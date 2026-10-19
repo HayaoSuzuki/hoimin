@@ -142,3 +142,102 @@ failed because the VM did not see that source path. Streaming the script on
 standard input worked. Task 3 can place task-owned source in a container via
 standard input or `docker cp`; do not assume host `/tmp` is mountable. The
 observed image interpreter is Python 3.12.3.
+
+## Production arithmetic contracts
+
+The verified package is `hoimin-budget-math`, the same package used by the
+application. Proof imports, logical models and contracts use `cfg(creusot)`;
+production types and function bodies are common to stable Rust and Creusot.
+`creusot-std = "=0.14.0"` is a target-cfg dependency, so normal builds and
+all-features builds do not compile it. The root and fuzz lockfiles still record
+its resolved source checksums. Its upstream license declarations remain part of
+the dependency audit even though it is excluded from ordinary target builds.
+The verified crate denies `creusot::trusted_code`; it contains no owned external
+specifications or assumptions. Upstream standard-library contracts remain in
+the trust boundary described above.
+
+`Duration` is modeled as integer nanoseconds, with
+`Dmax = u64::MAX * 1_000_000_000 + 999_999_999`. The contracts cover:
+
+| Requirement | Production contract |
+| --- | --- |
+| Mathematical ceiling, including zero and integer maxima | `project_top_budget`: `waves = (selected + jobs - 1) / jobs` over mathematical integers |
+| Both automatic-timeout saturation steps and floor | `auto_mutant_timeout`: `max(5s, min(Dmax, 2 * baseline + 1s))` |
+| Fixed/Auto selection | `project_top_budget`: case split over the actual `MutantTimeout` |
+| Duration and intermediate-u128 product saturation | `saturating_duration_mul`: `min(Dmax, duration * factor)` |
+| Exact seconds/nanoseconds reconstruction | `duration_from_nanos`: result equals its bounded integer input |
+| Strict shortfall, including equality | `is_shortfall`: compares the two fields for any public struct value |
+| Input preservation | Five separate postconditions on `project_top_budget` |
+| Positive duration and accessor meaning | `NonZeroDuration` invariant, constructor and accessor contracts |
+
+The private reconstruction helper requires a bounded total; its caller proves
+that requirement. The whole public input domain remains unrestricted apart
+from the actual positive input types. In particular, there is no jobs <= 256 or
+100-year bound in these contracts and no constructor-provenance invariant on
+`TopBudgetProjection`. Standard equality derives were replaced with common
+explicit bodies and structural deep-model equality contracts because the
+standard derive did not provide the trait postcondition required by Creusot.
+The derived models for the enum and public projection include every field, so
+omitting a field from their explicit equality prevents the proof from passing.
+
+The workspace-root `why3find.json` is byte-identical to the pinned configuration
+in this directory. Cargo-creusot selects the workspace root, so checking only
+this template directory would not validate the effective project configuration.
+Use `-p hoimin-budget-math` **before** the `--` separator; Cargo flags after that
+separator do not select Creusot's workspace package set.
+
+From the actual workspace in the pinned Linux environment, run each target
+sequentially:
+
+```sh
+export CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR=/tmp/hoimin-issue999-target
+python3 /recipe/tools/creusot_environment.py check \
+  --manifest /recipe/formal/creusot/toolchain.json --project-root "$PWD"
+cargo clean -p hoimin-budget-math --target "$target"
+# Remove only this job's generated output, retaining saved strategies elsewhere.
+rm -rf verif/hoimin_budget_math_rlib
+cargo creusot -p hoimin-budget-math --only=coma --span-mode relative -j 2 \
+  -- --lib --locked --target "$target"
+python3 /recipe/tools/creusot_environment.py check \
+  --manifest /recipe/formal/creusot/toolchain.json --project-root "$PWD"
+cargo creusot -p hoimin-budget-math --only=prove --no-cache -j 2 \
+  --why3find-arg=--goals
+```
+
+Cleaning only the owned package forces fresh generation without changing product
+source or rebuilding its dependencies. Fresh Coma files, the named contracts in
+`obligations.json`, and every final proof status must be checked by the mandatory
+runner; a command exit alone or a nonempty directory is insufficient. The
+manifest binds source contract expressions and logical definitions as well as
+actual generated goals, so deleting an `ensures` cannot leave an apparently
+successful overflow-only proof. Changes to that manifest require semantic
+review against the eight requirements above.
+
+Saved `proof.json` files under `proofs/TARGET/hoimin_budget_math_rlib/` are search
+strategies, not successful-result caches. Choose the current target and copy its relative paths into
+`verif/hoimin_budget_math_rlib/` after fresh generation, then add `--replay` to
+the proof command while retaining `--no-cache -j 2`. Replay still invokes the
+pinned solvers. Never reuse a cached successful answer as acceptance evidence.
+
+Local production verification on the pinned native Linux ARM64 development
+image generated 25 Coma files containing 59 named goals per target. Each target
+passed both a first no-cache proof and a fresh-generation no-cache replay of its
+saved strategy. The complete six-run sequence took 121.98 seconds with an empty
+owned Cargo target directory at entry; installed tools and registry downloads
+were already available. This is a cold **crate build**, not a cold environment
+installation or the native Linux x86_64 CI acceptance measurement.
+
+| Rust target | First generation / proof | Fresh warm generation / replay |
+| --- | ---: | ---: |
+| `x86_64-unknown-linux-gnu` | 20.65 s / 10.62 s | 0.31 s / 8.67 s |
+| `aarch64-apple-darwin` | 15.79 s / 8.99 s | 0.21 s / 8.68 s |
+| `x86_64-pc-windows-msvc` | 13.94 s / 9.00 s | 0.23 s / 8.73 s |
+
+Peak process/child RSS was 1,490,344 KiB during generation and 272,072 KiB during
+proof, rather than an aggregate environment measurement. The owned Linux build
+directory used 187,644 KiB afterward. Every round checked unchanged input hashes.
+Compiling mutations of ceiling, saturation, auto timeout and strict shortfall
+each produced their corresponding unproved goal; omitting one projection field
+from structural equality also failed its equality goal. All mutation sources
+were restored before these final three-target runs. Stable Rust's all-features
+workspace suite passed 2,916 tests with 33 ignored and no failures; Clippy passed.

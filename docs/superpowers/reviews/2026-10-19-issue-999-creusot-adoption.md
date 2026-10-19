@@ -189,3 +189,41 @@ addressed and no new Critical/Important problems. The controller inspected
 the actual project rejection log and all six first/fresh-warm sample proof
 results. Task 2 is complete; production arithmetic proofs and native Linux
 x86_64 cold/warm acceptance remain Tasks 3 and 4, respectively.
+
+## Task 3 production contracts: self-review passes
+
+These passes concern the actual budget arithmetic package, not the environment
+smoke. Evidence and repair history are in the worktree-local Task 3 report.
+
+| Pass | Requirements review | Design review | Implementation review | Proof/test review |
+| --- | --- | --- | --- | --- |
+| 1 | Mapped all eight approved mathematical clauses to production functions. | Models are integer nanoseconds; runtime types remain unchanged. | Constructor rejects exactly zero and preserves every positive Duration. | Existing independent arithmetic properties cover zero, maxima, fractions and arbitrary inputs. |
+| 2 | Kept all usize/Duration inputs; no configuration-only bounds. | NonZeroDuration alone owns positivity; public projection has no provenance invariant. | Accessor and Fixed selection use the invariant; Auto retains both overflow paths. | Initial no-cache RED exposed unsupported try_from and missing equality refinement contracts; logs preserve failures. |
+| 3 | Required ceiling, strict comparison and exact reconstruction separately. | Private reconstruction isolates its bounded conversion requirement. | Its caller proves Dmax bound; quotient/remainder casts preserve integer value. | Reconstruction has an exact-value postcondition and overflow/panic obligations; existing fraction/max tests exercise runtime. |
+| 4 | Required same production bodies for ordinary and proof builds. | Common explicit equality implementations avoid two derive expansion paths. | Structural models for enum/projection include every field; equality contracts prevent omissions. | Ordinary all-features builds and full workspace tests accompany formal equality/refinement checks. |
+| 5 | Three independent target generations, no-cache solving, four compiling mutations and fixed solver caps remain mandatory. | Manifest records mathematical contract expressions and generated names, not only counts. | Owned trust denial and conditional dependency boundary audited; upstream contracts explicitly trusted. | Fresh package compilation precedes proof/replay; mutation success means compilation plus the relevant unproved VC. |
+
+Design diagnostic score: 10/10 (8 of 8): the arithmetic module has one purpose;
+its caller interface is smaller than the implementation; changes stay behind
+the existing API; comments explain positivity and bounded reconstruction;
+review explicitly covers design; the module owns saturation/ceiling knowledge;
+module boundaries are documented; proof-driven refactoring is included rather
+than hidden in adapters. The explicit equality bodies add maintenance compared
+with derives; structural deep-model contracts are the corresponding guard.
+Final target, sensitivity and regression results are appended after execution.
+
+Task 3 final evidence: each of the three required Rust targets freshly generated
+25 Coma files/59 named goals and passed both no-cache prove and fresh-generation
+no-cache replay. Source hashes stayed unchanged and matched the host worktree.
+Cold-crate plus fresh-warm six-run sequence121.98s, peak process/child RSS1490344
+KiB (generation) and272072KiB (proof); each proof8.67–10.62s. This ARM64 development
+host does not establish the native Linux x86_64 cold-environment CI deadline.
+All four required production arithmetic mutations compiled and produced their
+relevant unproved goals; a fifth omitted-field equality mutation did likewise.
+They were restored before final proofs. Stable all-features full workspace:
+2916 passed/0 failed/33 ignored across171 summaries; no broad rerun or unreported
+failure. Clippy's initial unnecessary lint expectation was removed, then final
+workspace/all-targets/all-features Clippy passed21.84s. Normal/build dependency
+tree excludes Creusot; source files of all three pinned registry proof crates
+match the installed v0.14.0 tree. Native x86_64 CI acceptance and the dependency
+license integration audit remain the controller's later tasks.

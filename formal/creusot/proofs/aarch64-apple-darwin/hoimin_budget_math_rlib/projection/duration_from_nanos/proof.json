@@ -1,0 +1,9 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_duration_from_nanos": { "prover": "z3@5.1.0", "time": 0.007 },
+      "vc_new": { "prover": "z3@5.1.0", "time": 0.0003 }
+    }
+  }
+}

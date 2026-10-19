@@ -1,0 +1,10 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_elim_Fixed": { "prover": "z3@5.1.0", "time": 0.003 },
+      "vc_eq_MutantTimeout": { "prover": "z3@5.1.0", "time": 0.005 },
+      "vc_eq_ref_NonZeroDuration": { "prover": "z3@5.1.0", "time": 0.003 }
+    }
+  }
+}

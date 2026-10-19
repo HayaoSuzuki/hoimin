@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+#![cfg_attr(creusot, deny(creusot::trusted_code))]
 
 mod duration;
 mod projection;

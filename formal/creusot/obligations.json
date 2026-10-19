@@ -1,0 +1,413 @@
+{
+  "schema_version": 1,
+  "package": "hoimin-budget-math",
+  "targets": [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc"
+  ],
+  "expected_coma_files": 25,
+  "clauses": {
+    "1": [
+      "projection.mathematical_ceiling"
+    ],
+    "2": [
+      "auto_timeout.auto_floor_and_saturation"
+    ],
+    "3": [
+      "projection.effective_timeout"
+    ],
+    "4": [
+      "saturating_product.both_product_saturations",
+      "projection.capacity"
+    ],
+    "5": [
+      "reconstruction.exact_reconstruction"
+    ],
+    "6": [
+      "shortfall.strict_shortfall_for_any_struct"
+    ],
+    "7": [
+      "projection.selected_preserved",
+      "projection.jobs_preserved",
+      "projection.planned_timeout_preserved",
+      "projection.baseline_preserved",
+      "projection.remaining_preserved"
+    ],
+    "8": [
+      "positive_constructor.positive_constructor_exact",
+      "positive_accessor.positive_accessor_exact",
+      "shortfall.strict_shortfall_for_any_struct"
+    ]
+  },
+  "functions": [
+    {
+      "id": "positive_constructor",
+      "source": "crates/hoimin-budget-math/src/duration.rs",
+      "anchor": "impl NonZeroDuration",
+      "function": "new",
+      "coma": "verif/hoimin_budget_math_rlib/duration/impl_NonZeroDuration/new.coma",
+      "goal": "vc_new",
+      "requires": [],
+      "contracts": [
+        {
+          "id": "positive_constructor_exact",
+          "source": "ensures(match result { Some(value_out) => value_out.0@ == value@ && value@ > 0, None => value@ == 0, })",
+          "generated_marker": "new ensures"
+        }
+      ]
+    },
+    {
+      "id": "positive_accessor",
+      "source": "crates/hoimin-budget-math/src/duration.rs",
+      "anchor": "impl NonZeroDuration",
+      "function": "get",
+      "coma": "verif/hoimin_budget_math_rlib/duration/impl_NonZeroDuration/get.coma",
+      "goal": "vc_get",
+      "requires": [],
+      "contracts": [
+        {
+          "id": "positive_accessor_exact",
+          "source": "ensures(result@ == self@ && result@ > 0)",
+          "generated_marker": "get ensures"
+        }
+      ]
+    },
+    {
+      "id": "auto_timeout",
+      "source": "crates/hoimin-budget-math/src/duration.rs",
+      "function": "auto_mutant_timeout",
+      "coma": "verif/hoimin_budget_math_rlib/duration/auto_mutant_timeout.coma",
+      "goal": "vc_auto_mutant_timeout",
+      "requires": [],
+      "contracts": [
+        {
+          "id": "auto_floor_and_saturation",
+          "source": "ensures(result@ == auto_timeout_nanos(baseline@))",
+          "generated_marker": "auto_mutant_timeout ensures"
+        }
+      ]
+    },
+    {
+      "id": "projection",
+      "source": "crates/hoimin-budget-math/src/projection.rs",
+      "function": "project_top_budget",
+      "coma": "verif/hoimin_budget_math_rlib/projection/project_top_budget.coma",
+      "goal": "vc_project_top_budget",
+      "requires": [],
+      "contracts": [
+        {
+          "id": "selected_preserved",
+          "source": "ensures(result.selected == selected)",
+          "generated_marker": "project_top_budget ensures #0"
+        },
+        {
+          "id": "jobs_preserved",
+          "source": "ensures(result.jobs@ == jobs@)",
+          "generated_marker": "project_top_budget ensures #1"
+        },
+        {
+          "id": "planned_timeout_preserved",
+          "source": "ensures(result.planned_total_timeout@ == planned_total_timeout@)",
+          "generated_marker": "project_top_budget ensures #2"
+        },
+        {
+          "id": "baseline_preserved",
+          "source": "ensures(result.baseline@ == baseline@)",
+          "generated_marker": "project_top_budget ensures #3"
+        },
+        {
+          "id": "remaining_preserved",
+          "source": "ensures(result.remaining@ == remaining@)",
+          "generated_marker": "project_top_budget ensures #4"
+        },
+        {
+          "id": "mathematical_ceiling",
+          "source": "ensures(result.waves@ == (selected@ + jobs@ - 1) / jobs@)",
+          "generated_marker": "project_top_budget ensures #5"
+        },
+        {
+          "id": "effective_timeout",
+          "source": "ensures(match mutant_timeout { MutantTimeout::Auto => result.effective_mutant_timeout@ == auto_timeout_nanos(baseline@), MutantTimeout::Fixed(value) => result.effective_mutant_timeout@ == value@, })",
+          "generated_marker": "project_top_budget ensures #6"
+        },
+        {
+          "id": "capacity",
+          "source": "ensures(result.projected_capacity@ == (result.effective_mutant_timeout@ * result.waves@).min(duration_max_nanos()))",
+          "generated_marker": "project_top_budget ensures #7"
+        }
+      ]
+    },
+    {
+      "id": "saturating_product",
+      "source": "crates/hoimin-budget-math/src/projection.rs",
+      "function": "saturating_duration_mul",
+      "coma": "verif/hoimin_budget_math_rlib/projection/saturating_duration_mul.coma",
+      "goal": "vc_saturating_duration_mul",
+      "requires": [],
+      "contracts": [
+        {
+          "id": "both_product_saturations",
+          "source": "ensures(result@ == (duration@ * factor@).min(duration_max_nanos()))",
+          "generated_marker": "saturating_duration_mul ensures"
+        }
+      ]
+    },
+    {
+      "id": "reconstruction",
+      "source": "crates/hoimin-budget-math/src/projection.rs",
+      "function": "duration_from_nanos",
+      "coma": "verif/hoimin_budget_math_rlib/projection/duration_from_nanos.coma",
+      "goal": "vc_duration_from_nanos",
+      "requires": [
+        "requires(nanos@ <= duration_max_nanos())"
+      ],
+      "contracts": [
+        {
+          "id": "exact_reconstruction",
+          "source": "ensures(result@ == nanos@)",
+          "generated_marker": "duration_from_nanos ensures"
+        }
+      ]
+    },
+    {
+      "id": "shortfall",
+      "source": "crates/hoimin-budget-math/src/projection.rs",
+      "anchor": "impl TopBudgetProjection",
+      "function": "is_shortfall",
+      "coma": "verif/hoimin_budget_math_rlib/projection/impl_TopBudgetProjection/is_shortfall.coma",
+      "goal": "vc_is_shortfall",
+      "requires": [],
+      "contracts": [
+        {
+          "id": "strict_shortfall_for_any_struct",
+          "source": "ensures(result == (self.projected_capacity@ > self.remaining@))",
+          "generated_marker": "is_shortfall ensures"
+        }
+      ]
+    },
+    {
+      "id": "NonZeroDuration_equality",
+      "source": "crates/hoimin-budget-math/src/duration.rs",
+      "anchor": "impl PartialEq for NonZeroDuration",
+      "function": "eq",
+      "coma": "verif/hoimin_budget_math_rlib/duration/impl_PartialEq_for_NonZeroDuration/eq.coma",
+      "goal": "vc_eq_NonZeroDuration",
+      "requires": [],
+      "contracts": [
+        {
+          "id": "structural_equality",
+          "source": "ensures(result == (self.deep_model() == other.deep_model()))",
+          "generated_marker": "eq ensures"
+        }
+      ],
+      "refinement": {
+        "coma": "verif/hoimin_budget_math_rlib/duration/impl_PartialEq_for_NonZeroDuration/eq__refines.coma",
+        "goal": "refines"
+      }
+    },
+    {
+      "id": "MutantTimeout_equality",
+      "source": "crates/hoimin-budget-math/src/duration.rs",
+      "anchor": "impl PartialEq for MutantTimeout",
+      "function": "eq",
+      "coma": "verif/hoimin_budget_math_rlib/duration/impl_PartialEq_for_MutantTimeout/eq.coma",
+      "goal": "vc_eq_MutantTimeout",
+      "requires": [],
+      "contracts": [
+        {
+          "id": "structural_equality",
+          "source": "ensures(result == (self.deep_model() == other.deep_model()))",
+          "generated_marker": "eq ensures"
+        }
+      ],
+      "refinement": {
+        "coma": "verif/hoimin_budget_math_rlib/duration/impl_PartialEq_for_MutantTimeout/eq__refines.coma",
+        "goal": "refines"
+      }
+    },
+    {
+      "id": "TopBudgetProjection_equality",
+      "source": "crates/hoimin-budget-math/src/projection.rs",
+      "anchor": "impl PartialEq for TopBudgetProjection",
+      "function": "eq",
+      "coma": "verif/hoimin_budget_math_rlib/projection/impl_PartialEq_for_TopBudgetProjection/eq.coma",
+      "goal": "vc_eq_TopBudgetProjection",
+      "requires": [],
+      "contracts": [
+        {
+          "id": "structural_equality",
+          "source": "ensures(result == (self.deep_model() == other.deep_model()))",
+          "generated_marker": "eq ensures"
+        }
+      ],
+      "refinement": {
+        "coma": "verif/hoimin_budget_math_rlib/projection/impl_PartialEq_for_TopBudgetProjection/eq__refines.coma",
+        "goal": "refines"
+      }
+    }
+  ],
+  "logical_definitions": [
+    {
+      "id": "duration_max_nanos",
+      "source": "crates/hoimin-budget-math/src/duration.rs",
+      "definition": "#[cfg(creusot)] #[logic(open(crate))] pub(crate) fn duration_max_nanos() -> Int { pearlite! { u64::MAX@ * 1_000_000_000 + 999_999_999 } }"
+    },
+    {
+      "id": "auto_timeout_nanos",
+      "source": "crates/hoimin-budget-math/src/duration.rs",
+      "definition": "#[cfg(creusot)] #[logic(open(crate))] pub(crate) fn auto_timeout_nanos(baseline: Int) -> Int { pearlite! { (2 * baseline + 1_000_000_000).min(duration_max_nanos()).max(5_000_000_000) } }"
+    },
+    {
+      "id": "positive_invariant",
+      "source": "crates/hoimin-budget-math/src/duration.rs",
+      "definition": "#[cfg(creusot)] impl Invariant for NonZeroDuration { #[logic(open)] fn invariant(self) -> bool { pearlite! { self@ > 0 } } }"
+    },
+    {
+      "id": "duration_view",
+      "source": "crates/hoimin-budget-math/src/duration.rs",
+      "definition": "#[cfg(creusot)] impl View for NonZeroDuration { type ViewTy = Int; #[logic(open(self))] fn view(self) -> Int { pearlite! { self.0@ } } }"
+    },
+    {
+      "id": "duration_deep_model",
+      "source": "crates/hoimin-budget-math/src/duration.rs",
+      "definition": "#[cfg(creusot)] impl DeepModel for NonZeroDuration { type DeepModelTy = Int; #[logic(open)] fn deep_model(self) -> Int { pearlite! { self@ } } }"
+    }
+  ],
+  "scope_rules": [
+    "Compare complete contract sets attached to each named function; reject additional preconditions and missing or changed postconditions. Ignore whitespace only, not tokens.",
+    "Check the listed logical definitions and structural DeepModel derives; TopBudgetProjection must have no user-defined Invariant.",
+    "Require the listed generated contract markers and goals in freshly generated Coma, then prove every generated file, including unlisted derived-method obligations.",
+    "Saved proof.json files are replay strategies only. Run --no-cache and fail on any unproved goal."
+  ],
+  "structural_models": [
+    {
+      "source": "crates/hoimin-budget-math/src/duration.rs",
+      "type": "MutantTimeout",
+      "derive": "#[cfg_attr(creusot, derive(creusot_std::prelude::DeepModel))]"
+    },
+    {
+      "source": "crates/hoimin-budget-math/src/projection.rs",
+      "type": "TopBudgetProjection",
+      "derive": "#[cfg_attr(creusot, derive(creusot_std::prelude::DeepModel))]",
+      "forbid_user_invariant": true
+    }
+  ],
+  "goal_inventory": {
+    "verif/hoimin_budget_math_rlib/duration/auto_mutant_timeout.coma": [
+      "vc_and_then_Duration",
+      "vc_auto_mutant_timeout",
+      "vc_checked_add",
+      "vc_checked_mul",
+      "vc_closure0",
+      "vc_from_secs",
+      "vc_max_Duration",
+      "vc_new",
+      "vc_set_MAX",
+      "vc_unwrap_or_Duration"
+    ],
+    "verif/hoimin_budget_math_rlib/duration/impl_Clone_for_MutantTimeout/clone.coma": [
+      "vc_clone_MutantTimeout"
+    ],
+    "verif/hoimin_budget_math_rlib/duration/impl_Clone_for_MutantTimeout/clone__refines.coma": [
+      "refines"
+    ],
+    "verif/hoimin_budget_math_rlib/duration/impl_Clone_for_NonZeroDuration/clone.coma": [
+      "vc_clone_NonZeroDuration"
+    ],
+    "verif/hoimin_budget_math_rlib/duration/impl_Clone_for_NonZeroDuration/clone__refines.coma": [
+      "refines"
+    ],
+    "verif/hoimin_budget_math_rlib/duration/impl_Debug_for_MutantTimeout/fmt.coma": [
+      "vc_debug_tuple_field1_finish",
+      "vc_elim_Fixed",
+      "vc_fmt_MutantTimeout",
+      "vc_write_str"
+    ],
+    "verif/hoimin_budget_math_rlib/duration/impl_Debug_for_NonZeroDuration/fmt.coma": [
+      "vc_debug_tuple_field1_finish",
+      "vc_fmt_NonZeroDuration"
+    ],
+    "verif/hoimin_budget_math_rlib/duration/impl_Eq_for_MutantTimeout/assert_fields_are_eq.coma": [
+      "vc_assert_fields_are_eq_MutantTimeout"
+    ],
+    "verif/hoimin_budget_math_rlib/duration/impl_Eq_for_NonZeroDuration/assert_fields_are_eq.coma": [
+      "vc_assert_fields_are_eq_NonZeroDuration"
+    ],
+    "verif/hoimin_budget_math_rlib/duration/impl_NonZeroDuration/get.coma": [
+      "vc_get"
+    ],
+    "verif/hoimin_budget_math_rlib/duration/impl_NonZeroDuration/new.coma": [
+      "vc_is_zero",
+      "vc_new"
+    ],
+    "verif/hoimin_budget_math_rlib/duration/impl_PartialEq_for_MutantTimeout/eq.coma": [
+      "vc_elim_Fixed",
+      "vc_eq_MutantTimeout",
+      "vc_eq_ref_NonZeroDuration"
+    ],
+    "verif/hoimin_budget_math_rlib/duration/impl_PartialEq_for_MutantTimeout/eq__refines.coma": [
+      "refines"
+    ],
+    "verif/hoimin_budget_math_rlib/duration/impl_PartialEq_for_NonZeroDuration/eq.coma": [
+      "vc_eq_Duration",
+      "vc_eq_NonZeroDuration"
+    ],
+    "verif/hoimin_budget_math_rlib/duration/impl_PartialEq_for_NonZeroDuration/eq__refines.coma": [
+      "refines"
+    ],
+    "verif/hoimin_budget_math_rlib/projection/duration_from_nanos.coma": [
+      "vc_duration_from_nanos",
+      "vc_new"
+    ],
+    "verif/hoimin_budget_math_rlib/projection/impl_Clone_for_TopBudgetProjection/clone.coma": [
+      "vc_clone_TopBudgetProjection"
+    ],
+    "verif/hoimin_budget_math_rlib/projection/impl_Clone_for_TopBudgetProjection/clone__refines.coma": [
+      "refines"
+    ],
+    "verif/hoimin_budget_math_rlib/projection/impl_Debug_for_TopBudgetProjection/fmt.coma": [
+      "vc_debug_struct_fields_finish",
+      "vc_fmt_TopBudgetProjection"
+    ],
+    "verif/hoimin_budget_math_rlib/projection/impl_Eq_for_TopBudgetProjection/assert_fields_are_eq.coma": [
+      "vc_assert_fields_are_eq_TopBudgetProjection"
+    ],
+    "verif/hoimin_budget_math_rlib/projection/impl_PartialEq_for_TopBudgetProjection/eq.coma": [
+      "vc_eq_Duration",
+      "vc_eq_TopBudgetProjection"
+    ],
+    "verif/hoimin_budget_math_rlib/projection/impl_PartialEq_for_TopBudgetProjection/eq__refines.coma": [
+      "refines"
+    ],
+    "verif/hoimin_budget_math_rlib/projection/impl_TopBudgetProjection/is_shortfall.coma": [
+      "vc_gt_Duration",
+      "vc_is_shortfall"
+    ],
+    "verif/hoimin_budget_math_rlib/projection/project_top_budget.coma": [
+      "vc_auto_mutant_timeout",
+      "vc_elim_Fixed",
+      "vc_from_usize",
+      "vc_get",
+      "vc_get_usize",
+      "vc_is_multiple_of",
+      "vc_project_top_budget",
+      "vc_saturating_duration_mul"
+    ],
+    "verif/hoimin_budget_math_rlib/projection/saturating_duration_mul.coma": [
+      "vc_as_nanos",
+      "vc_checked_mul",
+      "vc_duration_from_nanos",
+      "vc_elim_Some",
+      "vc_new",
+      "vc_saturating_duration_mul",
+      "vc_set_MAX"
+    ]
+  },
+  "expected_named_goals": 59,
+  "strategy_roots": {
+    "x86_64-unknown-linux-gnu": "formal/creusot/proofs/x86_64-unknown-linux-gnu",
+    "aarch64-apple-darwin": "formal/creusot/proofs/aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc": "formal/creusot/proofs/x86_64-pc-windows-msvc"
+  }
+}

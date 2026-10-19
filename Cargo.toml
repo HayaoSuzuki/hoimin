@@ -13,6 +13,9 @@ rust-version = "1.99.0"
 license = "Elastic-2.0"
 repository = "https://github.com/HayaoSuzuki/hoimin"
 
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(creusot)'] }
+
 [workspace.lints.clippy]
 all = "deny"
 pedantic = "deny"
