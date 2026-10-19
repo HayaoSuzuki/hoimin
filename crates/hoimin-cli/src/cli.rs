@@ -632,10 +632,12 @@ pub fn write_completions(shell: Shell, writer: &mut impl std::io::Write) {
 }
 
 /// Builds the shared command definition used by parsing, completions and documentation.
+/// Usage/help use the trusted product name even when the executable is renamed.
 #[must_use]
 pub fn root_command() -> clap::Command {
     let operator_roster = operator_help();
     RootCli::command()
+        .bin_name("hoimin")
         .mut_subcommand("run", |command| command.after_help(operator_roster.clone()))
         .mut_subcommand("plan", |command| command.after_help(operator_roster))
 }

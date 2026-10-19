@@ -521,26 +521,28 @@ async fn review_missing_source_with_store_is_unavailable() {
 }
 
 #[cfg(unix)]
-#[tokio::test]
-async fn review_human_quotes_external_fields_and_json_keeps_logical_values() {
-    for (name, quoted_path) in [
-        ("sample\x1b[31m.py", r#""sample\u{1b}[31m.py""#),
-        ("sample\r\n\t.py", r#""sample\r\n\t.py""#),
-        ("日本語🦀.py", "\"日本語🦀.py\""),
-    ] {
-        let (_dir, mut args) = fixture_named(name).await;
-        let mut record = record_args(&args);
-        let reason = record.iter().position(|value| value == "--reason").unwrap() + 1;
-        record[reason] = "理由\n\t\"quoted\" \\literal".into();
-        record.extend(["--evidence".into(), "証拠\n\tsecond".into()]);
-        let (code, _, err) = run(record).await;
-        assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
+async fn assert_review_projection(name: &str, quoted_path: &str, format: &str) {
+    // Arrange: record one review and derive its ID from the saved plan.
+    let (_dir, mut args) = fixture_named(name).await;
+    let plan: Value = serde_json::from_slice(&std::fs::read(&args[3]).unwrap()).unwrap();
+    let id = plan["candidates"][0]["id"].as_str().unwrap();
+    let mut record = record_args(&args);
+    let reason = record.iter().position(|value| value == "--reason").unwrap() + 1;
+    record[reason] = "理由\n\t\"quoted\" \\literal".into();
+    record.extend(["--evidence".into(), "証拠\n\tsecond".into()]);
+    let (code, _, err) = run(record).await;
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
+    *args.last_mut().unwrap() = format.into();
 
-        let (code, out, err) = run(args.clone()).await;
-        assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
+    // Act: each generated format case observes one independent public result.
+    let (code, out, err) = run(args).await;
+
+    // Assert.
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
+    if format == "json" {
         let document: Value = serde_json::from_slice(&out).unwrap();
         let candidate = &document["candidates"][0];
-        let id = candidate["candidate"]["id"].as_str().unwrap();
+        assert_eq!(candidate["candidate"]["id"], id);
         assert_eq!(candidate["candidate"]["path"], name);
         assert_eq!(
             candidate["history"][0]["draft"]["reason"],
@@ -550,11 +552,7 @@ async fn review_human_quotes_external_fields_and_json_keeps_logical_values() {
             candidate["history"][0]["draft"]["evidence"][0],
             "証拠\n\tsecond"
         );
-        *args.last_mut().unwrap() = "text".into();
-
-        let (code, out, err) = run(args).await;
-
-        assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
+    } else {
         let text = String::from_utf8(out).unwrap();
         assert!(
             text.contains(&format!("candidate \"{id}\" {quoted_path}:1 ")),
@@ -569,4 +567,28 @@ async fn review_human_quotes_external_fields_and_json_keeps_logical_values() {
             "{text:?}"
         );
     }
+}
+
+#[cfg(unix)]
+macro_rules! review_projection_case {
+    ($case:ident, $name:expr, $quoted_path:expr) => {
+        mod $case {
+            #[tokio::test]
+            async fn human() {
+                super::assert_review_projection($name, $quoted_path, "text").await;
+            }
+            #[tokio::test]
+            async fn json() {
+                super::assert_review_projection($name, $quoted_path, "json").await;
+            }
+        }
+    };
+}
+
+#[cfg(unix)]
+mod review_external_field_projection {
+    use super::assert_review_projection;
+    review_projection_case!(esc, "sample\x1b[31m.py", r#""sample\u{1b}[31m.py""#);
+    review_projection_case!(line_controls, "sample\r\n\t.py", r#""sample\r\n\t.py""#);
+    review_projection_case!(unicode, "日本語🦀.py", "\"日本語🦀.py\"");
 }

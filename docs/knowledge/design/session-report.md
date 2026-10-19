@@ -17,9 +17,9 @@ sources:
   sha256: 996c546875b4f7563cb35df742d4cd23aad5dc6e83f4c8d5a6aa69aedad3d4c1
 - id: issue-1002-human-tests
   resource: ../../../crates/hoimin-cli/tests/report_handler.rs
-  revision: b02ee7d51709de664ee88db68abca34025db3487
+  revision: 3d9e33d178a451e39e182495f4a5bb3a4c5ebfa0
   working_tree: modified
-  sha256: fa3e30d87e12a40901ac4162ecb7819572da12edf140179c4667f5933e4d8a4a
+  sha256: af99502af3e8b1dab50efbd3ce2c9b0e4ae1db4dfebe4a5692f407ceec524c93
 - id: issue-992-identity
   resource: ../../../crates/hoimin-core/src/candidate.rs
   revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
