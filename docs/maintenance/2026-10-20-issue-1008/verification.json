@@ -29,5 +29,25 @@
     "160\u2192168B context stack;12-pair small-plan paired median+0.236521ms,positive8/12,negative4/12. Small-ASCII acceptance remains qualified.",
     "Successful analysis+validation builds2\u21922 sequentially; actual run3\u21923 including worker validation; max simultaneous2\u21921.",
     "Allocator byte deltas,process RSS,logical payload,and disk bytes are separate. No total CLI-half-memory or universal no-regression claim."
-  ]
+  ],
+  "r6_review_fix": {
+    "status": "I1 OPEN; practical non-regression not established",
+    "task_local_baseline": "e5e33603a4ed6a269d4131fbb6dbe99a409de05c",
+    "candidate": "952ab52780b181ae8de316e4b1f45988b5d0d1b0",
+    "ordinary_pairs_per_fixture": 512,
+    "one_sided_upper_rank": 276,
+    "tolerance_ns": 50000,
+    "upper_bounds_ns": {
+      "tiny": -19834,
+      "small": 67791
+    },
+    "requested_heap": "All three paired peak and retained deltas per fixture are zero",
+    "statistics_helper_tests": "6 passed",
+    "normal_hooks": "Explicit prek run --all-files: all four PASS after restoration",
+    "product_changes": false,
+    "evidence": "r6/README.md",
+    "summary": "r6/summary.json",
+    "restoration": "r6/restoration-verification.json",
+    "limitations": "Per-fixture independent representative pair assumption; no universal equality or stack equality; no additional batch or threshold change."
+  }
 }

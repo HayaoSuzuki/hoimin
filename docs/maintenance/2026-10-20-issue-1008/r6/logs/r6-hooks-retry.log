@@ -1,0 +1,4 @@
+cargo fmt (workspace)....................................................Passed
+cargo fmt (vendored parser)..............................................Passed
+cargo clippy (workspace).................................................Passed
+cargo clippy (vendored parser)...........................................Passed

@@ -1,0 +1,149 @@
+{
+  "pairs_per_fixture": 512,
+  "ordinary_child_count": 2048,
+  "child_timeout_seconds": 25,
+  "batch_timeout_seconds": 600,
+  "tolerance_ns": 50000,
+  "method": "512 alternating base/lazy then lazy/base pairs per fixture; tiny followed by small. First sample retained, no warmup discard, no trimming, all outliers retained. Single batch.",
+  "measurement": "Identical prior resource_wrapper.py: perf_counter_ns immediately before subprocess.run through captured child completion. Wrapper startup excluded. Ordinary executable, no allocator instrumentation. Heap probe separately invokes actual public run_with_writers plan after runtime/caller setup.",
+  "confidence": {
+    "one_sided_probability": "19/20",
+    "rank_one_based": 276,
+    "coverage_numerator": "12840087388107305426684601845879819075336308108719745642484818250319342545504022757924796945421277976581848805950349311431166270088464222777815069224359171",
+    "coverage_denominator": "13407807929942597099574024998205846127479365820592393377723561443721764030073546976801874298166903427690031858186486050853753882811946569946433649006084096",
+    "coverage_decimal": 0.9576574675889079,
+    "rule": "Smallest k with sum(comb(512,j),j=0..k-1)/2**512 >= 19/20; upper bound is ordered paired difference D_(k). Independent representative pairs assumed; per-fixture confidence, not simultaneous familywise confidence."
+  },
+  "heap_criterion": "For each fixture and all three matched observations, requested whole-plan peak and retained deltas lazy-base must each be <=0.",
+  "commands": {
+    "tiny-base": {
+      "argv": [
+        "/tmp/hoimin-perf-three-task3-r6/hoimin-base",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "sha256": "94bb5b116d200c70b660b5438a4854cd85647edf7ebe632d4a203c548968446f"
+    },
+    "tiny-lazy": {
+      "argv": [
+        "/tmp/hoimin-perf-three-task3-r6/hoimin-lazy",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "sha256": "9552211ae3481c918ccc1e4026607b7b1f8a0e81e8637a9558704f21bc21618b"
+    },
+    "small-base": {
+      "argv": [
+        "/tmp/hoimin-perf-three-task3-r6/hoimin-base",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "sha256": "40d62c331694610ef67a4f69fe79036c813474a786955f0e8b0543f90ba0c3fd"
+    },
+    "small-lazy": {
+      "argv": [
+        "/tmp/hoimin-perf-three-task3-r6/hoimin-lazy",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "sha256": "5c060597d3f16b87dcd18e753a9486aacf36338c30fb84f5a8d8c8785d9405ca"
+    }
+  },
+  "fixtures": {
+    "tiny": {
+      "bytes": 12,
+      "sha256": "397770613329e6e125ec8b33a70a0d206c3d6eec0c07bf109dc09d980d258d06"
+    },
+    "small": {
+      "bytes": 1771,
+      "sha256": "004690d9198bfc37ec2be2ed32e218a76e0e48383f7f44f7ade0ac60d8f71cdb"
+    }
+  },
+  "environment_sha256": "66f677bc9e7dce466ee5a577932d486f91f88f8e8b60fb9dd96a3cad8aa7dc5d",
+  "environment": {
+    "CARGO_BUILD_JOBS": "2",
+    "CARGO_TARGET_DIR": "/tmp/hoimin-perf-three-target",
+    "CARGO_INCREMENTAL": "0",
+    "RUST_TEST_THREADS": "2",
+    "PREK_NO_CONCURRENCY": "1",
+    "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+    "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache",
+    "PATH": "/tmp/hoimin-priority-six-venv/bin:/Users/hayao/.elan/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/homebrew/Caskroom/codex/0.162.1/codex-path:/Users/hayao/.codex/tmp/arg0/codex-arg0IGseZF:/Users/hayao/.rd/bin:/opt/homebrew/opt/mariadb-connector-c/bin:/Users/hayao/.nvm/versions/node/v22.14.0/bin:/Users/hayao/.local/bin:/Users/hayao/.elan/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/hayao/.cargo/bin:/Users/hayao/Library/Application Support/JetBrains/Toolbox/scripts:/Users/hayao/Library/Application Support/JetBrains/Toolbox/scripts",
+    "RUSTFLAGS": null,
+    "CARGO_ENCODED_RUSTFLAGS": null
+  },
+  "hashes": {
+    "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/docs/maintenance/2026-10-20-issue-1008/r6/measure.py": "edd19f266e4d8d3c725521ea7da21be6d49fe77f225fec79e94fc85bddcfcc13",
+    "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/docs/maintenance/2026-10-20-issue-1008/r6/r6_statistics.py": "d52d8ae3c295086ce621a4ff37574850005cb28f0fae6a7ffb9127520f025f43",
+    "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/docs/maintenance/2026-10-20-issue-1006/resource_wrapper.py": "e9b98feea96cf4916c83f67bc524dda3abaeeb18496f3bb83162cf407f6d866c",
+    "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/docs/maintenance/2026-10-20-issue-1008/probe.rs": "577450aaa419a7e8337142475903b15f1c05e238c196dce722335f97d6d74f95",
+    "/tmp/hoimin-perf-three-task3-r6/hoimin-base": "2f29fa71428c8de2d5c42cb76a87f9f8063a1a92051cf6e78fa3b9ee026868a5",
+    "/tmp/hoimin-perf-three-task3-r6/hoimin-lazy": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+    "/tmp/hoimin-perf-three-task3-r6/probe-base": "b75d45ae5e8cf8267b9a0561626e654c52ec7dbcbcd806d70558070f2da71422",
+    "/tmp/hoimin-perf-three-task3-r6/probe-lazy": "dc5d00c83c2a8ad8abc4891e931b726e4055d32a858a0a105d6dc3f4aff3a2c5"
+  }
+}

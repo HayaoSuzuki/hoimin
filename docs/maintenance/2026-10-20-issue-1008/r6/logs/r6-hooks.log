@@ -1,0 +1,2 @@
+error: Failed to open log file
+  caused by: failed to open file `/Users/hayao/.cache/prek/prek.log`: Operation not permitted (os error 1)

@@ -1,0 +1,326 @@
+[
+  {
+    "fixture": "tiny",
+    "pair": 0,
+    "variant": "base",
+    "command": [
+      "/tmp/hoimin-perf-three-task3-r6/probe-base",
+      "/tmp/hoimin-perf-three-task3/fixture-tiny",
+      "plan",
+      "0"
+    ],
+    "command_sha256": "cc16266834a53fc2243122fd0f749ea3409400716d62439cab2330dbf837a6e2",
+    "measurement": {
+      "candidates": 1,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "mode": "plan",
+      "n": 0,
+      "ns": 2953083,
+      "requested_live_delta": 27016,
+      "requested_peak_delta": 165860
+    },
+    "wrapper": {
+      "code": 0,
+      "stderr": "",
+      "elapsed_ns": 263606125,
+      "maxrss_bytes": 7585792
+    }
+  },
+  {
+    "fixture": "tiny",
+    "pair": 0,
+    "variant": "lazy",
+    "command": [
+      "/tmp/hoimin-perf-three-task3-r6/probe-lazy",
+      "/tmp/hoimin-perf-three-task3/fixture-tiny",
+      "plan",
+      "0"
+    ],
+    "command_sha256": "ad3b24d2caa0567de714d0ec36877d2bf359315b82ba47d6bd8ae9beb6d4eb77",
+    "measurement": {
+      "candidates": 1,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "mode": "plan",
+      "n": 0,
+      "ns": 3100416,
+      "requested_live_delta": 27016,
+      "requested_peak_delta": 165860
+    },
+    "wrapper": {
+      "code": 0,
+      "stderr": "",
+      "elapsed_ns": 213462750,
+      "maxrss_bytes": 7618560
+    }
+  },
+  {
+    "fixture": "tiny",
+    "pair": 1,
+    "variant": "lazy",
+    "command": [
+      "/tmp/hoimin-perf-three-task3-r6/probe-lazy",
+      "/tmp/hoimin-perf-three-task3/fixture-tiny",
+      "plan",
+      "0"
+    ],
+    "command_sha256": "ad3b24d2caa0567de714d0ec36877d2bf359315b82ba47d6bd8ae9beb6d4eb77",
+    "measurement": {
+      "candidates": 1,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "mode": "plan",
+      "n": 0,
+      "ns": 1857625,
+      "requested_live_delta": 27016,
+      "requested_peak_delta": 165860
+    },
+    "wrapper": {
+      "code": 0,
+      "stderr": "",
+      "elapsed_ns": 7867584,
+      "maxrss_bytes": 7520256
+    }
+  },
+  {
+    "fixture": "tiny",
+    "pair": 1,
+    "variant": "base",
+    "command": [
+      "/tmp/hoimin-perf-three-task3-r6/probe-base",
+      "/tmp/hoimin-perf-three-task3/fixture-tiny",
+      "plan",
+      "0"
+    ],
+    "command_sha256": "cc16266834a53fc2243122fd0f749ea3409400716d62439cab2330dbf837a6e2",
+    "measurement": {
+      "candidates": 1,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "mode": "plan",
+      "n": 0,
+      "ns": 1903958,
+      "requested_live_delta": 27016,
+      "requested_peak_delta": 165860
+    },
+    "wrapper": {
+      "code": 0,
+      "stderr": "",
+      "elapsed_ns": 7422833,
+      "maxrss_bytes": 7716864
+    }
+  },
+  {
+    "fixture": "tiny",
+    "pair": 2,
+    "variant": "base",
+    "command": [
+      "/tmp/hoimin-perf-three-task3-r6/probe-base",
+      "/tmp/hoimin-perf-three-task3/fixture-tiny",
+      "plan",
+      "0"
+    ],
+    "command_sha256": "cc16266834a53fc2243122fd0f749ea3409400716d62439cab2330dbf837a6e2",
+    "measurement": {
+      "candidates": 1,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "mode": "plan",
+      "n": 0,
+      "ns": 1378000,
+      "requested_live_delta": 27016,
+      "requested_peak_delta": 165860
+    },
+    "wrapper": {
+      "code": 0,
+      "stderr": "",
+      "elapsed_ns": 9406000,
+      "maxrss_bytes": 7503872
+    }
+  },
+  {
+    "fixture": "tiny",
+    "pair": 2,
+    "variant": "lazy",
+    "command": [
+      "/tmp/hoimin-perf-three-task3-r6/probe-lazy",
+      "/tmp/hoimin-perf-three-task3/fixture-tiny",
+      "plan",
+      "0"
+    ],
+    "command_sha256": "ad3b24d2caa0567de714d0ec36877d2bf359315b82ba47d6bd8ae9beb6d4eb77",
+    "measurement": {
+      "candidates": 1,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "mode": "plan",
+      "n": 0,
+      "ns": 1433500,
+      "requested_live_delta": 27016,
+      "requested_peak_delta": 165860
+    },
+    "wrapper": {
+      "code": 0,
+      "stderr": "",
+      "elapsed_ns": 6492709,
+      "maxrss_bytes": 7520256
+    }
+  },
+  {
+    "fixture": "small",
+    "pair": 0,
+    "variant": "base",
+    "command": [
+      "/tmp/hoimin-perf-three-task3-r6/probe-base",
+      "/tmp/hoimin-perf-three-task3/fixture-small",
+      "plan",
+      "128"
+    ],
+    "command_sha256": "9785f1ca5df0e66502bd21c3bc6338abde245a77289c94529d66ce709f316d92",
+    "measurement": {
+      "candidates": 1,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "mode": "plan",
+      "n": 128,
+      "ns": 1477250,
+      "requested_live_delta": 27015,
+      "requested_peak_delta": 165862
+    },
+    "wrapper": {
+      "code": 0,
+      "stderr": "",
+      "elapsed_ns": 5990083,
+      "maxrss_bytes": 7766016
+    }
+  },
+  {
+    "fixture": "small",
+    "pair": 0,
+    "variant": "lazy",
+    "command": [
+      "/tmp/hoimin-perf-three-task3-r6/probe-lazy",
+      "/tmp/hoimin-perf-three-task3/fixture-small",
+      "plan",
+      "128"
+    ],
+    "command_sha256": "4cf6f9c546dd132d23c8925405f3a36cdb3abbab2dcb5f8f31ad9c9930b9bfd5",
+    "measurement": {
+      "candidates": 1,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "mode": "plan",
+      "n": 128,
+      "ns": 1494500,
+      "requested_live_delta": 27015,
+      "requested_peak_delta": 165862
+    },
+    "wrapper": {
+      "code": 0,
+      "stderr": "",
+      "elapsed_ns": 5775458,
+      "maxrss_bytes": 7503872
+    }
+  },
+  {
+    "fixture": "small",
+    "pair": 1,
+    "variant": "lazy",
+    "command": [
+      "/tmp/hoimin-perf-three-task3-r6/probe-lazy",
+      "/tmp/hoimin-perf-three-task3/fixture-small",
+      "plan",
+      "128"
+    ],
+    "command_sha256": "4cf6f9c546dd132d23c8925405f3a36cdb3abbab2dcb5f8f31ad9c9930b9bfd5",
+    "measurement": {
+      "candidates": 1,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "mode": "plan",
+      "n": 128,
+      "ns": 4929791,
+      "requested_live_delta": 27015,
+      "requested_peak_delta": 165862
+    },
+    "wrapper": {
+      "code": 0,
+      "stderr": "",
+      "elapsed_ns": 13404084,
+      "maxrss_bytes": 8437760
+    }
+  },
+  {
+    "fixture": "small",
+    "pair": 1,
+    "variant": "base",
+    "command": [
+      "/tmp/hoimin-perf-three-task3-r6/probe-base",
+      "/tmp/hoimin-perf-three-task3/fixture-small",
+      "plan",
+      "128"
+    ],
+    "command_sha256": "9785f1ca5df0e66502bd21c3bc6338abde245a77289c94529d66ce709f316d92",
+    "measurement": {
+      "candidates": 1,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "mode": "plan",
+      "n": 128,
+      "ns": 1643417,
+      "requested_live_delta": 27015,
+      "requested_peak_delta": 165862
+    },
+    "wrapper": {
+      "code": 0,
+      "stderr": "",
+      "elapsed_ns": 8366792,
+      "maxrss_bytes": 8650752
+    }
+  },
+  {
+    "fixture": "small",
+    "pair": 2,
+    "variant": "base",
+    "command": [
+      "/tmp/hoimin-perf-three-task3-r6/probe-base",
+      "/tmp/hoimin-perf-three-task3/fixture-small",
+      "plan",
+      "128"
+    ],
+    "command_sha256": "9785f1ca5df0e66502bd21c3bc6338abde245a77289c94529d66ce709f316d92",
+    "measurement": {
+      "candidates": 1,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "mode": "plan",
+      "n": 128,
+      "ns": 1981583,
+      "requested_live_delta": 27015,
+      "requested_peak_delta": 165862
+    },
+    "wrapper": {
+      "code": 0,
+      "stderr": "",
+      "elapsed_ns": 11288417,
+      "maxrss_bytes": 8339456
+    }
+  },
+  {
+    "fixture": "small",
+    "pair": 2,
+    "variant": "lazy",
+    "command": [
+      "/tmp/hoimin-perf-three-task3-r6/probe-lazy",
+      "/tmp/hoimin-perf-three-task3/fixture-small",
+      "plan",
+      "128"
+    ],
+    "command_sha256": "4cf6f9c546dd132d23c8925405f3a36cdb3abbab2dcb5f8f31ad9c9930b9bfd5",
+    "measurement": {
+      "candidates": 1,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "mode": "plan",
+      "n": 128,
+      "ns": 2936666,
+      "requested_live_delta": 27015,
+      "requested_peak_delta": 165862
+    },
+    "wrapper": {
+      "code": 0,
+      "stderr": "",
+      "elapsed_ns": 13200292,
+      "maxrss_bytes": 8093696
+    }
+  }
+]

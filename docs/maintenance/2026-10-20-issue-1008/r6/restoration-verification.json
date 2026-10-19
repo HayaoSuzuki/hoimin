@@ -1,0 +1,25 @@
+{
+  "fix_base": "952ab52780b181ae8de316e4b1f45988b5d0d1b0",
+  "source_hashes": {
+    "crates/hoimin-core/src/candidate.rs": "bb98588e81434a8236204694cef02eec8f41123d90d65557d83123e5e76c753d",
+    "crates/hoimin-core/src/candidate_lazy_tests.rs": "237a757026464a04c687c7739187e312c6c161224186a1d5fc5f6e1fe5e0e96f",
+    "crates/hoimin-core/tests/candidate_policy.rs": "8fdb4350e0916900a2b1fe74bdf7882f2f4eb54e3c404512cb61959d2144a611",
+    "crates/hoimin-python/src/analyzer/rust.rs": "8abf12bab5c8858e4b7be9c15be79597d3d7762f4c42c6ecce404448d668b591",
+    "crates/hoimin-cli/tests/source_index_heap.rs": "e3012ff11570eb39e83b7595830a4e16c557ea204d0cfc5a1743f1c3542c1b5a",
+    "crates/hoimin-cli/tests/source_index_encoding_flow.rs": "7c8d10e62815a4a9e5732e3a08329b75eb6ad95d12e1370e425deaae8ab1a2fa",
+    "crates/hoimin-cli/tests/source_encoding_heap.rs": "7dd350edc299a9dd90d62732f2c9896c5d517be476007065c41b213edf29552a",
+    "docs/performance/shapes.json": "c75f67c59c4ba8f3b96f5c03a24bcc3d8f7057b7d98df17f776d20407f3c73c3",
+    "crates/hoimin-python/src/analyzer/rust_tests.rs": "d65208bc44c769e9c36526cd23f2e9c808be5e4a66ea16f071b8e7464f975e49"
+  },
+  "binary_hashes": {
+    "/tmp/hoimin-perf-three-baseline/release/hoimin": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+    "/tmp/hoimin-perf-three-task3/hoimin-after": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+    "/tmp/hoimin-perf-three-target/release/hoimin": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a"
+  },
+  "all_original_verification_hashes_match": true,
+  "product_test_cargo_and_shape_diff_from_fix_base": "",
+  "statistics_tests": "6 passed; logs/r6-statistics-tests.log",
+  "normal_hooks": "All four PASS via explicit prek run --all-files; logs/r6-hooks-retry.log",
+  "hook_environment_block": "Initial sandbox invocation could not open existing ~/.cache/prek/prek.log; authorized elevated retry succeeded. Both receipts retained.",
+  "acceptance": "I1 OPEN; R6 criterion not met; no new measurement or product change authorized."
+}

@@ -1,0 +1,95 @@
+PAIRS tiny 64 ELAPSED_SECONDS 3.693911249982193
+PAIRS tiny 128 ELAPSED_SECONDS 6.690656208898872
+PAIRS tiny 192 ELAPSED_SECONDS 9.702046166872606
+PAIRS tiny 256 ELAPSED_SECONDS 12.750805291812867
+PAIRS tiny 320 ELAPSED_SECONDS 15.841119333868846
+PAIRS tiny 384 ELAPSED_SECONDS 19.17695887479931
+PAIRS tiny 448 ELAPSED_SECONDS 22.158691708929837
+PAIRS tiny 512 ELAPSED_SECONDS 25.281767249805853
+PAIRS small 64 ELAPSED_SECONDS 28.282966417027637
+PAIRS small 128 ELAPSED_SECONDS 31.420494250021875
+PAIRS small 192 ELAPSED_SECONDS 34.793893749825656
+PAIRS small 256 ELAPSED_SECONDS 38.056747791823
+PAIRS small 320 ELAPSED_SECONDS 41.06341366702691
+PAIRS small 384 ELAPSED_SECONDS 44.07240862492472
+PAIRS small 448 ELAPSED_SECONDS 47.08755570882931
+PAIRS small 512 ELAPSED_SECONDS 50.67481870902702
+{
+  "tiny": {
+    "fixture": "tiny",
+    "upper_bound_ns": -19834,
+    "rank_one_based": 276,
+    "time_pass": true,
+    "positive": 227,
+    "zero": 0,
+    "negative": 285,
+    "paired_median_ns": -65208.0,
+    "paired_mean_ns": -214534.138671875,
+    "paired_min_ns": -44715999,
+    "paired_max_ns": 5337708,
+    "absolute": {
+      "base": {
+        "median_ns": 5765083.0,
+        "mean_ns": 6426792.54296875
+      },
+      "lazy": {
+        "median_ns": 5718250.5,
+        "mean_ns": 6212258.404296875
+      }
+    },
+    "heap_paired_differences": [
+      {
+        "requested_peak_delta": 0,
+        "requested_live_delta": 0
+      },
+      {
+        "requested_peak_delta": 0,
+        "requested_live_delta": 0
+      },
+      {
+        "requested_peak_delta": 0,
+        "requested_live_delta": 0
+      }
+    ],
+    "heap_pass": true
+  },
+  "small": {
+    "fixture": "small",
+    "upper_bound_ns": 67791,
+    "rank_one_based": 276,
+    "time_pass": false,
+    "positive": 268,
+    "zero": 0,
+    "negative": 244,
+    "paired_median_ns": 21354.0,
+    "paired_mean_ns": -20567.841796875,
+    "paired_min_ns": -34688167,
+    "paired_max_ns": 9396166,
+    "absolute": {
+      "base": {
+        "median_ns": 5908375.0,
+        "mean_ns": 6133912.59375
+      },
+      "lazy": {
+        "median_ns": 5966666.5,
+        "mean_ns": 6113344.751953125
+      }
+    },
+    "heap_paired_differences": [
+      {
+        "requested_peak_delta": 0,
+        "requested_live_delta": 0
+      },
+      {
+        "requested_peak_delta": 0,
+        "requested_live_delta": 0
+      },
+      {
+        "requested_peak_delta": 0,
+        "requested_live_delta": 0
+      }
+    ],
+    "heap_pass": true
+  }
+}
+R6 acceptance criterion not met; evidence retained, no additional batch authorized

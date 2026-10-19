@@ -1,0 +1,80 @@
+{
+  "base": "e5e33603a4ed6a269d4131fbb6dbe99a409de05c",
+  "candidate": "952ab52780b181ae8de316e4b1f45988b5d0d1b0",
+  "commands": [
+    [
+      "cargo",
+      "build",
+      "--locked",
+      "--release",
+      "-p",
+      "hoimin-cli"
+    ],
+    [
+      "python3",
+      "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/docs/maintenance/2026-10-20-issue-1008/build_probe.py",
+      "/tmp/hoimin-perf-three-target",
+      "r6-base"
+    ],
+    [
+      "cargo",
+      "build",
+      "--locked",
+      "--release",
+      "-p",
+      "hoimin-cli"
+    ],
+    [
+      "python3",
+      "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/docs/maintenance/2026-10-20-issue-1008/build_probe.py",
+      "/tmp/hoimin-perf-three-target",
+      "r6-lazy"
+    ]
+  ],
+  "variants": {
+    "base": {
+      "source_hashes": {
+        "crates/hoimin-core/src/candidate.rs": "0bec0dbf0fa391f301a1bec2f41b783732ac4248676adb055113f7370affa54f",
+        "crates/hoimin-python/src/analyzer/rust.rs": "86a24ae88ee0666c07b98a795d2891f0943284ef78be17c8e9d3c69a0d4c44f1"
+      },
+      "binary": "/tmp/hoimin-perf-three-task3-r6/hoimin-base",
+      "binary_sha256": "2f29fa71428c8de2d5c42cb76a87f9f8063a1a92051cf6e78fa3b9ee026868a5",
+      "probe": "/tmp/hoimin-perf-three-task3-r6/probe-base",
+      "probe_sha256": "b75d45ae5e8cf8267b9a0561626e654c52ec7dbcbcd806d70558070f2da71422",
+      "cargo_lock_sha256": "9ec547b05155b7805ca80a2d3656e05204c2f8b707b1ba4140ec4806a50d20f6",
+      "cargo_toml_sha256": "35d0ccf1475d17c1f76f42a291b79f172245a903ed0559f492ea4865a7f18d0a",
+      "probe_source_sha256": "577450aaa419a7e8337142475903b15f1c05e238c196dce722335f97d6d74f95"
+    },
+    "lazy": {
+      "source_hashes": {
+        "crates/hoimin-core/src/candidate.rs": "bb98588e81434a8236204694cef02eec8f41123d90d65557d83123e5e76c753d",
+        "crates/hoimin-python/src/analyzer/rust.rs": "8abf12bab5c8858e4b7be9c15be79597d3d7762f4c42c6ecce404448d668b591"
+      },
+      "binary": "/tmp/hoimin-perf-three-task3-r6/hoimin-lazy",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "probe": "/tmp/hoimin-perf-three-task3-r6/probe-lazy",
+      "probe_sha256": "dc5d00c83c2a8ad8abc4891e931b726e4055d32a858a0a105d6dc3f4aff3a2c5",
+      "cargo_lock_sha256": "9ec547b05155b7805ca80a2d3656e05204c2f8b707b1ba4140ec4806a50d20f6",
+      "cargo_toml_sha256": "35d0ccf1475d17c1f76f42a291b79f172245a903ed0559f492ea4865a7f18d0a",
+      "probe_source_sha256": "577450aaa419a7e8337142475903b15f1c05e238c196dce722335f97d6d74f95"
+    }
+  },
+  "environment": {
+    "CARGO_BUILD_JOBS": "2",
+    "CARGO_TARGET_DIR": "/tmp/hoimin-perf-three-target",
+    "CARGO_INCREMENTAL": "0",
+    "RUST_TEST_THREADS": "2",
+    "PREK_NO_CONCURRENCY": "1",
+    "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+    "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache",
+    "PATH": "/tmp/hoimin-priority-six-venv/bin:/Users/hayao/.elan/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/homebrew/Caskroom/codex/0.162.1/codex-path:/Users/hayao/.codex/tmp/arg0/codex-arg0IGseZF:/Users/hayao/.rd/bin:/opt/homebrew/opt/mariadb-connector-c/bin:/Users/hayao/.nvm/versions/node/v22.14.0/bin:/Users/hayao/.local/bin:/Users/hayao/.elan/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/hayao/.cargo/bin:/Users/hayao/Library/Application Support/JetBrains/Toolbox/scripts:/Users/hayao/Library/Application Support/JetBrains/Toolbox/scripts",
+    "RUSTFLAGS": null,
+    "CARGO_ENCODED_RUSTFLAGS": null
+  },
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+  "base_production_diff": "",
+  "source_restored": true,
+  "candidate_matches_prior_ordinary_binary": true,
+  "original_baseline_and_prior_probe_unchanged": true
+}
