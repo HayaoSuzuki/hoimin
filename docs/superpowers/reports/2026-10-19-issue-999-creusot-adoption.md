@@ -1,10 +1,19 @@
 # Issue #999: production budget proofs and final integration
 
-Task 5 implementation and local acceptance are complete; final hosted CI and
-independent branch review are controller-owned gates. The controller runs native
-CI at [39197995202](https://github.com/HayaoSuzuki/hoimin/actions/runs/39197995202)
-and non-Linux CI at [39198000067](https://github.com/HayaoSuzuki/hoimin/actions/runs/39198000067),
-both on checkpoint `5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee`.
+Task 5 implementation, local distribution acceptance and current-source native
+Linux CI are complete. Native run
+[39197995202](https://github.com/HayaoSuzuki/hoimin/actions/runs/39197995202)
+at `5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee` passed, including genuine cold and
+warm proofs. The earlier non-Linux run
+[39198000067](https://github.com/HayaoSuzuki/hoimin/actions/runs/39198000067)
+failed Windows Rust tests, as did the scheduling follow-up `39199825814`.
+Diagnostic run `39201076428` passed the two Job Object fixtures but exposed a
+separate lifecycle adapter wait that omitted existing shutdown allowances.
+The derived-bound repair passed all nine jobs in
+[39202749924](https://github.com/HayaoSuzuki/hoimin/actions/runs/39202749924)
+at `312be2c4759be00a26e2f04519258f1172057a67`, closing native platform acceptance.
+The scoped fix review found no new breakage; its then-pending Windows gate is now
+satisfied by that run. Final independent whole-branch review remains pending.
 No merge, release or proof-image publication was performed.
 
 ## Source and evidence map
@@ -24,7 +33,10 @@ SHA-256 manifest. Historical reports retain their original status wording.
 | Native warm/cold | `41c888f5`, run `39191762043`, both passed | [Task 4](issue-999/records/task-4-report.md), `evidence/task-4.tar.gz` |
 | Runner review fixes | `b5d920b5` then `62e3e390`, final re-review approved | [review](issue-999/records/task-4-review.md), [round 1](issue-999/records/task-4-fix1-review.md), [round 2](issue-999/records/task-4-fix2-review.md) |
 | Upstream merge | `878be0d5` merges main `f4460fc0`, preserving proof-source commits | [Rulings and costs](issue-999/records/progress.md) |
-| Final code checkpoint | `5033e1bb`, portable oracle premise and absolute Coma spans | [durable reviews](../reviews/2026-10-19-issue-999-creusot-adoption.md) |
+| Proof-source checkpoint | `5033e1bb`, portable oracle premise and absolute Coma spans; current native warm/cold passed | [durable reviews](../reviews/2026-10-19-issue-999-creusot-adoption.md), `evidence/task-5-final-ci.tar.gz` |
+| Windows harness follow-up | `70ea57b2`, two harness threads; same readiness failures persisted | [fix review](issue-999/records/task-5-fix1-review.md) |
+| Diagnostic checkpoint | `dd2674dd`, both Job Object cases passed; lifecycle exit guard failed | [round 2 report](issue-999/records/task-5-fix2-report.md), `evidence/task-5-fix2.tar.gz` |
+| Lifecycle guard repair | `312be2c4`, existing shutdown/telemetry allowances included; all nine native non-Linux jobs passed | [round 2 report](issue-999/records/task-5-fix2-report.md) |
 
 The task evidence archive maps `task-N/` to the original SDD task evidence
 folder. The original workspace remains intact. Final user-facing claims use
@@ -59,10 +71,26 @@ At `5033e1bb`, native Linux x86_64 proof job `117884864564` in run
 runner 156.09 seconds, three targets × 25 fresh files / 59 goals / 25 strategies.
 Generation peaked at 1,514,396 KiB process-or-child RSS, proof at 273,676 KiB;
 output was 29,542 bytes. Absolute spans produced no source-path warnings.
-Evidence is `task-5/native-ci/accepted-attempt-1/`, with adjacent full job log
-and run-attempt metadata. This is current-source warm acceptance. Current-source
-cold replay and full workflow/platform status remain controller-owned pending
-checks; the accepted `41c888f5` cold/warm figures remain separately identified.
+The same source passed genuine cold attempt 2, job `117888001628`, after the
+controller evicted only its owned branch tool-image cache. The full job log
+records `Cache not found`. Setup-inclusive time was 693 seconds and runner time
+105.023 seconds. Each target again freshly generated 25 files and proved all
+59 goals with 25 strategies. Generation/proof peak process-or-child RSS was
+1,516,044 / 273,544 KiB; the tool-build step peaked at 1,086,792 KiB. Output was
+29,542 bytes with no source-span warnings. After cold completion, disk and
+memory available were 81,462,580 and 14,552,420 KiB. Both jobs fit the unchanged
+30-minute cap. Runner durations are observations from separate jobs; they do
+not establish that a cold setup makes proving faster.
+
+The `evidence/task-5-final-ci.tar.gz` archive contains
+`task-5-final-ci/accepted-attempt-1/` and `accepted-cold/`, full job logs and
+`run-attempt-{1,2}-metadata.json`. Both run attempts concluded success; attempt 2
+reran the proof job and retained the other passing jobs from attempt 1. This
+establishes current-lock native CI acceptance, including Rust, quality, Lean,
+contracts, fuzz, random-order and wheel checks. The optional Linux cgroup-v2
+hard-mode job was skipped in both attempts; it is not counted as executed.
+Historical `41c888f5` results
+remain separately identified. Native Windows follow-up is tracked below.
 
 ## Dependency, license and distribution audit
 
@@ -193,7 +221,8 @@ file links and footnote definitions passed; remote URLs and heading anchors were
 not fetched. The first link check exposed the existing removed analyzer/rust.rs
 reference; it now points to the actual hoimin-python API, with refreshed source
 metadata. Historical source entries outside this update retain their hashes.
-The archive SHA-256 check and preservation check for six controller Rulings pass.
+The original archive SHA-256 and six-Ruling preservation checks passed. The final
+archive also preserves the seventh scheduling Ruling and its recorded costs.
 
 Exact local proof execution after copying the checkpoint runner and merged lock
 into the owned container was:
@@ -272,13 +301,91 @@ and 23 ignored. This was not a result-lifecycle oracle mismatch.
 The [fix report](issue-999/records/task-5-fix1-report.md) records the evidence and
 five self-reviews. The existing Issue #967 record observed the same two bounded
 tests fail under parallel execution (one at a different phase), then pass with
-two threads. Resource contention remains a supported working hypothesis. The
-manual Windows full workspace suite now uses `--test-threads=2`; production and
-fixture code, every test and each six-second bound remain unchanged. Fresh
-Windows acceptance and current cold proof remain controller-owned gates. The
-seventh Ruling and its longer-CI/remaining-cause risk are archived with the fix.
+two threads. This supported a contention hypothesis, not a confirmed cause. The
+manual Windows full workspace suite now uses `--test-threads=2`; that scheduling
+change preserved production/fixture code, every test and each six-second bound.
+However, follow-up run `39199825814` at `70ea57b2` failed the same two readiness
+cases: 761 passed, two failed, 23 ignored in 57.69 seconds. The mitigation was
+insufficient. The seventh Ruling and its longer-CI/remaining-cause risk remain in
+the archive, together with the contrary result. The scoped fix review found both
+Minor findings addressed and no new breakage, but left native acceptance open.
 
 Local regression: the new Windows workflow case failed before the scheduling
 change, with its macOS control passing. Final workflow/docs tests passed 194
 cases; Ruff and ty passed. The two source-provenance/count findings are corrected.
 The focused follow-up archive contains these results and the scoped review.
+
+## Diagnostic follow-up and lifecycle exit guard
+
+The [round 2 report](issue-999/records/task-5-fix2-report.md) records checkpoint
+`dd2674dd` and diagnostic run `39201076428`. Eight jobs passed, including native
+Windows Clippy. Both six-second Job Object cases passed in the full Rust job and
+the separate resource job. The latter recorded completed import/spawn/readiness
+phases and five `ResumeThread` calls with prior suspend count 1. This single run
+did not establish why earlier readiness failed or prove scheduling fixed it.
+
+The full Rust job instead failed `stop_preserves_accepted` with an infrastructure
+error while waiting for CLI exit. Concurrent pipe readers were already active.
+Its captured 5,950-byte JSON reported one killed result, one not_run result and
+exit code 4, with empty stderr; emitting that report did not prove process exit.
+The adapter waited only 12 seconds after observing the durable premise, although
+the configured 12-second execution timeout is followed by the shell's documented
+two-second shutdown grace and the binary's bounded 250-ms telemetry flush.
+
+Checkpoint `312be2c4` derives the exit wait from those existing allowances:
+14.25 seconds after observing the premise. The separate eight-second premise wait
+and bounded failure cleanup remain unchanged; 14.25 seconds is not a whole-process
+wall-clock cap. Production timeouts, the Lean corpus and expected outcome, and
+all six-second Job Object bounds remain unchanged. Three paused-time boundary
+tests failed on the old guard. All nine lifecycle tests then passed locally in
+13.52 seconds, including real strict correspondence and descendant cleanup;
+focused Clippy passed in 7.33 seconds. Native run `39202749924` subsequently
+passed all nine jobs. The [scoped review](issue-999/records/task-5-fix2-review.md)
+found the guard and local checks sound, with no new breakage. It preceded the
+native result and retains its original then-pending acceptance finding. Its RED
+evidence limitation is explicit: the exact command/result summary survives, but
+the raw RED terminal transcript was not archived.
+
+The Windows diagnostics are test-only and bounded: whitelisted Python environment
+values, limited file reads, interpreter/cwd, import/publication phases, native job
+limits and thread resumption. They add no product diagnostic flow. Their
+maintenance cost is explicit: additional fixture I/O can perturb startup timing,
+and internal test logging adds noise. The intermittent readiness cause remains
+unproven. The bounded diagnostics are retained as failure context for these native tests;
+they are not a claimed repair for the intermittent readiness failure. Final
+whole-branch review can assess their maintenance cost alongside the evidence.
+
+## Final native acceptance and remaining review
+
+Run `39202749924` at `312be2c4` completed successfully, with all nine jobs
+successful. The archived `non-linux-final-312be-metadata.json` and raw logs record:
+
+| Native check | Observed result |
+| --- | --- |
+| Windows Rust, job `117899018511` | 173 suite summaries: 2,886 passed, zero failed, 31 ignored; 20m18s job duration within the 30-minute cap |
+| macOS Rust, job `117899018190` | 172 suite summaries: 2,931 passed, zero failed, 33 ignored |
+| Windows wheel, job `117899018493` | 1,155 passed, 51 skipped in 94.82s |
+| macOS wheel, job `117899018525` | 1,192 passed, 14 skipped in 67.49s |
+| Windows resource scope, job `117899018476` | 37 passed across three suite summaries |
+| Remaining native jobs | Both quality jobs, Windows dependency purity and Windows metrics destinations passed |
+
+Rust counts aggregate the commands in each job, not just one workspace invocation.
+The Windows log includes both six-second Job Object tests, all three new timeout
+boundary tests and real `result_lifecycle_oracle_correspondence` passing. This
+closes the scoped review's external acceptance gap; it does not explain the prior
+intermittent readiness failures. Failed runs and their diagnostic limitations are
+preserved above and in the archive.
+
+Native Linux full CI and warm/cold proof remain sourced at `5033e1bb`. Production
+math, root dependency inputs, proof targets/strategies, runner and tool recipe are
+unchanged through `312be2c4`; only the proof guide changed within those paths.
+Later native macOS/Windows execution covers the fixture/adapter changes. The final
+PR will run its ordinary fresh proof job; an identical extra cold tool build is
+not claimed or required as new evidence here.
+
+The [final acceptance report](issue-999/records/task-5-final-acceptance-report.md)
+records the focused documentation/OKF/archive checks and five final self-reviews.
+All seven Rulings and their costs, both scoped fix reviews, complete current CI
+metadata and retained raw logs are archived. Task 5's implementation acceptance
+is complete; final whole-branch review, any resulting repair, and PR publication
+remain controller-owned work. No merge or release was performed.

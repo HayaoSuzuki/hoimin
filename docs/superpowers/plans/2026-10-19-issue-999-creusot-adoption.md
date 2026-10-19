@@ -116,7 +116,7 @@
 - Produces complete reproducible maintenance guidance, verified distribution and review record ready for PR.
 
 - [x] Document actual guarantees, exclusions/trust boundary, commands to regenerate/replay and repair proofs, pinned updates, cold/warm resource measurements, additional code/spec size and sensitivity results. Never claim Ledger/OS timing or unsupported targets are proved.
-- [ ] Run repository-required workspace tests, all-features clippy/formatting, Python quality checks, Lean oracle/proof correspondence and runtime contracts. Reuse passing focused checks where unchanged; fix actual failures without repeated full-suite churn.
+- [x] Run repository-required workspace tests, all-features clippy/formatting, Python quality checks, Lean oracle/proof correspondence and runtime contracts. Reuse passing focused checks where unchanged; fix actual failures without repeated full-suite churn.
 - [x] Verify root/fuzz lock consistency and dependency policy, generated SBOM, sdist includes the math crate and proof annotations' normal-build dependencies, build from sdist and execute wheel. Record results with exact source commit.
 - [x] Validate relevant OKF artifacts, record five final implementation/testing self-reviews, archive task/review evidence durably, and commit. Controller then obtains whole-branch review, addresses findings, pushes the issue branch and creates PR closing #999 only when all accepted conditions have evidence.
 
@@ -135,7 +135,11 @@ Tasks 1–4 are implemented and independently approved; original reports, review
 rounds, Rulings and execution evidence are retained in the
 [durable archive](../reports/issue-999/README.md). Task 5's current-code checkpoint
 is `5033e1bb`; local source-distribution/wheel/SBOM and dependency acceptance
-passed. Native current-source warm proof passed. Controller-owned full CI,
-current cold replay and final reviews remain pending; use the
+passed. Native current-source full CI and warm/cold proofs passed. Windows-only
+harness scheduling at `70ea57b2` did not resolve the readiness failures. Diagnostic
+checkpoint `dd2674dd` passed those cases but exposed a separate lifecycle adapter
+exit guard; its contract-derived repair at `312be2c4` passed all nine native
+non-Linux jobs in `39202749924`. Scoped review found no new breakage; its native
+acceptance gate is now closed. Final whole-branch review remains pending. Use the
 [integration record](../reports/2026-10-19-issue-999-creusot-adoption.md) for their
-actual disposition. Pending checkboxes are intentional until those gates finish.
+actual disposition. Whole-branch review and PR publication are the next controller steps.

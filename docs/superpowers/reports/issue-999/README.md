@@ -22,3 +22,15 @@ Use current sources and the [proof guide](../../../../formal/creusot/README.md)
 to run fresh verification. Review generated content and applicable upstream
 licenses before repackaging proof artifacts; see
 [licensing](../../../licensing.md#creusot-verification-dependencies).
+
+`evidence/task-5-final-ci.tar.gz` preserves the final hosted CI collection under
+`task-5-final-ci/`: current-source native warm/cold artifacts, full job logs,
+run metadata, and failed and repaired native platform runs. It complements the
+earlier Task 5 snapshots rather than replacing them. `records/task-5-fix1-review.md`
+retains its then-pending native Windows finding; the adoption report records the
+latest disposition. The progress ledger preserves all seven controller Rulings.
+
+`evidence/task-5-final-validation.tar.gz` contains the focused documentation/OKF
+logs and preparation/validation scripts under `task-5-final-validation/`. The
+[final acceptance report](records/task-5-final-acceptance-report.md) records their
+results and the final native acceptance, with whole-branch review still pending.

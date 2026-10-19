@@ -7,9 +7,9 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: issue-999-adoption
   resource: ../../superpowers/reports/2026-10-19-issue-999-creusot-adoption.md
-  revision: 46ef6b9ef240ce644a11a5ab03f82c69b79f2afd
+  revision: 312be2c4759be00a26e2f04519258f1172057a67
   working_tree: modified
-  sha256: b4916341dea6283fa3abb4059e0446898c47e16a5705aff7df20b3b7620ee38c
+  sha256: 7e3b95fed5f12bfaf90f8791152c6480959999702d3991becfc6650e50f46f52
 - id: issue-911-design
   resource: ../../superpowers/reports/issue-911/design.md
   working_tree: untracked

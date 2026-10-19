@@ -64,10 +64,19 @@ not an aggregate whole-environment RSS bound. The earlier failed cold run
 At code checkpoint `5033e1bb`, native warm run `39197995202` passed in
 247 setup-inclusive seconds (runner 156.09 seconds), with 25 files / 59 goals
 per target and no source-span warnings. Its generation/proof peak process-or-child
-RSS was 1,514,396 / 273,676 KiB. Task 5's current-lock ARM64 development replay
-also passed in 34.133 seconds without source-path warnings. It does not replace native final
-CI or native Windows/macOS regression tests. The report identifies those results
-by their actual commits and runs.
+RSS was 1,514,396 / 273,676 KiB. The same source's genuine cold attempt 2
+(explicit tool-image cache miss) passed in 693 setup-inclusive seconds; runner
+105.023 seconds, generation/proof peak RSS 1,516,044 / 273,544 KiB, tool-build
+peak RSS 1,086,792 KiB. Each target again generated 25 files and proved 59 goals
+with 25 strategies, without source warnings; both reports totaled 29,542 bytes.
+Cold completion left 81,462,580 KiB disk and 14,552,420 KiB memory available.
+Separate-job timings do not establish a causal warm/cold proof-speed difference.
+Both native workflow attempts concluded success; attempt 2 reran the proof job.
+Task 5's current-lock ARM64 development replay also passed in 34.133 seconds
+without source-path warnings. Native Windows/macOS regression results remain separate acceptance evidence:
+run `39202749924` at `312be2c4` passed all nine jobs after the lifecycle adapter
+repair. Earlier native failures and the unproven intermittent readiness cause
+are preserved in the report; arithmetic proofs do not establish OS timing.
 
 The arithmetic contracts cover all public `usize`, positive `NonZeroUsize`,
 `Duration` and positive fixed durations. They do not prove BudgetLedger state

@@ -382,9 +382,11 @@ the integration report; this checkpoint makes no broader completion claim.
 The [integration report](../reports/2026-10-19-issue-999-creusot-adoption.md)
 records five implementation self-reviews and five validation self-reviews,
 actual root/fuzz license audits, extracted-sdist wheel execution, generated SBOM,
-OKF checks and source-specific evidence. Current-source native warm proof passed;
-full current-source CI, cold replay and final independent reviews remain the
-controller's acceptance gates. All six controller Rulings and prior task/review
+OKF checks and source-specific evidence. Current-source native full CI and
+warm/cold proof passed at `5033e1bb`, run `39197995202`, attempts 1 and 2.
+The lifecycle adapter follow-up at `312be2c4` passed all nine native non-Linux
+jobs in `39202749924`. Final whole-branch review remains the controller's next
+gate. All seven controller Rulings and prior task/review
 reports survive in the [durable archive](../reports/issue-999/README.md).
 No final native platform result is inferred from the local package checks.
 
@@ -397,3 +399,18 @@ local Task 5 change, with two Minor provenance/inventory corrections. The
 those corrections, the later actual Windows failure and the scheduling-only
 repair. Its five self-reviews preserve the six-second assertions and distinguish
 local workflow validation from pending native Windows execution.
+
+The [scoped fix review](../reports/issue-999/records/task-5-fix1-review.md)
+confirmed both Minor corrections and found no new breakage in `46ef6b9e..70ea57b2`.
+Its native Windows finding remained open. Follow-up `39199825814` failed the
+same two readiness cases despite two harness threads. Diagnostic run `39201076428`
+then passed both cases but failed the lifecycle adapter's exit guard. The
+[round 2 report](../reports/issue-999/records/task-5-fix2-report.md) preserves
+those results and the separate contract-derived exit-wait repair in `312be2c4`.
+The [round 2 scoped review](../reports/issue-999/records/task-5-fix2-review.md)
+found the composed guard sound and no new breakage, with native acceptance still
+pending at review time. Run `39202749924` subsequently passed all nine jobs at
+`312be2c4`, closing that external gate. The review retains its original status and
+its limitation that RED was archived as an exact command/result summary rather
+than a raw terminal transcript. The original intermittent readiness cause remains
+unproven; final whole-branch review is outstanding.

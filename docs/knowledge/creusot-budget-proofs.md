@@ -6,9 +6,9 @@ status: draft
 sources:
 - id: guide
   resource: ../../formal/creusot/README.md
-  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
+  revision: 312be2c4759be00a26e2f04519258f1172057a67
   working_tree: modified
-  sha256: 0d35745e0754906b666f30c83f9d24bf1a8a4d7b612c86eb5259d20ef9e29b7a
+  sha256: 926b055dadd392e017e953ec5c9900c5ef2d01ca180c99bbce031ac18c5dbff5
 - id: manifest
   resource: ../../formal/creusot/obligations.json
   revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
@@ -21,9 +21,9 @@ sources:
   sha256: 57e65a4b70eb7bd7f6fb171710da0146bcbe10844800861bf46ca45b55f12535
 - id: record
   resource: ../superpowers/reports/2026-10-19-issue-999-creusot-adoption.md
-  revision: 46ef6b9ef240ce644a11a5ab03f82c69b79f2afd
+  revision: 312be2c4759be00a26e2f04519258f1172057a67
   working_tree: modified
-  sha256: b4916341dea6283fa3abb4059e0446898c47e16a5705aff7df20b3b7620ee38c
+  sha256: 7e3b95fed5f12bfaf90f8791152c6480959999702d3991becfc6650e50f46f52
 ---
 
 # Production implementation and contract
@@ -61,9 +61,15 @@ are distinct from an aggregate environment memory limit.[^guide]
 
 Native Linux x86_64 source `41c888f5`, run `39191762043`, passed both a 240-second
 warm job and a 942-second genuine cold job, with 25 generated files and 59 goals
-per target. Five compiling arithmetic/equality mutations failed the corresponding
-goals. The adoption record preserves exact revisions, failures, repair costs,
-local ARM measurements, later integration results and review dispositions.[^record]
+per target. At current proof source `5033e1bb`, run `39197995202` passed warm
+in 247 setup-inclusive seconds and genuinely cold in 693 seconds. Both freshly
+proved the same three targets, 25 files / 59 goals / 25 strategies each, without
+source-span warnings. Five compiling arithmetic/equality mutations failed the
+corresponding goals. The adoption record preserves exact revisions, failures,
+repair costs, local ARM measurements, integration results and review
+dispositions. Native non-Linux run `39202749924` at `312be2c4` passed all nine
+jobs, including the repaired lifecycle adapter. Earlier Windows failures remain
+failed evidence; the intermittent Job Object readiness cause is unproven.[^record]
 
 Follow the [proof guide](../../formal/creusot/README.md) for regeneration, replay,
 strategy repair and pinned upgrades. Recheck source inventories, sensitivity,
