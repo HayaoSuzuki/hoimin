@@ -397,6 +397,19 @@ sources:
   working_tree: modified
   sha256: 881f774b6a135f3d50f3acca3e379a0c8f0742349fd84964d526caa4073c421a
 
+- id: issue-1003-source-acquisition
+  resource: ../../../crates/hoimin-cli/src/plan/source.rs
+  working_tree: untracked
+  sha256: c6e684a074211c3c85618b02063003408ca4af1e80196666057593ac2e49d65b
+- id: issue-1003-source-safety-tests
+  resource: ../../../crates/hoimin-cli/src/plan/validation_tests.rs
+  revision: ccef1941710e20cff8d391283cc21bcfbd7650aa
+  working_tree: modified
+  sha256: acac0b4024130ac6bdd91d68ec7805eefc2414e0b2123e9e138b8b00f24b288c
+- id: issue-1003-source-heap
+  resource: ../../../crates/hoimin-cli/tests/plan_source_heap.rs
+  working_tree: untracked
+  sha256: a41daec552a0ef497201a3876589934ac5271a825a41e70c7d3c864a84f1c905
 ---
 
 # Checked execution selection (Issues #997 and #998)
@@ -978,3 +991,32 @@ allocator overhead or an I/O deadline.[^issue-988-evidence]
 
 [^issue-998-selection]: [crates/hoimin-core/src/machine/selection.rs](../../../crates/hoimin-core/src/machine/selection.rs).
 [^issue-997-stop]: [crates/hoimin-core/src/machine.rs](../../../crates/hoimin-core/src/machine.rs).
+
+
+# Capability-relative project source acquisition (Issue #1003)
+
+Plan source hashing and requested-candidate byte validation share one lazy
+PortableFileReader per operation. Root opening and file acquisition run on the
+blocking pool. Hashing reuses WorkerRoot's streaming hash from the safely opened
+descriptor; candidate validation keeps one file's bytes and context at a time.
+Requested-ID diagnostic ordering, source record sorting, hashes and identities
+remain unchanged. A missing source now uses the shared reader's not-found wording
+while preserving the source path and PlanError category.[^issue-1003-source-acquisition]
+
+Native macOS tests synchronize after target resolution and before acquisition,
+then replace the ordinary source with a writerless FIFO, a symlink to a regular
+file or a symlink to a FIFO. Both consumers reject those replacements; a watchdog
+bounds and reaps a regressed child. Existing WorkerRoot parent-replacement tests
+cover retained capability access.[^issue-1003-source-safety-tests]
+
+A public plan-creation allocation test observes only the source stage, excluding
+analyzer allocations. Its 1, 16 and 64 MiB sources stay below 256 KiB of additional
+requested live heap; restoring whole-source reading exceeds that bound. This
+measures requested live allocation, not RSS, allocator overhead, all plan memory
+or an I/O deadline. Native Linux/Windows results are not established by these
+macOS checks. A started blocking operation can continue after its caller is
+cancelled.[^issue-1003-source-heap]
+
+[^issue-1003-source-acquisition]: [Plan source acquisition](../../../crates/hoimin-cli/src/plan/source.rs).
+[^issue-1003-source-safety-tests]: [Synchronized source and descriptor regressions](../../../crates/hoimin-cli/src/plan/validation_tests.rs).
+[^issue-1003-source-heap]: [Production source-stage allocation gate](../../../crates/hoimin-cli/tests/plan_source_heap.rs).

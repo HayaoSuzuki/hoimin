@@ -53,7 +53,7 @@ impl PortableFileReader {
         )
     }
 
-    fn hash(&self, path: &Utf8Path) -> Result<blake3::Hash, PortableFileReadError> {
+    pub(crate) fn hash(&self, path: &Utf8Path) -> Result<blake3::Hash, PortableFileReadError> {
         Self::validate_portable_path(path)?;
         self.classify_read(path, self.root.hash(path))
     }

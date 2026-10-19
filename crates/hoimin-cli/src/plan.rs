@@ -36,6 +36,7 @@ mod schema_tests;
 mod selection;
 #[cfg(test)]
 mod selection_tests;
+mod source;
 #[cfg(test)]
 mod validation_tests;
 
@@ -666,16 +667,15 @@ async fn source_records(
     targets: &[TargetSlice],
 ) -> Result<Vec<FingerprintInputFile>, PlanError> {
     let mut records = BTreeMap::new();
+    let mut reader = source::SourceReader::new(root);
     for target in targets {
         let path = target.path.clone();
-        let bytes = tokio::fs::read(root.join(&path))
-            .await
-            .map_err(|error| PlanError::SourceRead(format!("{path}: {error}")))?;
+        let hash = reader.hash(&path).await.map_err(PlanError::SourceRead)?;
         records.insert(
             path.clone(),
             FingerprintInputFile {
                 path,
-                hash: blake3::hash(&bytes).to_hex().to_string(),
+                hash: hash.to_hex().to_string(),
             },
         );
     }
@@ -992,6 +992,7 @@ async fn validate_requested_descriptors(
         .collect();
     let mut requested_paths = BTreeSet::new();
     let mut results = BTreeMap::new();
+    let mut reader = source::SourceReader::new(&config.selection.root);
     for candidate_id in requested_ids {
         let candidate = candidates.get(candidate_id.as_str()).ok_or_else(|| {
             PlanError::CandidateInvalid(format!("candidate id is not in the plan: {candidate_id}"))
@@ -1008,11 +1009,10 @@ async fn validate_requested_descriptors(
         }
         requested_paths.insert(candidate.path.clone());
         if let Some(file_candidates) = by_path.remove(candidate.path.as_path()) {
-            let source = tokio::fs::read(config.selection.root.join(&candidate.path))
+            let source = reader
+                .read(&candidate.path)
                 .await
-                .map_err(|error| {
-                    PlanError::CandidateInvalid(format!("{}: {error}", candidate.path))
-                })?;
+                .map_err(PlanError::CandidateInvalid)?;
             #[cfg(test)]
             if let Some(stats) = stats.as_deref_mut() {
                 stats.contexts += 1;

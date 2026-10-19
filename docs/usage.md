@@ -258,6 +258,13 @@ On macOS, `--max-memory` is accepted for plan compatibility but is not enforced.
 
 `plan` discovers candidates but does not run a baseline or test command, copy a worker, or create or reuse a session. A manifest with `truncated` set to `true` contains only a partial candidate set, and `plan` exits 4; it cannot establish full coverage of the selected targets. On such a plan, `--top N` means the top N among retained candidates, not among candidates that discovery did not retain. `verify` still runs the retained selection, but its report remains incomplete and exits 4 because discovery was truncated. `verify` rejects a changed target or fingerprint input before its baseline runs. Each `verify` command runs a fresh baseline and does not use a session. After a successful baseline, the worker is restored to the preflight snapshot before any mutant runs; baseline-created files and changes to existing files do not carry into the first mutant. A restoration failure stops execution. Plan manifests are trusted local invocation data, not a security boundary.
 
+`plan` source hashing and `verify` candidate validation read project sources
+through the same root-relative regular-file reader. Source hashing streams bytes
+without retaining the whole file; candidate validation retains the bytes it
+needs for one source at a time. Symlinks and nonregular sources introduced after
+target resolution are rejected. This source policy does not impose a hard
+deadline on all filesystem I/O.
+
 `verify` reads a plan from a regular file and accepts symlinks to regular files.
 Directories, missing paths and nonregular inputs are errors. On Unix, writerless
 FIFOs and symlinks to them are rejected without waiting for a writer. This does
