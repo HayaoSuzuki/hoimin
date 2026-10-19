@@ -23,7 +23,7 @@
   "restored_release_matches_measured_candidate": true,
   "production_source_matches_preinstrumentation": true,
   "focused_tests": "304 distinct passed;12 explicitly ignored manual/fixture cases",
-  "normal_commit_hooks": "Enabled; final actual commit/hook receipt is in sibling SDD task-3-report.md and raw commit.log; no integration sweep here.",
+  "normal_commit_hooks": "Product commit5a1d6861c9f6fa662512472cb5cbdb18e606b649: workspace fmt, vendored fmt, workspace all-target/all-feature clippy, vendored clippy all PASS. Exact receipt: logs/commit-success.log. No hooks disabled; no full integration sweep here.",
   "limitations": [
     "Original whole-CLI baseline compares cumulative Tasks1/2/3; isolated index/pipeline and eager controls are task-specific evidence.",
     "160\u2192168B context stack;12-pair small-plan paired median+0.236521ms,positive8/12,negative4/12. Small-ASCII acceptance remains qualified.",
