@@ -260,4 +260,27 @@ setup-plus-proof acceptance. Full Python suite:1,179 passed,12 skipped. The
 first sandboxed run's seven unrelated environment failures were repaired by
 using a task-owned uv cache and granting the existing process-monitor tests
 their required OS access; no test was deleted or marked xfail. The native CI
-cold image-cache miss and warm hit results will be appended after dispatch.
+cold image-cache miss and warm hit results follow.
+
+Task 4 native CI at proof-source commit `41c888f5`: the warm attempt in
+[run 39191762043](https://github.com/HayaoSuzuki/hoimin/actions/runs/39191762043)
+hit the pinned tool-image cache, then regenerated and proved each target's
+25 Coma files/59 goals without solver-result cache; full job240s, proof runner
+153.348s. The complete attempt-1 workflow succeeded, including the mandatory
+aggregate. After deleting only the exact feature-branch image cache, the same
+SHA's Creusot job was rerun as attempt2. Its log shows a genuine cache miss,
+native image rebuild/save, and all three fresh no-cache proofs in942s including
+setup, within the fixed1800s job cap; runner152.438s. Cold peak process/child
+RSS1,507,040KiB generation and273,260KiB proof, tool-build step RSS1,087,072
+KiB; disk81,462,316KiB and available memory14,483,712KiB afterward. The
+earlier [run 39190445969](https://github.com/HayaoSuzuki/hoimin/actions/runs/39190445969)
+had a cache miss and completed image build but failed before proof due Python3.12
+syntax; it is failure evidence, not cold acceptance. Repairs also tracked the
+real test fixture absent in that run's checkout. Final `4d4a3ec6` changes only
+test portability and the new math Cargo metadata file's checkout EOL policy;
+runner, math, pins, recipe and workflow bytes remain those accepted at
+`41c888f5`. A manual Windows test run exposed POSIX fake-tool fixture failures,
+default cp1252 proof-log decoding, and one CRLF sdist-byte mismatch; 13 failures
+were repaired in `4d4a3ec6`, with a new Windows run in progress. Portable
+validators and three-target orchestration remain active on Windows. Task 4
+independent scope review and Windows confirmation remain open.
