@@ -1,0 +1,108 @@
+(* #"crates/hoimin-budget-math/src/duration.rs" 53 4 53 47 *)
+
+(* duration::NonZeroDuration *)
+
+let%span sduration = "crates/hoimin-budget-math/src/duration.rs" 54 11 54 26
+let%span sduration'0 = "crates/hoimin-budget-math/src/duration.rs" 53 15 53 20
+let%span sduration'1 = "crates/hoimin-budget-math/src/duration.rs" 53 35 53 47
+let%span sduration'2 = "crates/hoimin-budget-math/src/duration.rs" 49 32 52 5
+let%span sduration'3 = "crates/hoimin-budget-math/src/duration.rs" 43 20 43 29
+let%span sduration'4 = "crates/hoimin-budget-math/src/duration.rs" 25 20 25 27
+let%span sinvariant = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/invariant.rs" 90 8 90 18
+let%span sord = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/logic/ord.rs" 22 8 22 20
+let%span sord'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/logic/ord.rs" 34 8 34 21
+let%span stime = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 93 18 93 22
+let%span stime'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 94 18 94 22
+let%span stime'1 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 13 14 13 77
+let%span stime'2 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 44 4 44 24
+
+use creusot.int.UInt64
+use creusot.prelude.Any
+use int.Int
+
+type t_Duration
+
+predicate inv_Duration (_1: t_Duration)
+
+predicate invariant_ref_Duration [@inline:trivial] (self: t_Duration) = [%#sinvariant] inv_Duration self
+
+meta "rewrite_def" predicate invariant_ref_Duration
+
+predicate inv_ref_Duration [@inline:trivial] (_1: t_Duration) = invariant_ref_Duration _1
+
+meta "rewrite_def" predicate inv_ref_Duration
+
+predicate ge_log_Int [@inline:trivial] (self: int) (other: int) = [%#sord'0] other <= self
+
+meta "rewrite_def" predicate ge_log_Int
+
+function secs_to_nanos (secs: int) : int = [%#stime'2] secs * 1000000000
+
+constant const_MAX: UInt64.t = (18446744073709551615: UInt64.t)
+
+function view_Duration (self: t_Duration) : int
+
+axiom view_Duration_spec: forall self: t_Duration [view_Duration self]. [%#stime'1] ge_log_Int (view_Duration self) 0
+    /\ view_Duration self <= secs_to_nanos (UInt64.t'int const_MAX) + 999999999
+
+let is_zero (self: t_Duration) (return (x: bool)) =
+{[@stop_split] [@expl:is_zero 'self' type invariant] inv_ref_Duration self}
+  any
+  [ return (result: bool) ->
+  {[@stop_split] [@expl:is_zero ensures] ([@stop_split] [@expl:is_zero ensures #0] [%#stime] view_Duration self = 0
+      -> result = true)
+    /\ ([@stop_split] [@expl:is_zero ensures #1] [%#stime'0] view_Duration self <> 0 -> result = false)}
+    (! return {result}) ]
+
+type t_NonZeroDuration = { f0: t_Duration }
+
+type t_Option_NonZeroDuration = None | Some t_NonZeroDuration
+
+predicate gt_log_Int [@inline:trivial] (self: int) (other: int) = [%#sord] other < self
+
+meta "rewrite_def" predicate gt_log_Int
+
+function view_NonZeroDuration [#"crates/hoimin-budget-math/src/duration.rs" 24 4 24 24] (self: t_NonZeroDuration) : int
+ = [%#sduration'4] view_Duration self.f0
+
+predicate invariant_NonZeroDuration [#"crates/hoimin-budget-math/src/duration.rs" 42 4 42 30] (self: t_NonZeroDuration) =
+  [%#sduration'3] gt_log_Int (view_NonZeroDuration self) 0
+
+predicate inv_NonZeroDuration (_1: t_NonZeroDuration)
+
+axiom inv_axiom [@rewrite]: forall _1: t_NonZeroDuration [inv_NonZeroDuration _1]. inv_NonZeroDuration _1
+    = (invariant_NonZeroDuration _1 /\ inv_Duration _1.f0)
+
+predicate inv_Option_NonZeroDuration (_1: t_Option_NonZeroDuration)
+
+axiom inv_axiom'0 [@rewrite]:
+  forall _1: t_Option_NonZeroDuration [inv_Option_NonZeroDuration _1]. inv_Option_NonZeroDuration _1
+    = match _1 with
+      | None -> true
+      | Some f0'0 -> inv_NonZeroDuration f0'0
+      end
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+let new [#"crates/hoimin-budget-math/src/duration.rs" 53 4 53 47] (value: t_Duration)
+  (return (x: t_Option_NonZeroDuration)) =
+{[@stop_split] [@expl:new 'value' type invariant] [%#sduration'0] inv_Duration value}
+  (! bb0
+  [ bb0 = s0
+    [ s0 = is_zero [%#sduration] {value} (fun (_x: bool) -> [ &_4 <- _x ] s1)
+    | s1 = any [ br0 -> {_4 = false} (! bb3) | br1 -> {_4} (! bb2) ] ]
+  | bb2 = s0 [ s0 = [ &_ret <- None ] s1 | s1 = return {_ret} ]
+  | bb3 = s0 [ s0 = [ &_6 <- { f0 = value } ] s1 | s1 = [ &_ret <- Some _6 ] s2 | s2 = return {_ret} ] ]
+  [ & _ret: t_Option_NonZeroDuration = Any.any_l ()
+  | & value: t_Duration = value
+  | & _4: bool = Any.any_l ()
+  | & _6: t_NonZeroDuration = Any.any_l () ])
+  [ return (result: t_Option_NonZeroDuration) ->
+  {[@stop_split] [@expl:new ensures] ([@stop_split] [@expl:new result type invariant] [%#sduration'1] inv_Option_NonZeroDuration result)
+    /\ ([@stop_split] [@expl:new ensures] [%#sduration'2] match result with
+      | Some value_out -> view_Duration value_out.f0 = view_Duration value /\ gt_log_Int (view_Duration value) 0
+      | None -> view_Duration value = 0
+      end)}
+    (! return {result}) ]

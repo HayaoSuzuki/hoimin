@@ -9,7 +9,6 @@ mod source_encoding;
 pub use source_encoding::*;
 
 pub mod budget;
-pub mod budget_projection;
 pub mod candidate;
 pub mod config;
 mod contracts;
@@ -25,7 +24,6 @@ pub mod target;
 pub mod telemetry;
 
 pub use budget::*;
-pub use budget_projection::*;
 pub use candidate::*;
 pub use config::*;
 pub use contracts::ContractInvariant;

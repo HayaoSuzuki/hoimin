@@ -5,6 +5,11 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-999-adoption
+  resource: ../../superpowers/reports/2026-10-19-issue-999-creusot-adoption.md
+  revision: fb89c55c1ab6b851302f36d0fef7fd9f7697655a
+  working_tree: modified
+  sha256: 87f7e3fa2c550ea837a699675f8d3d0571c1762747c329df2f9671b6aa1b1cb6
 - id: issue-911-design
   resource: ../../superpowers/reports/issue-911/design.md
   working_tree: untracked
@@ -1590,3 +1595,6 @@ sources:
 [^issue-911-design]: [Typed verification selection design](../../superpowers/reports/issue-911/design.md).
 
 [^issue-911-review]: [Review and verification](../../superpowers/reports/issue-911/review.md).
+
+
+- [Issue #999 production proofs, distribution and evidence](../../superpowers/reports/2026-10-19-issue-999-creusot-adoption.md) — shared implementation, three-target proofs and recorded acceptance.

@@ -24,6 +24,7 @@ jobs:
       python: ${{ steps.plan.outputs.python }}
       rust: ${{ steps.plan.outputs.rust }}
       formal: ${{ steps.plan.outputs.formal }}
+      creusot: ${{ steps.plan.outputs.creusot }}
       distribution: ${{ steps.plan.outputs.distribution }}
       cgroup: ${{ steps.plan.outputs.cgroup }}
     steps:
@@ -54,7 +55,7 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
       - run: uv sync --frozen --group workflow --no-install-project
       - run: uv run --frozen --no-sync python -m tools.workflow_lint
-      - run: uv run --frozen --no-sync pytest tests/test_workflow_lint.py tests/test_ci_selection.py tests/test_ci_selection_workflow.py tests/test_ci_metrics.py
+      - run: uv run --frozen --no-sync pytest tests/test_workflow_lint.py tests/test_ci_selection.py tests/test_ci_selection_workflow.py tests/test_ci_metrics.py tests/test_verify_creusot.py
 
   quality:
     needs: changes
@@ -198,6 +199,100 @@ jobs:
           name: performance-gates-${{ matrix.os }}
           path: ${{ runner.temp }}/performance-gates
       - run: uv run --frozen pytest tests/test_skills.py
+
+  creusot:
+    name: Creusot production proofs
+    needs: changes
+    if: needs.changes.outputs.creusot == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - name: Start complete setup and proof measurement
+        shell: bash
+        run: |
+          echo "CREUSOT_JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/creusot-report"
+          echo "job_start_epoch=$(date +%s)" > "$RUNNER_TEMP/creusot-report/setup.txt"
+          test "$(uname -m)" = x86_64
+          df -k "$RUNNER_TEMP"
+          free -k
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Restore pinned tool image cache
+        id: image-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/creusot-image.tar
+          key: creusot-amd64-${{ hashFiles('formal/creusot/Dockerfile', 'formal/creusot/toolchain.json', 'formal/creusot/install*.sh', 'formal/creusot/configure.sh', 'formal/creusot/why3find.json', 'formal/creusot/why3.conf', 'formal/creusot/creusot_why3.conf', 'tools/creusot_environment.py') }}
+      - name: Load or build pinned tool image
+        shell: bash
+        env:
+          CREUSOT_CACHE_HIT: ${{ steps.image-cache.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          if [[ "$CREUSOT_CACHE_HIT" == 'true' ]]; then
+            docker load -i "$RUNNER_TEMP/creusot-image.tar"
+          else
+            tar -cf - formal/creusot tools/creusot_environment.py |
+              docker build --platform linux/amd64 --progress=plain \
+                -f formal/creusot/Dockerfile -t hoimin-issue999-creusot:local -
+            docker save -o "$RUNNER_TEMP/creusot-image.tar" hoimin-issue999-creusot:local
+          fi
+          docker image inspect hoimin-issue999-creusot:local --format '{{.Size}}'
+      - name: Save pinned tool image cache
+        if: steps.image-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/creusot-image.tar
+          key: creusot-amd64-${{ hashFiles('formal/creusot/Dockerfile', 'formal/creusot/toolchain.json', 'formal/creusot/install*.sh', 'formal/creusot/configure.sh', 'formal/creusot/why3find.json', 'formal/creusot/why3.conf', 'formal/creusot/creusot_why3.conf', 'tools/creusot_environment.py') }}
+      - name: Prove all production targets afresh
+        shell: bash
+        env:
+          CREUSOT_CACHE_HIT: ${{ steps.image-cache.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/creusot-report"
+          echo "cache_hit=$CREUSOT_CACHE_HIT" >> "$RUNNER_TEMP/creusot-report/setup.txt"
+          docker run --rm --platform linux/amd64 hoimin-issue999-creusot:local uname -m | grep -qx x86_64
+          docker run --rm --platform linux/amd64 \
+            -v "$PWD:/workspace" -v "$RUNNER_TEMP/creusot-report:/proof-report" \
+            -e CARGO_TARGET_DIR=/tmp/hoimin-issue999-target -e CARGO_BUILD_JOBS=2 \
+            --workdir /workspace hoimin-issue999-creusot:local \
+            python3 tools/verify_creusot.py --output /proof-report
+      - name: Record complete resource measurements
+        if: always()
+        shell: bash
+        run: |
+          echo "Elapsed setup plus proof seconds: $(( $(date +%s) - CREUSOT_JOB_START ))"
+          if [[ -d "$RUNNER_TEMP/creusot-report" ]]; then
+            {
+              echo "job_elapsed_seconds=$(( $(date +%s) - CREUSOT_JOB_START ))"
+              df -k "$RUNNER_TEMP"
+              free -k
+            } >> "$RUNNER_TEMP/creusot-report/setup.txt"
+          fi
+          df -k "$RUNNER_TEMP"
+          free -k
+          du -sk "$RUNNER_TEMP/creusot-report" "$RUNNER_TEMP/creusot-image.tar" 2>/dev/null || true
+      - name: Upload proof measurements
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: creusot-proof-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/creusot-report
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Upload proof diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: creusot-proof-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/creusot-report
+          if-no-files-found: warn
+          retention-days: 7
 
   lean-audit:
     needs: [changes, quality]
@@ -726,7 +821,7 @@ jobs:
   result:
     name: CI result
     if: always()
-    needs: [changes, quality, workflow-lint, fuzz, rust, lean-audit, boundary-contracts, rust-shuffle, contracts, core-dependency-purity, wheel-smoke, linux-best-effort, linux-cgroup-v2-hard]
+    needs: [changes, quality, workflow-lint, fuzz, rust, creusot, lean-audit, boundary-contracts, rust-shuffle, contracts, core-dependency-purity, wheel-smoke, linux-best-effort, linux-cgroup-v2-hard]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

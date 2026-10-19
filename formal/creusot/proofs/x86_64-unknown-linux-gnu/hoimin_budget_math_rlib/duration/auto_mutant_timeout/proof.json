@@ -1,0 +1,17 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_and_then_Duration": { "prover": "z3@5.1.0", "time": 0.003 },
+      "vc_auto_mutant_timeout": { "prover": "z3@5.1.0", "time": 0.0003 },
+      "vc_checked_add": { "prover": "z3@5.1.0", "time": 0.004 },
+      "vc_checked_mul": { "prover": "z3@5.1.0", "time": 0.003 },
+      "vc_closure0": { "prover": "z3@5.1.0", "time": 0.0003 },
+      "vc_from_secs": { "prover": "z3@5.1.0", "time": 0.003 },
+      "vc_max_Duration": { "prover": "z3@5.1.0", "time": 0.003 },
+      "vc_new": { "prover": "z3@5.1.0", "time": 0.003 },
+      "vc_set_MAX": { "prover": "z3@5.1.0", "time": 0.003 },
+      "vc_unwrap_or_Duration": { "prover": "z3@5.1.0", "time": 0.003 }
+    }
+  }
+}

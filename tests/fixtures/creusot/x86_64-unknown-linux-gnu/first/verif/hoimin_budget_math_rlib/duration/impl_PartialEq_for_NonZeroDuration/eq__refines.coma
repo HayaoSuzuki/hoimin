@@ -1,0 +1,83 @@
+(* #"crates/hoimin-budget-math/src/duration.rs" 14 4 14 38 *)
+
+(* <duration::NonZeroDuration as std::cmp::PartialEq> *)
+
+let%span sduration = "crates/hoimin-budget-math/src/duration.rs" 14 11 14 15
+let%span sduration'0 = "crates/hoimin-budget-math/src/duration.rs" 14 17 14 22
+let%span sduration'1 = "crates/hoimin-budget-math/src/duration.rs" 13 32 13 83
+let%span sduration'2 = "crates/hoimin-budget-math/src/duration.rs" 35 20 35 25
+let%span sduration'3 = "crates/hoimin-budget-math/src/duration.rs" 25 20 25 27
+let%span sduration'4 = "crates/hoimin-budget-math/src/duration.rs" 43 20 43 29
+let%span sinvariant = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/invariant.rs" 90 8 90 18
+let%span sord = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/logic/ord.rs" 34 8 34 21
+let%span sord'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/logic/ord.rs" 22 8 22 20
+let%span stime = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 13 14 13 77
+let%span stime'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 44 4 44 24
+let%span scmp = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/cmp.rs" 14 26 14 75
+let%span smodel = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/model.rs" 37 8 37 28
+
+use creusot.int.UInt64
+use int.Int
+
+type t_Duration
+
+type t_NonZeroDuration = { f0: t_Duration }
+
+predicate gt_log_Int [@inline:trivial] (self: int) (other: int) = [%#sord'0] other < self
+
+meta "rewrite_def" predicate gt_log_Int
+
+predicate ge_log_Int [@inline:trivial] (self: int) (other: int) = [%#sord] other <= self
+
+meta "rewrite_def" predicate ge_log_Int
+
+function secs_to_nanos (secs: int) : int = [%#stime'0] secs * 1000000000
+
+constant const_MAX: UInt64.t = (18446744073709551615: UInt64.t)
+
+function view_Duration (self: t_Duration) : int
+
+axiom view_Duration_spec: forall self: t_Duration [view_Duration self]. [%#stime] ge_log_Int (view_Duration self) 0
+    /\ view_Duration self <= secs_to_nanos (UInt64.t'int const_MAX) + 999999999
+
+function view_NonZeroDuration [#"crates/hoimin-budget-math/src/duration.rs" 24 4 24 24] (self: t_NonZeroDuration) : int
+ = [%#sduration'3] view_Duration self.f0
+
+predicate invariant_NonZeroDuration [#"crates/hoimin-budget-math/src/duration.rs" 42 4 42 30] (self: t_NonZeroDuration) =
+  [%#sduration'4] gt_log_Int (view_NonZeroDuration self) 0
+
+predicate inv_Duration (_1: t_Duration)
+
+predicate inv_NonZeroDuration (_1: t_NonZeroDuration)
+
+axiom inv_axiom [@rewrite]: forall _1: t_NonZeroDuration [inv_NonZeroDuration _1]. inv_NonZeroDuration _1
+    = (invariant_NonZeroDuration _1 /\ inv_Duration _1.f0)
+
+predicate invariant_ref_NonZeroDuration [@inline:trivial] (self: t_NonZeroDuration) =
+  [%#sinvariant] inv_NonZeroDuration self
+
+meta "rewrite_def" predicate invariant_ref_NonZeroDuration
+
+predicate inv_ref_NonZeroDuration [@inline:trivial] (_1: t_NonZeroDuration) = invariant_ref_NonZeroDuration _1
+
+meta "rewrite_def" predicate inv_ref_NonZeroDuration
+
+function deep_model_NonZeroDuration [#"crates/hoimin-budget-math/src/duration.rs" 34 4 34 30] (self: t_NonZeroDuration) : int
+ = [%#sduration'2] view_NonZeroDuration self
+
+function deep_model_ref_NonZeroDuration [@inline:trivial] (self: t_NonZeroDuration) : int =
+  [%#smodel] deep_model_NonZeroDuration self
+
+meta "rewrite_def" function deep_model_ref_NonZeroDuration
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+goal refines: forall self: t_NonZeroDuration, other: t_NonZeroDuration. inv_ref_NonZeroDuration self
+    -> inv_ref_NonZeroDuration other
+    -> ([%#sduration] inv_ref_NonZeroDuration self)
+    /\ ([%#sduration'0] inv_ref_NonZeroDuration other)
+    /\ (forall result: bool. ([%#sduration'1] result
+        = (deep_model_ref_NonZeroDuration self = deep_model_ref_NonZeroDuration other))
+      -> ([%#scmp] result = (deep_model_ref_NonZeroDuration self = deep_model_ref_NonZeroDuration other)))

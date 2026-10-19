@@ -109,6 +109,10 @@ extend-exclude = [
     "crates/hoimin-cli/tests/fixtures",
 ]
 
+[tool.ruff.per-file-target-version]
+# The proof runner executes in the pinned Python 3.12 tool image.
+"tools/verify_creusot.py" = "py312"
+
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [

@@ -31,6 +31,7 @@ def test_documentation_inputs_use_the_dedicated_build(path: str) -> None:
         "python": False,
         "rust": False,
         "formal": False,
+        "creusot": False,
         "distribution": False,
     }
 
@@ -48,7 +49,7 @@ def test_documentation_inputs_use_the_dedicated_build(path: str) -> None:
         ("tests/test_example.py", {"python", "rust", "formal"}),
         ("formal/HoiminOracle/Main.lean", {"formal", "rust"}),
         ("tools/release.py", {"python", "distribution"}),
-        ("tests/wheel_smoke.py", {"python", "rust", "formal", "distribution"}),
+        ("tests/wheel_smoke.py", set(ci_selection.CATEGORIES)),
         ("LICENSE", {"distribution"}),
         ("docs/json-schema/report.json", set(ci_selection.CATEGORIES)),
         ("docs/audits/repro.py", set(ci_selection.CATEGORIES)),
@@ -56,6 +57,18 @@ def test_documentation_inputs_use_the_dedicated_build(path: str) -> None:
         (".github/workflows/ci.yml", set(ci_selection.CATEGORIES)),
         ("Cargo.lock", set(ci_selection.CATEGORIES)),
         ("rust-toolchain.toml", set(ci_selection.CATEGORIES)),
+        (
+            "crates/hoimin-budget-math/src/projection.rs",
+            {"rust", "formal", "creusot", "distribution"},
+        ),
+        ("formal/creusot/obligations.json", {"rust", "formal", "creusot"}),
+        (
+            "formal/creusot/proofs/x86_64-unknown-linux-gnu/proof.json",
+            {"rust", "formal", "creusot"},
+        ),
+        ("tools/creusot_environment.py", set(ci_selection.CATEGORIES)),
+        ("tools/verify_creusot.py", set(ci_selection.CATEGORIES)),
+        ("why3find.json", set(ci_selection.CATEGORIES)),
         ("uv.lock", set(ci_selection.CATEGORIES)),
         ("unknown-file", set(ci_selection.CATEGORIES)),
     ],
@@ -73,7 +86,12 @@ def test_mixed_changes_union_their_requirements() -> None:
 
     flags = ci_selection.classify(paths)
 
-    assert all(flags.values())
+    assert {key for key, selected in flags.items() if selected} == {
+        "python",
+        "rust",
+        "formal",
+        "distribution",
+    }
 
 
 def test_empty_diff_requires_no_checks() -> None:
@@ -155,7 +173,9 @@ def test_aggregate_accepts_only_intentional_skips() -> None:
 
 
 @pytest.mark.parametrize("result", ["failure", "cancelled", "skipped", "neutral", ""])
-@pytest.mark.parametrize("job", ["changes", "quality", "workflow-lint", "rust"])
+@pytest.mark.parametrize(
+    "job", ["changes", "quality", "workflow-lint", "rust", "creusot"]
+)
 def test_required_job_never_becomes_success(result: str, job: str) -> None:
     needs = needs_for(dict.fromkeys(ci_selection.CATEGORIES, True))
     needs[job]["result"] = result

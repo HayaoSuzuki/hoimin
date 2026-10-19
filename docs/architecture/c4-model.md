@@ -8,6 +8,7 @@ run inside that executable.
 
 This source-based description was checked on 2026-10-19 against
 [`b65f62834b35a9ff85795b041e9687b21e5c51ba`](https://github.com/HayaoSuzuki/hoimin/tree/b65f62834b35a9ff85795b041e9687b21e5c51ba).
+The Issue #999 math-crate boundary below was updated against `5033e1bb`.
 It describes the implemented architecture. The language-specific CLI separation
 proposed in #743 is not implemented here. Links to source files identify the
 implementation to reread when updating these views. No runtime or platform test
@@ -120,8 +121,13 @@ assert that every command touches every store. `cwd` is a process's working
 directory; JSONL is one JSON record per line; SQLite is embedded, not a database
 server.
 
-`hoimin-cli` depends on `hoimin-core` and `hoimin-python`; `hoimin-python` also
-depends on `hoimin-core`. All three crates are linked into the CLI container.
+`hoimin-cli` depends on `hoimin-core`, `hoimin-python` and
+`hoimin-budget-math`; `hoimin-python` also depends on `hoimin-core`, and core
+depends on the math crate. All four crates are linked into the CLI container.
+`hoimin-budget-math` owns duration value types, auto timeout and pure budget
+projection. The [Creusot contracts](../../formal/creusot/README.md#production-arithmetic-contracts)
+verify those same production bodies. BudgetLedger transitions, I/O and OS timing
+remain outside that arithmetic proof boundary.
 The CLI, analyzer corpus tests and Python fuzz target use the same analysis
 crate API. Tokio tasks, blocking worker threads, the disk monitor and session
 dispatcher share the CLI process. The test command creates external process
@@ -167,6 +173,7 @@ flowchart LR
     subgraph CLI["hoimin CLI — container: Rust executable / Tokio"]
         ENTRY["Command dispatch and preparation<br/>[Component: Rust]<br/>lib / cli / plan: settings and checked plans"]
         SH["Shell coordinator<br/>[Component: Rust / Tokio]<br/>shell: effects, completions and ownership"]
+        MATH["Budget arithmetic<br/>[Component: Rust]<br/>hoimin-budget-math: durations, timeout and projection"]
         CORE["Execution policy<br/>[Component: Rust]<br/>hoimin-core: transitions, budgets and admission"]
         TARGET["Target discovery<br/>[Component: Rust]<br/>target: filesystem and Git selectors"]
         ANA["Candidate acquisition<br/>[Component: Rust]<br/>CLI analyzer: source validation and candidate spool"]
@@ -177,6 +184,7 @@ flowchart LR
         REP["Report delivery<br/>[Component: Rust / serde]<br/>report: encoding and writer ownership"]
         SES["Session persistence<br/>[Component: Rust / rusqlite]<br/>session: persistence and resume ownership"]
     end
+    CORE -->|Uses duration types and pure arithmetic| MATH
     ENTRY -->|Pass prepared config or checked plan| SH
     SH -->|Apply accepted run events and disk lifecycle observations| CORE
     CORE -->|Return state, requested effects and admission decisions| SH

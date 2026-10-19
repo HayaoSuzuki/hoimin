@@ -13,6 +13,13 @@ use tokio::io::AsyncReadExt;
 const MODE_ENV: &str = "HOIMIN_RESULT_LIFECYCLE_MODE";
 const CASE_ENV: &str = "HOIMIN_RESULT_LIFECYCLE_CASE";
 const TEST_MIN_FREE_SPACE: &str = "1B";
+const TIMEOUT_FIXTURE_RUN_LIMIT: Duration = Duration::from_secs(12);
+// The durable premise is observed after the run deadline starts. From that
+// observation, allow the run limit plus the documented two-second shell shutdown
+// grace and the binary telemetry guard's 250-ms flush budget before forced cleanup.
+const TIMEOUT_FIXTURE_EXIT_WAIT: Duration = TIMEOUT_FIXTURE_RUN_LIMIT
+    .saturating_add(Duration::from_secs(2))
+    .saturating_add(Duration::from_millis(250));
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
 #[serde(deny_unknown_fields)]
@@ -557,15 +564,8 @@ async fn run_cli(
     two_mutants: bool,
     resume: bool,
     metrics_path: &Path,
-    total_timeout: bool,
 ) -> Result<FixtureRun, String> {
-    let mut command = build_cli_command(
-        fixture,
-        two_mutants,
-        resume,
-        metrics_path,
-        total_timeout.then_some("1s"),
-    )?;
+    let mut command = build_cli_command(fixture, two_mutants, resume, metrics_path, None)?;
     let output = bounded_cli_output(&mut command, Duration::from_secs(12)).await?;
     fixture_run_from_output(output)
 }
@@ -594,7 +594,6 @@ fn fixture_run_from_output(output: Output) -> Result<FixtureRun, String> {
     })
 }
 
-#[cfg(unix)]
 async fn wait_for_first_durable_kill(
     child: &mut tokio::process::Child,
     session: &Path,
@@ -633,12 +632,12 @@ async fn wait_for_first_durable_kill(
     }
 }
 
-#[cfg(unix)]
 async fn run_cli_with_durable_timeout_premise(
     fixture: &Fixture,
     metrics_path: &Path,
 ) -> Result<FixtureRun, String> {
-    let mut command = build_cli_command(fixture, true, false, metrics_path, Some("12s"))?;
+    let total_timeout = format!("{}s", TIMEOUT_FIXTURE_RUN_LIMIT.as_secs());
+    let mut command = build_cli_command(fixture, true, false, metrics_path, Some(&total_timeout))?;
     let mut child = command
         .spawn()
         .map_err(|error| format!("spawn hoimin CLI: {error}"))?;
@@ -653,9 +652,12 @@ async fn run_cli_with_durable_timeout_premise(
 
     let trigger = async {
         wait_for_first_durable_kill(&mut child, &fixture.session, Duration::from_secs(8)).await?;
-        tokio::time::timeout(Duration::from_secs(12), child.wait())
+        tokio::time::timeout(TIMEOUT_FIXTURE_EXIT_WAIT, child.wait())
             .await
-            .map_err(|_| "hoimin CLI did not stop after its total timeout".to_owned())?
+            .map_err(|_| {
+                "hoimin CLI exceeded its total timeout plus shutdown and telemetry budgets"
+                    .to_owned()
+            })?
             .map_err(|error| format!("wait for hoimin CLI total timeout: {error}"))
     }
     .await;
@@ -860,7 +862,7 @@ async fn execute_strict(case: &OracleCase) -> Result<(ImplementationObservation,
 
     let run = match case.scenario.as_str() {
         "resume_reuses_determinate" | "session_persistence_failure" => {
-            let seed = run_cli(&fixture, false, false, &fixture.metrics, false).await?;
+            let seed = run_cli(&fixture, false, false, &fixture.metrics).await?;
             if seed.exit_code != 0 {
                 return Err(format!(
                     "seed run failed: exit={} stderr={} stdout={}",
@@ -869,20 +871,15 @@ async fn execute_strict(case: &OracleCase) -> Result<(ImplementationObservation,
             }
             reopen_incomplete(&fixture, case.scenario == "session_persistence_failure")?;
             fixture.clear_outputs()?;
-            run_cli(&fixture, false, true, &fixture.metrics, false).await?
+            run_cli(&fixture, false, true, &fixture.metrics).await?
         }
         "stop_preserves_accepted" => {
-            #[cfg(unix)]
-            {
-                run_cli_with_durable_timeout_premise(&fixture, metrics_path).await?
-            }
-            #[cfg(windows)]
-            {
-                run_cli(&fixture, true, false, metrics_path, true).await?
-            }
+            // The oracle starts after one accepted result is durable on every OS.
+            // If setup cannot reach that premise, report infrastructure failure.
+            run_cli_with_durable_timeout_premise(&fixture, metrics_path).await?
         }
         "sessionless_complete" | "session_complete" | "metrics_write_failure" => {
-            run_cli(&fixture, false, false, metrics_path, false).await?
+            run_cli(&fixture, false, false, metrics_path).await?
         }
         scenario => {
             return Err(format!(
@@ -1214,6 +1211,44 @@ async fn bounded_cli_timeout_terminates_descendants() {
     })
     .await;
     assert!(stopped.is_ok(), "fixture descendant {pid} survived cleanup");
+}
+
+// Each case describes a valid exit after a fast first durable result: the run
+// reaches its 12-second timeout, then uses shutdown grace or telemetry flushing.
+macro_rules! timeout_fixture_accepts_bounded_shutdown {
+    ($name:ident, $elapsed:expr) => {
+        #[tokio::test(start_paused = true)]
+        async fn $name() {
+            let exit = async {
+                tokio::time::sleep($elapsed).await;
+                "exited"
+            };
+
+            let outcome = tokio::time::timeout(TIMEOUT_FIXTURE_EXIT_WAIT, exit).await;
+
+            assert_eq!(outcome, Ok("exited"));
+        }
+    };
+}
+
+timeout_fixture_accepts_bounded_shutdown!(
+    timeout_fixture_accepts_exit_during_shutdown_grace,
+    Duration::from_secs(13)
+);
+timeout_fixture_accepts_bounded_shutdown!(
+    timeout_fixture_accepts_exit_during_binary_flush,
+    Duration::from_millis(14_125)
+);
+
+#[tokio::test(start_paused = true)]
+async fn timeout_fixture_rejects_a_process_that_never_exits() {
+    let started = tokio::time::Instant::now();
+    let exit = std::future::pending::<()>();
+
+    let outcome = tokio::time::timeout(TIMEOUT_FIXTURE_EXIT_WAIT, exit).await;
+
+    assert!(outcome.is_err());
+    assert_eq!(started.elapsed(), Duration::from_millis(14_250));
 }
 
 #[tokio::test]

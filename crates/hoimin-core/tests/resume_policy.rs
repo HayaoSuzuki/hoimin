@@ -3,11 +3,12 @@ use std::fmt::Write as _;
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
+use hoimin_budget_math::MutantTimeout;
 use hoimin_core::{
-    CommandArg, FingerprintInput, FingerprintInputFile, LineRange, MutantTimeout, MutationProfile,
-    MutationStatus, OutputConfig, OutputFormat, RawRunConfig, RawRunLimits, ResourceMode,
-    ResumeDecision, ReusedMutationStatus, RunConfig, SourceHash, StoredResult, TargetSlice,
-    fingerprint, resume_policy,
+    CommandArg, FingerprintInput, FingerprintInputFile, LineRange, MutationProfile, MutationStatus,
+    OutputConfig, OutputFormat, RawRunConfig, RawRunLimits, ResourceMode, ResumeDecision,
+    ReusedMutationStatus, RunConfig, SourceHash, StoredResult, TargetSlice, fingerprint,
+    resume_policy,
 };
 use proptest::prelude::*;
 

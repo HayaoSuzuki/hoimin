@@ -905,7 +905,7 @@ fn documented_defaults_are_applied() {
     assert_eq!(config.limits.baseline_timeout.get().as_secs(), 60);
     assert_eq!(
         config.limits.mutant_timeout,
-        hoimin_core::MutantTimeout::Auto
+        hoimin_budget_math::MutantTimeout::Auto
     );
     assert_eq!(config.limits.total_timeout.get().as_secs(), 300);
     assert_eq!(config.limits.max_memory.get(), 1024 * 1024 * 1024);

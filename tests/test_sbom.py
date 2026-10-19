@@ -75,6 +75,7 @@ def test_sbom_preserves_transitive_graph_and_binds_artifact(tmp_path: Path) -> N
     assert props["hoimin:artifact:sha256"] == hashlib.sha256(b"archive").hexdigest()
     assert props["hoimin:commit"] == COMMIT
     assert {c["name"] for c in data["components"]} == {
+        "hoimin-budget-math",
         "hoimin-core",
         "hoimin-python",
         "littrs-ruff-python-parser",
@@ -239,7 +240,7 @@ def cargo_capture(monkeypatch: pytest.MonkeyPatch) -> Callable[[Path, bytes], No
             path = root / "crates/hoimin-cli/hoimin-release-sbom.json"
             path.parent.mkdir(parents=True)
             path.write_text(json.dumps(raw_bom()))
-            for member in ("hoimin-core", "hoimin-python"):
+            for member in ("hoimin-budget-math", "hoimin-core", "hoimin-python"):
                 sidecar = root / "crates" / member / "hoimin-release-sbom.json"
                 sidecar.parent.mkdir(parents=True)
                 sidecar.write_text("generated sidecar")
@@ -348,4 +349,36 @@ def test_python_repository_component_requires_one_matching_version(
     path.write_text(json.dumps(data))
 
     with pytest.raises(ValueError, match="wrong hoimin-python version"):
+        sbom.validate(path, asset, "linux-x86_64", "standalone", "1.2.3", COMMIT)
+
+
+@pytest.mark.parametrize("corruption", ["missing", "version"])
+def test_budget_math_identity_is_required(tmp_path: Path, corruption: str) -> None:
+    source_tree(tmp_path)
+    asset = tmp_path / "hoimin-v1.2.3-linux-x86_64.tar.gz"
+    asset.write_bytes(b"archive")
+    path = sbom.finalize(
+        tmp_path,
+        capture_file(tmp_path, "x86_64-unknown-linux-gnu"),
+        asset,
+        "linux-x86_64",
+        "standalone",
+        "1.2.3",
+        COMMIT,
+    )
+    data = json.loads(path.read_text())
+    component = next(c for c in data["components"] if c["name"] == "hoimin-budget-math")
+    if corruption == "missing":
+        data["components"].remove(component)
+        data["dependencies"] = [
+            node for node in data["dependencies"] if node["ref"] != "hoimin-budget-math"
+        ]
+        for node in data["dependencies"]:
+            if "hoimin-budget-math" in node["dependsOn"]:
+                node["dependsOn"].remove("hoimin-budget-math")
+    else:
+        component["version"] = "9.9.9"
+    path.write_text(json.dumps(data))
+
+    with pytest.raises(ValueError, match="wrong hoimin-budget-math version"):
         sbom.validate(path, asset, "linux-x86_64", "standalone", "1.2.3", COMMIT)

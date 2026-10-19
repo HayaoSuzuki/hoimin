@@ -1,0 +1,50 @@
+(* #"crates/hoimin-budget-math/src/projection.rs" 13 29 13 31 *)
+
+(* <projection::TopBudgetProjection as std::cmp::Eq> *)
+
+let%span sinvariant = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/invariant.rs" 90 8 90 18
+let%span sprojection = "crates/hoimin-budget-math/src/projection.rs" 13 29 13 31
+
+use creusot.prelude.Any
+use creusot.int.UInt64
+
+type t_Duration
+
+type t_TopBudgetProjection = {
+  selected: UInt64.t;
+  jobs: UInt64.t;
+  planned_total_timeout: t_Duration;
+  baseline: t_Duration;
+  effective_mutant_timeout: t_Duration;
+  remaining: t_Duration;
+  waves: UInt64.t;
+  projected_capacity: t_Duration }
+
+predicate inv_Duration (_1: t_Duration)
+
+predicate inv_TopBudgetProjection (_1: t_TopBudgetProjection)
+
+axiom inv_axiom [@rewrite]: forall _1: t_TopBudgetProjection [inv_TopBudgetProjection _1]. inv_TopBudgetProjection _1
+    = (inv_Duration _1.planned_total_timeout
+    /\ inv_Duration _1.baseline
+    /\ inv_Duration _1.effective_mutant_timeout /\ inv_Duration _1.remaining /\ inv_Duration _1.projected_capacity)
+
+predicate invariant_ref_TopBudgetProjection [@inline:trivial] (self: t_TopBudgetProjection) =
+  [%#sinvariant] inv_TopBudgetProjection self
+
+meta "rewrite_def" predicate invariant_ref_TopBudgetProjection
+
+predicate inv_ref_TopBudgetProjection [@inline:trivial] (_1: t_TopBudgetProjection) =
+  invariant_ref_TopBudgetProjection _1
+
+meta "rewrite_def" predicate inv_ref_TopBudgetProjection
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+let assert_fields_are_eq_TopBudgetProjection [#"crates/hoimin-budget-math/src/projection.rs" 13 29 13 31]
+  (self: t_TopBudgetProjection) (return (x: ())) =
+{[@stop_split] [@expl:assert_fields_are_eq 'self' type invariant] [%#sprojection] inv_ref_TopBudgetProjection self}
+  (! bb0
+  [ bb0 = return {_ret} ] [ & _ret: () = Any.any_l () ]) [ return (result: ()) -> (! return {result}) ]

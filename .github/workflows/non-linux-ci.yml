@@ -62,7 +62,13 @@ jobs:
       - name: Install repository Rust toolchain
         run: rustup toolchain install
       - run: uv sync --frozen
+      # Native Job Object fixtures retain their six-second shared deadline.
+      # Bound harness contention during interpreter startup on Windows runners.
+      - name: Test Windows workspace with two harness threads
+        if: runner.os == 'Windows'
+        run: cargo test --workspace -- --test-threads=2
       - run: cargo test --workspace
+        if: runner.os != 'Windows'
       - name: Show native Windows disk-name acceptance
         if: runner.os == 'Windows'
         env:

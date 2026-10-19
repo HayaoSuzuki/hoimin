@@ -1,0 +1,2 @@
+# The sdist byte-retention test compares this metadata with the checkout.
+crates/hoimin-budget-math/Cargo.toml text eol=lf

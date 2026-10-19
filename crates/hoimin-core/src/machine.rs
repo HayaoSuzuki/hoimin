@@ -6,6 +6,7 @@ pub use selection::{RunSelection, RunSelectionError};
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
+use hoimin_budget_math::{MutantTimeout, auto_mutant_timeout, project_top_budget};
 use thiserror::Error;
 
 use crate::{
@@ -13,14 +14,14 @@ use crate::{
     BaselineFinished as BaselineOutput, BeginSession, BudgetLedger, CandidateCursor,
     CandidateSpoolRef, Cleanup, Diagnostic, EffectFailed, EffectFailure, EffectId, EmitOutput,
     ExitPolicy, FinishSession, IntegrityCheckpoint, LoadSession, LookupStoredResult,
-    MutantFinished as MutantOutput, MutantResult, MutantStarted, MutantTimeout, MutationCandidate,
+    MutantFinished as MutantOutput, MutantResult, MutantStarted, MutationCandidate,
     MutationOutcome, MutationSummary, ObserveRemainingBudget, OutputEvent,
     PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE, PersistResult, Preflight, ProcessFinished, ProcessLimits,
     ProcessOutputState, ProcessTermination, ReadCandidate, ReservationId, ResetWorker,
     ResolveTargets, ResumeDecision, ReusedMutationStatus, RunBudgets, RunConfig, RunEffect,
     RunEvent, RunFingerprint, RunProcess, RunStarted, RunSummary, SessionDiagnostic, TargetSlice,
-    VerifyOriginals, WorkspaceCopyGrant, auto_mutant_timeout, contract_ensure, exit_code_for,
-    project_top_budget, release_workspace_copy, reserve_workspace_copy,
+    VerifyOriginals, WorkspaceCopyGrant, contract_ensure, exit_code_for, release_workspace_copy,
+    reserve_workspace_copy,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

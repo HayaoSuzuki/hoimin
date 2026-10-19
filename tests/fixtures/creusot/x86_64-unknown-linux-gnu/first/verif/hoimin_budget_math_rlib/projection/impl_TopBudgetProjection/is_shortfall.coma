@@ -1,0 +1,106 @@
+(* #"crates/hoimin-budget-math/src/projection.rs" 43 4 43 38 *)
+
+(* projection::TopBudgetProjection *)
+
+let%span sinvariant = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/invariant.rs" 90 8 90 18
+let%span sord = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/logic/ord.rs" 22 8 22 20
+let%span sord'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/logic/ord.rs" 34 8 34 21
+let%span stime = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 13 14 13 77
+let%span stime'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 44 4 44 24
+let%span stime'1 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 24 8 24 19
+let%span scmp = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/cmp.rs" 45 26 45 76
+let%span smodel = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/model.rs" 37 8 37 28
+let%span sprojection = "crates/hoimin-budget-math/src/projection.rs" 44 8 44 48
+let%span sprojection'0 = "crates/hoimin-budget-math/src/projection.rs" 43 25 43 29
+let%span sprojection'1 = "crates/hoimin-budget-math/src/projection.rs" 42 32 42 86
+
+use creusot.int.UInt64
+use creusot.prelude.Any
+use int.Int
+
+type t_Duration
+
+type t_TopBudgetProjection = {
+  selected: UInt64.t;
+  jobs: UInt64.t;
+  planned_total_timeout: t_Duration;
+  baseline: t_Duration;
+  effective_mutant_timeout: t_Duration;
+  remaining: t_Duration;
+  waves: UInt64.t;
+  projected_capacity: t_Duration }
+
+predicate inv_Duration (_1: t_Duration)
+
+predicate invariant_ref_Duration [@inline:trivial] (self: t_Duration) = [%#sinvariant] inv_Duration self
+
+meta "rewrite_def" predicate invariant_ref_Duration
+
+predicate inv_ref_Duration [@inline:trivial] (_1: t_Duration) = invariant_ref_Duration _1
+
+meta "rewrite_def" predicate inv_ref_Duration
+
+predicate gt_log_Int [@inline:trivial] (self: int) (other: int) = [%#sord] other < self
+
+meta "rewrite_def" predicate gt_log_Int
+
+predicate ge_log_Int [@inline:trivial] (self: int) (other: int) = [%#sord'0] other <= self
+
+meta "rewrite_def" predicate ge_log_Int
+
+function secs_to_nanos (secs: int) : int = [%#stime'0] secs * 1000000000
+
+constant const_MAX: UInt64.t = (18446744073709551615: UInt64.t)
+
+function view_Duration (self: t_Duration) : int
+
+axiom view_Duration_spec: forall self: t_Duration [view_Duration self]. [%#stime] ge_log_Int (view_Duration self) 0
+    /\ view_Duration self <= secs_to_nanos (UInt64.t'int const_MAX) + 999999999
+
+function deep_model_Duration [@inline:trivial] (self: t_Duration) : int = [%#stime'1] view_Duration self
+
+meta "rewrite_def" function deep_model_Duration
+
+function deep_model_ref_Duration [@inline:trivial] (self: t_Duration) : int = [%#smodel] deep_model_Duration self
+
+meta "rewrite_def" function deep_model_ref_Duration
+
+let gt_Duration (self: t_Duration) (other: t_Duration) (return (x: bool)) =
+{[@stop_split] [@expl:gt_Duration requires] ([@stop_split] [@expl:gt 'self' type invariant] inv_ref_Duration self)
+  /\ ([@stop_split] [@expl:gt 'other' type invariant] inv_ref_Duration other)}
+  any
+  [ return (result: bool) -> {[@stop_split] [@expl:gt ensures] [%#scmp] result
+    = gt_log_Int (deep_model_ref_Duration self) (deep_model_ref_Duration other)}
+    (! return {result}) ]
+
+predicate inv_TopBudgetProjection (_1: t_TopBudgetProjection)
+
+axiom inv_axiom [@rewrite]: forall _1: t_TopBudgetProjection [inv_TopBudgetProjection _1]. inv_TopBudgetProjection _1
+    = (inv_Duration _1.planned_total_timeout
+    /\ inv_Duration _1.baseline
+    /\ inv_Duration _1.effective_mutant_timeout /\ inv_Duration _1.remaining /\ inv_Duration _1.projected_capacity)
+
+predicate invariant_ref_TopBudgetProjection [@inline:trivial] (self: t_TopBudgetProjection) =
+  [%#sinvariant] inv_TopBudgetProjection self
+
+meta "rewrite_def" predicate invariant_ref_TopBudgetProjection
+
+predicate inv_ref_TopBudgetProjection [@inline:trivial] (_1: t_TopBudgetProjection) =
+  invariant_ref_TopBudgetProjection _1
+
+meta "rewrite_def" predicate inv_ref_TopBudgetProjection
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+let is_shortfall [#"crates/hoimin-budget-math/src/projection.rs" 43 4 43 38] (self: t_TopBudgetProjection)
+  (return (x: bool)) =
+{[@stop_split] [@expl:is_shortfall 'self' type invariant] [%#sprojection'0] inv_ref_TopBudgetProjection self}
+  (! bb0
+  [ bb0 = s0
+    [ s0 = gt_Duration [%#sprojection] {self.projected_capacity} {self.remaining} (fun (_x: bool) -> [ &_ret <- _x ] s1)
+    | s1 = return {_ret} ] ] [ & _ret: bool = Any.any_l () | & self: t_TopBudgetProjection = self ])
+  [ return (result: bool) -> {[@stop_split] [@expl:is_shortfall ensures] [%#sprojection'1] result
+    = gt_log_Int (view_Duration self.projected_capacity) (view_Duration self.remaining)}
+    (! return {result}) ]

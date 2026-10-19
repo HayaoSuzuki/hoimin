@@ -1,0 +1,265 @@
+(* #"crates/hoimin-budget-math/src/duration.rs" 114 0 114 58 *)
+
+let%span sduration = "crates/hoimin-budget-math/src/duration.rs" 116 21 116 22
+let%span sduration'0 = "crates/hoimin-budget-math/src/duration.rs" 115 4 116 23
+let%span sduration'1 = "crates/hoimin-budget-math/src/duration.rs" 115 4 117 68
+let%span sduration'2 = "crates/hoimin-budget-math/src/duration.rs" 118 19 118 32
+let%span sduration'3 = "crates/hoimin-budget-math/src/duration.rs" 115 4 118 33
+let%span sduration'4 = "crates/hoimin-budget-math/src/duration.rs" 119 33 119 34
+let%span sduration'5 = "crates/hoimin-budget-math/src/duration.rs" 119 13 119 35
+let%span sduration'6 = "crates/hoimin-budget-math/src/duration.rs" 115 4 119 36
+let%span sduration'7 = "crates/hoimin-budget-math/src/duration.rs" 114 27 114 35
+let%span sduration'8 = "crates/hoimin-budget-math/src/duration.rs" 114 50 114 58
+let%span sduration'9 = "crates/hoimin-budget-math/src/duration.rs" 113 28 113 68
+let%span sduration'10 = "crates/hoimin-budget-math/src/duration.rs" 117 64 117 65
+let%span sduration'11 = "crates/hoimin-budget-math/src/duration.rs" 117 44 117 66
+let%span sduration'12 = "crates/hoimin-budget-math/src/duration.rs" 117 26 117 67
+let%span sduration'13 = "crates/hoimin-budget-math/src/duration.rs" 117 19 117 24
+let%span sduration'14 = "crates/hoimin-budget-math/src/duration.rs" 117 18 117 25
+let%span sduration'15 = "crates/hoimin-budget-math/src/duration.rs" 109 16 109 91
+let%span sduration'16 = "crates/hoimin-budget-math/src/duration.rs" 114 0 114 58
+let%span sduration'17 = "crates/hoimin-budget-math/src/duration.rs" 103 16 103 55
+let%span sord = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/logic/ord.rs" 22 8 22 20
+let%span sord'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/logic/ord.rs" 34 8 34 21
+let%span stime = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 140 18 140 76
+let%span stime'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 141 18 141 104
+let%span stime'1 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 77 18 77 49
+let%span stime'2 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 13 14 13 77
+let%span stime'3 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 39 4 39 25
+let%span stime'4 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 130 18 130 76
+let%span stime'5 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 131 18 131 104
+let%span stime'6 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 72 19 72 61
+let%span stime'7 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 73 18 73 58
+let%span stime'8 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 44 4 44 24
+let%span stime'9 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 24 8 24 19
+let%span scmp = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/cmp.rs" 66 26 66 66
+let%span scmp'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/cmp.rs" 67 26 67 63
+let%span scmp'1 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/cmp.rs" 68 26 68 55
+let%span scmp'2 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/cmp.rs" 69 26 69 30
+let%span scmp'3 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/cmp.rs" 70 75 70 79
+let%span soption = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/option.rs" 333 19 333 79
+let%span soption'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/option.rs" 334 18 337 9
+let%span soption'1 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/option.rs" 148 18 148 22
+let%span soption'2 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/option.rs" 149 18 149 22
+let%span soption'3 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/option.rs" 15 8 18 9
+
+use creusot.int.UInt32
+use int.ComputerDivision
+use creusot.int.UInt64
+use creusot.prelude.Any
+use int.MinMax
+use int.Int
+
+type t_Duration
+
+type t_Option_Duration = None | Some t_Duration
+
+predicate inv_Duration (_1: t_Duration)
+
+predicate inv_Option_Duration (_1: t_Option_Duration)
+
+axiom inv_axiom [@rewrite]: forall _1: t_Option_Duration [inv_Option_Duration _1]. inv_Option_Duration _1
+    = match _1 with
+      | None -> true
+      | Some f0 -> inv_Duration f0
+      end
+
+predicate gt_log_Int [@inline:trivial] (self: int) (other: int) = [%#sord] other < self
+
+meta "rewrite_def" predicate gt_log_Int
+
+function nanos_to_secs (nanos: int) : int = [%#stime'3] ComputerDivision.div nanos 1000000000
+
+predicate ge_log_Int [@inline:trivial] (self: int) (other: int) = [%#sord'0] other <= self
+
+meta "rewrite_def" predicate ge_log_Int
+
+function secs_to_nanos (secs: int) : int = [%#stime'8] secs * 1000000000
+
+constant const_MAX: UInt64.t = (18446744073709551615: UInt64.t)
+
+function view_Duration (self: t_Duration) : int
+
+axiom view_Duration_spec: forall self: t_Duration [view_Duration self]. [%#stime'2] ge_log_Int (view_Duration self) 0
+    /\ view_Duration self <= secs_to_nanos (UInt64.t'int const_MAX) + 999999999
+
+type t_Option_Int = None'0 | Some'0 int
+
+function deep_model_Duration [@inline:trivial] (self: t_Duration) : int = [%#stime'9] view_Duration self
+
+meta "rewrite_def" function deep_model_Duration
+
+function deep_model_Option_Duration [@inline:trivial] (self: t_Option_Duration) : t_Option_Int =
+  [%#soption'3] match self with
+    | Some t -> Some'0 (deep_model_Duration t)
+    | None -> None'0
+    end
+
+meta "rewrite_def" function deep_model_Option_Duration
+
+let checked_mul (self: t_Duration) (rhs: UInt32.t) (return (x: t_Option_Duration)) =
+{[@stop_split] [@expl:checked_mul 'self' type invariant] inv_Duration self}
+  any
+  [ return (result: t_Option_Duration) ->
+  {[@stop_split] [@expl:checked_mul ensures] ([@stop_split] [@expl:checked_mul result type invariant] inv_Option_Duration result)
+    /\ ([@stop_split] [@expl:checked_mul ensures #0] [%#stime] gt_log_Int (nanos_to_secs (view_Duration self
+        * UInt32.t'int rhs)) (UInt64.t'int const_MAX) -> result = None)
+    /\ ([@stop_split] [@expl:checked_mul ensures #1] [%#stime'0] nanos_to_secs (view_Duration self * UInt32.t'int rhs)
+      <= UInt64.t'int const_MAX -> deep_model_Option_Duration result = Some'0 (view_Duration self * UInt32.t'int rhs))}
+    (! return {result}) ]
+
+let from_secs (secs: UInt64.t) (return (x: t_Duration)) = any
+  [ return (result: t_Duration) ->
+  {[@stop_split] [@expl:from_secs ensures] ([@stop_split] [@expl:from_secs result type invariant] inv_Duration result)
+    /\ ([@stop_split] [@expl:from_secs ensures] [%#stime'1] view_Duration result = secs_to_nanos (UInt64.t'int secs))}
+    (! return {result}) ]
+
+let checked_add (self: t_Duration) (rhs: t_Duration) (return (x: t_Option_Duration)) =
+{[@stop_split] [@expl:checked_add requires] ([@stop_split] [@expl:checked_add 'self' type invariant] inv_Duration self)
+  /\ ([@stop_split] [@expl:checked_add 'rhs' type invariant] inv_Duration rhs)}
+  any
+  [ return (result: t_Option_Duration) ->
+  {[@stop_split] [@expl:checked_add ensures] ([@stop_split] [@expl:checked_add result type invariant] inv_Option_Duration result)
+    /\ ([@stop_split] [@expl:checked_add ensures #0] [%#stime'4] gt_log_Int (nanos_to_secs (view_Duration self
+        + view_Duration rhs)) (UInt64.t'int const_MAX) -> result = None)
+    /\ ([@stop_split] [@expl:checked_add ensures #1] [%#stime'5] nanos_to_secs (view_Duration self + view_Duration rhs)
+      <= UInt64.t'int const_MAX -> deep_model_Option_Duration result = Some'0 (view_Duration self + view_Duration rhs))}
+    (! return {result}) ]
+
+let closure0 [#"crates/hoimin-budget-math/src/duration.rs" 117 18 117 25] [@coma:extspec] (self: ()) (value: t_Duration)
+  (return (x: t_Option_Duration)) =
+{[@stop_split] [@expl:closure 'value' type invariant] [%#sduration'13] inv_Duration value}
+  bb0
+  [ bb0 = s0
+    [ s0 = from_secs [%#sduration'11] {[%#sduration'10] (1: UInt64.t)} (fun (_x: t_Duration) -> [ &_4 <- _x ] s1)
+    | s1 = checked_add [%#sduration'12] {value} {_4} (fun (_x: t_Option_Duration) -> [ &_ret <- _x ] s2)
+    | s2 = return {_ret} ] ]
+  [ & _ret: t_Option_Duration = Any.any_l () | & value: t_Duration = value | & _4: t_Duration = Any.any_l () ]
+  [ return (result: t_Option_Duration) ->
+  {[@stop_split] [@expl:closure result type invariant] [%#sduration'14] inv_Option_Duration result}
+    return {result} ]
+
+meta "rewrite_def" predicate closure0'pre
+
+meta "rewrite_def" predicate closure0'post'return
+
+predicate precondition_closure0 (self: ()) (args: t_Duration) =
+  [%#sduration'14] let value = args in closure0'pre self value
+
+meta "rewrite_def" predicate precondition_closure0
+
+predicate resolve_closure0 [@inline:trivial] (_1: ()) = true
+
+meta "rewrite_def" predicate resolve_closure0
+
+predicate postcondition_once_closure0 (self: ()) (args: t_Duration) (result: t_Option_Duration) =
+  [%#sduration'14] let value = args in closure0'post'return self value result
+
+meta "rewrite_def" predicate postcondition_once_closure0
+
+let and_then_Duration (self: t_Option_Duration) (f: ()) (return (x: t_Option_Duration)) =
+{[@stop_split] [@expl:and_then_Duration requires] ([@stop_split] [@expl:and_then 'self' type invariant] inv_Option_Duration self)
+  /\ ([@stop_split] [@expl:and_then requires] [%#soption] match self with
+    | None -> true
+    | Some t -> precondition_closure0 f t
+    end)}
+  any
+  [ return (result: t_Option_Duration) ->
+  {[@stop_split] [@expl:and_then_Duration ensures] ([@stop_split] [@expl:and_then result type invariant] inv_Option_Duration result)
+    /\ ([@stop_split] [@expl:and_then ensures] [%#soption'0] match self with
+      | None -> resolve_closure0 f /\ result = None
+      | Some t -> postcondition_once_closure0 f t result
+      end)}
+    (! return {result}) ]
+
+constant const_NANOS_PER_SEC: UInt32.t = [%#sduration'16] (1000000000: UInt32.t)
+
+type tup2_u32_bool = { f0: UInt32.t; f1: bool }
+
+let new (secs: UInt64.t) (nanos: UInt32.t) (return (x: t_Duration)) =
+{[@stop_split] [@expl:new requires] [%#stime'6] UInt64.t'int secs + nanos_to_secs (UInt32.t'int nanos)
+  <= UInt64.t'int const_MAX}
+  any
+  [ return (result: t_Duration) ->
+  {[@stop_split] [@expl:new ensures] ([@stop_split] [@expl:new result type invariant] inv_Duration result)
+    /\ ([@stop_split] [@expl:new ensures] [%#stime'7] view_Duration result
+    = secs_to_nanos (UInt64.t'int secs) + UInt32.t'int nanos)}
+    (! return {result}) ]
+
+constant const_MAX'0 : t_Duration
+
+axiom const_MAX_spec: false -> inv_Duration const_MAX'0
+
+let set_MAX (return) = bb0
+  [ bb0 = s0
+    [ s0 = [ &_2 <- let (_fst, _snd) = UInt32.sub_with_overflow const_NANOS_PER_SEC (1: UInt32.t) in { f0 = _fst;
+                                                                                                       f1 = _snd } ] s1
+    | s1 = {[@expl:Sub overflow] not _2.f1} s2
+    | s2 = new {const_MAX} {_2.f0} (fun (_x: t_Duration) -> [ &_ret <- _x ] s3)
+    | s3 = return {_ret} ] ] [ & _ret: t_Duration = Any.any_l () | & _2: tup2_u32_bool = Any.any_l () ]
+  [ return (_const: t_Duration) -> -{const_MAX'0 = _const}- return ]
+
+predicate resolve_Duration (_1: t_Duration)
+
+let unwrap_or_Duration (self: t_Option_Duration) (default: t_Duration) (return (x: t_Duration)) =
+{[@stop_split] [@expl:unwrap_or_Duration requires] ([@stop_split] [@expl:unwrap_or 'self' type invariant] inv_Option_Duration self)
+  /\ ([@stop_split] [@expl:unwrap_or 'default' type invariant] inv_Duration default)}
+  any
+  [ return (result: t_Duration) ->
+  {[@stop_split] [@expl:unwrap_or_Duration ensures] ([@stop_split] [@expl:unwrap_or result type invariant] inv_Duration result)
+    /\ ([@stop_split] [@expl:unwrap_or ensures #0] [%#soption'1] self = None -> result = default)
+    /\ ([@stop_split] [@expl:unwrap_or ensures #1] [%#soption'2] self = None
+    \/ self = Some result /\ resolve_Duration default)}
+    (! return {result}) ]
+
+let max_Duration (self: t_Duration) (other: t_Duration) (return (x: t_Duration)) =
+{[@stop_split] [@expl:max_Duration requires] ([@stop_split] [@expl:max 'self' type invariant] inv_Duration self)
+  /\ ([@stop_split] [@expl:max 'other' type invariant] inv_Duration other)}
+  any
+  [ return (result: t_Duration) ->
+  {[@stop_split] [@expl:max_Duration ensures] ([@stop_split] [@expl:max result type invariant] inv_Duration result)
+    /\ ([@stop_split] [@expl:max ensures #0] [%#scmp] ge_log_Int (deep_model_Duration result) (deep_model_Duration self))
+    /\ ([@stop_split] [@expl:max ensures #1] [%#scmp'0] ge_log_Int (deep_model_Duration result) (deep_model_Duration other))
+    /\ ([@stop_split] [@expl:max ensures #2] [%#scmp'1] result = self \/ result = other)
+    /\ ([@stop_split] [@expl:max ensures #3] [%#scmp'2] deep_model_Duration self <= deep_model_Duration other
+      -> result = other)
+    /\ ([@stop_split] [@expl:max ensures #4] [%#scmp'3] deep_model_Duration other < deep_model_Duration self
+    -> result = self)}
+    (! return {result}) ]
+
+constant duration_max_nanos: int = [%#sduration'17] UInt64.t'int const_MAX * 1000000000 + 999999999
+
+function auto_timeout_nanos [#"crates/hoimin-budget-math/src/duration.rs" 108 0 108 54] (baseline: int) : int =
+  [%#sduration'15] MinMax.max (MinMax.min (2 * baseline + 1000000000) duration_max_nanos) 5000000000
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+let auto_mutant_timeout [#"crates/hoimin-budget-math/src/duration.rs" 114 0 114 58] (baseline: t_Duration)
+  (return (x: t_Duration)) =
+{[@stop_split] [@expl:auto_mutant_timeout 'baseline' type invariant] [%#sduration'7] inv_Duration baseline}
+  (! set_MAX
+    (bb0
+    [ bb0 = s0
+      [ s0 = checked_mul [%#sduration'0] {baseline} {[%#sduration] (2: UInt32.t)}
+          (fun (_x: t_Option_Duration) -> [ &_6 <- _x ] s1)
+      | s1 = [ &_8 <- () ] s2
+      | s2 = and_then_Duration [%#sduration'1] {_6} {_8} (fun (_x: t_Option_Duration) -> [ &_5 <- _x ] s3)
+      | s3 = unwrap_or_Duration [%#sduration'3] {_5} {[%#sduration'2] const_MAX'0}
+          (fun (_x: t_Duration) -> [ &_4 <- _x ] s4)
+      | s4 = from_secs [%#sduration'5] {[%#sduration'4] (5: UInt64.t)} (fun (_x: t_Duration) -> [ &_9 <- _x ] s5)
+      | s5 = max_Duration [%#sduration'6] {_4} {_9} (fun (_x: t_Duration) -> [ &_ret <- _x ] s6)
+      | s6 = return {_ret} ] ]
+    [ & _ret: t_Duration = Any.any_l ()
+    | & baseline: t_Duration = baseline
+    | & _4: t_Duration = Any.any_l ()
+    | & _5: t_Option_Duration = Any.any_l ()
+    | & _6: t_Option_Duration = Any.any_l ()
+    | & _8: () = Any.any_l ()
+    | & _9: t_Duration = Any.any_l () ]))
+  [ return (result: t_Duration) ->
+  {[@stop_split] [@expl:auto_mutant_timeout ensures] ([@stop_split] [@expl:auto_mutant_timeout result type invariant] [%#sduration'8] inv_Duration result)
+    /\ ([@stop_split] [@expl:auto_mutant_timeout ensures] [%#sduration'9] view_Duration result
+    = auto_timeout_nanos (view_Duration baseline))}
+    (! return {result}) ]

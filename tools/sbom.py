@@ -115,7 +115,7 @@ def validate_graph(data: dict[str, Any], version: str, commit: str) -> None:
             reached.add(ref)
             pending.extend(graph[ref])
     require(reached == set(refs), "unreachable component")
-    for member in ("hoimin-core", "hoimin-python"):
+    for member in ("hoimin-budget-math", "hoimin-core", "hoimin-python"):
         matches = [c for c in components if c["name"] == member]
         require(
             len(matches) == 1 and matches[0]["version"] == version,

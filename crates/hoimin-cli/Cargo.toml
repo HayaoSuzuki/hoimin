@@ -18,6 +18,7 @@ default = []
 contracts = ["hoimin-core/contracts"]
 
 [dependencies]
+hoimin-budget-math = { path = "../hoimin-budget-math" }
 blake3 = "1.8"
 cap-fs-ext = "4.0"
 cap-primitives = "4.0"

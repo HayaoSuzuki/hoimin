@@ -6,34 +6,34 @@ status: draft
 sources:
 - id: issues-992-998-sdist-config
   resource: ../../pyproject.toml
-  revision: 60dab172af34dc929edc2fb87f27b7724b7d8542
-  working_tree: modified
-  sha256: dd6497bf51656c0a7cd813409a976cbe1be97a0e86f7f754a1aacce2fddf8f96
+  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
+  working_tree: clean
+  sha256: 152f20bea30856e826524da74b812b2b8a9dce105b4431881cbda83de801cec6
 - id: issues-992-998-sdist-archive
   resource: ../../tests/test_sdist.py
-  revision: 12e80440c1daec46c0e92895b123f34ef098f913
-  working_tree: modified
-  sha256: 7c0957d23274130c5b4083a9421cb6a0cdd5d0f84c2585562459f9658dfd116c
+  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
+  working_tree: clean
+  sha256: f814313d63bee7a6ada4559e19cd2e17cd23b927eaf87dab3903070aedb877c5
 - id: issues-992-998-sbom-validator
   resource: ../../tools/sbom.py
-  revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
-  working_tree: modified
-  sha256: 09ff16e05879eddfc4fe50c8d1dc9a6da478a0ddf292e81af457b56a0b053d81
+  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
+  working_tree: clean
+  sha256: 8ba2531e849d5250d0e271cf2ec0800e0b89cbcadb4c68567003df182bf58b05
 - id: issues-992-998-sbom-capture
   resource: ../../tools/capture_sbom.py
-  revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
-  working_tree: modified
-  sha256: 5f3eab1f3a3f9d0448fc27e5cbd7d6e591e1acb54dc75ff736d6b43979e5bf01
+  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
+  working_tree: clean
+  sha256: c6bd0663352ac0ccf8f5b5f718293c7d5fc4fa0f8f62148095337a328c2abf4f
 - id: ci
   resource: ../ci.md
-  revision: a9f9d424cd7fc0c21ece1c89c233448e531a5b64
+  revision: 46ef6b9ef240ce644a11a5ab03f82c69b79f2afd
   working_tree: modified
-  sha256: e39e1ca23612fc82c4e8a7f1aef276b28a91553a9df9339645400b4fd6983c01
+  sha256: a17fa37454e672512a1ccb3a8649783a89c9edd99b63da4679fe77a29228d96d
 - id: release
   resource: ../releases.md
-  revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
+  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
   working_tree: modified
-  sha256: cab75b11fc1b7ca03f24c37b845344b839cfdfd3f636b9e94776ea42079a58d9
+  sha256: 68a8bd954295add52934ddf8e38a3429d9a90c351771f12f6b73081ccefc462a
 - id: design
   resource: ../superpowers/specs/2026-10-10-issue-741-sbom-design.md
   working_tree: untracked
@@ -51,10 +51,10 @@ A release publishes six documents for standalone binaries and wheels on three pl
 
 # Repository package versions and generator cleanup
 
-The shipping graph contains exactly one `hoimin-core` and one `hoimin-python`
+The shipping graph contains exactly one `hoimin-budget-math`, one `hoimin-core` and one `hoimin-python`
 component, each matching the CLI root version. Missing, duplicate and mismatched
 internal components fail validation. Capture removes generator sidecars for all
-three shipping workspace members before generation and in final cleanup,
+four shipping workspace members before generation and in final cleanup,
 including when generation changes the lockfile and output is rejected. The
 original lockfile is restored before that rejection.[^issues-992-998-sbom-validator][^issues-992-998-sbom-capture]
 
@@ -91,3 +91,9 @@ Recheck the correspondence between build settings and SBOM metadata when updatin
 
 [^issues-992-998-sdist-config]: [pyproject.toml](../../pyproject.toml).
 [^issues-992-998-sdist-archive]: [tests/test_sdist.py](../../tests/test_sdist.py).
+
+
+The source archive also retains the production math crate's manifest and three
+Rust source files, including cfg-gated proof annotations. The
+[Creusot contract](creusot-budget-proofs.md) distinguishes verification-only
+registry dependencies from the ordinary shipping graph.

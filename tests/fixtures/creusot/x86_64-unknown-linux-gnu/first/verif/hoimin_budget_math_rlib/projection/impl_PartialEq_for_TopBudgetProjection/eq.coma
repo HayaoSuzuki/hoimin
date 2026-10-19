@@ -1,0 +1,173 @@
+(* #"crates/hoimin-budget-math/src/projection.rs" 28 4 28 38 *)
+
+(* <projection::TopBudgetProjection as std::cmp::PartialEq> *)
+
+let%span sinvariant = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/invariant.rs" 90 8 90 18
+let%span sord = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/logic/ord.rs" 34 8 34 21
+let%span stime = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 24 8 24 19
+let%span stime'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 13 14 13 77
+let%span stime'1 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 44 4 44 24
+let%span scmp = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/cmp.rs" 14 26 14 75
+let%span smodel = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/model.rs" 37 8 37 28
+let%span sprojection = "crates/hoimin-budget-math/src/projection.rs" 31 15 31 72
+let%span sprojection'0 = "crates/hoimin-budget-math/src/projection.rs" 32 15 32 46
+let%span sprojection'1 = "crates/hoimin-budget-math/src/projection.rs" 33 15 33 78
+let%span sprojection'2 = "crates/hoimin-budget-math/src/projection.rs" 34 15 34 48
+let%span sprojection'3 = "crates/hoimin-budget-math/src/projection.rs" 36 15 36 66
+let%span sprojection'4 = "crates/hoimin-budget-math/src/projection.rs" 29 8 36 66
+let%span sprojection'5 = "crates/hoimin-budget-math/src/projection.rs" 28 11 28 15
+let%span sprojection'6 = "crates/hoimin-budget-math/src/projection.rs" 28 17 28 22
+let%span sprojection'7 = "crates/hoimin-budget-math/src/projection.rs" 27 32 27 83
+let%span slib = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-proc-0.14.0/src/lib.rs" 91 0 91 44
+let%span snum = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/num.rs" 32 28 32 33
+
+use creusot.int.UInt64
+use creusot.prelude.Any
+use int.Int
+
+type t_Duration
+
+type t_TopBudgetProjection = {
+  selected: UInt64.t;
+  jobs: UInt64.t;
+  planned_total_timeout: t_Duration;
+  baseline: t_Duration;
+  effective_mutant_timeout: t_Duration;
+  remaining: t_Duration;
+  waves: UInt64.t;
+  projected_capacity: t_Duration }
+
+predicate inv_Duration (_1: t_Duration)
+
+predicate invariant_ref_Duration [@inline:trivial] (self: t_Duration) = [%#sinvariant] inv_Duration self
+
+meta "rewrite_def" predicate invariant_ref_Duration
+
+predicate inv_ref_Duration [@inline:trivial] (_1: t_Duration) = invariant_ref_Duration _1
+
+meta "rewrite_def" predicate inv_ref_Duration
+
+predicate ge_log_Int [@inline:trivial] (self: int) (other: int) = [%#sord] other <= self
+
+meta "rewrite_def" predicate ge_log_Int
+
+function secs_to_nanos (secs: int) : int = [%#stime'1] secs * 1000000000
+
+constant const_MAX: UInt64.t = (18446744073709551615: UInt64.t)
+
+function view_Duration (self: t_Duration) : int
+
+axiom view_Duration_spec: forall self: t_Duration [view_Duration self]. [%#stime'0] ge_log_Int (view_Duration self) 0
+    /\ view_Duration self <= secs_to_nanos (UInt64.t'int const_MAX) + 999999999
+
+function deep_model_Duration [@inline:trivial] (self: t_Duration) : int = [%#stime] view_Duration self
+
+meta "rewrite_def" function deep_model_Duration
+
+function deep_model_ref_Duration [@inline:trivial] (self: t_Duration) : int = [%#smodel] deep_model_Duration self
+
+meta "rewrite_def" function deep_model_ref_Duration
+
+let eq_Duration (self: t_Duration) (other: t_Duration) (return (x: bool)) =
+{[@stop_split] [@expl:eq_Duration requires] ([@stop_split] [@expl:eq 'self' type invariant] inv_ref_Duration self)
+  /\ ([@stop_split] [@expl:eq 'other' type invariant] inv_ref_Duration other)}
+  any
+  [ return (result: bool) -> {[@stop_split] [@expl:eq ensures] [%#scmp] result
+    = (deep_model_ref_Duration self = deep_model_ref_Duration other)}
+    (! return {result}) ]
+
+predicate inv_TopBudgetProjection (_1: t_TopBudgetProjection)
+
+axiom inv_axiom [@rewrite]: forall _1: t_TopBudgetProjection [inv_TopBudgetProjection _1]. inv_TopBudgetProjection _1
+    = (inv_Duration _1.planned_total_timeout
+    /\ inv_Duration _1.baseline
+    /\ inv_Duration _1.effective_mutant_timeout /\ inv_Duration _1.remaining /\ inv_Duration _1.projected_capacity)
+
+predicate invariant_ref_TopBudgetProjection [@inline:trivial] (self: t_TopBudgetProjection) =
+  [%#sinvariant] inv_TopBudgetProjection self
+
+meta "rewrite_def" predicate invariant_ref_TopBudgetProjection
+
+predicate inv_ref_TopBudgetProjection [@inline:trivial] (_1: t_TopBudgetProjection) =
+  invariant_ref_TopBudgetProjection _1
+
+meta "rewrite_def" predicate inv_ref_TopBudgetProjection
+
+type t_TopBudgetProjectionDeepModel = {
+  selected'0: int;
+  jobs'0: int;
+  planned_total_timeout'0: int;
+  baseline'0: int;
+  effective_mutant_timeout'0: int;
+  remaining'0: int;
+  waves'0: int;
+  projected_capacity'0: int }
+
+function deep_model_usize [@inline:trivial] (self: UInt64.t) : int = [%#snum] UInt64.t'int self
+
+meta "rewrite_def" function deep_model_usize
+
+function deep_model_TopBudgetProjection [#"crates/hoimin-budget-math/src/projection.rs" 14 27 14 58] (self: t_TopBudgetProjection) : t_TopBudgetProjectionDeepModel
+ = [%#slib] { selected'0 = deep_model_usize self.selected;
+              jobs'0 = deep_model_usize self.jobs;
+              planned_total_timeout'0 = deep_model_Duration self.planned_total_timeout;
+              baseline'0 = deep_model_Duration self.baseline;
+              effective_mutant_timeout'0 = deep_model_Duration self.effective_mutant_timeout;
+              remaining'0 = deep_model_Duration self.remaining;
+              waves'0 = deep_model_usize self.waves;
+              projected_capacity'0 = deep_model_Duration self.projected_capacity }
+
+function deep_model_ref_TopBudgetProjection [@inline:trivial] (self: t_TopBudgetProjection) : t_TopBudgetProjectionDeepModel
+ = [%#smodel] deep_model_TopBudgetProjection self
+
+meta "rewrite_def" function deep_model_ref_TopBudgetProjection
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+let eq_TopBudgetProjection [#"crates/hoimin-budget-math/src/projection.rs" 28 4 28 38] (self: t_TopBudgetProjection)
+  (other: t_TopBudgetProjection) (return (x: bool)) =
+{[@stop_split] [@expl:eq_TopBudgetProjection requires] ([@stop_split] [@expl:eq 'self' type invariant] [%#sprojection'5] inv_ref_TopBudgetProjection self)
+  /\ ([@stop_split] [@expl:eq 'other' type invariant] [%#sprojection'6] inv_ref_TopBudgetProjection other)}
+  (! bb0
+  [ bb0 = s0
+    [ s0 = [ &_6 <- self.selected = other.selected ] s1
+    | s1 = any [ br0 -> {_6 = false} (! bb19) | br1 -> {_6} (! bb1) ] ]
+  | bb1 = s0
+    [ s0 = [ &_9 <- self.jobs = other.jobs ] s1 | s1 = any [ br0 -> {_9 = false} (! bb19) | br1 -> {_9} (! bb2) ] ]
+  | bb2 = s0
+    [ s0 = eq_Duration [%#sprojection] {self.planned_total_timeout} {other.planned_total_timeout}
+        (fun (_x: bool) -> [ &_12 <- _x ] s1)
+    | s1 = any [ br0 -> {_12 = false} (! bb19) | br1 -> {_12} (! bb4) ] ]
+  | bb4 = s0
+    [ s0 = eq_Duration [%#sprojection'0] {self.baseline} {other.baseline} (fun (_x: bool) -> [ &_15 <- _x ] s1)
+    | s1 = any [ br0 -> {_15 = false} (! bb19) | br1 -> {_15} (! bb6) ] ]
+  | bb6 = s0
+    [ s0 = eq_Duration [%#sprojection'1] {self.effective_mutant_timeout} {other.effective_mutant_timeout}
+        (fun (_x: bool) -> [ &_18 <- _x ] s1)
+    | s1 = any [ br0 -> {_18 = false} (! bb19) | br1 -> {_18} (! bb8) ] ]
+  | bb8 = s0
+    [ s0 = eq_Duration [%#sprojection'2] {self.remaining} {other.remaining} (fun (_x: bool) -> [ &_21 <- _x ] s1)
+    | s1 = any [ br0 -> {_21 = false} (! bb19) | br1 -> {_21} (! bb10) ] ]
+  | bb10 = s0
+    [ s0 = [ &_24 <- self.waves = other.waves ] s1
+    | s1 = any [ br0 -> {_24 = false} (! bb19) | br1 -> {_24} (! bb11) ] ]
+  | bb11 = s0
+    [ s0 = eq_Duration [%#sprojection'3] {self.projected_capacity} {other.projected_capacity}
+        (fun (_x: bool) -> [ &_ret <- _x ] s1)
+    | s1 = return {_ret} ]
+  | bb19 = s0 [ s0 = [ &_ret <- [%#sprojection'4] false ] s1 | s1 = return {_ret} ] ]
+  [ & _ret: bool = Any.any_l ()
+  | & self: t_TopBudgetProjection = self
+  | & other: t_TopBudgetProjection = other
+  | & _6: bool = Any.any_l ()
+  | & _9: bool = Any.any_l ()
+  | & _12: bool = Any.any_l ()
+  | & _15: bool = Any.any_l ()
+  | & _18: bool = Any.any_l ()
+  | & _21: bool = Any.any_l ()
+  | & _24: bool = Any.any_l () ])
+  [ return (result: bool) -> {[@stop_split] [@expl:eq ensures] [%#sprojection'7] result
+    = (deep_model_ref_TopBudgetProjection self = deep_model_ref_TopBudgetProjection other)}
+    (! return {result}) ]

@@ -3,6 +3,7 @@ use std::num::{NonZeroU64, NonZeroUsize};
 use std::time::Duration;
 
 use camino::{Utf8Component, Utf8PathBuf};
+use hoimin_budget_math::{MutantTimeout, NonZeroDuration, auto_mutant_timeout};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -478,45 +479,6 @@ impl SessionMode {
     }
 }
 
-/// A strictly positive duration, checked during raw conversion and deserialization.
-///
-/// Timeout ceilings and automatic timeout arithmetic belong to configuration
-/// validation, not this representation invariant.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-pub struct NonZeroDuration(Duration);
-
-impl<'de> Deserialize<'de> for NonZeroDuration {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let value = Duration::deserialize(deserializer)?;
-        Self::new(value, "duration").map_err(serde::de::Error::custom)
-    }
-}
-
-impl NonZeroDuration {
-    #[must_use]
-    pub fn get(self) -> Duration {
-        self.0
-    }
-
-    fn new(value: Duration, name: &'static str) -> Result<Self, ConfigError> {
-        if value.is_zero() {
-            Err(ConfigError::InvalidLimit(name))
-        } else {
-            Ok(Self(value))
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MutantTimeout {
-    Auto,
-    Fixed(NonZeroDuration),
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RunLimits {
@@ -667,7 +629,8 @@ impl DiscoveryConfig {
     /// Returns [`ConfigError`] for zero or oversized timeouts.
     pub fn new(analyzer_timeout: Duration) -> Result<Self, ConfigError> {
         let config = Self {
-            analyzer_timeout: NonZeroDuration::new(analyzer_timeout, "analyzer_timeout")?,
+            analyzer_timeout: NonZeroDuration::new(analyzer_timeout)
+                .ok_or(ConfigError::InvalidLimit("analyzer_timeout"))?,
         };
         config.validate()?;
         Ok(config)
@@ -825,12 +788,17 @@ impl TryFrom<&RawRunLimits> for RunLimits {
             jobs: nonzero_usize(raw.jobs, "jobs")?,
             max_mutants: nonzero_usize(raw.max_mutants, "max_mutants")?,
             max_candidates: nonzero_usize(raw.max_candidates, "max_candidates")?,
-            baseline_timeout: NonZeroDuration::new(raw.baseline_timeout, "baseline_timeout")?,
+            baseline_timeout: NonZeroDuration::new(raw.baseline_timeout)
+                .ok_or(ConfigError::InvalidLimit("baseline_timeout"))?,
             mutant_timeout: match raw.mutant_timeout {
-                Some(value) => MutantTimeout::Fixed(NonZeroDuration::new(value, "mutant_timeout")?),
+                Some(value) => MutantTimeout::Fixed(
+                    NonZeroDuration::new(value)
+                        .ok_or(ConfigError::InvalidLimit("mutant_timeout"))?,
+                ),
                 None => MutantTimeout::Auto,
             },
-            total_timeout: NonZeroDuration::new(raw.total_timeout, "total_timeout")?,
+            total_timeout: NonZeroDuration::new(raw.total_timeout)
+                .ok_or(ConfigError::InvalidLimit("total_timeout"))?,
             max_memory: NonZeroU64::new(raw.max_memory)
                 .ok_or(ConfigError::InvalidLimit("max_memory"))?,
             max_output: NonZeroU64::new(raw.max_output)
@@ -1049,13 +1017,4 @@ impl TryFrom<RawRunConfig> for RunConfig<crate::EnvironmentRequest> {
             profile: raw.profile,
         })
     }
-}
-
-#[must_use]
-pub fn auto_mutant_timeout(baseline: Duration) -> Duration {
-    baseline
-        .checked_mul(2)
-        .and_then(|value| value.checked_add(Duration::from_secs(1)))
-        .unwrap_or(Duration::MAX)
-        .max(Duration::from_secs(5))
 }

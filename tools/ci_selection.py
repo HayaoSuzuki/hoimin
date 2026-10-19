@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TypeGuard
 
-CATEGORIES = ("python", "rust", "formal", "distribution")
+CATEGORIES = ("python", "rust", "formal", "creusot", "distribution")
 RELEASE_TOOLS = {"tools/release.py", "tools/sbom.py", "tools/capture_sbom.py"}
 DOCUMENTATION_INPUTS = {
     "tools/docs_site.py",
@@ -30,7 +30,11 @@ def classify(paths: list[str]) -> dict[str, bool]:
     return flags
 
 
-def categories_for(path: str) -> tuple[str, ...]:  # noqa: PLR0911 -- explicit path taxonomy
+def categories_for(path: str) -> tuple[str, ...]:  # noqa: C901, PLR0911 -- explicit path taxonomy
+    if path.startswith("crates/hoimin-budget-math/"):
+        return ("rust", "formal", "creusot", "distribution")
+    if path.startswith("formal/creusot/"):
+        return ("rust", "formal", "creusot")
     if path == "docs/cli-reference.md":
         return ("rust",)
     if path.startswith(("docs/json-schema/", "tests/fixtures/")):
@@ -40,6 +44,8 @@ def categories_for(path: str) -> tuple[str, ...]:  # noqa: PLR0911 -- explicit p
         path.endswith(".md") and (path == "CONTRIBUTING.md" or path.startswith("docs/"))
     ):
         return ()
+    if path == "tests/test_verify_creusot.py":
+        return ("python", "formal", "creusot")
     if path.startswith(("crates/", "vendor/")):
         return ("rust", "formal", "distribution")
     if path == "tests/wheel_smoke.py":
@@ -126,6 +132,7 @@ def selected_jobs(flags: dict[str, bool], *, cgroup: bool) -> dict[str, bool]:
         "linux-best-effort": flags["rust"],
         "fuzz": flags["rust"],
         "lean-audit": flags["formal"],
+        "creusot": flags["creusot"],
         "boundary-contracts": flags["formal"],
         "wheel-smoke": flags["distribution"] or flags["python"],
         "linux-cgroup-v2-hard": cgroup,

@@ -201,6 +201,11 @@ def set_version(root: Path, version: str) -> None:
         ),
         (
             "Cargo.lock",
+            r'(\[\[package\]\]\nname = "hoimin-budget-math"\nversion = ")[^"]+("\n)',
+            version,
+        ),
+        (
+            "Cargo.lock",
             r'(\[\[package\]\]\nname = "hoimin-core"\nversion = ")[^"]+("\n)',
             version,
         ),

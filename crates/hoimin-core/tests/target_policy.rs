@@ -2,10 +2,11 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use camino::Utf8PathBuf;
+use hoimin_budget_math::auto_mutant_timeout;
 use hoimin_core::{
     ConfigError, DiscoveredFile, LineRange, LineSelection, MAX_JOBS, MAX_TIMEOUT, RawRunConfig,
-    RunConfig, Selection, SymbolSelection, TargetError, TargetSlice, auto_mutant_timeout,
-    changed_is_normalized, intersect_changed, resolve_explicit, targets_are_normalized,
+    RunConfig, Selection, SymbolSelection, TargetError, TargetSlice, changed_is_normalized,
+    intersect_changed, resolve_explicit, targets_are_normalized,
 };
 use hoimin_core::{MutationOperator, MutationProfile};
 

@@ -1,0 +1,14 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_as_nanos": { "prover": "z3@5.1.0", "time": 0.003 },
+      "vc_checked_mul": { "prover": "z3@5.1.0", "time": 0.003 },
+      "vc_duration_from_nanos": { "prover": "z3@5.1.0", "time": 0.003 },
+      "vc_elim_Some": { "prover": "z3@5.1.0", "time": 0.003 },
+      "vc_new": { "prover": "z3@5.1.0", "time": 0.003 },
+      "vc_saturating_duration_mul": { "prover": "z3@5.1.0", "time": 0.01 },
+      "vc_set_MAX": { "prover": "z3@5.1.0", "time": 0.002 }
+    }
+  }
+}

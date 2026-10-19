@@ -18,6 +18,11 @@ unused-license-exception = "allow"
 
 # ELv2 is the repository's license, not a blanket approval for third parties.
 [[licenses.exceptions]]
+name = "hoimin-budget-math"
+version = ">=0.13.0, <0.14.0"
+allow = ["Elastic-2.0"]
+
+[[licenses.exceptions]]
 name = "hoimin-core"
 version = ">=0.13.0, <0.14.0"
 allow = ["Elastic-2.0"]
@@ -50,6 +55,19 @@ allow = ["NCSA"]
 name = "contracts"
 version = "=0.6.11"
 allow = ["MPL-2.0"]
+
+# Verification-only crates selected by cfg(creusot); normal builds exclude them.
+# Reviewed upstream license at Creusot v0.14.0, commit 65349025c67e69fcd7479f1f420fa5904f69bc27.
+# Re-review source, macro output, proof artifacts and notices on any upgrade.
+[[licenses.exceptions]]
+name = "creusot-std"
+version = "=0.14.0"
+allow = ["LGPL-2.1-or-later"]
+
+[[licenses.exceptions]]
+name = "creusot-std-proc"
+version = "=0.14.0"
+allow = ["LGPL-2.1-or-later"]
 
 [sources]
 unknown-registry = "deny"

@@ -89,11 +89,15 @@ fn resume_primary_thread(pid: u32) -> Result<(), ResourceError> {
                 "open suspended primary thread",
             )?;
             // SAFETY: thread is the sole primary thread of a CREATE_SUSPENDED process.
-            if unsafe { ResumeThread(thread.raw()) } == u32::MAX {
-                return Err(ResourceError::io(
-                    "resume suspended primary thread",
-                    io::Error::last_os_error(),
-                ));
+            let previous_suspend_count = unsafe { ResumeThread(thread.raw()) };
+            let resume_error = (previous_suspend_count == u32::MAX).then(io::Error::last_os_error);
+            #[cfg(test)]
+            eprintln!(
+                "native fixture resume: pid={pid}; thread={}; previous_suspend_count={previous_suspend_count}",
+                entry.th32ThreadID
+            );
+            if let Some(error) = resume_error {
+                return Err(ResourceError::io("resume suspended primary thread", error));
             }
             return Ok(());
         }

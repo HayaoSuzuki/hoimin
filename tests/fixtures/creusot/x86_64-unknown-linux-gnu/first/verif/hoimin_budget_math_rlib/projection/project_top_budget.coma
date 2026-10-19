@@ -1,0 +1,265 @@
+(* #"crates/hoimin-budget-math/src/projection.rs" 60 0 67 24 *)
+
+let%span sduration = "crates/hoimin-budget-math/src/duration.rs" 63 15 63 19
+let%span sduration'0 = "crates/hoimin-budget-math/src/duration.rs" 63 24 63 32
+let%span sduration'1 = "crates/hoimin-budget-math/src/duration.rs" 62 32 62 63
+let%span sduration'2 = "crates/hoimin-budget-math/src/duration.rs" 114 27 114 35
+let%span sduration'3 = "crates/hoimin-budget-math/src/duration.rs" 114 50 114 58
+let%span sduration'4 = "crates/hoimin-budget-math/src/duration.rs" 113 28 113 68
+let%span sduration'5 = "crates/hoimin-budget-math/src/duration.rs" 109 16 109 91
+let%span sduration'6 = "crates/hoimin-budget-math/src/duration.rs" 103 16 103 55
+let%span sduration'7 = "crates/hoimin-budget-math/src/duration.rs" 43 20 43 29
+let%span sord = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/logic/ord.rs" 22 8 22 20
+let%span sord'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/logic/ord.rs" 34 8 34 21
+let%span stime = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 13 14 13 77
+let%span stime'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 44 4 44 24
+let%span sprojection = "crates/hoimin-budget-math/src/projection.rs" 68 15 68 25
+let%span sprojection'0 = "crates/hoimin-budget-math/src/projection.rs" 69 16 69 31
+let%span sprojection'1 = "crates/hoimin-budget-math/src/projection.rs" 69 47 69 76
+let%span sprojection'2 = "crates/hoimin-budget-math/src/projection.rs" 69 34 69 77
+let%span sprojection'3 = "crates/hoimin-budget-math/src/projection.rs" 69 16 69 77
+let%span sprojection'4 = "crates/hoimin-budget-math/src/projection.rs" 72 39 72 50
+let%span sprojection'5 = "crates/hoimin-budget-math/src/projection.rs" 71 31 71 60
+let%span sprojection'6 = "crates/hoimin-budget-math/src/projection.rs" 74 29 74 85
+let%span sprojection'7 = "crates/hoimin-budget-math/src/projection.rs" 62 4 62 8
+let%span sprojection'8 = "crates/hoimin-budget-math/src/projection.rs" 63 4 63 25
+let%span sprojection'9 = "crates/hoimin-budget-math/src/projection.rs" 64 4 64 12
+let%span sprojection'10 = "crates/hoimin-budget-math/src/projection.rs" 65 4 65 18
+let%span sprojection'11 = "crates/hoimin-budget-math/src/projection.rs" 66 4 66 13
+let%span sprojection'12 = "crates/hoimin-budget-math/src/projection.rs" 67 5 67 24
+let%span sprojection'13 = "crates/hoimin-budget-math/src/projection.rs" 49 28 49 55
+let%span sprojection'14 = "crates/hoimin-budget-math/src/projection.rs" 50 28 50 49
+let%span sprojection'15 = "crates/hoimin-budget-math/src/projection.rs" 51 28 51 83
+let%span sprojection'16 = "crates/hoimin-budget-math/src/projection.rs" 52 28 52 57
+let%span sprojection'17 = "crates/hoimin-budget-math/src/projection.rs" 53 28 53 59
+let%span sprojection'18 = "crates/hoimin-budget-math/src/projection.rs" 54 28 54 76
+let%span sprojection'19 = "crates/hoimin-budget-math/src/projection.rs" 55 28 58 1
+let%span sprojection'20 = "crates/hoimin-budget-math/src/projection.rs" 59 28 59 134
+let%span sprojection'21 = "crates/hoimin-budget-math/src/projection.rs" 89 27 89 35
+let%span sprojection'22 = "crates/hoimin-budget-math/src/projection.rs" 89 65 89 73
+let%span sprojection'23 = "crates/hoimin-budget-math/src/projection.rs" 88 28 88 86
+let%span snum = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/num.rs" 794 18 794 44
+let%span snum'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/num.rs" 339 30 339 115
+let%span snum'1 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/num.rs" 736 8 736 31
+let%span snum'2 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/num.rs" 766 12 767 33
+let%span sconvert = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/convert.rs" 282 26 282 51
+
+use creusot.int.UInt64
+use int.ComputerDivision
+use int.MinMax
+use creusot.prelude.Any
+use int.Int
+
+function view_NonZero_usize [@inline:trivial] (self: UInt64.t) : int = [%#snum'1] UInt64.t'int self
+
+meta "rewrite_def" function view_NonZero_usize
+
+predicate inv_usize [@inline:trivial] (_1: UInt64.t) = true
+
+meta "rewrite_def" predicate inv_usize
+
+predicate invariant_NonZero_usize (self: UInt64.t) = [%#snum'2] view_NonZero_usize self <> 0 /\ inv_usize self
+
+predicate inv_NonZero_usize [@inline:trivial] (_1: UInt64.t) = invariant_NonZero_usize _1
+
+meta "rewrite_def" predicate inv_NonZero_usize
+
+let get_usize (self: UInt64.t) (return (x: UInt64.t)) =
+{[@stop_split] [@expl:get 'self' type invariant] inv_NonZero_usize self}
+  any [ return (result: UInt64.t) -> {[@stop_split] [@expl:get ensures] [%#snum] result = self} (! return {result}) ]
+
+let is_multiple_of (self: UInt64.t) (rhs: UInt64.t) (return (x: bool)) = any
+  [ return (result: bool) -> {[@stop_split] [@expl:is_multiple_of ensures] [%#snum'0] if self = (0: UInt64.t) then
+      result = (self = (0: UInt64.t))
+    else
+      result = (ComputerDivision.mod (UInt64.t'int self) (UInt64.t'int rhs) = 0)
+    }
+    (! return {result}) ]
+
+let from_usize (b: bool) (return (x: UInt64.t)) = any
+  [ return (result: UInt64.t) -> {[@stop_split] [@expl:from ensures] [%#sconvert] result = UInt64.of_bool b}
+    (! return {result}) ]
+
+type t_NonZeroDuration
+
+type t_MutantTimeout = Auto | Fixed t_NonZeroDuration
+
+let elim_Fixed (_x: t_MutantTimeout) (return (f0: t_NonZeroDuration)) = any
+  [ _k (f0: t_NonZeroDuration) -> {Fixed f0 = _x} (! return {f0})
+  | _chk -> (! {[@expl:elim Fixed] match _x with
+      | Fixed _ -> true
+      | _ -> false
+      end}
+    any) ]
+
+type t_Duration
+
+predicate gt_log_Int [@inline:trivial] (self: int) (other: int) = [%#sord] other < self
+
+meta "rewrite_def" predicate gt_log_Int
+
+function view_NonZeroDuration [#"crates/hoimin-budget-math/src/duration.rs" 24 4 24 24] (self: t_NonZeroDuration) : int
+
+predicate invariant_NonZeroDuration [#"crates/hoimin-budget-math/src/duration.rs" 42 4 42 30] (self: t_NonZeroDuration) =
+  [%#sduration'7] gt_log_Int (view_NonZeroDuration self) 0
+
+predicate inv_NonZeroDuration (_1: t_NonZeroDuration)
+
+axiom inv_axiom: forall _1: t_NonZeroDuration [inv_NonZeroDuration _1]. inv_NonZeroDuration _1
+    -> invariant_NonZeroDuration _1
+
+predicate inv_Duration (_1: t_Duration)
+
+predicate ge_log_Int [@inline:trivial] (self: int) (other: int) = [%#sord'0] other <= self
+
+meta "rewrite_def" predicate ge_log_Int
+
+function secs_to_nanos (secs: int) : int = [%#stime'0] secs * 1000000000
+
+constant const_MAX: UInt64.t = (18446744073709551615: UInt64.t)
+
+function view_Duration (self: t_Duration) : int
+
+axiom view_Duration_spec: forall self: t_Duration [view_Duration self]. [%#stime] ge_log_Int (view_Duration self) 0
+    /\ view_Duration self <= secs_to_nanos (UInt64.t'int const_MAX) + 999999999
+
+let get (self: t_NonZeroDuration) (return (x: t_Duration)) =
+{[@stop_split] [@expl:get 'self' type invariant] [%#sduration] inv_NonZeroDuration self}
+  any
+  [ return (result: t_Duration) ->
+  {[@stop_split] [@expl:get ensures] ([@stop_split] [@expl:get result type invariant] [%#sduration'0] inv_Duration result)
+    /\ ([@stop_split] [@expl:get ensures] [%#sduration'1] view_Duration result = view_NonZeroDuration self
+    /\ gt_log_Int (view_Duration result) 0)}
+    (! return {result}) ]
+
+constant duration_max_nanos: int = [%#sduration'6] UInt64.t'int const_MAX * 1000000000 + 999999999
+
+function auto_timeout_nanos [#"crates/hoimin-budget-math/src/duration.rs" 108 0 108 54] (baseline: int) : int =
+  [%#sduration'5] MinMax.max (MinMax.min (2 * baseline + 1000000000) duration_max_nanos) 5000000000
+
+let auto_mutant_timeout (baseline: t_Duration) (return (x: t_Duration)) =
+{[@stop_split] [@expl:auto_mutant_timeout 'baseline' type invariant] [%#sduration'2] inv_Duration baseline}
+  any
+  [ return (result: t_Duration) ->
+  {[@stop_split] [@expl:auto_mutant_timeout ensures] ([@stop_split] [@expl:auto_mutant_timeout result type invariant] [%#sduration'3] inv_Duration result)
+    /\ ([@stop_split] [@expl:auto_mutant_timeout ensures] [%#sduration'4] view_Duration result
+    = auto_timeout_nanos (view_Duration baseline))}
+    (! return {result}) ]
+
+let saturating_duration_mul (duration: t_Duration) (factor: UInt64.t) (return (x: t_Duration)) =
+{[@stop_split] [@expl:saturating_duration_mul 'duration' type invariant] [%#sprojection'21] inv_Duration duration}
+  any
+  [ return (result: t_Duration) ->
+  {[@stop_split] [@expl:saturating_duration_mul ensures] ([@stop_split] [@expl:saturating_duration_mul result type invariant] [%#sprojection'22] inv_Duration result)
+    /\ ([@stop_split] [@expl:saturating_duration_mul ensures] [%#sprojection'23] view_Duration result
+    = MinMax.min (view_Duration duration * UInt64.t'int factor) duration_max_nanos)}
+    (! return {result}) ]
+
+type t_TopBudgetProjection = {
+  selected: UInt64.t;
+  jobs: UInt64.t;
+  planned_total_timeout: t_Duration;
+  baseline: t_Duration;
+  effective_mutant_timeout: t_Duration;
+  remaining: t_Duration;
+  waves: UInt64.t;
+  projected_capacity: t_Duration }
+
+predicate inv_MutantTimeout (_1: t_MutantTimeout)
+
+axiom inv_axiom'0 [@rewrite]: forall _1: t_MutantTimeout [inv_MutantTimeout _1]. inv_MutantTimeout _1
+    = match _1 with
+      | Auto -> true
+      | Fixed f0 -> inv_NonZeroDuration f0
+      end
+
+predicate inv_TopBudgetProjection (_1: t_TopBudgetProjection)
+
+axiom inv_axiom'1 [@rewrite]: forall _1: t_TopBudgetProjection [inv_TopBudgetProjection _1]. inv_TopBudgetProjection _1
+    = (inv_Duration _1.planned_total_timeout
+    /\ inv_Duration _1.baseline
+    /\ inv_Duration _1.effective_mutant_timeout /\ inv_Duration _1.remaining /\ inv_Duration _1.projected_capacity)
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+let project_top_budget [#"crates/hoimin-budget-math/src/projection.rs" 60 0 67 24] (selected'0: UInt64.t)
+  (jobs'0: UInt64.t) (planned_total_timeout'0: t_Duration) (baseline'0: t_Duration) (mutant_timeout: t_MutantTimeout)
+  (remaining'0: t_Duration) (return (x: t_TopBudgetProjection)) =
+{[@stop_split] [@expl:project_top_budget requires] ([@stop_split] [@expl:project_top_budget 'jobs' type invariant] [%#sprojection'7] inv_NonZero_usize jobs'0)
+  /\ ([@stop_split] [@expl:project_top_budget 'planned_total_timeout' type invariant] [%#sprojection'8] inv_Duration planned_total_timeout'0)
+  /\ ([@stop_split] [@expl:project_top_budget 'baseline' type invariant] [%#sprojection'9] inv_Duration baseline'0)
+  /\ ([@stop_split] [@expl:project_top_budget 'mutant_timeout' type invariant] [%#sprojection'10] inv_MutantTimeout mutant_timeout)
+  /\ ([@stop_split] [@expl:project_top_budget 'remaining' type invariant] [%#sprojection'11] inv_Duration remaining'0)}
+  (! bb0
+  [ bb0 = s0
+    [ s0 = get_usize [%#sprojection] {jobs'0} (fun (_x: UInt64.t) -> [ &jobs'1 <- _x ] s1)
+    | s1 = [ &_29 <- jobs'1 ] s2
+    | s2 = [ &_30 <- _29 = ([%#sprojection'0] (0: UInt64.t)) ] s3
+    | s3 = {[@expl:division by zero] [%#sprojection'0] not _30} s4
+    | s4 = UInt64.div [%#sprojection'0] {selected'0} {_29} (fun (_x: UInt64.t) -> [ &_27 <- _x ] s5)
+    | s5 = is_multiple_of [%#sprojection'1] {selected'0} {jobs'1} (fun (_x: bool) -> [ &_33 <- _x ] s6)
+    | s6 = [ &_32 <- not _33 ] s7
+    | s7 = from_usize [%#sprojection'2] {_32} (fun (_x: UInt64.t) -> [ &_31 <- _x ] s8)
+    | s8 = UInt64.add [%#sprojection'3] {_27} {_31} (fun (_x: UInt64.t) -> [ &waves'0 <- _x ] s9)
+    | s9 = any
+      [ br0 -> {mutant_timeout = Auto} (! bb8) | br1 (x0: t_NonZeroDuration) -> {mutant_timeout = Fixed x0} (! bb7) ] ]
+  | bb7 = s0
+    [ s0 = elim_Fixed {mutant_timeout} (fun (r0: t_NonZeroDuration) -> [ &value <- r0 ] s1)
+    | s1 = get [%#sprojection'4] {value} (fun (_x: t_Duration) -> [ &effective_mutant_timeout'0 <- _x ] s2)
+    | s2 = bb11 ]
+  | bb8 = s0
+    [ s0 = auto_mutant_timeout [%#sprojection'5] {baseline'0}
+        (fun (_x: t_Duration) -> [ &effective_mutant_timeout'0 <- _x ] s1)
+    | s1 = bb11 ]
+  | bb11 = s0
+    [ s0 = saturating_duration_mul [%#sprojection'6] {effective_mutant_timeout'0} {waves'0}
+        (fun (_x: t_Duration) -> [ &projected_capacity'0 <- _x ] s1)
+    | s1 = [ &_ret <- { selected = selected'0;
+                        jobs = jobs'1;
+                        planned_total_timeout = planned_total_timeout'0;
+                        baseline = baseline'0;
+                        effective_mutant_timeout = effective_mutant_timeout'0;
+                        remaining = remaining'0;
+                        waves = waves'0;
+                        projected_capacity = projected_capacity'0 } ] s2
+    | s2 = return {_ret} ] ]
+  [ & _ret: t_TopBudgetProjection = Any.any_l ()
+  | & selected'0: UInt64.t = selected'0
+  | & jobs'0: UInt64.t = jobs'0
+  | & planned_total_timeout'0: t_Duration = planned_total_timeout'0
+  | & baseline'0: t_Duration = baseline'0
+  | & mutant_timeout: t_MutantTimeout = mutant_timeout
+  | & remaining'0: t_Duration = remaining'0
+  | & jobs'1: UInt64.t = Any.any_l ()
+  | & waves'0: UInt64.t = Any.any_l ()
+  | & _27: UInt64.t = Any.any_l ()
+  | & _29: UInt64.t = Any.any_l ()
+  | & _30: bool = Any.any_l ()
+  | & _31: UInt64.t = Any.any_l ()
+  | & _32: bool = Any.any_l ()
+  | & _33: bool = Any.any_l ()
+  | & effective_mutant_timeout'0: t_Duration = Any.any_l ()
+  | & value: t_NonZeroDuration = Any.any_l ()
+  | & projected_capacity'0: t_Duration = Any.any_l () ])
+  [ return (result: t_TopBudgetProjection) ->
+  {[@stop_split] [@expl:project_top_budget ensures] ([@stop_split] [@expl:project_top_budget result type invariant] [%#sprojection'12] inv_TopBudgetProjection result)
+    /\ ([@stop_split] [@expl:project_top_budget ensures #0] [%#sprojection'13] result.selected = selected'0)
+    /\ ([@stop_split] [@expl:project_top_budget ensures #1] [%#sprojection'14] UInt64.t'int result.jobs
+      = view_NonZero_usize jobs'0)
+    /\ ([@stop_split] [@expl:project_top_budget ensures #2] [%#sprojection'15] view_Duration result.planned_total_timeout
+      = view_Duration planned_total_timeout'0)
+    /\ ([@stop_split] [@expl:project_top_budget ensures #3] [%#sprojection'16] view_Duration result.baseline
+      = view_Duration baseline'0)
+    /\ ([@stop_split] [@expl:project_top_budget ensures #4] [%#sprojection'17] view_Duration result.remaining
+      = view_Duration remaining'0)
+    /\ ([@stop_split] [@expl:project_top_budget ensures #5] [%#sprojection'18] UInt64.t'int result.waves
+      = ComputerDivision.div (UInt64.t'int selected'0 + view_NonZero_usize jobs'0 - 1) (view_NonZero_usize jobs'0))
+    /\ ([@stop_split] [@expl:project_top_budget ensures #6] [%#sprojection'19] match mutant_timeout with
+        | Auto -> view_Duration result.effective_mutant_timeout = auto_timeout_nanos (view_Duration baseline'0)
+        | Fixed value -> view_Duration result.effective_mutant_timeout = view_NonZeroDuration value
+        end)
+    /\ ([@stop_split] [@expl:project_top_budget ensures #7] [%#sprojection'20] view_Duration result.projected_capacity
+    = MinMax.min (view_Duration result.effective_mutant_timeout * UInt64.t'int result.waves) duration_max_nanos)}
+    (! return {result}) ]

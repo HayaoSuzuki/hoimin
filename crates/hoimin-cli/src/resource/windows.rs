@@ -115,6 +115,8 @@ impl WindowsBackend {
         let root_job = create_limited_root_job(limits)?;
         let completion_port = create_completion_port()?;
         associate_completion_port(root_job.raw(), completion_port.raw())?;
+        #[cfg(test)]
+        tests::trace_prepared_job(root_job.raw(), limits);
         Ok(ProcessSupervisor::Windows(WindowsSupervisor {
             run: Arc::clone(&self.inner),
             root_job,
@@ -743,6 +745,7 @@ mod tests {
 
     use std::ffi::OsStr;
     use std::fs;
+    use std::io::Read;
     use std::os::windows::ffi::OsStrExt;
     use std::process::Stdio;
     use std::sync::Arc;
@@ -853,6 +856,93 @@ mod tests {
         }
     }
 
+    // Keep failed native fixtures observable without extending their semantic deadline.
+    struct FixtureDiagnostics {
+        directory: Utf8PathBuf,
+        backend: WindowsBackend,
+        started: Instant,
+    }
+
+    impl FixtureDiagnostics {
+        fn new(directory: &Utf8Path, backend: &WindowsBackend) -> Self {
+            eprintln!(
+                "native fixture: executable={:?}; cwd={:?}; requested_limits={:?}",
+                fixture_python_path(),
+                std::env::current_dir(),
+                fixture_limits()
+            );
+            for name in [
+                "PYTHONHOME",
+                "PYTHONPATH",
+                "VIRTUAL_ENV",
+                "PYTHONDONTWRITEBYTECODE",
+            ] {
+                let value = format!("{:?}", std::env::var_os(name));
+                let bounded: String = value.chars().take(1024).collect();
+                eprintln!("native fixture: {name}={bounded}");
+            }
+            Self {
+                directory: directory.to_owned(),
+                backend: backend.clone(),
+                started: Instant::now(),
+            }
+        }
+    }
+
+    impl Drop for FixtureDiagnostics {
+        fn drop(&mut self) {
+            eprintln!(
+                "native fixture: elapsed={:?}; active_processes={:?}; registered_roots={:?}",
+                self.started.elapsed(),
+                active_process_count(self.backend.inner.job.raw()),
+                self.backend
+                    .inner
+                    .state
+                    .lock()
+                    .map(|state| { state.active.iter().map(|root| root.pid).collect::<Vec<_>>() })
+            );
+            if let Ok(entries) = fs::read_dir(&self.directory) {
+                for entry in entries.flatten().take(8) {
+                    let mut contents = Vec::new();
+                    let read = fs::File::open(entry.path())
+                        .and_then(|file| file.take(4096).read_to_end(&mut contents));
+                    eprintln!(
+                        "native fixture file {:?}: read={read:?}; contents={:?}",
+                        entry.file_name(),
+                        String::from_utf8_lossy(&contents)
+                    );
+                }
+            }
+        }
+    }
+
+    pub(super) fn trace_prepared_job(
+        job: windows_sys::Win32::Foundation::HANDLE,
+        limits: ProcessLimits,
+    ) {
+        use windows_sys::Win32::System::JobObjects::{
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
+            QueryInformationJobObject,
+        };
+        let mut native = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        // SAFETY: the job handle and correctly sized output buffer remain live during the query.
+        let result = unsafe {
+            QueryInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                (&raw mut native).cast(),
+                u32::try_from(std::mem::size_of_val(&native)).unwrap(),
+                std::ptr::null_mut(),
+            )
+        };
+        eprintln!(
+            "native fixture prepare: requested={limits:?}; query={result}; flags={}; memory={}; processes={}",
+            native.BasicLimitInformation.LimitFlags,
+            native.JobMemoryLimit,
+            native.BasicLimitInformation.ActiveProcessLimit
+        );
+    }
+
     fn fixture_python_path() -> std::path::PathBuf {
         let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let configuration = std::fs::read_to_string(workspace.join(".venv/pyvenv.cfg")).unwrap();
@@ -894,11 +984,24 @@ mod tests {
             argv: vec![
                 fixture_python(),
                 arg("-c"),
-                arg(
-                    "import ctypes,ctypes.wintypes as w,os,pathlib,sys,time; ready=pathlib.Path(sys.argv[1]); release=pathlib.Path(sys.argv[2]); pending=ready.with_suffix('.pending'); pending.write_text(str(os.getpid())); os.replace(pending,ready);\nwhile not release.exists(): time.sleep(0.005)\nkernel32=ctypes.WinDLL('kernel32',use_last_error=True); kernel32.GetCurrentProcess.argtypes=(); kernel32.GetCurrentProcess.restype=w.HANDLE; kernel32.TerminateProcess.argtypes=(w.HANDLE,w.UINT); kernel32.TerminateProcess.restype=w.BOOL; STATUS_ACCESS_VIOLATION=0xC0000005; kernel32.TerminateProcess(kernel32.GetCurrentProcess(),STATUS_ACCESS_VIOLATION)",
-                ),
+                arg(r"print('fixture entered before imports',flush=True)
+import sys
+diagnostic=open(sys.argv[3],'w',buffering=1)
+diagnostic.write('before ctypes import\n')
+import ctypes,ctypes.wintypes as w
+diagnostic.write('before os/pathlib/time imports\n')
+import os,pathlib,time
+diagnostic.write(f'imports complete pid={os.getpid()} executable={sys.executable} cwd={os.getcwd()}\n')
+ready=pathlib.Path(sys.argv[1]); release=pathlib.Path(sys.argv[2]); pending=ready.with_suffix('.pending')
+diagnostic.write('before readiness write\n')
+pending.write_text(str(os.getpid())); os.replace(pending,ready)
+diagnostic.write('readiness published\n')
+while not release.exists(): time.sleep(0.005)
+diagnostic.write('release observed\n')
+kernel32=ctypes.WinDLL('kernel32',use_last_error=True); kernel32.GetCurrentProcess.argtypes=(); kernel32.GetCurrentProcess.restype=w.HANDLE; kernel32.TerminateProcess.argtypes=(w.HANDLE,w.UINT); kernel32.TerminateProcess.restype=w.BOOL; STATUS_ACCESS_VIOLATION=0xC0000005; kernel32.TerminateProcess(kernel32.GetCurrentProcess(),STATUS_ACCESS_VIOLATION)"),
                 arg(ready.as_std_path()),
                 arg(release.as_std_path()),
+                arg(ready.with_extension("diagnostic").as_std_path()),
             ],
             cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
             limits: fixture_limits(),
@@ -1191,7 +1294,21 @@ mod tests {
         let identities = output_dir.join("root-and-descendant.txt");
         let release = output_dir.join("release-root");
         let backend = WindowsBackend::new().unwrap();
-        let code = "import os,pathlib,subprocess,sys,time; identities=pathlib.Path(sys.argv[1]); release=pathlib.Path(sys.argv[2]); child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); pending=identities.with_suffix('.pending'); pending.write_text(f'{os.getpid()} {child.pid}',encoding='utf-8'); os.replace(pending,identities);\nwhile not release.exists(): time.sleep(0.005)";
+        let _diagnostics = FixtureDiagnostics::new(output_dir, &backend);
+        let code = r"print('fixture entered before imports',flush=True)
+import sys
+diagnostic=open(sys.argv[3],'w',buffering=1)
+diagnostic.write('before os/pathlib/subprocess/time imports\n')
+import os,pathlib,subprocess,time
+diagnostic.write(f'imports complete pid={os.getpid()} executable={sys.executable} cwd={os.getcwd()}\n')
+identities=pathlib.Path(sys.argv[1]); release=pathlib.Path(sys.argv[2])
+diagnostic.write('before descendant spawn\n')
+child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+diagnostic.write(f'descendant spawned pid={child.pid}\n')
+pending=identities.with_suffix('.pending'); pending.write_text(f'{os.getpid()} {child.pid}',encoding='utf-8'); os.replace(pending,identities)
+diagnostic.write('identities published\n')
+while not release.exists(): time.sleep(0.005)
+diagnostic.write('release observed\n')";
         let started = Instant::now();
         let deadline = tokio::time::Instant::now() + Duration::from_secs(6);
 
@@ -1202,14 +1319,26 @@ mod tests {
                 .arg(code)
                 .arg(identities.as_std_path())
                 .arg(release.as_std_path())
+                .arg(output_dir.join("root.diagnostic").as_std_path())
                 .current_dir(std::env::current_dir().unwrap())
                 .kill_on_drop(true)
                 .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null());
+                .stdout(fs::File::create(output_dir.join("root.stdout")).unwrap())
+                .stderr(fs::File::create(output_dir.join("root.stderr")).unwrap());
             let mut supervisor = backend.prepare(&mut command, fixture_limits()).unwrap();
             let mut child = command.spawn().unwrap();
+            eprintln!(
+                "native fixture: spawned pid={:?}; elapsed={:?}",
+                child.id(),
+                started.elapsed()
+            );
             supervisor.attach(&child).unwrap();
+            eprintln!(
+                "native fixture: attached pid={:?}; elapsed={:?}; wait={:?}",
+                child.id(),
+                started.elapsed(),
+                child.try_wait()
+            );
 
             let (root_pid, descendant_pid) =
                 wait_for_process_identities(&identities, deadline).await;
@@ -1275,6 +1404,7 @@ mod tests {
             output_dir.to_owned(),
         ));
         let _cleanup = HandlerCloseGuard(Arc::clone(&handler));
+        let _diagnostics = FixtureDiagnostics::new(output_dir, &backend);
         let started = Instant::now();
         let deadline = tokio::time::Instant::now() + Duration::from_secs(6);
         let phase = std::cell::Cell::new("starting sibling root");

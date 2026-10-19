@@ -17,9 +17,9 @@ sources:
   sha256: 44f27dd6683f6b362f3124fede5857675836ad93f13fff7ade1cdf793d205d81
 - id: ci
   resource: ../../.github/workflows/ci.yml
-  revision: 1e60e54813dad14f124635496ed773b299bb4b90
-  working_tree: modified
-  sha256: 18675c9744ae8606570e0b42c9d54b4dc19fd39c00849f659585157a843c3f08
+  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
+  working_tree: clean
+  sha256: 865f1adb4e81c7f848cb8eb06e0f0f3d0cd223d736e44b181784700b38a91968
 - id: release
   resource: ../../.github/workflows/release.yml
   revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
@@ -70,3 +70,13 @@ Recheck this contract and negative tests when changing path classification, job 
 [^planner]: [Change selection and aggregation](../../tools/ci_selection.py).
 [^ci]: [CI workflow](../../.github/workflows/ci.yml).
 [^release]: [Release workflow](../../.github/workflows/release.yml).
+
+
+# Production arithmetic proof gate
+
+`CI result` requires success from the selected `creusot` job. It checks effective
+pinned tools and configuration, regenerates current-source obligations and proves
+all three release targets using no-cache strategy replay. Its 30-minute budget
+includes image setup; tool-image caching cannot substitute for a new proof.
+Missing or stale source contracts/goals and final unproved goals fail the job.
+See the [proof contract and evidence](creusot-budget-proofs.md).[^ci]

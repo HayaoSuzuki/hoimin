@@ -313,3 +313,12 @@ or vendored parser version, update the SBOM metadata contract and tests with
 the build configuration. See the [design](superpowers/specs/2026-10-10-issue-741-sbom-design.md)
 and [verification record](superpowers/reports/2026-10-10-issue-741-sbom.md)
 for the tested scope and native-platform limitations.
+
+
+The shipping internal crates now include `hoimin-budget-math` alongside core,
+Python analysis and CLI. Source distributions include its actual annotated Rust
+sources and manifest; normal builds require no Creusot installation. Shipping
+SBOM validation requires one matching-version component for each internal
+library. Verification-only registry dependencies remain visible in unfiltered
+Cargo lock audits; consult [licensing](licensing.md#creusot-verification-dependencies)
+when distributing proof tools, generated artifacts or custom cfg builds.

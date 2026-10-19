@@ -1,0 +1,30 @@
+[package]
+name = "hoimin-budget-math"
+description = "Pure timeout and budget projection arithmetic for hoimin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = []
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"], optional = true }
+
+[dev-dependencies]
+proptest = "1.7"
+serde_json = "1.0"
+
+[[test]]
+name = "serialization"
+required-features = ["serde"]
+
+[target.'cfg(creusot)'.dependencies]
+creusot-std = "=0.14.0"

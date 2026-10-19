@@ -1,0 +1,200 @@
+{
+  "schema_version": 1,
+  "platform": "linux/arm64",
+  "base_image": "ubuntu@sha256:18b33ff3829707f31ada654a963b9ee35f2e6f0241b964bd17a22a9b330cb63d",
+  "apt_snapshot": "20261018T000000Z",
+  "rust_toolchain": "nightly-2026-08-03",
+  "targets": [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc"
+  ],
+  "limits": {
+    "solver_seconds": 30,
+    "solver_memory_mib": 2048,
+    "solver_parallelism": 2,
+    "job_seconds": 1800,
+    "build_jobs": 2
+  },
+  "artifacts": {
+    "creusot": {
+      "url": "https://codeload.github.com/creusot-rs/creusot/tar.gz/65349025c67e69fcd7479f1f420fa5904f69bc27",
+      "sha256": "e68f15e09fbbddfc7d90edc2ca43ca69127e515c460b3eb39e01f7f8a6d8bb17",
+      "revision": "65349025c67e69fcd7479f1f420fa5904f69bc27"
+    },
+    "why3": {
+      "url": "https://gitlab.inria.fr/why3/why3/-/archive/05bf4ddf55cb3042f34c3bc0ed3aff56a226978a/why3-05bf4ddf55cb3042f34c3bc0ed3aff56a226978a.tar.gz",
+      "sha256": "fc84ae17de6a79ea253cb7df96afd8e4eae562a99b43379a4cf5d12efa701b92",
+      "revision": "05bf4ddf55cb3042f34c3bc0ed3aff56a226978a"
+    },
+    "why3find": {
+      "url": "https://codeload.github.com/creusot-rs/why3find/tar.gz/0f054b93c86ac7ba20bca7df5d1563a9a4434a30",
+      "sha256": "7da871320d7c0dcf058dbb701f6fcff46d550ed4297b4a8c2c89f707ba39e1d9",
+      "revision": "0f054b93c86ac7ba20bca7df5d1563a9a4434a30"
+    },
+    "opam": {
+      "url": "https://codeload.github.com/ocaml/opam-repository/tar.gz/c9d86fa5bb8024f7acb88e1096c3a7f1f9dd22a9",
+      "sha256": "dd17bf006a6edebea24c1881e8d89732c746847a79aadaae32b1819123962b18",
+      "revision": "c9d86fa5bb8024f7acb88e1096c3a7f1f9dd22a9"
+    },
+    "rust-src-*": {
+      "url": "https://static.rust-lang.org/dist/2026-08-03/rust-src-nightly.tar.xz",
+      "sha256": "62284553caa0b233a241db1a53b0e352e11231d462e92d76c7e7610827adeb8f"
+    },
+    "rust-std-x86_64-unknown-linux-gnu": {
+      "url": "https://static.rust-lang.org/dist/2026-08-03/rust-std-nightly-x86_64-unknown-linux-gnu.tar.xz",
+      "sha256": "481433aa0c1a65ded03e4d9c5ca420095b8ed7c68b483dc97e39231fb6afa4e5"
+    },
+    "rust-std-aarch64-apple-darwin": {
+      "url": "https://static.rust-lang.org/dist/2026-08-03/rust-std-nightly-aarch64-apple-darwin.tar.xz",
+      "sha256": "1ec943d8a90aeda46793cba59bbf165409afd682bb45067f213dd5acf7c43ab3"
+    },
+    "rust-std-x86_64-pc-windows-msvc": {
+      "url": "https://static.rust-lang.org/dist/2026-08-03/rust-std-nightly-x86_64-pc-windows-msvc.tar.xz",
+      "sha256": "2fe83fc7a326584e458937aabbdd69fe1b5444dd2085b5247608e9dcec2a0537"
+    },
+    "z3": {
+      "url": "https://github.com/Z3Prover/z3/releases/download/z3-5.1.0/z3-5.1.0-arm64-glibc-2.38.zip",
+      "sha256": "2832cfd43c6862fbaf78834b5f1e35d031b4a87e85456b696c1c6f609cd5609e"
+    },
+    "cvc5": {
+      "url": "https://github.com/cvc5/cvc5/releases/download/cvc5-1.4.1/cvc5-Linux-arm64-static-gpl.zip",
+      "sha256": "e6cac10f5b80177b21ef56660ea580120fb8b614ceacc8ba8907c0fcfd9a1e7c"
+    },
+    "rustc-aarch64-unknown-linux-gnu": {
+      "url": "https://static.rust-lang.org/dist/2026-08-03/rustc-nightly-aarch64-unknown-linux-gnu.tar.xz",
+      "sha256": "a59cd8a19cfed98065eaf7f91f1df8cc3d4c56828906fee073033841d65f6a42"
+    },
+    "cargo-aarch64-unknown-linux-gnu": {
+      "url": "https://static.rust-lang.org/dist/2026-08-03/cargo-nightly-aarch64-unknown-linux-gnu.tar.xz",
+      "sha256": "c22e913e3179f00784ca5742e3b6eda853cc7778a8aeb80242fe24bfce418348"
+    },
+    "rustc-dev-aarch64-unknown-linux-gnu": {
+      "url": "https://static.rust-lang.org/dist/2026-08-03/rustc-dev-nightly-aarch64-unknown-linux-gnu.tar.xz",
+      "sha256": "44a4c2a33f874d9da89adad7c2b2fe1d990e2b38ec22d782d877d2b197cb7819"
+    },
+    "llvm-tools-preview-aarch64-unknown-linux-gnu": {
+      "url": "https://static.rust-lang.org/dist/2026-08-03/llvm-tools-nightly-aarch64-unknown-linux-gnu.tar.xz",
+      "sha256": "d2adf80841a2f98de4872d540dec3516edc5ddba4e5407bc4ee3ad70b72e7e81"
+    },
+    "rust-std-aarch64-unknown-linux-gnu": {
+      "url": "https://static.rust-lang.org/dist/2026-08-03/rust-std-nightly-aarch64-unknown-linux-gnu.tar.xz",
+      "sha256": "b7c2449708466da641dfa363bfc9345210d026118f42f707934e31bd68e76e93"
+    }
+  },
+  "tools": {
+    "rustc": {
+      "path": "/opt/creusot/rust/bin/rustc",
+      "args": [
+        "--version"
+      ],
+      "version": "rustc 1.99.0-nightly (11177f223 2026-08-02)"
+    },
+    "cargo": {
+      "path": "/opt/creusot/rust/bin/cargo",
+      "args": [
+        "--version"
+      ],
+      "version": "cargo 1.99.0-nightly (7c83d4cc0 2026-07-29)"
+    },
+    "creusot-rustc": {
+      "path": "/opt/creusot/rust/bin/creusot-rustc",
+      "args": [
+        "--version"
+      ],
+      "version": "rustc 1.99.0-nightly (11177f223 2026-08-02)"
+    },
+    "cargo-creusot": {
+      "path": "/opt/creusot/rust/bin/cargo-creusot",
+      "args": [
+        "creusot",
+        "version"
+      ],
+      "version": "cargo-creusot 0.14.0"
+    },
+    "ocamlc": {
+      "path": "/opt/creusot/opam-switch/_opam/bin/ocamlc",
+      "args": [
+        "-version"
+      ],
+      "version": "5.3.0"
+    },
+    "why3": {
+      "path": "/opt/creusot/opam-switch/_opam/bin/why3",
+      "args": [
+        "--version"
+      ],
+      "version": "Why3 platform, version 1.8.2+git"
+    },
+    "why3find": {
+      "path": "/opt/creusot/opam-switch/_opam/bin/why3find",
+      "args": [
+        "--version"
+      ],
+      "version": "why3find v1.3.0+dev"
+    },
+    "z3": {
+      "path": "/opt/creusot/data/bin/z3",
+      "args": [
+        "--version"
+      ],
+      "version": "Z3 version 5.1.0 - 64 bit"
+    },
+    "cvc5": {
+      "path": "/opt/creusot/data/bin/cvc5",
+      "args": [
+        "--version"
+      ],
+      "version": "cvc5 1.4.1 [git 2b2e844 on branch HEAD]"
+    },
+    "timeout": {
+      "path": "/usr/bin/timeout",
+      "args": [
+        "--version"
+      ],
+      "version": "timeout (GNU coreutils) 9.4"
+    },
+    "prlimit": {
+      "path": "/usr/bin/prlimit",
+      "args": [
+        "--version"
+      ],
+      "version": "prlimit from util-linux 2.39.3"
+    }
+  },
+  "project_config": "/opt/creusot/data/why3find.json",
+  "files": {
+    "/opt/creusot/config/creusot/why3.conf": "5c61d2bca9fc9fc010d038c3437081223b447f3ce6e1c71f8214fc164e93ca68",
+    "/opt/creusot/data/creusot_why3.conf": "3759b4e283e47cda979f3d949107b8e49cf7a3a046595b5c63dd623465eea944",
+    "/opt/creusot/data/why3find.json": "0b37a82c9f09cb028361eab6baba2be0dbf64a3e1e32b2b4a079133ffb9f6cb0"
+  },
+  "receipt": "/opt/creusot/receipt.json",
+  "sources": [
+    "https://github.com/creusot-rs/creusot/blob/65349025c67e69fcd7479f1f420fa5904f69bc27/creusot-install/src/main.rs",
+    "https://github.com/creusot-rs/creusot/blob/65349025c67e69fcd7479f1f420fa5904f69bc27/creusot-setup/src/tools_versions_urls.rs",
+    "https://static.rust-lang.org/dist/2026-08-03/channel-rust-nightly.toml",
+    "https://github.com/creusot-rs/why3find/blob/0f054b93c86ac7ba20bca7df5d1563a9a4434a30/src/runner.ml"
+  ],
+  "bootstrap_ca": {
+    "url": "https://curl.se/ca/cacert-2025-09-09.pem",
+    "sha256": "f290e6acaf904a4121424ca3ebdd70652780707e28e8af999221786b86bb1975"
+  },
+  "environment": {
+    "CREUSOT_DATA_HOME": "/opt/creusot/data",
+    "XDG_CONFIG_HOME": "/opt/creusot/config",
+    "OPAMSWITCH": "/opt/creusot/opam-switch",
+    "LD_LIBRARY_PATH": "/opt/creusot/rust/lib"
+  },
+  "host_target": "aarch64-unknown-linux-gnu",
+  "ocaml_compiler": {
+    "package": "ocaml-compiler.5.3.0",
+    "url": "https://github.com/ocaml/ocaml/releases/download/5.3.0/ocaml-5.3.0.tar.gz",
+    "sha256": "22c1dd9de21bf43b62d1909041fb5fad648905227bf69550a6a6bef31e654f38",
+    "recipe": "https://github.com/ocaml/opam-repository/blob/c9d86fa5bb8024f7acb88e1096c3a7f1f9dd22a9/packages/ocaml-compiler/ocaml-compiler.5.3.0/opam"
+  },
+  "rust_distribution": {
+    "url": "https://static.rust-lang.org/dist/2026-08-03/channel-rust-nightly.toml",
+    "sha256": "6a863d0b072fedd42184baeaf095db66ba5b029ae113f63ede5d461eda9c6b4b",
+    "rustc_commit": "11177f2235f0c842b00f82c558ad9480c0c3a895"
+  }
+}

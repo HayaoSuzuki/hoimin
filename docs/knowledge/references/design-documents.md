@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-999-adoption
+  resource: ../../superpowers/specs/2026-10-19-issue-999-creusot-adoption-design.md
+  revision: fb89c55c1ab6b851302f36d0fef7fd9f7697655a
+  working_tree: modified
+  sha256: d9f5ca27b9b52fa11eb6f7a96c530d55aa048b1da233e46fb65a17a0aff1655d
 - id: issues-992-998-design
   resource: ../../superpowers/specs/2026-10-19-issues-992-998-design.md
   revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
@@ -1758,3 +1763,6 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 [^issue-896-typed-session-design]: [正規化済みセッションモード](../../superpowers/specs/2026-10-15-issue-896-typed-session-design.md).
 
 [^issues-992-998-design]: [Issues 992–998 design](../../superpowers/specs/2026-10-19-issues-992-998-design.md).
+
+
+- [Issue #999 approved Creusot design](../../superpowers/specs/2026-10-19-issue-999-creusot-adoption-design.md) — shared implementation, three-target proofs and recorded acceptance.

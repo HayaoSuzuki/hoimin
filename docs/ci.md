@@ -103,3 +103,28 @@ On 2026-10-11, cargo-nextest 0.9.148 was evaluated in the existing Linux Rust jo
 The test lists matched, but neither workspace execution nor repeated timeout tests showed an improvement in execution time, so the existing cargo test runner was retained.
 See the [evaluation results](performance/nextest/2026-10-11-linux.md) for measurement conditions, resource usage, ignored tests versus runtime skips, and reproduction steps.
 Nightly shuffle, contracts, and OS-specific validation also remain in place.
+
+
+## Required production arithmetic proof
+
+The `creusot` job in `ci.yml` runs on Linux x86_64 and participates in `CI result`.
+It builds or loads the pinned tool image, checks installed tools and effective
+project configuration, then invokes `tools/verify_creusot.py`. Each of the three
+release targets gets fresh Coma generation and no-cache strategy replay.
+Missing contracts/tools, empty or stale output, unproved final goals, timeouts
+and unintended job skips fail acceptance. The workflow measures setup within
+its 30-minute job budget; solver processes each have a 30-second deadline and
+2-GiB address-space limit, with at most two solvers and sequential targets.
+Tool-image caching does not cache successful proof answers. See the
+[proof guide](../formal/creusot/README.md) for maintenance and recorded cold/warm
+costs. This workflow change does not modify remote branch-protection settings.
+
+
+The manual non-Linux Rust job runs the complete Windows workspace test suite
+with `--test-threads=2`. This bounds test-harness contention while Python-based
+Job Object fixtures establish readiness; their shared six-second runtime and
+cleanup assertions remain unchanged. The macOS workspace suite uses its existing
+default harness concurrency. This controlled test setup does not establish
+production timing under arbitrary host load. The
+[Issue #999 record](superpowers/reports/2026-10-19-issue-999-creusot-adoption.md)
+retains the failed full-suite run and the prior issue #967 scheduling evidence.
