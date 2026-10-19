@@ -296,11 +296,11 @@ reviewed production function with the exact approved manifest forms; only
 `#[must_use]` is exempt. It rejects alternate cfg predicates, qualified names,
 compound/nested contracts, same-line attributes and unsupported syntax.
 Comments between attributes are traversed. Production arithmetic, contract
-manifest, tool pins, targets and resource caps are unchanged. The runner now
-catches SIGTERM during each subprocess command, blocks it while Linux `Popen`
-establishes the owned session, kills the dispatcher before separate solver
-groups, reaps the leader, and restores the previous handler. Repeated SIGTERM
-cannot interrupt cleanup. The unresolved Coma source-span warning is deferred
+manifest, tool pins, targets and resource caps are unchanged. The first repair
+caught SIGTERM during each subprocess command and killed the dispatcher
+before separate solver groups. Its temporary Linux `Popen` signal mask was
+subsequently found to be inherited by children, so round 2 below replaces
+that part while preserving owned cleanup and handler restoration. The unresolved Coma source-span warning is deferred
 to Task 5/final review.
 
 | Fix pass | Implementation review | Testing review |
@@ -322,3 +322,31 @@ warm/cold acceptance at `41c888f5` remains historical evidence for those
 runner bytes; native execution of this fixed runner and scoped re-review are
 pending. The corrected non-Linux run at `4d4a3ec6` completed all nine jobs
 successfully: https://github.com/HayaoSuzuki/hoimin/actions/runs/39193858954 .
+
+## Task 4 scoped-review fix round 2
+
+The first fix's scoped re-review accepted the source-contract inventory and
+parent SIGTERM cleanup, then found that masking SIGTERM before Linux `Popen`
+caused every launched proof tool to inherit the blocked signal. The corrected
+runner leaves the signal mask unchanged. Its temporary handler records a stop
+while `Popen` is assigning the owned PID, then enters owned-session cleanup
+once that PID exists; later SIGTERM raises directly. Cleanup runs only before
+`Popen` has reaped its leader, avoiding a late signal against a reused PID.
+It still stops the dispatcher group before separately grouped children and
+restores the previous handler on exit. Production math, contracts, tool pins,
+three targets and all resource caps remain unchanged.
+
+Five focused review passes: (1) real Linux child signal delivery failed before
+repair (`wrapper=17`, handler marker absent) and passed after (`wrapper=0`,
+marker present); (2) real parent SIGTERM still returned failure and stopped its
+separately grouped child (state Z); (3) an injected signal during `Popen`
+deferred cleanup until PID assignment; (4) an injected signal after leader reap
+did not call session cleanup; (5) Python 3.12.3 ran fresh no-cache proofs for
+all three targets, each 25 Coma files/59 goals/25 strategies, in 35.851s.
+Focused host tests passed 39 with three Linux-only skips; Ruff, formatting,
+type checking and diff checks passed. Full Python/Rust suites were not rerun
+because only this runner lifecycle changed. Final runner SHA-256:
+`74540a367029ea3c0cd9e76eed8042d342c85c577c7173288c3616cb870116e0`.
+The complete local report and logs are in worktree-local
+`task-4-report.md` and `task-4-evidence/fix2-py312/`. Final native current-lock
+CI and scoped re-review remain pending with the controller.

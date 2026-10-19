@@ -393,26 +393,20 @@ def run_command(
         ["/usr/bin/time", "-v", "-o", str(time_file), *command] if measured else command
     )
     stopping = False
+    launching = True
+    pending_stop = False
 
     def request_stop(_signum: int, _frame: FrameType | None) -> None:
-        nonlocal stopping
-        if not stopping:
-            stopping = True
-            detail = "proof runner interrupted by SIGTERM"
-            raise ProofError(detail)
+        nonlocal stopping, pending_stop
+        if stopping:
+            return
+        if launching:
+            pending_stop = True
+            return
+        stopping = True
+        detail = "proof runner interrupted by SIGTERM"
+        raise ProofError(detail)
 
-    # On Linux, hold SIGTERM until the launched command's session ID is known.
-    # This closes the small gap between Popen starting a child and returning it.
-    mask = (
-        getattr(signal, "pthread_sigmask")  # noqa: B009 -- Linux-only API
-        if sys.platform == "linux"
-        else None
-    )
-    old_mask = (
-        mask(getattr(signal, "SIG_BLOCK"), {signal.SIGTERM})  # noqa: B009
-        if mask is not None
-        else None
-    )
     old_handler = signal.getsignal(signal.SIGTERM)
     process = None
     try:
@@ -430,13 +424,12 @@ def run_command(
                     "CARGO_TARGET_DIR": "/tmp/hoimin-issue999-target",  # noqa: S108 -- task-owned directory
                 },
             )
-            if mask is not None and old_mask is not None:
-                mask(getattr(signal, "SIG_SETMASK"), old_mask)  # noqa: B009
-                old_mask = None
+            launching = False
+            require(not pending_stop, "proof runner interrupted by SIGTERM")
             code = process.wait(timeout=remaining)
     except BaseException as error:
         stopping = True  # Repeated SIGTERM must not interrupt owned cleanup.
-        if process is not None:
+        if process is not None and process.returncode is None:
             terminate_session(process.pid)
             process.wait()
         if isinstance(error, subprocess.TimeoutExpired):
@@ -444,8 +437,6 @@ def run_command(
             raise ProofError(detail) from error
         raise
     finally:
-        if mask is not None and old_mask is not None:
-            mask(getattr(signal, "SIG_SETMASK"), old_mask)  # noqa: B009
         signal.signal(signal.SIGTERM, old_handler)
     elapsed = time.monotonic() - before
     require(code == 0, f"command failed ({code}): {' '.join(command)}; see {log_path}")

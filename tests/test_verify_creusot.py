@@ -427,6 +427,100 @@ def test_sigterm_kills_child_in_separate_process_group(tmp_path: Path) -> None:
         cleanup_child(child_pid)
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="Linux proof-child signal delivery required"
+)
+def test_command_child_receives_sigterm(tmp_path: Path) -> None:
+    def cleanup_child(pid: int | None) -> None:
+        if pid is not None:
+            with contextlib.suppress(ProcessLookupError):
+                getattr(os, "killpg")(pid, getattr(signal, "SIGKILL"))  # noqa: B009
+
+    pid_file = tmp_path / "child.pid"
+    received = tmp_path / "received"
+    child = (
+        "import os, pathlib, signal, sys, time\n"
+        "os.setpgid(0, 0)\n"
+        "def on_term(_signum, _frame):\n"
+        "    pathlib.Path(sys.argv[2]).write_text('received')\n"
+        "    raise SystemExit(0)\n"
+        "signal.signal(signal.SIGTERM, on_term)\n"
+        "pathlib.Path(sys.argv[1]).write_text(str(os.getpid()))\n"
+        "time.sleep(20)\n"
+    )
+    wrapper = (
+        "import pathlib, sys, time\n"
+        "from tools.verify_creusot import ProofError, run_command\n"
+        f"child = {child!r}\n"
+        "root = pathlib.Path(sys.argv[3])\n"
+        "try:\n"
+        "    run_command([sys.executable, '-c', child, sys.argv[1], sys.argv[2]], "
+        "cwd=root, log_path=root / 'child-signal.log', "
+        "deadline=time.monotonic() + 3)\n"
+        "except ProofError:\n"
+        "    raise SystemExit(17)\n"
+    )
+    process = subprocess.Popen(  # noqa: S603 -- fixed test Python code, no shell
+        [sys.executable, "-c", wrapper, str(pid_file), str(received), str(tmp_path)],
+        cwd=ROOT,
+    )
+    child_pid = None
+    try:
+        for _ in range(500):
+            if pid_file.exists():
+                child_pid = int(pid_file.read_text())
+                break
+            assert process.poll() is None, "runner exited before starting child"
+            time.sleep(0.01)
+        assert child_pid is not None, "child did not start"
+
+        os.kill(child_pid, signal.SIGTERM)
+        assert process.wait(timeout=10) == 0
+        assert received.read_text() == "received"
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=10)
+        cleanup_child(child_pid)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX SIGTERM is required")
+@pytest.mark.parametrize("when", ["during_launch", "after_reap"])
+def test_sigterm_cleanup_respects_command_lifecycle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, when: str
+) -> None:
+    cleaned: list[int] = []
+
+    class Command:
+        pid = 12345
+        returncode: int | None = None
+
+        def wait(self, timeout: float | None = None) -> int:
+            del timeout
+            if when == "after_reap":
+                self.returncode = 0
+                os.kill(os.getpid(), signal.SIGTERM)
+            return 0
+
+    def start(*_args: object, **_kwargs: object) -> Command:
+        if when == "during_launch":
+            os.kill(os.getpid(), signal.SIGTERM)
+        return Command()
+
+    monkeypatch.setattr(verify_creusot.subprocess, "Popen", start)
+    monkeypatch.setattr(verify_creusot, "terminate_session", cleaned.append)
+
+    with pytest.raises(verify_creusot.ProofError, match="SIGTERM"):
+        verify_creusot.run_command(
+            [sys.executable, "-c", "pass"],
+            cwd=tmp_path,
+            log_path=tmp_path / "lifecycle.log",
+            deadline=time.monotonic() + 10,
+        )
+
+    assert cleaned == ([12345] if when == "during_launch" else [])
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="Linux session ownership required")
 def test_session_cleanup_stops_command_group_before_solver_groups(
     monkeypatch: pytest.MonkeyPatch,
