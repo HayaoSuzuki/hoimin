@@ -2,9 +2,9 @@
 
 use hoimin_core::{
     BaselineFinished, ByteSpan, Diagnostic, DiskRunSummary, MutantFinished, MutantStarted,
-    MutationCandidate, MutationOutcome, OutputEvent, OutputSpoolRef, ProcessOutputState,
-    ProcessTermination, ReportSequence, ResourceControl, ResourceMode, ReusedMutationStatus,
-    RunStarted, RunSummary, summarize,
+    MutationCandidate, MutationOutcome, MutationStatus, OutputEvent, OutputSpoolRef,
+    ProcessOutputState, ProcessTermination, ReportSequence, ResourceControl, ResourceMode,
+    ReusedMutationStatus, RunStarted, RunSummary, summarize,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -167,7 +167,13 @@ fuzz_target!(|data: &[u8]| {
 
     // Malformed wire is rejected before it reaches lifecycle validation.
     let mut malformed = serde_json::to_value(&events[4]).unwrap();
-    malformed["status"] = serde_json::json!("error");
+    // Error is also a valid outcome status, so always choose a different status.
+    let contradictory_status = if status == MutationStatus::Error {
+        MutationStatus::Killed
+    } else {
+        MutationStatus::Error
+    };
+    malformed["status"] = serde_json::json!(contradictory_status);
     let encoded = serde_json::to_vec(&malformed).unwrap();
     assert!(serde_json::from_slice::<OutputEvent>(&encoded).is_err());
 });
