@@ -1,6 +1,6 @@
 # Creusot production budget proofs Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Prove the actual production budget projection and auto timeout implementation on all three release targets and require fresh proofs in PR CI.
 
@@ -47,11 +47,11 @@
 - Produces `project_top_budget(selected: usize, jobs: NonZeroUsize, planned_total_timeout: Duration, baseline: Duration, mutant_timeout: MutantTimeout, remaining: Duration) -> TopBudgetProjection`, same public result fields and `is_shortfall(&self) -> bool`.
 - `serde` is an optional additive feature for derives/manual deserialization only; verification will compile without it. It must not change arithmetic, type shapes, constructors, or branches. Core enables it and maps `None` into existing named `ConfigError::InvalidLimit` at conversion sites. Callers migrate directly to the new owner; no compatibility function forwarding layer.
 
-- [ ] Run baseline focused core projection/config/machine/Lean oracle tests before edits; record command and results. Use the shared target and no redundant separate build.
-- [ ] Add failing new-crate API tests: zero duration returns `None`; positive boundary values round-trip; serialization rejects zero and keeps current format; manually constructed projection uses only capacity/remaining for shortfall.
-- [ ] Add property tests with independent bounded mathematical expectations: waves is the smallest covering count (`selected <= waves * jobs`, and for positive waves `(waves - 1) * jobs < selected`, with widened u128 products); use widened additive ceiling `(selected as u128 + jobs as u128 - 1) / jobs as u128` for the independent capacity oracle; auto equals clamped `2 * baseline_nanos + 1_000_000_000`; product uses division threshold before multiplication to avoid oracle overflow. Include zero selected, usize maximum, Duration maximum, >u32 waves, saturation at multiplication and addition, equality shortfall. Each property checks one behavior per execution; use named parameterized cases for fixed boundaries.
-- [ ] Extract production types/calculation without behavior change; migrate all callers and configuration/Serde integration. Preserve existing config error text and serialized representation. Update crate graph, locks, release/SBOM/sdist assumptions in the same commit.
-- [ ] Run focused new and existing tests, `cargo check --workspace --all-features --locked`, relevant Python packaging/release/SBOM tests, formatting and focused lints. Record five implementation and five testing self-reviews, findings and fixes, and commit.
+- [x] Run baseline focused core projection/config/machine/Lean oracle tests before edits; record command and results. Use the shared target and no redundant separate build.
+- [x] Add failing new-crate API tests: zero duration returns `None`; positive boundary values round-trip; serialization rejects zero and keeps current format; manually constructed projection uses only capacity/remaining for shortfall.
+- [x] Add property tests with independent bounded mathematical expectations: waves is the smallest covering count (`selected <= waves * jobs`, and for positive waves `(waves - 1) * jobs < selected`, with widened u128 products); use widened additive ceiling `(selected as u128 + jobs as u128 - 1) / jobs as u128` for the independent capacity oracle; auto equals clamped `2 * baseline_nanos + 1_000_000_000`; product uses division threshold before multiplication to avoid oracle overflow. Include zero selected, usize maximum, Duration maximum, >u32 waves, saturation at multiplication and addition, equality shortfall. Each property checks one behavior per execution; use named parameterized cases for fixed boundaries.
+- [x] Extract production types/calculation without behavior change; migrate all callers and configuration/Serde integration. Preserve existing config error text and serialized representation. Update crate graph, locks, release/SBOM/sdist assumptions in the same commit.
+- [x] Run focused new and existing tests, `cargo check --workspace --all-features --locked`, relevant Python packaging/release/SBOM tests, formatting and focused lints. Record five implementation and five testing self-reviews, findings and fixes, and commit.
 
 ### Task 2: Build and measure the pinned Linux verification environment
 
