@@ -1940,6 +1940,12 @@ mod task_tests {
         assert_eq!(handler.pending_cleanup_count(), 1);
         assert_eq!(handler.observed_copy_bytes(), 9);
         assert_eq!(handler.materialized_worker_slots(), 1);
+        let expected = pending_workspace(&handler, 0)
+            .manifest()
+            .entry(Utf8Path::new("pkg/a.py"))
+            .unwrap();
+        assert_eq!(expected.size, 9);
+        assert_eq!(expected.blake3, blake3::hash(b"original\n"));
         std::fs::remove_dir(deepest).unwrap();
         let task = handler.prepare_create_task(retry).unwrap();
         assert!(matches!(

@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running unittests src/lib.rs (/tmp/hoimin-perf-three-target/debug/deps/hoimin_cli-2f5eac9f7ef8d7ab)
+
+running 1 test
+test target::fs::tests::exact_file_prunes_unrelated_subtrees_and_records ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 814 filtered out; finished in 0.10s
+

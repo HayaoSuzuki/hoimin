@@ -1,0 +1,35 @@
+   Compiling hoimin-cli v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.00s
+     Running tests/source_encoding_heap.rs (/tmp/hoimin-perf-three-target/debug/deps/source_encoding_heap-53c4d14c8e23f5e6)
+
+running 1 test
+test latin1_positions_do_not_retain_duplicate_coordinates ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+
+     Running tests/source_index_encoding_flow.rs (/tmp/hoimin-perf-three-target/debug/deps/source_index_encoding_flow-aac3ac8f4f093336)
+
+running 13 tests
+test ascii_crlf ... ok
+test ascii_cr ... ok
+test ascii_lf ... ok
+test bom_cr ... ok
+test bom_crlf ... ok
+test decoding_error_precedes_invalid_python_syntax ... ok
+test bom_lf ... ok
+test latin1_cr ... ok
+test latin1_crlf ... ok
+test latin1_lf ... ok
+test utf8_cr ... ok
+test utf8_crlf ... ok
+test utf8_lf ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.40s
+
+     Running tests/source_index_heap.rs (/tmp/hoimin-perf-three-target/debug/deps/source_index_heap-43d583b6c6f04a9f)
+
+running 1 test
+test unicode_context_and_cli_discovery_avoid_overlapping_location_indexes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.84s
+

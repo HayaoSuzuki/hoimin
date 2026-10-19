@@ -1,0 +1,32 @@
+{
+  "name": "clippy-workspace",
+  "argv": [
+    "cargo",
+    "clippy",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--",
+    "-D",
+    "warnings"
+  ],
+  "cwd": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index",
+  "head": "f72134d76d28d87cd728305ed224f298df41af4a",
+  "tracked_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "tracked_diff_bytes": 0,
+  "timeout_seconds": 900,
+  "environment": {
+    "CARGO_BUILD_JOBS": "2",
+    "CARGO_TARGET_DIR": "/tmp/hoimin-perf-three-target",
+    "CARGO_INCREMENTAL": "0",
+    "RUST_TEST_THREADS": "2",
+    "PREK_NO_CONCURRENCY": "1",
+    "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+    "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache",
+    "PATH": "/tmp/hoimin-priority-six-venv/bin:/opt/homebrew/Caskroom/codex/0.162.1/codex-path:/Users/hayao/.rd/bin:/Users/hayao/.rd/bin:/opt/homebrew/opt/mariadb-connector-c/bin:/Users/hayao/.nvm/versions/node/v22.14.0/bin:/Users/hayao/.elan/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Users/hayao/.codex/tmp/arg0/codex-arg0IGseZF:/opt/homebrew/Caskroom/codex/0.162.1/codex-path:/Users/hayao/.rd/bin:/opt/homebrew/opt/mariadb-connector-c/bin:/Users/hayao/.nvm/versions/node/v22.14.0/bin:/Users/hayao/.local/bin:/Users/hayao/.elan/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/hayao/.cargo/bin:/Users/hayao/Library/Application Support/JetBrains/Toolbox/scripts:/Users/hayao/Library/Application Support/JetBrains/Toolbox/scripts"
+  },
+  "exit_code": 0,
+  "elapsed_seconds": 0.4675605839584023,
+  "log_sha256": "8950be1e8f4499f41b8e38ef15f09a0e2671be53a43aa5dec4d794320908881d",
+  "log_bytes": 72
+}

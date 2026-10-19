@@ -1,0 +1,905 @@
+{
+  "structure_pages": 50,
+  "source_entries": 1035,
+  "changed_source_checks": [
+    {
+      "page": "docs/knowledge/audits/performance-shapes.md",
+      "id": "perf-three-d1",
+      "resource": "../../maintenance/2026-10-20-perf-three/reports/task-3-d1-review.md",
+      "hash_match": true
+    },
+    {
+      "page": "docs/knowledge/audits/performance-shapes.md",
+      "id": "perf-three-positions",
+      "resource": "../../maintenance/2026-10-20-issue-1008/r6/README.md",
+      "hash_match": true
+    },
+    {
+      "page": "docs/knowledge/audits/performance-shapes.md",
+      "id": "perf-three-manifest",
+      "resource": "../../maintenance/2026-10-20-issue-1007/README.md",
+      "hash_match": true
+    },
+    {
+      "page": "docs/knowledge/audits/performance-shapes.md",
+      "id": "perf-three-selection",
+      "resource": "../../maintenance/2026-10-20-issue-1006/verification.json",
+      "hash_match": true
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "id": "perf-three-d1",
+      "resource": "../../maintenance/2026-10-20-perf-three/reports/task-3-d1-review.md",
+      "hash_match": true
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "id": "perf-three-r6",
+      "resource": "../../maintenance/2026-10-20-issue-1008/r6/README.md",
+      "hash_match": true
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "id": "perf-three-context",
+      "resource": "../../../crates/hoimin-core/src/candidate.rs",
+      "hash_match": true
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "id": "perf-three-selection",
+      "resource": "../../../crates/hoimin-python/src/analyzer/rust/selection.rs",
+      "hash_match": true
+    },
+    {
+      "page": "docs/knowledge/design/runtime-lifecycle.md",
+      "id": "perf-three-manifest",
+      "resource": "../../../crates/hoimin-cli/src/workspace/manifest.rs",
+      "hash_match": true
+    },
+    {
+      "page": "docs/knowledge/design/selection-plan-verify.md",
+      "id": "perf-three-selection",
+      "resource": "../../../crates/hoimin-python/src/analyzer/rust/selection.rs",
+      "hash_match": true
+    },
+    {
+      "page": "docs/knowledge/references/design-documents.md",
+      "id": "perf-three-design",
+      "resource": "../../superpowers/specs/2026-10-20-perf-three-design.md",
+      "hash_match": true
+    }
+  ],
+  "local_missing_paths": [
+    {
+      "page": "docs/knowledge/audits/analysis-2026-09.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust/loop_transfer_tests.rs"
+    },
+    {
+      "page": "docs/knowledge/audits/analysis-2026-09.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/audits/analysis-2026-09.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust_tests.rs"
+    },
+    {
+      "page": "docs/knowledge/audits/evaluation-order-2026-09.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust/method_replacement_tests.rs"
+    },
+    {
+      "page": "docs/knowledge/audits/evaluation-order-2026-09.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust/method_replacement_tests.rs"
+    },
+    {
+      "page": "docs/knowledge/audits/implicit-finally.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/audits/implicit-finally.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/audits/nullable-gates-2026-09.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/audits/nullable-gates-2026-09.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/audits/with-finally-2026-09.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust/finally_transfer_tests.rs"
+    },
+    {
+      "page": "docs/knowledge/audits/with-finally-2026-09.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/audits/with-finally-2026-09.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/audits/with-finally-2026-09.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/audits/with-finally-2026-09.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/audits/with-finally-2026-09.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust/finally_transfer_tests.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/known_imports_tests.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/types.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust/depth.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust/string_segments.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust/string_literals.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/types.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust_tests.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/payload.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/visitor.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust/depth.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust/string_literals.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust/string_segments.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust/string_literals.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/types.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/known_imports_tests.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/types.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust_tests.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/payload.rs"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/visitor.rs"
+    },
+    {
+      "page": "docs/knowledge/design/annotation-builtins.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/design/annotation-builtins.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/design/selection-plan-verify.md",
+      "kind": "source",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    },
+    {
+      "page": "docs/knowledge/design/selection-plan-verify.md",
+      "kind": "link",
+      "resource": "../../../crates/hoimin-cli/src/analyzer/rust.rs"
+    }
+  ],
+  "unavailable_commit_references": [
+    {
+      "page": "docs/knowledge/artifact-smoke.md",
+      "id": "guide",
+      "revision": "34723ff3f9b19c28140a6efad0651e542e25b8c1"
+    },
+    {
+      "page": "docs/knowledge/compatibility.md",
+      "id": "issue-899-changed-selection",
+      "revision": "7b6cb19ba0181759f6b5726f985c5fd7700d313e"
+    },
+    {
+      "page": "docs/knowledge/compatibility.md",
+      "id": "issue-899-changed-review",
+      "revision": "ad65b8ce55b0dabc59712775e362d5d614b27559"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "id": "issue-871-evidence",
+      "revision": "6f5ce7e61ea43cf76b795570ecc403080888a092"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "id": "issue-873-decoder",
+      "revision": "30d9d9a0066cea85dfb89c68eb0a4db083a55f58"
+    },
+    {
+      "page": "docs/knowledge/design/analyzer.md",
+      "id": "issue-873-candidates",
+      "revision": "30d9d9a0066cea85dfb89c68eb0a4db083a55f58"
+    },
+    {
+      "page": "docs/knowledge/design/fingerprint-inputs.md",
+      "id": "design",
+      "revision": "67b82d65bfa6f4c13b7476531161c1852be50381"
+    },
+    {
+      "page": "docs/knowledge/design/fingerprint-inputs.md",
+      "id": "implementation",
+      "revision": "67b82d65bfa6f4c13b7476531161c1852be50381"
+    },
+    {
+      "page": "docs/knowledge/design/fingerprint-inputs.md",
+      "id": "tests",
+      "revision": "67b82d65bfa6f4c13b7476531161c1852be50381"
+    },
+    {
+      "page": "docs/knowledge/design/runtime-lifecycle.md",
+      "id": "issue-897-machine",
+      "revision": "175486b7cb30a665bdf39c1ac7897eb96d9966f7"
+    },
+    {
+      "page": "docs/knowledge/design/runtime-lifecycle.md",
+      "id": "issue-897-design",
+      "revision": "175486b7cb30a665bdf39c1ac7897eb96d9966f7"
+    },
+    {
+      "page": "docs/knowledge/design/runtime-lifecycle.md",
+      "id": "issue-897-review",
+      "revision": "0a148fcf5ca511b6ccca489feda2ccbc2429008f"
+    },
+    {
+      "page": "docs/knowledge/design/runtime-lifecycle.md",
+      "id": "issue-901-core",
+      "revision": "48ae4c0e565656ddf3f0a83dcc8a840bd6b4fec8"
+    },
+    {
+      "page": "docs/knowledge/design/runtime-lifecycle.md",
+      "id": "issue-901-oracle",
+      "revision": "48ae4c0e565656ddf3f0a83dcc8a840bd6b4fec8"
+    },
+    {
+      "page": "docs/knowledge/design/runtime-lifecycle.md",
+      "id": "readme",
+      "revision": "2831bde6adf75facf0a379b8a915267c278d8511"
+    },
+    {
+      "page": "docs/knowledge/design/runtime-lifecycle.md",
+      "id": "issue-898-design",
+      "revision": "51c9e26b9d0006cac150b3833cb797a59349bac1"
+    },
+    {
+      "page": "docs/knowledge/design/runtime-lifecycle.md",
+      "id": "issue-898-review",
+      "revision": "51c9e26b9d0006cac150b3833cb797a59349bac1"
+    },
+    {
+      "page": "docs/knowledge/design/selection-plan-verify.md",
+      "id": "issue-899-changed-selection",
+      "revision": "7b6cb19ba0181759f6b5726f985c5fd7700d313e"
+    },
+    {
+      "page": "docs/knowledge/design/selection-plan-verify.md",
+      "id": "issue-899-changed-review",
+      "revision": "ad65b8ce55b0dabc59712775e362d5d614b27559"
+    },
+    {
+      "page": "docs/knowledge/design/selection-plan-verify.md",
+      "id": "issue-888-canonical-enums",
+      "revision": "5c0215cb65e57d2758c4ec1708cd50d96b1bcdfd"
+    },
+    {
+      "page": "docs/knowledge/design/session-report.md",
+      "id": "issue-899-changed-selection",
+      "revision": "7b6cb19ba0181759f6b5726f985c5fd7700d313e"
+    },
+    {
+      "page": "docs/knowledge/design/session-report.md",
+      "id": "issue-899-changed-review",
+      "revision": "ad65b8ce55b0dabc59712775e362d5d614b27559"
+    },
+    {
+      "page": "docs/knowledge/design/session-report.md",
+      "id": "issue-896-config",
+      "revision": "e7e3cae8c4e048ee77d2bf644b47da1792211cbe"
+    },
+    {
+      "page": "docs/knowledge/design/session-report.md",
+      "id": "issue-896-design",
+      "revision": "e7e3cae8c4e048ee77d2bf644b47da1792211cbe"
+    },
+    {
+      "page": "docs/knowledge/design/session-report.md",
+      "id": "issue-896-review",
+      "revision": "e7e3cae8c4e048ee77d2bf644b47da1792211cbe"
+    },
+    {
+      "page": "docs/knowledge/design/session-report.md",
+      "id": "tracing-readme",
+      "revision": "e7e3cae8c4e048ee77d2bf644b47da1792211cbe"
+    },
+    {
+      "page": "docs/knowledge/design/survivor-review.md",
+      "id": "issue-902-model",
+      "revision": "51c72b5ec1255959e2d5e072cd9e85d8497ed1c8"
+    },
+    {
+      "page": "docs/knowledge/design/survivor-review.md",
+      "id": "issue-902-input",
+      "revision": "51c72b5ec1255959e2d5e072cd9e85d8497ed1c8"
+    },
+    {
+      "page": "docs/knowledge/design/survivor-review.md",
+      "id": "issue-902-store",
+      "revision": "51c72b5ec1255959e2d5e072cd9e85d8497ed1c8"
+    },
+    {
+      "page": "docs/knowledge/design/survivor-review.md",
+      "id": "issue-902-record",
+      "revision": "51c72b5ec1255959e2d5e072cd9e85d8497ed1c8"
+    },
+    {
+      "page": "docs/knowledge/design/survivor-review.md",
+      "id": "issue-875-indexes",
+      "revision": "5399bc05ade9d4a1651bdbe6d61bfc2dd5cdc8a4"
+    },
+    {
+      "page": "docs/knowledge/design/survivor-review.md",
+      "id": "issue-875-input",
+      "revision": "5399bc05ade9d4a1651bdbe6d61bfc2dd5cdc8a4"
+    },
+    {
+      "page": "docs/knowledge/design/survivor-review.md",
+      "id": "issue-875-record",
+      "revision": "5399bc05ade9d4a1651bdbe6d61bfc2dd5cdc8a4"
+    },
+    {
+      "page": "docs/knowledge/design/survivor-review.md",
+      "id": "issue-711-survivor-review-design",
+      "revision": "fdf80af"
+    },
+    {
+      "page": "docs/knowledge/discussion-intake.md",
+      "id": "support",
+      "revision": "34723ff3f9b19c28140a6efad0651e542e25b8c1"
+    },
+    {
+      "page": "docs/knowledge/documentation-publication.md",
+      "id": "guide",
+      "revision": "34723ff3f9b19c28140a6efad0651e542e25b8c1"
+    },
+    {
+      "page": "docs/knowledge/documentation-publication.md",
+      "id": "builder",
+      "revision": "34723ff3f9b19c28140a6efad0651e542e25b8c1"
+    },
+    {
+      "page": "docs/knowledge/documentation-publication.md",
+      "id": "workflow",
+      "revision": "9eb8ed0d3690d45f77932afcfd457afbdbf43abd"
+    },
+    {
+      "page": "docs/knowledge/documentation-publication.md",
+      "id": "design",
+      "revision": "9eb8ed0d3690d45f77932afcfd457afbdbf43abd"
+    },
+    {
+      "page": "docs/knowledge/fuzzing-adoption.md",
+      "id": "assessment",
+      "revision": "36c0e84e7e93022b3588dede701f3b85212d98ff"
+    },
+    {
+      "page": "docs/knowledge/mutation-search.md",
+      "id": "django-experiment",
+      "revision": "93116fed96602628d04a2139645b3dfe1166e168"
+    },
+    {
+      "page": "docs/knowledge/mutation-search.md",
+      "id": "experiment",
+      "revision": "93116fed96602628d04a2139645b3dfe1166e168"
+    },
+    {
+      "page": "docs/knowledge/mutation-search.md",
+      "id": "design",
+      "revision": "28fd9bf"
+    },
+    {
+      "page": "docs/knowledge/pypi-publishing.md",
+      "id": "guide",
+      "revision": "34723ff3f9b19c28140a6efad0651e542e25b8c1"
+    },
+    {
+      "page": "docs/knowledge/references/audit-documents.md",
+      "id": "issue-897-review",
+      "revision": "0a148fcf5ca511b6ccca489feda2ccbc2429008f"
+    },
+    {
+      "page": "docs/knowledge/references/audit-documents.md",
+      "id": "issue-898-process-review",
+      "revision": "51c9e26b9d0006cac150b3833cb797a59349bac1"
+    },
+    {
+      "page": "docs/knowledge/references/audit-documents.md",
+      "id": "issue-899-changed-selection-review",
+      "revision": "ad65b8ce55b0dabc59712775e362d5d614b27559"
+    },
+    {
+      "page": "docs/knowledge/references/audit-documents.md",
+      "id": "issue-896-review",
+      "revision": "e7e3cae8c4e048ee77d2bf644b47da1792211cbe"
+    },
+    {
+      "page": "docs/knowledge/references/audit-documents.md",
+      "id": "issue-790-django-report",
+      "revision": "93116fed96602628d04a2139645b3dfe1166e168"
+    },
+    {
+      "page": "docs/knowledge/references/audit-documents.md",
+      "id": "issue-790-proofreadtools-report",
+      "revision": "93116fed96602628d04a2139645b3dfe1166e168"
+    },
+    {
+      "page": "docs/knowledge/references/audit-documents.md",
+      "id": "fuzz-adoption-report",
+      "revision": "36c0e84e7e93022b3588dede701f3b85212d98ff"
+    },
+    {
+      "page": "docs/knowledge/references/audit-documents.md",
+      "id": "second-order-assessment",
+      "revision": "3c3a7d6"
+    },
+    {
+      "page": "docs/knowledge/references/design-documents.md",
+      "id": "issue-897-design",
+      "revision": "175486b7cb30a665bdf39c1ac7897eb96d9966f7"
+    },
+    {
+      "page": "docs/knowledge/references/design-documents.md",
+      "id": "issue-898-process-design",
+      "revision": "51c9e26b9d0006cac150b3833cb797a59349bac1"
+    },
+    {
+      "page": "docs/knowledge/references/design-documents.md",
+      "id": "issue-899-changed-selection-design",
+      "revision": "7b6cb19ba0181759f6b5726f985c5fd7700d313e"
+    },
+    {
+      "page": "docs/knowledge/references/design-documents.md",
+      "id": "typed-results-and-contracts-design",
+      "revision": "8ff7c6b"
+    },
+    {
+      "page": "docs/knowledge/references/design-documents.md",
+      "id": "issue-749-documentation-pages-design",
+      "revision": "9eb8ed0d3690d45f77932afcfd457afbdbf43abd"
+    },
+    {
+      "page": "docs/knowledge/references/design-documents.md",
+      "id": "issue-790-proofreadtools-design",
+      "revision": "28fd9bf"
+    },
+    {
+      "page": "docs/knowledge/references/design-documents.md",
+      "id": "issue-457",
+      "revision": "67b82d65bfa6f4c13b7476531161c1852be50381"
+    },
+    {
+      "page": "docs/knowledge/release-provenance.md",
+      "id": "workflow",
+      "revision": "e9acbf4e5da6d749a789405522feab6b6ac8ecc0"
+    },
+    {
+      "page": "docs/knowledge/release-provenance.md",
+      "id": "validator",
+      "revision": "e9acbf4e5da6d749a789405522feab6b6ac8ecc0"
+    },
+    {
+      "page": "docs/knowledge/release-provenance.md",
+      "id": "guide",
+      "revision": "34723ff3f9b19c28140a6efad0651e542e25b8c1"
+    },
+    {
+      "page": "docs/knowledge/second-order-mutation.md",
+      "id": "assessment",
+      "revision": "3c3a7d6"
+    },
+    {
+      "page": "docs/knowledge/test-execution-costs.md",
+      "id": "measurement",
+      "revision": "8056485"
+    },
+    {
+      "page": "docs/knowledge/typed-results-and-contracts.md",
+      "id": "release",
+      "revision": "e9acbf4e5da6d749a789405522feab6b6ac8ecc0"
+    },
+    {
+      "page": "docs/knowledge/typed-results-and-contracts.md",
+      "id": "budget",
+      "revision": "e9acbf4e5da6d749a789405522feab6b6ac8ecc0"
+    },
+    {
+      "page": "docs/knowledge/typed-results-and-contracts.md",
+      "id": "policy",
+      "revision": "e9acbf4e5da6d749a789405522feab6b6ac8ecc0"
+    }
+  ],
+  "unique_unavailable_commits": [
+    "34723ff3f9b19c28140a6efad0651e542e25b8c1",
+    "7b6cb19ba0181759f6b5726f985c5fd7700d313e",
+    "ad65b8ce55b0dabc59712775e362d5d614b27559",
+    "6f5ce7e61ea43cf76b795570ecc403080888a092",
+    "30d9d9a0066cea85dfb89c68eb0a4db083a55f58",
+    "67b82d65bfa6f4c13b7476531161c1852be50381",
+    "175486b7cb30a665bdf39c1ac7897eb96d9966f7",
+    "0a148fcf5ca511b6ccca489feda2ccbc2429008f",
+    "48ae4c0e565656ddf3f0a83dcc8a840bd6b4fec8",
+    "2831bde6adf75facf0a379b8a915267c278d8511",
+    "51c9e26b9d0006cac150b3833cb797a59349bac1",
+    "5c0215cb65e57d2758c4ec1708cd50d96b1bcdfd",
+    "e7e3cae8c4e048ee77d2bf644b47da1792211cbe",
+    "51c72b5ec1255959e2d5e072cd9e85d8497ed1c8",
+    "5399bc05ade9d4a1651bdbe6d61bfc2dd5cdc8a4",
+    "fdf80af",
+    "9eb8ed0d3690d45f77932afcfd457afbdbf43abd",
+    "36c0e84e7e93022b3588dede701f3b85212d98ff",
+    "93116fed96602628d04a2139645b3dfe1166e168",
+    "28fd9bf",
+    "3c3a7d6",
+    "8ff7c6b",
+    "e9acbf4e5da6d749a789405522feab6b6ac8ecc0",
+    "8056485"
+  ],
+  "footnote_findings": [
+    {
+      "page": "docs/knowledge/references/audit-documents.md",
+      "source_without_footnote_definition": "evaluation-order-correspondence"
+    },
+    {
+      "page": "docs/knowledge/references/audit-documents.md",
+      "source_without_footnote_definition": "annotation-followup-deferred"
+    },
+    {
+      "page": "docs/knowledge/references/audit-documents.md",
+      "source_without_footnote_definition": "issue-999-adoption"
+    },
+    {
+      "page": "docs/knowledge/references/audit-documents.md",
+      "source_without_footnote_definition": "evaluation-order-bug"
+    },
+    {
+      "page": "docs/knowledge/references/audit-documents.md",
+      "source_without_footnote_definition": "with-finally-bug"
+    },
+    {
+      "page": "docs/knowledge/references/audit-documents.md",
+      "source_without_footnote_definition": "annotation-followup-correspondence"
+    },
+    {
+      "page": "docs/knowledge/references/audit-documents.md",
+      "source_without_footnote_definition": "with-finally-performance"
+    },
+    {
+      "page": "docs/knowledge/references/audit-documents.md",
+      "source_without_footnote_definition": "with-finally-correspondence"
+    },
+    {
+      "page": "docs/knowledge/references/audit-documents.md",
+      "source_without_footnote_definition": "annotation-followup-report"
+    },
+    {
+      "page": "docs/knowledge/references/audit-documents.md",
+      "source_without_footnote_definition": "with-finally-report"
+    },
+    {
+      "page": "docs/knowledge/references/audit-documents.md",
+      "source_without_footnote_definition": "evaluation-order-perf"
+    },
+    {
+      "page": "docs/knowledge/references/audit-documents.md",
+      "source_without_footnote_definition": "annotation-followup-set"
+    },
+    {
+      "page": "docs/knowledge/references/audit-documents.md",
+      "source_without_footnote_definition": "evaluation-order-report"
+    },
+    {
+      "page": "docs/knowledge/references/design-documents.md",
+      "source_without_footnote_definition": "issue-999-adoption"
+    }
+  ],
+  "reachable_pages": 50,
+  "unreachable_pages": [],
+  "catalogs": {
+    "design-documents": {
+      "expected_markdown_files": 270,
+      "missing_catalog_resources": [
+        "docs/superpowers/specs/2026-09-25-issue-604-preview-details-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-605-prepared-annotation-imports-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-606-manifest-metrics-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-607-stale-plan-details-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-608-borrowed-ranking-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-609-progress-keys-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-610-duplicate-progress-inputs-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-611-private-annotation-imports-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-612-python-changed-lines-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-613-buffer-diagnostics-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-614-resume-diagnostics-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-615-latin1-positions-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-616-empty-directories-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-617-glob-exclusion-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-618-manifest-buffer-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-619-missing-source-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-620-scoped-git-diff-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-621-excluded-git-paths-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-622-source-order-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-623-stream-fingerprint-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-624-resume-budget-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-625-progress-dispatch-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-626-progress-details-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-627-source-discovery-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-628-fingerprint-env-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-629-stream-workspace-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-630-progress-regression-exit-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-631-offset-allocation-design.md",
+        "docs/superpowers/specs/2026-09-25-issue-632-changed-context-design.md",
+        "docs/superpowers/specs/2026-10-10-issue-741-sbom-design.md",
+        "docs/superpowers/specs/2026-10-12-philosophy-followup-design.md"
+      ]
+    },
+    "audit-documents": {
+      "expected_markdown_files": 314,
+      "missing_catalog_resources": [
+        "docs/superpowers/reports/2026-09-25-issue-605-prepared-annotation-imports.md",
+        "docs/superpowers/reports/2026-09-25-issue-611-private-annotation-imports.md",
+        "docs/superpowers/reports/2026-09-25-issue-612-python-changed-lines.md",
+        "docs/superpowers/reports/2026-09-25-issue-614-lean-oracle.md",
+        "docs/superpowers/reports/2026-09-25-issue-614-resume-diagnostics.md",
+        "docs/superpowers/reports/2026-09-25-issue-615-latin1-positions.md",
+        "docs/superpowers/reports/2026-09-25-issue-616-empty-directories.md",
+        "docs/superpowers/reports/2026-09-25-issue-617-glob-exclusion.md",
+        "docs/superpowers/reports/2026-09-25-issue-619-missing-source.md",
+        "docs/superpowers/reports/2026-09-25-issue-620-scoped-git-diff.md",
+        "docs/superpowers/reports/2026-09-25-issue-621-excluded-git-paths.md",
+        "docs/superpowers/reports/2026-09-25-issue-622-source-order.md",
+        "docs/superpowers/reports/2026-09-25-issue-623-stream-fingerprint.md",
+        "docs/superpowers/reports/2026-09-25-issue-624-resume-budget.md",
+        "docs/superpowers/reports/2026-09-25-issue-631-offset-allocation.md",
+        "docs/superpowers/reports/2026-09-25-issue-632-implementation-review.md",
+        "docs/superpowers/reports/2026-09-25-issue-632-lean-context.md",
+        "docs/superpowers/reports/2026-10-10-issue-741-sbom.md",
+        "docs/superpowers/reports/analyzer-696-708.md",
+        "docs/superpowers/reports/function-body-return-constant/assessment.md",
+        "docs/superpowers/reports/function-body-return-constant/design.md",
+        "docs/superpowers/reports/function-body-return-constant/plan.md",
+        "docs/superpowers/reports/function-body-return-constant/review.md",
+        "docs/superpowers/reports/issue-696/design.md",
+        "docs/superpowers/reports/issue-696/plan.md",
+        "docs/superpowers/reports/issue-696/review.md",
+        "docs/superpowers/reports/issue-697/design.md",
+        "docs/superpowers/reports/issue-697/plan.md",
+        "docs/superpowers/reports/issue-697/review.md",
+        "docs/superpowers/reports/issue-698/design.md",
+        "docs/superpowers/reports/issue-698/plan.md",
+        "docs/superpowers/reports/issue-698/review.md",
+        "docs/superpowers/reports/issue-699/design.md",
+        "docs/superpowers/reports/issue-699/plan.md",
+        "docs/superpowers/reports/issue-699/review.md",
+        "docs/superpowers/reports/issue-700/design.md",
+        "docs/superpowers/reports/issue-700/plan.md",
+        "docs/superpowers/reports/issue-700/review.md",
+        "docs/superpowers/reports/issue-701/design.md",
+        "docs/superpowers/reports/issue-701/plan.md",
+        "docs/superpowers/reports/issue-701/review.md",
+        "docs/superpowers/reports/issue-702/design.md",
+        "docs/superpowers/reports/issue-702/plan.md",
+        "docs/superpowers/reports/issue-702/review.md",
+        "docs/superpowers/reports/issue-703/design.md",
+        "docs/superpowers/reports/issue-703/plan.md",
+        "docs/superpowers/reports/issue-703/review.md",
+        "docs/superpowers/reports/issue-704/design.md",
+        "docs/superpowers/reports/issue-704/plan.md",
+        "docs/superpowers/reports/issue-704/review.md",
+        "docs/superpowers/reports/issue-705/design.md",
+        "docs/superpowers/reports/issue-705/plan.md",
+        "docs/superpowers/reports/issue-705/review.md",
+        "docs/superpowers/reports/issue-706/design.md",
+        "docs/superpowers/reports/issue-706/plan.md",
+        "docs/superpowers/reports/issue-706/review.md",
+        "docs/superpowers/reports/issue-707/design.md",
+        "docs/superpowers/reports/issue-707/plan.md",
+        "docs/superpowers/reports/issue-707/review.md",
+        "docs/superpowers/reports/issue-708/design.md",
+        "docs/superpowers/reports/issue-708/plan.md",
+        "docs/superpowers/reports/issue-708/review.md",
+        "docs/superpowers/reports/issue-999/README.md",
+        "docs/superpowers/reports/issue-999/records/design-tree.md",
+        "docs/superpowers/reports/issue-999/records/environment-handoff.md",
+        "docs/superpowers/reports/issue-999/records/final-controller-dispositions.md",
+        "docs/superpowers/reports/issue-999/records/final-integration-handoff.md",
+        "docs/superpowers/reports/issue-999/records/final-review-bookkeeping.md",
+        "docs/superpowers/reports/issue-999/records/final-review.md",
+        "docs/superpowers/reports/issue-999/records/global-constraints.md",
+        "docs/superpowers/reports/issue-999/records/progress.md",
+        "docs/superpowers/reports/issue-999/records/proof-handoff.md",
+        "docs/superpowers/reports/issue-999/records/task-1-brief.md",
+        "docs/superpowers/reports/issue-999/records/task-1-report.md",
+        "docs/superpowers/reports/issue-999/records/task-1-review.md",
+        "docs/superpowers/reports/issue-999/records/task-2-brief.md",
+        "docs/superpowers/reports/issue-999/records/task-2-fix1-review.md",
+        "docs/superpowers/reports/issue-999/records/task-2-report.md",
+        "docs/superpowers/reports/issue-999/records/task-2-review.md",
+        "docs/superpowers/reports/issue-999/records/task-3-brief.md",
+        "docs/superpowers/reports/issue-999/records/task-3-report.md",
+        "docs/superpowers/reports/issue-999/records/task-3-review.md",
+        "docs/superpowers/reports/issue-999/records/task-4-brief.md",
+        "docs/superpowers/reports/issue-999/records/task-4-fix1-review.md",
+        "docs/superpowers/reports/issue-999/records/task-4-fix2-review.md",
+        "docs/superpowers/reports/issue-999/records/task-4-report.md",
+        "docs/superpowers/reports/issue-999/records/task-4-review.md",
+        "docs/superpowers/reports/issue-999/records/task-5-brief.md",
+        "docs/superpowers/reports/issue-999/records/task-5-final-acceptance-report.md",
+        "docs/superpowers/reports/issue-999/records/task-5-fix1-report.md",
+        "docs/superpowers/reports/issue-999/records/task-5-fix1-review.md",
+        "docs/superpowers/reports/issue-999/records/task-5-fix2-report.md",
+        "docs/superpowers/reports/issue-999/records/task-5-fix2-review.md",
+        "docs/superpowers/reports/issue-999/records/task-5-handoff-history.md",
+        "docs/superpowers/reports/issue-999/records/task-5-report.md",
+        "docs/superpowers/reports/issue-999/records/task-5-review.md",
+        "docs/superpowers/reports/method-call-remove/assessment.md",
+        "docs/superpowers/reports/method-call-remove/design.md",
+        "docs/superpowers/reports/method-call-remove/plan.md",
+        "docs/superpowers/reports/method-call-remove/review.md",
+        "docs/superpowers/reports/recent-analyzer-defaults/design.md",
+        "docs/superpowers/reports/recent-analyzer-defaults/formal-audit.md",
+        "docs/superpowers/reports/recent-analyzer-defaults/plan.md",
+        "docs/superpowers/reports/recent-analyzer-defaults/review.md"
+      ]
+    }
+  },
+  "scope": "Local path existence, source IDs/footnotes, added-source current hashes, commit object availability, catalog coverage and bundle reachability. External URLs and fragments NOT checked. Historical source hashes NOT refreshed."
+}

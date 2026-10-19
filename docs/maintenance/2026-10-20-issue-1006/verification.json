@@ -1,0 +1,99 @@
+{
+  "issue": 1006,
+  "checked_base": "ca9afb90852c43d1422e543470940991ffaae7a2",
+  "baseline_product": "34e3349099ce7fd61838629ee8c0d0b814e65a5d",
+  "environment": {
+    "CARGO_BUILD_JOBS": "2",
+    "CARGO_TARGET_DIR": "/tmp/hoimin-perf-three-target",
+    "CARGO_INCREMENTAL": "0",
+    "RUST_TEST_THREADS": "2",
+    "PREK_NO_CONCURRENCY": "1",
+    "PATH_prefix": "/tmp/hoimin-priority-six-venv/bin"
+  },
+  "tools": {
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+    "python": "Python 3.12.6"
+  },
+  "source_sha256": {
+    "crates/hoimin-python/src/analyzer/rust.rs": "86a24ae88ee0666c07b98a795d2891f0943284ef78be17c8e9d3c69a0d4c44f1",
+    "crates/hoimin-python/src/analyzer/rust/selection.rs": "55784a1d7923b782f84f95b5cf67e9e7ae9e16e86a56b8bb0569a51039bfd5c5",
+    "crates/hoimin-python/src/analyzer/rust/selection_tests.rs": "bb698340115c489c2e4a3f22937661d5165a51ebb3f639df268e03795a3b2189",
+    "crates/hoimin-cli/tests/analyzer_line_selection.rs": "a49aa05d9384fcd3a4530d342745c48ddfce58cb47f225a66a4192b7e5c806aa",
+    "docs/performance/shapes.json": "65a2a2ee23d8933996f981665e835cc968714ccec6cdb17d3f031869dfd579f2"
+  },
+  "original_rust_source_sha256": "c896a1b22c5065ee62e05325fdeb3c636b5fe64185559754d02794cce15ae139",
+  "release_rlibs_sha256": {
+    "/tmp/hoimin-perf-three-baseline/release/deps/libhoimin_python-f46ed673dcee7a84.rlib": "36c4350b802b04c64e70f565a3ed97b1aeeae4659ce0f46399cdff9ce07c4e52",
+    "/tmp/hoimin-perf-three-target/release/deps/libhoimin_python-f46ed673dcee7a84.rlib": "044e37a8d3eb6e142a009a71e9b7cfe4127fd8b8a95f903d7f14e9b2553fee3f"
+  },
+  "operation_counts": [
+    {
+      "n": 1000,
+      "queries": 1000,
+      "old_membership": 1000000,
+      "indexed_membership": 11999,
+      "indexed_preparation": 2999
+    },
+    {
+      "n": 2000,
+      "queries": 2000,
+      "old_membership": 4000000,
+      "indexed_membership": 25999,
+      "indexed_preparation": 5999
+    },
+    {
+      "n": 4000,
+      "queries": 4000,
+      "old_membership": 16000000,
+      "indexed_membership": 55999,
+      "indexed_preparation": 11999
+    },
+    {
+      "n": 8000,
+      "queries": 8000,
+      "old_membership": 64000000,
+      "indexed_membership": 119999,
+      "indexed_preparation": 23999
+    }
+  ],
+  "green_commands": [
+    {
+      "command": "cargo test --locked -p hoimin-python selection -- --nocapture",
+      "passed": 59
+    },
+    {
+      "command": "cargo test --locked -p hoimin-python payload",
+      "passed": 27
+    },
+    {
+      "command": "cargo test --locked -p hoimin-python cancel",
+      "passed": 30
+    },
+    {
+      "command": "cargo test --locked -p hoimin-cli --test analyzer_line_selection -- --nocapture",
+      "passed": 3
+    },
+    {
+      "command": "cargo test --locked -p hoimin-python --lib",
+      "passed": 457,
+      "ignored": 3
+    }
+  ],
+  "reproduction": [
+    "Use an unused /tmp/hoimin-perf-three-task1 fixture directory; copy probe.rs, build_probe.py, measure.py, resource_wrapper.py there. Preserve frozen baseline release directory separately.",
+    "python3 /tmp/hoimin-perf-three-task1/build_probe.py /tmp/hoimin-perf-three-baseline before",
+    "python3 /tmp/hoimin-perf-three-task1/build_probe.py /tmp/hoimin-perf-three-target after",
+    "python3 /tmp/hoimin-perf-three-task1/measure.py"
+  ],
+  "raw_receipts": "/tmp/hoimin-perf-three-task1",
+  "limits": [
+    "Fixed-workload observations only; no timing gate or universal speedup/no-regression claim.",
+    "Whole-CLI many-line median increased 9.257\u219211.657ms in this 3-pair sample; raw ranges are in measurement.json.",
+    "API live/peak requested allocator bytes exclude caller-owned fixture/source/ranges; RSS and output string bytes have distinct definitions.",
+    "CLI output bytes and fixture input bytes are recorded; no run workspace/disk-charge optimization is claimed.",
+    "Global workspace/contracts/Python/performance suites reserved for controller integration; focused product tests only in this task."
+  ],
+  "normal_hook_initial_result": "fmt workspace/vendor passed, vendor clippy passed; workspace clippy rejected4 assert_is_empty test assertions. Replaced with assert_eq!/assert_ne! and explicitly expected empty vectors; product code unchanged.",
+  "normal_hook_second_result": "Workspace clippy reached the new CLI test and rejected format_collect in the twelve-line fixture builder. Replaced with explicit literal fixture; product code unchanged."
+}

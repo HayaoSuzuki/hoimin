@@ -5,6 +5,11 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: perf-three-manifest
+  resource: ../../../crates/hoimin-cli/src/workspace/manifest.rs
+  revision: f72134d76d28d87cd728305ed224f298df41af4a
+  working_tree: clean
+  sha256: db8d0f3912f72dc6ad945a60a2f559c99faa1726c082d7f5c27188ba9f0ac304
 - id: issue-1015-owned
   resource: ../../../crates/hoimin-cli/src/workspace/owned.rs
   revision: 8720b41a0d08f375d98bda7cfa6202be779f3226
@@ -996,3 +1001,29 @@ The implementation evidence does not establish native Linux/Windows behavior.
 
 [^issue-1015-owned]: [Janitor evidence and bounded cleanup](../../../crates/hoimin-cli/src/workspace/owned.rs).
 [^issue-1015-report]: [Shared report projection](../../../crates/hoimin-cli/src/report/mod.rs).
+
+
+# Immutable manifest handles (Issue #1007)
+
+`WorkspaceManifest` owns one private `Arc` containing entries, directories and
+logical bytes. Whole-manifest clones share metadata, and equality still compares
+content. Explicit `ManifestEntry` clones retain owned-value semantics. Fresh
+original-source verification continues rebuilding and comparing source content;
+pointer identity grants no validation shortcut.[^perf-three-manifest]
+
+Plans, workers and detached blocking tasks keep read-only handles alive through
+their existing ownership. Metadata storage owns no root, worker slot, reservation,
+charge or cleanup callback. Final handle drop releases metadata; worker cleanup
+and disk accounting keep their existing authorities. `logical_bytes()` and
+`WorkspacePlan::completed()` lose their Rust `const` qualifiers. This internal
+source migration changes no serialized format.[^perf-three-manifest]
+
+The [retained-heap measurements](../../maintenance/2026-10-20-issue-1007/README.md)
+isolate live clone/worker metadata from fixture and output allocation. They
+show no multiplication of file metadata by handle count on the measured inputs.
+Filesystem copying still scales with files and workers; measured materialization
+times include increases and decreases. Requested heap implies neither an RSS
+bound nor reduced logical copy charge. Native platform lifecycle checks remain
+part of the controller's final CI validation.
+
+[^perf-three-manifest]: [Immutable manifest storage and content comparison](../../../crates/hoimin-cli/src/workspace/manifest.rs).

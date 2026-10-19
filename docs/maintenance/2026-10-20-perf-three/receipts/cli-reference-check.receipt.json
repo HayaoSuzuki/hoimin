@@ -1,0 +1,33 @@
+{
+  "name": "cli-reference-check",
+  "argv": [
+    "cargo",
+    "run",
+    "--locked",
+    "-p",
+    "hoimin-cli",
+    "--example",
+    "generate_cli_reference",
+    "--",
+    "--check"
+  ],
+  "cwd": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index",
+  "head": "f72134d76d28d87cd728305ed224f298df41af4a",
+  "tracked_diff_sha256": "9b723dbe3590a30d827e34f5ceea6b4bb1f38d9d4741413f1d8b362277491eb4",
+  "tracked_diff_bytes": 21495,
+  "timeout_seconds": 600,
+  "environment": {
+    "CARGO_BUILD_JOBS": "2",
+    "CARGO_TARGET_DIR": "/tmp/hoimin-perf-three-target",
+    "CARGO_INCREMENTAL": "0",
+    "RUST_TEST_THREADS": "2",
+    "PREK_NO_CONCURRENCY": "1",
+    "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+    "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache",
+    "PATH": "/tmp/hoimin-priority-six-venv/bin:/opt/homebrew/Caskroom/codex/0.162.1/codex-path:/Users/hayao/.rd/bin:/Users/hayao/.rd/bin:/opt/homebrew/opt/mariadb-connector-c/bin:/Users/hayao/.nvm/versions/node/v22.14.0/bin:/Users/hayao/.elan/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Users/hayao/.codex/tmp/arg0/codex-arg0IGseZF:/opt/homebrew/Caskroom/codex/0.162.1/codex-path:/Users/hayao/.rd/bin:/opt/homebrew/opt/mariadb-connector-c/bin:/Users/hayao/.nvm/versions/node/v22.14.0/bin:/Users/hayao/.local/bin:/Users/hayao/.elan/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/hayao/.cargo/bin:/Users/hayao/Library/Application Support/JetBrains/Toolbox/scripts:/Users/hayao/Library/Application Support/JetBrains/Toolbox/scripts"
+  },
+  "exit_code": 0,
+  "elapsed_seconds": 0.351169542176649,
+  "log_sha256": "c1247f9ad432fe03418dc0e86ecf41bd713e2bfca3386822b7d6df57c405b591",
+  "log_bytes": 163
+}

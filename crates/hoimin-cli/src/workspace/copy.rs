@@ -509,7 +509,7 @@ impl WorkspacePlan {
     }
 
     #[must_use]
-    pub const fn completed(&self) -> PreflightCompleted {
+    pub fn completed(&self) -> PreflightCompleted {
         PreflightCompleted {
             id: self.preflight_id,
             per_worker_logical_bytes: self.manifest.logical_bytes(),
@@ -1929,6 +1929,144 @@ mod tests {
             completed.per_worker_logical_bytes
         );
         assert_eq!(worker.read("target.py").unwrap(), b"original\n");
+    }
+
+    #[test]
+    fn failed_snapshot_copy_preserves_sibling_manifest_and_charge() {
+        // Arrange: one successful sibling before a later snapshot read fails.
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("target.py"), b"original\n").unwrap();
+        let root = Utf8Path::from_path(source.path()).unwrap();
+        let plan = WorkspacePlan::preflight(root, EffectId(14), 2, CopyOptions::default()).unwrap();
+        let completed = plan.completed();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: completed.aggregate_logical_bytes,
+            processes: 1,
+        });
+        let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+        let sibling = plan
+            .create_worker(&grant.create_worker(EffectId(15), 0).unwrap())
+            .unwrap();
+        let retained = sibling.manifest().clone();
+        fs::remove_file(plan.snapshot.root.join("target.py")).unwrap();
+
+        // Act.
+        let failed = plan
+            .create_worker(&grant.create_worker(EffectId(16), 1).unwrap())
+            .unwrap_err();
+
+        // Assert: only the failed slot rolls back; the sibling owns its content and charge.
+        assert!(matches!(
+            failed,
+            WorkspaceError::Io {
+                operation: "read shared snapshot",
+                ..
+            }
+        ));
+        assert_eq!(plan.materialized_workers(), 1);
+        assert_eq!(plan.observed_copy_bytes(), 9);
+        assert_eq!(sibling.manifest(), &retained);
+        assert_eq!(sibling.read("target.py").unwrap(), b"original\n");
+        drop(sibling);
+        assert_eq!(plan.observed_copy_bytes(), 0);
+        assert_eq!(plan.materialized_workers(), 0);
+    }
+
+    #[test]
+    fn surviving_workers_reset_independently_after_all_plans_drop() {
+        // Arrange: independent worker owners from the same immutable snapshot.
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("target.py"), b"original\n").unwrap();
+        let root = Utf8Path::from_path(source.path()).unwrap();
+        let plan = WorkspacePlan::preflight(root, EffectId(14), 2, CopyOptions::default()).unwrap();
+        let completed = plan.completed();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: completed.aggregate_logical_bytes,
+            processes: 1,
+        });
+        let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+        let mut first = plan
+            .create_worker(&grant.create_worker(EffectId(15), 0).unwrap())
+            .unwrap();
+        let second = plan
+            .create_worker(&grant.create_worker(EffectId(16), 1).unwrap())
+            .unwrap();
+        let cloned_plan = plan.clone();
+        assert_eq!(cloned_plan.manifest(), first.manifest());
+        drop(plan);
+        drop(cloned_plan);
+        fs::write(source.path().join("target.py"), b"external change\n").unwrap();
+        fs::write(first.root().join("target.py"), b"worker change\n").unwrap();
+
+        // Act.
+        first.reset().unwrap();
+
+        // Assert: the surviving worker's reset uses retained snapshot metadata and bytes.
+        assert_eq!(first.read("target.py").unwrap(), b"original\n");
+        assert_eq!(second.read("target.py").unwrap(), b"original\n");
+        assert_eq!(first.manifest(), second.manifest());
+    }
+
+    #[test]
+    fn changing_one_worker_preserves_sibling_snapshot_expectations() {
+        // Arrange.
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("target.py"), b"original\n").unwrap();
+        let root = Utf8Path::from_path(source.path()).unwrap();
+        let plan = WorkspacePlan::preflight(root, EffectId(14), 2, CopyOptions::default()).unwrap();
+        let completed = plan.completed();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: completed.aggregate_logical_bytes,
+            processes: 1,
+        });
+        let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+        let mut first = plan
+            .create_worker(&grant.create_worker(EffectId(15), 0).unwrap())
+            .unwrap();
+        let second = plan
+            .create_worker(&grant.create_worker(EffectId(16), 1).unwrap())
+            .unwrap();
+
+        let mut candidate = hoimin_core::MutationCandidate {
+            id: String::new(),
+            sequence: 0,
+            path: Utf8PathBuf::from("target.py"),
+            span: hoimin_core::ByteSpan {
+                start: 0,
+                length: 8,
+            },
+            original: "original".into(),
+            replacement: "mutated!".into(),
+            operator: "test".into(),
+            line: 1,
+            column: 0,
+            symbol: None,
+            file_hash: blake3::hash(b"original\n").to_hex().to_string(),
+        };
+        candidate.id = hoimin_core::validate_candidate(
+            b"original\n",
+            &hoimin_core::CandidateDescriptor::from(&candidate),
+        )
+        .unwrap()
+        .to_string();
+
+        // Act.
+        first.apply_mutation(&candidate).unwrap();
+
+        // Assert: a shared expected hash cannot be updated from worker content.
+        assert_eq!(first.read("target.py").unwrap(), b"mutated!\n");
+        assert_eq!(
+            first.manifest().entries()[0].blake3,
+            blake3::hash(b"original\n")
+        );
+        assert_eq!(second.read("target.py").unwrap(), b"original\n");
+        assert_eq!(
+            second.manifest().entries()[0].blake3,
+            blake3::hash(b"original\n")
+        );
     }
 
     #[test]

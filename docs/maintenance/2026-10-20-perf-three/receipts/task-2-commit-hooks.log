@@ -1,0 +1,16 @@
+COMMAND: ['git', 'commit', '-m', 'perf(workspace): share immutable manifest storage (#1007)']
+cargo fmt (workspace)....................................................Passed
+cargo fmt (vendored parser)..............................................Passed
+cargo clippy (workspace).................................................Passed
+cargo clippy (vendored parser)...........................................Passed
+[issue-1006-line-selection-index-1007-shared-manifest-1008-source-index e5e33603] perf(workspace): share immutable manifest storage (#1007)
+ 13 files changed, 5037 insertions(+), 15 deletions(-)
+ create mode 100644 crates/hoimin-cli/tests/workspace_manifest_heap.rs
+ create mode 100644 crates/hoimin-cli/tests/workspace_worker_metadata_heap.rs
+ create mode 100644 docs/maintenance/2026-10-20-issue-1007/README.md
+ create mode 100644 docs/maintenance/2026-10-20-issue-1007/build_probe.py
+ create mode 100644 docs/maintenance/2026-10-20-issue-1007/measure.py
+ create mode 100644 docs/maintenance/2026-10-20-issue-1007/measurement.json
+ create mode 100644 docs/maintenance/2026-10-20-issue-1007/probe.rs
+ create mode 100644 docs/maintenance/2026-10-20-issue-1007/receipt.py
+ create mode 100644 docs/maintenance/2026-10-20-issue-1007/verification.json

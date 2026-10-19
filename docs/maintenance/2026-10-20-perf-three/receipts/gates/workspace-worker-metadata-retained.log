@@ -1,0 +1,9 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running tests/workspace_worker_metadata_heap.rs (/tmp/hoimin-perf-three-target/debug/deps/workspace_worker_metadata_heap-918b7e85ddb49cd7)
+
+running 1 test
+{"mode":"worker","files":1000,"handles":4,"payload_bytes":0,"retained":712,"peak":66427,"elapsed_ns":525474167,"digest":"a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13","logical_bytes":0,"worker_charge":0,"snapshot_plus_worker_payload_bytes":0}
+test retained_worker_metadata_does_not_multiply_file_inventory ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.20s
+

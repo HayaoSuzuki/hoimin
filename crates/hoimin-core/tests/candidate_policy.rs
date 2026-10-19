@@ -575,3 +575,39 @@ proptest! {
         prop_assert_eq!(descriptor_id.as_str(), candidate.id.as_str());
     }
 }
+
+#[test]
+fn production_validation_context_remains_send_and_sync() {
+    fn assert_traits<T: Send + Sync>() {}
+    assert_traits::<CandidateValidationContext<'static>>();
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(96))]
+    #[test]
+    fn indexed_locations_match_an_independent_scalar_walk(
+        chunks in proptest::collection::vec(prop::sample::select(vec!["a", "é", "\u{301}", "😀", "\n", "\r\n", "\r"]), 0..64),
+        bom in any::<bool>(),
+    ) {
+        let source = format!("{}{}", if bom { "\u{feff}" } else { "" }, chunks.concat());
+        let mut expected = vec![None; source.len() + 1];
+        let (mut line, mut column) = (1, 0);
+        let mut scalars = source.char_indices().peekable();
+        while let Some((offset, scalar)) = scalars.next() {
+            expected[offset] = Some((line, column));
+            match scalar {
+                '\n' => { line += 1; column = 0; }
+                '\r' if !matches!(scalars.peek(), Some((_, '\n'))) => { line += 1; column = 0; }
+                '\u{feff}' if offset == 0 => {}
+                _ => column += 1,
+            }
+        }
+        expected[source.len()] = Some((line, column));
+
+        let index = PythonSourceIndex::new(&source)?;
+
+        for (offset, position) in expected.into_iter().enumerate() {
+            prop_assert_eq!(index.line_and_column(offset), position);
+        }
+    }
+}

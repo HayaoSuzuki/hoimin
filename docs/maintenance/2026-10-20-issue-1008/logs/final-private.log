@@ -1,0 +1,21 @@
+   Compiling hoimin-core v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.01s
+     Running unittests src/lib.rs (/tmp/hoimin-perf-three-target/debug/deps/hoimin_core-8f88fc31ca3bf84d)
+
+running 13 tests
+test candidate::lazy_tests::invalid_decoding_is_retained_without_building ... ok
+test candidate::lazy_tests::hash_precedes_span_without_building ... ok
+test candidate::lazy_tests::length_check_accepts_the_largest_raw_or_decoded_source ... ok
+test candidate::lazy_tests::length_check_rejects_decoded_expansion_beyond_the_raw_limit ... ok
+test candidate::lazy_tests::mutation_precedes_span_without_building ... ok
+test candidate::lazy_tests::original_mismatch_precedes_invalid_decoding_without_building ... ok
+test candidate::lazy_tests::original_precedes_location_without_building ... ok
+test candidate::lazy_tests::path_precedes_hash_without_building ... ok
+test candidate::lazy_tests::replacement_encoding_precedes_location_without_building ... ok
+test candidate::lazy_tests::repeated_validation_reuses_one_materialization ... ok
+test candidate::lazy_tests::schema_precedes_location_without_building ... ok
+test candidate::lazy_tests::span_precedes_original_without_building ... ok
+test candidate::lazy_tests::unused_context_does_not_materialize_locations ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 47 filtered out; finished in 0.00s
+

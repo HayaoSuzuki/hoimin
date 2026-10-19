@@ -1,0 +1,33 @@
+{
+  "local_missing_paths": {
+    "baseline_occurrences": 52,
+    "current_occurrences": 52,
+    "inherited_distinct_records": 35,
+    "new": [],
+    "removed": []
+  },
+  "unavailable_commit_references": {
+    "baseline_occurrences": 67,
+    "current_occurrences": 67,
+    "inherited_distinct_records": 67,
+    "new": [],
+    "removed": []
+  },
+  "footnote_findings": {
+    "baseline_occurrences": 14,
+    "current_occurrences": 14,
+    "inherited_distinct_records": 14,
+    "new": [],
+    "removed": []
+  },
+  "design-documents": {
+    "current_missing": 31,
+    "baseline_missing": 32,
+    "new_missing": []
+  },
+  "audit-documents": {
+    "current_missing": 104,
+    "baseline_missing": 104,
+    "new_missing": []
+  }
+}

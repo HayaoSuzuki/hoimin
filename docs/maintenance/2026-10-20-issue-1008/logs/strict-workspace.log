@@ -1,0 +1,20 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.23s
+     Running unittests src/lib.rs (/tmp/hoimin-perf-three-target/debug/deps/hoimin_cli-2f5eac9f7ef8d7ab)
+
+running 13 tests
+test workspace::mutation::tests::benchmark_original_manifest_work_per_mutant_cycle ... ignored, manual before/after performance evidence
+test workspace::mutation::tests::mutation_rejects_candidate_hash_when_worker_bytes_still_match ... ok
+test workspace::mutation::tests::mutation_and_reset_do_not_rebuild_the_original_manifest ... ok
+test workspace::mutation::tests::mutation_rejects_location_mismatch_without_changing_worker_bytes ... ok
+test workspace::mutation::tests::mutation_rejects_stable_id_mismatch_without_changing_worker_bytes ... ok
+test workspace::mutation::tests::removing_shared_readonly_target_preserves_external_permissions ... ok
+test workspace::mutation::tests::parent_replacement_mutation_uses_the_opened_parent ... ok
+test workspace::mutation::tests::shared_mutation_preserves_readonly_external_sentinel ... ok
+test workspace::mutation::tests::shared_mutation_rejects_external_sentinel_after_baseline ... ok
+test workspace::mutation::tests::shared_mutation_rejects_external_sentinel_after_reset ... ok
+test workspace::mutation::tests::shared_mutation_rejects_original_after_baseline ... ok
+test workspace::mutation::tests::shared_mutation_rejects_original_after_reset ... ok
+test workspace::mutation::tests::shared_mutation_rejects_additional_aliases ... ok
+
+test result: ok. 12 passed; 0 failed; 1 ignored; 0 measured; 802 filtered out; finished in 0.13s
+

@@ -1,0 +1,66 @@
+[
+  {
+    "label": "tiny",
+    "mode": "pipeline",
+    "revision": "before",
+    "median_ns": 208208.5,
+    "min_ns": 164125,
+    "max_ns": 2851959
+  },
+  {
+    "label": "tiny",
+    "mode": "pipeline",
+    "revision": "after",
+    "median_ns": 184292.0,
+    "min_ns": 155000,
+    "max_ns": 3961042
+  },
+  {
+    "label": "tiny",
+    "mode": "ordinary-plan",
+    "revision": "before",
+    "median_ns": 5409813.0,
+    "min_ns": 5105250,
+    "max_ns": 22104666
+  },
+  {
+    "label": "tiny",
+    "mode": "ordinary-plan",
+    "revision": "after",
+    "median_ns": 5552521.0,
+    "min_ns": 5283208,
+    "max_ns": 18348291
+  },
+  {
+    "label": "small",
+    "mode": "pipeline",
+    "revision": "before",
+    "median_ns": 298958.0,
+    "min_ns": 257458,
+    "max_ns": 357334
+  },
+  {
+    "label": "small",
+    "mode": "pipeline",
+    "revision": "after",
+    "median_ns": 299270.5,
+    "min_ns": 270625,
+    "max_ns": 391125
+  },
+  {
+    "label": "small",
+    "mode": "ordinary-plan",
+    "revision": "before",
+    "median_ns": 5509541.5,
+    "min_ns": 4922417,
+    "max_ns": 6684875
+  },
+  {
+    "label": "small",
+    "mode": "ordinary-plan",
+    "revision": "after",
+    "median_ns": 5850041.5,
+    "min_ns": 5098916,
+    "max_ns": 6502750
+  }
+]

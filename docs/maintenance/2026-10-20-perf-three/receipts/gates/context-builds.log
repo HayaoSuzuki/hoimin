@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running unittests src/lib.rs (/tmp/hoimin-perf-three-target/debug/deps/hoimin_cli-2f5eac9f7ef8d7ab)
+
+running 1 test
+test plan::validation_tests::descriptor_validation_cost_tracks_files_and_bytes_not_candidates ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 814 filtered out; finished in 0.04s
+

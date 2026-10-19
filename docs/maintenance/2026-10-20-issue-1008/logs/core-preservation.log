@@ -1,0 +1,54 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+     Running tests/candidate_policy.rs (/tmp/hoimin-perf-three-target/debug/deps/candidate_policy-76aa7028866be4f8)
+
+running 25 tests
+test borrowed_descriptor_identity_includes_candidate_schema ... ok
+test borrowed_candidate_identity_preserves_published_id_vector ... ok
+test borrowed_descriptor_identity_preserves_canonical_path_and_hash_case ... ok
+test candidate_id_is_stable_across_runs_and_root_locations ... ok
+test candidate_identity_has_unambiguous_field_framing ... ok
+test candidate_paths_reject_absolute_parent_and_colon_components ... ok
+test indexed_locations_match_an_independent_scalar_walk ... ok
+test indexed_source_locations_match_the_single_query_contract ... ok
+test indexed_source_locations_preserve_python_columns_for_arbitrary_queries ... ok
+test mutation_candidate_validation_ignores_assigned_id_and_sequence ... ok
+test production_validation_context_remains_send_and_sync ... ok
+test python_columns_ignore_exactly_one_leading_file_bom ... ok
+test python_columns_reject_invalid_ranges_and_utf8_boundaries ... ok
+test python_physical_line_starts_count_crlf_once_and_keep_empty_lines ... ok
+test rejects_overflowing_span_without_panicking ... ok
+test rejects_span_original_mismatch ... ok
+test rejects_wrong_line_metadata_and_non_normalized_path ... ok
+test reusable_context_matches_strict_validation_for_multiple_locations ... ok
+test reusable_context_preserves_unicode_and_crlf_location_semantics ... ok
+test reusable_context_preserves_validation_error_precedence ... ok
+test stable_id_normalizes_only_harmless_path_variants ... ok
+test validates_bom_adjusted_first_line_without_changing_identity_inputs ... ok
+test validates_exact_hash_span_path_and_line_metadata ... ok
+test validates_python_physical_lines_without_normalizing_source_bytes ... ok
+test borrowed_projections_preserve_published_vectors_despite_display_metadata ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/source_encoding.rs (/tmp/hoimin-perf-three-target/debug/deps/source_encoding-3ca723a6eb30a75e)
+
+running 8 tests
+test cookies_follow_physical_lines_and_standalone_comment_rules ... ok
+test candidate_validation_rejects_unencodable_replacements_and_decoded_offsets ... ok
+test decoding_maps_every_latin1_boundary_and_reencodes_exactly ... ok
+test latin1_candidate_uses_original_bytes_and_unicode_metadata ... ok
+test errors_retain_declarations_and_bom_requires_tokenizer_utf8_name ... ok
+test latin1_mapping_matches_scalar_widths_for_every_byte_and_boundary ... ok
+test utf8_offsets_and_encoding_remain_unchanged ... ok
+test latin1_validation_locations_match_decoded_unicode_index_at_every_boundary ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/source_encoding_properties.rs (/tmp/hoimin-perf-three-target/debug/deps/source_encoding_properties-d6d951dec9126d8d)
+
+running 2 tests
+test boundary_property_utf8_coordinates_reject_split_scalars ... ok
+test boundary_property_latin1_coordinates_preserve_arbitrary_bytes ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+

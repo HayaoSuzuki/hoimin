@@ -1,0 +1,59 @@
+   Compiling hoimin-core v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-core)
+   Compiling hoimin-python v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-python)
+   Compiling hoimin-cli v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 18.98s
+     Running unittests src/lib.rs (/tmp/hoimin-perf-three-target/debug/deps/hoimin_cli-2f5eac9f7ef8d7ab)
+
+running 49 tests
+test analyzer::exception_fingerprint_tests::exception_hierarchy_fingerprints_unselected_inputs_and_additions ... ok
+test analyzer::exception_project::tests::hierarchy_project_bounds_file_discovery_and_cancels ... ok
+test analyzer::exception_project::tests::hierarchy_project_bounds_reads_and_does_not_cache_failure ... ok
+test analyzer::exception_project::tests::hierarchy_project_missing_snapshot_module_cannot_expose_lower_priority_module ... ok
+test analyzer::exception_project::tests::hierarchy_project_rejects_inputs_changed_after_configuration_was_prepared ... ok
+test analyzer::exception_project_tests::exception_hierarchy_discovery_reads_unselected_module ... ok
+test analyzer::payload_probes::django_boolean ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures
+test analyzer::payload_probes::django_focused ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures
+test analyzer::payload_probes::django_full ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures
+test analyzer::payload_probes::generated_boolean ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures
+test analyzer::payload_probes::generated_focused ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures
+test analyzer::payload_probes::generated_full ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures
+test analyzer::payload_probes::normal_three_file_plan ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures
+test analyzer::payload_probes::proofreadtools_boolean ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures
+test analyzer::payload_probes::proofreadtools_focused ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures
+test analyzer::payload_probes::proofreadtools_full ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures
+test analyzer::payload_tests::conversion_metadata_admission_fails_before_validation_scratch ... ok
+test analyzer::payload_tests::conversion_payload_failure_preserves_run_effect_identity ... ok
+test analyzer::payload_tests::conversion_scratch_exact_limit_preserves_id_and_transfers_payload ... ok
+test analyzer::payload_tests::conversion_scratch_limit_plus_one_fails_and_releases_payload ... ok
+test analyzer::payload_tests::cross_file_plan_exact_limit_hands_off_complete_plain_output ... ok
+test analyzer::payload_tests::cross_file_plan_retains_converted_candidates_in_shared_budget ... ok
+test analyzer::payload_tests::detached_worker_payload_remains_charged_during_handler_reuse ... ok
+test analyzer::payload_tests::handler_payload_failure_deletes_partial_store ... ok
+test analyzer::exception_project::oracle_tests::lean_exception_hierarchy_snapshot_correspondence ... ok
+test analyzer::payload_tests::latin1_conversion_reserves_encoding_scratch_and_preserves_raw_span ... ok
+test analyzer::payload_tests::spool_buffer_overlap_fails_without_an_unusable_spool ... ok
+test analyzer::payload_tests::successful_spool_write_releases_encoded_buffer_but_keeps_candidate ... ok
+test analyzer::payload_tests::large_eight_element_population_fails_at_payload_admission ... ok
+test analyzer::store::tests::cursor_advancement_rejects_integer_overflow ... ok
+test analyzer::store::tests::accepted_count_matches_independently_counted_finished_records ... ok
+test analyzer::store::tests::push_write_error_keeps_count_and_tempfile_cleanup ... ok
+test analyzer::store::tests::push_writes_one_complete_jsonl_record ... ok
+test analyzer::store::tests::rejected_push_preserves_accepted_count_and_file_contents ... ok
+test analyzer::store::tests::replay_does_not_parse_the_previous_record ... ok
+test analyzer::store::tests::ordered_unicode_candidates_round_trip_from_every_record_offset ... ok
+test analyzer::store::tests::serialized_payload_boundaries_include_the_newline_exactly_once ... ok
+test analyzer::tests::analyzer_diagnostic_preserves_custom_message_with_or_without_location ... ok
+test analyzer::tests::batch_conversion_preserves_strict_candidate_identity ... ok
+test analyzer::tests::batch_conversion_rejects_stale_source_metadata ... ok
+test analyzer::tests::concrete_handler_cancellation_leaves_store_ready_for_final_spool ... ok
+test analyzer::tests::controlled_discovery_arms_its_deadline_after_blocking_worker_entry ... ok
+test analyzer::store::tests::shared_record_size_matches_encoded_escaped_unicode_boundaries ... ok
+test analyzer::tests::discovery_deadline_is_shared_across_targets ... ok
+test analyzer::tests::discovery_timeout_returns_before_detached_analysis_releases_resources ... ok
+test analyzer::tests::depth_failure_releases_candidate_store_and_preserves_handler_reuse ... ok
+test analyzer::tests::maps_every_analyzer_diagnostic_to_a_stable_run_diagnostic ... ok
+test analyzer::tests::pre_cancelled_discovery_returns_before_opening_missing_root ... ok
+test analyzer::tests::in_progress_analysis_is_cancellable ... ok
+
+test result: ok. 39 passed; 0 failed; 10 ignored; 0 measured; 766 filtered out; finished in 2.64s
+

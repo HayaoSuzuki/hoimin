@@ -1,0 +1,40 @@
+{
+  "command": [
+    "rustc",
+    "--edition=2024",
+    "-O",
+    "-C",
+    "lto=thin",
+    "-C",
+    "embed-bitcode=yes",
+    "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/docs/maintenance/2026-10-20-issue-1008/probe.rs",
+    "-L",
+    "dependency=/tmp/hoimin-perf-three-baseline/release/deps",
+    "--extern",
+    "camino=/tmp/hoimin-perf-three-baseline/release/deps/libcamino-f91f8d14b22abb98.rlib",
+    "--extern",
+    "hoimin_core=/tmp/hoimin-perf-three-baseline/release/deps/libhoimin_core-e36060db195214e8.rlib",
+    "--extern",
+    "hoimin_python=/tmp/hoimin-perf-three-baseline/release/deps/libhoimin_python-f46ed673dcee7a84.rlib",
+    "--extern",
+    "hoimin_cli=/tmp/hoimin-perf-three-baseline/release/deps/libhoimin_cli-ae6165566be2bc32.rlib",
+    "--extern",
+    "blake3=/tmp/hoimin-perf-three-baseline/release/deps/libblake3-6eec682d57919d01.rlib",
+    "--extern",
+    "serde_json=/tmp/hoimin-perf-three-baseline/release/deps/libserde_json-249d5adfc4d88833.rlib",
+    "--extern",
+    "tokio=/tmp/hoimin-perf-three-baseline/release/deps/libtokio-71a583f173241733.rlib",
+    "-o",
+    "/tmp/hoimin-perf-three-task3/probe-before"
+  ],
+  "hashes": {
+    "/tmp/hoimin-perf-three-baseline/release/deps/libcamino-f91f8d14b22abb98.rlib": "50bd1c1fbaa4e55cb41d2994f39dd3a8b6186451472f26a32227892a9b8cf89d",
+    "/tmp/hoimin-perf-three-baseline/release/deps/libhoimin_core-e36060db195214e8.rlib": "d5174a5afb6aa1d3c02934b5fed1fb537b585bd9505054564175fa700a618f97",
+    "/tmp/hoimin-perf-three-baseline/release/deps/libhoimin_python-f46ed673dcee7a84.rlib": "36c4350b802b04c64e70f565a3ed97b1aeeae4659ce0f46399cdff9ce07c4e52",
+    "/tmp/hoimin-perf-three-baseline/release/deps/libhoimin_cli-ae6165566be2bc32.rlib": "b0ba184b3434870437d7a71ed8a689275c956ebf3ca9be96f8dc7d8e08131ac6",
+    "/tmp/hoimin-perf-three-baseline/release/deps/libblake3-6eec682d57919d01.rlib": "77bbf4441e08619dbd1da40d1a80051d518b0965c6d32f9d175d21ba78c522ea",
+    "/tmp/hoimin-perf-three-baseline/release/deps/libserde_json-249d5adfc4d88833.rlib": "a0a1371046ff40474374c94abd6eb2c1d758d6584bf63d2e847629fe843cafeb",
+    "/tmp/hoimin-perf-three-baseline/release/deps/libtokio-71a583f173241733.rlib": "106bf59b4d7c80f3648266380b31ecbb3837dde75570351e8f6618077e1cb8c7",
+    "/tmp/hoimin-perf-three-task3/probe-before": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4"
+  }
+}

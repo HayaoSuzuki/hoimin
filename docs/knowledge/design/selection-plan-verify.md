@@ -5,6 +5,11 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: perf-three-selection
+  resource: ../../../crates/hoimin-python/src/analyzer/rust/selection.rs
+  revision: f72134d76d28d87cd728305ed224f298df41af4a
+  working_tree: clean
+  sha256: 55784a1d7923b782f84f95b5cf67e9e7ae9e16e86a56b8bb0569a51039bfd5c5
 - id: issue-1004-config
   resource: ../../../crates/hoimin-core/src/config.rs
   revision: 6d78789eca05fad577b2a8dcce83077f9389ee06
@@ -1088,3 +1093,19 @@ establish arbitrary code execution.[^issue-1002-preview-tests]
 [^issue-1002-human-text]: [Shared human text projection](../../../crates/hoimin-cli/src/human_text.rs).
 [^issue-1002-preview]: [Preview rendering boundary](../../../crates/hoimin-cli/src/plan/preview.rs).
 [^issue-1002-preview-tests]: [Public preview and diagnostic regressions](../../../crates/hoimin-cli/tests/plan.rs).
+
+
+# Analyzer membership after target selection (Issue #1006)
+
+Per-file analyzer admission prepares the raw range union once and reuses it
+across token, AST and annotation producers. Empty input means all lines;
+nonempty reversed-only input means none. Prefix-maximum inclusive endpoints
+preserve arbitrary unsorted/overlapping/nested ranges without requiring caller
+normalization. Symbol admission remains a conjunction. Public `--line` and
+noncontiguous `--changed` coverage compares candidate objects, IDs, ordering and
+truncation; this internal index changes no saved format or ranking rule.
+See [analyzer ownership and limits](analyzer.md#prepared-admission-and-deferred-positions-issues-1006-and-1008)
+and the [fixed-workload evidence](../../maintenance/2026-10-20-issue-1006/verification.json).
+[^perf-three-selection]
+
+[^perf-three-selection]: [Prepared raw-range union](../../../crates/hoimin-python/src/analyzer/rust/selection.rs).

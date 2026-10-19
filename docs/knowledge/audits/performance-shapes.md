@@ -5,6 +5,26 @@ description: 決定的な回帰ゲートとrelease計測、未統合の依存、
 status: draft
 catalog_revision: 165a2d284a1af92eb02ffd214ba8c0070c2f3808
 sources:
+- id: perf-three-d1
+  resource: ../../maintenance/2026-10-20-perf-three/reports/task-3-d1-review.md
+  revision: f72134d76d28d87cd728305ed224f298df41af4a
+  working_tree: untracked
+  sha256: 940e252759779a85e44d2fa490888276c9ce6045f94cce5598e9ddf1f0beae73
+- id: perf-three-positions
+  resource: ../../maintenance/2026-10-20-issue-1008/r6/README.md
+  revision: f72134d76d28d87cd728305ed224f298df41af4a
+  working_tree: clean
+  sha256: dc8d380685fb078d256cc965a2aed63c31806ca4ac105bb6623b342cd4731d77
+- id: perf-three-manifest
+  resource: ../../maintenance/2026-10-20-issue-1007/README.md
+  revision: f72134d76d28d87cd728305ed224f298df41af4a
+  working_tree: clean
+  sha256: 9950f5b0240ef1e7d95bb847116a207689e47ee75efccbb2f0a4419d280135f9
+- id: perf-three-selection
+  resource: ../../maintenance/2026-10-20-issue-1006/verification.json
+  revision: f72134d76d28d87cd728305ed224f298df41af4a
+  working_tree: clean
+  sha256: c292f73978e6a2eb696faefff3d8a38fded3a352415012403a4776d2f0453de2
 - id: issue-546-report
   resource: ../../superpowers/reports/2026-09-15-issue-546-loop-transfer-review.md
   working_tree: untracked
@@ -133,3 +153,31 @@ progressの通常ゲートは1reportの内容500/1,000/2,000件と履歴2/4/8を
 旧モデルの再走査回数2^nと、import数・注釈数をともに2倍にした場合のコピー量4倍もPerformanceCostProofsへ移した。これは旧方式の定理であり、現在のRust実装全体の上界を証明するものではない。旧監査の36回の時間測定と、今回の操作数の検査は分けて扱う。[^audit-promotion]
 
 [^audit-promotion]: [監査コード・ケースの正式な検証への移行](../../superpowers/reports/2026-09-15-audit-verification-promotion.md)。
+
+
+# Indexed admission and immutable metadata (Issues #1006–#1008)
+
+Four exact sparse-selection gates count actual queries, membership comparisons
+and preparation work. Separate manifest-clone and actual-worker allocator gates
+observe requested retained heap while handles remain live. A CLI discovery gate
+bounds source-index heap with an eager-retention sensitivity control. These
+ordinary gates assert operations/allocation, with no elapsed-time thresholds.
+The [integration archive](../../maintenance/2026-10-20-perf-three/README.md)
+records their frozen-source execution and links all original observations.
+[^perf-three-selection][^perf-three-manifest]
+
+Release timing remains mixed: sparse API work improves, the three-pair many-line
+whole-CLI median increases, and workspace filesystem observations include both
+directions. Lazy validation reduces simultaneous Unicode indexes from two to
+one while preserving two sequential builds. R6 small ASCII did not meet the
+initial +0.05 ms upper-bound criterion. The user subsequently accepted +0.1 ms
+(D1); both fixtures meet it with unchanged requested whole-plan peak/retained
+heap. This post-observation acceptance does not rewrite R6 or establish a
+universal non-regression guarantee. Context stack grows by 8 bytes; heap, stack,
+RSS, logical payload and disk charges retain separate meanings.[^perf-three-positions][^perf-three-d1]
+
+[^perf-three-selection]: [Selection operation and release evidence](../../maintenance/2026-10-20-issue-1006/verification.json).
+[^perf-three-manifest]: [Manifest retention and filesystem evidence](../../maintenance/2026-10-20-issue-1007/README.md).
+[^perf-three-positions]: [R6 original protocol and observed bounds](../../maintenance/2026-10-20-issue-1008/r6/README.md); the later [D1 acceptance addendum](../../maintenance/2026-10-20-perf-three/reports/task-3-d1-review.md) records the user decision.
+
+[^perf-three-d1]: [D1 acceptance decision and scoped independent review](../../maintenance/2026-10-20-perf-three/reports/task-3-d1-review.md).

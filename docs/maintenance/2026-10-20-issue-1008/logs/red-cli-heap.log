@@ -1,0 +1,24 @@
+   Compiling hoimin-core v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-core)
+   Compiling hoimin-python v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-python)
+   Compiling hoimin-cli v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.72s
+     Running tests/source_index_heap.rs (/tmp/hoimin-perf-three-target/debug/deps/source_index_heap-43d583b6c6f04a9f)
+
+running 1 test
+unicode-index count=262144 context=2097232 discovery=4722483 eager_control=6819104
+unicode-index count=524288 context=4194384 discovery=9440528 eager_control=13634848
+unicode-index count=1048576 context=8388688 discovery=18877712 eager_control=27266336
+
+thread 'unicode_context_and_cli_discovery_avoid_overlapping_location_indexes' (56597355) panicked at crates/hoimin-cli/tests/source_index_heap.rs:64:9:
+overlapping CLI indexes: N=262144 peak=4722483 bound=3407872
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test unicode_context_and_cli_discovery_avoid_overlapping_location_indexes ... FAILED
+
+failures:
+
+failures:
+    unicode_context_and_cli_discovery_avoid_overlapping_location_indexes
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.92s
+
+error: test failed, to rerun pass `-p hoimin-cli --test source_index_heap`

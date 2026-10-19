@@ -1,0 +1,38 @@
+### Task 2: Share immutable manifest storage (#1007)
+
+**Files:** Modify `crates/hoimin-cli/src/workspace/manifest.rs`, `copy.rs`; focused lifecycle tests in existing workspace modules; add isolated metadata heap test binary(s) alongside `tests/workspace_heap.rs`; evidence under `docs/maintenance/2026-10-20-issue-1007/`.
+
+**Interfaces:** Consumes current WorkspaceManifest value API. Produces same methods/structural equality and cheap Clone via private Arc<ManifestStorage{entries,directories,logical_bytes}>. Remove const only where required (`logical_bytes`, `WorkspacePlan::completed`). Plan/worker field types and transfer signatures remain unchanged. No state shared with Task1's selection index.
+
+- [ ] Read issue snapshot and manifest design report; inspect actual base afterTask1. Record five design reviews, particularly const callers, security capabilities, detached tasks and charge/cleanup separation. Baseline immutable manifest implementation is still34e33490; public probes can link preserved rlibs.
+- [ ] Add allocator regression binaries with one case per process and a self-checked requested-live/peak meter. Capture actual RED for clone retention and real-worker metadata scaling before edits. Use preallocated output handles, exclude fixture/setup/printing from clone windows, retain handles during LIVE readings. Establish discrimination before selecting a conservative bound; do not confuse existing peak-only finish() with retained bytes.
+- [ ] Parameterize handle content/equality/drop-order cases and bounded small filesystem properties against generated file data. Reuse/extend existing failed_snapshot_copy_rolls_back_only_the_slot_and_keeps_the_bound_reservation, reset_task_preserves_depth_error_and_pending_copy_accounting, shared_snapshot_restores_after_original_source_changes and MaterializationPause cancellation harnesses. Add separate sibling isolation, final metadata release and plan-drop cases where existing coverage does not address shared lifetime. No sleeps or platform-unsafe chmod assumptions.
+- [ ] Implement private immutable Arc storage at the single manifest construction boundary. Keep structural comparisons, path/hash/size checks, fresh original verification, sorted directories and checked byte totals. No public Arc getter, mutable access, Weak instrumentation API, Mutex, cache, scalar duplicate, deep-copy fallback or lifecycle reordering.
+- [ ] GREEN metadata heap and focused workspace reset/mutation/recovery/failure/cancellation tests. Suggested commands: `cargo test --locked -p hoimin-cli --test workspace_manifest_heap -- --test-threads=1`; focused workspace unit filters and existing workspace_heap/recovery cases. Native Windows-only cases are recorded for final CI, not claimed locally passed.
+- [ ] Measure 1000/4000 files,1/4/16 clone handles and workers, empty/64-byte payloads, with sequential cleanup. Record pure-clone retention/time separately from actual materialization retention/time and optional process RSS. Copy filesystem operations still scale with files*workers; no generic materialization speedup claim. >=3 paired samples with bounded churn and retained raw observations/digests/charge checks. Add deterministic retained-memory gate.
+- [ ] Run five implementation/five validation reviews, normal fmt/clippy/hooks and focused regressions, commit and report. Controller task review gates Task3.
+
+
+## Global Constraints
+
+- Implement only #1006/#1007/#1008; no compatibility adapters, feature switches, unrelated state-machine or formal-proof changes. Current schemas and version0.14.0 remain.
+- Five distinct self-reviews in each requirements/design, implementation and validation stage for each task; report evidence, not a checked box repeated five times. Independent review is additional.
+- AAA, one behavioral case per test function/parameter instance; parameter/property tests with independent expectations and bounded sizes. Real RED for inefficiency, preservation controls labeled honestly.
+- One implementation/Cargo owner at a time. CARGO_BUILD_JOBS=2, CARGO_TARGET_DIR=/tmp/hoimin-perf-three-target, CARGO_INCREMENTAL=0, RUST_TEST_THREADS=2, PREK_NO_CONCURRENCY=1. Existing Python environment/cache under /tmp/hoimin-priority-six-{venv,uv-cache}; PATH starts with its bin.
+- Preserve clean baseline release artifacts under /tmp/hoimin-perf-three-baseline until comparisons finish. Record actual checked source/tool/binary hashes; historical issue values are not fresh measurements.
+- Measurements are fixed-workload evidence: requested live/peak heap, process RSS, elapsed time, payload and disk charges are distinct. No wall-time assertion in ordinary tests. Each measurement command has a bounded timeout; no concurrent benchmarks/builds.
+- Product tests per task are focused; final workspace/contracts/Python/performance tests run once at integration, repeat only for changed code/failures. Mandatory commit hooks remain enabled.
+- No subagents inside implementers/reviewers; controller owns review, PR push/creation, CI dispatch and final cleanup. Reports and raw receipts live in this plan's ignored SDD workspace until archived.
+
+## Controller handoff
+
+- Work only in this issue-named worktree. Sole product/Cargo ownership transfers after the previous task's review is complete. No worker subagents. Read implementer-prompt.md in the SDD skill and relevant test guidance.
+- This brief plus the exact task issue/design files are your requirements. Do not read the whole plan. Current source after previous tasks is authoritative; do not revert their changes.
+- Baseline original commit34e3349099ce7fd61838629ee8c0d0b814e65a5d is preserved at `/tmp/hoimin-perf-three-baseline/release` (entire release, including rlibs), receipt in this SDD workspace. Never overwrite or clean it before all comparisons finish. `rustc -C lto=thin` may be needed for public probes linked to thin-LTO macOS artifacts; apply identical flags to both versions.
+- Use `UV_PROJECT_ENVIRONMENT=/tmp/hoimin-priority-six-venv`, `UV_CACHE_DIR=/tmp/hoimin-priority-six-uv-cache`, prepend venv/bin to PATH for hooks. Frozen fuzz Python dependencies already restored. No new environment unless necessary.
+- Use existing allocator/probe/performance registry patterns where possible, keep measurements bounded and serialized; do not add a general benchmark framework. Meaningful RED must be a measured failing assertion on original behavior, not an inferred count. Save raw logs and exact commands/hash provenance; quoted historical issue values are not measurements.
+- Normal commit hooks are mandatory; set the bounded env from Global Constraints for every Cargo/commit. Git metadata commands may require escalation; no push/PR/CI/cleanup by implementer. No full integration sweep (Task4 owns it).
+- Write full report to this task's sibling `task-2-report.md` with exact HEAD/diff, five separate design/implementation/validation reviews each, RED/GREEN commands and outputs, measurements and limitations, any concerns. Return only status DONE/DONE_WITH_CONCERNS/BLOCKED/NEEDS_CONTEXT, commits, one-line tests/concerns, report path (under15lines).
+
+- Read `issue-1007.json` and `manifest-design.md` from this SDD directory; discovery is design evidence only, not completed implementation/validation.
+- Raw artifacts: `/tmp/hoimin-perf-three-task2`; tracked reproducibility evidence: `docs/maintenance/2026-10-20-issue-1007/`. Representation is one private immutable Arc storage; retain plan/worker fields and all lifecycle authority. Two required const removals are intentional. Existing exact lifecycle test paths and caveats are in the design report; reuse these harnesses before writing larger fixtures.

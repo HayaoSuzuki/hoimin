@@ -1,0 +1,210 @@
+cargo fmt (workspace)....................................................Passed
+cargo fmt (vendored parser)..............................................Passed
+cargo clippy (workspace).................................................Failed
+- hook id: cargo-clippy
+- exit code: 101
+
+  Compiling unicode-ident v1.0.24
+      Checking cfg-if v1.0.4
+      Checking libc v0.2.189
+     Compiling proc-macro2 v1.0.107
+      Checking memchr v2.8.3
+     Compiling quote v1.0.47
+     Compiling syn v3.0.5
+      Checking bitflags v2.13.2
+      Checking itoa v1.0.18
+      Checking errno v0.3.14
+      Checking regex-syntax v0.8.11
+      Checking serde_core v1.0.229
+      Checking rand_core v0.10.1
+      Checking once_cell v1.21.4
+      Checking rustix v1.1.5
+     Compiling serde_derive v1.0.229
+      Checking getrandom v0.4.3
+      Checking num-traits v0.2.19
+      Checking zmij v1.0.23
+      Checking serde_json v1.0.154
+      Checking fastrand v2.5.0
+      Checking tempfile v3.27.0
+     Compiling thiserror-impl v2.0.21
+      Checking serde v1.0.229
+      Checking thiserror v2.0.21
+      Checking hoimin-budget-math v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-budget-math)
+      Checking wait-timeout v0.2.1
+      Checking quick-error v1.2.3
+      Checking constant_time_eq v0.4.2
+      Checking fnv v1.0.7
+      Checking bit-vec v0.10.1
+      Checking arrayvec v0.7.8
+      Checking bit-set v0.11.1
+      Checking blake3 v1.8.7
+      Checking rusty-fork v0.3.1
+      Checking camino v1.2.6
+      Checking rand v0.10.3
+     Compiling contracts v0.6.11
+      Checking rand_xorshift v0.5.0
+      Checking chacha20 v0.10.2
+      Checking core_detect v1.0.0
+      Checking unarray v0.1.4
+      Checking proptest v1.12.0
+      Checking hoimin-core v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-core)
+     Compiling syn v2.0.119
+     Compiling proc-macro-utils v0.10.0
+     Compiling getrandom v0.2.17
+     Compiling manyhow-macros v0.11.4
+     Compiling manyhow v0.11.4
+     Compiling quote-use-macros v0.8.4
+     Compiling rand_core v0.6.4
+     Compiling quote-use v0.8.4
+     Compiling rand_chacha v0.3.1
+     Compiling derive-where v1.6.1
+     Compiling attribute-derive-macro v0.10.5
+      Checking aho-corasick v1.1.5
+     Compiling siphasher v1.0.3
+     Compiling phf_shared v0.11.3
+     Compiling attribute-derive v0.10.5
+      Checking castaway v0.2.4
+     Compiling rand v0.8.8
+      Checking static_assertions v1.1.0
+      Checking ryu v1.0.23
+     Compiling get-size-derive2 v0.7.4
+      Checking compact_str v0.9.1
+     Compiling phf_generator v0.11.3
+      Checking regex-automata v0.4.18
+      Checking get-size2 v0.7.4
+     Compiling phf_codegen v0.11.3
+     Compiling unicode_names2_generator v1.3.0
+      Checking littrs-ruff-text-size v0.6.2
+      Checking either v1.18.0
+      Checking bstr v1.13.1
+      Checking itertools v0.14.0
+      Checking littrs-ruff-source-file v0.6.2
+     Compiling unicode_names2 v1.3.0
+      Checking utf8parse v0.2.2
+      Checking anstyle-parse v1.0.0
+      Checking littrs-ruff-python-trivia v0.6.2
+      Checking psm v0.1.32
+      Checking io-lifetimes v2.0.4
+      Checking io-lifetimes v3.0.1
+      Checking phf v0.11.3
+     Compiling is-macro v0.3.8
+      Checking tracing-core v0.1.36
+      Checking tinyvec v1.13.3
+      Checking colorchoice v1.0.5
+      Checking anstyle v1.0.14
+      Checking rustc-hash v2.1.3
+      Checking anstyle-query v1.1.5
+      Checking log v0.4.34
+      Checking is_terminal_polyfill v1.70.2
+      Checking anstream v1.0.0
+      Checking littrs-ruff-python-ast v0.6.2
+      Checking unicode-normalization v0.1.25
+      Checking io-extras v0.19.0
+      Checking fs-set-times v0.20.3
+      Checking stacker v0.1.25
+      Checking crossbeam-utils v0.8.23
+      Checking num-integer v0.1.47
+      Checking maybe-owned v0.3.4
+      Checking ambient-authority v0.0.2
+      Checking strsim v0.11.1
+      Checking ipnet v2.12.2
+      Checking clap_lex v1.1.1
+      Checking pin-project-lite v0.2.17
+      Checking clap_builder v4.6.7
+      Checking littrs-ruff-python-parser v0.6.2 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/vendor/ruff_python_parser)
+      Checking cap-primitives v4.0.3
+      Checking num-bigint v0.5.1
+      Checking crossbeam-epoch v0.9.21
+     Compiling clap_derive v4.6.7
+     Compiling tracing-attributes v0.1.31
+      Checking lazy_static v1.5.0
+      Checking same-file v1.0.6
+      Checking smallvec v1.16.1
+      Checking tracing v0.1.44
+      Checking walkdir v2.5.0
+      Checking sharded-slab v0.1.7
+      Checking clap v4.6.7
+      Checking libsqlite3-sys v0.38.2
+      Checking crossbeam-deque v0.8.8
+      Checking cap-std v4.0.3
+      Checking tracing-log v0.2.0
+      Checking globset v0.4.20
+      Checking tracing-serde v0.2.0
+      Checking matchers v0.2.0
+     Compiling tokio-macros v2.7.2
+      Checking signal-hook-registry v1.4.8
+      Checking mio v1.2.3
+      Checking thread_local v1.1.10
+      Checking bytes v1.12.1
+      Checking nu-ansi-term v0.50.3
+      Checking fallible-streaming-iterator v0.1.9
+      Checking fallible-iterator v0.3.0
+      Checking tokio v1.53.3
+      Checking rusqlite v0.40.2
+      Checking tracing-subscriber v0.3.23
+      Checking ignore v0.4.33
+      Checking clap_complete v4.6.11
+      Checking cap-fs-ext v4.0.3
+      Checking crc32fast v1.5.2
+      Checking hoimin-python v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-python)
+      Checking uuid v1.26.1
+      Checking fs2 v0.4.3
+      Checking humantime v2.4.0
+      Checking hoimin-cli v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-cli)
+  error: used `assert!` to check that a value is empty
+    --> crates/hoimin-python/src/analyzer/rust/selection_tests.rs:83:5
+     |
+  83 |     assert!(output.candidates.is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+     = note: `-D clippy::assert-is-empty` implied by `-D clippy::pedantic`
+     = help: to override `-D clippy::pedantic` add `#[allow(clippy::assert_is_empty)]`
+  help: use `assert_eq!` to show the value on failure
+     |
+  83 -     assert!(output.candidates.is_empty());
+  83 +     assert_eq!(output.candidates, [] as [rust::payload::Charged<types::AnalyzerCandidate>; 0]);
+     |
+
+  error: used `assert!` to check that a value is empty
+    --> crates/hoimin-python/src/analyzer/rust/selection_tests.rs:84:5
+     |
+  84 |     assert!(output.diagnostics.is_empty());
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+  help: use `assert_eq!` to show the value on failure
+     |
+  84 -     assert!(output.diagnostics.is_empty());
+  84 +     assert_eq!(output.diagnostics, [] as [types::AnalyzerDiagnostic; 0]);
+     |
+
+  error: used `assert!` to check that a value is not empty
+     --> crates/hoimin-python/src/analyzer/rust/selection_tests.rs:252:5
+      |
+  252 |     assert!(!output.candidates.is_empty());
+      |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+  help: use `assert_ne!` to show the value on failure
+      |
+  252 -     assert!(!output.candidates.is_empty());
+  252 +     assert_ne!(output.candidates, [] as [rust::payload::Charged<types::AnalyzerCandidate>; 0]);
+      |
+
+  error: used `assert!` to check that a value is empty
+     --> crates/hoimin-python/src/analyzer/rust/selection_tests.rs:261:5
+      |
+  261 |     assert!(output.diagnostics.is_empty());
+      |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+  help: use `assert_eq!` to show the value on failure
+      |
+  261 -     assert!(output.diagnostics.is_empty());
+  261 +     assert_eq!(output.diagnostics, [] as [types::AnalyzerDiagnostic; 0]);
+      |
+
+  error: could not compile `hoimin-python` (lib test) due to 4 previous errors
+  warning: build failed, waiting for other jobs to finish...
+cargo clippy (vendored parser)...........................................Passed

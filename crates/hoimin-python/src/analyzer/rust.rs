@@ -39,6 +39,8 @@ mod function_body;
 mod optional_keywords;
 #[path = "rust/return_tuple.rs"]
 mod return_tuple;
+#[path = "rust/selection.rs"]
+mod selection;
 #[path = "rust/string_literals.rs"]
 mod string_literals;
 #[path = "rust/string_segments.rs"]
@@ -66,6 +68,7 @@ mod stdlib_conversions;
 use fact_index::IndexLookupStats;
 use fact_index::{ContainmentIndex, NotOperandIndex, ScopeIndex, ScopeInterval};
 use operator_functions::OperatorImports;
+use selection::CandidateSelection;
 
 #[cfg(test)]
 thread_local! {
@@ -448,6 +451,7 @@ pub fn analyze_source_with_exceptions(
     if cancelled() {
         return Err(AnalysisError::Cancelled);
     }
+    let selection = CandidateSelection::new(request, cancelled)?;
     let line_index = LineIndex::new(source);
     let mut token_candidates =
         CandidatePrefix::new(request.max_candidates, request.payload.clone());
@@ -542,6 +546,7 @@ pub fn analyze_source_with_exceptions(
         };
         let symbol = facts.scope_at(start);
         if let Some(candidate) = make_candidate(
+            &selection,
             request,
             source,
             &line_index,
@@ -564,6 +569,7 @@ pub fn analyze_source_with_exceptions(
         &line_index,
         &facts,
         request,
+        &selection,
         &cancelled,
         exceptions,
     )?;
@@ -576,6 +582,7 @@ pub fn analyze_source_with_exceptions(
         &line_index,
         &facts,
         request,
+        &selection,
         cancelled,
     )?;
     if cancelled() {
@@ -630,7 +637,7 @@ pub fn analyze_source_with_exceptions(
         .into_iter()
         .collect();
     if let Some((range, message)) = hierarchy_report.diagnostic() {
-        let (line, column) = line_index.line_and_column(source, usize::from(range.start()));
+        let (line, column) = line_index.line_and_column(usize::from(range.start()));
         diagnostics.push(AnalyzerDiagnostic {
             code: AnalyzerDiagnosticCode::UnsupportedExceptionHierarchy,
             path: Some(request.path.to_owned()),
@@ -640,7 +647,7 @@ pub fn analyze_source_with_exceptions(
         });
     }
     for (range, message) in enum_diagnostics {
-        let (line, column) = line_index.line_and_column(source, usize::from(range.start()));
+        let (line, column) = line_index.line_and_column(usize::from(range.start()));
         diagnostics.push(AnalyzerDiagnostic {
             code: AnalyzerDiagnosticCode::UnsupportedEnumDefinition,
             path: Some(request.path.to_owned()),
@@ -686,7 +693,12 @@ fn retained_by_profile(
     !facts.contains_arid_span(start, end)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "selection is prepared once independently of source positions and request limits"
+)]
 fn make_candidate(
+    selection: &CandidateSelection<'_>,
     request: &AnalyzeRequest<'_>,
     source: &str,
     line_index: &LineIndex,
@@ -701,8 +713,8 @@ fn make_candidate(
     }
     let start = u64::try_from(range.start).ok()?;
     let length = u64::try_from(range.len()).ok()?;
-    let (line, column) = line_index.line_and_column(source, range.start);
-    if !selected(request, line, symbol.as_deref()) {
+    let (line, column) = line_index.line_and_column(range.start);
+    if !selection.includes(line, symbol.as_deref()) {
         return None;
     }
     #[cfg(test)]
@@ -810,38 +822,16 @@ impl LineIndex {
         clippy::cast_possible_truncation,
         reason = "Ruff TextSize offsets cap parsed source at u32::MAX bytes, and code-point counts cannot exceed byte counts."
     )]
-    fn line_and_column(&self, _source: &str, offset: usize) -> (u32, u32) {
+    fn line_and_column(&self, offset: usize) -> (u32, u32) {
         self.source
             .line_and_column(offset)
             .expect("Ruff source offsets are valid UTF-8 boundaries within a u32-sized source")
     }
 }
 
-fn selected(request: &AnalyzeRequest<'_>, line: u32, symbol: Option<&str>) -> bool {
-    let line_selected = request.lines.is_empty()
-        || request
-            .lines
-            .iter()
-            .any(|range| range.start <= line && line <= range.end);
-    let symbol_selected = request.symbols.is_empty()
-        || request.symbols.iter().any(|selector| {
-            let (module_selected, qualname) = selector.rsplit_once(':').map_or_else(
-                || (true, selector.as_str()),
-                |(module, qualname)| {
-                    let current_module = module_name(request.path);
-                    (
-                        current_module == module || current_module.ends_with(&format!(".{module}")),
-                        qualname,
-                    )
-                },
-            );
-            module_selected
-                && symbol.is_some_and(|symbol| {
-                    symbol == qualname || symbol.starts_with(&format!("{qualname}."))
-                })
-        });
-    line_selected && symbol_selected
-}
+#[cfg(test)]
+#[path = "rust/selection_tests.rs"]
+mod selection_tests;
 
 fn module_name(path: &Utf8Path) -> String {
     let mut parts: Vec<_> = path.with_extension("").iter().map(str::to_owned).collect();
@@ -2898,6 +2888,7 @@ struct AstCandidateCollector<'a, F> {
     line_index: &'a LineIndex,
     facts: &'a AstFacts<'a>,
     request: &'a AnalyzeRequest<'a>,
+    selection: &'a CandidateSelection<'a>,
     cancelled: &'a F,
     cancelled_observed: bool,
     exception_handler_finality: Vec<bool>,
@@ -2906,12 +2897,17 @@ struct AstCandidateCollector<'a, F> {
 }
 
 impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "shared selection is separate from request limits and source positions"
+    )]
     fn collect(
         module: &'a ModModule,
         source: &'a str,
         line_index: &'a LineIndex,
         facts: &'a AstFacts<'a>,
         request: &'a AnalyzeRequest<'a>,
+        selection: &'a CandidateSelection<'a>,
         cancelled: &'a F,
         exceptions: Option<&exception_hierarchy::ExceptionIndex>,
     ) -> Result<AstCollection, AnalysisError> {
@@ -2973,6 +2969,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             line_index,
             facts,
             request,
+            selection,
             cancelled,
             cancelled_observed: false,
             exception_handler_finality: Vec::new(),
@@ -3067,6 +3064,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         let range = byte_range(range);
         let symbol = self.facts.scope_at(usize::from(scope.start()));
         if let Some(candidate) = make_candidate(
+            self.selection,
             self.request,
             self.source,
             self.line_index,
@@ -3115,13 +3113,13 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
 
     // Match candidate admission at the expression start, without pruning child walks.
     fn expression_selected(&self, expression: &Expr) -> bool {
-        if self.request.lines.is_empty() && self.request.symbols.is_empty() {
+        if self.selection.is_unrestricted() {
             return true;
         }
         let start = usize::from(expression.start());
-        let (line, _) = self.line_index.line_and_column(self.source, start);
+        let (line, _) = self.line_index.line_and_column(start);
         let symbol = self.facts.scope_at(start);
-        selected(self.request, line, symbol.as_deref())
+        self.selection.includes(line, symbol.as_deref())
     }
 
     fn collect_condition_clause_delete(&mut self, condition: &Expr) {
@@ -4397,17 +4395,22 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "shared selection is separate from request limits and source positions"
+)]
 fn ast_candidates<'a, F: Fn() -> bool>(
     module: &'a ModModule,
     source: &'a str,
     line_index: &'a LineIndex,
     facts: &'a AstFacts<'a>,
     request: &'a AnalyzeRequest<'a>,
+    selection: &'a CandidateSelection<'a>,
     cancelled: &'a F,
     exceptions: Option<&exception_hierarchy::ExceptionIndex>,
 ) -> Result<AstCollection, AnalysisError> {
     AstCandidateCollector::collect(
-        module, source, line_index, facts, request, cancelled, exceptions,
+        module, source, line_index, facts, request, selection, cancelled, exceptions,
     )
 }
 
@@ -7830,6 +7833,7 @@ fn type_annotation_candidates(
     line_index: &LineIndex,
     facts: &AstFacts<'_>,
     request: &AnalyzeRequest<'_>,
+    selection: &CandidateSelection<'_>,
     cancelled: &impl Fn() -> bool,
 ) -> Result<ProducerPrefix, AnalysisError> {
     let mut candidates = CandidatePrefix::new(request.max_candidates, request.payload.clone());
@@ -7860,6 +7864,7 @@ fn type_annotation_candidates(
                 let start = usize::from(range.start());
                 let end = usize::from(range.end());
                 if let Some(candidate) = make_candidate(
+                    selection,
                     request,
                     source,
                     line_index,

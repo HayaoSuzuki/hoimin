@@ -1,0 +1,13 @@
+COMMAND ['cargo', 'build', '--locked', '--release', '-p', 'hoimin-cli']
+   Compiling hoimin-core v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-core)
+   Compiling hoimin-python v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-python)
+   Compiling hoimin-cli v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-cli)
+    Finished `release` profile [optimized] target(s) in 52.46s
+COMMAND ['python3', '/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/docs/maintenance/2026-10-20-issue-1008/build_probe.py', '/tmp/hoimin-perf-three-target', 'r6-base']
+COMMAND ['cargo', 'build', '--locked', '--release', '-p', 'hoimin-cli']
+   Compiling hoimin-core v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-core)
+   Compiling hoimin-python v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-python)
+   Compiling hoimin-cli v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-cli)
+    Finished `release` profile [optimized] target(s) in 52.07s
+COMMAND ['python3', '/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/docs/maintenance/2026-10-20-issue-1008/build_probe.py', '/tmp/hoimin-perf-three-target', 'r6-lazy']
+SOURCE_RESTORED_AND_VARIANTS_PRESERVED

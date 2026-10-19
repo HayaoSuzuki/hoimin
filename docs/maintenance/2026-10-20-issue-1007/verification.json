@@ -1,0 +1,92 @@
+{
+  "issue": 1007,
+  "checked_base": "4c906846e4515735d7e89c17a2b374483ba299ff",
+  "baseline_product": "34e3349099ce7fd61838629ee8c0d0b814e65a5d",
+  "tracked_diff_sha256": "71b3d70122263bb7a4fd7b388df22c7b48f82d3875e05c56b063aa5962c8c202",
+  "source_sha256": {
+    "crates/hoimin-cli/src/workspace/manifest.rs": "db8d0f3912f72dc6ad945a60a2f559c99faa1726c082d7f5c27188ba9f0ac304",
+    "crates/hoimin-cli/src/workspace/copy.rs": "c3749775610758294832b494eca2cde27f3ecad8ada2c659d12bd2c9944d1ec0",
+    "crates/hoimin-cli/tests/workspace_manifest_heap.rs": "1d4534cf205d6a2cf8d76ad4ae9b6350241efd509058443c0bbd08f8e685c572",
+    "crates/hoimin-cli/tests/workspace_worker_metadata_heap.rs": "272b53be84a163a9366f90fe81d2ab6ebc66fb398a55db67bc418d69a85aadbe",
+    "docs/performance/shapes.json": "c5a9812e7414f16128f2d0acd7a85698d67cf7974984a00878be297915e9c0f7",
+    "Cargo.lock": "9ec547b05155b7805ca80a2d3656e05204c2f8b707b1ba4140ec4806a50d20f6",
+    "Cargo.toml": "35d0ccf1475d17c1f76f42a291b79f172245a903ed0559f492ea4865a7f18d0a",
+    "docs/maintenance/2026-10-20-issue-1007/measure.py": "4130ebf1313d42566fff21ec588456ddd2f111467f8f8072d980d4c14ed54357",
+    "docs/maintenance/2026-10-20-issue-1007/measurement.json": "519dc4b27b21b4617ef6295eaffd21357c8a17ad948b642861f7c3d31ef42b95",
+    "docs/maintenance/2026-10-20-issue-1007/build_probe.py": "0b2f73fca658446cdabfb03a5a165b377b4cfff1fd9f60019c57ee48d63f1d45",
+    "docs/maintenance/2026-10-20-issue-1007/receipt.py": "ddb204784bf2109da1e9f95264a95ae13634a5bde9a5c4d5bf7564ee839a3239",
+    "docs/maintenance/2026-10-20-issue-1007/probe.rs": "5723c28aac8503dfa72f374437977392e701f2f477aa0a6f9fc3ffe934d4f206"
+  },
+  "original_manifest_sha256": "2ba0867720d56c47f56ec84d89ef6ace3f6ccf74e41b524455aca9f4f35dff05",
+  "release_rlibs_sha256": {
+    "/tmp/hoimin-perf-three-baseline/release/deps/libhoimin_cli-ae6165566be2bc32.rlib": "b0ba184b3434870437d7a71ed8a689275c956ebf3ca9be96f8dc7d8e08131ac6",
+    "/tmp/hoimin-perf-three-baseline/release/deps/libhoimin_core-e36060db195214e8.rlib": "d5174a5afb6aa1d3c02934b5fed1fb537b585bd9505054564175fa700a618f97",
+    "/tmp/hoimin-perf-three-baseline/release/deps/libhoimin_python-f46ed673dcee7a84.rlib": "36c4350b802b04c64e70f565a3ed97b1aeeae4659ce0f46399cdff9ce07c4e52",
+    "/tmp/hoimin-perf-three-baseline/release/deps/libcamino-f91f8d14b22abb98.rlib": "50bd1c1fbaa4e55cb41d2994f39dd3a8b6186451472f26a32227892a9b8cf89d",
+    "/tmp/hoimin-perf-three-baseline/release/deps/libtempfile-95f7eac9d489d085.rlib": "68f975a2e52df980d8a9181cfb3c11e718b696d6798c4f207b765c0bb037f83b",
+    "/tmp/hoimin-perf-three-baseline/release/deps/libblake3-6eec682d57919d01.rlib": "77bbf4441e08619dbd1da40d1a80051d518b0965c6d32f9d175d21ba78c522ea",
+    "/tmp/hoimin-perf-three-target/release/deps/libhoimin_cli-ae6165566be2bc32.rlib": "85a25a61989fa1f1643d8025917763b0fe0960871e06f3e691fe4575d8158dac",
+    "/tmp/hoimin-perf-three-target/release/deps/libhoimin_core-e36060db195214e8.rlib": "d5174a5afb6aa1d3c02934b5fed1fb537b585bd9505054564175fa700a618f97",
+    "/tmp/hoimin-perf-three-target/release/deps/libhoimin_python-f46ed673dcee7a84.rlib": "044e37a8d3eb6e142a009a71e9b7cfe4127fd8b8a95f903d7f14e9b2553fee3f",
+    "/tmp/hoimin-perf-three-target/release/deps/libcamino-f91f8d14b22abb98.rlib": "50bd1c1fbaa4e55cb41d2994f39dd3a8b6186451472f26a32227892a9b8cf89d",
+    "/tmp/hoimin-perf-three-target/release/deps/libtempfile-95f7eac9d489d085.rlib": "68f975a2e52df980d8a9181cfb3c11e718b696d6798c4f207b765c0bb037f83b",
+    "/tmp/hoimin-perf-three-target/release/deps/libblake3-6eec682d57919d01.rlib": "77bbf4441e08619dbd1da40d1a80051d518b0965c6d32f9d175d21ba78c522ea"
+  },
+  "original_binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+  "tools": {
+    "platform": "macOS-15.7.7-arm64-arm-64bit",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1",
+    "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+    "python": "Python 3.12.6",
+    "executables": {
+      "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12": "69e6adfac00978215c4e5f3eaf63d262a5fb646b6dca1897b29f78872c4c5a26",
+      "/Users/hayao/.cargo/bin/rustup": "ec1b9233e7f72990ecd8e62063fa7f6c3dfc2bec8e97f88bff165f9100ac696a",
+      "/Users/hayao/.rustup/toolchains/1.99.0-aarch64-apple-darwin/bin/rustc": "dd6f58440b3418aa9157ae3f05d71eecff741ca41bc4eec120e7e8f2d933b9a0"
+    }
+  },
+  "environment": {
+    "CARGO_BUILD_JOBS": "2",
+    "CARGO_TARGET_DIR": "/tmp/hoimin-perf-three-target",
+    "CARGO_INCREMENTAL": "0",
+    "RUST_TEST_THREADS": "2",
+    "PREK_NO_CONCURRENCY": "1",
+    "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+    "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache",
+    "PATH_prefix": "/tmp/hoimin-priority-six-venv/bin"
+  },
+  "raw_receipts": {
+    "/tmp/hoimin-perf-three-task2/release.log": "6fa1a37abbac006b0cf3b977b315c18f74d831ea07a589e85acb2f5ffb2608c3",
+    "/tmp/hoimin-perf-three-task2/fmt.log": "0dc46c94040bfcd6de81390402025b532a3ba250192f527679566d78c0c062d3",
+    "/tmp/hoimin-perf-three-task2/final-cancel-release.log": "68bd719e7fbaea3ee96d237af2c033b1a21a503b16e223a67e3a9d9f5d5f0468",
+    "/tmp/hoimin-perf-three-task2/red.log": "cc4952943a622fb0ab068fb5c2869bee7527783c96e9493848d69328f0d0e146",
+    "/tmp/hoimin-perf-three-task2/build-after.log": "a19caaae886b88602033654370b1461743db53ed59c0ec02c26cf9e767293c33",
+    "/tmp/hoimin-perf-three-task2/red-worker.log": "c68385ac59623daffd90110f889688fc4d77ed22c296648a17cfb68656d92a25",
+    "/tmp/hoimin-perf-three-task2/final-fmt.log": "0dc46c94040bfcd6de81390402025b532a3ba250192f527679566d78c0c062d3",
+    "/tmp/hoimin-perf-three-task2/build-before.log": "cbdcd77cc4b42af66b8156fa3fccc1b1cf8d879d1252c992c7632b928185206c",
+    "/tmp/hoimin-perf-three-task2/final-materialization.log": "a30f0867b444b5671e4f9dfb272b68cab1dc1fffa6b2604bc8d4197b5aaca8d5",
+    "/tmp/hoimin-perf-three-task2/measurements.log": "0b01be031f432958546494334c89f8d554f392d26f1d9553dc4a5ca02e18e893",
+    "/tmp/hoimin-perf-three-task2/final-recovery-heap.log": "da9acf6fceeda1093b1cdde300f07cb2eb20e6c94241e636dd2b9147276995f0",
+    "/tmp/hoimin-perf-three-task2/green-workspace.log": "95f4877b98b272c2c626b7b093e45c68a2018acbe2ca802802f436dd621c8f58",
+    "/tmp/hoimin-perf-three-task2/final-workspace.log": "8767889fb067ccf2bb5f435e18bd4d2af675c52ce9ac858f8d8ac786dcc44954",
+    "/tmp/hoimin-perf-three-task2/green-heap.log": "345b402e904b5692ec17da0577b0f8a2724f7ac5ef1b3e402f24fe7d8e98ae0d",
+    "/tmp/hoimin-perf-three-task2/preservation-before.log": "11e161b9461922f015032d377685205b5aeddeab05c46a74d25adcb3cbdec2e7"
+  },
+  "probes_sha256": {
+    "/tmp/hoimin-perf-three-task2/probe-before": "b7655daab2f39a05933dcded7a4ec6a58643e171e077161cff6f3724890f25f8",
+    "/tmp/hoimin-perf-three-task2/probe-after": "021e5dedb76c5dee4d28e274cb26bfae07179c9134002e09388c71ccd6ea01d4"
+  },
+  "reproduction": [
+    "cargo build --locked -p hoimin-cli --release --lib",
+    "python3 docs/maintenance/2026-10-20-issue-1007/build_probe.py /tmp/hoimin-perf-three-baseline /tmp/hoimin-perf-three-task2/probe-before",
+    "python3 docs/maintenance/2026-10-20-issue-1007/build_probe.py /tmp/hoimin-perf-three-target /tmp/hoimin-perf-three-task2/probe-after",
+    "python3 -u docs/maintenance/2026-10-20-issue-1007/measure.py /tmp/hoimin-perf-three-task2/probe-before /tmp/hoimin-perf-three-task2/probe-after docs/maintenance/2026-10-20-issue-1007/measurement.json"
+  ],
+  "limits": [
+    "Requested live and peak heap are allocator-requested bytes, not RSS.",
+    "No process RSS observations were taken.",
+    "Elapsed windows exclude fixture/preflight, content verification and sequential cleanup.",
+    "Snapshot-plus-worker payload is logical data, not filesystem allocated blocks or metadata.",
+    "Actual copy charge is checked independently before and after sequential worker destruction.",
+    "No wall-clock test threshold or universal materialization-speedup claim."
+  ]
+}

@@ -1,4 +1,7 @@
-use hoimin_core::{CandidateValidationContext, decode_python_source};
+use hoimin_core::{
+    ByteSpan, CANDIDATE_SCHEMA_VERSION, CandidateDescriptor, CandidateValidationContext,
+    decode_python_source, validate_candidate_with_context,
+};
 
 #[path = "support/heap_tracking.rs"]
 mod heap_tracking;
@@ -21,8 +24,24 @@ fn latin1_positions_do_not_retain_duplicate_coordinates() {
             assert_eq!(decoded.text().len(), source.len() + expansions);
             drop(decoded);
 
+            let candidate = CandidateDescriptor {
+                schema_version: CANDIDATE_SCHEMA_VERSION,
+                path: "source.py".into(),
+                span: ByteSpan {
+                    start: u64::try_from(source.len() - 5).unwrap(),
+                    length: 4,
+                },
+                original: "True".into(),
+                replacement: "False".into(),
+                operator: "boolean_literal".into(),
+                line: 3,
+                column: 8,
+                symbol: None,
+                file_hash: blake3::hash(&source).to_hex().to_string(),
+            };
             heap_tracking::begin();
             let context = CandidateValidationContext::new(&source).unwrap();
+            validate_candidate_with_context(&context, &candidate).unwrap();
             let context_peak = heap_tracking::finish();
             assert_eq!(
                 context.decoded_source().unwrap().text().len(),

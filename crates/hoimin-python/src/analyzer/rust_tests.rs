@@ -274,7 +274,7 @@ fn line_index_answers_out_of_order_ascii_and_unicode_offsets() {
         (18, (3, 0)),
         (4, (1, 1)),
     ] {
-        assert_eq!(index.line_and_column(source, offset), expected);
+        assert_eq!(index.line_and_column(offset), expected);
     }
 }
 
@@ -4808,7 +4808,7 @@ fn line_index_reports_one_based_lines_and_unicode_scalar_columns() {
         (24, (3, 9)),
     ] {
         assert_eq!(
-            line_index.line_and_column(source, offset),
+            line_index.line_and_column(offset),
             expected,
             "position at byte offset {offset}",
         );
@@ -4829,7 +4829,7 @@ fn line_index_ignores_only_a_leading_file_bom_in_columns() {
         (10, (2, 2)),
     ] {
         assert_eq!(
-            line_index.line_and_column(source, offset),
+            line_index.line_and_column(offset),
             expected,
             "position at byte offset {offset}",
         );

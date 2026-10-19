@@ -1,0 +1,788 @@
+[
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/baseline-tests.log",
+    "sha256": "c956b5e513fd139685c43d89b55e3ccc5aee815d706163320a21497ae1ee78e5",
+    "bytes": 44558,
+    "selected_lines": [
+      {
+        "line": 36,
+        "text": "   Compiling static_assertions v1.1.0"
+      },
+      {
+        "line": 111,
+        "text": "test payload_tests::cancellation_releases_already_retained_candidates ... ok"
+      },
+      {
+        "line": 295,
+        "text": "test rust::rust_tests::annotation_import_snapshots_are_not_retained_per_site ... ok"
+      },
+      {
+        "line": 334,
+        "text": "test rust::rust_tests::composite_comparisons_preserve_multiline_trivia_and_reparse ... ok"
+      },
+      {
+        "line": 536,
+        "text": "test result: ok. 423 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 3.37s"
+      }
+    ]
+  },
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/commit-hooks-first.log",
+    "sha256": "f3dd0ad6961e2dc56e8195aacedbb757940d6ee32e5014d51180ba58403b3eef",
+    "bytes": 8714,
+    "selected_lines": [
+      {
+        "line": 1,
+        "text": "cargo fmt (workspace)....................................................Passed"
+      },
+      {
+        "line": 2,
+        "text": "cargo fmt (vendored parser)..............................................Passed"
+      },
+      {
+        "line": 3,
+        "text": "cargo clippy (workspace).................................................Failed"
+      },
+      {
+        "line": 68,
+        "text": "      Checking static_assertions v1.1.0"
+      },
+      {
+        "line": 154,
+        "text": "  error: used `assert!` to check that a value is empty"
+      },
+      {
+        "line": 169,
+        "text": "  error: used `assert!` to check that a value is empty"
+      },
+      {
+        "line": 182,
+        "text": "  error: used `assert!` to check that a value is not empty"
+      },
+      {
+        "line": 195,
+        "text": "  error: used `assert!` to check that a value is empty"
+      },
+      {
+        "line": 208,
+        "text": "  error: could not compile `hoimin-python` (lib test) due to 4 previous errors"
+      },
+      {
+        "line": 209,
+        "text": "  warning: build failed, waiting for other jobs to finish..."
+      },
+      {
+        "line": 210,
+        "text": "cargo clippy (vendored parser)...........................................Passed"
+      }
+    ]
+  },
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/commit-hooks-second.log",
+    "sha256": "03fb63bce79cb1479c8551c10ad3a9d75acdcd02f9ed946f4f009392e5aac253",
+    "bytes": 1996,
+    "selected_lines": [
+      {
+        "line": 1,
+        "text": "cargo fmt (workspace)....................................................Passed"
+      },
+      {
+        "line": 2,
+        "text": "cargo fmt (vendored parser)..............................................Passed"
+      },
+      {
+        "line": 3,
+        "text": "cargo clippy (workspace).................................................Failed"
+      },
+      {
+        "line": 9,
+        "text": "  error: use of `format!` to build up a string from an iterator"
+      },
+      {
+        "line": 33,
+        "text": "  error: could not compile `hoimin-cli` (test \"analyzer_line_selection\") due to 1 previous error"
+      },
+      {
+        "line": 34,
+        "text": "  warning: build failed, waiting for other jobs to finish..."
+      },
+      {
+        "line": 35,
+        "text": "cargo clippy (vendored parser)...........................................Passed"
+      }
+    ]
+  },
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/commit-hooks.log",
+    "sha256": "aa9d81d71325a93d19de3cc3925b894ceb1f94e014c01a8e6bd3d38fa169f3a4",
+    "bytes": 1175,
+    "selected_lines": [
+      {
+        "line": 1,
+        "text": "cargo fmt (workspace)....................................................Passed"
+      },
+      {
+        "line": 2,
+        "text": "cargo fmt (vendored parser)..............................................Passed"
+      },
+      {
+        "line": 3,
+        "text": "cargo clippy (workspace).................................................Passed"
+      },
+      {
+        "line": 4,
+        "text": "cargo clippy (vendored parser)...........................................Passed"
+      }
+    ]
+  },
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/final-fmt.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0,
+    "selected_lines": []
+  },
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/final-python-lib.log",
+    "sha256": "f047e367fb87b440b385c5afba3c98fc3449b7c3063e7266c6e86f5ce6634d79",
+    "bytes": 43001,
+    "selected_lines": [
+      {
+        "line": 7,
+        "text": "test payload_tests::cancellation_releases_already_retained_candidates ... ok"
+      },
+      {
+        "line": 192,
+        "text": "test rust::rust_tests::annotation_import_snapshots_are_not_retained_per_site ... ok"
+      },
+      {
+        "line": 231,
+        "text": "test rust::rust_tests::composite_comparisons_preserve_multiline_trivia_and_reparse ... ok"
+      },
+      {
+        "line": 467,
+        "text": "test result: ok. 457 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 3.46s"
+      }
+    ]
+  },
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/fix-cli.log",
+    "sha256": "cea442e1eaddc3af9574c5a80265e35b7c290961c8306769c1e6fe41a669a9c0",
+    "bytes": 685,
+    "selected_lines": [
+      {
+        "line": 10,
+        "text": "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.54s"
+      }
+    ]
+  },
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/fix-fmt.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0,
+    "selected_lines": []
+  },
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/fix-selection.log",
+    "sha256": "18ae26b5e8a0078038e3158b471a38ca4dc83c9ea448d18ba77013fab57ededc",
+    "bytes": 5336,
+    "selected_lines": [
+      {
+        "line": 71,
+        "text": "test result: ok. 59 passed; 0 failed; 0 ignored; 0 measured; 401 filtered out; finished in 0.10s"
+      }
+    ]
+  },
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/fix2-cli.log",
+    "sha256": "925e4e1f94b1d44cf7ff3bb1e55bcb133e8caebbf0f3b6385f245811be19bedb",
+    "bytes": 685,
+    "selected_lines": [
+      {
+        "line": 10,
+        "text": "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.57s"
+      }
+    ]
+  },
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/fix2-fmt.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0,
+    "selected_lines": []
+  },
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/fmt.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0,
+    "selected_lines": []
+  },
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/green-cancel.log",
+    "sha256": "3d792c9f786794be0d974290f7df737f28eb092eafa2fcadc764a6b8f0ba98ae",
+    "bytes": 3191,
+    "selected_lines": [
+      {
+        "line": 6,
+        "text": "test payload_tests::cancellation_releases_already_retained_candidates ... ok"
+      },
+      {
+        "line": 36,
+        "text": "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 430 filtered out; finished in 0.41s"
+      }
+    ]
+  },
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/green-cli.log",
+    "sha256": "adf2e72e3c77d1fe66e25872777b7d1f894b805ed4929f74b6dfad0c3b5d4871",
+    "bytes": 863,
+    "selected_lines": [
+      {
+        "line": 11,
+        "text": "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.55s"
+      }
+    ]
+  },
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/green-payload.log",
+    "sha256": "de718a8189d9224e74736b50c5c360add4a0e673db43282848b9f23a4929be64",
+    "bytes": 2531,
+    "selected_lines": [
+      {
+        "line": 7,
+        "text": "test payload_tests::cancellation_releases_already_retained_candidates ... ok"
+      },
+      {
+        "line": 33,
+        "text": "test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 433 filtered out; finished in 0.15s"
+      }
+    ]
+  },
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/green-selection.log",
+    "sha256": "e0cafd2350fbb8d8bbe9a0f41c741ae8432d90fdcc7ff2e14c54c76d89318bb2",
+    "bytes": 5336,
+    "selected_lines": [
+      {
+        "line": 71,
+        "text": "test result: ok. 59 passed; 0 failed; 0 ignored; 0 measured; 401 filtered out; finished in 0.09s"
+      }
+    ]
+  },
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/measure.log",
+    "sha256": "cc9bfb520fd335e0fa5c2243264c2ae3c937e93507922dccd5f2fbd32b6fe9cc",
+    "bytes": 265,
+    "selected_lines": []
+  },
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/probe-build-after.log",
+    "sha256": "0d5e65173b104edbeb1cc85d724446f136e9385a2dd657fe18403143b52ea291",
+    "bytes": 645,
+    "selected_lines": []
+  },
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/probe-build-before.log",
+    "sha256": "2fc980b6df2a7f4ae718ba32dfb74cef5d907d8ccfa25552e0d59d8f3e07fd03",
+    "bytes": 656,
+    "selected_lines": []
+  },
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/red-controls.log",
+    "sha256": "ccedd4210ca5e09996b9ab046c4778a4197750627e9f8f3ee8261cdffbbca5ea",
+    "bytes": 4078,
+    "selected_lines": [
+      {
+        "line": 2,
+        "text": "warning: function `record_preparation` is never used"
+      },
+      {
+        "line": 10,
+        "text": "warning: `hoimin-python` (lib test) generated 1 warning"
+      },
+      {
+        "line": 37,
+        "text": "thread 'rust::selection_tests::selection_sparse_1000' (56548320) panicked at crates/hoimin-python/src/analyzer/rust/selection_tests.rs:55:5:"
+      },
+      {
+        "line": 40,
+        "text": "test rust::selection_tests::selection_sparse_1000 ... FAILED"
+      },
+      {
+        "line": 43,
+        "text": "thread 'rust::selection_tests::selection_sparse_2000' (56548321) panicked at crates/hoimin-python/src/analyzer/rust/selection_tests.rs:55:5:"
+      },
+      {
+        "line": 45,
+        "text": "test rust::selection_tests::selection_sparse_2000 ... FAILED"
+      },
+      {
+        "line": 48,
+        "text": "thread 'rust::selection_tests::selection_sparse_4000' (56548323) panicked at crates/hoimin-python/src/analyzer/rust/selection_tests.rs:55:5:"
+      },
+      {
+        "line": 50,
+        "text": "test rust::selection_tests::selection_sparse_4000 ... FAILED"
+      },
+      {
+        "line": 58,
+        "text": "thread 'rust::selection_tests::selection_sparse_8000' (56548324) panicked at crates/hoimin-python/src/analyzer/rust/selection_tests.rs:55:5:"
+      },
+      {
+        "line": 60,
+        "text": "test rust::selection_tests::selection_sparse_8000 ... FAILED"
+      },
+      {
+        "line": 70,
+        "text": "test result: FAILED. 24 passed; 4 failed; 0 ignored; 0 measured; 426 filtered out; finished in 0.85s"
+      },
+      {
+        "line": 72,
+        "text": "error: test failed, to rerun pass `-p hoimin-python --lib`"
+      }
+    ]
+  },
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/red.log",
+    "sha256": "5e4c8f500c17c6b9b7a6d532e3fcd7a30ed3ec72138b7711fcdaa71eeee60aac",
+    "bytes": 4634,
+    "selected_lines": [
+      {
+        "line": 2,
+        "text": "warning: function `record_preparation` is never used"
+      },
+      {
+        "line": 10,
+        "text": "warning: `hoimin-python` (lib test) generated 1 warning"
+      },
+      {
+        "line": 24,
+        "text": "thread 'rust::selection_tests::selection_sparse_1000' (56547428) panicked at crates/hoimin-python/src/analyzer/rust/selection_tests.rs:55:5:"
+      },
+      {
+        "line": 27,
+        "text": "test rust::selection_tests::selection_sparse_1000 ... FAILED"
+      },
+      {
+        "line": 30,
+        "text": "thread 'rust::selection_tests::selection_sparse_2000' (56547429) panicked at crates/hoimin-python/src/analyzer/rust/selection_tests.rs:55:5:"
+      },
+      {
+        "line": 32,
+        "text": "test rust::selection_tests::selection_sparse_2000 ... FAILED"
+      },
+      {
+        "line": 35,
+        "text": "thread 'rust::selection_tests::selection_sparse_4000' (56547430) panicked at crates/hoimin-python/src/analyzer/rust/selection_tests.rs:55:5:"
+      },
+      {
+        "line": 37,
+        "text": "test rust::selection_tests::selection_sparse_4000 ... FAILED"
+      },
+      {
+        "line": 56,
+        "text": "thread 'rust::selection_tests::selection_sparse_8000' (56547432) panicked at crates/hoimin-python/src/analyzer/rust/selection_tests.rs:55:5:"
+      },
+      {
+        "line": 58,
+        "text": "test rust::selection_tests::selection_sparse_8000 ... FAILED"
+      },
+      {
+        "line": 68,
+        "text": "test result: FAILED. 22 passed; 4 failed; 0 ignored; 0 measured; 405 filtered out; finished in 0.86s"
+      },
+      {
+        "line": 70,
+        "text": "error: test failed, to rerun pass `-p hoimin-python --lib`"
+      }
+    ]
+  },
+  {
+    "task": 1,
+    "path": "/tmp/hoimin-perf-three-task1/release-build.log",
+    "sha256": "3367b7e3208380f3130b59067a53bce88f8be649e43cca1db3d62d09329837e1",
+    "bytes": 413,
+    "selected_lines": []
+  },
+  {
+    "task": 2,
+    "path": "/tmp/hoimin-perf-three-task2/build-after.log",
+    "sha256": "a19caaae886b88602033654370b1461743db53ed59c0ec02c26cf9e767293c33",
+    "bytes": 1025,
+    "selected_lines": []
+  },
+  {
+    "task": 2,
+    "path": "/tmp/hoimin-perf-three-task2/build-before.log",
+    "sha256": "cbdcd77cc4b42af66b8156fa3fccc1b1cf8d879d1252c992c7632b928185206c",
+    "bytes": 1041,
+    "selected_lines": []
+  },
+  {
+    "task": 2,
+    "path": "/tmp/hoimin-perf-three-task2/commit-hooks.log",
+    "sha256": "78a92df293557b2dccadccaa4d6c9f06113bad9c818b1a1a0ff4574079d6ad88",
+    "bytes": 1262,
+    "selected_lines": [
+      {
+        "line": 2,
+        "text": "cargo fmt (workspace)....................................................Passed"
+      },
+      {
+        "line": 3,
+        "text": "cargo fmt (vendored parser)..............................................Passed"
+      },
+      {
+        "line": 4,
+        "text": "cargo clippy (workspace).................................................Passed"
+      },
+      {
+        "line": 5,
+        "text": "cargo clippy (vendored parser)...........................................Passed"
+      }
+    ]
+  },
+  {
+    "task": 2,
+    "path": "/tmp/hoimin-perf-three-task2/final-cancel-release.log",
+    "sha256": "68bd719e7fbaea3ee96d237af2c033b1a21a503b16e223a67e3a9d9f5d5f0468",
+    "bytes": 539,
+    "selected_lines": [
+      {
+        "line": 8,
+        "text": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 814 filtered out; finished in 0.09s"
+      }
+    ]
+  },
+  {
+    "task": 2,
+    "path": "/tmp/hoimin-perf-three-task2/final-fmt.log",
+    "sha256": "0dc46c94040bfcd6de81390402025b532a3ba250192f527679566d78c0c062d3",
+    "bytes": 35,
+    "selected_lines": []
+  },
+  {
+    "task": 2,
+    "path": "/tmp/hoimin-perf-three-task2/final-materialization.log",
+    "sha256": "a30f0867b444b5671e4f9dfb272b68cab1dc1fffa6b2604bc8d4197b5aaca8d5",
+    "bytes": 1375,
+    "selected_lines": [
+      {
+        "line": 17,
+        "text": "test result: ok. 9 passed; 0 failed; 1 ignored; 0 measured; 805 filtered out; finished in 0.38s"
+      }
+    ]
+  },
+  {
+    "task": 2,
+    "path": "/tmp/hoimin-perf-three-task2/final-recovery-heap.log",
+    "sha256": "da9acf6fceeda1093b1cdde300f07cb2eb20e6c94241e636dd2b9147276995f0",
+    "bytes": 5478,
+    "selected_lines": [
+      {
+        "line": 7,
+        "text": "test retained_heap_does_not_scale_with_workspace_bytes_times_workers ... ok"
+      },
+      {
+        "line": 9,
+        "text": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s"
+      },
+      {
+        "line": 14,
+        "text": "test retained_manifest_clones_do_not_multiply_metadata ... {\"mode\":\"clone\",\"files\":4000,\"handles\":16,\"payload_bytes\":0,\"retained\":0,\"peak\":0,\"elapsed_ns\":1750,\"digest\":\"16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd\",\"logical_bytes\":0,\"worker_charge\":0,\"snapshot_plus_worker_payload_bytes\":0}"
+      },
+      {
+        "line": 17,
+        "text": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.13s"
+      },
+      {
+        "line": 27,
+        "text": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.77s"
+      },
+      {
+        "line": 57,
+        "text": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s"
+      },
+      {
+        "line": 73,
+        "text": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.15s"
+      },
+      {
+        "line": 78,
+        "text": "test retained_worker_metadata_does_not_multiply_file_inventory ... {\"mode\":\"worker\",\"files\":1000,\"handles\":4,\"payload_bytes\":0,\"retained\":712,\"peak\":66427,\"elapsed_ns\":483620291,\"digest\":\"a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13\",\"logical_bytes\":0,\"worker_charge\":0,\"snapshot_plus_worker_payload_bytes\":0}"
+      },
+      {
+        "line": 81,
+        "text": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.18s"
+      }
+    ]
+  },
+  {
+    "task": 2,
+    "path": "/tmp/hoimin-perf-three-task2/final-workspace.log",
+    "sha256": "8767889fb067ccf2bb5f435e18bd4d2af675c52ce9ac858f8d8ac786dcc44954",
+    "bytes": 24884,
+    "selected_lines": [
+      {
+        "line": 8,
+        "text": "test workspace::cleanup_capability_oracle_tests::unix::cleanup_repairs_mode_zero_root_and_wrapper_through_retained_handles ... ok"
+      },
+      {
+        "line": 14,
+        "text": "test workspace::cleanup_capability_oracle_tests::unix::retained_wrapper_swap_matches_the_lean_permission_observation ... ok"
+      },
+      {
+        "line": 81,
+        "text": "thread 'hoimin-disk-monitor' (56586275) panicked at crates/hoimin-cli/src/workspace/disk.rs:1215:13:"
+      },
+      {
+        "line": 82,
+        "text": "assertion `left == right` failed: injected monitor panic after initial sample"
+      },
+      {
+        "line": 180,
+        "text": "test workspace::owned::tests::retained_deleting_root_is_preserved_even_when_cleanup_ready ... ok"
+      },
+      {
+        "line": 181,
+        "text": "test workspace::owned::tests::retained_root_is_not_reclaimed_when_stale ... ok"
+      },
+      {
+        "line": 196,
+        "text": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 814 filtered out; finished in 0.02s"
+      },
+      {
+        "line": 200,
+        "text": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 814 filtered out; finished in 0.02s"
+      },
+      {
+        "line": 273,
+        "text": "test result: ok. 240 passed; 0 failed; 7 ignored; 0 measured; 568 filtered out; finished in 5.12s"
+      }
+    ]
+  },
+  {
+    "task": 2,
+    "path": "/tmp/hoimin-perf-three-task2/fmt.log",
+    "sha256": "0dc46c94040bfcd6de81390402025b532a3ba250192f527679566d78c0c062d3",
+    "bytes": 35,
+    "selected_lines": []
+  },
+  {
+    "task": 2,
+    "path": "/tmp/hoimin-perf-three-task2/green-heap.log",
+    "sha256": "345b402e904b5692ec17da0577b0f8a2724f7ac5ef1b3e402f24fe7d8e98ae0d",
+    "bytes": 1571,
+    "selected_lines": [
+      {
+        "line": 7,
+        "text": "test retained_manifest_clones_do_not_multiply_metadata ... {\"mode\":\"clone\",\"files\":4000,\"handles\":16,\"payload_bytes\":0,\"retained\":0,\"peak\":0,\"elapsed_ns\":4792,\"digest\":\"16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd\",\"logical_bytes\":0,\"worker_charge\":0,\"snapshot_plus_worker_payload_bytes\":0}"
+      },
+      {
+        "line": 10,
+        "text": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.14s"
+      },
+      {
+        "line": 15,
+        "text": "test retained_worker_metadata_does_not_multiply_file_inventory ... {\"mode\":\"worker\",\"files\":1000,\"handles\":4,\"payload_bytes\":0,\"retained\":712,\"peak\":66427,\"elapsed_ns\":472389209,\"digest\":\"a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13\",\"logical_bytes\":0,\"worker_charge\":0,\"snapshot_plus_worker_payload_bytes\":0}"
+      },
+      {
+        "line": 18,
+        "text": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.16s"
+      }
+    ]
+  },
+  {
+    "task": 2,
+    "path": "/tmp/hoimin-perf-three-task2/green-workspace.log",
+    "sha256": "95f4877b98b272c2c626b7b093e45c68a2018acbe2ca802802f436dd621c8f58",
+    "bytes": 24884,
+    "selected_lines": [
+      {
+        "line": 8,
+        "text": "test workspace::cleanup_capability_oracle_tests::unix::cleanup_repairs_mode_zero_root_and_wrapper_through_retained_handles ... ok"
+      },
+      {
+        "line": 14,
+        "text": "test workspace::cleanup_capability_oracle_tests::unix::retained_wrapper_swap_matches_the_lean_permission_observation ... ok"
+      },
+      {
+        "line": 81,
+        "text": "thread 'hoimin-disk-monitor' (56577552) panicked at crates/hoimin-cli/src/workspace/disk.rs:1215:13:"
+      },
+      {
+        "line": 82,
+        "text": "assertion `left == right` failed: injected monitor panic after initial sample"
+      },
+      {
+        "line": 180,
+        "text": "test workspace::owned::tests::retained_deleting_root_is_preserved_even_when_cleanup_ready ... ok"
+      },
+      {
+        "line": 181,
+        "text": "test workspace::owned::tests::retained_root_is_not_reclaimed_when_stale ... ok"
+      },
+      {
+        "line": 196,
+        "text": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 814 filtered out; finished in 0.01s"
+      },
+      {
+        "line": 200,
+        "text": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 814 filtered out; finished in 0.02s"
+      },
+      {
+        "line": 273,
+        "text": "test result: ok. 240 passed; 0 failed; 7 ignored; 0 measured; 568 filtered out; finished in 5.16s"
+      }
+    ]
+  },
+  {
+    "task": 2,
+    "path": "/tmp/hoimin-perf-three-task2/measurements.log",
+    "sha256": "0b01be031f432958546494334c89f8d554f392d26f1d9553dc4a5ca02e18e893",
+    "bytes": 767,
+    "selected_lines": []
+  },
+  {
+    "task": 2,
+    "path": "/tmp/hoimin-perf-three-task2/preservation-before.log",
+    "sha256": "11e161b9461922f015032d377685205b5aeddeab05c46a74d25adcb3cbdec2e7",
+    "bytes": 24671,
+    "selected_lines": [
+      {
+        "line": 8,
+        "text": "test workspace::cleanup_capability_oracle_tests::unix::cleanup_repairs_mode_zero_root_and_wrapper_through_retained_handles ... ok"
+      },
+      {
+        "line": 14,
+        "text": "test workspace::cleanup_capability_oracle_tests::unix::retained_wrapper_swap_matches_the_lean_permission_observation ... ok"
+      },
+      {
+        "line": 81,
+        "text": "thread 'hoimin-disk-monitor' (56575031) panicked at crates/hoimin-cli/src/workspace/disk.rs:1215:13:"
+      },
+      {
+        "line": 82,
+        "text": "assertion `left == right` failed: injected monitor panic after initial sample"
+      },
+      {
+        "line": 178,
+        "text": "test workspace::owned::tests::retained_deleting_root_is_preserved_even_when_cleanup_ready ... ok"
+      },
+      {
+        "line": 179,
+        "text": "test workspace::owned::tests::retained_root_is_not_reclaimed_when_stale ... ok"
+      },
+      {
+        "line": 194,
+        "text": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 812 filtered out; finished in 0.02s"
+      },
+      {
+        "line": 198,
+        "text": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 812 filtered out; finished in 0.02s"
+      },
+      {
+        "line": 271,
+        "text": "test result: ok. 238 passed; 0 failed; 7 ignored; 0 measured; 568 filtered out; finished in 5.22s"
+      }
+    ]
+  },
+  {
+    "task": 2,
+    "path": "/tmp/hoimin-perf-three-task2/red-worker.log",
+    "sha256": "c68385ac59623daffd90110f889688fc4d77ed22c296648a17cfb68656d92a25",
+    "bytes": 1263,
+    "selected_lines": [
+      {
+        "line": 6,
+        "text": "test retained_worker_metadata_does_not_multiply_file_inventory ... {\"mode\":\"worker\",\"files\":1000,\"handles\":4,\"payload_bytes\":0,\"retained\":474312,\"peak\":474450,\"elapsed_ns\":507587709,\"digest\":\"a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13\",\"logical_bytes\":0,\"worker_charge\":0,\"snapshot_plus_worker_payload_bytes\":0}"
+      },
+      {
+        "line": 8,
+        "text": "thread 'retained_worker_metadata_does_not_multiply_file_inventory' (56573478) panicked at crates/hoimin-cli/tests/workspace_worker_metadata_heap.rs:10:5:"
+      },
+      {
+        "line": 9,
+        "text": "workers retained 474312 requested bytes"
+      },
+      {
+        "line": 11,
+        "text": "FAILED"
+      },
+      {
+        "line": 16,
+        "text": "    retained_worker_metadata_does_not_multiply_file_inventory"
+      },
+      {
+        "line": 18,
+        "text": "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.17s"
+      },
+      {
+        "line": 20,
+        "text": "error: test failed, to rerun pass `-p hoimin-cli --test workspace_worker_metadata_heap`"
+      }
+    ]
+  },
+  {
+    "task": 2,
+    "path": "/tmp/hoimin-perf-three-task2/red.log",
+    "sha256": "cc4952943a622fb0ab068fb5c2869bee7527783c96e9493848d69328f0d0e146",
+    "bytes": 1420,
+    "selected_lines": [
+      {
+        "line": 7,
+        "text": "test retained_manifest_clones_do_not_multiply_metadata ... {\"mode\":\"clone\",\"files\":4000,\"handles\":16,\"payload_bytes\":0,\"retained\":7510400,\"peak\":7510400,\"elapsed_ns\":4885709,\"digest\":\"16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd\",\"logical_bytes\":0,\"worker_charge\":0,\"snapshot_plus_worker_payload_bytes\":0}"
+      },
+      {
+        "line": 9,
+        "text": "thread 'retained_manifest_clones_do_not_multiply_metadata' (56573251) panicked at crates/hoimin-cli/tests/workspace_manifest_heap.rs:10:5:"
+      },
+      {
+        "line": 10,
+        "text": "clones retained 7510400 requested bytes"
+      },
+      {
+        "line": 12,
+        "text": "FAILED"
+      },
+      {
+        "line": 17,
+        "text": "    retained_manifest_clones_do_not_multiply_metadata"
+      },
+      {
+        "line": 19,
+        "text": "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.16s"
+      },
+      {
+        "line": 21,
+        "text": "error: test failed, to rerun pass `-p hoimin-cli --test workspace_manifest_heap`"
+      }
+    ]
+  },
+  {
+    "task": 2,
+    "path": "/tmp/hoimin-perf-three-task2/release.log",
+    "sha256": "6fa1a37abbac006b0cf3b977b315c18f74d831ea07a589e85acb2f5ffb2608c3",
+    "bytes": 317,
+    "selected_lines": []
+  }
+]

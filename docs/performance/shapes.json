@@ -1134,6 +1134,128 @@
         "--exact",
         "--nocapture"
       ]
+    },
+    {
+      "id": "analyzer-line-selection-sparse-1000",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 1006,
+      "scope": "N=1000 Boolean sites; N isolated blank-line ranges; max_candidates=1. Real membership comparisons <= actual nonzero query count * (floor(log2 R)+3); preparation <= R*(floor(log2 R)+5). Includes index copy/sort/prefix operations; excludes parser, scope lookup, allocation/native-stack/time/RSS bounds.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-python",
+        "--lib",
+        "rust::selection_tests::selection_sparse_1000",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
+    },
+    {
+      "id": "analyzer-line-selection-sparse-2000",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 1006,
+      "scope": "N=2000 Boolean sites; N isolated blank-line ranges; max_candidates=1. Real membership comparisons <= actual nonzero query count * (floor(log2 R)+3); preparation <= R*(floor(log2 R)+5). Includes index copy/sort/prefix operations; excludes parser, scope lookup, allocation/native-stack/time/RSS bounds.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-python",
+        "--lib",
+        "rust::selection_tests::selection_sparse_2000",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
+    },
+    {
+      "id": "analyzer-line-selection-sparse-4000",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 1006,
+      "scope": "N=4000 Boolean sites; N isolated blank-line ranges; max_candidates=1. Real membership comparisons <= actual nonzero query count * (floor(log2 R)+3); preparation <= R*(floor(log2 R)+5). Includes index copy/sort/prefix operations; excludes parser, scope lookup, allocation/native-stack/time/RSS bounds.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-python",
+        "--lib",
+        "rust::selection_tests::selection_sparse_4000",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
+    },
+    {
+      "id": "analyzer-line-selection-sparse-8000",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 1006,
+      "scope": "N=8000 Boolean sites; N isolated blank-line ranges; max_candidates=1. Real membership comparisons <= actual nonzero query count * (floor(log2 R)+3); preparation <= R*(floor(log2 R)+5). Includes index copy/sort/prefix operations; excludes parser, scope lookup, allocation/native-stack/time/RSS bounds.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-python",
+        "--lib",
+        "rust::selection_tests::selection_sparse_8000",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
+    },
+    {
+      "id": "workspace-manifest-clone-retained",
+      "status": "active",
+      "metric": "retained_heap",
+      "related_issue": 1007,
+      "scope": "4000 empty files in 40 directories; 16 retained standalone clones <=16KiB requested-live allocation. Preallocated handles and setup excluded; meter checks live/realloc/peak/release. Not RSS or timing.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--test",
+        "workspace_manifest_heap",
+        "retained_manifest_clones_do_not_multiply_metadata",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
+    },
+    {
+      "id": "workspace-worker-metadata-retained",
+      "status": "active",
+      "metric": "retained_heap",
+      "related_issue": 1007,
+      "scope": "1000 empty files in 40 directories; four actual workers <=256KiB+8KiB/worker requested-live allocation with retained handles. Setup, requests and Vec capacities excluded; filesystem/charge checks outside observation. Not RSS or timing.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--test",
+        "workspace_worker_metadata_heap",
+        "retained_worker_metadata_does_not_multiply_file_inventory",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
+    },
+    {
+      "id": "source-index-unicode-discovery-peak",
+      "status": "active",
+      "metric": "peak_heap",
+      "related_issue": 1008,
+      "scope": "N=262144/524288/1048576 non-ASCII comment scalars with exactly one boolean candidate/max1. Unused context requested peak <1KiB; actual CLI discovery requested peak <=12N+256KiB including file read. Additional retained real Unicode index must exceed the same bound. One test owns allocator windows; excludes RSS, timing, total allocation and payload-budget guarantees.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--test",
+        "source_index_heap",
+        "unicode_context_and_cli_discovery_avoid_overlapping_location_indexes",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
     }
   ],
   "lean": {

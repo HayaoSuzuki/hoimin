@@ -1,0 +1,13 @@
+   Compiling hoimin-core v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-core)
+   Compiling hoimin-python v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-python)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.19s
+     Running unittests src/lib.rs (/tmp/hoimin-perf-three-target/debug/deps/hoimin_python-2ce8f4536081f3ba)
+
+running 4 tests
+test rust::rust_tests::line_index_answers_out_of_order_ascii_and_unicode_offsets ... ok
+test rust::rust_tests::line_index_ignores_only_a_leading_file_bom_in_columns ... ok
+test rust::rust_tests::line_index_reports_one_based_lines_and_unicode_scalar_columns ... ok
+test rust::rust_tests::line_index_positions_token_and_type_annotation_candidates ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 456 filtered out; finished in 0.00s
+

@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running unittests src/lib.rs (/tmp/hoimin-perf-three-target/debug/deps/hoimin_python-2ce8f4536081f3ba)
+
+running 1 test
+test rust::rust_tests::bounded_collection_with_zero_limit_keeps_only_an_overflow_probe ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 459 filtered out; finished in 0.00s
+

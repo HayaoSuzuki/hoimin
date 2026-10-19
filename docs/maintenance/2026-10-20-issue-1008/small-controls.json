@@ -1,0 +1,3001 @@
+{
+  "samples": [
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 0,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "987ca2d6584cf9e29bb16edb8e941c0976464b11c3b1b6d543da3cd2352b0eb8",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 2851959,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 12589792,
+        "maxrss_bytes": 4128768
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 0,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "24e04ab19353774e49156ce6368e078653844e0dff969ce5e707f3b8572c5a44",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 3961042,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 13207958,
+        "maxrss_bytes": 4096000
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 1,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "24e04ab19353774e49156ce6368e078653844e0dff969ce5e707f3b8572c5a44",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 258625,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4335917,
+        "maxrss_bytes": 3653632
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 1,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "987ca2d6584cf9e29bb16edb8e941c0976464b11c3b1b6d543da3cd2352b0eb8",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 164125,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 3892667,
+        "maxrss_bytes": 3702784
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 2,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "987ca2d6584cf9e29bb16edb8e941c0976464b11c3b1b6d543da3cd2352b0eb8",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 201333,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 3908542,
+        "maxrss_bytes": 3702784
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 2,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "24e04ab19353774e49156ce6368e078653844e0dff969ce5e707f3b8572c5a44",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 219042,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4050209,
+        "maxrss_bytes": 3653632
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 3,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "24e04ab19353774e49156ce6368e078653844e0dff969ce5e707f3b8572c5a44",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 168666,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4208750,
+        "maxrss_bytes": 3653632
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 3,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "987ca2d6584cf9e29bb16edb8e941c0976464b11c3b1b6d543da3cd2352b0eb8",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 210042,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 3935250,
+        "maxrss_bytes": 3702784
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 4,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "987ca2d6584cf9e29bb16edb8e941c0976464b11c3b1b6d543da3cd2352b0eb8",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 211667,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4000541,
+        "maxrss_bytes": 3670016
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 4,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "24e04ab19353774e49156ce6368e078653844e0dff969ce5e707f3b8572c5a44",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 173417,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4002834,
+        "maxrss_bytes": 3686400
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 5,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "24e04ab19353774e49156ce6368e078653844e0dff969ce5e707f3b8572c5a44",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 243375,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4758625,
+        "maxrss_bytes": 3653632
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 5,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "987ca2d6584cf9e29bb16edb8e941c0976464b11c3b1b6d543da3cd2352b0eb8",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 166750,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 3806584,
+        "maxrss_bytes": 3670016
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 6,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "987ca2d6584cf9e29bb16edb8e941c0976464b11c3b1b6d543da3cd2352b0eb8",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 217833,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4163833,
+        "maxrss_bytes": 3670016
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 6,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "24e04ab19353774e49156ce6368e078653844e0dff969ce5e707f3b8572c5a44",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 174583,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4013584,
+        "maxrss_bytes": 3653632
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 7,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "24e04ab19353774e49156ce6368e078653844e0dff969ce5e707f3b8572c5a44",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 191792,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4323541,
+        "maxrss_bytes": 3686400
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 7,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "987ca2d6584cf9e29bb16edb8e941c0976464b11c3b1b6d543da3cd2352b0eb8",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 179000,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 3940583,
+        "maxrss_bytes": 3670016
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 8,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "987ca2d6584cf9e29bb16edb8e941c0976464b11c3b1b6d543da3cd2352b0eb8",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 206375,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4053208,
+        "maxrss_bytes": 3670016
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 8,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "24e04ab19353774e49156ce6368e078653844e0dff969ce5e707f3b8572c5a44",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 191958,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4100708,
+        "maxrss_bytes": 3653632
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 9,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "24e04ab19353774e49156ce6368e078653844e0dff969ce5e707f3b8572c5a44",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 175125,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 3972667,
+        "maxrss_bytes": 3653632
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 9,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "987ca2d6584cf9e29bb16edb8e941c0976464b11c3b1b6d543da3cd2352b0eb8",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 199375,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 3720708,
+        "maxrss_bytes": 3670016
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 10,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "987ca2d6584cf9e29bb16edb8e941c0976464b11c3b1b6d543da3cd2352b0eb8",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 212708,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 3824083,
+        "maxrss_bytes": 3670016
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 10,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "24e04ab19353774e49156ce6368e078653844e0dff969ce5e707f3b8572c5a44",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 155000,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4069167,
+        "maxrss_bytes": 3653632
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 11,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "24e04ab19353774e49156ce6368e078653844e0dff969ce5e707f3b8572c5a44",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 176792,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4035417,
+        "maxrss_bytes": 3653632
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "sample": 11,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "pipeline",
+        "0"
+      ],
+      "command_sha256": "987ca2d6584cf9e29bb16edb8e941c0976464b11c3b1b6d543da3cd2352b0eb8",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 220167,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4040625,
+        "maxrss_bytes": 3670016
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 0,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "ee8dbb344d943bbefef95af0f274d2f58dd06131b46a07eeb165ba43899cd348",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 22104666,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 22104666,
+        "maxrss_bytes": 8830976
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 0,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "9bae105cfd33da1b1d4060c69e2679e9a0e6dbcf6538e9e83c862dc0009de363",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 18348291,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 18348291,
+        "maxrss_bytes": 8388608
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 1,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "9bae105cfd33da1b1d4060c69e2679e9a0e6dbcf6538e9e83c862dc0009de363",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 5635250,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5635250,
+        "maxrss_bytes": 7995392
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 1,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "ee8dbb344d943bbefef95af0f274d2f58dd06131b46a07eeb165ba43899cd348",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 5397167,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5397167,
+        "maxrss_bytes": 7995392
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 2,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "ee8dbb344d943bbefef95af0f274d2f58dd06131b46a07eeb165ba43899cd348",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 5180583,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5180583,
+        "maxrss_bytes": 8044544
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 2,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "9bae105cfd33da1b1d4060c69e2679e9a0e6dbcf6538e9e83c862dc0009de363",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 5726250,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5726250,
+        "maxrss_bytes": 8060928
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 3,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "9bae105cfd33da1b1d4060c69e2679e9a0e6dbcf6538e9e83c862dc0009de363",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 5283208,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5283208,
+        "maxrss_bytes": 8241152
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 3,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "ee8dbb344d943bbefef95af0f274d2f58dd06131b46a07eeb165ba43899cd348",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 5292250,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5292250,
+        "maxrss_bytes": 8273920
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 4,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "ee8dbb344d943bbefef95af0f274d2f58dd06131b46a07eeb165ba43899cd348",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 5759292,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5759292,
+        "maxrss_bytes": 8192000
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 4,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "9bae105cfd33da1b1d4060c69e2679e9a0e6dbcf6538e9e83c862dc0009de363",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 5608167,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5608167,
+        "maxrss_bytes": 8224768
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 5,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "9bae105cfd33da1b1d4060c69e2679e9a0e6dbcf6538e9e83c862dc0009de363",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 5629042,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5629042,
+        "maxrss_bytes": 7962624
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 5,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "ee8dbb344d943bbefef95af0f274d2f58dd06131b46a07eeb165ba43899cd348",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 5684583,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5684583,
+        "maxrss_bytes": 8142848
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 6,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "ee8dbb344d943bbefef95af0f274d2f58dd06131b46a07eeb165ba43899cd348",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 5603500,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5603500,
+        "maxrss_bytes": 7962624
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 6,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "9bae105cfd33da1b1d4060c69e2679e9a0e6dbcf6538e9e83c862dc0009de363",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 5425292,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5425292,
+        "maxrss_bytes": 7929856
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 7,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "9bae105cfd33da1b1d4060c69e2679e9a0e6dbcf6538e9e83c862dc0009de363",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 5496875,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5496875,
+        "maxrss_bytes": 8044544
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 7,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "ee8dbb344d943bbefef95af0f274d2f58dd06131b46a07eeb165ba43899cd348",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 5422459,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5422459,
+        "maxrss_bytes": 8257536
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 8,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "ee8dbb344d943bbefef95af0f274d2f58dd06131b46a07eeb165ba43899cd348",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 5293208,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5293208,
+        "maxrss_bytes": 8077312
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 8,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "9bae105cfd33da1b1d4060c69e2679e9a0e6dbcf6538e9e83c862dc0009de363",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 5389459,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5389459,
+        "maxrss_bytes": 8060928
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 9,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "9bae105cfd33da1b1d4060c69e2679e9a0e6dbcf6538e9e83c862dc0009de363",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 5389125,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5389125,
+        "maxrss_bytes": 8044544
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 9,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "ee8dbb344d943bbefef95af0f274d2f58dd06131b46a07eeb165ba43899cd348",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 5487500,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5487500,
+        "maxrss_bytes": 8273920
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 10,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "ee8dbb344d943bbefef95af0f274d2f58dd06131b46a07eeb165ba43899cd348",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 5105250,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5105250,
+        "maxrss_bytes": 8257536
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 10,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "9bae105cfd33da1b1d4060c69e2679e9a0e6dbcf6538e9e83c862dc0009de363",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 5308417,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5308417,
+        "maxrss_bytes": 7962624
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 11,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "9bae105cfd33da1b1d4060c69e2679e9a0e6dbcf6538e9e83c862dc0009de363",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 5651833,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5651833,
+        "maxrss_bytes": 8093696
+      }
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "sample": 11,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-tiny",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "ee8dbb344d943bbefef95af0f274d2f58dd06131b46a07eeb165ba43899cd348",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 5237042,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5237042,
+        "maxrss_bytes": 8060928
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 0,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "ff60506425d267e21d417ec5634c690e56a57672ead1abe15f093fcd159b99e4",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 357334,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5012084,
+        "maxrss_bytes": 3883008
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 0,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "54737a717281bc9a91dec66c982cfe6c50b92330f660284e3030c875ef05c5f6",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 354500,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4321667,
+        "maxrss_bytes": 3850240
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 1,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "54737a717281bc9a91dec66c982cfe6c50b92330f660284e3030c875ef05c5f6",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 391125,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4685542,
+        "maxrss_bytes": 3850240
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 1,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "ff60506425d267e21d417ec5634c690e56a57672ead1abe15f093fcd159b99e4",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 290250,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 3837375,
+        "maxrss_bytes": 3883008
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 2,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "ff60506425d267e21d417ec5634c690e56a57672ead1abe15f093fcd159b99e4",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 291458,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4776166,
+        "maxrss_bytes": 3883008
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 2,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "54737a717281bc9a91dec66c982cfe6c50b92330f660284e3030c875ef05c5f6",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 315667,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4479542,
+        "maxrss_bytes": 3850240
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 3,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "54737a717281bc9a91dec66c982cfe6c50b92330f660284e3030c875ef05c5f6",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 299333,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4100125,
+        "maxrss_bytes": 3850240
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 3,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "ff60506425d267e21d417ec5634c690e56a57672ead1abe15f093fcd159b99e4",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 306458,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4116083,
+        "maxrss_bytes": 3883008
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 4,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "ff60506425d267e21d417ec5634c690e56a57672ead1abe15f093fcd159b99e4",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 316333,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4071750,
+        "maxrss_bytes": 3883008
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 4,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "54737a717281bc9a91dec66c982cfe6c50b92330f660284e3030c875ef05c5f6",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 302500,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4414250,
+        "maxrss_bytes": 4030464
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 5,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "54737a717281bc9a91dec66c982cfe6c50b92330f660284e3030c875ef05c5f6",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 290042,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4336250,
+        "maxrss_bytes": 3850240
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 5,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "ff60506425d267e21d417ec5634c690e56a57672ead1abe15f093fcd159b99e4",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 259583,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 3889625,
+        "maxrss_bytes": 3883008
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 6,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "ff60506425d267e21d417ec5634c690e56a57672ead1abe15f093fcd159b99e4",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 265250,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4032750,
+        "maxrss_bytes": 3883008
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 6,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "54737a717281bc9a91dec66c982cfe6c50b92330f660284e3030c875ef05c5f6",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 299208,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4191625,
+        "maxrss_bytes": 3850240
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 7,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "54737a717281bc9a91dec66c982cfe6c50b92330f660284e3030c875ef05c5f6",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 270625,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4296834,
+        "maxrss_bytes": 3850240
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 7,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "ff60506425d267e21d417ec5634c690e56a57672ead1abe15f093fcd159b99e4",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 276500,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4135208,
+        "maxrss_bytes": 3883008
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 8,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "ff60506425d267e21d417ec5634c690e56a57672ead1abe15f093fcd159b99e4",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 321416,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4091250,
+        "maxrss_bytes": 3883008
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 8,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "54737a717281bc9a91dec66c982cfe6c50b92330f660284e3030c875ef05c5f6",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 278625,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4461666,
+        "maxrss_bytes": 3850240
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 9,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "54737a717281bc9a91dec66c982cfe6c50b92330f660284e3030c875ef05c5f6",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 326875,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4859459,
+        "maxrss_bytes": 3850240
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 9,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "ff60506425d267e21d417ec5634c690e56a57672ead1abe15f093fcd159b99e4",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 317791,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4482625,
+        "maxrss_bytes": 3883008
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 10,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "ff60506425d267e21d417ec5634c690e56a57672ead1abe15f093fcd159b99e4",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 315750,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4129750,
+        "maxrss_bytes": 3883008
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 10,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "54737a717281bc9a91dec66c982cfe6c50b92330f660284e3030c875ef05c5f6",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 289209,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4928583,
+        "maxrss_bytes": 3850240
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 11,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-after",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "54737a717281bc9a91dec66c982cfe6c50b92330f660284e3030c875ef05c5f6",
+      "binary_sha256": "9793cb994661470a52d5377f292d53695145b340a0772b19fe86d1fe92a8d94c",
+      "ns": 286291,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5702208,
+        "maxrss_bytes": 3850240
+      }
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "sample": 11,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/probe-before",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "pipeline",
+        "128"
+      ],
+      "command_sha256": "ff60506425d267e21d417ec5634c690e56a57672ead1abe15f093fcd159b99e4",
+      "binary_sha256": "fbfc57e3504f2c56e6c4c88f5894361578fc6e5f7eab4b62f4215384b7e4cdc4",
+      "ns": 257458,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4050375,
+        "maxrss_bytes": 3883008
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 0,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "19147197a6213279a5b54692373c59a63e624d69276e868189b38bfff2156710",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 5445500,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5445500,
+        "maxrss_bytes": 8470528
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 0,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "aee79c45b0d017492b5155af04a0a7113ce4cbcef47618c554e65125158c2c4c",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 6131541,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 6131541,
+        "maxrss_bytes": 8372224
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 1,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "aee79c45b0d017492b5155af04a0a7113ce4cbcef47618c554e65125158c2c4c",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 6119125,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 6119125,
+        "maxrss_bytes": 8208384
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 1,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "19147197a6213279a5b54692373c59a63e624d69276e868189b38bfff2156710",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 5069292,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5069292,
+        "maxrss_bytes": 8404992
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 2,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "19147197a6213279a5b54692373c59a63e624d69276e868189b38bfff2156710",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 5050958,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5050958,
+        "maxrss_bytes": 8192000
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 2,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "aee79c45b0d017492b5155af04a0a7113ce4cbcef47618c554e65125158c2c4c",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 6074833,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 6074833,
+        "maxrss_bytes": 8159232
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 3,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "aee79c45b0d017492b5155af04a0a7113ce4cbcef47618c554e65125158c2c4c",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 5152833,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5152833,
+        "maxrss_bytes": 8224768
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 3,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "19147197a6213279a5b54692373c59a63e624d69276e868189b38bfff2156710",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 4922417,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 4922417,
+        "maxrss_bytes": 8257536
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 4,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "19147197a6213279a5b54692373c59a63e624d69276e868189b38bfff2156710",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 5382625,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5382625,
+        "maxrss_bytes": 8192000
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 4,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "aee79c45b0d017492b5155af04a0a7113ce4cbcef47618c554e65125158c2c4c",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 5625250,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5625250,
+        "maxrss_bytes": 8323072
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 5,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "aee79c45b0d017492b5155af04a0a7113ce4cbcef47618c554e65125158c2c4c",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 5465208,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5465208,
+        "maxrss_bytes": 8192000
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 5,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "19147197a6213279a5b54692373c59a63e624d69276e868189b38bfff2156710",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 5679250,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5679250,
+        "maxrss_bytes": 8290304
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 6,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "19147197a6213279a5b54692373c59a63e624d69276e868189b38bfff2156710",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 5969125,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5969125,
+        "maxrss_bytes": 8175616
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 6,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "aee79c45b0d017492b5155af04a0a7113ce4cbcef47618c554e65125158c2c4c",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 6502750,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 6502750,
+        "maxrss_bytes": 7880704
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 7,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "aee79c45b0d017492b5155af04a0a7113ce4cbcef47618c554e65125158c2c4c",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 6443208,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 6443208,
+        "maxrss_bytes": 8142848
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 7,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "19147197a6213279a5b54692373c59a63e624d69276e868189b38bfff2156710",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 5651375,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5651375,
+        "maxrss_bytes": 8388608
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 8,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "19147197a6213279a5b54692373c59a63e624d69276e868189b38bfff2156710",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 5573583,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5573583,
+        "maxrss_bytes": 8175616
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 8,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "aee79c45b0d017492b5155af04a0a7113ce4cbcef47618c554e65125158c2c4c",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 5098916,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5098916,
+        "maxrss_bytes": 8159232
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 9,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "aee79c45b0d017492b5155af04a0a7113ce4cbcef47618c554e65125158c2c4c",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 6255209,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 6255209,
+        "maxrss_bytes": 8175616
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 9,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "19147197a6213279a5b54692373c59a63e624d69276e868189b38bfff2156710",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 6684875,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 6684875,
+        "maxrss_bytes": 8192000
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 10,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "19147197a6213279a5b54692373c59a63e624d69276e868189b38bfff2156710",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 5990708,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5990708,
+        "maxrss_bytes": 8126464
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 10,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "aee79c45b0d017492b5155af04a0a7113ce4cbcef47618c554e65125158c2c4c",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 5356375,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5356375,
+        "maxrss_bytes": 8044544
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 11,
+      "revision": "after",
+      "command": [
+        "/tmp/hoimin-perf-three-task3/hoimin-after",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "aee79c45b0d017492b5155af04a0a7113ce4cbcef47618c554e65125158c2c4c",
+      "binary_sha256": "644f8e41c502b6bc6ddebb45cf9a00e1d85925c95585b8ddee0e281cc284274a",
+      "ns": 5340875,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5340875,
+        "maxrss_bytes": 8224768
+      }
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "sample": 11,
+      "revision": "before",
+      "command": [
+        "/tmp/hoimin-perf-three-baseline/release/hoimin",
+        "plan",
+        "--root",
+        "/tmp/hoimin-perf-three-task3/fixture-small",
+        "--file",
+        "source.py",
+        "--operators",
+        "boolean_literal",
+        "--max-candidates",
+        "1",
+        "--jobs",
+        "1",
+        "--max-mutants",
+        "1",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "/usr/bin/true"
+      ],
+      "command_sha256": "19147197a6213279a5b54692373c59a63e624d69276e868189b38bfff2156710",
+      "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+      "ns": 5195458,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "process": {
+        "code": 0,
+        "stderr": "",
+        "elapsed_ns": 5195458,
+        "maxrss_bytes": 8241152
+      }
+    }
+  ],
+  "summary": [
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "revision": "before",
+      "median_ns": 208208.5,
+      "min_ns": 164125,
+      "max_ns": 2851959
+    },
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "revision": "after",
+      "median_ns": 184292.0,
+      "min_ns": 155000,
+      "max_ns": 3961042
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "revision": "before",
+      "median_ns": 5409813.0,
+      "min_ns": 5105250,
+      "max_ns": 22104666
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "revision": "after",
+      "median_ns": 5552521.0,
+      "min_ns": 5283208,
+      "max_ns": 18348291
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "revision": "before",
+      "median_ns": 298958.0,
+      "min_ns": 257458,
+      "max_ns": 357334
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "revision": "after",
+      "median_ns": 299270.5,
+      "min_ns": 270625,
+      "max_ns": 391125
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "revision": "before",
+      "median_ns": 5509541.5,
+      "min_ns": 4922417,
+      "max_ns": 6684875
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "revision": "after",
+      "median_ns": 5850041.5,
+      "min_ns": 5098916,
+      "max_ns": 6502750
+    }
+  ],
+  "reason": "Initial 3-pair small plan and pipeline medians varied. These are additional serial observations, not replacement/removal of those samples. Fresh child per sample; original workload/commands/source/probe binaries retained.",
+  "paired_differences": [
+    {
+      "label": "tiny",
+      "mode": "pipeline",
+      "paired_after_minus_before_ns": [
+        1109083,
+        94500,
+        17709,
+        -41376,
+        -38250,
+        76625,
+        -43250,
+        12792,
+        -14417,
+        -24250,
+        -57708,
+        -43375
+      ],
+      "positive": 5,
+      "negative": 7,
+      "median_difference_ns": -19333.5,
+      "mean_difference_ns": 87340.25,
+      "minimum_difference_ns": -57708,
+      "maximum_difference_ns": 1109083
+    },
+    {
+      "label": "tiny",
+      "mode": "ordinary-plan",
+      "paired_after_minus_before_ns": [
+        -3756375,
+        238083,
+        545667,
+        -9042,
+        -151125,
+        -55541,
+        -178208,
+        74416,
+        96251,
+        -98375,
+        203167,
+        414791
+      ],
+      "positive": 6,
+      "negative": 6,
+      "median_difference_ns": 32687.0,
+      "mean_difference_ns": -223024.25,
+      "minimum_difference_ns": -3756375,
+      "maximum_difference_ns": 545667
+    },
+    {
+      "label": "small",
+      "mode": "pipeline",
+      "paired_after_minus_before_ns": [
+        -2834,
+        100875,
+        24209,
+        -7125,
+        -13833,
+        30459,
+        33958,
+        -5875,
+        -42791,
+        9084,
+        -26541,
+        28833
+      ],
+      "positive": 6,
+      "negative": 6,
+      "median_difference_ns": 3125.0,
+      "mean_difference_ns": 10701.583333333334,
+      "minimum_difference_ns": -42791,
+      "maximum_difference_ns": 100875
+    },
+    {
+      "label": "small",
+      "mode": "ordinary-plan",
+      "paired_after_minus_before_ns": [
+        686041,
+        1049833,
+        1023875,
+        230416,
+        242625,
+        -214042,
+        533625,
+        791833,
+        -474667,
+        -429666,
+        -634333,
+        145417
+      ],
+      "positive": 8,
+      "negative": 4,
+      "median_difference_ns": 236520.5,
+      "mean_difference_ns": 245913.08333333334,
+      "minimum_difference_ns": -634333,
+      "maximum_difference_ns": 1049833
+    }
+  ]
+}
