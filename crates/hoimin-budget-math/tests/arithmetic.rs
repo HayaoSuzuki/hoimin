@@ -185,12 +185,16 @@ proptest! {
     }
 
     #[test]
-    fn waves_match_integer_ceiling(selected in any::<usize>(), jobs in 1..=usize::MAX) {
-        let expected = selected / jobs + usize::from(selected % jobs != 0);
+    fn waves_are_the_smallest_covering_count(selected in any::<usize>(), jobs in 1..=usize::MAX) {
+        let selected_natural = selected as u128;
+        let jobs_natural = jobs as u128;
 
         let projection = project(selected, jobs, Duration::from_nanos(1));
+        let waves = projection.waves as u128;
 
-        prop_assert_eq!(projection.waves, expected);
+        // These products fit u128 for every 32-bit or 64-bit usize input.
+        prop_assert!(selected_natural <= waves * jobs_natural
+            && (waves == 0 || (waves - 1) * jobs_natural < selected_natural));
     }
 
     #[test]
@@ -208,10 +212,12 @@ proptest! {
         selected in any::<usize>(), jobs in 1..=usize::MAX,
         duration in durations().prop_filter("positive", |d| !d.is_zero()),
     ) {
-        let waves = selected / jobs + usize::from(selected % jobs != 0);
+        // Keep this widened additive oracle independent of production arithmetic.
+        #[allow(clippy::manual_div_ceil)]
+        let waves = (selected as u128 + jobs as u128 - 1) / jobs as u128;
         let nanos = duration.as_nanos();
         // Guard before multiplying: even a full-width usize product cannot overflow the oracle.
-        let expected = if waves as u128 > DMAX / nanos { DMAX } else { nanos * waves as u128 };
+        let expected = if waves > DMAX / nanos { DMAX } else { nanos * waves };
 
         let projection = project(selected, jobs, duration);
 
