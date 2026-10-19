@@ -5712,3 +5712,142 @@ async fn baseline_contamination_plan(
     );
     (args, manifest, plan_path)
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn verify_preview_external_filenames_are_single_line_without_running_commands() {
+    for (name, escaped) in [
+        ("calc\x1b[31m.py", r"calc\u{1b}[31m.py"),
+        ("calc\r.py", r"calc\r.py"),
+        ("calc\n.py", r"calc\n.py"),
+        ("calc\t.py", r"calc\t.py"),
+        ("日本語🦀.py", "日本語🦀.py"),
+    ] {
+        // Arrange: real native filenames and a command with an observable side effect.
+        let project = Project::new_with_sources(&[(name, "value = 1 + 2\n")]);
+        let (path, manifest, marker) =
+            write_plan_manifest(&project, &["--operators", "binary_add_sub"]).await;
+        let before = std::fs::read(&path).unwrap();
+        assert_eq!(manifest.candidates.len(), 1);
+        let candidate = &manifest.candidates[0];
+        assert_eq!(candidate.path.as_str(), format!("src/{name}"));
+        let temporary = tempfile::tempdir().unwrap();
+
+        // Act: public binary dry-run in every output format.
+        for format in ["human", "json", "jsonl"] {
+            let output = preview_cli(
+                &path,
+                &["--top", "1", "--dry-run", "--format", format],
+                temporary.path(),
+            )
+            .await;
+
+            // Assert: only the human projection changes; dry-run never executes the command.
+            assert!(output.status.success(), "{name:?}: {output:?}");
+            assert!(!marker.exists(), "{name:?}: {format}");
+            assert_eq!(std::fs::read(&path).unwrap(), before);
+            assert_eq!(std::fs::read_dir(temporary.path()).unwrap().count(), 0);
+            if format == "human" {
+                let text = String::from_utf8(output.stdout).unwrap();
+                assert_eq!(text.lines().count(), 2, "{name:?}: {text:?}");
+                assert!(
+                    text.contains(&format!(
+                        "1: {} rank=1 src/{escaped}:1:10 operator=binary_add_sub \"+\" -> \"-\"\n",
+                        candidate.id
+                    )),
+                    "{name:?}: {text:?}"
+                );
+                assert!(
+                    !text.chars().any(|c| c.is_control() && c != '\n'),
+                    "{name:?}: {text:?}"
+                );
+            } else {
+                let preview: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+                assert_eq!(preview["candidates"][0]["path"], format!("src/{name}"));
+                assert_eq!(preview["candidates"][0]["id"], candidate.id);
+                assert_eq!(preview["candidates"][0]["original"], "+");
+                assert_eq!(preview["candidates"][0]["replacement"], "-");
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn verify_preparation_diagnostic_escapes_external_manifest_path() {
+    let temporary = tempfile::tempdir().unwrap();
+    let path = temporary.path().join("missing\x1b[31m\r\n\t.json");
+
+    let output = preview_cli(&path, &["--top", "1", "--dry-run"], temporary.path()).await;
+
+    assert_eq!(output.status.code(), Some(2));
+    let text = String::from_utf8(output.stderr).unwrap();
+    assert_eq!(text.lines().count(), 1, "{text:?}");
+    assert!(text.contains(r"missing\u{1b}[31m\r\n\t.json"), "{text:?}");
+    assert!(
+        !text.chars().any(|c| c.is_control() && c != '\n'),
+        "{text:?}"
+    );
+}
+
+#[tokio::test]
+async fn malformed_argument_diagnostics_escape_external_controls_preserving_usage() {
+    for args in [
+        vec!["hoimin", "verify", "plan.json", "--bad\x1b[31m\r\n\t"],
+        vec![
+            "hoimin",
+            "verify",
+            "plan.json",
+            "--top",
+            "1",
+            "--format",
+            "bad\x1b[31m\r\n\t",
+        ],
+        vec!["hoimin", "bad\x1b[31m\r\n\t"],
+        vec!["hoimin", "\n"],
+        vec!["hoimin", "\t"],
+        vec![
+            "hoimin",
+            "verify",
+            "plan.json",
+            "--top",
+            "1",
+            "--format",
+            "\n",
+        ],
+        vec![
+            "hoimin",
+            "verify",
+            "plan.json",
+            "--top",
+            "1",
+            "--format",
+            "\t",
+        ],
+    ] {
+        let is_invalid_format = args.contains(&"--format");
+        let expected = match *args.last().unwrap() {
+            "\n" => r"\n",
+            "\t" => r"\t",
+            _ => r"bad\u{1b}[31m\r\n\t",
+        };
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
+
+        let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+
+        assert_eq!(code, 2);
+        let text = String::from_utf8(stderr.snapshot()).unwrap();
+        assert!(
+            !text.chars().any(|c| c.is_control() && c != '\n'),
+            "{text:?}"
+        );
+        assert!(text.contains(expected), "{text:?}");
+        if is_invalid_format {
+            assert!(text.contains("\n  [possible values:"), "{text:?}");
+        } else {
+            assert!(text.contains("\n\nUsage: "), "{text:?}");
+        }
+        assert!(text.contains("\n\nFor more information,"), "{text:?}");
+        assert_eq!(stdout.snapshot(), [] as [u8; 0]);
+    }
+}

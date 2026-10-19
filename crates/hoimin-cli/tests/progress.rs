@@ -4235,3 +4235,28 @@ fn assert_json_regression_state(bytes: &[u8], state: &str) {
     let doc: Value = serde_json::from_slice(bytes).unwrap();
     assert_eq!(doc["latest"]["state"], state);
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn progress_diagnostics_escape_external_report_paths() {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut document = valid_report();
+    document["baseline"] = Value::Null;
+    let path = write_json(&fixture, "report\x1b[31m\r\n\t日本語.json", &document);
+
+    let (code, out, err) = run_progress(&[path.clone(), path.clone()], "json").await;
+
+    assert_eq!(code, 0);
+    let result: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(result["inputs"][0]["source"], path.to_str().unwrap());
+    let text = String::from_utf8(err).unwrap();
+    assert_eq!(text.lines().count(), 3, "{text:?}");
+    assert!(
+        text.contains(r"report\u{1b}[31m\r\n\t日本語.json"),
+        "{text:?}"
+    );
+    assert!(
+        !text.chars().any(|c| c.is_control() && c != '\n'),
+        "{text:?}"
+    );
+}

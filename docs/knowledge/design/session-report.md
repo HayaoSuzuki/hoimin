@@ -5,6 +5,21 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1002-human-text
+  resource: ../../../crates/hoimin-cli/src/human_text.rs
+  revision: b02ee7d51709de664ee88db68abca34025db3487
+  working_tree: untracked
+  sha256: 00322fd04c933a8ee575787e2f65bbb641059fd043a8493d76beca57a6ccf357
+- id: issue-1002-human-report
+  resource: ../../../crates/hoimin-cli/src/report/human.rs
+  revision: b02ee7d51709de664ee88db68abca34025db3487
+  working_tree: modified
+  sha256: 996c546875b4f7563cb35df742d4cd23aad5dc6e83f4c8d5a6aa69aedad3d4c1
+- id: issue-1002-human-tests
+  resource: ../../../crates/hoimin-cli/tests/report_handler.rs
+  revision: b02ee7d51709de664ee88db68abca34025db3487
+  working_tree: modified
+  sha256: fa3e30d87e12a40901ac4162ecb7819572da12edf140179c4667f5933e4d8a4a
 - id: issue-992-identity
   resource: ../../../crates/hoimin-core/src/candidate.rs
   revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
@@ -624,3 +639,29 @@ execution explicit.[^issue-985-admission]
 
 [^issue-992-identity]: [crates/hoimin-core/src/candidate.rs](../../../crates/hoimin-core/src/candidate.rs).
 [^issue-992-reader]: [crates/hoimin-cli/src/artifacts/run_report.rs](../../../crates/hoimin-cli/src/artifacts/run_report.rs).
+
+
+# External strings in human reports (Issue #1002)
+
+Human run events, fingerprint provenance, session diagnostics and ordinary event
+diagnostics share the `HumanText` presentation policy with preview, review and
+progress. External fields escape controls and line separators while preserving
+ordinary Unicode. Renderer-owned separators remain actual newlines. Machine
+serializers continue to receive the original strings.[^issue-1002-human-text][^issue-1002-human-report]
+
+The `baseline.output` diagnostic body alone uses an explicit multiline projection:
+LF/TAB remain readable, other controls are escaped, and existing textual escapes
+are preserved once. Its code and level still use ordinary single-line projection.
+This preserves the separate child-output streaming contract without changing
+capture, chunking or JSON/JSONL messages.[^issue-1002-human-report][^issue-1002-human-tests]
+
+Parameterized renderer tests cover C0/C1 controls, Unicode, literal backslashes,
+and baseline layout. Property tests require single-line human fields to contain
+no control characters or Unicode line separators. JSON/JSONL tests compare the
+original candidate and diagnostic values after parsing. These are native macOS
+results, not evidence of native Linux/Windows execution or of Unicode visual
+spoofing prevention.[^issue-1002-human-tests]
+
+[^issue-1002-human-text]: [Shared human text projection](../../../crates/hoimin-cli/src/human_text.rs).
+[^issue-1002-human-report]: [Human event and diagnostic rendering](../../../crates/hoimin-cli/src/report/human.rs).
+[^issue-1002-human-tests]: [Human and machine report regression tests](../../../crates/hoimin-cli/tests/report_handler.rs).

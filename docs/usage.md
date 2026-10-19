@@ -1036,6 +1036,12 @@ Details come from the same validated plan candidate. Rank, line and batch select
 order start at 1; column is the plan's 0-based Python source column. Human rows
 show `path:line:column operator=NAME "original" -> "replacement"`; mutation text
 is quoted and escaped so newlines, tabs, quotes and backslashes stay within one row.
+Paths and other external human fields escape controls, including ESC, CR, LF and
+TAB; ordinary Unicode such as Japanese remains readable. This same display policy
+covers run results, review, progress warnings and command diagnostics. Candidate
+paths, IDs and JSON/JSONL string values retain their logical values. Baseline child
+transcripts keep their separate streamed-output policy, including readable newlines
+and tabs; dry-run never executes baseline or test commands.
 
 The closed version-1 preview schema does not accept these added fields. Clients
 that accept only preview version 1 must update to version 2; the CLI emits version 2

@@ -3,6 +3,8 @@ use std::collections::{BTreeMap, HashSet};
 use hoimin_core::{MutantFinished, MutationStatus};
 use serde::Serialize;
 
+use crate::human_text::HumanText;
+
 use super::{UsableReport, compare::CandidateSetEligibility};
 
 #[derive(Debug, Serialize)]
@@ -75,14 +77,14 @@ impl Details {
                 out,
                 "  {}: {:?}:{}:{} {:?} {} -> {} id={:?} previous={:?}:{}:{}",
                 entry.classification,
-                entry.path,
+                HumanText(&entry.path),
                 entry.line,
                 entry.column,
-                entry.operator,
+                HumanText(&entry.operator),
                 status_name(entry.previous_status),
                 status_name(entry.current_status),
-                entry.id,
-                entry.previous_path,
+                HumanText(&entry.id),
+                HumanText(&entry.previous_path),
                 entry.previous_line,
                 entry.previous_column
             )?;

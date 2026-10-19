@@ -4,6 +4,8 @@ use hoimin_core::{
     OutputEvent, ProcessTermination, RunSummary, SessionDiagnostic, VerificationSelectionMode,
 };
 
+use crate::human_text::HumanText;
+
 pub(super) fn write_mutant_diagnostics(
     writer: &mut impl Write,
     diagnostics: &[SessionDiagnostic],
@@ -12,7 +14,9 @@ pub(super) fn write_mutant_diagnostics(
         writeln!(
             writer,
             "{} {}: {}",
-            diagnostic.level, diagnostic.code, diagnostic.message
+            HumanText(&diagnostic.level),
+            HumanText(&diagnostic.code),
+            HumanText(&diagnostic.message)
         )?;
     }
     writer.flush()
@@ -33,27 +37,27 @@ pub(super) fn write_event(writer: &mut impl Write, event: &OutputEvent) -> io::R
                     writeln!(
                         writer,
                         "run started: {} (profile: {})",
-                        value.run_id,
+                        HumanText(&value.run_id),
                         config.profile.as_str(),
                     )?;
                     if !config.fingerprint_includes.is_empty() {
-                        writeln!(writer, "fingerprint includes: [{patterns}]")?;
+                        writeln!(writer, "fingerprint includes: [{}]", HumanText(&patterns))?;
                     }
                     if !config.fingerprint_files.is_empty() {
                         writeln!(
                             writer,
                             "fingerprint files: [{}]",
-                            config.fingerprint_files.join(", ")
+                            HumanText(&config.fingerprint_files.join(", "))
                         )?;
                     }
                     if !config.fingerprint_inputs.is_empty() {
-                        writeln!(writer, "fingerprint inputs: [{inputs}]")?;
+                        writeln!(writer, "fingerprint inputs: [{}]", HumanText(&inputs))?;
                     }
                     if let Some(selection) = &value.verification_selection {
                         write_selection(writer, selection)?;
                     }
                 }
-                None => writeln!(writer, "run started: {}", value.run_id)?,
+                None => writeln!(writer, "run started: {}", HumanText(&value.run_id))?,
             }
             if let Some(outcome) = value.resume {
                 match outcome {
@@ -77,21 +81,33 @@ pub(super) fn write_event(writer: &mut impl Write, event: &OutputEvent) -> io::R
             )?;
         }
         OutputEvent::MutantStarted(value) => {
-            writeln!(writer, "mutant started: {}", value.mutant_id)?;
+            writeln!(writer, "mutant started: {}", HumanText(&value.mutant_id))?;
         }
         OutputEvent::MutantFinished(value) => writeln!(
             writer,
             "mutant finished: {}:{}:{} {} {:?} -> {:?} {}",
-            value.candidate.path,
+            HumanText(value.candidate.path.as_str()),
             value.candidate.line,
             value.candidate.column,
-            value.candidate.operator,
-            value.candidate.original,
-            value.candidate.replacement,
+            HumanText(&value.candidate.operator),
+            HumanText(&value.candidate.original),
+            HumanText(&value.candidate.replacement),
             value.outcome.status().as_str()
         )?,
         OutputEvent::Diagnostic(value) => {
-            writeln!(writer, "{} {}: {}", value.level, value.code, value.message)?;
+            write!(
+                writer,
+                "{} {}: ",
+                HumanText(&value.level),
+                HumanText(&value.code),
+            )?;
+            if value.code == "baseline.output" {
+                // Child transcripts have an explicit multiline policy; ordinary
+                // diagnostics remain single-line even if their text looks similar.
+                writeln!(writer, "{}", HumanText(&value.message).baseline_output())?;
+            } else {
+                writeln!(writer, "{}", HumanText(&value.message))?;
+            }
         }
         OutputEvent::RunFinished(value) => {
             write_summary(writer, value)?;

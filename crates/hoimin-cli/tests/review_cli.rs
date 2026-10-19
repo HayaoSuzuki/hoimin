@@ -13,15 +13,19 @@ async fn run(args: Vec<String>) -> (i32, Vec<u8>, Vec<u8>) {
 }
 
 async fn fixture() -> (tempfile::TempDir, Vec<String>) {
+    fixture_named("sample.py").await
+}
+
+async fn fixture_named(name: &str) -> (tempfile::TempDir, Vec<String>) {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("sample.py"), "value = 1\n").unwrap();
+    std::fs::write(dir.path().join(name), "value = 1\n").unwrap();
     let (code, out, err) = run(vec![
         "hoimin".into(),
         "plan".into(),
         "--root".into(),
         dir.path().to_str().unwrap().into(),
         "--file".into(),
-        "sample.py".into(),
+        name.into(),
         "--allow-best-effort-memory".into(),
         "--min-free-space".into(),
         "1B".into(),
@@ -514,4 +518,55 @@ async fn review_missing_source_with_store_is_unavailable() {
         list["candidates"][0]["history"].as_array().unwrap().len(),
         1
     );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn review_human_quotes_external_fields_and_json_keeps_logical_values() {
+    for (name, quoted_path) in [
+        ("sample\x1b[31m.py", r#""sample\u{1b}[31m.py""#),
+        ("sample\r\n\t.py", r#""sample\r\n\t.py""#),
+        ("日本語🦀.py", "\"日本語🦀.py\""),
+    ] {
+        let (_dir, mut args) = fixture_named(name).await;
+        let mut record = record_args(&args);
+        let reason = record.iter().position(|value| value == "--reason").unwrap() + 1;
+        record[reason] = "理由\n\t\"quoted\" \\literal".into();
+        record.extend(["--evidence".into(), "証拠\n\tsecond".into()]);
+        let (code, _, err) = run(record).await;
+        assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
+
+        let (code, out, err) = run(args.clone()).await;
+        assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
+        let document: Value = serde_json::from_slice(&out).unwrap();
+        let candidate = &document["candidates"][0];
+        let id = candidate["candidate"]["id"].as_str().unwrap();
+        assert_eq!(candidate["candidate"]["path"], name);
+        assert_eq!(
+            candidate["history"][0]["draft"]["reason"],
+            "理由\n\t\"quoted\" \\literal"
+        );
+        assert_eq!(
+            candidate["history"][0]["draft"]["evidence"][0],
+            "証拠\n\tsecond"
+        );
+        *args.last_mut().unwrap() = "text".into();
+
+        let (code, out, err) = run(args).await;
+
+        assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.contains(&format!("candidate \"{id}\" {quoted_path}:1 ")),
+            "{text:?}"
+        );
+        assert!(
+            text.contains(r#""理由\n\t\"quoted\" \\literal"; evidence ["証拠\n\tsecond"]"#),
+            "{text:?}"
+        );
+        assert!(
+            !text.chars().any(|c| c.is_control() && c != '\n'),
+            "{text:?}"
+        );
+    }
 }

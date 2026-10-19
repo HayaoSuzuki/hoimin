@@ -7,6 +7,7 @@ use serde::Serialize;
 use super::ReviewError;
 use super::model::{Applicability, Assessment, ReviewEvent};
 use crate::cli::ReviewOutputFormat;
+use crate::human_text::HumanText;
 
 #[derive(Serialize)]
 pub(super) struct ReviewDocument {
@@ -97,21 +98,26 @@ pub(super) fn write(
             writeln!(
                 writer,
                 "{label} {:?} {:?}:{} {} {:?}",
-                row.candidate.id,
-                row.candidate.path.as_str(),
+                HumanText(&row.candidate.id),
+                HumanText(row.candidate.path.as_str()),
                 row.candidate.line,
                 assessment,
                 row.applicability
             )?;
             for event in &row.history {
-                // Debug formatting escapes terminal control sequences from stored paths and text.
+                // Quote each external field through the shared human projection.
                 writeln!(
                     writer,
                     "  revision {} {:?}: {:?}; evidence {:?}",
                     event.revision,
                     event.draft.assessment,
-                    event.draft.reason,
-                    event.draft.evidence
+                    HumanText(&event.draft.reason),
+                    event
+                        .draft
+                        .evidence
+                        .iter()
+                        .map(|value| HumanText(value))
+                        .collect::<Vec<_>>()
                 )?;
             }
             match row.execution {
@@ -125,7 +131,7 @@ pub(super) fn write(
         writeln!(
             writer,
             "operator {:?}: total {}, reviewed {}, unreviewed {}, stale {}, source_unavailable {}, assessments {:?}",
-            count.operator,
+            HumanText(&count.operator),
             count.total,
             count.reviewed,
             count.unreviewed,

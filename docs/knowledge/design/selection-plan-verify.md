@@ -5,6 +5,21 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1002-human-text
+  resource: ../../../crates/hoimin-cli/src/human_text.rs
+  revision: b02ee7d51709de664ee88db68abca34025db3487
+  working_tree: untracked
+  sha256: 00322fd04c933a8ee575787e2f65bbb641059fd043a8493d76beca57a6ccf357
+- id: issue-1002-preview
+  resource: ../../../crates/hoimin-cli/src/plan/preview.rs
+  revision: b02ee7d51709de664ee88db68abca34025db3487
+  working_tree: modified
+  sha256: 12c88134f0d9dc3ec5b184e0e656376efa44bc2aabafc7bbcd4d79e751ec3956
+- id: issue-1002-preview-tests
+  resource: ../../../crates/hoimin-cli/tests/plan.rs
+  revision: b02ee7d51709de664ee88db68abca34025db3487
+  working_tree: modified
+  sha256: 50bcf97e2460b4bcf15b35e325a8a91fdef67c435fe4bcaa872a09d8d13067e4
 - id: issue-998-selection
   resource: ../../../crates/hoimin-core/src/machine/selection.rs
   revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
@@ -1020,3 +1035,24 @@ cancelled.[^issue-1003-source-heap]
 [^issue-1003-source-acquisition]: [Plan source acquisition](../../../crates/hoimin-cli/src/plan/source.rs).
 [^issue-1003-source-safety-tests]: [Synchronized source and descriptor regressions](../../../crates/hoimin-cli/src/plan/validation_tests.rs).
 [^issue-1003-source-heap]: [Production source-stage allocation gate](../../../crates/hoimin-cli/tests/plan_source_heap.rs).
+
+
+# Human display boundaries (Issue #1002)
+
+Preview projects each external string through `HumanText` at rendering time.
+C0/C1 controls, including ESC, CR, LF and TAB, and Unicode line separators
+U+2028/U+2029 become visible escapes. Ordinary Unicode remains readable, and each
+candidate occupies one renderer-generated line. Quoted mutation text uses the
+same policy with quote/backslash escaping; logical paths, candidate IDs and
+JSON/JSONL strings remain unchanged.[^issue-1002-human-text][^issue-1002-preview]
+
+Native macOS public-binary tests create actual ESC-, CR-, LF- and TAB-bearing
+filenames and a Japanese filename. They exercise all preview formats, compare
+logical path/ID values, and check the command marker remains absent and the plan
+unchanged. These checks do not establish native Linux/Windows behavior or permit
+NUL in a native filename. The issue concerns terminal presentation; it does not
+establish arbitrary code execution.[^issue-1002-preview-tests]
+
+[^issue-1002-human-text]: [Shared human text projection](../../../crates/hoimin-cli/src/human_text.rs).
+[^issue-1002-preview]: [Preview rendering boundary](../../../crates/hoimin-cli/src/plan/preview.rs).
+[^issue-1002-preview-tests]: [Public preview and diagnostic regressions](../../../crates/hoimin-cli/tests/plan.rs).
