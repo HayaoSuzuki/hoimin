@@ -1311,6 +1311,7 @@ def test_rust_jobs_install_only_their_classified_toolchain() -> None:
         workflow_jobs(decoded)
     ) == REPOSITORY_RUST_JOBS | COMPATIBILITY_RUST_JOBS | LEAN_JOBS | {
         "changes",
+        "creusot",
         "workflow-lint",
         "result",
     }

@@ -78,6 +78,55 @@ def test_aggregate_waits_for_every_planned_job_even_when_upstream_fails() -> Non
     assert "toJSON(needs)" in str(gate["steps"])
 
 
+def test_creusot_job_has_bounded_native_setup_and_failure_diagnostics() -> None:
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    )
+    job = workflow["jobs"]["creusot"]
+    steps = job["steps"]
+
+    assert job["runs-on"] == "ubuntu-latest"
+    assert job["timeout-minutes"] == 30
+    assert "changes" in job["needs"]
+    assert "needs.changes.outputs.creusot == 'true'" in job["if"]
+    assert any("docker build" in step.get("run", "") for step in steps)
+    assert any("tools/verify_creusot.py" in step.get("run", "") for step in steps)
+    assert any(
+        step.get("if") == "failure()"
+        and "actions/upload-artifact@" in step.get("uses", "")
+        for step in steps
+    )
+    assert "creusot" in workflow["jobs"]["result"]["needs"]
+
+
+def test_creusot_image_cache_keys_include_every_effective_recipe_input() -> None:
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    )
+    steps = workflow["jobs"]["creusot"]["steps"]
+    cache_keys = [
+        step["with"]["key"]
+        for step in steps
+        if step.get("uses", "").startswith(
+            ("actions/cache/restore@", "actions/cache/save@")
+        )
+    ]
+
+    assert len(cache_keys) == 2
+    assert cache_keys[0] == cache_keys[1]
+    for input_path in (
+        "formal/creusot/Dockerfile",
+        "formal/creusot/toolchain.json",
+        "formal/creusot/install*.sh",
+        "formal/creusot/configure.sh",
+        "formal/creusot/why3find.json",
+        "formal/creusot/why3.conf",
+        "formal/creusot/creusot_why3.conf",
+        "tools/creusot_environment.py",
+    ):
+        assert f"'{input_path}'" in cache_keys[0]
+
+
 def test_heavy_checks_and_rust_quality_are_selected_from_change_outputs() -> None:
     workflow = yaml.safe_load(
         (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")

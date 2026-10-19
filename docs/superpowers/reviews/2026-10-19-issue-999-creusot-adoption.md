@@ -240,3 +240,24 @@ successful proofs. The controller also inspected the full stable test summary
 (2,916 passed, no failures) and actual proof logs. Tasks 4 and 5 still own the
 mandatory CI/native x86_64 setup measurements and final dependency/distribution
 acceptance.
+
+## Task 4 mandatory proof gate: self-review passes
+
+| Pass | Requirements review | Design review | Implementation review | Testing review |
+| --- | --- | --- | --- | --- |
+| 1 | All eight clauses and ten named production functions remain mandatory. | The approved manifest digest binds functions, contracts, logical definitions, models, target list and goal inventory. | Source attributes are compared as complete attached sets, ignoring whitespace only; extra requires and weakened ensures fail. | A joint source-plus-manifest weakening initially passed, then failed after the approved-scope guard; separate source mutation cases fail. |
+| 2 | Each of three targets must be freshly generated, complete and separately proved. | Only the owned generated package tree is cleared; package clean forces compilation while dependency caches survive. | Fresh timestamp, nonempty Coma, required markers and named goal inventory are checked before proof. | Missing, empty, old and marker-damaged artifacts fail; a fixture crossing all three subprocess boundaries passes only after three results. |
+| 3 | Tool pins and 30s/2GiB/max-two solver limits may not drift. | Selected-project preflight runs before generation and again before proof; pinned solver configuration owns per-process limits. | Proof uses `--no-cache --replay -j 2` on each target; the runner has an 1800s overall deadline and preserves step logs. | Missing/failed tool and deadline cases fail; a solver timeout followed by a successful alternative is accepted only with complete final goal success. |
+| 4 | Deadline and interruption must stop owned solver descendants without affecting other processes. | Every command starts a new session; Linux cleanup kills the dispatcher's group first, then scans only its session for separated child groups. | The runner reaps the leader after scoped SIGKILL; normal successful runs do not invoke cleanup. | A real Linux child in a separate process group survived the old cleanup (state S), then terminated (state Z); ordering test failed child-first and passed leader-first. |
+| 5 | CI must select proof for math/spec/tool/dependency changes and reject failed, cancelled or unintended skips. | `creusot` is a distinct selector output and mandatory aggregate need; cold tool-image cache covers every effective recipe input without solver-result cache. | Job has a 30-minute cap, native x86_64 check, diagnostics and per-attempt proof report. | Selector/aggregate, workflow structure, cache-key coverage and pinned workflow linters pass; native cold/warm dispatch remains the final Task 4 gate. |
+
+Task 4 local pinned Linux ARM64 container: cold crate build81.379s and warm
+fresh replay35.438s. Every target generated25 Coma files and proved59 named
+goals with25 saved strategies and no success-result cache. Cold generation peak
+process/child RSS1,491,140KiB; proof peak271,264KiB. This is a local crate
+cache measurement after the tools were installed, not the native x86_64 full
+setup-plus-proof acceptance. Full Python suite:1,179 passed,12 skipped. The
+first sandboxed run's seven unrelated environment failures were repaired by
+using a task-owned uv cache and granting the existing process-monitor tests
+their required OS access; no test was deleted or marked xfail. The native CI
+cold image-cache miss and warm hit results will be appended after dispatch.
