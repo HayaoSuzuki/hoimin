@@ -48,38 +48,99 @@ fn finished(outcome: MutationOutcome) -> MutantFinished {
     }
 }
 
+// Decoder fixtures set the expected projection independently of the serializer.
+fn wire_for(result: &MutantFinished, status: &str) -> serde_json::Value {
+    let mut wire = serde_json::to_value(result).unwrap();
+    wire["status"] = json!(status);
+    wire
+}
+
 macro_rules! projection_case {
     ($name:ident, $outcome:expr, $expected:literal) => {
-        #[test]
-        fn $name() {
-            // Arrange: expectations are literal classifications, independent of status().
-            let result = finished($outcome);
-            // Act.
-            let direct = serde_json::to_value(&result).unwrap();
-            let event = serde_json::to_value(OutputEvent::MutantFinished(result.clone())).unwrap();
-            // Assert: direct and event boundaries agree and preserve the owned outcome.
-            assert_eq!(direct["status"], $expected);
-            assert_eq!(event["status"], $expected);
-            assert_eq!(
-                serde_json::from_value::<MutantFinished>(direct).unwrap(),
-                result
-            );
-            assert_eq!(
-                serde_json::from_value::<OutputEvent>(event.clone()).unwrap(),
-                OutputEvent::MutantFinished(result)
-            );
-            let mut tampered = event;
-            tampered["status"] = json!(if $expected == "killed" {
-                "survived"
-            } else {
-                "killed"
-            });
-            assert!(
-                serde_json::from_value::<OutputEvent>(tampered)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("does not match outcome status")
-            );
+        mod $name {
+            use super::*;
+
+            #[test]
+            fn direct_projection() {
+                // Arrange: expected classification is literal, independent of status().
+                let result = finished($outcome);
+                // Act.
+                let wire = serde_json::to_value(result).unwrap();
+                // Assert.
+                assert_eq!(wire["status"], $expected);
+            }
+
+            #[test]
+            fn tagged_projection() {
+                // Arrange.
+                let event = OutputEvent::MutantFinished(finished($outcome));
+                // Act.
+                let wire = serde_json::to_value(event).unwrap();
+                // Assert.
+                assert_eq!(wire["status"], $expected);
+            }
+
+            #[test]
+            fn matching_direct_decode() {
+                // Arrange: overwrite projected status with the independent expected literal.
+                let expected = finished($outcome);
+                let wire = wire_for(&expected, $expected);
+                // Act.
+                let decoded = serde_json::from_value::<MutantFinished>(wire).unwrap();
+                // Assert.
+                assert_eq!(decoded, expected);
+            }
+
+            #[test]
+            fn matching_tagged_decode() {
+                // Arrange.
+                let expected = finished($outcome);
+                let mut wire = wire_for(&expected, $expected);
+                wire["kind"] = json!("mutant_finished");
+                // Act.
+                let decoded = serde_json::from_value::<OutputEvent>(wire).unwrap();
+                // Assert.
+                assert_eq!(decoded, OutputEvent::MutantFinished(expected));
+            }
+
+            #[test]
+            fn contradictory_direct_rejection() {
+                // Arrange: change only the projection to a known incorrect status.
+                let result = finished($outcome);
+                let wrong = if $expected == "killed" {
+                    "survived"
+                } else {
+                    "killed"
+                };
+                let wire = wire_for(&result, wrong);
+                // Act.
+                let error = serde_json::from_value::<MutantFinished>(wire).unwrap_err();
+                // Assert.
+                assert!(
+                    error.to_string().contains("does not match outcome status"),
+                    "{error}"
+                );
+            }
+
+            #[test]
+            fn contradictory_tagged_rejection() {
+                // Arrange.
+                let result = finished($outcome);
+                let wrong = if $expected == "killed" {
+                    "survived"
+                } else {
+                    "killed"
+                };
+                let mut wire = wire_for(&result, wrong);
+                wire["kind"] = json!("mutant_finished");
+                // Act.
+                let error = serde_json::from_value::<OutputEvent>(wire).unwrap_err();
+                // Assert.
+                assert!(
+                    error.to_string().contains("does not match outcome status"),
+                    "{error}"
+                );
+            }
         }
     };
 }
@@ -226,33 +287,48 @@ invalid_status_case!(reject_unknown_status, json!("cancelled"), "unknown variant
 invalid_status_case!(reject_null_status, json!(null), "invalid type");
 invalid_status_case!(reject_numeric_status, json!(1), "invalid type");
 
+fn duplicate_wires(second: &str) -> (String, String) {
+    let wire = serde_json::to_string(&matching_wire()).unwrap();
+    let replacement = format!("\"status\":\"killed\",\"status\":\"{second}\"");
+    let direct = wire.replacen("\"status\":\"killed\"", &replacement, 1);
+    let tagged = format!("{{\"kind\":\"mutant_finished\",{}", &direct[1..]);
+    (direct, tagged)
+}
+
 macro_rules! duplicate_case {
     ($name:ident, $second:literal) => {
-        #[test]
-        fn $name() {
-            // Arrange: inject raw keys, preserving duplicate evidence before typed decoding.
-            let wire = serde_json::to_string(&matching_wire()).unwrap();
-            let duplicate = wire.replacen(
-                "\"status\":\"killed\"",
-                concat!("\"status\":\"killed\",\"status\":\"", $second, "\""),
-                1,
-            );
-            let event = format!("{{\"kind\":\"mutant_finished\",{}", &duplicate[1..]);
-            // Act.
-            let direct = serde_json::from_str::<MutantFinished>(&duplicate).unwrap_err();
-            let tagged = serde_json::from_str::<OutputEvent>(&event).unwrap_err();
-            // Assert.
-            assert!(
-                direct.to_string().contains("duplicate field `status`"),
-                "{direct}"
-            );
-            assert!(
-                tagged.to_string().contains("duplicate field `status`"),
-                "{tagged}"
-            );
+        mod $name {
+            use super::*;
+
+            #[test]
+            fn direct_rejection() {
+                // Arrange: raw keys preserve duplicate evidence before typed decoding.
+                let (wire, _) = duplicate_wires($second);
+                // Act.
+                let error = serde_json::from_str::<MutantFinished>(&wire).unwrap_err();
+                // Assert.
+                assert!(
+                    error.to_string().contains("duplicate field `status`"),
+                    "{error}"
+                );
+            }
+
+            #[test]
+            fn tagged_rejection() {
+                // Arrange.
+                let (_, wire) = duplicate_wires($second);
+                // Act.
+                let error = serde_json::from_str::<OutputEvent>(&wire).unwrap_err();
+                // Assert.
+                assert!(
+                    error.to_string().contains("duplicate field `status`"),
+                    "{error}"
+                );
+            }
         }
     };
 }
+
 duplicate_case!(duplicate_equal_status, "killed");
 duplicate_case!(duplicate_conflicting_status, "survived");
 
@@ -281,9 +357,21 @@ proptest! {
         let original = finished(executed(ProcessTermination::Exit(code), output_state));
         // Act.
         let wire = serde_json::to_value(&original).unwrap();
-        let round_trip = serde_json::from_value::<MutantFinished>(wire.clone()).unwrap();
         // Assert.
         prop_assert_eq!(&wire["status"], &json!(expected));
-        prop_assert_eq!(round_trip, original);
     }
+
+    #[test]
+    fn arbitrary_exit_matching_status_decodes(code in any::<i32>(), partial in any::<bool>()) {
+        // Arrange: input status comes from an independent exit/output oracle.
+        let status = if partial { "error" } else if code == 0 { "survived" } else { "killed" };
+        let output_state = if partial { ProcessOutputState::CloseTimedOut } else { ProcessOutputState::Complete };
+        let expected = finished(executed(ProcessTermination::Exit(code), output_state));
+        let wire = wire_for(&expected, status);
+        // Act.
+        let decoded = serde_json::from_value::<MutantFinished>(wire).unwrap();
+        // Assert.
+        prop_assert_eq!(decoded, expected);
+    }
+
 }
