@@ -1,0 +1,11 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running tests/source_index_heap.rs (/tmp/hoimin-perf-three-target/debug/deps/source_index_heap-43d583b6c6f04a9f)
+
+running 1 test
+unicode-index count=262144 context=64 discovery=2625315 eager_control=4721936
+unicode-index count=524288 context=64 discovery=5246208 eager_control=9440528
+unicode-index count=1048576 context=64 discovery=10489088 eager_control=18877712
+test unicode_context_and_cli_discovery_avoid_overlapping_location_indexes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.85s
+

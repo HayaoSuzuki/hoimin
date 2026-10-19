@@ -1,0 +1,8 @@
+{
+  "head": "f72134d76d28d87cd728305ed224f298df41af4a",
+  "protected_source_file_count": 839,
+  "protected_source_path_hash_manifest_sha256": "6bc35e0fa7026f378f694bb2148c5fe008753d877cbcd1604a845500a0a7637d",
+  "product_cargo_tests_proof_tools_workflow_diff_bytes": 0,
+  "changed_branch_proof_input_paths": [],
+  "description": "Sorted path/current-content SHA256 JSON list with sort_keys=true and compact separators; all protected source files match frozen integration head. Source reconstructible from that commit."
+}

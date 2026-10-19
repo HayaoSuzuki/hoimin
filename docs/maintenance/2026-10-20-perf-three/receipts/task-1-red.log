@@ -1,0 +1,70 @@
+   Compiling hoimin-python v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-python)
+warning: function `record_preparation` is never used
+  --> crates/hoimin-python/src/analyzer/rust/selection_tests.rs:19:15
+   |
+19 | pub(super) fn record_preparation() {
+   |               ^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `hoimin-python` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.95s
+     Running unittests src/lib.rs (/tmp/hoimin-perf-three-target/debug/deps/hoimin_python-2ce8f4536081f3ba)
+
+running 26 tests
+test rust::rust_tests::except_star_exception_type_pairs_keep_shared_selection_and_profile_behavior ... ok
+test rust::rust_tests::exception_hierarchy_respects_candidate_prefix_selection_and_cancellation ... ok
+test rust::rust_tests::exception_risky_candidates_require_explicit_selection_and_reparse ... ok
+test rust::rust_tests::raise_exception_type_pairs_keep_shared_selection_and_profile_behavior ... ok
+test rust::rust_tests::operator_function_source_order_selection_profiles_and_annotations ... ok
+selection n=1000 sparse=false queries=1000 membership=1000 preparation=0
+test rust::selection_tests::selection_one_range_control ... ok
+selection n=1000 sparse=true queries=1000 membership=1000000 preparation=0
+
+thread 'rust::selection_tests::selection_sparse_1000' (56547428) panicked at crates/hoimin-python/src/analyzer/rust/selection_tests.rs:55:5:
+Work { queries: 1000, membership: 1000000, preparation: 0 }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test rust::selection_tests::selection_sparse_1000 ... FAILED
+selection n=2000 sparse=true queries=2000 membership=4000000 preparation=0
+
+thread 'rust::selection_tests::selection_sparse_2000' (56547429) panicked at crates/hoimin-python/src/analyzer/rust/selection_tests.rs:55:5:
+Work { queries: 2000, membership: 4000000, preparation: 0 }
+test rust::selection_tests::selection_sparse_2000 ... FAILED
+selection n=4000 sparse=true queries=4000 membership=16000000 preparation=0
+
+thread 'rust::selection_tests::selection_sparse_4000' (56547430) panicked at crates/hoimin-python/src/analyzer/rust/selection_tests.rs:55:5:
+Work { queries: 4000, membership: 16000000, preparation: 0 }
+test rust::selection_tests::selection_sparse_4000 ... FAILED
+test rust::whole_expression_selection_tests::condition_cancels_after_first_constructed_replacement ... ok
+test rust::whole_expression_selection_tests::condition_excluded_line ... ok
+test rust::whole_expression_selection_tests::condition_excluded_symbol ... ok
+test rust::whole_expression_selection_tests::condition_multiline_interior_line ... ok
+test rust::whole_expression_selection_tests::condition_selected_child_inside_excluded_parent ... ok
+test rust::whole_expression_selection_tests::condition_selected_count_truncation ... ok
+test rust::whole_expression_selection_tests::condition_selected_order_dedup_identity ... ok
+test rust::whole_expression_selection_tests::container_cancels_after_first_constructed_replacement ... ok
+test rust::whole_expression_selection_tests::container_excluded_line ... ok
+test rust::whole_expression_selection_tests::container_excluded_symbol ... ok
+test rust::whole_expression_selection_tests::container_multiline_interior_line ... ok
+test rust::whole_expression_selection_tests::container_selected_child_inside_excluded_parent ... ok
+test rust::whole_expression_selection_tests::container_selected_count_truncation ... ok
+test rust::whole_expression_selection_tests::container_selected_order_dedup_identity ... ok
+test rust::whole_expression_selection_tests::excluded_condition_work_is_zero_for_bounded_payloads ... ok
+test rust::whole_expression_selection_tests::excluded_container_work_is_zero_for_bounded_payloads ... ok
+selection n=8000 sparse=true queries=8000 membership=64000000 preparation=0
+
+thread 'rust::selection_tests::selection_sparse_8000' (56547432) panicked at crates/hoimin-python/src/analyzer/rust/selection_tests.rs:55:5:
+Work { queries: 8000, membership: 64000000, preparation: 0 }
+test rust::selection_tests::selection_sparse_8000 ... FAILED
+
+failures:
+
+failures:
+    rust::selection_tests::selection_sparse_1000
+    rust::selection_tests::selection_sparse_2000
+    rust::selection_tests::selection_sparse_4000
+    rust::selection_tests::selection_sparse_8000
+
+test result: FAILED. 22 passed; 4 failed; 0 ignored; 0 measured; 405 filtered out; finished in 0.86s
+
+error: test failed, to rerun pass `-p hoimin-python --lib`

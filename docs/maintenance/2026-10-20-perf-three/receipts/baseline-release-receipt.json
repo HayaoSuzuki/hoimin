@@ -1,0 +1,24 @@
+{
+  "commit": "34e3349099ce7fd61838629ee8c0d0b814e65a5d",
+  "worktree_clean": true,
+  "command": [
+    "cargo",
+    "build",
+    "--locked",
+    "--release",
+    "-p",
+    "hoimin-cli",
+    "--bin",
+    "hoimin"
+  ],
+  "environment": {
+    "CARGO_BUILD_JOBS": "2",
+    "CARGO_TARGET_DIR": "/tmp/hoimin-perf-three-target",
+    "CARGO_INCREMENTAL": "0"
+  },
+  "platform": "macOS-15.7.7-arm64-arm-64bit",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "binary_sha256": "e82d32d845d62a0fdc79bc9c7d081ca795b6b9723585a31256917d0cca6c1b11",
+  "log_sha256": "e11a0b64958f7f5da6147d651dac970b76111aada38a8267143ddf9d5d7f7a70",
+  "preservation": "APFS clone copy of complete release directory before product edits; separate copy supports original public-API probes without overwritten rlibs"
+}

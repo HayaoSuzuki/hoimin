@@ -1,0 +1,15 @@
+cargo fmt (workspace)....................................................Passed
+cargo fmt (vendored parser)..............................................Passed
+cargo clippy (workspace).................................................Passed
+cargo clippy (vendored parser)...........................................Passed
+[issue-1006-line-selection-index-1007-shared-manifest-1008-source-index 4c906846] perf(python): index candidate line selection (#1006)
+ 11 files changed, 4138 insertions(+), 29 deletions(-)
+ create mode 100644 crates/hoimin-cli/tests/analyzer_line_selection.rs
+ create mode 100644 crates/hoimin-python/src/analyzer/rust/selection.rs
+ create mode 100644 crates/hoimin-python/src/analyzer/rust/selection_tests.rs
+ create mode 100644 docs/maintenance/2026-10-20-issue-1006/build_probe.py
+ create mode 100644 docs/maintenance/2026-10-20-issue-1006/measure.py
+ create mode 100644 docs/maintenance/2026-10-20-issue-1006/measurement.json
+ create mode 100644 docs/maintenance/2026-10-20-issue-1006/probe.rs
+ create mode 100644 docs/maintenance/2026-10-20-issue-1006/resource_wrapper.py
+ create mode 100644 docs/maintenance/2026-10-20-issue-1006/verification.json

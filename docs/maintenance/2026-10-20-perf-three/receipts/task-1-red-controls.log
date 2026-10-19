@@ -1,0 +1,72 @@
+   Compiling hoimin-python v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-python)
+warning: function `record_preparation` is never used
+  --> crates/hoimin-python/src/analyzer/rust/selection_tests.rs:19:15
+   |
+19 | pub(super) fn record_preparation() {
+   |               ^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `hoimin-python` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.91s
+     Running unittests src/lib.rs (/tmp/hoimin-perf-three-target/debug/deps/hoimin_python-2ce8f4536081f3ba)
+
+running 28 tests
+test rust::selection_tests::selection_all_invalid_is_none ... ok
+test rust::selection_tests::selection_adjacent ... ok
+test rust::selection_tests::selection_annotation_producer ... ok
+test rust::selection_tests::selection_ast_producer ... ok
+test rust::selection_tests::selection_duplicate ... ok
+test rust::selection_tests::selection_empty_is_all ... ok
+test rust::selection_tests::selection_end_excluded ... ok
+test rust::selection_tests::selection_gap_excluded ... ok
+test rust::selection_tests::selection_line_symbol_conjunction ... ok
+test rust::selection_tests::selection_max_inclusive ... ok
+test rust::selection_tests::selection_missing_symbol ... ok
+test rust::selection_tests::selection_module_symbol ... ok
+test rust::selection_tests::selection_nested_prefix_end ... ok
+test rust::selection_tests::selection_nested_symbol ... ok
+selection n=1000 sparse=false queries=1000 membership=1000 preparation=0
+test rust::selection_tests::selection_one_range_control ... ok
+test rust::selection_tests::selection_other_module ... ok
+test rust::selection_tests::selection_overlap ... ok
+test rust::selection_tests::selection_qualified_module_symbol ... ok
+test rust::selection_tests::selection_arbitrary_u32_membership_matches_linear_oracle ... ok
+selection n=1000 sparse=true queries=1000 membership=1000000 preparation=0
+
+thread 'rust::selection_tests::selection_sparse_1000' (56548320) panicked at crates/hoimin-python/src/analyzer/rust/selection_tests.rs:55:5:
+Work { queries: 1000, membership: 1000000, preparation: 0 }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test rust::selection_tests::selection_sparse_1000 ... FAILED
+selection n=2000 sparse=true queries=2000 membership=4000000 preparation=0
+
+thread 'rust::selection_tests::selection_sparse_2000' (56548321) panicked at crates/hoimin-python/src/analyzer/rust/selection_tests.rs:55:5:
+Work { queries: 2000, membership: 4000000, preparation: 0 }
+test rust::selection_tests::selection_sparse_2000 ... FAILED
+selection n=4000 sparse=true queries=4000 membership=16000000 preparation=0
+
+thread 'rust::selection_tests::selection_sparse_4000' (56548323) panicked at crates/hoimin-python/src/analyzer/rust/selection_tests.rs:55:5:
+Work { queries: 4000, membership: 16000000, preparation: 0 }
+test rust::selection_tests::selection_sparse_4000 ... FAILED
+test rust::selection_tests::selection_start_excluded ... ok
+test rust::selection_tests::selection_symbol_boundary ... ok
+test rust::selection_tests::selection_token_producer ... ok
+test rust::selection_tests::selection_unsorted ... ok
+test rust::selection_tests::selection_zero_inclusive ... ok
+selection n=8000 sparse=true queries=8000 membership=64000000 preparation=0
+
+thread 'rust::selection_tests::selection_sparse_8000' (56548324) panicked at crates/hoimin-python/src/analyzer/rust/selection_tests.rs:55:5:
+Work { queries: 8000, membership: 64000000, preparation: 0 }
+test rust::selection_tests::selection_sparse_8000 ... FAILED
+
+failures:
+
+failures:
+    rust::selection_tests::selection_sparse_1000
+    rust::selection_tests::selection_sparse_2000
+    rust::selection_tests::selection_sparse_4000
+    rust::selection_tests::selection_sparse_8000
+
+test result: FAILED. 24 passed; 4 failed; 0 ignored; 0 measured; 426 filtered out; finished in 0.85s
+
+error: test failed, to rerun pass `-p hoimin-python --lib`

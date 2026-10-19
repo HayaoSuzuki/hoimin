@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: perf-three-design
+  resource: ../../superpowers/specs/2026-10-20-perf-three-design.md
+  revision: f72134d76d28d87cd728305ed224f298df41af4a
+  working_tree: modified
+  sha256: 868d467153cb2da6a4b371ec9703d29b0af9e677fe8d3f73274765135e4b5d15
 - id: issue-999-adoption
   resource: ../../superpowers/specs/2026-10-19-issue-999-creusot-adoption-design.md
   revision: fb89c55c1ab6b851302f36d0fef7fd9f7697655a
@@ -1766,3 +1771,12 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 
 
 - [Issue #999 approved Creusot design](../../superpowers/specs/2026-10-19-issue-999-creusot-adoption-design.md) — shared implementation, three-target proofs and recorded acceptance.
+
+
+## Indexed admission and immutable metadata
+
+| Original heading | Source |
+| --- | --- |
+| Selection and immutable metadata performance design | [Design](../../superpowers/specs/2026-10-20-perf-three-design.md) [^perf-three-design] |
+
+[^perf-three-design]: [Selection and immutable metadata performance design](../../superpowers/specs/2026-10-20-perf-three-design.md).

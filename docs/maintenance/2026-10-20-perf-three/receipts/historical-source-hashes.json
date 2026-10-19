@@ -1,0 +1,228 @@
+[
+  {
+    "issue": 1006,
+    "receipt": "docs/maintenance/2026-10-20-issue-1006/verification.json",
+    "rows": [
+      {
+        "path": "crates/hoimin-python/src/analyzer/rust.rs",
+        "expected_sha256": "86a24ae88ee0666c07b98a795d2891f0943284ef78be17c8e9d3c69a0d4c44f1",
+        "historical_commit": "4c906846e4515735d7e89c17a2b374483ba299ff",
+        "historical_sha256": "86a24ae88ee0666c07b98a795d2891f0943284ef78be17c8e9d3c69a0d4c44f1",
+        "historical_matches": true,
+        "current_sha256": "8abf12bab5c8858e4b7be9c15be79597d3d7762f4c42c6ecce404448d668b591"
+      },
+      {
+        "path": "crates/hoimin-python/src/analyzer/rust/selection.rs",
+        "expected_sha256": "55784a1d7923b782f84f95b5cf67e9e7ae9e16e86a56b8bb0569a51039bfd5c5",
+        "historical_commit": "4c906846e4515735d7e89c17a2b374483ba299ff",
+        "historical_sha256": "55784a1d7923b782f84f95b5cf67e9e7ae9e16e86a56b8bb0569a51039bfd5c5",
+        "historical_matches": true,
+        "current_sha256": "55784a1d7923b782f84f95b5cf67e9e7ae9e16e86a56b8bb0569a51039bfd5c5"
+      },
+      {
+        "path": "crates/hoimin-python/src/analyzer/rust/selection_tests.rs",
+        "expected_sha256": "bb698340115c489c2e4a3f22937661d5165a51ebb3f639df268e03795a3b2189",
+        "historical_commit": "4c906846e4515735d7e89c17a2b374483ba299ff",
+        "historical_sha256": "bb698340115c489c2e4a3f22937661d5165a51ebb3f639df268e03795a3b2189",
+        "historical_matches": true,
+        "current_sha256": "bb698340115c489c2e4a3f22937661d5165a51ebb3f639df268e03795a3b2189"
+      },
+      {
+        "path": "crates/hoimin-cli/tests/analyzer_line_selection.rs",
+        "expected_sha256": "a49aa05d9384fcd3a4530d342745c48ddfce58cb47f225a66a4192b7e5c806aa",
+        "historical_commit": "4c906846e4515735d7e89c17a2b374483ba299ff",
+        "historical_sha256": "a49aa05d9384fcd3a4530d342745c48ddfce58cb47f225a66a4192b7e5c806aa",
+        "historical_matches": true,
+        "current_sha256": "a49aa05d9384fcd3a4530d342745c48ddfce58cb47f225a66a4192b7e5c806aa"
+      },
+      {
+        "path": "docs/performance/shapes.json",
+        "expected_sha256": "65a2a2ee23d8933996f981665e835cc968714ccec6cdb17d3f031869dfd579f2",
+        "historical_commit": "4c906846e4515735d7e89c17a2b374483ba299ff",
+        "historical_sha256": "65a2a2ee23d8933996f981665e835cc968714ccec6cdb17d3f031869dfd579f2",
+        "historical_matches": true,
+        "current_sha256": "c75f67c59c4ba8f3b96f5c03a24bcc3d8f7057b7d98df17f776d20407f3c73c3"
+      }
+    ]
+  },
+  {
+    "issue": 1007,
+    "receipt": "docs/maintenance/2026-10-20-issue-1007/verification.json",
+    "rows": [
+      {
+        "path": "crates/hoimin-cli/src/workspace/manifest.rs",
+        "expected_sha256": "db8d0f3912f72dc6ad945a60a2f559c99faa1726c082d7f5c27188ba9f0ac304",
+        "historical_commit": "e5e33603a4ed6a269d4131fbb6dbe99a409de05c",
+        "historical_sha256": "db8d0f3912f72dc6ad945a60a2f559c99faa1726c082d7f5c27188ba9f0ac304",
+        "historical_matches": true,
+        "current_sha256": "db8d0f3912f72dc6ad945a60a2f559c99faa1726c082d7f5c27188ba9f0ac304"
+      },
+      {
+        "path": "crates/hoimin-cli/src/workspace/copy.rs",
+        "expected_sha256": "c3749775610758294832b494eca2cde27f3ecad8ada2c659d12bd2c9944d1ec0",
+        "historical_commit": "e5e33603a4ed6a269d4131fbb6dbe99a409de05c",
+        "historical_sha256": "c3749775610758294832b494eca2cde27f3ecad8ada2c659d12bd2c9944d1ec0",
+        "historical_matches": true,
+        "current_sha256": "c3749775610758294832b494eca2cde27f3ecad8ada2c659d12bd2c9944d1ec0"
+      },
+      {
+        "path": "crates/hoimin-cli/tests/workspace_manifest_heap.rs",
+        "expected_sha256": "1d4534cf205d6a2cf8d76ad4ae9b6350241efd509058443c0bbd08f8e685c572",
+        "historical_commit": "e5e33603a4ed6a269d4131fbb6dbe99a409de05c",
+        "historical_sha256": "1d4534cf205d6a2cf8d76ad4ae9b6350241efd509058443c0bbd08f8e685c572",
+        "historical_matches": true,
+        "current_sha256": "1d4534cf205d6a2cf8d76ad4ae9b6350241efd509058443c0bbd08f8e685c572"
+      },
+      {
+        "path": "crates/hoimin-cli/tests/workspace_worker_metadata_heap.rs",
+        "expected_sha256": "272b53be84a163a9366f90fe81d2ab6ebc66fb398a55db67bc418d69a85aadbe",
+        "historical_commit": "e5e33603a4ed6a269d4131fbb6dbe99a409de05c",
+        "historical_sha256": "272b53be84a163a9366f90fe81d2ab6ebc66fb398a55db67bc418d69a85aadbe",
+        "historical_matches": true,
+        "current_sha256": "272b53be84a163a9366f90fe81d2ab6ebc66fb398a55db67bc418d69a85aadbe"
+      },
+      {
+        "path": "docs/performance/shapes.json",
+        "expected_sha256": "c5a9812e7414f16128f2d0acd7a85698d67cf7974984a00878be297915e9c0f7",
+        "historical_commit": "e5e33603a4ed6a269d4131fbb6dbe99a409de05c",
+        "historical_sha256": "c5a9812e7414f16128f2d0acd7a85698d67cf7974984a00878be297915e9c0f7",
+        "historical_matches": true,
+        "current_sha256": "c75f67c59c4ba8f3b96f5c03a24bcc3d8f7057b7d98df17f776d20407f3c73c3"
+      },
+      {
+        "path": "Cargo.lock",
+        "expected_sha256": "9ec547b05155b7805ca80a2d3656e05204c2f8b707b1ba4140ec4806a50d20f6",
+        "historical_commit": "e5e33603a4ed6a269d4131fbb6dbe99a409de05c",
+        "historical_sha256": "9ec547b05155b7805ca80a2d3656e05204c2f8b707b1ba4140ec4806a50d20f6",
+        "historical_matches": true,
+        "current_sha256": "9ec547b05155b7805ca80a2d3656e05204c2f8b707b1ba4140ec4806a50d20f6"
+      },
+      {
+        "path": "Cargo.toml",
+        "expected_sha256": "35d0ccf1475d17c1f76f42a291b79f172245a903ed0559f492ea4865a7f18d0a",
+        "historical_commit": "e5e33603a4ed6a269d4131fbb6dbe99a409de05c",
+        "historical_sha256": "35d0ccf1475d17c1f76f42a291b79f172245a903ed0559f492ea4865a7f18d0a",
+        "historical_matches": true,
+        "current_sha256": "35d0ccf1475d17c1f76f42a291b79f172245a903ed0559f492ea4865a7f18d0a"
+      },
+      {
+        "path": "docs/maintenance/2026-10-20-issue-1007/measure.py",
+        "expected_sha256": "4130ebf1313d42566fff21ec588456ddd2f111467f8f8072d980d4c14ed54357",
+        "historical_commit": "e5e33603a4ed6a269d4131fbb6dbe99a409de05c",
+        "historical_sha256": "4130ebf1313d42566fff21ec588456ddd2f111467f8f8072d980d4c14ed54357",
+        "historical_matches": true,
+        "current_sha256": "4130ebf1313d42566fff21ec588456ddd2f111467f8f8072d980d4c14ed54357"
+      },
+      {
+        "path": "docs/maintenance/2026-10-20-issue-1007/measurement.json",
+        "expected_sha256": "519dc4b27b21b4617ef6295eaffd21357c8a17ad948b642861f7c3d31ef42b95",
+        "historical_commit": "e5e33603a4ed6a269d4131fbb6dbe99a409de05c",
+        "historical_sha256": "519dc4b27b21b4617ef6295eaffd21357c8a17ad948b642861f7c3d31ef42b95",
+        "historical_matches": true,
+        "current_sha256": "519dc4b27b21b4617ef6295eaffd21357c8a17ad948b642861f7c3d31ef42b95"
+      },
+      {
+        "path": "docs/maintenance/2026-10-20-issue-1007/build_probe.py",
+        "expected_sha256": "0b2f73fca658446cdabfb03a5a165b377b4cfff1fd9f60019c57ee48d63f1d45",
+        "historical_commit": "e5e33603a4ed6a269d4131fbb6dbe99a409de05c",
+        "historical_sha256": "0b2f73fca658446cdabfb03a5a165b377b4cfff1fd9f60019c57ee48d63f1d45",
+        "historical_matches": true,
+        "current_sha256": "0b2f73fca658446cdabfb03a5a165b377b4cfff1fd9f60019c57ee48d63f1d45"
+      },
+      {
+        "path": "docs/maintenance/2026-10-20-issue-1007/receipt.py",
+        "expected_sha256": "ddb204784bf2109da1e9f95264a95ae13634a5bde9a5c4d5bf7564ee839a3239",
+        "historical_commit": "e5e33603a4ed6a269d4131fbb6dbe99a409de05c",
+        "historical_sha256": "ddb204784bf2109da1e9f95264a95ae13634a5bde9a5c4d5bf7564ee839a3239",
+        "historical_matches": true,
+        "current_sha256": "ddb204784bf2109da1e9f95264a95ae13634a5bde9a5c4d5bf7564ee839a3239"
+      },
+      {
+        "path": "docs/maintenance/2026-10-20-issue-1007/probe.rs",
+        "expected_sha256": "5723c28aac8503dfa72f374437977392e701f2f477aa0a6f9fc3ffe934d4f206",
+        "historical_commit": "e5e33603a4ed6a269d4131fbb6dbe99a409de05c",
+        "historical_sha256": "5723c28aac8503dfa72f374437977392e701f2f477aa0a6f9fc3ffe934d4f206",
+        "historical_matches": true,
+        "current_sha256": "5723c28aac8503dfa72f374437977392e701f2f477aa0a6f9fc3ffe934d4f206"
+      }
+    ]
+  },
+  {
+    "issue": 1008,
+    "receipt": "docs/maintenance/2026-10-20-issue-1008/verification.json",
+    "rows": [
+      {
+        "path": "crates/hoimin-core/src/candidate.rs",
+        "expected_sha256": "bb98588e81434a8236204694cef02eec8f41123d90d65557d83123e5e76c753d",
+        "historical_commit": "952ab52780b181ae8de316e4b1f45988b5d0d1b0",
+        "historical_sha256": "bb98588e81434a8236204694cef02eec8f41123d90d65557d83123e5e76c753d",
+        "historical_matches": true,
+        "current_sha256": "bb98588e81434a8236204694cef02eec8f41123d90d65557d83123e5e76c753d"
+      },
+      {
+        "path": "crates/hoimin-core/src/candidate_lazy_tests.rs",
+        "expected_sha256": "237a757026464a04c687c7739187e312c6c161224186a1d5fc5f6e1fe5e0e96f",
+        "historical_commit": "952ab52780b181ae8de316e4b1f45988b5d0d1b0",
+        "historical_sha256": "237a757026464a04c687c7739187e312c6c161224186a1d5fc5f6e1fe5e0e96f",
+        "historical_matches": true,
+        "current_sha256": "237a757026464a04c687c7739187e312c6c161224186a1d5fc5f6e1fe5e0e96f"
+      },
+      {
+        "path": "crates/hoimin-core/tests/candidate_policy.rs",
+        "expected_sha256": "8fdb4350e0916900a2b1fe74bdf7882f2f4eb54e3c404512cb61959d2144a611",
+        "historical_commit": "952ab52780b181ae8de316e4b1f45988b5d0d1b0",
+        "historical_sha256": "8fdb4350e0916900a2b1fe74bdf7882f2f4eb54e3c404512cb61959d2144a611",
+        "historical_matches": true,
+        "current_sha256": "8fdb4350e0916900a2b1fe74bdf7882f2f4eb54e3c404512cb61959d2144a611"
+      },
+      {
+        "path": "crates/hoimin-python/src/analyzer/rust.rs",
+        "expected_sha256": "8abf12bab5c8858e4b7be9c15be79597d3d7762f4c42c6ecce404448d668b591",
+        "historical_commit": "952ab52780b181ae8de316e4b1f45988b5d0d1b0",
+        "historical_sha256": "8abf12bab5c8858e4b7be9c15be79597d3d7762f4c42c6ecce404448d668b591",
+        "historical_matches": true,
+        "current_sha256": "8abf12bab5c8858e4b7be9c15be79597d3d7762f4c42c6ecce404448d668b591"
+      },
+      {
+        "path": "crates/hoimin-cli/tests/source_index_heap.rs",
+        "expected_sha256": "e3012ff11570eb39e83b7595830a4e16c557ea204d0cfc5a1743f1c3542c1b5a",
+        "historical_commit": "952ab52780b181ae8de316e4b1f45988b5d0d1b0",
+        "historical_sha256": "e3012ff11570eb39e83b7595830a4e16c557ea204d0cfc5a1743f1c3542c1b5a",
+        "historical_matches": true,
+        "current_sha256": "e3012ff11570eb39e83b7595830a4e16c557ea204d0cfc5a1743f1c3542c1b5a"
+      },
+      {
+        "path": "crates/hoimin-cli/tests/source_index_encoding_flow.rs",
+        "expected_sha256": "7c8d10e62815a4a9e5732e3a08329b75eb6ad95d12e1370e425deaae8ab1a2fa",
+        "historical_commit": "952ab52780b181ae8de316e4b1f45988b5d0d1b0",
+        "historical_sha256": "7c8d10e62815a4a9e5732e3a08329b75eb6ad95d12e1370e425deaae8ab1a2fa",
+        "historical_matches": true,
+        "current_sha256": "7c8d10e62815a4a9e5732e3a08329b75eb6ad95d12e1370e425deaae8ab1a2fa"
+      },
+      {
+        "path": "crates/hoimin-cli/tests/source_encoding_heap.rs",
+        "expected_sha256": "7dd350edc299a9dd90d62732f2c9896c5d517be476007065c41b213edf29552a",
+        "historical_commit": "952ab52780b181ae8de316e4b1f45988b5d0d1b0",
+        "historical_sha256": "7dd350edc299a9dd90d62732f2c9896c5d517be476007065c41b213edf29552a",
+        "historical_matches": true,
+        "current_sha256": "7dd350edc299a9dd90d62732f2c9896c5d517be476007065c41b213edf29552a"
+      },
+      {
+        "path": "docs/performance/shapes.json",
+        "expected_sha256": "c75f67c59c4ba8f3b96f5c03a24bcc3d8f7057b7d98df17f776d20407f3c73c3",
+        "historical_commit": "952ab52780b181ae8de316e4b1f45988b5d0d1b0",
+        "historical_sha256": "c75f67c59c4ba8f3b96f5c03a24bcc3d8f7057b7d98df17f776d20407f3c73c3",
+        "historical_matches": true,
+        "current_sha256": "c75f67c59c4ba8f3b96f5c03a24bcc3d8f7057b7d98df17f776d20407f3c73c3"
+      },
+      {
+        "path": "crates/hoimin-python/src/analyzer/rust_tests.rs",
+        "expected_sha256": "d65208bc44c769e9c36526cd23f2e9c808be5e4a66ea16f071b8e7464f975e49",
+        "historical_commit": "952ab52780b181ae8de316e4b1f45988b5d0d1b0",
+        "historical_sha256": "d65208bc44c769e9c36526cd23f2e9c808be5e4a66ea16f071b8e7464f975e49",
+        "historical_matches": true,
+        "current_sha256": "d65208bc44c769e9c36526cd23f2e9c808be5e4a66ea16f071b8e7464f975e49"
+      }
+    ]
+  }
+]

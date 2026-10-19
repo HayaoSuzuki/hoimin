@@ -1,0 +1,187 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=2187700671
+rootdir: /Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index
+configfile: pyproject.toml
+testpaths: tests
+plugins: platformdirs-4.12.4, returns-0.29.0, mock-3.16.0, randomly-5.0.0, cov-7.1.0, hypothesis-6.170.0
+collected 1212 items
+
+tests/test_review_reference_schema.py .                                  [  0%]
+tests/test_changed_selection_schema.py ...........                       [  0%]
+tests/test_wheel_smoke.py .............................................. [  4%]
+.........                                                                [  5%]
+tests/test_pypi_release.py ...............................               [  8%]
+tests/test_environment_snapshot_schema.py ..................             [  9%]
+tests/test_archive_smoke.py ..........                                   [ 10%]
+tests/test_ci_metrics.py ..                                              [ 10%]
+tests/test_ci_selection.py ............................................. [ 14%]
+.................................                                        [ 16%]
+tests/test_verify_creusot.py ........s.s............................s..  [ 20%]
+tests/test_skills.py ....................................                [ 23%]
+tests/test_sdist.py ................................                     [ 26%]
+tests/test_release_version_contracts.py ........                         [ 26%]
+tests/test_sbom.py ...............................                       [ 29%]
+tests/test_verification_selection_schema.py ..................           [ 30%]
+tests/test_pypi_provenance.py .......................................... [ 34%]
+......                                                                   [ 34%]
+tests/test_sbom_oracle.py .............................................. [ 38%]
+........................................................................ [ 44%]
+........................................................................ [ 50%]
+..................................................................       [ 55%]
+tests/test_tool_properties.py ...                                        [ 56%]
+tests/test_release.py .................................................. [ 60%]
+...                                                                      [ 60%]
+tests/test_ci_fuzz.py ......................                             [ 62%]
+tests/test_creusot_environment.py ...................................... [ 65%]
+                                                                         [ 65%]
+tests/test_lean_resource_guard.py FF.FF                                  [ 65%]
+tests/test_boundary_contracts.py ....................................... [ 69%]
+..                                                                       [ 69%]
+tests/test_mutation_outcome_schema.py ..................                 [ 70%]
+tests/test_docs_site.py ................                                 [ 72%]
+tests/test_performance_shapes.py ....................................... [ 75%]
+........................................................................ [ 81%]
+.....                                                                    [ 81%]
+tests/test_sbom_properties.py ...                                        [ 81%]
+tests/test_ci_workflow.py .............................................. [ 85%]
+........................................................................ [ 91%]
+............................................................             [ 96%]
+tests/test_session_mode_schema.py ....                                   [ 96%]
+tests/test_hypothesmith_corpus.py ...................                    [ 98%]
+tests/test_workflow_lint.py ssssssss                                     [ 99%]
+tests/test_ci_selection_workflow.py ...........                          [100%]
+
+=================================== FAILURES ===================================
+______________________ test_propagates_normal_child_exit _______________________
+
+tmp_path = PosixPath('/private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/pytest-of-hayao/pytest-717/test_propagates_normal_child_e0')
+
+    @requires_posix_guard
+    def test_propagates_normal_child_exit(tmp_path: Path) -> None:
+        completed, stats = run_guard(
+            tmp_path,
+            sys.executable,
+            "-c",
+            "import sys; sys.exit(7)",
+            timeout=3,
+            rss_limit_mib=768,
+        )
+    
+>       assert completed.returncode == 7
+E       AssertionError: assert 126 == 7
+E        +  where 126 = CompletedProcess(args=['/tmp/hoimin-priority-six-venv/bin/python', '/Users/hayao/RustroverProjects/hoimin/.worktrees/i...ild_e0/stats.json', '--', '/tmp/hoimin-priority-six-venv/bin/python', '-c', 'import sys; sys.exit(7)'], returncode=126).returncode
+
+tests/test_lean_resource_guard.py:134: AssertionError
+_______________ test_rejects_root_exit_that_leaves_a_descendant ________________
+
+tmp_path = PosixPath('/private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/pytest-of-hayao/pytest-717/test_rejects_root_exit_that_le0')
+
+    @requires_posix_guard
+    def test_rejects_root_exit_that_leaves_a_descendant(tmp_path: Path) -> None:
+        assert hasattr(signal, "SIGKILL"), "process groups require POSIX"
+        marker = tmp_path / "descendant.pid"
+        descendant = (
+            "import os,signal,time; "
+            "signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+            f"open({str(marker)!r},'w').write(str(os.getpid())); time.sleep(30)"
+        )
+        spawning_root = (
+            "import os,subprocess,sys,time\n"
+            f"subprocess.Popen([sys.executable,'-c',{descendant!r}])\n"
+            "deadline=time.monotonic()+2\n"
+            f"marker={str(marker)!r}\n"
+            "while not os.path.exists(marker) and time.monotonic()<deadline:\n"
+            "    time.sleep(.01)\n"
+        )
+    
+        completed, stats = run_guard(
+            tmp_path,
+            sys.executable,
+            "-c",
+            spawning_root,
+            timeout=3,
+            rss_limit_mib=768,
+        )
+    
+        assert completed.returncode == 126
+        assert stats["reason"] == "monitor_error"
+>       descendant_pid = int(marker.read_text())
+                             ^^^^^^^^^^^^^^^^^^
+
+tests/test_lean_resource_guard.py:167: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../../.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/lib/python3.14/pathlib/__init__.py:787: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/pytest-of-hayao/pytest-717/test_rejects_root_exit_that_le0/descendant.pid')
+mode = 'r', buffering = -1, encoding = 'locale', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/pytest-of-hayao/pytest-717/test_rejects_root_exit_that_le0/descendant.pid'
+
+../../../../.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/lib/python3.14/pathlib/__init__.py:771: FileNotFoundError
+__________________ test_terminates_process_group_at_rss_limit __________________
+
+tmp_path = PosixPath('/private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/pytest-of-hayao/pytest-717/test_terminates_process_group_0')
+
+    @requires_posix_guard
+    def test_terminates_process_group_at_rss_limit(tmp_path: Path) -> None:
+        marker = tmp_path / "child.pid"
+        allocating_child = (
+            "import os,time; "
+            f"open({str(marker)!r},'w').write(str(os.getpid())); "
+            "time.sleep(.1); payload=bytearray(64*1024*1024); time.sleep(30)"
+        )
+    
+        completed, stats = run_guard(
+            tmp_path,
+            sys.executable,
+            "-c",
+            allocating_child,
+            timeout=3,
+            rss_limit_mib=32,
+        )
+    
+>       assert completed.returncode == 125
+E       assert 126 == 125
+E        +  where 126 = CompletedProcess(args=['/tmp/hoimin-priority-six-venv/bin/python', '/Users/hayao/RustroverProjects/hoimin/.worktrees/i...d.pid','w').write(str(os.getpid())); time.sleep(.1); payload=bytearray(64*1024*1024); time.sleep(30)"], returncode=126).returncode
+
+tests/test_lean_resource_guard.py:95: AssertionError
+___________________ test_terminates_process_group_at_timeout ___________________
+
+tmp_path = PosixPath('/private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/pytest-of-hayao/pytest-717/test_terminates_process_group_1')
+
+    @requires_posix_guard
+    def test_terminates_process_group_at_timeout(tmp_path: Path) -> None:
+        completed, stats = run_guard(
+            tmp_path,
+            sys.executable,
+            "-c",
+            "import time; time.sleep(30)",
+            timeout=0.2,
+            rss_limit_mib=768,
+        )
+    
+>       assert completed.returncode == 124
+E       AssertionError: assert 126 == 124
+E        +  where 126 = CompletedProcess(args=['/tmp/hoimin-priority-six-venv/bin/python', '/Users/hayao/RustroverProjects/hoimin/.worktrees/i..._1/stats.json', '--', '/tmp/hoimin-priority-six-venv/bin/python', '-c', 'import time; time.sleep(30)'], returncode=126).returncode
+
+tests/test_lean_resource_guard.py:119: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_lean_resource_guard.py::test_propagates_normal_child_exit
+FAILED tests/test_lean_resource_guard.py::test_rejects_root_exit_that_leaves_a_descendant
+FAILED tests/test_lean_resource_guard.py::test_terminates_process_group_at_rss_limit
+FAILED tests/test_lean_resource_guard.py::test_terminates_process_group_at_timeout
+================= 4 failed, 1197 passed, 11 skipped in 57.06s ==================

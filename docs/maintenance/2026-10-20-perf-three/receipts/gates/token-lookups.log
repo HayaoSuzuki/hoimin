@@ -1,0 +1,10 @@
+   Compiling hoimin-core v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-core)
+   Compiling hoimin-python v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-python)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.58s
+     Running unittests src/lib.rs (/tmp/hoimin-perf-three-target/debug/deps/hoimin_python-2ce8f4536081f3ba)
+
+running 1 test
+test rust::rust_tests::candidate_punctuation_queries_are_range_bounded ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 459 filtered out; finished in 0.01s
+

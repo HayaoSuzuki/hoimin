@@ -5,6 +5,26 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: perf-three-d1
+  resource: ../../maintenance/2026-10-20-perf-three/reports/task-3-d1-review.md
+  revision: f72134d76d28d87cd728305ed224f298df41af4a
+  working_tree: untracked
+  sha256: 940e252759779a85e44d2fa490888276c9ce6045f94cce5598e9ddf1f0beae73
+- id: perf-three-r6
+  resource: ../../maintenance/2026-10-20-issue-1008/r6/README.md
+  revision: f72134d76d28d87cd728305ed224f298df41af4a
+  working_tree: clean
+  sha256: dc8d380685fb078d256cc965a2aed63c31806ca4ac105bb6623b342cd4731d77
+- id: perf-three-context
+  resource: ../../../crates/hoimin-core/src/candidate.rs
+  revision: f72134d76d28d87cd728305ed224f298df41af4a
+  working_tree: clean
+  sha256: bb98588e81434a8236204694cef02eec8f41123d90d65557d83123e5e76c753d
+- id: perf-three-selection
+  resource: ../../../crates/hoimin-python/src/analyzer/rust/selection.rs
+  revision: f72134d76d28d87cd728305ed224f298df41af4a
+  working_tree: clean
+  sha256: 55784a1d7923b782f84f95b5cf67e9e7ae9e16e86a56b8bb0569a51039bfd5c5
 - id: issue-1005-graph
   resource: ../../../crates/hoimin-python/src/analyzer/exception_import_graph.rs
   revision: faff6415d6a54f71ad881df97e521cc83ac19894
@@ -1437,3 +1457,47 @@ and independent semantic controls.[^issue-987-evidence]
 [^issue-1005-tests]: [Source, boundary, work and cancellation tests](../../../crates/hoimin-python/src/analyzer/exception_import_graph_tests.rs).
 [^issue-1005-properties]: [Independent graph reference and properties](../../../crates/hoimin-python/src/analyzer/exception_import_graph_properties.rs).
 [^issue-1005-evidence]: [Issue #1005 evidence and limits](../../maintenance/2026-10-19-issue-1005/report.md).
+
+
+# Prepared admission and deferred positions (Issues #1006 and #1008)
+
+The analyzer prepares a private `CandidateSelection` once per successfully
+parsed file. Empty raw line ranges select all lines; a nonempty reversed-only
+slice selects none. Sorted starts and prefix-maximum inclusive ends answer the
+union with logarithmic membership queries, including nested ranges and
+`u32::MAX`, while retaining existing symbol conjunction. Preparation takes
+O(R log R) work and O(R) storage. Token, AST and annotation producers borrow the
+same owner; the unrestricted expression path keeps its fast check. Cancellation
+checks cover copy/prefix work and surround sorting; sorting remains a synchronous
+phase. This admission index is independent of source-position indexes and
+candidate-payload reservations.[^perf-three-selection]
+
+`CandidateValidationContext` retains its source borrow, decoded facts and raw
+hash, then constructs a private location index only when strict validation
+reaches its existing location check. Raw/decoded length checks and decoding/hash
+work remain eager. Rejection order, candidate bytes and stable IDs retain their
+existing meaning. Unicode validation uses decoded scalar coordinates; Latin1
+uses raw-byte line starts. A successful Unicode CLI flow still constructs two
+indexes in sequence; it avoids their simultaneous retention because analysis
+finishes before candidate conversion. External validate-before-analyze callers
+do not inherit global deduplication. Index scans remain synchronous.[^perf-three-context]
+
+The [integration record](../../maintenance/2026-10-20-perf-three/README.md)
+links operation/heap gates and fixed release observations. Those observations
+support scoped work and retention reductions, with mixed full-CLI timing.
+The initial task-local experiment left Task3 small-ASCII acceptance open: its
++0.067791 ms upper median-difference bound exceeded the prespecified +0.05 ms
+criterion. After observing those results, the user explicitly accepted a
++0.1 ms practical tolerance (D1). Both tiny (−0.019834 ms) and small (+0.067791 ms)
+meet that accepted criterion, with unchanged requested whole-plan peak/retained
+heap. The [D1 review](../../maintenance/2026-10-20-perf-three/reports/task-3-d1-review.md)
+closes I1 under that decision. D1 changes acceptance after observation; it does
+not change the original failed criterion or establish universal non-regression.
+The measured context stack grows from 160 to 168 bytes; heap evidence does not
+measure stack equality.[^perf-three-r6][^perf-three-d1]
+
+[^perf-three-selection]: [Private per-file admission](../../../crates/hoimin-python/src/analyzer/rust/selection.rs).
+[^perf-three-context]: [Source-bound validation context](../../../crates/hoimin-core/src/candidate.rs).
+[^perf-three-r6]: [Task-local ASCII protocol, observations and open acceptance](../../maintenance/2026-10-20-issue-1008/r6/README.md).
+
+[^perf-three-d1]: [D1 acceptance decision and scoped independent review](../../maintenance/2026-10-20-perf-three/reports/task-3-d1-review.md).

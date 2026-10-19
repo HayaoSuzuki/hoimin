@@ -55,3 +55,22 @@ One shared task target /tmp/hoimin-perf-three-target and one Cargo owner; two bu
 Run focused suites per issue and one final workspace/contracts/Python/performance-gate integration pass. Required normal fmt/clippy hooks remain enabled. Run actual PR CI and one final manual native Windows/macOS workflow, since workspace lifetimes and encoding apply there. Preserve proof inputs/tool pins and unrelated issues, including #806 and held formal extensions. No merge or release is requested.
 
 Update affected current OKF analyzer/workspace/selection/compatibility explanations and the design-source catalog for this spec. Preserve historical audits and itemize inherited unavailable references rather than rewriting their evidence. Archive task reports, reviews, raw decisive evidence and controller rulings before clearing the task scratch workspace. PR names all three issues and records exact checked commits and measurement limits.
+
+
+## Recorded small-ASCII acceptance decision (D1, 2026-10-20)
+
+The initial controller R6 protocol fixed a +0.05 ms tolerance before observing
+512 alternating pairs for each tiny/small ASCII fixture. Tiny's one-sided 95%
+paired-median upper bound was −0.019834 ms; small's was +0.067791 ms. The latter
+did not meet the initial criterion. All requested whole-plan peak and retained
+heap differences were zero. That result and earlier adverse observations remain
+in the [R6 evidence](../../maintenance/2026-10-20-issue-1008/r6/README.md).
+
+After seeing those results, the user explicitly chose to accept a practical
+upper-bound tolerance of +0.1 ms with the same no-increase whole-plan heap
+criterion (D1). The existing observations meet that accepted criterion on both
+fixtures. This is a user acceptance decision after observation, not a
+prespecified +0.1 ms experiment or universal non-regression guarantee. The
+context stack increase from 160 to 168 bytes remains disclosed. The
+[acceptance addendum](../../maintenance/2026-10-20-perf-three/reports/task-3-d1-review.md)
+records I1's closure under D1; the original +0.05 ms verdict remains unchanged.

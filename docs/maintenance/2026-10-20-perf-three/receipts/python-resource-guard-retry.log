@@ -1,0 +1,11 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=1473869519
+rootdir: /Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index
+configfile: pyproject.toml
+plugins: platformdirs-4.12.4, returns-0.29.0, mock-3.16.0, randomly-5.0.0, cov-7.1.0, hypothesis-6.170.0
+collected 4 items
+
+tests/test_lean_resource_guard.py ....                                   [100%]
+
+============================== 4 passed in 2.36s ===============================

@@ -130,3 +130,23 @@ The depth20 fixtures passed Python AST parsing and Rust operation/state gates.
 A separate attempt at deep CPython bytecode compilation failed with `MemoryError`;
 it was not repeated. Successful bytecode compilation is evidenced only for the
 depth12/13 release comparison fixtures.
+
+
+## Indexed admission and immutable metadata (Issues #1006–#1008)
+
+The registry adds four sparse per-file selection comparison gates, separate
+manifest-clone/actual-worker retained-heap gates, and an actual CLI discovery
+source-index heap gate. They assert work or requested allocation, without timing
+thresholds. The [integration archive](../maintenance/2026-10-20-perf-three/README.md)
+links exact checked-source receipts, real RED/GREEN evidence and release samples.
+
+Sparse API membership work and manifest metadata retention improve on their
+fixed fixtures. Task1's three-pair many-line whole-CLI median increases
+9.257→11.657 ms; Task2 filesystem timings are mixed. Task3 reduces simultaneous
+location-index retention while retaining two sequential Unicode constructions.
+Its [task-local ASCII experiment](../maintenance/2026-10-20-issue-1008/r6/README.md)
+did not meet the initial +0.05 ms criterion for small input (+0.067791 ms upper
+confidence bound). The user then explicitly accepted +0.1 ms under D1; both
+fixtures meet that criterion and retain unchanged requested whole-plan heap.
+The context stack grows by 8 bytes. Preserve the initial failure and this
+post-observation acceptance decision; these data establish no universal speedup.

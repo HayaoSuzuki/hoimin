@@ -1,0 +1,21 @@
+COMMAND: ['cargo', 'test', '--locked', '-p', 'hoimin-cli', '--test', 'workspace_manifest_heap', '--test', 'workspace_worker_metadata_heap', '--', '--test-threads=1', '--nocapture']
+   Compiling hoimin-cli v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.47s
+     Running tests/workspace_manifest_heap.rs (/tmp/hoimin-perf-three-target/debug/deps/workspace_manifest_heap-46a0295ed88e734f)
+
+running 1 test
+test retained_manifest_clones_do_not_multiply_metadata ... {"mode":"clone","files":4000,"handles":16,"payload_bytes":0,"retained":7510400,"peak":7510400,"elapsed_ns":4885709,"digest":"16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd","logical_bytes":0,"worker_charge":0,"snapshot_plus_worker_payload_bytes":0}
+
+thread 'retained_manifest_clones_do_not_multiply_metadata' (56573251) panicked at crates/hoimin-cli/tests/workspace_manifest_heap.rs:10:5:
+clones retained 7510400 requested bytes
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    retained_manifest_clones_do_not_multiply_metadata
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.16s
+
+error: test failed, to rerun pass `-p hoimin-cli --test workspace_manifest_heap`

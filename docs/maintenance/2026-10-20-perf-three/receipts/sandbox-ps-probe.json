@@ -1,0 +1,10 @@
+{
+  "argv": [
+    "ps",
+    "-axo",
+    "pid=,ppid=,pgid=,rss="
+  ],
+  "exception": "PermissionError",
+  "errno": 1,
+  "message": "[Errno 1] Operation not permitted: 'ps'"
+}

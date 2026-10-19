@@ -2248,3 +2248,21 @@ See the [maintenance commands and proof boundary](../formal/creusot/README.md),
 [execution record](superpowers/reports/2026-10-19-issue-999-creusot-adoption.md).
 The existing Lean corpus correspondence and runtime contracts remain required;
 arithmetic proof does not establish BudgetLedger, persistence or OS timing.
+
+
+## Immutable metadata and location-index performance
+
+Prepare analyzer range membership once per file and keep it independent of
+source coordinates and candidate payload. Whole `WorkspaceManifest` clones
+share private immutable storage; worker roots, disk charges and cleanup remain
+with their existing owners. `logical_bytes()` and `WorkspacePlan::completed()`
+are ordinary Rust functions after this source migration.
+
+Validation contexts defer location indexes until the existing strict location
+check. Preserve eager source-size/decode/hash work and encoding-specific
+coordinates. Successful Unicode analysis and validation still build two indexes
+sequentially. Follow the [analyzer](knowledge/design/analyzer.md#prepared-admission-and-deferred-positions-issues-1006-and-1008)
+and [manifest](knowledge/design/runtime-lifecycle.md#immutable-manifest-handles-issue-1007)
+contracts when changing these boundaries; the [integration evidence](maintenance/2026-10-20-perf-three/README.md)
+records scoped gains, timing increases and the user's post-observation Task3
+small-ASCII acceptance decision.

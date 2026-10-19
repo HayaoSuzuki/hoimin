@@ -1,0 +1,83 @@
+{
+  "platform": "macOS-15.7.7-arm64-arm-64bit",
+  "commands": [
+    {
+      "argv": [
+        "rustc",
+        "--version"
+      ],
+      "exit_code": 0,
+      "stdout": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "cargo",
+        "--version"
+      ],
+      "exit_code": 0,
+      "stdout": "cargo 1.99.0 (5f94df478 2026-08-27)",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "python",
+        "--version"
+      ],
+      "exit_code": 0,
+      "stdout": "Python 3.14.7",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "uv",
+        "--version"
+      ],
+      "exit_code": 0,
+      "stdout": "uv 0.13.1 (62faed335 2026-10-13 aarch64-apple-darwin)",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "ruff",
+        "--version"
+      ],
+      "exit_code": 0,
+      "stdout": "ruff 0.17.1",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "ty",
+        "--version"
+      ],
+      "exit_code": 0,
+      "stdout": "ty 0.0.89 (82b0fd431 2026-10-16)",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "pytest",
+        "--version"
+      ],
+      "exit_code": 0,
+      "stdout": "pytest 9.1.1",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "python",
+        "-c",
+        "import hypothesis;print(hypothesis.__version__)"
+      ],
+      "exit_code": 0,
+      "stdout": "6.170.0",
+      "stderr": ""
+    }
+  ],
+  "lock_sha256": {
+    "Cargo.lock": "9ec547b05155b7805ca80a2d3656e05204c2f8b707b1ba4140ec4806a50d20f6",
+    "uv.lock": "f121ecec88f5d1c0e54f2694551f617a33074d5b517b12aa96552b4351da8e5b",
+    "rust-toolchain.toml": "b2c19d86958ed6810741488db5cd352856f303c53bcf0ea774e72f94ee4d201e"
+  }
+}
