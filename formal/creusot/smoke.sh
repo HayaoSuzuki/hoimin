@@ -9,7 +9,7 @@ p=Path('Cargo.toml')
 p.write_text(p.read_text().replace('creusot-std = "0.14.0"', 'creusot-std = { path = "/opt/creusot/src/creusot/creusot-65349025c67e69fcd7479f1f420fa5904f69bc27/creusot-std" }'))
 PY
 cp /opt/creusot/data/why3find.json why3find.json
-python3 /recipe/tools/creusot_environment.py check --manifest /recipe/formal/creusot/toolchain.json
+python3 /recipe/tools/creusot_environment.py check --manifest /recipe/formal/creusot/toolchain.json --project-root "$PWD"
 for round in cold_crate warm_crate; do
   for target in x86_64-unknown-linux-gnu aarch64-apple-darwin x86_64-pc-windows-msvc; do
     if [[ "$round" == warm_crate ]]; then sleep 1; touch src/lib.rs; fi

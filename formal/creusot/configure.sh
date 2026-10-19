@@ -26,4 +26,4 @@ def digest(p):
 receipt={'manifest_sha256':digest(m),'files':{str(p):digest(p) for p in files},'opam_packages':subprocess.check_output(['opam','list','--installed','--columns=name,version','--color=never'],text=True)}
 pathlib.Path(data['receipt']).write_text(json.dumps(receipt,indent=2)+'\n')
 PY
-python3 tools/creusot_environment.py check --manifest formal/creusot/toolchain.json
+python3 tools/creusot_environment.py check-installation --manifest formal/creusot/toolchain.json

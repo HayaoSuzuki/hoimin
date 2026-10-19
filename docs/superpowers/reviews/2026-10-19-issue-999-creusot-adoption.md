@@ -153,3 +153,28 @@ mandatory in Task 4. The earlier emulated amd64 setup was interrupted after
   Task 2 report. Focused checker32, Ruff format/lint, ty, shell/embedded Python
   syntax and normal commit hooks are rerun before the Task 2 commit; no full
   Python suite is repeated without a new suite-wide risk.
+
+### Task 2 independent-review correction: selected project configuration
+
+The reviewer found that preflight hashed only the installed Why3find template,
+while cargo-creusot starts Why3find from the project root and selects that
+project's `why3find.json`. This was a real gap: changing the selected project's
+`provers`, `time` or `tactics` left the old checker green. The new proof-facing
+`check --manifest ... --project-root PROJECT` requires a project-local file
+whose exact hash matches the manifest's pinned `project_config`; missing,
+changed, or unspecified project roots fail. `check-installation` retains the
+image self-check before any project exists and is documented as insufficient
+before proof. The smoke invokes the proof-facing check against its actual root;
+the Dockerfile and configuration stage use installation-only.
+
+Behavioral RED was observed for all three changed project settings and a
+missing project file: the old checker returned exit 0. A separate RED showed
+the old `check` accepted no project root, and the old CLI rejected the new
+installation-only command. The focused suite then passed all 38 cases.
+Actual ARM64 overlay checks passed matching project configuration and rejected
+changed `time` and a missing file. The revised ordinary-crate smoke generated
+and proved its named goal separately for all three targets and again after
+source-triggered warm regeneration. Source/tool pins, resource limits,
+production math and required targets are unchanged. This overlay validation
+reused the already verified tool image; native x86_64 full-job acceptance
+remains Task 4.

@@ -92,6 +92,14 @@ def load_manifest(path: Path) -> dict[str, Any]:  # noqa: C901, PLR0912 -- Schem
             if not isinstance(name, str) or not valid_hash(digest):
                 message = "invalid configuration hash"
                 raise PreflightError(message)
+        project_config = data.get("project_config")
+        if (
+            not isinstance(project_config, str)
+            or not Path(project_config).is_absolute()
+            or project_config not in data["files"]
+        ):
+            message = "project_config must name a pinned absolute configuration file"
+            raise PreflightError(message)
         for artifact in data["artifacts"].values():
             if (
                 not isinstance(artifact, dict)
@@ -121,7 +129,7 @@ def valid_hash(value: object) -> bool:
     )
 
 
-def check_environment(path: Path) -> None:
+def check_environment(path: Path) -> dict[str, Any]:
     data = load_manifest(path)
     for name, expected in data["environment"].items():
         if os.environ.get(name) != expected:
@@ -148,6 +156,17 @@ def check_environment(path: Path) -> None:
             raise PreflightError(message)
     for name, tool in data["tools"].items():
         check_tool(name, tool, hashes)
+    return data
+
+
+def check_project_config(data: dict[str, Any], project_root: Path) -> None:
+    config = project_root / "why3find.json"
+    if not project_root.is_dir() or not config.is_file():
+        message = f"missing project configuration: {config}"
+        raise PreflightError(message)
+    if sha256(config) != data["files"][data["project_config"]]:
+        message = f"project configuration hash mismatch: {config}"
+        raise PreflightError(message)
 
 
 def check_tool(name: str, tool: dict[str, Any], hashes: dict[str, Any]) -> None:
@@ -182,11 +201,20 @@ def check_tool(name: str, tool: dict[str, Any], hashes: dict[str, Any]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["check"])
+    parser.add_argument("command", choices=["check", "check-installation"])
     parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--project-root", type=Path)
     args = parser.parse_args()
+    if args.command == "check" and args.project_root is None:
+        parser.error(
+            "check requires --project-root for the effective Why3find configuration"
+        )
+    if args.command == "check-installation" and args.project_root is not None:
+        parser.error("check-installation does not accept --project-root")
     try:
-        check_environment(args.manifest)
+        data = check_environment(args.manifest)
+        if args.command == "check":
+            check_project_config(data, args.project_root)
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         sys.stderr.write(f"Creusot environment check failed: {error}\n")
         return 1

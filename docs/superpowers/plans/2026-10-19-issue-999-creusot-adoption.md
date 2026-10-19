@@ -61,7 +61,7 @@
 
 **Interfaces:**
 - Produces manifest with exact source revisions, download hashes, executable versions and prover configuration for approved tools; no mutable unverified downloads.
-- Produces `python tools/creusot_environment.py check --manifest formal/creusot/toolchain.json`, exit zero only if all actual executables and required configuration match; actionable nonzero diagnostics otherwise.
+- Produces `python tools/creusot_environment.py check --manifest formal/creusot/toolchain.json --project-root PROJECT`, exit zero only if all actual executables, installed configuration and selected project-local `why3find.json` match; actionable nonzero diagnostics otherwise. `check-installation` preserves image self-check before a project exists and cannot substitute for proof preflight.
 - Produces Linux x86_64 Docker build/run commands and a native Linux ARM64 development variant using the same source pins and proof targets. CI may install directly from the same pinned recipe if that avoids unnecessary container build overhead. Local ARM64 measurements do not replace native Linux x86_64 cold/warm acceptance in Task 4. Do not publish an image.
 
 - [ ] Read pinned upstream installation/prover CLI sources, resolve full revisions and checksums, and record their authoritative URLs. No unsupported guesses about CLI flags.

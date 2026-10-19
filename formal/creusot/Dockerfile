@@ -53,4 +53,4 @@ COPY formal/creusot/${TOOLCHAIN_MANIFEST} /recipe/formal/creusot/toolchain.json
 COPY tools/creusot_environment.py /recipe/tools/creusot_environment.py
 RUN /usr/bin/time -v /bin/bash /recipe/formal/creusot/configure.sh
 WORKDIR /workspace
-CMD ["python3", "/recipe/tools/creusot_environment.py", "check", "--manifest", "/recipe/formal/creusot/toolchain.json"]
+CMD ["python3", "/recipe/tools/creusot_environment.py", "check-installation", "--manifest", "/recipe/formal/creusot/toolchain.json"]

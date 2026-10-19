@@ -24,10 +24,11 @@ tar -cf - formal/creusot tools/creusot_environment.py |
 docker run --rm --platform linux/amd64 hoimin-issue999-creusot:local
 ```
 
-The default container command runs the strict preflight:
+The default container command checks the pinned installation, including all
+executables, receipts and installed prover configuration:
 
 ```sh
-python3 tools/creusot_environment.py check --manifest formal/creusot/toolchain.json
+python3 tools/creusot_environment.py check-installation --manifest formal/creusot/toolchain.json
 ```
 
 Run that command inside the installation environment. It fails on malformed or
@@ -36,6 +37,23 @@ configuration environment drift, nonzero version commands and mismatching actual
 version output. Tool exit codes alone cannot establish the expected environment.
 The receipt includes executable hashes, the Rust compiler driver and each target's
 standard library. Rebuild after changing the manifest or configuration.
+
+Before **every proof invocation**, run the proof preflight from the same
+installation with the Cargo project root that `cargo creusot` will use:
+
+```sh
+python3 /recipe/tools/creusot_environment.py check \
+  --manifest /recipe/formal/creusot/toolchain.json \
+  --project-root /workspace/my-project
+```
+
+This also requires a project-local `why3find.json` and compares its exact
+content hash with the pinned `project_config` entry in the manifest. Missing
+or altered project settings, including prover selection, time and tactics,
+fail closed. The installation-only command does not establish a project's
+effective Why3find configuration. Task 3 and Task 4 must run the proof check
+against the actual project root before using `cargo creusot` there; the root
+must match the workspace root selected by cargo-creusot.
 
 The approved targets are `x86_64-unknown-linux-gnu`, `aarch64-apple-darwin` and
 `x86_64-pc-windows-msvc`; their dated Rust standard-library artifacts are installed
@@ -111,7 +129,8 @@ docker run --rm -i --platform linux/arm64 \
 
 The script creates a temporary crate inside the container, points its
 `creusot-std` dependency at the exact installed Creusot source, checks the
-environment, and generates and proves the named `vc_add_one` obligation on all
+installation and selected project configuration, and generates and proves the
+named `vc_add_one` obligation on all
 three targets. It repeats with warm build caches, touching only the temporary
 sample source so Cargo actually regenerates each Coma file; `--no-cache`
 forces a solver run for every proof. The generated crate and caches disappear

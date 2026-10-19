@@ -44,6 +44,19 @@ def environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         hashes[str(path)] = hashlib.sha256(path.read_bytes()).hexdigest()
     config = tmp_path / "why3.conf"
     config.write_text("[main]\nrunning_provers_max = 2\nmemlimit = 2048\n")
+    project_config = tmp_path / "why3find.json"
+    project_config.write_text(
+        json.dumps(
+            {
+                "provers": ["z3@5.1.0", "cvc5@1.4.1"],
+                "time": 1.0,
+                "tactics": ["compute_specified", "split_vc"],
+            }
+        )
+    )
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "why3find.json").write_bytes(project_config.read_bytes())
     manifest = tmp_path / "toolchain.json"
     manifest.write_text(
         json.dumps(
@@ -51,7 +64,13 @@ def environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
                 "schema_version": 1,
                 "environment": {"CREUSOT_DATA_HOME": str(tmp_path)},
                 "tools": tools,
-                "files": {str(config): hashlib.sha256(config.read_bytes()).hexdigest()},
+                "files": {
+                    str(config): hashlib.sha256(config.read_bytes()).hexdigest(),
+                    str(project_config): hashlib.sha256(
+                        project_config.read_bytes()
+                    ).hexdigest(),
+                },
+                "project_config": str(project_config),
                 "receipt": str(tmp_path / "receipt.json"),
                 "artifacts": {
                     "source": {
@@ -75,7 +94,15 @@ def environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def check(manifest: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603 -- Fixed Python interpreter and script.
-        [sys.executable, str(SCRIPT), "check", "--manifest", str(manifest)],
+        [
+            sys.executable,
+            str(SCRIPT),
+            "check",
+            "--manifest",
+            str(manifest),
+            "--project-root",
+            str(manifest.parent / "project"),
+        ],
         capture_output=True,
         text=True,
         check=False,
@@ -83,9 +110,73 @@ def check(manifest: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+def test_requires_project_root_for_proof_check(environment: Path) -> None:
+    result = subprocess.run(  # noqa: S603 -- Fixed Python interpreter and script.
+        [sys.executable, str(SCRIPT), "check", "--manifest", str(environment)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "PATH": str(environment.parent) + ":/usr/bin:/bin"},
+    )
+
+    assert result.returncode != 0
+    assert "project-root" in result.stderr
+
+
+def test_installation_only_check_does_not_need_a_project(environment: Path) -> None:
+    (environment.parent / "project" / "why3find.json").unlink()
+
+    result = subprocess.run(  # noqa: S603 -- Fixed Python interpreter and script.
+        [
+            sys.executable,
+            str(SCRIPT),
+            "check-installation",
+            "--manifest",
+            str(environment),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "PATH": str(environment.parent) + ":/usr/bin:/bin"},
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_accepts_matching_executables_and_configuration(environment: Path) -> None:
     result = check(environment)
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("provers", ["z3@5.1.0"]),
+        ("time", 99.0),
+        ("tactics", []),
+    ],
+)
+def test_rejects_selected_project_configuration_drift(
+    environment: Path, field: str, value: object
+) -> None:
+    selected = environment.parent / "project" / "why3find.json"
+    content = json.loads(selected.read_text())
+    content[field] = value
+    selected.write_text(json.dumps(content))
+
+    result = check(environment)
+
+    assert result.returncode != 0
+    assert "why3find.json" in result.stderr
+
+
+def test_rejects_missing_selected_project_configuration(environment: Path) -> None:
+    (environment.parent / "project" / "why3find.json").unlink()
+
+    result = check(environment)
+
+    assert result.returncode != 0
+    assert "why3find.json" in result.stderr
 
 
 @pytest.mark.parametrize(
