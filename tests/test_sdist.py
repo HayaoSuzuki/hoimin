@@ -37,6 +37,10 @@ def source_archive(tmp_path_factory: pytest.TempPathFactory) -> Path:
     "member",
     [
         "crates/hoimin-python/src/lib.rs",
+        "crates/hoimin-budget-math/Cargo.toml",
+        "crates/hoimin-budget-math/src/lib.rs",
+        "crates/hoimin-budget-math/src/duration.rs",
+        "crates/hoimin-budget-math/src/projection.rs",
         "vendor/ruff_python_parser/Cargo.toml",
         "vendor/ruff_python_parser/README.hoimin.md",
         "vendor/ruff_python_parser/LICENSE",

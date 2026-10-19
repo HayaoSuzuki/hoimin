@@ -24,7 +24,12 @@ def capture(root: Path, target: str, output: Path) -> None:
     # The generator emits one document per workspace member even with a manifest.
     generated = [
         root / "crates" / member / "hoimin-release-sbom.json"
-        for member in ("hoimin-cli", "hoimin-core", "hoimin-python")
+        for member in (
+            "hoimin-cli",
+            "hoimin-core",
+            "hoimin-python",
+            "hoimin-budget-math",
+        )
     ]
     for path in generated:
         path.unlink(missing_ok=True)

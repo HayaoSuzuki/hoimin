@@ -2,10 +2,8 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 use camino::Utf8PathBuf;
-use hoimin_core::{
-    CommandArg, ConfigError, MAX_TIMEOUT, MutantTimeout, PlanConfig, RawRunConfig, RunConfig,
-    auto_mutant_timeout,
-};
+use hoimin_budget_math::{MutantTimeout, auto_mutant_timeout};
+use hoimin_core::{CommandArg, ConfigError, MAX_TIMEOUT, PlanConfig, RawRunConfig, RunConfig};
 use serde::Deserialize;
 
 const CORPUS: &str = include_str!("../../../formal/HoiminOracle/corpus/timeout-limit.jsonl");

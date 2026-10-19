@@ -624,7 +624,11 @@ def test_version_updates_manifests_and_both_lockfiles(
         "-dev.", ".dev"
     )
     for name, packages, expected_version in (
-        ("Cargo.lock", {"hoimin-core", "hoimin-cli", "hoimin-python"}, version),
+        (
+            "Cargo.lock",
+            {"hoimin-budget-math", "hoimin-core", "hoimin-cli", "hoimin-python"},
+            version,
+        ),
         ("uv.lock", {"hoimin"}, version.replace("-dev.", ".dev")),
     ):
         original = tomllib.loads((ROOT / name).read_text(encoding="utf-8"))["package"]

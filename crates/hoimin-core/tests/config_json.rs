@@ -1,8 +1,9 @@
 use std::time::Duration;
 
+use hoimin_budget_math::{MutantTimeout, NonZeroDuration};
 use hoimin_core::{
-    CommandArg, MAX_TIMEOUT, MutantTimeout, NonZeroDuration, OutputEvent, PlanConfig, RawRunConfig,
-    RawRunLimits, RunConfig, RunStarted,
+    CommandArg, MAX_TIMEOUT, OutputEvent, PlanConfig, RawRunConfig, RawRunLimits, RunConfig,
+    RunStarted,
 };
 
 #[test]

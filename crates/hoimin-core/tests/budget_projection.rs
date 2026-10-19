@@ -2,7 +2,8 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use camino::Utf8PathBuf;
-use hoimin_core::{CommandArg, MutantTimeout, RawRunConfig, RunConfig, project_top_budget};
+use hoimin_budget_math::{MutantTimeout, project_top_budget};
+use hoimin_core::{CommandArg, RawRunConfig, RunConfig};
 
 fn fixed_timeout(value: Duration) -> MutantTimeout {
     let mut raw = RawRunConfig {

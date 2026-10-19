@@ -1,12 +1,13 @@
 use std::time::Duration;
 
 use camino::Utf8PathBuf;
+use hoimin_budget_math::MutantTimeout;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    CommandArg, FingerprintInputFile, MutantTimeout, MutationCandidate, MutationProfile,
-    MutationStatus, OutputSpoolRef, ProcessOutputState, ProcessTermination, ResourceMode,
-    RunConfig, RunLimits, TargetSlice,
+    CommandArg, FingerprintInputFile, MutationCandidate, MutationProfile, MutationStatus,
+    OutputSpoolRef, ProcessOutputState, ProcessTermination, ResourceMode, RunConfig, RunLimits,
+    TargetSlice,
 };
 
 // Includes execution semantics: schema 13 requires baseline workspace restoration.
