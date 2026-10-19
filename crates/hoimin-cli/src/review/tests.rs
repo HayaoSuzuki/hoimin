@@ -630,6 +630,46 @@ async fn review_accepts_matching_report() {
     assert_eq!(report.mutants.len(), 1);
 }
 
+#[tokio::test]
+async fn public_review_rejects_contradictory_status_after_matching_control() {
+    // Arrange: valid saved configuration, candidate identity and janitor isolate status.
+    let (dir, path, report_path) = report_fixture().await;
+    let store = dir.path().join("status-reviews.sqlite3");
+    let plan = super::input::load_plan(&path).unwrap();
+    let mut wire: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
+    wire["mutants"][0]["status"] = serde_json::json!("killed");
+    std::fs::write(&report_path, serde_json::to_vec(&wire).unwrap()).unwrap();
+    super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan)).unwrap();
+    wire["mutants"][0]["status"] = serde_json::json!("survived");
+    std::fs::write(&report_path, serde_json::to_vec(&wire).unwrap()).unwrap();
+    let out = crate::test_writer::CollectingWriter::default();
+    let err = crate::test_writer::CollectingWriter::default();
+    // Act.
+    let code = crate::run_with_writers(
+        [
+            "hoimin",
+            "review",
+            "list",
+            path.to_str().unwrap(),
+            "--report",
+            report_path.to_str().unwrap(),
+            "--store",
+            store.to_str().unwrap(),
+        ],
+        out,
+        err.clone(),
+    )
+    .await;
+    // Assert.
+    assert_eq!(code, 2);
+    let error = String::from_utf8(err.snapshot()).unwrap();
+    assert!(
+        error.contains("status survived does not match outcome status killed"),
+        "{error}"
+    );
+}
+
 async fn reject_semantic_report_at_command(change: fn(&mut serde_json::Value), expected: &str) {
     // Arrange: a usable matching report and valid plan isolate config acceptance.
     let (dir, plan, report_path) = report_fixture().await;

@@ -1079,6 +1079,19 @@ When a baseline fails or reaches its process timeout, `run` and `verify` copy it
 
 `--format json` emits one document. `--format jsonl` emits flushed lifecycle events; diagnostics are JSON Lines on stderr. Public JSON contracts are versioned in [`run-result.schema.json`](json-schema/run-result.schema.json) and [`run-event.schema.json`](json-schema/run-event.schema.json). Event kinds are `run_started`, `baseline_finished`, `mutant_started`, `mutant_finished`, `diagnostic`, and `run_finished`. Parallel events are emitted in completion order; candidate sequence numbers allow stable reordering.
 
+Report schema 9 requires `status` in each JSON `mutants[]` record and JSONL
+`mutant_finished` event. Read this field for the candidate's verdict, for example
+`{"status":"not_run","outcome":"not_run"}`. The writer computes it from
+`outcome`; strict progress/review readers reject a disagreement with exit 2.
+JSON Schema checks the required field and its seven allowed values; only the
+strict reader checks equality with the outcome. Summary, progress and resume
+continue to derive their classifications from outcome evidence.
+
+Human completion rows include the full candidate ID, `path:line:column`, operator,
+quoted original and replacement expressions, and verdict on one line. Control
+characters and Unicode line separators in those fields are escaped, so each row
+can be read on its own when parallel workers finish in a different order.
+
 The final summary's `complete` is `false` when any mutant is inconclusive or the run fails or is interrupted. It is `true` only when every selected mutant is `killed` or `survived` and no run-level failure occurred; a successful run with no candidates is also complete. Therefore, an exit code of `4` always has `complete: false`.
 
 `progress` accepts JSON and JSONL reports from regular files, including symlinks
@@ -1129,13 +1142,13 @@ The schema validates the document structure, schema version, and nonnegative int
 
 Mutant statuses are:
 
-- `killed`: the mutant test process exited nonzero;
-- `survived`: it exited zero;
+- `killed`: the mutant test process exited nonzero and output collection completed, or a saved killed result was reused;
+- `survived`: it exited zero and output collection completed, or a saved survived result was reused;
 - `timeout`: its deadline elapsed;
 - `out_of_memory`: the kernel reported an OOM kill in the supervised root cgroup subtree;
 - `process_limit`: the root tree's process limit stopped it (Linux cgroup also counts threads);
-- `error`: infrastructure could not produce a valid result;
-- `not_run`: it was discovered but not executed, including cancellation or a run-wide limit.
+- `error`: infrastructure could not produce a valid result; output collection's `close_timed_out` overrides the termination, including `Exit(1)`;
+- `not_run`: no classified completion is available, including cancellation or a run-wide limit; a process may have started before cancellation.
 
 The score is `killed / (killed + survived)`. Inconclusive statuses are excluded. If no killed or survived mutant exists, `score` is `null`.
 

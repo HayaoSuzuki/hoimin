@@ -54,7 +54,8 @@
       "resource_mode": "hard",
       "run_id": "schema-v9-original",
       "schema_version": 9,
-      "sequence": 4
+      "sequence": 4,
+      "status": "killed"
     }
   ],
   "run": {

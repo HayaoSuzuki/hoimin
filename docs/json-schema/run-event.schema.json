@@ -1074,7 +1074,8 @@
         "run_id",
         "candidate",
         "resource_mode",
-        "outcome"
+        "outcome",
+        "status"
       ],
       "properties": {
         "kind": {
@@ -1098,6 +1099,10 @@
         },
         "outcome": {
           "$ref": "#/$defs/mutationOutcome"
+        },
+        "status": {
+          "$ref": "#/$defs/status",
+          "description": "Derived from outcome by MutationOutcome::status(). Strict readers enforce equality and discard this projection; JSON Schema validates its shape, not semantic consistency with outcome."
         },
         "diagnostics": {
           "type": "array",

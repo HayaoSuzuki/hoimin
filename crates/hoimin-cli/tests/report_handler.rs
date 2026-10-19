@@ -1495,6 +1495,13 @@ fn json_spool_writes_one_complete_record_per_mutant() {
     assert_eq!(calls.load(Ordering::Relaxed), 100);
     let document: serde_json::Value = serde_json::from_str(stdout.text().trim()).unwrap();
     assert_eq!(document["mutants"].as_array().unwrap().len(), 100);
+    assert!(
+        document["mutants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|mutant| mutant["status"] == "killed")
+    );
 }
 
 #[test]
@@ -1518,6 +1525,7 @@ fn json_spool_retries_short_writes_until_the_complete_record_is_stored() {
     assert!(calls.load(Ordering::Relaxed) > 1);
     let document: serde_json::Value = serde_json::from_str(stdout.text().trim()).unwrap();
     assert_eq!(document["mutants"][0]["kind"], "mutant_finished");
+    assert_eq!(document["mutants"][0]["status"], "killed");
 }
 
 #[test]
@@ -1573,15 +1581,134 @@ fn human_format_preserves_every_canonical_mutation_status_name() {
     assert_eq!(
         mutant_lines,
         [
-            "mutant finished: src/example.py:1:0 binary_add_sub \"+\" -> \"-\" killed",
-            "mutant finished: src/example.py:1:1 binary_add_sub \"+\" -> \"-\" survived",
-            "mutant finished: src/example.py:1:2 binary_add_sub \"+\" -> \"-\" timeout",
-            "mutant finished: src/example.py:1:3 binary_add_sub \"+\" -> \"-\" out_of_memory",
-            "mutant finished: src/example.py:1:4 binary_add_sub \"+\" -> \"-\" process_limit",
-            "mutant finished: src/example.py:1:5 binary_add_sub \"+\" -> \"-\" error",
-            "mutant finished: src/example.py:1:6 binary_add_sub \"+\" -> \"-\" not_run",
+            "mutant finished: m0 src/example.py:1:0 binary_add_sub \"+\" -> \"-\" killed",
+            "mutant finished: m1 src/example.py:1:1 binary_add_sub \"+\" -> \"-\" survived",
+            "mutant finished: m2 src/example.py:1:2 binary_add_sub \"+\" -> \"-\" timeout",
+            "mutant finished: m3 src/example.py:1:3 binary_add_sub \"+\" -> \"-\" out_of_memory",
+            "mutant finished: m4 src/example.py:1:4 binary_add_sub \"+\" -> \"-\" process_limit",
+            "mutant finished: m5 src/example.py:1:5 binary_add_sub \"+\" -> \"-\" error",
+            "mutant finished: m6 src/example.py:1:6 binary_add_sub \"+\" -> \"-\" not_run",
         ]
     );
+}
+
+#[test]
+fn human_completion_rows_keep_identity_when_workers_finish_in_reverse_order() {
+    // Arrange: both candidates have started before B completes ahead of A.
+    let stdout = SharedWriter::default();
+    let mut handler = ReportHandler::new(
+        OutputFormat::Human,
+        stdout.clone(),
+        io::sink(),
+        std::env::temp_dir(),
+    )
+    .unwrap();
+    let mut first = mutant_finished(4, 0);
+    let mut second = mutant_finished(3, 1);
+    for (event, id, original) in [
+        (&mut first, "candidate-A", "left\n\t\""),
+        (&mut second, "candidate-B", "right\r\x1b"),
+    ] {
+        let OutputEvent::MutantFinished(row) = event else {
+            unreachable!()
+        };
+        row.candidate.id = id.into();
+        row.candidate.original = original.into();
+    }
+    emit(
+        &mut handler,
+        1,
+        OutputEvent::MutantStarted(MutantStarted::new("run-1", 1, "candidate-A", 0)),
+    );
+    emit(
+        &mut handler,
+        2,
+        OutputEvent::MutantStarted(MutantStarted::new("run-1", 2, "candidate-B", 1)),
+    );
+    // Act.
+    emit(&mut handler, 3, second);
+    emit(&mut handler, 4, first);
+    // Assert: each completion is understandable without matching either start row.
+    let text = stdout.text();
+    let rows: Vec<_> = text
+        .lines()
+        .filter(|line| line.starts_with("mutant finished:"))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            "mutant finished: candidate-B src/example.py:1:0 binary \"right\\r\\u{1b}\" -> \"-\" killed",
+            "mutant finished: candidate-A src/example.py:1:0 binary \"left\\n\\t\\\"\" -> \"-\" killed",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn public_parallel_run_emits_complete_human_rows() {
+    // Arrange: two candidates permit parallel work with no assumed completion order.
+    let fixture = tempfile::tempdir().unwrap();
+    std::fs::write(
+        fixture.path().join("calc.py"),
+        "left = 1 + 2\nright = 4 + 5\n",
+    )
+    .unwrap();
+    let python = repository_python();
+    // Act.
+    let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .args(["run", "--root"])
+        .arg(fixture.path())
+        .args([
+            "--file",
+            "calc.py",
+            "--operators",
+            "binary_add_sub",
+            "--jobs",
+            "2",
+            "--max-mutants",
+            "2",
+            "--allow-best-effort-memory",
+            "--min-free-space",
+            "1B",
+            "--format",
+            "human",
+            "--",
+        ])
+        .arg(python)
+        .args([
+            "-c",
+            "import calc; assert calc.left == 3 and calc.right == 9",
+        ])
+        .output()
+        .await
+        .unwrap();
+    // Assert: the executable's delivery path keeps each full ID and verdict on its own row.
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = String::from_utf8(output.stdout).unwrap();
+    let rows: Vec<_> = text
+        .lines()
+        .filter(|line| line.starts_with("mutant finished:"))
+        .collect();
+    assert_eq!(rows.len(), 2, "{text}");
+    let identities: std::collections::BTreeSet<_> = rows
+        .iter()
+        .map(|row| {
+            let fields: Vec<_> = row.split_whitespace().collect();
+            assert!(fields[2].starts_with("m1_"));
+            assert_eq!(fields[2].len(), 67);
+            assert!(fields[3].starts_with("calc.py:"));
+            assert!(
+                row.ends_with("binary_add_sub \"+\" -> \"-\" killed"),
+                "{row}"
+            );
+            fields[2]
+        })
+        .collect();
+    assert_eq!(identities.len(), 2);
 }
 
 #[test]
@@ -1608,7 +1735,7 @@ fn human_format_writes_progress_to_stdout_and_diagnostics_to_stderr() {
     assert!(
         stdout
             .text()
-            .contains("mutant finished: src/example.py:1:0 binary \"+\" -> \"-\" killed")
+            .contains("mutant finished: m0 src/example.py:1:0 binary \"+\" -> \"-\" killed")
     );
     assert!(stdout.text().contains("run summary:"));
     assert!(stdout.text().contains("killed: 1"));
@@ -2342,6 +2469,20 @@ async fn public_resume_reports_validate_current_schema_in_json_and_jsonl() {
         assert_schema_valid(&result_schema, &document, &event_schema);
         assert_eq!(document["schema_version"], REPORT_SCHEMA_VERSION);
         assert_eq!(document["run"]["resume"], *expected);
+        let mutant = document["mutants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|mutant| mutant["status"] == "killed")
+            .unwrap();
+        if expected["status"] == "resumed" {
+            assert_eq!(
+                mutant["outcome"],
+                serde_json::json!({"reused":{"status":"killed"}})
+            );
+        } else {
+            assert!(mutant["outcome"].get("executed").is_some());
+        }
     }
     for (_, stdout, expected) in reports.iter().filter(|(format, _, _)| *format == "jsonl") {
         let events: Vec<serde_json::Value> = std::str::from_utf8(stdout)
@@ -2353,6 +2494,18 @@ async fn public_resume_reports_validate_current_schema_in_json_and_jsonl() {
             assert_schema_valid(&event_schema, event, &event_schema);
         }
         assert_eq!(events[0]["resume"], *expected);
+        let mutant = events
+            .iter()
+            .find(|event| event["kind"] == "mutant_finished" && event["status"] == "killed")
+            .unwrap();
+        if expected["status"] == "resumed" {
+            assert_eq!(
+                mutant["outcome"],
+                serde_json::json!({"reused":{"status":"killed"}})
+            );
+        } else {
+            assert!(mutant["outcome"].get("executed").is_some());
+        }
     }
 }
 
@@ -2579,6 +2732,7 @@ fn assert_human_format_escapes_external_candidate_fields(raw: &str, escaped: &st
     };
     value.candidate.path = raw.into();
     value.candidate.operator = raw.into();
+    value.candidate.id = raw.into();
 
     // Act.
     emit(&mut handler, 1, event);
@@ -2586,7 +2740,7 @@ fn assert_human_format_escapes_external_candidate_fields(raw: &str, escaped: &st
     // Assert: renderer separators remain real, each external field stays inert.
     assert_eq!(
         stdout.text(),
-        format!("mutant finished: {escaped}:1:0 {escaped} \"+\" -> \"-\" killed\n"),
+        format!("mutant finished: {escaped} {escaped}:1:0 {escaped} \"+\" -> \"-\" killed\n"),
         "{raw:?}"
     );
 }
@@ -2766,6 +2920,28 @@ human_text_cases!(
 
 proptest::proptest! {
     #![proptest_config(proptest::test_runner::Config { failure_persistence: None, ..proptest::test_runner::Config::default() })]
+    #[test]
+    fn human_completion_fields_stay_on_one_line(raw in proptest::prelude::any::<String>()) {
+        // Arrange: each external result field can contain arbitrary text.
+        let stdout = SharedWriter::default();
+        let mut handler = ReportHandler::new(OutputFormat::Human, stdout.clone(), io::sink(), std::env::temp_dir()).unwrap();
+        let mut event = mutant_finished(1, 0);
+        let OutputEvent::MutantFinished(row) = &mut event else { unreachable!() };
+        row.candidate.id.clone_from(&raw);
+        row.candidate.path = raw.clone().into();
+        row.candidate.operator.clone_from(&raw);
+        row.candidate.original.clone_from(&raw);
+        row.candidate.replacement.clone_from(&raw);
+        // Act.
+        emit(&mut handler, 1, event);
+        // Assert: only the renderer's final newline remains a control character.
+        let text = stdout.text();
+        let line = text.strip_suffix('\n').unwrap();
+        proptest::prop_assert!(!line.chars().any(|c| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}')), "{:?}", text);
+        proptest::prop_assert!(line.ends_with(" killed"));
+        proptest::prop_assert!(line.contains(" -> "));
+    }
+
     #[test]
     fn human_diagnostic_has_no_input_controls(raw in proptest::prelude::any::<String>()) {
         let stderr = SharedWriter::default();

@@ -268,6 +268,7 @@ fn build_report(case_id: &str, report_index: usize, input: &OracleReport) -> Val
                     "file_hash": format!("hash-{content}")
                 },
                 "outcome": mutation_outcome::executed(serde_json::from_value(json!(mutant.status)).unwrap()),
+                "status": mutant.status,
                 "resource_mode": "hard"
             })
         })

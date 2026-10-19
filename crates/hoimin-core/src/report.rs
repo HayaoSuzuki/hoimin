@@ -501,8 +501,7 @@ impl MutantStarted {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MutantFinished {
     pub schema_version: u32,
     pub sequence: u64,
@@ -510,8 +509,81 @@ pub struct MutantFinished {
     pub candidate: MutationCandidate,
     pub outcome: MutationOutcome,
     pub resource_mode: ResourceMode,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<SessionDiagnostic>,
+}
+
+impl Serialize for MutantFinished {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            schema_version: u32,
+            sequence: u64,
+            run_id: &'a str,
+            candidate: &'a MutationCandidate,
+            outcome: &'a MutationOutcome,
+            status: MutationStatus,
+            resource_mode: ResourceMode,
+            #[serde(skip_serializing_if = "<[SessionDiagnostic]>::is_empty")]
+            diagnostics: &'a [SessionDiagnostic],
+        }
+
+        Wire {
+            schema_version: self.schema_version,
+            sequence: self.sequence,
+            run_id: &self.run_id,
+            candidate: &self.candidate,
+            outcome: &self.outcome,
+            status: self.outcome.status(),
+            resource_mode: self.resource_mode,
+            diagnostics: &self.diagnostics,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for MutantFinished {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            schema_version: u32,
+            sequence: u64,
+            run_id: String,
+            candidate: MutationCandidate,
+            outcome: MutationOutcome,
+            status: MutationStatus,
+            resource_mode: ResourceMode,
+            #[serde(default)]
+            diagnostics: Vec<SessionDiagnostic>,
+        }
+
+        let wire = Wire::deserialize(deserializer)?;
+        // Status is an untrusted redundant projection: check and discard it.
+        // Execution, summary and resume continue to derive from the owned outcome.
+        let expected = wire.outcome.status();
+        if wire.status != expected {
+            return Err(serde::de::Error::custom(format_args!(
+                "status {} does not match outcome status {}",
+                wire.status.as_str(),
+                expected.as_str()
+            )));
+        }
+        Ok(Self {
+            schema_version: wire.schema_version,
+            sequence: wire.sequence,
+            run_id: wire.run_id,
+            candidate: wire.candidate,
+            outcome: wire.outcome,
+            resource_mode: wire.resource_mode,
+            diagnostics: wire.diagnostics,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

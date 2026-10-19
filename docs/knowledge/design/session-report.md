@@ -5,6 +5,16 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1010-wire
+  resource: ../../../crates/hoimin-core/src/report.rs
+  revision: 6ea967d6b1682596d6a2c0dda3d1c458f9ce5e6a
+  working_tree: modified
+  sha256: b000930d1bd41fe60dd9dc9e459c3947cb667711ceec450c0d8673c95904f993
+- id: issue-1010-human
+  resource: ../../../crates/hoimin-cli/src/report/human.rs
+  revision: 6ea967d6b1682596d6a2c0dda3d1c458f9ce5e6a
+  working_tree: modified
+  sha256: bc69723f31cb4e44a565471939a52377f48b25c3faf807e461509679675945dd
 - id: issue-1015-wire
   resource: ../../../crates/hoimin-core/src/report.rs
   revision: 8720b41a0d08f375d98bda7cfa6202be779f3226
@@ -275,6 +285,14 @@ sources:
 
 ---
 
+# 導出したstatusの送受信（Issue #1010）
+
+report schema 9では、JSONの`mutants[]`とJSONLの`mutant_finished`に必須の`status`を出力する。reportの直列化処理は`MutationOutcome::status()`から値を計算する。読取り処理は受け取った値とoutcomeの分類を照合し、矛盾を拒否した後にstatusを破棄する。実行状態、集計、progress、resumeの分類根拠はoutcomeのままである。`Exit(1)`でも出力回収が`close_timed_out`なら`error`となる。[^issue-1010-wire]
+
+JSON Schemaはstatusの必須性と七つの値を検査する。outcomeとの意味上の一致はRustのstrict readerが検査するため、汎用のschema検証だけでは一致を確認できない。旧schemaの番号だけを書き換えても現行reportにはならない。[^issue-1010-wire]
+
+humanの完了行には、候補ID、位置、演算子、引用符付きの元の式と置換後の式、判定をまとめる。共通の`HumanText`で各外部文字列を一度escapeするため、制御文字を含む場合も完了行は一行を保つ。並列実行の完了順が開始順と異なっても、候補IDを開始行で探す必要はない。[^issue-1010-human]
+
 # Current report identity validation (Issue #992)
 
 The common current JSON/JSONL reader checks each candidate's saved ID against
@@ -375,7 +393,7 @@ SQLiteのWAL実装や実際のクラッシュを証明するものではない�
 
 JSON Schemaは結果の構造を定める元資料として保持する。ただし、構造上正しいJSONにも、値どうしが矛盾した結果は入り得るため、読取り処理で意味上の整合性も検査する。現在のprogress読取り処理は、件数検査後に `validate_summary_coherence` を呼び、完了状態と終了コードが整合するか確認する。[^schema][^reader]
 
-この集計値の検査の詳細は[progress入力の後続修正](../audits/progress-input.md)を参照する。Issue #460 の設計は、個々の結果の検証を `MutantFinished::validate_result` にまとめ、生成側の `ReportSequence` とprogress読取りで共有する。終了理由がある場合は出力状態も含めてstatusを照合し、矛盾した入力は比較処理へ渡す前に拒否する。この旧検証はIssue #895のtyped outcomeへ置き換わり、独立したstatusやnullable実行証拠を現行形式では受理しない。[^issue-460]
+この集計値の検査の詳細は[progress入力の後続修正](../audits/progress-input.md)を参照する。Issue #460 の設計は、個々の結果の検証を `MutantFinished::validate_result` にまとめ、生成側の `ReportSequence` とprogress読取りで共有する。終了理由がある場合は出力状態も含めてstatusを照合し、矛盾した入力は比較処理へ渡す前に拒否する。この旧検証はIssue #895のtyped outcomeへ置き換わり、独立した可変statusやnullable実行証拠は受理しない。schema 9のstatusは、outcomeと照合して破棄する表示値である。[^issue-460]
 
 # progressのレポート入力スキーマ
 
@@ -716,3 +734,6 @@ historical verification evidence.[^issue-1015-compatibility]
 
 [^issue-1015-wire]: [Core report types and required-nullable decoder](../../../crates/hoimin-core/src/report.rs).
 [^issue-1015-compatibility]: [Schema 9 compatibility notice](../../compatibility.md#structured-startup-cleanup-in-0140).
+
+[^issue-1010-wire]: [MutantFinishedの直列化と検査](../../../crates/hoimin-core/src/report.rs)。
+[^issue-1010-human]: [humanの完了行](../../../crates/hoimin-cli/src/report/human.rs)。

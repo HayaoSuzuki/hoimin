@@ -85,7 +85,8 @@ pub(super) fn write_event(writer: &mut impl Write, event: &OutputEvent) -> io::R
         }
         OutputEvent::MutantFinished(value) => writeln!(
             writer,
-            "mutant finished: {}:{}:{} {} {:?} -> {:?} {}",
+            "mutant finished: {} {}:{}:{} {} {:?} -> {:?} {}",
+            HumanText(&value.candidate.id),
             HumanText(value.candidate.path.as_str()),
             value.candidate.line,
             value.candidate.column,

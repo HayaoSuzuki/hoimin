@@ -12,6 +12,16 @@ no janitor observation is available; it is different from an observed empty scan
 Read schema-8 reports with their producing binary or rerun with this version.
 Changing only a saved report's version number does not convert it.
 
+Schema 9 also requires derived `status` on JSON `mutants[]` records and JSONL
+`mutant_finished` events. Consumers can read the seven canonical verdicts without
+reclassifying process termination. Strict Rust readers check that status agrees
+with `outcome`, discard the received projection, and return exit 2 on a mismatch.
+An `Exit(1)` with `close_timed_out` output is `error`, not `killed`. JSON Schema
+validates status presence and enum membership; generic schema-only validation
+does not establish its semantic consistency with outcome. Update custom report
+producers to include the matching field. Human completion rows now include the
+full candidate ID together with location, operator, expressions and verdict.
+
 `run --verbose` and `verify --verbose` include bounded details for ordinary
 startup retention (young roots, active leases and retain markers). Default output
 keeps the structured summary and failure/incomplete-cleanup diagnostics. Both
