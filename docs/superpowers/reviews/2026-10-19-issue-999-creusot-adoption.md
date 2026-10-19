@@ -33,3 +33,123 @@ Reviewed commits `7110f2ef..e5ce0c6d`: spec compliant, task quality approved, no
 The controller confirmed active `rustc 1.99.0 (b940084d7 2026-09-28)` and `cargo 1.99.0 (5f94df478 2026-08-27)` in this worktree. Actual cargo-deny execution remains a final acceptance gate after adding Creusot dependencies; a narrow policy change alone is not execution evidence. Proof tools, mathematical proofs, cross-target and CI claims remain outside this completed extraction task.
 
 Controller plan correction: the original quotient/remainder test expectation mirrored production. The plan and tests now use minimal covering waves and widened additive ceiling, without changing the accepted mathematical contract. If that choice is wrong, the tests may reject correct arithmetic or need target-width adjustments.
+
+## Task 2: pinned verification environment
+
+The environment task preserves the approved versions and all three proof targets.
+The controller explicitly approved native Linux ARM64 for local development;
+actual native Linux x86_64 cold/warm and whole-job 30-minute acceptance remain
+mandatory in Task 4. The earlier emulated amd64 setup was interrupted after
+624.456 seconds (exit 130) during rustc-dev installation, with no cap relaxation.
+
+### Implementation self-reviews
+
+1. **Pinned provenance and trusted code.** Resolved Creusot v0.14.0 to
+   `65349025c67e69fcd7479f1f420fa5904f69bc27`; preserved approved Why3/Why3find
+   commits. Recorded SHA-256 for official source archives, dated Rust components,
+   all required target libraries and official Z3/CVC5 distributions. The opam
+   repository is a fixed, hashed source snapshot; OCaml 5.3.0's exact archive
+   checksum and the authoritative package recipe are recorded. No additional
+   solver or custom logical trusted/assume specification is introduced.
+2. **Runtime selection and drift.** Preflight checks every required executable's
+   installed content, execute permission, actual PATH resolution, version process
+   status and exact first version line. It checks the reviewed configuration
+   hashes, configuration-selecting environment variables and build-receipt
+   manifest digest. Version output alone cannot validate changed binaries or a
+   missing solver. Receipts close drift checks for built executables and target
+   standard libraries; they do not authenticate a maliciously built image.
+3. **Effective prover configuration.** Traced cargo-creusot's actual WHY3CONFIG
+   override into Why3find and Why3's read_config_rc. Corrected the effective
+   creusot_why3.conf to include main limits and exact prover version fields;
+   validating an unused user file would not establish the proof configuration.
+   Kept only Z3/CVC5 selections. Documented the necessary explicit `-j 2` and
+   Why3find's calibrated-time multiplier; Task 4 must independently enforce the
+   actual per-process 30-second/2-GiB limits and whole-job deadline.
+4. **Isolation, cache and disk.** Installation remains inside task-owned Docker
+   layers under /opt/creusot; unrelated images, containers and volumes are
+   preserved. Fixed artifact inputs are separated from final configuration and
+   checker COPY layers. Removed obsolete downloads/extracted Rust components
+   after installation. Measured Docker VM headroom as well as host free space;
+   the VM initially had 32 GiB free with 13 unrelated running containers.
+5. **Architecture and claim boundaries.** The pinned x86_64 recipe remains the
+   acceptance baseline. Added an official ARM64 host-artifact manifest for native
+   local development, with identical source commits, types, proof targets and
+   configuration. Real rustc metadata invocations diagnose all three target
+   standard libraries. No emulated or ARM64 timing is represented as native
+   x86_64 CI timing; arithmetic proofs and mandatory CI remain later tasks.
+
+### Testing self-reviews
+
+1. **Observed RED before code.** The first 15 CLI tests failed because the checker
+   did not exist. Subsequent behavioral RED exposed boolean-as-schema-version
+   acceptance, relative tool/receipt paths, environment configuration drift and
+   PATH selecting another executable; each was fixed and rerun. Controlled real
+   executable files test the process/file boundary without assuming internal
+   command order.
+2. **Failure-path independence.** Parameterized missing tools, wrong versions and
+   malformed manifest fields. Wrong-version fixtures update their receipt hash
+   so the version assertion is tested independently of hash drift. Changed binary
+   content prints the correct version to test the converse. A nonzero tool
+   prints the correct version to distinguish process status from stdout.
+3. **Mutation evidence and cleanup.** The targeted OR-to-AND mutation of the
+   version failure predicate was killed with a fresh passing baseline (5858 ms),
+   mutant exit 1 (6.231 s), zero survivors, complete execution and clean resource
+   cleanup. The first verify invocation stopped before baseline because a relative
+   linked .venv was excluded from worker copies; replanned with the absolute
+   shared interpreter after clean cleanup, preserving one worker and the
+   8-GiB/10-GiB disk limits. No survivor claim is based on that stopped run.
+4. **Suite and tooling evidence.** Focused checker tests reached 30 passing
+   cases; Ruff formatting/lint and ty passed. Full Python suite initially exposed
+   four existing resource-guard ps sandbox failures and two uv-cache permission
+   failures; rerun with process-inspection access, task-owned UV_CACHE_DIR and
+   venv PATH passed 1130 tests with 11 skips in 41.01 seconds. Shell syntax and
+   embedded Python syntax checks cover installer/configuration scripts.
+5. **Actual environment evidence remains distinct.** The initial minimal Ubuntu
+   apt bootstrap failed without CA roots. A dated checksum-verified CA bundle
+   retained TLS verification; diagnostics then found ADD had created parent
+   directories without traversal bits for _apt. Fixed directory modes and
+   required any apt index failure to stop installation. Subsequent signed snapshot
+   setup succeeded. Actual native build/preflight/smoke results, limits and any
+   outstanding acceptance gates are recorded in the Task 2 report rather than
+   inferred from the unit tests.
+
+### Follow-up environment and resource reviews
+
+- The controller approved native ARM64 development while keeping native x86_64
+  CI acceptance unchanged. The native first attempt reached all three real
+  metadata compilations and built OCaml 5.3.0, then stopped safely at opam's
+  missing-checksum rejection for a local directory pin (324.107 seconds overall,
+  tool-stage peak process RSS 521824 KiB). Replaced directory pins with package
+  recipes in a local repository whose source archives carry the already verified
+  SHA-256 values. OPAMREQUIRECHECKSUMS stays enabled; no network checksum bypass
+  was introduced. Separated Rust/components, OCaml and proof-tool cache layers.
+- Verified the actual pinned Linux GNU timeout 9.4 and prlimit 2.39.3 flags, then
+  added both as mandatory hashed/version-checked preflight tools (32 unit cases
+  pass after observed RED). The exact 30-second process-group fixture returned
+  137 and its sleeping descendant was gone. The real AS2GiB setting reported
+  2097152 KiB; a 1MiB AS fixture exited127 on loading libc, without a large
+  allocation. Effective solver commands use absolute timeout/prlimit paths. AS
+  is stricter than RSS, and no whole-environment RSS bound is asserted.
+- After the PATH/environment refactor, reran the selected version-predicate
+  mutation against the final helper: candidate
+  `m1_ae5d015d3b22013fd7a06936fcb64d5748670daeace209003dd48b6d64acb466`,
+  fresh baseline6775ms, killed1/survived0, complete execution, peak owned scratch
+  54336654bytes and clean cleanup. The later mandatory-tool-set addition retains
+  that predicate; its missing-timeout/prlimit fixtures and happy path are checked
+  separately.
+- Final native ARM64 integration review: the completed image passed strict
+  preflight for all 11 real executables and its pinned configuration/receipt.
+  Creusot generated a nonempty named Coma file and proved `vc_add_one` separately
+  for each required target, with `--no-cache` and `-j 2`. A first warm repeat
+  reused Cargo's generated output despite rerunning provers; a second repeat
+  touched only the disposable sample source and observed `Checking smoke_crate`
+  and successful proof on every target. This confirms the local smoke path,
+  while Task 4 still needs an owned fresh target or package clean for product
+  source, native x86_64 setup/proof timing and fail-closed proof gates.
+- Final test/evidence review: all five implementation and five testing passes
+  above remain applicable after late installer repairs. The native attempt and
+  warm-repair measurements, exact final image ID/size, 13 untouched unrelated
+  containers, Docker VM headroom, Python 3.12.3 and scripts/logs are in the
+  Task 2 report. Focused checker32, Ruff format/lint, ty, shell/embedded Python
+  syntax and normal commit hooks are rerun before the Task 2 commit; no full
+  Python suite is repeated without a new suite-wide risk.
