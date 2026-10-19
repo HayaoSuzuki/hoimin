@@ -6,11 +6,12 @@ command against modified copies, and uses the results to improve tests. The
 shipped application is one Rust executable; its core library and I/O handlers
 run inside that executable.
 
-This source-based description was checked on 2026-10-13 against
-[`4e9f8ab7161cece688eecd6e50a0f16fbed3caec`](https://github.com/HayaoSuzuki/hoimin/tree/4e9f8ab7161cece688eecd6e50a0f16fbed3caec).
-It describes the implemented architecture, not the proposed changes in issues
-#743 or #849–#851. Links to source files identify the implementation to reread
-when updating these views. No runtime or platform test result is implied.
+This source-based description was checked on 2026-10-19 against
+[`b65f62834b35a9ff85795b041e9687b21e5c51ba`](https://github.com/HayaoSuzuki/hoimin/tree/b65f62834b35a9ff85795b041e9687b21e5c51ba).
+It describes the implemented architecture. The language-specific CLI separation
+proposed in #743 is not implemented here. Links to source files identify the
+implementation to reread when updating these views. No runtime or platform test
+result is implied.
 
 ## Reading and editing the views
 
@@ -91,7 +92,7 @@ flowchart LR
     G["Git<br/>[External application]<br/>Git executable: change selection"]
     subgraph SYS["hoimin — software system boundary"]
         C["hoimin CLI<br/>[Application container]<br/>Rust / Tokio: analysis and execution"]
-        W[("Execution storage<br/>[Data container]<br/>Managed directories: worker copies and spools")]
+        W[("Execution storage<br/>[Data container]<br/>Managed directories: snapshot, workers and spools")]
         D[("Delivery storage<br/>[Data container]<br/>Managed directories: JSON spool")]
         F[("Exchange artifacts<br/>[Data container]<br/>Local files: plans, reports and metrics")]
         DB[("Session database<br/>[Data container]<br/>Optional SQLite: results and resume")]
@@ -119,24 +120,35 @@ assert that every command touches every store. `cwd` is a process's working
 directory; JSONL is one JSON record per line; SQLite is embedded, not a database
 server.
 
-`hoimin-core`, `hoimin-python` and `hoimin-cli` are linked code in the CLI container. Tokio tasks,
-blocking worker threads, the disk monitor and session dispatcher share that
-process. The test command creates external process trees. Linux resource setup
-can invoke a private launcher mode of the same executable; it is not an
-additional long-running service.
+`hoimin-cli` depends on `hoimin-core` and `hoimin-python`; `hoimin-python` also
+depends on `hoimin-core`. All three crates are linked into the CLI container.
+The CLI, analyzer corpus tests and Python fuzz target use the same analysis
+crate API. Tokio tasks, blocking worker threads, the disk monitor and session
+dispatcher share the CLI process. The test command creates external process
+trees. Linux resource setup can invoke a private launcher mode of the same
+executable; it is not an additional long-running service.
 
 Execution and delivery storage have separate ownership and cleanup conditions.
 A worker is a reusable copy/slot, not an independently deployed worker service.
-Reports normally go to stdout; the caller may save that stream as a file.
-Metrics use a separately configured destination. Session persistence is opt-in;
-human review storage does not alter mutation outcomes or scores.
+Workspace preflight builds a shared disk snapshot from which workers are created
+and restored. Reports normally go to stdout; the caller may save that stream as
+a file. Metrics use a separately configured destination. Session persistence is
+opt-in; human review storage does not alter mutation outcomes or scores.
+
+Plan and run-report readers accept their current schemas. Session storage
+initializes fresh databases at its current schema and rejects unsupported
+versions instead of migrating their tables. Reusing results from a compatible
+incomplete run is a separate session policy, not an old-schema adapter.
 
 Sources: [binary entry point](../../crates/hoimin-cli/src/main.rs),
 [workspace members](../../Cargo.toml),
+[analysis crate API](../../crates/hoimin-python/src/lib.rs),
+[fuzz dependencies](../../fuzz/Cargo.toml),
 [shell roots and setup](../../crates/hoimin-cli/src/shell.rs),
 [owned workspace storage](../../crates/hoimin-cli/src/workspace/owned.rs),
 [report delivery](../../crates/hoimin-cli/src/report/delivery.rs),
 [session](../../crates/hoimin-cli/src/session/mod.rs),
+[session schema](../../crates/hoimin-cli/src/session/schema.rs),
 [review](../../crates/hoimin-cli/src/review/mod.rs),
 [metrics destination](../../crates/hoimin-cli/src/metrics_destination.rs).
 
@@ -157,8 +169,8 @@ flowchart LR
         SH["Shell coordinator<br/>[Component: Rust / Tokio]<br/>shell: effects, completions and ownership"]
         CORE["Execution policy<br/>[Component: Rust]<br/>hoimin-core: transitions, budgets and admission"]
         TARGET["Target discovery<br/>[Component: Rust]<br/>target: filesystem and Git selectors"]
-        ANA["Candidate acquisition<br/>[Component: Rust]<br/>CLI analyzer: source reads and spool"]
-        PY["Pure Python analysis<br/>[Component: Rust / Ruff]<br/>hoimin-python: candidates, payload leases and exception index"]
+        ANA["Candidate acquisition<br/>[Component: Rust]<br/>CLI analyzer: source validation and candidate spool"]
+        PY["Pure Python analysis<br/>[Component: Rust / Ruff]<br/>hoimin-python: typed candidates and exception index"]
         WS["Workspace ownership<br/>[Component: Rust / filesystem]<br/>workspace: copies, mutation and cleanup"]
         PROC["Process execution<br/>[Component: Rust / Tokio]<br/>process: commands, output and drain"]
         RES["Platform resource control<br/>[Component: Rust / OS APIs]<br/>resource: backend selection and control"]
@@ -170,7 +182,7 @@ flowchart LR
     CORE -->|Return state, requested effects and admission decisions| SH
     SH -->|Resolve target requests| TARGET
     SH -->|Analyze source and replay candidate requests| ANA
-    ANA -->|Pass source and retain charged results| PY
+    ANA -->|Pass source and share candidate payload budget| PY
     SH -->|Perform workspace effects and owned-root cleanup| WS
     SH -->|Dispatch baseline/mutant requests and await drain| PROC
     SH -->|Initialize and close the selected backend| RES
@@ -195,6 +207,20 @@ The analyzer, target discovery and workspace use shared path/source policies
 without moving filesystem I/O into core. Low-level readers and artifact
 validation are omitted from this diagram to keep the execution boundary visible.
 
+The CLI analyzer fixes its root, operators, profile and candidate limit when
+constructing `AnalyzerHandler`. File requests contribute to one accumulated
+candidate spool until finalization. The `hoimin-python` API returns typed
+candidates and diagnostics directly; JSONL is a spool format, not a transport
+between analysis components. Candidate payload leases follow allocations through
+generation and conversion, including work whose async waiter has detached.
+This logical payload budget does not cover all source, AST or index memory.
+
+`WorkspaceHandler` keeps registered workers in one map: a `WorkerSlot` is either
+active or pending cleanup. Owned create/reset tasks carry workspace ownership
+while detached from the handler. Shared operation code applies the same creation
+and restoration policy to synchronous calls and owned tasks. Copy admission
+checks precede snapshot writes and continue while bytes are copied.
+
 Sources: [pure transition](../../crates/hoimin-core/src/machine.rs),
 [core dependencies](../../crates/hoimin-core/Cargo.toml),
 [disk lifecycle](../../crates/hoimin-core/src/disk.rs),
@@ -202,11 +228,58 @@ Sources: [pure transition](../../crates/hoimin-core/src/machine.rs),
 [target](../../crates/hoimin-cli/src/target/mod.rs),
 [CLI analyzer acquisition](../../crates/hoimin-cli/src/analyzer/mod.rs),
 [pure Python API](../../crates/hoimin-python/src/lib.rs),
+[candidate payload ownership](../../crates/hoimin-python/src/analyzer/payload.rs),
 [workspace](../../crates/hoimin-cli/src/workspace/mod.rs),
+[workspace operations](../../crates/hoimin-cli/src/workspace/operation.rs),
+[copy admission](../../crates/hoimin-cli/src/workspace/copy.rs),
 [process](../../crates/hoimin-cli/src/process/mod.rs),
 [resource](../../crates/hoimin-cli/src/resource/mod.rs),
 [report](../../crates/hoimin-cli/src/report/mod.rs),
 [session dispatcher](../../crates/hoimin-cli/src/session/mod.rs).
+
+### Configuration and checked-plan handoff
+
+Run and plan arguments share mutation options and normalization. CLI parsing
+produces `RunConfig<EnvironmentRequest>`; preparation captures the requested
+inherited environment and resolves fingerprint inputs to produce
+`RunConfig<EnvironmentSnapshot>`. The root is stored in `selection`. Environment
+typing guarantees the capture state; common configuration semantics still have
+an explicit `validate()` API used by normalization and persisted-plan admission.
+
+`DiscoveryConfig` owns the plan/verify analyzer timeout. A saved `PlanConfig`
+combines discovery settings with the execution template; discovery-only settings
+are absent from `RunLimits` and the execution resume fingerprint. Ordinary `run`
+uses its total execution deadline for analysis.
+
+Verification checks the manifest and current inputs, then constructs a
+`VerifiedPlan` containing configuration, protected paths and a `RunSelection`.
+The selection binds execution membership/order to immutable verification
+provenance. `VerifiedPlan::execute` consumes that handoff and owned output
+writers; the shell does not accept a separately attached selection description.
+
+Sources: [CLI normalization](../../crates/hoimin-cli/src/cli.rs),
+[configuration types](../../crates/hoimin-core/src/config.rs),
+[environment states](../../crates/hoimin-core/src/fingerprint_env.rs),
+[preparation and execution](../../crates/hoimin-cli/src/shell.rs),
+[checked plan](../../crates/hoimin-cli/src/plan.rs),
+[selection and provenance](../../crates/hoimin-core/src/machine/selection.rs),
+[resume fingerprint](../../crates/hoimin-core/src/resume.rs).
+
+### Process request identity
+
+The core fixes required identity when it creates an effect:
+`RunBaseline(RunProcess<BaselineContext>)` requires worker and run ID;
+`RunMutant(RunProcess<MutantContext>)` also requires mutant ID. A standalone
+`RunProcess<ProbeContext>` carries no workspace identity. Purpose is not stored
+as another independently editable flag inside these requests.
+
+The shell derives worker dispatch and the worker environment from that typed
+identity. The process runner lowers it to one private context enum for tracing,
+completion worker tags and mutant output policy. Cancellation gates, process
+ownership and metrics admission remain separate responsibilities. See
+[process effects](../../crates/hoimin-core/src/effect.rs),
+[process runner](../../crates/hoimin-cli/src/process/mod.rs) and
+[typed process requests](../development.md#typed-process-execution-requests).
 
 ### Command paths outside the execution loop
 
@@ -215,15 +288,19 @@ These are branches of the same CLI application, not additional containers.
 | Command | Main path | Test processes / persistent effects |
 | --- | --- | --- |
 | `run` | CLI config → shell → core/effect handlers | Runs baseline and mutants; optional session and metrics |
-| `plan` | `plan::create` → target discovery → `hoimin-python` analysis → ranking | Writes a plan to stdout; does not run baseline/mutant tests |
-| `verify` | `prepare_verify_selection` → `VerifiedPlan` → shell | Rechecks plan/current inputs, then executes the selected candidates |
+| `plan` | `plan::create` → targets and source fingerprints → CLI analyzer / `hoimin-python` → ranking | Writes a plan to stdout; does not run baseline/mutant tests |
+| `verify` | `prepare_verify_selection` → `VerifiedPlan::execute` → shell | Rechecks plan/current inputs, then executes the selected candidates |
 | `verify --dry-run` | Checked plan → preview | Writes a preview without baseline/mutant execution |
 | `progress` | Validated saved reports → comparison → rendering | Reads reports; no mutation test execution |
 | `review list/show/record` | Plan, optional report and current source identity → review store | Reads assessments or records revisioned assessments separately from run results |
 | `completions` | CLI definitions → completion script writer | Writes a shell completion script |
 
-Shared [artifact readers](../../crates/hoimin-cli/src/artifacts/mod.rs) own bounded
-reads and report decoding; individual commands retain their acceptance rules.
+Shared [artifact readers](../../crates/hoimin-cli/src/artifacts/mod.rs) open
+plan/report inputs as regular files and provide bounded reads where required.
+[Run-report decoding](../../crates/hoimin-cli/src/artifacts/run_report.rs) checks
+event structure, summary consistency and candidate identity for progress and
+review. Commands retain their own format, size and usability rules; the review
+input size limit is not a universal limit on progress reports or source reads.
 See [dispatch](../../crates/hoimin-cli/src/lib.rs),
 [plan and VerifiedPlan](../../crates/hoimin-cli/src/plan.rs),
 [progress](../../crates/hoimin-cli/src/progress/mod.rs), and
@@ -235,6 +312,7 @@ Scope: a small code view of `hoimin-core::transition`, rather than an exhaustive
 class diagram. Rust structs and enums are represented as UML-style classes.
 `Transition` represents a free function, not a class in the implementation.
 Only selected fields and enum variants are shown; variant payloads are omitted.
+Composition edges show where selection and worker state are owned.
 
 ```mermaid
 ---
@@ -246,12 +324,27 @@ classDiagram
         <<Rust struct>>
         -RunConfig config
         -RunPhase phase
+        -RunSelection selection
+    }
+    class RunSelection {
+        <<Rust struct>>
+        -SelectionState state
+    }
+    class WorkerState {
+        <<Rust enum>>
+        Idle
+        Ready
+        Running
+        Persisting
+        Finishing
+        Resetting
     }
     class RunEvent {
         <<Rust enum>>
         StartRequested
         BaselineFinished
         MutantFinished
+        WorkerReset
         OutputEmitted
         EffectFailed
         CancellationRequested
@@ -265,6 +358,7 @@ classDiagram
         AnalyzeFile
         ApplyMutation
         RunMutant
+        ResetWorker
         EmitOutput
         Cleanup
     }
@@ -279,6 +373,8 @@ classDiagram
     class MachineError {
         <<Rust enum>>
     }
+    RunState "1" *-- "1" RunSelection : selection and provenance
+    RunState "1" *-- "*" WorkerState : keyed by worker ID
     Transition ..> RunState : consumes and returns on success
     Transition ..> RunEvent : consumes an event
     Transition ..> RunEffect : returns zero or more effects
@@ -287,9 +383,10 @@ classDiagram
     RunEvent ..> EffectId : completion payload has an ID
 ```
 
-Legend: dashed arrows are code dependencies, not temporal messages. `EffectId`
-is a tuple newtype; `value` is a display label for its `u64` field. Completion
-events identify an effect, while stop/start events do not all carry effect IDs.
+Legend: solid diamond edges denote ownership; dashed arrows are code dependencies,
+not temporal messages. `EffectId` is a tuple newtype; `value` is a display label
+for its `u64` field. Completion events identify an effect, while stop/start
+events do not all carry effect IDs.
 The actual signature is
 `transition(RunState, RunEvent) -> Result<(RunState, Vec<RunEffect>), MachineError>`.
 
@@ -298,9 +395,25 @@ perform them. The transition checks whether a completion belongs to a pending
 effect and is valid for the current state. This code boundary supports tests
 without requiring every state transition to start an OS process.
 
+`RunSelection` distinguishes all-candidate, explicit-ID and ordered execution.
+Ordered execution separates candidate collection from dispatch. `WorkerState`
+owns the candidate or result needed by its phase, rather than tracking phase and
+payload in independent fields. `MutationOutcome` distinguishes executed, reused
+and not-run results; status, elapsed time and output availability are derived
+from that evidence. Diagnostics do not determine the outcome.
+
+The pending-effect registry owns expected completions. For output effects,
+`PendingCompletion::Output` also owns the continuation to take after
+`OutputEmitted`. Delivery acknowledgement therefore controls release of the
+worker's result and dispatch of its reset. This is separate from the shell's
+process, task and filesystem ownership.
+
 Sources: [RunState, transition and MachineError](../../crates/hoimin-core/src/machine.rs),
 [RunEffect and EffectId](../../crates/hoimin-core/src/effect.rs),
-[RunEvent](../../crates/hoimin-core/src/event.rs).
+[RunEvent](../../crates/hoimin-core/src/event.rs),
+[RunSelection](../../crates/hoimin-core/src/machine/selection.rs),
+[verification metadata](../../crates/hoimin-core/src/report/selection.rs),
+[MutationOutcome](../../crates/hoimin-core/src/resume.rs).
 
 ## Dynamic view — Successful run and final delivery
 
@@ -329,7 +442,7 @@ sequenceDiagram
     Core-->>Shell: Next state and requested effects
     Shell->>Inputs: Resolve targets
     Inputs-->>Shell: TargetsResolved
-    Shell->>Workspace: Preflight and materialize baseline worker copy
+    Shell->>Workspace: Preflight shared snapshot and materialize workers
     Workspace-->>Shell: Workspace completions
     Shell->>Process: Run baseline in worker copy
     Process->>Tests: Spawn with worker cwd and environment
@@ -350,7 +463,11 @@ sequenceDiagram
         Tests-->>Process: Exit status and captured output
         Process-->>Shell: Mutant completion and accounting
         Shell->>Core: Apply accepted completion
-        Core-->>Shell: Classification, next state and effects
+        Core-->>Shell: Outcome, next state and output effects
+        Shell->>Report: Deliver MutantFinished
+        Report-->>Shell: OutputEmitted
+        Shell->>Core: Accept mutant output acknowledgement
+        Core-->>Shell: ResetWorker
         Shell->>Workspace: Restore worker for reuse
     end
     Shell->>Process: Establish process and output-drain quiescence
@@ -377,8 +494,9 @@ On cancellation, timeout or fatal failure, the first shutdown cause and absolute
 deadline stay fixed through draining and outer finalization. Recovering a queued
 ownership payload after expiry does not certify successful core completion.
 Already-running blocking work can outlive its async wait. Run and verify report
-work requires owned writers and retains its writer and delivery-root ownership. Unsafe removal can be deferred for later managed-root
-reclamation, and failures preserve incomplete-cleanup evidence.
+work requires owned writers and retains its writer and delivery-root ownership.
+Unsafe removal can be deferred for later managed-root reclamation, and failures
+preserve incomplete-cleanup evidence.
 
 Sources: [shell orchestration and finalization](../../crates/hoimin-cli/src/shell.rs),
 [owned report delivery](../../crates/hoimin-cli/src/report/delivery.rs),
@@ -417,19 +535,3 @@ to historical design evidence. Use the [development guide](../development.md)
 for validation procedures and the [compatibility policy](../compatibility.md)
 for changes to CLI and saved artifacts. The C4 diagrams describe responsibilities
 and relationships; they do not prove termination, isolation or platform support.
-
-## Process request identity
-
-The core fixes required identity when it creates an effect:
-`RunBaseline(RunProcess<BaselineContext>)` requires worker and run ID;
-`RunMutant(RunProcess<MutantContext>)` also requires mutant ID. A standalone
-`RunProcess<ProbeContext>` carries no workspace identity. Purpose is not stored
-as another independently editable flag inside these requests.
-
-The shell builds the worker environment from that typed identity before the
-shared runner consumes the command. The runner lowers to one private context
-enum for tracing, completion worker tags and mutant output policy; it does not
-infer purpose from missing metadata. Cancellation gates, process ownership and
-metrics admission retain their existing ordering. See
-[typed process requests](../development.md#typed-process-execution-requests)
-for the environment convention.
