@@ -387,3 +387,13 @@ full current-source CI, cold replay and final independent reviews remain the
 controller's acceptance gates. All six controller Rulings and prior task/review
 reports survive in the [durable archive](../reports/issue-999/README.md).
 No final native platform result is inferred from the local package checks.
+
+
+## Task 5 scoped review and native Windows follow-up
+
+The [scoped review](../reports/issue-999/records/task-5-review.md) approved the
+local Task 5 change, with two Minor provenance/inventory corrections. The
+[follow-up report](../reports/issue-999/records/task-5-fix1-report.md) records
+those corrections, the later actual Windows failure and the scheduling-only
+repair. Its five self-reviews preserve the six-second assertions and distinguish
+local workflow validation from pending native Windows execution.

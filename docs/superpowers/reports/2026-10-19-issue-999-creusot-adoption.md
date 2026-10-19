@@ -257,3 +257,28 @@ output, not the 5.9-MB wheel; its exact hash and rebuild inputs are recorded abo
    source fingerprints, changed-page links and required footnotes separately
    from prose review. Preserve historical source hashes outside the updated
    concepts; source inspection never becomes a fabricated fresh execution claim.
+
+
+## Follow-up: Windows workspace harness scheduling
+
+The local Task 5 scoped review approved `878be0d5..46ef6b9e` and identified two
+Minor documentation findings, corrected in this follow-up. The complete native
+CI run `39197995202` attempt 1 passed at `5033e1bb`. The same checkpoint's
+non-Linux run `39198000067` failed two pre-existing Windows Job Object fixture
+cases before readiness/identity publication; macOS Rust and the Windows resource
+slice passed. The failed Windows library binary reported 761 passed, two failed
+and 23 ignored. This was not a result-lifecycle oracle mismatch.
+
+The [fix report](issue-999/records/task-5-fix1-report.md) records the evidence and
+five self-reviews. The existing Issue #967 record observed the same two bounded
+tests fail under parallel execution (one at a different phase), then pass with
+two threads. Resource contention remains a supported working hypothesis. The
+manual Windows full workspace suite now uses `--test-threads=2`; production and
+fixture code, every test and each six-second bound remain unchanged. Fresh
+Windows acceptance and current cold proof remain controller-owned gates. The
+seventh Ruling and its longer-CI/remaining-cause risk are archived with the fix.
+
+Local regression: the new Windows workflow case failed before the scheduling
+change, with its macOS control passing. Final workflow/docs tests passed 194
+cases; Ruff and ty passed. The two source-provenance/count findings are corrected.
+The focused follow-up archive contains these results and the scoped review.

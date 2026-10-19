@@ -1737,10 +1737,20 @@ def test_manual_non_linux_jobs_are_complete_and_independent() -> None:
             for step in job_steps(workflow_jobs(automatic)[job_name])
         ]
 
+        # The Windows harness variant is checked per platform below. Compare the
+        # unchanged macOS path with the automatic workspace suite here.
         manual_steps = [
-            step
+            {
+                key: value
+                for key, value in step.items()
+                if key != "if" or value != "runner.os != 'Windows'"
+            }
             for step in job_steps(job)
-            if step.get("name") != "Show native Windows disk-name acceptance"
+            if step.get("name")
+            not in {
+                "Show native Windows disk-name acceptance",
+                "Test Windows workspace with two harness threads",
+            }
         ]
         assert manual_steps == automatic_steps, job_name
 
@@ -1766,7 +1776,11 @@ def test_manual_non_linux_step_conditions(*, upload: bool) -> None:
     )
     expected_conditions = {
         True: {(True, "always()")},
-        False: {(False, None), (True, "runner.os == 'Windows'")},
+        False: {
+            (False, None),
+            (True, "runner.os == 'Windows'"),
+            (True, "runner.os != 'Windows'"),
+        },
     }
     steps = [
         step
@@ -2480,3 +2494,35 @@ def test_manual_windows_native_name_step_exposes_fixture_admission() -> None:
             ),
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("condition", "expected_command"),
+    [
+        (
+            "runner.os == 'Windows'",
+            "cargo test --workspace -- --test-threads=2",
+        ),
+        ("runner.os != 'Windows'", "cargo test --workspace"),
+    ],
+    ids=["windows", "macos"],
+)
+def test_non_linux_workspace_suite_runs_once_with_controlled_windows_concurrency(
+    condition: str, expected_command: str
+) -> None:
+    jobs = workflow_jobs(
+        workflow_document(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))
+    )
+    workspace_steps = [
+        step
+        for step in job_steps(jobs["rust"])
+        if string(step.get("run", "")).startswith("cargo test --workspace")
+    ]
+
+    selected = [
+        string(step["run"])
+        for step in workspace_steps
+        if step.get("if") in (None, condition)
+    ]
+
+    assert selected == [expected_command]

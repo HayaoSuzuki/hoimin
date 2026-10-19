@@ -26,9 +26,9 @@ sources:
   sha256: c6bd0663352ac0ccf8f5b5f718293c7d5fc4fa0f8f62148095337a328c2abf4f
 - id: ci
   resource: ../ci.md
-  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
+  revision: 46ef6b9ef240ce644a11a5ab03f82c69b79f2afd
   working_tree: modified
-  sha256: ca97d4bd598e9d671714fd1c67e903effa93d2622cc8d3efc6502bd35dbed930
+  sha256: a17fa37454e672512a1ccb3a8649783a89c9edd99b63da4679fe77a29228d96d
 - id: release
   resource: ../releases.md
   revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee

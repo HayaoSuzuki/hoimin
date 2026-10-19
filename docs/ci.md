@@ -118,3 +118,13 @@ its 30-minute job budget; solver processes each have a 30-second deadline and
 Tool-image caching does not cache successful proof answers. See the
 [proof guide](../formal/creusot/README.md) for maintenance and recorded cold/warm
 costs. This workflow change does not modify remote branch-protection settings.
+
+
+The manual non-Linux Rust job runs the complete Windows workspace test suite
+with `--test-threads=2`. This bounds test-harness contention while Python-based
+Job Object fixtures establish readiness; their shared six-second runtime and
+cleanup assertions remain unchanged. The macOS workspace suite uses its existing
+default harness concurrency. This controlled test setup does not establish
+production timing under arbitrary host load. The
+[Issue #999 record](superpowers/reports/2026-10-19-issue-999-creusot-adoption.md)
+retains the failed full-suite run and the prior issue #967 scheduling evidence.

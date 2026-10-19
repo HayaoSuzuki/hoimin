@@ -74,7 +74,7 @@ cannot select a newer version than the dependency update under review.
 These constraints do not disable Action updates or replace dependency audits.
 [^update-rules][^python-pins]
 
-The October 14 inventory records 218 main-workspace packages and 93 fuzz packages
+The October 19 inventory records 213 main-workspace packages and 111 fuzz packages
 from locked, all-feature metadata. Its changed build-script list is review
 input, not a certification of dependency code.[^inventory-862]
 
