@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import ast
+import contextlib
 import json
 import os
 import shutil
+import signal
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -75,6 +78,13 @@ def test_source_scope_rejects_missing_or_weakened_contract(
     [
         "#[cfg_attr(creusot, requires(selected@ < 100))]\n",
         "#[cfg_attr(creusot, ensures(result.waves@ >= 0))]\n",
+        "#[cfg_attr(all(creusot), requires(selected@ < 100))]\n",
+        "#[cfg_attr(creusot, creusot_std::requires(selected@ < 100))]\n",
+        (
+            "#[cfg_attr(creusot, requires(selected@ < 100), "
+            "ensures(result.waves@ >= 0))]\n"
+        ),
+        "#[cfg_attr(creusot, cfg_attr(creusot, requires(selected@ < 100)))]\n",
     ],
 )
 def test_source_scope_rejects_extra_contract(
@@ -85,6 +95,47 @@ def test_source_scope_rejects_extra_contract(
     source.write_text(
         source.read_text().replace(
             "pub fn project_top_budget(", addition + "pub fn project_top_budget(", 1
+        )
+    )
+
+    with pytest.raises(verify_creusot.ProofError):
+        verify_creusot.check_source_scope(root, manifest)
+
+
+@pytest.mark.parametrize(
+    "comment", ["// an ordinary comment\n", "/* block comment */\n"]
+)
+def test_source_scope_rejects_attribute_above_comment(
+    proof_project: tuple[Path, dict[str, Any]], comment: str
+) -> None:
+    root, manifest = proof_project
+    source = root / "crates/hoimin-budget-math/src/projection.rs"
+    original = source.read_text()
+    source.write_text(
+        original.replace(
+            "#[must_use]",
+            "#[cfg_attr(all(creusot), requires(selected@ < 100))]\n"
+            + comment
+            + "#[must_use]",
+            1,
+        )
+    )
+
+    with pytest.raises(verify_creusot.ProofError):
+        verify_creusot.check_source_scope(root, manifest)
+
+
+def test_source_scope_rejects_inline_attribute_before_function(
+    proof_project: tuple[Path, dict[str, Any]],
+) -> None:
+    root, manifest = proof_project
+    source = root / "crates/hoimin-budget-math/src/projection.rs"
+    source.write_text(
+        source.read_text().replace(
+            "pub fn project_top_budget(",
+            "#[cfg_attr(all(creusot), requires(selected@ < 100))] "
+            "pub fn project_top_budget(",
+            1,
         )
     )
 
@@ -256,6 +307,7 @@ def test_command_enforces_overall_deadline(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("failure", ["exit", "missing"])
 def test_command_rejects_failed_or_missing_tool(tmp_path: Path, failure: str) -> None:
+    old_handler = signal.getsignal(signal.SIGTERM)
     command = (
         ["python3", "-c", "raise SystemExit(3)"]
         if failure == "exit"
@@ -269,6 +321,8 @@ def test_command_rejects_failed_or_missing_tool(tmp_path: Path, failure: str) ->
             log_path=tmp_path / "failed.log",
             deadline=time.monotonic() + 10,
         )
+
+    assert signal.getsignal(signal.SIGTERM) == old_handler
 
 
 def test_mismatched_environment_preflight_stops_before_generation(
@@ -318,6 +372,59 @@ def test_deadline_kills_child_in_separate_process_group(tmp_path: Path) -> None:
     child = int(pid_file.read_text())
     state_file = Path(f"/proc/{child}/stat")
     assert not state_file.exists() or state_file.read_text().split(") ", 1)[1][0] == "Z"
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="Linux session ownership is required"
+)
+def test_sigterm_kills_child_in_separate_process_group(tmp_path: Path) -> None:
+    def cleanup_child(pid: int | None) -> None:
+        if pid is not None:
+            with contextlib.suppress(ProcessLookupError):
+                getattr(os, "killpg")(pid, getattr(signal, "SIGKILL"))  # noqa: B009
+
+    pid_file = tmp_path / "child.pid"
+    child = (
+        "import os, pathlib, sys, time\n"
+        "os.setpgid(0, 0)\n"
+        "pathlib.Path(sys.argv[1]).write_text(str(os.getpid()))\n"
+        "time.sleep(20)\n"
+    )
+    wrapper = (
+        "import pathlib, sys, time\n"
+        "from tools.verify_creusot import ProofError, run_command\n"
+        f"child = {child!r}\n"
+        "root = pathlib.Path(sys.argv[2])\n"
+        "try:\n"
+        "    run_command([sys.executable, '-c', child, sys.argv[1]], "
+        "cwd=root, log_path=root / 'term.log', deadline=time.monotonic() + 20)\n"
+        "except ProofError:\n"
+        "    raise SystemExit(17)\n"
+    )
+    process = subprocess.Popen(  # noqa: S603 -- fixed test Python code, no shell
+        [sys.executable, "-c", wrapper, str(pid_file), str(tmp_path)], cwd=ROOT
+    )
+    child_pid = None
+    try:
+        for _ in range(500):
+            if pid_file.exists():
+                child_pid = int(pid_file.read_text())
+                break
+            assert process.poll() is None, "runner exited before starting child"
+            time.sleep(0.01)
+        assert child_pid is not None, "child did not start"
+
+        process.send_signal(signal.SIGTERM)
+        assert process.wait(timeout=10) == 17
+        state_file = Path(f"/proc/{child_pid}/stat")
+        assert not state_file.exists() or (
+            state_file.read_text().split(") ", 1)[1][0] == "Z"
+        )
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=10)
+        cleanup_child(child_pid)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Linux session ownership required")

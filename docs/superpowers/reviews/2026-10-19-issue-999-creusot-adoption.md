@@ -281,6 +281,44 @@ test portability and the new math Cargo metadata file's checkout EOL policy;
 runner, math, pins, recipe and workflow bytes remain those accepted at
 `41c888f5`. A manual Windows test run exposed POSIX fake-tool fixture failures,
 default cp1252 proof-log decoding, and one CRLF sdist-byte mismatch; 13 failures
-were repaired in `4d4a3ec6`, with a new Windows run in progress. Portable
-validators and three-target orchestration remain active on Windows. Task 4
-independent scope review and Windows confirmation remain open.
+were repaired in `4d4a3ec6`, and the corrected non-Linux run later passed
+all nine jobs. Portable validators and three-target orchestration remain
+active on Windows. The subsequent scoped review found the two Important gaps
+repaired in the fix round below.
+
+## Task 4 scoped-review fix round 1
+
+Independent review at `4137a294` found two Important gaps: alternate valid
+Creusot attributes could narrow a public input domain without entering the
+source inventory, and default SIGTERM could leave the command's Linux session
+alive. The source guard now compares every attached outer attribute on each
+reviewed production function with the exact approved manifest forms; only
+`#[must_use]` is exempt. It rejects alternate cfg predicates, qualified names,
+compound/nested contracts, same-line attributes and unsupported syntax.
+Comments between attributes are traversed. Production arithmetic, contract
+manifest, tool pins, targets and resource caps are unchanged. The runner now
+catches SIGTERM during each subprocess command, blocks it while Linux `Popen`
+establishes the owned session, kills the dispatcher before separate solver
+groups, reaps the leader, and restores the previous handler. Repeated SIGTERM
+cannot interrupt cleanup. The unresolved Coma source-span warning is deferred
+to Task 5/final review.
+
+| Fix pass | Implementation review | Testing review |
+| --- | --- | --- |
+| 1 | Exact attached-attribute multiset replaces a literal-prefix filter. | Three alternate/nested cases first passed incorrectly, then failed; canonical contracts remain accepted. |
+| 2 | Line/block comments and same-line syntax cannot hide a contract attribute. | Two comment-separated and one inline case were behavioral RED before their scanner fixes; all are GREEN now. |
+| 3 | Scoped SIGTERM handler restores the previous handler on failure. | Failure-path handler restoration is asserted; host focused suite passed 37/2 platform skips. |
+| 4 | Linux launch masking and owned-session cleanup preserve dispatcher-first order. | Actual separate-PGID child reached state Z after SIGTERM; wrapper returned failure code 17. |
+| 5 | No math, manifest, recipe, caps or target changes. | Final Python 3.12 runner proved all three targets afresh, each 25 Coma/59 goals/25 strategies in 34.459s; a focused guard mutation was killed. |
+
+The full Python suite passed `1,187` tests with `13` skips under the established
+process-permission and task-owned uv cache setup. Final focused tests, Ruff,
+type checking and formatting passed after the last small test additions. The
+local runner and container source hashes matched
+`986747a2d2a5d227029700982323ceba111036935ec570f04d2e5ac85ff11430`.
+Full local logs and the scoped RED/GREEN details are in the worktree-local
+`task-4-report.md` and `task-4-evidence/review-fix-py312/`. Earlier native
+warm/cold acceptance at `41c888f5` remains historical evidence for those
+runner bytes; native execution of this fixed runner and scoped re-review are
+pending. The corrected non-Linux run at `4d4a3ec6` completed all nine jobs
+successfully: https://github.com/HayaoSuzuki/hoimin/actions/runs/39193858954 .

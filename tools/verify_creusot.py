@@ -18,6 +18,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import FrameType
 from typing import Any
 
 TARGETS = (
@@ -92,6 +93,27 @@ def normalized(value: str) -> str:
     return re.sub(r"\s+", "", value)
 
 
+def trailing_comment_start(source: str, cursor: int) -> int | None:
+    """Skip comments separating Rust attributes without interpreting attributes."""
+    if not source[:cursor].endswith("*/"):
+        line_start = source.rfind("\n", 0, cursor) + 1
+        comment = source[line_start:cursor].find("//")
+        return line_start + comment if comment >= 0 else None
+    depth = 1
+    scan = cursor - 2
+    while depth:
+        opening = source.rfind("/*", 0, scan)
+        closing = source.rfind("*/", 0, scan)
+        require(opening >= 0, "malformed block comment before function")
+        if closing > opening:
+            depth += 1
+            scan = closing
+        else:
+            depth -= 1
+            scan = opening
+    return scan
+
+
 def attached_attributes(source: str, function: str, anchor: str | None) -> list[str]:
     start = source.find(anchor) if anchor is not None else 0
     require(start >= 0, f"source anchor missing: {anchor}")
@@ -99,11 +121,19 @@ def attached_attributes(source: str, function: str, anchor: str | None) -> list[
     if match is None:
         detail = f"source function missing: {function}"
         raise ProofError(detail)
-    cursor = source.rfind("\n", 0, start + match.start()) + 1
+    function_start = start + match.start()
+    cursor = source.rfind("\n", 0, function_start) + 1
+    require(
+        "#" not in source[cursor:function_start],
+        f"unsupported inline attribute before function: {function}",
+    )
     attributes = []
     while True:
         while cursor and source[cursor - 1].isspace():
             cursor -= 1
+        if (comment_start := trailing_comment_start(source, cursor)) is not None:
+            cursor = comment_start
+            continue
         if not cursor or source[cursor - 1] != "]":
             break
         end = cursor
@@ -151,18 +181,24 @@ def check_source_scope(root: Path, manifest: dict[str, Any]) -> None:
         )
         source = (root / item["source"]).read_text(encoding="utf-8")
         attributes = attached_attributes(source, item["function"], item.get("anchor"))
-        actual = {
-            normalized(attribute[len("#[cfg_attr(creusot,") : -2])
+        # Any other attached attribute may change the effective Creusot
+        # contract or availability of the function. Keep this reviewed boundary
+        # closed instead of trying to interpret Rust's cfg_attr grammar here.
+        actual = sorted(
+            normalized(attribute)
             for attribute in attributes
-            if normalized(attribute).startswith("#[cfg_attr(creusot,requires(")
-            or normalized(attribute).startswith("#[cfg_attr(creusot,ensures(")
-        }
-        expected = {
-            normalized(contract["source"]) for contract in item["contracts"]
-        } | {normalized(precondition) for precondition in item["requires"]}
+            if normalized(attribute) != "#[must_use]"
+        )
+        expected = sorted(
+            normalized(f"#[cfg_attr(creusot, {clause})]")
+            for clause in [
+                *(contract["source"] for contract in item["contracts"]),
+                *item["requires"],
+            ]
+        )
         require(
             actual == expected,
-            f"source contract mismatch: {item['id']}: {actual ^ expected}",
+            f"source contract mismatch: {item['id']}",
         )
     require(
         {item["id"] for item in manifest["logical_definitions"]} == REQUIRED_LOGICAL,
@@ -347,7 +383,7 @@ def terminate_session(session_id: int) -> None:
 def run_command(
     command: list[str], *, cwd: Path, log_path: Path, deadline: float
 ) -> dict[str, Any]:
-    """Run one step under the overall deadline, killing its session on expiry."""
+    """Run one step under the deadline, cleaning up its session on interruption."""
     remaining = deadline - time.monotonic()
     require(remaining > 0, "overall proof deadline exhausted")
     before = time.monotonic()
@@ -356,30 +392,61 @@ def run_command(
     actual_command = (
         ["/usr/bin/time", "-v", "-o", str(time_file), *command] if measured else command
     )
-    with log_path.open("wb") as stream:
-        process = subprocess.Popen(  # noqa: S603 -- fixed runner commands, no shell
-            actual_command,
-            cwd=cwd,
-            stdout=stream,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-            env=os.environ
-            | {
-                "CARGO_BUILD_JOBS": "2",
-                "CARGO_TARGET_DIR": "/tmp/hoimin-issue999-target",  # noqa: S108 -- task-owned directory
-            },
-        )
-        try:
+    stopping = False
+
+    def request_stop(_signum: int, _frame: FrameType | None) -> None:
+        nonlocal stopping
+        if not stopping:
+            stopping = True
+            detail = "proof runner interrupted by SIGTERM"
+            raise ProofError(detail)
+
+    # On Linux, hold SIGTERM until the launched command's session ID is known.
+    # This closes the small gap between Popen starting a child and returning it.
+    mask = (
+        getattr(signal, "pthread_sigmask")  # noqa: B009 -- Linux-only API
+        if sys.platform == "linux"
+        else None
+    )
+    old_mask = (
+        mask(getattr(signal, "SIG_BLOCK"), {signal.SIGTERM})  # noqa: B009
+        if mask is not None
+        else None
+    )
+    old_handler = signal.getsignal(signal.SIGTERM)
+    process = None
+    try:
+        signal.signal(signal.SIGTERM, request_stop)
+        with log_path.open("wb") as stream:
+            process = subprocess.Popen(  # noqa: S603 -- fixed runner commands, no shell
+                actual_command,
+                cwd=cwd,
+                stdout=stream,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                env=os.environ
+                | {
+                    "CARGO_BUILD_JOBS": "2",
+                    "CARGO_TARGET_DIR": "/tmp/hoimin-issue999-target",  # noqa: S108 -- task-owned directory
+                },
+            )
+            if mask is not None and old_mask is not None:
+                mask(getattr(signal, "SIG_SETMASK"), old_mask)  # noqa: B009
+                old_mask = None
             code = process.wait(timeout=remaining)
-        except subprocess.TimeoutExpired as error:
+    except BaseException as error:
+        stopping = True  # Repeated SIGTERM must not interrupt owned cleanup.
+        if process is not None:
             terminate_session(process.pid)
             process.wait()
+        if isinstance(error, subprocess.TimeoutExpired):
             detail = f"overall proof deadline exceeded: {command[0]}"
             raise ProofError(detail) from error
-        except BaseException:
-            terminate_session(process.pid)
-            process.wait()
-            raise
+        raise
+    finally:
+        if mask is not None and old_mask is not None:
+            mask(getattr(signal, "SIG_SETMASK"), old_mask)  # noqa: B009
+        signal.signal(signal.SIGTERM, old_handler)
     elapsed = time.monotonic() - before
     require(code == 0, f"command failed ({code}): {' '.join(command)}; see {log_path}")
     peak_rss = None
