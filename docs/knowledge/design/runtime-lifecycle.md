@@ -5,6 +5,16 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1015-owned
+  resource: ../../../crates/hoimin-cli/src/workspace/owned.rs
+  revision: 8720b41a0d08f375d98bda7cfa6202be779f3226
+  working_tree: modified
+  sha256: 90ae595c91d048ef18a5d4e8a32fb42d362738341cb047db4155e9d997c1bf4f
+- id: issue-1015-report
+  resource: ../../../crates/hoimin-cli/src/report/mod.rs
+  revision: 8720b41a0d08f375d98bda7cfa6202be779f3226
+  working_tree: modified
+  sha256: 89761ec0f322a8ea1dcaebf37b5a3d367daf13221c646e165a552034b9606862
 - id: issue-994-controlled-metrics
   resource: ../../../crates/hoimin-cli/tests/metrics_destinations.rs
   revision: 7ea07bbf15c2fd76e126adbf1f0c55320c19fa1b
@@ -955,3 +965,34 @@ restoration, interruption of blocking I/O or native Windows/Linux behavior.
 [^issue-994-admission]: [crates/hoimin-cli/src/workspace/copy.rs](../../../crates/hoimin-cli/src/workspace/copy.rs).
 
 [^issue-994-controlled-metrics]: [Controlled-failure metrics and destination guards](../../../crates/hoimin-cli/tests/metrics_destinations.rs).
+
+## Startup janitor observations (Issue #1015)
+
+Startup cleanup finalizes one bounded root-evidence ledger. Reclaimed roots have
+an acknowledged root deletion; already-absent roots do not imply a deletion by
+this janitor. Positive ordinary holds are separate from unresolved inspection,
+integrity and cleanup outcomes. An acknowledged deletion remains counted when a
+later unlock or verification fails, and that failure retains its diagnostic.
+Nested deletion progress survives failures without changing cleanup eligibility,
+capabilities, deadline checks or deferred-round scheduling.[^issue-1015-owned]
+
+`disk.janitor` is independent of execution/delivery CleanupDisposition. The report
+handler projects ordinary root details only in verbose mode; it does not change
+counts, retry eligibility or exit policy. Detail retention remains bounded to 256
+records and 4096 UTF-8 bytes per record, prioritizing failures over ordinary holds.
+Truncation, capacity loss and intentional suppression are separate counts.
+Current-run failed/deferred cleanup and measurement failures stay visible.
+[^issue-1015-report]
+
+Directory enumeration is not candidate inspection. A completed enumeration can
+still select only 256 roots or postpone the wrapped cursor bucket. An interrupted
+scan does not establish an exact tail size, and a cleanup deadline leaves selected
+but uninspected roots explicitly uncounted as holds. Removed entries count OS
+acknowledgements, including control markers and root entries; Windows may still
+have delete-pending handles. No remaining-root census or freed-byte claim follows.
+Recheck these boundaries when changing traversal, root selection or output policy.
+The implementation evidence does not establish native Linux/Windows behavior.
+[^issue-1015-owned]
+
+[^issue-1015-owned]: [Janitor evidence and bounded cleanup](../../../crates/hoimin-cli/src/workspace/owned.rs).
+[^issue-1015-report]: [Shared report projection](../../../crates/hoimin-cli/src/report/mod.rs).

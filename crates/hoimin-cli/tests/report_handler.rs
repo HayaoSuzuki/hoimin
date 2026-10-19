@@ -33,12 +33,12 @@ struct WriterState {
 }
 
 #[test]
-fn minimal_schema_v8_report_fixture_matches_the_published_schema() {
+fn minimal_schema_v9_report_fixture_matches_the_published_schema() {
     let root = repo_root();
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
     let report =
-        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v8-original.json"));
+        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v9-original.json"));
 
     assert_schema_valid(&result_schema, &report, &event_schema);
     assert_report_optionals(&report, false);
@@ -162,7 +162,7 @@ fn current_report_golden_matches_typed_semantic_regeneration() {
     let root = repo_root();
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
-    let path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v8-current.json");
+    let path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v9-current.json");
     let checked_bytes = std::fs::read(&path).unwrap();
     let checked: GoldenReportDocument = serde_json::from_slice(&checked_bytes).unwrap();
     let checked_value: serde_json::Value = serde_json::from_slice(&checked_bytes).unwrap();
@@ -182,8 +182,8 @@ fn report_event_goldens_are_typed_complete_sequences() {
     let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
     let root = repo.join("crates/hoimin-cli/tests/golden/events");
     for (name, current) in [
-        ("schema-v8-original.jsonl", false),
-        ("schema-v8-current.jsonl", true),
+        ("schema-v9-original.jsonl", false),
+        ("schema-v9-current.jsonl", true),
     ] {
         let text = std::fs::read_to_string(root.join(name)).unwrap();
         let checked = text
@@ -208,7 +208,7 @@ fn report_event_goldens_are_typed_complete_sequences() {
 fn current_event_golden_matches_typed_semantic_regeneration() {
     let root = repo_root();
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
-    let path = root.join("crates/hoimin-cli/tests/golden/events/schema-v8-current.jsonl");
+    let path = root.join("crates/hoimin-cli/tests/golden/events/schema-v9-current.jsonl");
     let text = std::fs::read_to_string(path).unwrap();
     let first: serde_json::Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
     assert_canonical_normalized_config(&first);
@@ -247,12 +247,12 @@ fn raw_goldens_reject_unknown_fields_before_typed_comparison() {
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
     let mut report =
-        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v8-current.json"));
+        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v9-current.json"));
     report["unexpected"] = serde_json::json!(true);
     assert_schema_invalid(&result_schema, &report, &event_schema);
 
     let line = std::fs::read_to_string(
-        root.join("crates/hoimin-cli/tests/golden/events/schema-v8-current.jsonl"),
+        root.join("crates/hoimin-cli/tests/golden/events/schema-v9-current.jsonl"),
     )
     .unwrap();
     let mut event: serde_json::Value = serde_json::from_str(line.lines().next().unwrap()).unwrap();
@@ -263,16 +263,16 @@ fn raw_goldens_reject_unknown_fields_before_typed_comparison() {
 #[test]
 fn raw_goldens_reject_duplicate_known_fields_before_value_parsing() {
     let root = repo_root();
-    let report_path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v8-current.json");
+    let report_path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v9-current.json");
     let report = std::fs::read_to_string(report_path).unwrap();
     let duplicate_report = report.replacen(
-        "\"schema_version\": 8,",
-        "\"schema_version\": 8,\n  \"schema_version\": 8,",
+        "\"schema_version\": 9,",
+        "\"schema_version\": 9,\n  \"schema_version\": 9,",
         1,
     );
     assert!(serde_json::from_str::<GoldenReportDocument>(&duplicate_report).is_err());
 
-    let event_path = root.join("crates/hoimin-cli/tests/golden/events/schema-v8-current.jsonl");
+    let event_path = root.join("crates/hoimin-cli/tests/golden/events/schema-v9-current.jsonl");
     let events = std::fs::read_to_string(event_path).unwrap();
     let first = events.lines().next().unwrap();
     let duplicate_event = first.replacen(
@@ -2858,3 +2858,132 @@ human_text_cases!(
     assert_started_identifier,
     "mutant"
 );
+
+macro_rules! janitor_presentation_case {
+    ($name:ident, $format:expr, $verbose:expr) => {
+        #[test]
+        fn $name() {
+            // Arrange: ordinary hold and a real failure share one report.
+            let mut events = all_optional_report_events(true);
+            let OutputEvent::RunFinished(summary) = events.last_mut().unwrap() else {
+                panic!("summary");
+            };
+            let mut janitor = hoimin_core::JanitorSummary {
+                inspected_roots: 2,
+                preserved_roots: 1,
+                unresolved_roots: 1,
+                removed_entries: 3,
+                ..Default::default()
+            };
+            janitor
+                .preserved_by_reason
+                .insert(hoimin_core::JanitorReason::Young, 1);
+            janitor
+                .unresolved_by_reason
+                .insert(hoimin_core::JanitorReason::DeleteFailed, 1);
+            janitor.details = vec![
+                hoimin_core::JanitorDetail {
+                    reason: hoimin_core::JanitorReason::Young,
+                    message: "ordinary-young-root".into(),
+                },
+                hoimin_core::JanitorDetail {
+                    reason: hoimin_core::JanitorReason::DeleteFailed,
+                    message: "failed-root: permission denied".into(),
+                },
+            ];
+            summary.disk.janitor = Some(janitor);
+            summary.disk.stop = Some(hoimin_core::DiskStopReport {
+                code: "disk.measurement_failed".into(),
+                owned_bytes: None,
+                available_bytes: None,
+                message: Some("measurement-root: inspection denied".into()),
+                secondary: Vec::new(),
+            });
+            summary.disk.cleanup.push(hoimin_core::DiskCleanupReport {
+                root_id: "execution".into(),
+                owner: "hoimin".into(),
+                status: hoimin_core::DiskCleanupStatus::Deferred,
+                examined_entries: 4,
+                removed_entries: 1,
+                details: vec!["current cleanup timed out".into()],
+                omitted_detail_count: 0,
+                remaining_root: Some("current-incomplete-root".into()),
+            });
+            let exit = summary.exit_code;
+            let spool = tempfile::tempdir().unwrap();
+            let stdout = SharedWriter::default();
+            let mut handler = ReportHandler::new($format, stdout.clone(), io::sink(), spool.path())
+                .unwrap()
+                .with_presentation(hoimin_cli::report::ReportPresentation { verbose: $verbose });
+
+            // Act.
+            for (index, event) in events.into_iter().enumerate() {
+                emit(&mut handler, index as u64, event);
+            }
+            let bytes = stdout.0.lock().unwrap().bytes.clone();
+            let text = String::from_utf8(bytes).unwrap();
+
+            // Assert: filtering never erases failures or changes facts.
+            assert_eq!(text.contains("ordinary-young-root"), $verbose);
+            assert!(text.contains("failed-root: permission denied"), "{text}");
+            assert!(text.contains("current cleanup timed out"), "{text}");
+            assert!(text.contains("current-incomplete-root"), "{text}");
+            assert!(
+                text.contains("measurement-root: inspection denied"),
+                "{text}"
+            );
+            if $format == OutputFormat::Human {
+                assert!(text.contains("inspected 2"), "{text}");
+                assert!(text.contains("removed entries 3"), "{text}");
+                assert!(text.contains(&format!("exit: {exit}")));
+            } else {
+                let wire: serde_json::Value = if $format == OutputFormat::Json {
+                    serde_json::from_str::<serde_json::Value>(&text).unwrap()["summary"].clone()
+                } else {
+                    serde_json::from_str(text.lines().last().unwrap()).unwrap()
+                };
+                let schema =
+                    read_schema(&repo_root().join("docs/json-schema/run-event.schema.json"));
+                assert_schema_valid(&schema, &wire, &schema);
+                assert_eq!(wire["disk"]["janitor"]["inspected_roots"], 2);
+                assert_eq!(wire["disk"]["janitor"]["removed_entries"], 3);
+                assert_eq!(wire["exit_code"], exit);
+                assert_eq!(
+                    wire["disk"]["cleanup"].as_array().unwrap().last().unwrap()["status"],
+                    "deferred"
+                );
+            }
+        }
+    };
+}
+janitor_presentation_case!(janitor_json_default, OutputFormat::Json, false);
+janitor_presentation_case!(janitor_json_verbose, OutputFormat::Json, true);
+janitor_presentation_case!(janitor_jsonl_default, OutputFormat::Jsonl, false);
+janitor_presentation_case!(janitor_jsonl_verbose, OutputFormat::Jsonl, true);
+janitor_presentation_case!(janitor_human_default, OutputFormat::Human, false);
+janitor_presentation_case!(janitor_human_verbose, OutputFormat::Human, true);
+
+macro_rules! janitor_schema_presence_case {
+    ($name:ident, $present:expr) => {
+        #[test]
+        fn $name() {
+            // Arrange.
+            let schema = read_schema(&repo_root().join("docs/json-schema/run-event.schema.json"));
+            let mut disk = serde_json::to_value(default_disk_summary()).unwrap();
+            if !$present {
+                disk.as_object_mut().unwrap().remove("janitor");
+            }
+            // Act / Assert at the published schema boundary.
+            let result = validate_schema(
+                &schema["$defs"]["diskRunSummary"],
+                &disk,
+                &schema,
+                &schema,
+                "$",
+            );
+            assert_eq!(result.is_ok(), $present, "{result:?}");
+        }
+    };
+}
+janitor_schema_presence_case!(janitor_schema_rejects_missing_field, false);
+janitor_schema_presence_case!(janitor_schema_accepts_explicit_null, true);

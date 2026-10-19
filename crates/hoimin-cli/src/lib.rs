@@ -69,6 +69,9 @@ where
 {
     match command {
         Ok(cli::ParsedCommand::Run(args)) => {
+            let presentation = report::ReportPresentation {
+                verbose: args.verbose,
+            };
             let config = match cli::run_config_from_args(args) {
                 Ok(config) => config,
                 Err(error) => {
@@ -76,7 +79,9 @@ where
                     return 2;
                 }
             };
-            shell::run_loop(config, stdout, stderr).await.unwrap_or(2)
+            shell::run_loop(config, stdout, stderr, presentation)
+                .await
+                .unwrap_or(2)
         }
         Ok(cli::ParsedCommand::Progress(args)) => {
             command_result(progress::run(args, &mut stdout, &mut stderr), &mut stderr)
@@ -124,7 +129,13 @@ where
             } else {
                 verified
                     .with_metrics(args.metrics)
-                    .execute(stdout, stderr)
+                    .execute(
+                        stdout,
+                        stderr,
+                        report::ReportPresentation {
+                            verbose: args.verbose,
+                        },
+                    )
                     .await
                     .unwrap_or(2)
             }

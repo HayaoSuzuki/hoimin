@@ -2047,3 +2047,51 @@ fn help_limits_discovery_timeout_to_plan() {
         assert_eq!(help.contains("--analyzer-timeout"), advertised, "{argv:?}");
     }
 }
+
+#[test]
+fn verbose_is_runtime_only_and_does_not_change_checked_run_config() {
+    // Arrange.
+    let plain = [
+        "hoimin",
+        "run",
+        "--file",
+        "src/calc.py",
+        "--",
+        "python",
+        "-m",
+        "pytest",
+    ];
+    let verbose = [
+        "hoimin",
+        "run",
+        "--verbose",
+        "--file",
+        "src/calc.py",
+        "--",
+        "python",
+        "-m",
+        "pytest",
+    ];
+    // Act.
+    let ParsedCommand::Run(args) = parse_from(verbose).unwrap() else {
+        panic!("run");
+    };
+    let is_verbose = args.verbose;
+    let verbose_config = parse_config_from(verbose).unwrap();
+    let plain_config = parse_config_from(plain).unwrap();
+    // Assert.
+    assert!(is_verbose);
+    assert_eq!(verbose_config, plain_config);
+}
+
+#[test]
+fn verify_accepts_runtime_verbose_without_a_plan_override() {
+    // Arrange / Act.
+    let ParsedCommand::Verify(args) =
+        parse_from(["hoimin", "verify", "plan.json", "--top", "1", "--verbose"]).unwrap()
+    else {
+        panic!("verify");
+    };
+    // Assert.
+    assert!(args.verbose);
+}

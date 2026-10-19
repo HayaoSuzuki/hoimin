@@ -5,6 +5,16 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1015-wire
+  resource: ../../../crates/hoimin-core/src/report.rs
+  revision: 8720b41a0d08f375d98bda7cfa6202be779f3226
+  working_tree: modified
+  sha256: c89bddbf335142d9586ecbc3e155893c273af3718fb223e3975e66e97954a013
+- id: issue-1015-compatibility
+  resource: ../../compatibility.md
+  revision: 8720b41a0d08f375d98bda7cfa6202be779f3226
+  working_tree: modified
+  sha256: 5e7c0deae74941aa9651590a7b1e6d7465a75fa8e2063090b7398c30214aafa9
 - id: issue-1004-reader
   resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
   revision: 6d78789eca05fad577b2a8dcce83077f9389ee06
@@ -278,7 +288,7 @@ v1 bytes and valid schema-8 writer output.[^issue-992-identity][^issue-992-reade
 
 # Single project root in saved reports (Issue #949)
 
-Issue #949 introduced the single root in report schema 7. Current schema 8
+Issue #949 introduced the single root in report schema 7. Current schema 9
 stores it only in
 `run.normalized_config.selection.root` for JSON and
 `normalized_config.selection.root` for `run_started` JSONL. Typed configuration
@@ -686,3 +696,23 @@ spoofing prevention.[^issue-1002-human-tests]
 [^issue-1002-human-text]: [Shared human text projection](../../../crates/hoimin-cli/src/human_text.rs).
 [^issue-1002-human-report]: [Human event and diagnostic rendering](../../../crates/hoimin-cli/src/report/human.rs).
 [^issue-1002-human-tests]: [Human and machine report regression tests](../../../crates/hoimin-cli/tests/report_handler.rs).
+
+## Janitor report schema 9 (Issue #1015)
+
+Report/event schema 9 replaces `disk.stale_roots_reclaimed` with required nullable
+`disk.janitor`. Rust decoding rejects a missing field; explicit null means no
+observation. Non-null summaries distinguish inspected, reclaimed, already absent,
+preserved and unresolved roots, acknowledged deleted entries, and scan/detail
+omissions. Readers reject older report versions instead of adapting their shapes.
+[^issue-1015-wire]
+
+The 0.14.0 package floor carries this report change. Plan schema 10, session schema
+5, fingerprint 13 and candidate identities do not change. CLI `--verbose` is passed
+as runtime ReportPresentation, outside checked/saved RunConfig and PlanConfig.
+Default and verbose output share factual counts and exit policy; only ordinary
+retention details and their presentation-suppression count differ. This section
+supersedes earlier current report-version and floor statements, without changing
+historical verification evidence.[^issue-1015-compatibility]
+
+[^issue-1015-wire]: [Core report types and required-nullable decoder](../../../crates/hoimin-core/src/report.rs).
+[^issue-1015-compatibility]: [Schema 9 compatibility notice](../../compatibility.md#structured-startup-cleanup-in-0140).

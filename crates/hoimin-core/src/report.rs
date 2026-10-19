@@ -8,7 +8,10 @@ use crate::{
     ProcessTermination, ResourceMode, RunConfig, SessionDiagnostic, contract_ensure,
 };
 
-pub const REPORT_SCHEMA_VERSION: u32 = 8;
+mod janitor;
+pub use janitor::*;
+
+pub const REPORT_SCHEMA_VERSION: u32 = 9;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DiskRunSummary {
@@ -23,7 +26,8 @@ pub struct DiskRunSummary {
     pub stop: Option<DiskStopReport>,
     pub cleanup: Vec<DiskCleanupReport>,
     pub removed_logical_bytes: Option<u64>,
-    pub stale_roots_reclaimed: u64,
+    #[serde(deserialize_with = "required_janitor")]
+    pub janitor: Option<JanitorSummary>,
 }
 
 impl DiskRunSummary {
@@ -41,9 +45,16 @@ impl DiskRunSummary {
             stop: None,
             cleanup: Vec::new(),
             removed_logical_bytes: None,
-            stale_roots_reclaimed: 0,
+            janitor: None,
         }
     }
+}
+
+// A custom deserializer makes absence an error while accepting explicit null.
+fn required_janitor<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<JanitorSummary>, D::Error> {
+    Option::<JanitorSummary>::deserialize(deserializer)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

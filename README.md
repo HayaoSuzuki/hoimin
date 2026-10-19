@@ -39,3 +39,12 @@ External Issues and pull requests are not accepted.
 
 Licensed under [Elastic License 2.0](https://github.com/HayaoSuzuki/hoimin/blob/main/LICENSE).
 See [licensing details](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/licensing.md).
+
+### Startup cleanup reports
+
+`hoimin run` and `hoimin verify` summarize startup cleanup in `disk.janitor`
+(JSON/JSONL schema 9) and in human output. Use `--verbose` to include ordinary
+root retention details. Failures and unfinished cleanup remain visible by default.
+The summary separates roots from deleted entries and reports bounded scan/detail
+omissions. It does not estimate remaining roots or freed disk space. See the
+[compatibility notice](docs/compatibility.md#structured-startup-cleanup-in-0140).

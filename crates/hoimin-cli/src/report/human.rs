@@ -186,5 +186,101 @@ fn write_summary(writer: &mut impl Write, summary: &RunSummary) -> io::Result<()
         writer,
         "  disk minimum free bytes: {}",
         summary.disk.configured_min_free_bytes
-    )
+    )?;
+    if let Some(janitor) = &summary.disk.janitor {
+        write_janitor_summary(writer, janitor)?;
+    }
+    for cleanup in &summary.disk.cleanup {
+        if !cleanup.details.is_empty()
+            || matches!(
+                cleanup.status,
+                hoimin_core::DiskCleanupStatus::Failed | hoimin_core::DiskCleanupStatus::Deferred
+            )
+        {
+            writeln!(
+                writer,
+                "  cleanup {}: {:?}",
+                HumanText(&cleanup.root_id),
+                cleanup.status
+            )?;
+            if let Some(path) = &cleanup.remaining_root {
+                writeln!(writer, "    remaining root: {}", HumanText(path))?;
+            }
+            for detail in &cleanup.details {
+                writeln!(writer, "    {}", HumanText(detail))?;
+            }
+            if cleanup.omitted_detail_count != 0 {
+                writeln!(
+                    writer,
+                    "    cleanup details omitted: {}",
+                    cleanup.omitted_detail_count
+                )?;
+            }
+        }
+    }
+    if let Some(stop) = &summary.disk.stop {
+        writeln!(writer, "  disk stop: {}", HumanText(&stop.code))?;
+        if let Some(message) = &stop.message {
+            writeln!(writer, "    {}", HumanText(message))?;
+        }
+        for secondary in &stop.secondary {
+            if let hoimin_core::DiskSecondary::Error { code, message } = secondary {
+                writeln!(writer, "    {}: {}", HumanText(code), HumanText(message))?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn write_janitor_summary(
+    writer: &mut impl Write,
+    janitor: &hoimin_core::JanitorSummary,
+) -> io::Result<()> {
+    writeln!(
+        writer,
+        "  startup janitor: inspected {}, reclaimed {}, absent {}, preserved {}, unresolved {}; removed entries {}",
+        janitor.inspected_roots,
+        janitor.reclaimed_roots,
+        janitor.absent_roots,
+        janitor.preserved_roots,
+        janitor.unresolved_roots,
+        janitor.removed_entries
+    )?;
+    for (reason, count) in &janitor.preserved_by_reason {
+        writeln!(writer, "    preserved {reason:?}: {count}")?;
+    }
+    for (reason, count) in &janitor.unresolved_by_reason {
+        writeln!(writer, "    unresolved {reason:?}: {count}")?;
+    }
+    writeln!(
+        writer,
+        "    directory scan complete: {}; observed selection omissions: {}; selected roots not inspected: {}",
+        janitor.scan.directory_scan_complete,
+        janitor.scan.selection_omitted_observed_entries,
+        janitor.scan.uninspected_selected_roots
+    )?;
+    if !janitor.scan.directory_scan_complete {
+        writeln!(writer, "    unobserved scan tail: unknown")?;
+    }
+    if let Some(reason) = janitor.scan.stop_reason {
+        writeln!(writer, "    scan stop: {reason:?}")?;
+    }
+    for detail in &janitor.details {
+        writeln!(
+            writer,
+            "    {:?}: {}",
+            detail.reason,
+            HumanText(&detail.message)
+        )?;
+    }
+    let omitted = &janitor.detail_omissions;
+    writeln!(
+        writer,
+        "    details omitted: {} ordinary, {} issues; truncated: {}; ordinary details hidden: {}",
+        omitted.normal_details,
+        omitted.issue_details,
+        omitted.truncated_details,
+        omitted.suppressed_normal_details
+    )?;
+    Ok(())
 }

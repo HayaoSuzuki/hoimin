@@ -559,7 +559,7 @@ async fn report_fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::
     let (dir, path) = plan_fixture().await;
     let plan = super::input::load_plan(&path).unwrap();
     let mut report: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tests/golden/reports/schema-v8-current.json"
+        "../../tests/golden/reports/schema-v9-current.json"
     ))
     .unwrap();
     let config = plan
@@ -912,7 +912,7 @@ fn write_matching_report(
     candidates: &[&hoimin_core::MutationCandidate],
 ) {
     let mut report: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tests/golden/reports/schema-v8-current.json"
+        "../../tests/golden/reports/schema-v9-current.json"
     ))
     .unwrap();
     report["run"]["normalized_config"] = serde_json::to_value(

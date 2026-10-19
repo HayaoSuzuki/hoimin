@@ -523,6 +523,34 @@ impl<R: Read> Read for FingerprintReader<R> {
 
 #[cfg(test)]
 mod tests {
+    macro_rules! required_janitor_case {
+        ($name:ident, $present:expr) => {
+            #[test]
+            fn $name() {
+                // Arrange: exercise the actual shared JSON artifact decoder.
+                let mut document: serde_json::Value = serde_json::from_str(include_str!(
+                    "../../tests/golden/reports/schema-v9-current.json"
+                ))
+                .unwrap();
+                if !$present {
+                    document["summary"]["disk"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("janitor");
+                }
+                let dir = tempfile::tempdir().unwrap();
+                let path = dir.path().join("report.json");
+                std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
+                // Act.
+                let result = super::read_report(&path);
+                // Assert.
+                assert_eq!(result.is_ok(), $present, "{result:?}");
+            }
+        };
+    }
+    required_janitor_case!(artifact_reader_rejects_missing_janitor, false);
+    required_janitor_case!(artifact_reader_accepts_explicit_null_janitor, true);
+
     use super::*;
 
     #[test]
@@ -542,7 +570,7 @@ mod tests {
 
     fn current_report_json() -> String {
         let document: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tests/golden/reports/schema-v8-current.json"
+            "../../tests/golden/reports/schema-v9-current.json"
         ))
         .unwrap();
         serde_json::to_string(&document).unwrap()

@@ -12,6 +12,12 @@ use hoimin_core::{
 
 use self::json::{JsonError, JsonReport};
 
+/// Runtime presentation only: never part of saved plans, sessions or fingerprints.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ReportPresentation {
+    pub verbose: bool,
+}
+
 pub(crate) struct PreparedReport {
     encoding: ReportEncoding,
 }
@@ -46,6 +52,7 @@ impl PreparedReport {
     {
         ReportHandler {
             encoding: self.encoding,
+            presentation: ReportPresentation::default(),
             stdout,
             stderr,
             lock_stdio_stderr: false,
@@ -55,6 +62,7 @@ impl PreparedReport {
 
 pub struct ReportHandler<Stdout, Stderr> {
     encoding: ReportEncoding,
+    presentation: ReportPresentation,
     stdout: Stdout,
     stderr: Stderr,
     lock_stdio_stderr: bool,
@@ -95,6 +103,7 @@ where
         };
         Self {
             encoding,
+            presentation: ReportPresentation::default(),
             stdout,
             stderr,
             lock_stdio_stderr: false,
@@ -107,7 +116,12 @@ where
     ///
     /// Returns an error when the configured report cannot serialize or write the event.
     pub fn handle(&mut self, request: EmitOutput) -> Result<OutputEmitted, EffectFailed> {
-        let EmitOutput { id, event } = request;
+        let EmitOutput { id, mut event } = request;
+        if let OutputEvent::RunFinished(summary) = &mut event
+            && let Some(janitor) = &mut summary.disk.janitor
+        {
+            janitor.project_details(self.presentation.verbose);
+        }
         if matches!(event, OutputEvent::Diagnostic(_)) {
             // Keep streaming serialization atomic with respect to the tracing
             // output thread. Only owned CLI stdio uses this reentrant lock;
@@ -154,6 +168,12 @@ where
                 .map_err(|error| human_failed(id, &error))?;
         }
         Ok(OutputEmitted { id })
+    }
+
+    #[must_use]
+    pub fn with_presentation(mut self, presentation: ReportPresentation) -> Self {
+        self.presentation = presentation;
+        self
     }
 
     pub(crate) fn flush_and_release_spool(&mut self) -> io::Result<()> {

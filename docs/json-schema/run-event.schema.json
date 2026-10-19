@@ -11,6 +11,269 @@
     { "$ref": "#/$defs/runFinished" }
   ],
   "$defs": {
+    "janitorSummary": {
+      "type": "object",
+      "required": [
+        "inspected_roots",
+        "reclaimed_roots",
+        "absent_roots",
+        "preserved_roots",
+        "unresolved_roots",
+        "examined_entries",
+        "removed_entries",
+        "preserved_by_reason",
+        "unresolved_by_reason",
+        "scan",
+        "details",
+        "detail_omissions"
+      ],
+      "properties": {
+        "inspected_roots": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reclaimed_roots": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "absent_roots": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "preserved_roots": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unresolved_roots": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "examined_entries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removed_entries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "preserved_by_reason": {
+          "type": "object",
+          "propertyNames": {
+            "enum": [
+              "young",
+              "active_lease",
+              "retain_marker",
+              "coordinator_busy",
+              "mutation_barrier_active",
+              "invalid_candidate",
+              "candidate_inspection_failed",
+              "identity_inspection_failed",
+              "lease_invalid",
+              "lease_lock_failed",
+              "marker_invalid",
+              "heartbeat_invalid",
+              "age_unverifiable",
+              "unsafe_staging",
+              "coordinator_failed",
+              "mutation_barrier_failed",
+              "claim_failed",
+              "claimed_lease_unavailable",
+              "delete_failed",
+              "cleanup_incomplete",
+              "selection_failed",
+              "selection_deadline",
+              "selection_child_limit",
+              "cursor_persistence_failed"
+            ]
+          },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "unresolved_by_reason": {
+          "type": "object",
+          "propertyNames": {
+            "enum": [
+              "young",
+              "active_lease",
+              "retain_marker",
+              "coordinator_busy",
+              "mutation_barrier_active",
+              "invalid_candidate",
+              "candidate_inspection_failed",
+              "identity_inspection_failed",
+              "lease_invalid",
+              "lease_lock_failed",
+              "marker_invalid",
+              "heartbeat_invalid",
+              "age_unverifiable",
+              "unsafe_staging",
+              "coordinator_failed",
+              "mutation_barrier_failed",
+              "claim_failed",
+              "claimed_lease_unavailable",
+              "delete_failed",
+              "cleanup_incomplete",
+              "selection_failed",
+              "selection_deadline",
+              "selection_child_limit",
+              "cursor_persistence_failed"
+            ]
+          },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "scan": {
+          "type": "object",
+          "required": [
+            "directory_scan_complete",
+            "selection_limited",
+            "cursor_deferred",
+            "observed_matching_entries",
+            "selected_roots",
+            "uninspected_selected_roots",
+            "selection_omitted_observed_entries",
+            "stop_reason"
+          ],
+          "properties": {
+            "directory_scan_complete": {
+              "type": "boolean"
+            },
+            "selection_limited": {
+              "type": "boolean"
+            },
+            "cursor_deferred": {
+              "type": "boolean"
+            },
+            "observed_matching_entries": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "selected_roots": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "uninspected_selected_roots": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "selection_omitted_observed_entries": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "stop_reason": {
+              "enum": [
+                "young",
+                "active_lease",
+                "retain_marker",
+                "coordinator_busy",
+                "mutation_barrier_active",
+                "invalid_candidate",
+                "candidate_inspection_failed",
+                "identity_inspection_failed",
+                "lease_invalid",
+                "lease_lock_failed",
+                "marker_invalid",
+                "heartbeat_invalid",
+                "age_unverifiable",
+                "unsafe_staging",
+                "coordinator_failed",
+                "mutation_barrier_failed",
+                "claim_failed",
+                "claimed_lease_unavailable",
+                "delete_failed",
+                "cleanup_incomplete",
+                "selection_failed",
+                "selection_deadline",
+                "selection_child_limit",
+                "cursor_persistence_failed",
+                null
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "details": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "required": [
+              "reason",
+              "message"
+            ],
+            "properties": {
+              "reason": {
+                "enum": [
+                  "young",
+                  "active_lease",
+                  "retain_marker",
+                  "coordinator_busy",
+                  "mutation_barrier_active",
+                  "invalid_candidate",
+                  "candidate_inspection_failed",
+                  "identity_inspection_failed",
+                  "lease_invalid",
+                  "lease_lock_failed",
+                  "marker_invalid",
+                  "heartbeat_invalid",
+                  "age_unverifiable",
+                  "unsafe_staging",
+                  "coordinator_failed",
+                  "mutation_barrier_failed",
+                  "claim_failed",
+                  "claimed_lease_unavailable",
+                  "delete_failed",
+                  "cleanup_incomplete",
+                  "selection_failed",
+                  "selection_deadline",
+                  "selection_child_limit",
+                  "cursor_persistence_failed"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "maxLength": 4096
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "detail_omissions": {
+          "type": "object",
+          "required": [
+            "normal_details",
+            "issue_details",
+            "truncated_details",
+            "suppressed_normal_details"
+          ],
+          "properties": {
+            "normal_details": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "issue_details": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "truncated_details": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "suppressed_normal_details": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "description": "Janitor-owned bounded observations, not a census of remaining roots. Removed entries count acknowledged deletion operations (Windows may be delete-pending), not freed bytes. Root outcomes partition inspected_roots. Detail byte cap is 4096 UTF-8 bytes; maxLength is only a codepoint bound."
+    },
     "sessionMode": {
       "oneOf": [
         { "type": "object", "required": ["mode"], "properties": { "mode": { "const": "disabled" } }, "additionalProperties": false },
@@ -84,7 +347,7 @@
     },
     "schemaVersion": {
       "type": "integer",
-      "const": 8
+      "const": 9
     },
     "resumeOutcome": {
       "oneOf": [
@@ -533,7 +796,7 @@
     },
     "diskRunSummary": {
       "type": "object",
-      "required": ["configured_max_owned_bytes", "configured_min_free_bytes", "peak_owned_bytes", "minimum_available_bytes", "filesystems", "sample_count", "maximum_measurement_ms", "enforcement", "stop", "cleanup", "removed_logical_bytes", "stale_roots_reclaimed"],
+      "required": ["configured_max_owned_bytes", "configured_min_free_bytes", "peak_owned_bytes", "minimum_available_bytes", "filesystems", "sample_count", "maximum_measurement_ms", "enforcement", "stop", "cleanup", "removed_logical_bytes", "janitor"],
       "properties": {
         "configured_max_owned_bytes": { "type": "integer", "minimum": 1 },
         "configured_min_free_bytes": { "type": "integer", "minimum": 1 },
@@ -546,7 +809,7 @@
         "stop": { "$ref": "#/$defs/diskStop" },
         "cleanup": { "type": "array", "items": { "$ref": "#/$defs/diskCleanup" } },
         "removed_logical_bytes": { "type": ["integer", "null"], "minimum": 0 },
-        "stale_roots_reclaimed": { "type": "integer", "minimum": 0 }
+        "janitor": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/janitorSummary" }] }
       },
       "additionalProperties": false
     },

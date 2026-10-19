@@ -202,12 +202,13 @@ impl VerifiedPlan {
         self,
         stdout: Stdout,
         stderr: Stderr,
+        presentation: crate::report::ReportPresentation,
     ) -> Result<i32, String>
     where
         Stdout: std::io::Write + Send + 'static,
         Stderr: std::io::Write + Send + 'static,
     {
-        shell::run_verified(self, stdout, stderr).await
+        shell::run_verified(self, stdout, stderr, presentation).await
     }
 
     pub(crate) fn into_execution(self) -> VerifiedExecution {
