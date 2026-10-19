@@ -9,6 +9,8 @@ historical evidence. Begin with the guide for your task, then follow its linked
 contract and original sources. See the [scope and evidence guide](overview.md)
 before interpreting a historical result as a current guarantee.
 
+- [Production budget arithmetic proofs](creusot-budget-proofs.md) — same production bodies, proof maintenance and evidence boundaries.
+
 ## Start with your task
 
 The guides below own reusable procedures; concepts and dated records explain

@@ -56,6 +56,19 @@ name = "contracts"
 version = "=0.6.11"
 allow = ["MPL-2.0"]
 
+# Verification-only crates selected by cfg(creusot); normal builds exclude them.
+# Reviewed upstream license at Creusot v0.14.0, commit 65349025c67e69fcd7479f1f420fa5904f69bc27.
+# Re-review source, macro output, proof artifacts and notices on any upgrade.
+[[licenses.exceptions]]
+name = "creusot-std"
+version = "=0.14.0"
+allow = ["LGPL-2.1-or-later"]
+
+[[licenses.exceptions]]
+name = "creusot-std-proc"
+version = "=0.14.0"
+allow = ["LGPL-2.1-or-later"]
+
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"

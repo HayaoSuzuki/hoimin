@@ -2192,3 +2192,16 @@ filter. Notification tests live under the existing `tests` namespace, so that
 filter includes both modules. See the [notification-interest contract](knowledge/design/runtime-lifecycle.md#windows-root-notification-interest-issue-967)
 and [Issue 967 verification record](maintenance/2026-10-17-issue-967.md) for
 generation retention, completion evidence and formal-model limits.
+
+
+## Production budget proofs (Issue #999)
+
+`hoimin-budget-math` owns the production duration types, auto timeout and budget
+projection. Stable Rust 1.99.0 builds it without proof tools, including with all
+features. Core and CLI call that owner directly. The separate pinned Linux
+Creusot job generates and proves all three release targets from current source.
+See the [maintenance commands and proof boundary](../formal/creusot/README.md),
+[knowledge contract](knowledge/creusot-budget-proofs.md) and
+[execution record](superpowers/reports/2026-10-19-issue-999-creusot-adoption.md).
+The existing Lean corpus correspondence and runtime contracts remain required;
+arithmetic proof does not establish BudgetLedger, persistence or OS timing.

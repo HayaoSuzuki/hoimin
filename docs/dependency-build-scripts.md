@@ -1,12 +1,12 @@
 # Build script inventory
 
-Observed 2026-10-14 from locked, all-feature, unfiltered Cargo metadata.
+Observed 2026-10-19 from locked, all-feature, unfiltered Cargo metadata.
 Regenerate and review with the [dependency policy](dependency-policy.md).
 Names/versions identify build targets; their contents have not been certified.
 
 ## main workspace
 
-Graph packages: 218. Normal, build and dev dependencies included.
+Graph packages: 213. Normal, build and dev dependencies included.
 
 | Package | Version |
 | --- | --- |
@@ -35,7 +35,7 @@ Graph packages: 218. Normal, build and dev dependencies included.
 | rustversion | 1.0.23 |
 | serde | 1.0.229 |
 | serde_core | 1.0.229 |
-| serde_json | 1.0.151 |
+| serde_json | 1.0.154 |
 | stacker | 0.1.25 |
 | thiserror | 2.0.21 |
 | unicode_names2 | 1.3.0 |
@@ -46,27 +46,19 @@ Graph packages: 218. Normal, build and dev dependencies included.
 | winapi-i686-pc-windows-gnu | 0.4.0 |
 | winapi-x86_64-pc-windows-gnu | 0.4.0 |
 | windows_aarch64_gnullvm | 0.52.6 |
-| windows_aarch64_gnullvm | 0.53.1 |
 | windows_aarch64_msvc | 0.52.6 |
-| windows_aarch64_msvc | 0.53.1 |
 | windows_i686_gnu | 0.52.6 |
-| windows_i686_gnu | 0.53.1 |
 | windows_i686_gnullvm | 0.52.6 |
-| windows_i686_gnullvm | 0.53.1 |
 | windows_i686_msvc | 0.52.6 |
-| windows_i686_msvc | 0.53.1 |
 | windows_x86_64_gnu | 0.52.6 |
-| windows_x86_64_gnu | 0.53.1 |
 | windows_x86_64_gnullvm | 0.52.6 |
-| windows_x86_64_gnullvm | 0.53.1 |
 | windows_x86_64_msvc | 0.52.6 |
-| windows_x86_64_msvc | 0.53.1 |
 | zerocopy | 0.8.57 |
 | zmij | 1.0.23 |
 
 ## fuzz workspace
 
-Graph packages: 93. Normal, build and dev dependencies included.
+Graph packages: 111. Normal, build and dev dependencies included.
 
 | Package | Version |
 | --- | --- |
@@ -87,5 +79,7 @@ Graph packages: 93. Normal, build and dev dependencies included.
 | stacker | 0.1.25 |
 | thiserror | 2.0.21 |
 | unicode_names2 | 1.3.0 |
+| wasm-bindgen | 0.2.129 |
+| wasm-bindgen-shared | 0.2.129 |
 | zerocopy | 0.8.58 |
 | zmij | 1.0.23 |

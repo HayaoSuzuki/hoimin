@@ -6,24 +6,24 @@ status: draft
 sources:
 - id: development
   resource: ../development.md
-  revision: ddd80e12837632f49b7df2640b64535e33ef16db
+  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
   working_tree: modified
-  sha256: 1f7b4ff1e18fa3f7d843f302b0f4b06fe0433f620c719acaa23cbb7f1b86e670
+  sha256: a5b1c8b6cae3837fa2cfdc9c311a9ccd2183d13104dd581ac99475d59eeca3d3
 - id: pin
   resource: ../../rust-toolchain.toml
-  revision: ddd80e12837632f49b7df2640b64535e33ef16db
-  working_tree: modified
+  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
+  working_tree: clean
   sha256: b2c19d86958ed6810741488db5cd352856f303c53bcf0ea774e72f94ee4d201e
 - id: manifest
   resource: ../../Cargo.toml
-  revision: ddd80e12837632f49b7df2640b64535e33ef16db
-  working_tree: modified
-  sha256: 5d93c3c03282087fd84d1f0d5fe7d8ad766415b46aecd164b70e4df7420a0157
+  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
+  working_tree: clean
+  sha256: 3868155634f7ccdea55fb7b84ae8a783a0647121fbb9dff1a622b8cd25b0c560
 - id: ci
   resource: ../../.github/workflows/ci.yml
-  revision: ddd80e12837632f49b7df2640b64535e33ef16db
-  working_tree: modified
-  sha256: bd0a671109b8b6ec2f7b0c30194c82e78e256c0be89312b8be1c030efe017510
+  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
+  working_tree: clean
+  sha256: 865f1adb4e81c7f848cb8eb06e0f0f3d0cd223d736e44b181784700b38a91968
 - id: fuzz
   resource: ../../tools/ci_fuzz.py
   revision: ddd80e12837632f49b7df2640b64535e33ef16db
@@ -76,3 +76,13 @@ This page records the update policy adopted in Issue #739. It does not guarantee
 [^contracts]: [test_ci_workflow.py](../../tests/test_ci_workflow.py).
 [^renovate]: [renovate.json](../../renovate.json).
 [^rules]: [Pulumi.yaml](../../infra/github/Pulumi.yaml).
+
+
+# Creusot compiler pin
+
+Production budget verification uses Creusot v0.14.0 with
+`nightly-2026-08-03` inside its pinned Linux image. It shares the actual
+production math implementation with stable builds. Keep this proof compiler
+separate from stable 1.99.0 and the fuzz/random-order nightly. A tool update
+requires all three target proofs, cold/warm measurements and source/license
+review; see the [proof maintenance contract](creusot-budget-proofs.md).

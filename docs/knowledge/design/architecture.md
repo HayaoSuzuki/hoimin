@@ -20,8 +20,9 @@ sources:
   sha256: cb53d6166cfe5bff6452f9367780465b1e95f8ffeb99f529d752cefdc856f57e
 - id: c4-runtime-views
   resource: ../../architecture/c4-model.md
-  working_tree: untracked
-  sha256: f4f6faa7af1587457e50cec1f63edc80db44dcb45aad62268ca332042b8d4b80
+  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
+  working_tree: modified
+  sha256: 14802e911c96d12604fbc97ec9b2d6db7470a2b67463b97919b0474ad7a53e1e
 - id: relative-path-policy
   resource: ../../../crates/hoimin-core/src/relative_path.rs
   working_tree: untracked
@@ -104,9 +105,10 @@ sources:
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
 - id: analyzer
-  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
-  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  resource: ../../../crates/hoimin-python/src/lib.rs
+  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
   working_tree: clean
+  sha256: 07cb1fee8759b7b20d738e9533998c06e1c5679e744061265d5da4394a40be3e
 - id: issue-484
   resource: ../../superpowers/specs/2026-09-11-issue-484-metrics-destinations-design.md
   working_tree: untracked
@@ -116,7 +118,6 @@ sources:
   revision: e808dda124f8fdc7fd08ed2a49cb352bca90155e
   working_tree: modified
   sha256: 8cda66e46748a04d9971f26b5633e80a59e8ae252bbd94340b8d342800431717
-
 ---
 
 # Current C4 views
@@ -240,7 +241,7 @@ Issue 477では、path-only `.pth` に登録した元のsrcディレクトリが
 [^migration]: [2026-07-19-remove-python-libcst-design.md](../../superpowers/specs/2026-07-19-remove-python-libcst-design.md)。
 [^core]: [Cargo.toml](../../../crates/hoimin-core/Cargo.toml)。
 [^machine]: [machine.rs](../../../crates/hoimin-core/src/machine.rs)。
-[^analyzer]: [rust.rs](../../../crates/hoimin-cli/src/analyzer/rust.rs)。
+[^analyzer]: [hoimin-python/src/lib.rs](../../../crates/hoimin-python/src/lib.rs)。
 
 [^issue-484]: [2026-09-11-issue-484-metrics-destinations-design.md](../../superpowers/specs/2026-09-11-issue-484-metrics-destinations-design.md)。
 
@@ -267,3 +268,13 @@ Issue 477では、path-only `.pth` に登録した元のsrcディレクトリが
 [^candidate-path-policy]: [crates/hoimin-core/src/candidate.rs](../../../crates/hoimin-core/src/candidate.rs)。
 
 [^candidate-path-tests]: [crates/hoimin-core/tests/candidate_policy.rs](../../../crates/hoimin-core/tests/candidate_policy.rs)。
+
+
+## Production budget arithmetic boundary
+
+`hoimin-budget-math` owns duration value types, auto timeout and pure budget
+projection. Core and CLI depend directly on this crate; it has no dependency on
+state machines or OS handlers. Creusot verifies these production bodies, while
+BudgetLedger transitions and OS timing retain their separate verification scope.
+See the [proof contract](../creusot-budget-proofs.md) and
+[updated C4 view](../../architecture/c4-model.md).

@@ -11,7 +11,7 @@ cargo deny --manifest-path fuzz/Cargo.toml --workspace --all-features --locked -
 
 Both lockfiles are checked without updating them. With no target filter, the
 graph includes other OS/architecture dependencies, normal/build/dev dependencies
-and all features. The first graph includes the core, pure Python analyzer and CLI; the second
+and all features. The first graph includes the math crate, core, pure Python analyzer and CLI; the second
 is the separate development-only fuzz harness. The local vendored parser patch
 is included in both. These are Cargo graphs, not assertions that every crate
 ships in every archive. Python dependencies remain covered by uv audit and are
@@ -26,7 +26,7 @@ than another project's policy. crates.io is the only allowed registry; there
 are no git-source exceptions. Local paths are reviewed in repository diffs;
 the source check does not prove their origin or safety.
 
-The repository's Elastic-2.0 license is allowed only for `hoimin-core`,
+The repository's Elastic-2.0 license is allowed only for `hoimin-budget-math`, `hoimin-core`,
 `hoimin-python` and `hoimin-cli` in the 0.13 series and the private `hoimin-fuzz` 0.0.0 harness. The
 harness declares the license that already governs repository code. This does
 not allow unrelated ELv2 dependencies. `libfuzzer-sys` 0.4.13 has a scoped NCSA
@@ -64,3 +64,12 @@ postconditions and scalar snapshots. Its proc-macro source and return rewriting
 were reviewed before adoption; it has no custom build script. This exception
 does not admit other MPL dependencies. See [licensing](licensing.md) for the
 preserved notice and custom-build distribution guidance.
+
+`creusot-std` and `creusot-std-proc` 0.14.0 have exact-version
+LGPL-2.1-or-later exceptions for verification. `cfg(creusot)` selects them;
+ordinary all-features builds exclude them, while unfiltered dependency audits
+include them. Neither package has a custom build script; the latter executes
+as a proc macro during verification. Review its generated artifacts separately
+from the shipping dependency graph. [Licensing](licensing.md#creusot-verification-dependencies)
+records the upstream license, preserved notice, distribution boundary and
+upgrade conditions. The global allow-list is unchanged.

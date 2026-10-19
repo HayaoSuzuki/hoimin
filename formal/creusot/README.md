@@ -1,4 +1,90 @@
-# Pinned Creusot environment
+# Production budget proofs and pinned environment
+
+The production proof is `python3 tools/verify_creusot.py --output /proof-report`
+inside the pinned image, from the repository root. The runner enforces source
+and contract inventories, fresh generation, named nonempty goals, preflight
+before generation and proof, and final success for all targets. `CI result`
+requires this selected job to succeed. Ordinary stable builds need none of the
+proof tools. See the [adoption record](../../docs/superpowers/reports/2026-10-19-issue-999-creusot-adoption.md)
+for source revisions, independent reviews and archived execution evidence.
+
+For a local Linux x86_64 checkout, build the image below, create an empty report
+directory, then use the same invocation as CI:
+
+```sh
+mkdir -p /tmp/hoimin-creusot-report
+docker run --rm --platform linux/amd64 \
+  -v "$PWD:/workspace" -v /tmp/hoimin-creusot-report:/proof-report \
+  -e CARGO_TARGET_DIR=/tmp/hoimin-issue999-target -e CARGO_BUILD_JOBS=2 \
+  --workdir /workspace hoimin-issue999-creusot:local \
+  python3 tools/verify_creusot.py --output /proof-report
+```
+
+Use a fresh report directory per run. The runner removes only its generated
+crate output and cleans only `hoimin-budget-math` for the selected target. It
+keeps the strategy files under `formal/creusot/proofs` as inputs and invokes the
+solvers again. Absolute spans resolve diagnostics against that run's source
+checkout; regenerate after moving the checkout instead of expecting archived
+absolute paths to resolve elsewhere.
+
+## Repairing and updating proofs
+
+Read the failing target's `generation.log` or `proof.log` and `summary.json`.
+First reproduce with the pinned environment and current source. Compiler errors,
+missing tools, invalid inventories and timeouts are failures, not unproved
+mathematical counterexamples. For a final unproved goal, inspect its named
+contract and the actual production body; keep all public typed input domains.
+After changing contracts or bodies, review `obligations.json` against the eight
+requirements and regenerate on all three targets. To repair a stale strategy,
+run the manual generation/proof commands below without `--replay`, save the
+resulting target's `proof.json` files in its strategy directory, and finish with
+the full runner's fresh no-cache replay. Retain compiling negative sensitivity
+cases as evidence; a parse failure does not establish contract sensitivity.
+
+Tool updates change the exact source/artifact hashes, version lines, configs,
+receipts and relevant manifests together. Rebuild, rerun environment negative
+tests and all targets, then measure native cold and warm setup-inclusive CI.
+Review both lockfiles, licenses, proc-macro output and distribution inputs.
+Do not increase the accepted solver/job limits to hide a regression. Stable
+Rust 1.99.0 and the unrelated fuzz/random-order nightly remain separate pins.
+
+## Accepted native cost and proof scope
+
+At source `41c888f5`, native Linux x86_64 run `39191762043` measured 240 seconds
+warm (tool-image cache hit) and 942 seconds genuinely cold (cache miss), including
+setup. The proof runners took 153.348 and 152.438 seconds. Both regenerated
+25 Coma files and proved 59 goals per target. Cold generation peaked at
+1,507,040 KiB process-or-child RSS; cold proof at 273,260 KiB. The cold tool-build
+step peaked at 1,087,072 KiB RSS. Image size was 3,933,017,305 bytes and the saved
+tar used 3,976,204 KiB. After cold completion the runner had 81,462,316 KiB disk
+and 14,483,712 KiB memory available. These are observed process/host figures,
+not an aggregate whole-environment RSS bound. The earlier failed cold run
+`39190445969` is retained in the report as a failed attempt.
+
+At code checkpoint `5033e1bb`, native warm run `39197995202` passed in
+247 setup-inclusive seconds (runner 156.09 seconds), with 25 files / 59 goals
+per target and no source-span warnings. Its generation/proof peak process-or-child
+RSS was 1,514,396 / 273,676 KiB. Task 5's current-lock ARM64 development replay
+also passed in 34.133 seconds without source-path warnings. It does not replace native final
+CI or native Windows/macOS regression tests. The report identifies those results
+by their actual commits and runs.
+
+The arithmetic contracts cover all public `usize`, positive `NonZeroUsize`,
+`Duration` and positive fixed durations. They do not prove BudgetLedger state
+transitions, reservation ownership, persistence, process scheduling, wall-clock
+timing, OS APIs, serialization or unsupported targets. Lean corpus correspondence,
+property tests, native process tests and runtime contracts cover separate parts
+of the system. The top-budget projection remains warning-only.
+
+The annotation/equality/reconstruction change (`17135904..68ea9956`) added 119
+and removed 7 source lines across the three math modules, a net 112 lines.
+The final modules total 238 lines; the explicit obligation inventory is 413
+lines and the runner is 640 lines. These counts include whitespace and comments;
+they describe maintenance size, not proof strength. Five compiling sensitivity
+changes to ceiling, capacity saturation, auto timeout, strict shortfall and
+structural equality each failed their corresponding proof goal.
+
+## Environment installation
 
 `toolchain.json` records the Linux x86_64 installation inputs, source revisions,
 SHA-256 hashes, exact executable version lines, configuration hashes and required
@@ -51,7 +137,7 @@ This also requires a project-local `why3find.json` and compares its exact
 content hash with the pinned `project_config` entry in the manifest. Missing
 or altered project settings, including prover selection, time and tactics,
 fail closed. The installation-only command does not establish a project's
-effective Why3find configuration. Task 3 and Task 4 must run the proof check
+effective Why3find configuration. The production runner performs this check
 against the actual project root before using `cargo creusot` there; the root
 must match the workspace root selected by cargo-creusot.
 
@@ -135,7 +221,7 @@ three targets. It repeats with warm build caches, touching only the temporary
 sample source so Cargo actually regenerates each Coma file; `--no-cache`
 forces a solver run for every proof. The generated crate and caches disappear
 with `--rm`. This is a tool smoke, not the product's arithmetic verification.
-Task 4 must use its own source-freshness and proof-status gates.
+The production runner adds source-freshness and proof-status gates.
 
 On this Rancher Desktop host, a bind mount from `/tmp` into the Docker VM
 failed because the VM did not see that source path. Streaming the script on

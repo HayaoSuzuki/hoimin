@@ -1,0 +1,202 @@
+# SDD ledger — plan: docs/superpowers/plans/2026-10-19-issue-999-creusot-adoption.md
+
+Base: b65f62834b35a9ff85795b041e9687b21e5c51ba
+Approved specification: docs/superpowers/specs/2026-10-19-issue-999-creusot-adoption-design.md
+Execution approved by user: はい、進めて. No pending approval.
+
+## Preflight
+
+| Tasks | Checked producer/consumer or internal consistency | Finding |
+| --- | --- | --- |
+| 1 | API/Serde extraction, callers and regression/package tests | Consistent; positive constructor decouples ConfigError via Option mapping. |
+| 2 | Pinned manifest/install/check CLI and failure tests | Consistent; smoke generation is not claimed as arithmetic proof. |
+| 3 | Production contracts, all eight requirements, target proof and sensitivity | Consistent; no trusted local holes. |
+| 4 | Actual proof commands/coverage manifest to fail-closed runner and CI | Consistent; all three targets required, skip fails when selected. |
+| 5 | Evidence/docs/distribution to branch acceptance | Consistent; completion requires actual execution evidence. |
+| 1 / 2 | Shared durable review file only | Sequential writes. |
+| 1 / 3 | Math crate API and locks | Same production API; proof-driven equivalent refactors allowed with regression tests. |
+| 1 / 4 | Math crate consumed by proof runner | Runner uses crate rather than a duplicate implementation. |
+| 1 / 5 | Packaging and durable review record | Task 5 full distribution acceptance may repair concrete Task 1 gaps. |
+| 2 / 3 | Environment manifest/check and README | Task 3 uses Task 2 pinned tools. |
+| 2 / 4 | Environment check CLI, resources, README | Runner/CI consume preflight; total setup plus proof cap unchanged. |
+| 2 / 5 | Environment measurements and README | Final docs distinguish measured and unmeasured resources. |
+| 3 / 4 | Named obligations, strategies and actual CLI commands | Task 4 must use proven command syntax and fresh generated obligations. |
+| 3 / 5 | Proof evidence/README | Task 5 documents trust and sensitivity, not new unsupported claims. |
+| 4 / 5 | Runner/CI results/README | Final acceptance uses actual mandatory gate. |
+
+## Progress
+
+- Requirements: five self-reviews archived in approved spec.
+- Design: five self-reviews archived in approved spec.
+- Plan: five self-reviews archived in plan.
+- Task 1: complete; production extraction and independent review passed.
+- Task 2: complete; pinned environment and scoped fix review passed.
+- Task 3: complete; all three targets and five sensitivities verified, independent review approved.
+- Task 4: complete; mandatory CI, two scoped fix rounds and independent review passed.
+- Task 5: in progress; distribution/license/OKF integration, latest native/non-Linux acceptance and final review.
+
+- Issue #999 title/body updated to approved production-adoption conditions.
+- Task 1 BASE: 7110f2ef; dispatch pending.
+
+- Task 1 implementer: /root/issue999_math_extraction (gpt-6.1-sol high), baseline in progress. Clarified CLI direct dependencies/callers are within migration scope, no core compatibility reexports.
+- Environment read-only facts: /tmp/hoimin-issue999-design-mnk8miii/environment-handoff.md.
+
+Ruling: Replace the Task 1 plan's quotient/remainder test expectation with an independent minimal-covering-wave property and widened additive ceiling in the capacity oracle — the original planned expression mirrored production and weakened defect detection; the approved mathematical contract is unchanged — if wrong, tests may reject correct arithmetic or need target-width adjustments.
+
+- Task 1 implementation: commits b63329d7 and e5ce0c6d; full Rust 2916 passed/33 ignored, Python1100 passed/11 skipped, follow-up crate35 passed, targeted mutation killed1, hooks passed. Final cargo-deny execution is deferred to dependency acceptance after proof dependency introduction (not yet installed).
+- Task 1 independent reviewer: /root/issue999_math_review; package review-7110f2ef..e5ce0c6d.diff; review pending.
+
+- Task 1: complete (commits 7110f2ef..e5ce0c6d, review clean).
+- Reviewer cannot-verify resolved: active worktree rustc1.99.0(b940084d7 2026-09-28), cargo1.99.0(5f94df478 2026-08-27), matching toolchain pin. Actual cargo-deny remains an explicit Task5 final dependency gate after Task3 adds proof dependencies.
+
+- Task 2 BASE: 685e71aa; implementer /root/issue999_proof_environment (gpt-6.1-sol high). Real environment setup pending; no proof claimed.
+- Resource enforcement research: Why3find relative/calibrated time is not a hard30s wall limit; handoff recorded and Task2 owner notified.
+
+- Task2 live milestones: pinned Ubuntu AMD64 image runs x86_64 through ARM64-host emulation. Source archives/checksums and dated Rust manifest hashes resolved. Initial 3 cold attempts stopped before tool installation due CA bootstrap/parent-directory execute permissions (~8s/~6s/~6s), all logged separately; TLS/signature checks retained. Fourth emulated no-layer-cache build start1792369881.844/deadline1792371681.844; context/logs /tmp/hoimin-issue999-cold-context. Pre-pulled base and original pull time must be distinguished from full native cold acceptance.
+- Task2 focused preflight30 tests pass, lint/types clean; missing/version/config/receipt/PATH/environment mismatches covered. OR-to-AND version-check mutation killed with passing baseline5858ms/mutant6231ms and clean cleanup. Full Python rerun in progress after environment-only sandbox/cache failures.
+- Future Task3 proof research and dependency/license boundary: /tmp/hoimin-issue999-design-mnk8miii/proof-handoff.md. Official creusot-std/proc manifest LGPL declarations identified; investigate cfg(creusot)-only annotation dependency without alternate production bodies, retain narrow policy/source/notice review.
+
+Ruling: Use native Linux ARM64 locally for tool development while retaining the same pinned source versions, arithmetic implementation, three proof targets and the Linux x86_64 CI recipe — emulated AMD64 installation was still copying rustc-dev after 624.456s, so repeating it would waste the local resource budget; actual native x86_64 cold/warm measurement including setup remains mandatory in Task4 — if wrong, maintaining a second host-artifact manifest adds work and host-specific failures may require further CI repair. No proof scope or resource cap is relaxed.
+
+- Task2 emulated attempt4 stopped with exit130 at624.456s; diagnostic logs preserved. Native ARM64 final-recipe cold run starts1792370548.006/deadline1792372348.006, includes base pull, task tag hoimin-issue999-creusot-arm64:local. This is development measurement, not native x86_64 acceptance. Python1130 passed/11 skipped; focused mutation killed.
+
+Ruling: Enforce each solver's30s wall-time and2GiB process budget using actual Linux timeout plus prlimit(RLIMIT_AS), in addition to Why3 configuration — Why3find calibrates its own time and cannot alone meet the accepted hard limit; address-space limiting is a stricter implementable process limit, not an aggregate RSS guarantee — if wrong, a solver needing more virtual address space despite modest resident memory may fail and require an alternative equally strict enforcement design, without silently relaxing caps. Task2 validates the effective executables/configuration and smoke; Task4 owns full orchestration and failure semantics.
+
+- Native environment at224s: all three target standard-library metadata compilations succeeded; OCaml build in progress. VM32GiB free and~3.66GiB available memory; unrelated13 containers preserved. No mathematical proof claimed.
+
+- Task2 first native cold attempt failed after tool-stage256.9s: OCaml5.3.0 built successfully, then OPAMREQUIRECHECKSUMS rejected the local already-SHA-verified Why3 source pin because no opam url checksum was attached. Agent owns fixing local registration while retaining remote dependency checksums and splitting costly build stages. Native build.log retained; no proof success inferred.
+
+- Task2 Linux resource smoke: actual GNU timeout9.4/prlimit2.39.3 verified; AS2GiB child observed2097152KiB, small AS1MiB fixture rejected127 without large allocation; exact30s timeout returned137 and descendant was gone (whole docker probe30.581s). Final config uses absolute limit tools. Native attempt1 total324.107s / tool-stagepeakRSS521824KiB. Native attempt2 final separated recipe starts1792371015.278/deadline1792372815.278.
+
+- Native attempt2 at183s: components layer75.29s/peakRSS158772KiB, all three target metadata compilations pass. OCaml in separate layer. VM30GiB free/~3.29GiB available memory. Final Task2 Python suite1132 passed/11 skipped in41.64s after limit-tool additions; Creusot generation still pending.
+
+- Native attempt2 failed outer287.146s (tools44.78s / peakRSS421924KiB) because checksummed local opam fetch needed missing rsync. Added signed-snapshot dependency downstream; corrected actual local-switch _opam paths in PATH/manifest/symlinks.
+- Warm retry3 /tmp/hoimin-issue999-native-warm-context-3 starts1792371380.323; Rust/OCaml cached, checksummed pinned Why3/Why3find fetched. Failed outer67.206s at Why3 Makefile: release opam recipe make-j2 all byte races multiple Dune instances. Agent corrects outer make-j1 with DUNEJOBS=2 from pinned Makefile and separates Why3/Creusot cache stages. These setup failures are repair evidence, not cap/proof acceptance.
+
+- Clarification to local-ARM/native-x86 ruling: Task2 cold starts and repair attempts remain measured separately; successful layer reuse establishes the working local environment, not final cold acceptance. Avoid a redundant final ARM64 no-cache rebuild. Task4 must execute the final full recipe cold/warm on native Linux x86_64 with all three proofs and the unchanged30min setup-inclusive cap. Plan and Task2 brief now spell out these stage boundaries.
+- Warm4 start1792371544.052/deadline1792373344.052, log/tmp/hoimin-issue999-native-warm-context-4. Why3 stage64.65s/peakRSS422028KiB succeeds; Creusot compilation underway. VM29GiB free/~2.82GiB available at102s.
+
+- Warm4 Rust release build succeeded49.89s / peakRSS1053448KiB. Later prelude-generator direct invocation failed because pinned upstream reads CARGO_MANIFEST_DIR at runtime. Agent switches to official cargo-run invocation and moves generated prelude/final configuration into final layer to preserve built binaries. This is an installer invocation repair; pinned source unchanged.
+
+- Warm5 strict preflight rejected an outdated expected CVC5 banner after all binaries/prelude built; exact actual approved ARM64 banner verified. AMD64 CVC5 archive SHA verified and emulated version-only run confirms identical cvc5 1.4.1 [git 2b2e844 on branch HEAD]; temporary probe artifacts cleaned.
+- Warm6 starts1792371962.597/deadline1792373762.597 in/tmp/hoimin-issue999-native-warm-context-6. Final configuration preflight passes all11 real executables, exact banners, PATH/env, receipt/config/runtime library hashes in5.4s; heavy layers cached. Image export50.2s, unpack pending. Actual generation/proof smoke remains pending.
+
+- Task2 original implementer /root/issue999_proof_environment failed at provider capacity after final image completed. No code failure or task restart: continuation owner /root/issue999_environment_finish (gpt-6-sol high) receives same brief/report/BASE685e71aa and uncommitted state. Warm6 image export/unpack finished successfully; actual ordinary-crate smoke, final evidence/hooks/commit remain. No active competing implementer.
+
+- Task2 actual ordinary-crate smoke: final image LinuxARM64 size1297286234bytes, all11 executable preflight passes. x86_64-unknown-linux-gnu generated1002-byte Coma (hash8f52b6e4...), fresh no-cache-j2 vc_add_one proof passes. Generation17.44s/peak processRSS1500452KiB; proof2.25s/peak271008KiB. macOS/Windows and fresh warm repetition follow; these are environment smoke, not production arithmetic proofs.
+
+- Task2 ordinary-crate actual3-target smoke passed: Linux generation17.44s/proof2.25s; macOS15.42s/2.42s; Windows14.83s/3.57s; all named vc_add_one proved no-cache. Unchanged warm Cargo skipped generation (0.02–0.03s), explicitly not counted as fresh generation. Separate source-mtime-triggered fresh-warm probe is in progress. Actual container Python3.12.3 recorded for Task4 compatibility.
+
+- Task2 implementation complete commit336be05e62a3ec6cf47e4949d7e195804d79c177 (BASE685e71aa). Focused32 pass, lint/types/syntax/manifest consistency and3-target first/fresh-warm ordinary proofs pass; full Python1132/11skip reused. Native x86cold/warm fullproduction gate stillTask4. Independent scoped reviewer /root/issue999_environment_review (gpt-6-sol high) dispatched with review-685e71aa..336be05e.diff. Review pending; do not begin Task3 implementation yet.
+
+- Task2 independent review: Spec Issues Found / Needs fixes; one Important: preflight validates installed Why3find template, but actual project-local why3find.json may drift. Report task-2-review.md. Fix round1/5 dispatched to /root/issue999_environment_finish atBASE336be05e; require explicit effective project validation + controlled drift/missing tests and actual scoped container/smoke. No open Critical/Minor. Native x86 fullcold/warm remainsTask4, as reviewer agrees.
+- Reviewer cannot-verify observations: actual tool/preflight/smoke/resource/mutation measurements are in task-2-report.md and task-owned logs; controller has inspected build/preflight logs and report, and will retain the named full evidence durably before final workspace cleanup. No missing acceptance evidence is inferred from absence in source diff.
+
+Ruling: Split installation self-check (check-installation) from proof preflight (check with required project-root) — the original manifest-only command could not validate a future project-local Why3find configuration, as independent review demonstrated; actual proof now requires the exact selected project config — if wrong, the extra CLI distinction and callers will need rework, but it must not silently accept unknown or drifted proof configuration. Plan/Task2 brief updated; Task3/4 callers must use proof preflight.
+- Task2 fix1 RED observed4 selected-project missing/drift cases returning0 before fix; GREEN38 focusedtests pluslint/types/syntax. First warm rebuild invalidated components cache due context gid difference; task-owned build interrupted at26s before heavy stages, then prior-context metadata retained for final-stage-only retry.
+
+- Task2 fix1 second metadata-matched cache retry also missed components COPY; task client stopped~13s before heavy compile. Controller accepted local overlay validation FROM existing verified ARM64 image, with same changed final-stage COPY/configure/ENV/WORKDIR/CMD, then actual selected-project preflight/smoke. This is warm local overlay evidence only; unchanged native x86 final-recipe fullcold/warm acceptance staysTask4. Preserve existing image/unrelated containers; avoid more blind cache retries.
+
+- Task2 fix1 complete commit09226fa851403de0152b9c48094503023e9172dc, worktree clean. Covering38 tests/lint/types/syntax/hooks pass. Actual fixed local overlay hoimin-issue999-creusot-arm64:fix1-local validates selected project, rejects drift/missing, and first/fresh-warm3-target smoke yields six named proved goals. Scoped re-review pending on fix-only336be05e..09226fa8; native x86 final-recipe gate remainsTask4.
+
+- Task 2: complete (BASE685e71aa..09226fa8; fix round1 independently approved, all findings addressed, no new Critical/Important or outside-scope findings). Root inspected selected-project rejection logs and six fresh named goal proofs. Review archived task-2-fix1-review.md; native x86 setup plus production acceptance remains Task4.
+
+- Task 3 BASE: 17135904; implementer /root/issue999_production_proofs (gpt-6-astra high). Actual production proof task dispatched after Task2 review completion. Same production body/all eight clauses/three targets, no local trust holes; fixed local image and mandatory selected-project preflight handed over.
+
+- Controller archived Task2 actual selected-project checks, fixed-overlay recipe/build, first/fresh-warm smoke and hard-limit probe under evidence/task-2 with SHA256 manifest (temporary SDD archive; Task5 must retain necessary evidence durably before scratch deletion).
+
+- Task3 initial milestone: owned Linux ARM64 container hoimin-issue999-task3 uses fixed image; actual workspace project preflight passes all11 tools. Conditional annotation dependency/contracts added; first production generation running, no proof success claimed. Workspace-root configuration is required by actual cargo-creusot selection.
+
+- Task3 first successful production generation: Linuxx86 target generation-6.log, warm0.26s/peak186036KiB. Actual unsupported u64::try_from(u128) translates to contractless_external_function impossible precondition; bounded no-cache proof RED running before equivalent range-proved production cast refactor. cfg(creusot)-only registry creusot-std0.14.0 activation demonstrated. Annotation syntax/View/DeepModel repairs logged by implementer. No successful production proof yet.
+
+- Task3 initial bounded proof proves auto timeout, wave/projection contract, constructor/accessor and strict shortfall. Remaining real proof gaps include unsupported TryFrom and standard derived PartialEq trait refinements without contracts; these are not a full accepted proof.
+
+Ruling: Use common handwritten PartialEq bodies with proof-only contracts for the three small production value types, rather than conditional standard-versus-Creusot derives — the approved same-runtime-body guarantee should not depend on two macro expansion paths remaining equivalent; this is an equivalent production refactor within the spec — if wrong, explicit field comparisons add maintenance cost and may merit a future common contracted derive. Structural DeepModel contracts must detect omitted fields, and normal equality behavior remains regression-tested.
+
+- Task3 first complete Linux-target production proof: all25 generated Coma files proved with no-cache-j2, proof9.73s/peak271200KiB. Initial RED48.54s included impossible conversion and four equality/refinement failures. Common equality bodies plus structurally specified DeepModel and bounded exact Duration reconstruction resolved them. Other two targets, sensitivity and stable/regression remain pending. Local host remains ARM64; this is not native x86 CI acceptance.
+
+- Task3 stable full-workspace regression completed exit0:2916 passed/0 failed/33 ignored across171 suite/doc summaries, compile2m33s; log task-3-evidence/stable-workspace.log and summary JSON. No environment failures/repeated full run. Workspace all-target/all-feature Clippy running before sensitivity and final restored-source3-target proof/replay.
+
+- Task3 workspace all-target/all-feature Clippy passed21.84s after removing only an unfulfilled expect annotation. First sensitivity (ceil) compiled and left vc_project_top_budget unproved (11/12 split goals); final restored-source3-target proof still pending. Additional equality-field-omission sensitivity covers the new common manual equality boundary.
+
+- Task3 five sensitivities all compiled and produced corresponding unproved goals: ceil, duration saturation, auto multiplier, strict equality boundary, structural-equality field omission. Isolated actual production source copies restored in finally, host source untouched. Final sequential3-target fresh cold-crate generation/proof plus fresh warm no-cache replay now running with whole-source hashes; environment setup itself remains cached local ARM, not native x86 cold acceptance.
+
+- Task3 final three-target actual proof milestone: each target separately generated25 Coma/59 named goals, proved and freshly regenerated/replayed no-cache. Six-run sequence121.98s, maximum processRSS1490344KiB; proof runs8.67–10.62s. Whole-source hashes unchanged and match host. Root inspected final/summary.json. This is cached local ARM tool environment with cold crate builds, not native x86 full-setup cold measurement. Report/docs/commit pending before independent task review.
+
+- Controller inspected all six final proof logs: each has59 named goal lines, no error/unproved lines and exit0; all five sensitivity proof logs contain exactly the reported unproved-file diagnostic. Final report will provide source checks and generation commands. Task5 brief prepared only (not dispatched), with remaining dependency/distribution/durable-evidence requirements.
+
+- Task3 implementation complete commit68ea9956d63c13033a4f4a4153099e3e08cebd89 onBASE17135904, clean worktree, all normal hooks passed. Task-scoped independent reviewer /root/issue999_proofs_review (gpt-6-astra high) dispatched with review-17135904..68ea9956.diff/report/actual evidence. Native x86 CI and final dependency-license integration explicitly remain Tasks4/5. Do not dispatch Task4 implementation until review resolves.
+
+- Task 3: complete (BASE17135904..68ea9956; independent spec PASS/quality Approved, no Critical/Important/Minor findings). Reviewer checked eight clauses, common production bodies, typed domains, exact reconstruction, source hashes, generated Coma markers/invariants, six59-goal proof rounds and75 saved target strategies. Full report archived task-3-review.md.
+
+- Task4 BASEdeb729be; implementer /root/issue999_mandatory_ci (gpt-6-sol high). Full runner/strict source+generated scope/freshness, mandatory CI integration, native x86 cold/warm acceptance assigned. Root owns feature-branch push/workflow dispatch after local checkpoint commit; no image publication. Source/proof environment and all prior reviews complete.
+
+- Root read-only GitHub preflight confirms active CI workflow316067689 at .github/workflows/ci.yml supports workflow_dispatch; gh supports feature-branch --ref. No branch push or CI dispatch performed yet; awaiting Task4 validated checkpoint.
+
+- Task4 milestone: source/generated/proof validators17 focused tests pass; initial RED was absent module (not behavioral assertion evidence). CI selector/job tests observed behavioral RED;103/105 current tests pass before expected test updates. Three-target orchestration fixtures and actual container execution follow. Root requested report distinction plus focused guard mutation to establish behavioral negative-path coverage.
+
+- Task4 actual local pinned-container runner passed all3 targets in34.463s with warm crate caches: fresh25 Coma/59 goals each, no-cache replay, six actual project preflights. Agent found cumulative getrusage was unsuitable for per-step RSS and is fixing measurement before acceptance reruns. CI artifacts will include run_id/run_attempt.
+- Concrete lifecycle follow-up during Task4 implementation: root inspected current timeout branch killpg(rootPID), then official GNU coreutils9.4 timeout.c479–484 showing timeout creates its own PGID. Root informed owner that outer cancellation must stop owned solver groups too, and requested a focused real separate-PGID child test without touching unrelated processes or weakening caps. No actual hanging solver was observed; this is source-established ownership risk, not a new review round. Reference https://raw.githubusercontent.com/coreutils/coreutils/v9.4/src/timeout.c.
+
+- Task4 real Linux lifecycle RED/GREEN: separate-PGID owned sleeping child survived old outer-deadline cleanup (stateS; exact child then manually killed). New session-scoped cleanup terminated it (stateZ, not claimed reaped); handles interrupts, unchanged solver configs/caps. Root requested leader-group stop/kill before child-group enumeration so live Why3find cannot schedule replacement solvers during cleanup; keep leader unreaped until cleanup completes to retain session identity. Owner addressing ordering before final acceptance.
+
+- Task4 corrected local runner: cold crate-cache three-target run81.379s; fresh warm replay also passed, each25 Coma/59 named goals/25 strategies. Generation peak1491140KiB/proof peak271264KiB; these remain ARM local development evidence. Leader-first session cleanup order has focused RED/GREEN coverage.
+- Root cache-key inspection found effective formal/creusot/why3.conf absent from both CI image hashFiles keys despite configure.sh installation and toolchain.json pin. Sent concrete implementation follow-up to include all effective recipe inputs and focused assertion before checkpoint; native CI not yet dispatched.
+
+- Task4 checkpoint update: missing why3.conf cache-input assertion observed RED then fixed both keys. Full Python1179 passed/12 skipped with required process access and owned uv cache; source-guard mutation killed after correcting the worker fixture inclusion (initial missing ignored fixture is not mutation evidence). Focused post-fix format/workflow checks in progress; no heavy build active.
+
+- Task4 checkpoint09a1d1b5 committed and pushed; focused119 passed/1macOS skip, formatter/linter/workflow lint pass; no repeated Rust run. Native x86 CI dispatched at https://github.com/HayaoSuzuki/hoimin/actions/runs/39190445969 from approved feature branch. Root owns artifact capture/warm rerun; owner completes report during cold run. No PR yet.
+
+- Native CI39190445969 workflow-lint failed105 passed/24 setup errors because Task4 test fixture referenced ignored SDD Task3 evidence absent from checkout. Full job117861860144 log retained under task-4-evidence/native-ci. Owner directed to track minimal real generated test fixture/provenance and validate in clean tracked archive; earlier mutation fixture issue was portability symptom, not solely harness context. Native proof image build continues independently.
+
+- Task4 fixture portability fix e248f5e8 pushed. Only tests/fixtures/creusot and tests/test_verify_creusot.py changed; runner/math/tool recipe unchanged from09a1d1b5. Owner reports clean git-archive focused29 pass/1macOSskip, broaderfocused119/1skip, lint/typecheck and fresh guard-removal mutation killed. After cold proof image cache is saved, root will dispatch updated feature ref for warm measurement plus repaired workflow tests instead of rerunning oldSHA (which would retain missing fixture). No simultaneous cold image rebuild.
+
+- Native cold proof job117861897121 failed after798s: pinned x86 image construction/install preflight and cache save succeeded, but Python3.12 rejected final formatted runner line318 (`except OSError, IndexError, ValueError:`). Actual local3.12 execution preceded final formatter rewrite and is not final-commit acceptance. Image485a192b... / cachecreusot-amd64-c1c5dcc3fff807a83a5fcbfb453e70a4b03ef1c8eaddc3be9d46330d0a211c9b retained; failed artifact/setup and full log saved task-4-evidence/native-ci. Owner fixing per-file Python3.12 formatter/compatibility regression with actual final-source container rerun. Native warm diagnosis then separate genuine fullcold acceptance remains required; no cap relaxation or stitched success.
+
+- Task4 Python3.12 repair41c888f5 pushed: tuple exception syntax restored; Ruff per-filepy312 target and AST3.12 regression RED/GREEN. After allhooks/format, actual container3.12 py_compile/help and complete3targetfreshproofpassed37.827s. Focusedworkflow121pass/9skip. Native warm retry dispatched at https://github.com/HayaoSuzuki/hoimin/actions/runs/39191762043 on41c888f5. After warm acceptance, exacttaskcache eviction and same-SHA proofjob rerun will obtain genuine fullcold evidence.
+- Initial native run39190445969 completed: Quality/corepurity/Rust/randomized/fuzz/Lean/Contracts/Cross-boundary/Linuxbest-effort allsuccess; missingfixture causedworkflow-lint/Wheelsmokefailure, Python3.12syntax causedproofjobfailure, aggregatecorrectlyfailure. No coldproofacceptance claimed.
+
+- Native warm accepted run39191762043/job117865951824 at41c888f5: toolcache hit, jobelapsed240s, runner153.348s, all3targets25freshComa/59provedgoals, generationpeak1,510,704KiB, output262421bytes. Full artifacts/log/metadata retained under task-4-evidence/native-ci/accepted-warm and sibling files. Exact ownbranch cache9139081989 was evicted for genuinecold. GitHub CLI rejected job rerun while remainder of workflow stillrunning; wait for completed run before retry, without duplicatefullworkflow.
+
+- Native run39191762043 attempt1 overallSUCCESS, finalwarmmetadata archived. Same-SHA Creusot-only rerun accepted after workflow completion; attempt2 genuinecold nowrunning. Existing read-only manual non-LinuxCI dispatched at https://github.com/HayaoSuzuki/hoimin/actions/runs/39192791500 on41c888f5 to validate normal macOS/Windows quality/Rust/wheels and test portability duringcoldwait. This is verification, no Task5 implementation dispatched; reuse its unchanged-code evidence in final acceptance.
+
+- Non-Linux run39192791500: macOS/Windowsqualitypass, macOSwheelsmokepass. Windowswheel job117869024557 failed13/1147pass/33skip: eightPOSIXfakeexecutable environmenttests, twoLinuxprocessAPItests, twoprooflogfixture/parsercases, one mathCargo.toml sdistLFvsCRLFbytecase. Full log saved task-4-evidence/native-ci/windows-wheel-117869024557.log. Task4owner assigned concrete narrowintegrationfix (including earlierTask1/2tests), preserveportablecoverage, noWindows proofruntime scopeexpansion. Nativecold41c888f5 continues; proof/math/toolrecipeunchanged.
+
+- Windows portability fix4d4a3ec6 pushed: only.gitattributes/exactmathCargoLF and two testfiles; runner/math/toolrecipe/workflow unchangedvs41c888f5. Focused100pass/1macskip, lint/types, simulatedcore.autocrlf=truecheckout598bytes/0CRLF verified. Eight failing plusfourspuriouslypassingPOSIXfaketoolcases nowproperlydeclared; portablevalidators/orchestration remainenabled. Actualcp1252 logfixture decoding fixedexplicitUTF8. UpdatednonLinuxCI dispatched https://github.com/HayaoSuzuki/hoimin/actions/runs/39193858954; finalacceptance awaitsresult. Nativecoldattempt2 nowpastsetupinactual3targetproof.
+
+- Native cold acceptance: run39191762043 attempt2/job117868832092 at41c888f5 SUCCESS (entireworkflowSUCCESS). Actualcachemiss, setup-inclusive942s; runner152.438s; eachtarget25freshComa/59provedgoals/25strategies. Generationmaximumprocess-or-childRSS1,507,040KiB; toolbuildmaximum1,087,072KiB; output262429bytes. Root inspected accepted-cold/setup.txt and summary.json; full logs/metadata retained. Same41sourceasacceptedwarm240s; later4dcommitonlytest/EOLportability. No caprelaxation. Task4owner notifiedtofinalize report/durable note before independentreview.
+
+- Prior nonLinux39192791500 finalmetadata alsohas WindowsRust117869024599failure: stop_preserves_accepted Lean correspondence expectedacceptedm0, actualemptyresults/exit4. Root archivedfull log and focusedread reveals Windows1s total-timeout path lacks Unix durable-result premise guard(12s). Concrete test-timinghypothesis handedtoTask5 integration, not declaredfixed; Task4 arithmetic/proofunchanged. AllotheroldnonLinuxjobspassexceptWinwheel.
+
+- Task4 finalimplementation/report commit4137a294 clean; independentreview /root/issue999_ci_review(gpt-6-astra high) dispatched with fullBASEdeb729be..4137a294diff. UpdatednonLinux39193858954: macOS/Windowsquality, bothwheels, Windowspurity/metrics/resourcejobsSUCCESS; Rustjobsstillrunning. Winwheelfixacceptance log117872253173saved.
+
+- Task4 scopedreview interimreproducers: alternate Rustattribute spellings(all(creusot)/namespacedrequires) can bypasspublicdomaincontractguard; generatedComamarker/count checks alsoaccepta strengthenedprecondition. SeparateSIGTERMtestleavesownednew-sessionchildlive (reviewercleaned it). Currentapprovedcontracts/proofs remainintact; waitfullreportthenconsolidatedfixround1. No passing-suitererunrequested.
+
+- Task4 independentreview specFAIL/qualityNeedsfixes: twoImportantfindings(contractattribute/preconditionguardbypass andSIGTERMowned-sessioncleanupgap). Fullreporttask-4-review.md. Fixround1 BASE4137a294 assignedsameimplementer; scopedrereviewrequired. CannotverifyfinalWindowsintegrationassignedTask5; Task3approvedstable/allfeatures/Leanevidencealreadyexistsandfinalgatesremainrequired.
+- Task4: minor(deferred): relativeComaspanpathsproduce393inexistent-sourcewarningspertarget; proofsvalidbutdiagnosticnoise/source locationsneedresolutionorpreciselimitationdocumentationinTask5/finalreview. No unrelatedwarningssuppression.
+
+Read-only Task5 preparation byroot duringTask4fix: official cargo-deny0.20.2 downloadedfrom https://github.com/EmbarkStudios/cargo-deny/releases/tag/0.20.2 to /tmp/hoimin-issue999-audit-tools/cargo-deny-0.20.2. Official APIassetdigest and publishedchecksum matched SHA256 fe67d82a10d8597a3549364cb733a3f9cc1bfff9031b7ae46384a9f2a72090c3. Executable /tmp/hoimin-issue999-audit-tools/cargo-deny-0.20.2/unpacked/cargo-deny-0.20.2-aarch64-apple-darwin/cargo-deny prints0.20.2. No systeminstallation orsourcechanges. Both exactpolicycommands(allfeatures/locked/notargetfilter) runagainstHEAD4137a294 withTask4runner-onlyuncommitteddiff: root/fuzz exit4, licensesFAILED/sourcesOK, only creusot-std0.14.0 and creusot-std-proc0.14.0 LGPL-2.1-or-later rejected. Logs task-5-evidence/cargo-deny-{root,fuzz}-before.log. ThisiscurrentpolicyRED, notlicenseconclusion. Reuse toolandlogs; inspectactualupstream/source/generated/notices requirements then narrowexactexceptionsifwarranted, finalauditbothgraphs. No needreinstalltoolorredoRED.
+
+- UpdatednonLinux39193858954 at4d4a3ec6 finalSUCCESS/all9jobsSUCCESS. Metadata native-ci/non-linux-accepted-run-metadata.json, WindowsRust117872253152fulllogarchived. Bothwheels/quality, Rustsuites/performance, Windowspurity/metrics/resourcepassed. Priorstop_preserves_accepted1spremisefailurestillrequiresnarrowTask5robustnessfix; thispassdoesnoteraseit. Noactualproductarithmeticchanges sinceacceptednativeproofsource41.
+
+Upstream integration pending: mainadvancedfromb65f6283 to f4460fc00317ca6468577d4f075c9d8848264af0, two commits74bc2d24(deps#1001:rootserde_json1.0.151->1.0.154,hypothesis6.169.4->6.170.0,uv.lock) andf4460fc0(C4architecturedocs#1009). Rootwillmergeorigin/mainintofeatureafterTask4review, beforeTask5BASE, preservingexistingproof-sourceSHAs. Task5mustreuseupdatedC4documentandaddmathcrateboundaryasneeded, synctaskownedPythonenvforlockednewdependencies, rerunappropriatefinalintegrationagainstnewserde/Hypothesis; don'tundootheruserdocsorforceunrelatedfuzzlockversions. Proofcrate/toolpinsnotchangedupstreambutlockhashchangedneedsfreshproof. NativefinalCIcanoverlapTask5packagingchecksafterrunnerfixreview.
+
+- Task4fixround1 behavioralRED/GREEN covers alternate/nested/comment/same-lineattributes; cleanPython1187pass/13skipandfocusedguardmutationkilled. ActualLinuxSIGTERMreproducerchangedfromexit-15/livechildtoexit17/terminatedchild(stateZ). FinalPython3.12local3targetrunner34.459s, each25/59/25; host/containersourceSHA256986747a2d2a5d227029700982323ceba111036935ec570f04d2e5ac85ff11430. Rootread review-fix-py312/summary.json. Report/commitpendingthen scopedrereview; noadditionalbroadtests.
+
+- Task4fixround1 committedb5d920b5, cleanHEAD/sourcehashverified; scopedreview /root/issue999_ci_fix1_review(gpt-6-sol high) dispatchedfullfixrange4137a294..b5d920b5. Nativefix-sourceCIwillrunafterthisreviewandupstreammerge toavoidimmediatelysupersededbroadCI. origin/mainfetchedatf4460fc0, noHEAD/worktreechangesduringreview.
+
+- Task4fixround1 scopedreview: originaltwoImportantfindingsADDRESSED; newImportantSIGTERMmaskinheritanceinlaunchedtools(411-434) remains. FocusedPOSIXmaskreproducerconfirmedchildblocked. Fixround2BASEb5d920b5 assignedsameimplementer; replaceOSmaskingwithpending-stophandlingthroughlaunchandverifychildSIGTERMsemantics. Fullreporttask-4-fix1-review.md. No source/body/toolcapchange; nativefix-sourceCIstillpendingfinalrunner.
+
+- Task4fixround2 committed62e3e390 clean, removesinheritedSIGTERMmask anddefersstopuntilchildPIDowned; avoidsreapedPIDcleanup. ActualLinuxchilddeliveryRED/GREEN andparentterminationpassed; injectedtransitiontestsseparatelyreported. Focused39pass/3macLinuxskips, lints/typespass. FinalLinuxARM3.12runner35.851s,3x25files/59goals/25strategies; rootreadsummaryfix2-py312. Scopedreview /root/issue999_ci_fix2_review(gpt-6-sol high)dispatchedfullb5d920b5..62e3e390diff.
+
+- Task 4: complete (BASEdeb729be..62e3e390; initialreviewtwoImportantfindings, fixround1originalfindingsaddressedbutnewsignal-maskregression, fixround2allfindingsaddressed/noNewCriticalImportant). Fullreportsarchivedtask-4-review.md/task-4-fix1-review.md/task-4-fix2-review.md. Rootconfirmedlocalfix-sourceproofsummary; nativecold/warmtoolrecipe/math acceptance942/240s alreadyexists. Finalnativecurrent-runner/current-lock check remainsTask5 integration; Task3stable/allfeatures/Leanevidencechecked, Windows4dall9jobssuccess. Minor spanpathwarningcarriedforward.
+
+Ruling: Merge origin/main f4460fc0 into the issue feature branch before final integration, rather than rewriting the existing proof commits — upstream dependency and C4 documentation changes should be preserved while actual proof-source SHAs remain traceable — if wrong, the branch gains a merge commit and dependency changes require extra integration checks. This does not merge the feature into main or publish a release.
+
+- Upstreammergedwithoutconflictsas878be0d5496be231f0f15b6da1a8fe8f03659e6c; onlyrootCargo.lock,pyproject/uvlock,C4docsfrommain; cleanworktree. Task5BASE878be0d5, consolidatedbriefreadywithactualcurrentstatus/audittool/evidence andknownWindowsfixture/spanwarning fixes.
+
+- Task5 dispatched /root/issue999_final_integration(gpt-6-astra high), BASE878be0d5496be231f0f15b6da1a8fe8f03659e6c. Consolidatedtask-5-brief.md isrequirements; oldhandoffhistoryretainedseparately. OwnerconfirmedWindows1suncertainpremise, implementingcommon12s durable-premisehelper/OScleanup withunchangedoracle; pinnedCreusotabsolute-spanmode supported, actualproofpending. Isolatednew-lockPythonenvsync underway, sharedmain.venv untouched. Earlycommittedcodecheckpointrequestedforrootnative/nonLinuxCIwhilefinaldocs/license/distributionworkcontinues. PRdraftunpublishedatpr-body-draft.md; finalresultplaceholdersmustbereplacedbeforepublication.
+
+- Task5 earlycheckpoint5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee pushed: portable durable-premiseoraclehelper, obsolete1sboolremoved, absoluteComaspans. AgentactualARM3targetproof25/59passedwithoutsourcewarnings; focused39pass/3skip, lifecycle6pass. Rootdispatchednative/defaultCI39197995202 andnonLinux39198000067 at5033, willsaveevidencetask-5-evidence/native-ci. Agentcontinuesdocs/license(disjointuncommittedchanges)/sdistwheelSBOM/OKF; no newrunneredits expected. Root/fuzzcargo-denypostexactexceptionspassedperagent, finalreportpending.
+
+- Task5 latest native warm acceptance at5033e1bb: run39197995202/job117884864564 SUCCESS, cache_hit=true, setup-inclusive247s, runner156.09s; all3targets25freshComa/59provedgoals/25strategies, absolute spans without source warnings. Generation peak1,514,396KiB, proof273,676KiB; output29,542bytes. Artifact/log/metadata archived task-5-evidence/native-ci/accepted-attempt-1 and siblings. Current fullworkflow stillrunning; genuinecold proof-onlyrerun remainspending. Latest Linuxwheel1195pass/9skip59.47s and macOSwheel1190pass/14skip55.69s logs saved.

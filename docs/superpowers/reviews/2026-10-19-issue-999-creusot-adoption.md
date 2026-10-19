@@ -375,3 +375,15 @@ all six result-lifecycle tests passed, including real durable result polling and
 bounded descendant cleanup. Actual final Windows execution belongs to the
 controller's checkpoint CI run. Full Task 5 validation and self-review follow in
 the integration report; this checkpoint makes no broader completion claim.
+
+
+## Task 5 final integration review record
+
+The [integration report](../reports/2026-10-19-issue-999-creusot-adoption.md)
+records five implementation self-reviews and five validation self-reviews,
+actual root/fuzz license audits, extracted-sdist wheel execution, generated SBOM,
+OKF checks and source-specific evidence. Current-source native warm proof passed;
+full current-source CI, cold replay and final independent reviews remain the
+controller's acceptance gates. All six controller Rulings and prior task/review
+reports survive in the [durable archive](../reports/issue-999/README.md).
+No final native platform result is inferred from the local package checks.

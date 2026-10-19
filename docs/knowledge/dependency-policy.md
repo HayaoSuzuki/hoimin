@@ -12,24 +12,24 @@ sources:
   sha256: 9c86694f5e095191faca959a0c73c67dfaec811306be6e5cdad79733d184288f
 - id: python-pins
   resource: ../../pyproject.toml
-  revision: 0a545ea642275abc38ff501e6727dbedb691c3e7
-  working_tree: modified
-  sha256: b5b30d8e87b7c8c85f1e8b01defbc8e69cd6788c369301c4cbd8d00d4826532f
+  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
+  working_tree: clean
+  sha256: 152f20bea30856e826524da74b812b2b8a9dce105b4431881cbda83de801cec6
 - id: inventory-862
   resource: ../dependency-build-scripts.md
-  revision: 0a545ea642275abc38ff501e6727dbedb691c3e7
+  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
   working_tree: modified
-  sha256: 730c6d8e081922bc008daf2c52845a69ab7fe8d6447c0ee4ad4495ab9dc2c694
+  sha256: 293e9edad94b07cc782dcfeffea9286c2fbd7107f5631419a9bdaf63fa050aef
 - id: policy
   resource: ../dependency-policy.md
-  revision: 111244cf1f75b215e04580e38fbba797995f77cc
+  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
   working_tree: modified
-  sha256: da34328db07cf972ebe6e1afedfcf79f9357448db4a36c63d65eb6dd34b9f921
+  sha256: 4188abee29e44b4c215e9104d757096c284ed3178da336913d3294a8bfbe7403
 - id: config
   resource: ../../deny.toml
-  revision: 111244cf1f75b215e04580e38fbba797995f77cc
+  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
   working_tree: modified
-  sha256: 39503920fe526c409ffc8bb506c4ebc8dcbfb4e686c90b5c05b5254815f071ee
+  sha256: 1ade36661bac5b0062323ef9af713ab60792e13af26573560af9b7b703425900
 - id: workflow
   resource: ../../.github/workflows/dependency-audit.yml
   revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
@@ -45,7 +45,8 @@ This includes normal, build, development, and other-OS dependencies; it does not
 # Allowances and exceptions
 
 Reject unapproved licenses and unknown registry/git sources.
-Limit ELv2 to `hoimin-core` and `hoimin-cli` versions `>=0.12.0, <0.13.0`,
+Limit ELv2 to `hoimin-budget-math`, `hoimin-core`, `hoimin-python` and
+`hoimin-cli` versions `>=0.13.0, <0.14.0`,
 plus the `hoimin-fuzz` 0.0.0 harness. NCSA remains limited to libfuzzer-sys 0.4.13.
 Review local paths through repository diffs; passing automated checks does not establish safety or fulfillment of license obligations.[^policy][^config]
 
@@ -80,3 +81,14 @@ input, not a certification of dependency code.[^inventory-862]
 [^update-rules]: [Renovate rules](../../renovate.json).
 [^python-pins]: [Python package and development requirements](../../pyproject.toml).
 [^inventory-862]: [Build script inventory](../dependency-build-scripts.md).
+
+
+# Verification-only dependencies
+
+`creusot-std` and `creusot-std-proc` have exact 0.14.0 LGPL-2.1-or-later
+exceptions. Normal target builds exclude their cfg-gated macros and libraries;
+unfiltered lock audits include them. Upgrades require review of upstream source,
+macro output, generated proof artifacts and notices. The
+[licensing record](../licensing.md#creusot-verification-dependencies) distinguishes
+these facts from redistribution compliance. See the
+[proof contract](creusot-budget-proofs.md).[^policy][^config]

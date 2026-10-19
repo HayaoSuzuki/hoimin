@@ -64,11 +64,11 @@
 - Produces `python tools/creusot_environment.py check --manifest formal/creusot/toolchain.json --project-root PROJECT`, exit zero only if all actual executables, installed configuration and selected project-local `why3find.json` match; actionable nonzero diagnostics otherwise. `check-installation` preserves image self-check before a project exists and cannot substitute for proof preflight.
 - Produces Linux x86_64 Docker build/run commands and a native Linux ARM64 development variant using the same source pins and proof targets. CI may install directly from the same pinned recipe if that avoids unnecessary container build overhead. Local ARM64 measurements do not replace native Linux x86_64 cold/warm acceptance in Task 4. Do not publish an image.
 
-- [ ] Read pinned upstream installation/prover CLI sources, resolve full revisions and checksums, and record their authoritative URLs. No unsupported guesses about CLI flags.
-- [ ] Write parameterized failing tests for a missing solver, wrong version, wrong configuration and malformed manifest; successful version printing with mismatched content must fail. Use controlled executable fixtures without asserting implementation-internal command ordering.
-- [ ] Implement isolated install recipe and strict preflight. Download only pinned sources/artifacts with hash verification, bound build parallelism, and arrange exact Rust target standard libraries. Keep installation inside task-owned container/cache paths.
-- [ ] Begin local environment setup from cold with a 30-minute wall-clock deadline per attempt, recording elapsed time, peak memory where measurable, and disk delta. During repair, reuse successful tool layers and distinguish failed cold attempts from the final working warm setup. Check the actual toolchain and an ordinary crate verification invocation. Task 4 must measure the final recipe from cold and warm on native Linux x86_64, including setup and all proofs within the accepted job cap; local cached success does not satisfy that gate. Stop and report measured cap violations rather than increasing limits; diagnose target support with real compiler invocation.
-- [ ] Run focused Python tests/lint/types (and relevant hoimin mutation testing per skill), record five implementation and five testing self-reviews and measured limitations, then commit. Task 3 owns actual arithmetic proofs, not this environment smoke check.
+- [x] Read pinned upstream installation/prover CLI sources, resolve full revisions and checksums, and record their authoritative URLs. No unsupported guesses about CLI flags.
+- [x] Write parameterized failing tests for a missing solver, wrong version, wrong configuration and malformed manifest; successful version printing with mismatched content must fail. Use controlled executable fixtures without asserting implementation-internal command ordering.
+- [x] Implement isolated install recipe and strict preflight. Download only pinned sources/artifacts with hash verification, bound build parallelism, and arrange exact Rust target standard libraries. Keep installation inside task-owned container/cache paths.
+- [x] Begin local environment setup from cold with a 30-minute wall-clock deadline per attempt, recording elapsed time, peak memory where measurable, and disk delta. During repair, reuse successful tool layers and distinguish failed cold attempts from the final working warm setup. Check the actual toolchain and an ordinary crate verification invocation. Task 4 must measure the final recipe from cold and warm on native Linux x86_64, including setup and all proofs within the accepted job cap; local cached success does not satisfy that gate. Stop and report measured cap violations rather than increasing limits; diagnose target support with real compiler invocation.
+- [x] Run focused Python tests/lint/types (and relevant hoimin mutation testing per skill), record five implementation and five testing self-reviews and measured limitations, then commit. Task 3 owns actual arithmetic proofs, not this environment smoke check.
 
 ### Task 3: Prove the complete production arithmetic on three targets
 
@@ -82,11 +82,11 @@
 - Produces contracts on actual production constructors/accessors, auto timeout, waves, saturation/reconstruction, projection and shortfall covering all eight spec clauses.
 - Produces reproducible generation/prove/replay commands, actual generated function/goal identifiers, and no-cache proof strategies suitable for Task 4's runner.
 
-- [ ] Establish native Linux and both cross-target generation with current production crate; diagnose unsupported operations from the pinned Creusot source. Use equivalent provable production operations where needed, never verification-only alternate behavior.
-- [ ] Add contracts and proof helpers for all eight mathematical spec clauses. Deny `creusot::trusted_code` in owned proof code; model Duration in integer nanoseconds and encode positive duration invariants. Do not assume a public projection was produced by its constructor.
-- [ ] Generate fresh obligations and prove every goal for each required target sequentially, with solver 30 seconds/2048 MiB and maximum two concurrent processes. Record goal counts, required functions, elapsed time and logs, including final unproved goals if any.
-- [ ] Perform sensitivity checks by temporarily changing production ceil, saturation, auto timeout and equality comparison one at a time; each must compile and produce an unproved relevant goal. Restore source after each and retain diagnostic evidence; compile errors are not proof-sensitivity evidence.
-- [ ] Recheck stable Rust/all-features and focused arithmetic/Lean/runtime tests after proof-driven refactors. Record five implementation and five proof/test self-reviews, trust boundaries, repair effort and actual resource measurements; commit only correct production code and useful proof artifacts.
+- [x] Establish native Linux and both cross-target generation with current production crate; diagnose unsupported operations from the pinned Creusot source. Use equivalent provable production operations where needed, never verification-only alternate behavior.
+- [x] Add contracts and proof helpers for all eight mathematical spec clauses. Deny `creusot::trusted_code` in owned proof code; model Duration in integer nanoseconds and encode positive duration invariants. Do not assume a public projection was produced by its constructor.
+- [x] Generate fresh obligations and prove every goal for each required target sequentially, with solver 30 seconds/2048 MiB and maximum two concurrent processes. Record goal counts, required functions, elapsed time and logs, including final unproved goals if any.
+- [x] Perform sensitivity checks by temporarily changing production ceil, saturation, auto timeout and equality comparison one at a time; each must compile and produce an unproved relevant goal. Restore source after each and retain diagnostic evidence; compile errors are not proof-sensitivity evidence.
+- [x] Recheck stable Rust/all-features and focused arithmetic/Lean/runtime tests after proof-driven refactors. Record five implementation and five proof/test self-reviews, trust boundaries, repair effort and actual resource measurements; commit only correct production code and useful proof artifacts.
 
 ### Task 4: Enforce fresh complete verification in mandatory CI
 
@@ -100,10 +100,10 @@
 - Produces `python tools/verify_creusot.py --output <directory>`: preflight, freshly generate each target, check function/contract coverage and nonempty goals, replay every goal without success cache, fail closed; emit JSON measurements/diagnostics and logs into the given directory.
 - Produces mandatory CI job `creusot` with `timeout-minutes: 30`, including environment preparation, selected for source/spec/tools/dependency changes and required by CI aggregation when selected.
 
-- [ ] Write parameterized failing runner tests: missing required function/contract, empty goals, old artifacts, one target unresolved, missing/mismatched tool, solver timeout recovered by a successful alternative, overall timeout, and success only after all three fresh target results. Test observable failure and subprocess boundaries with fixtures, not an alternate fake proof engine.
-- [ ] Implement fail-closed orchestration using actual Task 3 commands and structured manifests; clear owned generated output before each generation, prohibit prove-only stale success and enforce caps/process counts. Identify required coverage by actual named contracts/functions, not total counts alone.
-- [ ] Add CI selection/aggregate tests for changed math crate, proof specs/strategies, tool pins and runner, plus failed/cancelled/unintentionally skipped proof job. Integrate installation/cache without solver-success cache; upload diagnostics on failure.
-- [ ] Execute full runner cold/warm on Linux and all three targets with actual tools; record elapsed time/memory/disk. Run focused tests, lint/types and relevant mutation checks, five implementation and five testing self-reviews, then commit.
+- [x] Write parameterized failing runner tests: missing required function/contract, empty goals, old artifacts, one target unresolved, missing/mismatched tool, solver timeout recovered by a successful alternative, overall timeout, and success only after all three fresh target results. Test observable failure and subprocess boundaries with fixtures, not an alternate fake proof engine.
+- [x] Implement fail-closed orchestration using actual Task 3 commands and structured manifests; clear owned generated output before each generation, prohibit prove-only stale success and enforce caps/process counts. Identify required coverage by actual named contracts/functions, not total counts alone.
+- [x] Add CI selection/aggregate tests for changed math crate, proof specs/strategies, tool pins and runner, plus failed/cancelled/unintentionally skipped proof job. Integrate installation/cache without solver-success cache; upload diagnostics on failure.
+- [x] Execute full runner cold/warm on Linux and all three targets with actual tools; record elapsed time/memory/disk. Run focused tests, lint/types and relevant mutation checks, five implementation and five testing self-reviews, then commit.
 
 ### Task 5: Complete distribution, documentation and branch acceptance
 
@@ -115,10 +115,10 @@
 - Consumes production crate, fresh proof runner, mandatory CI, and measurement evidence.
 - Produces complete reproducible maintenance guidance, verified distribution and review record ready for PR.
 
-- [ ] Document actual guarantees, exclusions/trust boundary, commands to regenerate/replay and repair proofs, pinned updates, cold/warm resource measurements, additional code/spec size and sensitivity results. Never claim Ledger/OS timing or unsupported targets are proved.
+- [x] Document actual guarantees, exclusions/trust boundary, commands to regenerate/replay and repair proofs, pinned updates, cold/warm resource measurements, additional code/spec size and sensitivity results. Never claim Ledger/OS timing or unsupported targets are proved.
 - [ ] Run repository-required workspace tests, all-features clippy/formatting, Python quality checks, Lean oracle/proof correspondence and runtime contracts. Reuse passing focused checks where unchanged; fix actual failures without repeated full-suite churn.
-- [ ] Verify root/fuzz lock consistency and dependency policy, generated SBOM, sdist includes the math crate and proof annotations' normal-build dependencies, build from sdist and execute wheel. Record results with exact source commit.
-- [ ] Validate relevant OKF artifacts, record five final implementation/testing self-reviews, archive task/review evidence durably, and commit. Controller then obtains whole-branch review, addresses findings, pushes the issue branch and creates PR closing #999 only when all accepted conditions have evidence.
+- [x] Verify root/fuzz lock consistency and dependency policy, generated SBOM, sdist includes the math crate and proof annotations' normal-build dependencies, build from sdist and execute wheel. Record results with exact source commit.
+- [x] Validate relevant OKF artifacts, record five final implementation/testing self-reviews, archive task/review evidence durably, and commit. Controller then obtains whole-branch review, addresses findings, pushes the issue branch and creates PR closing #999 only when all accepted conditions have evidence.
 
 ## Plan self-review (five passes)
 
@@ -127,3 +127,15 @@
 3. Interfaces: Task 1 owns arithmetic API, Task 2 environment manifest/preflight, Task 3 goal identifiers/strategies, Task 4 runner/CI. The optional Serde feature does not alter proved arithmetic.
 4. Failure classes: all five Review Focus items have explicit owners/tests; manually constructed output and missing solver are included.
 5. Proportion/resources: five deliverables, sequential heavy builds, scoped reviews, no parallel tool installations or unapproved cap increases. Existing approved spec governs remaining implementation choices.
+
+
+## Integration status (2026-10-19)
+
+Tasks 1–4 are implemented and independently approved; original reports, review
+rounds, Rulings and execution evidence are retained in the
+[durable archive](../reports/issue-999/README.md). Task 5's current-code checkpoint
+is `5033e1bb`; local source-distribution/wheel/SBOM and dependency acceptance
+passed. Native current-source warm proof passed. Controller-owned full CI,
+current cold replay and final reviews remain pending; use the
+[integration record](../reports/2026-10-19-issue-999-creusot-adoption.md) for their
+actual disposition. Pending checkboxes are intentional until those gates finish.
