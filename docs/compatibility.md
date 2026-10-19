@@ -43,7 +43,24 @@ Rust execution callers pass a nonserialized `ReportPresentation` argument to
 `run_loop`, `run_loop_with_control` and `VerifiedPlan::execute`. Migrate callers
 directly; no saved configuration field or compatibility overload is provided.
 
-## Current report identities and internal Rust callers
+Rust callers construct or edit `RunConfigData`, then use `RunConfig::try_from`
+to obtain immutable checked execution settings. Shared reads remain available;
+semantic edits consume `into_data()` and require checking again.
+`PlanConfig::into_run_config` now returns a `Result`. The checked type guarantees
+the existing semantic rules, including cross-field limits and normalized import
+roots; filesystem freshness and destination safety remain preparation concerns.
+Strict review rejects invalid settings before project I/O, while progress keeps
+its opaque configuration contract.
+
+New exception-hierarchy analysis excludes eager-import cycle members and applies
+a deterministic SCC-weighted depth bound of 256 to other modules. This can
+exclude candidates that the previous name-order-dependent traversal missed,
+including conservative bounds through large cyclic components. The separate
+class-ancestry limit is unchanged. Existing plan, fingerprint and candidate-ID
+formats are retained; saved-plan verification does not recompute candidates under
+the new graph rule. Regenerate a plan to analyze its sources with the new rule.
+
+## Report identity validation introduced before 0.14.0
 
 Current JSON and JSONL report readers reject a candidate whose saved ID disagrees
 with its identity fields, including path, source hash, operator, span and

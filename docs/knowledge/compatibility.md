@@ -54,17 +54,58 @@ sources:
   working_tree: modified
   sha256: 881f774b6a135f3d50f3acca3e379a0c8f0742349fd84964d526caa4073c421a
 
+- id: priority-six-compatibility
+  resource: ../compatibility.md
+  revision: 3aaf82b0d5b695a548dda33ea248ceaa1dd68219
+  working_tree: modified
+  sha256: 6dc4ae3fda223f4b3a2a0654042d98eac38f1fe010e267f79321d282388f0eb2
+
+- id: priority-six-graph-evidence
+  resource: ../maintenance/2026-10-19-issue-1005/report.md
+  revision: 3aaf82b0d5b695a548dda33ea248ceaa1dd68219
+  working_tree: clean
+  sha256: f00dd5b9e1daa9f50c1289a0b3a1f2f684be377ce954a8ceae19ed1e55c247f0
+
 ---
 
-# Current saved formats and release floor (Issues #979 and #984)
+# Current saved formats and release floor
+
+The package floor is 0.14.0. Report/event schema 9 requires nullable
+`disk.janitor` instead of `disk.stale_roots_reclaimed`, and requires derived
+`status` for each completed mutant. Strict Rust readers check status against
+outcome and discard the received projection. JSON Schema checks presence and
+the seven-value shape; it does not establish status/outcome agreement.
+Read older reports with their producing binary or rerun. Changing their version
+number does not convert them.[^priority-six-compatibility]
+
+Plan schema 10, SQLite session schema 5, fingerprint schema 13, ranking rule 4,
+candidate schema 1 and mutant-ID v1 retain their formats. Runtime verbosity is
+not saved configuration. Rust callers use checked `RunConfig` construction,
+fallible plan conversion and explicit `ReportPresentation` arguments; migrate
+those call sites directly.[^priority-six-compatibility]
+
+New exception-hierarchy analysis applies deterministic SCC-weighted depth at 256.
+It can conservatively exclude more candidates without changing saved identities
+or retroactively recomputing saved plans. Regenerate a plan to apply the new
+analysis rule. The release measurements concern fixed local workloads; their
+macOS results do not establish Linux/Windows behavior or universal runtime and
+memory improvements.[^priority-six-compatibility][^priority-six-graph-evidence]
+
+Follow the [0.14.0 migration notice](../compatibility.md#structured-startup-cleanup-in-0140).
+The earlier notices below retain the versions introduced by each change.
+
+[^priority-six-compatibility]: [Combined cleanup, result and Rust API migration](../compatibility.md#structured-startup-cleanup-in-0140).
+[^priority-six-graph-evidence]: [Release graph measurements and their limits](../maintenance/2026-10-19-issue-1005/report.md).
+
+# Earlier discovery and baseline formats (Issues #979 and #984)
 
 Plan schema 10 requires `normalized_config.discovery.analyzer_timeout`.
-Report/event schema 8 and runtime configuration omit discovery settings;
+Issue #979 introduced report/event schema 8. Runtime configuration omits discovery settings;
 `run` rejects `--analyzer-timeout`, and `verify` inherits the saved plan value.
 The cooperative deadline spans the whole discovery phase. It does not forcibly
 interrupt synchronous I/O or parsing.[^issue-979-compatibility]
 
-The minimum release version is 0.13.0. Fingerprint schema 13 prevents reuse of
+Issue #984 raised the minimum release version to 0.13.0. Fingerprint schema 13 prevents reuse of
 results produced before mandatory baseline restoration. It retains schema 12's
 field framing and omission of discovery timeout, changing the leading version
 byte. A new baseline alone cannot repair a stored conclusive result that resume
@@ -73,7 +114,7 @@ when no compatible current run exists; use a new session path or deliberately
 start without resume. Old databases and results are retained.[^issue-984-compatibility]
 
 Plan schema 10, report/event schema 8, SQLite session schema 5, ranking rule 4,
-candidate schema 1 and mutant-ID v1 remain unchanged by Issue #984. Current valid
+candidate schema 1 and mutant-ID v1 were unchanged by Issue #984. Valid
 plans need no regeneration for baseline restoration. The sole saved root remains
 `normalized_config.selection.root`. Schema-9 and older plans and historical
 reports still follow the prior migration requirements.[^issue-979-compatibility][^issue-984-compatibility]
@@ -84,7 +125,7 @@ introduced the single root at plan 9/report 7/floor 0.11.0. The notices below
 retain those historical versions.
 
 [^issue-979-compatibility]: [Discovery ownership and prior compatibility](../compatibility.md#discovery-timeout-ownership-in-0120).
-[^issue-984-compatibility]: [Baseline restoration and current compatibility](../compatibility.md#baseline-restoration-and-result-reuse-in-0130).
+[^issue-984-compatibility]: [Baseline restoration and its compatibility change](../compatibility.md#baseline-restoration-and-result-reuse-in-0130).
 [^issue-949-compatibility]: [Historical single-root notice](../compatibility.md#single-normalized-project-root-in-0110).
 
 

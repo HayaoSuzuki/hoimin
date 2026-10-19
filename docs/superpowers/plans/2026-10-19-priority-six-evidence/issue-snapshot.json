@@ -1,0 +1,122 @@
+[
+  {
+    "body": "<!-- hoimin-triage-2026-10-19:start -->\n## 2026-10-19 トリアージ\n\n**分類: 次の着手候補（推奨順 4/6） / `triage:next`。**\n\n利用報告にある通常保持の大量出力を減らし、清掃失敗の診断を見つけやすくする。既存janitorの結果を構造化する範囲で進められ、#1016の表示基盤にもなる。\n\n**依存関係・実施範囲:** #1016に先行する。今回は要約・詳細表示を整理し、回収条件・削除対象・終了コードは変えない。スキャン上限や省略を明記し、未計測の残存総数／解放byte数を表示しない。\n\n確認基準はmain `f4460fc00317ca6468577d4f075c9d8848264af0`。起票時の `b65f6283` からmainまでの変更は依存lock・pyproject・C4文書のみで、参照する本番Rustソースは変わっていない。本文の再現・測定は起票時の記録であり、今回再実行した結果ではない。\n\n本節を最新の着手優先度とする。以下の仕様・受入条件は維持し、旧形式のための互換実装は追加しない。\n<!-- hoimin-triage-2026-10-19:end -->\n\n---\n\n確認対象: main `b65f62834b35a9ff85795b041e9687b21e5c51ba`。Claude Code による kraken-hub での利用報告を、現行実装と照合して整理した改善要件。利用報告の外部プロジェクトでの再現実験は行っていない。\n\n## 問題と現状\n\n[ReclaimReport::append_to_cleanup](https://github.com/HayaoSuzuki/hoimin/blob/b65f62834b35a9ff85795b041e9687b21e5c51ba/crates/hoimin-cli/src/workspace/owned.rs#L4188) は件数要約に続いて root ごとの保持理由を結果 JSON に追加する。利用報告では数百件の「まだ回収できない」が verify JSON を占めた。\n\n起動 janitor は一回に最大256 rootを選択し、詳細文字列にも別の256件上限がある。preserved は調べた候補の保持数であり、ディレクトリ全体の残存数ではない。\n\n## 仕様\n\n- 調査対象数、回収した root 数、保持した root 数と理由別件数、実際に削除した項目数、調査/詳細省略の有無を構造化して表示する。\n- root 数と削除項目数を区別し、測定していない総残存数や解放 byte 数を推測しない。途中停止を全件調査済みと表示しない。\n- 既定 JSON/JSONL/human は要約中心にする。young / active lease / retain 等の通常保持の root 別詳細は --verbose のとき表示する。\n- 清掃失敗、測定失敗、今回の実行で cleanup が完了しなかったものは通常保持と区別し、原因と必要な対象パスを既定出力でも確認できる。\n- verbose でも詳細件数・文字数の既存上限を維持し、省略件数を示す。\n- 表示量の変更で cleanup の成功/失敗分類や run の終了コードを変更しない。\n\n## 受け入れ条件\n\n- 多数の通常保持で、既定結果が root 別の数百行に膨らまない。\n- 既定と verbose で構造化件数・清掃分類・終了コードが一致する。\n- 256 root の選択上限、詳細上限、時間予算による中断、実際の削除失敗で件数と省略表示が正確である。\n- 正常な保持と清掃失敗の両方を含む場合も、失敗の診断を隠さない。\n- 既存の #867 / #956 と同様、診断文字列の解析で判定せず、構造化した理由と結果から表示する。\n\n## 設計上の境界\n\njanitor が結果と件数を所有し、report は表示する。後続の gc も同じ要約を使える形にする。\n",
+    "labels": [
+      {
+        "id": "LA_kwDOTcEqDs8AAAACsOWVTg",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOTcEqDs8AAAAC8MRVfg",
+        "name": "triage:next",
+        "description": "次に取り組む候補。小さな保守・配布改善を優先",
+        "color": "0E8A16"
+      }
+    ],
+    "number": 1015,
+    "title": "feat(cleanup): janitorの結果を構造化要約し通常保持の詳細をverboseへ移す",
+    "url": "https://github.com/HayaoSuzuki/hoimin/issues/1015"
+  },
+  {
+    "body": "<!-- hoimin-triage-2026-10-19:start -->\n## 2026-10-19 トリアージ\n\n**分類: 次の着手候補（推奨順 5/6） / `triage:next`。**\n\n利用者側による終了状態の再分類を減らし、出力回収失敗をkilledと誤読することを防ぐ。humanの結果行も候補IDと一緒に読めるようにする。\n\n**依存関係・実施範囲:** #1002の共通escapeを使う。#1011とreport schema／分類関数の変更箇所を調整するが、exit 5の追加は本Issueへ混ぜない。statusはoutcomeから導出し、独立した可変状態を再導入しない。\n\n確認基準はmain `f4460fc00317ca6468577d4f075c9d8848264af0`。起票時の `b65f6283` からmainまでの変更は依存lock・pyproject・C4文書のみで、参照する本番Rustソースは変わっていない。本文の再現・測定は起票時の記録であり、今回再実行した結果ではない。\n\n本節を最新の着手優先度とする。以下の仕様・受入条件は維持し、旧形式のための互換実装は追加しない。\n<!-- hoimin-triage-2026-10-19:end -->\n\n---\n\n確認対象: main `b65f62834b35a9ff85795b041e9687b21e5c51ba`。Claude Code による kraken-hub での利用報告を、現行実装と照合して整理した改善要件。利用報告の外部プロジェクトでの再現実験は行っていない。\n\n## 問題と既存機能\n\nverify JSON の利用者は候補ごとの判定を termination から再実装している。しかし Exit(1) でも出力回収の close_timed_out があれば error なので、終了コードだけでは分類できない。[MutationOutcome::status()](https://github.com/HayaoSuzuki/hoimin/blob/b65f62834b35a9ff85795b041e9687b21e5c51ba/crates/hoimin-core/src/resume.rs#L213) が現行の判定を所有する。\n\n[human 出力](https://github.com/HayaoSuzuki/hoimin/blob/b65f62834b35a9ff85795b041e9687b21e5c51ba/crates/hoimin-cli/src/report/human.rs#L79) は変更式と判定を一行表示するが、ID は別の開始行にしかない。#895 では矛盾する status / termination / output_state の二重保持を廃止した。この方針は維持する。\n\n## 仕様\n\n- JSON の mutants[] と JSONL の mutant_finished に、候補の outcome から導出した status を出力する。値は killed / survived / timeout / out_of_memory / process_limit / error / not_run。\n- 内部の独立した可変 status は増やさない。分類の正本は既存 outcome と共通分類関数のままとする。\n- 新 schema の reader は status と outcome の矛盾を拒否する。表示用の追加値を summary / progress / resume の別の分類根拠にしない。\n- human の各結果行を「ID・位置・演算子・元の式→置換後・判定」で完結させる。改行・制御文字を escape し、並列実行でも開始行との照合を不要にする。\n- 新しい report コマンドと --format text の別名は今回追加しない。\n\n## 受け入れ条件\n\n- 通常終了、timeout、出力回収失敗、キャンセル、再利用、未実行で、status・集計・human が一致する。\n- Exit(1) + close_timed_out を killed としない。\n- 改ざんした status と outcome の矛盾を reader が exit 2 で拒否する。\n- JSON/JSONL schema、golden、reader、CLI 説明、利用スキルを同じ契約へ更新する。schema を明示的に改版し、変更点を記載する。\n- human の結果行に ID があり、制御文字を含む入力でも一行を保つ。\n\n## 設計上の境界\n\n表示 projection と実行状態を分ける。新旧形式を無言で混在させない。#1002 の端末文字 escape 改善と調整し、別の escape 実装を追加しない。\n",
+    "labels": [
+      {
+        "id": "LA_kwDOTcEqDs8AAAACsOWVTg",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOTcEqDs8AAAAC8MRVfg",
+        "name": "triage:next",
+        "description": "次に取り組む候補。小さな保守・配布改善を優先",
+        "color": "0E8A16"
+      }
+    ],
+    "number": 1010,
+    "title": "feat(report): 候補ごとの導出済みstatusをJSONに出しhumanの結果行にIDを含める",
+    "url": "https://github.com/HayaoSuzuki/hoimin/issues/1010"
+  },
+  {
+    "body": "<!-- hoimin-triage-2026-10-19:start -->\n## 2026-10-19 トリアージ\n\n**分類: 次の着手候補（推奨順 6/6） / `triage:next`。**\n\n候補上限を小さくしても残る例外解析の前処理に、moduleごとの重複探索がある。既存上限内のDAGでtimeoutした起票時の測定があり、性能改善の中では先に扱う。\n\n**依存関係・実施範囲:** 安全性・表示・設定境界の修正に続く候補。#1006の行選択や#1008の索引共有とは独立で、まとめて大規模な解析器改修にしない。release計測とoperation countで改善を確認し、debug実測から本番の改善倍率を断定しない。\n\n確認基準はmain `f4460fc00317ca6468577d4f075c9d8848264af0`。起票時の `b65f6283` からmainまでの変更は依存lock・pyproject・C4文書のみで、参照する本番Rustソースは変わっていない。本文の再現・測定は起票時の記録であり、今回再実行した結果ではない。\n\n本節を最新の着手優先度とする。以下の仕様・受入条件は維持し、旧形式のための互換実装は追加しない。\n<!-- hoimin-triage-2026-10-19:end -->\n\n---\n\n優先度案: P2。確認対象: main `b65f62834b35a9ff85795b041e9687b21e5c51ba`。後方互換性対応は不要。\n\n## 確認した問題\n\n[exclude_import_cycles](https://github.com/HayaoSuzuki/hoimin/blob/b65f62834b35a9ff85795b041e9687b21e5c51ba/crates/hoimin-python/src/analyzer/exception_hierarchy.rs#L1080) はmoduleごとにvisitedを作り直し、到達可能なeager importを再走査する。全体で概ね O(V×(V+E)) の探索となり、木構造でないDAGでも同じ部分グラフを繰り返し処理する。\n\n例外継承候補を1件だけ選択しても、このproject index構築費は残る。深さ・module数・dependency数の既存上限内でも負担が大きくなる。\n\n## 再現workloadと実測\n\n3層それぞれN個のmoduleを生成する。`a_i` は全 `m_j` から、`m_i` は全 `l_j` から `sentinel` をfrom-importし、`l_i` は `sentinel = 0` を定義する。別のtargetにはRoot/Child例外とraiseを置く。\n\n```python\nfor i in range(n):\n    (root / f\"a{i:03}.py\").write_text(\"\".join(\n        f\"from m{j:03} import sentinel as s{j:03}\\n\" for j in range(n)))\n    (root / f\"m{i:03}.py\").write_text(\"\".join(\n        f\"from l{j:03} import sentinel as s{j:03}\\n\" for j in range(n)))\n    (root / f\"l{i:03}.py\").write_text(\"sentinel = 0\\n\")\n(root / \"target.py\").write_text(\n    \"class Root(Exception): pass\\nclass Child(Root): pass\\n\"\n    \"def f():\\n    raise Child()\\n\")\n```\n\n`hoimin plan --root ROOT --file target.py --operators exception_hierarchy --max-candidates 1 --analyzer-timeout 5s --allow-best-effort-memory -- true` を実行する。対照はimport元のm/lだけを存在しないx/yへ変更し、ファイル数・バイト数を等しくする。\n\nmacOS arm64、現行HEADのdebug CLI。成功ケースは各3回の中央値。\n\n| N | ファイル数 | source合計bytes | DAG ms | 外部import対照 ms |\n| ---: | ---: | ---: | ---: | ---: |\n| 16 | 49 | 17,695 | 39.36 | 24.37 |\n| 32 | 97 | 70,127 | 136.32 | 48.15 |\n| 64 | 193 | 279,439 | 873.77 | 131.16 |\n| 128 | 385 | 1,115,855 | 5秒でtimeout・exit 2 | 416.41 |\n\n成功ケースはすべて候補1件、診断なし、truncated=falseで、候補配列全体のSHA-256も同一。N=128のdependency数は32,768、深さは3層で、既存のdependency上限65,536内にある。\n\nこのDAGでpendingから取り出す回数はコードから `N³ + 2N² + 3N + 1` と算出できる（N=64で270,529回）。これは実装から導いた回数で、計測counterの実測値ではない。上の時間はdebugであり、releaseの絶対時間や改善倍率は未測定。\n\n## 改善方針と受け入れ条件\n\n- eager import graphを一度構築し、SCC等の共有グラフ解析で循環を判定する。自己循環・複数module循環と深さ制限の意味は明示的に扱う。\n- 同一DAGの到達範囲をmoduleごとに再探索しない。\n- DAG、自己循環、相互循環、diamond、循環へ入る非循環prefix、遅延import、動的module、深さ上限を検証する。\n- 既存の候補・診断・可視性の保守的な判断を維持する。循環外まで無条件にdynamic扱いするような簡略化は避ける。\n- graph構築と探索中のcancel確認を保ち、operation countとrelease計測で改善を確認する。wall-clock閾値だけを回帰条件にしない。\n\n#995はbuild_visibleの無関係module走査を除いたもの。本件はその前段のexclude_import_cyclesであり、既存修正の再掲ではない。\n",
+    "labels": [
+      {
+        "id": "LA_kwDOTcEqDs8AAAACsOWVTg",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOTcEqDs8AAAAC8MRVfg",
+        "name": "triage:next",
+        "description": "次に取り組む候補。小さな保守・配布改善を優先",
+        "color": "0E8A16"
+      }
+    ],
+    "number": 1005,
+    "title": "perf(analyzer): import循環検出のmoduleごとの全到達探索を共有グラフ解析へ置き換える",
+    "url": "https://github.com/HayaoSuzuki/hoimin/issues/1005"
+  },
+  {
+    "body": "<!-- hoimin-triage-2026-10-19:start -->\n## 2026-10-19 トリアージ\n\n**分類: 次の着手候補（推奨順 3/6） / `triage:next`。**\n\n通常バックログから次の着手候補へ引き上げる。既存のstrict reader／公開実行入口に意味検証の責任漏れがあり、さらに#1017で新しい設定入力を増やす前に、型の構築・受付境界を一本化する必要がある。\n\n**依存関係・実施範囲:** #1017の設定readerに先行し、#1013の実行条件も同じ検証済み設定を使う。通常CLIの検証がすでにあることと、公開入口の保証不足を区別する。広範なgetter/setter frameworkやunchecked互換経路は追加しない。\n\n確認基準はmain `f4460fc00317ca6468577d4f075c9d8848264af0`。起票時の `b65f6283` からmainまでの変更は依存lock・pyproject・C4文書のみで、参照する本番Rustソースは変わっていない。本文の再現・測定は起票時の記録であり、今回再実行した結果ではない。\n\n本節を最新の着手優先度とする。以下の仕様・受入条件は維持し、旧形式のための互換実装は追加しない。\n<!-- hoimin-triage-2026-10-19:end -->\n\n---\n\n優先度案: P3。確認対象: main `b65f62834b35a9ff85795b041e9687b21e5c51ba`。旧形式・公開Rust APIの後方互換性対応は不要。\n\n## 確認した問題\n\n[RunConfigとRunLimits](https://github.com/HayaoSuzuki/hoimin/blob/b65f62834b35a9ff85795b041e9687b21e5c51ba/crates/hoimin-core/src/config.rs#L520) は公開フィールドを持ち、直接Deserializeできる。一方、正規化設定の意味上の制約は任意呼出しの [validate()](https://github.com/HayaoSuzuki/hoimin/blob/b65f62834b35a9ff85795b041e9687b21e5c51ba/crates/hoimin-core/src/config.rs#L587) にある。\n\n[planの受付](https://github.com/HayaoSuzuki/hoimin/blob/b65f62834b35a9ff85795b041e9687b21e5c51ba/crates/hoimin-cli/src/plan.rs#L704) は検証するが、[strict review reader](https://github.com/HayaoSuzuki/hoimin/blob/b65f62834b35a9ff85795b041e9687b21e5c51ba/crates/hoimin-cli/src/artifacts/run_report.rs#L61) と [公開prepare_run_config](https://github.com/HayaoSuzuki/hoimin/blob/b65f62834b35a9ff85795b041e9687b21e5c51ba/crates/hoimin-cli/src/shell.rs#L2355) は実施しない。「正規化済み設定」の型を受け取っても、呼出し側が検証責任を別途知る必要がある。\n\n## 現行HEADでの確認\n\n有効なplanと現行schemaのreportを用意し、reportの `run.normalized_config` だけを変更して `review list PLAN --report REPORT --store MISSING --format json` を実行した。\n\n| 変更 | 終了コード |\n| --- | ---: |\n| 変更なし | 0 |\n| jobs=257（上限256） | 0 |\n| jobs=65、max_processes=64 | 0 |\n| operators=[] | 0 |\n| test_argv=[] | 0 |\n| import_roots=[\"../escape\"] | 0 |\n| jobs=0（対照） | 2 |\n\n受理された不正入力のstdoutは有効入力と同一だった。review storeは作成されず、テストコマンドも実行していない。fixtureは `crates/hoimin-cli/tests/golden/reports/schema-v8-current.json` を現在のplanの候補・設定に合わせて作成できる。\n\n公開Rust APIでも次の呼出し順を確認した。\n\n```rust\nlet mut config = RunConfig::try_from(valid_raw_config).unwrap();\nconfig.limits.jobs = NonZeroUsize::new(257).unwrap();\nassert!(config.validate().is_err());\nlet prepared = hoimin_cli::shell::prepare_run_config(config).unwrap();\nassert!(prepared.validate().is_err());\n// このpreparedでRunStateを作るとStartRequestedのtransitionもOkになる。\n```\n\n通常のCLI run引数の正規化は既に検証している。257 workerの実行、path traversal、誤ったmutation verdictを実証した指摘ではない。\n\n## 改善方針\n\n既存の検証規則を共用し、構築・受付に成功した型が意味検証済みであることを保証する。privateなフィールドを持つchecked config、または小さな受付済み型を検討する。環境変数のrequest→snapshotの型分離は維持する。\n\nまずstrict reviewと公開実行入口で検証を必須化する修正も可能だが、その後の公開フィールド変更で保証を失う構造も整理する。各handlerへ検証呼出しを散らしたり、unchecked互換constructorを残したりしない。\n\n## 受け入れ条件\n\n- strict reviewと公開実行入口は、filesystem fingerprint処理や実行effectを始める前に不正設定を拒否する。\n- 検証済み実行設定の取得後に、無検証のfield変更で不正状態へ戻せない。\n- cross-fieldの上限、空の必須selector/operator/argv、未正規化import rootを確認する。\n- 有効なrun/plan/verify/review、重複JSONキー拒否を維持する。\n- progressの意図的なopaque normalized_config契約は維持する。\n- APIコメントに「どの状態を保証する型か」を明記し、広範なgetter/setter frameworkは追加しない。\n\n#939（重複キー）、#923（必須array）、#835（VerifiedPlan）、#887（環境状態）、#998（selection/provenance）とは別の意味検証責任の問題。\n",
+    "labels": [
+      {
+        "id": "LA_kwDOTcEqDs8AAAACsOWVTg",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOTcEqDs8AAAAC8MRVfg",
+        "name": "triage:next",
+        "description": "次に取り組む候補。小さな保守・配布改善を優先",
+        "color": "0E8A16"
+      }
+    ],
+    "number": 1004,
+    "title": "refactor(config): 正規化設定の意味検証を構築・読込み・実行境界で保証する",
+    "url": "https://github.com/HayaoSuzuki/hoimin/issues/1004"
+  },
+  {
+    "body": "<!-- hoimin-triage-2026-10-19:start -->\n## 2026-10-19 トリアージ\n\n**分類: 次の着手候補（推奨順 1/6） / `triage:next`。**\n\n通常ファイル確認後の差替えでFIFO open待ちに入り得る経路が残っており、入力読取りの安全性と停止可能性を先に改善する。hash用の全量保持も同じ読取り境界で削減できる。\n\n**依存関係・実施範囲:** 独立して着手可能。#1013の実行条件確認等でも新しい直接readを増やさず、この共通readerを再利用する。あらゆるfilesystem I/Oのhard deadline保証には拡張しない。\n\n確認基準はmain `f4460fc00317ca6468577d4f075c9d8848264af0`。起票時の `b65f6283` からmainまでの変更は依存lock・pyproject・C4文書のみで、参照する本番Rustソースは変わっていない。本文の再現・測定は起票時の記録であり、今回再実行した結果ではない。\n\n本節を最新の着手優先度とする。以下の仕様・受入条件は維持し、旧形式のための互換実装は追加しない。\n<!-- hoimin-triage-2026-10-19:end -->\n\n---\n\n優先度案: P2。確認対象: main `b65f62834b35a9ff85795b041e9687b21e5c51ba`。後方互換性対応は不要。\n\n## 確認した問題\n\nplan/verifyのsource処理に、共通readerを通らないパスが残っている。\n\n- [source_records](https://github.com/HayaoSuzuki/hoimin/blob/b65f62834b35a9ff85795b041e9687b21e5c51ba/crates/hoimin-cli/src/plan.rs#L664) は、対象解決後に `tokio::fs::read(root.join(path))` でsource全体を読み、hashだけを求める。\n- [候補検証](https://github.com/HayaoSuzuki/hoimin/blob/b65f62834b35a9ff85795b041e9687b21e5c51ba/crates/hoimin-cli/src/plan.rs#L1011) も直接 `tokio::fs::read` を使用する。\n- [create_inner](https://github.com/HayaoSuzuki/hoimin/blob/b65f62834b35a9ff85795b041e9687b21e5c51ba/crates/hoimin-cli/src/plan.rs#L331) はsource hashの読込みが終わってからanalyzer discoveryを始める。この前段のFIFO open待ちにはanalyzerの期限が適用されない。\n\n対象解決時には通常ファイルでも、読込みまでにFIFOへ置き換わるとwriter待ちで停止する。通常ファイルを先に確認するだけでは防げない。また、hashだけを必要とする処理で最大sourceサイズに比例する一時Vecを確保している。\n\n## 確認した再現と限界\n\n現行HEADのmacOS debug CLIで、自分の一時ディレクトリだけを使用して確認した。\n\n1. 読込み順が先の `a.py` に32MiBのコメント、後の `z.py` に小さな有効Python sourceを置く。\n2. `RUST_LOG=info hoimin plan --root TEMP --source . --operators binary_add_sub --analyzer-timeout 100ms --allow-best-effort-memory -- true` を起動し、stderrを捕捉する。\n3. `reading sources` の通知後、まだ読まれていない `z.py` をwriterのないFIFOへ置き換える。FIFOへのsymlinkも別ケースで確認した。\n4. どちらも3秒の外部watchdogまで `reading sources` で停止し、watchdogで終了・回収した。\n5. 置換しない対照は約0.58秒でanalyzer timeoutのexit 2に達した。planはテストを実行していない。\n\nこれは対象解決後の差し替えを伴う再現であり、最初から置いたFIFOが通常のtarget discoveryを通るという主張ではない。権限昇格・外部コード実行の実証でもない。Linux/Windowsでのnative再現は未実施。\n\n## 改善方針と受け入れ条件\n\n[PortableFileReader](https://github.com/HayaoSuzuki/hoimin/blob/b65f62834b35a9ff85795b041e9687b21e5c51ba/crates/hoimin-cli/src/workspace/reader.rs#L13) とWorkerRootのdescriptor検証・root-relative accessに処理を集約する。\n\n- source hashは安全に開いたdescriptorから固定サイズのチャンクで計算し、ファイル全体のVecを保持しない。\n- 候補検証でsource全体が必要な場合も、同じ安全なopenの方針を使う。hash用と解析用のデータ要件は区別する。\n- 対象解決後の通常ファイル→FIFO／symlink差し替えを、テスト用の同期点で再現して拒否を検証する。Unixではnonblocking open後に同じdescriptorの通常ファイル性を確認する。\n- 正常なplan/verifyのsource hash、候補ID、stale判定と診断を維持する。\n- hash段階の追加ヒープが最大sourceサイズに比例しないことを測る。\n- あらゆるfilesystem I/Oをhard deadline内に終える保証とは区別する。\n\n#985は入力plan/report自体のopenを修正したIssue。本件はその後に読むプロジェクトsourceの別経路であり、#985の修正済み箇所の再掲ではない。\n",
+    "labels": [
+      {
+        "id": "LA_kwDOTcEqDs8AAAACsOWVQg",
+        "name": "bug",
+        "description": "Something isn't working",
+        "color": "d73a4a"
+      },
+      {
+        "id": "LA_kwDOTcEqDs8AAAAC8MRVfg",
+        "name": "triage:next",
+        "description": "次に取り組む候補。小さな保守・配布改善を優先",
+        "color": "0E8A16"
+      }
+    ],
+    "number": 1003,
+    "title": "bug(plan): source hashと候補検証の直接readを安全なroot-relative readerへ集約する",
+    "url": "https://github.com/HayaoSuzuki/hoimin/issues/1003"
+  },
+  {
+    "body": "<!-- hoimin-triage-2026-10-19:start -->\n## 2026-10-19 トリアージ\n\n**分類: 次の着手候補（推奨順 2/6） / `triage:next`。**\n\n外部由来のパスが端末制御文字として解釈される表示経路が残る。比較的小さい表示境界の修正で、previewとhuman結果の安全性を改善できる。\n\n**依存関係・実施範囲:** #1010のhuman行拡張より先にescape方針を共通化する。JSONの値、候補ID、実際のパスは変更しない。任意コード実行を実証したIssueとは扱わない。\n\n確認基準はmain `f4460fc00317ca6468577d4f075c9d8848264af0`。起票時の `b65f6283` からmainまでの変更は依存lock・pyproject・C4文書のみで、参照する本番Rustソースは変わっていない。本文の再現・測定は起票時の記録であり、今回再実行した結果ではない。\n\n本節を最新の着手優先度とする。以下の仕様・受入条件は維持し、旧形式のための互換実装は追加しない。\n<!-- hoimin-triage-2026-10-19:end -->\n\n---\n\n優先度案: P2。確認対象: main `b65f62834b35a9ff85795b041e9687b21e5c51ba`。後方互換性対応は不要。\n\n## 確認した問題\n\n`verify --dry-run --format human` は、候補のファイル名を加工せず端末へ出力する。[preview.rs:124–137](https://github.com/HayaoSuzuki/hoimin/blob/b65f62834b35a9ff85795b041e9687b21e5c51ba/crates/hoimin-cli/src/plan/preview.rs#L124) の `candidate.path` は Display 表示であり、[RelativePathPolicy](https://github.com/HayaoSuzuki/hoimin/blob/b65f62834b35a9ff85795b041e9687b21e5c51ba/crates/hoimin-core/src/relative_path.rs#L29) は ESC・改行などを拒否しない。\n\nmacOSで `calc\\x1b[31m.py` という実在ファイルからplanを生成したところ、dry-runはexit 0で次の生バイト列をstdoutへ書いた。テストコマンドは実行していない。\n\n```text\n... rank=1 calc\\x1b[31m.py:1:10 operator=binary_add_sub \"+\" -> \"-\"\n```\n\nここで `\\x1b` は説明用表記で、実際の出力には1バイトのESCがある。端末の表示変更や改行による行の偽装につながる。任意コード実行や権限昇格を確認した指摘ではない。\n\n## 再現\n\n現行HEADを `cargo build --locked --offline -p hoimin-cli --bin hoimin` でビルドし、以下を実行する。出力はreprで表示し、制御文字を端末で解釈させない。\n\n```python\nfrom pathlib import Path\nimport subprocess, tempfile\n\nbinary = str(Path(\"target/debug/hoimin\").resolve())\nwith tempfile.TemporaryDirectory() as temporary:\n    root = Path(temporary)\n    name = \"calc\\x1b[31m.py\"\n    (root / name).write_text(\"value = 1 + 2\\n\")\n    marker = root / \"test-command-ran\"\n    plan = subprocess.run(\n        [binary, \"plan\", \"--root\", str(root), \"--file\", name,\n         \"--operators\", \"binary_add_sub\", \"--allow-best-effort-memory\",\n         \"--\", \"touch\", str(marker)],\n        capture_output=True, timeout=20, check=True,\n    )\n    path = root / \"plan.json\"\n    path.write_bytes(plan.stdout)\n    preview = subprocess.run(\n        [binary, \"verify\", str(path), \"--top\", \"1\",\n         \"--dry-run\", \"--format\", \"human\"],\n        capture_output=True, timeout=20, check=True,\n    )\n    print(repr(preview.stdout))\n    assert b\"\\x1b\" in preview.stdout\n    assert not marker.exists()\n```\n\n## 改善方針と受け入れ条件\n\n- パスなど外部由来の文字列をhuman出力へ渡す境界でescapeする。候補の論理パスやID自体は書き換えない。\n- [runのhuman出力](https://github.com/HayaoSuzuki/hoimin/blob/b65f62834b35a9ff85795b041e9687b21e5c51ba/crates/hoimin-cli/src/report/human.rs#L89) と診断にも同じ方針を適用する範囲を確認し、コマンドごとのescape漏れを防ぐ。\n- ESC、CR、改行、タブを含むファイル名で、previewの各候補が1行に収まり、入力由来の端末制御バイトを生で出さない。\n- JSON/JSONLでは元の文字列をJSONとして正しく保持する。日本語など通常のUnicodeパスを壊さない。\n- テストを実行しないdry-runでも検証する。\n\n[reviewのhuman renderer](https://github.com/HayaoSuzuki/hoimin/blob/b65f62834b35a9ff85795b041e9687b21e5c51ba/crates/hoimin-cli/src/review/render.rs#L115) はDebug表示でescapeし、[baseline出力](https://github.com/HayaoSuzuki/hoimin/blob/b65f62834b35a9ff85795b041e9687b21e5c51ba/crates/hoimin-cli/src/baseline_output.rs#L123) にも制御文字対策がある。本件はその方針がpreview等へ統一されていない問題。表示処理の責務として集約し、各入力層で名前を禁止する分岐を増やさない。\n",
+    "labels": [
+      {
+        "id": "LA_kwDOTcEqDs8AAAACsOWVQg",
+        "name": "bug",
+        "description": "Something isn't working",
+        "color": "d73a4a"
+      },
+      {
+        "id": "LA_kwDOTcEqDs8AAAAC8MRVfg",
+        "name": "triage:next",
+        "description": "次に取り組む候補。小さな保守・配布改善を優先",
+        "color": "0E8A16"
+      }
+    ],
+    "number": 1002,
+    "title": "bug(output): verify previewとhuman出力でパス由来の端末制御文字をescapeする",
+    "url": "https://github.com/HayaoSuzuki/hoimin/issues/1002"
+  }
+]

@@ -283,6 +283,12 @@ sources:
   working_tree: clean
   sha256: 7c4907d6190fa9019c36eb65207a3b5685ebc6da4737612022cb9aead5739ee6
 
+- id: priority-six-compatibility
+  resource: ../../compatibility.md
+  revision: 3aaf82b0d5b695a548dda33ea248ceaa1dd68219
+  working_tree: modified
+  sha256: 6dc4ae3fda223f4b3a2a0654042d98eac38f1fe010e267f79321d282388f0eb2
+
 ---
 
 # 導出したstatusの送受信（Issue #1010）
@@ -319,12 +325,14 @@ schema number cannot convert old reports.[^issue-949-reader][^issue-949-record]
 That change raised the floor to 0.11.0 and retained fingerprint 11 and session 5.
 Issue #979 introduced floor 0.12.0, report/event schema 8 and fingerprint 12;
 runtime configuration and execution fingerprints omit discovery timeout.
-Issue #984 raises the current floor to 0.13.0 and fingerprint to 13 so incomplete
+Issue #984 raised the floor to 0.13.0 and fingerprint to 13 so incomplete
 sessions cannot reuse conclusive results produced before baseline restoration.
 Session schema 5 remains. Different ample plan timeouts produce the same current
 execution fingerprint when discovery results agree; historical schema-11 and
 schema-12 fingerprint bytes are incompatible. The environment field-13 framing
-remains unchanged. Earlier sections retain their historical versions.[^issue-949-record][^issue-979-compatibility][^issue-984-compatibility]
+remains unchanged. The combined schema-9 cleanup/status change raises the package
+floor to 0.14.0 while retaining fingerprint 13. Earlier sections retain their
+historical versions.[^issue-949-record][^issue-979-compatibility][^issue-984-compatibility][^priority-six-compatibility]
 
 A new successful baseline and restoration do not recompute a reused `killed` or
 `survived` result. The fingerprint version therefore owns this execution-policy
@@ -737,3 +745,5 @@ historical verification evidence.[^issue-1015-compatibility]
 
 [^issue-1010-wire]: [MutantFinishedの直列化と検査](../../../crates/hoimin-core/src/report.rs)。
 [^issue-1010-human]: [humanの完了行](../../../crates/hoimin-cli/src/report/human.rs)。
+
+[^priority-six-compatibility]: [Current combined schema-9 notice](../../compatibility.md#structured-startup-cleanup-in-0140).

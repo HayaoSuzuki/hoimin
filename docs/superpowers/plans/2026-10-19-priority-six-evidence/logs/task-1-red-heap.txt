@@ -1,0 +1,26 @@
+Historical task 1 log excerpt.
+Original: /tmp/hoimin-priority-six-task1-red-heap.log
+Original SHA-256: a58657edfc0177cfc69bbe2a64b3abf1de4c7907286f1c4c50593e177d7d6d09
+Command, base, RED/GREEN meaning and limits: task-1-report.md.
+Only recorded command information is authoritative; no missing argv/head was inferred.
+
+000001:    Compiling hoimin-cli v0.13.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-cli)
+000002:     Finished `test` profile [unoptimized + debuginfo] target(s) in 11.05s
+000003:      Running tests/plan_source_heap.rs (/tmp/hoimin-priority-six-target/debug/deps/plan_source_heap-bd02b4e829f0e6e4)
+000004:
+000005: running 1 test
+000006: test plan_source_hashing_heap_is_independent_of_largest_source ... plan-source-peak mib=1 bytes=1050196
+000007:
+000008: thread 'plan_source_hashing_heap_is_independent_of_largest_source' (55752716) panicked at crates/hoimin-cli/tests/plan_source_heap.rs:72:9:
+000009: whole-source allocation: 1 MiB: 1050196
+000010: note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+000011: FAILED
+000012:
+000013: failures:
+000014:
+000015: failures:
+000016:     plan_source_hashing_heap_is_independent_of_largest_source
+000017:
+000018: test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+000019:
+000020: error: test failed, to rerun pass `-p hoimin-cli --test plan_source_heap`

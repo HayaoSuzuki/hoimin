@@ -1,0 +1,32 @@
+Historical task 5 log excerpt.
+Original: /tmp/hoimin-priority-six-task5-fix1-report-status.log
+Original SHA-256: 5eddc3dce8ba68c243a09b019041384ea123691e5efa5e780c046ef838f89bbb
+Command, base, RED/GREEN meaning and limits: task-5-report.md.
+Only recorded command information is authoritative; no missing argv/head was inferred.
+
+000001:    Compiling hoimin-core v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-core)
+000002:     Finished `test` profile [unoptimized + debuginfo] target(s) in 1.69s
+000003:      Running tests/report_status.rs (/tmp/hoimin-priority-six-target/debug/deps/report_status-f9e071c621dde7b3)
+000004:
+000005: running 119 tests
+000006: test arbitrary_exit_projection_respects_output_collection ... ok
+000007: test cancelled::contradictory_direct_rejection ... ok
+000008: test cancelled::contradictory_tagged_rejection ... ok
+000009: test cancelled::direct_projection ... ok
+000010: test cancelled::matching_direct_decode ... ok
+000011: test cancelled::matching_tagged_decode ... ok
+000012: test cancelled::tagged_projection ... ok
+000013: test cancelled_close_timeout::contradictory_direct_rejection ... ok
+000014: test cancelled_close_timeout::contradictory_tagged_rejection ... ok
+000116: test timeout::matching_direct_decode ... ok
+000117: test timeout::tagged_projection ... ok
+000118: test timeout::matching_tagged_decode ... ok
+000119: test timeout_close_timeout::contradictory_direct_rejection ... ok
+000120: test timeout_close_timeout::direct_projection ... ok
+000121: test timeout_close_timeout::contradictory_tagged_rejection ... ok
+000122: test timeout_close_timeout::matching_direct_decode ... ok
+000123: test timeout_close_timeout::tagged_projection ... ok
+000124: test timeout_close_timeout::matching_tagged_decode ... ok
+000125:
+000126: test result: ok. 119 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+000127:

@@ -139,3 +139,9 @@
 6. Controller prepares the PR body from final behavior/test evidence using the repository template, pushes the issue-named branch and creates the PR referencing all six issues. Do not merge. Check actual branch/ref/PR state and CI results; repair justified failures within scope. Archive the plan-owned report/ledger evidence before cleaning its temporary workspace; remove only task-owned unnecessary build artifacts.
 
 **Report:** `task-7-report.md` adjacent to brief; exact successful and pending checks, docs/OKF consulted/updated, remaining limitations, final artifact paths.
+
+## Execution and review evidence
+
+The [durable execution record](2026-10-19-priority-six-execution.md) indexes the
+task reports, all three self-review stages, independent findings and fixes,
+controller rulings, validation receipts and pending publication checks.

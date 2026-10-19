@@ -1,0 +1,23 @@
+Historical task 3 log excerpt.
+Original: /tmp/hoimin-priority-six-task3-green-preparation.log
+Original SHA-256: 89b8691d5e64ff421edfe533c2fbc6228d27b35b3b91bbba7e4df49a2283002f
+Command, base, RED/GREEN meaning and limits: task-3-report.md.
+Only recorded command information is authoritative; no missing argv/head was inferred.
+
+000001:    Compiling hoimin-core v0.13.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-core)
+000002:    Compiling hoimin-python v0.13.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-python)
+000003:    Compiling hoimin-cli v0.13.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-cli)
+000004:     Finished `test` profile [unoptimized + debuginfo] target(s) in 13.53s
+000005:      Running tests/checked_config.rs (/tmp/hoimin-priority-six-target/debug/deps/checked_config-81fa6f7b7474fb30)
+000006:
+000007: running 7 tests
+000008: test rejects_empty_required_selector ... ok
+000009: test rejects_empty_operators ... ok
+000010: test rejects_empty_test_argv ... ok
+000011: test rejects_escaping_import_root ... ok
+000012: test rejects_jobs_above_process_cap ... ok
+000013: test rejects_jobs_above_absolute_cap ... ok
+000014: test valid_configuration_reaches_fingerprint_resolution ... ok
+000015:
+000016: test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+000017:

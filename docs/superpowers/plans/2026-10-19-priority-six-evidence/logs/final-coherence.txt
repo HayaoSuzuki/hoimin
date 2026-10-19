@@ -1,0 +1,24 @@
+Final check excerpt
+Command: ["uv", "run", "--frozen", "--no-sync", "python", ".superpowers/sdd/2026-10-19-priority-six/validate-task7-coherence.py"]
+Head: 3aaf82b0d5b695a548dda33ea248ceaa1dd68219
+Exit: 0
+Original: /tmp/hoimin-priority-six-task7/coherence.log
+Original SHA-256: cf1d58f389cc0632ea27b3251b227f8e3d73a450264af90eef8c19320cd1a4a6
+
+000001: Cargo.toml: package floor 0.14.0
+000002: pyproject.toml: package floor 0.14.0
+000003: Cargo.lock: shipping local packages [('hoimin-budget-math', '0.14.0'), ('hoimin-cli', '0.14.0'), ('hoimin-core', '0.14.0'), ('hoimin-python', '0.14.0')]
+000004: fuzz/Cargo.lock: shipping local packages [('hoimin-budget-math', '0.14.0'), ('hoimin-core', '0.14.0'), ('hoimin-python', '0.14.0')]
+000005: uv.lock: shipping local packages [('hoimin', '0.14.0')]
+000006: Unpublished separate hoimin-fuzz harness retains its 0.0.0 placeholder
+000007: REPORT_SCHEMA_VERSION=9: crates/hoimin-core/src/report.rs
+000008: PLAN_SCHEMA_VERSION=10: crates/hoimin-cli/src/plan.rs
+000009: FINGERPRINT_SCHEMA_VERSION=13: crates/hoimin-core/src/resume.rs
+000010: SCHEMA_VERSION=5: crates/hoimin-cli/src/session/schema.rs
+000011: RANKING_RULE_VERSION=4: crates/hoimin-cli/src/plan/ranking.rs
+000012: CANDIDATE_SCHEMA_VERSION=1: crates/hoimin-core/src/candidate.rs
+000013: Both published schemas route schema9 and require projected status
+000014: Protected #999 proof/tooling/workflows/math and separate fuzz target/harness sources unchanged
+000015: Only schema-v9 positive goldens changed; earlier golden bytes preserved
+000016: No original-source catalog inputs added/moved/deleted; plans/maintenance remain outside those catalogs
+000017: Limits: static consistency only; no local proof rerun, fuzz run or Linux/Windows execution

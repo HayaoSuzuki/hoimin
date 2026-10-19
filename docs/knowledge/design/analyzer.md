@@ -22,8 +22,9 @@ sources:
   sha256: bb82ef574585c4b10a2e10c76b8dc1d50d5da0b2a7f905624ef5e649faff4be6
 - id: issue-1005-evidence
   resource: ../../maintenance/2026-10-19-issue-1005/report.md
-  revision: faff6415d6a54f71ad881df97e521cc83ac19894
-  working_tree: untracked
+  revision: 3aaf82b0d5b695a548dda33ea248ceaa1dd68219
+  working_tree: clean
+  sha256: f00dd5b9e1daa9f50c1289a0b3a1f2f684be377ce954a8ceae19ed1e55c247f0
 - id: issues-995-996-python
   resource: ../../../crates/hoimin-python/src/lib.rs
   revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
@@ -618,6 +619,8 @@ normal CLI wall time from an instrumented pure-index allocation probe, and sampl
 RSS from requested heap bytes. Requested heap peaks were unchanged; allocation
 traffic and the observed dense-DAG CLI times decreased. These observations are
 neither a universal speed/memory guarantee nor native Linux/Windows evidence.
+The report preserves the exact timed runner in `measured-runner.py.txt`; later
+formatting and type-only tool changes have separate provenance.
 No historical formal proof was extended or relabeled as fresh execution.
 [^issue-1005-evidence]
 

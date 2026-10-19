@@ -1,0 +1,137 @@
+[
+  {
+    "source": "/tmp/hoimin-priority-six-task1-red-symlink.log",
+    "source_sha256": "497faa47162f167215e4cbe69be99a94297fe5e5c27f3e29522d438e066e4d73",
+    "archive": "logs/task-1-red-symlink.txt",
+    "excerpt_sha256": "811a7fd0a4ef8fccd1fb6348a57eb93bc78ce93281058412b13ea036fca3f05f",
+    "report": "task-1-report.md",
+    "selection": "first/last lines, harness results and failure/assertion context; one-based original line numbers",
+    "format": "numbered selected lines with trailing whitespace trimmed; original full-log hash retained"
+  },
+  {
+    "source": "/tmp/hoimin-priority-six-task1-red-fifo.log",
+    "source_sha256": "d6564ac0dd00b2c58acb0a18c2b633827759877f4325be6e5ca66e1ebde0a501",
+    "archive": "logs/task-1-red-fifo.txt",
+    "excerpt_sha256": "d3c7bc9147e758bea4cb3c66b4c416b14cff72364dbed3224507d373da0b4c9d",
+    "report": "task-1-report.md",
+    "selection": "first/last lines, harness results and failure/assertion context; one-based original line numbers",
+    "format": "numbered selected lines with trailing whitespace trimmed; original full-log hash retained"
+  },
+  {
+    "source": "/tmp/hoimin-priority-six-task1-red-heap.log",
+    "source_sha256": "a58657edfc0177cfc69bbe2a64b3abf1de4c7907286f1c4c50593e177d7d6d09",
+    "archive": "logs/task-1-red-heap.txt",
+    "excerpt_sha256": "d17b2b6bd3030df1f2af2166faa578035c35b9acab3b20eed3d40a803a794194",
+    "report": "task-1-report.md",
+    "selection": "first/last lines, harness results and failure/assertion context; one-based original line numbers",
+    "format": "numbered selected lines with trailing whitespace trimmed; original full-log hash retained"
+  },
+  {
+    "source": "/tmp/hoimin-priority-six-task1-final-heap.log",
+    "source_sha256": "450c222f122a6da384efe12eb039889757b8e34197aec44ed7798ab3dfd68a12",
+    "archive": "logs/task-1-final-heap.txt",
+    "excerpt_sha256": "9d09189121a8853492d0b5d4201546af753bfc218d0b85725229fa3091cbc953",
+    "report": "task-1-report.md",
+    "selection": "first/last lines, harness results and failure/assertion context; one-based original line numbers",
+    "format": "numbered selected lines with trailing whitespace trimmed; original full-log hash retained"
+  },
+  {
+    "source": "/tmp/hoimin-priority-six-task2-fix1-red-argv0.log",
+    "source_sha256": "6f75abd0bfdd99d9b2ae4c64aaf210b09a60e27f16c5e097d1374a170c7263d4",
+    "archive": "logs/task-2-fix1-red-argv0.txt",
+    "excerpt_sha256": "44db4f8c822e5c5185e0c9bb0000bb3d8ab7e1f9bd2d5cdb50f3d13df41dff0f",
+    "report": "task-2-report.md",
+    "selection": "first/last lines, harness results and failure/assertion context; one-based original line numbers",
+    "format": "numbered selected lines with trailing whitespace trimmed; original full-log hash retained"
+  },
+  {
+    "source": "/tmp/hoimin-priority-six-task2-fix1-green-argv0.log",
+    "source_sha256": "76cf6249ae2cc21d91509cb2688f116a35d9af6cc76a16fb69ed318ead63f90b",
+    "archive": "logs/task-2-fix1-green-argv0.txt",
+    "excerpt_sha256": "de665d6d8614a6a229d088c11cb054d2c6a2f8c1642df8d6768643f0bbb72132",
+    "report": "task-2-report.md",
+    "selection": "first/last lines, harness results and failure/assertion context; one-based original line numbers",
+    "format": "numbered selected lines with trailing whitespace trimmed; original full-log hash retained"
+  },
+  {
+    "source": "/tmp/hoimin-priority-six-task3-red-preparation.log",
+    "source_sha256": "e655a226c1b5055f92b599a46ad8755432c6e304f693d31e2ee07e526a108c97",
+    "archive": "logs/task-3-red-preparation.txt",
+    "excerpt_sha256": "652c66f465082e521896ad3378941a2bb3aea4a4fbe833c5721a0286f2358f3c",
+    "report": "task-3-report.md",
+    "selection": "first/last lines, harness results and failure/assertion context; one-based original line numbers",
+    "format": "numbered selected lines with trailing whitespace trimmed; original full-log hash retained"
+  },
+  {
+    "source": "/tmp/hoimin-priority-six-task3-red-doc.log",
+    "source_sha256": "708af6885f0a840e3822428386673da17d5f521f1c57f8a2f85e76505c463764",
+    "archive": "logs/task-3-red-doc.txt",
+    "excerpt_sha256": "0c4007f6ccfcb4e7516684d14469931ca36542120b15e6d48881260a8aa48b75",
+    "report": "task-3-report.md",
+    "selection": "first/last lines, harness results and failure/assertion context; one-based original line numbers",
+    "format": "numbered selected lines with trailing whitespace trimmed; original full-log hash retained"
+  },
+  {
+    "source": "/tmp/hoimin-priority-six-task3-green-preparation.log",
+    "source_sha256": "89b8691d5e64ff421edfe533c2fbc6228d27b35b3b91bbba7e4df49a2283002f",
+    "archive": "logs/task-3-green-preparation.txt",
+    "excerpt_sha256": "f5094fceeb0bec3da5fd5e553bda798a5b594d47ed081a97acd9d86b1cf2987b",
+    "report": "task-3-report.md",
+    "selection": "first/last lines, harness results and failure/assertion context; one-based original line numbers",
+    "format": "numbered selected lines with trailing whitespace trimmed; original full-log hash retained"
+  },
+  {
+    "source": "/tmp/hoimin-priority-six-task4-red-core.log",
+    "source_sha256": "37c4532cfba38ee84aa8e2cc8ee26beaecdd38f82d60357d55ec1c69415c0f8a",
+    "archive": "logs/task-4-red-core.txt",
+    "excerpt_sha256": "bf66cf41700e801e8f75b4f970d8218dc75e8028dd98775329a2e37fbec6058e",
+    "report": "task-4-report.md",
+    "selection": "first/last lines, harness results and failure/assertion context; one-based original line numbers",
+    "format": "numbered selected lines with trailing whitespace trimmed; original full-log hash retained"
+  },
+  {
+    "source": "/tmp/hoimin-priority-six-task4-red-owner-progress.log",
+    "source_sha256": "3fdf2233b612cfaad0d23e9ec2d9d3f362463f4388340d7a14ab33f5bdcfb58d",
+    "archive": "logs/task-4-red-owner-progress.txt",
+    "excerpt_sha256": "a3dd5a7e67b56dc57146818c8eab9adca67e4b42e0b895062e485f893941e66d",
+    "report": "task-4-report.md",
+    "selection": "first/last lines, harness results and failure/assertion context; one-based original line numbers",
+    "format": "numbered selected lines with trailing whitespace trimmed; original full-log hash retained"
+  },
+  {
+    "source": "/tmp/hoimin-priority-six-task4-presentation-final.log",
+    "source_sha256": "ef89a9041a8c00e8580c1d6b56135cad84c99195dd11cecd509f8122d7293473",
+    "archive": "logs/task-4-presentation-final.txt",
+    "excerpt_sha256": "939d09024213aa87aaf072d9a17a42b7b7ee9217607037490530e0556753fa79",
+    "report": "task-4-report.md",
+    "selection": "first/last lines, harness results and failure/assertion context; one-based original line numbers",
+    "format": "numbered selected lines with trailing whitespace trimmed; original full-log hash retained"
+  },
+  {
+    "source": "/tmp/hoimin-priority-six-task5-red-core.log",
+    "source_sha256": "8ac61537c3f704e9e1127345e8ee57d5ac2737d42c34e2683817e3b3b25f8de2",
+    "archive": "logs/task-5-red-core.txt",
+    "excerpt_sha256": "3c4d5a7cdc76da44cd7d37bc4ced2f36070e0a176f3fa4ed27687f57d7f90401",
+    "report": "task-5-report.md",
+    "selection": "first/last lines, harness results and failure/assertion context; one-based original line numbers",
+    "format": "numbered selected lines with trailing whitespace trimmed; original full-log hash retained"
+  },
+  {
+    "source": "/tmp/hoimin-priority-six-task5-red-human.log",
+    "source_sha256": "6f9a62d242b70f4c8845d43eae890e9cbcca8aa14fa6a1ab48e5305f383681c4",
+    "archive": "logs/task-5-red-human.txt",
+    "excerpt_sha256": "8ad2f601052fd0e6f860f04cc2b3c65c06fb21bfa99fc74fe9eee2fc2e4c1e4d",
+    "report": "task-5-report.md",
+    "selection": "first/last lines, harness results and failure/assertion context; one-based original line numbers",
+    "format": "numbered selected lines with trailing whitespace trimmed; original full-log hash retained"
+  },
+  {
+    "source": "/tmp/hoimin-priority-six-task5-fix1-report-status.log",
+    "source_sha256": "5eddc3dce8ba68c243a09b019041384ea123691e5efa5e780c046ef838f89bbb",
+    "archive": "logs/task-5-fix1-report-status.txt",
+    "excerpt_sha256": "b88df1261bb096745326f02bfcb56cfdbddaa6611712952bfbcee5eccfff2b86",
+    "report": "task-5-report.md",
+    "selection": "first/last lines, harness results and failure/assertion context; one-based original line numbers",
+    "format": "numbered selected lines with trailing whitespace trimmed; original full-log hash retained"
+  }
+]

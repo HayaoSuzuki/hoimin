@@ -1,0 +1,9 @@
+Final check excerpt
+Command: ["cargo", "run", "--locked", "-p", "hoimin-cli", "--example", "generate_cli_reference", "--", "--check"]
+Head: 3aaf82b0d5b695a548dda33ea248ceaa1dd68219
+Exit: 0
+Original: /tmp/hoimin-priority-six-task7/cli-reference.log
+Original SHA-256: a0a11016269ae7c7275ce91a509ea26f1c24c37cd9478bae1c5b1ce40b08a291
+
+000001:     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+000002:      Running `/tmp/hoimin-priority-six-target/debug/examples/generate_cli_reference --check`

@@ -1,0 +1,18 @@
+Historical task 1 log excerpt.
+Original: /tmp/hoimin-priority-six-task1-final-heap.log
+Original SHA-256: 450c222f122a6da384efe12eb039889757b8e34197aec44ed7798ab3dfd68a12
+Command, base, RED/GREEN meaning and limits: task-1-report.md.
+Only recorded command information is authoritative; no missing argv/head was inferred.
+
+000001:    Compiling hoimin-cli v0.13.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-cli)
+000002:     Finished `test` profile [unoptimized + debuginfo] target(s) in 2.33s
+000003:      Running tests/plan_source_heap.rs (/tmp/hoimin-priority-six-target/debug/deps/plan_source_heap-bd02b4e829f0e6e4)
+000004:
+000005: running 1 test
+000006: test plan_source_hashing_heap_is_independent_of_largest_source ... plan-source-peak mib=1 bytes=1971
+000007: plan-source-peak mib=16 bytes=1248
+000008: plan-source-peak mib=64 bytes=1248
+000009: ok
+000010:
+000011: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.71s
+000012:

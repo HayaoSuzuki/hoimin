@@ -957,7 +957,7 @@ Cancellation can return before a blocking worker exits; the worker retains its
 resources until it stops. Synchronous reads and parsing are not forcibly
 interruptible. Runtime total/baseline/mutant deadlines remain separate.
 Issue #979 introduced plan 10/report 8/fingerprint 12 and floor 0.12.0.
-Issue #984 keeps these plan/report shapes and raises fingerprint to 13 and the
+Issue #984 kept these plan/report shapes and raised fingerprint to 13 and the
 floor to 0.13.0 to exclude pre-restoration results from resume. SQLite session 5,
 ranking 4 and candidate schema 1/ID v1 stay unchanged; current plans need no
 regeneration for that execution fix. See the [discovery migration notice](../../compatibility.md#discovery-timeout-ownership-in-0120)

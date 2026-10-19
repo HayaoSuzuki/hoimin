@@ -1,0 +1,8 @@
+Final check excerpt
+Command: ["cargo", "clippy", "--workspace", "--all-targets", "--all-features", "--locked", "--", "-D", "warnings"]
+Head: 3aaf82b0d5b695a548dda33ea248ceaa1dd68219
+Exit: 0
+Original: /tmp/hoimin-priority-six-task7/clippy.log
+Original SHA-256: 8b1fd2394f7b6f177ede882431154a419bd9f404f00add314c912e91a7fc0ec0
+
+000001:     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.31s

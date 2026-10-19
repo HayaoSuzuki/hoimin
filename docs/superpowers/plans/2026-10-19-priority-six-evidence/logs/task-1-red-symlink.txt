@@ -1,0 +1,38 @@
+Historical task 1 log excerpt.
+Original: /tmp/hoimin-priority-six-task1-red-symlink.log
+Original SHA-256: 497faa47162f167215e4cbe69be99a94297fe5e5c27f3e29522d438e066e4d73
+Command, base, RED/GREEN meaning and limits: task-1-report.md.
+Only recorded command information is authoritative; no missing argv/head was inferred.
+
+000001:    Compiling hoimin-cli v0.13.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-cli)
+000002:     Finished `test` profile [unoptimized + debuginfo] target(s) in 9.87s
+000003:      Running unittests src/lib.rs (/tmp/hoimin-priority-six-target/debug/deps/hoimin_cli-93cff9ce867fc646)
+000004:
+000005: running 2 tests
+000006:
+000007: thread 'plan::validation_tests::source_hash_rejects_resolved_symlink_swap' (55750490) panicked at crates/hoimin-cli/src/plan/validation_tests.rs:782:5:
+000008: hash/symlink:
+000009: thread 'plan::validation_tests::safe_source_swap_probe' (55750497) panicked at crates/hoimin-cli/src/plan/validation_tests.rs:819:71:
+000010: called `Result::unwrap_err()` on an `Ok` value: [FingerprintInputFile { path: "src/calc.py", hash: "a45e58cf1c8d9b6a95c41a6754d2a35a9bf2a493174391f7547de2785ebf7c98" }]
+000011: note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+000012:
+000013: note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+000014:
+000015: thread 'plan::validation_tests::descriptor_validation_rejects_resolved_symlink_swap' (55750489) panicked at crates/hoimin-cli/src/plan/validation_tests.rs:782:5:
+000016: validate/symlink:
+000017: thread 'plan::validation_tests::safe_source_swap_probe' (55750498) panicked at crates/hoimin-cli/src/plan/validation_tests.rs:823:83:
+000018: called `Result::unwrap_err()` on an `Ok` value: {"src/calc.py"}
+000019: note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+000020:
+000021: test plan::validation_tests::source_hash_rejects_resolved_symlink_swap ... FAILED
+000022: test plan::validation_tests::descriptor_validation_rejects_resolved_symlink_swap ... FAILED
+000023:
+000024: failures:
+000025:
+000026: failures:
+000027:     plan::validation_tests::descriptor_validation_rejects_resolved_symlink_swap
+000028:     plan::validation_tests::source_hash_rejects_resolved_symlink_swap
+000029:
+000030: test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 761 filtered out; finished in 0.01s
+000031:
+000032: error: test failed, to rerun pass `-p hoimin-cli --lib`

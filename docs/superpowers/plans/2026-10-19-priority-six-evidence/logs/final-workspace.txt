@@ -1,0 +1,372 @@
+Final check excerpt
+Command: ["cargo", "test", "--workspace", "--locked", "--", "--test-threads=2"]
+Head: 3aaf82b0d5b695a548dda33ea248ceaa1dd68219
+Exit: 0
+Original: /tmp/hoimin-priority-six-task7/workspace.log
+Original SHA-256: 12bda8a5a7b5f03760c60284162a823e13ea4c26144bba1ad53cf6d40d92c7c8
+
+000001:    Compiling hoimin-cli v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-cli)
+000002:    Compiling hoimin-python v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-python)
+000003:    Compiling hoimin-core v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-core)
+000004:    Compiling hoimin-budget-math v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-budget-math)
+000005:     Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 13s
+000006:      Running unittests src/lib.rs (/tmp/hoimin-priority-six-target/debug/deps/hoimin_budget_math-15158f3443cae438)
+000007:
+000008: running 0 tests
+000009:
+000010: test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+000012:      Running tests/arithmetic.rs (/tmp/hoimin-priority-six-target/debug/deps/arithmetic-2ec8a9f2d7ea48bb)
+000045: test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+000047:      Running tests/serialization.rs (/tmp/hoimin-priority-six-target/debug/deps/serialization-995f3ba68dd97e4f)
+000057: test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+000059:      Running unittests src/lib.rs (/tmp/hoimin-priority-six-target/debug/deps/hoimin_cli-364ef5e82ff81ad1)
+000797: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 794 filtered out; finished in 0.02s
+000801: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 794 filtered out; finished in 0.02s
+000870: test result: ok. 770 passed; 0 failed; 25 ignored; 0 measured; 0 filtered out; finished in 14.26s
+000872:      Running unittests src/main.rs (/tmp/hoimin-priority-six-target/debug/deps/hoimin-d23431f970dd17b1)
+000879: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+000881:      Running tests/abstract_set_provider.rs (/tmp/hoimin-priority-six-target/debug/deps/abstract_set_provider-01370a3c67e65305)
+000888: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s
+000890:      Running tests/analysis_depth.rs (/tmp/hoimin-priority-six-target/debug/deps/analysis_depth-c9c92f40ace675f6)
+000904: test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.51s
+000906:      Running tests/analyzer_handler.rs (/tmp/hoimin-priority-six-target/debug/deps/analyzer_handler-c198a58f715c0a0e)
+000940: test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+000942:      Running tests/artifact_inputs.rs (/tmp/hoimin-priority-six-target/debug/deps/artifact_inputs-08eab154531b868f)
+000962: test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.29s
+000964:      Running tests/augmented_to_assignment.rs (/tmp/hoimin-priority-six-target/debug/deps/augmented_to_assignment-f88df690dc2e3565)
+000972: test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+000974:      Running tests/baseline_output.rs (/tmp/hoimin-priority-six-target/debug/deps/baseline_output-a199194b78e5fea0)
+000982: test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.43s
+000984:      Running tests/boundary_selection.rs (/tmp/hoimin-priority-six-target/debug/deps/boundary_selection-1748074e1695610f)
+000989: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.69s
+000991:      Running tests/builtin_evaluation_order.rs (/tmp/hoimin-priority-six-target/debug/deps/builtin_evaluation_order-3410398f8ada5115)
+000997: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+000999:      Running tests/changed_excluded_paths.rs (/tmp/hoimin-priority-six-target/debug/deps/changed_excluded_paths-099d09268f5bd7ae)
+001008: test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
+001010:      Running tests/changed_git_scope.rs (/tmp/hoimin-priority-six-target/debug/deps/changed_git_scope-d9d5bcd95691801b)
+001025: test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.98s
+001027:      Running tests/checked_config.rs (/tmp/hoimin-priority-six-target/debug/deps/checked_config-b93ce559529d3999)
+001038: test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+001040:      Running tests/cli_config.rs (/tmp/hoimin-priority-six-target/debug/deps/cli_config-f6668f0f94727d85)
+001129: test result: ok. 84 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+001131:      Running tests/collection_annotation_builtins.rs (/tmp/hoimin-priority-six-target/debug/deps/collection_annotation_builtins-54d4a7b2921c464b)
+001140: test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.66s
+001142:      Running tests/comprehension_named_bindings.rs (/tmp/hoimin-priority-six-target/debug/deps/comprehension_named_bindings-ea8564936cc0f089)
+001161: test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.09s
+001163:      Running tests/condition_clause_delete.rs (/tmp/hoimin-priority-six-target/debug/deps/condition_clause_delete-e76b6cf8261926e4)
+001171: test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+001173:      Running tests/condition_constant.rs (/tmp/hoimin-priority-six-target/debug/deps/condition_constant-7fb1f8b71cdc7d5d)
+001181: test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+001183:      Running tests/container_element_delete.rs (/tmp/hoimin-priority-six-target/debug/deps/container_element_delete-d52cb057432410ab)
+001191: test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
+001193:      Running tests/conversion_call_remove.rs (/tmp/hoimin-priority-six-target/debug/deps/conversion_call_remove-c25257a874d117b3)
+001202: test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+001204:      Running tests/declaration_only_annotations.rs (/tmp/hoimin-priority-six-target/debug/deps/declaration_only_annotations-30500a486c2bd4b1)
+001209: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
+001211:      Running tests/default_operator_selection.rs (/tmp/hoimin-priority-six-target/debug/deps/default_operator_selection-361d08388c1bca6a)
+001218: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+001220:      Running tests/deferred_annotation_imports.rs (/tmp/hoimin-priority-six-target/debug/deps/deferred_annotation_imports-c2bdef9eca003b54)
+001237: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
+001239:      Running tests/diagnostic_heap.rs (/tmp/hoimin-priority-six-target/debug/deps/diagnostic_heap-a17f176651e85e2f)
+001244: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+001246:      Running tests/disk_shutdown.rs (/tmp/hoimin-priority-six-target/debug/deps/disk_shutdown-639d9307f9e34002)
+001254: test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+001256:      Running tests/disk_workspace.rs (/tmp/hoimin-priority-six-target/debug/deps/disk_workspace-079bf43644b79311)
+001263: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+001265:      Running tests/enum_member_replace.rs (/tmp/hoimin-priority-six-target/debug/deps/enum_member_replace-8b1471fa61ad1e3d)
+001274: test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
+001276:      Running tests/exception_hierarchy.rs (/tmp/hoimin-priority-six-target/debug/deps/exception_hierarchy-0b3003bbb6a777df)
+001302: test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.67s
+001304:      Running tests/exception_hierarchy_scopes.rs (/tmp/hoimin-priority-six-target/debug/deps/exception_hierarchy_scopes-4141d141cf93e5f7)
+001313: test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+001315:      Running tests/fingerprint_env.rs (/tmp/hoimin-priority-six-target/debug/deps/fingerprint_env-d7a399d5d73acd13)
+001325: test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.78s
+001327:      Running tests/fingerprint_env_plan.rs (/tmp/hoimin-priority-six-target/debug/deps/fingerprint_env_plan-f931640ebf246f5d)
+001335: test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+001337:      Running tests/fingerprint_input_heap.rs (/tmp/hoimin-priority-six-target/debug/deps/fingerprint_input_heap-536792f564abe390)
+001342: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.85s
+001344:      Running tests/fingerprint_inputs.rs (/tmp/hoimin-priority-six-target/debug/deps/fingerprint_inputs-6e71537a38132adb)
+001378: test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+001380:      Running tests/function_body_erase.rs (/tmp/hoimin-priority-six-target/debug/deps/function_body_erase-11f6c5c4fbd305e5)
+001390: test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s
+001392:      Running tests/function_body_return_constant.rs (/tmp/hoimin-priority-six-target/debug/deps/function_body_return_constant-49b0a99c8043c038)
+001405: test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.51s
+001407:      Running tests/import_roots.rs (/tmp/hoimin-priority-six-target/debug/deps/import_roots-6aba6e24c78837a0)
+001417: test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.85s
+001419:      Running tests/integer_literal_neighbor.rs (/tmp/hoimin-priority-six-target/debug/deps/integer_literal_neighbor-0dbfc5f8be5f1cc9)
+001426: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+001428:      Running tests/lean_annotation_scope_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_annotation_scope_oracle-def19df311c26e4c)
+001436: test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+001438:      Running tests/lean_binding_flow_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_binding_flow_oracle-07345cb43c883bd1)
+001446: test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+001448:      Running tests/lean_bounded_candidate_discovery_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_bounded_candidate_discovery_oracle-c08eb73530b2c42b)
+001457: test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+001459:      Running tests/lean_candidate_ranking_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_candidate_ranking_oracle-07ea0144c24da768)
+001465: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+001467:      Running tests/lean_candidate_span_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_candidate_span_oracle-5e282c050dbdb425)
+001480: test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+001482:      Running tests/lean_changed_context_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_changed_context_oracle-44ca679e37f3f90d)
+001488: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.08s
+001490:      Running tests/lean_changed_lines_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_changed_lines_oracle-bd1c8dd49b391f44)
+001498: test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.81s
+001500:      Running tests/lean_changed_target_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_changed_target_oracle-3480d6cb52ba454a)
+001511: test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+001513:      Running tests/lean_compound_pattern_guard_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_compound_pattern_guard_oracle-eb3d450ed9715c8a)
+001519: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+001521:      Running tests/lean_disk_shutdown_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_disk_shutdown_oracle-c7866de50623ceb0)
+001530: test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+001532:      Running tests/lean_environment_fingerprint_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_environment_fingerprint_oracle-043e3cf2a506a94d)
+001539: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.82s
+001541:      Running tests/lean_except_star_flow_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_except_star_flow_oracle-2df7b4a23c0ab74d)
+001547: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+001549:      Running tests/lean_exception_hierarchy_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_exception_hierarchy_oracle-4270a7ddd06f7aff)
+001555: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.83s
+001557:      Running tests/lean_exception_match_binding_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_exception_match_binding_oracle-2ab1537dc6c27e00)
+001569: test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+001571:      Running tests/lean_glob_selection_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_glob_selection_oracle-f856584a1e98dbda)
+001578: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+001580:      Running tests/lean_implicit_finally_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_implicit_finally_oracle-03eddac81b477fd3)
+001587: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+001589:      Running tests/lean_line_diverse_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_line_diverse_oracle-cd78ff829d0fd0ba)
+001595: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+001597:      Running tests/lean_multiple_handler_join_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_multiple_handler_join_oracle-f94752656ad58113)
+001603: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+001605:      Running tests/lean_nested_match_exit_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_nested_match_exit_oracle-8bc01efcf495770d)
+001611: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+001613:      Running tests/lean_nested_try_flow_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_nested_try_flow_oracle-c34ac2c9d846300d)
+001619: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+001621:      Running tests/lean_nullable_gate_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_nullable_gate_oracle-30815cbe4a652189)
+001627: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.83s
+001629:      Running tests/lean_paging_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_paging_oracle-1592f9ecaae42843)
+001635: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+001637:      Running tests/lean_prepared_annotation_import_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_prepared_annotation_import_oracle-b3d57cd7878f9a35)
+001644: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.56s
+001646:      Running tests/lean_prepared_namespace_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_prepared_namespace_oracle-17855a6225207552)
+001653: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.75s
+001655:      Running tests/lean_private_annotation_import_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_private_annotation_import_oracle-7220aa930df65de9)
+001663: test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.72s
+001665:      Running tests/lean_progress_decision_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_progress_decision_oracle-05e8fc436e6004ed)
+001674: test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.88s
+001676:      Running tests/lean_progress_input_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_progress_input_oracle-929414e43c175c1c)
+001684: test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.43s
+001686:      Running tests/lean_result_lifecycle_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_result_lifecycle_oracle-cbce60280456daba)
+001699: test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.94s
+001701:      Running tests/lean_resume_diagnostic_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_resume_diagnostic_oracle-6c7788eb6f2ff1b3)
+001708: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
+001710:      Running tests/lean_schema_migration_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_schema_migration_oracle-25f7ee8d3f7f2bad)
+001717: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+001719:      Running tests/lean_session_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_session_oracle-4b040fc0736b6c22)
+001728: test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+001730:      Running tests/lean_shutdown_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_shutdown_oracle-302af71989578ed4)
+001740: test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.78s
+001742:      Running tests/lean_source_order_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_source_order_oracle-9d464770d4819dd9)
+001748: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.91s
+001750:      Running tests/lean_survivor_review_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_survivor_review_oracle-2cfbdf504ef71fa6)
+001755: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+001757:      Running tests/lean_workspace_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_workspace_oracle-3e8e330251843873)
+001763: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+001765:      Running tests/line_diverse.rs (/tmp/hoimin-priority-six-target/debug/deps/line_diverse-eb0505244e4b3bbb)
+001772: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+001774:      Running tests/manifest_buffer_lifetime.rs (/tmp/hoimin-priority-six-target/debug/deps/manifest_buffer_lifetime-28b94036857f2afa)
+001780: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.47s
+001782:      Running tests/mapping_pattern_keys.rs (/tmp/hoimin-priority-six-target/debug/deps/mapping_pattern_keys-d080ce6f3d42e8f4)
+001791: test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.34s
+001793:      Running tests/method_call_remove.rs (/tmp/hoimin-priority-six-target/debug/deps/method_call_remove-9b74d88d3c676734)
+001804: test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s
+001806:      Running tests/method_replacement_selection.rs (/tmp/hoimin-priority-six-target/debug/deps/method_replacement_selection-eef1b753267f4d2c)
+001811: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+001813:      Running tests/metrics_destinations.rs (/tmp/hoimin-priority-six-target/debug/deps/metrics_destinations-88bc356f61fc3bb3)
+001846: test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.99s
+001848:      Running tests/missing_source.rs (/tmp/hoimin-priority-six-target/debug/deps/missing_source-3012e2ab740b2a9e)
+001855: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.56s
+001857:      Running tests/negative_neighbors.rs (/tmp/hoimin-priority-six-target/debug/deps/negative_neighbors-0407580bdbc90905)
+001863: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
+001865:      Running tests/nullable_builtin_provenance.rs (/tmp/hoimin-priority-six-target/debug/deps/nullable_builtin_provenance-31edbef70e9db391)
+001871: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.45s
+001873:      Running tests/operator_function_contracts.rs (/tmp/hoimin-priority-six-target/debug/deps/operator_function_contracts-f90792f5407f2510)
+001895: test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.99s
+001897:      Running tests/optional_keyword_delete.rs (/tmp/hoimin-priority-six-target/debug/deps/optional_keyword_delete-80c01b6a7a47e283)
+001907: test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+001909:      Running tests/owned_entry.rs (/tmp/hoimin-priority-six-target/debug/deps/owned_entry-d03ce1a1b5341a2d)
+001916: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.10s
+001918:      Running tests/plan.rs (/tmp/hoimin-priority-six-target/debug/deps/plan-b95715efb7d98c91)
+002072: test result: ok. 149 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 10.37s
+002074:      Running tests/plan_schema_heap.rs (/tmp/hoimin-priority-six-target/debug/deps/plan_schema_heap-f51bb4d67815f5bb)
+002083: test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.49s
+002085:      Running tests/plan_source_heap.rs (/tmp/hoimin-priority-six-target/debug/deps/plan_source_heap-32ca6e5b458ec780)
+002090: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.81s
+002092:      Running tests/process_handler.rs (/tmp/hoimin-priority-six-target/debug/deps/process_handler-46e105e31b3170f8)
+002124: test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.38s
+002126:      Running tests/progress.rs (/tmp/hoimin-priority-six-target/debug/deps/progress-a27504b087077f1c)
+002268: test result: ok. 138 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.80s
+002270:      Running tests/progress_compare_heap.rs (/tmp/hoimin-priority-six-target/debug/deps/progress_compare_heap-d8b42edba9684daa)
+002275: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.76s
+002277:      Running tests/progress_details_heap.rs (/tmp/hoimin-priority-six-target/debug/deps/progress_details_heap-f70136ea3fd3d27b)
+002282: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.15s
+002284:      Running tests/progress_heap.rs (/tmp/hoimin-priority-six-target/debug/deps/progress_heap-8a3469fc9725b957)
+002289: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.74s
+002291:      Running tests/progress_jsonl_heap.rs (/tmp/hoimin-priority-six-target/debug/deps/progress_jsonl_heap-d6b735b6816980b5)
+002296: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.49s
+002298:      Running tests/python_api.rs (/tmp/hoimin-priority-six-target/debug/deps/python_api-b0088e52c69cd566)
+002303: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+002305:      Running tests/ranking_heap.rs (/tmp/hoimin-priority-six-target/debug/deps/ranking_heap-1dbf57651671d181)
+002313: test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.95s
+002315:      Running tests/report_handler.rs (/tmp/hoimin-priority-six-target/debug/deps/report_handler-d11c78eef9aa30a0)
+002465: test result: ok. 146 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.83s
+002467:      Running tests/report_heap.rs (/tmp/hoimin-priority-six-target/debug/deps/report_heap-0fc92ec946941a1b)
+002472: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+002474:      Running tests/resume_budget.rs (/tmp/hoimin-priority-six-target/debug/deps/resume_budget-4e97cd9d9188c2ed)
+002480: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.14s
+002482:      Running tests/resume_diagnostics.rs (/tmp/hoimin-priority-six-target/debug/deps/resume_diagnostics-6fc98bcf2ebdfb49)
+002491: test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.71s
+002493:      Running tests/return_tuple_swap.rs (/tmp/hoimin-priority-six-target/debug/deps/return_tuple_swap-d40a44b93e4f50ec)
+002500: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+002502:      Running tests/review_cli.rs (/tmp/hoimin-priority-six-target/debug/deps/review_cli-9614ac5c3372b13b)
+002529: test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+002531:      Running tests/run_e2e.rs (/tmp/hoimin-priority-six-target/debug/deps/run_e2e-01c4127b9fb8976d)
+002612: test result: ok. 77 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 45.47s
+002614:      Running tests/rust_analyzer.rs (/tmp/hoimin-priority-six-target/debug/deps/rust_analyzer-629b1494cc98e47e)
+002640: test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.25s
+002642:      Running tests/sampling.rs (/tmp/hoimin-priority-six-target/debug/deps/sampling-e7c82f68e399604d)
+002655: test result: ok. 8 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.60s
+002657:      Running tests/selection_heap.rs (/tmp/hoimin-priority-six-target/debug/deps/selection_heap-39f8e6d04ece496d)
+002662: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+002664:      Running tests/session_handler.rs (/tmp/hoimin-priority-six-target/debug/deps/session_handler-f4802def9b4eebf6)
+002720: test result: ok. 51 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 1.51s
+002722:      Running tests/source_discovery.rs (/tmp/hoimin-priority-six-target/debug/deps/source_discovery-6b6ef6587df2fb5f)
+002731: test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+002733:      Running tests/source_encoding.rs (/tmp/hoimin-priority-six-target/debug/deps/source_encoding-3ea8afa912ac9cae)
+002743: test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.25s
+002745:      Running tests/source_encoding_heap.rs (/tmp/hoimin-priority-six-target/debug/deps/source_encoding_heap-cf86efd10eda96d0)
+002750: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+002752:      Running tests/statement_delete.rs (/tmp/hoimin-priority-six-target/debug/deps/statement_delete-bc9dc3201d952595)
+002760: test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+002762:      Running tests/stdlib_conversion_call_remove.rs (/tmp/hoimin-priority-six-target/debug/deps/stdlib_conversion_call_remove-f9b4bb49766fd09d)
+002779: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.80s
+002781:      Running tests/string_literal_empty.rs (/tmp/hoimin-priority-six-target/debug/deps/string_literal_empty-e5653a970328a6d8)
+002789: test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.52s
+002791:      Running tests/string_segment_empty.rs (/tmp/hoimin-priority-six-target/debug/deps/string_segment_empty-243460911e2632c0)
+002804: test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.66s
+002806:      Running tests/target_handler.rs (/tmp/hoimin-priority-six-target/debug/deps/target_handler-b4b5b37576caf406)
+002862: test result: ok. 52 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.52s
+002864:      Running tests/telemetry.rs (/tmp/hoimin-priority-six-target/debug/deps/telemetry-41f8267ec494aa5f)
+002875: test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.35s
+002877:      Running tests/type_parameter_bindings.rs (/tmp/hoimin-priority-six-target/debug/deps/type_parameter_bindings-71ce1569c2333bde)
+002889: test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.90s
+002891:      Running tests/valid_python_corpus.rs (/tmp/hoimin-priority-six-target/debug/deps/valid_python_corpus-868f02f27e2a54e6)
+002902: test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.91s
+002904:      Running tests/while_condition_false.rs (/tmp/hoimin-priority-six-target/debug/deps/while_condition_false-74ae20fdcdd9c8cc)
+002913: test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+002915:      Running tests/windows_resource_scope.rs (/tmp/hoimin-priority-six-target/debug/deps/windows_resource_scope-fba6dd483350a2ef)
+002919: test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+002921:      Running tests/with_suppression.rs (/tmp/hoimin-priority-six-target/debug/deps/with_suppression-e60b775a45fdd373)
+002927: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+002929:      Running tests/workspace_empty_directories.rs (/tmp/hoimin-priority-six-target/debug/deps/workspace_empty_directories-1e17da4bbf2f0c39)
+002939: test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+002941:      Running tests/workspace_handler.rs (/tmp/hoimin-priority-six-target/debug/deps/workspace_handler-c1ac17f45796b1d4)
+002981: test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+002983:      Running tests/workspace_heap.rs (/tmp/hoimin-priority-six-target/debug/deps/workspace_heap-c0d83453c44ed398)
+002988: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+002990:      Running tests/workspace_preflight_heap.rs (/tmp/hoimin-priority-six-target/debug/deps/workspace_preflight_heap-d4f7d0e33c219813)
+002995: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.82s
+002997:      Running tests/workspace_recovery.rs (/tmp/hoimin-priority-six-target/debug/deps/workspace_recovery-929299d0c8c3248c)
+003025: test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+003027:      Running tests/workspace_stream.rs (/tmp/hoimin-priority-six-target/debug/deps/workspace_stream-67f72a3920722c2e)
+003033: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+003035:      Running tests/workspace_stream_heap.rs (/tmp/hoimin-priority-six-target/debug/deps/workspace_stream_heap-88d7028d34f94ecf)
+003040: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.24s
+003042:      Running unittests src/lib.rs (/tmp/hoimin-priority-six-target/debug/deps/hoimin_core-30efd208e77cb5d4)
+003093: test result: ok. 45 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.04s
+003095:      Running tests/budget.rs (/tmp/hoimin-priority-six-target/debug/deps/budget-70e0a2ad18de4aae)
+003115: test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003117:      Running tests/budget_projection.rs (/tmp/hoimin-priority-six-target/debug/deps/budget_projection-9a796ae069b3438b)
+003129: test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003131:      Running tests/candidate_policy.rs (/tmp/hoimin-priority-six-target/debug/deps/candidate_policy-777de05ed9ccbce4)
+003158: test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+003160:      Running tests/changed_selection.rs (/tmp/hoimin-priority-six-target/debug/deps/changed_selection-9e46b265ccd29616)
+003171: test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+003173:      Running tests/checked_config.rs (/tmp/hoimin-priority-six-target/debug/deps/checked_config-7a7943a428607e50)
+003191: test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+003193:      Running tests/config_json.rs (/tmp/hoimin-priority-six-target/debug/deps/config_json-7f992bafd19e22d0)
+003210: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003212:      Running tests/contracts.rs (/tmp/hoimin-priority-six-target/debug/deps/contracts-575e3d1312967809)
+003219: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003221:      Running tests/disk_policy.rs (/tmp/hoimin-priority-six-target/debug/deps/disk_policy-2b8d85d4358ac578)
+003249: test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+003251:      Running tests/disk_root_cleanup.rs (/tmp/hoimin-priority-six-target/debug/deps/disk_root_cleanup-cdd39ebcb36512f5)
+003271: test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+003273:      Running tests/janitor_report.rs (/tmp/hoimin-priority-six-target/debug/deps/janitor_report-fbfe9ef147943af0)
+003279: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003281:      Running tests/lean_budget_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_budget_oracle-e4765d7ef6d24f83)
+003291: test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003293:      Running tests/lean_disk_guard_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_disk_guard_oracle-dab5afca0bb4b44a)
+003301: test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003303:      Running tests/lean_mutation_score_exit_policy_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_mutation_score_exit_policy_oracle-8311ef14a0159599)
+003311: test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003313:      Running tests/lean_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_oracle-ecfe4c3b2d71379e)
+003323: test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003325:      Running tests/lean_process_output_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_process_output_oracle-d7c7c8c35bcd9adf)
+003331: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003333:      Running tests/lean_report_sequence_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_report_sequence_oracle-3cf2d3c61d4811f8)
+003343: test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003345:      Running tests/lean_timeout_limit_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_timeout_limit_oracle-f038ec4187ed06dd)
+003353: test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003355:      Running tests/lean_top_budget_projection_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_top_budget_projection_oracle-3cb37f8c2945ec38)
+003361: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003363:      Running tests/line_selection_index.rs (/tmp/hoimin-priority-six-target/debug/deps/line_selection_index-97dd9df0fadb442c)
+003371: test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003373:      Running tests/machine.rs (/tmp/hoimin-priority-six-target/debug/deps/machine-03eb71a912894684)
+003487: test result: ok. 110 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+003489:      Running tests/mutation_outcome.rs (/tmp/hoimin-priority-six-target/debug/deps/mutation_outcome-bbe95d0c0c2c183b)
+003510: test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+003512:      Running tests/mutation_status_names.rs (/tmp/hoimin-priority-six-target/debug/deps/mutation_status_names-b6f706ef746e1848)
+003519: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003521:      Running tests/operator_names.rs (/tmp/hoimin-priority-six-target/debug/deps/operator_names-6798c0a6bfcac14e)
+003531: test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003533:      Running tests/operator_selection.rs (/tmp/hoimin-priority-six-target/debug/deps/operator_selection-b6767f963570057b)
+003554: test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003556:      Running tests/plan_config.rs (/tmp/hoimin-priority-six-target/debug/deps/plan_config-b74a44a42e1492e5)
+003595: test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+003597:      Running tests/process_context.rs (/tmp/hoimin-priority-six-target/debug/deps/process_context-1dd5454549e62833)
+003609: test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+003611:      Running tests/report_policy.rs (/tmp/hoimin-priority-six-target/debug/deps/report_policy-3b92c87de6fd7f42)
+003647: test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+003649:      Running tests/report_resume.rs (/tmp/hoimin-priority-six-target/debug/deps/report_resume-4e30542b9dc5b660)
+003657: test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003659:      Running tests/report_status.rs (/tmp/hoimin-priority-six-target/debug/deps/report_status-b9c039806840fd29)
+003782: test result: ok. 119 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+003784:      Running tests/resume_policy.rs (/tmp/hoimin-priority-six-target/debug/deps/resume_policy-0734d4a75f0d7f01)
+003817: test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+003819:      Running tests/run_selection.rs (/tmp/hoimin-priority-six-target/debug/deps/run_selection-ecfce647e683f295)
+003836: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003838:      Running tests/session_mode.rs (/tmp/hoimin-priority-six-target/debug/deps/session_mode-e613cd6328d11d6e)
+003848: test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+003850:      Running tests/source_encoding.rs (/tmp/hoimin-priority-six-target/debug/deps/source_encoding-ad9162109bb43e14)
+003862: test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+003864:      Running tests/source_encoding_properties.rs (/tmp/hoimin-priority-six-target/debug/deps/source_encoding_properties-9526882e61555f8f)
+003870: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+003872:      Running tests/target_policy.rs (/tmp/hoimin-priority-six-target/debug/deps/target_policy-8e84f3052b387cca)
+003907: test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003909:      Running tests/telemetry.rs (/tmp/hoimin-priority-six-target/debug/deps/telemetry-e7175ded83090832)
+003927: test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003929:      Running tests/verification_selection.rs (/tmp/hoimin-priority-six-target/debug/deps/verification_selection-e49c300ecec3a0c0)
+003952: test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+003954:      Running tests/workspace_effects.rs (/tmp/hoimin-priority-six-target/debug/deps/workspace_effects-0425eaf21fbf772d)
+003963: test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+003965:      Running unittests src/lib.rs (/tmp/hoimin-priority-six-target/debug/deps/hoimin_python-f4c16bc69f434cde)
+004395: test result: ok. 423 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 3.39s
+004397:    Doc-tests hoimin_budget_math
+004401: test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+004403:    Doc-tests hoimin_cli
+004410: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+004412:    Doc-tests hoimin_core
+004420: test crates/hoimin-core/src/config.rs - config::RunConfigData (line 535) - compile fail ... ok
+004421:
+004422: test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
+004423:
+004424:    Doc-tests hoimin_python
+004425:
+004426: running 0 tests
+004427:
+004428: test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+004429:
