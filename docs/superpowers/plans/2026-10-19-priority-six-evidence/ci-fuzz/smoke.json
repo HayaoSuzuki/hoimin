@@ -1,0 +1,38 @@
+{
+  "argv": [
+    "cargo",
+    "+nightly-2026-10-08",
+    "fuzz",
+    "run",
+    "--target-dir",
+    "/tmp/hoimin-priority-six-target",
+    "--codegen-units",
+    "16",
+    "report_sequence",
+    "/tmp/hoimin-priority-six-ci-fuzz/smoke-corpus",
+    "fuzz/seeds/report_sequence",
+    "/tmp/hoimin-priority-six-ci-fuzz/cases",
+    "--",
+    "-max_total_time=10",
+    "-runs=10000",
+    "-seed=588562252",
+    "-max_len=4096",
+    "-timeout=5",
+    "-rss_limit_mb=1024",
+    "-artifact_prefix=/tmp/hoimin-priority-six-ci-fuzz/"
+  ],
+  "cwd": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles",
+  "timeout_seconds": 90,
+  "env": {
+    "CARGO_BUILD_JOBS": "2",
+    "CARGO_TARGET_DIR": "/tmp/hoimin-priority-six-target",
+    "RUST_TEST_THREADS": "2",
+    "PREK_NO_CONCURRENCY": "1",
+    "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+    "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache",
+    "PATH": "/tmp/hoimin-priority-six-venv/bin:/Users/hayao/.elan/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/homebrew/Caskroom/codex/0.162.1/codex-path:/Users/hayao/.codex/tmp/arg0/codex-arg0IGseZF:/Users/hayao/.rd/bin:/opt/homebrew/opt/mariadb-connector-c/bin:/Users/hayao/.nvm/versions/node/v22.14.0/bin:/Users/hayao/.local/bin:/Users/hayao/.elan/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/hayao/.cargo/bin:/Users/hayao/Library/Application Support/JetBrains/Toolbox/scripts:/Users/hayao/Library/Application Support/JetBrains/Toolbox/scripts"
+  },
+  "returncode": 0,
+  "elapsed_seconds": 3.6841172091662884,
+  "log_sha256": "0cb7035f48e487b24e79b524fff18f8162670779236795d09f80e1085a9b7b7b"
+}

@@ -7,7 +7,8 @@ All seven task gates passed. The whole-branch review of `4254936c` found two
 Important defects; the single fix wave at `fcb11b94` addressed both, and its
 scoped re-review found no new or out-of-scope findings. No product finding remains
 open. PR #1023 is published; the reviewed CI policy correction below awaits
-controller publication and CI monitoring.
+controller publication and CI monitoring, together with the approved fuzz
+correction below.
 
 | Task | Implementation and fixes | Independent gate |
 | --- | --- | --- |
@@ -164,11 +165,52 @@ or the subsequent archive head. Any runtime, test or build-input change would
 invalidate reuse. Results remain controller-monitored; no new native success
 claim is made here, and no suite was rerun for archival work.
 
+## CI fuzz-oracle correction and native correspondence
+
+The initial Linux CI failure was an oracle no-op: the malformed-status mutation
+wrote Error over an already correct Error value. The [fuzz report](2026-10-19-priority-six-evidence/ci-fuzz-report.md)
+and [approved scoped review](2026-10-19-priority-six-evidence/ci-fuzz-review.md)
+record correction `be67c007d539842ad0e796e26eb2f54df18cab4e`, changing only
+`report_sequence.rs` and preserving the exact three-byte regression seed.
+Production decoding remains unchanged. The [focused evidence index](2026-10-19-priority-six-evidence/ci-fuzz/index.json)
+links original Linux failure provenance, actual native macOS RED/GREEN replay,
+57 separate deterministic input executions, a bounded 10,000-run ASan smoke,
+119 passing core status tests, exact command receipts and decisive log excerpts.
+Source hashes/commits identify tested snapshots; no binary or corpus is copied.
+
+| CI fuzz stage | Five passes |
+| --- | --- |
+| Requirements/design | [Five passes](2026-10-19-priority-six-evidence/ci-fuzz-report.md#five-requirementsdesign-reviews) |
+| Implementation | [Five passes](2026-10-19-priority-six-evidence/ci-fuzz-report.md#five-implementation-reviews) |
+| Validation | [Five passes](2026-10-19-priority-six-evidence/ci-fuzz-report.md#five-validation-reviews) |
+
+These 15 passes bring the indexed minimum to 150. R16 retains two disclosed
+limitations: manifest-wide fuzz formatting fails on byte-identical baseline
+`python_analyzer.rs` import ordering, and macOS atos emits symbolizer warnings.
+Changed-target formatting/clippy and actual replay pass. Normal root commit
+hooks skip fuzz files by configured exclusion; that skip is not target validation.
+
+The controller [rechecked native-source correspondence](2026-10-19-priority-six-evidence/ci-fuzz/native-source-correspondence.json)
+from `2712291daf85d91ddbff2b166b23ba16fbab6924` to `be67c007` for R15.
+The complete diff consists of license policy, plan evidence/companion, and the
+separate fuzz target/seed. Native workflow, root crates, tests, tools, manifests
+and locks are byte-identical. Native jobs do not compile this separate fuzz
+target or consume its seed; fake orchestration tests copy the unchanged fuzz
+manifest and inspect argument strings. This subsequent archival change is docs
+only. Native execution remains attributed exclusively to `2712291`, never to
+`be67c007` or the archive commit.
+
+At this archive checkpoint, eight native jobs passed and Windows Rust remains
+running. Build run [39243267946](https://github.com/HayaoSuzuki/hoimin/actions/runs/39243267946)
+succeeded for all three platform wheels/archives and packaged smoke at the
+original head. New automatic Linux/fuzz/policy CI has not yet been dispatched.
+These observations do not establish all native jobs passed or later-head success.
+
 ## Controller followup
 
-All reviews, correction evidence and fifteen rulings are archived. Push the
-reviewed policy and evidence commits once, then monitor new automatic PR CI and
-the existing R12 native run. Report actual checked heads, run URLs and outcomes
-in the PR body and final response. Do not create a post-CI documentation commit
-merely to record that the previous head passed. No push, CI dispatch or cleanup
-was performed by this archival followup.
+All reviews, correction evidence and sixteen rulings are archived. Push the
+reviewed policy, fuzz and evidence commits once, then monitor new automatic PR CI
+and the existing exact-head R12 native run. Report actual checked heads, run URLs
+and outcomes in the PR body and final response. Do not create a post-CI docs
+commit merely to record that the previous head passed. No suite rerun, push,
+CI dispatch or cleanup was performed by this archival followup.

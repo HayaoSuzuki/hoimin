@@ -1,0 +1,6 @@
+Original: /tmp/hoimin-priority-six-ci-fuzz/fuzz-clippy.log
+SHA256: fa1f409dfbdd345fd1ffec58237fca0dbaf0da38d3ec67889ef0ba398b086fe4
+Command/environment/exit/limits: ../fuzz-clippy.json
+Numbered decisive lines (trailing whitespace omitted):
+56:     Checking hoimin-fuzz v0.0.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/fuzz)
+57:     Finished `dev` profile [unoptimized + debuginfo] target(s) in 18.83s

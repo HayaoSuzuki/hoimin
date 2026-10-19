@@ -1,0 +1,47 @@
+### Spec Compliance
+
+- ✅ Spec compliant for `7c100e67086b5d8683f2959db40d876e662dce4c..be67c007d539842ad0e796e26eb2f54df18cab4e`. The supplied review package contains exactly the target correction and one 3-byte regression seed; no production decoder, workflow, budget, classifier, or unrelated target change appears (`review-7c100e67..be67c007.diff:6`, `:12`, `:52`).
+- ✅ The mutation is nontrivial for all seven statuses: `status` comes directly from `outcome.status()` (`fuzz/fuzz_targets/report_sequence.rs:109`); Error becomes Killed, and every other value becomes Error (`:171`). Both values use the existing enum's valid serialization, and the parse-rejection assertion remains (`:176`, `:178`). The unchanged enum has seven variants (`/tmp/hoimin-priority-six-ci-fuzz/source-snapshots/crates/hoimin-core/src/model.rs:42`).
+- ✅ Valid lifecycle round trips and ordering checks remain before the malformed-wire check: event construction at `fuzz/fuzz_targets/report_sequence.rs:111`, round trips/validation/observation at `:154`, and post-finish rejection at `:160`. Error outcomes are exercised rather than excluded (`:85`, `:171`).
+- ✅ The named seed `fuzz/seeds/report_sequence/error-status-close-timeout-regression` contains precisely `[123, 93, 9]` (binary offsets 0–2), byte-equal to the original Linux crash artifact. Independently calculated SHA256 is `626c48424fa4331745a35d1cfe93fce1f85b4f6299422c9a6ddf68dcbc5e960c`, matching `/tmp/hoimin-priority-six-ci-fuzz/final-receipt.json:10`. All three original artifact hashes still match `original-hashes.json:2`.
+- ✅ Meaningful RED/GREEN evidence runs the original artifact against the actual target: RED fails at the original rejection assertion with libFuzzer exit 77 (`/tmp/hoimin-priority-six-ci-fuzz/red-replay.log:99`, `:188`); GREEN executes those same bytes successfully (`green-replay.log:10`, `:11`; `green-replay.json:32`). Independently verified both retained log hashes against their receipts.
+- ✅ Deterministic replay provides 57 explicit input files and 57 matching Running/Executed pairs, not just corpus loading (`/tmp/hoimin-priority-six-ci-fuzz/deterministic-cases.log:10`, `:123`; argv in `deterministic-cases.json:2`). The first 48 independently prepared files span first-byte parity × six termination selectors × four outcome selectors; the remaining six seeds and three size boundaries include the original regression. Representative verified bytes are `[0,1,0]`, `[0,0,0]`, `[0,2,0]`, `[0,3,0]`, `[0,4,0]`, `[0,0,1]`, `[0,5,0]` for the seven named statuses. These follow the existing target's selector construction (`fuzz/fuzz_targets/report_sequence.rs:36`, `:83`, `:85`); temporary expected labels are explanatory, not a duplicated asserted classifier (`ci-fuzz-report.md:31`).
+- ✅ Each temporary fixture is a separate input; the target arranges its event, serializes the contradictory status, then asserts rejection (`fuzz/fuzz_targets/report_sequence.rs:169`, `:176`, `:178`). No new generated test combines unrelated cases, and no permanent literal-mirror test was added (`review-7c100e67..be67c007.diff:6`). The retained pre-existing lifecycle assertions are intentionally preserved by the brief.
+- ✅ The bounded smoke actually completed 10,000 runs, with 450 MB reported RSS (`/tmp/hoimin-priority-six-ci-fuzz/smoke.log:577`, `:620`), exit 0 (`smoke.json:35`), and explicit time/run/input/RSS limits (`smoke.log:3`). The existing focused boundary suite passed all 119 tests (`report-status.log:4`, `:125`). Independently verified smoke, deterministic replay, and boundary-suite log hashes against their receipts.
+- ✅ Focused target formatting and warnings-denied clippy pass (`/tmp/hoimin-priority-six-ci-fuzz/target-fmt-check.json:20`, `fuzz-clippy.json:2`, `:25`; `fuzz-clippy.log:57`). The actual executed fuzz binary resides under the requested shared target (`green-replay.log:3`, `smoke.log:3`), with no claim that root hooks checked it.
+- ✅ Normal hooks legitimately skip this scope: the retained configuration excludes `^fuzz/` (`/tmp/hoimin-priority-six-ci-fuzz/source-snapshots/prek.toml:5`), and the commit log records all four hooks as Skipped (`commit.log:1`). The bounded Cargo/task environment and successful commit exit are retained in `commit.json:2` and `:19`.
+- ✅ Five design, five implementation, and five validation self-review entries are present at the exact requested report path (`ci-fuzz-report.md:7`, `:15`, `:30`). Their conclusions match the scoped diff and retained evidence, including the format failure and symbolizer warnings (`:25`, `:32`, `:33`).
+- ⚠️ Platform boundary: the failure provenance is original Linux CI (`/tmp/hoimin-priority-six-ci-fuzz/artifact/_temp/fuzz-report/report_sequence.log:12`, `:51`); summary records four completed targets and 206.5965 seconds remaining (`summary.json:5`). The successful replay is native aarch64 macOS (`green-replay.log:3`), not a new Linux or Windows CI result. The report says so explicitly (`ci-fuzz-report.md:3`, `:34`). A later all-target CI rerun remains controller-owned; no additional native-workflow inference is necessary for this target-only review.
+
+### Strengths
+
+- The correction uses the existing canonical status as its sole source and a simple inequality argument, avoiding a second outcome classifier while retaining the exact rejection property (`fuzz/fuzz_targets/report_sequence.rs:109`, `:171`, `:178`).
+- The retained real crashing input, actual pre-change failure, same-input success, broad selector inputs, and focused existing report tests establish behavior more directly than a new mirror unit test (`/tmp/hoimin-priority-six-ci-fuzz/red-replay.log:99`, `green-replay.log:11`, `deterministic-cases.log:110`, `report-status.log:125`).
+- Evidence is inspectable: argv, bounded environment, elapsed time, exit status, source snapshots, and hashes are retained. The changed target is byte-equal to the final source snapshot and its final receipt hash; the seed is byte-equal to the original crash (`/tmp/hoimin-priority-six-ci-fuzz/final-receipt.json:9`, `:10`; `ci-fuzz-report.md:38`).
+
+### Issues
+
+#### Critical (Must Fix)
+
+- None found in the scoped change (`fuzz/fuzz_targets/report_sequence.rs:171`, `:178`).
+
+#### Important (Should Fix)
+
+- None found. The target still checks both valid lifecycle acceptance and contradictory-status rejection, and the real regression passes (`fuzz/fuzz_targets/report_sequence.rs:154`, `:178`; `/tmp/hoimin-priority-six-ci-fuzz/green-replay.log:11`).
+
+#### Minor (Nice to Have)
+
+- **Existing formatting failure, outside this correction:** `/tmp/hoimin-priority-six-ci-fuzz/final-fuzz-fmt.log:1` reports only import ordering in `fuzz/fuzz_targets/python_analyzer.rs:5`; the manifest-wide formatter therefore remains red. Independently confirmed that file is byte-equal to its baseline snapshot, and the supplied diff never changes it (`scope-baseline.json:2`; `review-7c100e67..be67c007.diff:6`). The controller explicitly directed leaving it out of scope. The report accurately discloses the failure (`ci-fuzz-report.md:25`); track any cleanup separately rather than broaden this patch.
+- **Native symbolizer noise, nonblocking:** `/tmp/hoimin-priority-six-ci-fuzz/smoke.log:16` and further lines contain `atos failed to symbolize address` warnings. The smoke still completes 10,000 runs without a target panic or sanitizer failure (`:577`, `:620`). These warnings reduce diagnostic readability but do not invalidate the demonstrated oracle correction. The report honestly records them (`ci-fuzz-report.md:33`); any macOS symbolizer cleanup can be separate.
+
+### Assessment
+
+**Task quality:** Approved
+
+**Reasoning:** The minimal change guarantees a different valid wire status for every canonical status and preserves all existing acceptance/rejection assertions. Exact-regression RED/GREEN replay, 57 independent input executions, bounded 10,000-run smoke, 119 focused report tests, and focused static checks support this task; disclosed baseline formatting and macOS symbolizer noise are nonblocking scope/platform limitations.
+
+### Review Checks
+
+- Read the supplied diff package once; did not derive another diff or run Git commands. Because the final hunk starts inside the fuzz closure and omits the status assignment/event construction, read the target once with line numbers to resolve the concrete risk that the selected status might belong to a different event (`fuzz/fuzz_targets/report_sequence.rs:109`, `:134`, `:169`). It belongs to the same outcome.
+- Focused unchanged-code check for the risk that enum serialization or reader semantics could invalidate the mutation: the retained `MutationStatus` enum uses snake_case serde names (`/tmp/hoimin-priority-six-ci-fuzz/source-snapshots/crates/hoimin-core/src/model.rs:40`); the serializer writes `outcome.status()` and the reader rejects inequality (`source-snapshots/crates/hoimin-core/src/report.rs:540`, `:570`). The existing outcome projection retains reused Killed/Survived and NotRun (`source-snapshots/crates/hoimin-core/src/resume.rs:217`). No production change is needed.
+- Independently read actual logs/receipts, counted all 57 matching replay pairs, checked representative fixture bytes and exact regression bytes, verified original-artifact hashes and retained validation-log hashes, compared final source and unchanged analyzer baseline snapshots, and checked hook exclusion. No Cargo invocation, suite rerun, subagent, commit, push, CI dispatch, or mutation beyond this ignored report was performed.

@@ -1,0 +1,11 @@
+Original: /tmp/hoimin-priority-six-ci-fuzz/commit.log
+SHA256: dc05d30ebd3a1c009cc7e1a4a59c0d0b1c2523e3bbbff24efc0a8dc2a24c8b04
+Command/environment/exit/limits: ../commit.json
+Numbered decisive lines (trailing whitespace omitted):
+1: cargo fmt (workspace)................................(no files to check)Skipped
+2: cargo fmt (vendored parser)..........................(no files to check)Skipped
+3: cargo clippy (workspace).............................(no files to check)Skipped
+4: cargo clippy (vendored parser).......................(no files to check)Skipped
+5: [issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles be67c007] fix(fuzz): contradict the canonical report status
+6:  2 files changed, 10 insertions(+), 4 deletions(-)
+7:  create mode 100644 fuzz/seeds/report_sequence/error-status-close-timeout-regression

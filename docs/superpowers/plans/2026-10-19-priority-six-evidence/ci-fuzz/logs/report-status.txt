@@ -1,0 +1,9 @@
+Original: /tmp/hoimin-priority-six-ci-fuzz/report-status.log
+SHA256: 507bc538ebd96ce6706d2beb5234df1cf96ddb23affc1f601a0ff151864c19c8
+Command/environment/exit/limits: ../report-status.json
+Numbered decisive lines (trailing whitespace omitted):
+1:     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.32s
+2:      Running tests/report_status.rs (/tmp/hoimin-priority-six-target/debug/deps/report_status-f9e071c621dde7b3)
+3:
+4: running 119 tests
+125: test result: ok. 119 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s

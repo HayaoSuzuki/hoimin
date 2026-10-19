@@ -1,0 +1,14 @@
+Original: /tmp/hoimin-priority-six-ci-fuzz/final-fuzz-fmt.log
+SHA256: 20ece4b4ddec150f0c4cff75ce70ef9a2f68337b951a5f40707f9bdbe09666ee
+Command/environment/exit/limits: ../final-fuzz-fmt.json
+Numbered decisive lines (trailing whitespace omitted):
+1: Diff in /Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/fuzz/fuzz_targets/python_analyzer.rs:5:
+2:      CandidateDescriptor, CandidateValidationContext, MutationOperatorSelection, MutationProfile,
+3:      validate_candidate_with_context,
+4:  };
+5: -use libfuzzer_sys::fuzz_target;
+6:  use hoimin_python::{AnalysisError, AnalyzeRequest, analyze_source_cancellable};
+7: +use libfuzzer_sys::fuzz_target;
+8:
+9:  fuzz_target!(|source: &str| {
+10:      if source.len() > 4096 {

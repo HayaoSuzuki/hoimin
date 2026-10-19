@@ -21,6 +21,223 @@
       "kind": "derived receipt, excerpt or index"
     },
     {
+      "path": "ci-fuzz-report.md",
+      "sha256": "03ff93b03dfaa6825b9959c368d710f4f91bb26c173fd6306c76105bb3b45d36",
+      "kind": "verbatim copy",
+      "source": ".superpowers/sdd/2026-10-19-priority-six/ci-fuzz-report.md",
+      "source_sha256": "03ff93b03dfaa6825b9959c368d710f4f91bb26c173fd6306c76105bb3b45d36"
+    },
+    {
+      "path": "ci-fuzz-review.md",
+      "sha256": "f0f7e11ee660ddb7d36b51c44ca044b0f798548e37ce24b1272f6c95a024c2d7",
+      "kind": "verbatim copy",
+      "source": ".superpowers/sdd/2026-10-19-priority-six/ci-fuzz-review.md",
+      "source_sha256": "f0f7e11ee660ddb7d36b51c44ca044b0f798548e37ce24b1272f6c95a024c2d7"
+    },
+    {
+      "path": "ci-fuzz/checks.json",
+      "sha256": "b195337e0ed55c3c4871d3389712f8f38839a328713cc44e67df812b6a1f3bf2",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-fuzz/checks.json",
+      "source_sha256": "b195337e0ed55c3c4871d3389712f8f38839a328713cc44e67df812b6a1f3bf2"
+    },
+    {
+      "path": "ci-fuzz/commit.json",
+      "sha256": "e05ab2ac51e65521b5201d3a3a39406f4f691ffd8a98fd9efadcdb0b9a7d3aa8",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-fuzz/commit.json",
+      "source_sha256": "e05ab2ac51e65521b5201d3a3a39406f4f691ffd8a98fd9efadcdb0b9a7d3aa8"
+    },
+    {
+      "path": "ci-fuzz/deterministic-cases.json",
+      "sha256": "f408814b66b30e5f483dfde312be9df2da0a654cafbaccd3591471c0ff9b6d62",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-fuzz/deterministic-cases.json",
+      "source_sha256": "f408814b66b30e5f483dfde312be9df2da0a654cafbaccd3591471c0ff9b6d62"
+    },
+    {
+      "path": "ci-fuzz/final-fuzz-fmt.json",
+      "sha256": "58900b35290fd4323aaafcba94b1005f3f976cfbb1efe8e45141146e165c2207",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-fuzz/final-fuzz-fmt.json",
+      "source_sha256": "58900b35290fd4323aaafcba94b1005f3f976cfbb1efe8e45141146e165c2207"
+    },
+    {
+      "path": "ci-fuzz/final-receipt.json",
+      "sha256": "f5b18d680ecaf348bca2d6db865bd5923a589da47b119186485ab6df50765aec",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-fuzz/final-receipt.json",
+      "source_sha256": "f5b18d680ecaf348bca2d6db865bd5923a589da47b119186485ab6df50765aec"
+    },
+    {
+      "path": "ci-fuzz/format-target.json",
+      "sha256": "21d698715276ce03f2f8c3ae8142de9e682e63bae704634fa7c337c884a26eff",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-fuzz/format-target.json",
+      "source_sha256": "21d698715276ce03f2f8c3ae8142de9e682e63bae704634fa7c337c884a26eff"
+    },
+    {
+      "path": "ci-fuzz/fuzz-clippy.json",
+      "sha256": "ed9d4ec83a95820db07f027e668a4dec607648249bdccd1ea1f37b12e64cfe8b",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-fuzz/fuzz-clippy.json",
+      "source_sha256": "ed9d4ec83a95820db07f027e668a4dec607648249bdccd1ea1f37b12e64cfe8b"
+    },
+    {
+      "path": "ci-fuzz/fuzz-fmt.json",
+      "sha256": "69a9c712a3a737825400216465c1ff9cd0694c46696572d5f52dfc0c4d59650a",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-fuzz/fuzz-fmt.json",
+      "source_sha256": "69a9c712a3a737825400216465c1ff9cd0694c46696572d5f52dfc0c4d59650a"
+    },
+    {
+      "path": "ci-fuzz/green-replay.json",
+      "sha256": "1ae4d0a0eb3e8dc128491013aa07c5df47100b092c54b184a280faa7fbae67f3",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-fuzz/green-replay.json",
+      "source_sha256": "1ae4d0a0eb3e8dc128491013aa07c5df47100b092c54b184a280faa7fbae67f3"
+    },
+    {
+      "path": "ci-fuzz/index.json",
+      "sha256": "73fcccdeace638fac6eeb6c4be4ae2ee9e7c654799b407bb925cae08068af491",
+      "kind": "derived focused excerpt, input inventory or index"
+    },
+    {
+      "path": "ci-fuzz/input-inventory.json",
+      "sha256": "e367c3fedb15b5f23cfbbd2dfc91a514ce032fc9a006bdd06bc9d2d124e9bd33",
+      "kind": "derived focused excerpt, input inventory or index"
+    },
+    {
+      "path": "ci-fuzz/logs/commit.txt",
+      "sha256": "0ac500c6b7b77564582b200b647cc019b5dd7ed7ca961a97add4076feb4dd655",
+      "kind": "derived focused excerpt, input inventory or index"
+    },
+    {
+      "path": "ci-fuzz/logs/deterministic-cases.txt",
+      "sha256": "4474d3cbafe0fa62c7f1c09a7f575b3b225f7bd6fb21e7b997a2a094e504a867",
+      "kind": "derived focused excerpt, input inventory or index"
+    },
+    {
+      "path": "ci-fuzz/logs/final-fuzz-fmt.txt",
+      "sha256": "f157d15c7aaaa153a9981ea03951166f5d9220e68ced718e0fc7955a15a1936a",
+      "kind": "derived focused excerpt, input inventory or index"
+    },
+    {
+      "path": "ci-fuzz/logs/format-target.txt",
+      "sha256": "ff0509673f2b10d29807707a39eac905db5550a36b8554a48702f9b99d825bee",
+      "kind": "derived focused excerpt, input inventory or index"
+    },
+    {
+      "path": "ci-fuzz/logs/fuzz-clippy.txt",
+      "sha256": "4e1a41793ced07feb0a949b3d21cf8d9d2e2d862c0f7599d7ec7ba2b74d53803",
+      "kind": "derived focused excerpt, input inventory or index"
+    },
+    {
+      "path": "ci-fuzz/logs/fuzz-fmt.txt",
+      "sha256": "b8bccbb6199cc2a8b59f43ad48da5d9290ceb6b992cfb81c1fbf0d504cd4e3cf",
+      "kind": "derived focused excerpt, input inventory or index"
+    },
+    {
+      "path": "ci-fuzz/logs/green-replay.txt",
+      "sha256": "c92e0c17ede61ab8eb6b6658c685e16749f0559199526f10f8040dbb38459271",
+      "kind": "derived focused excerpt, input inventory or index"
+    },
+    {
+      "path": "ci-fuzz/logs/red-replay.txt",
+      "sha256": "91db26b2abd6ed178dc03b842f9d8601e2d6328580adfe54309796b4e7328a9e",
+      "kind": "derived focused excerpt, input inventory or index"
+    },
+    {
+      "path": "ci-fuzz/logs/report-status.txt",
+      "sha256": "2d5f693cc11e852ec975e1e0c34065046af2e9e47a886f75bcd3a8550236e8b8",
+      "kind": "derived focused excerpt, input inventory or index"
+    },
+    {
+      "path": "ci-fuzz/logs/smoke.txt",
+      "sha256": "c6d2d87464885bc9e69202b86b07664aa2bfa122d9b0cb5d7d74b3338b72b473",
+      "kind": "derived focused excerpt, input inventory or index"
+    },
+    {
+      "path": "ci-fuzz/logs/target-fmt-check.txt",
+      "sha256": "18e39dda2936e127a485b58fdd73ce168a544f0e24a56c6e59f2bb596dafe2d5",
+      "kind": "derived focused excerpt, input inventory or index"
+    },
+    {
+      "path": "ci-fuzz/native-source-correspondence.json",
+      "sha256": "ddfde65ca0d6d2024fb16d48ffdd32d43ebf85cc8cfe3472b2718e06682b6904",
+      "kind": "verbatim copy",
+      "source": ".superpowers/sdd/2026-10-19-priority-six/native-source-correspondence.json",
+      "source_sha256": "ddfde65ca0d6d2024fb16d48ffdd32d43ebf85cc8cfe3472b2718e06682b6904"
+    },
+    {
+      "path": "ci-fuzz/original-failure.txt",
+      "sha256": "3ce7750f107a94782994eb8540798d00550e3b369801d24494ebc18790da3053",
+      "kind": "derived focused excerpt, input inventory or index"
+    },
+    {
+      "path": "ci-fuzz/original-hashes.json",
+      "sha256": "94eb4d17a450bf8ae73168056301b86939150eb3a2b60011bc9eabcec6c2805b",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-fuzz/original-hashes.json",
+      "source_sha256": "94eb4d17a450bf8ae73168056301b86939150eb3a2b60011bc9eabcec6c2805b"
+    },
+    {
+      "path": "ci-fuzz/original-summary.json",
+      "sha256": "e7da97af6fc2cdb525d15191a864fb8fd9d5182158d56e3715a86b6f39fd48a4",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-fuzz/artifact/_temp/fuzz-report/summary.json",
+      "source_sha256": "e7da97af6fc2cdb525d15191a864fb8fd9d5182158d56e3715a86b6f39fd48a4"
+    },
+    {
+      "path": "ci-fuzz/red-replay.json",
+      "sha256": "56eea276f43ab2b2c06b22febf58d143441b5ec2b1004664b6f0115d70b82939",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-fuzz/red-replay.json",
+      "source_sha256": "56eea276f43ab2b2c06b22febf58d143441b5ec2b1004664b6f0115d70b82939"
+    },
+    {
+      "path": "ci-fuzz/report-status.json",
+      "sha256": "2d6c85d560194bd895db7718952b62189884a3ac2cf6d1b15a2c0ce372209ac8",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-fuzz/report-status.json",
+      "source_sha256": "2d6c85d560194bd895db7718952b62189884a3ac2cf6d1b15a2c0ce372209ac8"
+    },
+    {
+      "path": "ci-fuzz/scope-baseline.json",
+      "sha256": "cf9e521060c28dd9952df367c42ffa65da621347c4f4caf9a1f6a096660d2b15",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-fuzz/scope-baseline.json",
+      "source_sha256": "cf9e521060c28dd9952df367c42ffa65da621347c4f4caf9a1f6a096660d2b15"
+    },
+    {
+      "path": "ci-fuzz/smoke.json",
+      "sha256": "1075fa8c5e86c3ca6bc7f6a6c778033f5f388a1620706c4383ef27905822d09c",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-fuzz/smoke.json",
+      "source_sha256": "1075fa8c5e86c3ca6bc7f6a6c778033f5f388a1620706c4383ef27905822d09c"
+    },
+    {
+      "path": "ci-fuzz/source-snapshots.json",
+      "sha256": "9a4a4fc4b15ed5cb9b66b1b0141f1584d1b1d028642676ebd69fb1369d466fec",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-fuzz/source-snapshots.json",
+      "source_sha256": "9a4a4fc4b15ed5cb9b66b1b0141f1584d1b1d028642676ebd69fb1369d466fec"
+    },
+    {
+      "path": "ci-fuzz/target-fmt-check.json",
+      "sha256": "9d0e609d2489d3ac7273711505d2da5d8d01b172d9669b5e4eada0d26292816c",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-fuzz/target-fmt-check.json",
+      "source_sha256": "9d0e609d2489d3ac7273711505d2da5d8d01b172d9669b5e4eada0d26292816c"
+    },
+    {
+      "path": "ci-fuzz/toolchain.json",
+      "sha256": "cc08e2bae0280942baa3e8f72e929c827d5df58b59447c720682533529af904d",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-fuzz/toolchain.json",
+      "source_sha256": "cc08e2bae0280942baa3e8f72e929c827d5df58b59447c720682533529af904d"
+    },
+    {
       "path": "ci-policy-report.md",
       "sha256": "e8b02ba3a49a67db4a4d633bc68df9b6c3e556dca3a689cb051257a9cad29fea",
       "kind": "verbatim copy",
@@ -83,10 +300,10 @@
     },
     {
       "path": "controller-rulings.md",
-      "sha256": "7d157aa4e94a8b120c9777b817b82cc25875d58675158fd71b8ec471845fb943",
+      "sha256": "3316bc35a29621037727cf9f273856770a2546540461e41c6029786418198d77",
       "kind": "verbatim ruling/shared-interface sections selected from ledger and brief",
       "source": ".superpowers/sdd/2026-10-19-priority-six/progress.md",
-      "source_sha256": "e57ea560cfbfb8fb0430982e5bffc66e64e4e51f48afce64206ecb8ebc0a0fb1"
+      "source_sha256": "6cb19a925fe67a3d8c95370a6d43acf97a1dbf035d53ee61aee1d898e3fb3a02"
     },
     {
       "path": "depth-facts.md",
@@ -778,18 +995,20 @@
     "Cargo targets, caches, venvs, saved executables, repeated raw plan output"
   ],
   "pending": [
-    "controller push of CI policy and archive commits",
-    "new automatic PR CI and existing R12 native run monitoring"
+    "controller push of policy/fuzz/archive commits",
+    "new automatic Linux/fuzz/policy PR CI",
+    "existing R12 native Windows Rust job monitoring"
   ],
   "reviewed_integration_head": "4254936ca33240e2f69f6d612fbb408d92090c8a",
-  "final_product_head": "060b69d7536d40c84b3396cad84e7d2e2ecc3894",
+  "final_product_head": "be67c007d539842ad0e796e26eb2f54df18cab4e",
   "review_stage_counts": {
     "original_seven_task_minimum": 105,
     "single_final_fix": 15,
-    "indexed_minimum": 135,
-    "ci_policy_correction": 15
+    "indexed_minimum": 150,
+    "ci_policy_correction": 15,
+    "ci_fuzz_correction": 15
   },
-  "product_findings": "none open after final scoped and CI policy approvals",
+  "product_findings": "none open after scoped product and CI correction approvals",
   "final_fix_retention": {
     "verified_original_inventory_files": 46,
     "command_receipts": 9,
@@ -799,5 +1018,7 @@
   },
   "ci_policy_commit": "060b69d7536d40c84b3396cad84e7d2e2ecc3894",
   "native_ci_checked_head": "2712291daf85d91ddbff2b166b23ba16fbab6924",
-  "native_ci_correspondence": "ci-policy/scope-receipt.json"
+  "native_ci_correspondence": "ci-fuzz/native-source-correspondence.json",
+  "ci_fuzz_commit": "be67c007d539842ad0e796e26eb2f54df18cab4e",
+  "native_ci_scope": "Exact run39243290107 at2712291 only; correspondence checked throughbe67c007 plus docs-only archive; eight jobs passed, Windows Rust pending at checkpoint"
 }

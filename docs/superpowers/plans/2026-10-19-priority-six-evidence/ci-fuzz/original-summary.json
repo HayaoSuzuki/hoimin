@@ -1,0 +1,224 @@
+{
+  "status": "failure",
+  "error": "report_sequence: exit 1; see report_sequence.log",
+  "seed": 588562252,
+  "remaining_seconds": 206.5965092985299,
+  "completed_targets": [
+    "source_encoding",
+    "source_index",
+    "candidate_validation",
+    "python_analyzer"
+  ],
+  "stages": [
+    {
+      "name": "dependencies",
+      "argv": [
+        "uv",
+        "sync",
+        "--frozen",
+        "--group",
+        "fuzz",
+        "--no-install-project"
+      ],
+      "timeout_seconds": 505.0853378045299,
+      "status": "success",
+      "returncode": 0,
+      "elapsed_seconds": 1.0689075630000033
+    },
+    {
+      "name": "build",
+      "argv": [
+        "cargo",
+        "+nightly-2026-10-08",
+        "fuzz",
+        "build",
+        "--codegen-units",
+        "16"
+      ],
+      "timeout_seconds": 504.01615033252995,
+      "status": "success",
+      "returncode": 0,
+      "elapsed_seconds": 118.07692940199999
+    },
+    {
+      "name": "generator-tests",
+      "argv": [
+        "uv",
+        "run",
+        "--frozen",
+        "--no-sync",
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_hypothesmith_corpus.py"
+      ],
+      "timeout_seconds": 385.9388230515299,
+      "status": "success",
+      "returncode": 0,
+      "elapsed_seconds": 29.289277313000014
+    },
+    {
+      "name": "generate-grammar",
+      "argv": [
+        "uv",
+        "run",
+        "--frozen",
+        "--no-sync",
+        "python",
+        "tools/hypothesmith_corpus.py",
+        "--strategy",
+        "grammar",
+        "--examples",
+        "50",
+        "--seed",
+        "588562252"
+      ],
+      "timeout_seconds": 356.6491304085299,
+      "status": "success",
+      "returncode": 0,
+      "elapsed_seconds": 2.2700310769999987
+    },
+    {
+      "name": "generate-libcst",
+      "argv": [
+        "uv",
+        "run",
+        "--frozen",
+        "--no-sync",
+        "python",
+        "tools/hypothesmith_corpus.py",
+        "--strategy",
+        "libcst",
+        "--examples",
+        "50",
+        "--seed",
+        "588562252"
+      ],
+      "timeout_seconds": 354.37869921952995,
+      "status": "success",
+      "returncode": 0,
+      "elapsed_seconds": 9.087700349999977
+    },
+    {
+      "name": "source_encoding",
+      "argv": [
+        "cargo",
+        "+nightly-2026-10-08",
+        "fuzz",
+        "run",
+        "--codegen-units",
+        "16",
+        "source_encoding",
+        "fuzz/corpus/source_encoding",
+        "fuzz/seeds/source_encoding",
+        "--",
+        "-max_total_time=50",
+        "-seed=588562252",
+        "-max_len=4096",
+        "-timeout=5",
+        "-rss_limit_mb=1024"
+      ],
+      "timeout_seconds": 60,
+      "status": "success",
+      "returncode": 0,
+      "elapsed_seconds": 51.311837206999996
+    },
+    {
+      "name": "source_index",
+      "argv": [
+        "cargo",
+        "+nightly-2026-10-08",
+        "fuzz",
+        "run",
+        "--codegen-units",
+        "16",
+        "source_index",
+        "fuzz/corpus/source_index",
+        "fuzz/seeds/source_index",
+        "--",
+        "-max_total_time=51",
+        "-seed=588562252",
+        "-max_len=4096",
+        "-timeout=5",
+        "-rss_limit_mb=1024"
+      ],
+      "timeout_seconds": 61,
+      "status": "success",
+      "returncode": 0,
+      "elapsed_seconds": 52.309724066
+    },
+    {
+      "name": "candidate_validation",
+      "argv": [
+        "cargo",
+        "+nightly-2026-10-08",
+        "fuzz",
+        "run",
+        "--codegen-units",
+        "16",
+        "candidate_validation",
+        "fuzz/corpus/candidate_validation",
+        "fuzz/seeds/candidate_validation",
+        "--",
+        "-max_total_time=53",
+        "-seed=588562252",
+        "-max_len=4096",
+        "-timeout=5",
+        "-rss_limit_mb=1024"
+      ],
+      "timeout_seconds": 63,
+      "status": "success",
+      "returncode": 0,
+      "elapsed_seconds": 54.32170967299999
+    },
+    {
+      "name": "python_analyzer",
+      "argv": [
+        "cargo",
+        "+nightly-2026-10-08",
+        "fuzz",
+        "run",
+        "--codegen-units",
+        "16",
+        "python_analyzer",
+        "fuzz/corpus/python_analyzer",
+        "fuzz/seeds/python_analyzer",
+        "--",
+        "-max_total_time=56",
+        "-seed=588562252",
+        "-max_len=4096",
+        "-timeout=5",
+        "-rss_limit_mb=1024"
+      ],
+      "timeout_seconds": 66,
+      "status": "success",
+      "returncode": 0,
+      "elapsed_seconds": 57.382667201000004
+    },
+    {
+      "name": "report_sequence",
+      "argv": [
+        "cargo",
+        "+nightly-2026-10-08",
+        "fuzz",
+        "run",
+        "--codegen-units",
+        "16",
+        "report_sequence",
+        "fuzz/corpus/report_sequence",
+        "fuzz/seeds/report_sequence",
+        "--",
+        "-max_total_time=58",
+        "-seed=588562252",
+        "-max_len=4096",
+        "-timeout=5",
+        "-rss_limit_mb=1024"
+      ],
+      "timeout_seconds": 68,
+      "status": "error",
+      "returncode": 1,
+      "elapsed_seconds": 0.3654150630000004
+    }
+  ]
+}
