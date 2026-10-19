@@ -21,6 +21,60 @@
       "kind": "derived receipt, excerpt or index"
     },
     {
+      "path": "ci-policy-report.md",
+      "sha256": "e8b02ba3a49a67db4a4d633bc68df9b6c3e556dca3a689cb051257a9cad29fea",
+      "kind": "verbatim copy",
+      "source": ".superpowers/sdd/2026-10-19-priority-six/ci-policy-report.md",
+      "source_sha256": "e8b02ba3a49a67db4a4d633bc68df9b6c3e556dca3a689cb051257a9cad29fea"
+    },
+    {
+      "path": "ci-policy-review.md",
+      "sha256": "726cc8287a4474f85297acf03f1cfc598ead8587ffb128c8bd9b6076ca93c27f",
+      "kind": "verbatim copy",
+      "source": ".superpowers/sdd/2026-10-19-priority-six/ci-policy-review.md",
+      "source_sha256": "726cc8287a4474f85297acf03f1cfc598ead8587ffb128c8bd9b6076ca93c27f"
+    },
+    {
+      "path": "ci-policy/commit-receipt.json",
+      "sha256": "f3d64dbbe363d87129ab0c580bb1dfde191f34604a3992457990eccfaa8fe087",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-policy/final-commit-receipt.json",
+      "source_sha256": "f3d64dbbe363d87129ab0c580bb1dfde191f34604a3992457990eccfaa8fe087"
+    },
+    {
+      "path": "ci-policy/green-fuzz.log",
+      "sha256": "a09bbb250feeb5c0d6ac91177e3a1730bf09901eefcec1269ea8d00949a8f1a4",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-policy/green-fuzz.log",
+      "source_sha256": "a09bbb250feeb5c0d6ac91177e3a1730bf09901eefcec1269ea8d00949a8f1a4"
+    },
+    {
+      "path": "ci-policy/green-root.log",
+      "sha256": "a09bbb250feeb5c0d6ac91177e3a1730bf09901eefcec1269ea8d00949a8f1a4",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-policy/green-root.log",
+      "source_sha256": "a09bbb250feeb5c0d6ac91177e3a1730bf09901eefcec1269ea8d00949a8f1a4"
+    },
+    {
+      "path": "ci-policy/red-fuzz.log",
+      "sha256": "eb260327fa36827e9fa8f1af01e2a547abd78b577921ef37c5c902490a74bddb",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-policy/red-fuzz.log",
+      "source_sha256": "eb260327fa36827e9fa8f1af01e2a547abd78b577921ef37c5c902490a74bddb"
+    },
+    {
+      "path": "ci-policy/red-root.log",
+      "sha256": "1503baa5d8311e13aea2bc8a9c8c8c3cadb0b712da3a0bd2eaf22e5b44899190",
+      "kind": "verbatim copy",
+      "source": "/tmp/hoimin-priority-six-ci-policy/red-root.log",
+      "source_sha256": "1503baa5d8311e13aea2bc8a9c8c8c3cadb0b712da3a0bd2eaf22e5b44899190"
+    },
+    {
+      "path": "ci-policy/scope-receipt.json",
+      "sha256": "17a845c4a5185ea51fd55f8ddd25da9f06f5222b945db8dc15d4a1b7849672ed",
+      "kind": "derived source-correspondence receipt"
+    },
+    {
       "path": "coherence.log",
       "sha256": "cf1d58f389cc0632ea27b3251b227f8e3d73a450264af90eef8c19320cd1a4a6",
       "kind": "verbatim copy",
@@ -29,10 +83,10 @@
     },
     {
       "path": "controller-rulings.md",
-      "sha256": "da4611d5f1fd11353e0576d9d35bbf9c4289590c348e480140e22035e3b43075",
+      "sha256": "7d157aa4e94a8b120c9777b817b82cc25875d58675158fd71b8ec471845fb943",
       "kind": "verbatim ruling/shared-interface sections selected from ledger and brief",
       "source": ".superpowers/sdd/2026-10-19-priority-six/progress.md",
-      "source_sha256": "f6ef13aa5d72c956f6c1eff4ff3c5c435adfce6102d581bdf7b3d61c91ab5567"
+      "source_sha256": "e57ea560cfbfb8fb0430982e5bffc66e64e4e51f48afce64206ecb8ebc0a0fb1"
     },
     {
       "path": "depth-facts.md",
@@ -724,22 +778,26 @@
     "Cargo targets, caches, venvs, saved executables, repeated raw plan output"
   ],
   "pending": [
-    "PR publication",
-    "automatic PR CI and R12 manual native CI"
+    "controller push of CI policy and archive commits",
+    "new automatic PR CI and existing R12 native run monitoring"
   ],
   "reviewed_integration_head": "4254936ca33240e2f69f6d612fbb408d92090c8a",
-  "final_product_head": "fcb11b946e2730f75c54d4408b5132ff6b57e41a",
+  "final_product_head": "060b69d7536d40c84b3396cad84e7d2e2ecc3894",
   "review_stage_counts": {
     "original_seven_task_minimum": 105,
     "single_final_fix": 15,
-    "indexed_minimum": 120
+    "indexed_minimum": 135,
+    "ci_policy_correction": 15
   },
-  "product_findings": "none open after scoped final re-review",
+  "product_findings": "none open after final scoped and CI policy approvals",
   "final_fix_retention": {
     "verified_original_inventory_files": 46,
     "command_receipts": 9,
     "unique_tested_snapshots": 3,
     "location": "final-fix/index.json",
     "scope": "Focused receipts/snapshots/excerpts/probe evidence; original checkpoint reports/checks unchanged; no suite rerun."
-  }
+  },
+  "ci_policy_commit": "060b69d7536d40c84b3396cad84e7d2e2ecc3894",
+  "native_ci_checked_head": "2712291daf85d91ddbff2b166b23ba16fbab6924",
+  "native_ci_correspondence": "ci-policy/scope-receipt.json"
 }

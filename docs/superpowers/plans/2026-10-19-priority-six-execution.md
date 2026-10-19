@@ -6,7 +6,8 @@ from base `1e6200d71237c6e445f337babf02f5f0354b610f`. The issue branch is
 All seven task gates passed. The whole-branch review of `4254936c` found two
 Important defects; the single fix wave at `fcb11b94` addressed both, and its
 scoped re-review found no new or out-of-scope findings. No product finding remains
-open. PR publication and native CI remain controller-owned followups.
+open. PR #1023 is published; the reviewed CI policy correction below awaits
+controller publication and CI monitoring.
 
 | Task | Implementation and fixes | Independent gate |
 | --- | --- | --- |
@@ -131,11 +132,43 @@ The [Task 7 commit receipt](2026-10-19-priority-six-evidence/task-7-commit-recei
 also remains an unchanged checkpoint record. No broad suite or proof tool was
 rerun for this archival followup.
 
+## CI policy correction after publication
+
+PR [#1023](https://github.com/HayaoSuzuki/hoimin/pull/1023) was first published at
+`2712291daf85d91ddbff2b166b23ba16fbab6924`. Its initial dependency audit rejected
+the four 0.14.0 shipping crates because their own-crate license exceptions still
+ended before 0.14.0. The [policy report](2026-10-19-priority-six-evidence/ci-policy-report.md)
+and [approved scoped review](2026-10-19-priority-six-evidence/ci-policy-review.md)
+record the four-bound correction at `060b69d7536d40c84b3396cad84e7d2e2ecc3894`.
+No workflow, product, test, build input or tool pin changed. The report retains
+pinned cargo-deny 0.20.2 root/fuzz RED (exit 4) and GREEN (exit 0) commands;
+[small raw logs and commit receipt](2026-10-19-priority-six-evidence/ci-policy/commit-receipt.json)
+are archived beside the [source-correspondence receipt](2026-10-19-priority-six-evidence/ci-policy/scope-receipt.json).
+The original hosted failure is identified there by run URL and full-log hash.
+
+These three additional five-pass sections bring the indexed minimum to 135;
+the original 105 and final-fix 15 entries above remain unchanged:
+
+| CI policy stage | Five passes |
+| --- | --- |
+| Requirements/design | [Five passes](2026-10-19-priority-six-evidence/ci-policy-report.md#requirements-and-design-review) |
+| Implementation | [Five passes](2026-10-19-priority-six-evidence/ci-policy-report.md#implementation-review) |
+| Validation | [Five passes](2026-10-19-priority-six-evidence/ci-policy-report.md#validation-review) |
+
+R15 permits reuse of the once-dispatched native Windows/macOS run
+[39243290107](https://github.com/HayaoSuzuki/hoimin/actions/runs/39243290107)
+at exact head `2712291daf85d91ddbff2b166b23ba16fbab6924` only with complete
+source correspondence: the later diff contains solely `deny.toml` policy bounds
+and this evidence/companion update. This is not a native execution at `060b69d7`
+or the subsequent archive head. Any runtime, test or build-input change would
+invalidate reuse. Results remain controller-monitored; no new native success
+claim is made here, and no suite was rerun for archival work.
+
 ## Controller followup
 
-Task 7, whole-branch and scoped final reviews, their fix evidence and all fourteen
-rulings are archived. Publish the issue branch and PR without merging or releasing. Run automatic PR CI and the R12
-manual non-Linux workflow on the final head, then record actual head/run URLs and
-outcomes in the PR body and final response. Do not create a post-CI documentation
-commit merely to record that the previous head passed. No temporary evidence or
-SDD workspace has been deleted by Task 7.
+All reviews, correction evidence and fifteen rulings are archived. Push the
+reviewed policy and evidence commits once, then monitor new automatic PR CI and
+the existing R12 native run. Report actual checked heads, run URLs and outcomes
+in the PR body and final response. Do not create a post-CI documentation commit
+merely to record that the previous head passed. No push, CI dispatch or cleanup
+was performed by this archival followup.

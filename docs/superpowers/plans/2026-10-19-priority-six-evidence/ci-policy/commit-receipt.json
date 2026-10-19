@@ -1,0 +1,22 @@
+{
+  "commit": "060b69d7536d40c84b3396cad84e7d2e2ecc3894",
+  "subject": "fix: align own-crate license range with 0.14",
+  "files": ["deny.toml"],
+  "commit_exit_code": 0,
+  "hooks": {
+    "normal_hooks_enabled": true,
+    "PREK_NO_CONCURRENCY": "1",
+    "cargo_build_jobs": 2,
+    "cargo_target_dir": "/tmp/hoimin-priority-six-target",
+    "rust_test_threads": 2,
+    "results": [
+      "cargo fmt (workspace): skipped, no matching files",
+      "cargo fmt (vendored parser): skipped, no matching files",
+      "cargo clippy (workspace): skipped, no matching files",
+      "cargo clippy (vendored parser): skipped, no matching files"
+    ]
+  },
+  "diff_check_exit_code": 0,
+  "working_tree_clean": true,
+  "policy_checks_rerun": false
+}

@@ -1,0 +1,20 @@
+{
+  "native_checked_head": "2712291daf85d91ddbff2b166b23ba16fbab6924",
+  "ci_policy_commit": "060b69d7536d40c84b3396cad84e7d2e2ecc3894",
+  "complete_committed_diff_files": [
+    "deny.toml"
+  ],
+  "deny_diff_sha256": "04fea229e41353c1195bf4a2689f11be1fc1672990bd8eacff84b1b2f5b7b588",
+  "archive_change_allowlist": [
+    "docs/superpowers/plans/2026-10-19-priority-six-execution.md",
+    "docs/superpowers/plans/2026-10-19-priority-six-evidence/"
+  ],
+  "native_test_build_inputs_changed": false,
+  "basis": "Complete base-to-policy diff inspected; only four own-crate license version bounds changed. Final working-tree scope and archive hashes verified before commit.",
+  "initial_dependency_run_url": "https://github.com/HayaoSuzuki/hoimin/actions/runs/39243268178",
+  "initial_dependency_log_sha256": "c0f28bc03b05664dd3bce325aa5da82ae324898be1b325b277bde19a45362085",
+  "native_run_url": "https://github.com/HayaoSuzuki/hoimin/actions/runs/39243290107",
+  "native_result": "controller-monitored; no later-head execution claim",
+  "new_automatic_ci": "pending controller push and monitoring",
+  "suite_rerun": false
+}
