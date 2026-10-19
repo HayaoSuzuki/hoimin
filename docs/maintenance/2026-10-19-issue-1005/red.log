@@ -1,0 +1,77 @@
+   Compiling syn v2.0.119
+   Compiling syn v3.0.5
+   Compiling manyhow v0.11.4
+   Compiling thiserror-impl v2.0.21
+   Compiling quote-use-macros v0.8.4
+   Compiling derive-where v1.6.1
+   Compiling quote-use v0.8.4
+   Compiling attribute-derive-macro v0.10.5
+   Compiling thiserror v2.0.21
+   Compiling serde_derive v1.0.229
+   Compiling attribute-derive v0.10.5
+   Compiling get-size-derive2 v0.7.4
+   Compiling get-size2 v0.7.4
+   Compiling is-macro v0.3.8
+   Compiling littrs-ruff-text-size v0.6.2
+   Compiling littrs-ruff-source-file v0.6.2
+   Compiling serde v1.0.229
+   Compiling littrs-ruff-python-trivia v0.6.2
+   Compiling regex-automata v0.4.18
+   Compiling littrs-ruff-python-ast v0.6.2
+   Compiling bstr v1.13.1
+   Compiling hoimin-budget-math v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-budget-math)
+   Compiling proptest v1.12.0
+   Compiling littrs-ruff-python-parser v0.6.2 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/vendor/ruff_python_parser)
+   Compiling hoimin-core v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-core)
+   Compiling hoimin-python v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-python)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 17.78s
+     Running unittests src/lib.rs (/tmp/hoimin-priority-six-target/debug/deps/hoimin_python-2bfcb59dd3432230)
+
+running 10 tests
+
+thread 'rust::exception_hierarchy::exception_import_graph_tests::joined_depth_short_branch_first_rejects' (56040049) panicked at crates/hoimin-python/src/analyzer/exception_import_graph_tests.rs:86:1:
+assertion failed: index.modules[Utf8Path::new("r.py")].dynamic
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test rust::exception_hierarchy::exception_import_graph_tests::joined_depth_short_branch_first_rejects ... FAILED
+test rust::exception_hierarchy::exception_import_graph_tests::joined_depth_long_branch_first_rejects ... ok
+N=16 missing=true work=[0, 0, 0, 0, 49, 0, 0, 0, 0, 0, 0, 0, 0] total=49
+test rust::exception_hierarchy::exception_import_graph_tests::layered_control_16 ... ok
+N=32 missing=true work=[0, 0, 0, 0, 97, 0, 0, 0, 0, 0, 0, 0, 0] total=97
+test rust::exception_hierarchy::exception_import_graph_tests::layered_control_32 ... ok
+N=64 missing=true work=[0, 0, 0, 0, 193, 0, 0, 0, 0, 0, 0, 0, 0] total=193
+test rust::exception_hierarchy::exception_import_graph_tests::layered_control_64 ... ok
+N=128 missing=true work=[0, 0, 0, 0, 385, 0, 0, 0, 0, 0, 0, 0, 0] total=385
+test rust::exception_hierarchy::exception_import_graph_tests::layered_control_128 ... ok
+N=16 missing=false work=[0, 0, 0, 0, 4657, 0, 0, 0, 0, 0, 0, 0, 0] total=4657
+
+thread 'rust::exception_hierarchy::exception_import_graph_tests::layered_dag_16' (56040064) panicked at crates/hoimin-python/src/analyzer/exception_import_graph_tests.rs:55:1:
+4657 exceeds graph work budget
+test rust::exception_hierarchy::exception_import_graph_tests::layered_dag_16 ... FAILED
+N=32 missing=false work=[0, 0, 0, 0, 34913, 0, 0, 0, 0, 0, 0, 0, 0] total=34913
+
+thread 'rust::exception_hierarchy::exception_import_graph_tests::layered_dag_32' (56040065) panicked at crates/hoimin-python/src/analyzer/exception_import_graph_tests.rs:56:1:
+34913 exceeds graph work budget
+test rust::exception_hierarchy::exception_import_graph_tests::layered_dag_32 ... FAILED
+N=64 missing=false work=[0, 0, 0, 0, 270529, 0, 0, 0, 0, 0, 0, 0, 0] total=270529
+
+thread 'rust::exception_hierarchy::exception_import_graph_tests::layered_dag_64' (56040067) panicked at crates/hoimin-python/src/analyzer/exception_import_graph_tests.rs:57:1:
+270529 exceeds graph work budget
+test rust::exception_hierarchy::exception_import_graph_tests::layered_dag_64 ... FAILED
+N=128 missing=false work=[0, 0, 0, 0, 2130305, 0, 0, 0, 0, 0, 0, 0, 0] total=2130305
+
+thread 'rust::exception_hierarchy::exception_import_graph_tests::layered_dag_128' (56040060) panicked at crates/hoimin-python/src/analyzer/exception_import_graph_tests.rs:58:1:
+2130305 exceeds graph work budget
+test rust::exception_hierarchy::exception_import_graph_tests::layered_dag_128 ... FAILED
+
+failures:
+
+failures:
+    rust::exception_hierarchy::exception_import_graph_tests::joined_depth_short_branch_first_rejects
+    rust::exception_hierarchy::exception_import_graph_tests::layered_dag_128
+    rust::exception_hierarchy::exception_import_graph_tests::layered_dag_16
+    rust::exception_hierarchy::exception_import_graph_tests::layered_dag_32
+    rust::exception_hierarchy::exception_import_graph_tests::layered_dag_64
+
+test result: FAILED. 5 passed; 5 failed; 0 ignored; 0 measured; 369 filtered out; finished in 7.76s
+
+error: test failed, to rerun pass `-p hoimin-python --lib`

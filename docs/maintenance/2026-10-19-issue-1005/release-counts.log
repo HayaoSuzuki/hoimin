@@ -1,0 +1,44 @@
+   Compiling rand_core v0.10.1
+   Compiling getrandom v0.4.3
+   Compiling rustix v1.1.5
+   Compiling errno v0.3.14
+   Compiling once_cell v1.21.4
+   Compiling wait-timeout v0.2.1
+   Compiling fnv v1.0.7
+   Compiling quick-error v1.2.3
+   Compiling tempfile v3.27.0
+   Compiling bit-vec v0.10.1
+   Compiling rusty-fork v0.3.1
+   Compiling bit-set v0.11.1
+   Compiling littrs-ruff-python-ast v0.6.2
+   Compiling rand v0.10.3
+   Compiling rand_xorshift v0.5.0
+   Compiling chacha20 v0.10.2
+   Compiling unarray v0.1.4
+   Compiling core_detect v1.0.0
+   Compiling regex-syntax v0.8.11
+   Compiling littrs-ruff-python-parser v0.6.2 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/vendor/ruff_python_parser)
+   Compiling proptest v1.12.0
+   Compiling hoimin-python v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-python)
+    Finished `release` profile [optimized] target(s) in 56.87s
+     Running unittests src/lib.rs (/tmp/hoimin-priority-six-target/release/deps/hoimin_python-40c0fd0bd37b0e0e)
+
+running 8 tests
+N=16 missing=true work=[147, 512, 0, 49, 49, 49, 49, 0, 49, 49, 0, 49, 49] total=1051
+test rust::exception_hierarchy::exception_import_graph_tests::layered_control_16 ... ok
+N=32 missing=true work=[291, 2048, 0, 97, 97, 97, 97, 0, 97, 97, 0, 97, 97] total=3115
+test rust::exception_hierarchy::exception_import_graph_tests::layered_control_32 ... ok
+N=64 missing=true work=[579, 8192, 0, 193, 193, 193, 193, 0, 193, 193, 0, 193, 193] total=10315
+test rust::exception_hierarchy::exception_import_graph_tests::layered_control_64 ... ok
+N=128 missing=true work=[1155, 32768, 0, 385, 385, 385, 385, 0, 385, 385, 0, 385, 385] total=37003
+test rust::exception_hierarchy::exception_import_graph_tests::layered_control_128 ... ok
+N=16 missing=false work=[147, 512, 512, 49, 561, 49, 49, 512, 49, 49, 512, 49, 49] total=3099
+test rust::exception_hierarchy::exception_import_graph_tests::layered_dag_16 ... ok
+N=32 missing=false work=[291, 2048, 2048, 97, 2145, 97, 97, 2048, 97, 97, 2048, 97, 97] total=11307
+test rust::exception_hierarchy::exception_import_graph_tests::layered_dag_32 ... ok
+N=64 missing=false work=[579, 8192, 8192, 193, 8385, 193, 193, 8192, 193, 193, 8192, 193, 193] total=43083
+test rust::exception_hierarchy::exception_import_graph_tests::layered_dag_64 ... ok
+N=128 missing=false work=[1155, 32768, 32768, 385, 33153, 385, 385, 32768, 385, 385, 32768, 385, 385] total=168075
+test rust::exception_hierarchy::exception_import_graph_tests::layered_dag_128 ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 418 filtered out; finished in 0.09s

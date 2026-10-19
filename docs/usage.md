@@ -725,6 +725,15 @@ project files; such changes are not guaranteed to suppress affected candidates.
 The operator does not guarantee that every replacement denotes an exception class
 at runtime. See [the implementation boundaries](development.md#user-defined-exception-hierarchies).
 
+Eager import cycles exclude their member modules, while a module that merely
+imports a cycle can remain eligible. Import depth uses a name-order-independent
+conservative bound with a limit of 256: on an acyclic graph it is the longest
+import path in edges; through a cycle it counts the component's module count.
+A bound of 255 is allowed and 256 is excluded. This can suppress additional
+candidates compared with the former order-dependent traversal, particularly for
+joined long paths or large cyclic components; it does not restore modules that
+the old cycle/depth check excluded. Lazy imports do not add eager graph edges.
+
 Boundary operators recognize ASCII decimal digits with an optional unary minus,
 including grouped or multiline spellings such as `items[(-1)]` and `items[-(1)]`.
 `items[-1]` and `items[:-1]` produce `0` and `-2`; `items[::-1]` produces only

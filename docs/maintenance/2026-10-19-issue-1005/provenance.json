@@ -1,0 +1,25 @@
+{
+  "base_revision": "faff6415d6a54f71ad881df97e521cc83ac19894",
+  "baseline_product_status": "",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1\n",
+  "cargo_environment": {
+    "CARGO_BUILD_JOBS": "2",
+    "CARGO_TARGET_DIR": "/tmp/hoimin-priority-six-target"
+  },
+  "profile": "release; opt-level=3; thin LTO; CLI stripped; heap probe rustc -O -C lto=thin",
+  "baseline_index_sha256": "b3b0ddfd0bcd07fef271c6682c62ddf9d3c70ae24d02922a81e55a84f80378c2",
+  "candidate_sources": {
+    "crates/hoimin-python/src/analyzer/exception_hierarchy.rs": "23aefabe7b0e701ce0b49b7d4c4d3f01c9b809b851e77d2d6eb9ffda6db17948",
+    "crates/hoimin-python/src/analyzer/exception_import_graph.rs": "ee7f8325a25d15e912ab75cf1e118d0829d6e2564444d85a248e7e48593fffe9",
+    "crates/hoimin-python/src/analyzer/exception_import_graph_properties.rs": "bb82ef574585c4b10a2e10c76b8dc1d50d5da0b2a7f905624ef5e649faff4be6",
+    "crates/hoimin-python/src/analyzer/exception_import_graph_tests.rs": "864b49faeeacd93ae8984a83f79ea295f5e6120c562e6a8b9a18a1aa67bd1536"
+  },
+  "fixtures_sha256": "2f81c98cd1c9d8462f3f71b40ccb2041e9212674466bf45746bf1a38e24030fe",
+  "retained_tooling_sha256": {
+    "measure.py": "b5d5c5510432624a8f5fe7f49a9f2c2c40450a56e3aff7e5d636d082a2812a51",
+    "rss.py": "648724fdc5eb6bcdde41d6657c7049fd614bfd2c8bb06566fd63752fce08b206",
+    "test_measure.py": "a968cceadcd60894feae2ae044182babaabe35c0f0d63aaa6dca75ab311feac7",
+    "link_probe.py": "d4fd994933551dab60a0ba045ca535269af0e824b5fb1a68f676aff7d3ae2aab"
+  },
+  "measured_runner_snapshot": "measured-runner.py.txt"
+}

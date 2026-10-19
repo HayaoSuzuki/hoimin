@@ -1996,8 +1996,8 @@ calls from observing an inserted future name. Conservative exclusions may suppre
 valid candidates; they never authorize an inserted import.
 
 The loader limits input to 4096 files, 16 MiB per file, 64 MiB total decoded source,
-and 65536 entries per module-name, binding and visible-alias table. Ancestry/import traversal is limited to 256 steps and
-uses the existing AST depth guard. Cancellation is checked during discovery,
+and 65536 entries per module-name, binding and visible-alias table. Class ancestry retains its 256-step limit and source parsing uses the existing
+AST depth guard. Eager imports use the shared graph rule below. Cancellation is checked during discovery,
 index construction and replacement enumeration. Per-site replacement retention is
 bounded by `max_candidates + 1`, preserving the existing producer's source-order
 prefix and truncation signal. One `exception_hierarchy_skipped` diagnostic per file
@@ -2008,6 +2008,27 @@ constructor policy and bare raises do not warn. Diagnostics do not mark analysis
 as truncated. The input/table limits above
 do not constitute a peak-memory bound: decoded sources, an AST and transient
 summaries can coexist, and some summary limits are checked after construction.
+
+Eager-import exclusion builds a path-identity graph once after import normalization.
+Only mapped, parsed destinations of eager absolute dependencies are edges;
+already dynamic modules remain in the graph. Iterative Kosaraju identifies strongly
+connected components (SCCs), marking only cyclic members unconditionally. For SCC C
+with weight w(C) equal to its module count, the sink-to-source depth calculation is
+`H(C) = min(256, max(terminal(C), max(C -> D, w(C) + H(D))))`, where terminal is
+w(C) for a cyclic component and zero otherwise. Other modules are excluded exactly
+when H reaches 256. Thus a one-edge prefix into a 254-node cycle stays eligible,
+while a prefix into a 255-node cycle is excluded. The weighted bound can add
+conservative exclusions compared with the old name-order-dependent traversal;
+it preserves all previous cycle/depth exclusions.
+
+Graph visits and auxiliary storage are O(V + E); graph construction also scans
+all dependency entries and pays existing ordered name/path lookup and string
+comparison costs. Graph scratch is released before class/visibility construction.
+Cancellation polls per node and dependency/edge, including lazy/missing imports;
+allocation and cleanup are not individually preemptible. These bounds describe
+this stage, not total index time or process memory. The
+[issue #1005 record](maintenance/2026-10-19-issue-1005/report.md) separates operation
+counts, normal release CLI timing and instrumented pure-index heap measurements.
 
 Focused verification:
 

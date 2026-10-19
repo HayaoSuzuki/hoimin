@@ -1,0 +1,49 @@
+   Compiling hoimin-python v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-python)
+   Compiling hoimin-cli v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.12s
+     Running tests/exception_hierarchy.rs (/tmp/hoimin-priority-six-target/debug/deps/exception_hierarchy-0b3003bbb6a777df)
+
+running 22 tests
+test hierarchy_assignment_alias_invalidates_local_class_constructor ... ok
+test hierarchy_assignment_alias_cannot_leave_rebound_destination_eligible ... ok
+test hierarchy_audit_early_submodules_and_nested_stdlib_names_remain_eligible ... ok
+test hierarchy_audit_index_bounds_visible_alias_expansion ... ok
+test hierarchy_audit_interpreter_modules_cannot_resolve_to_project_files ... ok
+test hierarchy_audit_relative_imports_cannot_mix_namespace_identities ... ok
+test hierarchy_audit_relative_imports_use_the_imported_module_name ... ok
+test hierarchy_audit_submodule_must_be_loaded_before_use ... ok
+test hierarchy_exclusion_and_import_roots_apply_to_index_and_fingerprint ... ok
+test hierarchy_handler_narrowing_changes_python_except_and_except_star_behavior ... ok
+test hierarchy_outcomes_distinguish_skipped_analysis_from_policy_exclusions ... ok
+test hierarchy_plan_verify_detects_dependency_changes_additions_and_deletions ... ok
+test hierarchy_rejects_duplicate_module_identities_and_shadowed_namespace_portions ... ok
+test hierarchy_review_attribute_write_forms_match_python ... ok
+test hierarchy_assignment_edges_have_an_independent_limit ... ok
+test hierarchy_review_bounds_deferred_import_dependencies ... ok
+test hierarchy_review_deferred_self_import_is_not_an_initialization_cycle ... ok
+test hierarchy_review_imported_attribute_writes_invalidate_other_aliases ... ok
+test hierarchy_review_submodule_loading_overwrites_package_class_attributes ... ok
+test hierarchy_review_bounds_import_alias_correlations ... ok
+test hierarchy_run_uses_same_candidates_and_mutants_change_python_behavior ... ok
+test hierarchy_skipped_reasons_are_aggregated_with_first_location ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.63s
+
+     Running tests/exception_hierarchy_scopes.rs (/tmp/hoimin-priority-six-target/debug/deps/exception_hierarchy_scopes-4141d141cf93e5f7)
+
+running 5 tests
+test hierarchy_implicit_scope_bindings_do_not_hide_module_classes ... ok
+test hierarchy_implicit_class_cell_writes_invalidate_owning_class ... ok
+test hierarchy_local_parameter_renaming_preserves_module_candidates ... ok
+test hierarchy_other_local_declarations_and_comprehensions_preserve_candidates ... ok
+test hierarchy_scoped_writes_distinguish_local_bindings_and_escaping_aliases ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/lean_exception_hierarchy_oracle.rs (/tmp/hoimin-priority-six-target/debug/deps/lean_exception_hierarchy_oracle-4270a7ddd06f7aff)
+
+running 2 tests
+test lean_exception_hierarchy_public_plan_resource_errors ... ok
+test lean_exception_hierarchy_public_plan_correspondence ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.87s
