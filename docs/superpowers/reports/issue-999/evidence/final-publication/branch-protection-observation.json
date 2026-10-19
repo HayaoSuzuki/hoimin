@@ -1,0 +1,30 @@
+{
+  "observation": "live gh API read on 2026-10-19 after final whole-branch review",
+  "branch": {
+    "name": "main",
+    "protected": true,
+    "protection": {
+      "enabled": false,
+      "required_status_checks": {
+        "checks": [],
+        "contexts": [],
+        "enforcement_level": "off"
+      }
+    }
+  },
+  "effective_rules": [
+    {
+      "parameters": null,
+      "type": "deletion"
+    },
+    {
+      "parameters": null,
+      "type": "non_fast_forward"
+    }
+  ],
+  "commands": [
+    "gh api repos/HayaoSuzuki/hoimin/branches/main --jq '{name,protected,protection}'",
+    "gh api repos/HayaoSuzuki/hoimin/rules/branches/main --jq '[.[]|{type,parameters}]'"
+  ],
+  "scope": "Captured API result fields; no remote settings were changed. Approved design line55 defines mandatory CI through existing workflow aggregate."
+}

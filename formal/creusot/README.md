@@ -8,6 +8,13 @@ requires this selected job to succeed. Ordinary stable builds need none of the
 proof tools. See the [adoption record](../../docs/superpowers/reports/2026-10-19-issue-999-creusot-adoption.md)
 for source revisions, independent reviews and archived execution evidence.
 
+The mandatory requirement is enforced by the workflow's `CI result` aggregate:
+a selected proof failure, cancellation, timeout or unexpected skip fails CI.
+It does not assert GitHub merge enforcement. The controller's October 19
+[settings observation](../../docs/superpowers/reports/issue-999/evidence/final-publication/branch-protection-observation.json)
+found deletion/non-fast-forward protection on `main` but no required-status-check
+rule; legacy contexts/checks were empty with enforcement off. No setting changed.
+
 For a local Linux x86_64 checkout, build the image below, create an empty report
 directory, then use the same invocation as CI:
 

@@ -34,3 +34,11 @@ latest disposition. The progress ledger preserves all seven controller Rulings.
 logs and preparation/validation scripts under `task-5-final-validation/`. The
 [final acceptance report](records/task-5-final-acceptance-report.md) records their
 results and the final native acceptance, with whole-branch review still pending.
+
+The [final whole-branch review](records/final-review.md) and
+[controller dispositions](records/final-controller-dispositions.md) close the
+review stage without a fix wave. The updated ledger preserves all seven Rulings
+and all six declined-to-judge dispositions. `evidence/final-publication/` preserves
+the live branch-rule observation and focused bookkeeping validation. PR
+publication and ordinary fresh CI were subsequent controller actions at this
+October 19 pre-publication snapshot; Issue #999 and its linked PR carry live status.

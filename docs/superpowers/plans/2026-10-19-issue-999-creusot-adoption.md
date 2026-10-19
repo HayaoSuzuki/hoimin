@@ -140,6 +140,10 @@ harness scheduling at `70ea57b2` did not resolve the readiness failures. Diagnos
 checkpoint `dd2674dd` passed those cases but exposed a separate lifecycle adapter
 exit guard; its contract-derived repair at `312be2c4` passed all nine native
 non-Linux jobs in `39202749924`. Scoped review found no new breakage; its native
-acceptance gate is now closed. Final whole-branch review remains pending. Use the
+acceptance gate is now closed. Final whole-branch review at `fb89c55c` concluded
+Ready to merge: Yes, with no Critical, Important or Minor findings and no fix wave.
+All six declined-to-judge items have controller dispositions. Use the
 [integration record](../reports/2026-10-19-issue-999-creusot-adoption.md) for their
-actual disposition. Whole-branch review and PR publication are the next controller steps.
+actual disposition. At this pre-publication acceptance snapshot, PR publication
+and ordinary fresh CI are the next controller steps; Issue #999 and its linked PR
+carry subsequent live status.

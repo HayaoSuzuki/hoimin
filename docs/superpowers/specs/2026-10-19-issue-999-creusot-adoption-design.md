@@ -1,6 +1,6 @@
 # Issue #999: Creusotを予算計算の本番実装と必須CIへ適用する
 
-状態: Q1〜Q7および仕様全体を利用者が承認済み（「はい、進めて」）。2026-10-19に実装開始。Tasks 1〜4の実装・独立レビューとnative Linuxのcold/warm証明を完了。Task 5のローカル配布検証・依存監査・文書統合、および現在の証明ソースでnative Linux CIとcold/warm証明を完了。Windowsの並列数制限ではreadiness失敗を解消できず、原因は未確定。後続の診断実行で見つかったlifecycleテストの終了待ちを修正し、312be2c4のnative CIは9ジョブすべて成功。修正範囲レビューのnative受入条件も満たした。全ブランチの最終レビューは次の段階として残る。結果は[実行記録](../reports/2026-10-19-issue-999-creusot-adoption.md)を参照。
+状態: Q1〜Q7および仕様全体を利用者が承認済み（「はい、進めて」）。2026-10-19に実装開始。Tasks 1〜4の実装・独立レビューとnative Linuxのcold/warm証明を完了。Task 5のローカル配布検証・依存監査・文書統合、および現在の証明ソースでnative Linux CIとcold/warm証明を完了。Windowsの並列数制限ではreadiness失敗を解消できず、原因は未確定。後続の診断実行で見つかったlifecycleテストの終了待ちを修正し、312be2c4のnative CIは9ジョブすべて成功。修正範囲レビューのnative受入条件も満たした。fb89c55cの全ブランチ最終レビューはReady to merge: Yesで完了し、Critical／Important／Minorの指摘なし。判断対象外の6項目は承認済み範囲と実測に基づきcontrollerが整理済み。2026-10-19のPR公開前受入記録として、次はPR公開と通常の新規CI実行。以後の公開状態はIssue #999とリンクされたPRで追跡する。結果は[実行記録](../reports/2026-10-19-issue-999-creusot-adoption.md)を参照。
 基点: main b65f62834b35a9ff85795b041e9687b21e5c51ba（PR #1000を含む）。
 
 ## 目的と完了の意味

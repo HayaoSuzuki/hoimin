@@ -6,9 +6,9 @@ status: draft
 sources:
 - id: guide
   resource: ../../formal/creusot/README.md
-  revision: 312be2c4759be00a26e2f04519258f1172057a67
+  revision: fb89c55c1ab6b851302f36d0fef7fd9f7697655a
   working_tree: modified
-  sha256: 926b055dadd392e017e953ec5c9900c5ef2d01ca180c99bbce031ac18c5dbff5
+  sha256: fbdccf3726ffd7ce38625c8cee398071155cbc0564a578e648f6d75321873dd4
 - id: manifest
   resource: ../../formal/creusot/obligations.json
   revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
@@ -21,9 +21,9 @@ sources:
   sha256: 57e65a4b70eb7bd7f6fb171710da0146bcbe10844800861bf46ca45b55f12535
 - id: record
   resource: ../superpowers/reports/2026-10-19-issue-999-creusot-adoption.md
-  revision: 312be2c4759be00a26e2f04519258f1172057a67
+  revision: fb89c55c1ab6b851302f36d0fef7fd9f7697655a
   working_tree: modified
-  sha256: 7e3b95fed5f12bfaf90f8791152c6480959999702d3991becfc6650e50f46f52
+  sha256: 87f7e3fa2c550ea837a699675f8d3d0571c1762747c329df2f9671b6aa1b1cb6
 ---
 
 # Production implementation and contract

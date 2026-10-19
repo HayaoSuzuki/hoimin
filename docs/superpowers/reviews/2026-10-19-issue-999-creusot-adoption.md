@@ -385,8 +385,8 @@ actual root/fuzz license audits, extracted-sdist wheel execution, generated SBOM
 OKF checks and source-specific evidence. Current-source native full CI and
 warm/cold proof passed at `5033e1bb`, run `39197995202`, attempts 1 and 2.
 The lifecycle adapter follow-up at `312be2c4` passed all nine native non-Linux
-jobs in `39202749924`. Final whole-branch review remains the controller's next
-gate. All seven controller Rulings and prior task/review
+jobs in `39202749924`. Final whole-branch review at `fb89c55c` concluded
+Ready to merge: Yes, with no findings; PR publication is the next controller step. All seven controller Rulings and prior task/review
 reports survive in the [durable archive](../reports/issue-999/README.md).
 No final native platform result is inferred from the local package checks.
 
@@ -413,4 +413,23 @@ pending at review time. Run `39202749924` subsequently passed all nine jobs at
 `312be2c4`, closing that external gate. The review retains its original status and
 its limitation that RED was archived as an exact command/result summary rather
 than a raw terminal transcript. The original intermittent readiness cause remains
-unproven; final whole-branch review is outstanding.
+unproven and was accepted as an explicit nonblocking maintenance risk by final review.
+
+## Final whole-branch review and controller disposition (2026-10-19, before publication)
+
+The [independent final review](../reports/issue-999/records/final-review.md)
+covered `f4460fc0..fb89c55c` in five passes and concluded **Ready to merge: Yes**,
+with no Critical, Important or Minor findings. It independently checked archive
+hashes, unchanged proof inputs, source-specific native acceptance and the seven
+Rulings. No further fix wave was required.
+
+The [controller's six dispositions](../reports/issue-999/records/final-controller-dispositions.md)
+are preserved verbatim with the updated ledger. Excluded state-machine/universal
+timing/unsupported-target claims remain excluded; license statements remain
+technical rather than general legal conclusions; unrelated existing linter
+warnings remain documented. A read-only live API observation established that
+the proof job is required by the CI aggregate while GitHub currently has no
+required-status-check merge rule. No remote setting changed. PR publication and
+ordinary fresh CI were the next controller steps at this acceptance snapshot;
+Issue #999 and its linked PR carry live status. Neither merge nor release was
+performed as part of this implementation.

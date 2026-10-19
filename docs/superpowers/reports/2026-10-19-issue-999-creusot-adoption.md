@@ -1,5 +1,9 @@
 # Issue #999: production budget proofs and final integration
 
+Acceptance snapshot: October 19, 2026, after implementation/review completion and
+before PR publication. [Issue #999](https://github.com/HayaoSuzuki/hoimin/issues/999)
+and its linked PR carry live publication and subsequent CI status.
+
 Task 5 implementation, local distribution acceptance and current-source native
 Linux CI are complete. Native run
 [39197995202](https://github.com/HayaoSuzuki/hoimin/actions/runs/39197995202)
@@ -13,7 +17,9 @@ The derived-bound repair passed all nine jobs in
 [39202749924](https://github.com/HayaoSuzuki/hoimin/actions/runs/39202749924)
 at `312be2c4759be00a26e2f04519258f1172057a67`, closing native platform acceptance.
 The scoped fix review found no new breakage; its then-pending Windows gate is now
-satisfied by that run. Final independent whole-branch review remains pending.
+satisfied by that run. Final independent whole-branch review at `fb89c55c`
+concluded **Ready to merge: Yes**, with no Critical, Important or Minor findings.
+At this snapshot, PR publication and ordinary fresh CI are the next controller steps.
 No merge, release or proof-image publication was performed.
 
 ## Source and evidence map
@@ -353,9 +359,9 @@ maintenance cost is explicit: additional fixture I/O can perturb startup timing,
 and internal test logging adds noise. The intermittent readiness cause remains
 unproven. The bounded diagnostics are retained as failure context for these native tests;
 they are not a claimed repair for the intermittent readiness failure. Final
-whole-branch review can assess their maintenance cost alongside the evidence.
+whole-branch review accepted that explicit maintenance cost as nonblocking.
 
-## Final native acceptance and remaining review
+## Final native acceptance and whole-branch review
 
 Run `39202749924` at `312be2c4` completed successfully, with all nine jobs
 successful. The archived `non-linux-final-312be-metadata.json` and raw logs record:
@@ -387,5 +393,28 @@ The [final acceptance report](issue-999/records/task-5-final-acceptance-report.m
 records the focused documentation/OKF/archive checks and five final self-reviews.
 All seven Rulings and their costs, both scoped fix reviews, complete current CI
 metadata and retained raw logs are archived. Task 5's implementation acceptance
-is complete; final whole-branch review, any resulting repair, and PR publication
-remain controller-owned work. No merge or release was performed.
+and final whole-branch review are complete. The
+[final review](issue-999/records/final-review.md) examined
+`f4460fc0..fb89c55c`, found no Critical, Important or Minor findings, and recommended
+publication without another fix wave. Its six declined-to-judge items have
+[controller dispositions](issue-999/records/final-controller-dispositions.md),
+preserved verbatim with the updated ledger. They retain approved exclusions and
+technical licensing limits, not new exceptions to the accepted requirements.
+PR publication and its ordinary fresh CI remain controller-owned work. No merge
+or release was performed.
+
+## CI requirement and observed GitHub settings
+
+“Mandatory CI” means the existing `CI result` aggregate requires a selected
+Creusot job to succeed. Failure, cancellation, timeout or an unexpected skip makes
+the aggregate fail, as required by the approved specification. This is the
+implemented workflow contract; it is not a claim that GitHub prevents a merge.
+
+The controller's October 19 live API
+[observation](issue-999/evidence/final-publication/branch-protection-observation.json)
+reported `main` protected by deletion/non-fast-forward rules, with no effective
+required-status-check rule. Legacy status-check contexts/checks were empty and
+enforcement was off. The record preserves the exact read-only commands and
+returned fields. No remote setting was changed. This observation resolves the
+review's external-settings question while keeping publication separate from
+unauthorized merge or release actions.
