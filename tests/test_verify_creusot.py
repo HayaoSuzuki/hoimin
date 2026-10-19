@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import shutil
@@ -16,6 +17,12 @@ from tools import verify_creusot
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = ROOT / "tests/fixtures/creusot" / "x86_64-unknown-linux-gnu/first"
+
+
+def test_runner_source_parses_for_pinned_container_python() -> None:
+    source = (ROOT / "tools/verify_creusot.py").read_text(encoding="utf-8")
+
+    ast.parse(source, filename="tools/verify_creusot.py", feature_version=(3, 12))
 
 
 @pytest.fixture

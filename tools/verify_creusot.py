@@ -315,7 +315,7 @@ def owned_session_groups(session_id: int) -> set[int]:
             fields = stat.rsplit(") ", 1)[1].split()
             if int(fields[3]) == session_id and fields[0] != "Z":
                 groups.add(int(fields[2]))
-        except OSError, IndexError, ValueError:
+        except (OSError, IndexError, ValueError):
             continue  # A process may exit while /proc is scanned.
     return groups
 
