@@ -1134,6 +1134,74 @@
         "--exact",
         "--nocapture"
       ]
+    },
+    {
+      "id": "analyzer-line-selection-sparse-1000",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 1006,
+      "scope": "N=1000 Boolean sites; N isolated blank-line ranges; max_candidates=1. Real membership comparisons <= actual nonzero query count * (floor(log2 R)+3); preparation <= R*(floor(log2 R)+5). Includes index copy/sort/prefix operations; excludes parser, scope lookup, allocation/native-stack/time/RSS bounds.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-python",
+        "--lib",
+        "rust::selection_tests::selection_sparse_1000",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
+    },
+    {
+      "id": "analyzer-line-selection-sparse-2000",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 1006,
+      "scope": "N=2000 Boolean sites; N isolated blank-line ranges; max_candidates=1. Real membership comparisons <= actual nonzero query count * (floor(log2 R)+3); preparation <= R*(floor(log2 R)+5). Includes index copy/sort/prefix operations; excludes parser, scope lookup, allocation/native-stack/time/RSS bounds.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-python",
+        "--lib",
+        "rust::selection_tests::selection_sparse_2000",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
+    },
+    {
+      "id": "analyzer-line-selection-sparse-4000",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 1006,
+      "scope": "N=4000 Boolean sites; N isolated blank-line ranges; max_candidates=1. Real membership comparisons <= actual nonzero query count * (floor(log2 R)+3); preparation <= R*(floor(log2 R)+5). Includes index copy/sort/prefix operations; excludes parser, scope lookup, allocation/native-stack/time/RSS bounds.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-python",
+        "--lib",
+        "rust::selection_tests::selection_sparse_4000",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
+    },
+    {
+      "id": "analyzer-line-selection-sparse-8000",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 1006,
+      "scope": "N=8000 Boolean sites; N isolated blank-line ranges; max_candidates=1. Real membership comparisons <= actual nonzero query count * (floor(log2 R)+3); preparation <= R*(floor(log2 R)+5). Includes index copy/sort/prefix operations; excludes parser, scope lookup, allocation/native-stack/time/RSS bounds.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-python",
+        "--lib",
+        "rust::selection_tests::selection_sparse_8000",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
     }
   ],
   "lean": {
