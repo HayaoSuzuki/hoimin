@@ -1839,7 +1839,7 @@ mod tests {
                 .evidence
                 .details
                 .iter()
-                .any(|detail| detail.message.contains("live child handle")),
+                .any(|detail| detail.contains("live child handle")),
             "missing live-child evidence: {while_closing:?}"
         );
         assert_eq!(
