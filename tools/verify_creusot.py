@@ -542,7 +542,7 @@ def verify(
                     "hoimin-budget-math",
                     "--only=coma",
                     "--span-mode",
-                    "relative",
+                    "absolute",
                     "-j",
                     "2",
                     "--",

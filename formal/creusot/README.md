@@ -196,7 +196,7 @@ python3 /recipe/tools/creusot_environment.py check \
 cargo clean -p hoimin-budget-math --target "$target"
 # Remove only this job's generated output, retaining saved strategies elsewhere.
 rm -rf verif/hoimin_budget_math_rlib
-cargo creusot -p hoimin-budget-math --only=coma --span-mode relative -j 2 \
+cargo creusot -p hoimin-budget-math --only=coma --span-mode absolute -j 2 \
   -- --lib --locked --target "$target"
 python3 /recipe/tools/creusot_environment.py check \
   --manifest /recipe/formal/creusot/toolchain.json --project-root "$PWD"

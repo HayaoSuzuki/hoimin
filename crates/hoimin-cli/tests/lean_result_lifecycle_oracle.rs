@@ -557,15 +557,8 @@ async fn run_cli(
     two_mutants: bool,
     resume: bool,
     metrics_path: &Path,
-    total_timeout: bool,
 ) -> Result<FixtureRun, String> {
-    let mut command = build_cli_command(
-        fixture,
-        two_mutants,
-        resume,
-        metrics_path,
-        total_timeout.then_some("1s"),
-    )?;
+    let mut command = build_cli_command(fixture, two_mutants, resume, metrics_path, None)?;
     let output = bounded_cli_output(&mut command, Duration::from_secs(12)).await?;
     fixture_run_from_output(output)
 }
@@ -594,7 +587,6 @@ fn fixture_run_from_output(output: Output) -> Result<FixtureRun, String> {
     })
 }
 
-#[cfg(unix)]
 async fn wait_for_first_durable_kill(
     child: &mut tokio::process::Child,
     session: &Path,
@@ -633,7 +625,6 @@ async fn wait_for_first_durable_kill(
     }
 }
 
-#[cfg(unix)]
 async fn run_cli_with_durable_timeout_premise(
     fixture: &Fixture,
     metrics_path: &Path,
@@ -860,7 +851,7 @@ async fn execute_strict(case: &OracleCase) -> Result<(ImplementationObservation,
 
     let run = match case.scenario.as_str() {
         "resume_reuses_determinate" | "session_persistence_failure" => {
-            let seed = run_cli(&fixture, false, false, &fixture.metrics, false).await?;
+            let seed = run_cli(&fixture, false, false, &fixture.metrics).await?;
             if seed.exit_code != 0 {
                 return Err(format!(
                     "seed run failed: exit={} stderr={} stdout={}",
@@ -869,20 +860,15 @@ async fn execute_strict(case: &OracleCase) -> Result<(ImplementationObservation,
             }
             reopen_incomplete(&fixture, case.scenario == "session_persistence_failure")?;
             fixture.clear_outputs()?;
-            run_cli(&fixture, false, true, &fixture.metrics, false).await?
+            run_cli(&fixture, false, true, &fixture.metrics).await?
         }
         "stop_preserves_accepted" => {
-            #[cfg(unix)]
-            {
-                run_cli_with_durable_timeout_premise(&fixture, metrics_path).await?
-            }
-            #[cfg(windows)]
-            {
-                run_cli(&fixture, true, false, metrics_path, true).await?
-            }
+            // The oracle starts after one accepted result is durable on every OS.
+            // If setup cannot reach that premise, report infrastructure failure.
+            run_cli_with_durable_timeout_premise(&fixture, metrics_path).await?
         }
         "sessionless_complete" | "session_complete" | "metrics_write_failure" => {
-            run_cli(&fixture, false, false, metrics_path, false).await?
+            run_cli(&fixture, false, false, metrics_path).await?
         }
         scenario => {
             return Err(format!(

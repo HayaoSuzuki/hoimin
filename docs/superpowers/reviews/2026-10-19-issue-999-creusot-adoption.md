@@ -350,3 +350,28 @@ because only this runner lifecycle changed. Final runner SHA-256:
 The complete local report and logs are in worktree-local
 `task-4-report.md` and `task-4-evidence/fix2-py312/`. Final native current-lock
 CI and scoped re-review remain pending with the controller.
+
+## Task 5 checkpoint: diagnostic spans and Windows oracle premise
+
+At integration base `878be0d5496be231f0f15b6da1a8fe8f03659e6c`, the retained
+Windows failure (run `39192791500`, job `117869024599`) showed zero executed or
+durable results in `stop_preserves_accepted`. That platform alone used an
+unguarded one-second total timeout. Both platforms now use the existing
+12-second timeout helper, which requires one persisted killed result within
+eight seconds before comparing the unchanged Lean expectation. Failure to reach
+that premise is infrastructure error. Existing bounded Unix/Windows process-tree
+cleanup remains in use. The obsolete boolean timeout option was removed.
+
+The pinned Creusot source and actual `cargo creusot --help` confirm absolute
+spans are supported. Fresh three-target proof with `--span-mode absolute` and
+the current merged Cargo.lock passed: each target generated 25 files and proved
+59 goals with no-cache replay. All three proof logs contain zero source-span
+warnings, replacing the prior 393 warnings per target. Historical fixture logs
+remain unchanged. Absolute paths refer to the job's live source tree; archived
+Coma diagnostics need that original path or regeneration.
+
+Focused host validation: 39 runner tests passed, three Linux-only tests skipped;
+all six result-lifecycle tests passed, including real durable result polling and
+bounded descendant cleanup. Actual final Windows execution belongs to the
+controller's checkpoint CI run. Full Task 5 validation and self-review follow in
+the integration report; this checkpoint makes no broader completion claim.
