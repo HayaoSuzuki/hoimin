@@ -261,7 +261,9 @@ mod tests {
         );
         assert_eq!(plan.environment, config.environment);
         assert_eq!(
-            plan.into_run_config(config.output.clone()).environment,
+            plan.into_run_config(config.output.clone())
+                .unwrap()
+                .environment,
             config.environment
         );
     }

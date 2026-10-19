@@ -187,7 +187,9 @@ impl VerifiedPlan {
     /// Candidate order, execution limits and protected inputs are unchanged.
     #[must_use]
     pub fn with_metrics(mut self, destination: Option<Utf8PathBuf>) -> Self {
-        self.config.output.metrics = destination;
+        let mut output = self.config.output.clone();
+        output.metrics = destination;
+        self.config = self.config.with_output(output);
         self
     }
 
@@ -484,7 +486,8 @@ async fn prepare_verify_selection_inner(
     let mut config = manifest
         .normalized_config
         .clone()
-        .into_run_config(output_config(format));
+        .into_run_config(output_config(format))
+        .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
     let targets = TargetHandler::resolve(&config.selection)
         .await
         .map_err(|error| PlanError::SourceChanged(error.to_string()))?;
@@ -505,7 +508,7 @@ async fn prepare_verify_selection_inner(
         &manifest.candidates,
     )
     .map_err(PlanError::ManifestInvalid)?;
-    config.fingerprint_inputs = current_inputs;
+    config = config.with_fingerprint_inputs(current_inputs);
     let copy_options = crate::workspace::CopyOptions {
         includes: config.selection.includes.clone(),
         excludes: config.selection.excludes.clone(),
@@ -1440,8 +1443,9 @@ mod tests {
     async fn create_rejects_oversized_saved_discovery_before_project_work() {
         // Arrange: deserialization checks positivity; semantic validation owns the ceiling.
         let project = Project::new();
-        let mut config = project.config();
+        let mut config = project.config().into_data();
         config.selection.root = project.root.join("missing");
+        let config = RunConfig::try_from(config).unwrap();
         let discovery = serde_json::from_value(serde_json::json!({
             "analyzer_timeout": {"secs": hoimin_core::MAX_TIMEOUT.as_secs(), "nanos": 1}
         }))

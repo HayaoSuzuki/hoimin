@@ -27,6 +27,8 @@ pub enum FingerprintInputError {
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum FingerprintInputRecheckError {
     #[error(transparent)]
+    Configuration(#[from] hoimin_core::ConfigError),
+    #[error(transparent)]
     Resolution(#[from] FingerprintInputError),
     #[error("resolved fingerprint input records differ from prepared configuration")]
     RecordsChanged,
@@ -103,8 +105,9 @@ pub(crate) fn recheck_config(
     config: &hoimin_core::RunConfig,
     root: &Utf8Path,
 ) -> Result<(), FingerprintInputRecheckError> {
-    let mut current = config.clone();
+    let mut current = config.clone().into_data();
     current.selection.root = root.to_owned();
+    let current = hoimin_core::RunConfig::try_from(current)?;
     if resolve_config(&current)? == config.fingerprint_inputs {
         Ok(())
     } else {
@@ -378,7 +381,7 @@ mod tests {
             std::fs::write(root.join("settings.toml"), "value = 1\n").unwrap();
             std::fs::write(root.join("errors.py"), "class Root(Exception): pass\n").unwrap();
         }
-        let mut config = hoimin_core::RunConfig::try_from(hoimin_core::RawRunConfig {
+        let config = hoimin_core::RunConfig::try_from(hoimin_core::RawRunConfig {
             root: original_root.to_owned(),
             files: vec!["errors.py".into()],
             fingerprint_files: vec!["settings.toml".into()],
@@ -391,8 +394,8 @@ mod tests {
         .unwrap()
         .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap();
-        config.fingerprint_inputs = resolve_config(&config).unwrap();
-        config
+        let inputs = resolve_config(&config).unwrap();
+        config.with_fingerprint_inputs(inputs)
     }
 
     #[test]

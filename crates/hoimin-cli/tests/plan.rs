@@ -1460,7 +1460,7 @@ async fn verified_metrics_override_preserves_checked_execution_and_preview() {
     )
     .await
     .unwrap();
-    let mut expected_config = verified.config().clone();
+    let mut expected_config = verified.config().clone().into_data();
     let expected_selection = verified.selection().clone();
     let expected_metadata = verified
         .selection()
@@ -1471,6 +1471,7 @@ async fn verified_metrics_override_preserves_checked_execution_and_preview() {
     let destination =
         camino::Utf8PathBuf::from_path_buf(project.path.join("metrics.json")).unwrap();
     expected_config.output.metrics = Some(destination.clone());
+    let expected_config = hoimin_core::RunConfig::try_from(expected_config).unwrap();
 
     let updated = verified.with_metrics(Some(destination));
 
@@ -5556,7 +5557,8 @@ async fn discovery_timeout_changes_saved_plan_without_changing_execution_identit
         let config = manifest
             .normalized_config
             .clone()
-            .into_run_config(hoimin_core::OutputConfig::default());
+            .into_run_config(hoimin_core::OutputConfig::default())
+            .unwrap();
         let sources = manifest
             .sources
             .iter()

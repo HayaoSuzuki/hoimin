@@ -1850,6 +1850,28 @@ The source-scaling regression counts actual walker visits and retained records:
 unrelated descendant file counts do not affect either, while root-level sibling
 enumeration can still grow. It does not impose an elapsed-time or RSS threshold.
 
+## Checked execution configuration
+
+`RunConfig<E>` owns immutable settings after semantic acceptance. Raw CLI
+normalization and direct deserialization use the same checked normalized-data
+constructor. For Rust callers, edit owned `RunConfigData<E>` and pass it to
+`RunConfig::try_from`; use `into_data()` to consume an existing checked value for
+editing. Shared field reads remain available, but nested field writes and
+collection mutations require reconstruction. `PlanConfig::into_run_config`
+returns a `Result` because persisted plan data remains editable.
+
+`prepare_run_config` accepts only checked request settings before capturing the
+environment or resolving filesystem fingerprints. `with_environment` preserves
+the request/snapshot distinction. The consuming `with_output` and
+`with_fingerprint_inputs` operations replace presentation settings and prepared
+records without changing validated selection, operators, command, or limits.
+Preparation still checks output destinations and input freshness.
+
+Strict review checks embedded configuration semantics during decoding, before
+project-root resolution. Progress retains opaque object-or-null configuration
+handling. This ownership change preserves saved shapes and fingerprint bytes;
+it does not certify filesystem safety or freshness at configuration construction.
+
 ## Explicit inherited environment fingerprints
 
 `--fingerprint-env` accepts portable ASCII identifiers only. Core config

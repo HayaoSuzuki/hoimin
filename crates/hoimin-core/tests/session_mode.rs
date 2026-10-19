@@ -61,7 +61,7 @@ proptest! {
         let normalized = RunConfig::try_from(raw).unwrap();
 
         // Assert
-        prop_assert_eq!(normalized.session, expected);
+        prop_assert_eq!(&normalized.session, &expected);
     }
 
     #[test]

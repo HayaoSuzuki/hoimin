@@ -5,6 +5,16 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1004-config
+  resource: ../../../crates/hoimin-core/src/config.rs
+  revision: 6d78789eca05fad577b2a8dcce83077f9389ee06
+  working_tree: modified
+  sha256: 6c0aa32efc26a872a6f5c3aaf32c7b9cfad9cb5ae58d4aa83a9ce5c26461fba4
+- id: issue-1004-preparation-tests
+  resource: ../../../crates/hoimin-cli/tests/checked_config.rs
+  revision: 6d78789eca05fad577b2a8dcce83077f9389ee06
+  working_tree: untracked
+  sha256: 5b5f8758c22e950dcbab0dd95a4058a81aee0f95ece51f58760436fbfb15339e
 - id: issue-1002-human-text
   resource: ../../../crates/hoimin-cli/src/human_text.rs
   revision: b02ee7d51709de664ee88db68abca34025db3487
@@ -426,6 +436,28 @@ sources:
   working_tree: untracked
   sha256: a41daec552a0ef497201a3876589934ac5271a825a41e70c7d3c864a84f1c905
 ---
+
+# Checked normalized settings (Issue #1004)
+
+`RunConfig<E>` now owns accepted normalized settings behind an immutable view.
+Raw conversion, normalized construction data, and typed serde acceptance share
+the semantic validators for selection, import roots, operators, argv, and limits.
+Callers consume `into_data()` to edit fields and must pass the result through
+`TryFrom` before execution. `PlanConfig` remains persisted data, with fallible
+conversion to execution settings. Header validation still precedes source and
+fingerprint work; `VerifiedPlan` retains selected candidates and protected inputs
+with the accepted config.
+
+The request-to-snapshot environment transition still checks the exact requested
+names. Configuration acceptance performs no filesystem work and does not establish
+freshness or destination safety. Preparation owns those checks. These changes
+preserve plan, report, and fingerprint representations. See the
+[Rust caller migration](../../development.md#checked-execution-configuration).[^issue-1004-config][^issue-1004-preparation-tests]
+Historical source revisions and verification records below retain their original
+scope; local macOS checks do not establish native Linux or Windows results.
+
+[^issue-1004-config]: [Checked configuration implementation](../../../crates/hoimin-core/src/config.rs).
+[^issue-1004-preparation-tests]: [Preparation boundary regressions](../../../crates/hoimin-cli/tests/checked_config.rs).
 
 # Checked execution selection (Issues #997 and #998)
 

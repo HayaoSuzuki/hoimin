@@ -866,7 +866,7 @@ impl BlockingEffect {
                 id,
                 mut workspace,
                 request,
-                mut config,
+                config,
                 copied_at_start,
                 metrics_protected_inputs,
                 targets,
@@ -874,15 +874,17 @@ impl BlockingEffect {
             } => {
                 let mut run_fingerprint = None;
                 let mut metrics_destination = None;
+                let mut resolved_session_path = None;
                 let validation =
                     validate_metrics_destination(&config, &targets, &metrics_protected_inputs, id)
                         .map(|value| {
                             metrics_destination = Some(value);
                         });
                 let preflight = validation.and_then(|()| {
-                    prepare_session_artifacts(&mut config)
+                    prepare_session_artifacts(&config)
                         .map_err(|error| EffectFailed::other(id, "session.path", error))
-                        .and_then(|exclusions| {
+                        .and_then(|(exclusions, session_path)| {
+                            resolved_session_path = session_path;
                             workspace.set_literal_exclusions(exclusions);
                             workspace.handle_preflight_validated(request, |root, manifest| {
                                 recheck_fingerprint_inputs(
@@ -906,10 +908,7 @@ impl BlockingEffect {
                 let (event, session_path) = match preflight {
                     Ok(mut value) => {
                         value.fingerprint = run_fingerprint;
-                        (
-                            RunEvent::PreflightCompleted(value),
-                            config.session.config().map(|session| session.path.clone()),
-                        )
+                        (RunEvent::PreflightCompleted(value), resolved_session_path)
                     }
                     Err(error) => (RunEvent::EffectFailed(error), None),
                 };
@@ -986,10 +985,11 @@ fn is_blocking_io_effect(effect: &RunEffect) -> bool {
 }
 
 fn prepare_session_artifacts(
-    config: &mut RunConfig,
-) -> Result<Vec<crate::workspace::LiteralExclusion>, String> {
+    config: &RunConfig,
+) -> Result<(Vec<crate::workspace::LiteralExclusion>, Option<Utf8PathBuf>), String> {
     let mut literal_exclusions = Vec::new();
-    if let Some(session) = config.session.config_mut() {
+    let mut resolved_path = None;
+    if let Some(session) = config.session.config() {
         let artifacts =
             SessionArtifacts::resolve(&session.path).map_err(|error| error.to_string())?;
         let root =
@@ -1014,10 +1014,12 @@ fn prepare_session_artifacts(
                 });
             }
         }
-        session.path = Utf8PathBuf::from_path_buf(artifacts.database().to_owned())
-            .map_err(|_| "session database path is not UTF-8".to_owned())?;
+        resolved_path = Some(
+            Utf8PathBuf::from_path_buf(artifacts.database().to_owned())
+                .map_err(|_| "session database path is not UTF-8".to_owned())?,
+        );
     }
-    Ok(literal_exclusions)
+    Ok((literal_exclusions, resolved_path))
 }
 
 fn prepare_blocking_effect(
@@ -2347,7 +2349,9 @@ pub enum PrepareRunConfigError {
     File(#[from] crate::fingerprint_inputs::FingerprintInputError),
 }
 
-/// Resolves declared filesystem and inherited-environment fingerprint inputs.
+/// Resolves fingerprint inputs for semantically checked request settings.
+/// Invalid normalized settings cannot enter this boundary; checked construction
+/// and deserialization run before environment capture or filesystem resolution.
 ///
 /// # Errors
 ///
@@ -2356,9 +2360,9 @@ pub fn prepare_run_config(
     config: RunConfig<hoimin_core::EnvironmentRequest>,
 ) -> Result<RunConfig, PrepareRunConfigError> {
     let environment = crate::fingerprint_env::capture(&config.environment)?;
-    let mut config = config.with_environment(environment)?;
-    config.fingerprint_inputs = crate::fingerprint_inputs::resolve_config(&config)?;
-    Ok(config)
+    let config = config.with_environment(environment)?;
+    let inputs = crate::fingerprint_inputs::resolve_config(&config)?;
+    Ok(config.with_fingerprint_inputs(inputs))
 }
 
 /// Captures the request once, then runs its validated snapshot with owned output writers.
@@ -7503,11 +7507,13 @@ mod tests {
         let project = tempfile::tempdir().unwrap();
         let managed_parent = tempfile::tempdir().unwrap();
         let parent = Utf8Path::from_path(managed_parent.path()).unwrap();
-        let mut config = shell_setup_test_config(&project)
+        let config = shell_setup_test_config(&project)
             .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
             .unwrap();
+        let mut config = config.into_data();
         config.limits.jobs = std::num::NonZeroUsize::new(1).unwrap();
         config.limits.max_copy_size = std::num::NonZeroU64::new(1).unwrap();
+        let config = RunConfig::try_from(config).unwrap();
         let mut prepared = prepare_shell_setup_sync_in(config, parent, &|_| {}).unwrap();
 
         // Act.

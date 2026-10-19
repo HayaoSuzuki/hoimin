@@ -5,6 +5,16 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1004-reader
+  resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
+  revision: 6d78789eca05fad577b2a8dcce83077f9389ee06
+  working_tree: modified
+  sha256: 55fc1aab381c73d4adbb1de145d6402cb7e1fc0d0c6f3124cede9d8fe3d61fd3
+- id: issue-1004-config
+  resource: ../../../crates/hoimin-core/src/config.rs
+  revision: 6d78789eca05fad577b2a8dcce83077f9389ee06
+  working_tree: modified
+  sha256: 6c0aa32efc26a872a6f5c3aaf32c7b9cfad9cb5ae58d4aa83a9ce5c26461fba4
 - id: issue-1002-human-text
   resource: ../../../crates/hoimin-cli/src/human_text.rs
   revision: b02ee7d51709de664ee88db68abca34025db3487
@@ -419,6 +429,17 @@ macOSで、並列数1・2、root内外の別名、大小文字の別名、実際
 [^issue-516]: [Issue 516: Share active session ownership-tree identities](../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md)。
 
 ## Environment metadata and report readers (Issue #887)
+
+Issue #1004 adds semantic acceptance to strict review's typed `RunConfig`
+deserializer. Invalid selectors, operators, argv, limits, and non-normalized
+import roots fail before project-root canonicalization. The deserializer reads
+the original configuration object before checking it, preserving duplicate-key
+rejection. Progress still selects an opaque configuration type and accepts an
+object or null without these semantic or filesystem checks. The saved report
+shape remains unchanged.[^issue-1004-reader][^issue-1004-config]
+
+[^issue-1004-reader]: [Shared reader and regressions](../../../crates/hoimin-cli/src/artifacts/run_report.rs).
+[^issue-1004-config]: [Checked configuration boundary](../../../crates/hoimin-core/src/config.rs).
 
 Report schema 6 retains the validated `environment` snapshot introduced in schema
 5 in place of separate names and an optional hash. Progress and review consume

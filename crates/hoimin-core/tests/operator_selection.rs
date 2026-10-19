@@ -275,11 +275,12 @@ fn normalized_run_config_rejects_an_empty_operator_selection() {
     let mut config = RunConfig::try_from(raw_config())
         .unwrap()
         .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
-        .unwrap();
+        .unwrap()
+        .into_data();
     config.operators.exclude(MutationOperator::CompareEqNe);
 
     assert_eq!(
-        config.validate(),
+        RunConfig::try_from(config),
         Err(ConfigError::EmptyMutationOperatorSelection)
     );
 }

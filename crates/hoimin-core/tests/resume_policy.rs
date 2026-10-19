@@ -56,9 +56,10 @@ fn config_with_metrics(path: &str) -> RunConfig {
 #[test]
 fn copy_policy_changes_resume_compatibility() {
     let make = |includes: &[&str], excludes: &[&str]| {
-        let mut config = config_with_metrics("metrics.json");
+        let mut config = config_with_metrics("metrics.json").into_data();
         config.selection.includes = includes.iter().map(|s| (*s).to_owned()).collect();
         config.selection.excludes = excludes.iter().map(|s| (*s).to_owned()).collect();
+        let config = RunConfig::try_from(config).unwrap();
         fingerprint(&FingerprintInput::from_config(
             &config,
             Vec::new(),

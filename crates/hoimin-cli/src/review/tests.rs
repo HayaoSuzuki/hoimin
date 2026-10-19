@@ -566,7 +566,8 @@ async fn report_fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::
         .manifest
         .normalized_config
         .clone()
-        .into_run_config(hoimin_core::OutputConfig::default());
+        .into_run_config(hoimin_core::OutputConfig::default())
+        .unwrap();
     report["run"]["normalized_config"] = serde_json::to_value(config).unwrap();
     report["mutants"][0]["candidate"] =
         serde_json::to_value(&plan.manifest.candidates[0].candidate).unwrap();
@@ -627,6 +628,71 @@ async fn review_accepts_matching_report() {
         super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan)).unwrap();
 
     assert_eq!(report.mutants.len(), 1);
+}
+
+async fn reject_semantic_report_at_command(change: fn(&mut serde_json::Value), expected: &str) {
+    // Arrange: a usable matching report and valid plan isolate config acceptance.
+    let (dir, plan, report_path) = report_fixture().await;
+    let store = dir.path().join("missing-reviews.sqlite3");
+    let mut report: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
+    change(&mut report["run"]["normalized_config"]);
+    std::fs::write(&report_path, serde_json::to_vec(&report).unwrap()).unwrap();
+    let argv = vec![
+        "hoimin".to_owned(),
+        "review".into(),
+        "list".into(),
+        plan.to_str().unwrap().into(),
+        "--report".into(),
+        report_path.to_str().unwrap().into(),
+        "--store".into(),
+        store.to_str().unwrap().into(),
+        "--format".into(),
+        "json".into(),
+    ];
+    let output = crate::test_writer::CollectingWriter::default();
+    let errors = crate::test_writer::CollectingWriter::default();
+
+    // Act
+    let code = crate::run_with_writers(argv, output.clone(), errors.clone()).await;
+
+    // Assert
+    assert_eq!(code, 2);
+    assert_eq!(output.snapshot(), Vec::<u8>::new());
+    assert!(String::from_utf8_lossy(&errors.snapshot()).contains(expected));
+    assert!(!store.exists());
+}
+
+macro_rules! invalid_report_command_cases {
+    ($($name:ident: $change:expr => $expected:literal;)*) => {
+        $(#[tokio::test]
+        async fn $name() {
+            reject_semantic_report_at_command($change, $expected).await;
+        })*
+    };
+}
+
+invalid_report_command_cases! {
+    command_rejects_report_jobs_above_absolute_cap: |config| {
+        config["limits"]["jobs"] = serde_json::json!(257);
+        config["limits"]["max_processes"] = serde_json::json!(300);
+    } => "--jobs 257 exceeds the supported maximum 256";
+    command_rejects_report_jobs_above_process_cap: |config| {
+        config["limits"]["jobs"] = serde_json::json!(65);
+    } => "--jobs 65 exceeds --max-processes 64";
+    command_rejects_report_empty_selector: |config| {
+        config["selection"]["sources"] = serde_json::json!([]);
+        config["selection"]["files"] = serde_json::json!([]);
+        config["selection"]["lines"] = serde_json::json!([]);
+        config["selection"]["symbols"] = serde_json::json!([]);
+        config["selection"]["changed"] = serde_json::Value::Null;
+    } => "at least one target selector is required";
+    command_rejects_report_empty_operators: |config| config["operators"] = serde_json::json!([])
+        => "mutation operator selection is empty";
+    command_rejects_report_empty_argv: |config| config["test_argv"] = serde_json::json!([])
+        => "at least one test argv element is required";
+    command_rejects_report_escaping_import_root: |config| config["import_roots"] = serde_json::json!(["../escape"])
+        => "invalid --import-root ../escape";
 }
 
 #[tokio::test]
@@ -853,7 +919,8 @@ fn write_matching_report(
         plan.manifest
             .normalized_config
             .clone()
-            .into_run_config(hoimin_core::OutputConfig::default()),
+            .into_run_config(hoimin_core::OutputConfig::default())
+            .unwrap(),
     )
     .unwrap();
     let template = report["mutants"][0].clone();

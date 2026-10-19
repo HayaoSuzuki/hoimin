@@ -296,7 +296,7 @@ fn all_optional_report_events(current: bool) -> Vec<OutputEvent> {
     reason = "Complete typed golden sequence spanning all event kinds"
 )]
 fn all_optional_report_events_at(current: bool, version: u32) -> Vec<OutputEvent> {
-    let mut config = hoimin_cli::cli::parse_config_from([
+    let config = hoimin_cli::cli::parse_config_from([
         "hoimin",
         "run",
         "--root",
@@ -320,6 +320,7 @@ fn all_optional_report_events_at(current: bool, version: u32) -> Vec<OutputEvent
     .unwrap()
     .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
     .unwrap();
+    let mut config = config.into_data();
     config.selection.root = ".".into();
     config.test_argv = ["python", "-m", "pytest"]
         .into_iter()
@@ -339,7 +340,7 @@ fn all_optional_report_events_at(current: bool, version: u32) -> Vec<OutputEvent
         hoimin_core::SessionMode::Fresh(config.session.config().unwrap().clone())
     };
     let mut started = RunStarted::minimal(run_id, 1, test_resource_control());
-    started.normalized_config = Some(config);
+    started.normalized_config = Some(hoimin_core::RunConfig::try_from(config).unwrap());
     started.resume = (current && version >= 4).then_some(hoimin_core::ResumeOutcome::Fresh {
         reason: hoimin_core::ResumeFreshReason::NoPriorRun,
     });
@@ -1719,7 +1720,7 @@ fn human_format_includes_profile_and_fingerprint_provenance_for_normalized_runs(
     .unwrap();
     let mut started = RunStarted::minimal("run-1", 1, test_resource_control());
     started.normalized_config = Some({
-        let mut config = hoimin_cli::cli::parse_config_from([
+        let config = hoimin_cli::cli::parse_config_from([
             "hoimin",
             "run",
             "--file",
@@ -1736,11 +1737,10 @@ fn human_format_includes_profile_and_fingerprint_provenance_for_normalized_runs(
         .unwrap()
         .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap();
-        config.fingerprint_inputs = vec![hoimin_core::FingerprintInputFile {
+        config.with_fingerprint_inputs(vec![hoimin_core::FingerprintInputFile {
             path: "pyproject.toml".into(),
             hash: "sha256:fixture".into(),
-        }];
-        config
+        }])
     });
 
     handler
@@ -2665,18 +2665,19 @@ fn assert_human_format_escapes_run_provenance(raw: &str, escaped: &str) {
     )
     .unwrap();
     let mut started = RunStarted::minimal(raw, 1, test_resource_control());
-    let mut config =
+    let config =
         hoimin_cli::cli::parse_config_from(["hoimin", "run", "--file", "x.py", "--", "check"])
             .unwrap()
             .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
             .unwrap();
+    let mut config = config.into_data();
     config.fingerprint_includes = vec![raw.into()];
     config.fingerprint_files = vec![raw.into()];
     config.fingerprint_inputs = vec![hoimin_core::FingerprintInputFile {
         path: raw.into(),
         hash: raw.into(),
     }];
-    started.normalized_config = Some(config);
+    started.normalized_config = Some(hoimin_core::RunConfig::try_from(config).unwrap());
 
     emit(&mut handler, 1, OutputEvent::RunStarted(started));
 

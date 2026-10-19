@@ -64,24 +64,25 @@ type InvalidPlanCase = (&'static str, fn(&mut serde_json::Value), ConfigError);
 #[test]
 fn plan_config_round_trips_run_semantics_with_session_disabled() {
     // Arrange
-    let mut config = fixture_run_config();
-    config.session = hoimin_core::SessionMode::Resume(SessionConfig {
+    let mut data = fixture_run_config().into_data();
+    data.session = hoimin_core::SessionMode::Resume(SessionConfig {
         path: "state.sqlite".into(),
     });
+    let config = RunConfig::try_from(data).unwrap();
     let value = serde_json::to_value(config.clone().into_plan_config(
         hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
     ))
     .unwrap();
-    let expected = RunConfig {
-        output: OutputConfig::default(),
-        session: hoimin_core::SessionMode::Disabled,
-        ..config
-    };
+    let mut expected = config.into_data();
+    expected.output = OutputConfig::default();
+    expected.session = hoimin_core::SessionMode::Disabled;
+    let expected = RunConfig::try_from(expected).unwrap();
 
     // Act
     let restored = serde_json::from_value::<PlanConfig>(value)
         .unwrap()
-        .into_run_config(OutputConfig::default());
+        .into_run_config(OutputConfig::default())
+        .unwrap();
 
     // Assert
     assert_eq!(restored, expected);
@@ -126,10 +127,11 @@ fn plan_config_preserves_explicit_required_arrays() {
 
 #[test]
 fn plan_config_serializes_the_mapping_operator_with_its_canonical_name() {
-    let mut config = fixture_run_config();
+    let mut config = fixture_run_config().into_data();
     config.operators.exclude(MutationOperator::CompareEqNe);
     config.operators.include(MutationOperator::TypeMapping);
 
+    let config = RunConfig::try_from(config).unwrap();
     let value = serde_json::to_value(config.into_plan_config(
         hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
     ))
@@ -185,8 +187,9 @@ fn normalized_configs_reject_the_removed_outer_root() {
 
 #[test]
 fn normalized_configs_accept_selection_root_without_filesystem_access() {
-    let mut run = fixture_run_config();
+    let mut run = fixture_run_config().into_data();
     run.selection.root = "nonexistent-project/./src/".into();
+    let run = RunConfig::try_from(run).unwrap();
     let plan = run.clone().into_plan_config(
         hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
     );
@@ -199,7 +202,7 @@ fn normalized_configs_accept_selection_root_without_filesystem_access() {
 proptest::proptest! {
     #[test]
     fn saved_configs_preserve_the_single_project_root(root in "[a-z]{1,12}(/\\./[a-z]{1,12})?/?") {
-        let mut config = fixture_run_config();
+        let mut config = fixture_run_config().into_data();
         config.selection.root = root.clone().into();
         let mut value = serde_json::to_value(config).unwrap();
         value.as_object_mut().unwrap().remove("root");
@@ -207,7 +210,7 @@ proptest::proptest! {
         let run: RunConfig = serde_json::from_value(value).unwrap();
         let plan_value = serde_json::to_value(run.into_plan_config(hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap())).unwrap();
         let plan: PlanConfig = serde_json::from_value(plan_value.clone()).unwrap();
-        let restored = plan.into_run_config(OutputConfig::default());
+        let restored = plan.into_run_config(OutputConfig::default()).unwrap();
         let run_value = serde_json::to_value(&restored).unwrap();
 
         proptest::prop_assert!(plan_value.get("root").is_none());
@@ -404,7 +407,7 @@ fn raw_config_rejects_resume_without_session() {
 }
 
 fn fixture_run_config() -> RunConfig {
-    let mut config = RunConfig::try_from(RawRunConfig {
+    let config = RunConfig::try_from(RawRunConfig {
         root: "project".into(),
         files: vec!["src/lib.py".into()],
         fingerprint_includes: vec!["pyproject.toml".to_owned()],
@@ -427,11 +430,10 @@ fn fixture_run_config() -> RunConfig {
     .unwrap()
     .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
     .unwrap();
-    config.fingerprint_inputs = vec![FingerprintInputFile {
+    config.with_fingerprint_inputs(vec![FingerprintInputFile {
         path: "pyproject.toml".into(),
         hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
-    }];
-    config
+    }])
 }
 
 #[test]
@@ -478,19 +480,19 @@ proptest::proptest! {
     ) {
         // Arrange: valid normalized roots, including meaningful order variations.
         proptest::prop_assume!(roots.iter().collect::<std::collections::BTreeSet<_>>().len() == roots.len());
-        let mut config = fixture_run_config();
+        let mut config = fixture_run_config().into_data();
         config.import_roots = roots.iter().map(Into::into).collect();
 
         // Act
         let run: RunConfig = serde_json::from_slice(&serde_json::to_vec(&config).unwrap()).unwrap();
         let plan: PlanConfig = serde_json::from_slice(
-            &serde_json::to_vec(&config.into_plan_config(hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap())).unwrap(),
+            &serde_json::to_vec(&RunConfig::try_from(config).unwrap().into_plan_config(hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap())).unwrap(),
         ).unwrap();
-        let restored = plan.into_run_config(OutputConfig::default());
+        let restored = plan.into_run_config(OutputConfig::default()).unwrap();
 
         // Assert: neither representation may erase or reorder import precedence.
-        proptest::prop_assert_eq!(run.import_roots, roots.clone());
-        proptest::prop_assert_eq!(restored.import_roots, roots);
+        proptest::prop_assert_eq!(&run.import_roots, &roots);
+        proptest::prop_assert_eq!(&restored.import_roots, &roots);
     }
 
     #[test]
@@ -498,43 +500,48 @@ proptest::proptest! {
         files in proptest::collection::vec("[a-z]{1,8}\\.toml", 0..8),
     ) {
         // Arrange
-        let mut config = fixture_run_config();
+        let mut config = fixture_run_config().into_data();
         config.fingerprint_files = files.clone();
 
         // Act
         let plan: PlanConfig = serde_json::from_slice(
-            &serde_json::to_vec(&config.into_plan_config(hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap())).unwrap(),
+            &serde_json::to_vec(&RunConfig::try_from(config).unwrap().into_plan_config(hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap())).unwrap(),
         ).unwrap();
-        let restored = plan.into_run_config(OutputConfig::default());
+        let restored = plan.into_run_config(OutputConfig::default()).unwrap();
 
         // Assert: saved input retains the exact configured fingerprint file list.
-        proptest::prop_assert_eq!(restored.fingerprint_files, files);
+        proptest::prop_assert_eq!(&restored.fingerprint_files, &files);
     }
 }
 
-#[test]
-fn normalized_run_and_plan_import_roots_cannot_bypass_validation() {
-    for roots in [
-        vec!["../outside"],
-        vec!["/absolute"],
-        vec!["src", "src"],
-        vec!["src/./pkg"],
-        vec![""],
-        vec!["src/../src"],
-    ] {
-        let mut config = fixture_run_config();
-        config.import_roots = roots.iter().map(|root| (*root).into()).collect();
-        assert!(config.validate().is_err(), "{roots:?}");
-        assert!(
-            config
-                .into_plan_config(
-                    hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap()
-                )
-                .validate()
-                .is_err(),
-            "{roots:?}"
-        );
-    }
+macro_rules! invalid_import_root_cases {
+    ($($name:ident: $roots:expr;)*) => {
+        $(#[test]
+        fn $name() {
+            // Arrange
+            let mut data = fixture_run_config().into_data();
+            data.import_roots = $roots.into_iter().map(Into::into).collect();
+            let mut plan: PlanConfig = serde_json::from_value(plan_value()).unwrap();
+            plan.import_roots.clone_from(&data.import_roots);
+
+            // Act
+            let run_result = RunConfig::try_from(data);
+            let plan_result = plan.into_run_config(OutputConfig::default());
+
+            // Assert
+            assert!(run_result.is_err());
+            assert!(plan_result.is_err());
+        })*
+    };
+}
+
+invalid_import_root_cases! {
+    checked_import_roots_reject_escape: ["../outside"];
+    checked_import_roots_reject_absolute: ["/absolute"];
+    checked_import_roots_reject_duplicates: ["src", "src"];
+    checked_import_roots_reject_dot_component: ["src/./pkg"];
+    checked_import_roots_reject_empty: [""];
+    checked_import_roots_reject_parent_component: ["src/../src"];
 }
 
 #[test]
