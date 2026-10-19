@@ -60,7 +60,7 @@ dev = [
     {include-group = "docs"},
     {include-group = "internal-tooling"},
     {include-group = "provenance"},
-    "hypothesis==6.170.0",
+    "hypothesis==6.170.1",
     "jsonschema==4.26.0",
     "maturin>=1.11,<2",
     "mypy>=2.3.0",
@@ -82,7 +82,7 @@ internal-tooling = [
     "deal==4.24.6",
 ]
 fuzz = [
-    "hypothesis==6.170.0",
+    "hypothesis==6.170.1",
     "hypothesmith==0.3.3",
 ]
 workflow = [
