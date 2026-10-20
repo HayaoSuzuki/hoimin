@@ -1,0 +1,25 @@
+{
+  "transformation": "Trailing whitespace on lines and blank lines at EOF removed; all other log content preserved. Original captures remain under .superpowers/issues-1029-1030.",
+  "files": [
+    {
+      "file": "visibility-cli.log",
+      "original_sha256": "9748ee460918632c60e65d6ea090e64fc8860f3e581a154a7e2a2e3c3349c582",
+      "normalized_sha256": "1c0865a5b9f97f148d73b742290884d844ed23a3aafb8381f2c13ccc9b19d48b"
+    },
+    {
+      "file": "visibility-green.log",
+      "original_sha256": "50e83b981f84fea4461ad70083d6c902c623cc5d846a2f52465b937681fa3c02",
+      "normalized_sha256": "248665cc302aadd40c4d760ec52c5a063bd8b51ed87b01df7f51caa6827ef43e"
+    },
+    {
+      "file": "visibility-hierarchy.log",
+      "original_sha256": "bcc04a3e3ad6c60001d7833ce36d43f9828827d7f3e5db29ac9a16716c20637a",
+      "normalized_sha256": "eaafcc78a85a2024ded60fd3526fb2cb64d1d294cb844f5ede761c35a095cb90"
+    },
+    {
+      "file": "visibility-red.log",
+      "original_sha256": "6736b155b6169487614537b1f588705b412dc462a74ec188afc83679e4463ef8",
+      "normalized_sha256": "4301aa9ecccb578d7a30a0f7652f02fcc6911d7719b359644fd9a89fcccc1baa"
+    }
+  ]
+}

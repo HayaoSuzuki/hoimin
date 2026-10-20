@@ -1199,6 +1199,18 @@ impl ExceptionIndex {
     }
 
     fn build_visible(&mut self, cancelled: &impl Fn() -> bool) -> Result<(), AnalysisError> {
+        // Qualified resolution accepts only direct class bindings present in
+        // `classes`. Borrow their names once; resolving each alias below still
+        // enforces the importer's identity, loaded-module and shadowing rules.
+        let mut members = BTreeMap::<&Utf8Path, Vec<&str>>::new();
+        for (path, name) in self.classes.keys() {
+            #[cfg(test)]
+            visibility_tests::record_member_scan();
+            if cancelled() {
+                return Err(AnalysisError::Cancelled);
+            }
+            members.entry(path).or_default().push(name);
+        }
         let mut remaining = MAX_SUMMARY_ENTRIES;
         for (path, module) in &self.modules {
             let mut visible = BTreeMap::<ClassId, Vec<(String, usize)>>::new();
@@ -1242,13 +1254,15 @@ impl ExceptionIndex {
                         let Some(module_path) = self.module_paths.get(module_name) else {
                             continue;
                         };
-                        if let Some(target) = self.modules.get(module_path) {
-                            for member in target.bindings.keys() {
+                        if let Some(target_members) = members.get(module_path.as_path()) {
+                            for member in target_members {
                                 if cancelled() {
                                     return Err(AnalysisError::Cancelled);
                                 }
                                 let spelling =
                                     format!("{name}{}.{member}", &module_name[imported.len()..]);
+                                #[cfg(test)]
+                                visibility_tests::record_member_resolution();
                                 if let Some(id) = self
                                     .binding_id(path, &spelling, usize::MAX)
                                     .filter(|id| self.classes.contains_key(id))

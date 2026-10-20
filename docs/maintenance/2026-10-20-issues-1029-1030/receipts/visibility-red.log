@@ -1,0 +1,144 @@
+   Compiling hoimin-python v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issues-1029-1030/crates/hoimin-python)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.99s
+     Running unittests src/lib.rs (/Users/hayao/RustroverProjects/hoimin/target/debug/deps/hoimin_python-2bfcb59dd3432230)
+
+running 26 tests
+test rust::exception_hierarchy::visibility_tests::alias_output_accepts_exact_summary_limit ... ok
+test rust::exception_hierarchy::visibility_tests::alias_output_rejects_excess_summary_entries ... ok
+test rust::exception_hierarchy::visibility_tests::external_import_visibility_work_tracks_imports_not_project_mappings ... module visibility module visits at N=32/64/128/256: [1024, 2048, 4096, 8192]
+member visibility module visits at N=32/64/128/256: [0, 0, 0, 0]
+ok
+test rust::exception_hierarchy::visibility_tests::loaded_descendant_classes_keep_package_and_exact_alias_spellings_in_order ... ok
+test rust::exception_hierarchy::visibility_tests::member_index_preserves_exhaustive_visibility ... ok
+test rust::exception_hierarchy::visibility_tests::ordinary_128_aliases_1::scans_do_not_multiply_ordinary_bindings_by_aliases ... ordinary=128 aliases=1 scans=128
+ok
+test rust::exception_hierarchy::visibility_tests::ordinary_128_aliases_1::unrelated_members_do_not_trigger_alias_resolution ... ordinary=128 aliases=1 resolutions=130
+
+thread 'rust::exception_hierarchy::visibility_tests::ordinary_128_aliases_1::unrelated_members_do_not_trigger_alias_resolution' (722945) panicked at crates/hoimin-python/src/analyzer/exception_visibility_tests.rs:85:1:
+assertion `left == right` failed
+  left: 130
+ right: 2
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test rust::exception_hierarchy::visibility_tests::ordinary_128_aliases_32::scans_do_not_multiply_ordinary_bindings_by_aliases ... ordinary=128 aliases=32 scans=4096
+
+thread 'rust::exception_hierarchy::visibility_tests::ordinary_128_aliases_32::scans_do_not_multiply_ordinary_bindings_by_aliases' (722946) panicked at crates/hoimin-python/src/analyzer/exception_visibility_tests.rs:87:1:
+4096 member scans
+FAILED
+test rust::exception_hierarchy::visibility_tests::ordinary_128_aliases_32::unrelated_members_do_not_trigger_alias_resolution ... ordinary=128 aliases=32 resolutions=4160
+
+thread 'rust::exception_hierarchy::visibility_tests::ordinary_128_aliases_32::unrelated_members_do_not_trigger_alias_resolution' (722947) panicked at crates/hoimin-python/src/analyzer/exception_visibility_tests.rs:87:1:
+assertion `left == right` failed
+  left: 4160
+ right: 64
+FAILED
+test rust::exception_hierarchy::visibility_tests::ordinary_128_aliases_8::scans_do_not_multiply_ordinary_bindings_by_aliases ... ordinary=128 aliases=8 scans=1024
+
+thread 'rust::exception_hierarchy::visibility_tests::ordinary_128_aliases_8::scans_do_not_multiply_ordinary_bindings_by_aliases' (722949) panicked at crates/hoimin-python/src/analyzer/exception_visibility_tests.rs:86:1:
+1024 member scans
+FAILED
+test rust::exception_hierarchy::visibility_tests::ordinary_128_aliases_8::unrelated_members_do_not_trigger_alias_resolution ... ordinary=128 aliases=8 resolutions=1040
+
+thread 'rust::exception_hierarchy::visibility_tests::ordinary_128_aliases_8::unrelated_members_do_not_trigger_alias_resolution' (722950) panicked at crates/hoimin-python/src/analyzer/exception_visibility_tests.rs:86:1:
+assertion `left == right` failed
+  left: 1040
+ right: 16
+FAILED
+test rust::exception_hierarchy::visibility_tests::ordinary_32_aliases_1::scans_do_not_multiply_ordinary_bindings_by_aliases ... ordinary=32 aliases=1 scans=32
+ok
+test rust::exception_hierarchy::visibility_tests::ordinary_32_aliases_1::unrelated_members_do_not_trigger_alias_resolution ... ordinary=32 aliases=1 resolutions=34
+
+thread 'rust::exception_hierarchy::visibility_tests::ordinary_32_aliases_1::unrelated_members_do_not_trigger_alias_resolution' (722952) panicked at crates/hoimin-python/src/analyzer/exception_visibility_tests.rs:82:1:
+assertion `left == right` failed
+  left: 34
+ right: 2
+FAILED
+test rust::exception_hierarchy::visibility_tests::ordinary_32_aliases_32::scans_do_not_multiply_ordinary_bindings_by_aliases ... ordinary=32 aliases=32 scans=1024
+
+thread 'rust::exception_hierarchy::visibility_tests::ordinary_32_aliases_32::scans_do_not_multiply_ordinary_bindings_by_aliases' (722953) panicked at crates/hoimin-python/src/analyzer/exception_visibility_tests.rs:84:1:
+1024 member scans
+FAILED
+test rust::exception_hierarchy::visibility_tests::ordinary_32_aliases_32::unrelated_members_do_not_trigger_alias_resolution ... ordinary=32 aliases=32 resolutions=1088
+
+thread 'rust::exception_hierarchy::visibility_tests::ordinary_32_aliases_32::unrelated_members_do_not_trigger_alias_resolution' (722954) panicked at crates/hoimin-python/src/analyzer/exception_visibility_tests.rs:84:1:
+assertion `left == right` failed
+  left: 1088
+ right: 64
+FAILED
+test rust::exception_hierarchy::visibility_tests::ordinary_32_aliases_8::scans_do_not_multiply_ordinary_bindings_by_aliases ... ordinary=32 aliases=8 scans=256
+
+thread 'rust::exception_hierarchy::visibility_tests::ordinary_32_aliases_8::scans_do_not_multiply_ordinary_bindings_by_aliases' (722955) panicked at crates/hoimin-python/src/analyzer/exception_visibility_tests.rs:83:1:
+256 member scans
+FAILED
+test rust::exception_hierarchy::visibility_tests::ordinary_32_aliases_8::unrelated_members_do_not_trigger_alias_resolution ... ordinary=32 aliases=8 resolutions=272
+
+thread 'rust::exception_hierarchy::visibility_tests::ordinary_32_aliases_8::unrelated_members_do_not_trigger_alias_resolution' (722956) panicked at crates/hoimin-python/src/analyzer/exception_visibility_tests.rs:83:1:
+assertion `left == right` failed
+  left: 272
+ right: 16
+FAILED
+test rust::exception_hierarchy::visibility_tests::ordinary_512_aliases_1::scans_do_not_multiply_ordinary_bindings_by_aliases ... ordinary=512 aliases=1 scans=512
+ok
+test rust::exception_hierarchy::visibility_tests::ordinary_512_aliases_1::unrelated_members_do_not_trigger_alias_resolution ... ordinary=512 aliases=1 resolutions=514
+
+thread 'rust::exception_hierarchy::visibility_tests::ordinary_512_aliases_1::unrelated_members_do_not_trigger_alias_resolution' (722958) panicked at crates/hoimin-python/src/analyzer/exception_visibility_tests.rs:88:1:
+assertion `left == right` failed
+  left: 514
+ right: 2
+FAILED
+test rust::exception_hierarchy::visibility_tests::ordinary_512_aliases_32::scans_do_not_multiply_ordinary_bindings_by_aliases ... ordinary=512 aliases=32 scans=16384
+
+thread 'rust::exception_hierarchy::visibility_tests::ordinary_512_aliases_32::scans_do_not_multiply_ordinary_bindings_by_aliases' (722959) panicked at crates/hoimin-python/src/analyzer/exception_visibility_tests.rs:90:1:
+16384 member scans
+FAILED
+test rust::exception_hierarchy::visibility_tests::ordinary_512_aliases_32::unrelated_members_do_not_trigger_alias_resolution ... ordinary=512 aliases=32 resolutions=16448
+
+thread 'rust::exception_hierarchy::visibility_tests::ordinary_512_aliases_32::unrelated_members_do_not_trigger_alias_resolution' (722961) panicked at crates/hoimin-python/src/analyzer/exception_visibility_tests.rs:90:1:
+assertion `left == right` failed
+  left: 16448
+ right: 64
+FAILED
+test rust::exception_hierarchy::visibility_tests::ordinary_512_aliases_8::scans_do_not_multiply_ordinary_bindings_by_aliases ... ordinary=512 aliases=8 scans=4096
+
+thread 'rust::exception_hierarchy::visibility_tests::ordinary_512_aliases_8::scans_do_not_multiply_ordinary_bindings_by_aliases' (722966) panicked at crates/hoimin-python/src/analyzer/exception_visibility_tests.rs:89:1:
+4096 member scans
+FAILED
+test rust::exception_hierarchy::visibility_tests::ordinary_512_aliases_8::unrelated_members_do_not_trigger_alias_resolution ... ordinary=512 aliases=8 resolutions=4112
+
+thread 'rust::exception_hierarchy::visibility_tests::ordinary_512_aliases_8::unrelated_members_do_not_trigger_alias_resolution' (722967) panicked at crates/hoimin-python/src/analyzer/exception_visibility_tests.rs:89:1:
+assertion `left == right` failed
+  left: 4112
+ right: 16
+FAILED
+test rust::exception_hierarchy::visibility_tests::qualified_reexports_stay_ineligible_while_direct_imports_remain_visible ... ok
+test rust::exception_hierarchy::visibility_tests::visibility_cancels_while_indexing_class_members ...
+thread 'rust::exception_hierarchy::visibility_tests::visibility_cancels_while_indexing_class_members' (722969) panicked at crates/hoimin-python/src/analyzer/exception_visibility_tests.rs:234:5:
+assertion `left == right` failed
+  left: 1
+ right: 0
+FAILED
+test rust::exception_hierarchy::visibility_tests::visibility_cancels_while_visiting_loaded_modules_with_no_members ... ok
+
+failures:
+
+failures:
+    rust::exception_hierarchy::visibility_tests::ordinary_128_aliases_1::unrelated_members_do_not_trigger_alias_resolution
+    rust::exception_hierarchy::visibility_tests::ordinary_128_aliases_32::scans_do_not_multiply_ordinary_bindings_by_aliases
+    rust::exception_hierarchy::visibility_tests::ordinary_128_aliases_32::unrelated_members_do_not_trigger_alias_resolution
+    rust::exception_hierarchy::visibility_tests::ordinary_128_aliases_8::scans_do_not_multiply_ordinary_bindings_by_aliases
+    rust::exception_hierarchy::visibility_tests::ordinary_128_aliases_8::unrelated_members_do_not_trigger_alias_resolution
+    rust::exception_hierarchy::visibility_tests::ordinary_32_aliases_1::unrelated_members_do_not_trigger_alias_resolution
+    rust::exception_hierarchy::visibility_tests::ordinary_32_aliases_32::scans_do_not_multiply_ordinary_bindings_by_aliases
+    rust::exception_hierarchy::visibility_tests::ordinary_32_aliases_32::unrelated_members_do_not_trigger_alias_resolution
+    rust::exception_hierarchy::visibility_tests::ordinary_32_aliases_8::scans_do_not_multiply_ordinary_bindings_by_aliases
+    rust::exception_hierarchy::visibility_tests::ordinary_32_aliases_8::unrelated_members_do_not_trigger_alias_resolution
+    rust::exception_hierarchy::visibility_tests::ordinary_512_aliases_1::unrelated_members_do_not_trigger_alias_resolution
+    rust::exception_hierarchy::visibility_tests::ordinary_512_aliases_32::scans_do_not_multiply_ordinary_bindings_by_aliases
+    rust::exception_hierarchy::visibility_tests::ordinary_512_aliases_32::unrelated_members_do_not_trigger_alias_resolution
+    rust::exception_hierarchy::visibility_tests::ordinary_512_aliases_8::scans_do_not_multiply_ordinary_bindings_by_aliases
+    rust::exception_hierarchy::visibility_tests::ordinary_512_aliases_8::unrelated_members_do_not_trigger_alias_resolution
+    rust::exception_hierarchy::visibility_tests::visibility_cancels_while_indexing_class_members
+
+test result: FAILED. 10 passed; 16 failed; 0 ignored; 0 measured; 471 filtered out; finished in 1.05s
+
+error: test failed, to rerun pass `-p hoimin-python --lib`

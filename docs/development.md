@@ -2266,3 +2266,17 @@ and [manifest](knowledge/design/runtime-lifecycle.md#immutable-manifest-handles-
 contracts when changing these boundaries; the [integration evidence](maintenance/2026-10-20-perf-three/README.md)
 records scoped gains, timing increases and the user's post-observation Task3
 small-ASCII acceptance decision.
+
+
+### Optional-call and exception-import work
+
+When changing optional-keyword generation, preserve whole-call start selection
+and child traversal separately. When changing imported exception visibility,
+measure unrelated member scans separately from required alias × class output.
+The [analyzer contract](knowledge/design/analyzer.md#optional-call-admission-and-imported-exception-members-issues-1030-and-1029)
+links the admission and resolution boundaries; the
+[integration record](maintenance/2026-10-20-issues-1029-1030/README.md)
+records deterministic counters, release allocation/time probes and their limits.
+Run before/after timing without concurrent compilation or tests, and report
+cumulative requested allocation, retained/peak requested heap and RSS as distinct
+metrics.

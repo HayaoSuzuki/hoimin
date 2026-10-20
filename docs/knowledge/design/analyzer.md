@@ -5,6 +5,16 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1030-admission
+  resource: ../../../crates/hoimin-python/src/analyzer/rust.rs
+  revision: 1f7feae33fa310aae87fbadb390105f6d770439d
+  working_tree: modified
+  sha256: b6341dbd686f6084a4b63f9c897e776884e2de82d8df13dca03fda6e429f1004
+- id: issue-1029-members
+  resource: ../../../crates/hoimin-python/src/analyzer/exception_hierarchy.rs
+  revision: 1f7feae33fa310aae87fbadb390105f6d770439d
+  working_tree: modified
+  sha256: 6395c960885332ceceed5ff1a19c6c8b9872aaebadff04bac9bf197300433335
 - id: perf-three-d1
   resource: ../../maintenance/2026-10-20-perf-three/reports/task-3-d1-review.md
   revision: f72134d76d28d87cd728305ed224f298df41af4a
@@ -1501,3 +1511,34 @@ measure stack equality.[^perf-three-r6][^perf-three-d1]
 [^perf-three-r6]: [Task-local ASCII protocol, observations and open acceptance](../../maintenance/2026-10-20-issue-1008/r6/README.md).
 
 [^perf-three-d1]: [D1 acceptance decision and scoped independent review](../../maintenance/2026-10-20-perf-three/reports/task-3-d1-review.md).
+
+# Optional-call admission and imported exception members (Issues #1030 and #1029)
+
+The optional-keyword whole-call producer checks the existing expression-start
+selection predicate before looking up optional keywords or constructing any
+replacement. A selected interior line does not select a multiline call whose
+start is excluded. The visitor still walks the call's arguments, so separately
+selected child expressions retain their candidates. Selected-call identity,
+ordering, payload accounting and truncation keep their existing paths.
+[^issue-1030-admission]
+
+Exception visibility builds a temporary index of borrowed class member names
+from the resolved class table, grouped by module. Each module import alias
+iterates only those class members for explicitly loaded modules. It still calls
+importer-specific binding resolution before emitting a spelling; shadowing,
+dynamic modules, ambiguity, loaded descendants and binding positions retain
+their existing checks. The index visits each resolved class once and drops when
+visibility construction finishes. Necessary alias × visible-class output still
+requires its own work and summary-entry budget. The change does not claim a
+bound independent of output size or remove scans over the importer's bindings.
+[^issue-1029-members]
+
+The [integration record](../../maintenance/2026-10-20-issues-1029-1030/README.md)
+links deterministic operation regressions and fixed release observations.
+Recheck admission tests when changing whole-call producers or selection rules,
+and visibility oracles when changing class resolution, module loading or import
+binding semantics. Requested cumulative allocation, retained heap and peak heap
+are separate measurements; none is process RSS.
+
+[^issue-1030-admission]: [Optional-call admission and unchanged child traversal](../../../crates/hoimin-python/src/analyzer/rust.rs).
+[^issue-1029-members]: [Eligible-member index and importer-specific visibility](../../../crates/hoimin-python/src/analyzer/exception_hierarchy.rs).

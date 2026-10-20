@@ -3112,7 +3112,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     // Match candidate admission at the expression start, without pruning child walks.
-    fn expression_selected(&self, expression: &Expr) -> bool {
+    fn expression_selected(&self, expression: &impl Ranged) -> bool {
         if self.selection.is_unrestricted() {
             return true;
         }
@@ -3225,6 +3225,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             && self.runtime_role == RuntimeRole::Value
             && !self.in_pattern
             && !self.string_exclusions.contains_alias(call.range())
+            && self.expression_selected(call)
             && let Some(keywords) = self
                 .optional_functions
                 .optional_keywords(call, self.cancelled)
@@ -8842,3 +8843,7 @@ mod nested_finally_transfer_tests;
 #[cfg(test)]
 #[path = "rust/whole_expression_selection_tests.rs"]
 mod whole_expression_selection_tests;
+
+#[cfg(test)]
+#[path = "rust/optional_keyword_selection_tests.rs"]
+mod optional_keyword_selection_tests;
