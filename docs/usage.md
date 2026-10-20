@@ -4,8 +4,8 @@ See the [README](../README.md) for installation and a quick start.
 The [generated CLI reference](cli-reference.md) lists public commands, arguments,
 help, defaults and reflected Clap constraints. This guide covers examples and
 runtime contracts, including OS-specific limits and plan/verify inheritance.
-For upgrades, saved-format compatibility and changed defaults, see the
-[compatibility policy](compatibility.md).
+For the current-format policy and changed defaults, see the
+[change policy](compatibility.md).
 For questions and bug reports, see the [reporting guide](support.md).
 
 - [Run it](#run-it)
@@ -1125,11 +1125,12 @@ limit; `unidentified` counts aggregate changes whose identity cannot be establis
 such as content-only matches with different IDs. All aggregate counts and decisions
 remain independent of the display limit.
 
-`--details --format json` explicitly selects
-[progress schema v2](json-schema/progress-result-v2.schema.json), which adds a
-`details` object. Without `--details`, human output,
-[progress schema v1](json-schema/progress-result.schema.json), and exit status
-retain their existing behavior.
+`progress --format json` uses [progress schema 3](json-schema/progress-result.schema.json)
+with or without `--details`. The required `details` field is `null` when details
+were not requested. With `--details`, it is an object, including `available: false`
+when the final pair cannot be compared. Human output, aggregate decisions and
+exit status retain their existing behavior. See the
+[current progress format](compatibility.md#single-progress-output-schema).
 
 ### Operational metrics
 

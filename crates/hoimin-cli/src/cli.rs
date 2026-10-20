@@ -403,7 +403,7 @@ struct RawProgressArgs {
     #[arg(long, value_enum, default_value_t = ProgressOutputFormat::Human)]
     format: ProgressOutputFormat,
 
-    /// Show identified changes in the final adjacent input pair (JSON selects schema v2).
+    /// Show identified changes in the final adjacent input pair.
     #[arg(long)]
     details: bool,
 

@@ -9,12 +9,13 @@
     "consecutive_stalls",
     "latest",
     "inputs",
-    "comparisons"
+    "comparisons",
+    "details"
   ],
   "properties": {
     "schema_version": {
       "type": "integer",
-      "const": 1
+      "const": 3
     },
     "patience": {
       "type": "integer",
@@ -37,6 +38,17 @@
       "items": {
         "$ref": "#/$defs/comparison"
       }
+    },
+    "details": {
+      "description": "Null when details were not requested; otherwise details for the final adjacent input pair, including unavailable comparisons.",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/details"
+        }
+      ]
     }
   },
   "additionalProperties": false,
@@ -84,7 +96,12 @@
     },
     "latestDecision": {
       "type": "object",
-      "required": ["state", "consecutive_stalls", "patience", "saturated"],
+      "required": [
+        "state",
+        "consecutive_stalls",
+        "patience",
+        "saturated"
+      ],
       "properties": {
         "state": {
           "$ref": "#/$defs/state"
@@ -104,7 +121,11 @@
     },
     "inputDisposition": {
       "type": "object",
-      "required": ["source", "usable", "reason"],
+      "required": [
+        "source",
+        "usable",
+        "reason"
+      ],
       "properties": {
         "source": {
           "type": "string"
@@ -116,7 +137,11 @@
           "oneOf": [
             {
               "type": "string",
-              "enum": ["missing_baseline", "baseline_failed", "incomplete"]
+              "enum": [
+                "missing_baseline",
+                "baseline_failed",
+                "incomplete"
+              ]
             },
             {
               "type": "null"
@@ -142,7 +167,11 @@
             },
             "reason": {
               "type": "string",
-              "enum": ["missing_baseline", "baseline_failed", "incomplete"]
+              "enum": [
+                "missing_baseline",
+                "baseline_failed",
+                "incomplete"
+              ]
             }
           }
         }
@@ -202,6 +231,128 @@
         },
         "state": {
           "$ref": "#/$defs/state"
+        }
+      },
+      "additionalProperties": false
+    },
+    "transition": {
+      "type": "object",
+      "required": [
+        "id",
+        "path",
+        "line",
+        "column",
+        "previous_path",
+        "previous_line",
+        "previous_column",
+        "operator",
+        "classification",
+        "previous_status",
+        "current_status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "previous_path": {
+          "type": "string"
+        },
+        "previous_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "previous_column": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "operator": {
+          "type": "string"
+        },
+        "classification": {
+          "enum": [
+            "improvement",
+            "regression"
+          ]
+        },
+        "previous_status": {
+          "enum": [
+            "killed",
+            "survived"
+          ]
+        },
+        "current_status": {
+          "enum": [
+            "killed",
+            "survived"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "details": {
+      "type": "object",
+      "required": [
+        "scope",
+        "previous_input",
+        "current_input",
+        "available",
+        "eligibility",
+        "limit",
+        "omitted",
+        "unidentified",
+        "transitions"
+      ],
+      "properties": {
+        "scope": {
+          "const": "latest_pair"
+        },
+        "previous_input": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "current_input": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "eligibility": {
+          "enum": [
+            "matching",
+            "different",
+            "duplicate",
+            null
+          ]
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "omitted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unidentified": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "transitions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/transition"
+          }
         }
       },
       "additionalProperties": false

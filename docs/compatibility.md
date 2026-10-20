@@ -1,8 +1,43 @@
 # Compatibility and change notices
 
-hoimin is currently a 0.x CLI. This policy describes how maintainers classify
-changes and tell users what to update. A patch release can fix incorrect
-behavior; it does not promise identical mutation candidates or scores.
+hoimin is a 0.x CLI for local, short-lived mutation-testing work with an agent.
+Its design does not assume integration into users' CI pipelines, stable external
+JSON readers, or long-term storage of plans and reports. Backward compatibility
+across releases is not a development requirement, including within a minor
+series.
+
+Maintain one current CLI and saved-format contract. Do not add legacy readers,
+aliases, fallback paths, or data migrations solely to preserve older behavior.
+Regenerate plans, rerun reports, or start a new session when an older artifact is
+no longer accepted. Schema and fingerprint checks still prevent invalid inputs
+or unrelated results from being used; they do not promise cross-version support.
+This policy does not authorize automatic deletion or rewriting of existing
+files.
+
+The release-floor rules below follow this policy. Earlier change notices record
+past decisions; their minor-version increases and preservation guidance are
+not requirements for future work. Repository test and release CI continues to
+validate the current implementation.
+
+## Single progress output schema
+
+`progress --format json` emits schema 3 with or without `--details`.
+The required `details` field is `null` when details were
+not requested; a requested object retains `available: false` when the final
+adjacent pair cannot be compared. The single current definition is
+[`progress-result.schema.json`](json-schema/progress-result.schema.json).
+The separate v2 schema and the flag-dependent v1/v2 output contract are removed.
+
+Read `details == null` as no request, and inspect `details.available` only for
+an object. The old output shapes are removed without a compatibility path.
+The package floor remains 0.14.0; this format change does not require a new
+minor series.
+
+Display limits still affect only listed transitions. Comparison counts,
+stalled/saturated decisions, regression exit policy and human output are
+unchanged. Progress still accepts only current report/event schema 9; plan schema
+10, SQLite session schema 5, fingerprint schema 13, ranking rule 4, candidate
+schema 1 and mutant-ID v1 retain their formats.
 
 ## Structured startup cleanup in 0.14.0
 
@@ -352,13 +387,13 @@ schemas 1–4 remain rejected; this change does not restore legacy migration pat
 
 | Interface | Maintenance rule | User action when it changes |
 | --- | --- | --- |
-| CLI arguments, defaults and exit codes | Preserve documented usage within a minor series, except documented bug fixes. Removing or changing a supported contract needs a minor-version floor increase. | Update invocation and CI conditions using the release notice. |
-| JSON and JSONL reports | Treat documented schemas as public. Progress accepts only report schema 9, matching the writer; review accepts current-schema JSON. Adding a field may still affect strict readers. | Read old reports with their producing binary, or rerun with the intended version. Plan regeneration alone cannot reconstruct past reports. Files are not automatically converted. |
+| CLI arguments, defaults and exit codes | Document and test the current behavior. Cross-version invocation compatibility is not required. | Use the current help and usage guide. |
+| JSON and JSONL reports | Maintain one current schema. Progress accepts only report schema 9, matching the writer; review accepts current-schema JSON. | Rerun to obtain current output when needed. |
 | Saved plan, ranking and candidate IDs | These are checked execution inputs, not timeless interchange formats. Changes to schema, ranking, identity, source or fingerprints can invalidate a plan. | Regenerate the plan with the intended version and inputs. Do not hand-edit versions or IDs to bypass validation. |
-| Session database and resume | Resume is allowed only under the implementation's schema and fingerprint checks. Migration support must be stated explicitly. | Keep the old database and binary if needed; start a new session when compatibility is not supported. |
-| Default operators, profiles and selection | Changes can alter candidate count, runtime and the population behind a score. Default expansion is an observable compatibility change. | Review the operator set and budget; use matching candidates and validation settings for comparisons. |
-| Supported Python, OS and architecture | A support removal or higher runtime minimum requires a minor-version floor increase and migration notice. | Keep a compatible release or update the environment. |
-| Archive and wheel layout, installation and runtime dependencies | Changes to the distributed package contract require a minor-version floor increase. | Follow the installation or packaging migration steps. |
+| Session database and resume | Resume requires the implementation's current schema and fingerprint checks. Historical database migration is not required. | Start a new session when an older database is rejected. |
+| Default operators, profiles and selection | Changes can alter candidate count, runtime and the population behind a score. | Review the operator set and budget; use matching candidates and validation settings for comparisons. |
+| Supported Python, OS and architecture | Document current requirements and validate supported targets. | Use an environment supported by the current release. |
+| Archive and wheel layout, installation and runtime dependencies | Document and test the current package layout and installation procedure. | Follow the current installation instructions. |
 | Internal Rust APIs, caches and diagnostic logs | No independent stability guarantee. Versioned reports are distinct from diagnostic output. | Use the documented CLI and report schemas; do not parse log wording as a stable protocol. |
 
 See the [usage guide](usage.md) for runtime contracts and the generated
@@ -404,15 +439,12 @@ floor and the next patch after the highest stable tag, with the existing history
 and atomic reservation checks. Changing the floor must keep `Cargo.toml`,
 `pyproject.toml`, `Cargo.lock`, `uv.lock` and `fuzz/Cargo.lock` consistent.
 
-| Change | Version decision and notice |
-| --- | --- |
-| Documentation, CI-only checks, SBOM or provenance metadata without a package-contract change | Keep the current minor series. Explain any operational change. |
-| Bug fix restoring a documented contract, including removal of invalid mutation candidates | Patch in the current minor series. Describe changed results and any required plan regeneration. |
-| New operator available only by explicit selection, with existing defaults and saved-format contracts intact | Patch in the current minor series; name the opt-in and its scope. |
-| Expanding or changing the default operator set/profile | Raise the floor to a new minor series. Explain candidate, budget and score-comparison effects. |
-| Removing a CLI option, changing a supported exit-code contract or making a public schema incompatible | Raise the minor-version floor and give concrete invocation/reader migration steps. |
-| Ranking/identity algorithm or saved-format change that invalidates supported saved inputs | Raise the minor-version floor; specify whether to regenerate plans or start new sessions. A bug fix rejecting previously invalid inputs is distinguished from a format redesign. |
-| Changing the archive/wheel package contract or required runtime environment | Raise the floor to a new minor series and document installation changes. |
+Keep the current floor unless a release decision explicitly selects a new
+series. Changes to CLI arguments, defaults, exit codes, schemas, saved inputs or
+package layout do not by themselves require a minor-version increase.
+Describe the current behavior and any necessary plan regeneration, new session
+or installation change. Do not design compatibility support or reader migration
+around hypothetical consumers.
 
 For example, with a highest tag of `v0.3.9`, a floor of `0.3.0` yields
 `v0.3.10`; a floor of `0.4.0` yields `v0.4.0`. If `v0.4.0` already exists,
@@ -449,18 +481,18 @@ existing files require no conversion or deletion.
 
 ## PR and release notices
 
-Fill in the PR template's compatibility section before merging. Describe:
+Fill in the PR template's usage and format section before merging. Describe:
 
 - which public interfaces change, or why there is no user-visible impact;
-- the selected version floor and why it fits the table above;
-- old and new commands/formats, and any plan/session/reader migration;
+- the current commands/formats and any need to regenerate a plan or start a session;
+- a version-floor change only when the PR deliberately changes it;
 - changed defaults, support requirements and score-comparison limits.
 
 The existing workflow generates GitHub release notes from merged PRs. Use a
 clear PR title and description; when editing the generated release description,
 organize the relevant entries under **Added**, **Fixed**, and
-**Compatibility and migration**. The generated notes are not an automated
-compatibility assessment, and this change adds no release-note generator.
+**Usage and format changes**. The generated notes describe the current release;
+they do not promise compatibility with earlier releases.
 PyPI publication continues through the existing TestPyPI gate.
 
 An illustrative notice for a future change is:
@@ -472,12 +504,11 @@ An illustrative notice for a future change is:
 ## Fixed
 - Stopped proposing invalid candidates in a documented unsupported context.
 
-## Compatibility and migration
-- The default profile now includes `example_operator`; the version floor is 0.4.0.
+## Usage and format changes
+- The default profile now includes `example_operator`.
 - Recreate saved plans to use the new default population. Compare scores only
   after matching candidate selection and validation settings.
-- Existing sessions are not automatically upgraded by this release. Preserve
-  them with their producing binary and start a new session if rejected.
+- Start a new session if an older session is rejected.
 ```
 
 The operator and changes above are examples, not claims about a shipped release.
@@ -486,7 +517,7 @@ The operator and changes above are examples, not claims about a shipped release.
 
 1. Classify the interfaces and default behavior affected by the final diff.
 2. Check the version floor and all five manifests/lockfiles if it changes.
-3. Include the migration notice and link the updated usage/schema documentation.
+3. Describe current usage and link the updated usage/schema documentation.
 4. Run checks for the changed contract; reuse existing tests rather than adding
    wording checks or a separate documentation E2E suite.
 5. Preserve the existing validated-artifact, provenance and TestPyPI/PyPI gates.

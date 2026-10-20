@@ -5,6 +5,11 @@ procedure for your task, then consult the linked contracts and implementation.
 For using hoimin to improve another project's tests, see the
 [plan/verify workflow](usage.md#plan-and-verify-with-an-agent).
 
+Maintain the current CLI and saved formats without cross-version compatibility
+requirements. The intended workflow is local and short-lived; do not assume
+users' CI integrations or long-term plan retention. Follow the
+[change policy](compatibility.md) when changing usage or formats.
+
 For the runtime boundary, component responsibilities and execution flow, start
 with the [C4 architecture views](architecture/c4-model.md), maintained as Markdown
 and Mermaid in the repository.
@@ -2036,6 +2041,23 @@ Focused verification:
 cargo test -p hoimin-core --test operator_selection
 cargo test -p hoimin-cli --lib hierarchy
 cargo test -p hoimin-cli --test exception_hierarchy
+```
+
+## Progress JSON contract
+
+[`progress-result.schema.json`](json-schema/progress-result.schema.json) is the
+single current progress output schema. Both details modes emit version 3 and
+require `details`: null for an absent request, an object for a request, including
+an unavailable final pair. The run-report input schema is independent. Keep
+comparison and exit-policy checks separate from presentation changes; display
+limits cannot alter aggregate counts or stalled/saturated decisions.
+
+Run the progress integration cases and full JSON Schema validator after changing
+this output contract:
+
+```console
+cargo test --locked -p hoimin-cli --test progress
+uv run --locked pytest -q tests/test_progress_schema.py
 ```
 
 ## Generated CLI reference

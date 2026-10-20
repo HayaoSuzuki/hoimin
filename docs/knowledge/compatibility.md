@@ -1,10 +1,15 @@
 ---
 type: Contract
 title: Compatibility and change notices
-description: Public interfaces, version floors and migration notices.
+description: Current formats, usage changes and release versioning.
 status: draft
 catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
 sources:
+- id: issue-1028-compatibility
+  resource: ../compatibility.md
+  revision: 4759e485282bbf212687a814ddf7bd4f9d1c9aa3
+  working_tree: modified
+  sha256: 87096a1e8a6486afd86bed2df9a7d7cfb2ccb919b561c2d49843e09a0cc77280
 - id: issue-939-compatibility
   resource: ../compatibility.md
   revision: 465ff928c1f2ceb9f9b8f8084465475e45799ee8
@@ -34,9 +39,9 @@ sources:
   sha256: 9702fae5c3fe2d64dab60343a6a67dcda74e6e6c73e74dff10372596037194b7
 - id: template
   resource: ../../.github/pull_request_template.md
-  revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
+  revision: 4759e485282bbf212687a814ddf7bd4f9d1c9aa3
   working_tree: modified
-  sha256: 264d87e967cd21cb15361897010c805cbd9bc99d808989288052c0c13f0c3d95
+  sha256: 4ca665b90d779f0d3df248d28c3538433c1becb43816df52e5f3357338914daf
 - id: issue-949-compatibility
   resource: ../compatibility.md
   revision: 35c21145ccdfb6a044f9ae1dad2a5e4ff90deece
@@ -70,12 +75,18 @@ sources:
 
 # Current saved formats and release floor
 
-The package floor is 0.14.0. Report/event schema 9 requires nullable
+The package floor remains 0.14.0. Progress output uses schema 3 in both details
+modes, with required null details when not requested and a details
+object when requested, including unavailable comparisons. The canonical schema
+defines that one current output format. The input report contract and
+existing plan/session formats remain unchanged.[^issue-1028-compatibility]
+
+Report/event schema 9 requires nullable
 `disk.janitor` instead of `disk.stale_roots_reclaimed`, and requires derived
 `status` for each completed mutant. Strict Rust readers check status against
 outcome and discard the received projection. JSON Schema checks presence and
 the seven-value shape; it does not establish status/outcome agreement.
-Read older reports with their producing binary or rerun. Changing their version
+Rerun to obtain current reports. Changing their version
 number does not convert them.[^priority-six-compatibility]
 
 Plan schema 10, SQLite session schema 5, fingerprint schema 13, ranking rule 4,
@@ -91,7 +102,7 @@ analysis rule. The release measurements concern fixed local workloads; their
 macOS results do not establish Linux/Windows behavior or universal runtime and
 memory improvements.[^priority-six-compatibility][^priority-six-graph-evidence]
 
-Follow the [0.14.0 migration notice](../compatibility.md#structured-startup-cleanup-in-0140).
+See the [current progress format](../compatibility.md#single-progress-output-schema) and the [0.14.0 report notice](../compatibility.md#structured-startup-cleanup-in-0140).
 The earlier notices below retain the versions introduced by each change.
 
 [^priority-six-compatibility]: [Combined cleanup, result and Rust API migration](../compatibility.md#structured-startup-cleanup-in-0140).
@@ -131,12 +142,13 @@ retain those historical versions.
 
 # Compatibility scope
 
-The canonical [compatibility policy](../compatibility.md) covers CLI, reports,
-saved plans/ranking/IDs, sessions, defaults, runtime support and package contracts.
-Bug fixes can change candidate populations within a patch series; stable scores
-are not promised. Breaking supported contracts and expanding defaults require a
-minor-version floor increase. Metadata-only release checks retain the current
-minor series. [^policy]
+The canonical [change policy](../compatibility.md) targets local, short-lived
+CLI work with an agent. It does not assume users' CI integration, stable external
+readers or long-term plan retention. Cross-version compatibility is not required,
+including within a minor series. Maintain one current format; regenerate plans,
+rerun reports or start a session when older artifacts are rejected. Schema and
+fingerprint checks still enforce valid inputs and correct result reuse.
+[^issue-1028-compatibility]
 
 # Release decisions
 
@@ -145,10 +157,11 @@ between it and the next stable patch. All five manifests/lockfiles must agree
 when the floor changes. Published tags and artifacts remain immutable, and the
 TestPyPI/PyPI gates remain in force. [^release]
 
-The PR template records affected interfaces, the version decision and migration.
-Generated release notes are not a compatibility validator. Plan/session readers
-still enforce their actual schemas and fingerprints; policy text does not add
-migration support. [^template][^policy]
+CLI and format changes do not themselves require a minor-version increase.
+The PR template describes current usage, format changes and any required
+regeneration. Mention a version-floor change only when deliberately included.
+Generated release notes do not promise cross-version support.
+[^template][^issue-1028-compatibility]
 
 # Session load contract removal
 
@@ -221,3 +234,5 @@ for scope and the [session/report contract](design/session-report.md#duplicate-r
 for implementation evidence.[^issue-939-compatibility]
 
 [^issue-939-compatibility]: [Duplicate report configuration notice](../compatibility.md#duplicate-report-configuration-fields).
+
+[^issue-1028-compatibility]: [Current-format policy and progress output](../compatibility.md).

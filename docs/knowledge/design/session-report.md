@@ -5,6 +5,26 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1028-render
+  resource: ../../../crates/hoimin-cli/src/progress/render.rs
+  revision: 1f7feae33fa310aae87fbadb390105f6d770439d
+  working_tree: modified
+  sha256: 0802b707760b136653bf85bf31d76d673fd0e8779841598701dced7214cf313b
+- id: issue-1028-schema
+  resource: ../../json-schema/progress-result.schema.json
+  revision: 1f7feae33fa310aae87fbadb390105f6d770439d
+  working_tree: modified
+  sha256: fba27c4aa373ab62638c0d6adb5c87b4462b434950d5fac8fccaeb6ae59a9ce6
+- id: issue-1028-tests
+  resource: ../../../crates/hoimin-cli/tests/progress.rs
+  revision: 1f7feae33fa310aae87fbadb390105f6d770439d
+  working_tree: modified
+  sha256: 32bc287a216836d6f5c97f829e5c66960e448c5f4d01980838fe8b6cfc645c66
+- id: issue-1028-compatibility
+  resource: ../../compatibility.md
+  revision: 4759e485282bbf212687a814ddf7bd4f9d1c9aa3
+  working_tree: modified
+  sha256: 87096a1e8a6486afd86bed2df9a7d7cfb2ccb919b561c2d49843e09a0cc77280
 - id: issue-1027-report
   resource: ../../../crates/hoimin-core/src/report.rs
   revision: 05c909c54a3bdf3485db2c833456fabe83c7dfaf
@@ -796,3 +816,34 @@ reader boundaries.[^issue-1027-tests]
 [^issue-1027-report]: [Event envelope and closed payload types](../../../crates/hoimin-core/src/report.rs).
 [^issue-1027-reader]: [Shared progress/review typed readers](../../../crates/hoimin-cli/src/artifacts/run_report.rs).
 [^issue-1027-tests]: [JSON/JSONL closed-object regression matrix](../../../crates/hoimin-cli/src/artifacts/run_report/closed_wire_tests.rs).
+
+# Progress output schema 3 (Issue #1028)
+
+Progress JSON emits schema 3 for both details modes. The required `details`
+field is null when the caller did not request details. A requested object keeps
+its availability and eligibility fields; an unusable final adjacent pair yields
+`available: false`. The canonical schema permits exactly these null/object
+forms and rejects missing details and superseded output versions.[^issue-1028-render][^issue-1028-schema]
+
+Details limits bound the listed transitions. They do not alter comparison counts,
+stalled/saturated decisions or the regression exit policy. The progress tests
+cover zero and ordinary limits, available and unavailable pairs, unequal candidate
+sets, and duplicate-identity input rejection. They compare the current output
+with a shared golden and retain JSONL, human output and input-reader
+regressions.[^issue-1028-tests]
+
+The package floor remains 0.14.0. The current-format policy does not require
+backward compatibility or a minor-version increase for this output change.
+Report/event schema 9, plan schema 10, session schema 5 and fingerprint schema 13
+are unchanged. A progress output version is independent of the report input
+version.[^issue-1028-compatibility]
+
+The sources record their comparison revisions and content hashes.
+The focused checks ran on macOS; this entry does not claim Linux or Windows
+execution. Recheck these claims when changing JSON serialization, details
+selection, display limits, schema definitions or exit policy.
+
+[^issue-1028-render]: [Progress JSON rendering](../../../crates/hoimin-cli/src/progress/render.rs).
+[^issue-1028-schema]: [Current progress schema](../../json-schema/progress-result.schema.json).
+[^issue-1028-tests]: [Progress integration and schema checks](../../../crates/hoimin-cli/tests/progress.rs).
+[^issue-1028-compatibility]: [Current-format policy and progress output](../../compatibility.md).

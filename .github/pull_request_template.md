@@ -6,11 +6,12 @@
 
 <!-- List checks actually run, results, and any unverified conditions. -->
 
-## Compatibility and migration
+## Usage and format changes
 
-<!-- Follow docs/compatibility.md. State affected CLI/schema/defaults/platform/package
-contracts (or no impact), the version-floor decision, and required command,
-reader, plan or session migration. Generated release notes do not assess this. -->
+<!-- Follow docs/compatibility.md. Describe current CLI/schema/defaults/platform/package
+changes (or no impact) and any need to regenerate plans or start a new session.
+Backward compatibility and historical artifact migration are not requirements.
+Mention a version-floor change only if deliberately included. -->
 
 ## OKF
 
