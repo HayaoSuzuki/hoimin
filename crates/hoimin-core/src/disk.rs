@@ -27,6 +27,7 @@ impl DiskPolicy {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DiskObservation {
     pub owned_bytes: u64,
     pub available_bytes: u64,
@@ -123,6 +124,7 @@ impl DiskStopReason {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub enum DiskSecondary {
     Observation {
         reason: DiskStopReason,

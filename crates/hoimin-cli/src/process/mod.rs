@@ -172,7 +172,7 @@ impl ProcessCancellation {
         self.state.cancelled.load(Ordering::Acquire)
     }
 
-    fn begin_spawn(&self) -> std::sync::MutexGuard<'_, ()> {
+    pub(crate) fn begin_spawn(&self) -> std::sync::MutexGuard<'_, ()> {
         self.state
             .spawn_gate
             .lock()

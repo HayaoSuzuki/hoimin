@@ -155,6 +155,54 @@ struct ReportRunStarted<C> {
     _resume: Option<hoimin_core::ResumeOutcome>,
 }
 
+// Progress needs only the report's closed configuration descendants. Unknown
+// configuration fields stay opaque, without buffering the known children into
+// Value maps that would discard their duplicate keys.
+struct ProgressConfig;
+
+impl<'de> Deserialize<'de> for ProgressConfig {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Config {
+            #[serde(default, rename = "environment")]
+            _environment: Option<hoimin_core::EnvironmentSnapshot>,
+            #[serde(default, rename = "session")]
+            _session: Option<hoimin_core::SessionMode>,
+            #[serde(default, rename = "selection")]
+            _selection: Option<Selection>,
+        }
+
+        #[derive(Deserialize)]
+        struct Selection {
+            #[serde(default, rename = "changed")]
+            _changed: Option<hoimin_core::ChangedSelection>,
+        }
+
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = ProgressConfig;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a normalized_config object or null")
+            }
+
+            fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+                Ok(ProgressConfig)
+            }
+
+            fn visit_map<M: serde::de::MapAccess<'de>>(
+                self,
+                map: M,
+            ) -> Result<Self::Value, M::Error> {
+                Config::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+                Ok(ProgressConfig)
+            }
+        }
+
+        deserializer.deserialize_any(Visitor)
+    }
+}
+
 fn present_resume<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<hoimin_core::ResumeOutcome>, D::Error> {
@@ -254,21 +302,13 @@ fn read_buffered_report(
         if let Some(header) = header {
             check_schema(path, header.schema_version)?;
         }
-        serde_json::from_slice::<RunReportDocument<serde_json::Value>>(&bytes).map_err(
-            |source| ProgressError::Parse {
+        serde_json::from_slice::<RunReportDocument<ProgressConfig>>(&bytes).map_err(|source| {
+            ProgressError::Parse {
                 path: path.to_path_buf(),
                 source,
-            },
-        )?
+            }
+        })?
     };
-    // Progress accepts opaque configurations in both formats, but not other JSON shapes.
-    let config = &document.run.value().normalized_config;
-    if !config.is_null() && !config.is_object() {
-        return Err(invalid_structure(
-            path,
-            "normalized_config must be null or an object",
-        ));
-    }
 
     validate_document(path, document)
 }
@@ -773,3 +813,6 @@ mod tests {
         assert_eq!(reader.fingerprint(), blake3::hash(bytes));
     }
 }
+
+#[cfg(test)]
+mod closed_wire_tests;

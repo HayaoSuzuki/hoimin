@@ -9,7 +9,12 @@ use tokio::process::Command;
 
 mod lines;
 mod paths;
+mod runner;
 mod tracked;
+
+use crate::process::ProcessCancellation;
+pub(crate) use runner::GitError;
+pub use runner::GitRunner;
 
 use paths::GitPathScope;
 
@@ -45,7 +50,16 @@ pub(crate) async fn resolve_changed(
     root: &Utf8Path,
     diff_base: Option<&str>,
 ) -> Result<BTreeMap<Utf8PathBuf, Vec<LineRange>>, TargetError> {
-    resolve_changed_scoped(root, diff_base, None, 0).await
+    resolve_changed_scoped(
+        root,
+        diff_base,
+        None,
+        0,
+        &GitRunner::default(),
+        &ProcessCancellation::new(),
+    )
+    .await
+    .map_err(GitError::into_target)
 }
 
 pub(crate) async fn resolve_changed_scoped(
@@ -53,8 +67,10 @@ pub(crate) async fn resolve_changed_scoped(
     diff_base: Option<&str>,
     eligible_targets: Option<&[TargetSlice]>,
     context: u32,
-) -> Result<BTreeMap<Utf8PathBuf, Vec<LineRange>>, TargetError> {
-    ensure_git_worktree(root).await?;
+    runner: &GitRunner,
+    cancellation: &ProcessCancellation,
+) -> Result<BTreeMap<Utf8PathBuf, Vec<LineRange>>, GitError> {
+    ensure_git_worktree(root, runner, cancellation).await?;
     let scope = GitPathScope::new(eligible_targets);
     // Git clips context to current-file bounds and includes both sides of deletion gaps.
     let unified = format!("--unified={context}");
@@ -84,7 +100,7 @@ pub(crate) async fn resolve_changed_scoped(
         "--relative",
     ];
     let tracked_ranges = if let Some(base) = diff_base {
-        let base = resolve_commit(root, base).await?;
+        let base = resolve_commit(root, base, runner, cancellation).await?;
         diff_args.push("--merge-base");
         diff_args.push(&base);
         numstat_args.push("--merge-base");
@@ -96,10 +112,12 @@ pub(crate) async fn resolve_changed_scoped(
                 &numstat_args,
                 &scope,
                 eligible_targets.is_some(),
+                runner,
+                cancellation,
             )
             .await?,
         )
-    } else if head_exists(root).await? {
+    } else if head_exists(root, runner, cancellation).await? {
         diff_args.push("HEAD");
         numstat_args.push("HEAD");
         Some(
@@ -109,6 +127,8 @@ pub(crate) async fn resolve_changed_scoped(
                 &numstat_args,
                 &scope,
                 eligible_targets.is_some(),
+                runner,
+                cancellation,
             )
             .await?,
         )
@@ -120,21 +140,34 @@ pub(crate) async fn resolve_changed_scoped(
     } else {
         // Unborn-indexed ranges already use Python physical rows.
         let mut physical = BTreeMap::new();
-        let indexed = run_git(root, &["ls-files", "-z"]).await?;
+        let indexed = run_git(root, &["ls-files", "-z"], runner, cancellation).await?;
         collect_current_worktree_paths(root, &indexed, &mut physical, eligible_targets).await?;
         physical
     };
 
-    let untracked = run_git(root, &["ls-files", "--others", "--exclude-standard", "-z"]).await?;
+    let untracked = run_git(
+        root,
+        &["ls-files", "--others", "--exclude-standard", "-z"],
+        runner,
+        cancellation,
+    )
+    .await?;
     collect_current_worktree_paths(root, &untracked, &mut changed, eligible_targets).await?;
     Ok(normalize_changed(changed))
 }
 
-async fn resolve_commit(root: &Utf8Path, revision: &str) -> Result<String, TargetError> {
+async fn resolve_commit(
+    root: &Utf8Path,
+    revision: &str,
+    runner: &GitRunner,
+    cancellation: &ProcessCancellation,
+) -> Result<String, GitError> {
     let revision = format!("{revision}^{{commit}}");
     let output = run_git(
         root,
         &["rev-parse", "--verify", "--end-of-options", &revision],
+        runner,
+        cancellation,
     )
     .await?;
     let oid = std::str::from_utf8(output.trim_ascii())
@@ -142,38 +175,45 @@ async fn resolve_commit(root: &Utf8Path, revision: &str) -> Result<String, Targe
     if matches!(oid.len(), 40 | 64) && oid.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         Ok(oid.to_owned())
     } else {
-        Err(TargetError::GitFailed(
-            "git rev-parse returned an invalid commit ID".into(),
-        ))
+        Err(TargetError::GitFailed("git rev-parse returned an invalid commit ID".into()).into())
     }
 }
 
-async fn head_exists(root: &Utf8Path) -> Result<bool, TargetError> {
-    let output = Command::new("git")
-        .args(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
-        .current_dir(root)
-        .output()
-        .await
-        .map_err(|error| TargetError::GitFailed(error.to_string()))?;
+async fn head_exists(
+    root: &Utf8Path,
+    runner: &GitRunner,
+    cancellation: &ProcessCancellation,
+) -> Result<bool, GitError> {
+    let output = runner
+        .output(
+            root,
+            &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
+            cancellation,
+        )
+        .await?;
     Ok(output.status.success())
 }
 
-async fn ensure_git_worktree(root: &Utf8Path) -> Result<(), TargetError> {
-    let output = Command::new("git")
-        .args(["rev-parse", "--is-inside-work-tree"])
-        .current_dir(root)
-        .output()
-        .await
-        .map_err(|error| TargetError::GitFailed(error.to_string()))?;
+async fn ensure_git_worktree(
+    root: &Utf8Path,
+    runner: &GitRunner,
+    cancellation: &ProcessCancellation,
+) -> Result<(), GitError> {
+    let output = runner
+        .output(root, &["rev-parse", "--is-inside-work-tree"], cancellation)
+        .await?;
     if output.status.success() && output.stdout.trim_ascii() == b"true" {
         Ok(())
     } else {
-        Err(TargetError::GitRepositoryRequired)
+        Err(TargetError::GitRepositoryRequired.into())
     }
 }
 
-async fn run_git(root: &Utf8Path, args: &[&str]) -> Result<Vec<u8>, TargetError> {
+fn git_command(root: &Utf8Path, args: &[&str]) -> Command {
     let mut command = Command::new("git");
+    // Git gives this variable precedence over our explicit --unified argument.
+    // Only target inspection owns this policy; user test environments retain it.
+    command.env_remove("GIT_DIFF_OPTS");
     if args.first() == Some(&"--literal-pathspecs") {
         // These options conflict with explicit literal mode; they must not change
         // the meaning of paths already selected by the target resolver.
@@ -185,12 +225,17 @@ async fn run_git(root: &Utf8Path, args: &[&str]) -> Result<Vec<u8>, TargetError>
             command.env_remove(name);
         }
     }
-    let output = command
-        .args(args)
-        .current_dir(root)
-        .output()
-        .await
-        .map_err(|error| TargetError::GitFailed(error.to_string()))?;
+    command.args(args).current_dir(root);
+    command
+}
+
+async fn run_git(
+    root: &Utf8Path,
+    args: &[&str],
+    runner: &GitRunner,
+    cancellation: &ProcessCancellation,
+) -> Result<Vec<u8>, GitError> {
+    let output = runner.output(root, args, cancellation).await?;
     if output.status.success() {
         return Ok(output.stdout);
     }
@@ -200,7 +245,8 @@ async fn run_git(root: &Utf8Path, args: &[&str]) -> Result<Vec<u8>, TargetError>
         "git {} exited with {}: {stderr}",
         args.join(" "),
         output.status
-    )))
+    ))
+    .into())
 }
 
 fn parse_diff(

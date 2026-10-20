@@ -5,6 +5,20 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1027-report
+  resource: ../../../crates/hoimin-core/src/report.rs
+  revision: 05c909c54a3bdf3485db2c833456fabe83c7dfaf
+  working_tree: modified
+  sha256: f69d7a62ce1a7b031ee3d61884579d9f1aea0f700b0f9ab66276f5bf24441cf7
+- id: issue-1027-reader
+  resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
+  revision: 05c909c54a3bdf3485db2c833456fabe83c7dfaf
+  working_tree: modified
+  sha256: b515f46a76dba90841832c03dbac5a4dfc106477dd302e946d5e8bdb065a1666
+- id: issue-1027-tests
+  resource: ../../../crates/hoimin-cli/src/artifacts/run_report/closed_wire_tests.rs
+  working_tree: untracked
+  sha256: 3845091e939050c2db85e5f65eb3cd6fff19e591762811ea14049ec19aa10d30
 - id: issue-1010-wire
   resource: ../../../crates/hoimin-core/src/report.rs
   revision: 6ea967d6b1682596d6a2c0dda3d1c458f9ce5e6a
@@ -405,7 +419,12 @@ JSON Schemaは結果の構造を定める元資料として保持する。ただ
 
 # progressのレポート入力スキーマ
 
-progressは `REPORT_SCHEMA_VERSION`（6）に一致するJSON文書とJSONLストリームを読む。旧schema 2/3/4/5と未対応の将来版を拒否し、旧形式専用の型・変換・検証は持たない。reviewは現行スキーマのJSONを要求する。[^reader]
+Progress reads JSON documents and JSONL streams matching `REPORT_SCHEMA_VERSION`
+(9). It rejects older and unsupported future versions without a legacy decoder
+or conversion. Review requires current-schema JSON. Both consumers reject
+unknown fields in schema-closed event payloads and descendants; progress retains
+open outer configuration fields while checking recognized closed children.
+[^issue-1027-report][^issue-1027-reader]
 
 スキーマ限定後も、候補ID・run ID・sequence・summary・単一結果の検証を維持する。JSONLの一行ずつの読取り、設定を不透明なJSONとして扱うprogressの方針も維持する。旧レポートは生成元バイナリで読むか、意図する版で実行し直す。planの再生成だけでは過去のreportは復元されない。手順と互換性通知は[利用方法](../../usage.md)と[互換性方針](../../compatibility.md)を参照する。[^reader]
 
@@ -651,11 +670,11 @@ Required-field, null, unknown-field and typed-value checks remain in the existin
 configuration decoders. The private report document selects its configuration
 type per consumer; schema and event structure validation stay shared.[^issue-939-reader]
 
-Progress selects an opaque JSON value and checks only that configuration is an
-object or null. Both JSON and JSONL retain usable/unusable classification without
-review's typed configuration or filesystem checks. Report schema 6 and valid
-writer output remain unchanged; duplicate rejection corrects invalid-input
-acceptance and requires no regeneration or version-floor increase.[^issue-939-reader][^issue-939-compatibility]
+At #939, progress accepted an opaque object or null without typed configuration
+checks. Issue #1027 retains that outer contract while validating recognized
+schema-closed children as described below. Neither change adds review's project
+filesystem checks to progress. The #939 duplicate-field correction required no
+regeneration or version-floor increase.[^issue-939-reader][^issue-939-compatibility][^issue-1027-reader]
 
 The verification record distinguishes raw-JSON RED/GREEN regressions, preserved
 progress behavior, existing Lean corpus correspondence and broader test results.
@@ -747,3 +766,33 @@ historical verification evidence.[^issue-1015-compatibility]
 [^issue-1010-human]: [humanの完了行](../../../crates/hoimin-cli/src/report/human.rs)。
 
 [^priority-six-compatibility]: [Current combined schema-9 notice](../../compatibility.md#structured-startup-cleanup-in-0140).
+
+# Closed current report payloads (Issue #1027)
+
+Current JSON/JSONL event payloads and schema-closed descendants reject unknown
+fields. The shared streaming envelope consumes and validates `kind` once before
+typed payload decoding. It retains original map entries, so duplicate known
+keys and escaped equivalent names are rejected without a generic JSON map
+discarding them. Nested raw disk integers still reach their existing decoder.
+Candidate identity, status/outcome, sequence and summary checks remain separate
+semantic requirements.[^issue-1027-report][^issue-1027-reader]
+
+Progress accepts null or an open outer `normalized_config` object and leaves
+unrecognized configuration fields opaque. Recognized `environment`, `session`
+and `selection.changed` children use their typed decoders, including closed-field
+and duplicate-key checks. Review continues to decode the complete `RunConfig`.
+The change does not close intentionally open objects or introduce an older-schema
+compatibility path.[^issue-1027-reader]
+
+Regression matrices cover valid, unknown-field and duplicate-key inputs across
+event variants and nested objects in JSON and JSONL. Producer output and golden
+fixtures remain accepted; invalid progress/review inputs return exit 2. The
+[report review record](../../maintenance/2026-10-20-issues-1026-1034/report.md)
+records the executed scopes. These tests establish the closure boundary, not
+general equivalence between every JSON Schema constraint and Rust validation.
+Recheck new event variants and nested wire objects at both the schema and typed
+reader boundaries.[^issue-1027-tests]
+
+[^issue-1027-report]: [Event envelope and closed payload types](../../../crates/hoimin-core/src/report.rs).
+[^issue-1027-reader]: [Shared progress/review typed readers](../../../crates/hoimin-cli/src/artifacts/run_report.rs).
+[^issue-1027-tests]: [JSON/JSONL closed-object regression matrix](../../../crates/hoimin-cli/src/artifacts/run_report/closed_wire_tests.rs).

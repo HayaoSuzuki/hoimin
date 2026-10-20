@@ -592,3 +592,35 @@ mod review_external_field_projection {
     review_projection_case!(line_controls, "sample\r\n\t.py", r#""sample\r\n\t.py""#);
     review_projection_case!(unicode, "日本語🦀.py", "\"日本語🦀.py\"");
 }
+
+macro_rules! closed_report_review {
+    ($name:ident, $pointer:literal) => {
+        #[tokio::test]
+        async fn $name() {
+            // Arrange.
+            let (dir, mut args) = fixture().await;
+            let mut value: Value =
+                serde_json::from_str(include_str!("golden/reports/schema-v9-current.json"))
+                    .unwrap();
+            value["run"]["normalized_config"]["selection"]["root"] = serde_json::json!(dir.path());
+            value.pointer_mut($pointer).unwrap()["unexpected"] = 123.into();
+            let report = dir.path().join("report.json");
+            std::fs::write(&report, serde_json::to_vec(&value).unwrap()).unwrap();
+            args.extend(["--report".into(), report.to_str().unwrap().into()]);
+
+            // Act.
+            let (code, out, err) = run(args).await;
+
+            // Assert.
+            assert_eq!(code, 2, "{}", String::from_utf8_lossy(&err));
+            assert!(out.is_empty());
+            assert!(String::from_utf8_lossy(&err).contains("unknown field `unexpected`"));
+        }
+    };
+}
+
+closed_report_review!(review_rejects_unknown_run, "/run");
+closed_report_review!(review_rejects_unknown_baseline, "/baseline");
+closed_report_review!(review_rejects_unknown_mutant, "/mutants/0");
+closed_report_review!(review_rejects_unknown_summary, "/summary");
+closed_report_review!(review_rejects_unknown_candidate, "/mutants/0/candidate");

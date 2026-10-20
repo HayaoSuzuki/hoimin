@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::{GitError, GitRunner};
+use crate::process::ProcessCancellation;
 use camino::Utf8Path;
 use hoimin_core::{TargetError, normalize_changed};
 
@@ -20,7 +22,9 @@ pub(super) async fn collect(
     numstat_args: &[&str],
     scope: &GitPathScope,
     scoped: bool,
-) -> Result<GitChangedRanges, TargetError> {
+    runner: &GitRunner,
+    cancellation: &ProcessCancellation,
+) -> Result<GitChangedRanges, GitError> {
     let plan = if scoped {
         let mut args: Vec<_> = patch_args
             .iter()
@@ -28,7 +32,7 @@ pub(super) async fn collect(
             .filter(|arg| !arg.starts_with("--unified="))
             .collect();
         args.splice(1..1, ["--name-status", "-z"]);
-        inventory_plan(&run_git(root, &args).await?, scope)?
+        inventory_plan(&run_git(root, &args, runner, cancellation).await?, scope)?
     } else {
         DiffPlan::Legacy
     };
@@ -37,24 +41,32 @@ pub(super) async fn collect(
     match plan {
         DiffPlan::Legacy => {
             parse_diff(
-                &run_git(root, patch_args).await?,
+                &run_git(root, patch_args, runner, cancellation).await?,
                 &mut changed,
                 &mut excluded,
                 scope,
             )?;
-            parse_binary_numstat(&run_git(root, numstat_args).await?, &mut excluded, scope)?;
+            parse_binary_numstat(
+                &run_git(root, numstat_args, runner, cancellation).await?,
+                &mut excluded,
+                scope,
+            )?;
         }
         DiffPlan::Scoped(batches) => {
             for paths in batches {
                 let patch = scoped_args(patch_args, &paths);
                 parse_diff(
-                    &run_git(root, &patch).await?,
+                    &run_git(root, &patch, runner, cancellation).await?,
                     &mut changed,
                     &mut excluded,
                     scope,
                 )?;
                 let numstat = scoped_args(numstat_args, &paths);
-                parse_binary_numstat(&run_git(root, &numstat).await?, &mut excluded, scope)?;
+                parse_binary_numstat(
+                    &run_git(root, &numstat, runner, cancellation).await?,
+                    &mut excluded,
+                    scope,
+                )?;
             }
         }
     }

@@ -78,9 +78,9 @@ impl<'de> Deserialize<'de> for DiskEnforcementReport {
         D: serde::Deserializer<'de>,
     {
         #[derive(Deserialize)]
-        #[serde(tag = "kind", rename_all = "snake_case")]
+        #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
         enum Encoded {
-            PortableGuard,
+            PortableGuard {},
             CapacityOnly {
                 root_kind: String,
                 filesystem_key: String,
@@ -92,7 +92,7 @@ impl<'de> Deserialize<'de> for DiskEnforcementReport {
         }
 
         match Encoded::deserialize(deserializer)? {
-            Encoded::PortableGuard => Ok(Self::PortableGuard),
+            Encoded::PortableGuard {} => Ok(Self::PortableGuard),
             Encoded::CapacityOnly {
                 root_kind,
                 filesystem_key,
@@ -145,6 +145,7 @@ pub enum DiskEnforcementError {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DiskCapabilityProbe {
     pub capability: String,
     pub verified: bool,
@@ -234,6 +235,7 @@ pub enum DiskCleanupStatus {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DiskCleanupReport {
     pub root_id: String,
     pub owner: String,
@@ -246,6 +248,7 @@ pub struct DiskCleanupReport {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DiskStopReport {
     pub code: String,
     pub owned_bytes: Option<u64>,
@@ -279,6 +282,7 @@ pub fn classify_mutant_result(
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MutationSummary {
     pub killed: u64,
     pub survived: u64,
@@ -373,12 +377,14 @@ pub fn exit_code_for(policy: ExitPolicy) -> i32 {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReportVersions {
     pub os: String,
     pub hoimin: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ResourceControl {
     pub mode: ResourceMode,
     pub mechanism: String,
@@ -425,13 +431,30 @@ impl ResumeFreshReason {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "status", rename_all = "snake_case")]
+#[serde(tag = "status", rename_all = "snake_case", from = "ResumeOutcomeWire")]
 pub enum ResumeOutcome {
     Resumed,
     Fresh { reason: ResumeFreshReason },
 }
 
+#[derive(Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case", deny_unknown_fields)]
+enum ResumeOutcomeWire {
+    Resumed {},
+    Fresh { reason: ResumeFreshReason },
+}
+
+impl From<ResumeOutcomeWire> for ResumeOutcome {
+    fn from(value: ResumeOutcomeWire) -> Self {
+        match value {
+            ResumeOutcomeWire::Resumed {} => Self::Resumed,
+            ResumeOutcomeWire::Fresh { reason } => Self::Fresh { reason },
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RunStarted {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resume: Option<ResumeOutcome>,
@@ -466,6 +489,7 @@ impl RunStarted {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BaselineFinished {
     pub schema_version: u32,
     pub sequence: u64,
@@ -477,6 +501,7 @@ pub struct BaselineFinished {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MutantStarted {
     pub schema_version: u32,
     pub sequence: u64,
@@ -588,6 +613,7 @@ impl<'de> Deserialize<'de> for MutantFinished {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Diagnostic {
     pub schema_version: u32,
     pub sequence: u64,
@@ -617,6 +643,7 @@ impl Diagnostic {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RunSummary {
     pub schema_version: u32,
     pub sequence: u64,
@@ -666,34 +693,77 @@ impl<'de> Deserialize<'de> for OutputEvent {
         let envelope =
             serde_json::from_str::<Envelope>(raw.get()).map_err(serde::de::Error::custom)?;
         match envelope.kind {
-            Kind::RunStarted => serde_json::from_str(raw.get())
-                .map(Self::RunStarted)
-                .map_err(serde::de::Error::custom),
-            Kind::BaselineFinished => serde_json::from_str(raw.get())
-                .map(Self::BaselineFinished)
-                .map_err(serde::de::Error::custom),
-            Kind::MutantStarted => serde_json::from_str(raw.get())
-                .map(Self::MutantStarted)
-                .map_err(serde::de::Error::custom),
-            Kind::MutantFinished => {
-                // Consume the event discriminator before validating the closed result payload.
-                #[derive(Deserialize)]
-                #[serde(tag = "kind", rename_all = "snake_case")]
-                enum FinishedEnvelope {
-                    MutantFinished(MutantFinished),
+            Kind::RunStarted => decode_event_payload(raw.get()).map(Self::RunStarted),
+            Kind::BaselineFinished => decode_event_payload(raw.get()).map(Self::BaselineFinished),
+            Kind::MutantStarted => decode_event_payload(raw.get()).map(Self::MutantStarted),
+            Kind::MutantFinished => decode_event_payload(raw.get()).map(Self::MutantFinished),
+            Kind::Diagnostic => decode_event_payload(raw.get()).map(Self::Diagnostic),
+            Kind::RunFinished => decode_event_payload(raw.get()).map(Self::RunFinished),
+        }
+        .map_err(serde::de::Error::custom)
+    }
+}
+
+// Consume only the discriminator while the original JSON parser still owns the
+// payload. Serde's buffered internally tagged enum representation cannot carry
+// nested RawValue fields, and a Value map would erase duplicate-key evidence.
+fn decode_event_payload<T: serde::de::DeserializeOwned>(raw: &str) -> serde_json::Result<T> {
+    struct Payload<T>(T);
+
+    impl<'de, T: Deserialize<'de>> Deserialize<'de> for Payload<T> {
+        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            struct Visitor<T>(std::marker::PhantomData<T>);
+            impl<'de, T: Deserialize<'de>> serde::de::Visitor<'de> for Visitor<T> {
+                type Value = Payload<T>;
+
+                fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    formatter.write_str("a tagged report event")
                 }
-                serde_json::from_str::<FinishedEnvelope>(raw.get())
-                    .map(|FinishedEnvelope::MutantFinished(value)| Self::MutantFinished(value))
-                    .map_err(serde::de::Error::custom)
+
+                fn visit_map<M: serde::de::MapAccess<'de>>(
+                    self,
+                    map: M,
+                ) -> Result<Self::Value, M::Error> {
+                    T::deserialize(serde::de::value::MapAccessDeserializer::new(PayloadMap(
+                        map,
+                    )))
+                    .map(Payload)
+                }
             }
-            Kind::Diagnostic => serde_json::from_str(raw.get())
-                .map(Self::Diagnostic)
-                .map_err(serde::de::Error::custom),
-            Kind::RunFinished => serde_json::from_str(raw.get())
-                .map(Self::RunFinished)
-                .map_err(serde::de::Error::custom),
+            deserializer.deserialize_map(Visitor(std::marker::PhantomData))
         }
     }
+
+    struct PayloadMap<M>(M);
+    impl<'de, M: serde::de::MapAccess<'de>> serde::de::MapAccess<'de> for PayloadMap<M> {
+        type Error = M::Error;
+
+        fn next_key_seed<K: serde::de::DeserializeSeed<'de>>(
+            &mut self,
+            seed: K,
+        ) -> Result<Option<K::Value>, Self::Error> {
+            while let Some(key) = self.0.next_key::<String>()? {
+                if key == "kind" {
+                    // The envelope already validates the discriminator, including duplicates.
+                    self.0.next_value::<serde::de::IgnoredAny>()?;
+                } else {
+                    return seed
+                        .deserialize(serde::de::value::StringDeserializer::new(key))
+                        .map(Some);
+                }
+            }
+            Ok(None)
+        }
+
+        fn next_value_seed<V: serde::de::DeserializeSeed<'de>>(
+            &mut self,
+            seed: V,
+        ) -> Result<V::Value, Self::Error> {
+            self.0.next_value_seed(seed)
+        }
+    }
+
+    serde_json::from_str::<Payload<T>>(raw).map(|value| value.0)
 }
 
 impl OutputEvent {

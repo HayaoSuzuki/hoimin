@@ -5,6 +5,24 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1032-git-runner
+  resource: ../../../crates/hoimin-cli/src/target/git/runner.rs
+  working_tree: untracked
+  sha256: f27c5ed5246513cd5238457e475bb94bc45a7ef3376e40e0311874d3228b07c5
+- id: issue-1034-shell
+  resource: ../../../crates/hoimin-cli/src/shell.rs
+  revision: 05c909c54a3bdf3485db2c833456fabe83c7dfaf
+  working_tree: modified
+  sha256: da9a0aa26352ab8b2f5fa2bfd09cc924bfa735c2d4e6b7c5ef32243bfe6cc754
+- id: issue-1034-preparation
+  resource: ../../../crates/hoimin-cli/src/shell/preparation.rs
+  working_tree: untracked
+  sha256: c3dd965cea6e5167b1a22e6c8d9111e514e40b940220b926bca2ea3790f90646
+- id: issue-1034-janitor
+  resource: ../../../crates/hoimin-cli/src/workspace/owned.rs
+  revision: 05c909c54a3bdf3485db2c833456fabe83c7dfaf
+  working_tree: modified
+  sha256: e1d464e19679364b74953b66bd64e6337e220651f047a4867d089569d8e0f558
 - id: perf-three-manifest
   resource: ../../../crates/hoimin-cli/src/workspace/manifest.rs
   revision: f72134d76d28d87cd728305ed224f298df41af4a
@@ -1027,3 +1045,52 @@ bound nor reduced logical copy charge. Native platform lifecycle checks remain
 part of the controller's final CI validation.
 
 [^perf-three-manifest]: [Immutable manifest storage and content comparison](../../../crates/hoimin-cli/src/workspace/manifest.rs).
+
+# Owned target Git commands (Issue #1032)
+
+One runner owns each direct Git child and its local pipe readers through
+completion. Dropping its waiter requests cancellation; it does not abandon the
+owner. Run admission checks the existing process-start gate and original
+deadline before spawning. Shutdown closes local readers, requests termination,
+and retains the child across reap errors. Initial wait/output failures and
+termination/reap failures remain recorded even if later cleanup succeeds.
+The shell drains the runner within the existing shutdown deadline.
+[^issue-1032-git-runner][^issue-1034-shell]
+
+Standalone plan/verify target inspection uses the same ownership contract.
+If a caller drops a waiter, its runtime must remain alive for cleanup to finish.
+This owns direct children and local readers; it does not promise containment of
+arbitrary descendants. Injected failure tests and native macOS cancellation
+checks are recorded in the [Git evidence](../../maintenance/2026-10-20-issues-1026-1034/git.md);
+they do not establish actual Linux/Windows backend failure behavior.
+[^issue-1032-git-runner]
+
+# Preparation shares the run deadline (Issue #1034)
+
+Run starts its total deadline after semantic configuration validation and before
+environment capture and fingerprint reads. Verify starts it after obtaining the
+validated execution plan; earlier saved-plan checks and reanalysis remain
+excluded. Janitor selection/deletion, setup, the first disk measurement and
+execution consume that original budget. Plan and dry-run retain their existing
+contracts.[^issue-1034-shell][^issue-1034-preparation]
+
+Preparation uses the existing cancellation gate and one shutdown deadline,
+anchored at the run deadline or first earlier cancellation request plus two
+seconds. Handoffs, repeated requests, rollback roots and diagnostic delivery
+cannot renew it. Janitor enumeration and destructive operations observe the
+same stop condition within their bounded local budget. An orderly preparation
+timeout returns 4 without starting a baseline or fabricating a report; real
+preparation or shutdown failures return 2.[^issue-1034-preparation][^issue-1034-janitor]
+
+A started blocking operation retains its resources until completion, even after
+the caller's bounded wait expires. Late results are disposed by an owner, and
+unjoined measurements retain managed roots. No immediate OS interruption or
+bounded runtime destruction is promised. The [preparation evidence](../../maintenance/2026-10-20-issues-1026-1034/runtime.md)
+separates controlled-clock/ownership checks from platform limits. Recheck these
+conditions when moving an entry boundary, adding setup I/O, or changing stop,
+cleanup or writer ownership.[^issue-1034-shell][^issue-1034-preparation]
+
+[^issue-1032-git-runner]: [Owned Git child and pipe lifecycle](../../../crates/hoimin-cli/src/target/git/runner.rs).
+[^issue-1034-shell]: [Preparation/execution integration and regressions](../../../crates/hoimin-cli/src/shell.rs).
+[^issue-1034-preparation]: [Shared preparation deadline and blocking ownership](../../../crates/hoimin-cli/src/shell/preparation.rs).
+[^issue-1034-janitor]: [Controlled janitor selection and cleanup](../../../crates/hoimin-cli/src/workspace/owned.rs).
