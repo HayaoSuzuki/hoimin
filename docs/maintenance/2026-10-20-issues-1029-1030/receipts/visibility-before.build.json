@@ -1,0 +1,40 @@
+{
+  "command": [
+    "rustc",
+    "--edition=2024",
+    "-O",
+    "-C",
+    "lto=thin",
+    "-C",
+    "embed-bitcode=yes",
+    "/Users/hayao/RustroverProjects/hoimin/.worktrees/issues-1029-1030/docs/maintenance/2026-10-20-issues-1029-1030/visibility_probe.rs",
+    "-L",
+    "dependency=/Users/hayao/RustroverProjects/hoimin/target/issues-1029-1030-base/release/deps",
+    "--extern",
+    "camino=/Users/hayao/RustroverProjects/hoimin/target/issues-1029-1030-base/release/deps/libcamino-f91f8d14b22abb98.rlib",
+    "--extern",
+    "hoimin_core=/Users/hayao/RustroverProjects/hoimin/target/issues-1029-1030-base/release/deps/libhoimin_core-e36060db195214e8.rlib",
+    "--extern",
+    "hoimin_python=/Users/hayao/RustroverProjects/hoimin/target/issues-1029-1030-base/release/deps/libhoimin_python-f46ed673dcee7a84.rlib",
+    "--extern",
+    "blake3=/Users/hayao/RustroverProjects/hoimin/target/issues-1029-1030-base/release/deps/libblake3-6eec682d57919d01.rlib",
+    "--extern",
+    "serde_json=/Users/hayao/RustroverProjects/hoimin/target/issues-1029-1030-base/release/deps/libserde_json-249d5adfc4d88833.rlib",
+    "-o",
+    "/private/tmp/visibility-before"
+  ],
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1\n",
+  "source_sha256": {
+    "/Users/hayao/RustroverProjects/hoimin/.worktrees/issues-1029-1030/docs/maintenance/2026-10-20-issues-1029-1030/visibility_probe.rs": "c160cbd5c1a20f24c7618520fc91c683176b044149e0462f0d31afddfd1aa190",
+    "/Users/hayao/RustroverProjects/hoimin/.worktrees/issues-1029-1030/docs/maintenance/2026-10-20-issues-1029-1030/requested_heap.rs": "2f261f4c4bf55b73158f1b73c8a93872ce32e1b6df2d759971565cb17fc56b88",
+    "/Users/hayao/RustroverProjects/hoimin/.worktrees/issues-1029-1030/docs/maintenance/2026-10-20-issues-1029-1030/build_probe.py": "c6eb3ca20dce30e747b9a281fdfc10d25805fc1536d26451352a4943eb9c5384"
+  },
+  "rlib_sha256": {
+    "/Users/hayao/RustroverProjects/hoimin/target/issues-1029-1030-base/release/deps/libcamino-f91f8d14b22abb98.rlib": "7f85dce2c94cd7f7562f17033e73f2bc6549a5027d46d416949df70156bcf272",
+    "/Users/hayao/RustroverProjects/hoimin/target/issues-1029-1030-base/release/deps/libhoimin_core-e36060db195214e8.rlib": "b66aeb95825de1218bc2e8412c4f29033da5c368e01d0f421f7c95941d70446f",
+    "/Users/hayao/RustroverProjects/hoimin/target/issues-1029-1030-base/release/deps/libhoimin_python-f46ed673dcee7a84.rlib": "4ef93bc7473feaf18ebeb3a673a8d130e1296b1d126d683a2f39efd3d6f51b2e",
+    "/Users/hayao/RustroverProjects/hoimin/target/issues-1029-1030-base/release/deps/libblake3-6eec682d57919d01.rlib": "77bbf4441e08619dbd1da40d1a80051d518b0965c6d32f9d175d21ba78c522ea",
+    "/Users/hayao/RustroverProjects/hoimin/target/issues-1029-1030-base/release/deps/libserde_json-249d5adfc4d88833.rlib": "c973d42262403d115984b91ab063f7e03e2c951b7445cddc21383b59988ccd5b"
+  },
+  "binary_sha256": "b1f1395f012fba6fb9a29ce6b1a349f1c1be5e72a3010f416b8a4a3c99a6fe09"
+}

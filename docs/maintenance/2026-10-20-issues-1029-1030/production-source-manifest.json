@@ -1,0 +1,19 @@
+{
+  "base_revision": "1f7feae33fa310aae87fbadb390105f6d770439d",
+  "after_revision": "working tree based on base_revision, identified by exact source hashes",
+  "before": {
+    "crates/hoimin-python/src/analyzer/rust.rs": "8abf12bab5c8858e4b7be9c15be79597d3d7762f4c42c6ecce404448d668b591",
+    "crates/hoimin-python/src/analyzer/rust/optional_keywords.rs": "3e7b71989457e67667981776fd7f71c1f6f5dc623752e76743c9ae4207e9b604",
+    "crates/hoimin-python/src/analyzer/exception_hierarchy.rs": "23aefabe7b0e701ce0b49b7d4c4d3f01c9b809b851e77d2d6eb9ffda6db17948"
+  },
+  "after": {
+    "crates/hoimin-python/src/analyzer/rust.rs": "b6341dbd686f6084a4b63f9c897e776884e2de82d8df13dca03fda6e429f1004",
+    "crates/hoimin-python/src/analyzer/rust/optional_keywords.rs": "d20627e64c74ad7e953cbb4a0d7d3bed9c162bbf2a24f1ec461caa1c0fb7f441",
+    "crates/hoimin-python/src/analyzer/exception_hierarchy.rs": "6395c960885332ceceed5ff1a19c6c8b9872aaebadff04bac9bf197300433335"
+  },
+  "post_measurement_changes": [
+    "test-only selected_method_name_survives_excluded_call_start case in optional_keyword_selection_tests.rs",
+    "documentation and evidence updates; no measured production behavior changes",
+    "test-only Clippy corrections: append fixture lines with writeln! and assert empty collection lengths; production source hashes unchanged"
+  ]
+}

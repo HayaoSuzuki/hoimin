@@ -5,6 +5,16 @@ description: 決定的な回帰ゲートとrelease計測、未統合の依存、
 status: draft
 catalog_revision: 165a2d284a1af92eb02ffd214ba8c0070c2f3808
 sources:
+- id: issue-1030-measurement
+  resource: ../../maintenance/2026-10-20-issues-1029-1030/optional-measurement.json
+  revision: 1f7feae33fa310aae87fbadb390105f6d770439d
+  working_tree: untracked
+  sha256: dbf0316dde42165f9515f19be5b01bf7c5851c9dc7dd566bf1251f3711bcf57d
+- id: issue-1029-measurement
+  resource: ../../maintenance/2026-10-20-issues-1029-1030/visibility-measurements.json
+  revision: 1f7feae33fa310aae87fbadb390105f6d770439d
+  working_tree: untracked
+  sha256: 01d8257b25ff1a71cd2de3a8c29407fcc11d60de4cf27932bdf172b27b224706
 - id: perf-three-d1
   resource: ../../maintenance/2026-10-20-perf-three/reports/task-3-d1-review.md
   revision: f72134d76d28d87cd728305ed224f298df41af4a
@@ -181,3 +191,41 @@ RSS, logical payload and disk charges retain separate meanings.[^perf-three-posi
 [^perf-three-positions]: [R6 original protocol and observed bounds](../../maintenance/2026-10-20-issue-1008/r6/README.md); the later [D1 acceptance addendum](../../maintenance/2026-10-20-perf-three/reports/task-3-d1-review.md) records the user decision.
 
 [^perf-three-d1]: [D1 acceptance decision and scoped independent review](../../maintenance/2026-10-20-perf-three/reports/task-3-d1-review.md).
+
+# Optional-call and exception-member work (Issues #1030 and #1029)
+
+The optional-call operation gates count signature lookup, keyword enumeration,
+completed replacements and constructed bytes separately. Excluded calls perform
+none of those operations, including with zero payload budget and varying count
+limits. The release comparison ran 19 workloads in five alternating pairs, with
+matching complete candidate identities, diagnostics, truncation and errors.
+On the excluded 1,000-keyword workload, the instrumented API median fell from
+14.64 ms to 0.556 ms and cumulative requested allocation from 34,082,971 to
+1,236,211 bytes. The one-keyword unrestricted median increased by 0.386 µs;
+its cumulative allocation, retained heap and peak heap were unchanged. These
+are fixed local observations, not a universal timing guarantee.
+[^issue-1030-measurement]
+
+Exception-member gates vary ordinary binding count and alias count independently
+and account separately for class-bearing output. Release measurements ran eight
+workloads in seven alternating pairs. With 1,000 ordinary bindings and 1,000
+aliases and no classes, the instrumented construction median fell from 296.884 ms
+to 1.215 ms; cumulative requested allocation fell from 93,640,894 to 2,640,894
+bytes. Retained and peak requested heap were unchanged in that case. A small
+class-bearing input used 461 additional peak requested bytes for the temporary
+index. Required alias × class output still has its own cost. API and CLI
+comparisons preserve complete candidate output, and a separate large-input
+10 ms CLI timeout check returned exit 2 with no stdout on both builds.
+[^issue-1029-measurement]
+
+Both probes use macOS arm64 release artifacts with an allocator meter active
+inside the measured operation. Source preparation, warmup and result hashing
+occur outside that interval. Cumulative successful allocation/reallocation
+requests, retained live-byte delta and peak live-byte delta are reported
+separately. Reallocation counts its full new request, including shrinkage.
+These metrics exclude allocator overhead and are not RSS. The
+[integration record](../../maintenance/2026-10-20-issues-1029-1030/README.md)
+links reproducible probes, source/binary metadata and final checks.
+
+[^issue-1030-measurement]: [Optional-call paired observations](../../maintenance/2026-10-20-issues-1029-1030/optional-measurement.json).
+[^issue-1029-measurement]: [Exception-member paired observations and public comparisons](../../maintenance/2026-10-20-issues-1029-1030/visibility-measurements.json).

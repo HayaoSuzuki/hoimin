@@ -1,0 +1,9 @@
+measured ordinary=8 aliases=1 classes=0
+measured ordinary=8 aliases=1 classes=2
+measured ordinary=1000 aliases=1 classes=0
+measured ordinary=32 aliases=1000 classes=0
+measured ordinary=1000 aliases=1000 classes=0
+measured ordinary=2000 aliases=2000 classes=0
+measured ordinary=1000 aliases=1000 classes=2
+measured ordinary=64 aliases=256 classes=16
+wrote docs/maintenance/2026-10-20-issues-1029-1030/visibility-measurements.json

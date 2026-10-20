@@ -1,0 +1,17 @@
+measured ordinary=8 aliases=1 classes=0
+measured ordinary=8 aliases=1 classes=2
+measured ordinary=1000 aliases=1 classes=0
+measured ordinary=32 aliases=1000 classes=0
+measured ordinary=1000 aliases=1000 classes=0
+measured ordinary=2000 aliases=2000 classes=0
+measured ordinary=1000 aliases=1000 classes=2
+measured ordinary=64 aliases=256 classes=16
+Traceback (most recent call last):
+  File "/Users/hayao/RustroverProjects/hoimin/.worktrees/issues-1029-1030/docs/maintenance/2026-10-20-issues-1029-1030/visibility_measure.py", line 145, in <module>
+    main()
+  File "/Users/hayao/RustroverProjects/hoimin/.worktrees/issues-1029-1030/docs/maintenance/2026-10-20-issues-1029-1030/visibility_measure.py", line 84, in main
+    document = invoke(command)
+               ^^^^^^^^^^^^^^^
+  File "/Users/hayao/RustroverProjects/hoimin/.worktrees/issues-1029-1030/docs/maintenance/2026-10-20-issues-1029-1030/visibility_measure.py", line 15, in invoke
+    raise RuntimeError((command, result.returncode, result.stderr))
+RuntimeError: (['/Users/hayao/RustroverProjects/hoimin/target/issues-1029-1030-base/release/hoimin', 'plan', '--root', '/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-visibility-vafo1kkt', '--file', 'service.py', '--operators', 'exception_hierarchy', '--max-candidates', '1', '--allow-best-effort-memory', '--min-free-space', '1B', '--', 'python3', '-c', 'pass'], 4, '')

@@ -92,6 +92,8 @@ impl FunctionIndex {
         call: &ExprCall,
         cancelled: &impl Fn() -> bool,
     ) -> Option<Vec<usize>> {
+        #[cfg(test)]
+        super::optional_keyword_selection_tests::record_lookup();
         let Expr::Name(name) = call.func.as_ref() else {
             return None;
         };
@@ -111,6 +113,8 @@ impl FunctionIndex {
         }
         let mut optional = Vec::new();
         for (index, keyword) in call.arguments.keywords.iter().enumerate() {
+            #[cfg(test)]
+            super::optional_keyword_selection_tests::record_keyword();
             if cancelled() {
                 return None;
             }
@@ -257,6 +261,8 @@ pub(super) fn emit(
             }
         }
         replacement.push_str("))");
+        #[cfg(test)]
+        super::optional_keyword_selection_tests::record_replacement(&replacement);
         if !candidate(replacement) {
             return;
         }

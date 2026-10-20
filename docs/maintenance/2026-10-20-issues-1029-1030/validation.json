@@ -1,0 +1,240 @@
+{
+  "base_revision": "1f7feae33fa310aae87fbadb390105f6d770439d",
+  "checked_at": "2026-10-20T05:08:44.577303+00:00",
+  "platform": "Darwin arm64",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "source_hashes": {
+    "crates/hoimin-python/src/analyzer/exception_hierarchy.rs": "6395c960885332ceceed5ff1a19c6c8b9872aaebadff04bac9bf197300433335",
+    "crates/hoimin-python/src/analyzer/exception_visibility_tests.rs": "5247a29f7ea6f16bc9a4797c9f6e4dd256e4ac307ce0fc4ba38ac4219273ded3",
+    "crates/hoimin-python/src/analyzer/rust.rs": "b6341dbd686f6084a4b63f9c897e776884e2de82d8df13dca03fda6e429f1004",
+    "crates/hoimin-python/src/analyzer/rust/optional_keyword_selection_tests.rs": "224e8e03468b01a2c18cdae7ae72c464f2005415f01f3797a57262b3696b5607",
+    "crates/hoimin-python/src/analyzer/rust/optional_keywords.rs": "d20627e64c74ad7e953cbb4a0d7d3bed9c162bbf2a24f1ec461caa1c0fb7f441"
+  },
+  "commands": [
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "seconds": 1.145,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "vendor-fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--manifest-path",
+        "vendor/ruff_python_parser/Cargo.toml",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "seconds": 0.108,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "seconds": 12.228,
+      "log_sha256": "0df1adcacecb404f87ba3979330541b5fab91cc5109adaedd5901533d46c142b"
+    },
+    {
+      "name": "vendor-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "-p",
+        "littrs-ruff-python-parser",
+        "--lib",
+        "--no-deps",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "seconds": 0.749,
+      "log_sha256": "9ee921b0e96c82bb59fa19f0d5699cb1f5a1e7bd46afdaa9f06ffba1cf4ff976"
+    },
+    {
+      "name": "workspace",
+      "command": [
+        "cargo",
+        "test",
+        "--workspace"
+      ],
+      "exit_code": 0,
+      "seconds": 375.12,
+      "test_totals": {
+        "passed": 3802,
+        "failed": 0,
+        "ignored": 33,
+        "harnesses": 182
+      },
+      "log_sha256": "449a81038b16b621663ba57bad632ce33d606beedd01999caa6e5d3741666656"
+    },
+    {
+      "name": "core-contracts",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "hoimin-core",
+        "--features",
+        "contracts"
+      ],
+      "exit_code": 0,
+      "seconds": 40.998,
+      "test_totals": {
+        "passed": 845,
+        "failed": 0,
+        "ignored": 2,
+        "harnesses": 41
+      },
+      "log_sha256": "911c4eeb91b033b2f180481bccd1fe88e6b576bb78dd400099de20e2982c0e0e"
+    },
+    {
+      "name": "cli-contracts",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--features",
+        "contracts"
+      ],
+      "exit_code": 0,
+      "seconds": 341.959,
+      "test_totals": {
+        "passed": 2422,
+        "failed": 0,
+        "ignored": 28,
+        "harnesses": 135
+      },
+      "log_sha256": "0a8da8213d6dbce10189c4e5e8b9d01e21111f22f742bed355912f243f36fc12"
+    },
+    {
+      "name": "ruff-format",
+      "command": [
+        "/Users/hayao/RustroverProjects/hoimin/.worktrees/issues-1029-1030/.venv/bin/ruff",
+        "format",
+        "--check",
+        "."
+      ],
+      "exit_code": 0,
+      "seconds": 0.049,
+      "log_sha256": "87bf6ae342b9d4cf8926374754d47ba335ed8007815b00218638906a349271dc"
+    },
+    {
+      "name": "ruff-check",
+      "command": [
+        "/Users/hayao/RustroverProjects/hoimin/.worktrees/issues-1029-1030/.venv/bin/ruff",
+        "check",
+        "--no-fix",
+        "."
+      ],
+      "exit_code": 0,
+      "seconds": 0.024,
+      "log_sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "name": "ty",
+      "command": [
+        "/Users/hayao/RustroverProjects/hoimin/.worktrees/issues-1029-1030/.venv/bin/ty",
+        "check"
+      ],
+      "exit_code": 0,
+      "seconds": 0.129,
+      "log_sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "name": "pytest",
+      "command": [
+        "/Users/hayao/RustroverProjects/hoimin/.worktrees/issues-1029-1030/.venv/bin/python",
+        "-m",
+        "pytest",
+        "tests",
+        "--randomly-seed=812"
+      ],
+      "exit_code": 0,
+      "seconds": 57.777,
+      "summary": "====================== 1201 passed, 11 skipped in 57.30s =======================",
+      "log_sha256": "9453101f1c8d69cf95f8e6c3a7f88c8f4d736c0500e38fabea0d6559e65af951"
+    },
+    {
+      "name": "cli-reference",
+      "command": [
+        "cargo",
+        "run",
+        "--locked",
+        "-p",
+        "hoimin-cli",
+        "--example",
+        "generate_cli_reference",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "seconds": 0.441,
+      "log_sha256": "fbf9b85c841b233b2dc1f14397b8cad9a4aa7705bf475a5b193b78807c363d1c"
+    },
+    {
+      "name": "cli-reference-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "hoimin-cli",
+        "--example",
+        "generate_cli_reference"
+      ],
+      "exit_code": 0,
+      "seconds": 1.311,
+      "test_totals": {
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "harnesses": 1
+      },
+      "log_sha256": "c7b9a2861562352300207bf6bbbbe67698758c10dba60db9eff6e9abe5d5ec70"
+    },
+    {
+      "name": "docs-site",
+      "command": [
+        "/Users/hayao/RustroverProjects/hoimin/.worktrees/issues-1029-1030/.venv/bin/python",
+        "tools/docs_site.py",
+        "--output",
+        "/Users/hayao/RustroverProjects/hoimin/.worktrees/issues-1029-1030/site"
+      ],
+      "exit_code": 0,
+      "seconds": 0.512,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "limitations": [
+    "macOS local execution; no native Linux/Windows execution",
+    "No new formal proofs or universal performance guarantee"
+  ],
+  "resolved_initial_findings": [
+    "Seven new-test Clippy style violations corrected without changing fixtures or assertions",
+    "Missing locked fuzz dependencies installed with prescribed uv sync before Python checks",
+    "Documentation output path corrected to required repository site/ directory"
+  ]
+}
