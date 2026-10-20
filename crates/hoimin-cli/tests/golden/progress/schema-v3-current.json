@@ -1,0 +1,40 @@
+{
+  "schema_version": 3,
+  "details": null,
+  "patience": 3,
+  "consecutive_stalls": 0,
+  "latest": {
+    "state": "regressing",
+    "consecutive_stalls": 0,
+    "patience": 3,
+    "saturated": false
+  },
+  "inputs": [
+    {
+      "source": "input-0.json",
+      "usable": true,
+      "reason": null
+    },
+    {
+      "source": "input-1.json",
+      "usable": true,
+      "reason": null
+    }
+  ],
+  "comparisons": [
+    {
+      "common": 1,
+      "added": 0,
+      "removed": 0,
+      "ambiguous": 0,
+      "inconclusive": 0,
+      "improvements": 0,
+      "regressions": 1,
+      "carried_survivors": 0,
+      "previous_score": 1.0,
+      "current_score": 0.0,
+      "score_delta": -1.0,
+      "state": "regressing"
+    }
+  ]
+}

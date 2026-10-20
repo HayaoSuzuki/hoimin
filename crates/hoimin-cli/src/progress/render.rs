@@ -10,7 +10,7 @@ use super::details::Details;
 use super::input::InputDisposition;
 use super::{Comparison, ProgressError, ProgressResult, ProgressState, UnusableReason};
 
-const PROGRESS_SCHEMA_VERSION: u32 = 1;
+const PROGRESS_SCHEMA_VERSION: u32 = 3;
 
 pub(super) fn render<Stdout, Stderr>(
     format: ProgressOutputFormat,
@@ -54,11 +54,7 @@ where
         .map(ComparisonDocument::from)
         .collect::<Vec<_>>();
     let document = ProgressDocument {
-        schema_version: if details.is_some() {
-            2
-        } else {
-            PROGRESS_SCHEMA_VERSION
-        },
+        schema_version: PROGRESS_SCHEMA_VERSION,
         details,
         patience: result.patience.get(),
         consecutive_stalls: result.consecutive_stalls,
@@ -231,7 +227,6 @@ fn write_error(source: std::io::Error) -> ProgressError {
 
 #[derive(Serialize)]
 struct ProgressDocument<'a> {
-    #[serde(skip_serializing_if = "Option::is_none")]
     details: Option<&'a Details>,
     schema_version: u32,
     patience: usize,

@@ -5,6 +5,11 @@ description: Public interfaces, version floors and migration notices.
 status: draft
 catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
 sources:
+- id: issue-1028-compatibility
+  resource: ../compatibility.md
+  revision: 1f7feae33fa310aae87fbadb390105f6d770439d
+  working_tree: modified
+  sha256: 8d3c298a1ee6c39900b5c4d23e694d859bbab2e76a7349fe7e922ea5d6d75a82
 - id: issue-939-compatibility
   resource: ../compatibility.md
   revision: 465ff928c1f2ceb9f9b8f8084465475e45799ee8
@@ -70,7 +75,13 @@ sources:
 
 # Current saved formats and release floor
 
-The package floor is 0.14.0. Report/event schema 9 requires nullable
+The package floor is 0.15.0 for progress output schema 3. Both details modes
+use the same schema, with required null details when not requested and a details
+object when requested, including unavailable comparisons. Update output readers
+to require version 3 and use the canonical schema. The input report contract and
+existing plan/session formats remain unchanged.[^issue-1028-compatibility]
+
+Report/event schema 9 requires nullable
 `disk.janitor` instead of `disk.stale_roots_reclaimed`, and requires derived
 `status` for each completed mutant. Strict Rust readers check status against
 outcome and discard the received projection. JSON Schema checks presence and
@@ -91,7 +102,7 @@ analysis rule. The release measurements concern fixed local workloads; their
 macOS results do not establish Linux/Windows behavior or universal runtime and
 memory improvements.[^priority-six-compatibility][^priority-six-graph-evidence]
 
-Follow the [0.14.0 migration notice](../compatibility.md#structured-startup-cleanup-in-0140).
+Follow the [0.15.0 progress migration notice](../compatibility.md#single-progress-output-schema-in-0150) and the [0.14.0 report notice](../compatibility.md#structured-startup-cleanup-in-0140).
 The earlier notices below retain the versions introduced by each change.
 
 [^priority-six-compatibility]: [Combined cleanup, result and Rust API migration](../compatibility.md#structured-startup-cleanup-in-0140).
@@ -221,3 +232,5 @@ for scope and the [session/report contract](design/session-report.md#duplicate-r
 for implementation evidence.[^issue-939-compatibility]
 
 [^issue-939-compatibility]: [Duplicate report configuration notice](../compatibility.md#duplicate-report-configuration-fields).
+
+[^issue-1028-compatibility]: [Single progress output schema and reader migration](../compatibility.md#single-progress-output-schema-in-0150).

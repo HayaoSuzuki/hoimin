@@ -1497,7 +1497,7 @@ async fn output_json_exposes_agent_decision_fields() {
 
     assert_eq!(code, 0);
     assert_eq!(stderr, Vec::<u8>::new());
-    assert_eq!(value["schema_version"], 1);
+    assert_eq!(value["schema_version"], 3);
     assert_eq!(value["latest"]["state"], "saturated");
     assert_eq!(value["latest"]["consecutive_stalls"], 3);
     assert_eq!(value["latest"]["patience"], 3);
@@ -3983,8 +3983,278 @@ fn detail_report(statuses: &[(&str, MutationStatus)]) -> Value {
     report
 }
 
+macro_rules! progress_json_contract_case {
+    ($name:ident, $scenario:literal, $limit:expr, $state:literal, $exit:literal) => {
+        #[tokio::test]
+        async fn $name() {
+            // Arrange: literal scenarios cover the final pair and independent stalled runs.
+            let fixture = tempfile::tempdir().unwrap();
+            let before = detail_report(&[("a", MutationStatus::Killed)]);
+            let mut after = detail_report(&[("a", MutationStatus::Survived)]);
+            match $scenario {
+                "unavailable" => {
+                    after["summary"]["complete"] = json!(false);
+                    after["summary"]["exit_code"] = json!(4);
+                }
+                "different" => {
+                    after["mutants"][0]["candidate"]["file_hash"] = json!("different");
+                    candidate_identity::assign_id(&mut after["mutants"][0]["candidate"]);
+                }
+                "stalled" | "saturated" => after = before.clone(),
+                "regressing" => {}
+                _ => unreachable!(),
+            }
+            let mut documents = vec![before, after];
+            if $scenario == "saturated" {
+                documents.extend([documents[0].clone(), documents[0].clone()]);
+            }
+            let reports = documents
+                .into_iter()
+                .enumerate()
+                .map(|(index, mut document)| {
+                    for field in ["run", "baseline", "summary"] {
+                        document[field]["run_id"] = json!(format!("independent-{index}"));
+                    }
+                    for mutant in document["mutants"].as_array_mut().unwrap() {
+                        mutant["run_id"] = json!(format!("independent-{index}"));
+                    }
+                    write_json(&fixture, &format!("input-{index}.json"), &document)
+                })
+                .collect::<Vec<_>>();
+            let limit: Option<usize> = $limit;
+            let mut args = regression_gate_args(&reports, "json", limit.is_some(), true);
+            if let Some(limit) = limit {
+                args.extend(["--details-limit".to_owned(), limit.to_string()]);
+            }
+            let stdout = CollectingWriter::default();
+            let stderr = CollectingWriter::default();
+            let schema =
+                read_schema(&repo_root().join("docs/json-schema/progress-result.schema.json"));
+
+            // Act: changing presentation must preserve the gate and aggregate decisions.
+            let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+            let actual: Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+            let (plain_code, plain, plain_stderr) =
+                progress_with_gate(&reports, "json", false, true).await;
+            let plain: Value = serde_json::from_slice(&plain).unwrap();
+
+            // Assert: one version and required details distinguish the request from availability.
+            assert_eq!(actual["schema_version"], 3);
+            assert_schema_valid(&schema, &actual);
+            assert_eq!(code, $exit);
+            assert_eq!(plain_code, code);
+            assert_eq!(plain_stderr, stderr.snapshot());
+            assert_eq!(actual["latest"]["state"], $state);
+            for field in [
+                "inputs",
+                "comparisons",
+                "latest",
+                "patience",
+                "consecutive_stalls",
+            ] {
+                assert_eq!(actual[field], plain[field], "{field}");
+            }
+            if let Some(limit) = limit {
+                let details = &actual["details"];
+                assert!(details.is_object());
+                assert_eq!(details["limit"], limit);
+                assert_eq!(details["available"], $scenario != "unavailable");
+                if $scenario == "unavailable" {
+                    assert!(details["eligibility"].is_null());
+                }
+                if limit == 0 {
+                    assert_eq!(details["transitions"], json!([]));
+                }
+                if $scenario == "regressing" {
+                    assert_eq!(actual["comparisons"][0]["regressions"], 1);
+                    assert_eq!(details["omitted"], usize::from(limit == 0));
+                    assert_eq!(
+                        details["transitions"].as_array().unwrap().len(),
+                        usize::from(limit > 0)
+                    );
+                }
+            } else {
+                assert_eq!(actual.get("details"), Some(&Value::Null));
+            }
+        }
+    };
+}
+
+progress_json_contract_case!(
+    progress_json_contract_default,
+    "regressing",
+    None,
+    "regressing",
+    1
+);
+progress_json_contract_case!(
+    progress_json_contract_zero,
+    "regressing",
+    Some(0),
+    "regressing",
+    1
+);
+progress_json_contract_case!(
+    progress_json_contract_one,
+    "regressing",
+    Some(1),
+    "regressing",
+    1
+);
+progress_json_contract_case!(
+    progress_json_contract_full,
+    "regressing",
+    Some(100),
+    "regressing",
+    1
+);
+progress_json_contract_case!(
+    progress_json_contract_unavailable_default,
+    "unavailable",
+    None,
+    "indeterminate",
+    0
+);
+progress_json_contract_case!(
+    progress_json_contract_unavailable_zero,
+    "unavailable",
+    Some(0),
+    "indeterminate",
+    0
+);
+progress_json_contract_case!(
+    progress_json_contract_unavailable_full,
+    "unavailable",
+    Some(100),
+    "indeterminate",
+    0
+);
+progress_json_contract_case!(
+    progress_json_contract_different_default,
+    "different",
+    None,
+    "indeterminate",
+    0
+);
+progress_json_contract_case!(
+    progress_json_contract_different_zero,
+    "different",
+    Some(0),
+    "indeterminate",
+    0
+);
+progress_json_contract_case!(
+    progress_json_contract_different_full,
+    "different",
+    Some(100),
+    "indeterminate",
+    0
+);
+progress_json_contract_case!(
+    progress_json_contract_stalled_zero,
+    "stalled",
+    Some(0),
+    "stalled",
+    0
+);
+progress_json_contract_case!(
+    progress_json_contract_saturated_zero,
+    "saturated",
+    Some(0),
+    "saturated",
+    0
+);
+progress_json_contract_case!(
+    progress_json_contract_saturated_full,
+    "saturated",
+    Some(100),
+    "saturated",
+    0
+);
+
+macro_rules! progress_duplicate_identity_case {
+    ($name:ident, $limit:expr) => {
+        #[tokio::test]
+        async fn $name() {
+            // Arrange: the report reader rejects one ID assigned to multiple sequences.
+            let fixture = tempfile::tempdir().unwrap();
+            let before = write_json(
+                &fixture,
+                "before.json",
+                &detail_report(&[("a", MutationStatus::Killed)]),
+            );
+            let after = write_json(
+                &fixture,
+                "after.json",
+                &detail_report(&[
+                    ("a", MutationStatus::Survived),
+                    ("a", MutationStatus::Survived),
+                ]),
+            );
+            let limit: Option<usize> = $limit;
+            let mut args = regression_gate_args(&[before, after], "json", limit.is_some(), true);
+            if let Some(limit) = limit {
+                args.extend(["--details-limit".to_owned(), limit.to_string()]);
+            }
+            let stdout = CollectingWriter::default();
+            let stderr = CollectingWriter::default();
+
+            // Act
+            let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+
+            // Assert: presentation cannot bypass the current input contract.
+            assert_eq!(code, 2);
+            assert!(stdout.snapshot().is_empty());
+            assert!(
+                String::from_utf8_lossy(&stderr.snapshot())
+                    .contains("mutant stable IDs must map to one candidate sequence")
+            );
+        }
+    };
+}
+
+progress_duplicate_identity_case!(progress_duplicate_identity_default, None);
+progress_duplicate_identity_case!(progress_duplicate_identity_zero, Some(0));
+progress_duplicate_identity_case!(progress_duplicate_identity_full, Some(100));
+
 #[tokio::test]
-async fn details_identify_both_directions_and_preserve_default_schema() {
+async fn progress_json_matches_current_golden() {
+    // Arrange
+    let fixture = tempfile::tempdir().unwrap();
+    let before = write_json(
+        &fixture,
+        "input-0.json",
+        &detail_report(&[("a", MutationStatus::Killed)]),
+    );
+    let after = write_json(
+        &fixture,
+        "input-1.json",
+        &detail_report(&[("a", MutationStatus::Survived)]),
+    );
+    let expected = read_schema(
+        &repo_root().join("crates/hoimin-cli/tests/golden/progress/schema-v3-current.json"),
+    );
+
+    // Act
+    let (code, stdout, _) = run_progress(&[before, after], "json").await;
+    let mut actual: Value = serde_json::from_slice(&stdout).unwrap();
+    for input in actual["inputs"].as_array_mut().unwrap() {
+        input["source"] = json!(
+            Path::new(input["source"].as_str().unwrap())
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+        );
+    }
+
+    // Assert
+    assert_eq!(code, 0);
+    assert_eq!(actual, expected);
+}
+
+#[tokio::test]
+async fn details_identify_both_directions() {
     let fixture = tempfile::tempdir().unwrap();
     let before = write_json(
         &fixture,
@@ -4001,9 +4271,6 @@ async fn details_identify_both_directions_and_preserve_default_schema() {
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
     let original: Value = serde_json::from_slice(&original).unwrap();
     let detailed = progress_details(&reports, "json", 100).await;
-    assert_eq!(detailed["schema_version"], 2);
-    assert_eq!(original["schema_version"], 1);
-    assert!(original.get("details").is_none());
     for field in [
         "inputs",
         "comparisons",
@@ -4132,12 +4399,8 @@ async fn details_schema_jsonl_and_quoted_locations_are_consistent() {
     let before = write_json(&fixture, "before.json", &before_doc);
     let after = write_json(&fixture, "after.json", &after_doc);
     let actual = progress_details(&[before.clone(), after.clone()], "json", 100).await;
-    let schema = read_schema(&repo_root().join("docs/json-schema/progress-result-v2.schema.json"));
+    let schema = read_schema(&repo_root().join("docs/json-schema/progress-result.schema.json"));
     assert_schema_valid(&schema, &actual);
-    assert_schema_invalid(
-        &read_schema(&repo_root().join("docs/json-schema/progress-result.schema.json")),
-        &actual,
-    );
     for pointer in ["/details", "/details/transitions/0"] {
         let mut invalid = actual.clone();
         invalid

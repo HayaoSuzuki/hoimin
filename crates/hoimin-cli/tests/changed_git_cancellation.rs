@@ -51,6 +51,8 @@ async fn stopped_git_case(block_at: usize, interrupt: bool) {
         std::iter::once(bin).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
     )
     .unwrap();
+    // The total deadline includes preparation before Git starts; allow loaded CI
+    // enough time to reach the helper whose cancellation this fixture checks.
     let mut command = Command::new(env!("CARGO_BIN_EXE_hoimin"));
     command
         .args(["run", "--root"])
@@ -60,7 +62,7 @@ async fn stopped_git_case(block_at: usize, interrupt: bool) {
             ".",
             "--changed",
             "--total-timeout",
-            if interrupt { "20s" } else { "1s" },
+            if interrupt { "20s" } else { "5s" },
             "--allow-best-effort-memory",
             "--min-free-space",
             "1B",
@@ -84,7 +86,8 @@ async fn stopped_git_case(block_at: usize, interrupt: bool) {
             0
         );
     }
-    let output = tokio::time::timeout(Duration::from_secs(5), child.wait_with_output())
+    // Stay below the helper's 30 s sleep so natural completion cannot pass.
+    let output = tokio::time::timeout(Duration::from_secs(10), child.wait_with_output())
         .await
         .unwrap()
         .unwrap();

@@ -114,6 +114,10 @@ improvement, stalls, or saturation. When a planned candidate remains unverified,
 `PLAN.json` was truncated, also say that candidates outside its retained partial set were never
 enumerated.
 
+Read progress output as schema 3 for both ordinary and `--details` invocations.
+The required `details` field is null when not requested; a requested object can
+have `available: false` for an unusable final pair.
+
 Stop at the agreed scope or budget, or when no justified test improvement remains.
 Progress saturation is an observation about comparable reports, not evidence that
 all behavior is covered or all remaining mutants are equivalent.

@@ -701,7 +701,7 @@ async fn public_progress_details_match_generated_latest_pair_expectations() {
             .await
             .unwrap_or_else(|error| panic!("{error}"));
         assert_case_matches(item, &actual);
-        assert_eq!(actual["schema_version"], 2);
+        assert_eq!(actual["schema_version"], 3);
         let detail = &actual["details"];
         let expected = &item.expected.details;
         assert_eq!(detail["available"], expected.available, "{}", item.id);

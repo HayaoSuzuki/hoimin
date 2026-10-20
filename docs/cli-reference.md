@@ -212,7 +212,7 @@ Options:
           [possible values: human, json]
 
       --details
-          Show identified changes in the final adjacent input pair (JSON selects schema v2)
+          Show identified changes in the final adjacent input pair
 
       --details-limit <DETAILS_LIMIT>
           Maximum transition details to show; zero reports only omission counts

@@ -2038,6 +2038,23 @@ cargo test -p hoimin-cli --lib hierarchy
 cargo test -p hoimin-cli --test exception_hierarchy
 ```
 
+## Progress JSON contract
+
+[`progress-result.schema.json`](json-schema/progress-result.schema.json) is the
+single current progress output schema. Both details modes emit version 3 and
+require `details`: null for an absent request, an object for a request, including
+an unavailable final pair. The run-report input schema is independent. Keep
+comparison and exit-policy checks separate from presentation changes; display
+limits cannot alter aggregate counts or stalled/saturated decisions.
+
+Run the progress integration cases and full JSON Schema validator after changing
+this output contract:
+
+```console
+cargo test --locked -p hoimin-cli --test progress
+uv run --locked pytest -q tests/test_progress_schema.py
+```
+
 ## Generated CLI reference
 
 The command definitions in `crates/hoimin-cli/src/cli.rs` are the source of truth

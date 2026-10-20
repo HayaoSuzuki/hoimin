@@ -4,6 +4,29 @@ hoimin is currently a 0.x CLI. This policy describes how maintainers classify
 changes and tell users what to update. A patch release can fix incorrect
 behavior; it does not promise identical mutation candidates or scores.
 
+## Single progress output schema in 0.15.0
+
+The package floor is 0.15.0. `progress --format json` emits schema 3 with or
+without `--details`. The required `details` field is `null` when details were
+not requested; a requested object retains `available: false` when the final
+adjacent pair cannot be compared. The single current definition is
+[`progress-result.schema.json`](json-schema/progress-result.schema.json).
+The separate v2 schema and the flag-dependent v1/v2 output contract are removed.
+
+Keep existing CLI invocations and update readers to require schema 3. Read
+`details == null` as no request, and inspect `details.available` only for an
+object. Consumers that validated v1 or v2 must use the canonical schema; there
+is no old-output flag or automatic conversion. Read saved older progress output
+with its producing contract, or rerun progress against current run reports.
+
+Display limits still affect only listed transitions. Comparison counts,
+stalled/saturated decisions, regression exit policy and human output are
+unchanged. Progress still accepts only current report/event schema 9; plan schema
+10, SQLite session schema 5, fingerprint schema 13, ranking rule 4, candidate
+schema 1 and mutant-ID v1 retain their formats. Existing valid plans and sessions
+need no regeneration or migration for this output change. This notice supersedes
+earlier package-floor statements below.
+
 ## Structured startup cleanup in 0.14.0
 
 The package floor is 0.14.0 and JSON/JSONL reports use schema 9. The required

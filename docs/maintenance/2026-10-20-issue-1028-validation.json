@@ -1,0 +1,286 @@
+{
+  "base_revision": "1f7feae33fa310aae87fbadb390105f6d770439d",
+  "checked_at": "2026-10-20T05:29:22.929208+00:00",
+  "platform": "Darwin arm64",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "source_hashes": {
+    "Cargo.lock": "04dae15af573f3900db46f119c43f122e184091bc18cd489d45f4c4f3f0b6c34",
+    "Cargo.toml": "adebab99bce35d3e04f35d418358824512a539cb9fd12880ac5ee69bb088461e",
+    "crates/hoimin-cli/src/cli.rs": "f00f53f23eaba2cf759d1eec57b70a9f40247fa59329d2518f7bf2e887d35b83",
+    "crates/hoimin-cli/src/progress/render.rs": "0802b707760b136653bf85bf31d76d673fd0e8779841598701dced7214cf313b",
+    "crates/hoimin-cli/tests/changed_git_cancellation.rs": "203f41f1f6cdf991ba154d5dc2d6138ea73968412a8014def58393a4a7417528",
+    "crates/hoimin-cli/tests/golden/progress/schema-v3-current.json": "98f8b147b1d92162e62eedff0a9c0dd285ab9ad88f7f3cbbe5fe27bb6702544e",
+    "crates/hoimin-cli/tests/lean_progress_decision_oracle.rs": "fe91c63adc7b2ab1f1b560985efa973900b0cbe8ac1ba1a6420f90953799c721",
+    "crates/hoimin-cli/tests/progress.rs": "32bc287a216836d6f5c97f829e5c66960e448c5f4d01980838fe8b6cfc645c66",
+    "docs/json-schema/progress-result.schema.json": "fba27c4aa373ab62638c0d6adb5c87b4462b434950d5fac8fccaeb6ae59a9ce6",
+    "fuzz/Cargo.lock": "f685716b9ec484b087f14149372ff41d235b287508dcf4a8f41d44efbadf9be6",
+    "pyproject.toml": "ce16ae6b3eca6eff53279d8db445bd26e66943d5583280a56eff6722691886d2",
+    "tests/test_progress_schema.py": "2507ba5fc6809a30473e1c50663a0b23fe69a22b01e09a17eaf7a9888d64c80c",
+    "uv.lock": "7e28db0deb416a44f7a894185af3efd4feb61f200389ee8bd9e7c2c6c192bda5"
+  },
+  "commands": [
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "seconds": 0.984,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "vendor-fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--manifest-path",
+        "vendor/ruff_python_parser/Cargo.toml",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "seconds": 0.103,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "seconds": 0.304,
+      "log_sha256": "f4403412cb20dc7d8a0a94c08c9c8853e4bac9b3e8489158834f30512311ed97"
+    },
+    {
+      "name": "vendor-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "-p",
+        "littrs-ruff-python-parser",
+        "--lib",
+        "--no-deps",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "seconds": 0.095,
+      "log_sha256": "02db5a66fa0c60ca8618bd08aac556eac4f3ec863e8630a0d353dba6a0f6e126"
+    },
+    {
+      "name": "workspace",
+      "command": [
+        "cargo",
+        "test",
+        "--workspace"
+      ],
+      "exit_code": 0,
+      "seconds": 237.371,
+      "test_totals": {
+        "passed": 3781,
+        "failed": 0,
+        "ignored": 33,
+        "harnesses": 182
+      },
+      "log_sha256": "dac0abd0b2babe6a3c9adfcf476d11aafb6ed4384b8880f0f5c76b825d9a783f"
+    },
+    {
+      "name": "core-contracts",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "hoimin-core",
+        "--features",
+        "contracts"
+      ],
+      "exit_code": 0,
+      "seconds": 22.111,
+      "test_totals": {
+        "passed": 845,
+        "failed": 0,
+        "ignored": 2,
+        "harnesses": 41
+      },
+      "log_sha256": "dd547ece1c4c71366cd49166a4984f87d0910f780b5ed2cd6575fc5c295df5a2"
+    },
+    {
+      "name": "cli-contracts",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--features",
+        "contracts"
+      ],
+      "exit_code": 0,
+      "seconds": 254.441,
+      "test_totals": {
+        "passed": 2439,
+        "failed": 0,
+        "ignored": 28,
+        "harnesses": 135
+      },
+      "log_sha256": "81121eae5e9501988e7e8244d0ebb38c37f08fb6374cdb7629e1ddf224bc08fa"
+    },
+    {
+      "name": "ruff-format",
+      "command": [
+        "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1028/.venv/bin/ruff",
+        "format",
+        "--check",
+        "."
+      ],
+      "exit_code": 0,
+      "seconds": 0.074,
+      "log_sha256": "67cca57c8096c7b0f6763ed13c5b7c3a1194d2853ed367fb1800e9bfbe7442ad"
+    },
+    {
+      "name": "ruff-check",
+      "command": [
+        "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1028/.venv/bin/ruff",
+        "check",
+        "--no-fix",
+        "."
+      ],
+      "exit_code": 0,
+      "seconds": 0.026,
+      "log_sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "name": "ty",
+      "command": [
+        "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1028/.venv/bin/ty",
+        "check"
+      ],
+      "exit_code": 0,
+      "seconds": 0.13,
+      "log_sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "name": "pytest",
+      "command": [
+        "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1028/.venv/bin/python",
+        "-m",
+        "pytest",
+        "tests",
+        "--randomly-seed=812"
+      ],
+      "exit_code": 0,
+      "seconds": 58.654,
+      "summary": "====================== 1216 passed, 11 skipped in 58.09s =======================",
+      "log_sha256": "1c9161e611141e5f62c9c74b46880839edb734ccfc047a29c0e65083ad9c9408"
+    },
+    {
+      "name": "cli-reference",
+      "command": [
+        "cargo",
+        "run",
+        "--locked",
+        "-p",
+        "hoimin-cli",
+        "--example",
+        "generate_cli_reference",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "seconds": 0.442,
+      "log_sha256": "5b533d0d015f3dea6ac674c7051098dfc113f67b952c5720aecc051d1da3c215"
+    },
+    {
+      "name": "cli-reference-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "hoimin-cli",
+        "--example",
+        "generate_cli_reference"
+      ],
+      "exit_code": 0,
+      "seconds": 1.34,
+      "test_totals": {
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "harnesses": 1
+      },
+      "log_sha256": "c100caa7ad11c60fe81d7e869a6bea343e0eb64313bf9a4e5c92ea89052210de"
+    },
+    {
+      "name": "docs-site",
+      "command": [
+        "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1028/.venv/bin/python",
+        "tools/docs_site.py",
+        "--output",
+        "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1028/site"
+      ],
+      "exit_code": 0,
+      "seconds": 0.562,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "limitations": [
+    "macOS local execution; no native Linux/Windows execution",
+    "No new formal proofs or universal performance guarantee"
+  ],
+  "source_hash_scope": "Final source snapshot. Workspace, core contracts and initial lint checks preceded the test-only Git fixture timing adjustment; production code was unchanged afterward. Focused fixture checks and the complete CLI contracts suite followed that adjustment.",
+  "resolved_integration_findings": [
+    "The first workspace run found a remaining schema-2 expectation in the Lean progress adapter. Only the expectation changed to 3; all five adapter tests and the later workspace run passed.",
+    "An unchanged Git cancellation fixture could exhaust its one-second total deadline before starting its helper. Concurrent instrumentation reproduced 7 failures among 16 cases with exit 4 and no helper request trace.",
+    "The fixture now allows five seconds for the total deadline and ten seconds for exit, below the unchanged helper sleep of thirty seconds. Required handshake, exit status, helper reaping and request-count assertions are preserved."
+  ],
+  "post_fixture_checks": [
+    {
+      "name": "default-after",
+      "log_sha256": "568fa4d29ab79a077bb51b84774f5e5ab9af2c2320705889e35f8a30559035a6",
+      "result": "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.55s"
+    },
+    {
+      "name": "contracts-after",
+      "log_sha256": "09c836864efc7e907e9218e9d72a1bf3cd1b8ba89dccae6237e6c89476218470",
+      "result": "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.54s"
+    },
+    {
+      "name": "concurrent-after-1",
+      "log_sha256": "6170036b69cb77fb0697eda90d4774380510f9d8d54fc176092ff4298d21c717",
+      "result": "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.22s"
+    },
+    {
+      "name": "concurrent-after-2",
+      "log_sha256": "1e3364366e3d4520794386b5ff49ed6fe45a8b073a384f27ed5913f1926a5f3d",
+      "result": "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.21s"
+    },
+    {
+      "name": "concurrent-after-3",
+      "log_sha256": "e6440a63f60b28c604046413b77530df392a369d78ec4fe95331a8951f26031c",
+      "result": "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.22s"
+    },
+    {
+      "name": "concurrent-after-4",
+      "log_sha256": "9df54233313e53de5a0c799976f4e241296741406267817cfe2fc63305b125ab",
+      "result": "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.21s"
+    }
+  ],
+  "independent_review": {
+    "agent": "/root/review_1028_1030",
+    "unresolved_findings": 0,
+    "scope": "Implementation, schema/fixture consistency, migration and execution logs; final timing-only fixture follow-up. Initial review missed the Lean expectation, which was caught by integration testing and reviewed after correction."
+  }
+}

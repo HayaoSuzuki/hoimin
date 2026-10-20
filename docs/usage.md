@@ -1125,11 +1125,13 @@ limit; `unidentified` counts aggregate changes whose identity cannot be establis
 such as content-only matches with different IDs. All aggregate counts and decisions
 remain independent of the display limit.
 
-`--details --format json` explicitly selects
-[progress schema v2](json-schema/progress-result-v2.schema.json), which adds a
-`details` object. Without `--details`, human output,
-[progress schema v1](json-schema/progress-result.schema.json), and exit status
-retain their existing behavior.
+`progress --format json` uses [progress schema 3](json-schema/progress-result.schema.json)
+with or without `--details`. The required `details` field is `null` when details
+were not requested. With `--details`, it is an object, including `available: false`
+when the final pair cannot be compared. Update readers that selected a schema
+from the details flag to validate schema 3 and inspect this field. Human output,
+aggregate decisions and exit status retain their existing behavior. See the
+[0.15.0 migration notice](compatibility.md#single-progress-output-schema-in-0150).
 
 ### Operational metrics
 
