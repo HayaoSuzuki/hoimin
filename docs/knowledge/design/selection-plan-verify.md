@@ -5,6 +5,11 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1031-selection
+  resource: ../../../crates/hoimin-core/src/machine/selection.rs
+  revision: 3054427a1b1b9a7d2f5cdd1b6ce62053e6c417ac
+  working_tree: modified
+  sha256: 915dee30a763915c155e1ac223ee42e9b3517f3f97c56e3d93f4fbb3788691c2
 - id: issue-1026-git
   resource: ../../../crates/hoimin-cli/src/target/git.rs
   revision: 05c909c54a3bdf3485db2c833456fabe83c7dfaf
@@ -483,11 +488,22 @@ selections remain valid when selected is zero. `RunState::with_selection`
 consumes this owner; provenance cannot be attached later. Membership, ordered
 Collecting/Ready state and explicit matched history have one owner.[^issue-998-selection]
 
+Ordered discovery and waiting queues contain IDs only. After a complete spool
+scan validates membership, an available worker requests its next body by ID from
+the I/O-owned position index. The requested order, last duplicate body and
+missing-ID timing remain observable contracts. See
+[ordered discovery and stopping](runtime-lifecycle.md#ordered-candidate-discovery-and-stop-ownership)
+for cancellation and read-failure ownership. This bounds waiting-body retention
+by worker admission; selected metadata, plan loading and report retention have
+separate costs.[^issue-1031-selection]
+
 Ordered stopping borrows the requested IDs to build one temporary rank map per
 merge. Stable sorting preserves requested order with candidate-sequence fallback
 for IDs without a rank. The map is derived state rather than persistent selection
 authority. Operation-count tests establish bounded rank preparation and lookup
 work, not a wall-time performance guarantee.[^issue-997-stop]
+
+[^issue-1031-selection]: [ID-only ordered phases](../../../crates/hoimin-core/src/machine/selection.rs).
 
 Historical analyzer source entries retain their recorded paths and revisions.
 For current analyzer ownership and retrieval of moved historical files, see

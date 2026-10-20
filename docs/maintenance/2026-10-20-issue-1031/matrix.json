@@ -1,0 +1,17 @@
+{
+  "repeats": 5,
+  "cases": [
+    {"name": "payload-small", "n": 512, "s": 256, "jobs": 4, "field_bytes": 32, "mode": "run", "selection": "top"},
+    {"name": "pivot", "n": 512, "s": 256, "jobs": 4, "field_bytes": 4096, "mode": "run", "selection": "top"},
+    {"name": "payload-large", "n": 512, "s": 256, "jobs": 4, "field_bytes": 32768, "mode": "run", "selection": "top"},
+    {"name": "selected-small", "n": 512, "s": 64, "jobs": 4, "field_bytes": 4096, "mode": "run", "selection": "top"},
+    {"name": "selected-large", "n": 512, "s": 512, "jobs": 4, "field_bytes": 4096, "mode": "run", "selection": "top"},
+    {"name": "jobs-one", "n": 512, "s": 256, "jobs": 1, "field_bytes": 4096, "mode": "run", "selection": "top"},
+    {"name": "jobs-eight", "n": 512, "s": 256, "jobs": 8, "field_bytes": 4096, "mode": "run", "selection": "top"},
+    {"name": "io-small", "n": 256, "s": 256, "jobs": 4, "field_bytes": 1024, "mode": "run", "selection": "top"},
+    {"name": "io-medium", "n": 512, "s": 512, "jobs": 4, "field_bytes": 1024, "mode": "run", "selection": "top"},
+    {"name": "io-large", "n": 1024, "s": 1024, "jobs": 4, "field_bytes": 1024, "mode": "run", "selection": "top"},
+    {"name": "sample", "n": 512, "s": 256, "jobs": 4, "field_bytes": 4096, "mode": "run", "selection": "sample"},
+    {"name": "stopped", "n": 512, "s": 256, "jobs": 4, "field_bytes": 32768, "mode": "stop", "selection": "top"}
+  ]
+}

@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use hoimin_core::{
-    AnalysisDiagnostic, AnalysisFinished, ByteSpan, CandidateCursor, CandidateLoaded,
+    AnalysisDiagnostic, AnalysisFinished, ByteSpan, CandidateLoaded, CandidateReadTarget,
     CandidateSpoolRef, CleanupFinished, CommandArg, DiskFailure, DiskObservation,
     DiskStopRequested, EffectFailed, EffectFailure, EffectId, FILESYSTEM_RESERVE_REACHED,
     IntegrityCheckpoint, MachineError, MutationApplied, MutationCandidate, MutationProfile,
@@ -692,7 +692,6 @@ fn retired_late_completion_is_distinct_from_a_true_duplicate() {
         id: read_id,
         worker: 0,
         candidate: Some(fixture_candidate(1)),
-        next_cursor: candidate_cursor(1, 1),
     };
     let (state, effects) = transition(state, RunEvent::CandidateLoaded(completed.clone())).unwrap();
     let duplicate = transition(state.clone(), RunEvent::CandidateLoaded(completed)).unwrap_err();
@@ -1103,7 +1102,6 @@ fn cancellation_flushes_active_and_remaining_candidates_as_not_run() {
             id: read_id,
             worker: 0,
             candidate: Some(fixture_candidate(1)),
-            next_cursor: candidate_cursor(10, 2),
         }),
     )
     .unwrap();
@@ -1117,8 +1115,10 @@ fn cancellation_flushes_active_and_remaining_candidates_as_not_run() {
         });
         assert!(matches!(
             read,
-            RunEffect::ReadCandidate(ReadCandidate { cursor, .. })
-                if *cursor == candidate_cursor((sequence - 1) * 10, sequence)
+            RunEffect::ReadCandidate(ReadCandidate {
+                target: CandidateReadTarget::Next,
+                ..
+            })
         ));
         let read_id = effect_id(read);
         (state, effects) = transition(
@@ -1127,7 +1127,6 @@ fn cancellation_flushes_active_and_remaining_candidates_as_not_run() {
                 id: read_id,
                 worker: 0,
                 candidate: Some(fixture_candidate(sequence)),
-                next_cursor: candidate_cursor(sequence * 10, sequence + 1),
             }),
         )
         .unwrap();
@@ -1139,8 +1138,10 @@ fn cancellation_flushes_active_and_remaining_candidates_as_not_run() {
     });
     assert!(matches!(
         read,
-        RunEffect::ReadCandidate(ReadCandidate { cursor, .. })
-            if *cursor == candidate_cursor(30, 4)
+        RunEffect::ReadCandidate(ReadCandidate {
+            target: CandidateReadTarget::Next,
+            ..
+        })
     ));
     let read_id = effect_id(read);
     let (state, effects) = transition(
@@ -1149,7 +1150,6 @@ fn cancellation_flushes_active_and_remaining_candidates_as_not_run() {
             id: read_id,
             worker: 0,
             candidate: None,
-            next_cursor: candidate_cursor(30, 4),
         }),
     )
     .unwrap();
@@ -1166,9 +1166,14 @@ fn cancellation_flushes_active_and_remaining_candidates_as_not_run() {
 fn one_active_candidate_is_applied_classified_and_reported() {
     let (state, effects) = waiting_for_candidate();
     assert!(matches!(
-        find_effect(&effects, |effect| matches!(effect, RunEffect::ReadCandidate(_))),
-        RunEffect::ReadCandidate(ReadCandidate { cursor, .. })
-            if *cursor == CandidateCursor { offset: 0, expected_sequence: 1 }
+        find_effect(&effects, |effect| matches!(
+            effect,
+            RunEffect::ReadCandidate(_)
+        )),
+        RunEffect::ReadCandidate(ReadCandidate {
+            target: CandidateReadTarget::Next,
+            ..
+        })
     ));
     let read_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::ReadCandidate(_))
@@ -1180,14 +1185,9 @@ fn one_active_candidate_is_applied_classified_and_reported() {
             id: read_id,
             worker: 0,
             candidate: Some(candidate.clone()),
-            next_cursor: CandidateCursor {
-                offset: 17,
-                expected_sequence: 2,
-            },
         }),
     )
     .unwrap();
-    assert_eq!(state.candidate_offset(), 17);
     let apply_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::ApplyMutation(_))
     }));
@@ -1253,7 +1253,6 @@ fn candidate_filter_skips_unrequested_candidates() {
             id: first_read,
             worker: 0,
             candidate: Some(first),
-            next_cursor: candidate_cursor(10, 1),
         }),
     )
     .unwrap();
@@ -1277,7 +1276,6 @@ fn candidate_filter_skips_unrequested_candidates() {
             id: second_read,
             worker: 0,
             candidate: Some(second.clone()),
-            next_cursor: candidate_cursor(20, 1),
         }),
     )
     .unwrap();
@@ -1349,7 +1347,6 @@ fn candidate_filter_skips_unrequested_candidates() {
             id: final_read,
             worker: 0,
             candidate: None,
-            next_cursor: candidate_cursor(20, 1),
         }),
     )
     .unwrap();
@@ -1440,7 +1437,6 @@ fn ordered_candidate_filter_rejects_missing_after_partial_match() {
             id: read.id,
             worker: read.worker,
             candidate: Some(first),
-            next_cursor: candidate_cursor(10, 1),
         }),
     )
     .unwrap();
@@ -1456,7 +1452,6 @@ fn ordered_candidate_filter_rejects_missing_after_partial_match() {
             id: eof.id,
             worker: eof.worker,
             candidate: None,
-            next_cursor: candidate_cursor(10, 1),
         }),
     )
     .unwrap_err();
@@ -1525,7 +1520,6 @@ fn explicit_candidate_filter_rejects_missing_selected_candidate() {
             id: read_id,
             worker: 0,
             candidate: Some(first),
-            next_cursor: candidate_cursor(10, 1),
         }),
     )
     .unwrap();
@@ -1539,7 +1533,6 @@ fn explicit_candidate_filter_rejects_missing_selected_candidate() {
             id: eof_id,
             worker: 0,
             candidate: None,
-            next_cursor: candidate_cursor(10, 1),
         }),
     )
     .unwrap_err();
@@ -1578,7 +1571,6 @@ fn explicit_candidate_filter_rejects_missing_after_partial_match() {
             id: read_id,
             worker: 0,
             candidate: Some(first.clone()),
-            next_cursor: candidate_cursor(10, 1),
         }),
     )
     .unwrap();
@@ -1595,7 +1587,6 @@ fn explicit_candidate_filter_rejects_missing_after_partial_match() {
             id: eof_id,
             worker: 0,
             candidate: None,
-            next_cursor: candidate_cursor(10, 1),
         }),
     )
     .unwrap_err();
@@ -1626,7 +1617,7 @@ fn ordered_candidate_filter_defers_and_preserves_requested_order() {
     )
     .unwrap();
 
-    for (candidate, offset) in [(first.clone(), 10), (second, 20), (third.clone(), 30)] {
+    for candidate in [first.clone(), second, third.clone()] {
         let read_id = effect_id(find_effect(&effects, |effect| {
             matches!(effect, RunEffect::ReadCandidate(_))
         }));
@@ -1636,7 +1627,6 @@ fn ordered_candidate_filter_defers_and_preserves_requested_order() {
                 id: read_id,
                 worker: 0,
                 candidate: Some(candidate),
-                next_cursor: candidate_cursor(offset, 1),
             }),
         )
         .unwrap();
@@ -1657,10 +1647,10 @@ fn ordered_candidate_filter_defers_and_preserves_requested_order() {
             id: read_id,
             worker: 0,
             candidate: None,
-            next_cursor: candidate_cursor(30, 1),
         }),
     )
     .unwrap();
+    let (state, effects) = complete_indexed_candidate(state, &effects, &third);
     let apply_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::ApplyMutation(_))
     }));
@@ -1706,7 +1696,7 @@ fn ordered_candidate_cancellation_drains_remaining_candidates_in_requested_order
         }),
     )
     .unwrap();
-    for (candidate, offset) in [(first.clone(), 10), (second, 20), (third.clone(), 30)] {
+    for candidate in [first.clone(), second, third.clone()] {
         let read_id = effect_id(find_effect(&effects, |effect| {
             matches!(effect, RunEffect::ReadCandidate(_))
         }));
@@ -1716,7 +1706,6 @@ fn ordered_candidate_cancellation_drains_remaining_candidates_in_requested_order
                 id: read_id,
                 worker: 0,
                 candidate: Some(candidate),
-                next_cursor: candidate_cursor(offset, 1),
             }),
         )
         .unwrap();
@@ -1730,12 +1719,12 @@ fn ordered_candidate_cancellation_drains_remaining_candidates_in_requested_order
             id: read_id,
             worker: 0,
             candidate: None,
-            next_cursor: candidate_cursor(30, 1),
         }),
     )
     .unwrap();
 
     (state, effects) = transition(state, RunEvent::CancellationRequested).unwrap();
+    (state, effects) = complete_indexed_candidate(state, &effects, &third);
     assert_mutant_started_id(&effects, &third.id);
     (state, effects) = complete_mutant_started(state, &effects);
     let finished_id = effect_id(find_effect(&effects, |effect| {
@@ -1749,11 +1738,12 @@ fn ordered_candidate_cancellation_drains_remaining_candidates_in_requested_order
                 )
         )
     }));
-    (_, effects) = transition(
+    (state, effects) = transition(
         state,
         RunEvent::OutputEmitted(OutputEmitted { id: finished_id }),
     )
     .unwrap();
+    (_, effects) = complete_indexed_candidate(state, &effects, &first);
     assert_mutant_started_id(&effects, &first.id);
 }
 
@@ -1802,7 +1792,7 @@ fn assert_ordered_mid_collection_stop(stop: RunEvent, expected_exit_code: i32) {
     )
     .unwrap();
 
-    for (candidate, offset) in [(first.clone(), 10), (second, 20), (third.clone(), 30)] {
+    for candidate in [first.clone(), second, third.clone()] {
         let RunEffect::ReadCandidate(read) = find_effect(&effects, |effect| {
             matches!(effect, RunEffect::ReadCandidate(_))
         }) else {
@@ -1814,7 +1804,6 @@ fn assert_ordered_mid_collection_stop(stop: RunEvent, expected_exit_code: i32) {
                 id: read.id,
                 worker: read.worker,
                 candidate: Some(candidate),
-                next_cursor: candidate_cursor(offset, 1),
             }),
         )
         .unwrap();
@@ -1830,9 +1819,9 @@ fn assert_ordered_mid_collection_stop(stop: RunEvent, expected_exit_code: i32) {
     assert!(
         !effects
             .iter()
-            .any(|effect| matches!(effect, RunEffect::ReadCandidate(_)))
+            .any(|effect| matches!(effect, RunEffect::ReadCandidate(read)
+                if read.target == CandidateReadTarget::Next))
     );
-    assert_mutant_started_id(&effects, &third.id);
 
     let retired = transition(
         state.clone(),
@@ -1840,7 +1829,6 @@ fn assert_ordered_mid_collection_stop(stop: RunEvent, expected_exit_code: i32) {
             id: in_flight_read.id,
             worker: in_flight_read.worker,
             candidate: Some(fourth.clone()),
-            next_cursor: candidate_cursor(40, 1),
         }),
     )
     .unwrap_err();
@@ -1848,6 +1836,8 @@ fn assert_ordered_mid_collection_stop(stop: RunEvent, expected_exit_code: i32) {
 
     let mut reported = Vec::new();
     for expected in [&third, &first] {
+        (state, effects) = complete_indexed_candidate(state, &effects, expected);
+        assert_mutant_started_id(&effects, &expected.id);
         (state, effects) = complete_mutant_started(state, &effects);
         let RunEffect::EmitOutput(finished) = find_effect(&effects, |effect| {
             matches!(effect, RunEffect::EmitOutput(value)
@@ -1869,7 +1859,8 @@ fn assert_ordered_mid_collection_stop(stop: RunEvent, expected_exit_code: i32) {
         assert!(
             !effects
                 .iter()
-                .any(|effect| matches!(effect, RunEffect::ReadCandidate(_)))
+                .any(|effect| matches!(effect, RunEffect::ReadCandidate(read)
+                    if read.target == CandidateReadTarget::Next))
         );
     }
     assert_eq!(reported, vec![third.id, first.id]);
@@ -1948,7 +1939,7 @@ fn ordered_candidate_filter_stably_deduplicates_requested_ids() {
     )
     .unwrap();
 
-    for (candidate, offset) in [(first.clone(), 10), (second.clone(), 20)] {
+    for candidate in [first.clone(), second.clone()] {
         let read_id = effect_id(find_effect(&effects, |effect| {
             matches!(effect, RunEffect::ReadCandidate(_))
         }));
@@ -1958,7 +1949,6 @@ fn ordered_candidate_filter_stably_deduplicates_requested_ids() {
                 id: read_id,
                 worker: 0,
                 candidate: Some(candidate),
-                next_cursor: candidate_cursor(offset, 1),
             }),
         )
         .unwrap();
@@ -1973,12 +1963,13 @@ fn ordered_candidate_filter_stably_deduplicates_requested_ids() {
             id: read_id,
             worker: 0,
             candidate: None,
-            next_cursor: candidate_cursor(20, 1),
         }),
     )
     .unwrap();
 
+    let (state, effects) = complete_indexed_candidate(state, &effects, &second);
     let (state, effects) = complete_killed_candidate(state, &effects, &second.id);
+    let (state, effects) = complete_indexed_candidate(state, &effects, &first);
     let (state, effects) = complete_killed_candidate(state, &effects, &first.id);
 
     assert_eq!(state.summary().killed, 2);
@@ -1987,6 +1978,82 @@ fn ordered_candidate_filter_stably_deduplicates_requested_ids() {
         effects
             .iter()
             .any(|effect| matches!(effect, RunEffect::VerifyOriginals(_)))
+    );
+}
+
+#[test]
+fn ordered_duplicate_discovery_dispatches_once_with_the_indexed_body() {
+    // Arrange: the last occurrence has a different body and sequence for the selected ID.
+    let first = fixture_candidate(1);
+    let mut latest = first.clone();
+    latest.sequence = 3;
+    latest.replacement = "*".into();
+    let (state, effects) = waiting_for_ordered_analysis(vec![first.id.clone()]);
+    let analysis_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::AnalyzeFile(_))
+    }));
+    let (mut state, mut effects) = transition(
+        state,
+        RunEvent::AnalysisFinished(AnalysisFinished {
+            id: analysis_id,
+            spool: Some(CandidateSpoolRef {
+                token: "duplicate-selected-id".into(),
+                records: 3,
+            }),
+            truncated: false,
+            diagnostics: Vec::new(),
+        }),
+    )
+    .unwrap();
+    for candidate in [first, fixture_candidate(2), latest.clone()] {
+        let RunEffect::ReadCandidate(read) = find_effect(&effects, |effect| {
+            matches!(effect, RunEffect::ReadCandidate(_))
+        }) else {
+            unreachable!()
+        };
+        assert_eq!(read.target, CandidateReadTarget::Next);
+        (state, effects) = transition(
+            state,
+            RunEvent::CandidateLoaded(CandidateLoaded {
+                id: read.id,
+                worker: read.worker,
+                candidate: Some(candidate),
+            }),
+        )
+        .unwrap();
+        assert!(effects.iter().all(|effect| {
+            matches!(effect, RunEffect::ReadCandidate(read)
+                if read.target == CandidateReadTarget::Next)
+        }));
+    }
+    let RunEffect::ReadCandidate(read) = &effects[0] else {
+        unreachable!()
+    };
+    (state, effects) = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read.id,
+            worker: read.worker,
+            candidate: None,
+        }),
+    )
+    .unwrap();
+
+    // Act: I/O returns the last indexed occurrence after the complete discovery scan.
+    let (state, effects) = complete_indexed_candidate(state, &effects, &latest);
+
+    // Assert: core uses the fetched body once instead of a body retained during discovery.
+    let RunEffect::ApplyMutation(apply) = &effects[0] else {
+        panic!("expected the selected indexed body to be applied")
+    };
+    assert_eq!(apply.candidate, latest);
+    let (state, effects) = complete_killed_candidate(state, &effects, "m1");
+    assert_eq!(state.summary().killed, 1);
+    assert_eq!(state.summary().not_run, 0);
+    assert!(
+        effects
+            .iter()
+            .all(|effect| matches!(effect, RunEffect::VerifyOriginals(_)))
     );
 }
 
@@ -2001,6 +2068,28 @@ fn assert_mutant_started_id(effects: &[RunEffect], expected: &str) {
                 )
         )
     }));
+}
+
+fn complete_indexed_candidate(
+    state: RunState,
+    effects: &[RunEffect],
+    candidate: &MutationCandidate,
+) -> (RunState, Vec<RunEffect>) {
+    let RunEffect::ReadCandidate(read) = find_effect(effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }) else {
+        unreachable!()
+    };
+    assert_eq!(read.target, CandidateReadTarget::Id(candidate.id.clone()));
+    transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read.id,
+            worker: read.worker,
+            candidate: Some(candidate.clone()),
+        }),
+    )
+    .unwrap()
 }
 
 #[test]
@@ -2049,7 +2138,6 @@ fn four_jobs_fill_four_independent_worker_chains_in_every_completion_order() {
                 id: read_id,
                 worker,
                 candidate: Some(fixture_candidate(sequence)),
-                next_cursor: candidate_cursor(sequence, 1),
             }),
         )
         .unwrap();
@@ -2812,7 +2900,6 @@ fn session_result_is_persisted_before_finished_output_and_reset() {
             id: read_id,
             worker: 0,
             candidate: Some(fixture_candidate(1)),
-            next_cursor: candidate_cursor(1, 1),
         }),
     )
     .unwrap();
@@ -2941,7 +3028,6 @@ fn output_close_timeout_becomes_an_error_and_the_worker_continues() {
             id: read_id,
             worker: 0,
             candidate: Some(candidate.clone()),
-            next_cursor: candidate_cursor(1, 1),
         }),
     )
     .unwrap();
@@ -3051,7 +3137,6 @@ fn cancellation_during_mutant_execution_still_reports_not_run() {
             id: read_id,
             worker: 0,
             candidate: Some(candidate.clone()),
-            next_cursor: candidate_cursor(1, 1),
         }),
     )
     .unwrap();
@@ -3113,7 +3198,6 @@ fn assert_persisting_stop_preserves_result(stop: RunEvent, expected_exit_code: i
             id: read_id,
             worker: 0,
             candidate: Some(candidate.clone()),
-            next_cursor: candidate_cursor(1, 1),
         }),
     )
     .unwrap();
@@ -3212,7 +3296,6 @@ fn assert_persisting_stop_preserves_result(stop: RunEvent, expected_exit_code: i
             id: read.id,
             worker: read.worker,
             candidate: None,
-            next_cursor: candidate_cursor(1, 1),
         }),
     )
     .unwrap();
@@ -3296,7 +3379,6 @@ fn timeout_marks_the_session_and_final_report_incomplete() {
             id: read_id,
             worker: 0,
             candidate: Some(candidate.clone()),
-            next_cursor: candidate_cursor(1, 1),
         }),
     )
     .unwrap();
@@ -3374,7 +3456,6 @@ fn timeout_marks_the_session_and_final_report_incomplete() {
             id: read_id,
             worker: 0,
             candidate: None,
-            next_cursor: candidate_cursor(1, 1),
         }),
     )
     .unwrap();
@@ -3452,7 +3533,6 @@ fn resumed_determinate_result_is_reused_without_mutant_execution() {
             id: read_id,
             worker: 0,
             candidate: Some(candidate.clone()),
-            next_cursor: candidate_cursor(1, 1),
         }),
     )
     .unwrap();
@@ -3647,7 +3727,6 @@ fn waiting_for_synthetic_started(status: MutationStatus) -> (RunState, Vec<RunEf
             id: read_id,
             worker: 0,
             candidate: Some(candidate.clone()),
-            next_cursor: candidate_cursor(1, 1),
         }),
     )
     .unwrap();
@@ -3684,7 +3763,6 @@ fn reused_result_is_counted_only_after_finished_output_succeeds() {
             id: read_id,
             worker: 0,
             candidate: Some(candidate.clone()),
-            next_cursor: candidate_cursor(1, 1),
         }),
     )
     .unwrap();
@@ -3749,7 +3827,6 @@ fn session_completion_for_another_mutant_is_rejected() {
             id: read_id,
             worker: 0,
             candidate: Some(fixture_candidate(1)),
-            next_cursor: candidate_cursor(1, 1),
         }),
     )
     .unwrap();
@@ -3784,7 +3861,6 @@ fn session_save_failure_reports_the_classified_result_without_scheduling_another
             id: read_id,
             worker: 0,
             candidate: Some(fixture_candidate(1)),
-            next_cursor: candidate_cursor(1, 1),
         }),
     )
     .unwrap();
@@ -3859,7 +3935,6 @@ fn mutant_process_is_only_scheduled_after_started_output_succeeds() {
             id: read_id,
             worker: 0,
             candidate: Some(fixture_candidate(1)),
-            next_cursor: candidate_cursor(1, 1),
         }),
     )
     .unwrap();
@@ -4186,7 +4261,6 @@ fn every_process_termination_is_classified_by_the_machine() {
                 id: read_id,
                 worker: 0,
                 candidate: Some(fixture_candidate(1)),
-                next_cursor: candidate_cursor(1, 1),
             }),
         )
         .unwrap();
@@ -4258,7 +4332,6 @@ fn max_mutants_reports_remaining_candidates_as_not_run_in_stable_order() {
             id: read_id,
             worker: 0,
             candidate: Some(fixture_candidate(1)),
-            next_cursor: candidate_cursor(10, 1),
         }),
     )
     .unwrap();
@@ -4310,7 +4383,6 @@ fn max_mutants_reports_remaining_candidates_as_not_run_in_stable_order() {
             id: read_id,
             worker: 0,
             candidate: Some(fixture_candidate(2)),
-            next_cursor: candidate_cursor(20, 1),
         }),
     )
     .unwrap();
@@ -4377,7 +4449,6 @@ fn completion_ledger_stays_bounded_across_ten_thousand_mutants() {
                 id: read_id,
                 worker: 0,
                 candidate: Some(fixture_candidate(sequence)),
-                next_cursor: candidate_cursor(sequence, 1),
             }),
         )
         .unwrap();
@@ -4437,7 +4508,6 @@ fn completion_ledger_stays_bounded_across_ten_thousand_mutants() {
             id: read_id,
             worker: 0,
             candidate: None,
-            next_cursor: candidate_cursor(10_000, 1),
         }),
     )
     .unwrap();
@@ -4704,6 +4774,13 @@ impl ScheduleHarness {
         if matches!(effect, RunEffect::EmitOutput(_)) {
             self.failed_output_ids.insert(effect.id());
         }
+        if let RunEffect::ReadCandidate(read) = effect
+            && let CandidateReadTarget::Id(id) = &read.target
+        {
+            // A failed indexed body cannot be reported; other accepted IDs still must be.
+            self.scheduled_candidates.remove(id);
+            self.ledger.remove(id);
+        }
         let failed = EffectFailed::other(effect.id(), "schedule.effect", "generated failure");
         self.stop_requested = true;
         self.classify_uncompleted_as_not_run();
@@ -4829,10 +4906,20 @@ impl ScheduleHarness {
                 diagnostics: Vec::new(),
             }),
             RunEffect::ReadCandidate(read) => {
-                let candidate = self.candidates.get(self.next_candidate).cloned();
-                if candidate.is_some() {
-                    self.next_candidate += 1;
-                }
+                let candidate = match &read.target {
+                    CandidateReadTarget::Next => {
+                        let candidate = self.candidates.get(self.next_candidate).cloned();
+                        if candidate.is_some() {
+                            self.next_candidate += 1;
+                        }
+                        candidate
+                    }
+                    CandidateReadTarget::Id(id) => self.candidates[..self.next_candidate]
+                        .iter()
+                        .rev()
+                        .find(|candidate| candidate.id == *id)
+                        .cloned(),
+                };
                 if let Some(candidate) = &candidate {
                     self.scheduled_candidates.insert(candidate.id.clone());
                 }
@@ -4840,7 +4927,6 @@ impl ScheduleHarness {
                     id: read.id,
                     worker: read.worker,
                     candidate,
-                    next_cursor: candidate_cursor(u64::try_from(self.next_candidate).unwrap(), 1),
                 })
             }
             RunEffect::ApplyMutation(apply) => RunEvent::MutationApplied(MutationApplied {
@@ -5219,7 +5305,6 @@ fn ordered_collection_with_pending_read(
         id: read.id,
         worker: read.worker,
         candidate: harness.candidates.get(discovered_count).cloned(),
-        next_cursor: candidate_cursor((discovered_count + 1) as u64, 1),
     });
     (harness, late_completion)
 }
@@ -5246,6 +5331,204 @@ fn ordered_collection_stop_reports_discovered_boundary_prefix() {
         assert_eq!(finished.state.summary().not_run, discovered as u64);
         assert_eq!(finished.apply_mutation_count, 0);
     }
+}
+
+#[test]
+fn ordered_discovery_failure_after_all_selected_ids_prevents_dispatch() {
+    // Arrange: every selected ID was found, but the next spool read has not completed.
+    let (mut harness, _) = ordered_collection_with_pending_read(3, 3, 2);
+    assert_eq!(harness.apply_mutation_count, 0);
+
+    // Act: represent a corrupt trailing record through the real effect-failure boundary.
+    harness.fail_where(|effect| matches!(effect, RunEffect::ReadCandidate(_)));
+    let finished = harness.finish(&[]);
+
+    // Assert: validation never committed dispatch; accepted IDs are reported in request order.
+    assert_eq!(finished.apply_mutation_count, 0);
+    assert_eq!(reported_candidate_ids(&finished), ["m3", "m2", "m1"]);
+    assert_eq!(finished.state.summary().not_run, 3);
+    assert_eq!(finished.state.exit_code(), 2);
+    finished.assert_failure_diagnostic_precedes_cleanup_and_terminal();
+}
+
+fn assert_stop_during_indexed_read(stop: RunEvent, repeated: bool, expected_exit: i32) {
+    // Arrange: discovery is complete and the first requested body is still in flight.
+    let mut harness = ScheduleHarness::new(3, 2, ScheduleFilter::Ordered, false, vec![0]);
+    harness.complete_until(|effect| {
+        matches!(effect, RunEffect::ReadCandidate(read)
+            if read.target == CandidateReadTarget::Id("m3".into()))
+    });
+    let mut retired_completions = Vec::new();
+    let RunEffect::ReadCandidate(read) = find_effect(&harness.pending, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }) else {
+        unreachable!()
+    };
+    retired_completions.push(CandidateLoaded {
+        id: read.id,
+        worker: read.worker,
+        candidate: Some(fixture_candidate(3)),
+    });
+
+    // Act: retire the pending body fetch, optionally again while its NotRun fetch is pending.
+    harness.stop(stop.clone());
+    if repeated {
+        let RunEffect::ReadCandidate(read) = find_effect(&harness.pending, |effect| {
+            matches!(effect, RunEffect::ReadCandidate(_))
+        }) else {
+            unreachable!()
+        };
+        retired_completions.push(CandidateLoaded {
+            id: read.id,
+            worker: read.worker,
+            candidate: Some(fixture_candidate(3)),
+        });
+        let (state, effects) = transition(harness.state.clone(), stop).unwrap();
+        harness.state = state;
+        harness
+            .pending
+            .retain(|effect| harness.state.is_effect_pending(effect.id()));
+        harness.register(effects);
+    }
+
+    // Assert: no retired body is accepted and discovery never resumes during the drain.
+    for completion in retired_completions {
+        let id = completion.id;
+        assert_eq!(
+            transition(harness.state.clone(), RunEvent::CandidateLoaded(completion)).unwrap_err(),
+            MachineError::RetiredEffect(id)
+        );
+    }
+    for _ in 0..128 {
+        assert!(!harness.pending.iter().any(|effect| {
+            matches!(effect, RunEffect::ReadCandidate(read)
+                if read.target == CandidateReadTarget::Next)
+        }));
+        if harness.state.phase() == RunPhase::Finished {
+            break;
+        }
+        harness.complete(0);
+    }
+    let finished = harness.finish(&[]);
+    assert_eq!(reported_candidate_ids(&finished), ["m3", "m2", "m1"]);
+    assert_eq!(finished.state.summary().not_run, 3);
+    assert_eq!(finished.apply_mutation_count, 0);
+    assert_eq!(finished.state.exit_code(), expected_exit);
+}
+
+macro_rules! indexed_read_stop_case {
+    ($name:ident, $event:expr, $repeated:literal, $exit:literal) => {
+        #[test]
+        fn $name() {
+            assert_stop_during_indexed_read($event, $repeated, $exit);
+        }
+    };
+}
+
+indexed_read_stop_case!(
+    ordered_pending_indexed_read_survives_cancellation,
+    RunEvent::CancellationRequested,
+    false,
+    130
+);
+indexed_read_stop_case!(
+    ordered_pending_indexed_read_survives_deadline,
+    RunEvent::DeadlineReached,
+    false,
+    4
+);
+indexed_read_stop_case!(
+    ordered_pending_indexed_read_survives_disk_stop,
+    disk_stop(1024),
+    false,
+    2
+);
+indexed_read_stop_case!(
+    ordered_stopped_indexed_read_survives_repeated_cancellation,
+    RunEvent::CancellationRequested,
+    true,
+    130
+);
+indexed_read_stop_case!(
+    ordered_stopped_indexed_read_survives_repeated_deadline,
+    RunEvent::DeadlineReached,
+    true,
+    4
+);
+indexed_read_stop_case!(
+    ordered_stopped_indexed_read_survives_repeated_disk_stop,
+    disk_stop(1024),
+    true,
+    2
+);
+
+fn assert_indexed_read_identity_rejected(candidate: Option<MutationCandidate>) {
+    // Arrange: the requested body has a known identity independently of the returned payload.
+    let mut harness = ScheduleHarness::new(3, 2, ScheduleFilter::Ordered, false, vec![0]);
+    harness.complete_until(|effect| {
+        matches!(effect, RunEffect::ReadCandidate(read)
+            if read.target == CandidateReadTarget::Id("m3".into()))
+    });
+    let RunEffect::ReadCandidate(read) = find_effect(&harness.pending, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }) else {
+        unreachable!()
+    };
+    let received = candidate.as_ref().map(|candidate| candidate.id.clone());
+
+    // Act.
+    let error = transition(
+        harness.state.clone(),
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read.id,
+            worker: read.worker,
+            candidate,
+        }),
+    )
+    .unwrap_err();
+
+    // Assert: absence is not EOF, and another body's identity cannot satisfy this request.
+    assert_eq!(
+        error,
+        MachineError::CandidateIdentityMismatch {
+            worker: read.worker,
+            expected: "m3".into(),
+            received,
+        }
+    );
+    assert_eq!(error.code(), "machine.candidate.identity_mismatch");
+    assert_eq!(harness.apply_mutation_count, 0);
+}
+
+#[test]
+fn ordered_indexed_read_rejects_missing_body() {
+    assert_indexed_read_identity_rejected(None);
+}
+
+#[test]
+fn ordered_indexed_read_rejects_other_candidate_body() {
+    assert_indexed_read_identity_rejected(Some(fixture_candidate(1)));
+}
+
+#[test]
+fn ordered_indexed_read_failure_drains_other_ids_without_retrying_failed_body() {
+    // Arrange.
+    let mut harness = ScheduleHarness::new(3, 2, ScheduleFilter::Ordered, false, vec![0]);
+    harness.complete_until(|effect| {
+        matches!(effect, RunEffect::ReadCandidate(read)
+            if read.target == CandidateReadTarget::Id("m3".into()))
+    });
+
+    // Act.
+    harness.fail_where(|effect| matches!(effect, RunEffect::ReadCandidate(_)));
+    let finished = harness.finish(&[]);
+
+    // Assert: the unreadable body is consumed once; the remaining known IDs still get reports.
+    assert_eq!(reported_candidate_ids(&finished), ["m2", "m1"]);
+    assert_eq!(finished.state.summary().not_run, 2);
+    assert_eq!(finished.apply_mutation_count, 0);
+    assert_eq!(finished.state.exit_code(), 2);
+    finished.assert_failure_diagnostic_precedes_cleanup_and_terminal();
 }
 
 proptest! {
@@ -6004,7 +6287,6 @@ fn waiting_for_reset(termination: ProcessTermination) -> (RunState, Vec<RunEffec
             id: read_id,
             worker: 0,
             candidate: Some(fixture_candidate(1)),
-            next_cursor: candidate_cursor(1, 1),
         }),
     )
     .unwrap();
@@ -6140,13 +6422,6 @@ fn finish_not_run_candidate(
         RunEffect::ApplyMutation(_) | RunEffect::RunMutant(_)
     )));
     (state, effects)
-}
-
-fn candidate_cursor(offset: u64, expected_sequence: u64) -> CandidateCursor {
-    CandidateCursor {
-        offset,
-        expected_sequence,
-    }
 }
 
 fn find_effect(effects: &[RunEffect], predicate: impl Fn(&RunEffect) -> bool) -> &RunEffect {

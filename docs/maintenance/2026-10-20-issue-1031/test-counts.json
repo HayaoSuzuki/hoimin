@@ -1,0 +1,20 @@
+{
+  "workspace-tests": {
+    "scope": "Full test-binary and doc-test result lines; nested filtered subprocess test results excluded.",
+    "result_lines": 183,
+    "passed": 3849,
+    "failed": 0,
+    "ignored": 33,
+    "nested_filtered_result_lines": 1,
+    "log_sha256": "6c08eb1e6d6a10286047789a9a979d7c4733485b166611512f5f98f648a9c66a"
+  },
+  "contracts-tests": {
+    "scope": "Full test-binary and doc-test result lines; nested filtered subprocess test results excluded.",
+    "result_lines": 183,
+    "passed": 3851,
+    "failed": 0,
+    "ignored": 33,
+    "nested_filtered_result_lines": 2,
+    "log_sha256": "afbe7a4ffba1fe005ec6be5c5476306d7bd4dbef954df432e2934b523f1b0f40"
+  }
+}

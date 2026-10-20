@@ -1,6 +1,6 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeSet, VecDeque};
 
-use crate::{MutationCandidate, VerificationSelection, VerificationSelectionMode};
+use crate::{VerificationSelection, VerificationSelectionMode};
 
 /// Execution membership, dispatch order and immutable verification provenance.
 /// Consume this value when constructing a run; provenance cannot be attached or
@@ -78,7 +78,7 @@ impl RunSelection {
         })
     }
 
-    /// Collects selected candidates before dispatching them in request order.
+    /// Validates selected IDs through EOF before dispatching them in request order.
     /// Top IDs are deduplicated at their first occurrence. Sample IDs must
     /// exactly match the unique ordered IDs in their provenance.
     ///
@@ -115,7 +115,7 @@ impl RunSelection {
                 candidates: Box::new(OrderedCandidateState {
                     ids: ordered_ids,
                     phase: OrderedCandidatePhase::Collecting {
-                        discovered: BTreeMap::new(),
+                        discovered: BTreeSet::new(),
                     },
                 }),
                 metadata,
@@ -181,10 +181,9 @@ impl RunSelection {
                 ids.iter().find(|id| !matched.contains(*id))
             }
             SelectionState::Ordered { candidates, .. } => match &candidates.phase {
-                OrderedCandidatePhase::Collecting { discovered } => candidates
-                    .ids
-                    .iter()
-                    .find(|id| !discovered.contains_key(*id)),
+                OrderedCandidatePhase::Collecting { discovered } => {
+                    candidates.ids.iter().find(|id| !discovered.contains(*id))
+                }
                 OrderedCandidatePhase::Ready { .. } => None,
             },
         }
@@ -199,28 +198,25 @@ pub(super) struct OrderedCandidateState {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum OrderedCandidatePhase {
-    Collecting {
-        discovered: BTreeMap<String, MutationCandidate>,
-    },
-    Ready {
-        remaining: VecDeque<MutationCandidate>,
-    },
+    Collecting { discovered: BTreeSet<String> },
+    Ready { remaining: VecDeque<String> },
 }
 
 impl OrderedCandidateState {
-    /// Transfers only owned candidates in request order, ending collection even
+    /// Transfers only discovered IDs in request order, ending collection even
     /// when stopped before EOF. Undiscovered requested IDs have no result to emit.
-    pub(super) fn take_remaining(&mut self) -> VecDeque<MutationCandidate> {
+    pub(super) fn take_remaining(&mut self) -> VecDeque<String> {
         match std::mem::replace(
             &mut self.phase,
             OrderedCandidatePhase::Ready {
                 remaining: VecDeque::new(),
             },
         ) {
-            OrderedCandidatePhase::Collecting { mut discovered } => self
+            OrderedCandidatePhase::Collecting { discovered } => self
                 .ids
                 .iter()
-                .filter_map(|id| discovered.remove(id))
+                .filter(|id| discovered.contains(*id))
+                .cloned()
                 .collect(),
             OrderedCandidatePhase::Ready { remaining } => remaining,
         }

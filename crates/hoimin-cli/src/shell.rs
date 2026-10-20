@@ -6,8 +6,8 @@
 //! `run_loop_context` in their audited order when changing scheduling.
 //!
 //! Process tasks own requests and share the process handler; their completions
-//! carry worker accounting through acceptance and join. Workspace-bearing blocking
-//! effects take workspace state or capabilities out of [`ShellContext`];
+//! carry worker accounting through acceptance and join. Blocking effects take
+//! workspace state, capabilities, or the candidate replay owner out of [`ShellContext`];
 //! `accept_blocking_completion` restores returned ownership. A task join alone
 //! does not acknowledge a core effect. At shutdown expiry, `drain_processes`
 //! recovers buffered payloads and accounting before aborting async wrappers;
@@ -74,7 +74,7 @@ use tokio::task::JoinSet;
 use tracing::Instrument;
 use uuid::Uuid;
 
-use crate::analyzer::{AnalyzerHandler, CandidateStore};
+use crate::analyzer::{AnalyzerHandler, CandidateReplay};
 use crate::metrics::{MetricsCollector, MetricsError, finalize_metrics};
 use crate::metrics_destination::{MetricsDestination, validate_metrics_destination};
 use crate::process::{ProcessCancellation, ProcessHandler, ProcessRequest, ProcessStartGate};
@@ -825,7 +825,10 @@ enum CompletionSource {
 
 enum BlockingEffect {
     Workspace(Box<WorkspaceTask>),
-    Candidate(hoimin_core::ReadCandidate),
+    Candidate {
+        request: hoimin_core::ReadCandidate,
+        replay: CandidateReplay,
+    },
     Preflight {
         id: EffectId,
         workspace: Box<WorkspaceHandler>,
@@ -856,7 +859,13 @@ enum BlockingEffect {
 
 enum BlockingEffectCompletion {
     Workspace(Box<WorkspaceTaskCompletion>),
-    Candidate(Box<RunEvent>),
+    Candidate {
+        id: EffectId,
+        replay: CandidateReplay,
+        event: Box<RunEvent>,
+    },
+    #[cfg(test)]
+    TestEvent(Box<RunEvent>),
     OwnedWorkspace {
         id: EffectId,
         workspace: Box<WorkspaceHandler>,
@@ -882,7 +891,7 @@ impl BlockingEffect {
     fn id(&self) -> EffectId {
         match self {
             Self::Workspace(task) => task.id(),
-            Self::Candidate(request) => request.id,
+            Self::Candidate { request, .. } => request.id,
             Self::Preflight { id, .. } => *id,
             Self::Cleanup { id, .. } => *id,
             #[cfg(test)]
@@ -895,8 +904,16 @@ impl BlockingEffect {
     fn execute(self) -> BlockingEffectCompletion {
         match self {
             Self::Workspace(task) => BlockingEffectCompletion::Workspace(Box::new(task.execute())),
-            Self::Candidate(request) => {
-                BlockingEffectCompletion::Candidate(Box::new(replay_candidate(&request)))
+            Self::Candidate {
+                request,
+                mut replay,
+            } => {
+                let event = replay_candidate(&mut replay, &request);
+                BlockingEffectCompletion::Candidate {
+                    id: request.id,
+                    replay,
+                    event: Box::new(event),
+                }
             }
             Self::Preflight {
                 id,
@@ -977,7 +994,7 @@ impl BlockingEffect {
             }
             #[cfg(test)]
             Self::TestOperation { operation, .. } => {
-                BlockingEffectCompletion::Candidate(Box::new(operation()))
+                BlockingEffectCompletion::TestEvent(Box::new(operation()))
             }
             #[cfg(test)]
             Self::TestCompletion { operation, .. } => operation(),
@@ -985,19 +1002,15 @@ impl BlockingEffect {
     }
 }
 
-fn replay_candidate(request: &hoimin_core::ReadCandidate) -> RunEvent {
-    match CandidateStore::replay_one(&request.spool, request.cursor) {
-        Ok(Some((candidate, next_cursor))) => RunEvent::CandidateLoaded(CandidateLoaded {
+fn replay_candidate(
+    replay: &mut CandidateReplay,
+    request: &hoimin_core::ReadCandidate,
+) -> RunEvent {
+    match replay.read(&request.spool, &request.target) {
+        Ok(candidate) => RunEvent::CandidateLoaded(CandidateLoaded {
             id: request.id,
             worker: request.worker,
-            next_cursor,
-            candidate: Some(candidate),
-        }),
-        Ok(None) => RunEvent::CandidateLoaded(CandidateLoaded {
-            id: request.id,
-            worker: request.worker,
-            candidate: None,
-            next_cursor: request.cursor,
+            candidate,
         }),
         Err(error) => RunEvent::EffectFailed(EffectFailed::other(
             request.id,
@@ -1091,7 +1104,16 @@ fn prepare_blocking_effect(
             });
         }
         RunEffect::CreateWorker(request) => context.workspace_mut().prepare_create_task(request),
-        RunEffect::ReadCandidate(request) => return Ok(BlockingEffect::Candidate(request)),
+        RunEffect::ReadCandidate(request) => {
+            let replay = context.candidate_replay.take().ok_or_else(|| {
+                EffectFailed::other(
+                    request.id,
+                    "shell.blocking_io",
+                    "candidate replay ownership is unavailable",
+                )
+            })?;
+            return Ok(BlockingEffect::Candidate { request, replay });
+        }
         RunEffect::ApplyMutation(request) => context.workspace_mut().prepare_apply_task(request),
         RunEffect::ResetWorker(request) => context.workspace_mut().prepare_reset_task(request),
         RunEffect::VerifyOriginals(request) => context.workspace().prepare_verify_task(request),
@@ -1125,7 +1147,19 @@ fn accept_blocking_completion(
             .workspace_mut()
             .accept_task_completion(*completion)
             .unwrap_or_else(RunEvent::EffectFailed),
-        BlockingEffectCompletion::Candidate(event) => *event,
+        BlockingEffectCompletion::Candidate { id, replay, event } => {
+            if context.candidate_replay.is_some() {
+                return RunEvent::EffectFailed(EffectFailed::other(
+                    id,
+                    "shell.blocking_io",
+                    "blocking operation returned duplicate candidate replay ownership",
+                ));
+            }
+            context.candidate_replay = Some(replay);
+            *event
+        }
+        #[cfg(test)]
+        BlockingEffectCompletion::TestEvent(event) => *event,
         BlockingEffectCompletion::OwnedWorkspace {
             id,
             workspace,
@@ -1162,10 +1196,10 @@ fn execute_direct_io_effect(context: &mut ShellContext, effect: RunEffect) -> Ru
             .handle_create_worker(request)
             .map(RunEvent::WorkerCreated),
         RunEffect::ReadCandidate(request) => {
-            return accept_blocking_completion(
-                context,
-                BlockingEffectCompletion::Candidate(Box::new(replay_candidate(&request))),
-            );
+            return match prepare_blocking_effect(context, RunEffect::ReadCandidate(request)) {
+                Ok(task) => accept_blocking_completion(context, task.execute()),
+                Err(error) => RunEvent::EffectFailed(error),
+            };
         }
         RunEffect::ApplyMutation(request) => context
             .workspace_mut()
@@ -2013,6 +2047,7 @@ pub struct ShellContext {
     git: crate::target::git::GitRunner,
     workspace: Option<WorkspaceHandler>,
     analyzer: AnalyzerHandler,
+    candidate_replay: Option<CandidateReplay>,
     process: Arc<ProcessHandler>,
     report: ReportDelivery,
     session: Option<SessionDispatcher>,
@@ -2076,6 +2111,7 @@ impl ShellContext {
             git: crate::target::git::GitRunner::default(),
             workspace: Some(workspace),
             analyzer,
+            candidate_replay: Some(CandidateReplay::new([])),
             process,
             report: ReportDelivery::new(
                 report
@@ -2838,6 +2874,13 @@ async fn run_loop_context(
     let mut finalization_errors = Vec::new();
     let mut disk_lifecycle = ShellDiskLifecycle::new([DiskRootId::Execution, DiskRootId::Delivery])
         .map_err(|error| format!("disk lifecycle initialization failed: {error}"))?;
+    context.candidate_replay = Some(CandidateReplay::new(
+        candidate_selection
+            .ordered_ids()
+            .into_iter()
+            .flatten()
+            .cloned(),
+    ));
     let run_result = async {
         let mut state = Box::new(RunState::with_selection(
             initial_run_id.clone(),
@@ -4054,7 +4097,8 @@ async fn run_loop_context(
                 }
                 ShellCompletion::Blocking(Ok(blocking)) => Some(match blocking.as_ref() {
                     BlockingEffectCompletion::Workspace(completion) => completion.event(),
-                    BlockingEffectCompletion::Candidate(event)
+                    BlockingEffectCompletion::Candidate { event, .. }
+                    | BlockingEffectCompletion::TestEvent(event)
                     | BlockingEffectCompletion::OwnedWorkspace { event, .. } => event.as_ref(),
                 }),
                 ShellCompletion::Blocking(Err(_)) => None,
@@ -5196,7 +5240,12 @@ fn accept_drained_completion(
         } => record_metrics(metrics, metrics_warnings, |metrics| {
             metrics.process_finished(worker, false)
         }),
-        ShellCompletion::Blocking(Ok(blocking)) => accept_blocking(*blocking),
+        ShellCompletion::Blocking(Ok(mut blocking)) => {
+            if let BlockingEffectCompletion::Candidate { replay, .. } = blocking.as_mut() {
+                replay.retire_read();
+            }
+            accept_blocking(*blocking);
+        }
         ShellCompletion::Serial(_)
         | ShellCompletion::Process {
             context: WorkerProcessContext::Baseline(_),
@@ -8742,7 +8791,7 @@ mod tests {
                 token: "spool.jsonl".into(),
                 records: 1,
             },
-            cursor: hoimin_core::CandidateCursor::START,
+            target: hoimin_core::CandidateReadTarget::Next,
         });
         let effects = [
             RunEffect::Preflight(Preflight { id: EffectId(30) }),
@@ -8769,6 +8818,451 @@ mod tests {
 
         assert!(effects.iter().all(is_blocking_io_effect));
         assert!(!is_blocking_io_effect(&process_effect(0)));
+    }
+
+    fn candidate_read_effect(
+        id: u64,
+        spool: hoimin_core::CandidateSpoolRef,
+        target: hoimin_core::CandidateReadTarget,
+    ) -> RunEffect {
+        RunEffect::ReadCandidate(hoimin_core::ReadCandidate {
+            id: EffectId(id),
+            worker: 0,
+            spool,
+            target,
+        })
+    }
+
+    fn waiting_for_sequential_read(
+        config: RunConfig,
+        selection: hoimin_core::RunSelection,
+        spool: &hoimin_core::CandidateSpoolRef,
+    ) -> (RunState, hoimin_core::ReadCandidate) {
+        let jobs = u32::try_from(config.limits.jobs.get()).unwrap();
+        let state = RunState::with_selection(
+            "replay-stop",
+            config,
+            selection,
+            hoimin_core::ResourceControl {
+                mode: ResourceMode::Hard,
+                mechanism: "test".into(),
+            },
+        );
+        let (mut state, effects) =
+            transition(state, RunEvent::StartRequested(StartRequested)).unwrap();
+        let mut pending: VecDeque<_> = effects.into();
+        while let Some(effect) = pending.pop_front() {
+            let event = match effect {
+                RunEffect::ReadCandidate(request) => {
+                    assert!(pending.is_empty());
+                    return (state, request);
+                }
+                RunEffect::ResolveTargets(request) => {
+                    RunEvent::TargetsResolved(hoimin_core::TargetsResolved {
+                        id: request.id,
+                        targets: vec![TargetSlice {
+                            path: "pkg/a.py".into(),
+                            lines: Vec::new(),
+                            symbols: Vec::new(),
+                        }],
+                    })
+                }
+                RunEffect::Preflight(request) => {
+                    RunEvent::PreflightCompleted(hoimin_core::PreflightCompleted {
+                        id: request.id,
+                        per_worker_logical_bytes: 10,
+                        requested_workers: jobs,
+                        aggregate_logical_bytes: 10 * u64::from(jobs),
+                        fingerprint: None,
+                    })
+                }
+                RunEffect::EmitOutput(request) => {
+                    RunEvent::OutputEmitted(hoimin_core::OutputEmitted { id: request.id })
+                }
+                RunEffect::CreateWorker(request) => {
+                    RunEvent::WorkerCreated(hoimin_core::WorkerCreated {
+                        id: request.id(),
+                        worker: request.worker(),
+                        reservation_id: request.reservation_id(),
+                    })
+                }
+                RunEffect::VerifyOriginals(request) => {
+                    RunEvent::OriginalsVerified(hoimin_core::OriginalsVerified {
+                        id: request.id,
+                        checkpoint: request.checkpoint,
+                    })
+                }
+                RunEffect::RunBaseline(request) => {
+                    RunEvent::BaselineFinished(hoimin_core::ProcessFinished {
+                        id: request.id,
+                        worker: Some(request.context.worker),
+                        termination: hoimin_core::ProcessTermination::Exit(0),
+                        output_state: hoimin_core::ProcessOutputState::Complete,
+                        output: hoimin_core::OutputSpoolRef {
+                            token: "baseline".into(),
+                            retained: 0,
+                            observed: 0,
+                        },
+                        elapsed: Duration::from_millis(1),
+                        resource_mode: ResourceMode::Hard,
+                    })
+                }
+                RunEffect::ResetWorker(request) => {
+                    RunEvent::WorkerReset(hoimin_core::WorkerReset {
+                        id: request.id,
+                        worker: request.worker,
+                    })
+                }
+                RunEffect::ObserveRemainingBudget(request) => {
+                    RunEvent::RemainingBudgetObserved(hoimin_core::RemainingBudgetObserved {
+                        id: request.id,
+                        remaining: Duration::from_hours(24),
+                    })
+                }
+                RunEffect::AnalyzeFile(request) => {
+                    RunEvent::AnalysisFinished(hoimin_core::AnalysisFinished {
+                        id: request.id,
+                        spool: Some(spool.clone()),
+                        truncated: false,
+                        diagnostics: Vec::new(),
+                    })
+                }
+                unexpected => panic!("unexpected setup effect: {unexpected:?}"),
+            };
+            let effects;
+            (state, effects) = transition(state, event).unwrap();
+            pending.extend(effects);
+        }
+        panic!("setup did not request its first candidate");
+    }
+
+    async fn outputs_after_unaccepted_sequential_reads(
+        explicit: bool,
+        retirements: usize,
+    ) -> Vec<OutputEvent> {
+        let (project, _managed_parent, mut context, mut first, _create) =
+            context_with_worker().await;
+        first.id = "first".into();
+        let mut second = first.clone();
+        second.id = "second".into();
+        second.sequence = 2;
+        let mut store = crate::analyzer::CandidateStore::new_in(2, project.path()).unwrap();
+        store.push(&first).unwrap();
+        store.push(&second).unwrap();
+        let spool = store.finish().unwrap();
+        let selection = if explicit {
+            hoimin_core::RunSelection::explicit(
+                [first.id],
+                hoimin_core::VerificationSelection::candidate_ids(1, 1, false).unwrap(),
+            )
+            .unwrap()
+        } else {
+            hoimin_core::RunSelection::all()
+        };
+        let (mut state, first_read) =
+            waiting_for_sequential_read(context.config.clone(), selection, &spool);
+        let mut pending = VecDeque::from([RunEffect::ReadCandidate(first_read)]);
+        let mut retired = 0;
+        let mut outputs = Vec::new();
+        while let Some(effect) = pending.pop_front() {
+            let event = match effect {
+                RunEffect::ReadCandidate(request) => {
+                    let id = request.id;
+                    let task =
+                        prepare_blocking_effect(&mut context, RunEffect::ReadCandidate(request))
+                            .unwrap();
+                    // The real file read finishes before core observes the stop.
+                    let completion = task.execute();
+                    if retired < retirements {
+                        let (next, effects) =
+                            transition(state, RunEvent::CancellationRequested).unwrap();
+                        state = next;
+                        assert!(state.is_effect_retired(id));
+                        pending.extend(effects);
+                        let mut in_flight = 1;
+                        accept_drained_completion(
+                            ShellCompletion::Blocking(Ok(Box::new(completion))),
+                            &mut in_flight,
+                            &mut None,
+                            &mut Vec::new(),
+                            &mut |completion| {
+                                let _ = accept_blocking_completion(&mut context, completion);
+                            },
+                        );
+                        assert_eq!(in_flight, 0);
+                        retired += 1;
+                        continue;
+                    }
+                    accept_blocking_completion(&mut context, completion)
+                }
+                RunEffect::EmitOutput(request) => {
+                    outputs.push(request.event);
+                    RunEvent::OutputEmitted(hoimin_core::OutputEmitted { id: request.id })
+                }
+                RunEffect::VerifyOriginals(request) => {
+                    RunEvent::OriginalsVerified(hoimin_core::OriginalsVerified {
+                        id: request.id,
+                        checkpoint: request.checkpoint,
+                    })
+                }
+                RunEffect::Cleanup(request) => {
+                    RunEvent::CleanupFinished(hoimin_core::CleanupFinished {
+                        id: request.id,
+                        released_reservations: request.reservations,
+                    })
+                }
+                unexpected => panic!("unexpected stopped effect: {unexpected:?}"),
+            };
+            let effects;
+            (state, effects) = transition(state, event).unwrap();
+            pending.extend(effects);
+        }
+        assert_eq!(retired, retirements);
+        assert_eq!(state.phase(), RunPhase::Finished);
+        outputs
+    }
+
+    fn finished_id_status(outputs: &[OutputEvent]) -> Vec<(&str, hoimin_core::MutationStatus)> {
+        outputs
+            .iter()
+            .filter_map(|event| match event {
+                OutputEvent::MutantFinished(value) => {
+                    Some((value.candidate.id.as_str(), value.outcome.status()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn unaccepted_sequential_read_reports_every_candidate_after_all_selection_stops() {
+        // Arrange / Act: stop after the first real read but before core acceptance.
+        let outputs = outputs_after_unaccepted_sequential_reads(false, 1).await;
+
+        // Assert.
+        assert_eq!(
+            finished_id_status(&outputs),
+            [
+                ("first", hoimin_core::MutationStatus::NotRun),
+                ("second", hoimin_core::MutationStatus::NotRun),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn unaccepted_sequential_read_preserves_explicit_selected_membership_after_stop() {
+        // Arrange / Act.
+        let outputs = outputs_after_unaccepted_sequential_reads(true, 1).await;
+
+        // Assert.
+        assert_eq!(
+            finished_id_status(&outputs),
+            [("first", hoimin_core::MutationStatus::NotRun)]
+        );
+        assert!(
+            !outputs
+                .iter()
+                .any(|event| matches!(event, OutputEvent::Diagnostic(_)))
+        );
+    }
+
+    #[tokio::test]
+    async fn unaccepted_sequential_read_survives_repeated_stop_without_duplicate_reports() {
+        // Arrange / Act: the retried first record is also retired before acceptance.
+        let outputs = outputs_after_unaccepted_sequential_reads(false, 2).await;
+
+        // Assert.
+        assert_eq!(
+            finished_id_status(&outputs),
+            [
+                ("first", hoimin_core::MutationStatus::NotRun),
+                ("second", hoimin_core::MutationStatus::NotRun),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn candidate_completion_returns_the_index_for_later_selected_reads() {
+        // Arrange.
+        let (project, _managed_parent, mut context, candidate, _create) =
+            context_with_worker().await;
+        let mut store = crate::analyzer::CandidateStore::new_in(1, project.path()).unwrap();
+        store.push(&candidate).unwrap();
+        let spool = store.finish().unwrap();
+        context.candidate_replay = Some(CandidateReplay::new([candidate.id.clone()]));
+        let task = prepare_blocking_effect(
+            &mut context,
+            candidate_read_effect(301, spool.clone(), hoimin_core::CandidateReadTarget::Next),
+        )
+        .unwrap();
+        assert!(context.candidate_replay.is_none());
+
+        // Act.
+        let completion = task.execute();
+        let discovered = accept_blocking_completion(&mut context, completion);
+        let selected = execute_effect(
+            &mut context,
+            candidate_read_effect(
+                302,
+                spool,
+                hoimin_core::CandidateReadTarget::Id(candidate.id.clone()),
+            ),
+        )
+        .await;
+
+        // Assert.
+        assert!(matches!(
+            discovered,
+            RunEvent::CandidateLoaded(CandidateLoaded { candidate: Some(value), .. })
+                if value == candidate
+        ));
+        assert!(matches!(
+            selected,
+            RunEvent::CandidateLoaded(CandidateLoaded { candidate: Some(value), .. })
+                if value == candidate
+        ));
+    }
+
+    #[tokio::test]
+    async fn candidate_replay_error_returns_the_reader_without_advancing_the_scan() {
+        // Arrange.
+        let (project, _managed_parent, mut context, first, _create) = context_with_worker().await;
+        let mut second = first.clone();
+        second.sequence = 2;
+        second.id = "second".into();
+        let mut store = crate::analyzer::CandidateStore::new_in(2, project.path()).unwrap();
+        store.push(&first).unwrap();
+        store.push(&second).unwrap();
+        let spool = store.finish().unwrap();
+        execute_effect(
+            &mut context,
+            candidate_read_effect(303, spool.clone(), hoimin_core::CandidateReadTarget::Next),
+        )
+        .await;
+        let original = std::fs::read(&spool.token).unwrap();
+        let mut corrupt = original.clone();
+        let tail = corrupt.iter().position(|byte| *byte == b'\n').unwrap() + 1;
+        corrupt[tail] = b'!';
+        std::fs::write(&spool.token, corrupt).unwrap();
+
+        // Act.
+        let failed = execute_effect(
+            &mut context,
+            candidate_read_effect(304, spool.clone(), hoimin_core::CandidateReadTarget::Next),
+        )
+        .await;
+        std::fs::write(&spool.token, original).unwrap();
+        let retried = execute_effect(
+            &mut context,
+            candidate_read_effect(305, spool, hoimin_core::CandidateReadTarget::Next),
+        )
+        .await;
+
+        // Assert.
+        assert!(matches!(
+            failed,
+            RunEvent::EffectFailed(error) if error.failure.code() == "candidate.replay"
+        ));
+        assert!(matches!(
+            retried,
+            RunEvent::CandidateLoaded(CandidateLoaded { candidate: Some(value), .. })
+                if value == second
+        ));
+    }
+
+    #[tokio::test]
+    async fn candidate_reader_cannot_be_taken_by_two_blocking_tasks() {
+        // Arrange.
+        let (project, _managed_parent, mut context, candidate, _create) =
+            context_with_worker().await;
+        let mut store = crate::analyzer::CandidateStore::new_in(1, project.path()).unwrap();
+        store.push(&candidate).unwrap();
+        let spool = store.finish().unwrap();
+        let task = prepare_blocking_effect(
+            &mut context,
+            candidate_read_effect(306, spool.clone(), hoimin_core::CandidateReadTarget::Next),
+        )
+        .unwrap();
+
+        // Act.
+        let duplicate = prepare_blocking_effect(
+            &mut context,
+            candidate_read_effect(307, spool, hoimin_core::CandidateReadTarget::Next),
+        );
+        let restored = accept_blocking_completion(&mut context, task.execute());
+
+        // Assert.
+        assert!(matches!(
+            duplicate,
+            Err(error) if error.id == EffectId(307) && error.failure.code() == "shell.blocking_io"
+        ));
+        assert!(matches!(restored, RunEvent::CandidateLoaded(_)));
+        assert!(context.candidate_replay.is_some());
+    }
+
+    #[tokio::test]
+    async fn shutdown_drain_returns_the_candidate_index_for_stopped_reads() {
+        // Arrange.
+        let (project, _managed_parent, mut context, candidate, _create) =
+            context_with_worker().await;
+        let mut store = crate::analyzer::CandidateStore::new_in(1, project.path()).unwrap();
+        store.push(&candidate).unwrap();
+        let spool = store.finish().unwrap();
+        context.candidate_replay = Some(CandidateReplay::new([candidate.id.clone()]));
+        let task = prepare_blocking_effect(
+            &mut context,
+            candidate_read_effect(308, spool.clone(), hoimin_core::CandidateReadTarget::Next),
+        )
+        .unwrap();
+        let (sender, mut receiver) = mpsc::channel(1);
+        let mut io_tasks = JoinSet::new();
+        spawn_blocking_effect(task, sender, &mut io_tasks);
+        let mut process_tasks = JoinSet::new();
+        let mut in_flight = 1;
+        let mut metrics = None;
+        let mut warnings = Vec::new();
+        let mut expiry_reported = false;
+        let budget = ShutdownBudget::after_observation_with_grace(
+            ShutdownCause::Cancellation,
+            tokio::time::Instant::now(),
+            Duration::from_secs(5),
+        );
+
+        // Act: shutdown accepts ownership even though it discards the candidate event.
+        drain_processes(
+            &mut process_tasks,
+            &mut io_tasks,
+            &mut receiver,
+            &mut in_flight,
+            &budget,
+            &mut expiry_reported,
+            &mut metrics,
+            &mut warnings,
+            |completion| {
+                let _ = accept_blocking_completion(&mut context, completion);
+            },
+        )
+        .await
+        .unwrap();
+        let stopped = execute_effect(
+            &mut context,
+            candidate_read_effect(
+                309,
+                spool,
+                hoimin_core::CandidateReadTarget::Id(candidate.id.clone()),
+            ),
+        )
+        .await;
+
+        // Assert.
+        assert_eq!(in_flight, 0);
+        assert_eq!(warnings, Vec::new());
+        assert!(!expiry_reported);
+        assert!(matches!(
+            stopped,
+            RunEvent::CandidateLoaded(CandidateLoaded { candidate: Some(value), .. })
+                if value == candidate
+        ));
     }
 
     #[test]

@@ -8,10 +8,8 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use hoimin_cli::analyzer::{AnalyzerHandler, CandidateStore};
-use hoimin_core::{
-    AnalyzeFile, CandidateCursor, EffectId, MutationOperatorSelection, MutationProfile, TargetSlice,
-};
+use hoimin_cli::analyzer::{AnalyzerHandler, CandidateCursor, CandidateStore};
+use hoimin_core::{AnalyzeFile, EffectId, MutationOperatorSelection, MutationProfile, TargetSlice};
 use serde::Deserialize;
 
 const CORPUS: &str =

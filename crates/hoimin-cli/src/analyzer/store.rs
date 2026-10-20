@@ -1,14 +1,29 @@
+use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use hoimin_core::{
-    CandidateCursor, CandidateSpoolRef, ContractInvariant, MutationCandidate, contract_ensure,
+    CandidateReadTarget, CandidateSpoolRef, ContractInvariant, MutationCandidate, contract_ensure,
 };
 use tempfile::NamedTempFile;
 use thiserror::Error;
 
 pub const MAX_SPOOL_RECORD_BYTES: u64 = 2 * 1024 * 1024;
+
+/// A physical JSONL record position, owned by the I/O replay layer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CandidateCursor {
+    pub offset: u64,
+    pub expected_sequence: u64,
+}
+
+impl CandidateCursor {
+    pub const START: Self = Self {
+        offset: 0,
+        expected_sequence: 1,
+    };
+}
 
 #[derive(Debug, Error)]
 pub enum StoreError {
@@ -33,6 +48,95 @@ pub enum StoreError {
     Io(String),
     #[error("candidate spool record is corrupt: {0}")]
     CorruptRecord(String),
+    #[error("candidate replay cannot switch spool references")]
+    SpoolMismatch,
+    #[error("candidate {id:?} has no indexed spool record")]
+    MissingCandidate { id: String },
+    #[error("indexed candidate identity mismatch: expected {expected:?}, got {actual:?}")]
+    CandidateIdMismatch { expected: String, actual: String },
+}
+
+/// Owns one sequential scan and positions for requested ordered candidates.
+///
+/// Only successful sequential reads update the index. Repeated IDs replace their
+/// earlier position; indexed reads neither advance the scan nor retain bodies.
+pub struct CandidateReplay {
+    spool: Option<CandidateSpoolRef>,
+    cursor: CandidateCursor,
+    last_sequential_start: Option<CandidateCursor>,
+    selected: BTreeMap<String, Option<CandidateCursor>>,
+}
+
+impl CandidateReplay {
+    #[must_use]
+    pub fn new(ordered_ids: impl IntoIterator<Item = String>) -> Self {
+        Self {
+            spool: None,
+            cursor: CandidateCursor::START,
+            last_sequential_start: None,
+            selected: ordered_ids.into_iter().map(|id| (id, None)).collect(),
+        }
+    }
+
+    /// Reads the next discovery record or directly seeks a discovered selected ID.
+    ///
+    /// # Errors
+    ///
+    /// Rejects a different spool, missing indexed IDs, mismatched identities, and
+    /// the I/O or record errors reported by [`CandidateStore::replay_one`].
+    pub fn read(
+        &mut self,
+        spool: &CandidateSpoolRef,
+        target: &CandidateReadTarget,
+    ) -> Result<Option<MutationCandidate>, StoreError> {
+        self.last_sequential_start = None;
+        match &self.spool {
+            Some(bound) if bound != spool => return Err(StoreError::SpoolMismatch),
+            None => self.spool = Some(spool.clone()),
+            Some(_) => {}
+        }
+        match target {
+            CandidateReadTarget::Next => {
+                let Some((candidate, next)) = CandidateStore::replay_one(spool, self.cursor)?
+                else {
+                    return Ok(None);
+                };
+                if let Some(position) = self.selected.get_mut(&candidate.id) {
+                    *position = Some(self.cursor);
+                }
+                self.last_sequential_start = Some(self.cursor);
+                self.cursor = next;
+                Ok(Some(candidate))
+            }
+            CandidateReadTarget::Id(id) => {
+                let missing = || StoreError::MissingCandidate { id: id.clone() };
+                let cursor = self
+                    .selected
+                    .get(id)
+                    .copied()
+                    .flatten()
+                    .ok_or_else(missing)?;
+                let (candidate, _) =
+                    CandidateStore::replay_one(spool, cursor)?.ok_or_else(missing)?;
+                if candidate.id != *id {
+                    return Err(StoreError::CandidateIdMismatch {
+                        expected: id.clone(),
+                        actual: candidate.id,
+                    });
+                }
+                Ok(Some(candidate))
+            }
+        }
+    }
+
+    /// A drained completion returns ownership without accepting its record into
+    /// core. Rewind only that read so a stopped streaming run can read it again.
+    /// Ordered discovery keeps its index; core separately owns accepted membership.
+    pub(crate) fn retire_read(&mut self) {
+        if let Some(cursor) = self.last_sequential_start.take() {
+            self.cursor = cursor;
+        }
+    }
 }
 
 pub struct CandidateStore {
@@ -244,6 +348,10 @@ fn read_one_bounded(
     let read = reader
         .read_until(b'\n', &mut line)
         .map_err(|error| io_error(&error))?;
+    #[cfg(test)]
+    if read > 0 {
+        RECORD_READS.set(RECORD_READS.get() + 1);
+    }
     if read == 0 {
         return Err(StoreError::UnexpectedEof {
             expected_records: reference.records,
@@ -325,10 +433,21 @@ impl Write for CountingWriter {
 }
 
 #[cfg(test)]
+thread_local! {
+    // Count record work in the bounded reader, including indexed seeks and
+    // malformed records, rather than counting calls to the replay facade.
+    static RECORD_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+#[path = "store_replay_tests.rs"]
+mod replay_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use camino::Utf8PathBuf;
-    use hoimin_core::{ByteSpan, CandidateCursor};
+    use hoimin_core::ByteSpan;
     use proptest::prelude::*;
 
     #[derive(Clone, Debug)]
