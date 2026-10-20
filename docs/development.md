@@ -5,6 +5,11 @@ procedure for your task, then consult the linked contracts and implementation.
 For using hoimin to improve another project's tests, see the
 [plan/verify workflow](usage.md#plan-and-verify-with-an-agent).
 
+Maintain the current CLI and saved formats without cross-version compatibility
+requirements. The intended workflow is local and short-lived; do not assume
+users' CI integrations or long-term plan retention. Follow the
+[change policy](compatibility.md) when changing usage or formats.
+
 For the runtime boundary, component responsibilities and execution flow, start
 with the [C4 architecture views](architecture/c4-model.md), maintained as Markdown
 and Mermaid in the repository.

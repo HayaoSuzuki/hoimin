@@ -1,9 +1,9 @@
 # Building and releasing hoimin
 
-Use the [compatibility policy](compatibility.md) to classify public-interface,
-default-operator and package changes before choosing a version floor. The PR
-template records the decision and migration notice; generated release notes
-do not make that decision automatically.
+Use the [change policy](compatibility.md) to describe current usage, formats,
+defaults and package requirements in the PR template. Keep the version floor
+unless deliberately choosing a new release series; incompatible CLI or format
+changes do not require an increase. Generated release notes summarize the PRs.
 
 ## Build and verify a wheel
 

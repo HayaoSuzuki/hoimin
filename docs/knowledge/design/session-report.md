@@ -22,9 +22,9 @@ sources:
   sha256: 32bc287a216836d6f5c97f829e5c66960e448c5f4d01980838fe8b6cfc645c66
 - id: issue-1028-compatibility
   resource: ../../compatibility.md
-  revision: 1f7feae33fa310aae87fbadb390105f6d770439d
+  revision: 4759e485282bbf212687a814ddf7bd4f9d1c9aa3
   working_tree: modified
-  sha256: 8d3c298a1ee6c39900b5c4d23e694d859bbab2e76a7349fe7e922ea5d6d75a82
+  sha256: 87096a1e8a6486afd86bed2df9a7d7cfb2ccb919b561c2d49843e09a0cc77280
 - id: issue-1027-report
   resource: ../../../crates/hoimin-core/src/report.rs
   revision: 05c909c54a3bdf3485db2c833456fabe83c7dfaf
@@ -832,14 +832,13 @@ sets, and duplicate-identity input rejection. They compare the current output
 with a shared golden and retain JSONL, human output and input-reader
 regressions.[^issue-1028-tests]
 
-This public output change raises the package floor to 0.15.0. Consumers keep
-existing invocations, require output version 3 and distinguish null details from
-an unavailable requested object. Report/event schema 9, plan schema 10, session
-schema 5 and fingerprint schema 13 are unchanged. See the migration notice for
-saved-output handling; a progress output version is independent of the report
-input version.[^issue-1028-compatibility]
+The package floor remains 0.14.0. The current-format policy does not require
+backward compatibility or a minor-version increase for this output change.
+Report/event schema 9, plan schema 10, session schema 5 and fingerprint schema 13
+are unchanged. A progress output version is independent of the report input
+version.[^issue-1028-compatibility]
 
-The sources record local changes against `1f7feae33fa310aae87fbadb390105f6d770439d`.
+The sources record their comparison revisions and content hashes.
 The focused checks ran on macOS; this entry does not claim Linux or Windows
 execution. Recheck these claims when changing JSON serialization, details
 selection, display limits, schema definitions or exit policy.
@@ -847,4 +846,4 @@ selection, display limits, schema definitions or exit policy.
 [^issue-1028-render]: [Progress JSON rendering](../../../crates/hoimin-cli/src/progress/render.rs).
 [^issue-1028-schema]: [Current progress schema](../../json-schema/progress-result.schema.json).
 [^issue-1028-tests]: [Progress integration and schema checks](../../../crates/hoimin-cli/tests/progress.rs).
-[^issue-1028-compatibility]: [Progress output migration](../../compatibility.md#single-progress-output-schema-in-0150).
+[^issue-1028-compatibility]: [Current-format policy and progress output](../../compatibility.md).
