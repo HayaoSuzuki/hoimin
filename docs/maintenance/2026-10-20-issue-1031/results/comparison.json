@@ -1,0 +1,704 @@
+[
+  {
+    "case": "io-large",
+    "scan": {
+      "retained_bytes": {
+        "baseline": 2960018,
+        "changed": 448144
+      },
+      "peak_bytes": {
+        "baseline": 2970507,
+        "changed": 460834
+      },
+      "elapsed_ns": {
+        "baseline": 12992791,
+        "changed": 13277792
+      },
+      "records_read": {
+        "baseline": 1024,
+        "changed": 1024
+      }
+    },
+    "saturation": {
+      "retained_bytes": {
+        "baseline": 2681536,
+        "changed": 439826
+      },
+      "peak_bytes": {
+        "baseline": 2970507,
+        "changed": 538186
+      },
+      "elapsed_ns": {
+        "baseline": 13177000,
+        "changed": 13480333
+      },
+      "records_read": {
+        "baseline": 1024,
+        "changed": 1028
+      }
+    },
+    "drained": {
+      "retained_bytes": {
+        "baseline": 419539,
+        "changed": 357569
+      },
+      "peak_bytes": {
+        "baseline": 2970507,
+        "changed": 538186
+      },
+      "elapsed_ns": {
+        "baseline": 18913250,
+        "changed": 33160917
+      },
+      "records_read": {
+        "baseline": 1024,
+        "changed": 2048
+      }
+    }
+  },
+  {
+    "case": "io-medium",
+    "scan": {
+      "retained_bytes": {
+        "baseline": 1479706,
+        "changed": 227424
+      },
+      "peak_bytes": {
+        "baseline": 1490194,
+        "changed": 240113
+      },
+      "elapsed_ns": {
+        "baseline": 6511375,
+        "changed": 6487083
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 512
+      }
+    },
+    "saturation": {
+      "retained_bytes": {
+        "baseline": 1348696,
+        "changed": 232522
+      },
+      "peak_bytes": {
+        "baseline": 1490194,
+        "changed": 272410
+      },
+      "elapsed_ns": {
+        "baseline": 6614208,
+        "changed": 6617625
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 516
+      }
+    },
+    "drained": {
+      "retained_bytes": {
+        "baseline": 213611,
+        "changed": 183033
+      },
+      "peak_bytes": {
+        "baseline": 1490194,
+        "changed": 272410
+      },
+      "elapsed_ns": {
+        "baseline": 9566250,
+        "changed": 16271916
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 1024
+      }
+    }
+  },
+  {
+    "case": "io-small",
+    "scan": {
+      "retained_bytes": {
+        "baseline": 744074,
+        "changed": 118560
+      },
+      "peak_bytes": {
+        "baseline": 754562,
+        "changed": 131249
+      },
+      "elapsed_ns": {
+        "baseline": 3311542,
+        "changed": 3369166
+      },
+      "records_read": {
+        "baseline": 256,
+        "changed": 256
+      }
+    },
+    "saturation": {
+      "retained_bytes": {
+        "baseline": 682888,
+        "changed": 129754
+      },
+      "peak_bytes": {
+        "baseline": 754562,
+        "changed": 141018
+      },
+      "elapsed_ns": {
+        "baseline": 3370709,
+        "changed": 3470666
+      },
+      "records_read": {
+        "baseline": 256,
+        "changed": 260
+      }
+    },
+    "drained": {
+      "retained_bytes": {
+        "baseline": 111259,
+        "changed": 96649
+      },
+      "peak_bytes": {
+        "baseline": 754562,
+        "changed": 141018
+      },
+      "elapsed_ns": {
+        "baseline": 4844042,
+        "changed": 8241958
+      },
+      "records_read": {
+        "baseline": 256,
+        "changed": 512
+      }
+    }
+  },
+  {
+    "case": "jobs-eight",
+    "scan": {
+      "retained_bytes": {
+        "baseline": 2320010,
+        "changed": 121632
+      },
+      "peak_bytes": {
+        "baseline": 2344522,
+        "changed": 154489
+      },
+      "elapsed_ns": {
+        "baseline": 7574750,
+        "changed": 7578708
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 512
+      }
+    },
+    "saturation": {
+      "retained_bytes": {
+        "baseline": 2316780,
+        "changed": 248482
+      },
+      "peak_bytes": {
+        "baseline": 2344522,
+        "changed": 264911
+      },
+      "elapsed_ns": {
+        "baseline": 7639875,
+        "changed": 7758000
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 520
+      }
+    },
+    "drained": {
+      "retained_bytes": {
+        "baseline": 114331,
+        "changed": 99721
+      },
+      "peak_bytes": {
+        "baseline": 2344522,
+        "changed": 264911
+      },
+      "elapsed_ns": {
+        "baseline": 11016166,
+        "changed": 14944625
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 768
+      }
+    }
+  },
+  {
+    "case": "jobs-one",
+    "scan": {
+      "retained_bytes": {
+        "baseline": 2316938,
+        "changed": 118560
+      },
+      "peak_bytes": {
+        "baseline": 2341450,
+        "changed": 151417
+      },
+      "elapsed_ns": {
+        "baseline": 7608209,
+        "changed": 7602750
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 512
+      }
+    },
+    "saturation": {
+      "retained_bytes": {
+        "baseline": 2255293,
+        "changed": 128924
+      },
+      "peak_bytes": {
+        "baseline": 2341450,
+        "changed": 151417
+      },
+      "elapsed_ns": {
+        "baseline": 7671375,
+        "changed": 7664416
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 513
+      }
+    },
+    "drained": {
+      "retained_bytes": {
+        "baseline": 111259,
+        "changed": 96545
+      },
+      "peak_bytes": {
+        "baseline": 2341450,
+        "changed": 151417
+      },
+      "elapsed_ns": {
+        "baseline": 10963250,
+        "changed": 14951625
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 768
+      }
+    }
+  },
+  {
+    "case": "payload-large",
+    "scan": {
+      "retained_bytes": {
+        "baseline": 16997002,
+        "changed": 118560
+      },
+      "peak_bytes": {
+        "baseline": 17136202,
+        "changed": 323449
+      },
+      "elapsed_ns": {
+        "baseline": 17079541,
+        "changed": 16192292
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 512
+      }
+    },
+    "saturation": {
+      "retained_bytes": {
+        "baseline": 17189768,
+        "changed": 637658
+      },
+      "peak_bytes": {
+        "baseline": 17258529,
+        "changed": 711431
+      },
+      "elapsed_ns": {
+        "baseline": 17169875,
+        "changed": 16410292
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 516
+      }
+    },
+    "drained": {
+      "retained_bytes": {
+        "baseline": 111259,
+        "changed": 96649
+      },
+      "peak_bytes": {
+        "baseline": 17258529,
+        "changed": 711431
+      },
+      "elapsed_ns": {
+        "baseline": 33922875,
+        "changed": 40894584
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 768
+      }
+    }
+  },
+  {
+    "case": "payload-small",
+    "scan": {
+      "retained_bytes": {
+        "baseline": 236170,
+        "changed": 118560
+      },
+      "peak_bytes": {
+        "baseline": 244674,
+        "changed": 127281
+      },
+      "elapsed_ns": {
+        "baseline": 7629625,
+        "changed": 10224375
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 512
+      }
+    },
+    "saturation": {
+      "retained_bytes": {
+        "baseline": 167048,
+        "changed": 113882
+      },
+      "peak_bytes": {
+        "baseline": 244674,
+        "changed": 141018
+      },
+      "elapsed_ns": {
+        "baseline": 7690625,
+        "changed": 10375208
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 516
+      }
+    },
+    "drained": {
+      "retained_bytes": {
+        "baseline": 111259,
+        "changed": 96649
+      },
+      "peak_bytes": {
+        "baseline": 244674,
+        "changed": 141018
+      },
+      "elapsed_ns": {
+        "baseline": 8531334,
+        "changed": 16293125
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 768
+      }
+    }
+  },
+  {
+    "case": "pivot",
+    "scan": {
+      "retained_bytes": {
+        "baseline": 2316938,
+        "changed": 118560
+      },
+      "peak_bytes": {
+        "baseline": 2341450,
+        "changed": 151417
+      },
+      "elapsed_ns": {
+        "baseline": 7496792,
+        "changed": 7715209
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 512
+      }
+    },
+    "saturation": {
+      "retained_bytes": {
+        "baseline": 2280328,
+        "changed": 178906
+      },
+      "peak_bytes": {
+        "baseline": 2341450,
+        "changed": 195335
+      },
+      "elapsed_ns": {
+        "baseline": 7555208,
+        "changed": 7828542
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 516
+      }
+    },
+    "drained": {
+      "retained_bytes": {
+        "baseline": 111259,
+        "changed": 96649
+      },
+      "peak_bytes": {
+        "baseline": 2341450,
+        "changed": 195335
+      },
+      "elapsed_ns": {
+        "baseline": 10849583,
+        "changed": 15173334
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 768
+      }
+    }
+  },
+  {
+    "case": "sample",
+    "scan": {
+      "retained_bytes": {
+        "baseline": 2337314,
+        "changed": 138936
+      },
+      "peak_bytes": {
+        "baseline": 2361826,
+        "changed": 171793
+      },
+      "elapsed_ns": {
+        "baseline": 7587416,
+        "changed": 7698167
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 512
+      }
+    },
+    "saturation": {
+      "retained_bytes": {
+        "baseline": 2300704,
+        "changed": 199282
+      },
+      "peak_bytes": {
+        "baseline": 2361826,
+        "changed": 215711
+      },
+      "elapsed_ns": {
+        "baseline": 7662083,
+        "changed": 7836125
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 516
+      }
+    },
+    "drained": {
+      "retained_bytes": {
+        "baseline": 131635,
+        "changed": 117025
+      },
+      "peak_bytes": {
+        "baseline": 2361826,
+        "changed": 215711
+      },
+      "elapsed_ns": {
+        "baseline": 11014833,
+        "changed": 15297125
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 768
+      }
+    }
+  },
+  {
+    "case": "selected-large",
+    "scan": {
+      "retained_bytes": {
+        "baseline": 4625434,
+        "changed": 227424
+      },
+      "peak_bytes": {
+        "baseline": 4649946,
+        "changed": 260281
+      },
+      "elapsed_ns": {
+        "baseline": 8419291,
+        "changed": 7889791
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 512
+      }
+    },
+    "saturation": {
+      "retained_bytes": {
+        "baseline": 4519000,
+        "changed": 281674
+      },
+      "peak_bytes": {
+        "baseline": 4649946,
+        "changed": 298103
+      },
+      "elapsed_ns": {
+        "baseline": 8532208,
+        "changed": 8045375
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 516
+      }
+    },
+    "drained": {
+      "retained_bytes": {
+        "baseline": 213611,
+        "changed": 183033
+      },
+      "peak_bytes": {
+        "baseline": 4649946,
+        "changed": 298103
+      },
+      "elapsed_ns": {
+        "baseline": 15341417,
+        "changed": 23436958
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 1024
+      }
+    }
+  },
+  {
+    "case": "selected-small",
+    "scan": {
+      "retained_bytes": {
+        "baseline": 583946,
+        "changed": 35936
+      },
+      "peak_bytes": {
+        "baseline": 608458,
+        "changed": 68793
+      },
+      "elapsed_ns": {
+        "baseline": 7964583,
+        "changed": 7781708
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 512
+      }
+    },
+    "saturation": {
+      "retained_bytes": {
+        "baseline": 601064,
+        "changed": 101114
+      },
+      "peak_bytes": {
+        "baseline": 612481,
+        "changed": 117543
+      },
+      "elapsed_ns": {
+        "baseline": 7989792,
+        "changed": 7889083
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 516
+      }
+    },
+    "drained": {
+      "retained_bytes": {
+        "baseline": 34235,
+        "changed": 31145
+      },
+      "peak_bytes": {
+        "baseline": 612481,
+        "changed": 117543
+      },
+      "elapsed_ns": {
+        "baseline": 8829792,
+        "changed": 9705833
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 576
+      }
+    }
+  },
+  {
+    "case": "stopped",
+    "scan": {
+      "retained_bytes": {
+        "baseline": 16997002,
+        "changed": 118560
+      },
+      "peak_bytes": {
+        "baseline": 17136202,
+        "changed": 323449
+      },
+      "elapsed_ns": {
+        "baseline": 15939083,
+        "changed": 15111834
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 512
+      }
+    },
+    "saturation": {
+      "retained_bytes": {
+        "baseline": 17189768,
+        "changed": 637658
+      },
+      "peak_bytes": {
+        "baseline": 17258529,
+        "changed": 711431
+      },
+      "elapsed_ns": {
+        "baseline": 16020917,
+        "changed": 15314625
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 516
+      }
+    },
+    "stopped": {
+      "retained_bytes": {
+        "baseline": 16959961,
+        "changed": 452803
+      },
+      "peak_bytes": {
+        "baseline": 17366282,
+        "changed": 859124
+      },
+      "elapsed_ns": {
+        "baseline": 16058750,
+        "changed": 15344250
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 516
+      }
+    },
+    "drained": {
+      "retained_bytes": {
+        "baseline": 144131,
+        "changed": 174473
+      },
+      "peak_bytes": {
+        "baseline": 17366282,
+        "changed": 859124
+      },
+      "elapsed_ns": {
+        "baseline": 29935417,
+        "changed": 36702000
+      },
+      "records_read": {
+        "baseline": 512,
+        "changed": 768
+      }
+    }
+  }
+]

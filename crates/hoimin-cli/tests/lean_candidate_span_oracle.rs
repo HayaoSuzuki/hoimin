@@ -8,11 +8,11 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use camino::{Utf8Path, Utf8PathBuf};
-use hoimin_cli::analyzer::CandidateStore;
+use hoimin_cli::analyzer::{CandidateCursor, CandidateStore};
 use hoimin_cli::session::SessionHandler;
 use hoimin_cli::workspace::{CopyOptions, WorkerWorkspace, WorkspaceError, WorkspacePlan};
 use hoimin_core::{
-    ApplyMutation, BeginSession, BudgetLedger, ByteSpan, CANDIDATE_SCHEMA_VERSION, CandidateCursor,
+    ApplyMutation, BeginSession, BudgetLedger, ByteSpan, CANDIDATE_SCHEMA_VERSION,
     CandidateDescriptor, CandidateIdentity, CandidateValidationError, EffectId, LookupStoredResult,
     MutantResult, MutationCandidate, MutationStatus, PersistResult, ResourceMode, RunBudgets,
     RunFingerprint, reserve_workspace_copy, stable_mutant_id, validate_candidate,

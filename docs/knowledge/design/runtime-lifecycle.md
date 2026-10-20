@@ -5,6 +5,21 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1031-machine
+  resource: ../../../crates/hoimin-core/src/machine.rs
+  revision: 3054427a1b1b9a7d2f5cdd1b6ce62053e6c417ac
+  working_tree: modified
+  sha256: ae1fcd59f16775c4d7306ec5384d6533bddbf9965fd39852a307a72d0cd4184f
+- id: issue-1031-store
+  resource: ../../../crates/hoimin-cli/src/analyzer/store.rs
+  revision: 3054427a1b1b9a7d2f5cdd1b6ce62053e6c417ac
+  working_tree: modified
+  sha256: 989870eabbed3c164022ef6f795572a45d9317353917b896402b9e998cbb7dcd
+- id: issue-1031-shell
+  resource: ../../../crates/hoimin-cli/src/shell.rs
+  revision: 3054427a1b1b9a7d2f5cdd1b6ce62053e6c417ac
+  working_tree: modified
+  sha256: fbab03542f76540a819944f83768705d357f3512b2c126392b33ae0075b975b4
 - id: issue-1032-git-runner
   resource: ../../../crates/hoimin-cli/src/target/git/runner.rs
   working_tree: untracked
@@ -720,20 +735,41 @@ for review findings, tests and the boundary of that correspondence.[^issue-901-o
 [^issue-901-core]: [Typed root cleanup lifecycle](../../../crates/hoimin-core/src/disk.rs).
 [^issue-901-oracle]: [Validated formal-to-typed root observation adapter](../../../crates/hoimin-cli/tests/lean_disk_shutdown_oracle.rs).
 
-## Ordered candidate collection and stop ownership
+## Ordered candidate discovery and stop ownership
 
 Ordered selection retains its stable, deduplicated requested IDs across two
-private phases. `Collecting` owns discovered selected candidates; `Ready` owns
-only the remaining execution queue. End-of-spool validation rejects missing
-requested IDs before converting the map to request order. The enum prevents a
-ready queue and an unfinished discovered map from coexisting.[^issue-912-machine]
+private phases. `Collecting` owns a set of accepted selected IDs; `Ready` owns
+the remaining IDs in request order. Neither phase owns candidate bodies.
+End-of-spool validation rejects the first missing requested ID before dispatch,
+even when all requested IDs were found before the final record. This supersedes
+the body-owning phases introduced by Issue #912.[^issue-1031-machine]
+
+The I/O replay owner holds the sequential cursor and positions for selected IDs
+only. A successful sequential read replaces that ID's position, so the last
+duplicate body wins. `CandidateReadTarget::Id` reads directly from the indexed
+position and validates identity without advancing discovery. Core requests at
+most one read at a time and only for an available worker; returned effects and
+worker states may own body copies, bounded by jobs.[^issue-1031-store]
 
 A stop consumes the current phase and leaves an empty Ready state. During
-collection, only discovered selected candidates become NotRun; undiscovered IDs
-produce neither results nor missing-ID errors. Worker-owned candidates join this
-drain in requested order. Existing effect retirement rejects late reads, and
-existing scheduling still limits real mutations with `max_mutants`. This changes
-private ownership, without changing CLI, report or database formats.[^issue-912-machine]
+discovery, only IDs accepted by core become NotRun; undiscovered IDs produce
+neither results nor missing-ID errors. A pending indexed read keeps its ID in
+the worker, so retiring or repeating a stop cannot lose it. Worker-owned bodies
+and unloaded IDs join the drain in request order. A failed indexed read is
+consumed once, records an infrastructure failure, and permits the remaining IDs
+to drain; an unavailable body cannot produce a candidate result.
+[^issue-1031-machine]
+
+Shell transfers the replay owner into each blocking read and restores it on
+completion, including read errors and retired completions during shutdown.
+Shutdown drains those tasks before issuing replacement reads. A retired discovery
+completion may update the physical index but cannot add an ID to core's accepted
+membership. Discarding a successful sequential completion rewinds its one-record
+position checkpoint. This lets stopped All/Explicit runs reread the unaccepted
+candidate instead of omitting its NotRun result. Indexed reads, errors and EOF
+clear that checkpoint; they cannot rewind an earlier accepted record.
+`max_mutants`, budget observation and report acknowledgements retain their
+existing responsibilities.[^issue-1031-shell]
 
 The [Issue #912 review record](../../superpowers/plans/2026-10-15-issue-912-review.md)
 records characterization, manual sensitivity checks and executed verification.
@@ -742,6 +778,9 @@ claim a new Lean proof.[^issue-912-plan]
 
 [^issue-912-machine]: [Core run machine](../../../crates/hoimin-core/src/machine.rs), Issue #912 private ordered collection phase.
 [^issue-912-plan]: [Issue #912 design and implementation plan](../../superpowers/plans/2026-10-15-issue-912.md).
+[^issue-1031-machine]: [Logical candidate requests and stopped draining](../../../crates/hoimin-core/src/machine.rs).
+[^issue-1031-store]: [I/O-owned candidate replay](../../../crates/hoimin-cli/src/analyzer/store.rs).
+[^issue-1031-shell]: [Blocking read ownership](../../../crates/hoimin-cli/src/shell.rs).
 
 ## Apply requests have one candidate
 

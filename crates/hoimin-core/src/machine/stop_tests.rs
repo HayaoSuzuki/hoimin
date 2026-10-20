@@ -6,8 +6,9 @@ use super::{
     transition,
 };
 use crate::{
-    ByteSpan, CommandArg, MutationCandidate, OutputEvent, RawRunConfig, ResourceControl,
-    ResourceMode, RunConfig, RunEffect, RunEvent, VerificationSelection,
+    ByteSpan, CandidateLoaded, CandidateReadTarget, CandidateSpoolRef, CommandArg,
+    MutationCandidate, OutputEvent, RawRunConfig, ResourceControl, ResourceMode, RunConfig,
+    RunEffect, RunEvent, VerificationSelection,
 };
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -93,6 +94,10 @@ fn ready_state(ids: Vec<String>, remaining: Vec<MutationCandidate>, jobs: usize)
     );
     state.phase = RunPhase::Mutants;
     state.flags.report.report_started = true;
+    state.candidate_spool = Some(CandidateSpoolRef {
+        token: "stop-fixture".into(),
+        records: u64::try_from(selected).unwrap(),
+    });
     state.copy_grant = Some(
         crate::reserve_workspace_copy(
             &mut state.budgets,
@@ -107,7 +112,10 @@ fn ready_state(ids: Vec<String>, remaining: Vec<MutationCandidate>, jobs: usize)
         .unwrap(),
     );
     state.selection.ordered_state_mut().unwrap().phase = OrderedCandidatePhase::Ready {
-        remaining: remaining.into(),
+        remaining: remaining
+            .into_iter()
+            .map(|candidate| candidate.id)
+            .collect(),
     };
     state
 }
@@ -161,10 +169,10 @@ fn assert_rank_work(candidate_count: usize, repeated: bool) {
     );
     assert_eq!(state.stopped_candidates.len(), candidate_count - 1);
     for (rank, stopped) in state.stopped_candidates.iter().enumerate() {
-        let StoppedCandidate::NotStarted(candidate) = stopped else {
-            panic!("expected queued candidate")
+        let StoppedCandidate::Unloaded(id) = stopped else {
+            panic!("expected queued candidate ID")
         };
-        assert_eq!(candidate.id, format!("{:064x}", rank + 1));
+        assert_eq!(*id, format!("{:064x}", rank + 1));
     }
 }
 
@@ -195,7 +203,11 @@ fn disk_stop() -> RunEvent {
     })
 }
 
-fn drain_outputs(mut state: RunState, mut effects: Vec<RunEffect>) -> Vec<OutputEvent> {
+fn drain_outputs(
+    mut state: RunState,
+    mut effects: Vec<RunEffect>,
+    candidates: &[MutationCandidate],
+) -> Vec<OutputEvent> {
     let mut outputs = Vec::new();
     for _ in 0..64 {
         if state.phase == RunPhase::Finished {
@@ -203,6 +215,22 @@ fn drain_outputs(mut state: RunState, mut effects: Vec<RunEffect>) -> Vec<Output
         }
         assert_eq!(effects.len(), 1);
         let event = match effects.pop().unwrap() {
+            RunEffect::ReadCandidate(read) => {
+                let CandidateReadTarget::Id(id) = read.target else {
+                    panic!("stopped ordered drain must not resume discovery")
+                };
+                RunEvent::CandidateLoaded(CandidateLoaded {
+                    id: read.id,
+                    worker: read.worker,
+                    candidate: Some(
+                        candidates
+                            .iter()
+                            .find(|candidate| candidate.id == id)
+                            .unwrap()
+                            .clone(),
+                    ),
+                })
+            }
             RunEffect::EmitOutput(output) => {
                 outputs.push(output.event);
                 RunEvent::OutputEmitted(crate::OutputEmitted { id: output.id })
@@ -259,7 +287,13 @@ fn assert_disordered_stop(event: RunEvent, exit: i32, repeated: bool) {
             Err(super::MachineError::RetiredEffect(retired)) if retired == id
         ));
     }
-    let outputs = drain_outputs(state, effects);
+    let candidates = [
+        candidate("a".into(), 1),
+        candidate("b".into(), 2),
+        candidate("c".into(), 3),
+        candidate("d".into(), 4),
+    ];
+    let outputs = drain_outputs(state, effects, &candidates);
 
     // Assert: literal requested order, unchanged NotRun outcomes and exactly one summary.
     let started: Vec<_> = outputs
@@ -366,7 +400,7 @@ fn unordered_stop_uses_sequence_and_preserves_equal_key_order() {
 
     // Act.
     let (state, effects) = transition(state, RunEvent::CancellationRequested).unwrap();
-    let outputs = drain_outputs(state, effects);
+    let outputs = drain_outputs(state, effects, &[]);
 
     // Assert: stable sequence fallback keeps c ahead of b at equal keys.
     let started: Vec<_> = outputs

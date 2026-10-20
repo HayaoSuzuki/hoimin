@@ -3,9 +3,8 @@ use serde::{Deserialize, Serialize};
 use camino::Utf8PathBuf;
 
 use crate::{
-    CandidateCursor, CandidateSpoolRef, CommandArg, IntegrityCheckpoint, MutantResult,
-    MutationCandidate, OutputEvent, ProcessLimits, ReservationId, RunFingerprint, Selection,
-    TargetSlice,
+    CandidateSpoolRef, CommandArg, IntegrityCheckpoint, MutantResult, MutationCandidate,
+    OutputEvent, ProcessLimits, ReservationId, RunFingerprint, Selection, TargetSlice,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -33,11 +32,19 @@ pub struct AnalyzeFile {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum CandidateReadTarget {
+    /// Continue discovery in spool order. The I/O owner retains the position.
+    Next,
+    /// Load a previously discovered candidate without advancing discovery.
+    Id(String),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ReadCandidate {
     pub id: EffectId,
     pub worker: u32,
     pub spool: CandidateSpoolRef,
-    pub cursor: CandidateCursor,
+    pub target: CandidateReadTarget,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

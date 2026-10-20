@@ -4,8 +4,9 @@ use std::hint::black_box;
 use std::io::Write;
 use std::time::Instant;
 
+use hoimin_cli::analyzer::CandidateCursor;
 use hoimin_cli::analyzer::CandidateStore;
-use hoimin_core::{ByteSpan, CandidateCursor, MutationCandidate};
+use hoimin_core::{ByteSpan, MutationCandidate};
 
 #[derive(Default)]
 struct Counter(usize);

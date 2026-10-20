@@ -1,0 +1,4680 @@
+{
+  "io-large": {
+    "baseline": {
+      "setup": {
+        "allocation_calls": {
+          "median": 2277,
+          "min": 2277,
+          "max": 2277
+        },
+        "cumulative_requested_bytes": {
+          "median": 227762,
+          "min": 227762,
+          "max": 227762
+        },
+        "elapsed_ns": {
+          "median": 98000,
+          "min": 85500,
+          "max": 104125
+        },
+        "live_after": {
+          "median": 305317,
+          "min": 305317,
+          "max": 305317
+        },
+        "live_before": {
+          "median": 91139,
+          "min": 91139,
+          "max": 91139
+        },
+        "peak_bytes": {
+          "median": 217162,
+          "min": 217162,
+          "max": 217162
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 214178,
+          "min": 214178,
+          "max": 214178
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 13712,
+          "min": 13712,
+          "max": 13712
+        },
+        "cumulative_requested_bytes": {
+          "median": 14636879,
+          "min": 14636879,
+          "max": 14636879
+        },
+        "elapsed_ns": {
+          "median": 12992791,
+          "min": 12948916,
+          "max": 13403292
+        },
+        "live_after": {
+          "median": 3051157,
+          "min": 3051157,
+          "max": 3051157
+        },
+        "live_before": {
+          "median": 91139,
+          "min": 91139,
+          "max": 91139
+        },
+        "peak_bytes": {
+          "median": 2970507,
+          "min": 2970507,
+          "max": 2970507
+        },
+        "record_bytes_read": {
+          "median": 2416557,
+          "min": 2416557,
+          "max": 2416557
+        },
+        "records_read": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024
+        },
+        "retained_bytes": {
+          "median": 2960018,
+          "min": 2960018,
+          "max": 2960018
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 13774,
+          "min": 13774,
+          "max": 13774
+        },
+        "cumulative_requested_bytes": {
+          "median": 15069431,
+          "min": 15069431,
+          "max": 15069431
+        },
+        "elapsed_ns": {
+          "median": 13177000,
+          "min": 13138750,
+          "max": 13586083
+        },
+        "live_after": {
+          "median": 2772675,
+          "min": 2772675,
+          "max": 2772675
+        },
+        "live_before": {
+          "median": 91139,
+          "min": 91139,
+          "max": 91139
+        },
+        "peak_bytes": {
+          "median": 2970507,
+          "min": 2970507,
+          "max": 2970507
+        },
+        "record_bytes_read": {
+          "median": 2416557,
+          "min": 2416557,
+          "max": 2416557
+        },
+        "records_read": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024
+        },
+        "retained_bytes": {
+          "median": 2681536,
+          "min": 2681536,
+          "max": 2681536
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 79274,
+          "min": 79274,
+          "max": 79274
+        },
+        "cumulative_requested_bytes": {
+          "median": 40294818,
+          "min": 40294818,
+          "max": 40294818
+        },
+        "elapsed_ns": {
+          "median": 18913250,
+          "min": 18832791,
+          "max": 19345458
+        },
+        "live_after": {
+          "median": 510678,
+          "min": 510678,
+          "max": 510678
+        },
+        "live_before": {
+          "median": 91139,
+          "min": 91139,
+          "max": 91139
+        },
+        "peak_bytes": {
+          "median": 2970507,
+          "min": 2970507,
+          "max": 2970507
+        },
+        "record_bytes_read": {
+          "median": 2416557,
+          "min": 2416557,
+          "max": 2416557
+        },
+        "records_read": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024
+        },
+        "retained_bytes": {
+          "median": 419539,
+          "min": 419539,
+          "max": 419539
+        }
+      }
+    },
+    "changed": {
+      "setup": {
+        "allocation_calls": {
+          "median": 3398,
+          "min": 3398,
+          "max": 3398
+        },
+        "cumulative_requested_bytes": {
+          "median": 444146,
+          "min": 444146,
+          "max": 444146
+        },
+        "elapsed_ns": {
+          "median": 121917,
+          "min": 114750,
+          "max": 128500
+        },
+        "live_after": {
+          "median": 423396,
+          "min": 423396,
+          "max": 423396
+        },
+        "live_before": {
+          "median": 91138,
+          "min": 91138,
+          "max": 91138
+        },
+        "peak_bytes": {
+          "median": 373550,
+          "min": 373550,
+          "max": 373550
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 332258,
+          "min": 332258,
+          "max": 332258
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 13810,
+          "min": 13810,
+          "max": 13810
+        },
+        "cumulative_requested_bytes": {
+          "median": 14411597,
+          "min": 14411597,
+          "max": 14411597
+        },
+        "elapsed_ns": {
+          "median": 13277792,
+          "min": 13027958,
+          "max": 13342666
+        },
+        "live_after": {
+          "median": 539282,
+          "min": 539282,
+          "max": 539282
+        },
+        "live_before": {
+          "median": 91138,
+          "min": 91138,
+          "max": 91138
+        },
+        "peak_bytes": {
+          "median": 460834,
+          "min": 460834,
+          "max": 460834
+        },
+        "record_bytes_read": {
+          "median": 2416557,
+          "min": 2416557,
+          "max": 2416557
+        },
+        "records_read": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024
+        },
+        "retained_bytes": {
+          "median": 448144,
+          "min": 448144,
+          "max": 448144
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 14943,
+          "min": 14943,
+          "max": 14943
+        },
+        "cumulative_requested_bytes": {
+          "median": 14610813,
+          "min": 14610813,
+          "max": 14610813
+        },
+        "elapsed_ns": {
+          "median": 13480333,
+          "min": 13227250,
+          "max": 13542583
+        },
+        "live_after": {
+          "median": 530964,
+          "min": 530964,
+          "max": 530964
+        },
+        "live_before": {
+          "median": 91138,
+          "min": 91138,
+          "max": 91138
+        },
+        "peak_bytes": {
+          "median": 538186,
+          "min": 538186,
+          "max": 538186
+        },
+        "record_bytes_read": {
+          "median": 2426001,
+          "min": 2426001,
+          "max": 2426001
+        },
+        "records_read": {
+          "median": 1028,
+          "min": 1028,
+          "max": 1028
+        },
+        "retained_bytes": {
+          "median": 439826,
+          "min": 439826,
+          "max": 439826
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 90645,
+          "min": 90645,
+          "max": 90645
+        },
+        "cumulative_requested_bytes": {
+          "median": 50636917,
+          "min": 50636917,
+          "max": 50636917
+        },
+        "elapsed_ns": {
+          "median": 33160917,
+          "min": 32960500,
+          "max": 33742541
+        },
+        "live_after": {
+          "median": 448707,
+          "min": 448707,
+          "max": 448707
+        },
+        "live_before": {
+          "median": 91138,
+          "min": 91138,
+          "max": 91138
+        },
+        "peak_bytes": {
+          "median": 538186,
+          "min": 538186,
+          "max": 538186
+        },
+        "record_bytes_read": {
+          "median": 4833114,
+          "min": 4833114,
+          "max": 4833114
+        },
+        "records_read": {
+          "median": 2048,
+          "min": 2048,
+          "max": 2048
+        },
+        "retained_bytes": {
+          "median": 357569,
+          "min": 357569,
+          "max": 357569
+        }
+      }
+    }
+  },
+  "io-medium": {
+    "baseline": {
+      "setup": {
+        "allocation_calls": {
+          "median": 1166,
+          "min": 1166,
+          "max": 1166
+        },
+        "cumulative_requested_bytes": {
+          "median": 124234,
+          "min": 124234,
+          "max": 124234
+        },
+        "elapsed_ns": {
+          "median": 84458,
+          "min": 74000,
+          "max": 989709
+        },
+        "live_after": {
+          "median": 156731,
+          "min": 156731,
+          "max": 156731
+        },
+        "live_before": {
+          "median": 46081,
+          "min": 46081,
+          "max": 46081
+        },
+        "peak_bytes": {
+          "median": 113634,
+          "min": 113634,
+          "max": 113634
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 110650,
+          "min": 110650,
+          "max": 110650
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 6882,
+          "min": 6882,
+          "max": 6882
+        },
+        "cumulative_requested_bytes": {
+          "median": 7324862,
+          "min": 7324862,
+          "max": 7324862
+        },
+        "elapsed_ns": {
+          "median": 6511375,
+          "min": 6461500,
+          "max": 7697459
+        },
+        "live_after": {
+          "median": 1525787,
+          "min": 1525787,
+          "max": 1525787
+        },
+        "live_before": {
+          "median": 46081,
+          "min": 46081,
+          "max": 46081
+        },
+        "peak_bytes": {
+          "median": 1490194,
+          "min": 1490194,
+          "max": 1490194
+        },
+        "record_bytes_read": {
+          "median": 1208212,
+          "min": 1208212,
+          "max": 1208212
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 1479706,
+          "min": 1479706,
+          "max": 1479706
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 6943,
+          "min": 6943,
+          "max": 6943
+        },
+        "cumulative_requested_bytes": {
+          "median": 7552614,
+          "min": 7552614,
+          "max": 7552614
+        },
+        "elapsed_ns": {
+          "median": 6614208,
+          "min": 6559042,
+          "max": 7798709
+        },
+        "live_after": {
+          "median": 1394777,
+          "min": 1394777,
+          "max": 1394777
+        },
+        "live_before": {
+          "median": 46081,
+          "min": 46081,
+          "max": 46081
+        },
+        "peak_bytes": {
+          "median": 1490194,
+          "min": 1490194,
+          "max": 1490194
+        },
+        "record_bytes_read": {
+          "median": 1208212,
+          "min": 1208212,
+          "max": 1208212
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 1348696,
+          "min": 1348696,
+          "max": 1348696
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 39675,
+          "min": 39675,
+          "max": 39675
+        },
+        "cumulative_requested_bytes": {
+          "median": 20152081,
+          "min": 20152081,
+          "max": 20152081
+        },
+        "elapsed_ns": {
+          "median": 9566250,
+          "min": 9454875,
+          "max": 10712042
+        },
+        "live_after": {
+          "median": 259692,
+          "min": 259692,
+          "max": 259692
+        },
+        "live_before": {
+          "median": 46081,
+          "min": 46081,
+          "max": 46081
+        },
+        "peak_bytes": {
+          "median": 1490194,
+          "min": 1490194,
+          "max": 1490194
+        },
+        "record_bytes_read": {
+          "median": 1208212,
+          "min": 1208212,
+          "max": 1208212
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 213611,
+          "min": 213611,
+          "max": 213611
+        }
+      }
+    },
+    "changed": {
+      "setup": {
+        "allocation_calls": {
+          "median": 1728,
+          "min": 1728,
+          "max": 1728
+        },
+        "cumulative_requested_bytes": {
+          "median": 232746,
+          "min": 232746,
+          "max": 232746
+        },
+        "elapsed_ns": {
+          "median": 92084,
+          "min": 68833,
+          "max": 99250
+        },
+        "live_after": {
+          "median": 216090,
+          "min": 216090,
+          "max": 216090
+        },
+        "live_before": {
+          "median": 46080,
+          "min": 46080,
+          "max": 46080
+        },
+        "peak_bytes": {
+          "median": 186726,
+          "min": 186726,
+          "max": 186726
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 170010,
+          "min": 170010,
+          "max": 170010
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 6933,
+          "min": 6933,
+          "max": 6933
+        },
+        "cumulative_requested_bytes": {
+          "median": 7215876,
+          "min": 7215876,
+          "max": 7215876
+        },
+        "elapsed_ns": {
+          "median": 6487083,
+          "min": 6366417,
+          "max": 6819458
+        },
+        "live_after": {
+          "median": 273504,
+          "min": 273504,
+          "max": 273504
+        },
+        "live_before": {
+          "median": 46080,
+          "min": 46080,
+          "max": 46080
+        },
+        "peak_bytes": {
+          "median": 240113,
+          "min": 240113,
+          "max": 240113
+        },
+        "record_bytes_read": {
+          "median": 1208212,
+          "min": 1208212,
+          "max": 1208212
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 227424,
+          "min": 227424,
+          "max": 227424
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 7553,
+          "min": 7553,
+          "max": 7553
+        },
+        "cumulative_requested_bytes": {
+          "median": 7357744,
+          "min": 7357744,
+          "max": 7357744
+        },
+        "elapsed_ns": {
+          "median": 6617625,
+          "min": 6555875,
+          "max": 6952625
+        },
+        "live_after": {
+          "median": 278602,
+          "min": 278602,
+          "max": 278602
+        },
+        "live_before": {
+          "median": 46080,
+          "min": 46080,
+          "max": 46080
+        },
+        "peak_bytes": {
+          "median": 272410,
+          "min": 272410,
+          "max": 272410
+        },
+        "record_bytes_read": {
+          "median": 1217652,
+          "min": 1217652,
+          "max": 1217652
+        },
+        "records_read": {
+          "median": 516,
+          "min": 516,
+          "max": 516
+        },
+        "retained_bytes": {
+          "median": 232522,
+          "min": 232522,
+          "max": 232522
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 45367,
+          "min": 45367,
+          "max": 45367
+        },
+        "cumulative_requested_bytes": {
+          "median": 25339411,
+          "min": 25339411,
+          "max": 25339411
+        },
+        "elapsed_ns": {
+          "median": 16271916,
+          "min": 16030375,
+          "max": 16682500
+        },
+        "live_after": {
+          "median": 229113,
+          "min": 229113,
+          "max": 229113
+        },
+        "live_before": {
+          "median": 46080,
+          "min": 46080,
+          "max": 46080
+        },
+        "peak_bytes": {
+          "median": 272410,
+          "min": 272410,
+          "max": 272410
+        },
+        "record_bytes_read": {
+          "median": 2416424,
+          "min": 2416424,
+          "max": 2416424
+        },
+        "records_read": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024
+        },
+        "retained_bytes": {
+          "median": 183033,
+          "min": 183033,
+          "max": 183033
+        }
+      }
+    }
+  },
+  "io-small": {
+    "baseline": {
+      "setup": {
+        "allocation_calls": {
+          "median": 612,
+          "min": 612,
+          "max": 612
+        },
+        "cumulative_requested_bytes": {
+          "median": 73082,
+          "min": 73082,
+          "max": 73082
+        },
+        "elapsed_ns": {
+          "median": 67625,
+          "min": 54959,
+          "max": 93000
+        },
+        "live_after": {
+          "median": 83051,
+          "min": 83051,
+          "max": 83051
+        },
+        "live_before": {
+          "median": 23553,
+          "min": 23553,
+          "max": 23553
+        },
+        "peak_bytes": {
+          "median": 62482,
+          "min": 62482,
+          "max": 62482
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 59498,
+          "min": 59498,
+          "max": 59498
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 3470,
+          "min": 3470,
+          "max": 3470
+        },
+        "cumulative_requested_bytes": {
+          "median": 3673390,
+          "min": 3673390,
+          "max": 3673390
+        },
+        "elapsed_ns": {
+          "median": 3311542,
+          "min": 3271250,
+          "max": 3415250
+        },
+        "live_after": {
+          "median": 767627,
+          "min": 767627,
+          "max": 767627
+        },
+        "live_before": {
+          "median": 23553,
+          "min": 23553,
+          "max": 23553
+        },
+        "peak_bytes": {
+          "median": 754562,
+          "min": 754562,
+          "max": 754562
+        },
+        "record_bytes_read": {
+          "median": 604052,
+          "min": 604052,
+          "max": 604052
+        },
+        "records_read": {
+          "median": 256,
+          "min": 256,
+          "max": 256
+        },
+        "retained_bytes": {
+          "median": 744074,
+          "min": 744074,
+          "max": 744074
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 3530,
+          "min": 3530,
+          "max": 3530
+        },
+        "cumulative_requested_bytes": {
+          "median": 3798742,
+          "min": 3798742,
+          "max": 3798742
+        },
+        "elapsed_ns": {
+          "median": 3370709,
+          "min": 3328250,
+          "max": 3477625
+        },
+        "live_after": {
+          "median": 706441,
+          "min": 706441,
+          "max": 706441
+        },
+        "live_before": {
+          "median": 23553,
+          "min": 23553,
+          "max": 23553
+        },
+        "peak_bytes": {
+          "median": 754562,
+          "min": 754562,
+          "max": 754562
+        },
+        "record_bytes_read": {
+          "median": 604052,
+          "min": 604052,
+          "max": 604052
+        },
+        "records_read": {
+          "median": 256,
+          "min": 256,
+          "max": 256
+        },
+        "retained_bytes": {
+          "median": 682888,
+          "min": 682888,
+          "max": 682888
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 19878,
+          "min": 19878,
+          "max": 19878
+        },
+        "cumulative_requested_bytes": {
+          "median": 10085249,
+          "min": 10085249,
+          "max": 10085249
+        },
+        "elapsed_ns": {
+          "median": 4844042,
+          "min": 4775333,
+          "max": 5017334
+        },
+        "live_after": {
+          "median": 134812,
+          "min": 134812,
+          "max": 134812
+        },
+        "live_before": {
+          "median": 23553,
+          "min": 23553,
+          "max": 23553
+        },
+        "peak_bytes": {
+          "median": 754562,
+          "min": 754562,
+          "max": 754562
+        },
+        "record_bytes_read": {
+          "median": 604052,
+          "min": 604052,
+          "max": 604052
+        },
+        "records_read": {
+          "median": 256,
+          "min": 256,
+          "max": 256
+        },
+        "retained_bytes": {
+          "median": 111259,
+          "min": 111259,
+          "max": 111259
+        }
+      }
+    },
+    "changed": {
+      "setup": {
+        "allocation_calls": {
+          "median": 895,
+          "min": 895,
+          "max": 895
+        },
+        "cumulative_requested_bytes": {
+          "median": 127930,
+          "min": 127930,
+          "max": 127930
+        },
+        "elapsed_ns": {
+          "median": 77708,
+          "min": 67708,
+          "max": 83209
+        },
+        "live_after": {
+          "median": 113322,
+          "min": 113322,
+          "max": 113322
+        },
+        "live_before": {
+          "median": 23552,
+          "min": 23552,
+          "max": 23552
+        },
+        "peak_bytes": {
+          "median": 94198,
+          "min": 94198,
+          "max": 94198
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 89770,
+          "min": 89770,
+          "max": 89770
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 3498,
+          "min": 3498,
+          "max": 3498
+        },
+        "cumulative_requested_bytes": {
+          "median": 3619524,
+          "min": 3619524,
+          "max": 3619524
+        },
+        "elapsed_ns": {
+          "median": 3369166,
+          "min": 3336792,
+          "max": 3562709
+        },
+        "live_after": {
+          "median": 142112,
+          "min": 142112,
+          "max": 142112
+        },
+        "live_before": {
+          "median": 23552,
+          "min": 23552,
+          "max": 23552
+        },
+        "peak_bytes": {
+          "median": 131249,
+          "min": 131249,
+          "max": 131249
+        },
+        "record_bytes_read": {
+          "median": 604052,
+          "min": 604052,
+          "max": 604052
+        },
+        "records_read": {
+          "median": 256,
+          "min": 256,
+          "max": 256
+        },
+        "retained_bytes": {
+          "median": 118560,
+          "min": 118560,
+          "max": 118560
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 3861,
+          "min": 3861,
+          "max": 3861
+        },
+        "cumulative_requested_bytes": {
+          "median": 3732720,
+          "min": 3732720,
+          "max": 3732720
+        },
+        "elapsed_ns": {
+          "median": 3470666,
+          "min": 3434542,
+          "max": 3669125
+        },
+        "live_after": {
+          "median": 153306,
+          "min": 153306,
+          "max": 153306
+        },
+        "live_before": {
+          "median": 23552,
+          "min": 23552,
+          "max": 23552
+        },
+        "peak_bytes": {
+          "median": 141018,
+          "min": 141018,
+          "max": 141018
+        },
+        "record_bytes_read": {
+          "median": 613492,
+          "min": 613492,
+          "max": 613492
+        },
+        "records_read": {
+          "median": 260,
+          "min": 260,
+          "max": 260
+        },
+        "retained_bytes": {
+          "median": 129754,
+          "min": 129754,
+          "max": 129754
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 22731,
+          "min": 22731,
+          "max": 22731
+        },
+        "cumulative_requested_bytes": {
+          "median": 12692179,
+          "min": 12692179,
+          "max": 12692179
+        },
+        "elapsed_ns": {
+          "median": 8241958,
+          "min": 8134583,
+          "max": 8596709
+        },
+        "live_after": {
+          "median": 120201,
+          "min": 120201,
+          "max": 120201
+        },
+        "live_before": {
+          "median": 23552,
+          "min": 23552,
+          "max": 23552
+        },
+        "peak_bytes": {
+          "median": 141018,
+          "min": 141018,
+          "max": 141018
+        },
+        "record_bytes_read": {
+          "median": 1208104,
+          "min": 1208104,
+          "max": 1208104
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 96649,
+          "min": 96649,
+          "max": 96649
+        }
+      }
+    }
+  },
+  "jobs-eight": {
+    "baseline": {
+      "setup": {
+        "allocation_calls": {
+          "median": 613,
+          "min": 613,
+          "max": 613
+        },
+        "cumulative_requested_bytes": {
+          "median": 82298,
+          "min": 82298,
+          "max": 82298
+        },
+        "elapsed_ns": {
+          "median": 73000,
+          "min": 61208,
+          "max": 91750
+        },
+        "live_after": {
+          "median": 86123,
+          "min": 86123,
+          "max": 86123
+        },
+        "live_before": {
+          "median": 23553,
+          "min": 23553,
+          "max": 23553
+        },
+        "peak_bytes": {
+          "median": 65554,
+          "min": 65554,
+          "max": 65554
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 62570,
+          "min": 62570,
+          "max": 62570
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 6543,
+          "min": 6543,
+          "max": 6543
+        },
+        "cumulative_requested_bytes": {
+          "median": 21682330,
+          "min": 21682330,
+          "max": 21682330
+        },
+        "elapsed_ns": {
+          "median": 7574750,
+          "min": 7367167,
+          "max": 7715208
+        },
+        "live_after": {
+          "median": 2343563,
+          "min": 2343563,
+          "max": 2343563
+        },
+        "live_before": {
+          "median": 23553,
+          "min": 23553,
+          "max": 23553
+        },
+        "peak_bytes": {
+          "median": 2344522,
+          "min": 2344522,
+          "max": 2344522
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 2320010,
+          "min": 2320010,
+          "max": 2320010
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 6656,
+          "min": 6656,
+          "max": 6656
+        },
+        "cumulative_requested_bytes": {
+          "median": 21932810,
+          "min": 21932810,
+          "max": 21932810
+        },
+        "elapsed_ns": {
+          "median": 7639875,
+          "min": 7426750,
+          "max": 7778250
+        },
+        "live_after": {
+          "median": 2340333,
+          "min": 2340333,
+          "max": 2340333
+        },
+        "live_before": {
+          "median": 23553,
+          "min": 23553,
+          "max": 23553
+        },
+        "peak_bytes": {
+          "median": 2344522,
+          "min": 2344522,
+          "max": 2344522
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 2316780,
+          "min": 2316780,
+          "max": 2316780
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 22948,
+          "min": 22948,
+          "max": 22948
+        },
+        "cumulative_requested_bytes": {
+          "median": 40670957,
+          "min": 40670957,
+          "max": 40670957
+        },
+        "elapsed_ns": {
+          "median": 11016166,
+          "min": 10772333,
+          "max": 11199875
+        },
+        "live_after": {
+          "median": 137884,
+          "min": 137884,
+          "max": 137884
+        },
+        "live_before": {
+          "median": 23553,
+          "min": 23553,
+          "max": 23553
+        },
+        "peak_bytes": {
+          "median": 2344522,
+          "min": 2344522,
+          "max": 2344522
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 114331,
+          "min": 114331,
+          "max": 114331
+        }
+      }
+    },
+    "changed": {
+      "setup": {
+        "allocation_calls": {
+          "median": 896,
+          "min": 896,
+          "max": 896
+        },
+        "cumulative_requested_bytes": {
+          "median": 137146,
+          "min": 137146,
+          "max": 137146
+        },
+        "elapsed_ns": {
+          "median": 82000,
+          "min": 73167,
+          "max": 89416
+        },
+        "live_after": {
+          "median": 116394,
+          "min": 116394,
+          "max": 116394
+        },
+        "live_before": {
+          "median": 23552,
+          "min": 23552,
+          "max": 23552
+        },
+        "peak_bytes": {
+          "median": 95826,
+          "min": 95826,
+          "max": 95826
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 92842,
+          "min": 92842,
+          "max": 92842
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 6571,
+          "min": 6571,
+          "max": 6571
+        },
+        "cumulative_requested_bytes": {
+          "median": 21628464,
+          "min": 21628464,
+          "max": 21628464
+        },
+        "elapsed_ns": {
+          "median": 7578708,
+          "min": 7317500,
+          "max": 8161166
+        },
+        "live_after": {
+          "median": 145184,
+          "min": 145184,
+          "max": 145184
+        },
+        "live_before": {
+          "median": 23552,
+          "min": 23552,
+          "max": 23552
+        },
+        "peak_bytes": {
+          "median": 154489,
+          "min": 154489,
+          "max": 154489
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 121632,
+          "min": 121632,
+          "max": 121632
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 7042,
+          "min": 7042,
+          "max": 7042
+        },
+        "cumulative_requested_bytes": {
+          "median": 22154432,
+          "min": 22154432,
+          "max": 22154432
+        },
+        "elapsed_ns": {
+          "median": 7758000,
+          "min": 7496917,
+          "max": 8338875
+        },
+        "live_after": {
+          "median": 272034,
+          "min": 272034,
+          "max": 272034
+        },
+        "live_before": {
+          "median": 23552,
+          "min": 23552,
+          "max": 23552
+        },
+        "peak_bytes": {
+          "median": 264911,
+          "min": 264911,
+          "max": 264911
+        },
+        "record_bytes_read": {
+          "median": 4421972,
+          "min": 4421972,
+          "max": 4421972
+        },
+        "records_read": {
+          "median": 520,
+          "min": 520,
+          "max": 520
+        },
+        "retained_bytes": {
+          "median": 248482,
+          "min": 248482,
+          "max": 248482
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 26308,
+          "min": 26308,
+          "max": 26308
+        },
+        "cumulative_requested_bytes": {
+          "median": 51306155,
+          "min": 51306155,
+          "max": 51306155
+        },
+        "elapsed_ns": {
+          "median": 14944625,
+          "min": 14611458,
+          "max": 15847583
+        },
+        "live_after": {
+          "median": 123273,
+          "min": 123273,
+          "max": 123273
+        },
+        "live_before": {
+          "median": 23552,
+          "min": 23552,
+          "max": 23552
+        },
+        "peak_bytes": {
+          "median": 264911,
+          "min": 264911,
+          "max": 264911
+        },
+        "record_bytes_read": {
+          "median": 6530964,
+          "min": 6530964,
+          "max": 6530964
+        },
+        "records_read": {
+          "median": 768,
+          "min": 768,
+          "max": 768
+        },
+        "retained_bytes": {
+          "median": 99721,
+          "min": 99721,
+          "max": 99721
+        }
+      }
+    }
+  },
+  "jobs-one": {
+    "baseline": {
+      "setup": {
+        "allocation_calls": {
+          "median": 612,
+          "min": 612,
+          "max": 612
+        },
+        "cumulative_requested_bytes": {
+          "median": 70778,
+          "min": 70778,
+          "max": 70778
+        },
+        "elapsed_ns": {
+          "median": 70625,
+          "min": 57750,
+          "max": 79042
+        },
+        "live_after": {
+          "median": 83051,
+          "min": 83051,
+          "max": 83051
+        },
+        "live_before": {
+          "median": 23553,
+          "min": 23553,
+          "max": 23553
+        },
+        "peak_bytes": {
+          "median": 62482,
+          "min": 62482,
+          "max": 62482
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 59498,
+          "min": 59498,
+          "max": 59498
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 6542,
+          "min": 6542,
+          "max": 6542
+        },
+        "cumulative_requested_bytes": {
+          "median": 21670810,
+          "min": 21670810,
+          "max": 21670810
+        },
+        "elapsed_ns": {
+          "median": 7608209,
+          "min": 7428792,
+          "max": 7890417
+        },
+        "live_after": {
+          "median": 2340491,
+          "min": 2340491,
+          "max": 2340491
+        },
+        "live_before": {
+          "median": 23553,
+          "min": 23553,
+          "max": 23553
+        },
+        "peak_bytes": {
+          "median": 2341450,
+          "min": 2341450,
+          "max": 2341450
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 2316938,
+          "min": 2316938,
+          "max": 2316938
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 6563,
+          "min": 6563,
+          "max": 6563
+        },
+        "cumulative_requested_bytes": {
+          "median": 21792940,
+          "min": 21792940,
+          "max": 21792940
+        },
+        "elapsed_ns": {
+          "median": 7671375,
+          "min": 7484375,
+          "max": 7952750
+        },
+        "live_after": {
+          "median": 2278846,
+          "min": 2278846,
+          "max": 2278846
+        },
+        "live_before": {
+          "median": 23553,
+          "min": 23553,
+          "max": 23553
+        },
+        "peak_bytes": {
+          "median": 2341450,
+          "min": 2341450,
+          "max": 2341450
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 2255293,
+          "min": 2255293,
+          "max": 2255293
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 22953,
+          "min": 22953,
+          "max": 22953
+        },
+        "cumulative_requested_bytes": {
+          "median": 40674797,
+          "min": 40674797,
+          "max": 40674797
+        },
+        "elapsed_ns": {
+          "median": 10963250,
+          "min": 10775708,
+          "max": 11287333
+        },
+        "live_after": {
+          "median": 134812,
+          "min": 134812,
+          "max": 134812
+        },
+        "live_before": {
+          "median": 23553,
+          "min": 23553,
+          "max": 23553
+        },
+        "peak_bytes": {
+          "median": 2341450,
+          "min": 2341450,
+          "max": 2341450
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 111259,
+          "min": 111259,
+          "max": 111259
+        }
+      }
+    },
+    "changed": {
+      "setup": {
+        "allocation_calls": {
+          "median": 895,
+          "min": 895,
+          "max": 895
+        },
+        "cumulative_requested_bytes": {
+          "median": 125626,
+          "min": 125626,
+          "max": 125626
+        },
+        "elapsed_ns": {
+          "median": 86833,
+          "min": 61584,
+          "max": 690917
+        },
+        "live_after": {
+          "median": 113322,
+          "min": 113322,
+          "max": 113322
+        },
+        "live_before": {
+          "median": 23552,
+          "min": 23552,
+          "max": 23552
+        },
+        "peak_bytes": {
+          "median": 94198,
+          "min": 94198,
+          "max": 94198
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 89770,
+          "min": 89770,
+          "max": 89770
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 6570,
+          "min": 6570,
+          "max": 6570
+        },
+        "cumulative_requested_bytes": {
+          "median": 21616944,
+          "min": 21616944,
+          "max": 21616944
+        },
+        "elapsed_ns": {
+          "median": 7602750,
+          "min": 7349792,
+          "max": 8081625
+        },
+        "live_after": {
+          "median": 142112,
+          "min": 142112,
+          "max": 142112
+        },
+        "live_before": {
+          "median": 23552,
+          "min": 23552,
+          "max": 23552
+        },
+        "peak_bytes": {
+          "median": 151417,
+          "min": 151417,
+          "max": 151417
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 118560,
+          "min": 118560,
+          "max": 118560
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 6858,
+          "min": 6858,
+          "max": 6858
+        },
+        "cumulative_requested_bytes": {
+          "median": 21704993,
+          "min": 21704993,
+          "max": 21704993
+        },
+        "elapsed_ns": {
+          "median": 7664416,
+          "min": 7409500,
+          "max": 8141000
+        },
+        "live_after": {
+          "median": 152476,
+          "min": 152476,
+          "max": 152476
+        },
+        "live_before": {
+          "median": 23552,
+          "min": 23552,
+          "max": 23552
+        },
+        "peak_bytes": {
+          "median": 151417,
+          "min": 151417,
+          "max": 151417
+        },
+        "record_bytes_read": {
+          "median": 4362444,
+          "min": 4362444,
+          "max": 4362444
+        },
+        "records_read": {
+          "median": 513,
+          "min": 513,
+          "max": 513
+        },
+        "retained_bytes": {
+          "median": 128924,
+          "min": 128924,
+          "max": 128924
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 26052,
+          "min": 26052,
+          "max": 26052
+        },
+        "cumulative_requested_bytes": {
+          "median": 50514243,
+          "min": 50514243,
+          "max": 50514243
+        },
+        "elapsed_ns": {
+          "median": 14951625,
+          "min": 14524458,
+          "max": 15196250
+        },
+        "live_after": {
+          "median": 120097,
+          "min": 120097,
+          "max": 120097
+        },
+        "live_before": {
+          "median": 23552,
+          "min": 23552,
+          "max": 23552
+        },
+        "peak_bytes": {
+          "median": 151417,
+          "min": 151417,
+          "max": 151417
+        },
+        "record_bytes_read": {
+          "median": 6530964,
+          "min": 6530964,
+          "max": 6530964
+        },
+        "records_read": {
+          "median": 768,
+          "min": 768,
+          "max": 768
+        },
+        "retained_bytes": {
+          "median": 96545,
+          "min": 96545,
+          "max": 96545
+        }
+      }
+    }
+  },
+  "payload-large": {
+    "baseline": {
+      "setup": {
+        "allocation_calls": {
+          "median": 612,
+          "min": 612,
+          "max": 612
+        },
+        "cumulative_requested_bytes": {
+          "median": 73082,
+          "min": 73082,
+          "max": 73082
+        },
+        "elapsed_ns": {
+          "median": 86000,
+          "min": 69000,
+          "max": 124459
+        },
+        "live_after": {
+          "median": 83052,
+          "min": 83052,
+          "max": 83052
+        },
+        "live_before": {
+          "median": 23554,
+          "min": 23554,
+          "max": 23554
+        },
+        "peak_bytes": {
+          "median": 62482,
+          "min": 62482,
+          "max": 62482
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 59498,
+          "min": 59498,
+          "max": 59498
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 8078,
+          "min": 8078,
+          "max": 8078
+        },
+        "cumulative_requested_bytes": {
+          "median": 168473754,
+          "min": 168473754,
+          "max": 168473754
+        },
+        "elapsed_ns": {
+          "median": 17079541,
+          "min": 16039500,
+          "max": 22465250
+        },
+        "live_after": {
+          "median": 17020556,
+          "min": 17020556,
+          "max": 17020556
+        },
+        "live_before": {
+          "median": 23554,
+          "min": 23554,
+          "max": 23554
+        },
+        "peak_bytes": {
+          "median": 17136202,
+          "min": 17136202,
+          "max": 17136202
+        },
+        "record_bytes_read": {
+          "median": 33714068,
+          "min": 33714068,
+          "max": 33714068
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 16997002,
+          "min": 16997002,
+          "max": 16997002
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 8138,
+          "min": 8138,
+          "max": 8138
+        },
+        "cumulative_requested_bytes": {
+          "median": 169107010,
+          "min": 169107010,
+          "max": 169107010
+        },
+        "elapsed_ns": {
+          "median": 17169875,
+          "min": 16121000,
+          "max": 22548584
+        },
+        "live_after": {
+          "median": 17213322,
+          "min": 17213322,
+          "max": 17213322
+        },
+        "live_before": {
+          "median": 23554,
+          "min": 23554,
+          "max": 23554
+        },
+        "peak_bytes": {
+          "median": 17258529,
+          "min": 17258529,
+          "max": 17258529
+        },
+        "record_bytes_read": {
+          "median": 33714068,
+          "min": 33714068,
+          "max": 33714068
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 17189768,
+          "min": 17189768,
+          "max": 17189768
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 24486,
+          "min": 24486,
+          "max": 24486
+        },
+        "cumulative_requested_bytes": {
+          "median": 304909037,
+          "min": 304909037,
+          "max": 304909037
+        },
+        "elapsed_ns": {
+          "median": 33922875,
+          "min": 31873166,
+          "max": 38950459
+        },
+        "live_after": {
+          "median": 134813,
+          "min": 134813,
+          "max": 134813
+        },
+        "live_before": {
+          "median": 23554,
+          "min": 23554,
+          "max": 23554
+        },
+        "peak_bytes": {
+          "median": 17258529,
+          "min": 17258529,
+          "max": 17258529
+        },
+        "record_bytes_read": {
+          "median": 33714068,
+          "min": 33714068,
+          "max": 33714068
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 111259,
+          "min": 111259,
+          "max": 111259
+        }
+      }
+    },
+    "changed": {
+      "setup": {
+        "allocation_calls": {
+          "median": 895,
+          "min": 895,
+          "max": 895
+        },
+        "cumulative_requested_bytes": {
+          "median": 127930,
+          "min": 127930,
+          "max": 127930
+        },
+        "elapsed_ns": {
+          "median": 96542,
+          "min": 81083,
+          "max": 108875
+        },
+        "live_after": {
+          "median": 113323,
+          "min": 113323,
+          "max": 113323
+        },
+        "live_before": {
+          "median": 23553,
+          "min": 23553,
+          "max": 23553
+        },
+        "peak_bytes": {
+          "median": 94198,
+          "min": 94198,
+          "max": 94198
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 89770,
+          "min": 89770,
+          "max": 89770
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 8106,
+          "min": 8106,
+          "max": 8106
+        },
+        "cumulative_requested_bytes": {
+          "median": 168419888,
+          "min": 168419888,
+          "max": 168419888
+        },
+        "elapsed_ns": {
+          "median": 16192292,
+          "min": 14899834,
+          "max": 16335500
+        },
+        "live_after": {
+          "median": 142113,
+          "min": 142113,
+          "max": 142113
+        },
+        "live_before": {
+          "median": 23553,
+          "min": 23553,
+          "max": 23553
+        },
+        "peak_bytes": {
+          "median": 323449,
+          "min": 323449,
+          "max": 323449
+        },
+        "record_bytes_read": {
+          "median": 33714068,
+          "min": 33714068,
+          "max": 33714068
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 118560,
+          "min": 118560,
+          "max": 118560
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 8485,
+          "min": 8485,
+          "max": 8485
+        },
+        "cumulative_requested_bytes": {
+          "median": 170301308,
+          "min": 170301308,
+          "max": 170301308
+        },
+        "elapsed_ns": {
+          "median": 16410292,
+          "min": 15103667,
+          "max": 16549708
+        },
+        "live_after": {
+          "median": 661211,
+          "min": 661211,
+          "max": 661211
+        },
+        "live_before": {
+          "median": 23553,
+          "min": 23553,
+          "max": 23553
+        },
+        "peak_bytes": {
+          "median": 711431,
+          "min": 711431,
+          "max": 711431
+        },
+        "record_bytes_read": {
+          "median": 33977460,
+          "min": 33977460,
+          "max": 33977460
+        },
+        "records_read": {
+          "median": 516,
+          "min": 516,
+          "max": 516
+        },
+        "retained_bytes": {
+          "median": 637658,
+          "min": 637658,
+          "max": 637658
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 28363,
+          "min": 28363,
+          "max": 28363
+        },
+        "cumulative_requested_bytes": {
+          "median": 388176555,
+          "min": 388176555,
+          "max": 388176555
+        },
+        "elapsed_ns": {
+          "median": 40894584,
+          "min": 37854417,
+          "max": 42391833
+        },
+        "live_after": {
+          "median": 120202,
+          "min": 120202,
+          "max": 120202
+        },
+        "live_before": {
+          "median": 23553,
+          "min": 23553,
+          "max": 23553
+        },
+        "peak_bytes": {
+          "median": 711431,
+          "min": 711431,
+          "max": 711431
+        },
+        "record_bytes_read": {
+          "median": 50571156,
+          "min": 50571156,
+          "max": 50571156
+        },
+        "records_read": {
+          "median": 768,
+          "min": 768,
+          "max": 768
+        },
+        "retained_bytes": {
+          "median": 96649,
+          "min": 96649,
+          "max": 96649
+        }
+      }
+    }
+  },
+  "payload-small": {
+    "baseline": {
+      "setup": {
+        "allocation_calls": {
+          "median": 612,
+          "min": 612,
+          "max": 612
+        },
+        "cumulative_requested_bytes": {
+          "median": 73082,
+          "min": 73082,
+          "max": 73082
+        },
+        "elapsed_ns": {
+          "median": 80666,
+          "min": 64333,
+          "max": 486500
+        },
+        "live_after": {
+          "median": 83049,
+          "min": 83049,
+          "max": 83049
+        },
+        "live_before": {
+          "median": 23551,
+          "min": 23551,
+          "max": 23551
+        },
+        "peak_bytes": {
+          "median": 62482,
+          "min": 62482,
+          "max": 62482
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 59498,
+          "min": 59498,
+          "max": 59498
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 6030,
+          "min": 6030,
+          "max": 6030
+        },
+        "cumulative_requested_bytes": {
+          "median": 5121070,
+          "min": 5121070,
+          "max": 5121070
+        },
+        "elapsed_ns": {
+          "median": 7629625,
+          "min": 6314625,
+          "max": 9747416
+        },
+        "live_after": {
+          "median": 259721,
+          "min": 259721,
+          "max": 259721
+        },
+        "live_before": {
+          "median": 23551,
+          "min": 23551,
+          "max": 23551
+        },
+        "peak_bytes": {
+          "median": 244674,
+          "min": 244674,
+          "max": 244674
+        },
+        "record_bytes_read": {
+          "median": 192404,
+          "min": 192404,
+          "max": 192404
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 236170,
+          "min": 236170,
+          "max": 236170
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 6090,
+          "min": 6090,
+          "max": 6090
+        },
+        "cumulative_requested_bytes": {
+          "median": 5230550,
+          "min": 5230550,
+          "max": 5230550
+        },
+        "elapsed_ns": {
+          "median": 7690625,
+          "min": 6381500,
+          "max": 9826541
+        },
+        "live_after": {
+          "median": 190599,
+          "min": 190599,
+          "max": 190599
+        },
+        "live_before": {
+          "median": 23551,
+          "min": 23551,
+          "max": 23551
+        },
+        "peak_bytes": {
+          "median": 244674,
+          "min": 244674,
+          "max": 244674
+        },
+        "record_bytes_read": {
+          "median": 192404,
+          "min": 192404,
+          "max": 192404
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 167048,
+          "min": 167048,
+          "max": 167048
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 22438,
+          "min": 22438,
+          "max": 22438
+        },
+        "cumulative_requested_bytes": {
+          "median": 7469697,
+          "min": 7469697,
+          "max": 7469697
+        },
+        "elapsed_ns": {
+          "median": 8531334,
+          "min": 7586791,
+          "max": 10907208
+        },
+        "live_after": {
+          "median": 134810,
+          "min": 134810,
+          "max": 134810
+        },
+        "live_before": {
+          "median": 23551,
+          "min": 23551,
+          "max": 23551
+        },
+        "peak_bytes": {
+          "median": 244674,
+          "min": 244674,
+          "max": 244674
+        },
+        "record_bytes_read": {
+          "median": 192404,
+          "min": 192404,
+          "max": 192404
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 111259,
+          "min": 111259,
+          "max": 111259
+        }
+      }
+    },
+    "changed": {
+      "setup": {
+        "allocation_calls": {
+          "median": 895,
+          "min": 895,
+          "max": 895
+        },
+        "cumulative_requested_bytes": {
+          "median": 127930,
+          "min": 127930,
+          "max": 127930
+        },
+        "elapsed_ns": {
+          "median": 96250,
+          "min": 77708,
+          "max": 425334
+        },
+        "live_after": {
+          "median": 113320,
+          "min": 113320,
+          "max": 113320
+        },
+        "live_before": {
+          "median": 23550,
+          "min": 23550,
+          "max": 23550
+        },
+        "peak_bytes": {
+          "median": 94198,
+          "min": 94198,
+          "max": 94198
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 89770,
+          "min": 89770,
+          "max": 89770
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 6058,
+          "min": 6058,
+          "max": 6058
+        },
+        "cumulative_requested_bytes": {
+          "median": 5067204,
+          "min": 5067204,
+          "max": 5067204
+        },
+        "elapsed_ns": {
+          "median": 10224375,
+          "min": 6557167,
+          "max": 18343209
+        },
+        "live_after": {
+          "median": 142110,
+          "min": 142110,
+          "max": 142110
+        },
+        "live_before": {
+          "median": 23550,
+          "min": 23550,
+          "max": 23550
+        },
+        "peak_bytes": {
+          "median": 127281,
+          "min": 127281,
+          "max": 127281
+        },
+        "record_bytes_read": {
+          "median": 192404,
+          "min": 192404,
+          "max": 192404
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 118560,
+          "min": 118560,
+          "max": 118560
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 6421,
+          "min": 6421,
+          "max": 6421
+        },
+        "cumulative_requested_bytes": {
+          "median": 5148656,
+          "min": 5148656,
+          "max": 5148656
+        },
+        "elapsed_ns": {
+          "median": 10375208,
+          "min": 6658000,
+          "max": 18596042
+        },
+        "live_after": {
+          "median": 137432,
+          "min": 137432,
+          "max": 137432
+        },
+        "live_before": {
+          "median": 23550,
+          "min": 23550,
+          "max": 23550
+        },
+        "peak_bytes": {
+          "median": 141018,
+          "min": 141018,
+          "max": 141018
+        },
+        "record_bytes_read": {
+          "median": 193908,
+          "min": 193908,
+          "max": 193908
+        },
+        "records_read": {
+          "median": 516,
+          "min": 516,
+          "max": 516
+        },
+        "retained_bytes": {
+          "median": 113882,
+          "min": 113882,
+          "max": 113882
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 25291,
+          "min": 25291,
+          "max": 25291
+        },
+        "cumulative_requested_bytes": {
+          "median": 9060927,
+          "min": 9060927,
+          "max": 9060927
+        },
+        "elapsed_ns": {
+          "median": 16293125,
+          "min": 10693792,
+          "max": 27849959
+        },
+        "live_after": {
+          "median": 120199,
+          "min": 120199,
+          "max": 120199
+        },
+        "live_before": {
+          "median": 23550,
+          "min": 23550,
+          "max": 23550
+        },
+        "peak_bytes": {
+          "median": 141018,
+          "min": 141018,
+          "max": 141018
+        },
+        "record_bytes_read": {
+          "median": 288660,
+          "min": 288660,
+          "max": 288660
+        },
+        "records_read": {
+          "median": 768,
+          "min": 768,
+          "max": 768
+        },
+        "retained_bytes": {
+          "median": 96649,
+          "min": 96649,
+          "max": 96649
+        }
+      }
+    }
+  },
+  "pivot": {
+    "baseline": {
+      "setup": {
+        "allocation_calls": {
+          "median": 612,
+          "min": 612,
+          "max": 612
+        },
+        "cumulative_requested_bytes": {
+          "median": 73082,
+          "min": 73082,
+          "max": 73082
+        },
+        "elapsed_ns": {
+          "median": 68208,
+          "min": 57584,
+          "max": 76125
+        },
+        "live_after": {
+          "median": 83051,
+          "min": 83051,
+          "max": 83051
+        },
+        "live_before": {
+          "median": 23553,
+          "min": 23553,
+          "max": 23553
+        },
+        "peak_bytes": {
+          "median": 62482,
+          "min": 62482,
+          "max": 62482
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 59498,
+          "min": 59498,
+          "max": 59498
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 6542,
+          "min": 6542,
+          "max": 6542
+        },
+        "cumulative_requested_bytes": {
+          "median": 21673114,
+          "min": 21673114,
+          "max": 21673114
+        },
+        "elapsed_ns": {
+          "median": 7496792,
+          "min": 7372542,
+          "max": 9595208
+        },
+        "live_after": {
+          "median": 2340491,
+          "min": 2340491,
+          "max": 2340491
+        },
+        "live_before": {
+          "median": 23553,
+          "min": 23553,
+          "max": 23553
+        },
+        "peak_bytes": {
+          "median": 2341450,
+          "min": 2341450,
+          "max": 2341450
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 2316938,
+          "min": 2316938,
+          "max": 2316938
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 6602,
+          "min": 6602,
+          "max": 6602
+        },
+        "cumulative_requested_bytes": {
+          "median": 21847618,
+          "min": 21847618,
+          "max": 21847618
+        },
+        "elapsed_ns": {
+          "median": 7555208,
+          "min": 7434125,
+          "max": 9669500
+        },
+        "live_after": {
+          "median": 2303881,
+          "min": 2303881,
+          "max": 2303881
+        },
+        "live_before": {
+          "median": 23553,
+          "min": 23553,
+          "max": 23553
+        },
+        "peak_bytes": {
+          "median": 2341450,
+          "min": 2341450,
+          "max": 2341450
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 2280328,
+          "min": 2280328,
+          "max": 2280328
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 22950,
+          "min": 22950,
+          "max": 22950
+        },
+        "cumulative_requested_bytes": {
+          "median": 40667885,
+          "min": 40667885,
+          "max": 40667885
+        },
+        "elapsed_ns": {
+          "median": 10849583,
+          "min": 10785000,
+          "max": 13789375
+        },
+        "live_after": {
+          "median": 134812,
+          "min": 134812,
+          "max": 134812
+        },
+        "live_before": {
+          "median": 23553,
+          "min": 23553,
+          "max": 23553
+        },
+        "peak_bytes": {
+          "median": 2341450,
+          "min": 2341450,
+          "max": 2341450
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 111259,
+          "min": 111259,
+          "max": 111259
+        }
+      }
+    },
+    "changed": {
+      "setup": {
+        "allocation_calls": {
+          "median": 895,
+          "min": 895,
+          "max": 895
+        },
+        "cumulative_requested_bytes": {
+          "median": 127930,
+          "min": 127930,
+          "max": 127930
+        },
+        "elapsed_ns": {
+          "median": 82625,
+          "min": 76208,
+          "max": 147792
+        },
+        "live_after": {
+          "median": 113322,
+          "min": 113322,
+          "max": 113322
+        },
+        "live_before": {
+          "median": 23552,
+          "min": 23552,
+          "max": 23552
+        },
+        "peak_bytes": {
+          "median": 94198,
+          "min": 94198,
+          "max": 94198
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 89770,
+          "min": 89770,
+          "max": 89770
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 6570,
+          "min": 6570,
+          "max": 6570
+        },
+        "cumulative_requested_bytes": {
+          "median": 21619248,
+          "min": 21619248,
+          "max": 21619248
+        },
+        "elapsed_ns": {
+          "median": 7715209,
+          "min": 7273583,
+          "max": 8248417
+        },
+        "live_after": {
+          "median": 142112,
+          "min": 142112,
+          "max": 142112
+        },
+        "live_before": {
+          "median": 23552,
+          "min": 23552,
+          "max": 23552
+        },
+        "peak_bytes": {
+          "median": 151417,
+          "min": 151417,
+          "max": 151417
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 118560,
+          "min": 118560,
+          "max": 118560
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 6937,
+          "min": 6937,
+          "max": 6937
+        },
+        "cumulative_requested_bytes": {
+          "median": 21895036,
+          "min": 21895036,
+          "max": 21895036
+        },
+        "elapsed_ns": {
+          "median": 7828542,
+          "min": 7376833,
+          "max": 8366667
+        },
+        "live_after": {
+          "median": 202458,
+          "min": 202458,
+          "max": 202458
+        },
+        "live_before": {
+          "median": 23552,
+          "min": 23552,
+          "max": 23552
+        },
+        "peak_bytes": {
+          "median": 195335,
+          "min": 195335,
+          "max": 195335
+        },
+        "record_bytes_read": {
+          "median": 4387956,
+          "min": 4387956,
+          "max": 4387956
+        },
+        "records_read": {
+          "median": 516,
+          "min": 516,
+          "max": 516
+        },
+        "retained_bytes": {
+          "median": 178906,
+          "min": 178906,
+          "max": 178906
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 26059,
+          "min": 26059,
+          "max": 26059
+        },
+        "cumulative_requested_bytes": {
+          "median": 50535083,
+          "min": 50535083,
+          "max": 50535083
+        },
+        "elapsed_ns": {
+          "median": 15173334,
+          "min": 14556541,
+          "max": 15885625
+        },
+        "live_after": {
+          "median": 120201,
+          "min": 120201,
+          "max": 120201
+        },
+        "live_before": {
+          "median": 23552,
+          "min": 23552,
+          "max": 23552
+        },
+        "peak_bytes": {
+          "median": 195335,
+          "min": 195335,
+          "max": 195335
+        },
+        "record_bytes_read": {
+          "median": 6530964,
+          "min": 6530964,
+          "max": 6530964
+        },
+        "records_read": {
+          "median": 768,
+          "min": 768,
+          "max": 768
+        },
+        "retained_bytes": {
+          "median": 96649,
+          "min": 96649,
+          "max": 96649
+        }
+      }
+    }
+  },
+  "sample": {
+    "baseline": {
+      "setup": {
+        "allocation_calls": {
+          "median": 1145,
+          "min": 1145,
+          "max": 1145
+        },
+        "cumulative_requested_bytes": {
+          "median": 120922,
+          "min": 120922,
+          "max": 120922
+        },
+        "elapsed_ns": {
+          "median": 109417,
+          "min": 95750,
+          "max": 120708
+        },
+        "live_after": {
+          "median": 103430,
+          "min": 103430,
+          "max": 103430
+        },
+        "live_before": {
+          "median": 23556,
+          "min": 23556,
+          "max": 23556
+        },
+        "peak_bytes": {
+          "median": 99623,
+          "min": 99623,
+          "max": 99623
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 79874,
+          "min": 79874,
+          "max": 79874
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 7075,
+          "min": 7075,
+          "max": 7075
+        },
+        "cumulative_requested_bytes": {
+          "median": 21720954,
+          "min": 21720954,
+          "max": 21720954
+        },
+        "elapsed_ns": {
+          "median": 7587416,
+          "min": 7471959,
+          "max": 7654917
+        },
+        "live_after": {
+          "median": 2360870,
+          "min": 2360870,
+          "max": 2360870
+        },
+        "live_before": {
+          "median": 23556,
+          "min": 23556,
+          "max": 23556
+        },
+        "peak_bytes": {
+          "median": 2361826,
+          "min": 2361826,
+          "max": 2361826
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 2337314,
+          "min": 2337314,
+          "max": 2337314
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 7135,
+          "min": 7135,
+          "max": 7135
+        },
+        "cumulative_requested_bytes": {
+          "median": 21895458,
+          "min": 21895458,
+          "max": 21895458
+        },
+        "elapsed_ns": {
+          "median": 7662083,
+          "min": 7551209,
+          "max": 7728584
+        },
+        "live_after": {
+          "median": 2324260,
+          "min": 2324260,
+          "max": 2324260
+        },
+        "live_before": {
+          "median": 23556,
+          "min": 23556,
+          "max": 23556
+        },
+        "peak_bytes": {
+          "median": 2361826,
+          "min": 2361826,
+          "max": 2361826
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 2300704,
+          "min": 2300704,
+          "max": 2300704
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 23740,
+          "min": 23740,
+          "max": 23740
+        },
+        "cumulative_requested_bytes": {
+          "median": 40738253,
+          "min": 40738253,
+          "max": 40738253
+        },
+        "elapsed_ns": {
+          "median": 11014833,
+          "min": 10904959,
+          "max": 11164209
+        },
+        "live_after": {
+          "median": 155191,
+          "min": 155191,
+          "max": 155191
+        },
+        "live_before": {
+          "median": 23556,
+          "min": 23556,
+          "max": 23556
+        },
+        "peak_bytes": {
+          "median": 2361826,
+          "min": 2361826,
+          "max": 2361826
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 131635,
+          "min": 131635,
+          "max": 131635
+        }
+      }
+    },
+    "changed": {
+      "setup": {
+        "allocation_calls": {
+          "median": 1428,
+          "min": 1428,
+          "max": 1428
+        },
+        "cumulative_requested_bytes": {
+          "median": 175770,
+          "min": 175770,
+          "max": 175770
+        },
+        "elapsed_ns": {
+          "median": 143292,
+          "min": 115125,
+          "max": 388583
+        },
+        "live_after": {
+          "median": 133701,
+          "min": 133701,
+          "max": 133701
+        },
+        "live_before": {
+          "median": 23555,
+          "min": 23555,
+          "max": 23555
+        },
+        "peak_bytes": {
+          "median": 129895,
+          "min": 129895,
+          "max": 129895
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 110146,
+          "min": 110146,
+          "max": 110146
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 7103,
+          "min": 7103,
+          "max": 7103
+        },
+        "cumulative_requested_bytes": {
+          "median": 21667088,
+          "min": 21667088,
+          "max": 21667088
+        },
+        "elapsed_ns": {
+          "median": 7698167,
+          "min": 7480042,
+          "max": 8051875
+        },
+        "live_after": {
+          "median": 162491,
+          "min": 162491,
+          "max": 162491
+        },
+        "live_before": {
+          "median": 23555,
+          "min": 23555,
+          "max": 23555
+        },
+        "peak_bytes": {
+          "median": 171793,
+          "min": 171793,
+          "max": 171793
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 138936,
+          "min": 138936,
+          "max": 138936
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 7470,
+          "min": 7470,
+          "max": 7470
+        },
+        "cumulative_requested_bytes": {
+          "median": 21942876,
+          "min": 21942876,
+          "max": 21942876
+        },
+        "elapsed_ns": {
+          "median": 7836125,
+          "min": 7601250,
+          "max": 8170333
+        },
+        "live_after": {
+          "median": 222837,
+          "min": 222837,
+          "max": 222837
+        },
+        "live_before": {
+          "median": 23555,
+          "min": 23555,
+          "max": 23555
+        },
+        "peak_bytes": {
+          "median": 215711,
+          "min": 215711,
+          "max": 215711
+        },
+        "record_bytes_read": {
+          "median": 4387956,
+          "min": 4387956,
+          "max": 4387956
+        },
+        "records_read": {
+          "median": 516,
+          "min": 516,
+          "max": 516
+        },
+        "retained_bytes": {
+          "median": 199282,
+          "min": 199282,
+          "max": 199282
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 26849,
+          "min": 26849,
+          "max": 26849
+        },
+        "cumulative_requested_bytes": {
+          "median": 50605451,
+          "min": 50605451,
+          "max": 50605451
+        },
+        "elapsed_ns": {
+          "median": 15297125,
+          "min": 14784000,
+          "max": 15461000
+        },
+        "live_after": {
+          "median": 140580,
+          "min": 140580,
+          "max": 140580
+        },
+        "live_before": {
+          "median": 23555,
+          "min": 23555,
+          "max": 23555
+        },
+        "peak_bytes": {
+          "median": 215711,
+          "min": 215711,
+          "max": 215711
+        },
+        "record_bytes_read": {
+          "median": 6530912,
+          "min": 6530912,
+          "max": 6530912
+        },
+        "records_read": {
+          "median": 768,
+          "min": 768,
+          "max": 768
+        },
+        "retained_bytes": {
+          "median": 117025,
+          "min": 117025,
+          "max": 117025
+        }
+      }
+    }
+  },
+  "selected-large": {
+    "baseline": {
+      "setup": {
+        "allocation_calls": {
+          "median": 1166,
+          "min": 1166,
+          "max": 1166
+        },
+        "cumulative_requested_bytes": {
+          "median": 124234,
+          "min": 124234,
+          "max": 124234
+        },
+        "elapsed_ns": {
+          "median": 86000,
+          "min": 73958,
+          "max": 923291
+        },
+        "live_after": {
+          "median": 156731,
+          "min": 156731,
+          "max": 156731
+        },
+        "live_before": {
+          "median": 46081,
+          "min": 46081,
+          "max": 46081
+        },
+        "peak_bytes": {
+          "median": 113634,
+          "min": 113634,
+          "max": 113634
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 110650,
+          "min": 110650,
+          "max": 110650
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 7394,
+          "min": 7394,
+          "max": 7394
+        },
+        "cumulative_requested_bytes": {
+          "median": 21845290,
+          "min": 21845290,
+          "max": 21845290
+        },
+        "elapsed_ns": {
+          "median": 8419291,
+          "min": 7721292,
+          "max": 9080375
+        },
+        "live_after": {
+          "median": 4671515,
+          "min": 4671515,
+          "max": 4671515
+        },
+        "live_before": {
+          "median": 46081,
+          "min": 46081,
+          "max": 46081
+        },
+        "peak_bytes": {
+          "median": 4649946,
+          "min": 4649946,
+          "max": 4649946
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 4625434,
+          "min": 4625434,
+          "max": 4625434
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 7455,
+          "min": 7455,
+          "max": 7455
+        },
+        "cumulative_requested_bytes": {
+          "median": 22122194,
+          "min": 22122194,
+          "max": 22122194
+        },
+        "elapsed_ns": {
+          "median": 8532208,
+          "min": 7823792,
+          "max": 9187125
+        },
+        "live_after": {
+          "median": 4565081,
+          "min": 4565081,
+          "max": 4565081
+        },
+        "live_before": {
+          "median": 46081,
+          "min": 46081,
+          "max": 46081
+        },
+        "peak_bytes": {
+          "median": 4649946,
+          "min": 4649946,
+          "max": 4649946
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 4519000,
+          "min": 4519000,
+          "max": 4519000
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 40187,
+          "min": 40187,
+          "max": 40187
+        },
+        "cumulative_requested_bytes": {
+          "median": 59838333,
+          "min": 59838333,
+          "max": 59838333
+        },
+        "elapsed_ns": {
+          "median": 15341417,
+          "min": 14430875,
+          "max": 15831708
+        },
+        "live_after": {
+          "median": 259692,
+          "min": 259692,
+          "max": 259692
+        },
+        "live_before": {
+          "median": 46081,
+          "min": 46081,
+          "max": 46081
+        },
+        "peak_bytes": {
+          "median": 4649946,
+          "min": 4649946,
+          "max": 4649946
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 213611,
+          "min": 213611,
+          "max": 213611
+        }
+      }
+    },
+    "changed": {
+      "setup": {
+        "allocation_calls": {
+          "median": 1728,
+          "min": 1728,
+          "max": 1728
+        },
+        "cumulative_requested_bytes": {
+          "median": 232746,
+          "min": 232746,
+          "max": 232746
+        },
+        "elapsed_ns": {
+          "median": 100916,
+          "min": 91458,
+          "max": 109625
+        },
+        "live_after": {
+          "median": 216090,
+          "min": 216090,
+          "max": 216090
+        },
+        "live_before": {
+          "median": 46080,
+          "min": 46080,
+          "max": 46080
+        },
+        "peak_bytes": {
+          "median": 186726,
+          "min": 186726,
+          "max": 186726
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 170010,
+          "min": 170010,
+          "max": 170010
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 7445,
+          "min": 7445,
+          "max": 7445
+        },
+        "cumulative_requested_bytes": {
+          "median": 21736304,
+          "min": 21736304,
+          "max": 21736304
+        },
+        "elapsed_ns": {
+          "median": 7889791,
+          "min": 7728291,
+          "max": 8286875
+        },
+        "live_after": {
+          "median": 273504,
+          "min": 273504,
+          "max": 273504
+        },
+        "live_before": {
+          "median": 46080,
+          "min": 46080,
+          "max": 46080
+        },
+        "peak_bytes": {
+          "median": 260281,
+          "min": 260281,
+          "max": 260281
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 227424,
+          "min": 227424,
+          "max": 227424
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 8069,
+          "min": 8069,
+          "max": 8069
+        },
+        "cumulative_requested_bytes": {
+          "median": 22040764,
+          "min": 22040764,
+          "max": 22040764
+        },
+        "elapsed_ns": {
+          "median": 8045375,
+          "min": 7880250,
+          "max": 8451083
+        },
+        "live_after": {
+          "median": 327754,
+          "min": 327754,
+          "max": 327754
+        },
+        "live_before": {
+          "median": 46080,
+          "min": 46080,
+          "max": 46080
+        },
+        "peak_bytes": {
+          "median": 298103,
+          "min": 298103,
+          "max": 298103
+        },
+        "record_bytes_read": {
+          "median": 4387956,
+          "min": 4387956,
+          "max": 4387956
+        },
+        "records_read": {
+          "median": 516,
+          "min": 516,
+          "max": 516
+        },
+        "retained_bytes": {
+          "median": 281674,
+          "min": 281674,
+          "max": 281674
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 46391,
+          "min": 46391,
+          "max": 46391
+        },
+        "cumulative_requested_bytes": {
+          "median": 79546091,
+          "min": 79546091,
+          "max": 79546091
+        },
+        "elapsed_ns": {
+          "median": 23436958,
+          "min": 22596208,
+          "max": 24051208
+        },
+        "live_after": {
+          "median": 229113,
+          "min": 229113,
+          "max": 229113
+        },
+        "live_before": {
+          "median": 46080,
+          "min": 46080,
+          "max": 46080
+        },
+        "peak_bytes": {
+          "median": 298103,
+          "min": 298103,
+          "max": 298103
+        },
+        "record_bytes_read": {
+          "median": 8707880,
+          "min": 8707880,
+          "max": 8707880
+        },
+        "records_read": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024
+        },
+        "retained_bytes": {
+          "median": 183033,
+          "min": 183033,
+          "max": 183033
+        }
+      }
+    }
+  },
+  "selected-small": {
+    "baseline": {
+      "setup": {
+        "allocation_calls": {
+          "median": 196,
+          "min": 196,
+          "max": 196
+        },
+        "cumulative_requested_bytes": {
+          "median": 34458,
+          "min": 34458,
+          "max": 34458
+        },
+        "elapsed_ns": {
+          "median": 64542,
+          "min": 60125,
+          "max": 72917
+        },
+        "live_after": {
+          "median": 27530,
+          "min": 27530,
+          "max": 27530
+        },
+        "live_before": {
+          "median": 6656,
+          "min": 6656,
+          "max": 6656
+        },
+        "peak_bytes": {
+          "median": 23858,
+          "min": 23858,
+          "max": 23858
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 20874,
+          "min": 20874,
+          "max": 20874
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 5902,
+          "min": 5902,
+          "max": 5902
+        },
+        "cumulative_requested_bytes": {
+          "median": 21542362,
+          "min": 21542362,
+          "max": 21542362
+        },
+        "elapsed_ns": {
+          "median": 7964583,
+          "min": 7644792,
+          "max": 8050125
+        },
+        "live_after": {
+          "median": 590602,
+          "min": 590602,
+          "max": 590602
+        },
+        "live_before": {
+          "median": 6656,
+          "min": 6656,
+          "max": 6656
+        },
+        "peak_bytes": {
+          "median": 608458,
+          "min": 608458,
+          "max": 608458
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 583946,
+          "min": 583946,
+          "max": 583946
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 5960,
+          "min": 5960,
+          "max": 5960
+        },
+        "cumulative_requested_bytes": {
+          "median": 21640066,
+          "min": 21640066,
+          "max": 21640066
+        },
+        "elapsed_ns": {
+          "median": 7989792,
+          "min": 7671917,
+          "max": 8076667
+        },
+        "live_after": {
+          "median": 607720,
+          "min": 607720,
+          "max": 607720
+        },
+        "live_before": {
+          "median": 6656,
+          "min": 6656,
+          "max": 6656
+        },
+        "peak_bytes": {
+          "median": 612481,
+          "min": 612481,
+          "max": 612481
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 601064,
+          "min": 601064,
+          "max": 601064
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 10020,
+          "min": 10020,
+          "max": 10020
+        },
+        "cumulative_requested_bytes": {
+          "median": 26288429,
+          "min": 26288429,
+          "max": 26288429
+        },
+        "elapsed_ns": {
+          "median": 8829792,
+          "min": 8557417,
+          "max": 8937292
+        },
+        "live_after": {
+          "median": 40891,
+          "min": 40891,
+          "max": 40891
+        },
+        "live_before": {
+          "median": 6656,
+          "min": 6656,
+          "max": 6656
+        },
+        "peak_bytes": {
+          "median": 612481,
+          "min": 612481,
+          "max": 612481
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 34235,
+          "min": 34235,
+          "max": 34235
+        }
+      }
+    },
+    "changed": {
+      "setup": {
+        "allocation_calls": {
+          "median": 268,
+          "min": 268,
+          "max": 268
+        },
+        "cumulative_requested_bytes": {
+          "median": 45530,
+          "min": 45530,
+          "max": 45530
+        },
+        "elapsed_ns": {
+          "median": 61916,
+          "min": 59625,
+          "max": 992375
+        },
+        "live_after": {
+          "median": 35529,
+          "min": 35529,
+          "max": 35529
+        },
+        "live_before": {
+          "median": 6655,
+          "min": 6655,
+          "max": 6655
+        },
+        "peak_bytes": {
+          "median": 31858,
+          "min": 31858,
+          "max": 31858
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 28874,
+          "min": 28874,
+          "max": 28874
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 5911,
+          "min": 5911,
+          "max": 5911
+        },
+        "cumulative_requested_bytes": {
+          "median": 21527408,
+          "min": 21527408,
+          "max": 21527408
+        },
+        "elapsed_ns": {
+          "median": 7781708,
+          "min": 7716292,
+          "max": 8611792
+        },
+        "live_after": {
+          "median": 42591,
+          "min": 42591,
+          "max": 42591
+        },
+        "live_before": {
+          "median": 6655,
+          "min": 6655,
+          "max": 6655
+        },
+        "peak_bytes": {
+          "median": 68793,
+          "min": 68793,
+          "max": 68793
+        },
+        "record_bytes_read": {
+          "median": 4353940,
+          "min": 4353940,
+          "max": 4353940
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 35936,
+          "min": 35936,
+          "max": 35936
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 6084,
+          "min": 6084,
+          "max": 6084
+        },
+        "cumulative_requested_bytes": {
+          "median": 21781692,
+          "min": 21781692,
+          "max": 21781692
+        },
+        "elapsed_ns": {
+          "median": 7889083,
+          "min": 7824542,
+          "max": 8711334
+        },
+        "live_after": {
+          "median": 107769,
+          "min": 107769,
+          "max": 107769
+        },
+        "live_before": {
+          "median": 6655,
+          "min": 6655,
+          "max": 6655
+        },
+        "peak_bytes": {
+          "median": 117543,
+          "min": 117543,
+          "max": 117543
+        },
+        "record_bytes_read": {
+          "median": 4387956,
+          "min": 4387956,
+          "max": 4387956
+        },
+        "records_read": {
+          "median": 516,
+          "min": 516,
+          "max": 516
+        },
+        "retained_bytes": {
+          "median": 101114,
+          "min": 101114,
+          "max": 101114
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 10806,
+          "min": 10806,
+          "max": 10806
+        },
+        "cumulative_requested_bytes": {
+          "median": 28772779,
+          "min": 28772779,
+          "max": 28772779
+        },
+        "elapsed_ns": {
+          "median": 9705833,
+          "min": 9678916,
+          "max": 10576834
+        },
+        "live_after": {
+          "median": 37800,
+          "min": 37800,
+          "max": 37800
+        },
+        "live_before": {
+          "median": 6655,
+          "min": 6655,
+          "max": 6655
+        },
+        "peak_bytes": {
+          "median": 117543,
+          "min": 117543,
+          "max": 117543
+        },
+        "record_bytes_read": {
+          "median": 4898196,
+          "min": 4898196,
+          "max": 4898196
+        },
+        "records_read": {
+          "median": 576,
+          "min": 576,
+          "max": 576
+        },
+        "retained_bytes": {
+          "median": 31145,
+          "min": 31145,
+          "max": 31145
+        }
+      }
+    }
+  },
+  "stopped": {
+    "baseline": {
+      "setup": {
+        "allocation_calls": {
+          "median": 612,
+          "min": 612,
+          "max": 612
+        },
+        "cumulative_requested_bytes": {
+          "median": 73082,
+          "min": 73082,
+          "max": 73082
+        },
+        "elapsed_ns": {
+          "median": 71167,
+          "min": 62292,
+          "max": 82875
+        },
+        "live_after": {
+          "median": 83053,
+          "min": 83053,
+          "max": 83053
+        },
+        "live_before": {
+          "median": 23555,
+          "min": 23555,
+          "max": 23555
+        },
+        "peak_bytes": {
+          "median": 62482,
+          "min": 62482,
+          "max": 62482
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 59498,
+          "min": 59498,
+          "max": 59498
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 8078,
+          "min": 8078,
+          "max": 8078
+        },
+        "cumulative_requested_bytes": {
+          "median": 168473754,
+          "min": 168473754,
+          "max": 168473754
+        },
+        "elapsed_ns": {
+          "median": 15939083,
+          "min": 15741709,
+          "max": 16384583
+        },
+        "live_after": {
+          "median": 17020557,
+          "min": 17020557,
+          "max": 17020557
+        },
+        "live_before": {
+          "median": 23555,
+          "min": 23555,
+          "max": 23555
+        },
+        "peak_bytes": {
+          "median": 17136202,
+          "min": 17136202,
+          "max": 17136202
+        },
+        "record_bytes_read": {
+          "median": 33714068,
+          "min": 33714068,
+          "max": 33714068
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 16997002,
+          "min": 16997002,
+          "max": 16997002
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 8138,
+          "min": 8138,
+          "max": 8138
+        },
+        "cumulative_requested_bytes": {
+          "median": 169107010,
+          "min": 169107010,
+          "max": 169107010
+        },
+        "elapsed_ns": {
+          "median": 16020917,
+          "min": 15823334,
+          "max": 16470042
+        },
+        "live_after": {
+          "median": 17213323,
+          "min": 17213323,
+          "max": 17213323
+        },
+        "live_before": {
+          "median": 23555,
+          "min": 23555,
+          "max": 23555
+        },
+        "peak_bytes": {
+          "median": 17258529,
+          "min": 17258529,
+          "max": 17258529
+        },
+        "record_bytes_read": {
+          "median": 33714068,
+          "min": 33714068,
+          "max": 33714068
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 17189768,
+          "min": 17189768,
+          "max": 17189768
+        }
+      },
+      "stopped": {
+        "allocation_calls": {
+          "median": 8159,
+          "min": 8159,
+          "max": 8159
+        },
+        "cumulative_requested_bytes": {
+          "median": 169424945,
+          "min": 169424945,
+          "max": 169424945
+        },
+        "elapsed_ns": {
+          "median": 16058750,
+          "min": 15859250,
+          "max": 16514125
+        },
+        "live_after": {
+          "median": 16983516,
+          "min": 16983516,
+          "max": 16983516
+        },
+        "live_before": {
+          "median": 23555,
+          "min": 23555,
+          "max": 23555
+        },
+        "peak_bytes": {
+          "median": 17366282,
+          "min": 17366282,
+          "max": 17366282
+        },
+        "record_bytes_read": {
+          "median": 33714068,
+          "min": 33714068,
+          "max": 33714068
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 16959961,
+          "min": 16959961,
+          "max": 16959961
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 15332,
+          "min": 15332,
+          "max": 15332
+        },
+        "cumulative_requested_bytes": {
+          "median": 236961637,
+          "min": 236961637,
+          "max": 236961637
+        },
+        "elapsed_ns": {
+          "median": 29935417,
+          "min": 29796625,
+          "max": 30925000
+        },
+        "live_after": {
+          "median": 167686,
+          "min": 167686,
+          "max": 167686
+        },
+        "live_before": {
+          "median": 23555,
+          "min": 23555,
+          "max": 23555
+        },
+        "peak_bytes": {
+          "median": 17366282,
+          "min": 17366282,
+          "max": 17366282
+        },
+        "record_bytes_read": {
+          "median": 33714068,
+          "min": 33714068,
+          "max": 33714068
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 144131,
+          "min": 144131,
+          "max": 144131
+        }
+      }
+    },
+    "changed": {
+      "setup": {
+        "allocation_calls": {
+          "median": 895,
+          "min": 895,
+          "max": 895
+        },
+        "cumulative_requested_bytes": {
+          "median": 127930,
+          "min": 127930,
+          "max": 127930
+        },
+        "elapsed_ns": {
+          "median": 79583,
+          "min": 71167,
+          "max": 88500
+        },
+        "live_after": {
+          "median": 113324,
+          "min": 113324,
+          "max": 113324
+        },
+        "live_before": {
+          "median": 23554,
+          "min": 23554,
+          "max": 23554
+        },
+        "peak_bytes": {
+          "median": 94198,
+          "min": 94198,
+          "max": 94198
+        },
+        "record_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "records_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "retained_bytes": {
+          "median": 89770,
+          "min": 89770,
+          "max": 89770
+        }
+      },
+      "scan": {
+        "allocation_calls": {
+          "median": 8106,
+          "min": 8106,
+          "max": 8106
+        },
+        "cumulative_requested_bytes": {
+          "median": 168419888,
+          "min": 168419888,
+          "max": 168419888
+        },
+        "elapsed_ns": {
+          "median": 15111834,
+          "min": 14654041,
+          "max": 15703167
+        },
+        "live_after": {
+          "median": 142114,
+          "min": 142114,
+          "max": 142114
+        },
+        "live_before": {
+          "median": 23554,
+          "min": 23554,
+          "max": 23554
+        },
+        "peak_bytes": {
+          "median": 323449,
+          "min": 323449,
+          "max": 323449
+        },
+        "record_bytes_read": {
+          "median": 33714068,
+          "min": 33714068,
+          "max": 33714068
+        },
+        "records_read": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "retained_bytes": {
+          "median": 118560,
+          "min": 118560,
+          "max": 118560
+        }
+      },
+      "saturation": {
+        "allocation_calls": {
+          "median": 8485,
+          "min": 8485,
+          "max": 8485
+        },
+        "cumulative_requested_bytes": {
+          "median": 170301308,
+          "min": 170301308,
+          "max": 170301308
+        },
+        "elapsed_ns": {
+          "median": 15314625,
+          "min": 14849083,
+          "max": 15922042
+        },
+        "live_after": {
+          "median": 661212,
+          "min": 661212,
+          "max": 661212
+        },
+        "live_before": {
+          "median": 23554,
+          "min": 23554,
+          "max": 23554
+        },
+        "peak_bytes": {
+          "median": 711431,
+          "min": 711431,
+          "max": 711431
+        },
+        "record_bytes_read": {
+          "median": 33977460,
+          "min": 33977460,
+          "max": 33977460
+        },
+        "records_read": {
+          "median": 516,
+          "min": 516,
+          "max": 516
+        },
+        "retained_bytes": {
+          "median": 637658,
+          "min": 637658,
+          "max": 637658
+        }
+      },
+      "stopped": {
+        "allocation_calls": {
+          "median": 8506,
+          "min": 8506,
+          "max": 8506
+        },
+        "cumulative_requested_bytes": {
+          "median": 170619243,
+          "min": 170619243,
+          "max": 170619243
+        },
+        "elapsed_ns": {
+          "median": 15344250,
+          "min": 14878750,
+          "max": 15954959
+        },
+        "live_after": {
+          "median": 476357,
+          "min": 476357,
+          "max": 476357
+        },
+        "live_before": {
+          "median": 23554,
+          "min": 23554,
+          "max": 23554
+        },
+        "peak_bytes": {
+          "median": 859124,
+          "min": 859124,
+          "max": 859124
+        },
+        "record_bytes_read": {
+          "median": 33977460,
+          "min": 33977460,
+          "max": 33977460
+        },
+        "records_read": {
+          "median": 516,
+          "min": 516,
+          "max": 516
+        },
+        "retained_bytes": {
+          "median": 452803,
+          "min": 452803,
+          "max": 452803
+        }
+      },
+      "drained": {
+        "allocation_calls": {
+          "median": 19459,
+          "min": 19459,
+          "max": 19459
+        },
+        "cumulative_requested_bytes": {
+          "median": 320997155,
+          "min": 320997155,
+          "max": 320997155
+        },
+        "elapsed_ns": {
+          "median": 36702000,
+          "min": 36283000,
+          "max": 37464209
+        },
+        "live_after": {
+          "median": 198027,
+          "min": 198027,
+          "max": 198027
+        },
+        "live_before": {
+          "median": 23554,
+          "min": 23554,
+          "max": 23554
+        },
+        "peak_bytes": {
+          "median": 859124,
+          "min": 859124,
+          "max": 859124
+        },
+        "record_bytes_read": {
+          "median": 50571156,
+          "min": 50571156,
+          "max": 50571156
+        },
+        "records_read": {
+          "median": 768,
+          "min": 768,
+          "max": 768
+        },
+        "retained_bytes": {
+          "median": 174473,
+          "min": 174473,
+          "max": 174473
+        }
+      }
+    }
+  }
+}

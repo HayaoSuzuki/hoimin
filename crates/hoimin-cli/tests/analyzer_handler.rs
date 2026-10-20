@@ -1,8 +1,10 @@
 use camino::Utf8PathBuf;
-use hoimin_cli::analyzer::{AnalyzerHandler, CandidateStore, StoreError, discover_targets};
+use hoimin_cli::analyzer::{
+    AnalyzerHandler, CandidateCursor, CandidateStore, StoreError, discover_targets,
+};
 use hoimin_core::{
-    AnalyzeFile, ByteSpan, CandidateCursor, EffectId, MutationCandidate, MutationOperatorSelection,
-    MutationProfile, TargetSlice,
+    AnalyzeFile, ByteSpan, EffectId, MutationCandidate, MutationOperatorSelection, MutationProfile,
+    TargetSlice,
 };
 use hoimin_python::{AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 use std::{fs, num::NonZeroUsize};

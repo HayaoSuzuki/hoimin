@@ -1,0 +1,14 @@
+{
+  "started_unix_seconds": 1792485592.991602,
+  "elapsed_seconds": 7.197030067443848,
+  "platform": "macOS-15.7.7-arm64-arm-64bit",
+  "python": "3.12.6",
+  "repeats": 5,
+  "matrix_sha256": "2cf11af91db32e957e564f048f9108a953a77e276b6efdbc3e769d277aa4c6b1",
+  "binary_sha256": {
+    "baseline": "a6c46269835c8be9cdb7f279a6c418a70bff3d8acdcde912b7776a07ddc284bb",
+    "changed": "bb88a26af5569117989e170cd2c11ca4cabad2a3e05b52f266f44bd0b1d92eba"
+  },
+  "boundary": "Actual core transitions and instrumented production spool source; setup IDs/index included; fixture writing, plan load, reports, children, allocator overhead, OS page cache excluded.",
+  "timing": "Cumulative elapsed nanoseconds from after fixture creation; warm spool page cache; instrumented reads; no process execution."
+}

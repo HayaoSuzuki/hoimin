@@ -5,6 +5,11 @@ description: 決定的な回帰ゲートとrelease計測、未統合の依存、
 status: draft
 catalog_revision: 165a2d284a1af92eb02ffd214ba8c0070c2f3808
 sources:
+- id: issue-1031-record
+  resource: ../../maintenance/2026-10-20-issue-1031/README.md
+  revision: 3054427a1b1b9a7d2f5cdd1b6ce62053e6c417ac
+  working_tree: untracked
+  sha256: b4759fa55a227ebbf2d3652ed0385fc326569f146fd7d0957615ab02377e7495
 - id: issue-1030-measurement
   resource: ../../maintenance/2026-10-20-issues-1029-1030/optional-measurement.json
   revision: 1f7feae33fa310aae87fbadb390105f6d770439d
@@ -229,3 +234,23 @@ links reproducible probes, source/binary metadata and final checks.
 
 [^issue-1030-measurement]: [Optional-call paired observations](../../maintenance/2026-10-20-issues-1029-1030/optional-measurement.json).
 [^issue-1029-measurement]: [Exception-member paired observations and public comparisons](../../maintenance/2026-10-20-issues-1029-1030/visibility-measurements.json).
+
+## Ordered candidate body ownership (Issue #1031)
+
+Ordered discovery and waiting queues now retain IDs, while I/O retains selected
+spool positions. The regression meter allocates bodies during actual core
+transitions and keeps worker effects alive at the observation point. It checks
+discovery and occupied workers independently; jobs controls the admitted body
+count. The release comparison varies original/replacement bytes, selected count,
+population and jobs, and checks reverse order, seeded sampling and stopped
+draining.[^issue-1031-record]
+
+The reader counter is inside the bounded record parser. A complete scan plus
+selected fetches must visit N + S records, including reverse requested order;
+this detects repeated prefix scanning without relying on timing. Retained and
+peak requested heap are distinct from allocator overhead and RSS. Plan loading,
+report storage and child processes are outside this queue measurement. The
+[implementation record](../../maintenance/2026-10-20-issue-1031/README.md)
+separates those costs and the executed checks.[^issue-1031-record]
+
+[^issue-1031-record]: [Issue #1031 observations and limitations](../../maintenance/2026-10-20-issue-1031/README.md).

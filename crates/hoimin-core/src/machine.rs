@@ -11,7 +11,7 @@ use thiserror::Error;
 
 use crate::{
     AnalysisDiagnostic, AnalysisFinished, AnalyzeFile, ApplyMutation,
-    BaselineFinished as BaselineOutput, BeginSession, BudgetLedger, CandidateCursor,
+    BaselineFinished as BaselineOutput, BeginSession, BudgetLedger, CandidateReadTarget,
     CandidateSpoolRef, Cleanup, Diagnostic, EffectFailed, EffectFailure, EffectId, EmitOutput,
     ExitPolicy, FinishSession, IntegrityCheckpoint, LoadSession, LookupStoredResult,
     MutantFinished as MutantOutput, MutantResult, MutantStarted, MutationCandidate,
@@ -113,7 +113,7 @@ impl SyntheticOutcome {
 enum WorkerState {
     #[default]
     Idle,
-    Reading,
+    Reading(CandidateReadTarget),
     Ready(MutationCandidate),
     Lookup(MutationCandidate),
     Applying(MutationCandidate),
@@ -137,7 +137,7 @@ impl WorkerState {
             | Self::SyntheticStarting(candidate, _)
             | Self::SyntheticFinishing(candidate, _) => Some(candidate),
             Self::Persisting(result) | Self::Finishing(result) => Some(&result.candidate),
-            Self::Idle | Self::Reading | Self::Resetting => None,
+            Self::Idle | Self::Reading(_) | Self::Resetting => None,
         }
     }
 }
@@ -158,6 +158,7 @@ enum OutputContinuation {
 
 #[derive(Clone, Debug)]
 enum StoppedCandidate {
+    Unloaded(String),
     NotStarted(MutationCandidate),
     SyntheticNotStarted(MutationCandidate, SyntheticOutcome),
     StartedNotRun(MutationCandidate),
@@ -221,7 +222,6 @@ pub struct RunState {
     budgets: BudgetLedger,
     copy_grant: Option<WorkspaceCopyGrant>,
     candidate_spool: Option<CandidateSpoolRef>,
-    candidate_cursor: CandidateCursor,
     workers: BTreeMap<u32, WorkerState>,
     scheduled_mutants: u64,
     baseline_elapsed: std::time::Duration,
@@ -279,7 +279,6 @@ impl RunState {
             budgets: BudgetLedger::new(budgets),
             copy_grant: None,
             candidate_spool: None,
-            candidate_cursor: CandidateCursor::START,
             workers: BTreeMap::new(),
             scheduled_mutants: 0,
             baseline_elapsed: std::time::Duration::ZERO,
@@ -336,11 +335,6 @@ impl RunState {
     #[must_use]
     pub fn run_id(&self) -> &str {
         &self.run_id
-    }
-
-    #[must_use]
-    pub fn candidate_offset(&self) -> u64 {
-        self.candidate_cursor.offset
     }
 
     #[must_use]
@@ -742,18 +736,22 @@ impl RunState {
         })])
     }
 
-    fn read_next_candidate(&mut self, worker: u32) -> Result<Vec<RunEffect>, MachineError> {
+    fn read_candidate(
+        &mut self,
+        worker: u32,
+        target: CandidateReadTarget,
+    ) -> Result<Vec<RunEffect>, MachineError> {
         let spool = self
             .candidate_spool
             .clone()
             .ok_or(MachineError::WrongPhase { phase: self.phase })?;
-        *self.worker_mut(worker)? = WorkerState::Reading;
+        *self.worker_mut(worker)? = WorkerState::Reading(target.clone());
         let id = self.allocate_id()?;
         Ok(vec![RunEffect::ReadCandidate(ReadCandidate {
             id,
             worker,
             spool,
-            cursor: self.candidate_cursor,
+            target,
         })])
     }
 
@@ -813,33 +811,23 @@ impl RunState {
                 if !self.candidate_read_pending()
                     && let Some(worker) = self.idle_worker()
                 {
-                    return self.read_next_candidate(worker);
+                    return self.read_candidate(worker, CandidateReadTarget::Next);
                 }
                 return Ok(Vec::new());
             }
 
-            let mut effects = Vec::new();
-            while let Some(worker) = self.idle_worker() {
-                let Some(candidate) = self.selection.ordered_state_mut().and_then(|ordered| {
+            // Serialize indexed reads so completion order cannot reorder dispatch.
+            // Only an idle worker may own a body; the queue itself contains IDs.
+            if !self.candidate_read_pending()
+                && let Some(worker) = self.idle_worker()
+                && let Some(id) = self.selection.ordered_state_mut().and_then(|ordered| {
                     match &mut ordered.phase {
                         OrderedCandidatePhase::Ready { remaining } => remaining.pop_front(),
                         OrderedCandidatePhase::Collecting { .. } => None,
                     }
-                }) else {
-                    break;
-                };
-                *self.worker_mut(worker)? = WorkerState::Ready(candidate);
-                if self.flags.scheduling.stop_requested {
-                    effects
-                        .extend(self.synthetic_started_output(worker, SyntheticOutcome::NotRun)?);
-                } else if self.scheduled_mutants >= self.config.limits.max_mutants.get() as u64 {
-                    self.flags.outcome.incomplete = true;
-                    effects
-                        .extend(self.synthetic_started_output(worker, SyntheticOutcome::NotRun)?);
-                } else {
-                    self.scheduled_mutants += 1;
-                    effects.extend(self.candidate_effects(worker)?);
-                }
+                })
+            {
+                return self.read_candidate(worker, CandidateReadTarget::Id(id));
             }
             if self.selection.ordered_state().is_some_and(|ordered| {
                 matches!(
@@ -853,15 +841,15 @@ impl RunState {
             {
                 self.flags.scheduling.candidate_exhausted = true;
                 self.phase = RunPhase::Finalize;
-                effects.extend(self.finalize_effects()?);
+                return self.finalize_effects();
             }
-            return Ok(effects);
+            return Ok(Vec::new());
         }
         if !self.flags.scheduling.candidate_exhausted
             && !self.candidate_read_pending()
             && let Some(worker) = self.idle_worker()
         {
-            return self.read_next_candidate(worker);
+            return self.read_candidate(worker, CandidateReadTarget::Next);
         }
         if self.flags.scheduling.candidate_exhausted
             && self
@@ -894,7 +882,7 @@ impl RunState {
                 let OrderedCandidatePhase::Collecting { discovered } = &mut ordered.phase else {
                     unreachable!("ordered collection requires the collecting phase");
                 };
-                discovered.insert(candidate.id.clone(), candidate);
+                discovered.insert(candidate.id);
             }
             return self.schedule_read_or_finalize();
         }
@@ -1088,7 +1076,12 @@ impl RunState {
                 WorkerState::SyntheticFinishing(candidate, outcome) => {
                     Some(StoppedCandidate::SyntheticFinished(candidate, outcome))
                 }
-                WorkerState::Idle | WorkerState::Reading | WorkerState::Resetting => None,
+                WorkerState::Reading(CandidateReadTarget::Id(id)) => {
+                    Some(StoppedCandidate::Unloaded(id))
+                }
+                WorkerState::Idle
+                | WorkerState::Reading(CandidateReadTarget::Next)
+                | WorkerState::Resetting => None,
             };
             if let Some(candidate) = stopped_candidate {
                 stopped.push(candidate);
@@ -1099,7 +1092,7 @@ impl RunState {
                 ordered
                     .take_remaining()
                     .into_iter()
-                    .map(StoppedCandidate::NotStarted),
+                    .map(StoppedCandidate::Unloaded),
             );
             self.flags.scheduling.candidate_exhausted = true;
         }
@@ -1118,17 +1111,24 @@ impl RunState {
         stopped.sort_by_key(|candidate| {
             #[cfg(test)]
             stop_tests::record_rank_query();
-            let candidate = match candidate {
+            let (id, sequence) = match candidate {
+                StoppedCandidate::Unloaded(id) => (id.as_str(), usize::MAX),
                 StoppedCandidate::NotStarted(candidate)
                 | StoppedCandidate::SyntheticNotStarted(candidate, _)
                 | StoppedCandidate::StartedNotRun(candidate)
-                | StoppedCandidate::SyntheticFinished(candidate, _) => candidate,
-                StoppedCandidate::Finished(result) => &result.candidate,
+                | StoppedCandidate::SyntheticFinished(candidate, _) => (
+                    candidate.id.as_str(),
+                    usize::try_from(candidate.sequence).unwrap_or(usize::MAX),
+                ),
+                StoppedCandidate::Finished(result) => (
+                    result.candidate.id.as_str(),
+                    usize::try_from(result.candidate.sequence).unwrap_or(usize::MAX),
+                ),
             };
             requested_ranks
                 .as_ref()
-                .and_then(|ranks| ranks.get(candidate.id.as_str()).copied())
-                .unwrap_or_else(|| usize::try_from(candidate.sequence).unwrap_or(usize::MAX))
+                .and_then(|ranks| ranks.get(id).copied())
+                .unwrap_or(sequence)
         });
         self.stopped_candidates = stopped.into();
         self.phase = RunPhase::Mutants;
@@ -1143,6 +1143,9 @@ impl RunState {
             .ok_or(MachineError::WrongPhase { phase: self.phase })?;
         if let Some(candidate) = self.stopped_candidates.pop_front() {
             match candidate {
+                StoppedCandidate::Unloaded(id) => {
+                    self.read_candidate(worker, CandidateReadTarget::Id(id))
+                }
                 StoppedCandidate::NotStarted(candidate) => {
                     *self.worker_mut(worker)? = WorkerState::Ready(candidate);
                     self.synthetic_started_output(worker, SyntheticOutcome::NotRun)
@@ -1162,7 +1165,7 @@ impl RunState {
                 }
             }
         } else if !self.flags.scheduling.candidate_exhausted {
-            self.read_next_candidate(worker)
+            self.read_candidate(worker, CandidateReadTarget::Next)
         } else if let Some(failed) = self.pending_failure.take() {
             self.diagnostic_effect(&failed)
         } else {
@@ -1263,6 +1266,14 @@ pub enum MachineError {
     MissingCandidateSpool,
     #[error("selected candidate was not discovered: {0}")]
     SelectedCandidateMissing(String),
+    #[error(
+        "candidate identity mismatch for worker {worker}: expected {expected}, received {received:?}"
+    )]
+    CandidateIdentityMismatch {
+        worker: u32,
+        expected: String,
+        received: Option<String>,
+    },
     #[error("configured worker count does not fit in u32")]
     WorkerCountOverflow,
     #[error("configured maximum process count does not fit in u32")]
@@ -1303,6 +1314,7 @@ impl MachineError {
             Self::MissingFingerprint => "machine.fingerprint.missing",
             Self::MissingCandidateSpool => "machine.candidate_spool.missing",
             Self::SelectedCandidateMissing(_) => "machine.candidate.missing",
+            Self::CandidateIdentityMismatch { .. } => "machine.candidate.identity_mismatch",
             Self::WorkerCountOverflow => "machine.worker.count_overflow",
             Self::ProcessCountOverflow => "machine.process.count_overflow",
             Self::WorkerCountMismatch { .. } => "machine.worker.count_mismatch",
@@ -1526,7 +1538,16 @@ pub fn transition(
                 return Err(MachineError::UnknownWorker(value.worker));
             }
             let worker = value.worker;
-            state.candidate_cursor = value.next_cursor;
+            if let WorkerState::Reading(CandidateReadTarget::Id(expected)) =
+                state.worker_mut(worker)?
+                && value.candidate.as_ref().map(|candidate| &candidate.id) != Some(expected)
+            {
+                return Err(MachineError::CandidateIdentityMismatch {
+                    worker,
+                    expected: expected.clone(),
+                    received: value.candidate.map(|candidate| candidate.id),
+                });
+            }
             if state.selection.ordered_state().is_some_and(|ordered| {
                 matches!(ordered.phase, OrderedCandidatePhase::Collecting { .. })
             }) {
@@ -1535,10 +1556,11 @@ pub fn transition(
                 if value.candidate.is_none() {
                     state.ensure_selected_candidates_discovered()?;
                 }
-                let selected = value
-                    .candidate
-                    .as_ref()
-                    .is_none_or(|candidate| state.selection.select_streamed(&candidate.id));
+                let selected = state.selection.ordered_state().is_some()
+                    || value
+                        .candidate
+                        .as_ref()
+                        .is_none_or(|candidate| state.selection.select_streamed(&candidate.id));
                 if !selected {
                     *state.worker_mut(worker)? = WorkerState::default();
                     state.schedule_read_or_finalize()?
@@ -1556,7 +1578,7 @@ pub fn transition(
                     let mut effects = if let Some(candidate) = value.candidate {
                         contract_ensure!(
                             "machine.worker.candidate.pre",
-                            matches!(state.worker_mut(worker)?, WorkerState::Reading),
+                            matches!(state.worker_mut(worker)?, WorkerState::Reading(_)),
                             (worker, &candidate)
                         );
                         *state.worker_mut(worker)? = WorkerState::Ready(candidate);
@@ -1854,6 +1876,13 @@ pub fn transition(
             }
             state.retire_pending();
             if was_mutating && !output_delivery_failed {
+                // A failed indexed read cannot supply a report body. Release its
+                // ID before draining the others, otherwise stop would retry forever.
+                if completed_kind == Some(CompletionKind::CandidateLoaded)
+                    && let Some(worker) = completed_worker
+                {
+                    *state.worker_mut(worker)? = WorkerState::Idle;
+                }
                 state.flags.scheduling.candidate_exhausted = true;
                 state.pending_failure = Some(failed);
                 state.begin_stopped_mutant_drain()?
