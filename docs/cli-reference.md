@@ -676,7 +676,9 @@ Options:
           [default: auto]
 
       --total-timeout <DURATION>
-          Wall-clock timeout for the complete run
+          Run time budget, including environment capture, fingerprint reads, and execution setup.
+
+          Verify starts this budget after saved-plan validation and reanalysis. Preparation consumes execution time; shutdown uses one additional two-second grace. An OS operation already in progress may finish later while retaining its resource owners.
 
           [default: 5m]
 
@@ -729,7 +731,7 @@ Options:
           Resume the newest compatible incomplete run in the session database
 
   -h, --help
-          Print help
+          Print help (see a summary with '-h')
 
 Mutation operator IDs and selector families:
   augmented_add_sub, augmented_bitwise_and_or, augmented_bitwise_shift, augmented_bitwise_xor
@@ -1034,7 +1036,9 @@ Options:
           [default: auto]
 
       --total-timeout <DURATION>
-          Wall-clock timeout for the complete run
+          Run time budget, including environment capture, fingerprint reads, and execution setup.
+
+          Verify starts this budget after saved-plan validation and reanalysis. Preparation consumes execution time; shutdown uses one additional two-second grace. An OS operation already in progress may finish later while retaining its resource owners.
 
           [default: 5m]
 
@@ -1072,7 +1076,7 @@ Options:
           Permit best-effort memory enforcement when hard limits are unavailable
 
   -h, --help
-          Print help
+          Print help (see a summary with '-h')
 
 Mutation operator IDs and selector families:
   augmented_add_sub, augmented_bitwise_and_or, augmented_bitwise_shift, augmented_bitwise_xor

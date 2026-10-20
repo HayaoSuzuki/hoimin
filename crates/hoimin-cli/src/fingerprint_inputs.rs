@@ -10,6 +10,8 @@ use crate::workspace::{self, PortableFileReadError, WorkspaceManifest};
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum FingerprintInputError {
+    #[error("fingerprint preparation stopped")]
+    Stopped,
     #[error("fingerprint.include.invalid_glob: {0}")]
     InvalidGlob(String),
     #[error("fingerprint.include.unmatched: {0}")]
@@ -45,8 +47,18 @@ pub fn resolve(
     patterns: &[String],
     files: &[String],
 ) -> Result<Vec<FingerprintInputFile>, FingerprintInputError> {
-    let mut selected = resolve_patterns(root, patterns)?.selected;
+    resolve_controlled(root, patterns, files, &|| false)
+}
+
+fn resolve_controlled(
+    root: &Utf8Path,
+    patterns: &[String],
+    files: &[String],
+    stopped: &impl Fn() -> bool,
+) -> Result<Vec<FingerprintInputFile>, FingerprintInputError> {
+    let mut selected = resolve_patterns_controlled(root, patterns, stopped)?.selected;
     for file in files {
+        check_stopped(stopped)?;
         let path = resolve_exact(file)?;
         let digest = workspace::hash_portable_file(root, &path).map_err(|error| match error {
             PortableFileReadError::NotFound => FingerprintInputError::NotFound(file.clone()),
@@ -60,6 +72,7 @@ pub fn resolve(
     selected
         .into_iter()
         .map(|(path, exact_digest)| {
+            check_stopped(stopped)?;
             let digest = exact_digest.map_or_else(
                 || {
                     workspace::hash_portable_file(root, &path).map_err(|error| match error {
@@ -85,12 +98,20 @@ pub fn resolve(
 pub(crate) fn resolve_config(
     config: &hoimin_core::RunConfig,
 ) -> Result<Vec<FingerprintInputFile>, FingerprintInputError> {
+    resolve_config_controlled(config, &|| false)
+}
+
+pub(crate) fn resolve_config_controlled(
+    config: &hoimin_core::RunConfig,
+    stopped: &impl Fn() -> bool,
+) -> Result<Vec<FingerprintInputFile>, FingerprintInputError> {
+    check_stopped(stopped)?;
     let mut files = config.fingerprint_files.clone();
     if let Some(project) = crate::analyzer::exception_project::ExceptionProject::from_config(config)
     {
         files.extend(
             project
-                .files(&|| false)
+                .files(stopped)
                 .map_err(FingerprintInputError::UnsupportedFile)?
                 .into_iter()
                 .map(camino::Utf8PathBuf::into_string),
@@ -98,7 +119,12 @@ pub(crate) fn resolve_config(
         files.sort();
         files.dedup();
     }
-    resolve(&config.selection.root, &config.fingerprint_includes, &files)
+    resolve_controlled(
+        &config.selection.root,
+        &config.fingerprint_includes,
+        &files,
+        stopped,
+    )
 }
 
 pub(crate) fn recheck_config(
@@ -219,13 +245,36 @@ struct PatternResolution {
     clippy::too_many_lines,
     reason = "pattern compilation, one traversal, and ordered error replay stay together"
 )]
+#[cfg(test)]
 fn resolve_patterns(
     root: &Utf8Path,
     patterns: &[String],
 ) -> Result<PatternResolution, FingerprintInputError> {
+    resolve_patterns_controlled(root, patterns, &|| false)
+}
+
+fn check_stopped(stopped: &impl Fn() -> bool) -> Result<(), FingerprintInputError> {
+    if stopped() {
+        Err(FingerprintInputError::Stopped)
+    } else {
+        Ok(())
+    }
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "pattern compilation, one traversal, and ordered error replay stay together"
+)]
+fn resolve_patterns_controlled(
+    root: &Utf8Path,
+    patterns: &[String],
+    stopped: &impl Fn() -> bool,
+) -> Result<PatternResolution, FingerprintInputError> {
+    check_stopped(stopped)?;
     let mut states = Vec::new();
     let mut deferred_error = None;
     for pattern in patterns {
+        check_stopped(stopped)?;
         if let Err(error) = validate_pattern(root, pattern) {
             deferred_error = Some(error);
             break;
@@ -280,6 +329,7 @@ fn resolve_patterns(
         walks += 1;
     }
     for result in builder.build() {
+        check_stopped(stopped)?;
         let entry =
             result.map_err(|error| FingerprintInputError::UnsupportedFile(error.to_string()))?;
         if entry.path() == root.as_std_path() {

@@ -276,3 +276,55 @@ fn large_report(root: &Path) -> PathBuf {
 
 parsed_manifest!(verify_does_not_apply_review_size_limit, large_manifest);
 accepted_report!(progress_does_not_apply_review_size_limit, large_report);
+
+macro_rules! closed_report_progress {
+    ($name:ident, $jsonl:expr, $index:expr, $field:literal) => {
+        #[test]
+        fn $name() {
+            // Arrange: alter one raw event so duplicate keys survive until the reader.
+            let root = tempfile::tempdir().unwrap();
+            let mut events: Vec<serde_json::Value> =
+                include_str!("golden/events/schema-v9-current.jsonl")
+                    .lines()
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect();
+            events[$index]["unexpected"] = 123.into();
+            let wire = if $jsonl {
+                events
+                    .iter()
+                    .map(|event| serde_json::to_string(event).unwrap())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            } else {
+                let mut value: serde_json::Value =
+                    serde_json::from_str(include_str!("golden/reports/schema-v9-current.json"))
+                        .unwrap();
+                value[$field] = events[$index].clone();
+                serde_json::to_string(&value).unwrap()
+            };
+            let path = root.path().join("report");
+            std::fs::write(&path, wire).unwrap();
+
+            // Act.
+            let output = bounded_output(progress(&path));
+
+            // Assert.
+            assert_eq!(output.status.code(), Some(2), "{output:?}");
+            assert!(output.stdout.is_empty());
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("unknown field `unexpected`"),
+                "{output:?}"
+            );
+        }
+    };
+}
+
+closed_report_progress!(progress_rejects_json_unknown_run, false, 0, "run");
+closed_report_progress!(progress_rejects_json_unknown_baseline, false, 1, "baseline");
+closed_report_progress!(progress_rejects_json_unknown_summary, false, 5, "summary");
+closed_report_progress!(progress_rejects_jsonl_unknown_run, true, 0, "run");
+closed_report_progress!(progress_rejects_jsonl_unknown_baseline, true, 1, "baseline");
+closed_report_progress!(progress_rejects_jsonl_unknown_mutant_start, true, 2, "");
+closed_report_progress!(progress_rejects_jsonl_unknown_mutant_finish, true, 3, "");
+closed_report_progress!(progress_rejects_jsonl_unknown_diagnostic, true, 4, "");
+closed_report_progress!(progress_rejects_jsonl_unknown_summary, true, 5, "summary");

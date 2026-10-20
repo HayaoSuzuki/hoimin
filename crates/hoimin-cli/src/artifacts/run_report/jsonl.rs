@@ -3,7 +3,10 @@ use std::path::Path;
 
 use hoimin_core::{OutputEvent, ReportSequence, RunStarted};
 
-use super::{ProgressError, ReportRunEvent, RunReportDocument, check_schema, invalid_structure};
+use super::{
+    ProgressConfig, ProgressError, ReportRunEvent, RunReportDocument, check_schema,
+    invalid_structure,
+};
 
 /// Reuses storage for one nonblank physical line, including a final line
 /// without a newline. No event-history buffer is retained.
@@ -36,17 +39,16 @@ pub(super) fn read_document(
     path: &Path,
     mut reader: impl BufRead,
     mut line: Vec<u8>,
-) -> Result<RunReportDocument<serde_json::Value>, ProgressError> {
+) -> Result<RunReportDocument<ProgressConfig>, ProgressError> {
     let parse_error = |source| ProgressError::Parse {
         path: path.to_path_buf(),
         source,
     };
-    let run: ReportRunEvent<serde_json::Value> =
-        serde_json::from_slice(&line).map_err(parse_error)?;
+    let run: ReportRunEvent<ProgressConfig> = serde_json::from_slice(&line).map_err(parse_error)?;
     check_schema(path, run.schema_version())?;
     let started = run.value();
-    // Progress deliberately treats configuration as opaque. ReportSequence
-    // consumes only header identity; don't deserialize config as today's RunConfig.
+    // Progress validates the closed config descendants without requiring a full
+    // RunConfig. ReportSequence consumes only header identity.
     let header = RunStarted::minimal(
         started.run_id.clone(),
         started.sequence,

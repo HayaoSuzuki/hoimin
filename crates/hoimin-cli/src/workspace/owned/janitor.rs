@@ -223,6 +223,159 @@ mod tests {
 mod boundary_tests {
     use super::super::*;
 
+    #[test]
+    fn stopped_preparation_does_not_start_janitor_selection() {
+        // Arrange.
+        let parent = tempfile::tempdir().unwrap();
+        let coordinator =
+            ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap()).unwrap();
+        create_owned_directory(
+            &coordinator.dir,
+            &format!("run-{}", uuid::Uuid::from_u128(1)),
+        )
+        .unwrap();
+
+        // Act.
+        let report = ManagedRunRoot::reclaim_abandoned_controlled(
+            &coordinator,
+            SystemTime::now(),
+            tokio::time::Instant::now() + Duration::from_secs(30),
+            &|| true,
+        );
+
+        // Assert.
+        assert!(!report.scan.directory_scan_complete);
+        assert_eq!(report.scan.observed_matching_entries, 0);
+        assert_eq!(report.inspected_roots, 0);
+    }
+
+    #[test]
+    fn preparation_stop_after_first_janitor_entry_preserves_cursor() {
+        // Arrange: stop exactly when the iterator has produced its first entry.
+        let parent = tempfile::tempdir().unwrap();
+        let coordinator =
+            ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap()).unwrap();
+        for id in 1..=3 {
+            create_owned_directory(
+                &coordinator.dir,
+                &format!("run-{}", uuid::Uuid::from_u128(id)),
+            )
+            .unwrap();
+        }
+        let before = std::fs::read(coordinator.path.join(COORDINATOR_FILE)).unwrap();
+        let stopped = std::cell::Cell::new(false);
+        let entries = std::cell::Cell::new(0);
+        let mut scan = JanitorScan::default();
+
+        // Act: remaining time becomes zero during enumeration, without sleeping.
+        let result = select_reclaim_candidates_controlled_with_hooks(
+            &coordinator,
+            &mut scan,
+            &|| {
+                if stopped.get() {
+                    Duration::ZERO
+                } else {
+                    Duration::from_secs(1)
+                }
+            },
+            &|| {
+                entries.set(entries.get() + 1);
+                stopped.set(true);
+            },
+        );
+
+        // Assert: traversal stops immediately and never persists a new cursor.
+        assert!(
+            result.is_err(),
+            "stopped enumeration returned a completed selection"
+        );
+        assert_eq!(entries.get(), 1);
+        assert!(!scan.directory_scan_complete);
+        assert_eq!(scan.stop_reason, Some(JanitorReason::SelectionDeadline));
+        assert_eq!(
+            std::fs::read(coordinator.path.join(COORDINATOR_FILE)).unwrap(),
+            before
+        );
+    }
+
+    #[test]
+    fn preparation_stop_after_first_deletion_preserves_remaining_entries() {
+        // Arrange: the shared stop becomes true immediately after one payload file disappears.
+        let parent = tempfile::tempdir().unwrap();
+        let coordinator =
+            ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap()).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let paths = ["a.txt", "b.txt", "c.txt"].map(|name| root.path().join(name));
+        for path in &paths {
+            std::fs::write(path, "payload").unwrap();
+        }
+        let stopped = || paths.iter().any(|path| !path.exists());
+        let budget = CleanupBudget {
+            duration: Duration::from_secs(5),
+            stopped: Some(&stopped),
+        };
+        let mut capabilities = CleanupCapabilities::default();
+
+        // Act: execute an ordinary deletion slice while its shared control changes.
+        let result = remove_claimed_tree_slice_with_capabilities(
+            &coordinator.dir,
+            root.path().file_name().unwrap(),
+            None,
+            budget,
+            &mut capabilities,
+        );
+
+        // Assert: acknowledged work remains reported, and no next payload deletion starts.
+        assert!(result.is_err() || result.as_ref().is_ok_and(|slice| !slice.complete));
+        assert_eq!(paths.iter().filter(|path| path.exists()).count(), 2);
+        assert_eq!(capabilities.progress.removed_entries, 1);
+        assert!(root.path().join(LEASE_FILE).exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn controlled_janitor_propagates_stop_into_claimed_tree_deletion() {
+        // Arrange: retain a directory capability so the stop observation survives claim rename.
+        let parent = tempfile::tempdir().unwrap();
+        let coordinator =
+            ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap()).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let payload = ["a.txt", "b.txt", "c.txt"];
+        for name in payload {
+            std::fs::write(root.path().join(name), "payload").unwrap();
+        }
+        let observed_root = root.dir.try_clone().unwrap();
+        root.mark_cleanup_ready().unwrap();
+        fs2::FileExt::unlock(root.lease.lock().unwrap().as_deref().unwrap()).unwrap();
+        drop(root);
+        let stopped = || {
+            payload
+                .iter()
+                .any(|name| observed_root.symlink_metadata(name).is_err())
+        };
+
+        // Act: cancellation becomes true immediately after the first real payload deletion.
+        let report = ManagedRunRoot::reclaim_abandoned_controlled(
+            &coordinator,
+            SystemTime::now(),
+            tokio::time::Instant::now() + Duration::from_secs(30),
+            &stopped,
+        );
+
+        // Assert: the controlled public path retains acknowledged work and the remaining root.
+        assert_eq!(report.removed_entries, 1, "{report:?}");
+        assert_eq!(report.unresolved_roots, 1, "{report:?}");
+        assert_eq!(report.reclaimed_roots, 0);
+        assert_eq!(
+            payload
+                .iter()
+                .filter(|name| observed_root.symlink_metadata(name).is_ok())
+                .count(),
+            2
+        );
+        assert!(observed_root.symlink_metadata(LEASE_FILE).is_ok());
+    }
+
     macro_rules! selection_case {
         ($name:ident, $count:expr, $selected:expr, $omitted:expr) => {
             #[test]

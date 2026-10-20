@@ -1174,9 +1174,31 @@ Exit codes are:
 
 Higher-priority conditions win in this order: cancellation, infrastructure error, baseline failure, incomplete result, survivor.
 
+For `run`, `--total-timeout` starts after CLI configuration validation and before
+capturing environment values or reading and hashing fingerprint inputs. Startup
+janitor selection and cleanup, managed workspace and spool creation, resource
+backend preparation, and the initial disk measurement consume that same budget.
+Preparation does not reset the deadline before target discovery, copying,
+baseline, analysis, or mutation tests. With the same configured duration, slower
+preparation can leave time for fewer mutants.
+
+For `verify`, the deadline starts after the saved plan has been loaded,
+validated, and reanalyzed and a verified execution plan has been received. The
+shared execution preparation is included; those earlier plan checks are excluded.
+`plan` and `verify --dry-run` keep their existing contracts.
+
+If preparation times out, no later preparation stage, baseline command, or mutant
+command is started. The diagnostic identifies preparation and does not emit a
+report containing an unexecuted baseline. An orderly preparation timeout exits
+with `4`, and user cancellation exits with `130`. Preparation, rollback, and
+diagnostic output failures exit with `2`.
+
 `--total-timeout` stops normal work at its configured deadline. Scheduler,
 process, blocking-I/O, and internal-finalization waits then receive at most a
-fixed additional two seconds for orderly shutdown. A timeout whose cleanup
+fixed additional two seconds for orderly shutdown. The grace starts at the run
+deadline or the first cancellation request; changing stages does not restart it.
+Preparation rollback and diagnostics share it, including cleanup of multiple
+managed roots. A timeout whose cleanup
 completes inside that grace remains an incomplete run with exit code `4`. If
 cleanup cannot finish before the shutdown grace expires, the run is an
 infrastructure failure with exit code `2`. CLI report writes and flushes share
@@ -1185,6 +1207,11 @@ final stderr diagnostic; stdout can contain a partial report if its consumer
 stalls. Library run and verify entry points require owned `Write + Send + 'static`
 writers and use the same delivery deadline. A started blocking operation can
 outlive the wait; it retains its writer and delivery resources until it returns.
+The same ownership rule applies to preparation I/O and live disk measurements:
+stopping the wait does not prove the operation has stopped, and its leases and
+managed roots remain owned until completion. Existing janitor rules recover
+residual roots when safe. The timeout does not guarantee immediate interruption
+of an OS operation.
 
 ## Sessions and resume
 
@@ -1579,7 +1606,7 @@ current candidates. `list --stale` includes stored candidates absent from the
 plan separately. List and show do not create a missing store.
 
 Plan-only output has execution state `not_loaded`. Add `--report run.json` for
-actual results from a complete schema-v8 JSON report with a passing baseline and
+actual results from a complete schema-v9 JSON report with a passing baseline and
 matching project/candidates. A plan candidate absent from the report is
 `not_in_report`; recording it with that report is rejected. JSONL and older
 reports are not supported by review. Plan-only recording remains allowed.

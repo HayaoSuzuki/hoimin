@@ -350,15 +350,28 @@ const MONITOR_JOIN_SUCCEEDED: u8 = 1;
 const MONITOR_JOIN_FAILED: u8 = 2;
 
 impl DiskMonitor {
-    pub(crate) async fn start(
+    pub(crate) fn start_unmeasured(
         policy: hoimin_core::DiskPolicy,
         roots: Vec<Arc<super::ManagedRunRoot>>,
     ) -> io::Result<Self> {
         let meter =
             initial_meter_from_capabilities(roots.iter().map(|root| root.disk_capability()));
-        Self::start_with_meter(meter, policy, roots).await
+        Self::start_unmeasured_with_meter(meter, policy, roots, hoimin_core::DISK_SAMPLE_INTERVAL)
     }
 
+    pub(crate) fn start_unmeasured_with_meter<M: DiskMeasurement>(
+        meter: M,
+        policy: hoimin_core::DiskPolicy,
+        roots: Vec<Arc<super::ManagedRunRoot>>,
+        sample_interval: Duration,
+    ) -> io::Result<Self> {
+        Self::spawn_with_meter(meter, policy, roots, sample_interval, |worker| {
+            std::thread::Builder::new()
+                .name("hoimin-disk-monitor".to_owned())
+                .spawn(worker)
+        })
+    }
+    #[cfg(test)]
     pub(crate) async fn start_with_meter<M>(
         meter: M,
         policy: hoimin_core::DiskPolicy,
@@ -371,6 +384,7 @@ impl DiskMonitor {
             .await
     }
 
+    #[cfg(test)]
     pub(crate) async fn start_with_meter_and_interval<M>(
         meter: M,
         policy: hoimin_core::DiskPolicy,
@@ -394,6 +408,7 @@ impl DiskMonitor {
         .await
     }
 
+    #[cfg(test)]
     async fn start_with_meter_and_interval_and_spawner<M>(
         meter: M,
         policy: hoimin_core::DiskPolicy,
@@ -404,6 +419,18 @@ impl DiskMonitor {
     where
         M: DiskMeasurement,
     {
+        let monitor = Self::spawn_with_meter(meter, policy, roots, sample_interval, spawner)?;
+        let _ = monitor.sample_now().await;
+        Ok(monitor)
+    }
+
+    fn spawn_with_meter<M: DiskMeasurement>(
+        meter: M,
+        policy: hoimin_core::DiskPolicy,
+        roots: Vec<Arc<super::ManagedRunRoot>>,
+        sample_interval: Duration,
+        spawner: impl FnOnce(MonitorWorker) -> io::Result<JoinHandle<()>>,
+    ) -> io::Result<Self> {
         let (commands, receiver) = mpsc::channel();
         let (stop_sender, stop) = tokio::sync::watch::channel(None);
         let stats = Arc::new(Mutex::new(DiskMonitorStats::default()));
@@ -427,7 +454,6 @@ impl DiskMonitor {
             thread: Mutex::new(Some(thread)),
             join_status,
         };
-        let _ = monitor.sample_now().await;
         Ok(monitor)
     }
 
@@ -507,7 +533,11 @@ fn monitor_loop<M: DiskMeasurement>(
             }
             Ok(MonitorCommand::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                let _ = sample_meter(&meter, policy, &roots, &mut last_refresh, &stop, &stats);
+                // Construction alone admits no filesystem work. Measured run
+                // preparation explicitly requests and bounds the first sample.
+                if last_refresh.is_some() {
+                    let _ = sample_meter(&meter, policy, &roots, &mut last_refresh, &stop, &stats);
+                }
             }
         }
     }

@@ -236,7 +236,11 @@ struct RawMutationArgs {
     #[arg(long, default_value = "auto", value_name = "DURATION|auto")]
     mutant_timeout: String,
 
-    /// Wall-clock timeout for the complete run.
+    /// Run time budget, including environment capture, fingerprint reads, and execution setup.
+    ///
+    /// Verify starts this budget after saved-plan validation and reanalysis. Preparation
+    /// consumes execution time; shutdown uses one additional two-second grace. An OS
+    /// operation already in progress may finish later while retaining its resource owners.
     #[arg(long, default_value = "5m", value_name = "DURATION")]
     total_timeout: String,
 

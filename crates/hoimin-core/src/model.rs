@@ -4,6 +4,7 @@ use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ByteSpan {
     pub start: u64,
     pub length: u64,
@@ -23,6 +24,7 @@ pub struct TargetSlice {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MutationCandidate {
     pub id: String,
     pub sequence: u64,
@@ -114,6 +116,7 @@ pub struct CandidateSpoolRef {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OutputSpoolRef {
     pub token: String,
     pub retained: u64,

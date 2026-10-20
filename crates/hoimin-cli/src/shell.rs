@@ -96,6 +96,9 @@ use crate::workspace::{
     DiskMeasurement, MaterializationPause, MaterializationPauseController, PreflightPause,
 };
 
+mod preparation;
+use preparation::{PreparationError, PreparationToken};
+
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 #[cfg(test)]
 const FINAL_MEASUREMENT_PAUSE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -268,6 +271,7 @@ async fn finish_with_interrupt_monitor<T>(
 #[derive(Clone, Debug)]
 pub struct RunControl {
     request: ProcessStartGate,
+    cancelled_at: Arc<std::sync::Mutex<Option<tokio::time::Instant>>>,
     max_process_tasks: Arc<AtomicUsize>,
     max_completion_in_flight: Arc<AtomicUsize>,
     #[cfg(test)]
@@ -410,6 +414,7 @@ impl RunControl {
     pub fn new() -> Self {
         Self {
             request: ProcessStartGate::new(),
+            cancelled_at: Arc::new(std::sync::Mutex::new(None)),
             max_process_tasks: Arc::new(AtomicUsize::new(0)),
             max_completion_in_flight: Arc::new(AtomicUsize::new(0)),
             #[cfg(test)]
@@ -718,7 +723,38 @@ impl RunControl {
     }
 
     pub fn cancel(&self) {
+        self.cancelled_at
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get_or_insert_with(tokio::time::Instant::now);
         self.request.cancel();
+    }
+
+    fn establish_event_shutdown_budget(
+        &self,
+        active: &mut Option<ShutdownBudget>,
+        event: &RunEvent,
+        run_deadline: tokio::time::Instant,
+        observed_at: tokio::time::Instant,
+        grace: Duration,
+    ) -> Option<ShutdownBudget> {
+        let observed_at = if matches!(event, RunEvent::CancellationRequested) {
+            self.cancelled_at
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .unwrap_or(observed_at)
+        } else {
+            observed_at
+        };
+        if matches!(event, RunEvent::CancellationRequested) && observed_at >= run_deadline {
+            // Cancellation retains event precedence, but cannot extend the
+            // shutdown window of a deadline that has already elapsed.
+            return Some(establish_shutdown_budget(
+                active,
+                ShutdownBudget::for_total_timeout_with_grace(run_deadline, grace),
+            ));
+        }
+        establish_event_shutdown_budget(active, event, run_deadline, observed_at, grace)
     }
 
     #[must_use]
@@ -1271,6 +1307,7 @@ struct SetupRollback {
     execution_spool: Option<Arc<ManagedChild>>,
     delivery_spool: Option<Arc<ManagedChild>>,
     armed: bool,
+    timing: Option<PreparationToken>,
 }
 
 impl SetupRollback {
@@ -1281,6 +1318,7 @@ impl SetupRollback {
             execution_spool: None,
             delivery_spool: None,
             armed: true,
+            timing: None,
         }
     }
 
@@ -1304,21 +1342,44 @@ impl SetupRollback {
 impl Drop for SetupRollback {
     fn drop(&mut self) {
         if self.armed {
+            if let Some(timing) = &self.timing {
+                timing.failure_budget();
+            }
             // A concurrent creator may hold the coordinator lock long enough for immediate
             // cleanup to defer. Publish cleanup-ready first so releasing our leases never turns
             // a setup failure into a young root that the janitor must preserve for 24 hours.
-            let _ = self.execution.mark_cleanup_ready();
-            if let Some(delivery) = &self.delivery {
-                let _ = delivery.mark_cleanup_ready();
+            for root in std::iter::once(&self.execution).chain(self.delivery.iter()) {
+                if let Err(error) = root.mark_cleanup_ready()
+                    && let Some(timing) = &self.timing
+                {
+                    timing.record_failure(format!("preparation rollback marker failed: {error}"));
+                }
             }
             // Close every child capability owned by the guard before the root lifecycle checks
             // for live handles. Callers bind this guard before their additional Arc clones, so
             // those clones are also dropped before this guard during error unwinding.
             self.delivery_spool.take();
             self.execution_spool.take();
-            let _ = self.execution.cleanup(Duration::from_secs(60));
-            if let Some(delivery) = &self.delivery {
-                let _ = delivery.cleanup(Duration::from_secs(60));
+            // Both roots share one absolute shutdown deadline. A late blocking
+            // owner cannot acquire another grace interval when it finally returns.
+            let fallback = tokio::time::Instant::now() + SHUTDOWN_GRACE;
+            for root in std::iter::once(&self.execution).chain(self.delivery.iter()) {
+                let remaining = self.timing.as_ref().map_or_else(
+                    || fallback.saturating_duration_since(tokio::time::Instant::now()),
+                    PreparationToken::rollback_remaining,
+                );
+                if remaining.is_zero() {
+                    continue;
+                }
+                let cleanup = root.cleanup(remaining);
+                if cleanup.disposition == CleanupDisposition::Failed
+                    && let Some(timing) = &self.timing
+                {
+                    timing.record_failure(format!(
+                        "preparation rollback failed: {}",
+                        cleanup.evidence.details.join("; ")
+                    ));
+                }
             }
         }
     }
@@ -1370,10 +1431,31 @@ fn prepare_shell_setup_sync_in(
     temporary_parent: &Utf8Path,
     boundary: &impl Fn(ShellSetupBoundary),
 ) -> Result<PreparedShellSetup, String> {
+    prepare_shell_setup_controlled(config, temporary_parent, boundary, None).map_err(|error| {
+        match error {
+            PreparationError::Failed(error) => error,
+            PreparationError::Stopped(cause) => format!("{} during preparation", cause.label()),
+        }
+    })
+}
+
+fn preparation_check(timing: Option<&PreparationToken>) -> Result<(), PreparationError> {
+    timing.map_or(Ok(()), PreparationToken::check)
+}
+
+fn prepare_shell_setup_controlled(
+    config: RunConfig,
+    temporary_parent: &Utf8Path,
+    boundary: &impl Fn(ShellSetupBoundary),
+    timing: Option<&PreparationToken>,
+) -> Result<PreparedShellSetup, PreparationError> {
+    preparation_check(timing)?;
     let (rollback, execution_root, delivery_root, execution_spool, delivery_spool, startup_reclaim) =
-        create_managed_shell_roots_in(temporary_parent, &|_| {})?;
+        create_managed_shell_roots_controlled(temporary_parent, &|_| {}, timing)?;
     boundary(ShellSetupBoundary::RootsCreated);
+    preparation_check(timing)?;
     boundary(ShellSetupBoundary::DiskPolicyVerified);
+    preparation_check(timing)?;
     let spool_path = execution_spool.path().to_owned();
     let requested_workers = u32::try_from(config.limits.jobs.get())
         .map_err(|_| "--jobs exceeds the supported worker count".to_owned())?;
@@ -1392,10 +1474,13 @@ fn prepare_shell_setup_sync_in(
     .with_max_owned_bytes(config.limits.max_workspace_size.get())
     .with_max_copy_bytes(config.limits.max_copy_size.get());
     boundary(ShellSetupBoundary::WorkspaceCreated);
+    preparation_check(timing)?;
     let backend = resource_backend(&config).map_err(|error| error.to_string())?;
     boundary(ShellSetupBoundary::BackendCreated);
+    preparation_check(timing)?;
     let process = Arc::new(ProcessHandler::new(backend, spool_path.join("process")));
     boundary(ShellSetupBoundary::ProcessCreated);
+    preparation_check(timing)?;
     let analyzer = AnalyzerHandler::new(
         config.selection.root.clone(),
         config.operators.clone(),
@@ -1405,9 +1490,11 @@ fn prepare_shell_setup_sync_in(
     .with_managed_candidate_spool_owner(Arc::clone(&execution_spool))
     .with_exception_project(&config);
     boundary(ShellSetupBoundary::AnalyzerCreated);
+    preparation_check(timing)?;
     let report = PreparedReport::new(config.output.format, delivery_spool.path())
         .map_err(|error| error.to_string())?;
     boundary(ShellSetupBoundary::ReportCreated);
+    preparation_check(timing)?;
     let spool_dir = Arc::new(ManagedShellRoots {
         execution_root,
         delivery_root,
@@ -1438,6 +1525,7 @@ enum ManagedRootSetupBoundary {
     clippy::type_complexity,
     reason = "the tuple keeps the rollback guard armed alongside all four published owners"
 )]
+#[cfg(test)]
 fn create_managed_shell_roots_in(
     temporary_parent: &Utf8Path,
     boundary: &impl Fn(ManagedRootSetupBoundary),
@@ -1452,21 +1540,62 @@ fn create_managed_shell_roots_in(
     ),
     String,
 > {
+    create_managed_shell_roots_controlled(temporary_parent, boundary, None).map_err(|error| {
+        match error {
+            PreparationError::Failed(error) => error,
+            PreparationError::Stopped(cause) => format!("{} during preparation", cause.label()),
+        }
+    })
+}
+
+#[allow(
+    clippy::type_complexity,
+    reason = "rollback stays armed alongside every published owner"
+)]
+fn create_managed_shell_roots_controlled(
+    temporary_parent: &Utf8Path,
+    boundary: &impl Fn(ManagedRootSetupBoundary),
+    timing: Option<&PreparationToken>,
+) -> Result<
+    (
+        SetupRollback,
+        Arc<ManagedRunRoot>,
+        Arc<ManagedRunRoot>,
+        Arc<ManagedChild>,
+        Arc<ManagedChild>,
+        ReclaimReport,
+    ),
+    PreparationError,
+> {
+    preparation_check(timing)?;
     let coordinator =
         ManagedRootCoordinator::open(temporary_parent).map_err(|error| error.to_string())?;
-    let reclaim = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
+    preparation_check(timing)?;
+    let reclaim = match timing {
+        Some(timing) => ManagedRunRoot::reclaim_abandoned_controlled(
+            &coordinator,
+            std::time::SystemTime::now(),
+            timing.deadline,
+            &|| timing.check().is_err(),
+        ),
+        None => ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now()),
+    };
+    preparation_check(timing)?;
     let execution_root = Arc::new(
         ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution)
             .map_err(|error| error.to_string())?,
     );
     let mut rollback = SetupRollback::new(Arc::clone(&execution_root));
+    rollback.timing = timing.cloned();
     boundary(ManagedRootSetupBoundary::ExecutionPublished);
+    preparation_check(timing)?;
     let delivery_root = Arc::new(
         ManagedRunRoot::create(&coordinator, OwnerKind::PublicDelivery)
             .map_err(|error| error.to_string())?,
     );
     rollback.attach_delivery(Arc::clone(&delivery_root));
     boundary(ManagedRootSetupBoundary::DeliveryPublished);
+    preparation_check(timing)?;
     let execution_spool = Arc::new(
         execution_root
             .create_child("spool-")
@@ -1474,6 +1603,7 @@ fn create_managed_shell_roots_in(
     );
     rollback.attach_execution_spool(Arc::clone(&execution_spool));
     boundary(ManagedRootSetupBoundary::ExecutionSpoolCreated);
+    preparation_check(timing)?;
     let delivery_spool = Arc::new(
         delivery_root
             .create_child("report-")
@@ -1481,6 +1611,7 @@ fn create_managed_shell_roots_in(
     );
     rollback.attach_delivery_spool(Arc::clone(&delivery_spool));
     boundary(ManagedRootSetupBoundary::DeliverySpoolCreated);
+    preparation_check(timing)?;
     Ok((
         rollback,
         execution_root,
@@ -1491,8 +1622,8 @@ fn create_managed_shell_roots_in(
     ))
 }
 
-async fn start_disk_monitor(
-    context: &ShellContext,
+fn begin_disk_monitor(
+    context: &PreparedShellSetup,
     control: &RunControl,
 ) -> Result<DiskMonitor, String> {
     #[cfg(not(test))]
@@ -1504,17 +1635,15 @@ async fn start_disk_monitor(
     let roots = context.spool_dir.monitor_roots();
     #[cfg(test)]
     if let Some(meter) = control.disk_meter() {
-        return DiskMonitor::start_with_meter_and_interval(
+        return DiskMonitor::start_unmeasured_with_meter(
             meter,
             policy,
             roots,
             control.disk_sample_interval,
         )
-        .await
         .map_err(|error| format!("disk.measurement.failed: {error}"));
     }
-    DiskMonitor::start(policy, roots)
-        .await
+    DiskMonitor::start_unmeasured(policy, roots)
         .map_err(|error| format!("disk.measurement.failed: {error}"))
 }
 
@@ -1881,6 +2010,7 @@ fn merge_lifecycle_stop(summary: &mut hoimin_core::RunSummary, failure: hoimin_c
 }
 
 pub struct ShellContext {
+    git: crate::target::git::GitRunner,
     workspace: Option<WorkspaceHandler>,
     analyzer: AnalyzerHandler,
     process: Arc<ProcessHandler>,
@@ -1943,6 +2073,7 @@ impl ShellContext {
         let delivery_owner = Arc::new((Arc::clone(&spool_dir.delivery_root), delivery_child));
 
         Self {
+            git: crate::target::git::GitRunner::default(),
             workspace: Some(workspace),
             analyzer,
             process,
@@ -2113,7 +2244,13 @@ async fn execute_effect_with_cancellation(
     debug_assert!(!is_blocking_io_effect(&effect));
     let id = effect.id();
     let result: Result<RunEvent, EffectFailed> = match effect {
-        RunEffect::ResolveTargets(request) => match TargetHandler::handle(request).await {
+        RunEffect::ResolveTargets(request) => match TargetHandler::handle_with_cancellation(
+            request,
+            cancellation.clone(),
+            &context.git,
+        )
+        .await
+        {
             Ok(value) => {
                 context.resolved_targets = Some(value.targets.clone());
                 Ok(RunEvent::TargetsResolved(value))
@@ -2414,16 +2551,37 @@ where
     Stdout: Write + Send + 'static,
     Stderr: Write + Send + 'static,
 {
+    let timing = PreparationToken::new(config.limits.total_timeout.get(), control.clone());
+    let mut interrupts = crate::interrupt::InterruptMonitor::spawn();
     crate::live_progress::stage("preparing run");
-    let config = match prepare_run_config(config) {
+    let config_token = timing.clone();
+    let config = match timing
+        .run(&mut interrupts, move || {
+            config_token.check()?;
+            let environment = crate::fingerprint_env::capture(&config.environment)
+                .map_err(|error| PreparationError::Failed(error.to_string()))?;
+            config_token.check()?;
+            let config = config
+                .with_environment(environment)
+                .map_err(|error| PreparationError::Failed(error.to_string()))?;
+            let inputs = crate::fingerprint_inputs::resolve_config_controlled(&config, &|| {
+                config_token.check().is_err()
+            })
+            .map_err(|error| {
+                config_token
+                    .check()
+                    .err()
+                    .unwrap_or_else(|| PreparationError::Failed(error.to_string()))
+            })?;
+            config_token.check()?;
+            Ok(config.with_fingerprint_inputs(inputs))
+        })
+        .await
+    {
         Ok(config) => config,
-        Err(error) => {
-            let error = error.to_string();
-            crate::write_terminal_error(error.clone(), stderr).await;
-            return Err(error);
-        }
+        Err(error) => return timing.report(error, stderr).await,
     };
-    run_loop_prepared(
+    Box::pin(run_loop_prepared_timed(
         config,
         stdout,
         stderr,
@@ -2431,7 +2589,9 @@ where
         hoimin_core::RunSelection::all(),
         None,
         presentation,
-    )
+        timing,
+        interrupts,
+    ))
     .await
 }
 
@@ -2452,8 +2612,21 @@ where
         return Err(error);
     }
     let control = RunControl::new();
-    let mut context =
-        prepare_loop_context(&verified.config, stdout, stderr, &control, presentation).await?;
+    let timing = PreparationToken::new(verified.config.limits.total_timeout.get(), control.clone());
+    let mut interrupts = crate::interrupt::InterruptMonitor::spawn();
+    let context = match Box::pin(prepare_loop_context(
+        &verified.config,
+        &control,
+        &timing,
+        &mut interrupts,
+    ))
+    .await
+    {
+        Ok(prepared) => prepared,
+        Err(error) => return timing.report(error, stderr).await,
+    };
+    let (prepared, monitor) = context;
+    let mut context = ShellContext::from_prepared(prepared, stdout, stderr, presentation);
     context.metrics_protected_inputs = verified.manifest_inputs;
     Box::pin(run_loop_context(
         verified.config,
@@ -2461,10 +2634,14 @@ where
         control,
         verified.selection,
         Some(verified.fingerprint_copy_inputs),
+        timing,
+        interrupts,
+        monitor,
     ))
     .await
 }
 
+#[cfg(test)]
 async fn run_loop_prepared<Stdout, Stderr>(
     config: RunConfig,
     stdout: Stdout,
@@ -2478,56 +2655,133 @@ where
     Stdout: Write + Send + 'static,
     Stderr: Write + Send + 'static,
 {
-    let context = prepare_loop_context(&config, stdout, stderr, &control, presentation).await?;
+    let timing = PreparationToken::new(config.limits.total_timeout.get(), control.clone());
+    let interrupts = crate::interrupt::InterruptMonitor::spawn();
+    Box::pin(run_loop_prepared_timed(
+        config,
+        stdout,
+        stderr,
+        control,
+        candidate_selection,
+        fingerprint_copy_inputs,
+        presentation,
+        timing,
+        interrupts,
+    ))
+    .await
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "owned execution inputs include the original deadline and interrupt monitor"
+)]
+async fn run_loop_prepared_timed<Stdout, Stderr>(
+    config: RunConfig,
+    stdout: Stdout,
+    stderr: Stderr,
+    control: RunControl,
+    candidate_selection: hoimin_core::RunSelection,
+    fingerprint_copy_inputs: Option<BTreeSet<Utf8PathBuf>>,
+    presentation: crate::report::ReportPresentation,
+    timing: PreparationToken,
+    mut interrupts: crate::interrupt::InterruptMonitor,
+) -> Result<i32, String>
+where
+    Stdout: Write + Send + 'static,
+    Stderr: Write + Send + 'static,
+{
+    let context = match Box::pin(prepare_loop_context(
+        &config,
+        &control,
+        &timing,
+        &mut interrupts,
+    ))
+    .await
+    {
+        Ok(prepared) => prepared,
+        Err(error) => return timing.report(error, stderr).await,
+    };
+    let (prepared, monitor) = context;
+    let context = ShellContext::from_prepared(prepared, stdout, stderr, presentation);
     Box::pin(run_loop_context(
         config,
         context,
         control,
         candidate_selection,
         fingerprint_copy_inputs,
+        timing,
+        interrupts,
+        monitor,
     ))
     .await
 }
 
-async fn prepare_loop_context<Stdout, Stderr>(
-    config: &RunConfig,
-    stdout: Stdout,
-    stderr: Stderr,
+fn reconcile_target_completion(
+    completed: RunEvent,
     control: &RunControl,
-    presentation: crate::report::ReportPresentation,
-) -> Result<ShellContext, String>
-where
-    Stdout: Write + Send + 'static,
-    Stderr: Write + Send + 'static,
-{
-    #[cfg(not(test))]
-    let _ = control;
-    #[cfg(not(test))]
-    let prepared = prepare_shell_setup(config.clone(), Box::new(|| {})).await;
-    #[cfg(test)]
-    let prepared = prepare_shell_setup_in(
-        config.clone(),
-        Utf8PathBuf::from_path_buf(control.managed_parent.path().to_owned())
-            .map_err(|_| "test managed parent is not UTF-8".to_owned())?,
-    )
-    .await;
-    match prepared {
-        Ok(prepared) => Ok(ShellContext::from_prepared(
-            prepared,
-            stdout,
-            stderr,
-            presentation,
-        )),
-        Err(error) => {
-            crate::write_terminal_error(error.clone(), stderr).await;
-            Err(error)
+    deadline: tokio::time::Instant,
+) -> RunEvent {
+    if matches!(&completed, RunEvent::EffectFailed(failure)
+        if matches!(&failure.failure, hoimin_core::EffectFailure::Other { code, .. } if code == "target.cancelled"))
+    {
+        if control.is_cancelled() {
+            return RunEvent::CancellationRequested;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return RunEvent::DeadlineReached;
         }
     }
+    completed
+}
+
+async fn prepare_loop_context(
+    config: &RunConfig,
+    control: &RunControl,
+    timing: &PreparationToken,
+    interrupts: &mut crate::interrupt::InterruptMonitor,
+) -> Result<(PreparedShellSetup, DiskMonitor), PreparationError> {
+    #[cfg(not(test))]
+    let parent = Utf8PathBuf::from_path_buf(std::env::temp_dir())
+        .map_err(|_| PreparationError::Failed("temporary workspace parent is not UTF-8".into()))?;
+    #[cfg(test)]
+    let parent = Utf8PathBuf::from_path_buf(control.managed_parent.path().to_owned())
+        .map_err(|_| PreparationError::Failed("test managed parent is not UTF-8".into()))?;
+    #[cfg(not(test))]
+    let _ = control;
+    let token = timing.clone();
+    let config = config.clone();
+    let monitor_control = control.clone();
+    let (monitor, prepared) = timing
+        .run(interrupts, move || {
+            let prepared = prepare_shell_setup_controlled(config, &parent, &|_| {}, Some(&token))?;
+            token.check()?;
+            let monitor = begin_disk_monitor(&prepared, &monitor_control)?;
+            // Drop an undelivered idle monitor before its setup. No measurements
+            // start until the first explicit sample; retained leases still prevent
+            // workspace deletion until the monitor thread actually exits.
+            Ok((monitor, prepared))
+        })
+        .await?;
+    if let Err(error) = timing.admit(interrupts, monitor.sample_now()).await {
+        let joined = monitor.stop_and_join(timing.rollback_remaining()).await;
+        drop(monitor);
+        let rollback = timing.dispose(prepared).await;
+        if !joined {
+            return Err(PreparationError::Failed("preparation disk monitor did not join before shutdown grace; live measurement retains its roots".into()));
+        }
+        rollback?;
+        return Err(error);
+    }
+    Ok((prepared, monitor))
 }
 
 #[expect(
     clippy::too_many_lines,
     reason = "the loop keeps cancellation, completion, and state-transition ordering in one auditable sequence"
+)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "execution receives the prepared monitor and original deadline owners"
 )]
 #[tracing::instrument(name = "mutation_run", level = "debug", skip_all, fields(run_id = tracing::field::Empty))]
 async fn run_loop_context(
@@ -2536,7 +2790,11 @@ async fn run_loop_context(
     control: RunControl,
     candidate_selection: hoimin_core::RunSelection,
     fingerprint_copy_inputs: Option<BTreeSet<Utf8PathBuf>>,
+    timing: PreparationToken,
+    mut interrupts: crate::interrupt::InterruptMonitor,
+    prepared_monitor: DiskMonitor,
 ) -> Result<i32, String> {
+    context.git = crate::target::git::GitRunner::for_run(control.start_gate(), timing.deadline);
     let metrics_requested = config.output.metrics.is_some();
     #[cfg(test)]
     control.observe_managed_roots(&context.spool_dir);
@@ -2551,7 +2809,7 @@ async fn run_loop_context(
     if let Some(fingerprint_copy_inputs) = fingerprint_copy_inputs {
         context.fingerprint_copy_inputs = fingerprint_copy_inputs;
     }
-    let deadline = tokio::time::Instant::now() + config.limits.total_timeout.get();
+    let deadline = timing.deadline;
     let shutdown_grace = control.shutdown_grace();
     let report_admission = context.report.admission();
     report_admission.restrict_to(
@@ -2565,9 +2823,9 @@ async fn run_loop_context(
     let mut executed = 0_u64;
     let initial_run_id = Uuid::new_v4().to_string();
     let mut diagnostic_run_id = initial_run_id.clone();
-    let mut shutdown_budget = None;
+    let _ = timing.check();
+    let mut shutdown_budget = timing.shutdown();
     let mut shutdown_expiry_reported = false;
-    let mut interrupts = crate::interrupt::InterruptMonitor::spawn();
     let mut disk_monitor = None;
     let mut execution_safety_proven = false;
     let mut final_measurement_joined = true;
@@ -2592,7 +2850,7 @@ async fn run_loop_context(
         *state = next;
         crate::live_progress::observe(&state);
         track_diagnostic_run_id(&mut diagnostic_run_id, &state);
-        let monitor = start_disk_monitor(&context, &control).await?;
+        let monitor = prepared_monitor;
         context.commit_setup();
         let mut disk_stop = monitor.stop_receiver();
         disk_monitor = Some(monitor);
@@ -2630,7 +2888,7 @@ async fn run_loop_context(
                 });
             }
             if let Some(event) = &priority_event {
-                establish_event_shutdown_budget(
+                control.establish_event_shutdown_budget(
                     &mut shutdown_budget,
                     event,
                     deadline,
@@ -2672,7 +2930,7 @@ async fn run_loop_context(
                     } else {
                         RunEvent::DeadlineReached
                     };
-                    establish_event_shutdown_budget(
+                    control.establish_event_shutdown_budget(
                         &mut shutdown_budget,
                         &event,
                         deadline,
@@ -2701,7 +2959,7 @@ async fn run_loop_context(
                             disk_stop_delivered = true;
                             let event =
                                 RunEvent::DiskStopRequested(DiskStopRequested { failure });
-                            establish_event_shutdown_budget(
+                            control.establish_event_shutdown_budget(
                                 &mut shutdown_budget,
                                 &event,
                                 deadline,
@@ -2720,10 +2978,16 @@ async fn run_loop_context(
                     let remaining = cleanup_budget
                         .deadline()
                         .saturating_duration_since(tokio::time::Instant::now());
-                    let process_drain = context
+                    let git_drain = context.git.drain_for_shutdown(remaining).await;
+                    let remaining = cleanup_budget.deadline().saturating_duration_since(tokio::time::Instant::now());
+                    let mut process_drain = context
                         .process
                         .drain_for_shutdown(remaining)
                         .await;
+                    if let Err(error) = git_drain {
+                        process_drain.all_reaped = false;
+                        process_drain.secondary_errors.push(error);
+                    }
                     #[cfg(test)]
                     {
                         if process_drain.all_reaped {
@@ -2768,7 +3032,7 @@ async fn run_loop_context(
                                     secondary: Vec::new(),
                                 },
                             });
-                            establish_event_shutdown_budget(
+                            control.establish_event_shutdown_budget(
                                 &mut shutdown_budget,
                                 &event,
                                 deadline,
@@ -2880,7 +3144,7 @@ async fn run_loop_context(
                         stop_signalled = true;
                         disk_stop_delivered = true;
                         let event = RunEvent::DiskStopRequested(DiskStopRequested { failure });
-                        establish_event_shutdown_budget(
+                        control.establish_event_shutdown_budget(
                             &mut shutdown_budget,
                             &event,
                             deadline,
@@ -2913,7 +3177,7 @@ async fn run_loop_context(
                                     cancellation.cancel();
                                     stop_signalled = true;
                                     let event = RunEvent::CancellationRequested;
-                                    establish_event_shutdown_budget(
+                                    control.establish_event_shutdown_budget(
                                         &mut shutdown_budget,
                                         &event,
                                         deadline,
@@ -2964,7 +3228,7 @@ async fn run_loop_context(
                                     cancellation.cancel();
                                     stop_signalled = true;
                                     let event = RunEvent::CancellationRequested;
-                                    establish_event_shutdown_budget(
+                                    control.establish_event_shutdown_budget(
                                         &mut shutdown_budget,
                                         &event,
                                         deadline,
@@ -3147,7 +3411,7 @@ async fn run_loop_context(
                                     () = control.cancelled(), if !stop_signalled => {
                                         cancellation.cancel();
                                         stop_signalled = true;
-                                        establish_event_shutdown_budget(
+                                        control.establish_event_shutdown_budget(
                                             &mut shutdown_budget, &RunEvent::CancellationRequested,
                                             deadline, tokio::time::Instant::now(), shutdown_grace,
                                         );
@@ -3156,7 +3420,7 @@ async fn run_loop_context(
                                         cancellation.cancel();
                                         stop_signalled = true;
                                         let event = first_interrupt_event(signal)?;
-                                        establish_event_shutdown_budget(
+                                        control.establish_event_shutdown_budget(
                                             &mut shutdown_budget, &event, deadline,
                                             tokio::time::Instant::now(), shutdown_grace,
                                         );
@@ -3164,7 +3428,7 @@ async fn run_loop_context(
                                     () = tokio::time::sleep_until(deadline), if !stop_signalled => {
                                         cancellation.cancel();
                                         stop_signalled = true;
-                                        establish_event_shutdown_budget(
+                                        control.establish_event_shutdown_budget(
                                             &mut shutdown_budget, &RunEvent::DeadlineReached,
                                             deadline, tokio::time::Instant::now(), shutdown_grace,
                                         );
@@ -3360,7 +3624,7 @@ async fn run_loop_context(
                                     let event = RunEvent::DiskStopRequested(DiskStopRequested {
                                         failure,
                                     });
-                                    let budget = establish_event_shutdown_budget(
+                                    let budget = control.establish_event_shutdown_budget(
                                         &mut shutdown_budget,
                                         &event,
                                         deadline,
@@ -3374,12 +3638,11 @@ async fn run_loop_context(
                                         signal_failure: None,
                                     }
                                 }
-                                event = &mut execution => SerialSelection::Completed(event),
                                 () = control.cancelled() => {
                                     cancellation.cancel();
                                     stop_signalled = true;
                                     let event = RunEvent::CancellationRequested;
-                                    let budget = establish_event_shutdown_budget(
+                                    let budget = control.establish_event_shutdown_budget(
                                         &mut shutdown_budget,
                                         &event,
                                         deadline,
@@ -3397,7 +3660,7 @@ async fn run_loop_context(
                                     cancellation.cancel();
                                     stop_signalled = true;
                                     let event = RunEvent::DeadlineReached;
-                                    let budget = establish_event_shutdown_budget(
+                                    let budget = control.establish_event_shutdown_budget(
                                         &mut shutdown_budget,
                                         &event,
                                         deadline,
@@ -3416,7 +3679,7 @@ async fn run_loop_context(
                                     stop_signalled = true;
                                     match first_interrupt_event(signal) {
                                         Ok(event) => {
-                                            let budget = establish_event_shutdown_budget(
+                                            let budget = control.establish_event_shutdown_budget(
                                                 &mut shutdown_budget,
                                                 &event,
                                                 deadline,
@@ -3447,9 +3710,10 @@ async fn run_loop_context(
                                         }
                                     }
                                 }
+                                event = &mut execution => SerialSelection::Completed(event),
                             };
                             match selection {
-                                SerialSelection::Completed(event) => event,
+                                SerialSelection::Completed(event) => reconcile_target_completion(event, &control, deadline),
                                 SerialSelection::Stopped {
                                     event,
                                     budget,
@@ -3488,8 +3752,16 @@ async fn run_loop_context(
                                     signal_failure = pending_signal_failure;
                                     // Accept the completed effect before its observed stop.
                                     // Otherwise finalization can replay output already written.
-                                    priority_event = Some(event);
-                                    completed
+                                    // Target cancellation is reported only after the owned
+                                    // Git child has been terminated and reaped. Its synthetic
+                                    // failure must not replace an orderly observed stop.
+                                    if matches!(&completed, RunEvent::EffectFailed(failure)
+                                        if matches!(&failure.failure, hoimin_core::EffectFailure::Other { code, .. } if code == "target.cancelled")) {
+                                        event
+                                    } else {
+                                        priority_event = Some(event);
+                                        completed
+                                    }
                                 }
                             }
                         };
@@ -3499,6 +3771,9 @@ async fn run_loop_context(
                                 | RunEvent::CancellationRequested
                                 | RunEvent::DiskStopRequested(_)
                         ) {
+                            cancellation.cancel();
+                            stop_signalled = true;
+                            control.establish_event_shutdown_budget(&mut shutdown_budget, &event, deadline, tokio::time::Instant::now(), shutdown_grace);
                             priority_event = Some(event);
                         } else {
                             serial_completion = Some(ShellCompletion::Serial(event));
@@ -3594,7 +3869,7 @@ async fn run_loop_context(
                         cancellation.cancel();
                         stop_signalled = true;
                         let event = RunEvent::DiskStopRequested(DiskStopRequested { failure });
-                        establish_event_shutdown_budget(
+                        control.establish_event_shutdown_budget(
                             &mut shutdown_budget,
                             &event,
                             deadline,
@@ -3607,7 +3882,7 @@ async fn run_loop_context(
                         cancellation.cancel();
                         stop_signalled = true;
                         let event = RunEvent::CancellationRequested;
-                        establish_event_shutdown_budget(
+                        control.establish_event_shutdown_budget(
                             &mut shutdown_budget,
                             &event,
                             deadline,
@@ -3620,7 +3895,7 @@ async fn run_loop_context(
                         cancellation.cancel();
                         stop_signalled = true;
                         let event = RunEvent::DeadlineReached;
-                        establish_event_shutdown_budget(
+                        control.establish_event_shutdown_budget(
                             &mut shutdown_budget,
                             &event,
                             deadline,
@@ -3634,7 +3909,7 @@ async fn run_loop_context(
                         stop_signalled = true;
                         match first_interrupt_event(signal) {
                             Ok(event) => {
-                                establish_event_shutdown_budget(
+                                control.establish_event_shutdown_budget(
                                     &mut shutdown_budget,
                                     &event,
                                     deadline,
@@ -3724,7 +3999,7 @@ async fn run_loop_context(
                 stop_signalled = true;
                 disk_stop_delivered = true;
                 let event = RunEvent::DiskStopRequested(DiskStopRequested { failure });
-                establish_event_shutdown_budget(
+                control.establish_event_shutdown_budget(
                     &mut shutdown_budget,
                     &event,
                     deadline,
@@ -3945,7 +4220,7 @@ async fn run_loop_context(
                 io_in_flight = io_in_flight.saturating_sub(1);
             }
             if external_stop || failed {
-                establish_event_shutdown_budget(
+                control.establish_event_shutdown_budget(
                     &mut shutdown_budget,
                     &event,
                     deadline,
@@ -4163,7 +4438,15 @@ async fn run_loop_context(
         let (process_reaped, output_drained, process_errors) = if execution_safety_proven {
             (true, true, Vec::new())
         } else {
-            let report = context
+            let git_drain = context
+                .git
+                .drain_for_shutdown(
+                    budget
+                        .deadline()
+                        .saturating_duration_since(tokio::time::Instant::now()),
+                )
+                .await;
+            let mut report = context
                 .process
                 .drain_for_shutdown(
                     budget
@@ -4171,6 +4454,10 @@ async fn run_loop_context(
                         .saturating_duration_since(tokio::time::Instant::now()),
                 )
                 .await;
+            if let Err(error) = git_drain {
+                report.all_reaped = false;
+                report.secondary_errors.push(error);
+            }
             (
                 report.all_reaped,
                 report.output_drains_joined,
@@ -5437,6 +5724,195 @@ mod tests {
         .await
         .unwrap_err();
         (error, stdout.snapshot())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn execution_handoff_does_not_restart_preparation_cancellation_grace() {
+        // Arrange.
+        let control = RunControl::new();
+        let requested = tokio::time::Instant::now();
+        let deadline = requested + Duration::from_secs(30);
+        control.cancel();
+        tokio::time::advance(Duration::from_secs(1)).await;
+        let mut active = None;
+
+        // Act.
+        let budget = control
+            .establish_event_shutdown_budget(
+                &mut active,
+                &RunEvent::CancellationRequested,
+                deadline,
+                tokio::time::Instant::now(),
+                Duration::from_secs(2),
+            )
+            .unwrap();
+
+        // Assert.
+        assert_eq!(budget.deadline(), requested + Duration::from_secs(2));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn execution_late_cancellation_cannot_extend_expired_total_deadline() {
+        // Arrange: both stop reasons become ready before the scheduler observes either.
+        let control = RunControl::new();
+        let started = tokio::time::Instant::now();
+        let deadline = started + Duration::from_secs(1);
+        tokio::time::advance(Duration::from_secs(2)).await;
+        control.cancel();
+        let mut active = None;
+
+        // Act.
+        let budget = control
+            .establish_event_shutdown_budget(
+                &mut active,
+                &RunEvent::CancellationRequested,
+                deadline,
+                tokio::time::Instant::now(),
+                Duration::from_secs(2),
+            )
+            .unwrap();
+
+        // Assert: cancellation precedence does not grant another second of grace.
+        assert_eq!(budget.deadline(), started + Duration::from_secs(3));
+    }
+
+    #[test]
+    fn completed_git_cancellation_racing_stop_maps_to_cancellation() {
+        // Arrange.
+        let control = RunControl::new();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        let completion = RunEvent::EffectFailed(EffectFailed::other(
+            EffectId(1),
+            "target.cancelled",
+            "Git reaped",
+        ));
+        control.cancel();
+
+        // Act.
+        let event = reconcile_target_completion(completion, &control, deadline);
+
+        // Assert.
+        assert!(matches!(event, RunEvent::CancellationRequested));
+    }
+
+    #[test]
+    fn completed_git_cancellation_racing_deadline_maps_to_timeout() {
+        // Arrange.
+        let control = RunControl::new();
+        let deadline = tokio::time::Instant::now();
+        let completion = RunEvent::EffectFailed(EffectFailed::other(
+            EffectId(1),
+            "target.cancelled",
+            "Git reaped",
+        ));
+
+        // Act.
+        let event = reconcile_target_completion(completion, &control, deadline);
+
+        // Assert.
+        assert!(matches!(event, RunEvent::DeadlineReached));
+    }
+
+    #[test]
+    fn completed_git_reap_failure_is_preserved_after_timeout() {
+        // Arrange.
+        let control = RunControl::new();
+        let deadline = tokio::time::Instant::now();
+        let completion = RunEvent::EffectFailed(EffectFailed::other(
+            EffectId(1),
+            "target.resolve",
+            "Git reap failed",
+        ));
+
+        // Act.
+        let event = reconcile_target_completion(completion, &control, deadline);
+
+        // Assert.
+        assert!(
+            matches!(event, RunEvent::EffectFailed(failure) if matches!(&failure.failure,
+            hoimin_core::EffectFailure::Other {message, ..} if message == "Git reap failed"))
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn preparation_cancellation_bounds_initial_disk_measurement() {
+        // Arrange: the initial monitor sample owns roots until its meter returns.
+        let project = tempfile::tempdir().unwrap();
+        let config = output_failure_test_config(&project, "json");
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let release = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+        let control = RunControl::with_disk_meter(BlockingAfterCallMeter {
+            calls: Arc::new(AtomicUsize::new(0)),
+            block_at: 1,
+            entered: entered_tx,
+            release: Arc::clone(&release),
+        });
+        let observed = control.clone();
+        let stdout = CollectingWriter::default();
+        let output = stdout.clone();
+        let mut run = tokio::spawn(run_loop_with_control(
+            config,
+            stdout,
+            Vec::new(),
+            control,
+            crate::report::ReportPresentation::default(),
+        ));
+        tokio::task::spawn_blocking(move || {
+            entered_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        })
+        .await
+        .unwrap();
+
+        // Act.
+        observed.cancel();
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_secs(2)).await;
+        tokio::task::yield_now().await;
+        let stopped = run.is_finished();
+        let (released, changed) = &*release;
+        *released.lock().unwrap() = true;
+        changed.notify_all();
+        let _ = (&mut run).await;
+
+        // Assert: releasing the OS operation is fixture cleanup, not stop evidence.
+        assert!(
+            stopped,
+            "initial preparation sample ignored cancellation and shared grace"
+        );
+        assert_eq!(output.snapshot(), [] as [u8; 0]);
+    }
+
+    #[tokio::test]
+    async fn preparation_cancellation_skips_invalid_fingerprint_inputs() {
+        // Arrange: cancelled preparation must not inspect missing input files.
+        let project = tempfile::tempdir().unwrap();
+        let config = output_failure_test_config(&project, "json");
+        let mut data = config.into_data();
+        data.fingerprint_files = vec!["missing.toml".into()];
+        let config = RunConfig::try_from(data).unwrap();
+        let control = RunControl::new();
+        control.cancel();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
+
+        // Act.
+        let result = run_loop_with_control(
+            config,
+            stdout.clone(),
+            stderr.clone(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await;
+
+        // Assert.
+        assert_eq!(result, Ok(130));
+        assert_eq!(stdout.snapshot(), [] as [u8; 0]);
+        assert!(
+            String::from_utf8(stderr.snapshot())
+                .unwrap()
+                .contains("preparation")
+        );
     }
 
     #[tokio::test]
@@ -7511,6 +7987,141 @@ mod tests {
         assert!(error.starts_with("shell setup task failed:"), "{error}");
         assert!(error.contains("controlled shell setup panic"), "{error}");
     }
+
+    #[tokio::test]
+    async fn preparation_rollback_marker_failure_is_infrastructure_failure() {
+        // Arrange: an invalid cleanup-ready entry prevents publishing safe recovery.
+        let project = tempfile::tempdir().unwrap();
+        let managed_parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(managed_parent.path()).unwrap();
+        let config = shell_setup_test_config(&project)
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap();
+        let control = RunControl::new();
+        let timing = PreparationToken::new(Duration::from_secs(30), control.clone());
+
+        // Act.
+        let stopped = prepare_shell_setup_controlled(
+            config,
+            parent,
+            &|stage| {
+                if stage == ShellSetupBoundary::RootsCreated {
+                    for entry in std::fs::read_dir(parent.join("hoimin-workspaces-v1")).unwrap() {
+                        let entry = entry.unwrap();
+                        if entry.file_name().to_string_lossy().starts_with("run-") {
+                            std::fs::create_dir(entry.path().join(".hoimin-cleanup-ready.json"))
+                                .unwrap();
+                        }
+                    }
+                    control.cancel();
+                }
+            },
+            Some(&timing),
+        );
+        let Err(error) = stopped else {
+            panic!("marker failure fixture must stop setup");
+        };
+        let result = timing.report(error, Vec::new()).await;
+
+        // Assert.
+        assert!(
+            result
+                .unwrap_err()
+                .contains("preparation rollback marker failed")
+        );
+    }
+
+    #[test]
+    fn preparation_late_rollback_does_not_restart_root_cleanup_budget() {
+        // Arrange.
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .start_paused(true)
+            .build()
+            .unwrap();
+        let _entered = runtime.enter();
+        let project = tempfile::tempdir().unwrap();
+        let managed_parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(managed_parent.path()).unwrap();
+        let config = shell_setup_test_config(&project)
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap();
+        let timing = PreparationToken::new(Duration::from_secs(30), RunControl::new());
+        let prepared =
+            prepare_shell_setup_controlled(config, parent, &|_| {}, Some(&timing)).unwrap();
+        let roots = prepared.spool_dir.paths();
+        runtime.block_on(tokio::time::advance(Duration::from_secs(32)));
+
+        // Act: a late owner may publish recovery evidence, but gets no new cleanup window.
+        drop(prepared);
+
+        // Assert.
+        assert!(roots.iter().all(|root| root.exists()));
+        assert!(
+            roots
+                .iter()
+                .all(|root| root.join(".hoimin-cleanup-ready.json").is_file())
+        );
+        assert_eq!(timing.rollback_remaining(), Duration::ZERO);
+    }
+
+    macro_rules! preparation_stop_case {
+        ($name:ident, $stage:ident, $cancel:expr) => {
+            #[test]
+            fn $name() {
+                // Arrange.
+                let runtime = tokio::runtime::Builder::new_current_thread().enable_all().start_paused(true).build().unwrap();
+                let _entered = runtime.enter();
+                let project = tempfile::tempdir().unwrap();
+                let managed_parent = tempfile::tempdir().unwrap();
+                let parent = Utf8Path::from_path(managed_parent.path()).unwrap();
+                let config = shell_setup_test_config(&project).with_environment(hoimin_core::EnvironmentSnapshot::Untracked).unwrap();
+                let control = RunControl::new();
+                let timing = PreparationToken::new(Duration::from_secs(30), control.clone());
+                let observed = std::cell::RefCell::new(Vec::new());
+                let selected = ShellSetupBoundary::$stage;
+
+                // Act.
+                let result = prepare_shell_setup_controlled(config, parent, &|stage| {
+                    observed.borrow_mut().push(stage);
+                    if stage == selected {
+                        if $cancel { control.cancel(); }
+                        else { runtime.block_on(tokio::time::advance(Duration::from_secs(30))); }
+                    }
+                }, Some(&timing));
+
+                // Assert: no subsequent preparation stage was entered.
+                let cause = if $cancel { ShutdownCause::Cancellation } else { ShutdownCause::TotalTimeout };
+                assert!(matches!(result, Err(PreparationError::Stopped(actual)) if actual == cause));
+                assert_eq!(observed.borrow().last(), Some(&selected));
+                let residual = std::fs::read_dir(parent.join("hoimin-workspaces-v1")).unwrap()
+                    .map(|entry| entry.unwrap().file_name()).filter(|name| name != ".hoimin-coordinator").collect::<Vec<_>>();
+                assert!(residual.is_empty(), "stopped preparation leaked roots: {residual:?}");
+            }
+        };
+    }
+    preparation_stop_case!(preparation_timeout_after_roots, RootsCreated, false);
+    preparation_stop_case!(preparation_cancel_after_roots, RootsCreated, true);
+    preparation_stop_case!(
+        preparation_timeout_after_disk_policy,
+        DiskPolicyVerified,
+        false
+    );
+    preparation_stop_case!(
+        preparation_cancel_after_disk_policy,
+        DiskPolicyVerified,
+        true
+    );
+    preparation_stop_case!(preparation_timeout_after_workspace, WorkspaceCreated, false);
+    preparation_stop_case!(preparation_cancel_after_workspace, WorkspaceCreated, true);
+    preparation_stop_case!(preparation_timeout_after_backend, BackendCreated, false);
+    preparation_stop_case!(preparation_cancel_after_backend, BackendCreated, true);
+    preparation_stop_case!(preparation_timeout_after_process, ProcessCreated, false);
+    preparation_stop_case!(preparation_cancel_after_process, ProcessCreated, true);
+    preparation_stop_case!(preparation_timeout_after_analyzer, AnalyzerCreated, false);
+    preparation_stop_case!(preparation_cancel_after_analyzer, AnalyzerCreated, true);
+    preparation_stop_case!(preparation_timeout_after_report, ReportCreated, false);
+    preparation_stop_case!(preparation_cancel_after_report, ReportCreated, true);
 
     #[test]
     fn every_managed_root_publication_boundary_rolls_back_on_unwind() {

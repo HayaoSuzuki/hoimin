@@ -5788,31 +5788,82 @@ impl ManagedRunRoot {
         Self::reclaim_abandoned_with_clock(coordinator, now, &|started| started.elapsed())
     }
 
-    #[allow(
-        clippy::too_many_lines,
-        reason = "janitor validation and claim order stays explicit"
-    )]
+    /// Cap the existing janitor ledger by the run's remaining preparation time.
+    /// All deletion slices inherit the same shifted start, including their local budgets.
+    pub(crate) fn reclaim_abandoned_controlled(
+        coordinator: &ManagedRootCoordinator,
+        now: SystemTime,
+        deadline: tokio::time::Instant,
+        stopped: &impl Fn() -> bool,
+    ) -> ReclaimReport {
+        let remaining = deadline
+            .saturating_duration_since(tokio::time::Instant::now())
+            .min(JANITOR_CLEANUP_BUDGET);
+        let started = std::time::Instant::now();
+        let started = started
+            .checked_sub(JANITOR_CLEANUP_BUDGET.saturating_sub(remaining))
+            .unwrap_or(started);
+        let elapsed = |started: std::time::Instant| {
+            if stopped() {
+                JANITOR_CLEANUP_BUDGET
+            } else {
+                started.elapsed()
+            }
+        };
+        let remaining = || JANITOR_CLEANUP_BUDGET.saturating_sub(elapsed(started));
+        if remaining().is_zero() {
+            let mut report = ReclaimLedger::default();
+            report.report.scan.stop_reason = Some(JanitorReason::SelectionDeadline);
+            return report.finish();
+        }
+        Self::reclaim_abandoned_with_clock_and_selection(
+            coordinator,
+            now,
+            started,
+            &elapsed,
+            &|scan| select_reclaim_candidates_controlled(coordinator, scan, &remaining),
+        )
+    }
+
     fn reclaim_abandoned_with_clock(
         coordinator: &ManagedRootCoordinator,
         now: SystemTime,
         elapsed: &impl Fn(std::time::Instant) -> Duration,
     ) -> ReclaimReport {
+        Self::reclaim_abandoned_with_clock_and_selection(
+            coordinator,
+            now,
+            std::time::Instant::now(),
+            elapsed,
+            &|scan| select_reclaim_candidates(coordinator, scan),
+        )
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "janitor validation and claim order stays explicit"
+    )]
+    fn reclaim_abandoned_with_clock_and_selection(
+        coordinator: &ManagedRootCoordinator,
+        now: SystemTime,
+        cleanup_started: std::time::Instant,
+        elapsed: &impl Fn(std::time::Instant) -> Duration,
+        select: &impl Fn(&mut JanitorScan) -> Result<(Vec<String>, Option<String>), WorkspaceError>,
+    ) -> ReclaimReport {
         let mut report = ReclaimLedger::default();
         let mut pending_cleanup = VecDeque::new();
-        let cleanup_started = std::time::Instant::now();
-        let (candidates, cursor_error) =
-            match select_reclaim_candidates(coordinator, &mut report.report.scan) {
-                Ok(selection) => selection,
-                Err(error) => {
-                    let reason = *report
-                        .report
-                        .scan
-                        .stop_reason
-                        .get_or_insert(JanitorReason::SelectionFailed);
-                    report.detail(reason, error.to_string());
-                    return report.finish();
-                }
-            };
+        let (candidates, cursor_error) = match select(&mut report.report.scan) {
+            Ok(selection) => selection,
+            Err(error) => {
+                let reason = *report
+                    .report
+                    .scan
+                    .stop_reason
+                    .get_or_insert(JanitorReason::SelectionFailed);
+                report.detail(reason, error.to_string());
+                return report.finish();
+            }
+        };
         report.report.scan.selected_roots = candidates.len() as u64;
         if let Some(error) = cursor_error {
             report.detail(JanitorReason::CursorPersistenceFailed, error);
@@ -5960,7 +6011,10 @@ impl ManagedRunRoot {
                     candidate,
                     candidate_identity,
                     cleanup_started,
-                    JANITOR_CLEANUP_BUDGET,
+                    CleanupBudget {
+                        duration: JANITOR_CLEANUP_BUDGET,
+                        stopped: Some(&|| elapsed(cleanup_started) >= JANITOR_CLEANUP_BUDGET),
+                    },
                     &mut progress,
                 );
                 let unlock = coordinator_guard.unlock(&coordinator.path);
@@ -6201,6 +6255,7 @@ impl ManagedRunRoot {
                 capabilities,
                 cleanup_started,
                 index,
+                elapsed,
             );
         }
         while !pending_cleanup.is_empty() && elapsed(cleanup_started) < JANITOR_CLEANUP_BUDGET {
@@ -6219,6 +6274,7 @@ impl ManagedRunRoot {
                     pending.expected_identity,
                     cleanup_started,
                     &mut pending.capabilities,
+                    elapsed,
                 ) {
                     ReclaimRemoval::Complete => {
                         report.removal(pending.index, pending.capabilities.progress, true);
@@ -6298,6 +6354,7 @@ fn record_or_queue_reclaim_removal(
     mut capabilities: CleanupCapabilities,
     cleanup_started: std::time::Instant,
     index: usize,
+    elapsed: &impl Fn(std::time::Instant) -> Duration,
 ) {
     match reclaim_removal(
         coordinator,
@@ -6305,6 +6362,7 @@ fn record_or_queue_reclaim_removal(
         expected_identity,
         cleanup_started,
         &mut capabilities,
+        elapsed,
     ) {
         ReclaimRemoval::Complete => report.removal(index, capabilities.progress, true),
         ReclaimRemoval::Deferred { .. } => {
@@ -6335,12 +6393,18 @@ fn reclaim_removal(
     expected_identity: (u64, u64),
     cleanup_started: std::time::Instant,
     capabilities: &mut CleanupCapabilities,
+    elapsed: &impl Fn(std::time::Instant) -> Duration,
 ) -> ReclaimRemoval {
+    let stopped = || elapsed(cleanup_started) >= JANITOR_CLEANUP_BUDGET;
+    let budget = CleanupBudget {
+        duration: JANITOR_CLEANUP_BUDGET.saturating_sub(elapsed(cleanup_started)),
+        stopped: Some(&stopped),
+    };
     match remove_claimed_tree_slice_with_capabilities(
         &coordinator.dir,
         deleting_name,
         Some(expected_identity),
-        JANITOR_CLEANUP_BUDGET.saturating_sub(cleanup_started.elapsed()),
+        budget,
         capabilities,
     ) {
         Ok(slice) if slice.complete => match coordinator.dir.symlink_metadata(deleting_name) {
@@ -6551,6 +6615,52 @@ fn write_cleanup_ready_marker_for_identity(
         .map_err(|error| WorkspaceError::io("flush workspace marker", &marker_path, error))
 }
 
+fn select_reclaim_candidates_controlled(
+    coordinator: &ManagedRootCoordinator,
+    scan: &mut JanitorScan,
+    remaining: &impl Fn() -> Duration,
+) -> Result<(Vec<String>, Option<String>), WorkspaceError> {
+    select_reclaim_candidates_controlled_with_hooks(coordinator, scan, remaining, &|| {})
+}
+
+fn select_reclaim_candidates_controlled_with_hooks(
+    coordinator: &ManagedRootCoordinator,
+    scan: &mut JanitorScan,
+    remaining: &impl Fn() -> Duration,
+    after_entry: &impl Fn(),
+) -> Result<(Vec<String>, Option<String>), WorkspaceError> {
+    let budget = remaining().min(JANITOR_SELECTION_BUDGET);
+    let started = std::time::Instant::now();
+    let deadline = started.checked_add(budget).unwrap_or(started);
+    let now = || {
+        if remaining().is_zero() {
+            deadline
+        } else {
+            std::time::Instant::now()
+        }
+    };
+    ensure_selection_deadline(coordinator, scan, deadline, &now)?;
+    // Startup reclamation may defer when another creator owns the coordinator.
+    // Waiting for that lock must not acquire an independent local time budget.
+    let Some(guard) = CoordinatorLockGuard::try_acquire(coordinator)? else {
+        scan.stop_reason = Some(JanitorReason::CoordinatorBusy);
+        return Ok((Vec::new(), None));
+    };
+    let selection = select_reclaim_candidates_locked_until_with_hooks(
+        coordinator,
+        scan,
+        deadline,
+        &now,
+        &|| {},
+        after_entry,
+    );
+    let unlock = guard.unlock(&coordinator.path);
+    match (selection, unlock) {
+        (Ok(selection), Ok(())) => Ok(selection),
+        (Err(error), _) | (_, Err(error)) => Err(error),
+    }
+}
+
 fn select_reclaim_candidates(
     coordinator: &ManagedRootCoordinator,
     scan: &mut JanitorScan,
@@ -6584,14 +6694,31 @@ fn select_reclaim_candidates_locked_with_hooks(
     now: &impl Fn() -> std::time::Instant,
     after_enumeration: &impl Fn(),
 ) -> Result<(Vec<String>, Option<String>), WorkspaceError> {
-    let started = now();
-    let deadline = started.checked_add(budget).ok_or_else(|| {
+    let deadline = now().checked_add(budget).ok_or_else(|| {
         WorkspaceError::io(
             "select abandoned workspaces",
             &coordinator.path,
             "selection deadline overflow",
         )
     })?;
+    select_reclaim_candidates_locked_until_with_hooks(
+        coordinator,
+        scan,
+        deadline,
+        now,
+        after_enumeration,
+        &|| {},
+    )
+}
+
+fn select_reclaim_candidates_locked_until_with_hooks(
+    coordinator: &ManagedRootCoordinator,
+    scan: &mut JanitorScan,
+    deadline: std::time::Instant,
+    now: &impl Fn() -> std::time::Instant,
+    after_enumeration: &impl Fn(),
+    after_entry: &impl Fn(),
+) -> Result<(Vec<String>, Option<String>), WorkspaceError> {
     ensure_selection_deadline(coordinator, scan, deadline, now)?;
     let coordinator_path = coordinator.path.join(COORDINATOR_FILE);
     let (active_slot, state) = read_coordinator_state(&coordinator.file, &coordinator_path)?;
@@ -6612,6 +6739,8 @@ fn select_reclaim_candidates_locked_with_hooks(
         let entry = entry.map_err(|error| {
             WorkspaceError::io("enumerate managed roots", &coordinator.path, error)
         })?;
+        after_entry();
+        ensure_selection_deadline(coordinator, scan, deadline, now)?;
         examined = examined
             .checked_add(1)
             .ok_or(WorkspaceError::CopySizeOverflow)?;
@@ -6695,15 +6824,48 @@ enum ClaimResult {
     Absent,
 }
 
-fn remove_empty_unmarked_directory(
+// Nested filesystem operations keep the caller's stop predicate when capping or
+// subtracting a local slice; a fresh duration alone would lose cancellation.
+#[derive(Clone, Copy)]
+struct CleanupBudget<'a> {
+    duration: Duration,
+    stopped: Option<&'a dyn Fn() -> bool>,
+}
+
+impl From<Duration> for CleanupBudget<'_> {
+    fn from(duration: Duration) -> Self {
+        Self {
+            duration,
+            stopped: None,
+        }
+    }
+}
+
+impl CleanupBudget<'_> {
+    fn min(self, duration: Duration) -> Self {
+        Self {
+            duration: self.duration.min(duration),
+            ..self
+        }
+    }
+    fn saturating_sub(self, elapsed: Duration) -> Self {
+        Self {
+            duration: self.duration.saturating_sub(elapsed),
+            ..self
+        }
+    }
+}
+
+fn remove_empty_unmarked_directory<'a>(
     parent: &cap_std::fs::Dir,
     name: &str,
     candidate: cap_std::fs::Dir,
     expected_identity: (u64, u64),
     started: std::time::Instant,
-    budget: Duration,
+    budget: impl Into<CleanupBudget<'a>>,
     progress: &mut DeletionProgress,
 ) -> std::io::Result<()> {
+    let budget = budget.into();
     ensure_cleanup_deadline(started, budget)?;
     if directory_identity(&candidate)? != expected_identity || !staging_is_empty(&candidate) {
         return Err(std::io::Error::other(
@@ -7501,20 +7663,21 @@ fn inspect_cleanup_entry(
     }
 }
 
-fn remove_claimed_tree_slice_with_capabilities(
+fn remove_claimed_tree_slice_with_capabilities<'a>(
     parent: &cap_std::fs::Dir,
     name: &str,
     expected_root_identity: Option<(u64, u64)>,
-    budget: Duration,
+    budget: impl Into<CleanupBudget<'a>>,
     capabilities: &mut CleanupCapabilities,
 ) -> std::io::Result<RemovalSlice> {
+    let budget = budget.into();
     let started = std::time::Instant::now();
     let slice_budget = budget.min(MAX_CLEANUP_SLICE_DURATION);
     let mut examined = 0_u64;
     let mut removed = 0_u64;
     loop {
         if examined >= u64::try_from(MAX_CLEANUP_SLICE_ENTRIES).expect("fixed limit")
-            || started.elapsed() >= slice_budget
+            || cleanup_deadline_reached(started, slice_budget)
         {
             if removed == 0 {
                 return Err(std::io::Error::new(
@@ -7568,14 +7731,15 @@ fn remove_claimed_tree_slice_with_capabilities(
     clippy::too_many_lines,
     reason = "single-step deletion keeps every identity and cooperative-bound check adjacent"
 )]
-fn remove_one_claimed_entry(
+fn remove_one_claimed_entry<'a>(
     parent: &cap_std::fs::Dir,
     root_name: &str,
     expected_root_identity: Option<(u64, u64)>,
     max_examined: u64,
     started: std::time::Instant,
-    budget: Duration,
+    budget: impl Into<CleanupBudget<'a>>,
 ) -> std::io::Result<RemovalSlice> {
+    let budget = budget.into();
     remove_one_claimed_entry_with_capabilities(
         parent,
         root_name,
@@ -7591,15 +7755,16 @@ fn remove_one_claimed_entry(
     clippy::too_many_lines,
     reason = "single-step deletion keeps every identity and cooperative-bound check adjacent"
 )]
-fn remove_one_claimed_entry_with_capabilities(
+fn remove_one_claimed_entry_with_capabilities<'a>(
     parent: &cap_std::fs::Dir,
     root_name: &str,
     expected_root_identity: Option<(u64, u64)>,
     max_examined: u64,
     started: std::time::Instant,
-    budget: Duration,
+    budget: impl Into<CleanupBudget<'a>>,
     capabilities: &mut CleanupCapabilities,
 ) -> std::io::Result<RemovalSlice> {
+    let budget = budget.into();
     let mut current = match open_cleanup_root(
         parent,
         std::ffi::OsStr::new(root_name),
@@ -7783,12 +7948,13 @@ fn is_root_control_marker(name: &std::ffi::OsStr) -> bool {
         || name == RETAIN_FILE
 }
 
-fn remove_root_control_markers(
+fn remove_root_control_markers<'a>(
     root: &cap_std::fs::Dir,
     started: std::time::Instant,
-    budget: Duration,
+    budget: impl Into<CleanupBudget<'a>>,
     capabilities: &mut CleanupCapabilities,
 ) -> std::io::Result<ControlMarkerProgress> {
+    let budget = budget.into();
     let mut removed = 0_u64;
     for marker in [RETAIN_FILE, HEARTBEAT_FILE, CLEANUP_READY_FILE, LEASE_FILE] {
         if cleanup_deadline_reached(started, budget) {
@@ -7847,12 +8013,13 @@ fn remove_root_control_markers(
 }
 
 #[cfg(windows)]
-fn remove_pinned_cleanup_lease(
+fn remove_pinned_cleanup_lease<'a>(
     root: &cap_std::fs::Dir,
     started: std::time::Instant,
-    budget: Duration,
+    budget: impl Into<CleanupBudget<'a>>,
     capabilities: &mut CleanupCapabilities,
 ) -> std::io::Result<bool> {
+    let budget = budget.into();
     ensure_cleanup_deadline(started, budget)?;
     let canonical_identity =
         match cleanup_entry_identity_if_owned(root, std::ffi::OsStr::new(LEASE_FILE)) {
@@ -7944,11 +8111,19 @@ fn advance_cleanup_cursor(
     Ok(cursor_bytes)
 }
 
-fn cleanup_deadline_reached(started: std::time::Instant, budget: Duration) -> bool {
-    started.elapsed() >= budget
+fn cleanup_deadline_reached<'a>(
+    started: std::time::Instant,
+    budget: impl Into<CleanupBudget<'a>>,
+) -> bool {
+    let budget = budget.into();
+    budget.stopped.is_some_and(|stopped| stopped()) || started.elapsed() >= budget.duration
 }
 
-fn ensure_cleanup_deadline(started: std::time::Instant, budget: Duration) -> std::io::Result<()> {
+fn ensure_cleanup_deadline<'a>(
+    started: std::time::Instant,
+    budget: impl Into<CleanupBudget<'a>>,
+) -> std::io::Result<()> {
+    let budget = budget.into();
     if cleanup_deadline_reached(started, budget) {
         Err(std::io::Error::new(
             std::io::ErrorKind::TimedOut,
@@ -7959,14 +8134,15 @@ fn ensure_cleanup_deadline(started: std::time::Instant, budget: Duration) -> std
     }
 }
 
-fn reopen_cleanup_parent(
+fn reopen_cleanup_parent<'a>(
     parent: &cap_std::fs::Dir,
     root_name: &str,
     root_identity: (u64, u64),
     components: &[(OsString, (u64, u64))],
     started: std::time::Instant,
-    budget: Duration,
+    budget: impl Into<CleanupBudget<'a>>,
 ) -> std::io::Result<cap_std::fs::Dir> {
+    let budget = budget.into();
     let mut current = open_cleanup_directory(
         parent,
         std::ffi::OsStr::new(root_name),
@@ -7989,14 +8165,15 @@ fn reopen_cleanup_parent(
     Ok(current)
 }
 
-fn open_cleanup_root(
+fn open_cleanup_root<'a>(
     parent: &cap_std::fs::Dir,
     name: &std::ffi::OsStr,
     expected_identity: Option<(u64, u64)>,
     started: std::time::Instant,
-    budget: Duration,
+    budget: impl Into<CleanupBudget<'a>>,
     capabilities: &CleanupCapabilities,
 ) -> std::io::Result<cap_std::fs::Dir> {
+    let budget = budget.into();
     #[cfg(windows)]
     match &capabilities.root_authority {
         RootCleanupAuthority::ByName => {}
@@ -8029,13 +8206,14 @@ fn open_cleanup_root(
 }
 
 #[cfg(unix)]
-fn open_cleanup_directory(
+fn open_cleanup_directory<'a>(
     parent: &cap_std::fs::Dir,
     name: &std::ffi::OsStr,
     expected_identity: Option<(u64, u64)>,
     started: std::time::Instant,
-    budget: Duration,
+    budget: impl Into<CleanupBudget<'a>>,
 ) -> std::io::Result<cap_std::fs::Dir> {
+    let budget = budget.into();
     ensure_cleanup_deadline(started, budget)?;
     let metadata = parent.symlink_metadata(name)?;
     ensure_cleanup_deadline(started, budget)?;
@@ -8085,13 +8263,14 @@ fn open_cleanup_directory(
 }
 
 #[cfg(windows)]
-fn open_cleanup_directory(
+fn open_cleanup_directory<'a>(
     parent: &cap_std::fs::Dir,
     name: &std::ffi::OsStr,
     expected_identity: Option<(u64, u64)>,
     started: std::time::Instant,
-    budget: Duration,
+    budget: impl Into<CleanupBudget<'a>>,
 ) -> std::io::Result<cap_std::fs::Dir> {
+    let budget = budget.into();
     ensure_cleanup_deadline(started, budget)?;
     ensure_cleanup_deadline(started, budget)?;
     let child = super::root::windows::open_directory_shared(parent, name)?;
@@ -8107,16 +8286,18 @@ fn open_cleanup_directory(
 }
 
 #[cfg(unix)]
-fn make_cleanup_child_accessible(
+fn make_cleanup_child_accessible<'a>(
     parent: &cap_std::fs::Dir,
     name: &std::ffi::OsStr,
     metadata: &cap_std::fs::Metadata,
     started: std::time::Instant,
-    budget: Duration,
+    budget: impl Into<CleanupBudget<'a>>,
 ) -> std::io::Result<()> {
     use cap_std::fs::PermissionsExt;
     use std::os::fd::AsRawFd;
     use std::os::unix::ffi::OsStrExt;
+
+    let budget = budget.into();
 
     ensure_cleanup_deadline(started, budget)?;
     let name = std::ffi::CString::new(name.as_bytes())
@@ -8144,12 +8325,14 @@ fn make_cleanup_child_accessible(
 }
 
 #[cfg(unix)]
-fn make_cleanup_directory_accessible(
+fn make_cleanup_directory_accessible<'a>(
     dir: &cap_std::fs::Dir,
     started: std::time::Instant,
-    budget: Duration,
+    budget: impl Into<CleanupBudget<'a>>,
 ) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
+
+    let budget = budget.into();
 
     ensure_cleanup_deadline(started, budget)?;
     let file = dir.try_clone()?.into_std_file();
@@ -8167,11 +8350,12 @@ fn make_cleanup_directory_accessible(
 }
 
 #[cfg(windows)]
-fn make_cleanup_directory_accessible(
+fn make_cleanup_directory_accessible<'a>(
     dir: &cap_std::fs::Dir,
     started: std::time::Instant,
-    budget: Duration,
+    budget: impl Into<CleanupBudget<'a>>,
 ) -> std::io::Result<()> {
+    let budget = budget.into();
     ensure_cleanup_deadline(started, budget)?;
     dir.metadata(".")?;
     ensure_cleanup_deadline(started, budget)
@@ -8212,14 +8396,15 @@ fn remove_cleanup_directory(
 }
 
 #[cfg(unix)]
-fn remove_cleanup_entry_checked(
+fn remove_cleanup_entry_checked<'a>(
     parent: &cap_std::fs::Dir,
     name: &std::ffi::OsStr,
     logical_path: &Utf8Path,
     expected_identity: (u64, u64),
     started: std::time::Instant,
-    budget: Duration,
+    budget: impl Into<CleanupBudget<'a>>,
 ) -> std::io::Result<()> {
+    let budget = budget.into();
     ensure_cleanup_deadline(started, budget)?;
     let metadata = parent.symlink_metadata(name)?;
     if metadata_identity(&metadata) != expected_identity {
@@ -8232,14 +8417,15 @@ fn remove_cleanup_entry_checked(
 }
 
 #[cfg(unix)]
-fn remove_cleanup_directory_checked(
+fn remove_cleanup_directory_checked<'a>(
     parent: &cap_std::fs::Dir,
     name: &std::ffi::OsStr,
     logical_path: &Utf8Path,
     expected_identity: (u64, u64),
     started: std::time::Instant,
-    budget: Duration,
+    budget: impl Into<CleanupBudget<'a>>,
 ) -> std::io::Result<()> {
+    let budget = budget.into();
     ensure_cleanup_deadline(started, budget)?;
     let metadata = parent.symlink_metadata(name)?;
     if metadata_identity(&metadata) != expected_identity
@@ -8255,14 +8441,15 @@ fn remove_cleanup_directory_checked(
 }
 
 #[cfg(windows)]
-fn remove_cleanup_directory_checked(
+fn remove_cleanup_directory_checked<'a>(
     parent: &cap_std::fs::Dir,
     name: &std::ffi::OsStr,
     _logical_path: &Utf8Path,
     expected_identity: (u64, u64),
     started: std::time::Instant,
-    budget: Duration,
+    budget: impl Into<CleanupBudget<'a>>,
 ) -> std::io::Result<()> {
+    let budget = budget.into();
     super::root::windows::remove_entry_io_checked_with_guard(
         parent,
         name,
@@ -8272,14 +8459,15 @@ fn remove_cleanup_directory_checked(
 }
 
 #[cfg(windows)]
-fn remove_cleanup_entry_checked(
+fn remove_cleanup_entry_checked<'a>(
     parent: &cap_std::fs::Dir,
     name: &std::ffi::OsStr,
     _logical_path: &Utf8Path,
     expected_identity: (u64, u64),
     started: std::time::Instant,
-    budget: Duration,
+    budget: impl Into<CleanupBudget<'a>>,
 ) -> std::io::Result<()> {
+    let budget = budget.into();
     super::root::windows::remove_entry_io_checked_with_guard(
         parent,
         name,
@@ -8288,15 +8476,16 @@ fn remove_cleanup_entry_checked(
     )
 }
 
-fn remove_cleanup_root_checked(
+fn remove_cleanup_root_checked<'a>(
     parent: &cap_std::fs::Dir,
     name: &std::ffi::OsStr,
     logical_path: &Utf8Path,
     expected_identity: (u64, u64),
     started: std::time::Instant,
-    budget: Duration,
+    budget: impl Into<CleanupBudget<'a>>,
     capabilities: &mut CleanupCapabilities,
 ) -> std::io::Result<()> {
+    let budget = budget.into();
     #[cfg(windows)]
     if !matches!(capabilities.root_authority, RootCleanupAuthority::ByName) {
         ensure_cleanup_deadline(started, budget)?;
@@ -8396,12 +8585,13 @@ fn macos_directory_mount_identity(dir: &cap_std::fs::Dir) -> std::io::Result<Mac
 }
 
 #[cfg(target_os = "macos")]
-fn ensure_same_cleanup_mount(
+fn ensure_same_cleanup_mount<'a>(
     parent: &cap_std::fs::Dir,
     child: &cap_std::fs::Dir,
     started: std::time::Instant,
-    budget: Duration,
+    budget: impl Into<CleanupBudget<'a>>,
 ) -> std::io::Result<()> {
+    let budget = budget.into();
     ensure_cleanup_deadline(started, budget)?;
     let parent_mount = macos_directory_mount_identity(parent)?;
     ensure_cleanup_deadline(started, budget)?;
@@ -8416,12 +8606,13 @@ fn ensure_same_cleanup_mount(
     }
 }
 
-fn remove_claimed_tree_bounded(
+fn remove_claimed_tree_bounded<'a>(
     parent: &cap_std::fs::Dir,
     name: &str,
     expected_root_identity: Option<(u64, u64)>,
-    budget: Duration,
+    budget: impl Into<CleanupBudget<'a>>,
 ) -> std::io::Result<RemovalSlice> {
+    let budget = budget.into();
     remove_claimed_tree_bounded_with_capabilities(
         parent,
         name,
@@ -8431,20 +8622,21 @@ fn remove_claimed_tree_bounded(
     )
 }
 
-fn remove_claimed_tree_bounded_with_capabilities(
+fn remove_claimed_tree_bounded_with_capabilities<'a>(
     parent: &cap_std::fs::Dir,
     name: &str,
     expected_root_identity: Option<(u64, u64)>,
-    budget: Duration,
+    budget: impl Into<CleanupBudget<'a>>,
     capabilities: &mut CleanupCapabilities,
 ) -> std::io::Result<RemovalSlice> {
+    let budget = budget.into();
     let started = std::time::Instant::now();
     let mut total = RemovalSlice {
         complete: false,
         examined: 0,
         removed: 0,
     };
-    while started.elapsed() < budget {
+    while !cleanup_deadline_reached(started, budget) {
         let slice = remove_claimed_tree_slice_with_capabilities(
             parent,
             name,

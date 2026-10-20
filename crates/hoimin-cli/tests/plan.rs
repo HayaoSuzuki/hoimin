@@ -675,9 +675,12 @@ async fn plan_candidates_match_shared_discovery_for_normalized_selectors() {
             "stderr={}",
             String::from_utf8_lossy(&stderr.snapshot())
         );
-        let manifest: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
-        let mut actual: Vec<MutationCandidate> =
-            serde_json::from_value(manifest["candidates"].clone()).unwrap();
+        let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let mut actual: Vec<MutationCandidate> = manifest
+            .candidates
+            .into_iter()
+            .map(|ranked| ranked.candidate)
+            .collect();
         actual.sort_by(|left, right| left.id.cmp(&right.id));
         expected.sort_by(|left, right| left.id.cmp(&right.id));
         assert_eq!(actual, expected, "options={options:?}");
@@ -3839,12 +3842,18 @@ async fn verify_metrics_exports_baseline_failure_with_jsonl_output() {
 
 #[tokio::test]
 async fn verify_metrics_exports_total_timeout_with_jsonl_output() {
-    let command = "import time; time.sleep(20)";
-    let options = vec!["--total-timeout", "100ms"];
+    // Arrange: confirm baseline entry before advancing the run clock. Preparation
+    // now consumes the total budget and must not accidentally become this test's stop stage.
+    let options = vec!["--total-timeout", "30s"];
     let expected_exit = 4;
     let project = Project::new();
     let coordinator = tempfile::tempdir().unwrap();
-    let mut args = plan_args(&project, options, &coordinator.path().join("marker"));
+    let marker = coordinator.path().join("marker");
+    let command = format!(
+        "from pathlib import Path; import time; Path({}).write_text('started'); time.sleep(20)",
+        serde_json::to_string(marker.to_str().unwrap()).unwrap(),
+    );
+    let mut args = plan_args(&project, options, &marker);
     insert_test_min_free_space(&mut args);
     *args.last_mut().unwrap() = OsString::from(command);
     let ParsedCommand::Plan(plan) = parse_from(args).unwrap() else {
@@ -3857,7 +3866,7 @@ async fn verify_metrics_exports_total_timeout_with_jsonl_output() {
     let metrics_path = coordinator.path().join("metrics.json");
     let stdout = CollectingWriter::default();
     let stderr = CollectingWriter::default();
-    let exit = hoimin_cli::run_with_writers(
+    let verification = hoimin_cli::run_with_writers(
         [
             OsString::from("hoimin"),
             OsString::from("verify"),
@@ -3871,8 +3880,24 @@ async fn verify_metrics_exports_total_timeout_with_jsonl_output() {
         ],
         stdout.clone(),
         stderr.clone(),
-    )
-    .await;
+    );
+    let expire_after_baseline = async {
+        tokio::time::timeout(std::time::Duration::from_secs(30), async {
+            while !marker.exists() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("verification baseline did not announce its start");
+        tokio::time::pause();
+        tokio::time::advance(std::time::Duration::from_secs(30)).await;
+        tokio::time::resume();
+    };
+
+    // Act.
+    let (exit, ()) = tokio::join!(verification, expire_after_baseline);
+
+    // Assert.
     assert_eq!(
         exit,
         expected_exit,

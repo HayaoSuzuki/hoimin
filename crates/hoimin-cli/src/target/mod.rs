@@ -6,7 +6,8 @@ use hoimin_core::{
     intersect_changed, normalize_logical_path, resolve_explicit,
 };
 
-use self::git::resolve_changed_scoped;
+use self::git::{GitError, GitRunner, resolve_changed_scoped};
+use crate::process::ProcessCancellation;
 
 pub struct TargetHandler;
 
@@ -18,6 +19,20 @@ impl TargetHandler {
     /// Returns an error when filesystem or Git target discovery fails.
     #[tracing::instrument(name = "resolve_targets", level = "debug", skip_all)]
     pub async fn resolve(selection: &Selection) -> Result<Vec<TargetSlice>, TargetError> {
+        Self::resolve_with_git(
+            selection,
+            &GitRunner::default(),
+            &ProcessCancellation::new(),
+        )
+        .await
+        .map_err(GitError::into_target)
+    }
+
+    async fn resolve_with_git(
+        selection: &Selection,
+        runner: &GitRunner,
+        cancellation: &ProcessCancellation,
+    ) -> Result<Vec<TargetSlice>, GitError> {
         crate::live_progress::stage("resolving targets");
         validate_sources(selection)?;
         for path in selection
@@ -29,7 +44,7 @@ impl TargetHandler {
             if crate::copy_policy::excluded_path(relative.as_std_path()) {
                 return Err(TargetError::DiscoveryFailed(format!(
                     "target {relative} is excluded by the built-in workspace policy; choose source outside the excluded directory (--include cannot override this policy)"
-                )));
+                )).into());
             }
         }
         let discovered = fs::discover_explicit(selection)
@@ -46,6 +61,8 @@ impl TargetHandler {
             changed_selection.diff_base(),
             Some(&explicit),
             changed_selection.context(),
+            runner,
+            cancellation,
         )
         .await?;
         if explicit.is_empty()
@@ -65,11 +82,35 @@ impl TargetHandler {
     ///
     /// Returns an effect failure when target resolution fails.
     pub async fn handle(request: ResolveTargets) -> Result<TargetsResolved, EffectFailed> {
+        Self::handle_with_cancellation(request, ProcessCancellation::new(), &GitRunner::default())
+            .await
+    }
+
+    /// Resolves targets with the shell-owned Git lifecycle and stop token.
+    /// Cancellation is reported separately only after child reap and pipe closure.
+    ///
+    /// # Errors
+    ///
+    /// Returns target discovery failures, Git failures, or proven Git cancellation.
+    pub async fn handle_with_cancellation(
+        request: ResolveTargets,
+        cancellation: ProcessCancellation,
+        runner: &GitRunner,
+    ) -> Result<TargetsResolved, EffectFailed> {
         let id = request.id;
-        Self::resolve(&request.selection)
+        Self::resolve_with_git(&request.selection, runner, &cancellation)
             .await
             .map(|targets| TargetsResolved { id, targets })
-            .map_err(|error| EffectFailed::other(id, "target.resolve", error.to_string()))
+            .map_err(|error| match error {
+                GitError::Cancelled => EffectFailed::other(
+                    id,
+                    "target.cancelled",
+                    "target Git command cancelled after reap and pipe closure",
+                ),
+                GitError::Failed(error) => {
+                    EffectFailed::other(id, "target.resolve", error.to_string())
+                }
+            })
     }
 }
 

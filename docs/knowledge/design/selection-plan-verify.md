@@ -5,6 +5,15 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1026-git
+  resource: ../../../crates/hoimin-cli/src/target/git.rs
+  revision: 05c909c54a3bdf3485db2c833456fabe83c7dfaf
+  working_tree: modified
+  sha256: 2a5c02ed960b8b4d539cb5aa1419b0e30f7f611f65054462ce31ddded6d835ba
+- id: issue-1026-environment-tests
+  resource: ../../../crates/hoimin-cli/tests/changed_git_environment.rs
+  working_tree: untracked
+  sha256: 7d2f0f73c5e4ab0a3f711848e88d5fd2817384917a03f2a0ec57a13da80a7dd8
 - id: perf-three-selection
   resource: ../../../crates/hoimin-python/src/analyzer/rust/selection.rs
   revision: f72134d76d28d87cd728305ed224f298df41af4a
@@ -1109,3 +1118,24 @@ and the [fixed-workload evidence](../../maintenance/2026-10-20-issue-1006/verifi
 [^perf-three-selection]
 
 [^perf-three-selection]: [Prepared raw-range union](../../../crates/hoimin-python/src/analyzer/rust/selection.rs).
+
+# Target Git environment policy (Issue #1026)
+
+Every target-inspection Git command removes `GIT_DIFF_OPTS` through the shared
+command builder. Hoimin's requested changed context therefore controls both
+ordinary scoped patches and global rename pairing. The parent environment and
+baseline/mutant command environments retain the variable; literal pathspec and
+existing diff semantics remain in place.[^issue-1026-git]
+
+Public plan regressions compare candidates, IDs, ordering, ranking and saved
+configuration for omitted, zero and nonzero context across absent, zero and
+nonzero ambient Git settings. A runtime regression checks that test commands
+still receive the ambient setting. The [Git review record](../../maintenance/2026-10-20-issues-1026-1034/git.md)
+records red/green evidence and platform limits. Recheck this policy when adding
+a target Git command or changing rename/context handling.[^issue-1026-environment-tests]
+
+The owned runner's cancellation and runtime-lifetime requirements are described
+in the [runtime contract](runtime-lifecycle.md#owned-target-git-commands-issue-1032).
+
+[^issue-1026-git]: [Shared target Git command policy](../../../crates/hoimin-cli/src/target/git.rs).
+[^issue-1026-environment-tests]: [Public environment and context regressions](../../../crates/hoimin-cli/tests/changed_git_environment.rs).
