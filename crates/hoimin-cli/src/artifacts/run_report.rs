@@ -650,8 +650,6 @@ mod tests {
             config["limits"]["jobs"] = serde_json::json!(257);
             config["limits"]["max_processes"] = serde_json::json!(300);
         } => "--jobs 257 exceeds the supported maximum 256";
-        review_rejects_jobs_above_process_cap: |config| config["limits"]["jobs"] = serde_json::json!(65)
-            => "--jobs 65 exceeds --max-processes 64";
         review_rejects_empty_selector: |config| {
             config["selection"]["sources"] = serde_json::json!([]);
             config["selection"]["files"] = serde_json::json!([]);
@@ -674,6 +672,8 @@ mod tests {
         let mut document: serde_json::Value = serde_json::from_str(&current_report_json()).unwrap();
         document["run"]["normalized_config"]["selection"]["root"] =
             serde_json::json!(project.path().join("missing-project"));
+        document["run"]["normalized_config"]["limits"]["jobs"] = serde_json::json!(4);
+        document["run"]["normalized_config"]["limits"]["max_processes"] = serde_json::json!(1);
 
         // Act
         let result = read_review_json(

@@ -48,8 +48,6 @@ invalid_preparation_cases! {
         input["limits"]["jobs"] = json!(257);
         input["limits"]["max_processes"] = json!(300);
     } => "--jobs 257 exceeds the supported maximum 256";
-    rejects_jobs_above_process_cap: |input| input["limits"]["jobs"] = json!(65)
-        => "--jobs 65 exceeds --max-processes 64";
     rejects_empty_required_selector: |input| input["selection"]["files"] = json!([])
         => "at least one target selector is required";
     rejects_empty_operators: |input| input["operators"] = json!([])
@@ -64,9 +62,10 @@ invalid_preparation_cases! {
 fn valid_configuration_reaches_fingerprint_resolution() {
     // Arrange
     let project = tempfile::tempdir().unwrap();
-    let config =
-        serde_json::from_value::<RunConfig<EnvironmentRequest>>(preparation_input(project.path()))
-            .unwrap();
+    let mut input = preparation_input(project.path());
+    input["limits"]["jobs"] = json!(4);
+    input["limits"]["max_processes"] = json!(1);
+    let config = serde_json::from_value::<RunConfig<EnvironmentRequest>>(input).unwrap();
 
     // Act
     let error = hoimin_cli::shell::prepare_run_config(config).unwrap_err();

@@ -1151,14 +1151,6 @@ fn invalid_normalized_config_cases() -> Vec<InvalidManifestCase> {
             "at least one test argv element is required",
         ),
         (
-            "jobs exceed processes",
-            |value| {
-                value["normalized_config"]["limits"]["jobs"] = serde_json::json!(2);
-                value["normalized_config"]["limits"]["max_processes"] = serde_json::json!(1);
-            },
-            "--jobs 2 exceeds --max-processes 1",
-        ),
-        (
             "zero total timeout",
             |value| {
                 value["normalized_config"]["limits"]["total_timeout"] =
@@ -1230,6 +1222,25 @@ fn invalid_normalized_config_cases() -> Vec<InvalidManifestCase> {
         cases
     };
     cases
+}
+
+#[tokio::test]
+async fn verify_preserves_independent_worker_and_process_limits_without_running_tests() {
+    // Arrange
+    let project = Project::new();
+    let (path, manifest, baseline_marker) =
+        write_plan_manifest(&project, &["--jobs", "4", "--max-processes", "1"]).await;
+    let requested = vec![manifest.candidates[0].id.clone()];
+
+    // Act
+    let verified = prepare_verify(&path, &requested, OutputFormat::Json)
+        .await
+        .unwrap();
+
+    // Assert
+    assert_eq!(verified.config().limits.jobs.get(), 4);
+    assert_eq!(verified.config().limits.max_processes.get(), 1);
+    assert!(!baseline_marker.exists());
 }
 
 #[tokio::test]

@@ -1,5 +1,9 @@
 # Normalized Plan Configuration Validation Implementation Plan
 
+> Historical plan: #1033 removes the `jobs <= max_processes` check shown below.
+> Worker parallelism and each root tree's process allowance are now independent;
+> their individual validity checks remain in place.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Reject semantically invalid normalized plan configuration as `plan.manifest.invalid` before target resolution, analyzer discovery, or baseline execution.

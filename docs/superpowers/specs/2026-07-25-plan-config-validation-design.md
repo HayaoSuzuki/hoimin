@@ -1,5 +1,9 @@
 # Normalized Plan Configuration Validation Design
 
+> Historical design: #1033 removes the `jobs <= max_processes` constraint
+> described below. Worker parallelism and each root tree's process allowance
+> are now independent; their individual validity checks remain in place.
+
 ## Context
 
 Issue #27 addresses audit finding `RUST-AUDIT-005`. A plan manifest stores a

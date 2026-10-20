@@ -1947,21 +1947,16 @@ pub fn transition(
     );
     contract_ensure!(
         "machine.budget.invariant",
-        state.config.limits.jobs.get() <= state.config.limits.max_processes.get()
-            && state
-                .pending
-                .values()
-                .filter(|pending| matches!(
-                    pending.kind(),
-                    CompletionKind::BaselineFinished | CompletionKind::MutantFinished
-                ))
-                .count()
-                <= state.config.limits.jobs.get(),
-        (
-            state.config.limits.jobs,
-            state.config.limits.max_processes,
-            &state.pending,
-        )
+        state
+            .pending
+            .values()
+            .filter(|pending| matches!(
+                pending.kind(),
+                CompletionKind::BaselineFinished | CompletionKind::MutantFinished
+            ))
+            .count()
+            <= state.config.limits.jobs.get(),
+        (state.config.limits.jobs, &state.pending)
     );
     contract_ensure!(
         "machine.cancel.post",

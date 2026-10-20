@@ -717,9 +717,6 @@ invalid_report_command_cases! {
         config["limits"]["jobs"] = serde_json::json!(257);
         config["limits"]["max_processes"] = serde_json::json!(300);
     } => "--jobs 257 exceeds the supported maximum 256";
-    command_rejects_report_jobs_above_process_cap: |config| {
-        config["limits"]["jobs"] = serde_json::json!(65);
-    } => "--jobs 65 exceeds --max-processes 64";
     command_rejects_report_empty_selector: |config| {
         config["selection"]["sources"] = serde_json::json!([]);
         config["selection"]["files"] = serde_json::json!([]);

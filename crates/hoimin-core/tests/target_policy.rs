@@ -143,17 +143,21 @@ fn rejects_jobs_before_any_jobs_sized_allocation_is_possible() {
             maximum: MAX_JOBS,
         })
     );
+}
 
+#[test]
+fn raw_configuration_accepts_more_workers_than_processes_per_tree() {
+    // Arrange
     let mut raw = raw_config();
     raw.limits.jobs = 4;
-    raw.limits.max_processes = 3;
-    assert_eq!(
-        RunConfig::try_from(raw),
-        Err(ConfigError::JobsExceedsProcesses {
-            jobs: 4,
-            max_processes: 3,
-        })
-    );
+    raw.limits.max_processes = 1;
+
+    // Act
+    let config = RunConfig::try_from(raw).unwrap();
+
+    // Assert
+    assert_eq!(config.limits.jobs.get(), 4);
+    assert_eq!(config.limits.max_processes.get(), 1);
 }
 
 #[test]
