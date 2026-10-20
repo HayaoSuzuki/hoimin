@@ -24,6 +24,32 @@ const CONFIG_PARSERS: [(&str, ConfigParser); 2] = [
     }),
 ];
 
+#[test]
+fn mutation_commands_accept_independent_worker_and_process_limits() {
+    for (command, parse) in CONFIG_PARSERS {
+        // Arrange
+        let args = [
+            "hoimin",
+            command,
+            "--file",
+            "calc.py",
+            "--jobs",
+            "4",
+            "--max-processes",
+            "1",
+            "--",
+            "python",
+        ];
+
+        // Act
+        let config = parse(&args).unwrap();
+
+        // Assert
+        assert_eq!(config.limits.jobs.get(), 4, "{command}");
+        assert_eq!(config.limits.max_processes.get(), 1, "{command}");
+    }
+}
+
 #[cfg(any(unix, windows))]
 fn native_mutation_config(
     command: &str,

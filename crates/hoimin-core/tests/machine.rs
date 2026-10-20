@@ -172,6 +172,7 @@ proptest! {
 fn all_workers_are_verified_once_before_baseline() {
     let mut raw = fixture_raw_config();
     raw.limits.jobs = 2;
+    raw.limits.max_processes = 1;
     let (state, effects) = waiting_for_materialization_verification_with(
         RunConfig::try_from(raw)
             .unwrap()
@@ -196,7 +197,10 @@ fn all_workers_are_verified_once_before_baseline() {
     .unwrap();
 
     assert_eq!(state.phase(), RunPhase::Baseline);
-    assert!(matches!(effects.as_slice(), [RunEffect::RunBaseline(_)]));
+    let [RunEffect::RunBaseline(baseline)] = effects.as_slice() else {
+        panic!("expected one baseline, got {effects:?}");
+    };
+    assert_eq!(baseline.limits.max_processes, 1);
 }
 
 #[test]
@@ -2100,6 +2104,7 @@ fn complete_indexed_candidate(
 fn four_jobs_fill_four_independent_worker_chains_in_every_completion_order() {
     let mut raw = fixture_raw_config();
     raw.limits.jobs = 4;
+    raw.limits.max_processes = 1;
     let (state, effects) = waiting_for_analysis_with(
         RunConfig::try_from(raw)
             .unwrap()
@@ -2162,6 +2167,7 @@ fn four_jobs_fill_four_independent_worker_chains_in_every_completion_order() {
             unreachable!()
         };
         assert_eq!(process.context.worker, worker);
+        assert_eq!(process.limits.max_processes, 1);
         running_workers.insert(worker);
         running_ids.insert(worker, process.id);
         effects = produced;

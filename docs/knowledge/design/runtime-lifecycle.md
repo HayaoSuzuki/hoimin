@@ -5,6 +5,16 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1033-machine
+  resource: ../../../crates/hoimin-core/src/machine.rs
+  revision: 91b345996357900ee3d7b7f956d80d13c5aacba3
+  working_tree: modified
+  sha256: 37dad66ee1fc95c3f84e77f9284471717d01d04bf5c15e745d1185b712e2d362
+- id: issue-1033-native-tests
+  resource: ../../../crates/hoimin-cli/tests/process_handler.rs
+  revision: 91b345996357900ee3d7b7f956d80d13c5aacba3
+  working_tree: modified
+  sha256: 0df172ff1a4e8cc93447ba8914389d72a192df82de851de08e05a75a05297865
 - id: issue-1031-machine
   resource: ../../../crates/hoimin-core/src/machine.rs
   revision: 3054427a1b1b9a7d2f5cdd1b6ce62053e6c417ac
@@ -1133,3 +1143,27 @@ cleanup or writer ownership.[^issue-1034-shell][^issue-1034-preparation]
 [^issue-1034-shell]: [Preparation/execution integration and regressions](../../../crates/hoimin-cli/src/shell.rs).
 [^issue-1034-preparation]: [Shared preparation deadline and blocking ownership](../../../crates/hoimin-cli/src/shell/preparation.rs).
 [^issue-1034-janitor]: [Controlled janitor selection and cleanup](../../../crates/hoimin-cli/src/workspace/owned.rs).
+
+# Independent worker and root-process limits (Issue #1033)
+
+Worker parallelism and each root tree's process allowance are independent.
+The machine forwards the full configured `max_processes` to each baseline and
+mutant request. Its executable budget invariant bounds pending process
+completions by `jobs`; it no longer compares `jobs` with `max_processes`.
+No aggregate process cap is introduced.[^issue-1033-machine]
+
+The native regression uses four roots with an allowance of one each. All roots
+must reach a live-process barrier before one tries to create a child; the other
+three remain alive until that root's result is observed. The assertions require
+`ProcessLimit` for the offender and successful completion for its peers. Linux
+counts tasks including threads, while Windows counts processes and uses the
+base Python interpreter to avoid a virtual-environment launcher process.
+These are test requirements, not a claim of native execution on every host;
+missing Linux delegation remains an explicit skip.[^issue-1033-native-tests]
+
+Recheck the configuration, pending-effect invariant and native tests together
+when changing worker scheduling or resource-control scope. See the
+[configuration boundary](selection-plan-verify.md#independent-worker-and-process-configuration-issue-1033).
+
+[^issue-1033-machine]: [Process requests and pending-effect invariant](../../../crates/hoimin-core/src/machine.rs).
+[^issue-1033-native-tests]: [Native root-limit and isolation tests](../../../crates/hoimin-cli/tests/process_handler.rs).

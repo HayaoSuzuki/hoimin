@@ -5,6 +5,16 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1033-config
+  resource: ../../../crates/hoimin-core/src/config.rs
+  revision: 91b345996357900ee3d7b7f956d80d13c5aacba3
+  working_tree: modified
+  sha256: 06299876caa5d1d33dca7c06806aa118091f314535dc4c87f2cd8d71a7a2e23d
+- id: issue-1033-verify-test
+  resource: ../../../crates/hoimin-cli/tests/plan.rs
+  revision: 91b345996357900ee3d7b7f956d80d13c5aacba3
+  working_tree: modified
+  sha256: faf967c3713789320bff4be62407907dc0c752826a554219b006fe9e00524a67
 - id: issue-1031-selection
   resource: ../../../crates/hoimin-core/src/machine/selection.rs
   revision: 3054427a1b1b9a7d2f5cdd1b6ce62053e6c417ac
@@ -835,7 +845,7 @@ Later validation already rejected zero before this change; this is a type
 invariant repair, not an unchecked-execution finding.[^issue-886-duration]
 
 The wrapper guarantees positivity only. The inclusive timeout ceiling,
-automatic timeout calculation, overflow checks, and jobs/process relationships
+automatic timeout calculation, overflow checks, and individual jobs/process bounds
 remain configuration-validation responsibilities. Valid Duration objects,
 fixed timeout variant names, and schemas remain intact. This invalid-input
 tightening does not require a release-floor increase.
@@ -1155,3 +1165,20 @@ in the [runtime contract](runtime-lifecycle.md#owned-target-git-commands-issue-1
 
 [^issue-1026-git]: [Shared target Git command policy](../../../crates/hoimin-cli/src/target/git.rs).
 [^issue-1026-environment-tests]: [Public environment and context regressions](../../../crates/hoimin-cli/tests/changed_git_environment.rs).
+
+# Independent worker and process configuration (Issue #1033)
+
+Raw run/plan input and normalized configuration accept `jobs > max_processes`,
+including `--jobs 4 --max-processes 1`. Individual checks remain: positive
+values, at most 256 workers, and a process allowance representable by `u32`.
+Checked construction, saved `RunConfig` decoding and plan-to-run conversion
+apply these constraints without a cross-field ordering rule.[^issue-1033-config]
+
+A plan/verify integration regression preserves the 4/1 settings and verifies
+that preparation has not executed the test command. Saved formats and defaults
+do not change. Runtime enforcement remains per root tree; see
+[resource scope and native test conditions](runtime-lifecycle.md#independent-worker-and-root-process-limits-issue-1033).
+[^issue-1033-verify-test]
+
+[^issue-1033-config]: [Raw and normalized configuration validation](../../../crates/hoimin-core/src/config.rs).
+[^issue-1033-verify-test]: [Saved-plan verification regression](../../../crates/hoimin-cli/tests/plan.rs).

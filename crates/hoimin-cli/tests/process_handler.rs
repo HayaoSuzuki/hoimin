@@ -125,6 +125,121 @@ fn portable_handler_with_classification_and_termination_failure(
     )
 }
 
+#[cfg(any(target_os = "linux", windows))]
+struct NativeHandlerCloseGuard<'a>(&'a ProcessHandler);
+
+#[cfg(any(target_os = "linux", windows))]
+impl Drop for NativeHandlerCloseGuard<'_> {
+    fn drop(&mut self) {
+        let _ = self.0.close();
+    }
+}
+
+#[cfg(any(target_os = "linux", windows))]
+async fn assert_four_single_process_roots_are_independent(
+    handler: &ProcessHandler,
+    directory: &Utf8Path,
+    python: &CommandArg,
+) {
+    let _close_guard = NativeHandlerCloseGuard(handler);
+    let guards: Vec<_> = (0..4)
+        .map(|index| FixtureChildGuard::new(directory.join(format!("{index}.pid"))))
+        .collect();
+    let release = directory.join("release");
+    let code = r"
+import os, pathlib, subprocess, sys, time
+directory = pathlib.Path(sys.argv[1])
+index = sys.argv[2]
+ready = directory / (index + '.pid')
+pending = ready.with_suffix('.pending')
+pending.write_text(str(os.getpid()))
+os.replace(pending, ready)
+deadline = time.monotonic() + 5
+while not (directory / 'release').exists():
+    if time.monotonic() >= deadline:
+        raise TimeoutError('four roots did not reach the barrier')
+    time.sleep(0.01)
+if index == '0':
+    try:
+        child = subprocess.Popen([sys.executable, '-c', 'pass'])
+    except OSError:
+        pass
+    else:
+        child.wait(timeout=1)
+        raise AssertionError('max_processes=1 allowed a child')
+else:
+    while not (directory / 'offender-finished').exists():
+        if time.monotonic() >= deadline:
+            raise TimeoutError('offender result was not observed')
+        time.sleep(0.01)
+    sys.stdout.write('alive')
+";
+    let request = |index: u64| RunProcess {
+        id: EffectId(220 + index),
+        context: hoimin_core::ProbeContext,
+        argv: vec![
+            python.clone(),
+            utf8_arg("-c"),
+            utf8_arg(code),
+            native_arg(directory.as_std_path().as_os_str()),
+            utf8_arg(&index.to_string()),
+        ],
+        cwd: directory.to_owned(),
+        limits: ProcessLimits {
+            max_processes: 1,
+            ..limits(REAL_PROCESS_TIMEOUT, 4096)
+        },
+    };
+    let barrier = async {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(4);
+        loop {
+            let pids: Vec<_> = guards.iter().filter_map(FixtureChildGuard::pid).collect();
+            if pids.len() == 4 && pids.iter().all(|pid| process_exists(*pid)) {
+                fs::write(&release, b"ready").map_err(|error| error.to_string())?;
+                return Ok::<_, String>(());
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err(format!("four simultaneous roots were not ready: {pids:?}"));
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    };
+    let offender = async {
+        let result = handler.handle(request(0)).await;
+        fs::write(directory.join("offender-finished"), b"done")
+            .expect("release healthy roots after offender completion");
+        result
+    };
+    let results = tokio::time::timeout(REAL_PROCESS_FIXTURE_BUDGET, async {
+        tokio::join!(
+            offender,
+            handler.handle(request(1)),
+            handler.handle(request(2)),
+            handler.handle(request(3)),
+            barrier,
+        )
+    })
+    .await;
+    let close = handler.close();
+    let (offender, first, second, third, barrier) =
+        results.expect("four root requests exceeded the fixture deadline");
+    close.unwrap();
+    barrier.unwrap();
+    assert_eq!(
+        offender.unwrap().termination,
+        ProcessTermination::ProcessLimit
+    );
+    for result in [first, second, third] {
+        let event = result.unwrap();
+        assert_eq!(event.resource_mode, ResourceMode::Hard);
+        assert_eq!(event.termination, ProcessTermination::Exit(0));
+        assert_eq!(
+            fs::read(handler.spool_path(&event.output).unwrap()).unwrap(),
+            b"alive"
+        );
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn hard_run_limits(max_memory: u64, max_processes: usize) -> RunLimits {
     let raw = RawRunLimits {
@@ -206,19 +321,6 @@ mod cgroup_v2 {
                 )
             }
         }
-    }
-
-    fn decimal_hard_backend(capabilities: CgroupCapabilities) -> Option<LinuxBackend> {
-        let unavailable_reason = match &capabilities {
-            CgroupCapabilities::Unavailable(reason) => Some(reason.as_str()),
-            _ => None,
-        };
-        assert!(
-            !unavailable_reason
-                .is_some_and(|reason| reason.contains("cgroup limit readback mismatch")),
-            "non-page-aligned memory limit must not disable hard cgroups: {unavailable_reason:?}"
-        );
-        available_hard_backend(capabilities)
     }
 
     fn hard_handler(
@@ -303,31 +405,77 @@ mod cgroup_v2 {
         }
     }
 
-    #[test]
-    fn decimal_memory_limit_keeps_hard_cgroup_enforcement() {
+    #[tokio::test]
+    async fn decimal_memory_limit_keeps_hard_cgroup_enforcement() {
         let requested = 1_000_000_000;
         let capabilities = probe_linux_cgroup_with_launcher(
             &hard_run_limits(requested, 16),
             OsString::from(env!("CARGO_BIN_EXE_hoimin")),
         );
-        let backends = decimal_hard_backend(capabilities).into_iter();
+        let backends = available_hard_backend(capabilities).into_iter();
         for backend in backends {
             // SAFETY: `_SC_PAGESIZE` is a side-effect-free process configuration query.
             let page_size = u64::try_from(unsafe { libc::sysconf(libc::_SC_PAGESIZE) }).unwrap();
             let expected = requested - requested % page_size;
-            let actual = fs::read_to_string(backend.run_cgroup_path_for_tests().join("memory.max"))
-                .unwrap()
-                .trim()
-                .parse::<u64>()
-                .unwrap();
-
+            let run_path = backend.run_cgroup_path_for_tests();
+            let output = tempfile::tempdir().unwrap();
+            let directory = Utf8Path::from_path(output.path()).unwrap();
+            let handler =
+                ProcessHandler::new(ResourceBackend::LinuxHard(backend), directory.to_owned());
+            let _close_guard = NativeHandlerCloseGuard(&handler);
+            let root_guard = FixtureChildGuard::new(directory.join("ready.pid"));
+            let code = r"
+import os, pathlib, sys, time
+directory = pathlib.Path(sys.argv[1])
+pending = directory / 'ready.pending'
+pending.write_text(str(os.getpid()))
+os.replace(pending, directory / 'ready.pid')
+deadline = time.monotonic() + 5
+while not (directory / 'release').exists():
+    if time.monotonic() >= deadline:
+        raise TimeoutError('memory limit was not inspected')
+    time.sleep(0.01)
+";
+            let mut request = run_python(
+                211,
+                code,
+                ProcessLimits {
+                    max_memory_bytes: requested,
+                    ..limits(REAL_PROCESS_TIMEOUT, 64)
+                },
+            );
+            request
+                .argv
+                .push(native_arg(directory.as_std_path().as_os_str()));
+            let inspect = async {
+                let deadline = tokio::time::Instant::now() + Duration::from_secs(4);
+                wait_for_fixture_pid(&root_guard, deadline).await;
+                let roots: Vec<_> = fs::read_dir(&run_path)
+                    .unwrap()
+                    .map(|entry| entry.unwrap().path())
+                    .filter(|path| path.is_dir())
+                    .collect();
+                assert_eq!(roots.len(), 1, "expected one active root cgroup");
+                let actual = fs::read_to_string(roots[0].join("memory.max"))
+                    .unwrap()
+                    .trim()
+                    .parse::<u64>()
+                    .unwrap();
+                fs::write(directory.join("release"), b"inspected").unwrap();
+                actual
+            };
+            let results = tokio::time::timeout(REAL_PROCESS_FIXTURE_BUDGET, async {
+                tokio::join!(handler.handle(request), inspect)
+            })
+            .await;
+            let close = handler.close();
+            let (event, actual) =
+                results.expect("memory limit inspection exceeded fixture deadline");
+            close.unwrap();
+            let event = event.unwrap();
+            assert_eq!(event.resource_mode, ResourceMode::Hard);
+            assert_eq!(event.termination, ProcessTermination::Exit(0));
             assert_eq!(actual, expected);
-            assert!(backend.diagnostics().iter().any(|diagnostic| {
-                diagnostic.contains(&requested.to_string())
-                    && diagnostic.contains(&expected.to_string())
-                    && diagnostic.contains(&page_size.to_string())
-            }));
-            backend.close().unwrap();
         }
     }
 
@@ -574,7 +722,21 @@ mod cgroup_v2 {
     }
 
     #[tokio::test]
-    async fn run_cgroup_classifies_concurrent_aggregate_memory_and_process_limits() {
+    async fn hard_cgroup_allows_four_roots_with_one_process_each_and_denies_a_child() {
+        let output = tempfile::tempdir().unwrap();
+        let directory = Utf8Path::from_path(output.path()).unwrap();
+        if let Some(handler) = hard_handler(directory, 256 * 1024 * 1024, 1) {
+            assert_four_single_process_roots_are_independent(
+                &handler,
+                directory,
+                &python_executable(),
+            )
+            .await;
+        }
+    }
+
+    #[tokio::test]
+    async fn concurrent_roots_have_independent_memory_and_process_limits() {
         let memory_output = tempfile::tempdir().unwrap();
         let memory_handlers = hard_handler(
             Utf8Path::from_path(memory_output.path()).unwrap(),
@@ -584,15 +746,18 @@ mod cgroup_v2 {
         .into_iter();
         for memory_handler in memory_handlers {
             let memory_handler = Arc::new(memory_handler);
+            let _close_guard = NativeHandlerCloseGuard(&memory_handler);
             let code = "import time; x=bytearray(96*1024*1024); x[::4096]=b'x'*(len(x[::4096])); time.sleep(2)";
+            let memory_limits = ProcessLimits {
+                max_memory_bytes: 160 * 1024 * 1024,
+                ..limits(Duration::from_secs(5), 64)
+            };
             let (first, second) = tokio::join!(
-                memory_handler.handle(run_python(204, code, limits(Duration::from_secs(5), 64))),
-                memory_handler.handle(run_python(205, code, limits(Duration::from_secs(5), 64)))
+                memory_handler.handle(run_python(204, code, memory_limits)),
+                memory_handler.handle(run_python(205, code, memory_limits))
             );
-            assert!(
-                [first.unwrap().termination, second.unwrap().termination]
-                    .contains(&ProcessTermination::OutOfMemory)
-            );
+            assert_eq!(first.unwrap().termination, ProcessTermination::Exit(0));
+            assert_eq!(second.unwrap().termination, ProcessTermination::Exit(0));
             memory_handler.close().unwrap();
 
             let process_output = tempfile::tempdir().unwrap();
@@ -604,23 +769,18 @@ mod cgroup_v2 {
             .into_iter();
             for process_handler in process_handlers {
                 let process_handler = Arc::new(process_handler);
+                let _close_guard = NativeHandlerCloseGuard(&process_handler);
                 let code = "import subprocess,sys,time; child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(2)']); time.sleep(1); child.wait()";
+                let process_limits = ProcessLimits {
+                    max_processes: 3,
+                    ..limits(Duration::from_secs(5), 4096)
+                };
                 let (first, second) = tokio::join!(
-                    process_handler.handle(run_python(
-                        206,
-                        code,
-                        limits(Duration::from_secs(5), 4096)
-                    )),
-                    process_handler.handle(run_python(
-                        207,
-                        code,
-                        limits(Duration::from_secs(5), 4096)
-                    ))
+                    process_handler.handle(run_python(206, code, process_limits)),
+                    process_handler.handle(run_python(207, code, process_limits))
                 );
-                assert!(
-                    [first.unwrap().termination, second.unwrap().termination]
-                        .contains(&ProcessTermination::ProcessLimit)
-                );
+                assert_eq!(first.unwrap().termination, ProcessTermination::Exit(0));
+                assert_eq!(second.unwrap().termination, ProcessTermination::Exit(0));
                 process_handler.close().unwrap();
             }
         }
@@ -1529,6 +1689,15 @@ mod job_object {
             max_processes: processes,
             ..limits(Duration::from_secs(15), 4096)
         }
+    }
+
+    #[tokio::test]
+    async fn job_object_allows_four_roots_with_one_process_each_and_denies_a_child() {
+        let output = tempfile::tempdir().unwrap();
+        let directory = Utf8Path::from_path(output.path()).unwrap();
+        let handler = hard_handler(directory);
+        assert_four_single_process_roots_are_independent(&handler, directory, &native_python())
+            .await;
     }
 
     #[tokio::test]

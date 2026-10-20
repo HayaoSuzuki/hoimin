@@ -285,25 +285,25 @@ fn plan_config_rejects_invalid_normalized_semantics() {
 }
 
 #[test]
-fn normalized_limit_validation_rejects_cross_field_violations() {
+fn normalized_limit_validation_accepts_more_workers_than_processes_per_tree() {
+    // Arrange
     let mut value = plan_value();
-    value["limits"]["jobs"] = serde_json::json!(2);
+    value["limits"]["jobs"] = serde_json::json!(4);
     value["limits"]["max_processes"] = serde_json::json!(1);
     let config: PlanConfig = serde_json::from_value(value).unwrap();
-    assert_eq!(
-        config.validate(),
-        Err(ConfigError::JobsExceedsProcesses {
-            jobs: 2,
-            max_processes: 1,
-        })
-    );
+
+    // Act
+    let result = config.validate();
+
+    // Assert
+    assert_eq!(result, Ok(()));
 }
 
 #[test]
 fn normalized_limit_validation_accepts_maximum_jobs() {
     let mut value = plan_value();
     value["limits"]["jobs"] = serde_json::json!(MAX_JOBS);
-    value["limits"]["max_processes"] = serde_json::json!(MAX_JOBS);
+    value["limits"]["max_processes"] = serde_json::json!(1);
     let config: PlanConfig = serde_json::from_value(value).unwrap();
 
     assert_eq!(config.validate(), Ok(()));

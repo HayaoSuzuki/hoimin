@@ -835,8 +835,6 @@ pub enum ConfigError {
     InvalidLimit(&'static str),
     #[error("--jobs {jobs} exceeds the supported maximum {maximum}")]
     JobsExceedsMaximum { jobs: usize, maximum: usize },
-    #[error("--jobs {jobs} exceeds --max-processes {max_processes}")]
-    JobsExceedsProcesses { jobs: usize, max_processes: usize },
 }
 
 fn limit_flag(name: &str) -> &str {
@@ -875,12 +873,6 @@ impl TryFrom<&RawRunLimits> for RunLimits {
             return Err(ConfigError::JobsExceedsMaximum {
                 jobs: raw.jobs,
                 maximum: MAX_JOBS,
-            });
-        }
-        if raw.jobs > raw.max_processes {
-            return Err(ConfigError::JobsExceedsProcesses {
-                jobs: raw.jobs,
-                max_processes: raw.max_processes,
             });
         }
         let limits = Self {
@@ -1008,12 +1000,6 @@ fn validate_limits(limits: &RunLimits) -> Result<(), ConfigError> {
     }
     if u32::try_from(limits.max_processes.get()).is_err() {
         return Err(ConfigError::InvalidLimit("max_processes"));
-    }
-    if limits.jobs.get() > limits.max_processes.get() {
-        return Err(ConfigError::JobsExceedsProcesses {
-            jobs: limits.jobs.get(),
-            max_processes: limits.max_processes.get(),
-        });
     }
     for (name, duration) in [
         ("baseline_timeout", limits.baseline_timeout.get()),

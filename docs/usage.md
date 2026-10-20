@@ -479,7 +479,7 @@ The defaults are:
 
 | Option | Default | Scope |
 | --- | ---: | --- |
-| `--jobs` | `1` | concurrent workers; maximum 256 and never greater than `--max-processes` |
+| `--jobs` | `1` | concurrent workers; maximum 256 |
 | `--max-mutants` | `100` | mutants executed |
 | `--max-candidates` | `10000` | candidates discovered before execution |
 | `--analyzer-timeout` | `30s` | plan only; saved for verify discovery |
@@ -501,6 +501,11 @@ The defaults are:
 By default, there are no include/exclude overrides or SQLite session, and `--changed`, `--resume`, and `--allow-best-effort-memory` are disabled.
 
 Every numeric limit must be nonzero. Copy and total-timeout limits are run-wide.
+
+Worker parallelism and the process allowance per root tree are independent.
+For example, `--jobs 4 --max-processes 1` allows four concurrent single-process
+test trees. On Linux cgroup v2, each tree must also remain single-threaded.
+The worker count remains limited to 256, regardless of the per-tree allowance.
 
 On Windows, each baseline or mutant root process and its descendants share their own full `--max-memory` and `--max-processes` allowance, enforced by a nested Job Object. Memory means committed memory, not RSS; the process count includes the root itself. With `--jobs J`, concurrent trees can approach `J × max-memory` and `J × max-processes` in total. The outer run Job Object owns cleanup and imposes no aggregate memory or process cap. Host-imposed parent Job Objects can make effective limits stricter.
 
