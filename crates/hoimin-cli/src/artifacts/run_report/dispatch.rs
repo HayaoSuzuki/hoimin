@@ -15,6 +15,7 @@ pub(super) struct Header {
     pub(super) schema_version: u32,
 }
 
+#[cfg(test)]
 pub(super) fn probe(bytes: &[u8]) -> Option<Header> {
     probe_deserializer(&mut serde_json::Deserializer::from_slice(bytes))
 }

@@ -76,6 +76,8 @@ recorded revisions against the implementation you are changing:
 Treat these as evidence at their recorded revisions, inputs and environments,
 not a claim that every current host or commit passed the same checks:
 
+- [Design and resource audit after PR 1059](audits/design-2026-10-22-post1059.md) - Symbol admission, artifact boundaries and rejected state/compatibility alternatives.
+
 - [October 2026 design-audit history](audits/design-history-2026-10.md) - Eight archived reviews, completed follow-ups and conditions for reconsidering earlier decisions.
 
 - [Additional audit Lean integration report](../superpowers/reports/2026-09-15-followup-lean-promotion.md) - Six models, 33 theorems, 58 inputs and unresolved implementation correspondence.

@@ -17,6 +17,23 @@ The registry declares the active gates. These do not cover every performance reg
 
 ## Ordinary gates
 
+The `analyzer-distinct-symbol-selection-exact-work` gate varies distinct symbol selectors and
+lookup counts independently (32/128/512). It measures selector preparation and
+actual set probes: a one-level miss performs one lookup per candidate, while
+line-rejected candidates perform none. Nested names probe dot-boundary ancestors;
+the prepared set retains O(S) borrowed entries. This gate does not count allocator
+events, retained bytes or RSS. The existing `symbol-selectors` release shape
+repeats the same declaration over one function, so it remains a normalization
+measurement rather than evidence for the distinct-selector axis.
+
+The [#1060 release samples](2026-10-22-issue-1060-release.json) compare one-symbol,
+unrestricted and 512-distinct-selector plans. In five pairs per input on macOS
+arm64, the many-selector median wall time is 20.002→12.913 ms and median maximum
+process RSS is 10,469,376→10,616,832 bytes. Small/unrestricted observations are
+mixed and no confidence interval or timing threshold was used. Read the
+[audit and measurement conditions](../knowledge/audits/design-2026-10-22-post1059.md#follow-up-implementation-and-validation)
+before inferring a general speed or memory improvement.
+
 ```sh
 python tools/performance_shapes.py check
 python tools/performance_shapes.py gate --output /tmp/hoimin-perf-gates-new

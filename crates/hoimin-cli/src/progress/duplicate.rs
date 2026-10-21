@@ -3,7 +3,7 @@ use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use super::input::InputDisposition;
-use crate::artifacts::open_regular_file;
+use crate::artifacts::{SnapshotReader, open_regular_file};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum DuplicateReason {
@@ -70,8 +70,10 @@ fn identical_regular_files(left: &Path, right: &Path) -> io::Result<bool> {
     let (Some(left), Some(right)) = (open_regular_file(left)?, open_regular_file(right)?) else {
         return Ok(false);
     };
-    let mut left = BufReader::new(left);
-    let mut right = BufReader::new(right);
+    let mut left = BufReader::new(SnapshotReader::new(left)?);
+    let mut right = BufReader::new(SnapshotReader::new(right)?);
+    #[cfg(test)]
+    tests::run_readers_prepared_hook();
     loop {
         let left_bytes = left.fill_buf()?;
         let right_bytes = right.fill_buf()?;
@@ -90,6 +92,101 @@ fn identical_regular_files(left: &Path, right: &Path) -> io::Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    thread_local! {
+        static READERS_PREPARED: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+            std::cell::RefCell::new(None);
+    }
+
+    fn on_readers_prepared(action: impl FnOnce() + 'static) {
+        READERS_PREPARED.with(|hook| {
+            assert!(hook.borrow_mut().replace(Box::new(action)).is_none());
+        });
+    }
+
+    pub(super) fn run_readers_prepared_hook() {
+        let action = READERS_PREPARED.with(|hook| hook.borrow_mut().take());
+        if let Some(action) = action {
+            action();
+        }
+    }
+
+    fn append_after_readers_prepared(paths: Vec<PathBuf>) {
+        on_readers_prepared(move || {
+            use std::io::Write;
+            for path in paths {
+                std::fs::OpenOptions::new()
+                    .append(true)
+                    .open(path)
+                    .unwrap()
+                    .write_all(&[b'x'; 128])
+                    .unwrap();
+            }
+        });
+    }
+
+    #[test]
+    fn confirmation_rejects_append_after_readers_are_prepared() {
+        let fixture = tempfile::tempdir().unwrap();
+        let first = fixture.path().join("first");
+        let second = fixture.path().join("second");
+        std::fs::write(&first, b"same").unwrap();
+        std::fs::write(&second, b"same").unwrap();
+        append_after_readers_prepared(vec![first.clone(), second.clone()]);
+        assert_eq!(
+            identical_regular_files(&first, &second).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn append_confirmation_failure_omits_optional_annotation() {
+        let fixture = tempfile::tempdir().unwrap();
+        let first = fixture.path().join("first");
+        let second = fixture.path().join("second");
+        std::fs::write(&first, b"same").unwrap();
+        std::fs::write(&second, b"same").unwrap();
+        let fingerprint = blake3::hash(b"same");
+        let mut tracker = DuplicateInputs::default();
+        assert!(tracker.observe(&first, fingerprint, &[]).is_none());
+        let inputs = [input(first.clone())];
+        append_after_readers_prepared(vec![first, second.clone()]);
+        assert!(tracker.observe(&second, fingerprint, &inputs).is_none());
+    }
+
+    #[test]
+    fn confirmation_rejects_truncate_after_readers_are_prepared() {
+        let fixture = tempfile::tempdir().unwrap();
+        let first = fixture.path().join("first");
+        let second = fixture.path().join("second");
+        std::fs::write(&first, b"same").unwrap();
+        std::fs::write(&second, b"same").unwrap();
+        let paths = [first.clone(), second.clone()];
+        on_readers_prepared(move || {
+            for path in paths {
+                std::fs::write(path, b"").unwrap();
+            }
+        });
+        assert_eq!(
+            identical_regular_files(&first, &second).unwrap_err().kind(),
+            io::ErrorKind::UnexpectedEof
+        );
+    }
+
+    #[test]
+    fn hard_link_confirmation_rejects_append_after_readers_are_prepared() {
+        let fixture = tempfile::tempdir().unwrap();
+        let first = fixture.path().join("first");
+        let second = fixture.path().join("second");
+        std::fs::write(&first, b"same").unwrap();
+        std::fs::hard_link(&first, &second).unwrap();
+        assert!(identical_regular_files(&first, &second).unwrap());
+        append_after_readers_prepared(vec![first.clone()]);
+        assert_eq!(
+            identical_regular_files(&first, &second).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+    }
 
     fn input(path: PathBuf) -> InputDisposition {
         InputDisposition {

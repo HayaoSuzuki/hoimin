@@ -249,17 +249,13 @@ impl PortableSupervisor {
         self.process_group.record_root_reaped();
     }
 
-    #[allow(
-        deprecated,
-        reason = "fetch_update preserves the Rust 1.88 MSRV; it was renamed in Rust 1.95"
-    )]
     pub(crate) fn classify(
         &mut self,
         termination: hoimin_core::ProcessTermination,
     ) -> Result<hoimin_core::ProcessTermination, ResourceError> {
         if self
             .classification_failures
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |remaining| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |remaining| {
                 remaining.checked_sub(1)
             })
             .is_ok()
@@ -305,10 +301,6 @@ impl PortableSupervisor {
         suspended.assign(self.job as _, "assign spawned process to job")
     }
 
-    #[allow(
-        deprecated,
-        reason = "fetch_update preserves the Rust 1.88 MSRV; it was renamed in Rust 1.95"
-    )]
     pub(crate) fn terminate(&mut self, live_root_owned: bool) -> Result<bool, ResourceError> {
         if self.terminated {
             return Ok(self.tree_quiescent);
@@ -324,7 +316,7 @@ impl PortableSupervisor {
         let _ = live_root_owned;
         if self
             .termination_failures
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |remaining| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |remaining| {
                 remaining.checked_sub(1)
             })
             .is_ok()

@@ -6,9 +6,11 @@ pub(super) struct Work {
     pub queries: usize,
     pub membership: usize,
     pub preparation: usize,
+    pub symbol_preparation: usize,
+    pub symbol_lookups: usize,
 }
 thread_local! {
-    static WORK: Cell<Work> = const { Cell::new(Work { queries: 0, membership: 0, preparation: 0 }) };
+    static WORK: Cell<Work> = const { Cell::new(Work { queries: 0, membership: 0, preparation: 0, symbol_preparation: 0, symbol_lookups: 0 }) };
 }
 pub(super) fn record_query() {
     WORK.update(|mut work| {
@@ -365,4 +367,187 @@ fn selection_equivalent_ranges_keep_candidate_order_and_truncation() {
     );
     assert!(actual.truncated);
     assert_eq!(actual.truncated, expected.truncated);
+}
+
+pub(super) fn record_symbol_lookup() {
+    WORK.update(|mut work| {
+        work.symbol_lookups += 1;
+        work
+    });
+}
+pub(super) fn record_symbol_preparation() {
+    WORK.update(|mut work| {
+        work.symbol_preparation += 1;
+        work
+    });
+}
+
+#[test]
+fn selection_distinct_symbols_exact_work_gate() {
+    // Catches restoring a per-candidate selector scan.
+    // The two axes are independent: misses visit every old selector, and hits
+    // at the end prevent an accidentally first-selector-only implementation.
+    let operators = operators(MutationOperator::BooleanLiteral);
+    for selectors in [32, 128, 512] {
+        let symbols: Vec<_> = (0..selectors).map(|i| format!("chosen_{i}")).collect();
+        for candidates in [32, 128, 512] {
+            WORK.set(Work::default());
+            let selection = CandidateSelection::new(
+                &request(&operators, &[], &symbols, candidates + 1),
+                &|| false,
+            )
+            .unwrap();
+            let prepared = WORK.get();
+            for _ in 0..candidates {
+                assert!(!selection.includes(1, Some("missing")));
+            }
+            let work = WORK.get();
+            eprintln!(
+                "symbol-selection selectors={selectors} candidates={candidates} work={work:?}"
+            );
+            assert_eq!(work.symbol_lookups, candidates, "{work:?}");
+            assert_eq!(prepared.symbol_preparation, selectors, "{prepared:?}");
+            assert_eq!(work.symbol_preparation, prepared.symbol_preparation);
+            assert!(selection.includes(1, symbols.last().map(String::as_str)));
+        }
+    }
+}
+
+#[test]
+fn selection_rejected_lines_skip_symbol_work() {
+    let operators = operators(MutationOperator::BooleanLiteral);
+    let lines = [LineRange { start: 3, end: 3 }];
+    let symbols = ["outer".to_owned()];
+    let selection =
+        CandidateSelection::new(&request(&operators, &lines, &symbols, 1), &|| false).unwrap();
+    WORK.set(Work::default());
+    assert!(!selection.includes(2, Some("outer.inner")));
+    assert_eq!(WORK.get().symbol_lookups, 0);
+}
+
+#[test]
+fn selection_old_linear_control_exceeds_exact_work_budget() {
+    // Independent sensitivity control: the former algorithm cannot satisfy
+    // the same one-lookup-per-top-level-symbol gate even at its smallest size.
+    // These control counters count comparisons and format! calls, not allocator events.
+    let selectors: Vec<_> = (0..32).map(|i| format!("chosen_{i}")).collect();
+    let mut comparisons = 0;
+    let mut prefix_constructions = 0;
+    for _ in 0..32 {
+        let selected = selectors.iter().any(|selector| {
+            comparisons += 1;
+            if selector == "missing" {
+                return true;
+            }
+            prefix_constructions += 1;
+            "missing".starts_with(&format!("{selector}."))
+        });
+        assert!(!selected);
+    }
+    assert_eq!(comparisons, 1024);
+    assert_eq!(prefix_constructions, 1024);
+    assert!(comparisons > 32);
+}
+
+#[test]
+fn selection_symbol_modes_keep_empty_and_module_mismatch_distinct() {
+    let operators = operators(MutationOperator::BooleanLiteral);
+    let mismatched = ["other:outer".to_owned()];
+    let all = CandidateSelection::new(&request(&operators, &[], &[], 1), &|| false).unwrap();
+    let none =
+        CandidateSelection::new(&request(&operators, &[], &mismatched, 1), &|| false).unwrap();
+    assert!(all.is_unrestricted());
+    assert!(all.includes(1, None));
+    assert!(!none.is_unrestricted());
+    assert!(!none.includes(1, Some("outer")));
+    assert!(!none.includes(1, None));
+}
+
+symbol_case!(
+    selection_module_suffix_boundary,
+    "ject:outer",
+    Some("outer"),
+    3,
+    false
+);
+symbol_case!(
+    selection_nested_boundary,
+    "outer.inner",
+    Some("outer.innerish"),
+    3,
+    false
+);
+symbol_case!(
+    selection_nested_exact,
+    "outer.inner",
+    Some("outer.inner"),
+    3,
+    true
+);
+symbol_case!(
+    selection_nested_descendant,
+    "outer.inner",
+    Some("outer.inner.leaf"),
+    3,
+    true
+);
+symbol_case!(selection_empty_symbol_prefix, "", Some(".inner"), 3, true);
+
+#[test]
+fn selection_cancel_during_symbol_preparation() {
+    let operators = operators(MutationOperator::BooleanLiteral);
+    let symbols: Vec<_> = (0..32).map(|i| format!("chosen_{i}")).collect();
+    let calls = Cell::new(0);
+    let result = CandidateSelection::new(&request(&operators, &[], &symbols, 1), &|| {
+        calls.set(calls.get() + 1);
+        calls.get() == 4
+    });
+    assert!(matches!(result, Err(AnalysisCancelled)));
+    assert_eq!(calls.get(), 4);
+}
+
+#[test]
+fn selection_distinct_symbols_keep_candidate_values_order_and_truncation() {
+    let operators = operators(MutationOperator::BooleanLiteral);
+    let source =
+        "def first():\n return True\ndef other():\n return True\ndef last():\n return False\n";
+    let mut symbols: Vec<_> = (0..32).map(|i| format!("missing_{i}")).collect();
+    symbols.extend(["subject:last".to_owned(), "first".to_owned()]);
+    let output = analyze_source(&request(&operators, &[], &symbols, 8), source);
+    let observed: Vec<_> = output
+        .candidates
+        .iter()
+        .map(|c| {
+            (
+                c.line,
+                c.original.as_str(),
+                c.replacement.as_str(),
+                c.symbol.as_deref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        observed,
+        [
+            (2, "True", "False", Some("first")),
+            (6, "False", "True", Some("last"))
+        ]
+    );
+    assert_eq!(output.diagnostics, []);
+    assert!(!output.truncated);
+    let limited = analyze_source(&request(&operators, &[], &symbols, 1), source);
+    assert_eq!(limited.candidates, output.candidates[..1]);
+    assert_eq!(limited.diagnostics.len(), 1);
+    assert_eq!(
+        limited.diagnostics[0].code,
+        AnalyzerDiagnosticCode::CandidateLimitExceeded
+    );
+    assert_eq!(
+        limited.diagnostics[0].path.as_deref(),
+        Some(Utf8Path::new("pkg/subject.py"))
+    );
+    assert_eq!(limited.diagnostics[0].line, None);
+    assert_eq!(limited.diagnostics[0].column, None);
+    assert_eq!(limited.diagnostics[0].message, None);
+    assert!(limited.truncated);
 }

@@ -55,9 +55,6 @@ pub(crate) struct ReviewReport {
 /// Returns an error for invalid JSON, unsupported schema, invalid configuration
 /// or structure, an unusable run, or failure to resolve the project root.
 pub(crate) fn read_review_json(path: &Path, bytes: &[u8]) -> Result<ReviewReport, ProgressError> {
-    if let Some(header) = dispatch::probe(bytes) {
-        check_schema(path, header.schema_version)?;
-    }
     let document: RunReportDocument<hoimin_core::RunConfig> = serde_json::from_slice(bytes)
         .map_err(|source| ProgressError::Parse {
             path: path.to_path_buf(),
@@ -633,18 +630,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn review_rejects_old_root_shape_with_schema_migration_guidance() {
+    fn review_rejects_old_root_shape() {
         let bytes = include_bytes!("../../tests/golden/reports/schema-v6-current.json");
 
-        let error = read_review_json(Path::new("old.json"), bytes)
-            .err()
-            .unwrap();
+        assert!(read_review_json(Path::new("old.json"), bytes).is_err());
+    }
 
-        assert!(matches!(
-            error,
-            ProgressError::UnsupportedSchema { found: 6, .. }
-        ));
-        assert!(error.to_string().contains("rerun with this version"));
+    #[test]
+    fn review_rejects_old_shape_during_decode_before_project_root_read() {
+        let project = tempfile::tempdir().unwrap();
+        let mut document: serde_json::Value = serde_json::from_slice(include_bytes!(
+            "../../tests/golden/reports/schema-v6-current.json"
+        ))
+        .unwrap();
+        document["run"]["normalized_config"]["selection"]["root"] =
+            serde_json::json!(project.path().join("missing-project"));
+        document.as_object_mut().unwrap().remove("schema_version");
+        let payload = serde_json::to_string(&document).unwrap();
+        let wire = format!(r#"{{"schema_version":6,{}"#, &payload[1..]);
+
+        let error = read_review_json(Path::new("old.json"), wire.as_bytes())
+            .err()
+            .expect("old shape must fail during typed decode");
+
+        assert!(matches!(error, ProgressError::Parse { .. }), "{error}");
     }
 
     fn current_report_json() -> String {
@@ -653,6 +662,56 @@ mod tests {
         ))
         .unwrap();
         serde_json::to_string(&document).unwrap()
+    }
+
+    #[test]
+    fn review_accepts_current_schema_first_and_last() {
+        let project = tempfile::tempdir().unwrap();
+        let mut document: serde_json::Value = serde_json::from_str(&current_report_json()).unwrap();
+        document["run"]["normalized_config"]["selection"]["root"] =
+            serde_json::json!(project.path());
+        let schema = document
+            .as_object_mut()
+            .unwrap()
+            .remove("schema_version")
+            .unwrap();
+        let payload = serde_json::to_string(&document).unwrap();
+        for wire in [
+            format!(r#"{{"schema_version":{schema},{}"#, &payload[1..]),
+            format!(
+                r#"{},"schema_version":{schema}}}"#,
+                &payload[..payload.len() - 1]
+            ),
+        ] {
+            let report = read_review_json(Path::new("report.json"), wire.as_bytes())
+                .unwrap_or_else(|error| panic!("{error}"));
+
+            assert_eq!(
+                report.project.as_std_path(),
+                std::fs::canonicalize(project.path()).unwrap()
+            );
+            assert_eq!(report.run_id, "schema-v10-current");
+            assert_eq!(report.mutants.len(), 1);
+        }
+    }
+
+    #[test]
+    fn review_checks_document_schema_before_project_root_read() {
+        let project = tempfile::tempdir().unwrap();
+        let mut document: serde_json::Value = serde_json::from_str(&current_report_json()).unwrap();
+        document["run"]["normalized_config"]["selection"]["root"] =
+            serde_json::json!(project.path().join("missing-project"));
+        document["schema_version"] = serde_json::json!(9);
+
+        let result = read_review_json(
+            Path::new("report.json"),
+            &serde_json::to_vec(&document).unwrap(),
+        );
+
+        assert!(matches!(
+            result,
+            Err(ProgressError::UnsupportedSchema { found: 9, .. })
+        ));
     }
 
     fn reject_config_before_root_read(change: fn(&mut serde_json::Value), expected: &str) {
@@ -685,6 +744,9 @@ mod tests {
     }
 
     invalid_review_config_cases! {
+        review_rejects_unknown_nested_config_before_project_root_read: |config| {
+            config["limits"]["future_limit"] = serde_json::json!(1);
+        } => "unknown field `future_limit`";
         review_rejects_jobs_above_absolute_cap: |config| {
             config["limits"]["jobs"] = serde_json::json!(257);
             config["limits"]["max_processes"] = serde_json::json!(300);
