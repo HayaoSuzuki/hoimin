@@ -19,6 +19,28 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Prepared symbol selection and finite report confirmation (Issues #1060–#1063)
+
+Analyzer symbol admission prepares per-file membership once and preserves the
+existing line intersection, nested-symbol boundaries and module-qualified API
+semantics. Selector options, ranking rules, candidate identities and schemas
+retain their existing meanings.
+
+Progress's optional byte comparison for duplicate reports now uses each opened
+file's initial length as a read budget, matching report decoding. Observed
+growth/truncation omits the duplicate annotation without adding an input failure
+or changing improvement/saturation results. Same-length in-place rewrites remain
+outside this check; no fixed size cap or atomic snapshot is added.
+
+Review decodes its current typed JSON document directly. Old report shapes remain
+rejected, but they no longer receive a guaranteed unsupported-schema diagnostic
+before typed shape errors. Current schema/configuration checks still precede
+project-root access; progress retains JSON/JSONL routing and review's 64 MiB input
+limit remains unchanged. Rerun with this version when an old report is rejected.
+
+Internal atomic updates use `try_update` under the existing Rust 1.99.0 floor.
+There is no new dependency, migration, public format or package-floor change.
+
 ## Bounded Git capture and streaming artifact reads (Issues #1054–#1056)
 
 Target-inspection Git commands reject stdout above 64 MiB without accepting a

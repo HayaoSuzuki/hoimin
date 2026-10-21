@@ -8,6 +8,7 @@ and an actual host execution are different evidence; see the
 
 Read the relevant summary and follow its original sources:
 
+- [Design and resource audit after PR 1059](design-2026-10-22-post1059.md) - Current findings, rejected state simplifications and #1060–#1063 follow-ups.
 - [October 2026 design-audit history](design-history-2026-10.md) - Eight archived reviews, completed follow-ups and conditions behind retained or later revised decisions.
 - [Reading Lean evidence](lean-evidence.md) - Model proofs, finite search, Rust comparisons and host execution.
 - [2026-09-11 boundary audit](boundary-2026-09.md) - Syntax, selection, execution and persistence findings, including static and unverified scope.

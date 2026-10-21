@@ -5,6 +5,11 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1060-selection
+  resource: ../../../crates/hoimin-python/src/analyzer/rust/selection.rs
+  revision: 8691e86562bf65ccf1624b784f845ed92bbda1cc
+  working_tree: modified
+  sha256: 2abe5c76c979f78e4e55b933574d1508d663d02e35667871d206c373fcc13b07
 - id: six-perf-record
   resource: ../../maintenance/2026-10-21-issues-1039-1040-1041-1042-1044-1045/README.md
   revision: 79f22535197cdc922e12318386102f1806df625e
@@ -1502,6 +1507,16 @@ checks cover copy/prefix work and surround sorting; sorting remains a synchronou
 phase. This admission index is independent of source-position indexes and
 candidate-payload reservations.[^perf-three-selection]
 
+Issue #1060 also prepares symbol membership once per file. A private enum
+distinguishes unrestricted selection from a restricted borrowed qualifier set,
+including a restricted set with no module matches. Module qualification is
+resolved during preparation; queries test the symbol and its dot-boundary
+ancestors without constructing prefix strings or scanning selectors. A rejected
+line returns before symbol lookup. The additional set stores O(S) borrowed
+entries; cancellation is checked while preparing selectors. The new work gate
+varies distinct selectors and queries independently, rather than repeating a
+single selector that target normalization deduplicates.[^issue-1060-selection]
+
 `CandidateValidationContext` retains its source borrow, decoded facts and raw
 hash, then constructs a private location index only when strict validation
 reaches its existing location check. Raw/decoded length checks and decoding/hash
@@ -1527,6 +1542,7 @@ The measured context stack grows from 160 to 168 bytes; heap evidence does not
 measure stack equality.[^perf-three-r6][^perf-three-d1]
 
 [^perf-three-selection]: [Private per-file admission](../../../crates/hoimin-python/src/analyzer/rust/selection.rs).
+[^issue-1060-selection]: [Prepared symbol admission](../../../crates/hoimin-python/src/analyzer/rust/selection.rs).
 [^perf-three-context]: [Source-bound validation context](../../../crates/hoimin-core/src/candidate.rs).
 [^perf-three-r6]: [Task-local ASCII protocol, observations and open acceptance](../../maintenance/2026-10-20-issue-1008/r6/README.md).
 

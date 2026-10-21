@@ -5,6 +5,16 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1062-review
+  resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
+  revision: 8691e86562bf65ccf1624b784f845ed92bbda1cc
+  working_tree: modified
+  sha256: ac37c8dece911431b8a2da6568f9ed62844ab6e3dfa91b7bb2cc5c97ad27dc50
+- id: issue-1061-duplicate
+  resource: ../../../crates/hoimin-cli/src/progress/duplicate.rs
+  revision: 8691e86562bf65ccf1624b784f845ed92bbda1cc
+  working_tree: modified
+  sha256: 78a08d19e2bdcbbb840b4aeff0209bfa05f5bef1d9cab3bb6b7bf0c8735c15cd
 - id: issues-1054-report
   resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
   revision: f55f42c66b21861ae5302c057b4b600ec5d765c1
@@ -972,3 +982,26 @@ Current implementation and bounded verification evidence: see the change record.
 [^issues-1054-evidence]
 
 [^issues-1054-evidence]: [Implementation and validation record](../../maintenance/2026-10-21-issues-1054-1055-1056/README.md).
+
+# Optional duplicate confirmation and review decoding (Issues #1061 and #1062)
+
+Progress's optional byte confirmation reopens equal-fingerprint report paths.
+Both opened descriptors now have initial-length budgets through `SnapshotReader`.
+Observed growth or early truncation omits the duplicate annotation, as other
+confirmation I/O failures do, without making the input unusable or changing
+comparison/saturation. Exact bytes still decide collisions. This is finite
+reading, not an atomic snapshot or detection of all same-length rewrites.
+[^issue-1061-duplicate]
+
+Review's JSON-only entry decodes the current typed configuration/document once
+and checks the document schema before resolving the project root. It no longer
+probes the header solely to prioritize unsupported-schema guidance for obsolete
+shapes. Nested event, structure, complete-run and passing-baseline checks remain.
+Progress's JSON/JSONL dispatch probe is still necessary and remains separate;
+review retains its existing 64 MiB input bound.[^issue-1062-review]
+
+See the [audit and implementation record](../audits/design-2026-10-22-post1059.md)
+for static findings, observed regression sensitivity and execution limits.
+
+[^issue-1061-duplicate]: [Finite optional byte confirmation](../../../crates/hoimin-cli/src/progress/duplicate.rs).
+[^issue-1062-review]: [Single typed review decode](../../../crates/hoimin-cli/src/artifacts/run_report.rs).

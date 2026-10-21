@@ -1136,6 +1136,23 @@
       ]
     },
     {
+      "id": "analyzer-distinct-symbol-selection-exact-work",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 1060,
+      "scope": "Distinct selectors S=32/128/512 and candidate queries C=32/128/512 independently. Actual preparation visits S selectors; unmatched top-level symbols use exactly C set probes. Separate old linear control needs 1024 comparisons and prefix constructions at S=C=32. Retains O(S) borrowed qualifier set entries without copying selector strings. Excludes parser, hashing byte cost, allocator events/bytes, time/RSS bounds; behavioral tests cover candidate values/order/truncation, module and dot boundaries, line conjunction and cancellation.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-python",
+        "--lib",
+        "rust::selection_tests::selection_distinct_symbols_exact_work_gate",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
+    },
+    {
       "id": "analyzer-line-selection-sparse-1000",
       "status": "active",
       "metric": "operations",

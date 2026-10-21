@@ -341,14 +341,10 @@ impl CopyAllowance {
         self.granted.store(granted, Ordering::Release);
     }
 
-    #[allow(
-        deprecated,
-        reason = "fetch_update preserves the Rust 1.88 MSRV; it was renamed in Rust 1.95"
-    )]
     fn charge(&self, amount: u64) -> Result<(), WorkspaceError> {
         let granted = self.granted.load(Ordering::Acquire);
         self.charged
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |current| {
                 current.checked_add(amount).filter(|next| *next <= granted)
             })
             .map(|_| ())
