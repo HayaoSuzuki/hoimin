@@ -45,6 +45,7 @@ enum IneligibleReason {
     ConstructorPolicy,
 }
 
+#[derive(Debug, Eq, PartialEq)]
 enum SiteOutcome<'a> {
     Candidates(Vec<&'a str>),
     Ineligible(IneligibleReason),
@@ -134,6 +135,12 @@ struct Class {
     constructible: bool,
 }
 
+#[derive(Default)]
+struct ChildClasses {
+    ids: BTreeSet<ClassId>,
+    constructible: usize,
+}
+
 /// Only compact summaries survive project parsing. No target module is executed.
 #[derive(Default)]
 pub struct ExceptionIndex {
@@ -142,7 +149,7 @@ pub struct ExceptionIndex {
     module_paths: BTreeMap<String, Utf8PathBuf>,
     classes: BTreeMap<ClassId, Class>,
     visible: BTreeMap<Utf8PathBuf, BTreeMap<ClassId, Vec<(String, usize)>>>,
-    children: BTreeMap<ClassId, BTreeSet<ClassId>>,
+    children: BTreeMap<ClassId, ChildClasses>,
 }
 
 fn reference(expression: &Expr) -> Option<String> {
@@ -885,12 +892,13 @@ impl ExceptionIndex {
             }
         }
         for (id, class) in &index.classes {
+            if cancelled() {
+                return Err(AnalysisError::Cancelled);
+            }
             if let Some(parent) = &class.parent {
-                index
-                    .children
-                    .entry(parent.clone())
-                    .or_default()
-                    .insert(id.clone());
+                let group = index.children.entry(parent.clone()).or_default();
+                group.ids.insert(id.clone());
+                group.constructible += usize::from(class.constructible);
             }
         }
         index.build_visible(cancelled)?;
@@ -1318,31 +1326,36 @@ impl ExceptionIndex {
         }
         let siblings = class.parent.as_ref().and_then(|p| self.children.get(p));
         let children = self.children.get(&id);
-        let related = class
-            .parent
-            .iter()
-            .chain(siblings.into_iter().flatten())
-            .chain(children.into_iter().flatten());
+        // Parent, siblings (excluding self), and children are disjoint in the
+        // resolved single-parent acyclic graph. Counts retain eligibility facts
+        // even when none of those identities is visible in this module.
+        let has_related = class.parent.is_some() || children.is_some_and(|c| !c.ids.is_empty());
+        let compatible = !raised
+            || class
+                .parent
+                .as_ref()
+                .is_some_and(|parent| self.classes.get(parent).is_some_and(|c| c.constructible))
+            || siblings.is_some_and(|s| s.constructible > usize::from(class.constructible))
+            || children.is_some_and(|c| c.constructible > 0);
+        let related_count = usize::from(class.parent.is_some())
+            + siblings.map_or(0, |s| s.ids.len().saturating_sub(1))
+            + children.map_or(0, |c| c.ids.len());
+        let visible = self.visible.get(path);
         let mut result = BTreeSet::new();
-        let mut has_related = false;
-        let mut compatible = false;
-        for destination in related {
-            if (budget.1)() {
-                break;
-            }
+        let mut visit = |destination: &ClassId| {
+            #[cfg(test)]
+            lookup_tests::RELATED_VISITS.update(|n| n + 1);
             if *destination == id {
-                continue;
+                return;
             }
-            has_related = true;
             if raised
                 && !self
                     .classes
                     .get(destination)
                     .is_some_and(|c| c.constructible)
             {
-                continue;
+                return;
             }
-            compatible = true;
             if let Some(aliases) = self.visible.get(path).and_then(|v| v.get(destination))
                 && let Some((name, _)) = aliases.iter().find(|(n, end)| {
                     *end <= before && !excluded.contains(n.split('.').next().unwrap())
@@ -1352,6 +1365,37 @@ impl ExceptionIndex {
                 if result.len() > budget.0.saturating_add(1) {
                     result.pop_last();
                 }
+            }
+        };
+        if let Some(visible) = visible.filter(|v| v.len() < related_count) {
+            for destination in visible.keys() {
+                if (budget.1)() {
+                    break;
+                }
+                let related = class.parent.as_ref() == Some(destination)
+                    || self.classes.get(destination).is_some_and(|other| {
+                        other.parent.as_ref() == Some(&id)
+                            || (class.parent.is_some() && other.parent == class.parent)
+                    });
+                if related {
+                    visit(destination);
+                }
+                #[cfg(test)]
+                if !related {
+                    lookup_tests::RELATED_VISITS.update(|n| n + 1);
+                }
+            }
+        } else {
+            for destination in class
+                .parent
+                .iter()
+                .chain(siblings.into_iter().flat_map(|s| s.ids.iter()))
+                .chain(children.into_iter().flat_map(|c| c.ids.iter()))
+            {
+                if (budget.1)() {
+                    break;
+                }
+                visit(destination);
             }
         }
         if result.is_empty() {
@@ -1380,6 +1424,7 @@ impl ExceptionIndex {
             limit,
             path,
             excluded: BTreeSet::new(),
+            private_roots: None,
             deferred: None,
             class_name: None,
             disabled: false,
@@ -1405,6 +1450,7 @@ struct Collector<'i, 'p, F, C> {
     limit: usize,
     path: &'p Utf8Path,
     excluded: BTreeSet<String>,
+    private_roots: Option<BTreeSet<&'i str>>,
     deferred: Option<usize>,
     class_name: Option<String>,
     disabled: bool,
@@ -1503,19 +1549,35 @@ impl<'a, F: FnMut(TextRange, String) -> Result<(), AnalysisError>, C: Fn() -> bo
                         self.class_name.replace(d.name.to_string()),
                     );
                     self.excluded.insert("__class__".into());
-                    if let Some(visible) = self.index.visible.get(self.path) {
-                        for aliases in visible.values() {
-                            for (name, _) in aliases {
-                                if name
-                                    .split('.')
-                                    .any(|part| part.starts_with("__") && !part.ends_with("__"))
-                                {
-                                    self.excluded
-                                        .insert(name.split('.').next().unwrap().to_owned());
+                    if self.private_roots.is_none() {
+                        let mut roots = BTreeSet::new();
+                        if let Some(visible) = self.index.visible.get(self.path) {
+                            for aliases in visible.values() {
+                                for (name, _) in aliases {
+                                    #[cfg(test)]
+                                    lookup_tests::PRIVATE_ALIAS_VISITS.update(|n| n + 1);
+                                    if (self.cancelled)() {
+                                        self.stopped = true;
+                                        return;
+                                    }
+                                    if name
+                                        .split('.')
+                                        .any(|part| part.starts_with("__") && !part.ends_with("__"))
+                                    {
+                                        roots.insert(name.split('.').next().unwrap());
+                                    }
                                 }
                             }
                         }
+                        self.private_roots = Some(roots);
                     }
+                    self.excluded.extend(
+                        self.private_roots
+                            .as_ref()
+                            .unwrap()
+                            .iter()
+                            .map(|root| (*root).to_owned()),
+                    );
                     for stmt in &d.body {
                         if matches!(stmt, Stmt::FunctionDef(_)) {
                             self.visit_stmt(stmt);
@@ -1649,3 +1711,7 @@ mod visibility_tests;
 #[cfg(test)]
 #[path = "exception_import_graph_tests.rs"]
 mod exception_import_graph_tests;
+
+#[cfg(test)]
+#[path = "exception_lookup_tests.rs"]
+mod lookup_tests;
