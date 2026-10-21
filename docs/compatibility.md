@@ -20,6 +20,22 @@ not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
 
+## Session database admission and internal ownership (#1073–#1075)
+
+Only a new path or a genuinely empty SQLite database with version and application
+ID zero is initialized. Existing sessions must match the current schema-5 DDL,
+including the required positive budget. Foreign, unsupported and earlier nullable
+schema-5 databases are rejected before session configuration. Start a new session
+at another path; no migration, compatibility reader or repair is provided.
+Closed-database tests cover bytes, rows, journal mode and companion files; this
+is not a general SQLite crash-recovery or concurrent foreign-writer guarantee.
+
+Exception hierarchy loading summarizes one borrowed source at a time rather than
+retaining the entire project's text. Input limits, fingerprint checks, candidate
+semantics and input-error priority remain. Run identity now has one internal
+owner distinguishing generated IDs from established session IDs. No CLI option,
+wire schema, dependency or package-floor change is introduced.
+
 ## Original-manifest reads and review-store creation (#1070–#1071)
 
 Original workspace manifest and snapshot reads now reject growth or truncation

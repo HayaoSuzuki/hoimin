@@ -458,10 +458,19 @@ impl Fixture {
                 "source = Path('src/calc.py').read_text()\n",
                 "marker = Path({marker:?})\n",
                 "mutated_first = 'return first_left - first_right' in source\n",
+                "if mutated_first and Path({failure_marker:?}).exists():\n",
+                "    import sqlite3\n",
+                "    with sqlite3.connect({session:?}) as database:\n",
+                "        database.execute(\"CREATE TRIGGER fail_result BEFORE INSERT ON results BEGIN SELECT RAISE(ABORT, 'injected save failure'); END\")\n",
                 "{first_mutant_delay}",
                 "{test_body}",
             ),
             marker = marker,
+            failure_marker = self
+                .session
+                .with_extension("fail-persist")
+                .to_string_lossy(),
+            session = self.session.to_string_lossy(),
             first_mutant_delay = first_mutant_delay,
             test_body = test_body,
         )
@@ -831,11 +840,13 @@ fn reopen_incomplete(fixture: &Fixture, fail_persist: bool) -> Result<(), String
             .execute_batch(
                 "UPDATE runs SET complete=0;
                  DELETE FROM results;
-                 DELETE FROM candidates;
-                 CREATE TRIGGER fail_result BEFORE INSERT ON results
-                 BEGIN SELECT RAISE(ABORT, 'injected save failure'); END;",
+                 DELETE FROM candidates;",
             )
-            .map_err(|error| format!("inject persistence failure: {error}"))?;
+            .map_err(|error| format!("clear seeded results: {error}"))?;
+        // The stable test command installs the trigger during mutant execution,
+        // after the session has passed admission. Keep the marker outside root.
+        std::fs::write(fixture.session.with_extension("fail-persist"), "armed")
+            .map_err(|error| format!("arm persistence failure: {error}"))?;
     } else {
         connection
             .execute("UPDATE runs SET complete=0", [])
@@ -871,7 +882,16 @@ async fn execute_strict(case: &OracleCase) -> Result<(ImplementationObservation,
             }
             reopen_incomplete(&fixture, case.scenario == "session_persistence_failure")?;
             fixture.clear_outputs()?;
-            run_cli(&fixture, false, true, &fixture.metrics).await?
+            let run = run_cli(&fixture, false, true, &fixture.metrics).await?;
+            if case.scenario == "session_persistence_failure"
+                && !run.stderr.contains("injected save failure")
+            {
+                return Err(format!(
+                    "resumed run did not reach injected SQLite ABORT: {}",
+                    run.stderr
+                ));
+            }
+            run
         }
         "stop_preserves_accepted" => {
             // The oracle starts after one accepted result is durable on every OS.

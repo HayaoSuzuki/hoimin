@@ -68,6 +68,10 @@ jobs:
         env:
           CARGO_BUILD_JOBS: '2'
         run: cargo test --locked -p hoimin-cli --lib review::store_tests -- --test-threads=2
+      - name: Test session database admission
+        env:
+          CARGO_BUILD_JOBS: '2'
+        run: cargo test --locked -p hoimin-cli --lib session::schema::tests -- --test-threads=2
       # Native Job Object fixtures retain their six-second shared deadline.
       # Bound harness contention during interpreter startup on Windows runners.
       - name: Test Windows workspace with two harness threads

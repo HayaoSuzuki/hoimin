@@ -139,7 +139,10 @@ def cases : List OracleCase := [
   { schema := 1, id := "forced_stale_fresh_reread", mode := "model-only",
     scenario := "stale_reread", initialVersion := .fresh,
     legacyRow := false, trace := staleReadTrace },
-  { schema := 1, id := "failed_fresh_initialization_rollback", mode := "strict",
+  -- The transaction model retains rollback, but the old public fixture contains
+  -- foreign schema objects and is now rejected before initialization. Actual
+  -- SQLITE_FULL rollback is checked separately at the production schema owner.
+  { schema := 1, id := "failed_fresh_initialization_rollback", mode := "model-only",
     scenario := "rollback", initialVersion := .fresh,
     legacyRow := true, trace := rollbackTrace }
 ] ++ ([Version.v1, .v2, .v3, .v4, .future]).map fun version =>

@@ -2091,28 +2091,59 @@ async fn focused_profile_does_not_resume_full_profile_session() {
 async fn sqlite_save_failure_reports_the_classification_but_leaves_no_partial_database_result() {
     let directory = tempfile::tempdir().unwrap();
     let database = directory.path().join("session.sqlite3");
-    let first = run_fixture_with_session(&["-m", "pytest", "-q", "tests"], &database, false).await;
+    let armed = directory.path().join("fail-persist");
+    let original = std::fs::read_to_string(fixture_root().join("src/calc.py"))
+        .unwrap()
+        .replace("\r\n", "\n");
+    // Keep seed/resume fingerprints identical; arm only an external marker.
+    // The mutant's test process adds the trigger after session admission.
+    let command = format!(
+        concat!(
+            "from pathlib import Path\n",
+            "import sqlite3, sys, pytest\n",
+            "if Path({armed:?}).exists() and Path('src/calc.py').read_text() != {original:?}:\n",
+            "    with sqlite3.connect({database:?}) as database:\n",
+            "        database.execute(\"CREATE TRIGGER fail_result BEFORE INSERT ON results BEGIN SELECT RAISE(ABORT, 'injected save failure'); END\")\n",
+            "sys.exit(pytest.main(['-q', 'tests']))\n",
+        ),
+        armed = armed.to_string_lossy(),
+        database = database.to_string_lossy(),
+        original = original,
+    );
+    let first = run_fixture_with_session(&["-c", &command], &database, false).await;
     assert_eq!(first.exit_code, 0, "{}", first.stderr);
     let connection = rusqlite::Connection::open(&database).unwrap();
     connection
         .execute_batch(
             "UPDATE runs SET complete=0;
          DELETE FROM results;
-         DELETE FROM candidates;
-         CREATE TRIGGER fail_result BEFORE INSERT ON results
-         BEGIN SELECT RAISE(ABORT, 'injected save failure'); END;",
+         DELETE FROM candidates;",
         )
         .unwrap();
     drop(connection);
 
-    let failed = run_fixture_with_session(&["-m", "pytest", "-q", "tests"], &database, true).await;
-    assert_eq!(failed.exit_code, 2);
+    std::fs::write(&armed, "armed").unwrap();
+    let failed = run_fixture_with_session(&["-c", &command], &database, true).await;
+    assert_eq!(failed.exit_code, 2, "{}", failed.stderr);
     assert_eq!(failed.document["summary"]["counts"]["killed"], 1);
     let mutants = failed.document["mutants"].as_array().unwrap();
     assert_eq!(mutants.len(), 1);
     assert_eq!(mutation_outcome::status(&mutants[0]), "killed");
     assert!(failed.stderr.contains("session"), "{}", failed.stderr);
+    assert!(
+        failed.stderr.contains("injected save failure"),
+        "{}",
+        failed.stderr
+    );
     let connection = rusqlite::Connection::open(&database).unwrap();
+    let triggers: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM sqlite_schema WHERE type='trigger' AND name='fail_result'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(triggers, 1);
     let results: i64 = connection
         .query_row("SELECT COUNT(*) FROM results", [], |row| row.get(0))
         .unwrap();

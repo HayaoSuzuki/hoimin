@@ -207,9 +207,32 @@ struct CleanupFlags {
     session_finish_attempted: bool,
 }
 
+/// Session establishment follows accepted creation/resume, not configuration.
+/// Its ID then replaces the generated ID for every execution and report consumer.
+#[derive(Clone, Debug)]
+enum RunIdentity {
+    Ephemeral(String),
+    Session(String),
+}
+
+impl RunIdentity {
+    fn id(&self) -> &str {
+        match self {
+            Self::Ephemeral(id) | Self::Session(id) => id,
+        }
+    }
+
+    fn session_id(&self) -> Option<&str> {
+        match self {
+            Self::Ephemeral(_) => None,
+            Self::Session(id) => Some(id),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct RunState {
-    run_id: String,
+    identity: RunIdentity,
     config: RunConfig,
     resource_control: crate::ResourceControl,
     phase: RunPhase,
@@ -230,7 +253,6 @@ pub struct RunState {
     disk_summary: crate::DiskRunSummary,
     output_sequence: u64,
     fingerprint: Option<RunFingerprint>,
-    session_run_id: Option<String>,
     resume_outcome: Option<crate::ResumeOutcome>,
     pending_failure: Option<EffectFailed>,
     flags: RunFlags,
@@ -267,7 +289,7 @@ impl RunState {
             config.limits.min_free_space.get(),
         );
         Self {
-            run_id: run_id.into(),
+            identity: RunIdentity::Ephemeral(run_id.into()),
             config,
             resource_control,
             phase: RunPhase::Validate,
@@ -288,7 +310,6 @@ impl RunState {
             disk_summary,
             output_sequence: 0,
             fingerprint: None,
-            session_run_id: None,
             resume_outcome: None,
             pending_failure: None,
             flags: RunFlags {
@@ -336,7 +357,7 @@ impl RunState {
 
     #[must_use]
     pub fn run_id(&self) -> &str {
-        &self.run_id
+        self.identity.id()
     }
 
     #[must_use]
@@ -521,7 +542,7 @@ impl RunState {
         let output = EmitOutput {
             id,
             event: OutputEvent::Diagnostic(Diagnostic::new(
-                self.run_id.clone(),
+                self.run_id().to_owned(),
                 self.output_sequence(),
                 "error",
                 failed.failure.code(),
@@ -553,7 +574,7 @@ impl RunState {
             let output = EmitOutput {
                 id,
                 event: OutputEvent::Diagnostic(Diagnostic::new(
-                    self.run_id.clone(),
+                    self.run_id().to_owned(),
                     self.output_sequence(),
                     "warning",
                     diagnostic.code,
@@ -661,7 +682,7 @@ impl RunState {
             id,
             context: crate::BaselineContext {
                 worker: 0,
-                run_id: self.run_id.clone(),
+                run_id: self.run_id().to_owned(),
             },
             argv: self.config.test_argv.clone(),
             cwd: self.config.selection.root.clone(),
@@ -679,7 +700,7 @@ impl RunState {
         let id = self.allocate_id()?;
         Ok(vec![RunEffect::BeginSession(BeginSession {
             id,
-            run_id: self.run_id.clone(),
+            run_id: self.run_id().to_owned(),
             fingerprint,
             max_mutants: self.config.limits.max_mutants,
         })])
@@ -688,8 +709,11 @@ impl RunState {
     fn start_run_effects(&mut self) -> Result<Vec<RunEffect>, MachineError> {
         let id = self.allocate_id()?;
         let sequence = self.output_sequence();
-        let mut run_started =
-            RunStarted::minimal(self.run_id.clone(), sequence, self.resource_control.clone());
+        let mut run_started = RunStarted::minimal(
+            self.run_id().to_owned(),
+            sequence,
+            self.resource_control.clone(),
+        );
         run_started.normalized_config = Some(self.config.clone());
         run_started.resume = self.resume_outcome;
         run_started.verification_selection = self.selection.verification_selection().cloned();
@@ -714,7 +738,7 @@ impl RunState {
     }
 
     fn candidate_effects(&mut self, worker: u32) -> Result<Vec<RunEffect>, MachineError> {
-        if let Some(run_id) = self.session_run_id.clone() {
+        if let Some(run_id) = self.identity.session_id().map(str::to_owned) {
             let candidate = self.take_candidate(worker)?;
             let mutant_id = candidate.id.clone();
             *self.worker_mut(worker)? = WorkerState::Lookup(candidate);
@@ -945,7 +969,7 @@ impl RunState {
         let output = EmitOutput {
             id,
             event: OutputEvent::MutantStarted(MutantStarted::new(
-                self.run_id.clone(),
+                self.run_id().to_owned(),
                 self.output_sequence(),
                 mutant_id,
                 candidate_sequence,
@@ -970,7 +994,7 @@ impl RunState {
         let output = EmitOutput {
             id,
             event: OutputEvent::MutantStarted(MutantStarted::new(
-                self.run_id.clone(),
+                self.run_id().to_owned(),
                 self.output_sequence(),
                 mutant_id,
                 candidate_sequence,
@@ -1001,7 +1025,7 @@ impl RunState {
             id,
             context: crate::MutantContext {
                 worker,
-                run_id: self.run_id.clone(),
+                run_id: self.run_id().to_owned(),
                 mutant_id,
             },
             argv: self.config.test_argv.clone(),
@@ -1027,7 +1051,7 @@ impl RunState {
             event: OutputEvent::MutantFinished(MutantOutput {
                 schema_version: crate::REPORT_SCHEMA_VERSION,
                 sequence: self.output_sequence(),
-                run_id: self.run_id.clone(),
+                run_id: self.run_id().to_owned(),
                 candidate: result.candidate,
                 outcome: result.outcome,
                 resource_mode: result.resource_mode,
@@ -1053,7 +1077,7 @@ impl RunState {
             event: OutputEvent::MutantFinished(MutantOutput {
                 schema_version: crate::REPORT_SCHEMA_VERSION,
                 sequence: self.output_sequence(),
-                run_id: self.run_id.clone(),
+                run_id: self.run_id().to_owned(),
                 candidate,
                 outcome: outcome.report_outcome(),
                 resource_mode: self.resource_control.mode,
@@ -1227,7 +1251,7 @@ impl RunState {
                 resolved_mutant_timeout: self.resolved_mutant_timeout,
                 schema_version: crate::REPORT_SCHEMA_VERSION,
                 sequence: self.output_sequence(),
-                run_id: self.run_id.clone(),
+                run_id: self.run_id().to_owned(),
                 counts: self.summary.clone(),
                 complete: self.complete(),
                 exit_code: self.exit_code(),
@@ -1246,7 +1270,7 @@ impl RunState {
     }
 
     fn post_report_effects(&mut self) -> Result<Vec<RunEffect>, MachineError> {
-        if let Some(run_id) = self.session_run_id.clone()
+        if let Some(run_id) = self.identity.session_id().map(str::to_owned)
             && !self.flags.cleanup.session_finish_attempted
         {
             self.flags.cleanup.session_finish_attempted = true;
@@ -1427,8 +1451,7 @@ pub fn transition(
             match value.outcome {
                 crate::SessionLoadOutcome::Resumed(resume) => {
                     state.resume_outcome = Some(crate::ResumeOutcome::Resumed);
-                    state.run_id.clone_from(&resume.run_id);
-                    state.session_run_id = Some(resume.run_id);
+                    state.identity = RunIdentity::Session(resume.run_id);
                     state.start_run_effects()?
                 }
                 crate::SessionLoadOutcome::Fresh(reason) => {
@@ -1438,8 +1461,7 @@ pub fn transition(
             }
         }
         RunEvent::SessionStarted(value) if state.phase == RunPhase::Preflight => {
-            state.run_id.clone_from(&value.run_id);
-            state.session_run_id = Some(value.run_id);
+            state.identity = RunIdentity::Session(value.run_id);
             state.start_run_effects()?
         }
         RunEvent::PreflightCompleted(value) if state.phase == RunPhase::Preflight => {
@@ -1526,7 +1548,7 @@ pub fn transition(
                 let output = EmitOutput {
                     id,
                     event: OutputEvent::Diagnostic(Diagnostic::new(
-                        state.run_id.clone(),
+                        state.run_id().to_owned(),
                         state.output_sequence(),
                         "warning",
                         "budget.projected_shortfall",
@@ -1682,10 +1704,7 @@ pub fn transition(
                 }],
             };
             let result = MutantResult {
-                run_id: state
-                    .session_run_id
-                    .clone()
-                    .unwrap_or_else(|| state.run_id.clone()),
+                run_id: state.run_id().to_owned(),
                 candidate,
                 outcome: MutationOutcome::Executed {
                     termination: value.termination,
@@ -1697,7 +1716,7 @@ pub fn transition(
                 diagnostics,
             };
             let status = result.outcome.status();
-            if state.session_run_id.is_some() {
+            if state.identity.session_id().is_some() {
                 *state.worker_mut(worker)? = WorkerState::Persisting(result.clone());
                 let id = state.allocate_id()?;
                 vec![RunEffect::PersistResult(PersistResult {
@@ -2010,7 +2029,7 @@ fn baseline_output(state: &mut RunState, value: &ProcessFinished) -> OutputEvent
     OutputEvent::BaselineFinished(BaselineOutput {
         schema_version: crate::REPORT_SCHEMA_VERSION,
         sequence: state.output_sequence(),
-        run_id: state.run_id.clone(),
+        run_id: state.run_id().to_owned(),
         termination: value.termination,
         elapsed_ms: elapsed_millis(value.elapsed),
         resource_mode: value.resource_mode,

@@ -5,6 +5,16 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1074-project
+  resource: ../../../crates/hoimin-cli/src/analyzer/exception_project.rs
+  revision: 03c7e00fc2087fa87c3c0ee9ab9f70c766fc6956
+  working_tree: modified
+  sha256: 84d34a4faa0bf9ca32e0e6f6c6eeb68232b6e8633adae3a0f9b466ebacde99c3
+- id: issue-1074-builder
+  resource: ../../../crates/hoimin-python/src/analyzer/exception_hierarchy.rs
+  revision: 03c7e00fc2087fa87c3c0ee9ab9f70c766fc6956
+  working_tree: modified
+  sha256: 86548f1626d8f1f84afceed70d0dd37f89a07894d29a90a2830690b287b85344
 - id: issue-1060-selection
   resource: ../../../crates/hoimin-python/src/analyzer/rust/selection.rs
   revision: 8691e86562bf65ccf1624b784f845ed92bbda1cc
@@ -1668,3 +1678,23 @@ identity insertion and constructibility queries; inserting an existing identity
 cannot inflate its count. The representation and sparse/dense iteration bounds
 are unchanged. The original Boolean algorithm remains only in the test reference.
 [^six-perf-hierarchy][^six-perf-lookup-tests][^six-perf-record]
+
+# 例外階層の本文 lifetime（Issue #1074）
+
+`ExceptionProject::load` は本文を集めず、path と prepared origin を先に予約する。
+各ファイルを取得・hash 検査・decode し、借用した本文から owned summary を抽出した後、
+次のファイルへ進む。最終の import graph・class・visibility 構築には本文を渡さない。
+本文の保持は全ファイルの合計量ではなく最大 1 ファイルの量に従う。必要な path、
+summary、index と処理中の parser/AST は別に保持する。[^issue-1074-project][^issue-1074-builder]
+
+`ExceptionIndexBuilder` は mapping/解析の最初のエラーを保持する。全ファイルの
+bounded acquisition が成功してからそのエラーを返すため、後のファイルの decode や
+fingerprint エラーが先の解析エラーに隠れない。prepared origin の件数超過も同じ優先順に
+従う。総 decoded bytes 64 MiB、1 ファイル 16 MiB、4096 ファイル、summary 件数の
+上限は維持し、成功した index だけを cache に入れる。[^issue-1074-project]
+
+[^issue-1074-project]: [Per-file acquisition and successful-index cache](../../../crates/hoimin-cli/src/analyzer/exception_project.rs).
+[^issue-1074-builder]: [Borrowed-source summary builder](../../../crates/hoimin-python/src/analyzer/exception_hierarchy.rs).
+
+小さい実入力での allocation 観測、回帰試験と測定範囲は
+[実装記録](../../maintenance/2026-10-22-issues-1073-1074-1075/README.md)に記す。

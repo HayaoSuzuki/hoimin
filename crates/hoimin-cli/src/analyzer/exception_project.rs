@@ -1,7 +1,7 @@
 //! Project inputs shared by hierarchy analysis and fingerprint revalidation.
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{MutationOperator, RunConfig, Selection};
-use hoimin_python::{ExceptionIndex, MAX_SUMMARY_ENTRIES};
+use hoimin_python::{ExceptionIndex, ExceptionIndexBuilder, MAX_SUMMARY_ENTRIES};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
@@ -80,9 +80,29 @@ impl ExceptionProject {
         }
         let reader = crate::workspace::PortableFileReader::open(self.selection.root.clone())
             .map_err(|e| e.to_string())?;
-        let mut sources = Vec::new();
+        let paths = self.files(cancelled)?;
+        // Reserved origins need paths, never all source bodies. Keep construction
+        // errors deferred until every bounded acquisition has succeeded.
+        let inputs = self
+            .prepared_inputs
+            .iter()
+            .flat_map(|inputs| inputs.keys())
+            .filter(|path| path.extension() == Some("py"))
+            .take(MAX_SUMMARY_ENTRIES + 1)
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut builder = if inputs.len() > MAX_SUMMARY_ENTRIES {
+            Err("exception hierarchy prepared input limit exceeded".to_owned())
+        } else {
+            Ok(ExceptionIndexBuilder::new(
+                &paths,
+                &self.roots,
+                &inputs,
+                cancelled,
+            ))
+        };
         let mut remaining = MAX_TOTAL_BYTES;
-        for path in self.files(cancelled)? {
+        for path in paths {
             if cancelled() {
                 return Err("analyzer.cancelled".into());
             }
@@ -106,24 +126,14 @@ impl ExceptionProject {
             remaining = remaining
                 .checked_sub(decoded.text().len())
                 .ok_or("exception hierarchy total decoded source byte limit exceeded")?;
-            sources.push((path, decoded.text().to_owned()));
-        }
-        // Preserve prepared module origins even if a file temporarily disappears.
-        // Missing or excluded inputs reserve their names without supplying classes.
-        let inputs = self
-            .prepared_inputs
-            .iter()
-            .flat_map(|inputs| inputs.keys())
-            .filter(|path| path.extension() == Some("py"))
-            .take(MAX_SUMMARY_ENTRIES + 1)
-            .cloned()
-            .collect::<Vec<_>>();
-        if inputs.len() > MAX_SUMMARY_ENTRIES {
-            return Err("exception hierarchy prepared input limit exceeded".into());
+            if let Ok(builder) = &mut builder {
+                builder.add_source(&path, decoded.text(), cancelled);
+            }
         }
         let index = Arc::new(
-            ExceptionIndex::from_sources_with_inputs(&sources, &self.roots, &inputs, cancelled)
-                .map_err(|e| e.to_string())?,
+            builder?
+                .finish(cancelled)
+                .map_err(|error| error.to_string())?,
         );
         *self.index.lock().map_err(|e| e.to_string())? = Some(Arc::clone(&index));
         Ok(index)
@@ -133,6 +143,48 @@ impl ExceptionProject {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hierarchy_acquisition_failure_precedes_an_earlier_analysis_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(dir.path()).unwrap();
+        let deep = format!("x = {}1\n", "1 + ".repeat(160));
+        std::fs::write(root.join("a.py"), deep).unwrap();
+        std::fs::write(root.join("z.py"), b"# coding: ascii\n# \xff\n").unwrap();
+        let project = ExceptionProject::new(root);
+        let error = project.load(&|| false).err().unwrap();
+        assert!(error.starts_with("z.py:"), "{error}");
+        std::fs::write(root.join("z.py"), "").unwrap();
+        let error = project.load(&|| false).err().unwrap();
+        assert!(error.contains("analysis depth"), "{error}");
+        std::fs::write(root.join("a.py"), "class Root(Exception): pass\n").unwrap();
+        let first = project.load(&|| false).unwrap();
+        assert!(Arc::ptr_eq(&first, &project.load(&|| false).unwrap()));
+    }
+
+    #[test]
+    fn hierarchy_acquisition_failure_precedes_prepared_origin_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(dir.path()).unwrap();
+        let invalid = b"# coding: ascii\n# \xff\n";
+        std::fs::write(root.join("source.py"), invalid).unwrap();
+        let mut project = ExceptionProject::new(root);
+        let mut inputs = (0..MAX_SUMMARY_ENTRIES)
+            .map(|i| (format!("missing{i}.py").into(), String::new()))
+            .collect::<BTreeMap<Utf8PathBuf, String>>();
+        inputs.insert(
+            "source.py".into(),
+            blake3::hash(invalid).to_hex().to_string(),
+        );
+        project.prepared_inputs = Some(Arc::new(inputs));
+        let error = project.load(&|| false).err().unwrap();
+        assert!(error.starts_with("source.py:"), "{error}");
+        std::fs::write(root.join("source.py"), "").unwrap();
+        Arc::make_mut(project.prepared_inputs.as_mut().unwrap())
+            .insert("source.py".into(), blake3::hash(b"").to_hex().to_string());
+        let error = project.load(&|| false).err().unwrap();
+        assert!(error.contains("prepared input limit"), "{error}");
+    }
     #[test]
     fn hierarchy_project_bounds_reads_and_does_not_cache_failure() {
         let dir = tempfile::tempdir().unwrap();

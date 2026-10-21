@@ -1753,31 +1753,35 @@ def test_manual_non_linux_jobs_are_complete_and_independent() -> None:
             }
             and not (
                 job_name == "rust"
-                and step.get("name") == "Test completed review-store publication"
+                and step.get("name")
+                in {
+                    "Test completed review-store publication",
+                    "Test session database admission",
+                }
             )
         ]
         assert manual_steps == automatic_steps, job_name
         if job_name == "rust":
             steps = job_steps(job)
-            publication = [
-                step
-                for step in steps
-                if step.get("name") == "Test completed review-store publication"
-            ]
-            assert publication == [
-                {
-                    "name": "Test completed review-store publication",
-                    "env": {"CARGO_BUILD_JOBS": "2"},
-                    "run": "cargo test --locked -p hoimin-cli --lib "
-                    "review::store_tests -- --test-threads=2",
-                }
-            ]
-            assert steps.index(publication[0]) < next(
-                index
-                for index, step in enumerate(steps)
-                if isinstance(command := step.get("run"), str)
-                and command.startswith("cargo test --workspace")
-            )
+            for name, test_filter in [
+                ("Test completed review-store publication", "review::store_tests"),
+                ("Test session database admission", "session::schema::tests"),
+            ]:
+                native = [step for step in steps if step.get("name") == name]
+                assert native == [
+                    {
+                        "name": name,
+                        "env": {"CARGO_BUILD_JOBS": "2"},
+                        "run": "cargo test --locked -p hoimin-cli --lib "
+                        f"{test_filter} -- --test-threads=2",
+                    }
+                ]
+                assert steps.index(native[0]) < next(
+                    index
+                    for index, step in enumerate(steps)
+                    if isinstance(command := step.get("run"), str)
+                    and command.startswith("cargo test --workspace")
+                )
 
     for job_name, expected_os in MANUAL_NON_LINUX_MATRIX_JOBS.items():
         job = jobs[job_name]
