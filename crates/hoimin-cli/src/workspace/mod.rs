@@ -11,6 +11,8 @@ mod owned;
 mod reader;
 mod reset;
 mod root;
+#[cfg(test)]
+pub(crate) use root::{WorkspaceRaceHook, install_workspace_race_hook};
 mod stream;
 
 #[cfg(test)]

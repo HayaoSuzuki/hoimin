@@ -1,7 +1,7 @@
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use thiserror::Error;
 
 use crate::{LineRange, TargetSlice, contract_ensure};
@@ -191,6 +191,7 @@ pub fn resolve_explicit(
         .iter()
         .map(|path| normalize_logical(&selection.root, path))
         .collect::<Result<Vec<_>, _>>()?;
+    let source_scope = SourceScope::new(&sources);
     let available: BTreeMap<_, _> = discovered
         .iter()
         .filter_map(|file| {
@@ -211,13 +212,13 @@ pub fn resolve_explicit(
 
     let mut targets = BTreeMap::<Utf8PathBuf, TargetSlice>::new();
     for (path, is_python) in &available {
-        if *is_python && sources.iter().any(|source| is_within(path, source)) {
+        if *is_python && source_scope.contains(path) {
             targets.insert(path.clone(), whole_file(path.clone()));
         }
     }
 
     for raw_path in &selection.files {
-        let requested = checked_explicit_path(selection, &sources, raw_path)?;
+        let requested = checked_explicit_path(selection, &source_scope, raw_path)?;
         let path = require_python(&available_python, &requested)?;
         targets.insert(path.clone(), whole_file(path));
     }
@@ -226,7 +227,7 @@ pub fn resolve_explicit(
         if line.range.start == 0 || line.range.start > line.range.end {
             return Err(TargetError::InvalidLineRange(line.range));
         }
-        let requested = checked_explicit_path(selection, &sources, &line.path)?;
+        let requested = checked_explicit_path(selection, &source_scope, &line.path)?;
         let path = require_python(&available_python, &requested)?;
         let entry = targets.entry(path.clone()).or_insert_with(|| TargetSlice {
             path,
@@ -269,11 +270,11 @@ pub fn resolve_explicit(
 
 fn checked_explicit_path(
     selection: &Selection,
-    sources: &[Utf8PathBuf],
+    scope: &SourceScope<'_>,
     raw_path: &Utf8Path,
 ) -> Result<Utf8PathBuf, TargetError> {
     let path = normalize_logical(&selection.root, raw_path)?;
-    if !sources.is_empty() && !sources.iter().any(|source| is_within(&path, source)) {
+    if !matches!(scope, SourceScope::Unspecified) && !scope.contains(&path) {
         return Err(TargetError::FileOutsideSource(raw_path.to_owned()));
     }
     Ok(path)
@@ -355,16 +356,60 @@ fn strip_root(root: &Utf8Path, path: &Utf8Path) -> Option<Utf8PathBuf> {
     Some(Utf8PathBuf::from(path_parts[root_parts.len()..].join("/")))
 }
 
-fn is_within(path: &Utf8Path, directory: &Utf8Path) -> bool {
-    if directory.as_str().is_empty() {
-        return true;
+/// Prepared whole-file admission. Unspecified sources admit no whole files,
+/// but leave exact file/line selectors unrestricted. A normalized `.` is All.
+/// Symbol lookup keeps the original source order independently of this index.
+enum SourceScope<'a> {
+    Unspecified,
+    All,
+    One(Cow<'a, str>),
+    Roots(HashSet<Cow<'a, str>>),
+}
+
+impl<'a> SourceScope<'a> {
+    fn new(sources: &'a [Utf8PathBuf]) -> Self {
+        if sources.iter().any(|path| path.as_str().is_empty()) {
+            return Self::All;
+        }
+        match sources {
+            [] => Self::Unspecified,
+            [source] => Self::One(path_equality_key(source)),
+            _ => Self::Roots(
+                sources
+                    .iter()
+                    .map(|source| path_equality_key(source))
+                    .collect(),
+            ),
+        }
     }
-    if cfg!(windows) {
-        let path = path_key(path.as_str());
-        let directory = path_key(directory.as_str());
-        path == directory || path.starts_with(&format!("{directory}/"))
-    } else {
-        path == directory || path.starts_with(directory.as_str().to_owned() + "/")
+
+    fn contains(&self, path: &Utf8Path) -> bool {
+        match self {
+            Self::Unspecified => false,
+            Self::All => true,
+            Self::One(root) => {
+                let path = path_equality_key(path);
+                #[cfg(test)]
+                SOURCE_MEMBERSHIP_PROBES.with(|count| count.set(count.get() + 1));
+                path.strip_prefix(root.as_ref())
+                    .is_some_and(|suffix| suffix.is_empty() || suffix.starts_with('/'))
+            }
+            Self::Roots(roots) => {
+                let path = path_equality_key(path);
+                let mut ancestor = path.as_ref();
+                loop {
+                    #[cfg(test)]
+                    SOURCE_MEMBERSHIP_PROBES.with(|count| count.set(count.get() + 1));
+                    if roots.contains(ancestor) {
+                        return true;
+                    }
+                    let Some((parent, _)) = ancestor.rsplit_once('/') else {
+                        return false;
+                    };
+                    ancestor = parent;
+                }
+            }
+        }
     }
 }
 
@@ -374,6 +419,7 @@ fn paths_equal(left: &Utf8Path, right: &Utf8Path) -> bool {
 
 #[cfg(test)]
 thread_local! {
+    static SOURCE_MEMBERSHIP_PROBES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static PATH_KEY_DERIVATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
@@ -588,6 +634,200 @@ mod tests {
     use std::hint::black_box;
     use std::time::Instant;
 
+    // Removing the prepared membership index must exceed this bound: these
+    // inputs vary distinct roots, not duplicate spellings of the same root.
+    #[test]
+    fn source_membership_work_does_not_multiply_roots_by_files() {
+        for roots in [32, 128, 512] {
+            for files in [32, 128, 512] {
+                let selection = Selection {
+                    root: "/project".into(),
+                    sources: (0..roots).map(|i| format!("src{i:04}").into()).collect(),
+                    ..Selection::default()
+                };
+                let discovered = (0..files)
+                    .map(|i| DiscoveredFile::python(format!("src{:04}/file{i:04}.py", i % roots)))
+                    .collect::<Vec<_>>();
+                SOURCE_MEMBERSHIP_PROBES.with(|count| count.set(0));
+                let targets = resolve_explicit(&selection, &discovered).unwrap();
+                assert_eq!(targets.len(), files);
+                let probes = SOURCE_MEMBERSHIP_PROBES.with(std::cell::Cell::get);
+                assert!(
+                    probes <= 3 * files,
+                    "roots={roots} files={files} probes={probes}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_membership_keys_and_probes_follow_path_depth_not_root_count() {
+        for roots in [32, 128, 512] {
+            let roots: Vec<_> = (0..roots)
+                .map(|i| Utf8PathBuf::from(format!("src{i:04}")))
+                .collect();
+            for depth in [1, 8, 32] {
+                PATH_KEY_DERIVATIONS.with(|count| count.set(0));
+                SOURCE_MEMBERSHIP_PROBES.with(|count| count.set(0));
+                let scope = SourceScope::new(&roots);
+                for i in 0..32 {
+                    let path = Utf8PathBuf::from(format!(
+                        "src{:04}/{}a.py",
+                        i % roots.len(),
+                        "nested/".repeat(depth)
+                    ));
+                    assert!(scope.contains(&path));
+                }
+                assert_eq!(
+                    PATH_KEY_DERIVATIONS.with(std::cell::Cell::get),
+                    roots.len() + 32
+                );
+                assert_eq!(
+                    SOURCE_MEMBERSHIP_PROBES.with(std::cell::Cell::get),
+                    32 * (depth + 2)
+                );
+            }
+        }
+    }
+
+    // Reference keeps the old linear policy independently of the prepared index.
+    fn linear_source_contains(path: &Utf8Path, roots: &[Utf8PathBuf]) -> bool {
+        roots.iter().any(|root| {
+            if root.as_str().is_empty() {
+                return true;
+            }
+            if cfg!(windows) {
+                let path = path_key(path.as_str());
+                let root = path_key(root.as_str());
+                path == root || path.starts_with(&format!("{root}/"))
+            } else {
+                path == root || path.starts_with(root.as_str().to_owned() + "/")
+            }
+        })
+    }
+
+    #[test]
+    fn prepared_source_membership_matches_linear_reference() {
+        let paths = [
+            "",
+            "src",
+            "src/a.py",
+            "src/nested/b.py",
+            "src2/c.py",
+            "SRC/a.py",
+            "other.py",
+        ];
+        for roots in [
+            vec![],
+            vec![""],
+            vec!["src"],
+            vec!["src", "src2"],
+            vec!["src/nested", "src", "src"],
+        ] {
+            let roots: Vec<_> = roots.into_iter().map(Utf8PathBuf::from).collect();
+            let scope = SourceScope::new(&roots);
+            for path in paths {
+                assert_eq!(
+                    scope.contains(Utf8Path::new(path)),
+                    linear_source_contains(Utf8Path::new(path), &roots),
+                    "roots={roots:?}, path={path}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "release performance evidence"]
+    fn measure_source_membership_scaling() {
+        for (roots, files) in [(1, 16), (32, 512), (128, 512), (512, 512)] {
+            let sources: Vec<_> = (0..roots)
+                .map(|i| Utf8PathBuf::from(format!("src{i:04}")))
+                .collect();
+            let paths: Vec<_> = (0..files)
+                .map(|i| Utf8PathBuf::from(format!("src{:04}/file{i:04}.py", i % roots)))
+                .collect();
+            let start = Instant::now();
+            for _ in 0..100 {
+                for path in &paths {
+                    assert!(black_box(linear_source_contains(
+                        black_box(path),
+                        black_box(&sources)
+                    )));
+                }
+            }
+            let linear = start.elapsed();
+            let start = Instant::now();
+            let mut capacity = 0;
+            for _ in 0..100 {
+                let scope = SourceScope::new(black_box(&sources));
+                if let SourceScope::Roots(set) = &scope {
+                    capacity = set.capacity();
+                }
+                for path in &paths {
+                    assert!(black_box(scope.contains(black_box(path))));
+                }
+            }
+            eprintln!(
+                "roots={roots} files={files} repeats=100 linear_us={} prepared_including_build_us={} retained_key_capacity={capacity}",
+                linear.as_micros(),
+                start.elapsed().as_micros()
+            );
+        }
+    }
+
+    #[test]
+    fn source_membership_preserves_absent_root_and_component_boundaries() {
+        let inventory = [
+            DiscoveredFile::python("src/a.py"),
+            DiscoveredFile::python("src/nested/b.py"),
+            DiscoveredFile::python("src2/c.py"),
+        ];
+        for (sources, expected) in [
+            (vec![], vec![]),
+            (vec!["."], vec!["src/a.py", "src/nested/b.py", "src2/c.py"]),
+            (vec!["src"], vec!["src/a.py", "src/nested/b.py"]),
+            (
+                vec!["src/nested", "src"],
+                vec!["src/a.py", "src/nested/b.py"],
+            ),
+        ] {
+            let selection = Selection {
+                root: "/project".into(),
+                sources: sources.into_iter().map(Utf8PathBuf::from).collect(),
+                ..Selection::default()
+            };
+            let targets = resolve_explicit(&selection, &inventory).unwrap();
+            assert_eq!(
+                targets.iter().map(|t| t.path.as_str()).collect::<Vec<_>>(),
+                expected
+            );
+        }
+        for sources in [vec![], vec!["."]] {
+            let selection = Selection {
+                root: "/project".into(),
+                sources: sources.into_iter().map(Utf8PathBuf::from).collect(),
+                files: vec!["src2/c.py".into()],
+                ..Selection::default()
+            };
+            assert!(
+                resolve_explicit(&selection, &inventory)
+                    .unwrap()
+                    .iter()
+                    .any(|t| t.path == "src2/c.py")
+            );
+        }
+        let restricted = Selection {
+            root: "/project".into(),
+            sources: vec!["src".into(), "other".into()],
+            files: vec!["src2/c.py".into()],
+            ..Selection::default()
+        };
+        assert_eq!(
+            resolve_explicit(&restricted, &inventory),
+            Err(TargetError::FileOutsideSource("src2/c.py".into()))
+        );
+    }
+
     #[test]
     fn explicit_file_lookups_do_not_scan_every_discovered_file() {
         let count = 128;
@@ -633,7 +873,10 @@ mod tests {
         let key_derivations = PATH_KEY_DERIVATIONS.with(std::cell::Cell::get);
 
         assert_eq!(targets.len(), count);
-        assert_eq!(key_derivations, count + 2);
+        assert!(
+            key_derivations <= 2 * count + 4,
+            "key_derivations={key_derivations}"
+        );
     }
 
     #[test]
@@ -657,7 +900,10 @@ mod tests {
         let key_derivations = PATH_KEY_DERIVATIONS.with(std::cell::Cell::get);
 
         assert_eq!(error, TargetError::SymbolModuleNotFound("missing".into()));
-        assert_eq!(key_derivations, count + 2);
+        assert!(
+            key_derivations <= 2 * count + 4,
+            "key_derivations={key_derivations}"
+        );
     }
 
     #[cfg(windows)]

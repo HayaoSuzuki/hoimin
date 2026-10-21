@@ -19,6 +19,17 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+
+## Source and fingerprint read boundaries (#1066)
+
+Source reads and hashes, including plan source validation and fingerprint inputs,
+now reject growth or truncation relative to the opened descriptor's initial
+length. Stable large files remain supported without a new fixed-size cap. This
+bounds bytes consumed, not arbitrary filesystem I/O time, and does not detect
+same-length rewrites or provide an atomic snapshot. Root-relative, no-follow and
+regular-file checks remain in place. No schema, CLI option, compatibility reader
+or migration is added.
+
 ## Prepared symbol selection and finite report confirmation (Issues #1060–#1063)
 
 Analyzer symbol admission prepares per-file membership once and preserves the

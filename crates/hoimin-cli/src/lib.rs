@@ -7,6 +7,7 @@ pub mod cli;
 mod copy_policy;
 mod fingerprint_env;
 pub mod fingerprint_inputs;
+mod finite_file;
 mod human_text;
 mod interrupt;
 mod live_progress;

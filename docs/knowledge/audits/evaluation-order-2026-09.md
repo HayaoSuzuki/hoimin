@@ -11,10 +11,13 @@ sources:
     working_tree: clean
     sha256: a7f402b5fbedc5a56144dc5b1ccf8ea92e0f24a725fd5c632680db85c9c1f370
   - id: issue-561-tests
-    resource: ../../../crates/hoimin-cli/src/analyzer/rust/method_replacement_tests.rs
+    resource: https://github.com/HayaoSuzuki/hoimin/blob/d2b8e83f054c13eacfceac84e37803fbe71512de/crates/hoimin-cli/src/analyzer/rust/method_replacement_tests.rs
     revision: d2b8e83f054c13eacfceac84e37803fbe71512de
     working_tree: clean
     sha256: 2f7432f828036471d1553f7cfee193146dac60d5c64507b2dcbef8550f52da41
+    original_resource: ../../../crates/hoimin-cli/src/analyzer/rust/method_replacement_tests.rs
+    recovered_revision: d2b8e83f054c13eacfceac84e37803fbe71512de
+    recovered_blob: 4035c7a9ef65f12f8f732dd196880a86db6591d3
   - id: issue-561-compatibility
     resource: ../../../crates/hoimin-cli/tests/method_replacement_selection.rs
     revision: d2b8e83f054c13eacfceac84e37803fbe71512de
@@ -80,6 +83,6 @@ NameResolutionBuilderの束縛記録やresolve_ordered_at、method replacement h
 独立したallocator probeによる修正前後の累積確保要求量と、各3回のセルフレビュー・テスト結果は作業記録に示す。カウンタの操作数、allocatorへの累積要求、同時保持量、経過時間は別の指標として扱う。この修正でpeak RSSや一般的な速度改善率は主張しない。[^issue-561-review]
 
 [^issue-561-design]: [修正設計](../../superpowers/specs/2026-09-25-issue-561-method-replacements.md)。
-[^issue-561-tests]: [回帰テスト](../../../crates/hoimin-cli/src/analyzer/rust/method_replacement_tests.rs)。
+[^issue-561-tests]: [回帰テスト](https://github.com/HayaoSuzuki/hoimin/blob/d2b8e83f054c13eacfceac84e37803fbe71512de/crates/hoimin-cli/src/analyzer/rust/method_replacement_tests.rs)。 Historical evidence; [current owner](../../../crates/hoimin-python/src/analyzer/rust/method_replacement_tests.rs).
 [^issue-561-compatibility]: [公開解析APIの候補互換性テスト](../../../crates/hoimin-cli/tests/method_replacement_selection.rs)。
 [^issue-561-review]: [レビューと検証記録](../../superpowers/reviews/2026-09-25-issue-561.md)。

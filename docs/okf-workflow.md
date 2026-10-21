@@ -98,4 +98,29 @@ print(f'YAML and reserved-file checks passed: {len(pages)} Markdown files')
 PY
 ```
 
+For a reproducible local-reference inventory, run:
+
+```sh
+python3 tools/knowledge_references.py > /tmp/knowledge-references.json
+.venv/bin/pytest tests/test_knowledge_references.py
+```
+
+The inventory parses YAML `sources[].resource` and Markdown inline links/reference
+definitions outside fenced code. It reports missing local targets and concepts
+unreachable through Markdown from `docs/knowledge/index.md`, and exits nonzero
+for those findings. Bundle-root links beginning with `/` resolve from
+`docs/knowledge`; ordinary links resolve from their page. External URLs are
+listed but are not fetched, and heading fragments are not validated. This is
+separate from structure checks and content review. When files move, compare
+both reference inventories and read owner descriptions; an existing path alone
+does not prove that a source still supports a claim.
+
+For recovered historical evidence, retain `original_resource`, `revision`,
+`working_tree`, and `sha256`. Use `recovered_revision` and `recovered_blob` for
+independently recovered bytes, and pin `resource` and its footnote to that commit.
+If exact recorded bytes cannot be found, link to an explicit unavailable-evidence
+record and retain the original metadata with `evidence_status`. See the
+[Issue #1068 repair inventory](maintenance/2026-10-22-issue-1068-knowledge-links.md)
+for recovered snapshots, unresolved limits, and Git hash rechecks.
+
 In the PR or completion report, list the consulted concepts, updated pages or reason no update was needed, checks run, and unverified conditions. The [PR template](../.github/pull_request_template.md) has fields for this. When recording counts, include their scope and date, and distinguish current checks from historical audit results.

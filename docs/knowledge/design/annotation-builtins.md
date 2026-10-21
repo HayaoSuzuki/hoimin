@@ -21,10 +21,13 @@ sources:
   working_tree: untracked
   sha256: 064489054f3c1e2bb0959094f1b81258d02fd2eec5ce89712509931b9d998218
 - id: issue-548-implementation
-  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/10be4aef140e19bb906bdbb834ca025ac7c3aee9/crates/hoimin-cli/src/analyzer/rust.rs
   revision: f11013542ccd735ab9741b5079c0b39a517df256
   working_tree: modified
   sha256: ce8edf8778d99da3bba284c21c859d3c331aeec5455745984988f62e59b2893d
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  recovered_revision: 10be4aef140e19bb906bdbb834ca025ac7c3aee9
+  recovered_blob: 939402db0c261de0cccc67863f674c9808a741a6
 - id: issue-548-tests
   resource: ../../../crates/hoimin-cli/tests/collection_annotation_builtins.rs
   working_tree: modified
@@ -70,7 +73,7 @@ resolver、type parameterのscope、注釈の遅延評価、collection pairを�
 
 Leanは独立したCollectionAnnotationModelで、許可からbuiltinであることを導く性質と、shadowed/unknownの拒否を確認する。fixtureのscopeがモデル前提に対応することは、有限入力の実装比較による証拠である。[^issue-548-lean]
 
-[^issue-548-implementation]: [rust.rs](../../../crates/hoimin-cli/src/analyzer/rust.rs)。
+[^issue-548-implementation]: [rust.rs](https://github.com/HayaoSuzuki/hoimin/blob/10be4aef140e19bb906bdbb834ca025ac7c3aee9/crates/hoimin-cli/src/analyzer/rust.rs)。 Historical evidence; [current owner](../../../crates/hoimin-python/src/analyzer/rust.rs).
 
 [^issue-548-tests]: [collection_annotation_builtins.rs](../../../crates/hoimin-cli/tests/collection_annotation_builtins.rs)。
 

@@ -101,15 +101,21 @@ sources:
   working_tree: modified
   sha256: dc5e5c31080e7e9294c658a391410615dbb32efe4f99f662e276cfe7160d1903
 - id: issue-935-bindings
-  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/341e153c093e2677b443d3ef85bdf29fc618ebdf/crates/hoimin-cli/src/analyzer/rust.rs
   revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
   working_tree: modified
   sha256: 07748a919716ded038afecfed1fe7288d78ae5c5ff119b129e778c0a5cee36c0
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  recovered_revision: 341e153c093e2677b443d3ef85bdf29fc618ebdf
+  recovered_blob: 479adf70e261535378115c7447f15ed9bc5e036e
 - id: issue-935-tests
-  resource: ../../../crates/hoimin-cli/src/analyzer/known_imports_tests.rs
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/341e153c093e2677b443d3ef85bdf29fc618ebdf/crates/hoimin-cli/src/analyzer/known_imports_tests.rs
   revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
   working_tree: untracked
   sha256: 82141fe8dcedb0bcca268600e8351b3cbde6dd4a9048485fac00d5a3c7d05537
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/known_imports_tests.rs
+  recovered_revision: 341e153c093e2677b443d3ef85bdf29fc618ebdf
+  recovered_blob: 48eef2b970f162d942d3ec0ae828834f09c32066
 - id: issue-935-evidence
   resource: ../../superpowers/plans/2026-10-16-issue-935.md
   revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
@@ -126,25 +132,33 @@ sources:
   working_tree: modified
   sha256: 1c46f3462180954d6ba207aa51ad49b579e48eba24a214c0a292e3ad23ed64e0
 - id: issue-929-live-codes
-  resource: ../../../crates/hoimin-cli/src/analyzer/types.rs
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/54a72e541a80db4a9df3225e728345146f636180/crates/hoimin-cli/src/analyzer/types.rs
   revision: 0d3fbc1a1821074d6ba8a2a212116241adc85c4e
   working_tree: modified
   sha256: 77cd9052af7d310e7a34c6145768fde93db6617603163beaf800cba2bace8a64
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/types.rs
+  recovered_revision: 54a72e541a80db4a9df3225e728345146f636180
+  recovered_blob: 7bb09dc798f41391aef4007368035c85ee731456
 - id: issue-914-evidence
   resource: ../../superpowers/plans/2026-10-15-issue-914.md
   revision: 54093222abe08c79e8e36e4656ee04b9c6d8dda0
   working_tree: untracked
   sha256: 8801090d34da44064e561eaab3f5ee44edf8768a2e1db1f2942174ae6e3e52d7
 - id: issue-914-class-context
-  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/75df00cabcebed7c839d6d77fa1b8ce96b9a858f/crates/hoimin-cli/src/analyzer/rust.rs
   revision: 54093222abe08c79e8e36e4656ee04b9c6d8dda0
   working_tree: modified
   sha256: d128e5fe1af0de83481bfb435810b0fc0e5129757b517c9354d94a3045fec524
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  recovered_revision: 75df00cabcebed7c839d6d77fa1b8ce96b9a858f
+  recovered_blob: 7da5342a7c9d53dcc4a69c6b545b8af9797965d4
 - id: issue-871-acquisition
-  resource: ../../../crates/hoimin-cli/src/analyzer/rust/depth.rs
+  resource: ../../maintenance/2026-10-22-issue-1068-knowledge-links.md#issue-871-acquisition
   revision: 49a34a63ac4e995bfefb156f85ff3a934b594e6b
   working_tree: modified
   sha256: bda56c389adde16eecbfdf6ce13726a1138f2a117442cc82ed3c541aa3eeab3c
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust/depth.rs
+  evidence_status: unavailable-recorded-working-tree-bytes
 - id: issue-871-evidence
   resource: ../../superpowers/plans/2026-10-14-issue-871.md
   revision: 6f5ce7e61ea43cf76b795570ecc403080888a092
@@ -179,15 +193,21 @@ sources:
 - id: issue-849-initialization
   resource: ../../maintenance/2026-10-13-analyzer-initialization.md
 - id: string-segment-implementation
-  resource: ../../../crates/hoimin-cli/src/analyzer/rust/string_segments.rs
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/a6965910bbc745e74aeb539628b3e2dc66c2a9d3/crates/hoimin-cli/src/analyzer/rust/string_segments.rs
   revision: d6f4be7b467b584479250ff01dca034441a92b82
   working_tree: untracked
   sha256: b126bf9a14e7b812cc56d29c91ed849d6274be48d1cbc83b3380ee1fd77f61fa
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust/string_segments.rs
+  recovered_revision: a6965910bbc745e74aeb539628b3e2dc66c2a9d3
+  recovered_blob: 222b44d69d371e9a438b9108cc8b337a27249c38
 - id: string-segment-exclusions
-  resource: ../../../crates/hoimin-cli/src/analyzer/rust/string_literals.rs
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/a6965910bbc745e74aeb539628b3e2dc66c2a9d3/crates/hoimin-cli/src/analyzer/rust/string_literals.rs
   revision: d6f4be7b467b584479250ff01dca034441a92b82
   working_tree: modified
   sha256: 3ea6e3c5e1f49de52765356a7f035c6d9673fa252f9b9ac8d44a468b3dc4532e
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust/string_literals.rs
+  recovered_revision: a6965910bbc745e74aeb539628b3e2dc66c2a9d3
+  recovered_blob: 9f442e22a9f93a6b7f7c6be4319c94cac9e23352
 - id: string-segment-selection
   resource: ../../../crates/hoimin-core/src/config.rs
   revision: d6f4be7b467b584479250ff01dca034441a92b82
@@ -230,10 +250,13 @@ sources:
   working_tree: clean
   sha256: fec8835b826fb48eee6f58471f0e0d679cb0dcefe0a574b4bd1476051d99546e
 - id: issue-560-code
-  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/b91d3659215a150a6c8c24f0233f4c3880b52e28/crates/hoimin-cli/src/analyzer/rust.rs
   revision: aefa2a8
   working_tree: modified
   sha256: 0d93c8c393d50ca9793ade1ce487504138b13aa3845557481ce94f89662959be
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  recovered_revision: b91d3659215a150a6c8c24f0233f4c3880b52e28
+  recovered_blob: 9f6c00fb1c1a342046a7269798b31a1a23b29d1f
 - id: issue-560-tests
   resource: ../../../crates/hoimin-cli/tests/builtin_evaluation_order.rs
   revision: ffb65c051014f3d9601df2deb0bfeb5ff55c7c38
@@ -251,10 +274,13 @@ sources:
   working_tree: clean
   sha256: a0237a6eca382f65069b6a15eb7681c155f6b94f468d8b09725cff7a9f514f8e
 - id: issue-564-code
-  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/f6f5d96c099fb880884b2b7cb29717ff33d70d75/crates/hoimin-cli/src/analyzer/rust.rs
   revision: f6f5d96c099fb880884b2b7cb29717ff33d70d75
   working_tree: clean
   sha256: 977b7f871450b831854909f1d8d96a53992922f5688ffa103d5e7a94527e2b8a
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  recovered_revision: f6f5d96c099fb880884b2b7cb29717ff33d70d75
+  recovered_blob: c1aae5af5bde2e4ee38061fc675b7dc38ff97dde
 
 - id: issue-565-design
   resource: ../../superpowers/specs/2026-09-24-issue-565-annotation-descendants.md
@@ -413,9 +439,12 @@ sources:
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
 - id: implementation
-  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/a7daea0b557cd435c1e55b540392fbdd116348e1/crates/hoimin-cli/src/analyzer/rust.rs
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  recovered_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  recovered_blob: 664a96c54d8060dc78a7ae1f95a3dbba5d448f3b
 - id: operator-report
   resource: ../../superpowers/reports/2026-09-08-python-operator-coverage.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -557,30 +586,42 @@ sources:
   sha256: 98c8c6c858b6159203d518deaff36f5a186e4f1304bca81085549b401161db26
 
 - id: issue-930-token-operators
-  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/59fff0890b78e0169b0318b2a8fe637dd0056334/crates/hoimin-cli/src/analyzer/rust.rs
   revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
   working_tree: modified
   sha256: fc838b85cc69ce2e0d5500a089b1f0d034ec82794b94a0a576bd7b3f30180318
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  recovered_revision: 59fff0890b78e0169b0318b2a8fe637dd0056334
+  recovered_blob: 2f893f051b10ef4bc2ee544864e67373dbc67b98
 - id: issue-950-candidate
-  resource: ../../../crates/hoimin-cli/src/analyzer/types.rs
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/59fff0890b78e0169b0318b2a8fe637dd0056334/crates/hoimin-cli/src/analyzer/types.rs
   revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
   working_tree: modified
   sha256: fe08e9d35c48024b4eb68ccad307116a2e529e3db4ca52f491ace49e5b2dc37f
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/types.rs
+  recovered_revision: 59fff0890b78e0169b0318b2a8fe637dd0056334
+  recovered_blob: b553107f55877be0d240b9a50e8d01a536b33ceb
 - id: issue-950-retention
-  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/59fff0890b78e0169b0318b2a8fe637dd0056334/crates/hoimin-cli/src/analyzer/rust.rs
   revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
   working_tree: modified
   sha256: fc838b85cc69ce2e0d5500a089b1f0d034ec82794b94a0a576bd7b3f30180318
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  recovered_revision: 59fff0890b78e0169b0318b2a8fe637dd0056334
+  recovered_blob: 2f893f051b10ef4bc2ee544864e67373dbc67b98
 - id: issue-950-descriptor
   resource: ../../../crates/hoimin-cli/src/analyzer/mod.rs
   revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
   working_tree: modified
   sha256: 8246e175ff7ed75800d7d2cd4cf7db1d99dc397e9bfcd73282b75fdd801f4f10
 - id: issue-950-tests
-  resource: ../../../crates/hoimin-cli/src/analyzer/rust_tests.rs
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/59fff0890b78e0169b0318b2a8fe637dd0056334/crates/hoimin-cli/src/analyzer/rust_tests.rs
   revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
   working_tree: modified
   sha256: 99a2645a9d488283ad238c16fd3493a28da173c966b80ad3c5f78e6555777878
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust_tests.rs
+  recovered_revision: 59fff0890b78e0169b0318b2a8fe637dd0056334
+  recovered_blob: f0c52ed905f8e6cedc9968253adb57fff4cf985d
 - id: issue-972-handler
   resource: ../../../crates/hoimin-cli/src/analyzer/mod.rs
   revision: 4ebed4457519920e9a28f8f653d8ce96985acdad
@@ -593,20 +634,26 @@ sources:
   sha256: b3ae02cb2e123c0089cb127d4189c2d03c2dd4bfba21c6b1789fee9995858dc2
 
 - id: issue-978-payload
-  resource: ../../../crates/hoimin-cli/src/analyzer/payload.rs
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/4ebed4457519920e9a28f8f653d8ce96985acdad/crates/hoimin-cli/src/analyzer/payload.rs
   revision: 4ebed4457519920e9a28f8f653d8ce96985acdad
   working_tree: clean
   sha256: 2286b8eb233abacf91ce0d89bda9cd628ae05149def6ed341f470b0b6f09f0e8
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/payload.rs
+  recovered_revision: 4ebed4457519920e9a28f8f653d8ce96985acdad
+  recovered_blob: 571abd603802a87be2909407d7f5e245409d2f9f
 
 - id: issue-978-evidence
   resource: ../../maintenance/2026-10-18-issues-971-979/task-9-report.md
   working_tree: untracked
   sha256: d9fd8051886a76403ff07084d186e237c9bf8a43848e735238152c5164b146a9
 - id: issue-986-walker
-  resource: ../../../crates/hoimin-cli/src/analyzer/visitor.rs
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/2ec902ae2353c38f2da1a74cbf6552785387e42d/crates/hoimin-cli/src/analyzer/visitor.rs
   revision: 2ec902ae2353c38f2da1a74cbf6552785387e42d
   working_tree: clean
   sha256: e7e0f607c3b8dce98dd93ac4a340ca4f92f3cec59a5500debec9df1506ff291b
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/visitor.rs
+  recovered_revision: 2ec902ae2353c38f2da1a74cbf6552785387e42d
+  recovered_blob: a81bd3c074217587c6c2578f344dbd8c8b15854d
 - id: issue-986-evidence
   resource: ../../maintenance/2026-10-18-issue-986-visitation.md
   revision: 2ec902ae2353c38f2da1a74cbf6552785387e42d
@@ -633,11 +680,19 @@ Visibility lookup uses ordered exact/prefix queries over loaded modules and
 indexed paths. It retains loaded descendants, alias offsets, ambiguity rules,
 cancellation and the 65,536-entry ceiling. Test-only operation counts measure
 visited entries; they exclude ordered-map comparisons and make no wall-time
-claim. Earlier source paths in this concept describe their recorded revisions;
-current pure analyzer sources are under `crates/hoimin-python`. For a moved
-historical file, use `git show REVISION:REPOSITORY_PATH` with its recorded
-revision. A source marked modified or untracked also depends on the recorded
-snapshot/hash; its baseline commit alone does not reproduce that snapshot.[^issue-995-index]
+claim. Historical implementation sources below use commit-pinned URLs when their
+recorded bytes were recovered. `revision` remains the original comparison
+commit; `recovered_revision` and `recovered_blob` identify the recovered bytes.
+The two are not interchangeable for modified or untracked sources. Missing
+snapshots and the recheck procedure are recorded in the
+[reference repair record](../../maintenance/2026-10-22-issue-1068-knowledge-links.md).
+Current pure analyzer code is in
+[hoimin-python](../../../crates/hoimin-python/src/lib.rs), including
+[diagnostic and candidate types](../../../crates/hoimin-python/src/analyzer/types.rs).
+The [CLI handler](../../../crates/hoimin-cli/src/analyzer/mod.rs) owns source
+acquisition and spool validation, and its
+[store](../../../crates/hoimin-cli/src/analyzer/store.rs) owns spool replay. These
+live links are navigation, not substitutes for historical snapshot evidence.[^issue-995-index]
 
 # Shared eager-import graph (Issue #1005)
 
@@ -780,11 +835,11 @@ recursive destruction, or depth/cancellation observation order. Recheck the Rust
 contract if parser ownership, syntax validity, traversal order, or cleanup
 changes.[^issue-871-evidence]
 
-[^issue-871-acquisition]: [Checked AST acquisition](../../../crates/hoimin-cli/src/analyzer/rust/depth.rs).
+[^issue-871-acquisition]: [Checked AST acquisition](../../maintenance/2026-10-22-issue-1068-knowledge-links.md#issue-871-acquisition). Historical evidence (recorded bytes unavailable); [current owner](../../../crates/hoimin-python/src/analyzer/rust/depth.rs).
 [^issue-871-evidence]: [Issue #871 design and validation](../../superpowers/plans/2026-10-14-issue-871.md).
 
 [^operators]: [2026-08-06-collection-and-structural-mutation-operators-design.md](../../superpowers/specs/2026-08-06-collection-and-structural-mutation-operators-design.md)。
-[^implementation]: [rust.rs](../../../crates/hoimin-cli/src/analyzer/rust.rs)。
+[^implementation]: [rust.rs](https://github.com/HayaoSuzuki/hoimin/blob/a7daea0b557cd435c1e55b540392fbdd116348e1/crates/hoimin-cli/src/analyzer/rust.rs)。 Historical evidence; [current owner](../../../crates/hoimin-python/src/analyzer/rust.rs).
 [^operator-report]: [2026-09-08-python-operator-coverage.md](../../superpowers/reports/2026-09-08-python-operator-coverage.md)。
 [^span]: [2026-08-15-lean-byte-span-preservation-audit.md](../../superpowers/reports/2026-08-15-lean-byte-span-preservation-audit.md)。
 [^bounded]: [2026-08-14-lean-bounded-candidate-discovery-audit.md](../../superpowers/reports/2026-08-14-lean-bounded-candidate-discovery-audit.md)。
@@ -966,7 +1021,7 @@ Issue #556の修正では、通常のwithとasync withの本体で例外状態�
 拡張代入はtargetを一度評価してから右辺を評価するため、通常の代入とは順序が異なる。右辺で格納前に参照する組込み名の候補と、拡張代入のtarget内で先に参照する候補は保持する。例外で後続targetの格納が停止し得る場合は、既存の条件付き束縛を使って参照先を保守的に判定する。公開plan/runテストでは、CPythonで元入力の値を確認し、候補数・spanと誤ったkilled計上の抑制を照合する。任意の例外到達経路を判定する保証は含まない。[^issue-560-code][^issue-560-tests]
 
 [^issue-560-design]: [Issue 560: builtin resolution in evaluation order](../../superpowers/specs/2026-09-24-issue-560-evaluation-order.md)。
-[^issue-560-code]: [NameResolutionBuilderの実装](../../../crates/hoimin-cli/src/analyzer/rust.rs)。
+[^issue-560-code]: [NameResolutionBuilderの実装](https://github.com/HayaoSuzuki/hoimin/blob/b91d3659215a150a6c8c24f0233f4c3880b52e28/crates/hoimin-cli/src/analyzer/rust.rs)。 Historical evidence; [current owner](../../../crates/hoimin-python/src/analyzer/rust.rs).
 [^issue-560-tests]: [公開plan/runの評価順序テスト](../../../crates/hoimin-cli/tests/builtin_evaluation_order.rs)。
 
 ## #558の遅延注釈の名前解決
@@ -985,7 +1040,7 @@ nullable追加では、str/int/float/bool/bytesの名前とlist/set/dictの型�
 標準ライブラリのimport aliasは既存の名前対応で判定するため、`Sequence as list`のような綴りも保持する。nullable除去とcollection変異の条件は変更しない。複数型引数内の対象外構文を検査する#565と、typing aliasの後続再代入を扱う#558は別の変更として扱う。[^issue-564-design]
 
 [^issue-564-design]: [Issue 564: nullable annotation builtin provenance](../../superpowers/specs/2026-09-24-issue-564-nullable-provenance.md)。
-[^issue-564-code]: [nullable追加の名前解決](../../../crates/hoimin-cli/src/analyzer/rust.rs)。
+[^issue-564-code]: [nullable追加の名前解決](https://github.com/HayaoSuzuki/hoimin/blob/f6f5d96c099fb880884b2b7cb29717ff33d70d75/crates/hoimin-cli/src/analyzer/rust.rs)。 Historical evidence; [current owner](../../../crates/hoimin-python/src/analyzer/rust.rs).
 
 ### 複数型引数とunpackの再帰検査（Issue #565）
 
@@ -1131,10 +1186,10 @@ CPython 3.14による実行で構文・値・補間の回数と順序・conversi
 これは固定部分の検証漏れを示す例であり、任意の文字列変化を有用な欠陥と判定する根拠ではない。
 実プロジェクト評価の対象と限界はレビュー記録に記載する。[^string-segment-tests][^string-segment-review]
 
-[^string-segment-exclusions]: [文字列の役割別除外](../../../crates/hoimin-cli/src/analyzer/rust/string_literals.rs)。
+[^string-segment-exclusions]: [文字列の役割別除外](https://github.com/HayaoSuzuki/hoimin/blob/a6965910bbc745e74aeb539628b3e2dc66c2a9d3/crates/hoimin-cli/src/analyzer/rust/string_literals.rs)。 Historical evidence; [current owner](../../../crates/hoimin-python/src/analyzer/rust/string_literals.rs).
 [^string-segment-review]: [各段階のレビューと評価](../../reviews/2026-10-10-issue-761-string-segments.md)。
 
-[^string-segment-implementation]: [ソース範囲と置換](../../../crates/hoimin-cli/src/analyzer/rust/string_segments.rs)、[文字列の役割別除外](../../../crates/hoimin-cli/src/analyzer/rust/string_literals.rs)。
+[^string-segment-implementation]: [ソース範囲と置換](https://github.com/HayaoSuzuki/hoimin/blob/a6965910bbc745e74aeb539628b3e2dc66c2a9d3/crates/hoimin-cli/src/analyzer/rust/string_segments.rs)、[文字列の役割別除外](https://github.com/HayaoSuzuki/hoimin/blob/a6965910bbc745e74aeb539628b3e2dc66c2a9d3/crates/hoimin-cli/src/analyzer/rust/string_literals.rs)。 Historical evidence; [current owner](../../../crates/hoimin-python/src/analyzer/rust/string_segments.rs).
 [^string-segment-selection]: [演算子の定義と既定選択](../../../crates/hoimin-core/src/config.rs)。
 [^string-segment-tests]: [CPython・保存済みplanの回帰テスト](../../../crates/hoimin-cli/tests/string_segment_empty.rs)、[各段階のセルフレビューと評価](../../reviews/2026-10-10-issue-761-string-segments.md)。
 
@@ -1216,7 +1271,7 @@ The [Issue 929 review and verification record](../../superpowers/plans/2026-10-1
 describes removal and retained behavioral coverage. The Issue 865 record remains
 historical evidence for the original seven-name centralization.[^issue-865-names]
 
-[^issue-929-live-codes]: [Current analyzer diagnostic type](../../../crates/hoimin-cli/src/analyzer/types.rs).
+[^issue-929-live-codes]: [Historical analyzer diagnostic type](https://github.com/HayaoSuzuki/hoimin/blob/54a72e541a80db4a9df3225e728345146f636180/crates/hoimin-cli/src/analyzer/types.rs). Historical evidence; [current owner](../../../crates/hoimin-python/src/analyzer/types.rs).
 [^issue-929-plan]: [Plan diagnostic representation and conversion](../../../crates/hoimin-cli/src/plan.rs).
 [^issue-929-run]: [Run diagnostic conversion](../../../crates/hoimin-cli/src/analyzer/mod.rs).
 [^issue-865-names]: [Issue #865 design, implementation and validation](../../superpowers/plans/2026-10-14-issue-865.md).
@@ -1261,7 +1316,7 @@ implementation. The existing loop callback and visit-count checks remain the
 bounded cost evidence; this change establishes no general complexity bound or
 new formal guarantee.[^issue-914-class-context]
 
-[^issue-914-class-context]: [AnnotationCollector implementation](../../../crates/hoimin-cli/src/analyzer/rust.rs).
+[^issue-914-class-context]: [AnnotationCollector implementation](https://github.com/HayaoSuzuki/hoimin/blob/75df00cabcebed7c839d6d77fa1b8ce96b9a858f/crates/hoimin-cli/src/analyzer/rust.rs). Historical evidence; [current owner](../../../crates/hoimin-python/src/analyzer/rust.rs).
 
 The Issue 914 verification record reports pre-refactor characterization, three
 manual mutation sensitivity checks, the retained loop/finally checks, nine strict
@@ -1285,7 +1340,7 @@ baseline and post-change checks from static comparison. This private type change
 adds no operator, format migration, performance claim or formal guarantee.
 The candidate-boundary change in Issue #950 retains canonical-name ordering.
 
-[^issue-930-token-operators]: [Token dispatch, replacement and candidate construction](../../../crates/hoimin-cli/src/analyzer/rust.rs).
+[^issue-930-token-operators]: [Token dispatch, replacement and candidate construction](https://github.com/HayaoSuzuki/hoimin/blob/59fff0890b78e0169b0318b2a8fe637dd0056334/crates/hoimin-cli/src/analyzer/rust.rs). Historical evidence; [current owner](../../../crates/hoimin-python/src/analyzer/rust.rs).
 
 
 # Known binding categories (Issue #935)
@@ -1317,8 +1372,8 @@ spelling rules requires rechecking these tests and the existing oracle cases.
 Execution evidence and its limits are recorded in the implementation plan.
 [^issue-935-tests][^issue-935-evidence]
 
-[^issue-935-bindings]: [KnownImports implementation](../../../crates/hoimin-cli/src/analyzer/rust.rs).
-[^issue-935-tests]: [Known binding behavior and intersection properties](../../../crates/hoimin-cli/src/analyzer/known_imports_tests.rs).
+[^issue-935-bindings]: [KnownImports implementation](https://github.com/HayaoSuzuki/hoimin/blob/341e153c093e2677b443d3ef85bdf29fc618ebdf/crates/hoimin-cli/src/analyzer/rust.rs). Historical evidence; [current owner](../../../crates/hoimin-python/src/analyzer/rust.rs).
+[^issue-935-tests]: [Known binding behavior and intersection properties](https://github.com/HayaoSuzuki/hoimin/blob/341e153c093e2677b443d3ef85bdf29fc618ebdf/crates/hoimin-cli/src/analyzer/known_imports_tests.rs). Historical evidence; [current owner](../../../crates/hoimin-python/src/analyzer/known_imports_tests.rs).
 [^issue-935-evidence]: [Issue 935 design, reviews and verification](../../superpowers/plans/2026-10-16-issue-935.md).
 
 
@@ -1362,10 +1417,10 @@ descriptor conversion and family membership when changing operator identity.
 The [implementation record](../../maintenance/2026-10-16-issue-950.md) records
 executed checks and their limitations.[^issue-950-tests]
 
-[^issue-950-candidate]: [In-memory candidate type](../../../crates/hoimin-cli/src/analyzer/types.rs).
-[^issue-950-retention]: [Candidate ranking, dedup and profile classification](../../../crates/hoimin-cli/src/analyzer/rust.rs).
+[^issue-950-candidate]: [In-memory candidate type](https://github.com/HayaoSuzuki/hoimin/blob/59fff0890b78e0169b0318b2a8fe637dd0056334/crates/hoimin-cli/src/analyzer/types.rs). Historical evidence; [current owner](../../../crates/hoimin-python/src/analyzer/types.rs).
+[^issue-950-retention]: [Candidate ranking, dedup and profile classification](https://github.com/HayaoSuzuki/hoimin/blob/59fff0890b78e0169b0318b2a8fe637dd0056334/crates/hoimin-cli/src/analyzer/rust.rs). Historical evidence; [current owner](../../../crates/hoimin-python/src/analyzer/rust.rs).
 [^issue-950-descriptor]: [Saved descriptor boundary](../../../crates/hoimin-cli/src/analyzer/mod.rs).
-[^issue-950-tests]: [Lexical order and prefix regressions](../../../crates/hoimin-cli/src/analyzer/rust_tests.rs).
+[^issue-950-tests]: [Lexical order and prefix regressions](https://github.com/HayaoSuzuki/hoimin/blob/59fff0890b78e0169b0318b2a8fe637dd0056334/crates/hoimin-cli/src/analyzer/rust_tests.rs). Historical evidence; [current owner](../../../crates/hoimin-python/src/analyzer/rust_tests.rs).
 
 # Selection before replacement construction (Issue #977)
 
@@ -1417,7 +1472,7 @@ source revision.[^issue-978-evidence]
 
 [^issue-972-handler]: [Fixed handler settings and lifetime implementation](../../../crates/hoimin-cli/src/analyzer/mod.rs).
 [^issue-977-evidence]: [Selection construction counters and verification](../../maintenance/2026-10-18-issues-971-979/task-8-report.md).
-[^issue-978-payload]: [Shared logical payload owner](../../../crates/hoimin-cli/src/analyzer/payload.rs).
+[^issue-978-payload]: [Shared logical payload owner](https://github.com/HayaoSuzuki/hoimin/blob/4ebed4457519920e9a28f8f653d8ce96985acdad/crates/hoimin-cli/src/analyzer/payload.rs). Historical evidence; [current owner](../../../crates/hoimin-python/src/analyzer/payload.rs).
 [^issue-978-evidence]: [Accounting, charged peaks, release comparison and early-stop fix](../../maintenance/2026-10-18-issues-971-979/task-9-report.md).
 
 # Single if/elif visitation (Issue #986)
@@ -1441,7 +1496,7 @@ Debug and release regressions both passed on macOS. The confirmed original
 panic was in debug; these observations establish neither historical release
 candidate loss nor a universal AST proof.[^issue-986-evidence]
 
-[^issue-986-walker]: [Shared statement traversal boundary](../../../crates/hoimin-cli/src/analyzer/visitor.rs).
+[^issue-986-walker]: [Shared statement traversal boundary](https://github.com/HayaoSuzuki/hoimin/blob/2ec902ae2353c38f2da1a74cbf6552785387e42d/crates/hoimin-cli/src/analyzer/visitor.rs). Historical evidence; [current owner](../../../crates/hoimin-python/src/analyzer/visitor.rs).
 [^issue-986-evidence]: [Visitation design, self-reviews and test evidence](../../maintenance/2026-10-18-issue-986-visitation.md).
 
 # Multi-exit finally work (Issue #987)

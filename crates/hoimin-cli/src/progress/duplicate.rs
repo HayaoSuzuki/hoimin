@@ -3,7 +3,8 @@ use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use super::input::InputDisposition;
-use crate::artifacts::{SnapshotReader, open_regular_file};
+use crate::artifacts::open_regular_file;
+use crate::finite_file::SnapshotReader;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum DuplicateReason {

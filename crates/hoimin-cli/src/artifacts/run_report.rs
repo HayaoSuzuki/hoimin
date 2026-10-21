@@ -346,13 +346,13 @@ fn open_report(path: &Path) -> Result<File, ProgressError> {
 // SnapshotReader rejects growth/truncation during the actual decoding pass.
 fn progress_reader(
     path: &Path,
-) -> Result<(crate::artifacts::SnapshotReader, Option<dispatch::Header>), ProgressError> {
+) -> Result<(crate::finite_file::SnapshotReader, Option<dispatch::Header>), ProgressError> {
     let file = open_report(path)?;
     let read_error = |source| ProgressError::Read {
         path: path.to_path_buf(),
         source,
     };
-    let mut reader = crate::artifacts::SnapshotReader::new(file).map_err(read_error)?;
+    let mut reader = crate::finite_file::SnapshotReader::new(file).map_err(read_error)?;
     let header = dispatch::probe_reader(BufReader::new(&mut reader));
     reader.rewind().map_err(read_error)?;
     if let Some(header) = header {

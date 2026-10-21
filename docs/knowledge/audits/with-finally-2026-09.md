@@ -11,10 +11,13 @@ sources:
     working_tree: clean
     sha256: a2b984813077de46a2efac8105cc689f42641d23c87c24fb4f26c269672f8f6d
   - id: issue-557-tests
-    resource: ../../../crates/hoimin-cli/src/analyzer/rust/finally_transfer_tests.rs
+    resource: https://github.com/HayaoSuzuki/hoimin/blob/f071781e20bc87c13b537ecd620e5ed06e9cd1f6/crates/hoimin-cli/src/analyzer/rust/finally_transfer_tests.rs
     revision: f071781e20bc87c13b537ecd620e5ed06e9cd1f6
     working_tree: clean
     sha256: 88e229c3d09e03c30001f2f71090540d9f18eb4cb49f56dd7cda0279f285301e
+    original_resource: ../../../crates/hoimin-cli/src/analyzer/rust/finally_transfer_tests.rs
+    recovered_revision: f071781e20bc87c13b537ecd620e5ed06e9cd1f6
+    recovered_blob: f8e15ee81a7800ca2335c532ed3fb3f11db03535
   - id: issue-557-review
     resource: ../../superpowers/reviews/2026-09-25-issue-557.md
     revision: f071781e20bc87c13b537ecd620e5ed06e9cd1f6
@@ -26,10 +29,12 @@ sources:
     working_tree: clean
     sha256: 7ff74c9749274839e3cbe0ceb737544de0dd3b5fb5eef90aae17e3ff461269be
   - id: issue-556-implementation
-    resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+    resource: ../../maintenance/2026-10-22-issue-1068-knowledge-links.md#issue-556-implementation
     revision: 282e941e4c1a5a23303d30beca881d7bbfde7763
     working_tree: modified
     sha256: 17c79e4a1cb5a22cd1deeec35ede2988288ca9145245c874bee23229e72a6af8
+    original_resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+    evidence_status: unavailable-recorded-working-tree-bytes
   - id: issue-556-tests
     resource: ../../../crates/hoimin-cli/tests/with_suppression.rs
     revision: 282e941e4c1a5a23303d30beca881d7bbfde7763
@@ -42,8 +47,11 @@ sources:
     resource: ../../audits/2026-09-15-with-finally/WithModel.lean
     working_tree: untracked
   - id: implementation
-    resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+    resource: https://github.com/HayaoSuzuki/hoimin/blob/5e631efc46a6e8c0b9fcf2d7a74536e57f79a369/crates/hoimin-cli/src/analyzer/rust.rs
     revision: 5e631ef
+    original_resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+    recovered_revision: 5e631efc46a6e8c0b9fcf2d7a74536e57f79a369
+    recovered_blob: 939402db0c261de0cccc67863f674c9808a741a6
 ---
 
 # 対象と発見
@@ -69,7 +77,7 @@ macOSの公開CLIテストでは、既存Lean corpusの5入力に独自manager�
 #557のfinally走査コストは、この修正では変更・再計測していない。import失敗、任意の動的hook、他OSの実行は引き続き今回の確認範囲外である。[^issue-556-design]
 
 [^issue-556-design]: [Issue 556: import facts after context-manager suppression](../../superpowers/specs/2026-09-24-issue-556-with-suppression.md)。
-[^issue-556-implementation]: [修正後の解析器](../../../crates/hoimin-cli/src/analyzer/rust.rs)。
+[^issue-556-implementation]: [修正後の解析器](../../maintenance/2026-10-22-issue-1068-knowledge-links.md#issue-556-implementation)。 Historical evidence (recorded bytes unavailable); [current owner](../../../crates/hoimin-python/src/analyzer/rust.rs).
 [^issue-556-tests]: [公開CLIとCPythonの回帰テスト](../../../crates/hoimin-cli/tests/with_suppression.rs)。
 
 # 再確認の契機
@@ -78,7 +86,7 @@ macOSの公開CLIテストでは、既存Lean corpusの5入力に独自manager�
 
 [^audit]: [監査報告・再現コマンド](../../audits/2026-09-15-with-finally/README.md)。
 [^model]: [WithModel.lean](../../audits/2026-09-15-with-finally/WithModel.lean)。
-[^implementation]: [解析器](../../../crates/hoimin-cli/src/analyzer/rust.rs)。
+[^implementation]: [解析器](https://github.com/HayaoSuzuki/hoimin/blob/5e631efc46a6e8c0b9fcf2d7a74536e57f79a369/crates/hoimin-cli/src/analyzer/rust.rs)。 Historical evidence; [current owner](../../../crates/hoimin-python/src/analyzer/rust.rs).
 
 # Issue #557の修正（2026-09-25）
 
@@ -89,5 +97,5 @@ macOSの公開CLIテストでは、既存Lean corpusの5入力に独自manager�
 深さ16〜20のrelease計測と候補比較の結果は作業記録に示す。訪問回数の上限はこのfixtureに対する検査であり、任意の複数終了経路を持つプログラムの計算量保証ではない。過去のLean定理は二重走査モデルについての証明として保持し、今回のRust計測や時間測定と区別する。[^issue-557-review]
 
 [^issue-557-design]: [修正設計](../../superpowers/specs/2026-09-25-issue-557-finally-traversal.md)。
-[^issue-557-tests]: [回帰テスト](../../../crates/hoimin-cli/src/analyzer/rust/finally_transfer_tests.rs)。
+[^issue-557-tests]: [回帰テスト](https://github.com/HayaoSuzuki/hoimin/blob/f071781e20bc87c13b537ecd620e5ed06e9cd1f6/crates/hoimin-cli/src/analyzer/rust/finally_transfer_tests.rs)。 Historical evidence; [current owner](../../../crates/hoimin-python/src/analyzer/rust/finally_transfer_tests.rs).
 [^issue-557-review]: [レビューと検証記録](../../superpowers/reviews/2026-09-25-issue-557.md)。

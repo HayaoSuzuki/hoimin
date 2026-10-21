@@ -16,7 +16,7 @@ use cap_primitives::fs::OpenOptionsExt;
 use super::{MAX_WORKER_TREE_DEPTH, WorkspaceError};
 
 #[cfg(test)]
-pub(super) trait WorkspaceRaceHook: Send + Sync {
+pub(crate) trait WorkspaceRaceHook: Send + Sync {
     fn parent_opened(&self, operation: &'static str, path: &Utf8Path);
 }
 
@@ -27,7 +27,7 @@ thread_local! {
 }
 
 #[cfg(test)]
-pub(super) struct WorkspaceRaceHookGuard;
+pub(crate) struct WorkspaceRaceHookGuard;
 
 #[cfg(test)]
 impl Drop for WorkspaceRaceHookGuard {
@@ -39,7 +39,7 @@ impl Drop for WorkspaceRaceHookGuard {
 }
 
 #[cfg(test)]
-pub(super) fn install_workspace_race_hook(
+pub(crate) fn install_workspace_race_hook(
     hook: Arc<dyn WorkspaceRaceHook>,
 ) -> WorkspaceRaceHookGuard {
     WORKSPACE_RACE_HOOK.with(|slot| {
@@ -281,7 +281,11 @@ impl WorkerRoot {
     }
 
     pub(crate) fn read(&self, path: &Utf8Path) -> Result<Vec<u8>, WorkspaceError> {
-        self.with_read_file(path, |mut file| {
+        self.with_read_file(path, |file| {
+            let mut file = crate::finite_file::SnapshotReader::new(file)
+                .map_err(|error| WorkspaceError::io("inspect worker file", path, error))?;
+            #[cfg(test)]
+            parent_opened("read-budget", path);
             let mut contents = Vec::new();
             file.read_to_end(&mut contents)
                 .map_err(|error| WorkspaceError::io("read worker file", path, error))?;
@@ -291,6 +295,10 @@ impl WorkerRoot {
 
     pub(crate) fn hash(&self, path: &Utf8Path) -> Result<blake3::Hash, WorkspaceError> {
         self.with_read_file(path, |file| {
+            let file = crate::finite_file::SnapshotReader::new(file)
+                .map_err(|error| WorkspaceError::io("inspect worker file", path, error))?;
+            #[cfg(test)]
+            parent_opened("read-budget", path);
             let mut hasher = blake3::Hasher::new();
             hasher
                 .update_reader(file)

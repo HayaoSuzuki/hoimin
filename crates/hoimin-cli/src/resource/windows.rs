@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::ffi::c_void;
 use std::io;
 use std::mem::{size_of, zeroed};
@@ -143,16 +142,12 @@ struct RunState {
     closed: bool,
     terminated: bool,
     active: Vec<ActiveRoot>,
-    exited_roots: HashSet<Uuid>,
 }
 
 #[derive(Debug)]
 struct ActiveRoot {
     id: Uuid,
     pid: u32,
-    // Record exit evidence for a supervisor still waiting for this root. Clearing interest
-    // does not release the PID generation; its handle remains until notification consumption.
-    record_exit: bool,
     // Keeping the process object open prevents Windows from recycling its PID before the
     // corresponding Job Object exit notification has been consumed.
     process: Option<Arc<OwnedHandle>>,
@@ -162,12 +157,6 @@ impl Drop for ActiveRoot {
     fn drop(&mut self) {
         drop(self.process.take());
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RootExitBarrier {
-    NotificationConsumed,
-    ProcessSignaled,
 }
 
 impl WindowsRunJob {
@@ -235,29 +224,29 @@ impl WindowsRunJob {
         child.assign(self.job.raw(), "assign process to run-wide job")?;
         #[cfg(test)]
         if attach_fault == AttachFault::NestedAssign {
-            register_root(&mut state, root_id, pid, false, child, attach_fault)?;
+            register_root(&mut state, root_id, pid, child, attach_fault)?;
             return Err(ResourceError::io(
                 "assign process to nested root job",
                 io::Error::other("injected nested assignment failure"),
             ));
         }
         if let Err(error) = child.assign(root_job, "assign process to nested root job") {
-            register_root(&mut state, root_id, pid, false, child, attach_fault)?;
+            register_root(&mut state, root_id, pid, child, attach_fault)?;
             return Err(error);
         }
         #[cfg(test)]
         if attach_fault == AttachFault::Resume {
-            register_root(&mut state, root_id, pid, false, child, attach_fault)?;
+            register_root(&mut state, root_id, pid, child, attach_fault)?;
             return Err(ResourceError::io(
                 "resume suspended primary thread",
                 io::Error::other("injected resume failure"),
             ));
         }
         if let Err(error) = child.resume() {
-            register_root(&mut state, root_id, pid, false, child, attach_fault)?;
+            register_root(&mut state, root_id, pid, child, attach_fault)?;
             return Err(error);
         }
-        register_root(&mut state, root_id, pid, true, child, attach_fault)?;
+        register_root(&mut state, root_id, pid, child, attach_fault)?;
         Ok(pid)
     }
 
@@ -305,33 +294,16 @@ impl WindowsRunJob {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.drain_pending(&mut state)?;
-        let barrier = if root_notification_consumed(&state, root_id) {
-            RootExitBarrier::NotificationConsumed
-        } else if signaled == Some(true) {
-            RootExitBarrier::ProcessSignaled
+        if root_notification_consumed(&state, root_id) || signaled == Some(true) {
+            // A signaled process satisfies the barrier, but its registration and owned handle
+            // must remain until notification consumption releases this PID generation.
+            Ok(())
         } else {
-            return Err(ResourceError::io(
+            Err(ResourceError::io(
                 "wait for Job Object exit notification",
                 io::Error::new(io::ErrorKind::TimedOut, "root exit notification timed out"),
-            ));
-        };
-        match barrier {
-            RootExitBarrier::NotificationConsumed => {
-                forget_root_generation(&mut state, root_id);
-            }
-            RootExitBarrier::ProcessSignaled => {
-                detach_root_generation(&mut state, root_id);
-            }
+            ))
         }
-        Ok(())
-    }
-
-    fn unregister_root(&self, root_id: Uuid) {
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        detach_root_generation(&mut state, root_id);
     }
 
     fn drain_pending(&self, state: &mut RunState) -> Result<(), ResourceError> {
@@ -394,20 +366,11 @@ impl WindowsRunJob {
 fn record_notification(state: &mut RunState, message: u32, pid: u32, job_is_empty: bool) {
     match message {
         JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO if job_is_empty => {
-            state.exited_roots.extend(
-                state
-                    .active
-                    .drain(..)
-                    .filter(|root| root.record_exit)
-                    .map(|root| root.id),
-            );
+            state.active.clear();
         }
         JOB_OBJECT_MSG_EXIT_PROCESS | JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS => {
             if let Some(index) = state.active.iter().position(|root| root.pid == pid) {
-                let root = state.active.remove(index);
-                if root.record_exit {
-                    state.exited_roots.insert(root.id);
-                }
+                state.active.remove(index);
             }
         }
         // The run-wide job owns cleanup, not memory/process caps. Ignore its limit packets
@@ -418,7 +381,7 @@ fn record_notification(state: &mut RunState, message: u32, pid: u32, job_is_empt
 }
 
 fn root_notification_consumed(state: &RunState, root_id: Uuid) -> bool {
-    state.exited_roots.contains(&root_id) || state.active.iter().all(|root| root.id != root_id)
+    state.active.iter().all(|root| root.id != root_id)
 }
 
 #[cfg(test)]
@@ -450,7 +413,6 @@ fn register_root(
     state: &mut RunState,
     root_id: Uuid,
     pid: u32,
-    record_exit: bool,
     child: super::suspended::SuspendedChild,
     attach_fault: AttachFault,
 ) -> Result<(), ResourceError> {
@@ -461,7 +423,6 @@ fn register_root(
             state.active.push(ActiveRoot {
                 id: root_id,
                 pid,
-                record_exit: false,
                 process: Some(Arc::new(original_process)),
             });
             return Err(error);
@@ -470,7 +431,6 @@ fn register_root(
     state.active.push(ActiveRoot {
         id: root_id,
         pid,
-        record_exit,
         process: Some(Arc::new(process)),
     });
     drop(original_process);
@@ -502,20 +462,6 @@ fn open_root_exit_handle(
         },
         "open root process exit handle",
     )
-}
-
-fn forget_root_generation(state: &mut RunState, root_id: Uuid) {
-    state.active.retain(|root| root.id != root_id);
-    state.exited_roots.remove(&root_id);
-}
-
-fn detach_root_generation(state: &mut RunState, root_id: Uuid) {
-    if state.exited_roots.remove(&root_id) {
-        return;
-    }
-    if let Some(root) = state.active.iter_mut().find(|root| root.id == root_id) {
-        root.record_exit = false;
-    }
 }
 
 #[derive(Debug)]
@@ -575,9 +521,6 @@ impl WindowsSupervisor {
         }
         terminate_job(self.root_job.raw(), "terminate nested root process job")?;
         self.terminated = true;
-        if self.pid.is_some() {
-            self.run.unregister_root(self.root_id);
-        }
         self.tree_is_quiescent()
     }
 
@@ -593,9 +536,6 @@ impl WindowsSupervisor {
 impl Drop for WindowsSupervisor {
     fn drop(&mut self) {
         let _ = self.terminate();
-        if self.pid.is_some() {
-            self.run.unregister_root(self.root_id);
-        }
     }
 }
 
@@ -765,7 +705,7 @@ mod tests {
 
     use super::{
         ActiveRoot, AttachFault, OwnedHandle, RunState, WindowsBackend, active_process_count,
-        detach_root_generation, forget_root_generation, record_notification, root_process_signaled,
+        record_notification, root_notification_consumed, root_process_signaled,
     };
     use crate::process::ProcessHandler;
     use crate::resource::ResourceBackend;
@@ -1524,19 +1464,17 @@ diagnostic.write('release observed\n')";
             for active in &state.active {
                 assert_ne!(active.id, Uuid::nil());
                 assert_ne!(active.pid, 0);
-                assert!(!active.record_exit);
                 assert!(active.process.is_some());
                 assert!(
                     root_process_signaled(&state, active.id).unwrap(),
                     "retained generation process handle must be signaled"
                 );
             }
-            assert!(state.exited_roots.is_empty());
         }
     }
 
     #[tokio::test]
-    async fn exit_handle_reopen_failure_preserves_detached_generation_identity() {
+    async fn exit_handle_reopen_failure_preserves_owned_generation_identity() {
         let temporary = tempfile::tempdir().unwrap();
         let output_dir = Utf8Path::from_path(temporary.path()).unwrap();
         let backend = WindowsBackend::with_test_fault(AttachFault::ExitHandleOpen).unwrap();
@@ -1571,13 +1509,11 @@ diagnostic.write('release observed\n')";
         assert_eq!(state.active.len(), 1);
         assert_ne!(state.active[0].id, Uuid::nil());
         assert_ne!(state.active[0].pid, 0);
-        assert!(!state.active[0].record_exit);
         assert!(state.active[0].process.is_some());
-        assert!(state.exited_roots.is_empty());
     }
 
     #[tokio::test]
-    async fn timeout_cleanup_retains_signaled_detached_generation() {
+    async fn timeout_cleanup_retains_signaled_generation() {
         let temporary = tempfile::tempdir().unwrap();
         let output_dir = Utf8Path::from_path(temporary.path()).unwrap();
         let backend = WindowsBackend::new().unwrap();
@@ -1609,14 +1545,12 @@ diagnostic.write('release observed\n')";
         assert_eq!(state.active.len(), 1);
         assert_ne!(state.active[0].id, Uuid::nil());
         assert_ne!(state.active[0].pid, 0);
-        assert!(!state.active[0].record_exit);
         assert!(state.active[0].process.is_some());
         let root_id = state.active[0].id;
         assert!(
             root_process_signaled(&state, root_id).unwrap(),
             "retained generation process handle must be signaled"
         );
-        assert!(state.exited_roots.is_empty());
     }
 
     #[test]
@@ -1646,10 +1580,14 @@ diagnostic.write('release observed\n')";
             .push(ActiveRoot {
                 id: root_id,
                 pid,
-                record_exit: true,
                 process: Some(Arc::new(process.0)),
             });
 
+        let retained = backend.inner.state.lock().unwrap().active[0]
+            .process
+            .clone()
+            .unwrap();
+        backend.inner.wait_root_exit(root_id).unwrap();
         backend.inner.wait_root_exit(root_id).unwrap();
 
         let state = backend
@@ -1660,9 +1598,10 @@ diagnostic.write('release observed\n')";
         assert_eq!(state.active.len(), 1);
         assert_eq!(state.active[0].id, root_id);
         assert_eq!(state.active[0].pid, pid);
-        assert!(!state.active[0].record_exit);
-        assert!(state.active[0].process.is_some());
-        assert!(state.exited_roots.is_empty());
+        assert!(Arc::ptr_eq(
+            state.active[0].process.as_ref().unwrap(),
+            &retained
+        ));
     }
 
     #[test]
@@ -1692,7 +1631,6 @@ diagnostic.write('release observed\n')";
             .push(ActiveRoot {
                 id: root_id,
                 pid,
-                record_exit: true,
                 process: Some(Arc::new(process.0)),
             });
         // SAFETY: the completion port is live, and this test posts the same PID-shaped value that
@@ -1715,7 +1653,6 @@ diagnostic.write('release observed\n')";
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         assert!(state.active.is_empty());
-        assert!(state.exited_roots.is_empty());
     }
 
     #[test]
@@ -1733,7 +1670,6 @@ diagnostic.write('release observed\n')";
         backend.inner.state.lock().unwrap().active.push(ActiveRoot {
             id: root_id,
             pid,
-            record_exit: true,
             process: Some(process),
         });
         let result = backend.inner.wait_root_exit_with(root_id, |process| {
@@ -1743,7 +1679,12 @@ diagnostic.write('release observed\n')";
                 .try_lock()
                 .expect("root exit wait must not retain the registry mutex");
             assert!(state.active[0].process.is_some());
-            forget_root_generation(&mut state, root_id);
+            record_notification(
+                &mut state,
+                windows_sys::Win32::System::SystemServices::JOB_OBJECT_MSG_EXIT_PROCESS,
+                pid,
+                false,
+            );
             assert!(
                 retained.upgrade().is_some(),
                 "wait owns the process generation"
@@ -1762,6 +1703,44 @@ diagnostic.write('release observed\n')";
     }
 
     #[test]
+    fn exit_notification_queued_during_wait_satisfies_barrier() {
+        let backend = WindowsBackend::new().unwrap();
+        let mut child = std::process::Command::new("ping.exe")
+            .args(["-n", "30", "127.0.0.1"])
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let root_id = Uuid::from_u128(1_207);
+        backend.inner.state.lock().unwrap().active.push(ActiveRoot {
+            id: root_id,
+            pid,
+            process: Some(Arc::new(FixtureProcessHandle::open(pid).0)),
+        });
+
+        let result = backend.inner.wait_root_exit_with(root_id, |_| {
+            // SAFETY: this live port accepts the PID-shaped pointer used by Job Object packets.
+            assert_ne!(
+                unsafe {
+                    PostQueuedCompletionStatus(
+                        backend.inner.completion_port.raw(),
+                        windows_sys::Win32::System::SystemServices::JOB_OBJECT_MSG_EXIT_PROCESS,
+                        0,
+                        pid as usize as *mut _,
+                    )
+                },
+                0
+            );
+            Ok(false)
+        });
+        child.kill().unwrap();
+        child.wait().unwrap();
+
+        result.expect("second drain consumes the exit packet queued during the wait");
+        assert!(backend.inner.state.lock().unwrap().active.is_empty());
+    }
+
+    #[test]
     fn root_exit_wait_timeout_retains_registration_for_retry() {
         let backend = WindowsBackend::new().unwrap();
         let mut child = std::process::Command::new("ping.exe")
@@ -1774,7 +1753,6 @@ diagnostic.write('release observed\n')";
         backend.inner.state.lock().unwrap().active.push(ActiveRoot {
             id: root_id,
             pid,
-            record_exit: true,
             process: Some(Arc::new(FixtureProcessHandle::open(pid).0)),
         });
         let error = backend
@@ -1786,8 +1764,12 @@ diagnostic.write('release observed\n')";
         assert!(error.to_string().contains("timed out"));
         let state = backend.inner.state.lock().unwrap();
         assert_eq!(state.active.len(), 1);
-        assert!(state.active[0].record_exit);
         assert!(state.active[0].process.is_some());
+        drop(state);
+        backend
+            .inner
+            .wait_root_exit(root_id)
+            .expect("same registration remains retryable");
     }
 
     #[test]
@@ -1804,7 +1786,6 @@ diagnostic.write('release observed\n')";
         backend.inner.state.lock().unwrap().active.push(ActiveRoot {
             id: root_id,
             pid,
-            record_exit: true,
             process: Some(Arc::new(process.0)),
         });
 
@@ -1822,9 +1803,12 @@ diagnostic.write('release observed\n')";
         let state = backend.inner.state.lock().unwrap();
         assert_eq!(state.active.len(), 1);
         assert_eq!((state.active[0].id, state.active[0].pid), (root_id, pid));
-        assert!(state.active[0].record_exit);
         assert!(state.active[0].process.is_some());
-        assert!(state.exited_roots.is_empty());
+        drop(state);
+        backend
+            .inner
+            .wait_root_exit(root_id)
+            .expect("same registration remains retryable");
     }
 
     #[test]
@@ -1846,7 +1830,6 @@ diagnostic.write('release observed\n')";
             active: vec![ActiveRoot {
                 id: root_id,
                 pid,
-                record_exit: true,
                 process: Some(Arc::new(process.0)),
             }],
             ..RunState::default()
@@ -1896,13 +1879,11 @@ diagnostic.write('release observed\n')";
                 ActiveRoot {
                     id: crashed_id,
                     pid: 401,
-                    record_exit: true,
                     process: None,
                 },
                 ActiveRoot {
                     id: Uuid::from_u128(402),
                     pid: 402,
-                    record_exit: true,
                     process: None,
                 },
             ],
@@ -1920,19 +1901,18 @@ diagnostic.write('release observed\n')";
             state.active.iter().map(|root| root.pid).collect::<Vec<_>>(),
             vec![402]
         );
-        assert_eq!(state.exited_roots.len(), 1);
-        assert!(state.exited_roots.contains(&crashed_id));
+        assert!(root_notification_consumed(&state, crashed_id));
+        assert!(!root_notification_consumed(&state, Uuid::from_u128(402)));
     }
 
     #[test]
-    fn recycled_pid_exit_generations_are_recorded_independently() {
+    fn recycled_pid_exit_generations_complete_independently() {
         let first_id = Uuid::from_u128(501);
         let second_id = Uuid::from_u128(502);
         let mut state = RunState {
             active: vec![ActiveRoot {
                 id: first_id,
                 pid: 501,
-                record_exit: true,
                 process: None,
             }],
             ..RunState::default()
@@ -1947,7 +1927,6 @@ diagnostic.write('release observed\n')";
         state.active.push(ActiveRoot {
             id: second_id,
             pid: 501,
-            record_exit: true,
             process: None,
         });
         record_notification(
@@ -1958,24 +1937,18 @@ diagnostic.write('release observed\n')";
         );
 
         assert!(state.active.is_empty());
-        assert_eq!(
-            state.exited_roots.len(),
-            2,
-            "each PID generation needs independent completion state"
-        );
-        assert!(state.exited_roots.contains(&first_id));
-        assert!(state.exited_roots.contains(&second_id));
+        assert!(root_notification_consumed(&state, first_id));
+        assert!(root_notification_consumed(&state, second_id));
     }
 
     #[test]
-    fn old_generation_cleanup_preserves_a_new_root_with_the_same_pid() {
+    fn old_generation_completion_preserves_a_new_root_with_the_same_pid() {
         let old_id = Uuid::from_u128(601);
         let new_id = Uuid::from_u128(602);
         let mut state = RunState {
             active: vec![ActiveRoot {
                 id: old_id,
                 pid: 601,
-                record_exit: true,
                 process: None,
             }],
             ..RunState::default()
@@ -1989,17 +1962,16 @@ diagnostic.write('release observed\n')";
         state.active.push(ActiveRoot {
             id: new_id,
             pid: 601,
-            record_exit: true,
             process: None,
         });
 
-        forget_root_generation(&mut state, old_id);
+        assert!(root_notification_consumed(&state, old_id));
+        assert!(!root_notification_consumed(&state, new_id));
 
         assert_eq!(
             state.active.iter().map(|root| root.id).collect::<Vec<_>>(),
             vec![new_id]
         );
-        assert!(state.exited_roots.is_empty());
     }
 
     #[test]
@@ -2012,19 +1984,16 @@ diagnostic.write('release observed\n')";
                 ActiveRoot {
                     id: other_id,
                     pid: 700,
-                    record_exit: true,
                     process: None,
                 },
                 ActiveRoot {
                     id: old_id,
                     pid: 701,
-                    record_exit: true,
                     process: None,
                 },
                 ActiveRoot {
                     id: new_id,
                     pid: 701,
-                    record_exit: true,
                     process: None,
                 },
             ],
@@ -2044,9 +2013,9 @@ diagnostic.write('release observed\n')";
             false,
         );
 
-        assert!(state.exited_roots.contains(&other_id));
-        assert!(state.exited_roots.contains(&old_id));
-        assert!(!state.exited_roots.contains(&new_id));
+        assert!(root_notification_consumed(&state, other_id));
+        assert!(root_notification_consumed(&state, old_id));
+        assert!(!root_notification_consumed(&state, new_id));
         assert_eq!(
             state.active.iter().map(|root| root.id).collect::<Vec<_>>(),
             vec![new_id]
@@ -2054,37 +2023,45 @@ diagnostic.write('release observed\n')";
     }
 
     #[test]
-    fn detached_generation_consumes_its_delayed_exit_before_a_reused_pid() {
+    fn retained_generation_consumes_its_delayed_exit_before_a_reused_pid() {
+        let backend = WindowsBackend::new().unwrap();
+        let mut child = std::process::Command::new("cmd.exe")
+            .args(["/D", "/C", "exit 0"])
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let process = Arc::new(FixtureProcessHandle::open(pid).0);
+        let retained = Arc::downgrade(&process);
+        child.wait().unwrap();
         let old_id = Uuid::from_u128(801);
         let new_id = Uuid::from_u128(802);
-        let mut state = RunState {
-            active: vec![ActiveRoot {
-                id: old_id,
-                pid: 801,
-                record_exit: true,
-                process: None,
-            }],
-            ..RunState::default()
-        };
-
-        detach_root_generation(&mut state, old_id);
+        backend.inner.state.lock().unwrap().active.push(ActiveRoot {
+            id: old_id,
+            pid,
+            process: Some(process),
+        });
+        backend.inner.wait_root_exit(old_id).unwrap();
+        assert!(retained.upgrade().is_some());
+        let mut state = backend.inner.state.lock().unwrap();
+        // Simulate the delayed packet encountering another registration for the same PID.
         state.active.push(ActiveRoot {
             id: new_id,
-            pid: 801,
-            record_exit: true,
+            pid,
             process: None,
         });
+
         record_notification(
             &mut state,
             windows_sys::Win32::System::SystemServices::JOB_OBJECT_MSG_EXIT_PROCESS,
-            801,
+            pid,
             false,
         );
 
-        assert!(!state.exited_roots.contains(&old_id));
-        assert!(!state.exited_roots.contains(&new_id));
+        assert!(retained.upgrade().is_none());
+        assert!(root_notification_consumed(&state, old_id));
+        assert!(!root_notification_consumed(&state, new_id));
         assert_eq!(state.active.len(), 1);
-        assert_eq!(state.active[0].id, new_id);
+        assert_eq!((state.active[0].id, state.active[0].pid), (new_id, pid));
     }
 
     #[test]
@@ -2094,7 +2071,6 @@ diagnostic.write('release observed\n')";
             active: vec![ActiveRoot {
                 id: root_id,
                 pid: 901,
-                record_exit: true,
                 process: None,
             }],
             ..RunState::default()
@@ -2109,7 +2085,6 @@ diagnostic.write('release observed\n')";
 
         assert_eq!(state.active.len(), 1);
         assert_eq!(state.active[0].id, root_id);
-        assert!(state.exited_roots.is_empty());
     }
 
     #[test]
@@ -2121,13 +2096,11 @@ diagnostic.write('release observed\n')";
                 ActiveRoot {
                     id: first_id,
                     pid: 1001,
-                    record_exit: true,
                     process: None,
                 },
                 ActiveRoot {
                     id: second_id,
                     pid: 1002,
-                    record_exit: true,
                     process: None,
                 },
             ],
@@ -2142,33 +2115,37 @@ diagnostic.write('release observed\n')";
         );
 
         assert!(state.active.is_empty());
-        assert_eq!(state.exited_roots.len(), 2);
-        assert!(state.exited_roots.contains(&first_id));
-        assert!(state.exited_roots.contains(&second_id));
+        assert!(root_notification_consumed(&state, first_id));
+        assert!(root_notification_consumed(&state, second_id));
     }
 
     #[test]
-    fn confirmed_active_process_zero_discards_detached_generations() {
-        let detached_id = Uuid::from_u128(1101);
+    fn confirmed_active_process_zero_releases_retained_generations() {
+        let mut child = std::process::Command::new("cmd.exe")
+            .args(["/D", "/C", "exit 0"])
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let process = Arc::new(FixtureProcessHandle::open(pid).0);
+        let retained = Arc::downgrade(&process);
+        child.wait().unwrap();
+        let retained_id = Uuid::from_u128(1101);
         let live_id = Uuid::from_u128(1102);
         let mut state = RunState {
             active: vec![
                 ActiveRoot {
-                    id: detached_id,
-                    pid: 1101,
-                    record_exit: true,
-                    process: None,
+                    id: retained_id,
+                    pid,
+                    process: Some(process),
                 },
                 ActiveRoot {
                     id: live_id,
                     pid: 1102,
-                    record_exit: true,
                     process: None,
                 },
             ],
             ..RunState::default()
         };
-        detach_root_generation(&mut state, detached_id);
 
         record_notification(
             &mut state,
@@ -2178,8 +2155,11 @@ diagnostic.write('release observed\n')";
         );
 
         assert!(state.active.is_empty());
-        assert_eq!(state.exited_roots.len(), 1);
-        assert!(!state.exited_roots.contains(&detached_id));
-        assert!(state.exited_roots.contains(&live_id));
+        assert!(
+            retained.upgrade().is_none(),
+            "confirmed empty job releases the owned generation"
+        );
+        assert!(root_notification_consumed(&state, retained_id));
+        assert!(root_notification_consumed(&state, live_id));
     }
 }

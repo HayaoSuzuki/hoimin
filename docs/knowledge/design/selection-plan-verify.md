@@ -297,10 +297,13 @@ sources:
   sha256: 2679747599bc69451f05128d6f6ab08fb22fb65460179d4f9a40d71e936aa3d5
   revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
 - id: issue-476-analyzer
-  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/9d9e79247ac4f9146c623102c7e5503bcd1e94ab/crates/hoimin-cli/src/analyzer/rust.rs
   working_tree: modified
   sha256: b4e03399f3d7e6786fcecb7c876bd94232a16bea5c7d61f98feb31fdd5f69c19
   revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  recovered_revision: 9d9e79247ac4f9146c623102c7e5503bcd1e94ab
+  recovered_blob: 92b156d3861c23a8fcfd6aad85cec63ec40a36e1
 - id: issue-476-tests
   resource: ../../../crates/hoimin-cli/tests/plan.rs
   working_tree: modified

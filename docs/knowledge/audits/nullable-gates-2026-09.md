@@ -27,10 +27,13 @@ sources:
     working_tree: clean
     sha256: d55bbd0f28c1e25e9fa55afb4f53d52938804f88336b8531e947d8db3c57503f
   - id: issue-565-implementation
-    resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+    resource: https://github.com/HayaoSuzuki/hoimin/blob/75c1ddfd59a1c2ebf1bc9de05efb33c571c7c328/crates/hoimin-cli/src/analyzer/rust.rs
     revision: 75c1ddfd59a1c2ebf1bc9de05efb33c571c7c328
     working_tree: clean
     sha256: e979b73edd09d07dc625ffe282a8ff709e30dcdb9f86ca76134bbd8d703db69b
+    original_resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+    recovered_revision: 75c1ddfd59a1c2ebf1bc9de05efb33c571c7c328
+    recovered_blob: cd357cb58423ac7118156e30ed1c3c21859bbb46
   - id: issue-565-tests
     resource: ../../../crates/hoimin-cli/tests/lean_nullable_gate_oracle.rs
     revision: 75c1ddfd59a1c2ebf1bc9de05efb33c571c7c328
@@ -68,7 +71,7 @@ Leanから生成する65入力すべてを公開CLIでstrictに照合する。�
 
 [^issue-565-design]: [Issue 565: recursively exclude disallowed annotation arguments](../../superpowers/specs/2026-09-24-issue-565-annotation-descendants.md)。
 [^issue-565-model]: [正式検証用のNullableGateModel](../../../formal/HoiminOracle/HoiminOracle/NullableGateModel.lean)。
-[^issue-565-implementation]: [注釈判定の実装](../../../crates/hoimin-cli/src/analyzer/rust.rs)。
+[^issue-565-implementation]: [注釈判定の実装](https://github.com/HayaoSuzuki/hoimin/blob/75c1ddfd59a1c2ebf1bc9de05efb33c571c7c328/crates/hoimin-cli/src/analyzer/rust.rs)。 Historical evidence; [current owner](../../../crates/hoimin-python/src/analyzer/rust.rs).
 [^issue-565-tests]: [公開CLI対応テスト](../../../crates/hoimin-cli/tests/lean_nullable_gate_oracle.rs)。
 
 # 再確認の契機
