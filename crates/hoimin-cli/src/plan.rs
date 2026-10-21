@@ -158,7 +158,6 @@ pub struct PlanOutput {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedPlan {
     manifest_inputs: Vec<PathBuf>,
-    preview: VerifyPreview,
     config: RunConfig,
     fingerprint_copy_inputs: BTreeSet<Utf8PathBuf>,
     selection: RunSelection,
@@ -175,12 +174,6 @@ impl VerifiedPlan {
     #[must_use]
     pub const fn selection(&self) -> &RunSelection {
         &self.selection
-    }
-
-    /// Preview prepared from the same checked selection that execution consumes.
-    #[must_use]
-    pub const fn preview(&self) -> &VerifyPreview {
-        &self.preview
     }
 
     /// Overrides only the metrics destination; execution validates destination safety.
@@ -432,6 +425,41 @@ pub async fn prepare_verify_selection(
         None,
     )
     .await
+    .map(|checked| checked.verified)
+}
+
+/// Validates the same inputs and selection as execution, then builds display data.
+///
+/// # Errors
+/// Returns the same manifest, selection, source and candidate validation errors
+/// as [`prepare_verify_selection`].
+#[tracing::instrument(name = "verify_plan_preview", level = "debug", skip_all)]
+pub async fn prepare_verify_preview_selection(
+    manifest_path: impl AsRef<Path>,
+    requested_selection: &VerifySelection,
+    format: OutputFormat,
+) -> Result<VerifyPreview, PlanError> {
+    crate::live_progress::stage("validating saved plan");
+    let checked = prepare_verify_selection_inner(
+        manifest_path.as_ref(),
+        requested_selection,
+        format,
+        #[cfg(test)]
+        None,
+    )
+    .await?;
+    Ok(VerifyPreview::new(
+        &checked.manifest,
+        requested_selection,
+        &checked.verified.selection,
+        &checked.discovered_ids,
+    ))
+}
+
+struct CheckedPlan {
+    verified: VerifiedPlan,
+    manifest: PlanManifest,
+    discovered_ids: Vec<String>,
 }
 
 #[cfg(test)]
@@ -448,6 +476,7 @@ async fn prepare_verify_with_discovery_control(
         control,
     )
     .await
+    .map(|checked| checked.verified)
 }
 
 fn read_manifest(path: &Path) -> Result<(Vec<PathBuf>, Vec<u8>), PlanError> {
@@ -473,7 +502,7 @@ async fn prepare_verify_selection_inner(
     requested_selection: &VerifySelection,
     format: OutputFormat,
     #[cfg(test)] control: Option<DiscoveryControl>,
-) -> Result<VerifiedPlan, PlanError> {
+) -> Result<CheckedPlan, PlanError> {
     let (manifest_inputs, bytes) = read_manifest(manifest_path)?;
     let manifest = decode_manifest(&bytes)?;
     drop(bytes);
@@ -536,13 +565,15 @@ async fn prepare_verify_selection_inner(
     )
     .await?;
 
-    let preview = VerifyPreview::new(&manifest, requested_selection, &selection, &discovered_ids);
-    Ok(VerifiedPlan {
-        manifest_inputs,
-        preview,
-        config,
-        fingerprint_copy_inputs,
-        selection,
+    Ok(CheckedPlan {
+        verified: VerifiedPlan {
+            manifest_inputs,
+            config,
+            fingerprint_copy_inputs,
+            selection,
+        },
+        manifest,
+        discovered_ids,
     })
 }
 

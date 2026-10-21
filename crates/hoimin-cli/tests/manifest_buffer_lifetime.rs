@@ -14,9 +14,10 @@ use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
 use hoimin_cli::cli::{OutputFormat, TopSelectionPolicy, VerifySelection};
-use hoimin_cli::plan::{PlanManifest, prepare_verify_selection};
+use hoimin_cli::plan::{PlanManifest, prepare_verify_preview_selection, prepare_verify_selection};
 
 struct ManifestAllocator;
+static LIVE_BYTES: AtomicUsize = AtomicUsize::new(0);
 
 #[global_allocator]
 static ALLOCATOR: ManifestAllocator = ManifestAllocator;
@@ -42,17 +43,24 @@ fn allocated(pointer: *mut u8, size: usize) {
 unsafe impl GlobalAlloc for ManifestAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let pointer = unsafe { System.alloc(layout) };
+        if !pointer.is_null() {
+            LIVE_BYTES.fetch_add(layout.size(), Ordering::SeqCst);
+        }
         allocated(pointer, layout.size());
         pointer
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         let pointer = unsafe { System.alloc_zeroed(layout) };
+        if !pointer.is_null() {
+            LIVE_BYTES.fetch_add(layout.size(), Ordering::SeqCst);
+        }
         allocated(pointer, layout.size());
         pointer
     }
 
     unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
+        LIVE_BYTES.fetch_sub(layout.size(), Ordering::SeqCst);
         if BUFFER
             .compare_exchange(pointer as usize, 0, Ordering::SeqCst, Ordering::SeqCst)
             .is_ok()
@@ -64,6 +72,13 @@ unsafe impl GlobalAlloc for ManifestAllocator {
 
     unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, size: usize) -> *mut u8 {
         let replacement = unsafe { System.realloc(pointer, layout, size) };
+        if !replacement.is_null() {
+            if size >= layout.size() {
+                LIVE_BYTES.fetch_add(size - layout.size(), Ordering::SeqCst);
+            } else {
+                LIVE_BYTES.fetch_sub(layout.size() - size, Ordering::SeqCst);
+            }
+        }
         if !replacement.is_null()
             && BUFFER
                 .compare_exchange(
@@ -110,9 +125,18 @@ fn write_public_manifest(
     directory: &Path,
     marker: &Path,
 ) -> (PathBuf, PlanManifest, usize) {
+    write_public_manifest_with_payload(runtime, directory, marker, 128 * 1024)
+}
+
+fn write_public_manifest_with_payload(
+    runtime: &tokio::runtime::Runtime,
+    directory: &Path,
+    marker: &Path,
+    payload_bytes: usize,
+) -> (PathBuf, PlanManifest, usize) {
     let root = directory.join("project");
     std::fs::create_dir(&root).unwrap();
-    let payload = "x".repeat(128 * 1024);
+    let payload = "x".repeat(payload_bytes);
     let mut source = String::new();
     for index in 0..24 {
         writeln!(source, "record_{index} = ['{payload}']").unwrap();
@@ -160,7 +184,7 @@ fn write_public_manifest(
     let manifest: PlanManifest = serde_json::from_slice(&bytes.snapshot()).unwrap();
     assert_eq!(manifest.candidates.len(), 24);
     let manifest_size = bytes.len();
-    assert!(manifest_size > 6 * 1024 * 1024);
+    assert!(manifest_size > 48 * payload_bytes);
     let path = directory.join("plan.json");
     std::fs::write(&path, bytes.snapshot()).unwrap();
     (path, manifest, manifest_size)
@@ -228,8 +252,14 @@ fn assert_manifest_lifetime_and_preview(count: usize) {
     drop(gate);
     let verified = runtime.block_on(prepare).unwrap();
     let mut api_bytes = Vec::new();
-    verified
-        .preview()
+    drop(verified);
+    runtime
+        .block_on(prepare_verify_preview_selection(
+            &path,
+            &requested,
+            OutputFormat::Json,
+        ))
+        .unwrap()
         .write(OutputFormat::Json, &mut api_bytes)
         .unwrap();
     let api: serde_json::Value = serde_json::from_slice(&api_bytes).unwrap();
@@ -272,4 +302,55 @@ fn public_prepare_releases_manifest_bytes_before_source_read_for_top_one() {
 #[test]
 fn public_prepare_releases_manifest_bytes_before_source_read_for_top_five() {
     assert_manifest_lifetime_and_preview(5);
+}
+
+#[test]
+fn normal_prepare_retained_heap_is_independent_of_preview_payload() {
+    let _observation = OBSERVATION.lock().unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    for payload in [4 * 1024, 128 * 1024] {
+        let directory = tempfile::tempdir().unwrap();
+        let marker = directory.path().join("must-not-run");
+        let (path, manifest, _) =
+            write_public_manifest_with_payload(&runtime, directory.path(), &marker, payload);
+        drop(manifest);
+        for selected in [1, 5, 16] {
+            let request = VerifySelection::Top {
+                count: NonZeroUsize::new(selected).unwrap(),
+                policy: TopSelectionPolicy::Strict,
+                offset: 0,
+            };
+            // Warm runtime caches before measuring live allocations retained by
+            // a second, independently checked preparation.
+            drop(
+                runtime
+                    .block_on(prepare_verify_selection(
+                        &path,
+                        &request,
+                        OutputFormat::Json,
+                    ))
+                    .unwrap(),
+            );
+            let before = LIVE_BYTES.load(Ordering::SeqCst);
+            let verified = runtime
+                .block_on(prepare_verify_selection(
+                    &path,
+                    &request,
+                    OutputFormat::Json,
+                ))
+                .unwrap();
+            let retained = LIVE_BYTES.load(Ordering::SeqCst).saturating_sub(before);
+            eprintln!("normal-prepare payload={payload} selected={selected} retained={retained}");
+            assert!(retained < 64 * 1024, "display payload retained: {retained}");
+            assert_eq!(
+                verified.selection().candidate_ids().unwrap().len(),
+                selected
+            );
+            drop(verified);
+        }
+        assert!(!marker.exists());
+    }
 }
