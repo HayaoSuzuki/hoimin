@@ -701,8 +701,18 @@ impl<'de> Deserialize<'de> for OutputEvent {
             RunFinished,
         }
 
+        fn string_kind<'de, D: serde::Deserializer<'de>>(
+            deserializer: D,
+        ) -> Result<Kind, D::Error> {
+            // Keep enum-based dispatch, but require the wire discriminator to
+            // be a string. Derived enum decoding also admits {"variant": null}.
+            let kind = String::deserialize(deserializer)?;
+            Kind::deserialize(serde::de::value::StringDeserializer::<D::Error>::new(kind))
+        }
+
         #[derive(Deserialize)]
         struct Envelope {
+            #[serde(deserialize_with = "string_kind")]
             kind: Kind,
         }
 

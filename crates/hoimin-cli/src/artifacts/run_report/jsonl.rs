@@ -1,4 +1,4 @@
-use std::io::BufRead;
+use std::io::{self, BufRead, Read};
 use std::path::Path;
 
 use hoimin_core::{OutputEvent, ReportSequence, RunStarted};
@@ -8,43 +8,70 @@ use super::{
     invalid_structure,
 };
 
-/// Reuses storage for one nonblank physical line, including a final line
-/// without a newline. No event-history buffer is retained.
-pub(super) fn read_line(
+/// Expose one physical line as an independent JSON input without retaining its
+/// bytes. Very long lines have no additional raw-line allocation; event payload
+/// decoding retains at most the current event in addition to finished mutants.
+struct LineReader<'a, R> {
+    reader: &'a mut R,
+    ended: bool,
+}
+
+impl<R: BufRead> Read for LineReader<'_, R> {
+    fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+        if self.ended || output.is_empty() {
+            return Ok(0);
+        }
+        let available = self.reader.fill_buf()?;
+        let available = &available[..available.len().min(output.len())];
+        let line_end = available.iter().position(|byte| *byte == b'\n');
+        let count = line_end.map_or(available.len(), |end| end + 1);
+        output[..count].copy_from_slice(&available[..count]);
+        self.ended = line_end.is_some_and(|end| count == end + 1);
+        self.reader.consume(count);
+        Ok(count)
+    }
+}
+
+// Skip blank lines and indentation without accumulating whitespace. The event
+// parser must still reach the end of its physical line, rejecting trailing JSON.
+fn read_event<T: serde::de::DeserializeOwned>(
     path: &Path,
     reader: &mut impl BufRead,
-    line: &mut Vec<u8>,
-) -> Result<bool, ProgressError> {
+) -> Result<Option<T>, ProgressError> {
     loop {
-        line.clear();
-        let read = reader
-            .read_until(b'\n', line)
-            .map_err(|source| ProgressError::Read {
-                path: path.to_path_buf(),
-                source,
-            })?;
-        if read == 0 {
-            return Ok(false);
+        let available = reader.fill_buf().map_err(|source| ProgressError::Read {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        if available.is_empty() {
+            return Ok(None);
         }
-        if !line
+        let whitespace = available
             .iter()
-            .all(|byte| matches!(byte, b' ' | b'\t' | b'\r' | b'\n'))
-        {
-            return Ok(true);
+            .take_while(|byte| matches!(byte, b' ' | b'\t' | b'\r' | b'\n'))
+            .count();
+        if whitespace == 0 {
+            break;
         }
+        reader.consume(whitespace);
     }
+    serde_json::from_reader(LineReader {
+        reader,
+        ended: false,
+    })
+    .map(Some)
+    .map_err(|source| ProgressError::Parse {
+        path: path.to_path_buf(),
+        source,
+    })
 }
 
 pub(super) fn read_document(
     path: &Path,
     mut reader: impl BufRead,
-    mut line: Vec<u8>,
 ) -> Result<RunReportDocument<ProgressConfig>, ProgressError> {
-    let parse_error = |source| ProgressError::Parse {
-        path: path.to_path_buf(),
-        source,
-    };
-    let run: ReportRunEvent<ProgressConfig> = serde_json::from_slice(&line).map_err(parse_error)?;
+    let run: ReportRunEvent<ProgressConfig> = read_event(path, &mut reader)?
+        .ok_or_else(|| invalid_structure(path, "JSONL report requires run_started"))?;
     check_schema(path, run.schema_version())?;
     let started = run.value();
     // Progress validates the closed config descendants without requiring a full
@@ -65,8 +92,7 @@ pub(super) fn read_document(
     let mut mutants = Vec::new();
     let mut summary = None;
     let mut saw_mutant = false;
-    while read_line(path, &mut reader, &mut line)? {
-        let event: OutputEvent = serde_json::from_slice(&line).map_err(parse_error)?;
+    while let Some(event) = read_event::<OutputEvent>(path, &mut reader)? {
         check_schema(path, event.schema_version())?;
         sequence
             .validate(&event)

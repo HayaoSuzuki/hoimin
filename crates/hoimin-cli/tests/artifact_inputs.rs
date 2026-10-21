@@ -1,3 +1,10 @@
+use hoimin_cli::plan::{
+    PLAN_SCHEMA_VERSION, PlanManifest, RankedPlanCandidate, RankingReason, RankingReasonCode,
+};
+
+#[path = "support/plan_schema_fixture.rs"]
+mod plan_fixture;
+
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -15,7 +22,11 @@ impl Drop for ReapedChild {
     }
 }
 
-fn bounded_output(mut command: Command) -> Output {
+fn bounded_output(command: Command) -> Output {
+    bounded_output_with_timeout(command, Duration::from_secs(5))
+}
+
+fn bounded_output_with_timeout(mut command: Command, timeout: Duration) -> Output {
     let mut stdout = tempfile::tempfile().unwrap();
     let mut stderr = tempfile::tempfile().unwrap();
     command
@@ -23,14 +34,14 @@ fn bounded_output(mut command: Command) -> Output {
         .stdout(stdout.try_clone().unwrap())
         .stderr(stderr.try_clone().unwrap());
     let mut child = ReapedChild(command.spawn().unwrap());
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + timeout;
     let status = loop {
         if let Some(status) = child.0.try_wait().unwrap() {
             break status;
         }
         assert!(
             Instant::now() < deadline,
-            "artifact input command exceeded the five-second deadline: {command:?}"
+            "artifact input command exceeded the {timeout:?} deadline: {command:?}"
         );
         std::thread::sleep(Duration::from_millis(10));
     };
@@ -169,7 +180,11 @@ rejected_input!(
 
 fn regular_manifest(root: &Path) -> PathBuf {
     let path = root.join("plan.json");
-    std::fs::write(&path, br#"{"schema_version":0}"#).unwrap();
+    // Keep the shape current: unsupported-version checks happen only after a
+    // complete typed decode, including any large trailing whitespace.
+    let mut manifest = plan_fixture::manifest(1, 32);
+    manifest.schema_version = 0;
+    std::fs::write(&path, serde_json::to_vec(&manifest).unwrap()).unwrap();
     path
 }
 
@@ -181,12 +196,15 @@ fn manifest_symlink(root: &Path) -> PathBuf {
 
 macro_rules! parsed_manifest {
     ($name:ident, $fixture:ident) => {
+        parsed_manifest!($name, $fixture, Duration::from_secs(5));
+    };
+    ($name:ident, $fixture:ident, $timeout:expr) => {
         #[test]
         fn $name() {
             let root = tempfile::tempdir().unwrap();
             let path = $fixture(root.path());
 
-            let output = bounded_output(verify(&path));
+            let output = bounded_output_with_timeout(verify(&path), $timeout);
 
             assert_eq!(output.status.code(), Some(2), "{output:?}");
             assert!(output.stdout.is_empty(), "{output:?}");
@@ -231,12 +249,15 @@ fn jsonl_report_symlink(root: &Path) -> PathBuf {
 
 macro_rules! accepted_report {
     ($name:ident, $fixture:ident) => {
+        accepted_report!($name, $fixture, Duration::from_secs(5));
+    };
+    ($name:ident, $fixture:ident, $timeout:expr) => {
         #[test]
         fn $name() {
             let root = tempfile::tempdir().unwrap();
             let path = $fixture(root.path());
 
-            let output = bounded_output(progress(&path));
+            let output = bounded_output_with_timeout(progress(&path), $timeout);
 
             assert!(output.status.success(), "{output:?}");
             let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -274,8 +295,22 @@ fn large_report(root: &Path) -> PathBuf {
     path
 }
 
-parsed_manifest!(verify_does_not_apply_review_size_limit, large_manifest);
-accepted_report!(progress_does_not_apply_review_size_limit, large_report);
+// These finite regular files exceed 64 MiB; progress reads its report twice.
+// Streaming JSON decoding in debug builds can legitimately exceed the short
+// FIFO-open watchdog on a shared runner. Keep that watchdog for the small/FIFO
+// cases, while separately bounding large-input work without a throughput claim.
+const LARGE_REGULAR_INPUT_TIMEOUT: Duration = Duration::from_secs(30);
+
+parsed_manifest!(
+    verify_does_not_apply_review_size_limit,
+    large_manifest,
+    LARGE_REGULAR_INPUT_TIMEOUT
+);
+accepted_report!(
+    progress_does_not_apply_review_size_limit,
+    large_report,
+    LARGE_REGULAR_INPUT_TIMEOUT
+);
 
 macro_rules! closed_report_progress {
     ($name:ident, $jsonl:expr, $index:expr, $field:literal) => {

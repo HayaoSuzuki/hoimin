@@ -282,6 +282,46 @@ async fn scoped_diff_base_and_unborn_sources_match_unscoped_resolution() {
 }
 
 #[tokio::test]
+async fn large_single_line_patch_preserves_legacy_rename_line_identity() {
+    let repo = Repository::new().await;
+    // Keep the rename detectable while forcing patch lines across many pipe reads.
+    let stable = "# stable rename evidence\n".repeat(4000);
+    let long = "x".repeat(64 * 1024);
+    repo.write(
+        "selected/old.py",
+        format!("{stable}# before {long}\nvalue = True\n"),
+    );
+    repo.commit().await;
+    repo.git(&["mv", "selected/old.py", "selected/new.py"])
+        .await;
+    repo.write(
+        "selected/new.py",
+        format!("{stable}# after {long}\nvalue = False\n"),
+    );
+    let status = String::from_utf8(
+        repo.git(&["diff", "--name-status", "--find-renames", "HEAD"])
+            .await,
+    )
+    .unwrap();
+    assert!(
+        status.starts_with('R'),
+        "fixture must use the Legacy rename route: {status}"
+    );
+
+    let changed = repo.compare(0, None).await;
+
+    assert_eq!(changed.len(), 1);
+    assert_eq!(changed[0].path, "selected/new.py");
+    assert_eq!(
+        changed[0].lines,
+        [LineRange {
+            start: 4001,
+            end: 4002
+        }]
+    );
+}
+
+#[tokio::test]
 async fn selected_and_unrelated_rename_directions_preserve_hunk_ranges() {
     for (direction, old, new, expected_count, expected_rename_lines) in [
         (

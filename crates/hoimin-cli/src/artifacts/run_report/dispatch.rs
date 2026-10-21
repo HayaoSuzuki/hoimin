@@ -19,6 +19,10 @@ pub(super) fn probe(bytes: &[u8]) -> Option<Header> {
     probe_deserializer(&mut serde_json::Deserializer::from_slice(bytes))
 }
 
+pub(super) fn probe_reader(reader: impl std::io::Read) -> Option<Header> {
+    probe_deserializer(&mut serde_json::Deserializer::from_reader(reader))
+}
+
 fn probe_deserializer<'de, R: serde_json::de::Read<'de>>(
     deserializer: &mut serde_json::Deserializer<R>,
 ) -> Option<Header> {

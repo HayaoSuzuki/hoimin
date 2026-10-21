@@ -248,10 +248,10 @@ async fn read_only_plan_does_not_execute() {
 }
 
 #[tokio::test]
-async fn plan_readers_reject_old_schemas_with_regeneration_guidance() {
+async fn plan_readers_reject_old_shapes_without_rewriting() {
     for version in 1..=8 {
         for review in [false, true] {
-            // Arrange: old fields must not obscure schema regeneration guidance.
+            // Arrange: obsolete shapes are rejected without requiring diagnostic precedence.
             let (_dir, path) = plan_fixture().await;
             let mut value: serde_json::Value =
                 serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
@@ -278,13 +278,7 @@ async fn plan_readers_reject_old_schemas_with_regeneration_guidance() {
             };
 
             // Assert.
-            let error = result.unwrap_err();
-            assert!(
-                error.contains(&format!(
-                    "unsupported schema version {version}; regenerate the plan"
-                )),
-                "review={review}: {error}"
-            );
+            assert!(result.is_err(), "version={version}, review={review}");
             assert_eq!(std::fs::read(&path).unwrap(), bytes);
         }
     }

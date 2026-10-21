@@ -363,3 +363,25 @@ fn resolved_timeout_wire_rejects_unknown_duration_fields() {
 fn resolved_timeout_wire_rejects_noncanonical_nanoseconds() {
     assert_invalid_resolved_timeout(serde_json::json!({"secs":1,"nanos":1_000_000_000}));
 }
+
+#[test]
+fn every_event_kind_requires_a_string() {
+    for index in 0..6 {
+        let original: serde_json::Value = serde_json::from_str(&event(index)).unwrap();
+        let kind = original["kind"].as_str().unwrap();
+        for invalid in [
+            serde_json::json!({kind: null}),
+            serde_json::json!([kind]),
+            serde_json::Value::Null,
+            serde_json::json!(42),
+        ] {
+            let mut value = original.clone();
+            value["kind"] = invalid;
+            let wire = serde_json::to_string(&value).unwrap();
+            assert!(
+                serde_json::from_str::<OutputEvent>(&wire).is_err(),
+                "event {kind} accepted a non-string discriminator"
+            );
+        }
+    }
+}

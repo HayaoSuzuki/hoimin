@@ -5,6 +5,36 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issues-1054-report
+  resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
+  revision: f55f42c66b21861ae5302c057b4b600ec5d765c1
+  working_tree: modified
+  sha256: f6947f2d3ce54be207c85e92c64ebe22d6d4ecbee939a02e7ae425c976ae56cf
+- id: issues-1054-jsonl
+  resource: ../../../crates/hoimin-cli/src/artifacts/run_report/jsonl.rs
+  revision: f55f42c66b21861ae5302c057b4b600ec5d765c1
+  working_tree: modified
+  sha256: ab38e1ae32aac3bf96c3f440d7e7c289a6efe76d746692966eabf35522801af8
+- id: issues-1054-reader
+  resource: ../../../crates/hoimin-cli/src/artifacts/mod.rs
+  revision: f55f42c66b21861ae5302c057b4b600ec5d765c1
+  working_tree: modified
+  sha256: d9a70cbc2be8f1f8b61fddc4a319b201c1a055d2be9090e0ef516a5f53be5498
+- id: issues-1054-event-kinds
+  resource: ../../../crates/hoimin-core/src/report.rs
+  revision: f55f42c66b21861ae5302c057b4b600ec5d765c1
+  working_tree: modified
+  sha256: c1213c52126df94d78243bb7f0fb66e1505f9f6a365be99162053536686d75ee
+- id: issues-1054-report-heap
+  resource: ../../../crates/hoimin-cli/tests/progress_report_heap.rs
+  revision: f55f42c66b21861ae5302c057b4b600ec5d765c1
+  working_tree: untracked
+  sha256: 1a4183d460853dc06a835d518042a69b23e076ff05486dfd91ed1bff34a5959b
+- id: issues-1054-evidence
+  resource: ../../maintenance/2026-10-21-issues-1054-1055-1056/README.md
+  revision: f55f42c66b21861ae5302c057b4b600ec5d765c1
+  working_tree: untracked
+  sha256: be5e14dd130bf7616f3847d7837e37cda43cb1464fd50128cbc774e361e233f3
 - id: issue-1012-machine
   resource: ../../../crates/hoimin-core/src/machine.rs
   revision: 9d457e322ff1ed91e69e448c1cd40e4a8949baca
@@ -902,3 +932,43 @@ or timeout resolution.[^issue-1012-cli-tests][^issue-1012-wire]
 [^issue-1012-duration]: [Canonical report duration decoder](../../../crates/hoimin-core/src/resume.rs).
 [^issue-1012-schema]: [Current event schema](../../json-schema/run-event.schema.json).
 [^issue-1012-cli-tests]: [Public timeout reporting tests](../../../crates/hoimin-cli/tests/resolved_timeout.rs).
+
+# Streaming progress inputs (Issue #1055)
+
+Progress probes routing from the opened descriptor, rewinds it, and decodes JSON
+through a buffered reader. Both passes share the initial-length budget, so an
+append between routing and decoding cannot expand the budget. JSONL exposes one
+physical line to the JSON decoder without retaining its raw bytes. Each nonblank line
+must contain exactly one event; multiline events and trailing JSON are rejected.
+The fingerprint covers the complete successful decoding read, including ignored
+whitespace.[^issues-1054-report][^issues-1054-jsonl][^issues-1054-reader]
+
+No fixed total-size or line cap is imposed. The initial-length read policy
+rejects observed append and early truncation, but does not detect every in-place
+rewrite. Retained mutants and JSONL sequence-validation state remain necessary.
+The core event decoder still temporarily holds one event's RawValue and decoded
+payload; eliminating the report/line buffer does not bound all heap to a small
+constant. The run header ignores opaque configuration directly without an
+internally tagged enum's intermediate tree.[^issues-1054-report][^issues-1054-jsonl]
+
+After schema checks, raw events convert once to typed baseline/mutant/summary
+payloads. Both the run header and the shared event envelope require a string
+`kind` before enum dispatch; externally tagged object forms are rejected.
+Structural validation and usable-result construction no longer repeat
+kind matches or depend on unreachable document-kind branches. Identity,
+sequence, summary, duplicate-key and closed-descendant checks remain in place.
+Progress keeps adjacent report pairs and the multiple-report stall/saturation
+semantics. Review's bounded-input policy and persistence remain unchanged.
+[^issues-1054-report][^issues-1054-event-kinds][^issues-1054-report-heap]
+
+[^issues-1054-report]: [Shared report reader and typed payloads](../../../crates/hoimin-cli/src/artifacts/run_report.rs).
+[^issues-1054-jsonl]: [Streaming physical-line reader](../../../crates/hoimin-cli/src/artifacts/run_report/jsonl.rs).
+[^issues-1054-reader]: [Finite regular-file read policy](../../../crates/hoimin-cli/src/artifacts/mod.rs).
+[^issues-1054-report-heap]: [Bounded JSON/JSONL heap regression](../../../crates/hoimin-cli/tests/progress_report_heap.rs).
+
+[^issues-1054-event-kinds]: [String-only shared event discriminator](../../../crates/hoimin-core/src/report.rs).
+
+Current implementation and bounded verification evidence: see the change record.
+[^issues-1054-evidence]
+
+[^issues-1054-evidence]: [Implementation and validation record](../../maintenance/2026-10-21-issues-1054-1055-1056/README.md).

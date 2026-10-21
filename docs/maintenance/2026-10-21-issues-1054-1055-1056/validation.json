@@ -1,0 +1,102 @@
+{
+  "issues": [
+    1054,
+    1055,
+    1056
+  ],
+  "base": "f55f42c66b21861ae5302c057b4b600ec5d765c1",
+  "platform": "macOS arm64",
+  "workspace_all_features": {
+    "passed": 3918,
+    "failed": 0,
+    "ignored": 33,
+    "suite_results": 188
+  },
+  "core_default_report_closed_wire": {
+    "passed": 145,
+    "failed": 0
+  },
+  "pytest": {
+    "initial_sandbox_run": {
+      "passed": 1217,
+      "failed": 6,
+      "skipped": 14,
+      "seconds": 58.68
+    },
+    "restricted_modules_rerun": {
+      "passed": 58,
+      "failed": 0,
+      "seconds": 13.36
+    },
+    "verified_unique_tests": {
+      "passed": 1223,
+      "skipped": 14
+    },
+    "rerun_reason": "Six tests failed due to sandbox permissions for uv cache writes or process inspection; release/resource-guard modules rerun with ordinary OS permissions, no production code change."
+  },
+  "fmt": "passed",
+  "vendor_fmt": "passed",
+  "workspace_clippy": "passed",
+  "vendor_clippy": "passed",
+  "fuzz_workspace_check_all_bins": "passed",
+  "fuzz_workspace_clippy_all_bins": "passed",
+  "fuzz_campaign": "not run",
+  "docs_strict": "passed",
+  "okf": {
+    "pages": 50,
+    "changed_concepts": 4,
+    "scope": [
+      "YAML/reserved files",
+      "entry-point reachability",
+      "changed concept link targets",
+      "new source hashes and footnotes"
+    ]
+  },
+  "independent_static_review": "No remaining Critical/Important findings; run-header and shared-core string-only enum discriminator fixes rereviewed.",
+  "negative_controls": {
+    "plan_schema_precedence": "3 tests failed before probe removal",
+    "public_plan_full_buffer": "manifest-sized allocation count was 1 before streaming, expected 0",
+    "git_capture": "all 5 bounded capture tests failed with unbounded read_to_end restored",
+    "progress_heap": "4 MiB ignored config produced 8408048-byte peak before streaming; small control 22451",
+    "run_header_object_kind": "new rejection regression failed before string-only enum decoding",
+    "core_event_object_kind": "public progress accepted object baseline kind with exit 0; six-kind rejection regression failed before fix"
+  },
+  "measurements": {
+    "plan_valid_input_bytes": 6505533,
+    "plan_candidates": 512,
+    "plan_streaming_peak_rust_bytes": 4439175,
+    "plan_same_decoder_buffered_control_peak_rust_bytes": 10936516,
+    "progress_final_ignored_config_bytes": 4194304,
+    "progress_final_same_line_whitespace_bytes": 4194304,
+    "progress_json_small_peak_rust_bytes": 12542,
+    "progress_json_large_peak_rust_bytes": 12542,
+    "progress_jsonl_small_peak_rust_bytes": 13339,
+    "progress_jsonl_large_peak_rust_bytes": 13339,
+    "scope": "Bounded debug fixtures; requested live Rust bytes; excludes allocator metadata and OS RSS. Retained payloads and one current event remain. No general latency claim."
+  },
+  "resource_policy": {
+    "git_stdout_bytes_per_command": 67108864,
+    "git_stdout_overflow": "explicit error with owned termination/reap; no partial selection",
+    "git_stderr_prefix_bytes": 65536,
+    "git_stderr_marker_bytes": 41,
+    "git_read_buffers_bytes": 16384,
+    "artifact_read_budget": "initial opened-descriptor length reused across report routing and decoding; reject observed append/truncation; no fixed plan/report cap",
+    "artifact_limitations": "not an atomic snapshot; concurrent in-place rewrites may go undetected",
+    "cargo_jobs": 2,
+    "cargo_processes": "sequential",
+    "shared_target": true,
+    "linked_venv": true,
+    "large_benchmarks": false,
+    "temporary_spool_files": false,
+    "release_build": false,
+    "available_disk_gib_after_checks": 190
+  },
+  "preserved": {
+    "plan_schema": 10,
+    "report_schema": 10,
+    "package_floor": "0.14.0",
+    "review_history": true,
+    "progress_multi_report_semantics": true,
+    "formal_proof_sources": "unchanged; no new proof claim"
+  }
+}

@@ -5,6 +5,31 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issues-1054-plan
+  resource: ../../../crates/hoimin-cli/src/plan.rs
+  revision: f55f42c66b21861ae5302c057b4b600ec5d765c1
+  working_tree: modified
+  sha256: 08da09cea447b88849f94534b20b0208f2cf7f837d8ac226ececea6811c7702a
+- id: issues-1054-plan-schema
+  resource: ../../../crates/hoimin-cli/src/plan/schema.rs
+  revision: f55f42c66b21861ae5302c057b4b600ec5d765c1
+  working_tree: modified
+  sha256: a5de27259e9f2810160e8c24c9fb637f8e812c5a41433bcb55bed3d192e457f3
+- id: issues-1054-reader
+  resource: ../../../crates/hoimin-cli/src/artifacts/mod.rs
+  revision: f55f42c66b21861ae5302c057b4b600ec5d765c1
+  working_tree: modified
+  sha256: d9a70cbc2be8f1f8b61fddc4a319b201c1a055d2be9090e0ef516a5f53be5498
+- id: issues-1054-plan-heap
+  resource: ../../../crates/hoimin-cli/tests/plan_schema_heap.rs
+  revision: f55f42c66b21861ae5302c057b4b600ec5d765c1
+  working_tree: modified
+  sha256: f5c15425653130f29a5ae7605455b2fa0b33c16574985327d353eef671d7f766
+- id: issues-1054-evidence
+  resource: ../../maintenance/2026-10-21-issues-1054-1055-1056/README.md
+  revision: f55f42c66b21861ae5302c057b4b600ec5d765c1
+  working_tree: untracked
+  sha256: be5e14dd130bf7616f3847d7837e37cda43cb1464fd50128cbc774e361e233f3
 - id: six-perf-record
   resource: ../../maintenance/2026-10-21-issues-1039-1040-1041-1042-1044-1045/README.md
   revision: 79f22535197cdc922e12318386102f1806df625e
@@ -731,7 +756,7 @@ symbol指定ファイルは候補解析前にもparseする。既存のAST深さ
 
 [^issue-476-target]: [mod.rs](../../../crates/hoimin-cli/src/target/mod.rs).
 
-[^issue-476-analyzer]: [rust.rs](../../../crates/hoimin-cli/src/analyzer/rust.rs).
+[^issue-476-analyzer]: [Historical analyzer location at the recorded base](https://github.com/HayaoSuzuki/hoimin/blob/8b33167a049e3cae0fc05e96ccf2253c660b7023/crates/hoimin-cli/src/analyzer/rust.rs).
 
 [^issue-476-tests]: [plan.rs](../../../crates/hoimin-cli/tests/plan.rs).
 
@@ -1063,28 +1088,13 @@ Clippy corrections.[^issue-989-evidence]
 [^issue-989-evidence]: [Default-selection refactor and verification](../../maintenance/2026-10-19-issue-989-default-selection.md).
 
 
-# Schema routing without a full JSON tree (Issue #988)
+# Historical schema routing (Issue #988)
 
-Review and verify share a schema probe that stores only the top-level version.
-The normal schema-first encoding stops the probe before candidate bodies;
-schema-last input skips preceding values without building a generic JSON tree.
-Current plans are strictly decoded from the original bytes, so duplicate known
-fields, unknown fields and trailing content remain rejected. The probe never
-accepts a plan.[^issue-988-decoder]
-
-Unsupported versions receive a structural JSON and end-of-input check before
-regeneration guidance. That check skips scalar UTF-8, surrogate and numeric-range
-semantics; those invalid scalars can therefore receive the version error instead
-of a scalar error. Such inputs are still rejected. Mixed-invalid input and field
-order can change which error is reported; there is no old-schema decoder or
-conversion.[^issue-988-decoder][^issue-988-evidence]
-
-Counted-reader properties check prefix scanning independently of full typed
-validation. Allocation tests compare the actual decoder with direct typed
-decoding for first/last schema positions and small/large candidate payloads.
-Temporarily restoring the old JSON-tree allocation fails the same resource gate.
-These checks measure scan work and requested live allocation, not process RSS,
-allocator overhead or an I/O deadline.[^issue-988-evidence]
+Issue #988 introduced a top-level version probe to avoid a generic JSON tree
+while prioritizing old-plan regeneration diagnostics. Its recorded prefix-scan
+and allocation checks describe that earlier implementation. Issue #1056 removes
+the probe and that diagnostic precedence; the current reader is described below.
+The historical record remains available.[^issue-988-decoder][^issue-988-evidence]
 
 [^issue-988-decoder]: [Schema-routing owner](../../../crates/hoimin-cli/src/plan/schema.rs).
 [^issue-988-evidence]: [Schema routing and allocation verification](../../maintenance/2026-10-19-issue-988-schema-probe.md).
@@ -1221,3 +1231,31 @@ The [implementation and measurement record](../../maintenance/2026-10-21-issues-
 retained heap, guarded elapsed observations and sampled RSS limits.[^six-perf-record]
 
 [^six-perf-record]: [Six-issue implementation, measurements and validation](../../maintenance/2026-10-21-issues-1039-1040-1041-1042-1044-1045/README.md).
+
+# Streaming current plans (Issues #1055 and #1056)
+
+Verify deserializes the closed current plan directly from a buffered regular-file
+reader. It performs no discriminator probe, old-shape parsing pass or whole-file
+byte allocation. Duplicate known fields, unknown fields, invalid/trailing JSON
+and unsupported versions remain errors. Schema position and escaped field names
+do not change acceptance; obsolete mixed-invalid shapes have no special error
+precedence.[^issues-1054-plan][^issues-1054-plan-schema]
+
+The reader uses the opened descriptor's initial length as a finite budget,
+rejecting observed append or premature EOF. It does not impose review's fixed
+64 MiB cap, nor provide an atomic snapshot. Candidate payloads and the largest
+string's parser scratch storage remain necessary allocations. Source validation
+and requested/resolved manifest path protection retain their existing policy.
+The bounded allocation checks distinguish raw encoding from decoded payloads;
+they measure requested live Rust bytes, not RSS or a general speedup.
+[^issues-1054-plan][^issues-1054-reader][^issues-1054-plan-heap]
+
+[^issues-1054-plan]: [Verify input owner](../../../crates/hoimin-cli/src/plan.rs).
+[^issues-1054-plan-schema]: [Single typed plan decoder](../../../crates/hoimin-cli/src/plan/schema.rs).
+[^issues-1054-reader]: [Finite artifact read policy](../../../crates/hoimin-cli/src/artifacts/mod.rs).
+[^issues-1054-plan-heap]: [Bounded plan allocation regression](../../../crates/hoimin-cli/tests/plan_schema_heap.rs).
+
+Current implementation and bounded verification evidence: see the change record.
+[^issues-1054-evidence]
+
+[^issues-1054-evidence]: [Implementation and validation record](../../maintenance/2026-10-21-issues-1054-1055-1056/README.md).

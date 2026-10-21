@@ -5,6 +5,21 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issues-1054-git
+  resource: ../../../crates/hoimin-cli/src/target/git/runner.rs
+  revision: f55f42c66b21861ae5302c057b4b600ec5d765c1
+  working_tree: modified
+  sha256: dc8413bb1a987a7b8678a55fae8953f88b9808eb5c2216951c59a9dbf5e9fad2
+- id: issues-1054-git-tests
+  resource: ../../../crates/hoimin-cli/tests/changed_git_scope.rs
+  revision: f55f42c66b21861ae5302c057b4b600ec5d765c1
+  working_tree: modified
+  sha256: b0413ed62955cfc628cabb816b316e53eac23265de729578a9ee8f0e4349c455
+- id: issues-1054-evidence
+  resource: ../../maintenance/2026-10-21-issues-1054-1055-1056/README.md
+  revision: f55f42c66b21861ae5302c057b4b600ec5d765c1
+  working_tree: untracked
+  sha256: be5e14dd130bf7616f3847d7837e37cda43cb1464fd50128cbc774e361e233f3
 - id: issues-1050-finalization
   resource: ../../../crates/hoimin-cli/src/shell/finalization.rs
   revision: 5265aa2cc9f36b6b98ded50c6823039d8999b665
@@ -1304,3 +1319,29 @@ ownership and failure recovery when changing those moves.[^issues-1050-machine][
 [^issues-1050-disk]: [Canonical allocation-free lifecycle query](../../../crates/hoimin-core/src/disk.rs).
 [^issues-1050-machine]: [Worker payload ownership and ACK transitions](../../../crates/hoimin-core/src/machine.rs).
 [^issues-1050-worker-tests]: [Bounded public-transition allocation regression](../../../crates/hoimin-core/tests/worker_candidate_heap.rs).
+
+# Bounded target-inspection Git capture (Issue #1054)
+
+Each Git command retains at most 64 MiB stdout and 64 KiB stderr plus a 41-byte
+truncation marker. Explicit capacity growth stays inside these capture budgets;
+pipe reads additionally use two 8 KiB buffers. Stderr continues draining after
+its retained prefix is full. Stdout overflow fails explicitly before changed-line
+results are accepted, closes both readers, and follows owned termination/reap.
+An expected output-limit failure does not poison a subsequently proven lifecycle
+drain; I/O and cleanup failures remain recorded.[^issues-1054-git]
+
+The same bounds cover scoped batches and whole-repository rename/unmerged
+inspection. Legacy names identify patch semantics, not an obsolete format reader.
+Valid outputs above the stdout bound now fail rather than consume unbounded heap;
+there is no spool file or new setting. Selection, rename pairing and exact native
+path bytes are unchanged below the limit. Tests exercise large lines, NUL-delimited
+inventories, stderr flooding and owned-child cleanup; these bounds are not an
+end-to-end runtime or process-RSS guarantee.[^issues-1054-git][^issues-1054-git-tests]
+
+[^issues-1054-git]: [Git command capture and lifecycle owner](../../../crates/hoimin-cli/src/target/git/runner.rs).
+[^issues-1054-git-tests]: [Scoped and rename selection regressions](../../../crates/hoimin-cli/tests/changed_git_scope.rs).
+
+Current implementation and bounded verification evidence: see the change record.
+[^issues-1054-evidence]
+
+[^issues-1054-evidence]: [Implementation and validation record](../../maintenance/2026-10-21-issues-1054-1055-1056/README.md).

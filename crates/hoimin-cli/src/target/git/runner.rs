@@ -20,6 +20,31 @@ use tokio::sync::Notify;
 
 use crate::process::{ProcessCancellation, ProcessStartGate};
 
+// Per-command resource policy, including whole-repository rename/unmerged diffs.
+// 64 MiB permits large patches and inventories without allowing their capture to
+// grow with repository size. Larger valid results fail explicitly, never return
+// partial changed lines, and need no unbounded temporary disk storage.
+const STDOUT_LIMIT: usize = 64 * 1024 * 1024;
+const STDERR_LIMIT: usize = 64 * 1024;
+const STDERR_TRUNCATED: &[u8] = b"\n[Git stderr truncated after 65536 bytes]";
+
+#[derive(Debug)]
+enum CaptureError {
+    Io(std::io::Error),
+    StdoutLimit(usize),
+}
+
+impl std::fmt::Display for CaptureError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(error) => std::fmt::Display::fmt(error, formatter),
+            Self::StdoutLimit(limit) => {
+                write!(formatter, "Git stdout exceeded {limit}-byte capture limit")
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) enum GitError {
     Cancelled,
@@ -161,9 +186,12 @@ impl GitRunner {
             let completed = {
                 // These readers are owned inline. Cancelling drops and closes both pipes before reap.
                 let collect = async {
-                    let (status, stdout, stderr) =
-                        tokio::try_join!(child.wait(), read_pipe(stdout), read_pipe(stderr))?;
-                    Ok::<_, std::io::Error>(Output {
+                    let (status, stdout, stderr) = tokio::try_join!(
+                        async { child.wait().await.map_err(CaptureError::Io) },
+                        read_pipe(stdout, STDOUT_LIMIT, false),
+                        read_pipe(stderr, STDERR_LIMIT, true),
+                    )?;
+                    Ok::<_, CaptureError>(Output {
                         status,
                         stdout,
                         stderr,
@@ -184,13 +212,20 @@ impl GitRunner {
                     // Keep ownership even on termination failure. The shell can time out its drain,
                     // while this task still owns and eventually reaps the direct child.
                     let primary = match stopped_or_failed {
-                        Some(Err(error)) => Some(error.to_string()),
+                        Some(Err(error)) => Some(error),
                         None => None,
                         Some(Ok(_)) => unreachable!(),
                     };
+                    // A resource-policy rejection is the command's reported failure,
+                    // not a lost lifecycle proof. Preserve actual I/O failures for drain.
+                    let primary_message = primary.as_ref().map(ToString::to_string);
+                    let lifecycle_failure = primary.as_ref().and_then(|error| match error {
+                        CaptureError::Io(_) => primary_message.as_deref(),
+                        CaptureError::StdoutLimit(_) => None,
+                    });
                     let cleanup =
-                        terminate_and_reap(&mut child, &mut lifecycle, primary.as_deref()).await;
-                    match (primary, cleanup) {
+                        terminate_and_reap(&mut child, &mut lifecycle, lifecycle_failure).await;
+                    match (primary_message, cleanup) {
                         (None, Ok(())) => Err(GitError::Cancelled),
                         (Some(primary), Ok(())) => Err(TargetError::GitFailed(primary).into()),
                         (None, Err(cleanup)) => Err(TargetError::GitFailed(cleanup).into()),
@@ -302,10 +337,108 @@ async fn terminate_and_reap(
     }
 }
 
-async fn read_pipe(mut pipe: impl AsyncRead + Unpin) -> std::io::Result<Vec<u8>> {
+async fn read_pipe(
+    mut pipe: impl AsyncRead + Unpin,
+    limit: usize,
+    diagnostic: bool,
+) -> Result<Vec<u8>, CaptureError> {
     let mut output = Vec::new();
-    pipe.read_to_end(&mut output).await?;
+    let mut buffer = [0_u8; 8192];
+    let mut truncated = false;
+    // Reserve growth explicitly: Vec::extend's geometric growth must not turn
+    // the configured byte budget into an allocation of up to twice that budget.
+    let capacity_limit = limit
+        + if diagnostic {
+            STDERR_TRUNCATED.len()
+        } else {
+            0
+        };
+    loop {
+        let count = pipe.read(&mut buffer).await.map_err(CaptureError::Io)?;
+        if count == 0 {
+            break;
+        }
+        let retained = count.min(limit - output.len());
+        if retained != count {
+            if !diagnostic {
+                return Err(CaptureError::StdoutLimit(limit));
+            }
+            truncated = true;
+        }
+        append_capped(&mut output, &buffer[..retained], capacity_limit);
+        // Continue draining even after stderr retention is exhausted, so a
+        // diagnostic flood cannot block stdout, normal exit, or cancellation.
+    }
+    if truncated {
+        append_capped(&mut output, STDERR_TRUNCATED, capacity_limit);
+    }
     Ok(output)
+}
+
+fn append_capped(output: &mut Vec<u8>, bytes: &[u8], capacity_limit: usize) {
+    let needed = output.len() + bytes.len();
+    if needed > output.capacity() {
+        let capacity = output.capacity().max(8192).saturating_mul(2).max(needed);
+        output.reserve_exact(capacity.min(capacity_limit) - output.len());
+    }
+    output.extend_from_slice(bytes);
+}
+
+#[cfg(test)]
+mod capture_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn stdout_limit_preserves_exact_bytes_and_accepts_boundary() {
+        let bytes = b"M\0space name.py\0R100\0old.py\0new.py\0\xff\r\n";
+        let captured = read_pipe(bytes.as_slice(), bytes.len(), false)
+            .await
+            .unwrap();
+        assert_eq!(captured, bytes);
+        assert!(captured.capacity() <= bytes.len());
+    }
+
+    #[tokio::test]
+    async fn stdout_limit_rejects_a_huge_unterminated_line() {
+        let error = read_pipe(tokio::io::repeat(b'x').take(1_000_000), 1024, false)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Git stdout exceeded 1024-byte capture limit"
+        );
+    }
+
+    #[tokio::test]
+    async fn stdout_limit_rejects_many_nul_delimited_targets_without_partial_results() {
+        let records = b"M\0app.py\0".repeat(300);
+        assert!(read_pipe(records.as_slice(), 1024, false).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn stderr_limit_drains_and_marks_truncation_with_bounded_capacity() {
+        let captured = read_pipe(tokio::io::repeat(0xff).take(1_000_000), 1024, true)
+            .await
+            .unwrap();
+        assert_eq!(&captured[..1024], &[0xff; 1024]);
+        assert_eq!(&captured[1024..], STDERR_TRUNCATED);
+        assert!(captured.capacity() <= 1024 + STDERR_TRUNCATED.len());
+        // Lossy UTF-8 diagnostics can expand each captured byte to three bytes.
+        assert!(String::from_utf8_lossy(&captured).len() <= 3 * 1024 + STDERR_TRUNCATED.len());
+    }
+
+    #[tokio::test]
+    async fn stderr_at_boundary_has_no_truncation_marker() {
+        assert_eq!(
+            read_pipe(b"diagnostic".as_slice(), 10, true).await.unwrap(),
+            b"diagnostic"
+        );
+        assert_eq!(
+            read_pipe(b"".as_slice(), 0, false).await.unwrap(),
+            [] as [u8; 0]
+        );
+        assert!(read_pipe(b"x".as_slice(), 0, false).await.is_err());
+    }
 }
 
 #[cfg(all(test, unix))]
@@ -338,6 +471,46 @@ mod tests {
     fn alive(pid: i32) -> bool {
         // SAFETY: signal zero probes the fixture PID without sending a signal.
         unsafe { libc::kill(pid, 0) == 0 }
+    }
+
+    #[tokio::test]
+    async fn stdout_overflow_terminates_and_reaps_with_both_pipes_busy() {
+        let fixture = tempfile::tempdir().unwrap();
+        let marker = fixture.path().join("started");
+        let runner = GitRunner::default();
+        let command = python(
+            "import os,pathlib,sys,threading,time\npathlib.Path(sys.argv[1]).write_text(str(os.getpid()))\ndef flood_stderr():\n while True: os.write(2, b'e' * 8192)\nthreading.Thread(target=flood_stderr, daemon=True).start()\nfor _ in range(8193): os.write(1, b'x' * 8192)\ntime.sleep(30)\n",
+            &marker,
+        );
+        let task_runner = runner.clone();
+        let task = tokio::spawn(async move {
+            task_runner
+                .run_command(command, &ProcessCancellation::new())
+                .await
+        });
+        let mut pid = FixturePid::new(announced(&marker).await);
+
+        let error = tokio::time::timeout(Duration::from_secs(10), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err();
+
+        pid.disarm();
+        assert!(
+            error
+                .into_target()
+                .to_string()
+                .contains("Git stdout exceeded 67108864-byte capture limit")
+        );
+        assert!(
+            !alive(pid.pid),
+            "overflow returned before reaping its Git root"
+        );
+        runner
+            .drain_for_shutdown(Duration::from_secs(1))
+            .await
+            .unwrap();
     }
 
     struct FixturePid {

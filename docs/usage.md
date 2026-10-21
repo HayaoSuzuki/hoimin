@@ -271,6 +271,13 @@ FIFOs and symlinks to them are rejected without waiting for a writer. This does
 not promise a deadline for every filesystem operation or add review's 64 MiB
 input limit to `verify`.
 
+`verify` decodes the plan directly from a buffered reader rather than retaining
+its entire JSON encoding alongside the decoded candidates. The necessary plan
+payloads remain in memory. `verify` and `progress` bound a read to the opened
+file's initial length and reject observed growth or early truncation; use
+completed files and retry if another process is still writing. This is not an
+atomic snapshot and does not detect every in-place edit.
+
 Use a narrower selector to check one symbol:
 
 ```console
@@ -394,6 +401,13 @@ not guaranteed, and Python `-E`/`-I` ignores PYTHONPATH. Setting inherited
 `PYTHONPATH=/absolute/project/src` remains a workaround: hoimin rewrites that
 project path to the worker. Neither approach edits the original source or venv.
 Saved plans preserve import-root order; `verify` inherits it without a flag.
+
+Git inspection retains at most 64 MiB of stdout per command. Exceeding this
+limit is an error: hoimin terminates and reaps the command without accepting
+partial changed-line results. Git stderr retains its first 64 KiB and an explicit
+truncation marker, while excess stderr is drained. These internal limits are
+independent of the test process's `--max-output` setting and use no temporary
+spool files.
 
 `--root DIR` resolves relative paths and defaults to the current directory. Combining explicit selectors with `--changed` intersects each explicit target with changed lines and any `--changed-context` neighborhood. Context never expands an explicit line or symbol selector. When that target also has a symbol selector, a candidate must be both in that Git selection and inside the selected symbol. The `changed_line` ranking reason and its 200-point boost apply to this entire selection, including context lines; the reason does not assert that the candidate itself was edited. Plans save the context setting, and `verify` reuses it. A `--symbol` requires `--source`; when `--source` is present, file and line paths must be inside a source root.
 
@@ -910,9 +924,14 @@ detected as a copy. Copy confirmation is best-effort if files change or become
 unreadable after validation; reports should remain unchanged during comparison.
 
 Inputs may mix JSON documents and JSONL event streams saved from
-`hoimin run --format jsonl`, both using report schema 8. Older and unsupported
+`hoimin run --format jsonl`, both using report schema 10. Older and unsupported
 future schemas are rejected with exit code 2. Detection uses content, not
-filename. For example:
+filename. JSON input is decoded directly; JSONL input is decoded one physical
+line at a time without a raw line buffer. There is no fixed total-size or line
+limit. Memory still includes finished mutant results, sequence-validation state,
+and the current event's decoding storage. Progress retains only adjacent report
+pairs for comparison. The initial-file-length read policy described above also
+applies to progress. For example:
 
 ```console
 hoimin progress --format json reports/before.json reports/after.jsonl
