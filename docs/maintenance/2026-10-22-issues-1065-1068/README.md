@@ -148,6 +148,38 @@ capacity.
 
 ### Native Windows validation
 
-Pending at implementation publication. Run the existing `non-linux-ci.yml`
-workflow on this branch and record the code revision and native results before
-claiming Windows validation. This follow-up has no new Windows proof claim.
+The [manual non-Linux run](https://github.com/HayaoSuzuki/hoimin/actions/runs/39652751479)
+executes code revision `8457743c6f1c6a82f89574019d7a251dce309dc8`.
+The [dedicated Windows resource-scope job](https://github.com/HayaoSuzuki/hoimin/actions/runs/39652751479/job/119405061763) passed: 31 all-feature backend unit tests,
+six Job Object process-handler cases and two `windows_resource_scope` tests. Windows/macOS
+quality, wheel smoke, Windows metrics and Windows core dependency purity also
+passed. The macOS native workspace and performance gates passed. The full Windows
+workspace job remained in progress at this documentation follow-up; its result
+is not covered by the focused-suite success claim. The existing Lean and Creusot production-proof jobs passed, without a new
+Windows packet/generation correspondence claim.
+
+Later documentation-only edits do not alter the Rust bytes validated by that
+run. The current contract concepts link the relevant implementation and this
+record; initial audit findings and their source hashes remain historical.
+
+### Additional evidence checks
+
+The targeted `contracts` runs passed: 11 target unit tests (three measurement
+fixtures ignored) and three plan-source tests. GitHub's commit API confirmed all
+17 distinct recovered historical revisions exist on origin; this supports the
+22 repaired source entries, but is not a general check of external URLs or
+heading anchors.
+
+
+### PR workflow results for the implementation commit
+
+The [normal CI run](https://github.com/HayaoSuzuki/hoimin/actions/runs/39652756257),
+[build/release validation](https://github.com/HayaoSuzuki/hoimin/actions/runs/39652756193),
+[documentation run](https://github.com/HayaoSuzuki/hoimin/actions/runs/39652756244)
+and [dependency audit](https://github.com/HayaoSuzuki/hoimin/actions/runs/39652756305)
+all completed successfully for implementation commit `8457743c`. This includes
+bounded fuzzing, randomized test order, contracts, Lean and Creusot jobs. The
+release workflow was PR validation; publication/tag-reservation jobs were skipped.
+These results do not claim that later documentation-only commits or the unfinished
+full Windows workspace job have completed CI. The final follow-up changes only
+contract/evidence documentation; its Rust source hashes still match `8457743c`.

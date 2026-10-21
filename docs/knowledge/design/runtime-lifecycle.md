@@ -275,8 +275,6 @@ sources:
   revision: 0a148fcf5ca511b6ccca489feda2ccbc2429008f
   working_tree: modified
   sha256: c4c11806e1e8b6e9ad722f65c1ce42da8b0277809b4c2b9b039a222058d3bd48
-
-
 - id: issue-901-core
   resource: ../../../crates/hoimin-core/src/disk.rs
   revision: 48ae4c0e565656ddf3f0a83dcc8a840bd6b4fec8
@@ -348,12 +346,10 @@ sources:
   resource: ../../superpowers/specs/2026-09-11-issue-488-windows-resource-scope-design.md
   working_tree: untracked
   sha256: 9187c4029df0e3f1e0be45f43d11fa4b875201fcbcb7e0a22a4b4c0f31510d4a
-
 - id: issue-487
   resource: ../../superpowers/specs/2026-09-11-issue-487-resource-report-policy-design.md
   working_tree: untracked
   sha256: 81204e5418b7fe3eac61795402199e9427a1b3157f89525d8267cb502d324e80
-
 - id: issue-484
   resource: ../../superpowers/specs/2026-09-11-issue-484-metrics-destinations-design.md
   working_tree: untracked
@@ -362,7 +358,6 @@ sources:
   resource: ../../../crates/hoimin-cli/src/workspace/operation.rs
   working_tree: untracked
   sha256: b71290b610725a6db3859f1fb47afb8550df81e4c85d138a24469c19810792c5
-
 - id: issue-872-handler
   resource: ../../../crates/hoimin-cli/src/workspace/mod.rs
   revision: 49a34a63ac4e995bfefb156f85ff3a934b594e6b
@@ -373,19 +368,16 @@ sources:
   revision: 18634ef7fb0e5b4cd74ae959e019751af3465ed6
   working_tree: modified
   sha256: 34e86caeada4fd917bd334d151fce0efdadc150d351436a28edba38db7e8bd65
-
 - id: issue-889-shell
   resource: ../../../crates/hoimin-cli/src/shell.rs
   revision: 18634ef7fb0e5b4cd74ae959e019751af3465ed6
   working_tree: modified
   sha256: 7eda76259a6a9533e0a6656ad7eb60ef2af74e59fc46647d6c9cde3cbc5a8926
-
 - id: issue-889-delivery
   resource: ../../../crates/hoimin-cli/src/report/delivery.rs
   revision: 18634ef7fb0e5b4cd74ae959e019751af3465ed6
   working_tree: modified
   sha256: f0eb61d7bfd1bae452fe9993d8a058f902fc42c04d68a308dee995f14b52ca5f
-
 - id: issue-913-portable
   resource: ../../../crates/hoimin-cli/src/resource/portable.rs
   revision: 64ac5038afa1396e7fe237d17dd82641dee25c56
@@ -406,23 +398,24 @@ sources:
   revision: 4ebed4457519920e9a28f8f653d8ce96985acdad
   working_tree: clean
   sha256: b784fdfa14c405f37a73c504f5fa26b0455d3eeccc38e12b7c00446db070bbc0
-
 - id: issue-974-evidence
   resource: ../../maintenance/2026-10-18-issues-971-979/task-1-report.md
   working_tree: untracked
   sha256: 5c44f14a04237b8a8172fbf665e8c868c3cda065ad6257bca504f46f86a214da
-
 - id: issue-972-lifetime
   resource: ../../maintenance/2026-10-18-issues-971-979/task-7-report.md
   working_tree: untracked
   sha256: 94720f53dfcc7c8db649b2dc5a456e09c2b2f357e6962b300b4d183b3343489b
-
 - id: issue-984-restoration
   resource: ../../maintenance/2026-10-19-issue-984-baseline-restoration.md
   revision: d0d2472ed6797fcc07b286af3056e19dccbedc98
   working_tree: clean
   sha256: 7c4907d6190fa9019c36eb65207a3b5685ebc6da4737612022cb9aead5739ee6
-
+- id: issues-1067-windows
+  resource: ../../../crates/hoimin-cli/src/resource/windows.rs
+  revision: 8457743c6f1c6a82f89574019d7a251dce309dc8
+  working_tree: clean
+  sha256: 38f792d82e4f83b1b1fd8f2ece294ca2a7428d8bd959f6fde9a5612d7a209692
 ---
 
 # Native names and early copy admission (Issues #993 and #994)
@@ -1345,3 +1338,26 @@ Current implementation and bounded verification evidence: see the change record.
 [^issues-1054-evidence]
 
 [^issues-1054-evidence]: [Implementation and validation record](../../maintenance/2026-10-21-issues-1054-1055-1056/README.md).
+
+
+# Windows root-exit generations after Issue #1067
+
+The run job derives consumed-root completion from absence in its active
+registrations. It no longer maintains a completed-UUID set or notification
+interest flag. Each retained UUID/PID registration keeps its owned process
+handle until the matching oldest-PID exit packet, or native confirmation of an
+empty run job, removes it.[^issues-1067-windows]
+
+A signaled process can satisfy the exit barrier while its registration and handle
+remain retained. Waiting clones the owned handle under the mutex, releases the
+mutex for the native wait, then drains notifications again before deciding.
+Timeout and I/O failure preserve retry ownership. Both notification drains,
+stale empty-job handling, independent nested-limit classification and assigned
+attachment-failure handle retention remain part of the contract. Recheck these
+conditions when changing packet handling or root generation ownership.
+
+[Implementation and native validation scope](../../maintenance/2026-10-22-issues-1065-1068/README.md)
+is recorded separately. Existing formal models do not establish all Win32 packet
+and PID-generation details; a successful model proof is not native execution.
+
+[^issues-1067-windows]: [crates/hoimin-cli/src/resource/windows.rs](../../../crates/hoimin-cli/src/resource/windows.rs).

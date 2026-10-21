@@ -249,30 +249,25 @@ sources:
   resource: ../../superpowers/specs/2026-09-14-issue-454-fixed-batches-design.md
   working_tree: untracked
   sha256: 10e05c4a8d518d5334e191a2999d2bd9f5c198569a3db650969f51adcc097dd1
-
 - id: issue-599
   resource: ../../superpowers/specs/2026-09-25-issue-599-verify-preview-design.md
   revision: 99655f08bb941db0e9e888f3b5d373ec6f11440e
   working_tree: clean
   sha256: c024231b308a39d92f38fe7035630d6f364be449c80f98267197933fcf286d93
-
 - id: issue-599-preview
   resource: ../../../crates/hoimin-cli/src/plan/preview.rs
   revision: 99655f08bb941db0e9e888f3b5d373ec6f11440e
   working_tree: clean
   sha256: 75fcd7faf4cf52262f120bb68912ae33f7e9728c3ed12eb1b329593e6d3c725b
-
 - id: issue-599-schema
   resource: ../../json-schema/verify-preview.schema.json
   revision: 99655f08bb941db0e9e888f3b5d373ec6f11440e
   working_tree: untracked
   sha256: 8bdb3d181c6acfc34c99253135b14a07c5367b60f05e1f92f7e4908b533246e4
-
 - id: issue-458
   resource: ../../superpowers/specs/2026-09-14-issue-458-verify-metrics-design.md
   working_tree: untracked
   sha256: 9348d92fc7357d35f6092240f58cd681672864de808daa41b989f0cb717c4887
-
 - id: issue-480-symbol
   resource: ../../../crates/hoimin-cli/src/target/mod.rs
   working_tree: modified
@@ -323,7 +318,6 @@ sources:
   resource: ../../superpowers/specs/2026-09-14-issue-474-selector-index-design.md
   working_tree: untracked
   sha256: 0325588c52127c73cb41fbf33ef9d9e244915a6de4de5f6b3134b31312500ef6
-
 - id: issue-456
   resource: ../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md
   working_tree: untracked
@@ -333,7 +327,6 @@ sources:
   revision: fb7f1f1a44d94a8ea6e5e19dfba8efbb6dc656c1
   working_tree: clean
   sha256: cd568b65781ba9aee5262f8452e8516d707fcdd74081097fcca9855cd5a86aa9
-
 - id: issue-456-review
   resource: ../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md
   working_tree: untracked
@@ -347,7 +340,6 @@ sources:
   working_tree: clean
   revision: 5c5dbea5b97eb1a4a58be3e90c272ba86c61ab33
   sha256: 6c25091c136ce679c1d1b1d4530977afefa016c79322fcd5cd858c35c71fb44f
-
 - id: issue-456-code
   resource: ../../../crates/hoimin-cli/src/plan.rs
   working_tree: modified
@@ -357,17 +349,14 @@ sources:
   resource: ../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md
   working_tree: untracked
   sha256: a30ed5f129c635e75431212d590171ab03e5973640a4d6624775ee43fd81dcdd
-
 - id: issue-473
   resource: ../../superpowers/specs/2026-09-11-issue-473-symbol-ranking-design.md
   working_tree: untracked
   sha256: d1748256ef730d871a2158c57e8c5601145d78e32288c269cac720f60ad10618
-
 - id: issue-459
   resource: ../../superpowers/specs/2026-09-11-issue-459-record-size-design.md
   working_tree: untracked
   sha256: ced8501765b2babcd15bac56139f575c00cdb779a5149bb4a6e231ea75e0af7f
-
 - id: issue-452
   resource: ../../superpowers/specs/2026-09-11-issue-452-shared-exclusions-design.md
   working_tree: untracked
@@ -417,25 +406,20 @@ sources:
   resource: ../../superpowers/reports/issue-710/design.md
   working_tree: untracked
   sha256: 187d95a722fc212fa5748bd95b031035ecc34f89f43633a12d2b29e034d7701e
-
 - id: issue-710-plan
   resource: ../../superpowers/reports/issue-710/plan.md
   working_tree: untracked
   sha256: 664949692555d984ab034f9468f745f958fb16b529dee9f0b75e10a30d060f7a
-
 - id: issue-710-assessment
   resource: ../../superpowers/reports/issue-710/assessment.md
   working_tree: untracked
   sha256: 9e099f6d6125e40eed282924e41381fd0ed60d1a6f4f507dca3eeda14a21dece
-
 - id: issue-710-review
   resource: ../../superpowers/reports/issue-710/review.md
   working_tree: untracked
   sha256: 37e8886b574a7226c882551b72683241c31bcd39ed0654f417c9569f63ed4e31
-
 - id: issue-887-environment
   resource: ../../superpowers/plans/2026-10-14-issue-887.md
-
 - id: issue-949-config
   resource: ../../../crates/hoimin-core/src/config.rs
   revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
@@ -450,13 +434,11 @@ sources:
   resource: ../../maintenance/2026-10-18-issues-971-979/task-5-report.md
   working_tree: untracked
   sha256: 37f183a85687a1f2bdbf03067a57288c492458b37259268ae5b5171bb31c7d3f
-
 - id: issue-979-compatibility
   resource: ../../compatibility.md
   revision: 4ebed4457519920e9a28f8f653d8ce96985acdad
   working_tree: clean
   sha256: 3db98744cba6c95b2828d98298038c52242135a2607f2855c58d100205243fb4
-
 - id: issue-979-evidence
   resource: ../../maintenance/2026-10-18-issues-971-979/task-6-report.md
   working_tree: untracked
@@ -476,7 +458,6 @@ sources:
   revision: ac554aa9fe4d3907ed4a42f6c89486e6f599c897
   working_tree: clean
   sha256: f1d1bbc8c45525a6b489a98beab41b313ae24d4bbfd4c8c6362abdfd5f72116f
-
 - id: issue-988-decoder
   resource: ../../../crates/hoimin-cli/src/plan/schema.rs
   revision: c4078e0dadc58bdbc7953b6d5a23cd76160d6ecf
@@ -487,13 +468,11 @@ sources:
   revision: c4078e0dadc58bdbc7953b6d5a23cd76160d6ecf
   working_tree: clean
   sha256: 5f8ec28392a16d65c6588bc4a6722d1a41b643b23e0e695e74eb3fcd521c1c1a
-
 - id: issue-984-compatibility
   resource: ../../compatibility.md
   revision: c4078e0dadc58bdbc7953b6d5a23cd76160d6ecf
   working_tree: modified
   sha256: 881f774b6a135f3d50f3acca3e379a0c8f0742349fd84964d526caa4073c421a
-
 - id: issue-1003-source-acquisition
   resource: ../../../crates/hoimin-cli/src/plan/source.rs
   working_tree: untracked
@@ -507,6 +486,21 @@ sources:
   resource: ../../../crates/hoimin-cli/tests/plan_source_heap.rs
   working_tree: untracked
   sha256: a41daec552a0ef497201a3876589934ac5271a825a41e70c7d3c864a84f1c905
+- id: issues-1065-target
+  resource: ../../../crates/hoimin-core/src/target.rs
+  revision: 8457743c6f1c6a82f89574019d7a251dce309dc8
+  working_tree: clean
+  sha256: eaaecea1bbc9d8bd1667bde5066e8d058b1ded862b60d7fac542ab36e0adce8a
+- id: issues-1066-finite
+  resource: ../../../crates/hoimin-cli/src/finite_file.rs
+  revision: 8457743c6f1c6a82f89574019d7a251dce309dc8
+  working_tree: clean
+  sha256: 188cfd129c655cf78f4908874b9a218c79e4279b26848234d81f8b6cc46b856e
+- id: issues-1066-source-root
+  resource: ../../../crates/hoimin-cli/src/workspace/root.rs
+  revision: 8457743c6f1c6a82f89574019d7a251dce309dc8
+  working_tree: clean
+  sha256: 1f21584cd34f5894b0944168fdcdf819d0c167546be602b4e39ff42c33759a49
 ---
 
 # Checked normalized settings (Issue #1004)
@@ -1262,3 +1256,34 @@ Current implementation and bounded verification evidence: see the change record.
 [^issues-1054-evidence]
 
 [^issues-1054-evidence]: [Implementation and validation record](../../maintenance/2026-10-21-issues-1054-1055-1056/README.md).
+
+
+# Prepared source admission and finite source I/O (Issues #1065–#1066)
+
+Core target resolution prepares source membership once. Unspecified sources
+admit no whole-file targets but leave exact file/line selectors unrestricted;
+a normalized `.` source covers the whole root. A single source uses a component
+prefix boundary; multiple sources query a normalized path and its component
+ancestors against prepared keys. Symbol module lookup retains the original
+source order independently of this membership index. Recheck absent/all roots,
+overlaps, Windows equality and diagnostic precedence when changing this owner.[^issues-1065-target]
+
+Source read/hash now share the descriptor-length reader also used for artifacts.
+After reading the initial length, one extra byte detects growth; truncation is
+an error rather than a successful prefix. Plan source acquisition and exact/glob
+fingerprint hashing inherit this policy from the capability root. Stable large
+files have no new fixed cap. The rule bounds consumed bytes, not arbitrary
+filesystem I/O time, and neither provides an atomic snapshot nor detects
+same-length rewrites. Root-relative, no-follow and regular-file validation remain
+in place; bounded hierarchy inputs and copy streaming keep their separate
+policies.[^issues-1066-finite][^issues-1066-source-root]
+
+[Implementation and verification scope](../../maintenance/2026-10-22-issues-1065-1068/README.md)
+records the measured shapes and finite append/truncate regressions separately
+from earlier source-acquisition evidence.
+
+[^issues-1065-target]: [crates/hoimin-core/src/target.rs](../../../crates/hoimin-core/src/target.rs).
+
+[^issues-1066-finite]: [crates/hoimin-cli/src/finite_file.rs](../../../crates/hoimin-cli/src/finite_file.rs).
+
+[^issues-1066-source-root]: [crates/hoimin-cli/src/workspace/root.rs](../../../crates/hoimin-cli/src/workspace/root.rs).
