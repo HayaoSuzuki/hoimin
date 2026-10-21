@@ -11,7 +11,8 @@ pub(crate) enum PortableFileReadError {
 }
 
 /// Reads portable source and fingerprint paths through a capability-relative root.
-/// Workspace copying uses `WorkerRoot` internally with its native path policy.
+/// Source read/hash reject length changes; bounded hierarchy reads keep their
+/// separate fixed-cap policy. Workspace copying uses its native path policy.
 #[derive(Debug)]
 pub(crate) struct PortableFileReader {
     root: WorkerRoot,

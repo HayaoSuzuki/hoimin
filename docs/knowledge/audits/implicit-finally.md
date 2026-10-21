@@ -19,10 +19,13 @@ sources:
   working_tree: untracked
   sha256: 1f24068440027fb9084264b25b9f9294421da130d4e939ea2532bc4e47099c60
 - id: implementation
-  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/e69fb312ffc91fff88c0d97b5bf0fc7df9151af7/crates/hoimin-cli/src/analyzer/rust.rs
   revision: f11013542ccd735ab9741b5079c0b39a517df256
   working_tree: modified
   sha256: 1a31757e7932ce7fa0fe8407fed27558414def841a7ad23459c623cf9f018e70
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  recovered_revision: e69fb312ffc91fff88c0d97b5bf0fc7df9151af7
+  recovered_blob: 9632ea3a1ef94abeb83dc812f8b88d8e4eab559e
 - id: model
   resource: ../../../formal/HoiminOracle/HoiminOracle/ImplicitFinallyModel.lean
   working_tree: modified
@@ -55,7 +58,7 @@ Lean の3イベントモデルは、custom 束縛で始まる `mayRaise` に任�
 
 [^design]: [設計](../../superpowers/specs/2026-09-15-issue-545-implicit-finally-design.md)。
 [^review]: [検証記録](../../superpowers/reports/2026-09-15-issue-545-implicit-finally-review.md)。
-[^implementation]: [解析器](../../../crates/hoimin-cli/src/analyzer/rust.rs)。
+[^implementation]: [解析器](https://github.com/HayaoSuzuki/hoimin/blob/e69fb312ffc91fff88c0d97b5bf0fc7df9151af7/crates/hoimin-cli/src/analyzer/rust.rs)。 Historical evidence; [current owner](../../../crates/hoimin-python/src/analyzer/rust.rs).
 [^model]: [Leanモデル](../../../formal/HoiminOracle/HoiminOracle/ImplicitFinallyModel.lean)。生成は[専用生成器](../../../formal/HoiminOracle/ImplicitFinallyAuditMain.lean)から行う。
 
 [^audit-promotion]: [監査コード・ケースの正式な検証への移行](../../superpowers/reports/2026-09-15-audit-verification-promotion.md)。

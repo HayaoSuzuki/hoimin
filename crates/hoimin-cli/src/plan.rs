@@ -490,7 +490,7 @@ fn read_manifest(path: &Path) -> Result<(Vec<PathBuf>, PlanManifest), PlanError>
                 "input is not a regular file",
             )
         })?;
-        Ok((inputs, crate::artifacts::SnapshotReader::new(file)?))
+        Ok((inputs, crate::finite_file::SnapshotReader::new(file)?))
     };
     let (inputs, reader) = open()
         .map_err(|error| PlanError::ManifestInvalid(format!("{}: {error}", path.display())))?;

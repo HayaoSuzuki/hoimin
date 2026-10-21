@@ -9,38 +9,34 @@ use windows_sys::Win32::System::SystemServices::{
     JOB_OBJECT_MSG_JOB_MEMORY_LIMIT,
 };
 
-use super::{ActiveRoot, RunState, WindowsBackend, detach_root_generation, record_notification};
+use super::{
+    ActiveRoot, RunState, WindowsBackend, record_notification, root_notification_consumed,
+};
 use crate::resource::ProcessSupervisor;
 
-fn root(id: u128, pid: u32, interested: bool) -> ActiveRoot {
+fn root(id: u128, pid: u32) -> ActiveRoot {
     ActiveRoot {
         id: Uuid::from_u128(id),
         pid,
-        record_exit: interested,
         process: None,
     }
 }
 
 #[test]
-fn exit_notification_records_only_interested_roots() {
-    for (message, interested, expected) in [
-        (JOB_OBJECT_MSG_EXIT_PROCESS, false, vec![]),
-        (JOB_OBJECT_MSG_EXIT_PROCESS, true, vec![Uuid::from_u128(1)]),
-        (JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS, false, vec![]),
-        (
-            JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS,
-            true,
-            vec![Uuid::from_u128(1)],
-        ),
+fn exit_notification_completes_only_its_root() {
+    for message in [
+        JOB_OBJECT_MSG_EXIT_PROCESS,
+        JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS,
     ] {
         let mut state = RunState {
-            active: vec![root(1, 101, interested), root(2, 102, true)],
+            active: vec![root(1, 101), root(2, 102)],
             ..RunState::default()
         };
 
         record_notification(&mut state, message, 101, false);
 
-        assert_eq!(state.exited_roots, expected.into_iter().collect());
+        assert!(root_notification_consumed(&state, Uuid::from_u128(1)));
+        assert!(!root_notification_consumed(&state, Uuid::from_u128(2)));
         assert_eq!(
             state.active.iter().map(|root| root.id).collect::<Vec<_>>(),
             vec![Uuid::from_u128(2)]
@@ -49,15 +45,13 @@ fn exit_notification_records_only_interested_roots() {
 }
 
 #[test]
-fn active_process_zero_requires_empty_job_and_respects_interest() {
-    for (interested, job_is_empty, expected_active, expected_exited) in [
-        (false, false, vec![Uuid::from_u128(1)], vec![]),
-        (true, false, vec![Uuid::from_u128(1)], vec![]),
-        (false, true, vec![], vec![]),
-        (true, true, vec![], vec![Uuid::from_u128(1)]),
+fn active_process_zero_requires_empty_job_before_completing_roots() {
+    for (job_is_empty, expected_active, expected_complete) in [
+        (false, vec![Uuid::from_u128(1)], false),
+        (true, vec![], true),
     ] {
         let mut state = RunState {
-            active: vec![root(1, 101, interested)],
+            active: vec![root(1, 101)],
             ..RunState::default()
         };
 
@@ -72,7 +66,10 @@ fn active_process_zero_requires_empty_job_and_respects_interest() {
             state.active.iter().map(|root| root.id).collect::<Vec<_>>(),
             expected_active
         );
-        assert_eq!(state.exited_roots, expected_exited.into_iter().collect());
+        assert_eq!(
+            root_notification_consumed(&state, Uuid::from_u128(1)),
+            expected_complete
+        );
     }
 }
 
@@ -83,8 +80,7 @@ fn run_wide_limit_notifications_preserve_root_registry() {
         JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT,
     ] {
         let mut state = RunState {
-            active: vec![root(1, 101, true), root(2, 102, false)],
-            exited_roots: [Uuid::from_u128(3)].into_iter().collect(),
+            active: vec![root(1, 101), root(2, 102)],
             ..RunState::default()
         };
 
@@ -94,17 +90,13 @@ fn run_wide_limit_notifications_preserve_root_registry() {
             state
                 .active
                 .iter()
-                .map(|root| (root.id, root.pid, root.record_exit))
+                .map(|root| (root.id, root.pid))
                 .collect::<Vec<_>>(),
-            vec![
-                (Uuid::from_u128(1), 101, true),
-                (Uuid::from_u128(2), 102, false)
-            ]
+            vec![(Uuid::from_u128(1), 101), (Uuid::from_u128(2), 102)]
         );
-        assert_eq!(
-            state.exited_roots,
-            [Uuid::from_u128(3)].into_iter().collect()
-        );
+        assert!(!root_notification_consumed(&state, Uuid::from_u128(1)));
+        assert!(!root_notification_consumed(&state, Uuid::from_u128(2)));
+        assert!(root_notification_consumed(&state, Uuid::from_u128(3)));
     }
 }
 
@@ -193,7 +185,7 @@ proptest! {
         ]), 0..32),
     ) {
         let mut state = RunState {
-            active: vec![root(1, 101, true), root(2, 101, true), root(3, 102, true)],
+            active: vec![root(1, 101), root(2, 101), root(3, 102)],
             ..RunState::default()
         };
         let exit_count = messages.iter().filter(|&&message|
@@ -201,15 +193,15 @@ proptest! {
         ).count();
         let expected_active = [Uuid::from_u128(1), Uuid::from_u128(2), Uuid::from_u128(3)]
             .into_iter().skip(exit_count.min(2)).collect::<Vec<_>>();
-        let expected_exited = [Uuid::from_u128(2)].into_iter()
-            .take(usize::from(exit_count >= 2)).collect();
+        let expected_complete = [exit_count >= 1, exit_count >= 2, false];
 
-        detach_root_generation(&mut state, Uuid::from_u128(1));
         for message in messages {
             record_notification(&mut state, message, 101, false);
         }
 
         prop_assert_eq!(state.active.iter().map(|root| root.id).collect::<Vec<_>>(), expected_active);
-        prop_assert_eq!(state.exited_roots, expected_exited);
+        for (id, expected) in [1, 2, 3].into_iter().zip(expected_complete) {
+            prop_assert_eq!(root_notification_consumed(&state, Uuid::from_u128(id)), expected);
+        }
     }
 }
