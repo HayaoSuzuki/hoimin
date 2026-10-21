@@ -82,3 +82,38 @@ required field. Updating that current-format fixture fixed all 101 dependent
 failures; the focused 161-test progress suite and subsequent full workspace run
 passed. Historical schema-9 rejection is now explicitly covered. No reader
 fallback or permissive default was added to accommodate those inputs.
+
+## PR #1049 fuzz build follow-up
+
+[CI job 119081391328](https://github.com/HayaoSuzuki/hoimin/actions/runs/39557554706/job/119081391328?pr=1049)
+failed before any fuzz target executed. Its `fuzz-report/build.log` reports
+E0063 at `fuzz_targets/report_sequence.rs`: the synthetic `RunSummary` omitted
+`resolved_mutant_timeout`. The initial full-workspace test and lint commands do
+not include the independent `fuzz/` workspace; the initial validation missed
+that separate build. `cargo check --locked --offline --manifest-path
+fuzz/Cargo.toml --bins` reproduced the exact missing-field error locally.
+
+The harness now supplies a subsecond cap for executed outcomes and explicit
+None for reused/not-run outcomes, exercising both summary round-trip forms.
+The independent formatter also reordered one existing import in
+`python_analyzer.rs`. No shipping implementation or contract changed in this
+follow-up; the four OKF concepts updated above remain applicable.
+
+Follow-up checks, executed sequentially with the shared target and jobs=2:
+
+- `cargo fmt --manifest-path fuzz/Cargo.toml -- --check`: passed.
+- `cargo check --locked --offline --manifest-path fuzz/Cargo.toml --bins`: passed.
+- `cargo clippy --locked --offline --manifest-path fuzz/Cargo.toml --bins -- -D warnings`:
+  passed.
+- `cargo +nightly-2026-10-08 fuzz build --target-dir <shared-target> --codegen-units 16`:
+  all seven targets built with AddressSanitizer, matching CI's pinned toolchain.
+- `cargo +nightly-2026-10-08 fuzz run report_sequence --target-dir <shared-target>
+  --codegen-units 16 fuzz/corpus/report_sequence fuzz/seeds/report_sequence --
+  -max_total_time=30 -max_len=4096 -timeout=5 -rss_limit_mb=1024`:
+  exit 0, 98,270 executions in 31 seconds, seed 1049459887. Final reported
+  RSS was 469 MB under the 1,024 MB limit. Disk free space remained about 143 GiB.
+
+The bounded run is a macOS arm64 observation for this target and these inputs;
+it does not replace the Linux CI campaign or establish exhaustive coverage.
+The earlier Rust/Python suite counts describe the original implementation
+validation; those entire suites were not repeated for this harness-only fix.

@@ -36,5 +36,26 @@
     "linked_venv": true,
     "cargo_processes": "sequential",
     "disk_free_gib_approx": 144
+  },
+  "fuzz_followup": {
+    "source_commit": "911d449aba3d929cf6870a50689f938e07f21e46",
+    "ci_job": 119081391328,
+    "root_cause": "independent fuzz workspace RunSummary constructor missing resolved_mutant_timeout",
+    "local_reproduction": "E0063",
+    "fmt": "passed",
+    "check_all_bins": "passed",
+    "clippy_all_bins": "passed",
+    "nightly": "nightly-2026-10-08",
+    "asan_build_targets": 7,
+    "report_sequence": {
+      "exit_code": 0,
+      "runs": 98270,
+      "seconds": 31,
+      "seed": 1049459887,
+      "rss_mb_final": 469,
+      "rss_limit_mb": 1024
+    },
+    "disk_free_gib_approx": 143,
+    "production_changes": false
   }
 }
