@@ -92,8 +92,8 @@ impl ExceptionIndex {
         let related = class
             .parent
             .iter()
-            .chain(siblings.into_iter().flat_map(|s| s.ids.iter()))
-            .chain(children.into_iter().flat_map(|c| c.ids.iter()));
+            .chain(siblings.into_iter().flat_map(ChildClasses::iter))
+            .chain(children.into_iter().flat_map(ChildClasses::iter));
         let mut result = BTreeSet::new();
         let mut has_related = false;
         let mut compatible = false;
@@ -159,7 +159,7 @@ fn related_lookup_work_is_bounded_by_visible_classes() {
                         Utf8Path::new("service.py"),
                         "C0",
                         usize::MAX,
-                        true,
+                        ExceptionSite::Raise,
                         &BTreeSet::new(),
                         (10, &|| false)
                     ),
@@ -196,7 +196,11 @@ fn related_lookup_matches_exhaustive_outcomes() {
                                     path,
                                     name,
                                     before,
-                                    raised,
+                                    if raised {
+                                        ExceptionSite::Raise
+                                    } else {
+                                        ExceptionSite::Handler
+                                    },
                                     &excluded,
                                     (limit, &|| false),
                                 );
@@ -218,5 +222,104 @@ fn related_lookup_matches_exhaustive_outcomes() {
                 }
             }
         }
+    }
+}
+
+#[test]
+fn child_summary_does_not_invent_a_constructible_sibling_on_duplicate_insert() {
+    let source = Class {
+        parent: None,
+        constructible: true,
+    };
+    let mut group = ChildClasses::default();
+    let id = (Utf8PathBuf::from("errors.py"), "Source".to_owned());
+    group.insert(id.clone(), true);
+    group.insert(id, true);
+    group.insert(("errors.py".into(), "Blocked".into()), false);
+    assert!(!group.has_constructible_sibling(&source));
+    group.insert(("errors.py".into(), "Allowed".into()), true);
+    assert!(group.has_constructible_sibling(&source));
+}
+
+#[test]
+fn hierarchy_site_eligibility_preserves_distinct_empty_reasons() {
+    let sources = vec![
+        ("errors.py".into(), "class Lonely(Exception): pass\nclass Root(Exception): pass\nclass Blocked(Root):\n def __init__(self, required): pass\nclass Parent(Exception): pass\nclass Child(Parent): pass\n".into()),
+        ("sparse.py".into(), "from errors import Lonely, Root, Child\n".into()),
+        ("visible.py".into(), "from errors import Root, Blocked\n".into()),
+    ];
+    let index = ExceptionIndex::from_sources(&sources, &[".".into()], &|| false).unwrap();
+    for (path, name, raised, expected) in [
+        (
+            "sparse.py",
+            "Lonely",
+            true,
+            SiteOutcome::Ineligible(IneligibleReason::NoRelatedClass),
+        ),
+        (
+            "sparse.py",
+            "Lonely",
+            false,
+            SiteOutcome::Ineligible(IneligibleReason::NoRelatedClass),
+        ),
+        (
+            "sparse.py",
+            "Root",
+            true,
+            SiteOutcome::Ineligible(IneligibleReason::ConstructorPolicy),
+        ),
+        (
+            "sparse.py",
+            "Root",
+            false,
+            SiteOutcome::Ineligible(IneligibleReason::NoVisibleDestination),
+        ),
+        (
+            "sparse.py",
+            "Child",
+            true,
+            SiteOutcome::Ineligible(IneligibleReason::NoVisibleDestination),
+        ),
+        (
+            "visible.py",
+            "Root",
+            true,
+            SiteOutcome::Ineligible(IneligibleReason::ConstructorPolicy),
+        ),
+        (
+            "visible.py",
+            "Root",
+            false,
+            SiteOutcome::Candidates(vec!["Blocked"]),
+        ),
+        (
+            "visible.py",
+            "Blocked",
+            true,
+            SiteOutcome::Ineligible(IneligibleReason::ConstructorPolicy),
+        ),
+        (
+            "visible.py",
+            "Blocked",
+            false,
+            SiteOutcome::Candidates(vec!["Root"]),
+        ),
+    ] {
+        assert_eq!(
+            index.replacements(
+                Utf8Path::new(path),
+                name,
+                usize::MAX,
+                if raised {
+                    ExceptionSite::Raise
+                } else {
+                    ExceptionSite::Handler
+                },
+                &BTreeSet::new(),
+                (10, &|| false)
+            ),
+            expected,
+            "{path} {name} raised={raised}"
+        );
     }
 }

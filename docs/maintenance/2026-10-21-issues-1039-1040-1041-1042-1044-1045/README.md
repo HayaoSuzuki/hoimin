@@ -128,7 +128,7 @@ compact observations and the probe are tracked, not binaries or fixture trees.
 Binary hashes, platform, Python/Rust versions, Cargo.lock hash and code revision
 are in the measurement file. Baseline is a892eee0; implementation is 4e2b4417.
 
-### Final checks and limits
+### Initial six-issue checks and limits (4e2b4417)
 
 - `cargo test --locked --offline --workspace --all-features`: 185 target/doc-test
   result blocks, 3,867 passed, zero failures, 33 ignored. These are this change's
@@ -146,3 +146,35 @@ are in the measurement file. Baseline is a892eee0; implementation is 4e2b4417.
   603 MiB standalone hook cache was checked for distinct realpath/inode and
   removed; no shared cache was cleaned. The selected worktree and branch retain
   all six issue numbers.
+
+## Typed hierarchy follow-up (after 79f22535)
+
+The follow-up replaces the `raised` argument with `ExceptionSite::{Raise, Handler}`
+and the related/compatible Boolean pair with
+`RelatedEligibility::{NoRelated, ConstructorRejected, Eligible}`. An empty
+candidate result maps that eligibility to its existing diagnostic reason.
+Source constructor rejection still precedes related-class and visibility checks.
+
+`ChildClasses` now owns insertion and query operations. Its constructible count
+increases only when a new identity is inserted; constructibility is immutable
+for an identity in the resolved index. A regression first failed because duplicate
+insertion invented a constructible sibling, then passed after centralizing the
+update. Literal fixtures distinguish no-relative, constructor-policy and
+no-visible-destination outcomes and retain nonconstructible destinations in
+handlers. The independent exhaustive reference deliberately keeps its original
+Boolean inputs; only the production API uses the site enum.
+
+The child-group representation remains the same set plus one count. The enums
+add no heap allocation or persistent cache. The existing independent-axis
+private-alias and sparse-related operation gates and exhaustive outcome
+comparison remain in the analyzer suite. A separate static review found no
+Important or Critical issues in this follow-up.
+
+Follow-up validation is recorded in [typed-followup.json](typed-followup.json):
+Python analyzer all-feature tests, CLI library and plan tests, workspace
+all-target/all-feature Clippy, fmt, performance inventory, and the affected
+OKF/documentation checks. The initial 3,867-test workspace run and 216 release
+observations above remain evidence for their recorded pre-refactor source;
+they are not presented as new timing or native-platform measurements for this
+follow-up. The output-ring refactoring discussed as a lower-priority option is
+outside this follow-up.

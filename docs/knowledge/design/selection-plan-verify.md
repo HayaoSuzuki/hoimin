@@ -7,9 +7,9 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: six-perf-record
   resource: ../../maintenance/2026-10-21-issues-1039-1040-1041-1042-1044-1045/README.md
-  revision: 4e2b4417acc4999676b47e6ee9e80b1b2fe8f607
+  revision: 79f22535197cdc922e12318386102f1806df625e
   working_tree: modified
-  sha256: 29bd14f404dab541e5b203dcd73c3323c2779795647ff6358da6656aa2cd3c8b
+  sha256: 2361b6b7834e602c1c5a41fed9a31b706cdae9ced91f77ece2a67b83d05a0689
 - id: six-perf-verify
   resource: ../../../crates/hoimin-cli/src/plan.rs
   revision: ab940366085cccfadcfe182bfbf8f447613e25bc

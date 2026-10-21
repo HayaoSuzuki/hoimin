@@ -45,6 +45,29 @@ enum IneligibleReason {
     ConstructorPolicy,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ExceptionSite {
+    Raise,
+    Handler,
+}
+
+/// Eligibility before intersecting relatives with visible, allowed aliases.
+enum RelatedEligibility {
+    NoRelated,
+    ConstructorRejected,
+    Eligible,
+}
+
+impl RelatedEligibility {
+    fn empty_reason(self) -> IneligibleReason {
+        match self {
+            Self::NoRelated => IneligibleReason::NoRelatedClass,
+            Self::ConstructorRejected => IneligibleReason::ConstructorPolicy,
+            Self::Eligible => IneligibleReason::NoVisibleDestination,
+        }
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 enum SiteOutcome<'a> {
     Candidates(Vec<&'a str>),
@@ -139,6 +162,37 @@ struct Class {
 struct ChildClasses {
     ids: BTreeSet<ClassId>,
     constructible: usize,
+}
+
+impl ChildClasses {
+    // Class identities have immutable constructibility in the resolved index.
+    // Repeated insertion of an identity must not increase the summary count.
+    fn insert(&mut self, id: ClassId, constructible: bool) {
+        if self.ids.insert(id) {
+            self.constructible += usize::from(constructible);
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &ClassId> {
+        self.ids.iter()
+    }
+
+    fn len(&self) -> usize {
+        self.ids.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
+
+    fn has_constructible(&self) -> bool {
+        self.constructible > 0
+    }
+
+    // The source belongs to this parent's child group.
+    fn has_constructible_sibling(&self, source: &Class) -> bool {
+        self.constructible > usize::from(source.constructible)
+    }
 }
 
 /// Only compact summaries survive project parsing. No target module is executed.
@@ -897,8 +951,7 @@ impl ExceptionIndex {
             }
             if let Some(parent) = &class.parent {
                 let group = index.children.entry(parent.clone()).or_default();
-                group.ids.insert(id.clone());
-                group.constructible += usize::from(class.constructible);
+                group.insert(id.clone(), class.constructible);
             }
         }
         index.build_visible(cancelled)?;
@@ -1296,12 +1349,36 @@ impl ExceptionIndex {
         Ok(())
     }
 
+    fn related_eligibility(
+        &self,
+        class: &Class,
+        site: ExceptionSite,
+        siblings: Option<&ChildClasses>,
+        children: Option<&ChildClasses>,
+    ) -> RelatedEligibility {
+        if class.parent.is_none() && children.is_none_or(ChildClasses::is_empty) {
+            return RelatedEligibility::NoRelated;
+        }
+        match site {
+            ExceptionSite::Handler => RelatedEligibility::Eligible,
+            ExceptionSite::Raise
+                if class.parent.as_ref().is_some_and(|parent| {
+                    self.classes.get(parent).is_some_and(|c| c.constructible)
+                }) || siblings.is_some_and(|s| s.has_constructible_sibling(class))
+                    || children.is_some_and(ChildClasses::has_constructible) =>
+            {
+                RelatedEligibility::Eligible
+            }
+            ExceptionSite::Raise => RelatedEligibility::ConstructorRejected,
+        }
+    }
+
     fn replacements(
         &self,
         path: &Utf8Path,
         name: &str,
         before: usize,
-        raised: bool,
+        site: ExceptionSite,
         excluded: &BTreeSet<String>,
         budget: (usize, &dyn Fn() -> bool),
     ) -> SiteOutcome<'_> {
@@ -1321,7 +1398,7 @@ impl ExceptionIndex {
         let Some(class) = self.classes.get(&id) else {
             return SiteOutcome::Skipped(SkipReason::UnresolvedBinding);
         };
-        if raised && !class.constructible {
+        if site == ExceptionSite::Raise && !class.constructible {
             return SiteOutcome::Ineligible(IneligibleReason::ConstructorPolicy);
         }
         let siblings = class.parent.as_ref().and_then(|p| self.children.get(p));
@@ -1329,17 +1406,10 @@ impl ExceptionIndex {
         // Parent, siblings (excluding self), and children are disjoint in the
         // resolved single-parent acyclic graph. Counts retain eligibility facts
         // even when none of those identities is visible in this module.
-        let has_related = class.parent.is_some() || children.is_some_and(|c| !c.ids.is_empty());
-        let compatible = !raised
-            || class
-                .parent
-                .as_ref()
-                .is_some_and(|parent| self.classes.get(parent).is_some_and(|c| c.constructible))
-            || siblings.is_some_and(|s| s.constructible > usize::from(class.constructible))
-            || children.is_some_and(|c| c.constructible > 0);
+        let eligibility = self.related_eligibility(class, site, siblings, children);
         let related_count = usize::from(class.parent.is_some())
-            + siblings.map_or(0, |s| s.ids.len().saturating_sub(1))
-            + children.map_or(0, |c| c.ids.len());
+            + siblings.map_or(0, |s| s.len().saturating_sub(1))
+            + children.map_or(0, ChildClasses::len);
         let visible = self.visible.get(path);
         let mut result = BTreeSet::new();
         let mut visit = |destination: &ClassId| {
@@ -1348,7 +1418,7 @@ impl ExceptionIndex {
             if *destination == id {
                 return;
             }
-            if raised
+            if site == ExceptionSite::Raise
                 && !self
                     .classes
                     .get(destination)
@@ -1386,8 +1456,8 @@ impl ExceptionIndex {
             for destination in class
                 .parent
                 .iter()
-                .chain(siblings.into_iter().flat_map(|s| s.ids.iter()))
-                .chain(children.into_iter().flat_map(|c| c.ids.iter()))
+                .chain(siblings.into_iter().flat_map(ChildClasses::iter))
+                .chain(children.into_iter().flat_map(ChildClasses::iter))
             {
                 if (budget.1)() {
                     break;
@@ -1396,13 +1466,7 @@ impl ExceptionIndex {
             }
         }
         if result.is_empty() {
-            SiteOutcome::Ineligible(if !has_related {
-                IneligibleReason::NoRelatedClass
-            } else if !compatible {
-                IneligibleReason::ConstructorPolicy
-            } else {
-                IneligibleReason::NoVisibleDestination
-            })
+            SiteOutcome::Ineligible(eligibility.empty_reason())
         } else {
             SiteOutcome::Candidates(result.into_iter().collect())
         }
@@ -1460,7 +1524,7 @@ struct Collector<'i, 'p, F, C> {
 impl<F: FnMut(TextRange, String) -> Result<(), AnalysisError>, C: Fn() -> bool>
     Collector<'_, '_, F, C>
 {
-    fn occurrence(&mut self, expression: &Expr, raised: bool) {
+    fn occurrence(&mut self, expression: &Expr, site: ExceptionSite) {
         if self.stopped {
             return;
         }
@@ -1481,7 +1545,7 @@ impl<F: FnMut(TextRange, String) -> Result<(), AnalysisError>, C: Fn() -> bool>
             self.path,
             &name,
             before,
-            raised,
+            site,
             &self.excluded,
             (self.limit, self.cancelled),
         );
@@ -1586,8 +1650,8 @@ impl<'a, F: FnMut(TextRange, String) -> Result<(), AnalysisError>, C: Fn() -> bo
             Stmt::Raise(r) => {
                 if let Some(expr) = &r.exc {
                     match expr.as_ref() {
-                        Expr::Call(c) => self.occurrence(&c.func, true),
-                        expr => self.occurrence(expr, true),
+                        Expr::Call(c) => self.occurrence(&c.func, ExceptionSite::Raise),
+                        expr => self.occurrence(expr, ExceptionSite::Raise),
                     }
                 }
             }
@@ -1597,7 +1661,7 @@ impl<'a, F: FnMut(TextRange, String) -> Result<(), AnalysisError>, C: Fn() -> bo
     fn visit_except_handler(&mut self, handler: &'a ruff_python_ast::ExceptHandler) {
         let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = handler;
         if let Some(type_) = &handler.type_ {
-            self.occurrence(type_, false);
+            self.occurrence(type_, ExceptionSite::Handler);
         }
         self.visit_body(&handler.body);
     }
