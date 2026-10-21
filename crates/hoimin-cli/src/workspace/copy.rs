@@ -802,11 +802,15 @@ impl<'a> SnapshotWriter<'a> {
     fn write_stream(
         &mut self,
         path: &Utf8Path,
-        mut source: fs::File,
+        source: fs::File,
     ) -> Result<super::ManifestEntry, WorkspaceError> {
         let metadata = source
             .metadata()
             .map_err(|error| WorkspaceError::io("read original metadata", path, error))?;
+        let mut source = crate::finite_file::SnapshotReader::new(source)
+            .map_err(|error| WorkspaceError::io("read original metadata", path, error))?;
+        #[cfg(test)]
+        super::root::parent_opened("snapshot-budget", path);
         self.write_reader(path, &mut source, metadata.len(), metadata.permissions())
     }
 
@@ -970,6 +974,8 @@ fn create_pending_disk_snapshot(
 
 #[cfg(test)]
 mod admission_tests;
+#[cfg(test)]
+mod finite_read_tests;
 #[cfg(test)]
 mod grant_tests;
 

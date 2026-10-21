@@ -62,6 +62,12 @@ jobs:
       - name: Install repository Rust toolchain
         run: rustup toolchain install
       - run: uv sync --frozen
+      # Run publication/initialization on both native platforms before the
+      # longer workspace suite, so its result can be inspected independently.
+      - name: Test completed review-store publication
+        env:
+          CARGO_BUILD_JOBS: '2'
+        run: cargo test --locked -p hoimin-cli --lib review::store_tests -- --test-threads=2
       # Native Job Object fixtures retain their six-second shared deadline.
       # Bound harness contention during interpreter startup on Windows runners.
       - name: Test Windows workspace with two harness threads

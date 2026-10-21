@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use camino::Utf8Path;
 use rusqlite::{Connection, OpenFlags, TransactionBehavior, params};
@@ -73,46 +73,18 @@ impl ReviewStore {
     }
 
     pub(super) fn open_write(path: &Path, project: &Utf8Path) -> Result<Self, ReviewError> {
-        let created = match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(path)
-        {
-            Ok(_) => true,
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => false,
+        match std::fs::symlink_metadata(path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                initialize_store(path, project)?;
+            }
             Err(error) => return Err(error.into()),
-        };
-        check_file(path)?;
-        let mut connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
-        configure(&connection)?;
-        if created {
-            connection.pragma_update(None, "page_size", 4096)?;
-            connection.pragma_update(None, "journal_mode", "DELETE")?;
-            connection.pragma_update(None, "synchronous", "FULL")?;
-            connection.pragma_update(None, "max_page_count", 4096)?;
-            let transaction =
-                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            for sql in [METADATA, CANDIDATES, EVENTS] {
-                transaction.execute(sql, [])?;
-            }
-            transaction.pragma_update(None, "application_id", APPLICATION_ID)?;
-            transaction.pragma_update(None, "user_version", 2)?;
-            transaction.execute(
-                "INSERT INTO metadata(project) VALUES (?1)",
-                [project.as_str()],
-            )?;
-            transaction.commit()?;
-        } else {
-            let deadline = Instant::now() + Duration::from_secs(1);
-            loop {
-                let version: i64 =
-                    connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-                if version != 0 || Instant::now() >= deadline {
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(10));
-            }
+            Ok(_) => (),
         }
+        check_file(path)?;
+        // Reopen the public pathname even when our private initializer won:
+        // future SQLite journals must belong to the published database.
+        let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        configure(&connection)?;
         validate_schema(&connection, project)?;
         connection.pragma_update(None, "synchronous", "FULL")?;
         connection.pragma_update(None, "max_page_count", 4096)?;
@@ -226,6 +198,62 @@ impl ReviewStore {
             }
         }
     }
+}
+
+// A private directory owns the database and every SQLite sidecar, including
+// rollback journals during error/unwind. Forced termination can leave this
+// directory behind; later initializers neither adopt nor remove those remnants.
+fn initialize_store(path: &Path, project: &Utf8Path) -> Result<(), ReviewError> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let directory = tempfile::Builder::new()
+        .prefix(".hoimin-review-")
+        .tempdir_in(parent)?;
+    // Close tempfile's handle before SQLite opens the file (also on Windows).
+    let temporary = tempfile::NamedTempFile::new_in(directory.path())?.into_temp_path();
+    #[cfg(test)]
+    super::store_tests::initialization_stage("created")?;
+    let mut connection =
+        Connection::open_with_flags(&temporary, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+    configure(&connection)?;
+    connection.pragma_update(None, "page_size", 4096)?;
+    connection.pragma_update(None, "journal_mode", "DELETE")?;
+    connection.pragma_update(None, "synchronous", "FULL")?;
+    connection.pragma_update(None, "max_page_count", 4096)?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    for sql in [METADATA, CANDIDATES, EVENTS] {
+        transaction.execute(sql, [])?;
+        #[cfg(test)]
+        super::store_tests::initialization_stage("transaction")?;
+    }
+    transaction.pragma_update(None, "application_id", APPLICATION_ID)?;
+    transaction.pragma_update(None, "user_version", 2)?;
+    transaction.execute(
+        "INSERT INTO metadata(project) VALUES (?1)",
+        [project.as_str()],
+    )?;
+    transaction.commit()?;
+    validate_schema(&connection, project)?;
+    connection.close().map_err(|(_, error)| error)?;
+    std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&temporary)?
+        .sync_all()?;
+    #[cfg(test)]
+    super::store_tests::initialization_stage("publish")?;
+    // tempfile uses a no-replace rename or a hard-link fallback on Unix and
+    // MoveFileExW without REPLACE_EXISTING on Windows. The fallback may leave
+    // an old link, which is still owned by our private directory.
+    match temporary.persist_noclobber(path) {
+        Ok(()) => (),
+        Err(error) if error.error.kind() == std::io::ErrorKind::AlreadyExists => (),
+        Err(error) => return Err(error.error.into()),
+    }
+    directory.close()?;
+    Ok(())
 }
 
 fn check_file(path: &Path) -> Result<(), ReviewError> {

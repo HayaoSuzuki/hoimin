@@ -20,6 +20,24 @@ not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
 
+## Original-manifest reads and review-store creation (#1070–#1071)
+
+Original workspace manifest and snapshot reads now reject growth or truncation
+relative to the opened descriptor's initial length, including preflight rechecks,
+original verification and duplicate includes. Existing copy/owned-disk limits
+remain. Stable files have no new cap; this does not provide atomic snapshots,
+same-length rewrite detection or arbitrary filesystem I/O time bounds.
+
+First review-store creation completes initialization privately before publishing
+without replacing an existing destination. Retrying an interrupted initialization
+can create the destination; existing empty, corrupt, foreign or unsupported stores
+remain rejected without repair. Forced termination may leave a private
+`.hoimin-review-*` directory beside the store. Later invocations do not adopt or
+delete such remnants. This is not a power-loss durability guarantee.
+
+No CLI option, dependency, schema or package-floor change is introduced. Plans
+and sessions do not need regeneration for these fixes.
+
 ## Source and fingerprint read boundaries (#1066)
 
 Source reads and hashes, including plan source validation and fingerprint inputs,

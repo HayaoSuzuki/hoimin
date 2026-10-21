@@ -5,6 +5,16 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1071-store
+  resource: ../../../crates/hoimin-cli/src/review/store.rs
+  revision: d45174b7d5b337e9792e2f9559c4c4adf81fa9ab
+  working_tree: modified
+  sha256: 7a23490e33c6a50bc1e0bfebac51e82004e188b923e7bfdf9e438d90c3ef908d
+- id: issue-1071-tests
+  resource: ../../../crates/hoimin-cli/src/review/store_tests.rs
+  revision: d45174b7d5b337e9792e2f9559c4c4adf81fa9ab
+  working_tree: modified
+  sha256: 00ae79648d9dcc7c0b19965d8d8c9ff7958605964d24904fadbc815fa44c7117
 - id: issue-1062-review
   resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
   revision: 8691e86562bf65ccf1624b784f845ed92bbda1cc
@@ -1005,3 +1015,34 @@ for static findings, observed regression sensitivity and execution limits.
 
 [^issue-1061-duplicate]: [Finite optional byte confirmation](../../../crates/hoimin-cli/src/progress/duplicate.rs).
 [^issue-1062-review]: [Single typed review decode](../../../crates/hoimin-cli/src/artifacts/run_report.rs).
+
+# Publish completed review stores (Issue #1071)
+
+First review-store creation initializes and validates schema 2 in an owned private
+directory beside the destination. SQLite is closed and the DB file synced before
+no-clobber publication. The store then opens the public pathname; a competing
+initializer opens and validates the winner there. Incomplete private state is
+never exposed as the public destination. Existing empty, corrupt, foreign and
+unsupported stores are still rejected, with no schema-zero repair or polling.
+Review history and expected-revision conflict semantics remain.[^issue-1071-store]
+
+The private directory owns temporary databases and journals through ordinary
+errors and unwinding. Forced termination can leave private remnants, which later
+initializers neither adopt nor delete; the public destination remains retryable
+if publication has not occurred. This rule does not prove all SQLite crash
+recovery or power-loss durability, and directory fsync is not added. Recheck
+no-clobber behavior, handle lifetimes and native platform tests when changing
+publication or the tempfile dependency.[^issue-1071-store]
+
+Tests inject errors/panics before publication, preserve a newly appeared foreign
+file, reopen a populated winner, and rendezvous two private initializers before
+publication. Existing invalid-store bytes remain unchanged. These deterministic
+error/unwind tests are distinct from forced-kill experiments; native execution
+scope is recorded separately.[^issue-1071-tests]
+
+[^issue-1071-store]: [Private review-store initialization and publication](../../../crates/hoimin-cli/src/review/store.rs).
+[^issue-1071-tests]: [Review-store failure and concurrent-initialization regressions](../../../crates/hoimin-cli/src/review/store_tests.rs).
+
+See [Issues #1070–#1071 evidence](../../maintenance/2026-10-22-issues-1070-1071/README.md)
+for current verification, rather than extending earlier formal-model results to
+filesystem publication.

@@ -2,6 +2,195 @@ use super::model::*;
 use super::store::ReviewStore;
 use super::tests::{draft, key};
 
+type InitializationHook = Box<dyn Fn(&str) -> Result<(), super::ReviewError>>;
+
+thread_local! {
+    static INITIALIZATION_HOOK: std::cell::RefCell<Option<InitializationHook>> =
+        std::cell::RefCell::new(None);
+}
+
+pub(super) fn initialization_stage(stage: &str) -> Result<(), super::ReviewError> {
+    INITIALIZATION_HOOK.with_borrow(|hook| match hook {
+        Some(hook) => hook(stage),
+        None => Ok(()),
+    })
+}
+
+struct InitializationHookGuard;
+
+impl Drop for InitializationHookGuard {
+    fn drop(&mut self) {
+        INITIALIZATION_HOOK.with_borrow_mut(|hook| *hook = None);
+    }
+}
+
+fn with_initialization_hook<T>(hook: InitializationHook, action: impl FnOnce() -> T) -> T {
+    INITIALIZATION_HOOK.with_borrow_mut(|slot| {
+        assert!(slot.is_none());
+        *slot = Some(hook);
+    });
+    let _guard = InitializationHookGuard;
+    action()
+}
+
+// Publishing the empty database first would leave a non-retryable public file.
+// Exercise SQLite and its real journal at each failure boundary, including unwind.
+fn failed_initialization_is_retryable(stage: &'static str, panic: bool) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reviews.sqlite3");
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        with_initialization_hook(
+            Box::new(move |current| {
+                if current == stage {
+                    assert!(!panic, "injected initialization interruption");
+                    return Err(super::ReviewError::Invalid(
+                        "injected initialization failure".into(),
+                    ));
+                }
+                Ok(())
+            }),
+            || ReviewStore::open_write(&path, &key().project),
+        )
+    }));
+    if panic {
+        assert!(outcome.is_err());
+    } else {
+        assert!(outcome.unwrap().is_err());
+    }
+    assert!(!path.exists(), "public store exists after {stage} failure");
+    assert_eq!(
+        std::fs::read_dir(dir.path()).unwrap().count(),
+        0,
+        "private database or journal leaked"
+    );
+    let key = key();
+    let mut store = ReviewStore::open_write(&path, &key.project).unwrap();
+    store.append(&key, SourceState::Fresh, 0, draft()).unwrap();
+    drop(store);
+    let mut reopened = ReviewStore::open_read(&path, &key.project)
+        .unwrap()
+        .unwrap();
+    assert_eq!(reopened.snapshot().unwrap()[0].1.history.len(), 1);
+}
+
+#[test]
+fn store_initialization_error_after_creation_is_retryable() {
+    failed_initialization_is_retryable("created", false);
+}
+
+#[test]
+fn store_initialization_error_during_transaction_is_retryable() {
+    failed_initialization_is_retryable("transaction", false);
+}
+
+#[test]
+fn store_initialization_error_before_publication_is_retryable() {
+    failed_initialization_is_retryable("publish", false);
+}
+
+#[test]
+fn store_initialization_panic_after_creation_is_retryable() {
+    failed_initialization_is_retryable("created", true);
+}
+
+#[test]
+fn store_initialization_panic_during_transaction_is_retryable() {
+    failed_initialization_is_retryable("transaction", true);
+}
+
+#[test]
+fn store_initialization_panic_before_publication_is_retryable() {
+    failed_initialization_is_retryable("publish", true);
+}
+
+#[test]
+fn store_initialization_never_exposes_uninitialized_public_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reviews.sqlite3");
+    let observed = path.clone();
+    let store = with_initialization_hook(
+        Box::new(move |_| {
+            assert!(!observed.exists());
+            assert!(ReviewStore::open_read(&observed, &key().project)?.is_none());
+            Ok(())
+        }),
+        || ReviewStore::open_write(&path, &key().project),
+    )
+    .unwrap();
+    drop(store);
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    assert!(
+        ReviewStore::open_read(&path, &key().project)
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[test]
+fn store_initialization_preserves_a_file_created_before_publication() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reviews.sqlite3");
+    let competitor = path.clone();
+    let result = with_initialization_hook(
+        Box::new(move |stage| {
+            if stage == "publish" {
+                use std::io::Write;
+                let mut file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&competitor)
+                    .unwrap();
+                file.write_all(b"another initializer's unrelated file")
+                    .unwrap();
+            }
+            Ok(())
+        }),
+        || ReviewStore::open_write(&path, &key().project),
+    );
+
+    assert!(result.is_err());
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        b"another initializer's unrelated file"
+    );
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+}
+
+#[test]
+fn store_initialization_opens_the_valid_publication_winner() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reviews.sqlite3");
+    let competitor = path.clone();
+    let mut store = with_initialization_hook(
+        Box::new(move |stage| {
+            if stage == "publish" {
+                let competitor = competitor.clone();
+                std::thread::spawn(move || {
+                    let key = key();
+                    let mut winner = ReviewStore::open_write(&competitor, &key.project).unwrap();
+                    winner.append(&key, SourceState::Fresh, 0, draft()).unwrap();
+                })
+                .join()
+                .unwrap();
+            }
+            Ok(())
+        }),
+        || ReviewStore::open_write(&path, &key().project),
+    )
+    .unwrap();
+
+    let key = key();
+    assert_eq!(store.snapshot().unwrap()[0].1.history.len(), 1);
+    assert!(store.append(&key, SourceState::Fresh, 0, draft()).is_err());
+    store.append(&key, SourceState::Fresh, 1, draft()).unwrap();
+    drop(store);
+    let mut reopened = ReviewStore::open_read(&path, &key.project)
+        .unwrap()
+        .unwrap();
+    assert_eq!(reopened.snapshot().unwrap()[0].1.history.len(), 2);
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+}
+
 #[test]
 fn store_rejects_changed_page_size_before_writing() {
     let dir = tempfile::tempdir().unwrap();
@@ -85,10 +274,12 @@ fn store_rejects_other_project() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("reviews.sqlite3");
     drop(ReviewStore::open_write(&path, &key().project).unwrap());
+    let bytes = std::fs::read(&path).unwrap();
 
     let result = ReviewStore::open_write(&path, camino::Utf8Path::new("/other"));
 
     assert!(result.is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
 }
 
 #[test]
@@ -96,15 +287,37 @@ fn store_concurrent_initialization_and_updates() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("reviews.sqlite3");
     let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let initialized = std::sync::Arc::new((std::sync::Mutex::new(0), std::sync::Condvar::new()));
 
     let workers: Vec<_> = (0..2)
         .map(|_| {
             let path = path.clone();
             let barrier = barrier.clone();
+            let initialized = initialized.clone();
             std::thread::spawn(move || {
                 barrier.wait();
                 let key = key();
-                let mut store = ReviewStore::open_write(&path, &key.project).unwrap();
+                let mut store = with_initialization_hook(
+                    Box::new(move |stage| {
+                        if stage == "publish" {
+                            let (count, ready) = &*initialized;
+                            let mut count = count.lock().unwrap();
+                            *count += 1;
+                            ready.notify_all();
+                            let (count, _) = ready
+                                .wait_timeout_while(
+                                    count,
+                                    std::time::Duration::from_secs(5),
+                                    |count| *count < 2,
+                                )
+                                .unwrap();
+                            assert_eq!(*count, 2, "both databases must initialize privately");
+                        }
+                        Ok(())
+                    }),
+                    || ReviewStore::open_write(&path, &key.project),
+                )
+                .unwrap();
                 store.append(&key, SourceState::Fresh, 0, draft()).is_ok()
             })
         })
@@ -146,10 +359,12 @@ fn store_rejects_foreign_schema() {
     let db = rusqlite::Connection::open(&path).unwrap();
     db.execute_batch("CREATE VIEW hostile AS SELECT 1").unwrap();
     drop(db);
+    let bytes = std::fs::read(&path).unwrap();
 
     let result = ReviewStore::open_write(&path, &key().project);
 
     assert!(result.is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
 }
 
 #[test]
@@ -249,10 +464,12 @@ fn store_rejects_unknown_version() {
     let db = rusqlite::Connection::open(&path).unwrap();
     db.pragma_update(None, "user_version", 99).unwrap();
     drop(db);
+    let bytes = std::fs::read(&path).unwrap();
 
     let result = ReviewStore::open_write(&path, &key().project);
 
     assert!(result.is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
 }
 
 #[test]
