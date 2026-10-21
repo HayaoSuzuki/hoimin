@@ -411,7 +411,7 @@ merge queues, pushes to `main`, and daily at 02:23 UTC. It can also be started
 manually. Python and Rust audits run independently, and a detected vulnerability
 or a failed advisory lookup fails the corresponding job.
 
-Python auditing uses uv 0.12.13 with the `audit-command` preview feature. It audits
+Python auditing uses uv 0.13.1 with the `audit-command` preview feature. It audits
 all extras and dependency groups, including development and fuzz dependencies,
 for Linux, macOS and Windows using separate target-platform selections on a
 Linux runner. These are dependency checks, not execution tests on those systems.

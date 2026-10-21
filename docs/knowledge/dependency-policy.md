@@ -7,34 +7,39 @@ catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
 sources:
 - id: update-rules
   resource: ../../renovate.json
-  revision: 0a545ea642275abc38ff501e6727dbedb691c3e7
-  working_tree: modified
-  sha256: 9c86694f5e095191faca959a0c73c67dfaec811306be6e5cdad79733d184288f
-- id: python-pins
-  resource: ../../pyproject.toml
-  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
+  revision: c2ccb34946bd581cac41b1ca924b7491ab0c16ac
   working_tree: clean
-  sha256: 152f20bea30856e826524da74b812b2b8a9dce105b4431881cbda83de801cec6
-- id: inventory-862
+  sha256: ebb3d6499a848ede376d0c5789fdba307fb33d8ffde2be65d1de4bf54982d2b0
+- id: python-requirements
+  resource: ../../pyproject.toml
+  revision: c2ccb34946bd581cac41b1ca924b7491ab0c16ac
+  working_tree: clean
+  sha256: 31b7a78adbd0739a4ffe81019faa4bc3c7cc72bd8311bfef0c713a38eb9dcd83
+- id: inventory
   resource: ../dependency-build-scripts.md
-  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
-  working_tree: modified
-  sha256: 293e9edad94b07cc782dcfeffea9286c2fbd7107f5631419a9bdaf63fa050aef
+  revision: c2ccb34946bd581cac41b1ca924b7491ab0c16ac
+  working_tree: clean
+  sha256: 354b84133c997f5fca425c30a916c69f94fe5cd3ac22a2b19475d55fb28a83e7
 - id: policy
   resource: ../dependency-policy.md
-  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
+  revision: c2ccb34946bd581cac41b1ca924b7491ab0c16ac
   working_tree: modified
-  sha256: 4188abee29e44b4c215e9104d757096c284ed3178da336913d3294a8bfbe7403
+  sha256: 623a49ceefb2daa5c3083367fae930c2fbcf6eba50a6abc2a75da1f5290dc913
 - id: config
   resource: ../../deny.toml
-  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
-  working_tree: modified
-  sha256: 1ade36661bac5b0062323ef9af713ab60792e13af26573560af9b7b703425900
+  revision: c2ccb34946bd581cac41b1ca924b7491ab0c16ac
+  working_tree: clean
+  sha256: 52e8fcb676d9b637ec20a61ebe498915727c31f64face81a6ce4d3090aad2463
 - id: workflow
   resource: ../../.github/workflows/dependency-audit.yml
-  revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
+  revision: c2ccb34946bd581cac41b1ca924b7491ab0c16ac
+  working_tree: clean
+  sha256: 09436fc28383b7188d7c5e7282880962d365ec52984234f75a9f5466d1d481b6
+- id: development
+  resource: ../development.md
+  revision: c2ccb34946bd581cac41b1ca924b7491ab0c16ac
   working_tree: modified
-  sha256: baf4dd85d13e34ebf2f217cfa00a3a67914a41b380da2c6d5f3e284185731d15
+  sha256: 56050a9b19490aed98e1784ba55ae11eb4b2ff8a4d0501b7e4634be6f56a1b5d
 ---
 
 # Check scope
@@ -46,7 +51,7 @@ This includes normal, build, development, and other-OS dependencies; it does not
 
 Reject unapproved licenses and unknown registry/git sources.
 Limit ELv2 to `hoimin-budget-math`, `hoimin-core`, `hoimin-python` and
-`hoimin-cli` versions `>=0.13.0, <0.14.0`,
+`hoimin-cli` versions `>=0.14.0, <0.15.0`,
 plus the `hoimin-fuzz` 0.0.0 harness. NCSA remains limited to libfuzzer-sys 0.4.13.
 Review local paths through repository diffs; passing automated checks does not establish safety or fulfillment of license obligations.[^policy][^config]
 
@@ -69,18 +74,35 @@ The optional `contracts` 0.6.11 proc macro has an exact-version MPL-2.0 exceptio
 
 CI Python updates are limited to the supported 3.14 minor series. Review the
 Renovate `actions/python-versions` rule alongside package support when changing
-that range. Hypothesis has matching exact dev/fuzz pins so lock regeneration
-cannot select a newer version than the dependency update under review.
-These constraints do not disable Action updates or replace dependency audits.
-[^update-rules][^python-pins]
+that range.[^update-rules][^python-requirements]
 
-The October 19 inventory records 213 main-workspace packages and 111 fuzz packages
+Python requirements such as `hypothesis>=6.170.1,<7` permit minor and patch
+updates within the current major version. The 0.x ranges for `returns`,
+`pypi-attestations`, `hypothesmith`, and `shellcheck-py` permit minor updates
+below 1.0. Hypothesis uses matching ranges in the `dev` and `fuzz` groups;
+`uv.lock` records the selected versions. See the [development guide](../development.md#dependency-vulnerability-audits)
+for updating all groups.[^python-requirements][^development]
+
+General Rust 0.x dependencies use explicit `<1` upper bounds to permit minor
+updates. Ruff remains in the vendored parser's 0.6 series to preserve AST type
+identity, and `creusot-std` remains pinned to the proof toolchain. The
+[dependency update procedure](../dependency-policy.md#dependency-updates) covers
+both Cargo workspaces and the source-review conditions for license exceptions.
+[^policy]
+
+Renovate's Cargo and Python managers use `update-lockfile` and enable lockfile
+maintenance. Committed lockfiles determine the versions used by frozen Python
+syncs and locked Cargo builds; range changes define the versions available to
+future updates. Dependency audits remain separate checks.[^update-rules][^policy][^development]
+
+The October 21 inventory records 223 main-workspace packages and 111 fuzz packages
 from locked, all-feature metadata. Its changed build-script list is review
-input, not a certification of dependency code.[^inventory-862]
+input, not a certification of dependency code.[^inventory]
 
 [^update-rules]: [Renovate rules](../../renovate.json).
-[^python-pins]: [Python package and development requirements](../../pyproject.toml).
-[^inventory-862]: [Build script inventory](../dependency-build-scripts.md).
+[^python-requirements]: [Python package and development requirements](../../pyproject.toml).
+[^inventory]: [Build script inventory](../dependency-build-scripts.md).
+[^development]: [Development guide](../development.md).
 
 
 # Verification-only dependencies
