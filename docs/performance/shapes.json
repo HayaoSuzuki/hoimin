@@ -1256,6 +1256,109 @@
         "--exact",
         "--nocapture"
       ]
+    },
+    {
+      "id": "qualified-import-binding-work",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 1040,
+      "scope": "Imports=1/32/256 and annotations=1/16/64 independently; <=one binding lookup per qualified request. Unqualified selection unchanged.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-python",
+        "--lib",
+        "rust::known_imports_tests::qualified_spelling_work_is_independent_of_unrelated_imports",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
+    },
+    {
+      "id": "private-exception-alias-work",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 1039,
+      "scope": "Aliases=1/32/128, classes=0/1/8/32 independently; at most one module alias scan per collector, zero without eligible classes.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-python",
+        "--lib",
+        "rust::exception_hierarchy::lookup_tests::private_alias_scan_is_independent_of_class_count",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
+    },
+    {
+      "id": "sparse-exception-related-work",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 1044,
+      "scope": "Siblings=8/64/256 and sites=1/8/32 independently; two visible identities bound visits per site. Separate exhaustive outcome oracle covers dense/sparse eligibility.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-python",
+        "--lib",
+        "rust::exception_hierarchy::lookup_tests::related_lookup_work_is_bounded_by_visible_classes",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
+    },
+    {
+      "id": "normal-verify-retained-payload",
+      "status": "active",
+      "metric": "retained_heap",
+      "related_issue": 1041,
+      "scope": "Public checked preparation: payload=4/128KiB and selected=1/5/16 independently, 24 saved candidates; requested-live allocation delta <64KiB after runtime warmup. Whole validation still parses source/manifest; this is not peak heap or RSS.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--test",
+        "manifest_buffer_lifetime",
+        "normal_prepare_retained_heap_is_independent_of_preview_payload",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
+    },
+    {
+      "id": "worker-sort-component-work",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 1042,
+      "scope": "Depth=1/8/32 and files=1/32/128 independently; actual WorkerRoot entries sorted with zero comparator component scans. Depth/native-path order checked separately.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
+        "workspace::root::tests::worker_entry_sort_does_not_rescan_path_components",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
+    },
+    {
+      "id": "aligned-output-ring-seeks",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 1045,
+      "scope": "Observed real Tokio file: 16 aligned 8-byte writes produce one seek; exact-boundary, wrap, oversized, empty and zero-capacity cases check bytes and seeks; separate required-seek/deferred-write fault tests.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
+        "process::output::io_tests::aligned_ring_writes_avoid_redundant_seeks",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
     }
   ],
   "lean": {

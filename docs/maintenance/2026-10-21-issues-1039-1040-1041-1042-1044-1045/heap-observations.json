@@ -1,0 +1,44 @@
+{
+  "metric": "requested_live_allocation_delta_after_public_prepare",
+  "runtime_warmed": true,
+  "includes": "checked execution configuration, selection IDs and protected paths",
+  "excludes": "source/manifest temporary peak and process RSS",
+  "limit_bytes": 65536,
+  "baseline_red": {
+    "payload_bytes": 4096,
+    "selected": 16,
+    "retained_requested_bytes": 139286
+  },
+  "candidate": [
+    {
+      "payload_bytes": 4096,
+      "selected": 1,
+      "retained_requested_bytes": 1188
+    },
+    {
+      "payload_bytes": 4096,
+      "selected": 5,
+      "retained_requested_bytes": 1820
+    },
+    {
+      "payload_bytes": 4096,
+      "selected": 16,
+      "retained_requested_bytes": 4214
+    },
+    {
+      "payload_bytes": 131072,
+      "selected": 1,
+      "retained_requested_bytes": 1188
+    },
+    {
+      "payload_bytes": 131072,
+      "selected": 5,
+      "retained_requested_bytes": 1820
+    },
+    {
+      "payload_bytes": 131072,
+      "selected": 16,
+      "retained_requested_bytes": 4214
+    }
+  ]
+}
