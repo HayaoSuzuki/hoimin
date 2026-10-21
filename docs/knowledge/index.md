@@ -49,7 +49,7 @@ commands rather than copying commands from a dated design or execution report:
 - [Release artifact SBOMs](release-sbom.md) - Cargo dependency graph scope, artifact mapping and pre-publication validation.
 - [GitHub Release provenance](release-provenance.md) - Attested/published file identity, source identity, validation and publication gates.
 
-- [Rust dependency licenses and sources](dependency-policy.md) - Both workspaces, narrow exceptions and build-script diff review.
+- [Dependency licenses, sources and updates](dependency-policy.md) - Python/Rust version ranges, locked graphs, scoped license exceptions and build-script review.
 
 - [CI selection and required checks](ci-validation.md) - Conservative diff classification, aggregation, strict workflow checks and publication permissions.
 - [CLI reference generation and synchronization](cli-reference.md) - Generation from Rust definitions, handwritten guidance and synchronization checks.

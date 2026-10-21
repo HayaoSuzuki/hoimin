@@ -60,8 +60,8 @@ dev = [
     {include-group = "docs"},
     {include-group = "internal-tooling"},
     {include-group = "provenance"},
-    "hypothesis==6.170.1",
-    "jsonschema==4.26.0",
+    "hypothesis>=6.170.1,<7",
+    "jsonschema>=4.26.0,<5",
     "maturin>=1.11,<2",
     "mypy>=2.3.0",
     "packaging>=26.0",
@@ -75,24 +75,24 @@ dev = [
 ]
 provenance = [
     {include-group = "internal-tooling"},
-    "pypi-attestations==0.0.30",
+    "pypi-attestations>=0.0.30,<1",
 ]
 internal-tooling = [
-    "returns==0.29.0",
-    "deal==4.24.6",
+    "returns>=0.29.0,<1",
+    "deal>=4.24.6,<5",
 ]
 fuzz = [
-    "hypothesis==6.170.1",
-    "hypothesmith==0.3.3",
+    "hypothesis>=6.170.1,<7",
+    "hypothesmith>=0.3.3,<1",
 ]
 workflow = [
-    "actionlint-py==1.7.12.25",
-    "shellcheck-py==0.11.0.1",
-    "zizmor==1.30.1",
+    "actionlint-py>=1.7.12.25,<2",
+    "shellcheck-py>=0.11.0.1,<1",
+    "zizmor>=1.30.1,<2",
 ]
 docs = [
-    "mkdocs==1.6.1",
-    "mkdocs-material==9.7.7",
+    "mkdocs>=1.6.1,<2",
+    "mkdocs-material>=9.7.7,<10",
     "pytest>=9,<10",
 ]
 

@@ -27,4 +27,5 @@ name = "serialization"
 required-features = ["serde"]
 
 [target.'cfg(creusot)'.dependencies]
+# Match the verifier pinned in formal/creusot/toolchain.json.
 creusot-std = "=0.14.0"

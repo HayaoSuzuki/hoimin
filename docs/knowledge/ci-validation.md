@@ -7,9 +7,9 @@ catalog_revision: 00893465e0328204453e5008dc3884035b85c7bd
 sources:
 - id: guide
   resource: ../ci.md
-  revision: 00893465e0328204453e5008dc3884035b85c7bd
-  working_tree: modified
-  sha256: 68c2906e16a37495208b754a8a6798dcfc2c5b143aeb96a541704fac6206c4c5
+  revision: c2ccb34946bd581cac41b1ca924b7491ab0c16ac
+  working_tree: clean
+  sha256: 5263f51a8ee2c1c6dc2d66939a10a4a1ea070ecd78022766df1ababc8ff74b92
 - id: planner
   resource: ../../tools/ci_selection.py
   revision: 1e60e54813dad14f124635496ed773b299bb4b90
@@ -51,7 +51,9 @@ See [artifact execution checks](artifact-smoke.md) for details and limitations.[
 
 After successful GitHub Release publication, an optional enablement variable starts a separate `workflow_dispatch` run for PyPI publication. Production publication requires successful TestPyPI retrieval and verification. Leave the variable unset before registration; see [PyPI wheel publication](pypi-publishing.md).[^release]
 
-All workflows are checked with pinned actionlint, ShellCheck, and zizmor.
+All workflows are checked with actionlint, ShellCheck, and zizmor at the exact
+versions recorded in `uv.lock`. Their manifest ranges permit minor and patch
+updates; see [dependency update constraints](dependency-policy.md#development-update-constraints).
 Do not apply severity cutoffs or blanket ShellCheck exclusions; document necessary exceptions inline with reasons.
 The operational guide is canonical for local commands, exceptions, measurements, and tool limitations.[^guide]
 

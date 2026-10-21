@@ -50,7 +50,10 @@ uv run --frozen --no-sync pytest tests/test_workflow_lint.py tests/test_ci_selec
 ```
 
 The checker enumerates every `.yml` and `.yaml` file directly under `.github/workflows/`.
-actionlint 1.7.12, ShellCheck 0.11.0, and zizmor 1.30.1 are pinned in the dependency group and lockfile and updated together by Renovate.
+The workflow dependency group permits minor and patch updates of actionlint,
+ShellCheck, and zizmor within their current major versions, including the
+ShellCheck 0.x series. Exact versions are recorded in `uv.lock` and updated
+together by Renovate.
 zizmor runs offline in auditor mode at every severity, including informational findings; ShellCheck rules are not excluded wholesale.
 These checks need no secrets, write permissions, or SARIF uploads, and fork PRs run the same checks.
 
