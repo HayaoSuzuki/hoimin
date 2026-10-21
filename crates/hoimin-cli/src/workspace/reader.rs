@@ -37,16 +37,27 @@ impl PortableFileReader {
         self.classify_read(
             path,
             self.root.with_read_file(path, |file| {
+                let exceeds_limit = || {
+                    WorkspaceError::io(
+                        "read hierarchy input",
+                        path,
+                        std::io::Error::other("exception hierarchy source byte limit exceeded"),
+                    )
+                };
+                // Inspect the already-opened handle so oversized inputs are rejected
+                // before allocation without introducing a path replacement race.
+                let metadata = file
+                    .metadata()
+                    .map_err(|e| WorkspaceError::io("inspect bounded input", path, e))?;
+                if metadata.len() > limit as u64 {
+                    return Err(exceeds_limit());
+                }
                 let mut bytes = Vec::new();
                 file.take(limit as u64 + 1)
                     .read_to_end(&mut bytes)
                     .map_err(|e| WorkspaceError::io("read hierarchy input", path, e))?;
                 if bytes.len() > limit {
-                    return Err(WorkspaceError::io(
-                        "read hierarchy input",
-                        path,
-                        std::io::Error::other("exception hierarchy source byte limit exceeded"),
-                    ));
+                    return Err(exceeds_limit());
                 }
                 Ok(bytes)
             }),

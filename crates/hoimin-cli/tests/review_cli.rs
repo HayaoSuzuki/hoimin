@@ -460,7 +460,7 @@ async fn review_accepts_a_symlink_to_a_regular_plan() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn review_regular_source_symlink_with_store_remains_current() {
+async fn review_source_symlink_is_unavailable_and_preserves_saved_history() {
     // Arrange
     let (dir, args) = fixture().await;
     assert_eq!(run(record_args(&args)).await.0, 0);
@@ -469,14 +469,26 @@ async fn review_regular_source_symlink_with_store_remains_current() {
     std::fs::rename(&source, &target).unwrap();
     std::os::unix::fs::symlink(&target, &source).unwrap();
 
-    // Act
+    // Act: the symlink cannot authorize a new assessment, even at the right revision.
+    let database = dir.path().join("reviews.sqlite3");
+    let before = std::fs::read(&database).unwrap();
+    let mut record = record_args(&args);
+    let revision = record
+        .iter()
+        .position(|arg| arg == "--expected-revision")
+        .unwrap()
+        + 1;
+    record[revision] = "1".into();
+    assert_eq!(run(record).await.0, 2);
+    assert_eq!(std::fs::read(&database).unwrap(), before);
     let (code, out, err) = run(args).await;
 
     // Assert
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
     let list: Value = serde_json::from_slice(&out).unwrap();
-    assert_eq!(list["candidates"][0]["applicability"], "current");
-    assert_eq!(list["candidates"][0]["review"]["revision"], 1);
+    assert_eq!(list["candidates"][0]["applicability"], "source_unavailable");
+    assert_eq!(list["candidates"][0]["review"], Value::Null);
+    assert_eq!(list["candidates"][0]["history"][0]["revision"], 1);
 }
 
 #[cfg(unix)]

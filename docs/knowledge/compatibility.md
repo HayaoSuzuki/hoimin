@@ -5,6 +5,11 @@ description: Current formats, usage changes and release versioning.
 status: draft
 catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
 sources:
+- id: issues-1050-compatibility
+  resource: ../compatibility.md
+  revision: 5265aa2cc9f36b6b98ded50c6823039d8999b665
+  working_tree: modified
+  sha256: a9e282b6c3df23bc35fe33b1159c9262056f81ef06b8501ca6e39cbe23c0abf2
 - id: issue-1012-compatibility
   resource: ../compatibility.md
   revision: 9d457e322ff1ed91e69e448c1cd40e4a8949baca
@@ -250,3 +255,22 @@ for implementation evidence.[^issue-939-compatibility]
 [^issue-1028-compatibility]: [Current-format policy and progress output](../compatibility.md).
 
 [^issue-1012-compatibility]: [Resolved individual timeout and schema 10](../compatibility.md#resolved-individual-mutant-timeout-report-schema-10).
+
+# Review source policy and internal ownership changes (Issues #1050–#1053)
+
+Review sources now use the same root-relative no-follow reader as plan/verify.
+Both internal and external symlink/reparse-point components yield
+`source_unavailable`; lexical invalid candidate paths remain errors. This
+replaces acceptance of internal links and the special Invalid error for an
+external resolved link. Nonregular, oversized, missing and unreadable sources
+remain unavailable. Symlinks to regular input artifacts keep their independent
+policy.[^issues-1050-compatibility]
+
+Persistent review histories and revisions remain. Store validation, worker ACK
+ownership, cleanup safety and shutdown deadlines retain their contracts while
+internal retention and state ownership change. No new option, configuration file,
+compatibility adapter, migration, format version or package-floor increase is
+introduced. Read the [change notice](../compatibility.md#review-source-boundary-and-internal-ownership-cleanup-issues-10501053)
+when changing source handling.[^issues-1050-compatibility]
+
+[^issues-1050-compatibility]: [Current source-boundary notice](../compatibility.md).

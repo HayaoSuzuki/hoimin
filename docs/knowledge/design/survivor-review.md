@@ -5,6 +5,36 @@ description: 候補の同定、評価履歴、stale判定、実行結果へ影�
 status: draft
 catalog_revision: d46f13a43667323b8d0374d6c5409942f4c3c822
 sources:
+- id: issues-1050-input
+  resource: ../../../crates/hoimin-cli/src/review/input.rs
+  revision: 5265aa2cc9f36b6b98ded50c6823039d8999b665
+  working_tree: modified
+  sha256: ffe19e39affe2ebe4ca68a6cadfe53c8a81503ead04312cb8e2784234c1d20c7
+- id: issues-1050-reader
+  resource: ../../../crates/hoimin-cli/src/workspace/reader.rs
+  revision: 5265aa2cc9f36b6b98ded50c6823039d8999b665
+  working_tree: modified
+  sha256: 9b4abde6b56fe707e756b44f50fc41a1efdf63a5500cf5eabbfb7ad50530b830
+- id: issues-1050-boundary-tests
+  resource: ../../../crates/hoimin-cli/src/review/input_boundary_tests.rs
+  revision: 5265aa2cc9f36b6b98ded50c6823039d8999b665
+  working_tree: untracked
+  sha256: 005dbdf4fba6717c4cdd0d92978fe804dfeb9f1c7b4b5058bcec4ca4e0e78eae
+- id: issues-1050-store
+  resource: ../../../crates/hoimin-cli/src/review/store.rs
+  revision: 5265aa2cc9f36b6b98ded50c6823039d8999b665
+  working_tree: modified
+  sha256: b3a26a2374d42c31de679daaa3790ba5d3eb22fed5b0e378dc79e7d0ba61203e
+- id: issues-1050-model
+  resource: ../../../crates/hoimin-cli/src/review/model.rs
+  revision: 5265aa2cc9f36b6b98ded50c6823039d8999b665
+  working_tree: modified
+  sha256: abdbe23ec9834dc3756803e3261385fe966c38598605f1b5639e6bd456e82bd0
+- id: issues-1050-store-tests
+  resource: ../../../crates/hoimin-cli/src/review/store_scaling_tests.rs
+  revision: 5265aa2cc9f36b6b98ded50c6823039d8999b665
+  working_tree: untracked
+  sha256: 2252d9252299a6c66afae208f604bf30f250827e68382a12bd25d70f4efd2160
 - id: issue-902-model
   resource: ../../../crates/hoimin-cli/src/review/model.rs
   revision: 51c72b5ec1255959e2d5e072cd9e85d8497ed1c8
@@ -213,3 +243,42 @@ thresholds or a general performance guarantee.[^issue-976-reader][^issue-976-evi
 [^issue-975-evidence]: [FIFO child deadlines/reaping and preserved policies](../../maintenance/2026-10-18-issues-971-979/task-2-report.md).
 [^issue-976-reader]: [Read-only plan reader](../../../crates/hoimin-cli/src/plan.rs).
 [^issue-976-evidence]: [Source-work counters and aligned CLI comparison](../../maintenance/2026-10-18-issues-971-979/task-3-report.md).
+
+## Capability-relative sources and selected history retention (Issues #1050 and #1053)
+
+Review source observations now share `PortableFileReader` with plan/verify.
+The reader pins a root handle and uses bounded no-follow regular-file reads.
+Internal and external symlink/reparse-point components are unavailable, as are
+missing, unreadable, oversized and nonregular sources; lexical invalid paths
+remain input errors. This supersedes review's older canonicalize/containment
+check followed by a path-based reopen. Artifact symlinks have their separate,
+unchanged regular-file input policy.[^issues-1050-input][^issues-1050-reader]
+
+Opened-handle metadata rejects an initially oversized source before allocation;
+limit+1 reading still detects growth. One read and validation context serves all
+candidates for a path in original output order. Record takes a new freshness
+observation. Deterministic final-entry/parent swaps and internal links are
+covered alongside limits, FIFO and grouped observations. These tests establish
+those boundaries, not a deadline for every filesystem operation.[^issues-1050-boundary-tests]
+
+Append and selected show validate the full store in one ordered joined scan
+and an event count, retaining only requested history. Unrelated malformed keys
+or drafts, empty/noncontiguous histories and orphan events still reject the
+operation. Full snapshot uses the same scan without a selection. Owned append
+shares rejection rules with the immutable model operation but moves its already
+loaded history, avoiding a second copy. Revision conflicts, rollback, event/DB
+limits and schema 2 remain.[^issues-1050-store][^issues-1050-model]
+
+The bounded regression measures data SELECTs, decoded keys/drafts and additional
+live Rust heap. It excludes schema/PRAGMA queries, SQLite's C heap and process
+RSS. All stored history is still validated; the change does not make append
+constant-time. The [implementation record](../../maintenance/2026-10-21-issues-1050-1051-1052-1053/README.md)
+separates before/after observations and platform limits. Recheck path policy,
+corruption detection and retention when changing these readers.[^issues-1050-store-tests]
+
+[^issues-1050-input]: [Review source observations](../../../crates/hoimin-cli/src/review/input.rs).
+[^issues-1050-reader]: [Shared bounded root-relative reader](../../../crates/hoimin-cli/src/workspace/reader.rs).
+[^issues-1050-boundary-tests]: [Source boundary regressions](../../../crates/hoimin-cli/src/review/input_boundary_tests.rs).
+[^issues-1050-store]: [Global validation and selected retention](../../../crates/hoimin-cli/src/review/store.rs).
+[^issues-1050-model]: [Shared revision rules and owned append](../../../crates/hoimin-cli/src/review/model.rs).
+[^issues-1050-store-tests]: [Query, heap and corruption regressions](../../../crates/hoimin-cli/src/review/store_scaling_tests.rs).

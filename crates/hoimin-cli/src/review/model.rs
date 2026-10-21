@@ -115,6 +115,32 @@ pub fn apply_update(
     expected_revision: u64,
     draft: ReviewDraft,
 ) -> Result<ReviewState, UpdateRejection> {
+    let revision = next_revision(state, applicability, expected_revision)?;
+    #[cfg(test)]
+    super::store::STORE_WORK.with_borrow_mut(|work| work.cloned_events += state.history.len());
+    let mut result = state.clone();
+    result.history.push(ReviewEvent { revision, draft });
+    Ok(result)
+}
+
+// The store owns its freshly loaded target history, so it can append without
+// cloning every previously saved annotation. Both APIs share rejection rules.
+pub(super) fn apply_update_owned(
+    mut state: ReviewState,
+    applicability: Applicability,
+    expected_revision: u64,
+    draft: ReviewDraft,
+) -> Result<ReviewState, UpdateRejection> {
+    let revision = next_revision(&state, applicability, expected_revision)?;
+    state.history.push(ReviewEvent { revision, draft });
+    Ok(state)
+}
+
+fn next_revision(
+    state: &ReviewState,
+    applicability: Applicability,
+    expected_revision: u64,
+) -> Result<u64, UpdateRejection> {
     if applicability != Applicability::Current {
         return Err(UpdateRejection::NotCurrent);
     }
@@ -122,12 +148,9 @@ pub fn apply_update(
     if revision != expected_revision {
         return Err(UpdateRejection::RevisionConflict);
     }
-    let revision = revision
+    revision
         .checked_add(1)
-        .ok_or(UpdateRejection::RevisionOverflow)?;
-    let mut result = state.clone();
-    result.history.push(ReviewEvent { revision, draft });
-    Ok(result)
+        .ok_or(UpdateRejection::RevisionOverflow)
 }
 
 /// Validates bounded, inert human annotations.

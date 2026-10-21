@@ -703,7 +703,7 @@ impl RunState {
     }
 
     fn apply_worker_effects(&mut self, worker: u32) -> Result<Vec<RunEffect>, MachineError> {
-        let candidate = self.candidate(worker)?;
+        let candidate = self.take_candidate(worker)?;
         *self.worker_mut(worker)? = WorkerState::Applying(candidate.clone());
         let id = self.allocate_id()?;
         Ok(vec![RunEffect::ApplyMutation(ApplyMutation {
@@ -715,7 +715,7 @@ impl RunState {
 
     fn candidate_effects(&mut self, worker: u32) -> Result<Vec<RunEffect>, MachineError> {
         if let Some(run_id) = self.session_run_id.clone() {
-            let candidate = self.candidate(worker)?;
+            let candidate = self.take_candidate(worker)?;
             let mutant_id = candidate.id.clone();
             *self.worker_mut(worker)? = WorkerState::Lookup(candidate);
             let id = self.allocate_id()?;
@@ -908,25 +908,47 @@ impl RunState {
         Ok(())
     }
 
-    fn candidate(&self, worker: u32) -> Result<MutationCandidate, MachineError> {
+    fn candidate(&self, worker: u32) -> Result<&MutationCandidate, MachineError> {
         self.workers
             .get(&worker)
             .and_then(WorkerState::candidate)
-            .cloned()
             .ok_or(MachineError::WrongPhase { phase: self.phase })
     }
 
+    /// Move a candidate between phases; output and persistence effects keep their
+    /// independent copies until their acknowledgements have been received.
+    fn take_candidate(&mut self, worker: u32) -> Result<MutationCandidate, MachineError> {
+        // Validate before taking so an invalid transition preserves its worker.
+        self.candidate(worker)?;
+        let candidate = match std::mem::take(self.worker_mut(worker)?) {
+            WorkerState::Ready(candidate)
+            | WorkerState::Lookup(candidate)
+            | WorkerState::Applying(candidate)
+            | WorkerState::Starting(candidate)
+            | WorkerState::Running(candidate)
+            | WorkerState::SyntheticStarting(candidate, _)
+            | WorkerState::SyntheticFinishing(candidate, _) => candidate,
+            WorkerState::Persisting(result) | WorkerState::Finishing(result) => result.candidate,
+            WorkerState::Idle | WorkerState::Reading(_) | WorkerState::Resetting => {
+                unreachable!("candidate ownership was validated before taking the worker")
+            }
+        };
+        Ok(candidate)
+    }
+
     fn started_output(&mut self, worker: u32) -> Result<Vec<RunEffect>, MachineError> {
-        let candidate = self.candidate(worker)?;
-        *self.worker_mut(worker)? = WorkerState::Starting(candidate.clone());
+        let candidate = self.take_candidate(worker)?;
+        let mutant_id = candidate.id.clone();
+        let candidate_sequence = candidate.sequence;
+        *self.worker_mut(worker)? = WorkerState::Starting(candidate);
         let id = self.allocate_id()?;
         let output = EmitOutput {
             id,
             event: OutputEvent::MutantStarted(MutantStarted::new(
                 self.run_id.clone(),
                 self.output_sequence(),
-                candidate.id,
-                candidate.sequence,
+                mutant_id,
+                candidate_sequence,
             )),
         };
         Ok(vec![self.register_output(
@@ -940,16 +962,18 @@ impl RunState {
         worker: u32,
         outcome: SyntheticOutcome,
     ) -> Result<Vec<RunEffect>, MachineError> {
-        let candidate = self.candidate(worker)?;
-        *self.worker_mut(worker)? = WorkerState::SyntheticStarting(candidate.clone(), outcome);
+        let candidate = self.take_candidate(worker)?;
+        let mutant_id = candidate.id.clone();
+        let candidate_sequence = candidate.sequence;
+        *self.worker_mut(worker)? = WorkerState::SyntheticStarting(candidate, outcome);
         let id = self.allocate_id()?;
         let output = EmitOutput {
             id,
             event: OutputEvent::MutantStarted(MutantStarted::new(
                 self.run_id.clone(),
                 self.output_sequence(),
-                candidate.id,
-                candidate.sequence,
+                mutant_id,
+                candidate_sequence,
             )),
         };
         Ok(vec![self.register_output(
@@ -963,8 +987,9 @@ impl RunState {
             .map_err(|_| MachineError::ProcessCountOverflow)
     }
     fn mutant_process(&mut self, worker: u32) -> Result<Vec<RunEffect>, MachineError> {
-        let candidate = self.candidate(worker)?;
-        *self.worker_mut(worker)? = WorkerState::Running(candidate.clone());
+        let candidate = self.take_candidate(worker)?;
+        let mutant_id = candidate.id.clone();
+        *self.worker_mut(worker)? = WorkerState::Running(candidate);
         let id = self.allocate_id()?;
         let timeout = *self.resolved_mutant_timeout.get_or_insert_with(|| {
             match self.config.limits.mutant_timeout {
@@ -977,7 +1002,7 @@ impl RunState {
             context: crate::MutantContext {
                 worker,
                 run_id: self.run_id.clone(),
-                mutant_id: candidate.id,
+                mutant_id,
             },
             argv: self.config.test_argv.clone(),
             cwd: self.config.selection.root.clone(),
@@ -1020,7 +1045,7 @@ impl RunState {
         worker: u32,
         outcome: SyntheticOutcome,
     ) -> Result<Vec<RunEffect>, MachineError> {
-        let candidate = self.candidate(worker)?;
+        let candidate = self.take_candidate(worker)?;
         *self.worker_mut(worker)? = WorkerState::SyntheticFinishing(candidate.clone(), outcome);
         let id = self.allocate_id()?;
         let output = EmitOutput {
@@ -1610,12 +1635,12 @@ pub fn transition(
             }
             let worker = value.worker;
             if let Some(result) = value.result.as_ref() {
-                let expected = state.candidate(worker)?.id;
-                if result.mutant_id != expected {
+                let expected = &state.candidate(worker)?.id;
+                if result.mutant_id != *expected {
                     return Err(MachineError::SessionIdentityMismatch {
                         worker,
                         field: "mutant_id",
-                        expected,
+                        expected: expected.clone(),
                         received: result.mutant_id.clone(),
                     });
                 }
@@ -1643,7 +1668,7 @@ pub fn transition(
             let worker = value
                 .worker
                 .ok_or(MachineError::WrongPhase { phase: state.phase })?;
-            let candidate = state.candidate(worker)?;
+            let candidate = state.take_candidate(worker)?;
             let diagnostics = match value.output_state {
                 ProcessOutputState::Complete => Vec::new(),
                 ProcessOutputState::CloseTimedOut => vec![SessionDiagnostic {

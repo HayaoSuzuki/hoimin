@@ -94,11 +94,13 @@ pub fn run(args: &ReviewArgs, stdout: &mut dyn std::io::Write) -> Result<i32, Re
         let revision = state.history.last().map_or(0, |event| event.revision);
         (vec![(key, state)], Some(revision))
     } else {
-        let snapshot = store::ReviewStore::open_read(&common.store, &plan.project)?
-            .as_mut()
-            .map(store::ReviewStore::snapshot)
-            .transpose()?
-            .unwrap_or_default();
+        let snapshot = match store::ReviewStore::open_read(&common.store, &plan.project)? {
+            Some(mut store) => match candidate_id {
+                Some(id) => store.candidate(id)?.into_iter().collect(),
+                None => store.snapshot()?,
+            },
+            None => Vec::new(),
+        };
         (snapshot, None)
     };
     saved_output(saved_revision, || {
@@ -220,6 +222,8 @@ fn execution(
     Ok(ReviewExecution::Result(mutant.outcome.status()))
 }
 
+#[cfg(test)]
+mod store_scaling_tests;
 #[cfg(test)]
 mod store_tests;
 #[cfg(test)]
