@@ -1,0 +1,61 @@
+{
+  "base": "9b4e76693e1b1b20cd9b70444ec661007fc80227",
+  "platform": "macOS arm64",
+  "ci_run": 39576770437,
+  "failed_jobs": [
+    119144930328,
+    119144930596,
+    119144930346
+  ],
+  "shared_failure": "progress_does_not_apply_review_size_limit exceeded the shared five-second artifact-input watchdog",
+  "manual_reproduction": {
+    "input_bytes": 68162282,
+    "elapsed_seconds": 4.846,
+    "exit_code": 0,
+    "stdout_bytes": 608,
+    "stderr_bytes": 230
+  },
+  "test_budgets_seconds": {
+    "small_and_fifo": 5,
+    "two_large_regular_file_cases": 30
+  },
+  "targeted_tests": {
+    "default": {
+      "passed": 25,
+      "failed": 0,
+      "ignored": 0,
+      "suite_seconds": 4.72
+    },
+    "contracts": {
+      "passed": 25,
+      "failed": 0,
+      "ignored": 0,
+      "suite_seconds": 4.84
+    },
+    "nightly_shuffle_seed_20261021": {
+      "passed": 25,
+      "failed": 0,
+      "ignored": 0,
+      "suite_seconds": 5.06
+    },
+    "nightly_shuffle_failed_ci_seed_1792575186426381072": {
+      "passed": 25,
+      "failed": 0,
+      "ignored": 0,
+      "suite_seconds": 4.89
+    }
+  },
+  "workspace_clippy_all_targets_all_features": "passed",
+  "independent_review": "No Critical/Important findings; finite large-input work separated from FIFO-open watchdog; behavioral assertions and owned reap preserved.",
+  "production_changes": false,
+  "saved_format_changes": false,
+  "new_settings": false,
+  "resources": {
+    "cargo_jobs": 2,
+    "cargo_processes": "sequential",
+    "shared_target": true,
+    "new_release_build": false,
+    "large_benchmark": false
+  },
+  "scope": "Focused CI regression tests only; original full-workspace and heap results remain in validation.json. No Linux execution claimed by these local results."
+}
