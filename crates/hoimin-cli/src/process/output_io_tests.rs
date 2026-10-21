@@ -137,3 +137,36 @@ async fn deferred_file_write_error_still_drains_to_eof() {
     );
     assert_eq!(std::fs::read(&path).unwrap(), b"unchanged");
 }
+
+async fn pending_error(file: &mut File, baseline: bool) -> io::Error {
+    let mut position = 0;
+    for _ in 0..32 {
+        let result = if baseline {
+            async {
+                file.seek(SeekFrom::Start(position)).await?;
+                file.write_all(b"payload!").await?;
+                Ok::<_, io::Error>(position + 8)
+            }
+            .await
+        } else {
+            write_ring(file, 4096, position, b"payload!").await
+        };
+        match result {
+            Ok(next) => position = next,
+            Err(error) => return error,
+        }
+    }
+    panic!("read-only writes must fail");
+}
+
+#[tokio::test]
+async fn aligned_pending_write_error_matches_baseline_diagnostic() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("readonly");
+    std::fs::write(&path, b"unchanged").unwrap();
+    let baseline = pending_error(&mut File::open(&path).await.unwrap(), true).await;
+    let actual = pending_error(&mut File::open(&path).await.unwrap(), false).await;
+    assert_eq!(actual.kind(), baseline.kind());
+    assert_eq!(actual.raw_os_error(), baseline.raw_os_error());
+    assert_eq!(actual.to_string(), baseline.to_string());
+}

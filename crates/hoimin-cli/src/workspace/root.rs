@@ -128,9 +128,17 @@ pub(crate) enum WorkerEntryKind {
     LinkOrReparse,
 }
 
+#[cfg(not(test))]
+type WorkerNativePath = PathBuf;
+#[cfg(test)]
+#[path = "root_path_observation.rs"]
+mod path_observation;
+#[cfg(test)]
+use path_observation::WorkerNativePath;
+
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct WorkerEntry {
-    pub(crate) native_path: PathBuf,
+    pub(crate) native_path: WorkerNativePath,
     pub(crate) logical_path: Option<Utf8PathBuf>,
     pub(crate) kind: WorkerEntryKind,
     depth: usize,
@@ -655,7 +663,10 @@ impl WorkerRoot {
                 WorkerEntryKind::LinkOrReparse
             };
             entries.push(WorkerEntry {
+                #[cfg(not(test))]
                 native_path: native_path.clone(),
+                #[cfg(test)]
+                native_path: native_path.clone().into(),
                 logical_path: logical_path.clone(),
                 kind,
                 depth,
@@ -1572,6 +1583,7 @@ mod tests {
                 let root = WorkerRoot::open(fixture.worker_path()).unwrap();
                 SORT_COMPONENT_VISITS.set(0);
                 let entries = root.entries().unwrap();
+                let sort_visits = SORT_COMPONENT_VISITS.get();
                 assert_eq!(entries.len(), depth + files);
                 assert!(entries.windows(2).all(|pair| {
                     (
@@ -1582,11 +1594,7 @@ mod tests {
                         &pair[1].native_path,
                     )
                 }));
-                assert_eq!(
-                    SORT_COMPONENT_VISITS.get(),
-                    0,
-                    "depth={depth}, files={files}"
-                );
+                assert_eq!(sort_visits, 0, "depth={depth}, files={files}");
             }
         }
     }
@@ -1595,7 +1603,7 @@ mod tests {
     fn worker_entries_keep_depth_then_native_path_order() {
         let fixture = RootFixture::new();
         let root = WorkerRoot::open(fixture.worker_path()).unwrap();
-        assert!(root.entries().unwrap().is_empty());
+        assert_eq!(root.entries().unwrap(), []);
         fs::create_dir_all(fixture.worker.join("z/a")).unwrap();
         fs::create_dir_all(fixture.worker.join("a")).unwrap();
         fs::write(fixture.worker.join("z/a/leaf"), b"x").unwrap();

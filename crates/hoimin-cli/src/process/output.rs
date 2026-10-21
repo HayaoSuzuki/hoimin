@@ -125,6 +125,10 @@ async fn write_ring<F: AsyncSeek + AsyncWrite + Unpin>(
     // Skipping an oversized prefix can also change the required start offset.
     if start != position || position == 0 {
         file.seek(SeekFrom::Start(start)).await?;
+    } else {
+        // Seek also completes pending writes before the next write. Preserve
+        // Tokio's error normalization and ordering without issuing start_seek.
+        std::future::poll_fn(|cx| std::pin::Pin::new(&mut *file).poll_complete(cx)).await?;
     }
     file.write_all(&chunk[chunk.len() - keep..chunk.len() - keep + first])
         .await?;

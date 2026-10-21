@@ -1356,7 +1356,7 @@ impl ExceptionIndex {
             {
                 return;
             }
-            if let Some(aliases) = self.visible.get(path).and_then(|v| v.get(destination))
+            if let Some(aliases) = visible.and_then(|v| v.get(destination))
                 && let Some((name, _)) = aliases.iter().find(|(n, end)| {
                     *end <= before && !excluded.contains(n.split('.').next().unwrap())
                 })
@@ -1368,10 +1368,7 @@ impl ExceptionIndex {
             }
         };
         if let Some(visible) = visible.filter(|v| v.len() < related_count) {
-            for destination in visible.keys() {
-                if (budget.1)() {
-                    break;
-                }
+            for destination in visible.keys().take_while(|_| !(budget.1)()) {
                 let related = class.parent.as_ref() == Some(destination)
                     || self.classes.get(destination).is_some_and(|other| {
                         other.parent.as_ref() == Some(&id)
