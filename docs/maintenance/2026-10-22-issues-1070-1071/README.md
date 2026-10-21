@@ -66,9 +66,9 @@ and universal power-loss persistence are not claimed.
 
 ## Verification and resources
 
-Local checks run on macOS arm64 with locked dependencies, Cargo jobs limited to
-two, development debug information disabled and incremental compilation off.
-Only one Cargo command runs at a time, using this worktree's target directory.
+Explicit local build/test commands run on macOS arm64 with locked dependencies,
+Cargo jobs limited to two, development debug information disabled and incremental
+compilation off. These commands are serialized in this worktree's target directory.
 The shared root Python environment is reused without dependency changes.
 
 - Manifest regression tests: 4 passed.
@@ -83,7 +83,7 @@ The shared root Python environment is reused without dependency changes.
   passed. Workspace and vendored-parser formatting checks passed.
 - Workflow lint passed with actionlint, ShellCheck and zizmor from the locked
   workflow dependency group in a disposable environment; the shared `.venv`
-  was not changed. Workflow/CI-selection Python tests: 89 passed, 8 skipped.
+  was not changed. Initial workflow/CI-selection Python tests: 89 passed, 8 skipped.
 - Knowledge checks parsed YAML/reserved-file structure for 54 Markdown pages,
   matched all five new source hashes and citations, and found zero missing
   local Markdown/source targets or unreachable pages. The allowlisted public
@@ -93,7 +93,38 @@ The shared root Python environment is reused without dependency changes.
   issue. Review included the pinned tempfile no-clobber implementation for
   Unix and Windows, but static inspection is not native Windows execution.
 
-The manual non-Linux workflow now runs `review::store_tests` on both native
-platforms before the longer workspace suite. Native Windows runtime verification
-is pending; local macOS success does not establish it. Further results are
-recorded below when available.
+The pre-commit hooks additionally passed both formatting checks and workspace /
+vendored-parser Clippy. The resulting local `target` directory (about 5.6 GiB)
+and generated site were removed after verification; test logs remain outside
+version control in `.superpowers/implementation-1070-1071/`.
+
+## Native execution and CI follow-up
+
+The [manual non-Linux run](https://github.com/HayaoSuzuki/hoimin/actions/runs/39667336844)
+checks implementation commit `8c5c49b75e7d1cef427c32736a90e96a7614d25e`.
+`review::store_tests` passed on both
+[macOS](https://github.com/HayaoSuzuki/hoimin/actions/runs/39667336844/job/119455738843)
+and [Windows](https://github.com/HayaoSuzuki/hoimin/actions/runs/39667336844/job/119455738976)
+before the broader workspace tests. This establishes native execution of the
+initialization/publication regressions, not completion of every manual CI job.
+The longer workspace/platform jobs were still running at this follow-up.
+
+The [first PR CI](https://github.com/HayaoSuzuki/hoimin/actions/runs/39667302809)
+passed Linux quality, workflow lint, best-effort resources, Lean, Creusot, core
+dependency purity and cross-boundary contracts. Its wheel-smoke Python suite
+failed because the manual-vs-automatic workflow contract still expected no extra
+publication step. This was reproduced locally, then corrected to validate one
+unconditional native publication step in the Rust job before workspace tests;
+the remaining job-shape comparison stays strict. Final related Python tests:
+267 passed, 8 skipped. Full Python suite: 1,231 passed, 11 skipped; the tightened
+job-specific assertion was then rechecked in the final related suite. Ruff lint,
+format and ty checks passed for the updated test. Independent review confirmed
+the added exception is limited to the Rust job and preserves the other job
+comparisons.
+
+The focused manual step retains two build jobs and harness threads. It no longer
+overrides incremental compilation for that step alone, allowing the subsequent
+workspace command to reuse its library artifacts. Final workflow lint passed.
+These workflow/test/document follow-ups do not change the Rust bytes checked
+by the native run. New PR CI results remain separate from the first run's
+failure and the local correction; pending jobs are not claimed to have passed.

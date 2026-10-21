@@ -67,7 +67,6 @@ jobs:
       - name: Test completed review-store publication
         env:
           CARGO_BUILD_JOBS: '2'
-          CARGO_INCREMENTAL: '0'
         run: cargo test --locked -p hoimin-cli --lib review::store_tests -- --test-threads=2
       # Native Job Object fixtures retain their six-second shared deadline.
       # Bound harness contention during interpreter startup on Windows runners.

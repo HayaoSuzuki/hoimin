@@ -1738,7 +1738,7 @@ def test_manual_non_linux_jobs_are_complete_and_independent() -> None:
         ]
 
         # The Windows harness variant is checked per platform below. Compare the
-        # unchanged macOS path with the automatic workspace suite here.
+        # broader macOS suite with automatic CI, apart from native checks.
         manual_steps = [
             {
                 key: value
@@ -1751,8 +1751,33 @@ def test_manual_non_linux_jobs_are_complete_and_independent() -> None:
                 "Show native Windows disk-name acceptance",
                 "Test Windows workspace with two harness threads",
             }
+            and not (
+                job_name == "rust"
+                and step.get("name") == "Test completed review-store publication"
+            )
         ]
         assert manual_steps == automatic_steps, job_name
+        if job_name == "rust":
+            steps = job_steps(job)
+            publication = [
+                step
+                for step in steps
+                if step.get("name") == "Test completed review-store publication"
+            ]
+            assert publication == [
+                {
+                    "name": "Test completed review-store publication",
+                    "env": {"CARGO_BUILD_JOBS": "2"},
+                    "run": "cargo test --locked -p hoimin-cli --lib "
+                    "review::store_tests -- --test-threads=2",
+                }
+            ]
+            assert steps.index(publication[0]) < next(
+                index
+                for index, step in enumerate(steps)
+                if isinstance(command := step.get("run"), str)
+                and command.startswith("cargo test --workspace")
+            )
 
     for job_name, expected_os in MANUAL_NON_LINUX_MATRIX_JOBS.items():
         job = jobs[job_name]
