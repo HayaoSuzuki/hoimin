@@ -190,7 +190,11 @@ pub fn build_manifest(
     root: &Utf8Path,
     options: &CopyOptions,
 ) -> Result<(WorkspaceManifest, Vec<WorkspaceDiagnostic>), WorkspaceError> {
-    build_manifest_with_contents(root, options, |path, mut file| {
+    build_manifest_with_contents(root, options, |path, file| {
+        let mut file = crate::finite_file::SnapshotReader::new(file)
+            .map_err(|error| WorkspaceError::io("read original metadata", path, error))?;
+        #[cfg(test)]
+        super::root::parent_opened("manifest-budget", path);
         hash_contents(path, &mut file, |_| Ok(()))
     })
 }

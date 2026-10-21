@@ -5,6 +5,21 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1070-manifest
+  resource: ../../../crates/hoimin-cli/src/workspace/manifest.rs
+  revision: d45174b7d5b337e9792e2f9559c4c4adf81fa9ab
+  working_tree: modified
+  sha256: 74d41329e44b8d67bbc3f47b69669875d5d939518f1f3f130f593594b15b0c77
+- id: issue-1070-copy
+  resource: ../../../crates/hoimin-cli/src/workspace/copy.rs
+  revision: d45174b7d5b337e9792e2f9559c4c4adf81fa9ab
+  working_tree: modified
+  sha256: e7bbe6ad99c9d7f9714ab45b3100f4da4b3653d79c4503e7e7bc0a43b4363666
+- id: issue-1070-tests
+  resource: ../../../crates/hoimin-cli/src/workspace/copy/finite_read_tests.rs
+  revision: d45174b7d5b337e9792e2f9559c4c4adf81fa9ab
+  working_tree: untracked
+  sha256: 3ed968e0a8d16cb54cb82bb7b1ecc7480ea6cb0e652fc8965a8fe92c0a470eec
 - id: issues-1054-plan
   resource: ../../../crates/hoimin-cli/src/plan.rs
   revision: f55f42c66b21861ae5302c057b4b600ec5d765c1
@@ -1287,3 +1302,28 @@ from earlier source-acquisition evidence.
 [^issues-1066-finite]: [crates/hoimin-cli/src/finite_file.rs](../../../crates/hoimin-cli/src/finite_file.rs).
 
 [^issues-1066-source-root]: [crates/hoimin-cli/src/workspace/root.rs](../../../crates/hoimin-cli/src/workspace/root.rs).
+
+# Finite original-manifest reads (Issue #1070)
+
+Original manifest construction and snapshot streaming now wrap their opened
+file descriptors in the same finite reader used for source acquisition. This
+covers preflight's second manifest, later original verification and duplicate
+snapshot entries. Observed append or truncation fails instead of accepting a
+prefix; consumption is bounded by the descriptor length observed at reader
+construction plus one growth-probe byte. Copy/owned budgets remain separate
+per-chunk checks, and native-path, capability/no-follow and permission handling
+keep their existing owners.[^issue-1070-manifest][^issue-1070-copy]
+
+Stable files receive no new fixed cap. This is neither an atomic snapshot nor
+a bound on arbitrary filesystem I/O time, and it does not detect every same-length
+rewrite. Finite append/truncate regressions exercise production preflight and
+verification, pending-snapshot cleanup and duplicate entries; stable empty,
+single-byte and 128-KiB inputs preserve manifest bytes/hash. Recheck these paths
+when adding a raw-file workspace consumer.[^issue-1070-tests]
+
+[^issue-1070-manifest]: [Original manifest reader](../../../crates/hoimin-cli/src/workspace/manifest.rs).
+[^issue-1070-copy]: [Snapshot reader and existing copy budgets](../../../crates/hoimin-cli/src/workspace/copy.rs).
+[^issue-1070-tests]: [Finite-read integration regressions](../../../crates/hoimin-cli/src/workspace/copy/finite_read_tests.rs).
+
+Implementation results and platform limits are recorded in the
+[Issues #1070–#1071 evidence](../../maintenance/2026-10-22-issues-1070-1071/README.md).
