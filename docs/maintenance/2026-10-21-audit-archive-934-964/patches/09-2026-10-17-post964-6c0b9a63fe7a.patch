@@ -1,0 +1,126 @@
+diff --git a/docs/knowledge/audits/design-complexity-post964.md b/docs/knowledge/audits/design-complexity-post964.md
+index 11f7367e4b9b90da5c923e9964a3f3fbe7f69039..9c56bd1c9ef8d3819e014567d9c564d3fcf29615 100644
+--- a/docs/knowledge/audits/design-complexity-post964.md
++++ b/docs/knowledge/audits/design-complexity-post964.md
+@@ -5,6 +5,51 @@ description: Type, compatibility and duplicate-state review after disk statistic
+ status: draft
+ audit_revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
+ sources:
++- id: post964-report-sequence
++  resource: ../../../crates/hoimin-core/src/report.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: 0afdb217243d7cd1b1ba2849bb2597b33e34f784d0a6a2d25e7f93e66bdd9355
++- id: post964-json-writer
++  resource: ../../../crates/hoimin-cli/src/report/json.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: 3357da3117212874872b3a1c5245bd8b94dcfd58bee4322edab3758503db16f3
++- id: post964-report-delivery
++  resource: ../../../crates/hoimin-cli/src/report/delivery.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: f0eb61d7bfd1bae452fe9993d8a058f902fc42c04d68a308dee995f14b52ca5f
++- id: post964-linux
++  resource: ../../../crates/hoimin-cli/src/resource/linux.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: 476ccf7f1dfe90507af7618ea6f5dbe2d5c092bd0a5349e3ff4839cba6b8b854
++- id: post964-environment-model
++  resource: ../../../crates/hoimin-core/src/fingerprint_env.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: 1054217dc82d835d3aaf45476be9e51e42022a20e6b3d6bba4b9cb344a2efdd4
++- id: post964-environment-capture
++  resource: ../../../crates/hoimin-cli/src/fingerprint_env.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: e4d7ff837d1fad8bc916bb10095c4da9dc38d7c2eaa35576aaba1e3700649fe6
++- id: post964-progress-comparison
++  resource: ../../../crates/hoimin-cli/src/progress/compare.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: f7414a5fc5d9db0cfe5762a07d487b53f4bc7c783719d71dc27f4c58765711a6
++- id: post964-progress-duplicate
++  resource: ../../../crates/hoimin-cli/src/progress/duplicate.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: bee220c3b8af776341bd447c99ec2cf64db51e758ee15427837f7c8be2c0097d
++- id: post964-source-encoding
++  resource: ../../../crates/hoimin-core/src/source_encoding.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: b9147eb48c247ca61474b3fe8d4aa13175e594949c077cc2441d6acbdcbcc32a
+ - id: post964-copy
+   resource: ../../../crates/hoimin-cli/src/workspace/copy.rs
+   revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
+@@ -238,6 +283,55 @@ producers, job limit placement or generation-retention rules change. Existing
+ #743 remains a conditional broader design topic rather than a prerequisite for
+ these two local reductions.
+ 
++# Same-revision follow-up: report, Linux and environment boundaries
++
++A second remote check on 2026-10-17 found main unchanged at the audited revision,
++#966/#967 still open and no open PRs. This follow-up examined additional boundary
++paths instead of repeating the initial whole-domain inspection. The assessment
++remains 7.5/10: the two previously reported ownership clarifications remain open,
++and design-time allocation remains unmeasured. No new implementation, test,
++benchmark or proof result is claimed.
++
++| Candidate | Current evidence and decision |
++| --- | --- |
++| Linux RootSignal | Unlike Windows, `refresh_events` computes per-root counter deltas and writes violations with `fetch_or`; classification consumes them. The state is live and cannot be removed by analogy with #967. [^post964-linux] |
++| ReportSequence active set and seen map | The set indexes unfinished `(ID, sequence)` pairs, while the map retains identity/sequence history after finish. A single map with lifecycle values is possible, but adds per-history state and requires filtering for active counts unless another counter is retained. Current writes are centralized and error precedence distinguishes already active, reused identity, mismatched sequence and unmatched finish. An ID-only active set would remove the repeated sequence but retain both collections and move history/active checks to preserve error precedence. No demonstrated net simplification justified a separate Issue. [^post964-report-sequence] |
++| JSON report lifecycle and event buffers | Run/baseline bytes are output payload, while Poisoned records a possibly partial spool/stdout write and Finished prevents another finalization. Event ordering cannot recover this I/O state. The delimiter flag tracks emitted records. No collapse of these independent facts was justified. [^post964-json-writer] |
++| Report delivery ownership and admission | Idle/Running/Unavailable describe where the handler lives. The lease survives a cancelled wait; loss after panic is not evidence of quiescence. Deadline restriction and abandonment answer different admission questions. The comment mentioning old post-panic behavior describes a live error boundary, not an obsolete wire/API adapter. [^post964-report-delivery] |
++| Environment wire types | The unit-variant adapter rejects unknown fields; captured metadata validates canonical nonempty names and digest shape. These are strict current-input checks. Capture distinguishes absent from empty values and hashes native Unix bytes or Windows code units. Removing the boundary would weaken validation or change current meaning, not retire compatibility. [^post964-environment-model][^post964-environment-capture] |
++| Progress latest state and comparison history | An unusable adjacent pair resets latest/stall state without appending a comparison. The last retained comparison therefore cannot derive the latest result. A per-pair enum excluding Saturated is possible, but requires projection into shared result/render states for one private unreachable arm; no material reduction was established. [^post964-progress-comparison] |
++| Duplicate report indexes | Path identity and digest candidate lists answer different questions. Byte confirmation remains optional when a validated file later disappears; merging indexes does not remove this policy. [^post964-progress-duplicate] |
++| Source encoding offsets | Raw length bounds original offsets; expanded Latin-1 positions map coordinates. ASCII, UTF-8 and Latin-1 are current supported source encodings, not saved-version adapters. No independently maintained duplicate coordinate array remains. [^post964-source-encoding] |
++
++Selected test sources were inspected for report lifecycle/error precedence,
++partial writes, cancelled delivery waits, retained owners, writer panic,
++environment absent/empty/native encoding, and duplicate-report confirmation.
++Existing Lean report-sequence corpus adapters describe the model correspondence;
++they were not executed. The follow-up does not establish performance differences
++between possible report-index layouts, arbitrary scheduling correctness or Linux
++host behavior.
++
++Five investigation passes checked (1) unchanged remote revision and open work,
++(2) actual writers/readers, (3) state domains and alternatives, (4) rejection,
++partial-I/O and missing-input counterexamples, and (5) test/model evidence limits.
++Five proposal-review passes checked (1) Linux versus Windows signal ownership,
++(2) sequence-error precedence under map consolidation, (3) I/O state versus event
++history, (4) progress resets and strict environment decoding, and (5) an independent
++read-only challenge of these conclusions. No additional Issue was justified.
++
++The independent challenge completed five passes with no new finding. It covered
++report sequence, JSON/delivery state, Linux signals, environment metadata and
++progress state. Duplicate detection and source encoding were coordinator-only
++inspection, not independently certified.
++
++Five final record checks confirmed (1) the same audit revision, (2) existing
++Issue references without duplicates, (3) unchanged implementation sources and
++25 source hashes, (4) scoped claims distinguishing source inspection from tests,
++and (5) documentation structure/links/reachability, strict rendering and diff
++whitespace. On 2026-10-17, all 50 knowledge pages passed the structure/link/
++reachability check, all 25 current source hashes matched, the strict site build
++passed, and `git diff --check` passed. No new Issue was created.
++
+ [^post964-copy]: [Source: crates/hoimin-cli/src/workspace/copy.rs](../../../crates/hoimin-cli/src/workspace/copy.rs); audited revision and hash recorded above.
+ [^post964-windows]: [Source: crates/hoimin-cli/src/resource/windows.rs](../../../crates/hoimin-cli/src/resource/windows.rs); audited revision and hash recorded above.
+ [^post964-machine]: [Source: crates/hoimin-core/src/machine.rs](../../../crates/hoimin-core/src/machine.rs); audited revision and hash recorded above.
+@@ -254,3 +348,13 @@ these two local reductions.
+ [^post964-report-reader]: [Source: crates/hoimin-cli/src/artifacts/run_report.rs](../../../crates/hoimin-cli/src/artifacts/run_report.rs); audited revision and hash recorded above.
+ [^post964-release]: [Source: tools/release.py](../../../tools/release.py); audited revision and hash recorded above.
+ [^post964-provenance]: [Source: tools/pypi_provenance.py](../../../tools/pypi_provenance.py); audited revision and hash recorded above.
++
++[^post964-report-sequence]: [Source: crates/hoimin-core/src/report.rs](../../../crates/hoimin-core/src/report.rs); audited revision and hash recorded above.
++[^post964-json-writer]: [Source: crates/hoimin-cli/src/report/json.rs](../../../crates/hoimin-cli/src/report/json.rs); audited revision and hash recorded above.
++[^post964-report-delivery]: [Source: crates/hoimin-cli/src/report/delivery.rs](../../../crates/hoimin-cli/src/report/delivery.rs); audited revision and hash recorded above.
++[^post964-linux]: [Source: crates/hoimin-cli/src/resource/linux.rs](../../../crates/hoimin-cli/src/resource/linux.rs); audited revision and hash recorded above.
++[^post964-environment-model]: [Source: crates/hoimin-core/src/fingerprint_env.rs](../../../crates/hoimin-core/src/fingerprint_env.rs); audited revision and hash recorded above.
++[^post964-environment-capture]: [Source: crates/hoimin-cli/src/fingerprint_env.rs](../../../crates/hoimin-cli/src/fingerprint_env.rs); audited revision and hash recorded above.
++[^post964-progress-comparison]: [Source: crates/hoimin-cli/src/progress/compare.rs](../../../crates/hoimin-cli/src/progress/compare.rs); audited revision and hash recorded above.
++[^post964-progress-duplicate]: [Source: crates/hoimin-cli/src/progress/duplicate.rs](../../../crates/hoimin-cli/src/progress/duplicate.rs); audited revision and hash recorded above.
++[^post964-source-encoding]: [Source: crates/hoimin-core/src/source_encoding.rs](../../../crates/hoimin-core/src/source_encoding.rs); audited revision and hash recorded above.

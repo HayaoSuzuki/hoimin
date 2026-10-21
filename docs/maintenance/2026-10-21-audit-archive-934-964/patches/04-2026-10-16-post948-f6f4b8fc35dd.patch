@@ -1,0 +1,191 @@
+diff --git a/docs/knowledge/design/architecture.md b/docs/knowledge/design/architecture.md
+index 8ab4a4cf9713f5b2e3b218cf5219691bd34f4beb..2e532666c42ed5a8d48f8274f444af8dcdb55ed3 100644
+--- a/docs/knowledge/design/architecture.md
++++ b/docs/knowledge/design/architecture.md
+@@ -5,6 +5,11 @@ description: 元ソースへの変異適用を避け、状態遷移と入出力
+ status: draft
+ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+ sources:
++- id: post948-design-audit
++  resource: ../../maintenance/2026-10-16-post948-design-audit.md
++  revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
++  working_tree: untracked
++  sha256: 488b4cd4076c0ba424988247055030c62211b08fee625d37b3df544fa3868c58
+ - id: c4-runtime-views
+   resource: ../../architecture/c4-model.md
+   working_tree: untracked
+@@ -100,6 +105,29 @@ sources:
+   sha256: b146daf296d69374ad01ac86d5a5becd30b721b1983d5a54507cd0f1750ef3e7
+ ---
+ 
++# Design follow-up after PRs 944–948
++
++The 2026-10-16 audit inspected main
++`ddb8ed9504beb04c06bfe11821ebcafffa332714` after the previous five findings were
++implemented. It identified three remaining representation issues: duplicate
++project roots in normalized configuration, early conversion of analyzer
++operators to strings, and independently specified process-dispatch identity.
++Issues [949](https://github.com/HayaoSuzuki/hoimin/issues/949),
++[950](https://github.com/HayaoSuzuki/hoimin/issues/950), and
++[951](https://github.com/HayaoSuzuki/hoimin/issues/951) contain the evidence and
++acceptance conditions. These are proposed improvements, not implemented
++contracts or reproduced runtime failures. Compatibility preservation is not a
++requirement for the root consolidation.[^post948-design-audit]
++
++The audit distinguishes necessary lifecycle observations and derived indexes
++from duplicated authority. Its 7.5/10 score supports six diagnostic rows; local
++synchronization obligations remain and design-time allocation was not measured.
++No new runtime suite, mutation campaign or Lean proof was run. The record
++includes rejected candidates, review passes and verification limits.
++[^post948-design-audit]
++
++[^post948-design-audit]: [Post-948 design audit](../../maintenance/2026-10-16-post948-design-audit.md).
++
+ # Current C4 views
+ 
+ The [C4 architecture views](../../architecture/c4-model.md) describe the runtime
+diff --git a/docs/maintenance/2026-10-16-post948-design-audit.md b/docs/maintenance/2026-10-16-post948-design-audit.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7aa91d661859537262e8ea8e536449bd1997b6fe
+--- /dev/null
++++ b/docs/maintenance/2026-10-16-post948-design-audit.md
+@@ -0,0 +1,139 @@
++# Design audit after PRs 944–948
++
++Audited on 2026-10-16 at main
++`ddb8ed9504beb04c06bfe11821ebcafffa332714`, after all five changes for Issues
++939–943 merged. This record belongs to `audit/2026-10-16-post948`. The work is
++an audit and issue publication, not implementation of the findings.
++
++The user requested a thorough check of type/enum boundaries, unnecessary
++backward compatibility, and duplicated state management. Compatibility adapters
++are not required. The `software-design-philosophy` skill guided the assessment.
++Three independent read-only reviews covered runtime/process state, analyzer
++internals, and persistence/configuration. The coordinator checked the evidence
++and counterarguments and inspected reporting, metrics, workspace copy ownership,
++budget accounting, and compatibility-related production code.
++
++## Evaluation
++
++**7.5/10: six of eight diagnostic rows supported in the inspected boundaries.**
++This is a coarse design assessment, not a whole-repository correctness or
++performance score. It is unchanged numerically from the previous audit because
++new, smaller synchronization obligations remain, and design-time allocation is
++still unmeasured. The previous five findings are implemented, not reopened.
++
++| Diagnostic | Assessment | Evidence or improvement needed |
++| --- | --- | --- |
++| Describe module responsibilities in one sentence | Pass | Core policy, shell orchestration, analyzer discovery, workspace ownership and artifact readers have identifiable roles. |
++| Interfaces simpler than implementations | Pass overall | Typed effects, contexts and configuration hide substantial behavior. The extra dispatch arguments are a local exception covered by the findings. |
++| Change implementation without updating distributed assumptions | Not satisfied | Root equality, dispatch identity and operator-name classification impose avoidable synchronization. Remove duplicate root ownership, derive dispatch identity from the request and preserve the analyzer enum until serialization. |
++| Interface comments describe abstractions | Pass in inspected boundaries | Process documentation distinguishes cancellation, reap, output drain and backend close; worker and reader comments describe ownership and accepted inputs. |
++| Design discussion is part of review | Pass | Recent maintenance records and this audit explicitly compare ownership, alternatives, evidence and costs. |
++| Modules hide important design decisions | Pass overall | Core owns transition policy; process/workspace own lifecycle capabilities; readers own validation. Findings concern remaining representation leaks within these responsibilities. |
++| Newcomers can understand module boundaries without reading every implementation | Pass at module level | Architecture/OKF contracts identify owners and limits. Local dispatch parameters still require knowledge of a request/argument equality condition. |
++| 10–20% of time invested in design improvement | Unmeasured; not counted | No time-allocation data was collected. Measure representative development work before awarding this row. |
++
++Reaching 10/10 under this rubric requires resolving the three representation
++leaks, checking that the resulting interfaces remove the synchronization duties,
++and obtaining evidence for the time-investment diagnostic. Adding enums without
++reducing caller obligations would not improve the assessment.
++
++## Published findings
++
++1. **[Issue 949](https://github.com/HayaoSuzuki/hoimin/issues/949): one project root in normalized run/plan configuration (medium).**
++   `config.rs:553–575` stores both an outer root and `Selection.root`.
++   Raw conversion clones the value and `fingerprint_inputs.rs:106–108` updates
++   both on relocation. Retain the standalone selection root and remove the
++   duplicate owner. Issue 843 previously improved validation while explicitly
++   preserving saved fields; this follow-up removes that compatibility constraint.
++   Update saved schemas and reject unsupported old inputs rather than repair them.
++2. **[Issue 950](https://github.com/HayaoSuzuki/hoimin/issues/950): typed operator through the analyzer candidate boundary (low).**
++   `analyzer/types.rs:33` stores a String even though `make_candidate` already
++   receives `MutationOperator`. Keep the enum until the descriptor boundary.
++   Preserve lexicographic name ordering explicitly: derived enum ordering differs.
++   Issue 930 deliberately excluded this downstream field from its token-only change.
++3. **[Issue 951](https://github.com/HayaoSuzuki/hoimin/issues/951): derive process completion identity from the request (low).**
++   `shell.rs:4726–4755` receives request, worker and baseline flag separately,
++   while the request already contains the corresponding typed context. Remove
++   independent re-specification. Retain completion metadata after execution,
++   including failures, because metrics/drain cannot recover it from every event.
++   Issue 898 typed the process request; this follow-up covers the shell dispatch seam.
++
++These are design improvements, not newly reproduced runtime failures. No speed
++or memory improvement has been measured. Each issue body pins source links,
++defines bounded acceptance criteria and gives appropriate existing regression
++tests, parameterized cases and property tests. New Lean models are not required
++for representation-only changes; existing correspondence tests remain useful.
++
++## Counterarguments and exclusions
++
++- `pending` and `output_actions` hold completion identity and continuation
++  metadata respectively. Combining them requires changes to effect staging;
++  net simplification was not established. No issue was filed for their mere
++  coexistence, and report-finalization IDs were not treated as redundant flags.
++- Process termination, root reap, output drain, backend close, cancellation
++  admission and workspace quiescence are distinct observations. Task count and
++  buffered completion count also differ. Their separation is intentional.
++- Workspace plan grant/worker tracking controls materialization and charging;
++  it is not a second copy of the handler's active/pending ownership registry.
++- Analyzer abstract exits may coexist; trusted and possible import provenance
++  differ; fact indexes are derived lookup structures. These are not exclusive
++  runtime states that should be merged into one enum.
++- `runs.finished` is persisted recovery provenance, including observations in
++  existing correspondence tests. Lack of a production SELECT is insufficient
++  reason to remove it.
++- Budget release history could be reconstructed from a contiguous allocation
++  frontier and active reservations, but current production reserves workspace
++  copy capacity once. No meaningful current cost justified another issue.
++- Old report-reader branches, DB migrations, old enum aliases and missing-array
++  repair are already removed. Optional fields and raw invocation defaults alone
++  are not evidence of compatibility debt.
++- `DiffPlan::Legacy` handles current Git rename/unmerged/path-batching semantics;
++  Windows deletion fallback supports current capability operations. Rust MSRV
++  annotations around atomic operations do not add a second runtime algorithm.
++  Their names or supported-version rationale alone do not justify removal.
++- `all_legacy()` constructs an older operator subset used by current defaults
++  and regression fixtures. Directly defining defaults could be a local cleanup,
++  but replacing it with all operators would incorrectly enable opt-in mutations.
++  No additional issue was warranted for this small helper.
++
++## Review record
++
++Scope stage, five passes: (1) pinned fetched main and confirmed PRs 944–948;
++(2) verified origin and isolated branch with no upstream tracking;
++(3) read overview, architecture, analyzer, selection, runtime and session/report
++knowledge contracts; (4) compared the three open issues and recent closed work;
++(5) separated the no-compatibility requirement from necessary runtime semantics.
++
++Finding stage, five passes: (1) inspected declarations and production producers;
++(2) traced normal, error and shutdown consumers; (3) tested standalone-selection,
++lexicographic-order and failure-metadata counterarguments; (4) checked Issues
++843, 898 and 930 and their original scope; (5) removed weaker candidates and
++bounded changes and acceptance tests. Each domain reviewer also reported five
++passes. The coordinator independently read each accepted finding's source.
++
++Publication stage, five passes: (1) checked pinned file/line links;
++(2) checked factual claims against the audited checkout; (3) independently
++reviewed the three drafts; (4) checked schema impact, necessary metadata and
++test/proof limits; (5) refreshed the live issue list before publication and
++verified the published bodies afterward.
++
++Independent draft review resulted in two corrections: keep non-root selection
++validation when removing the equality check, and assert expected lexicographic
++operator order independently of the implementation's full-output ordering. A
++full/prefix comparison alone could miss changing both algorithms to enum order.
++
++## Verification scope
++
++No production or test code changed. This audit ran no Rust/Python suite,
++mutation campaign, new proptest or Lean proof. It establishes source-level
++design findings only. Prior test passes are historical evidence and are not
++claimed as new results. The architecture concept links this record; existing
++contract descriptions remain valid until the improvement issues are implemented.
++
++Final documentation verification passed: 49 OKF Markdown pages satisfied the
++YAML/reserved-file, local-target and reachability checks; the updated architecture
++concept's source IDs/footnotes and this record's SHA-256 matched. Site generation
++and `git diff --check` passed. The GitHub API reported Issues 949–951 OPEN, and
++each complete body matched its reviewed draft after newline normalization.
++Main was rechecked immediately before publication and still matched the audited
++revision. No open PR or overlapping open design issue existed at that check.

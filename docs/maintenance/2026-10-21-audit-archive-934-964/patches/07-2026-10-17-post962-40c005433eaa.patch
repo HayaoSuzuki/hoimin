@@ -1,0 +1,306 @@
+diff --git a/docs/knowledge/audits/design-complexity-post962.md b/docs/knowledge/audits/design-complexity-post962.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..80cc8fa7c7e811f5c1dc70fc1228a27aa99e36a9
+--- /dev/null
++++ b/docs/knowledge/audits/design-complexity-post962.md
+@@ -0,0 +1,259 @@
++---
++type: Audit
++title: Design complexity after PR 962
++description: Type boundaries, obsolete compatibility and state ownership at the post-962 revision.
++status: draft
++audit_revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
++sources:
++- id: post962-disk-monitor
++  resource: ../../../crates/hoimin-cli/src/workspace/disk.rs
++  revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
++  working_tree: clean
++  sha256: 63793e1f410978f06ffffdcde140ead0b3003eb498cf341303056e79299c575f
++- id: post962-shell
++  resource: ../../../crates/hoimin-cli/src/shell.rs
++  revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
++  working_tree: clean
++  sha256: 5fcdd3d6b6704103af83478744e858cebb30bc57c8938cf24d4223ae05c7fe3d
++- id: post962-machine
++  resource: ../../../crates/hoimin-core/src/machine.rs
++  revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
++  working_tree: clean
++  sha256: 509d0eb1f971cb48f2c0cf0f1afbc2db57a69b5065d5b9e614c81d4dd05eaba6
++- id: post962-budget
++  resource: ../../../crates/hoimin-core/src/budget.rs
++  revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
++  working_tree: clean
++  sha256: eac9191b3f8a531c0005bdc24a8eb33a9ec30133447880cbd942bc8591b3c01f
++- id: post962-disk-lifecycle
++  resource: ../../../crates/hoimin-core/src/disk.rs
++  revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
++  working_tree: clean
++  sha256: 8286ae8254bc1c944a56b8553d261171d06f8ad8b2a0342078c988e1c4c0d853
++- id: post962-collector
++  resource: ../../../crates/hoimin-cli/src/process/output.rs
++  revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
++  working_tree: clean
++  sha256: 27c0141b77480c1c6172f0020722e0ba549fa7f940805f86f63bf59907821644
++- id: post962-cli
++  resource: ../../../crates/hoimin-cli/src/cli.rs
++  revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
++  working_tree: clean
++  sha256: 4e2fb37221f97b90dc0f1b4369859cf17f07c0b93d0525fafffc0ec1d296a43d
++- id: post962-plan
++  resource: ../../../crates/hoimin-cli/src/plan.rs
++  revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
++  working_tree: clean
++  sha256: ecee9e236c23c92c24820d2744501c6583c6201fe544caf295be932a0fd10942
++- id: post962-analyzer
++  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
++  revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
++  working_tree: clean
++  sha256: fc838b85cc69ce2e0d5500a089b1f0d034ec82794b94a0a576bd7b3f30180318
++- id: post962-target
++  resource: ../../../crates/hoimin-cli/src/target/mod.rs
++  revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
++  working_tree: clean
++  sha256: ff7a24c26627bc1bf6cbc177172ef3f7099fb1cd5fb444c4a89a57ccd29342f4
++- id: post962-review
++  resource: ../../../crates/hoimin-cli/src/review/mod.rs
++  revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
++  working_tree: clean
++  sha256: d7cb60b5ee7520d419d0de91442f2fe48f5ad70ef93cb147c9304a1c4bc2f7b2
++- id: post962-session
++  resource: ../../../crates/hoimin-cli/src/session/mod.rs
++  revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
++  working_tree: clean
++  sha256: a6d2221ead4358cd7b48bae6afce68dce85de32d0dba81ceec7dad5d98133aa5
++- id: post962-report
++  resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
++  revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
++  working_tree: clean
++  sha256: 585817301a29f83d660b42c293025105adcdc1defd568e1b48a9027f8da6f17a
++- id: post962-config
++  resource: ../../../crates/hoimin-core/src/config.rs
++  revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
++  working_tree: clean
++  sha256: 990c4227e4d3bdcc90d97957e47cf34ac63d07aabc39247a170e8e600066f2a6
++- id: post962-metrics
++  resource: ../../../crates/hoimin-cli/src/metrics.rs
++  revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
++  working_tree: clean
++  sha256: 91f7a188bc7c4f5fb355147ee190a6b6ae42f586fbe892aa042cefe5e7e7531e
++- id: post962-release
++  resource: ../../../tools/release.py
++  revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
++  working_tree: clean
++  sha256: 4e1951c826b512d57d06e8e3ed5eaeac1d29d07a6ff2c3061f57db41024d7e1c
++- id: post962-provenance
++  resource: ../../../tools/pypi_provenance.py
++  revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
++  working_tree: clean
++  sha256: 6676ffe0e8205137868f1fbbcf05979990e5ee888bf205173c293c64a03b3eb7
++- id: post962-release-workflow
++  resource: ../../../.github/workflows/release.yml
++  revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
++  working_tree: clean
++  sha256: a701c95964e2fb80eee328016cfb4f71d79e195f591505f56cb3d72fc764cb9a
++---
++
++# Scope and method
++
++Static review on 2026-10-17 of main at
++`a72ca276efbb6c98499878f5c1cdeaadd39c23b8`, after #961 and #962 merged.
++The coordinator inspected core transitions, budgets and shell ownership. Three
++independent domain reviews covered analyzer/target/plan/review,
++process/resource/workspace/metrics, and persistence/configuration/Python tooling.
++Each review traced current writers and readers, failure paths, alternatives and
++existing test assertions, with five distinct self-review passes.
++
++The software-design-philosophy criterion is a reduction in maintained decisions,
++representations or caller obligations. Backward compatibility is not required.
++Current error rejection, historical evidence, platform capabilities and active
++entry points still need their own justification before removal. No runtime test,
++benchmark, build of the implementation or Lean proof was executed in this audit.
++Test-source inspection does not establish a fresh passing test result.
++
++Consulted the catalog overview, architecture, selection, runtime, session/report,
++release provenance and related design records. Prior audits were used to identify
++questions to revisit, not to infer the current result. Source trees outside the
++two recent changes were also inspected, including previously less-covered disk
++statistics and Python release boundaries.
++
++# Assessment
++
++**8.75/10: seven evidenced rows out of eight**, at 1.25 points per row, for the
++inspected boundaries. This is a qualitative assessment, not a repository-wide
++quality measurement or an assertion of complete absence of leakage. The previous
++ranked-request locality finding is resolved; the remaining proposal is a small
++local reduction in maintained statistics.
++
++| Diagnostic | Result | Evidence or missing condition |
++| --- | --- | --- |
++| Module purposes are describable | Pass | Core transitions, shell execution, discovery, validation and artifact readers have distinct responsibilities. |
++| Interfaces are simpler than implementations | Pass | Typed requests, managed ownership and shared artifact readers hide substantial work. |
++| Implementation rules can change locally | Pass | One normalized Top request now supplies both execution and preview; common source/format rules already have owners. |
++| Interface comments describe abstractions | Pass | Process draining, store transfer and cleanup contracts identify lifetime and evidence limits. |
++| Design discussion occurs in review | Pass | Current maintenance records document alternatives and preservation obligations; this review records rejected changes. |
++| Modules hide important decisions | Pass | Core owns transitions; collectors own retention; workspace/resource modules own cleanup and measurement. The statistics proposal removes local redundancy within that boundary. |
++| Module boundaries are discoverable | Pass | Architecture and knowledge routes describe responsibilities and connect implementation evidence. |
++| 10–20% actual design-time allocation | Unmeasured | No time-allocation measurements were collected, so this row is not awarded. |
++
++No additional module-level failed row was established. An evidenced 10/10 would
++require measuring the investment criterion. Removing the narrow statistics
++redundancy is useful, but does not supply that missing measurement.
++
++# Finding: remove unused and derived disk-monitor state
++
++**Issue: [#963](https://github.com/HayaoSuzuki/hoimin/issues/963).** `DiskMonitorStats.latest_owned_bytes` and
++`FilesystemStats.latest` are written for every successful sample but have no
++production reader. Their only external observations are test assertions.
++`DiskMonitorStats.minimum_available_bytes` is separately updated alongside each
++filesystem's historical minimum. Removing the two unused fields and deriving the
++global minimum from the retained per-filesystem minima eliminates three stored
++fields and their update obligations.[^post962-disk-monitor][^post962-shell]
++
++Every accepted reading is nonempty. Under the same mutex, the monitor updates
++all per-filesystem minima and never deletes prior entries. Consequently the
++minimum over all successful readings equals the minimum of the retained
++per-filesystem minima. An empty history yields None; a measured zero remains Some(0). Valid readings
++that trigger a policy stop or arrive after a sticky stop still update statistics. Failed refresh, failed
++measurement and empty capacity maps return before updating statistics. Keep this
++derivation inside the statistics API or snapshot projection, rather than moving
++the aggregation rule into shell.[^post962-disk-monitor]
++
++The local minimum of the current reading remains necessary for immediate stop
++policy. End-of-run free space is a separate explicit measurement in shell and
++must not be replaced with the most recent sampled value. The public report
++field, retained historical minima, sample count, owned-byte peak, maximum duration
++and sticky failure behavior remain unchanged. The proposal makes no performance
++or reproduced-defect claim and adds no enum or generic framework.
++[^post962-disk-monitor][^post962-shell]
++
++Implementation checks should parameterize unmeasured/failed/empty cases and use
++bounded property-generated multi-filesystem sample histories with an independent
++minimum oracle. Include disappearing/reappearing filesystems. Retain existing
++disk-monitor, sticky-stop, final-report and Lean correspondence tests; new formal
++models are unnecessary if only the representation changes. Existing tests that
++read deleted fields should instead verify retained observable statistics.
++
++# Resolved and rejected candidates
++
++| Candidate | Current evidence and decision |
++| --- | --- |
++| Top / TopRange compatibility | #961 removes TopRange. Parser owns omitted-offset normalization and plan consumes the field. Do not reopen #959. [^post962-cli][^post962-plan] |
++| Collector sink/error Options | #962 retains one Result, drops a failed sink and delays error propagation until EOF. Do not reopen #960. [^post962-collector] |
++| Pending output and cleanup classifications | Output continuations are owned by pending completions. Cleanup disposition and report evidence have separate current roles. No restoration of the earlier duplicate maps/classifications was found. [^post962-machine][^post962-shell] |
++| Core flags, diagnostic queue and pending analysis | Attempt history, outcomes and queued diagnostic delivery have distinct consumers. Bundling the one narrow queue/pending producer can rename its invariant but establishes no worthwhile cross-boundary simplification. [^post962-machine] |
++| Run ID and optional session identity | Session identity is set with the report ID on successful load/start and gates persistence. A flag plus shared ID could remove a small copy, but does not remove the session-start condition or repeated policy. No independent Issue justified. [^post962-machine] |
++| Seeded fingerprint constructor | Preflight replaces the initial fingerprint and production uses the ordinary constructor; the seed helper has only a test caller. Removing the tiny helper is possible, but no meaningful current complexity amplification was established. [^post962-machine] |
++| Reservation history | Active reservations, released IDs and allocation frontier serve accounting, repeat-release diagnostics and exhaustion. Inferring released membership from a dense issued prefix is possible, but adds that coupling and reworks corruption/exhaustion contracts for a production path that reserves one aggregate copy grant. No present issue-level benefit established. [^post962-budget] |
++| Disk lifecycle secondary evidence | Incoming primary failure secondaries are moved into the lifecycle history; snapshots project that history into report form. Cleanup can add secondary evidence without a primary stop. This is not two independent mutable copies. [^post962-disk-lifecycle] |
++| Shell task/count/cleanup state | Unaccepted completions differ from JoinSet ownership. Cleanup attempted, safety proven and monitor joined remain distinct after timeout/failure. Final capacity's attempted flag distinguishes unmeasured from failed observation. [^post962-shell] |
++| Resource close result and owned workspace | Blocking close can time out while retaining ownership outside the context. A missing handle is not successful cleanup; replacing the independent result/ownership axes loses evidence. [^post962-shell] |
++| Metrics stage strings | Collector accepts arbitrary stage names, including alpha/zeta in current tests. A fixed enum adds conversions without deleting a policy; shell already centralizes phase mapping. [^post962-metrics][^post962-shell] |
++| Target normalization and analyzer pipelines | Shared lexical/source/candidate conversion rules already exist. Filesystem existence, discovery pruning, pure selection and Vec/spool delivery have distinct contracts. A prepared-selector or generic sink framework adds interfaces without a demonstrated reduction. [^post962-target][^post962-plan][^post962-analyzer] |
++| Analyzer flow/recording state | Working imports, returned continuation evidence, scope restoration and revisit suppression are independent axes. A single enum would combine valid simultaneous states. [^post962-analyzer] |
++| Plan sources, ranking and review evidence | Candidate hashes do not describe files producing zero candidates. Immutable provenance/history differs from current dispatch/applicability; removing these fields discards product evidence. [^post962-plan][^post962-review] |
++| Session and report compatibility | Finalization and completeness are distinct observations. Supported-schema corruption checks and current optional report fields are not obsolete repair paths. Shared structural validation already prevents reader drift. [^post962-session][^post962-report] |
++| Raw configuration and operator cohorts | SessionMode normalizes raw input once. all_legacy supplies a current default/fixture cohort; moving that list elsewhere leaves the same knowledge to maintain. [^post962-config] |
++| Release Result/exception adapters | Typed expected-failure contracts feed current exception-based callers. Removing adapters repeats extraction at callers; deleting Results also removes adopted contracts. No bounded net gain found. [^post962-release] |
++| Provenance and release entry modes | Missing versus verified results already exclude errors. Direct-script/module callers and container capture have live workflow roles. Labels suggesting compatibility do not make those execution environments obsolete. [^post962-provenance][^post962-release-workflow] |
++
++# Review and publication
++
++The coordinator performed the following additional passes; domain reports also
++record five separate reviews of their own findings and rejections.
++
++| Stage | Passes and outcome |
++| --- | --- |
++| Investigation 1 | Pinned main, checked previous PR merges, existing Issues, origin and isolated worktree. |
++| Investigation 2 | Traced core/shell state and budget transitions rather than counting bool/Option fields. |
++| Investigation 3 | Separated current API/error/environment boundaries from obsolete compatibility. |
++| Investigation 4 | Checked timeout, ownership transfer, EOF, unmeasured and failed observation counterexamples. |
++| Investigation 5 | Compared smaller replacements and rejected nominal type changes without meaningful reduction. |
++| Proposal 1 | Repository-wide references confirmed the two latest statistics have no production reader. |
++| Proposal 2 | Checked the global/per-filesystem minimum invariant under the same lock and retained history. |
++| Proposal 3 | Kept current-reading stop policy and separate final capacity observation outside the deletion. |
++| Proposal 4 | Specified independent property expectations and distinguished existing tests from executed evidence. |
++| Proposal 5 | Independent challenge supported the bounded change and added explicit measured-zero and stop-triggering-sample preservation conditions. |
++| Publication 1 | Searched existing Issues for DiskMonitorStats, latest_owned_bytes and minimum_available_bytes; none matched. |
++| Publication 2 | Pinned source links to the audited commit and checked the actual cited update/reader paths. |
++| Publication 3 | Rechecked Japanese Issue scope, low priority, compatibility premise and preserved report behavior. |
++| Publication 4 | Created #963 and read back its OPEN state and exact body, matching the reviewed draft. |
++| Publication 5 | OKF structure, local links, reachability, source IDs/footnotes and all 18 current-source hashes passed across 50 pages. Final site/diff checks are recorded below. |
++
++Final documentation verification on 2026-10-17: OKF structure/local links/
++reachability passed for 50 knowledge pages; changed-page source IDs/footnotes
++and 18 current-source SHA-256 values matched. The strict site build
++(`python -m tools.docs_site --output site`) and `git diff --check` passed.
++These checks validate documentation structure, not runtime behavior.
++
++# Limits and recheck triggers
++
++This audit does not prove runtime correctness, OS behavior, performance, arbitrary
++interleavings or exhaustive absence of compatibility code. Recheck the statistics
++invariant if filesystem history is removed, replaced or reset, if sampling gains
++another writer, or if a new consumer needs latest sampled values. Reevaluate
++other rejected candidates when caller multiplicity, saved schemas, result
++composition or lifecycle ownership changes. Existing passing tests from earlier
++implementation work are not results of this audit.
++
++[^post962-disk-monitor]: [Source: crates/hoimin-cli/src/workspace/disk.rs](../../../crates/hoimin-cli/src/workspace/disk.rs); read revision and hash recorded above.
++[^post962-shell]: [Source: crates/hoimin-cli/src/shell.rs](../../../crates/hoimin-cli/src/shell.rs); read revision and hash recorded above.
++[^post962-machine]: [Source: crates/hoimin-core/src/machine.rs](../../../crates/hoimin-core/src/machine.rs); read revision and hash recorded above.
++[^post962-budget]: [Source: crates/hoimin-core/src/budget.rs](../../../crates/hoimin-core/src/budget.rs); read revision and hash recorded above.
++[^post962-disk-lifecycle]: [Source: crates/hoimin-core/src/disk.rs](../../../crates/hoimin-core/src/disk.rs); read revision and hash recorded above.
++[^post962-collector]: [Source: crates/hoimin-cli/src/process/output.rs](../../../crates/hoimin-cli/src/process/output.rs); read revision and hash recorded above.
++[^post962-cli]: [Source: crates/hoimin-cli/src/cli.rs](../../../crates/hoimin-cli/src/cli.rs); read revision and hash recorded above.
++[^post962-plan]: [Source: crates/hoimin-cli/src/plan.rs](../../../crates/hoimin-cli/src/plan.rs); read revision and hash recorded above.
++[^post962-analyzer]: [Source: crates/hoimin-cli/src/analyzer/rust.rs](../../../crates/hoimin-cli/src/analyzer/rust.rs); read revision and hash recorded above.
++[^post962-target]: [Source: crates/hoimin-cli/src/target/mod.rs](../../../crates/hoimin-cli/src/target/mod.rs); read revision and hash recorded above.
++[^post962-review]: [Source: crates/hoimin-cli/src/review/mod.rs](../../../crates/hoimin-cli/src/review/mod.rs); read revision and hash recorded above.
++[^post962-session]: [Source: crates/hoimin-cli/src/session/mod.rs](../../../crates/hoimin-cli/src/session/mod.rs); read revision and hash recorded above.
++[^post962-report]: [Source: crates/hoimin-cli/src/artifacts/run_report.rs](../../../crates/hoimin-cli/src/artifacts/run_report.rs); read revision and hash recorded above.
++[^post962-config]: [Source: crates/hoimin-core/src/config.rs](../../../crates/hoimin-core/src/config.rs); read revision and hash recorded above.
++[^post962-metrics]: [Source: crates/hoimin-cli/src/metrics.rs](../../../crates/hoimin-cli/src/metrics.rs); read revision and hash recorded above.
++[^post962-release]: [Source: tools/release.py](../../../tools/release.py); read revision and hash recorded above.
++[^post962-provenance]: [Source: tools/pypi_provenance.py](../../../tools/pypi_provenance.py); read revision and hash recorded above.
++[^post962-release-workflow]: [Source: .github/workflows/release.yml](../../../.github/workflows/release.yml); read revision and hash recorded above.
+diff --git a/docs/knowledge/audits/index.md b/docs/knowledge/audits/index.md
+index 1458c4886036f40f0aa89fb6c65b676734b15271..2263d5eebe275150a194f8de06e76ba5d39accf9 100644
+--- a/docs/knowledge/audits/index.md
++++ b/docs/knowledge/audits/index.md
+@@ -8,6 +8,8 @@ and an actual host execution are different evidence; see the
+ 
+ Read the relevant summary and follow its original sources:
+ 
++- [Design complexity after PR 962](design-complexity-post962.md) - Unused and derived disk statistics; rejected broader state rewrites.
++
+ - [Reading Lean evidence](lean-evidence.md) - Model proofs, finite search, Rust comparisons and host execution.
+ - [2026-09-11 boundary audit](boundary-2026-09.md) - Syntax, selection, execution and persistence findings, including static and unverified scope.
+ - [Progress-input validation and follow-up](progress-input.md) - Later fixes, 368 historical observations and changed comparison-test assumptions.
+diff --git a/docs/knowledge/design/runtime-lifecycle.md b/docs/knowledge/design/runtime-lifecycle.md
+index c6861b4ab32d4d0f61aa083b506439725d455373..ce105bf8f7acf6fd7c00ce95e01f6105eeff89e7 100644
+--- a/docs/knowledge/design/runtime-lifecycle.md
++++ b/docs/knowledge/design/runtime-lifecycle.md
+@@ -736,3 +736,10 @@ failure handling.[^issue-960-record]
+ 
+ [^issue-960-output]: [Output collection and fault tests](../../../crates/hoimin-cli/src/process/output.rs).
+ [^issue-960-record]: [Issue 960 implementation and verification](../../maintenance/2026-10-16-issue-960.md).
++
++# Post-962 statistics audit
++
++The [post-962 design audit](../audits/design-complexity-post962.md) identifies
++unused sampled values and a derivable global minimum, while retaining separate
++end-of-run capacity measurement. It records static evidence and implementation
++validation requirements; it does not claim fresh runtime or formal verification.
+diff --git a/docs/knowledge/index.md b/docs/knowledge/index.md
+index 5ed7fcc8fd6b743830649f50228e48a24259df06..99e5207d1b450e98d231c087e2308a8d9ef2ed13 100644
+--- a/docs/knowledge/index.md
++++ b/docs/knowledge/index.md
+@@ -71,6 +71,8 @@ recorded revisions against the implementation you are changing:
+ 
+ # Audits and verification scope
+ 
++- [Design complexity after PR 962](audits/design-complexity-post962.md) - Current type/compatibility review and disk-statistics ownership.
++
+ Treat these as evidence at their recorded revisions, inputs and environments,
+ not a claim that every current host or commit passed the same checks:
+ 

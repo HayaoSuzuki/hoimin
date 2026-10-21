@@ -1,0 +1,288 @@
+diff --git a/docs/knowledge/audits/design-2026-10-16.md b/docs/knowledge/audits/design-2026-10-16.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..210f546c1ac0746618b4ca8fab0a469f923d5e0f
+--- /dev/null
++++ b/docs/knowledge/audits/design-2026-10-16.md
+@@ -0,0 +1,44 @@
++---
++type: Audit
++title: Type and compatibility design audit, 2026-10-16
++description: Three small follow-ups after the saved-config, cleanup-authority and candidate-projection refactors.
++status: draft
++audit_revision: 0d3fbc1a1821074d6ba8a2a212116241adc85c4e
++sources:
++- id: design-audit-20261016
++  resource: ../../superpowers/reports/2026-10-16-design-audit-followup.md
++  working_tree: untracked
++  sha256: ec3aaf5e1966da6e300a9ae108132d22d5242613e2e5059a2765240938f3b251
++---
++
++# Findings and limits
++
++The static audit at the recorded revision examined types, Enum boundaries and
++obsolete compatibility behavior after #923/#924/#925 were merged. Compatibility
++preservation was not required. The accepted changes are [#929](https://github.com/HayaoSuzuki/hoimin/issues/929)
++(removing three analyzer diagnostic variants with no current producer),
++[#930](https://github.com/HayaoSuzuki/hoimin/issues/930) (returning MutationOperator
++from token replacement selection), and [#931](https://github.com/HayaoSuzuki/hoimin/issues/931)
++(using ApplyMutation.candidate as the single candidate source). These are
++proposals; this audit does not implement them or demonstrate current CLI failures.[^design-audit-20261016]
++
++The review also checked runtime/session state, report and configuration readers,
++progress, metrics, plan/review boundaries and Python tooling. Current Git and
++Windows fallbacks, useful report projections and optional evidence were not
++classified as obsolete compatibility. The source record explains rejected
++candidates and the boundaries of each accepted change.[^design-audit-20261016]
++
++The scoped philosophy assessment is 7.5/10: six diagnostics supported, locality
++partially unmet, and actual design-investment time unmeasured. Completion needs
++implementation and re-review of the three follow-ups plus time measurements for
++that last diagnostic. Builds, tests, property testing, mutation testing and Lean
++proofs were not run during this audit. Existing tests were inspected to define
++future acceptance criteria.[^design-audit-20261016]
++
++# Related contracts
++
++- [Analyzer](../design/analyzer.md): current candidate and diagnostic generation.
++- [Runtime lifecycle](../design/runtime-lifecycle.md): workspace ownership and recovery.
++- [Evidence guide](../overview.md): historical and static evidence limits.
++
++[^design-audit-20261016]: [Original audit and review record](../../superpowers/reports/2026-10-16-design-audit-followup.md).
+diff --git a/docs/knowledge/audits/index.md b/docs/knowledge/audits/index.md
+index 1458c4886036f40f0aa89fb6c65b676734b15271..630db75018a114969a33819ba7b86b37008eb208 100644
+--- a/docs/knowledge/audits/index.md
++++ b/docs/knowledge/audits/index.md
+@@ -8,6 +8,8 @@ and an actual host execution are different evidence; see the
+ 
+ Read the relevant summary and follow its original sources:
+ 
++- [2026-10-16 type and compatibility audit](design-2026-10-16.md) - Static follow-ups #929–#931 and rejected candidates.
++
+ - [Reading Lean evidence](lean-evidence.md) - Model proofs, finite search, Rust comparisons and host execution.
+ - [2026-09-11 boundary audit](boundary-2026-09.md) - Syntax, selection, execution and persistence findings, including static and unverified scope.
+ - [Progress-input validation and follow-up](progress-input.md) - Later fixes, 368 historical observations and changed comparison-test assumptions.
+diff --git a/docs/knowledge/design/analyzer.md b/docs/knowledge/design/analyzer.md
+index 824707772ea4311c8025d14d6feeb19bc8561d75..abc83626f09bd7d0a0d121cf3fb7c210724db9c6 100644
+--- a/docs/knowledge/design/analyzer.md
++++ b/docs/knowledge/design/analyzer.md
+@@ -996,3 +996,9 @@ These are finite implementation observations on macOS; the Lean model was not
+ rebuilt for this private representation change.[^issue-914-evidence]
+ 
+ [^issue-914-evidence]: [Issue 914 design, reviews and verification](../../superpowers/plans/2026-10-15-issue-914.md).
++
++## 2026-10-16 follow-up proposals
++
++The [type and compatibility audit](../audits/design-2026-10-16.md) records
++unimplemented follow-ups at a pinned revision. Its static findings do not change
++this contract or establish new runtime verification results.
+diff --git a/docs/knowledge/design/runtime-lifecycle.md b/docs/knowledge/design/runtime-lifecycle.md
+index ca5685f160ca2382bb22c37a65843f047094a1ae..5f02d96d3924a1ddb38bbd1fe3e1595137159fd5 100644
+--- a/docs/knowledge/design/runtime-lifecycle.md
++++ b/docs/knowledge/design/runtime-lifecycle.md
+@@ -434,3 +434,9 @@ claim a new Lean proof.[^issue-912-plan]
+ 
+ [^issue-912-machine]: [Core run machine](../../../crates/hoimin-core/src/machine.rs), Issue #912 private ordered collection phase.
+ [^issue-912-plan]: [Issue #912 design and implementation plan](../../superpowers/plans/2026-10-15-issue-912.md).
++
++## 2026-10-16 follow-up proposals
++
++The [type and compatibility audit](../audits/design-2026-10-16.md) records
++unimplemented follow-ups at a pinned revision. Its static findings do not change
++this contract or establish new runtime verification results.
+diff --git a/docs/knowledge/index.md b/docs/knowledge/index.md
+index 5ed7fcc8fd6b743830649f50228e48a24259df06..45300f62464f248e9d2e698af82130241a613fca 100644
+--- a/docs/knowledge/index.md
++++ b/docs/knowledge/index.md
+@@ -71,6 +71,8 @@ recorded revisions against the implementation you are changing:
+ 
+ # Audits and verification scope
+ 
++- [2026-10-16 type and compatibility audit](audits/design-2026-10-16.md) - Static follow-ups #929–#931 and rejected candidates.
++
+ Treat these as evidence at their recorded revisions, inputs and environments,
+ not a claim that every current host or commit passed the same checks:
+ 
+diff --git a/docs/knowledge/references/audit-documents.md b/docs/knowledge/references/audit-documents.md
+index 2319eef8b28eb1f320bf6f9e2e0b01470090c700..48813a2f3f0f0b84f91163c808b51e23bd842f25 100644
+--- a/docs/knowledge/references/audit-documents.md
++++ b/docs/knowledge/references/audit-documents.md
+@@ -5,6 +5,10 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
+ status: draft
+ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+ sources:
++- id: design-audit-20261016
++  resource: ../../superpowers/reports/2026-10-16-design-audit-followup.md
++  working_tree: untracked
++  sha256: ec3aaf5e1966da6e300a9ae108132d22d5242613e2e5059a2765240938f3b251
+ - id: issue-911-design
+   resource: ../../superpowers/reports/issue-911/design.md
+   working_tree: untracked
+@@ -1590,3 +1594,11 @@ sources:
+ [^issue-911-design]: [Typed verification selection design](../../superpowers/reports/issue-911/design.md).
+ 
+ [^issue-911-review]: [Review and verification](../../superpowers/reports/issue-911/review.md).
++
++## 2026-10-16 type and compatibility design audit
++
++| Document | Scope |
++| --- | --- |
++| [Audit and review record](../../superpowers/reports/2026-10-16-design-audit-followup.md) [^design-audit-20261016] | Static findings #929–#931, rejected candidates, scoring and evidence limits |
++
++[^design-audit-20261016]: [Original audit record](../../superpowers/reports/2026-10-16-design-audit-followup.md).
+diff --git a/docs/superpowers/reports/2026-10-16-design-audit-followup.md b/docs/superpowers/reports/2026-10-16-design-audit-followup.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6dd067a3e19b64395db7fcf8ca28ff26b4b81d27
+--- /dev/null
++++ b/docs/superpowers/reports/2026-10-16-design-audit-followup.md
+@@ -0,0 +1,151 @@
++# Design audit follow-up, 2026-10-16
++
++## Scope and revision
++
++Static audit of `0d3fbc1a1821074d6ba8a2a212116241adc85c4e`, after
++#923/#924/#925 were merged through #927/#928/#926.
++The user requested software-design-philosophy, particular attention to types,
++Enums and obsolete compatibility work, and authorized filing justified Issues.
++Compatibility preservation is not required.
++
++Worktree: `.worktrees/design-audit-20261016`.
++Branch: `audit/2026-10-16-design-followup`, created from fetched origin/main;
++upstream removed to avoid accidentally pushing to main.
++Origin fetch/push URL: `https://github.com/HayaoSuzuki/hoimin.git`.
++
++Read the knowledge catalog and evidence guide, inspected code and existing
++tests, and checked open and recently closed GitHub Issues. Parallel read-only
++reviews covered runtime/workspace/session, analyzer/plan/review, and
++configuration/report/Python compatibility. Parent review additionally examined
++progress, metrics and report delivery, and independently checked every accepted
++finding. No production source or test was changed.
++
++## Accepted improvements
++
++| Issue | Evidence and smallest useful change |
++| --- | --- |
++| [#929](https://github.com/HayaoSuzuki/hoimin/issues/929) | Remove three producerless analyzer diagnostic variants and their mappings. #851 preserved shared definitions verbatim; #865 centralized the retained names. Keep generic message/location coverage using current variants. |
++| [#930](https://github.com/HayaoSuzuki/hoimin/issues/930) | Return existing MutationOperator values from token replacement selection. Remove the immediate string-to-enum parse and expect; preserve candidate string serialization and ordering. |
++| [#931](https://github.com/HayaoSuzuki/hoimin/issues/931) | ApplyMutation already owns the candidate, but the synchronous handler takes a second candidate and ignores the request payload. Remove the extra argument; keep synchronous and owned execution APIs. #872 explicitly preserved this difference. |
++
++These are maintenance improvements, not reproduced failures of the current CLI.
++The workspace signature change is deliberate; no old-signature wrapper is needed.
++The diagnostic deletion does not require rejecting arbitrary saved diagnostic
++strings. Token selection should not change all candidate operator fields to an
++Enum: declaration ordering differs from current lexical ordering.
++
++## Candidates not promoted to Issues
++
++- Saved normalized arrays and session budgets: the recent changes already reject
++  obsolete missing fields and old schemas. Raw configuration defaults still
++  serve current input.
++- Git legacy diff and Windows deletion fallback: current rename/unmerged inputs
++  and filesystem behavior require these paths; names alone do not establish
++  obsolete compatibility.
++- SelectionWire and flat disk reporting: projections describe current external
++  metadata. Internal enums already centralize their relationships; a schema
++  redesign has no established net benefit here.
++- CandidateValidationContext Result/Option fields: private construction and
++  validation precedence enforce their relationship; a new wrapper would not
++  simplify the sole consumer.
++- Review SourceState versus Applicability: source observations and stored-key
++  matching are separate responsibilities.
++- All candidate operator strings becoming Enums: this would broaden persistence,
++  stable-ID and ordering changes beyond the confirmed internal conversion.
++- Report optional fields, progress opaque configuration and Python tool optional
++  evidence: current consumers legitimately omit or do not require these values.
++- Release Result-to-exception adapters and target effect handlers: they implement
++  current error/ID boundaries rather than preserving retired transport.
++- Progress pair versus aggregate state and metrics stage strings: inspected
++  their construction/consumption; localized mappings do not establish enough
++  present complexity reduction to justify another standalone Issue.
++- Removing every synchronous workspace API: useful recovery and Lean adapter
++  tests consume them; the confirmed problem only requires one argument removal.
++- CLI error classification and language splitting: no separate proposal with
++  demonstrated benefit beyond existing #743.
++
++## Philosophy assessment
++
++Scoped qualitative score: **7.5/10**, six diagnostic rows supported, one
++partially unmet and one unmeasured. This is not a complete correctness result,
++nor a numerical comparison with earlier audits of different boundaries.
++
++| Diagnostic | Assessment |
++| --- | --- |
++| Module purpose can be stated in one sentence | Supported: pure core policy, analysis, filesystem workspace, reporting, persistence have identifiable ownership. |
++| Interface simpler than implementation | Supported overall: owned tasks, verified plans and validated configuration hide substantial work. |
++| Implementation changes remain local | Partially unmet: synchronous callers duplicate candidate data/selection knowledge; fixed operator IDs are converted through a string agreement. #929 also reduces obsolete vocabulary callers must understand. |
++| Interface comments explain abstraction | Supported by workspace ownership, artifact-reader and selection contracts; update the changed signature's contract during implementation. |
++| Design discussion is routine in reviews | Supported by recent design Issues, implementation records and explicit scope decisions in #851/#865/#872. |
++| Modules own important decisions | Supported: core owns candidate identity/configuration; workspace operations own recovery; artifact reader owns decoding. |
++| Boundaries understandable without implementation reading | Supported overall by module contracts and the knowledge catalog; remaining local vocabulary is addressed by #929. |
++| 10–20% of time invested in design | Unmeasured; do not infer time allocation from document count. |
++
++To reach the framework's 10/10 within this scope, remove the confirmed local
++duplication and obsolete vocabulary, re-review the resulting boundaries, and
++measure actual design-investment time. Time measurement is not a reason to file
++a code-change Issue.
++
++## Review passes
++
++### Scope: five passes
++
++1. Checked main SHA, fetched origin, verified URLs and isolated the audit branch.
++2. Checked #923/#924/#925 completion and excluded them from new proposals.
++3. Checked open Issues (#806/#743/#570) and recent closed titles for overlap.
++4. Read catalog/evidence policy; separated current contracts from historical results.
++5. Split independent review domains and required producer/consumer evidence;
++   rejected a quota-based search for Issues.
++
++### Evidence: five passes
++
++1. Traced real diagnostic constructors and enum consumers; obsolete values occur
++   only in mappings and synthetic construction tests.
++2. Traced token replacement into its sole conversion and typed candidate builder;
++   inspected compound tokens and existing enum canonical names.
++3. Traced request/explicit candidate behavior and the test that deliberately
++   preserves their difference; confirmed production owned tasks and cfg(test)
++   direct shell execution.
++4. Read #851/#865/#872 bodies and local maintenance provenance to distinguish
++   new follow-up scope from already completed work.
++5. Checked proposed alternatives against ordering, persisted strings, ownership,
++   recovery, and existing test/oracle callers; reduced workspace scope to one
++   source of candidate data.
++
++### Publication: five passes
++
++1. Wrote separate issue drafts with current SHA links, actual evidence,
++   acceptance criteria and explicit static-only verification scope.
++2. Checked that no proposal introduces a compatibility wrapper or speculative
++   abstraction; kept supported platform fallbacks and useful wire projections.
++3. Independently reviewed draft evidence. Corrected the token draft's claim that
++   all named tests are parameterized; added the actual annotation-suppression
++   test rather than relying on lookup-statistics coverage.
++4. Validated all fourteen source-link file/line ranges locally and checked the
++   named token regression tests exist. Re-read past Issue bodies for scope.
++5. Re-read the three published Issues (#929/#930/#931); confirmed OPEN state,
++   correct repository and titles. Checked source anchors and local change scope.
++   The source record is catalogued below without claiming runtime validation.
++
++## Verification limits
++
++This audit did not run Rust builds, tests, proptest, mutation testing, benchmarks
++or Lean proofs. Existing tests were read to define implementation acceptance
++criteria; their presence is not a new execution result. The proposed changes do
++not introduce a new state machine requiring a fresh formal model. Implementation
++should run relevant existing regression/property/oracle tests and add focused
++coverage only where needed, with AAA and one viewpoint per test.
++
++Implementation is not part of this audit. Future work
++should use separate branches with corresponding documentation and at least five
++self-review passes in each design, planning, implementation and verification stage.
++
++
++## Documentation checks
++
++The new concept YAML, source hashes, footnotes and local links passed focused
++checks. All fourteen source-code link ranges in the Issue drafts exist at the
++pinned revision. Published Issues were read back and confirmed open.
++The strict documentation-site command could not start because the existing
++Python environment lacks the markdown package; no successful site build is
++claimed. This audit only changes internal knowledge and review documents.

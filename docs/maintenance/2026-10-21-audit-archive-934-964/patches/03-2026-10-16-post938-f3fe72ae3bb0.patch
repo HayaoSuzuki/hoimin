@@ -1,0 +1,183 @@
+diff --git a/docs/knowledge/design/architecture.md b/docs/knowledge/design/architecture.md
+index 8ab4a4cf9713f5b2e3b218cf5219691bd34f4beb..32fad0f73e60317d149f3e1d5fd79f8e7b53b01c 100644
+--- a/docs/knowledge/design/architecture.md
++++ b/docs/knowledge/design/architecture.md
+@@ -5,6 +5,11 @@ description: 元ソースへの変異適用を避け、状態遷移と入出力
+ status: draft
+ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+ sources:
++- id: post938-design-audit
++  resource: ../../maintenance/2026-10-16-post938-design-audit.md
++  revision: 465ff928c1f2ceb9f9b8f8084465475e45799ee8
++  working_tree: untracked
++  sha256: 9f61315922c987ea53b719f6f3330d43c43de22748fe90d32cd90577e3b809f7
+ - id: c4-runtime-views
+   resource: ../../architecture/c4-model.md
+   working_tree: untracked
+@@ -211,3 +216,16 @@ Issue 477では、path-only `.pth` に登録した元のsrcディレクトリが
+ [^candidate-path-policy]: [crates/hoimin-core/src/candidate.rs](../../../crates/hoimin-core/src/candidate.rs)。
+ 
+ [^candidate-path-tests]: [crates/hoimin-core/tests/candidate_policy.rs](../../../crates/hoimin-core/tests/candidate_policy.rs)。
++
++# Design audit after Issues 935 and 936 (2026-10-16)
++
++The audit at `465ff928c1f2ceb9f9b8f8084465475e45799ee8` evaluated types,
++compatibility remnants and duplicated state. It filed Issues 939–943 for report
++configuration decoding, synthetic outcome ownership, common stop routing,
++workspace slot ownership and redundant bookkeeping. The report distinguishes
++static design findings from a reproduced current-schema report-reader acceptance
++difference and records intentional caches/lifecycle distinctions that should
++remain separate. The fixes are pending; the audit does not establish their
++implementation or a new whole-workspace test result.[^post938-design-audit]
++
++[^post938-design-audit]: [Design audit after Issues 935 and 936](../../maintenance/2026-10-16-post938-design-audit.md).
+diff --git a/docs/maintenance/2026-10-16-post938-design-audit.md b/docs/maintenance/2026-10-16-post938-design-audit.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..091cde8b31cdd4169f559654432ec8c2e709b261
+--- /dev/null
++++ b/docs/maintenance/2026-10-16-post938-design-audit.md
+@@ -0,0 +1,144 @@
++# Design audit after Issues 935 and 936
++
++Audited on 2026-10-16 at main
++`465ff928c1f2ceb9f9b8f8084465475e45799ee8`, after PRs 937 and 938 merged.
++This record belongs to branch `audit/2026-10-16-post938`. It records an audit and
++issue publication, not implementation of the findings.
++
++The requested focus was type/enum boundaries, unnecessary backward compatibility,
++and duplicated state management. No compatibility adapter is required for future
++fixes. `software-design-philosophy` guided the evaluation; three independent
++read-only audits covered analyzer, runtime, and persistence. The coordinator
++inspected workspace/selection boundaries, checked the findings, and repeated the
++report-reader reproduction.
++
++## Evaluation
++
++**7.5/10: six of eight diagnostic rows supported in the inspected production
++boundaries.** This is a scoped design assessment, not a numerical guarantee about
++every source file or a performance score.
++
++| Diagnostic | Assessment | Evidence or remaining work |
++| --- | --- | --- |
++| Describe module responsibilities in one sentence | Pass | Core transitions, analyzer discovery, workspace ownership, process execution, and report/session I/O have distinct roles. |
++| Interfaces simpler than implementations | Pass | Effects/events, validated configuration, and private worker states hide substantial mechanisms. |
++| Change implementation without updating distributed assumptions | Partial; not counted | Synthetic outcomes, workspace ownership, and stopping rules still require synchronized updates. Issues 940–943 reduce these dependencies; 939 preserves typed-reader information at the boundary. |
++| Interface comments describe abstractions | Pass in inspected boundaries | Workspace operations describe ownership on failure; readers distinguish progress and review; runtime contracts describe acknowledgement and cleanup. |
++| Design is part of code review | Pass | Recent type/ownership changes and this audit include explicit scope, counterexamples and independent review. |
++| Modules own important design decisions | Pass | Core owns transition policy, workspace owns filesystem capabilities, report readers own structural validation. Local duplication within these owners remains actionable. |
++| Boundaries understandable without tracing every implementation | Pass at module level | Architecture/OKF contracts and boundary comments identify ownership and evidence limits. The report implementation currently violates its intended typed validation boundary. |
++| 10–20% of time invested in design improvement | Unmeasured; not counted | No time-allocation data was collected. Measure representative development work before awarding this row. |
++
++Reaching 10/10 requires eliminating the identified synchronization/reader-boundary
++problems and establishing the design-investment diagnostic with actual data.
++Adding more enums without reducing legal-state ambiguity would not improve the
++assessment.
++
++## Filed issues
++
++| Issue | Priority | Finding and bounded correction |
++| --- | --- | --- |
++| [939](https://github.com/HayaoSuzuki/hoimin/issues/939) | Medium | Review decodes report configuration through `Value`, losing duplicate keys before typed validation. Preserve original field information until strict review decoding while retaining progress's opaque configuration contract. |
++| [940](https://github.com/HayaoSuzuki/hoimin/issues/940) | Medium | Synthetic statuses are broad `MutationStatus` values copied into worker states and output actions. Use a narrow synthetic outcome with one owner. |
++| [941](https://github.com/HayaoSuzuki/hoimin/issues/941) | Medium | Deadline, disk stop and cancellation repeat the same retirement/drain/finalization routing. Share the routing while preserving cause-specific outcomes. |
++| [942](https://github.com/HayaoSuzuki/hoimin/issues/942) | Medium | Active/pending workspace ownership is split across two maps and two completion Options despite exclusive production states. Use a slot enum and typed returned ownership. |
++| [943](https://github.com/HayaoSuzuki/hoimin/issues/943) | Low | `created_workers`, write-only `mutant_limit_reached`, and the mirror `records_written` counter carry no independent information. Remove exactly these fields without adding a shared abstraction. |
++
++Source locations are pinned in each issue. Principal files inspected were
++`crates/hoimin-core/src/{machine,resume,config,report}.rs`,
++`crates/hoimin-cli/src/workspace/{mod,operation,owned}.rs`,
++`crates/hoimin-cli/src/artifacts/run_report.rs`, and the analyzer modules including
++`store.rs`, fact indexes, callable imports and exception analysis.
++
++The live issue list contained only 570, 743 and 806 before publication, with no
++open PRs. The latest 100 closed issues were checked, including 856, 872, 895–902,
++911–916, 923–925, 929–931, 935 and 936. The new issues concern remaining code, not
++reopening completed work. The publication bodies contain acceptance conditions,
++compatibility decisions, verification scope and five review checks.
++
++## Report-reader reproduction
++
++The existing issue-936 binary was used, not a new audit-main build:
++
++- Binary: `.worktrees/issue-936/target/debug/hoimin`, version 0.10.0.
++- Checkout: clean `6894b3b17d4b335577b54d8614415397d5aabaf2`.
++- Binary SHA-256: `e83508d9b0cc081d2c3bba3db62ab1a0bac651757543785d6f852b678203ecc1`.
++- Compared with audit main, crate source differences are confined to analyzer
++  files. Relevant report reader, review and configuration code is identical.
++- Input: a schema-8 plan and schema-6 golden-report fixture adjusted to its
++  candidate/configuration. This was not a newly executed mutation test run.
++
++Scratch inputs are under `/private/tmp/hoimin-post938-report-decode-e0njhyst/`:
++`plan.json`, `valid.json`, `invalid-config.json`, and `duplicate-config.json`.
++Each case ran `hoimin review list PLAN --store absent.sqlite3 --report REPORT
++--format json` on macOS. The coordinator repeated all three cases independently.
++
++| Raw configuration field | Exit | Observation |
++| --- | --- | --- |
++| `"import_roots":[]` | 0 | Accepted |
++| `"import_roots":null` | 2 | `invalid type: null, expected a sequence` |
++| `"import_roots":null,"import_roots":[]` | 0 | Accepted; stdout byte-identical to the valid case |
++
++The store remained absent. The valid/duplicate stdout SHA-256 was
++`31ed1b2d1bc6286c01ec8185594fea4078b60d10d7ade35bc9cc62c5e2f34697`.
++The temporary result record is `/tmp/hoimin-post938-repro-results.json`.
++Issue 939 contains a portable raw-string mutation recipe. This establishes the
++reader acceptance difference, not a security exploit or normal-writer defect.
++
++## Counterexamples and deferred cleanup
++
++- `all_legacy()` remains a historical 43-operator helper used to assemble the
++  current default plus later additions. There is no runtime legacy-mode parser.
++  A future local cleanup can define the current allowlist directly and move old
++  subsets into test fixtures. It is lower value than the filed issues; do not
++  replace defaults with all operators and accidentally enable opt-in mutations.
++- Old report readers, DB migrations, alias names and omitted required-array
++  repair have already been removed by earlier work. No new reason was found to
++  reintroduce them. Current optional fields and raw CLI defaults are not
++  automatically backward-compatibility debt.
++- Git's `DiffPlan::Legacy` preserves global rename/unmerged-diff behavior and
++  handles path batching limits. Windows disposition fallback supports current OS
++  operations. Their names do not justify deleting them as format compatibility.
++- Analyzer fact indexes and exception indexes are deliberate derived caches.
++  Callable imports' trusted and possible provenance have distinct meanings.
++  Control-flow exits describe simultaneous abstract alternatives, not exclusive
++  runtime states. They should not be merged mechanically.
++- `HierarchyReport.emitted/ineligible` are unused accounting candidates, but too
++  small to justify a separate issue. Preserve the actual `SiteOutcome` distinction.
++- Exception-project string errors appear to lose cancellation classification, but
++  the cancellation-select/timeout paths mask ordinary public outcomes. No
++  observable failure was established, so no bug was filed.
++- Root cleanup readiness, namespace lifecycle, process cancellation gates, output
++  drain evidence, and process quiescence represent different observations or
++  ownership. Multiple fields alone do not establish redundant authority.
++- Persisted outcomes/diagnostics and independently useful event projections are
++  not removed simply because a narrow consumer reads only part of them.
++
++## Review and verification record
++
++Scope stage, five passes: (1) pinned latest main; (2) checked worktree and remote;
++(3) read architecture/knowledge contracts; (4) separated three independent audit
++domains; (5) excluded completed/open work and established no-compatibility scope.
++
++Finding stage, five passes: (1) checked declarations and every relevant reference;
++(2) traced producers, updates and consumers; (3) considered deliberate caches,
++projections and lifecycle distinctions; (4) bounded proposed changes and checked
++historical issues; (5) checked acceptance tests and the strength of evidence.
++Each delegated audit also reported five passes.
++
++Publication stage, five passes: (1) checked exact source links; (2) independently
++reviewed the issue drafts; (3) narrowed the spool requirement to stores whose
++pushes all succeeded, avoiding a new partial-write-recovery promise; (4) recorded
++binary provenance and repeated the report reproduction; (5) checked the live
++issue/PR list again and published only the five reviewed bodies.
++
++No Rust/Python production source was changed. No workspace suite, new proptest,
++new mutation campaign or Lean proof was run during this audit. The new issues
++specify where existing properties/oracles should be rerun during implementation.
++Native evidence here is limited to the macOS report-reader reproduction.
++Final documentation checks passed: 49 OKF pages parsed with reserved-file rules,
++local targets and catalog reachability; the updated architecture concept's
++source IDs/footnotes and this record's SHA/revision matched. Site generation and
++`git diff --check` passed. All five published issues were read back and their
++OPEN state, titles and complete bodies matched the reviewed drafts. No product
++source or tests were changed in this audit branch.

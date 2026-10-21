@@ -76,6 +76,8 @@ recorded revisions against the implementation you are changing:
 Treat these as evidence at their recorded revisions, inputs and environments,
 not a claim that every current host or commit passed the same checks:
 
+- [October 2026 design-audit history](audits/design-history-2026-10.md) - Eight archived reviews, completed follow-ups and conditions for reconsidering earlier decisions.
+
 - [Additional audit Lean integration report](../superpowers/reports/2026-09-15-followup-lean-promotion.md) - Six models, 33 theorems, 58 inputs and unresolved implementation correspondence.
 
 - [Nullable mutation eligibility](audits/nullable-gates-2026-09.md) - #564/#565 reproductions and Lean validation of name resolution and type-argument trees.

@@ -1,0 +1,371 @@
+diff --git a/docs/knowledge/audits/design-complexity-post958.md b/docs/knowledge/audits/design-complexity-post958.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b82a47cdf407ab7cedd789cae971db8512c1bcac
+--- /dev/null
++++ b/docs/knowledge/audits/design-complexity-post958.md
+@@ -0,0 +1,311 @@
++---
++type: Audit
++title: Design complexity after PR 958
++description: Current type boundaries, obsolete compatibility and duplicate state, with two bounded simplifications.
++status: draft
++audit_revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++sources:
++- id: post958-cli
++  resource: ../../../crates/hoimin-cli/src/cli.rs
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: 302ddf564bfaf174c73f9a1839540146e3cb5a69d819b4f83a79d7a9453312bf
++- id: post958-plan
++  resource: ../../../crates/hoimin-cli/src/plan.rs
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: a7e8dbef8e4f3fe3ca8b90a86c377cf9441ac94682b209ac22d554fb8f884210
++- id: post958-preview
++  resource: ../../../crates/hoimin-cli/src/plan/preview.rs
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: 970beb507cb837b470bb4c42bc024a8b597cb9ba5a616ef399ee45eab84b9c0c
++- id: post958-compat-intent
++  resource: ../../../docs/superpowers/specs/2026-09-14-issue-454-fixed-batches-design.md
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: 10e05c4a8d518d5334e191a2999d2bd9f5c198569a3db650969f51adcc097dd1
++- id: post958-output
++  resource: ../../../crates/hoimin-cli/src/process/output.rs
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: 516e3b59070d9b381dc812ff211f5796b1238a00567fb2ab2f77769f2a972e4e
++- id: post958-machine
++  resource: ../../../crates/hoimin-core/src/machine.rs
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: 509d0eb1f971cb48f2c0cf0f1afbc2db57a69b5065d5b9e614c81d4dd05eaba6
++- id: post958-shell
++  resource: ../../../crates/hoimin-cli/src/shell.rs
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: 5fcdd3d6b6704103af83478744e858cebb30bc57c8938cf24d4223ae05c7fe3d
++- id: post958-process
++  resource: ../../../crates/hoimin-cli/src/process/mod.rs
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: eabae4dc6c9f4690a397e81aa5386b511d65f671d731140ea890db7455cdd398
++- id: post958-owned
++  resource: ../../../crates/hoimin-cli/src/workspace/owned.rs
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: 037cb0b8ed3294240e4d36859c70882674d2f0622c00dcaf8167d22604dbfded
++- id: post958-workspace
++  resource: ../../../crates/hoimin-cli/src/workspace/mod.rs
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: 7220756728e06d01fa9949d93dbb8f9dc2cd5ff9f53b913d812ceb0ed0a80187
++- id: post958-disk
++  resource: ../../../crates/hoimin-cli/src/workspace/disk.rs
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: 63793e1f410978f06ffffdcde140ead0b3003eb498cf341303056e79299c575f
++- id: post958-linux
++  resource: ../../../crates/hoimin-cli/src/resource/linux.rs
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: 476ccf7f1dfe90507af7618ea6f5dbe2d5c092bd0a5349e3ff4839cba6b8b854
++- id: post958-windows
++  resource: ../../../crates/hoimin-cli/src/resource/windows.rs
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: 459663a3f969e9acf4658845f0f84d90991450ba04e61d7a3aab3fdeaf1673c8
++- id: post958-session
++  resource: ../../../crates/hoimin-cli/src/session/mod.rs
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: a6d2221ead4358cd7b48bae6afce68dce85de32d0dba81ceec7dad5d98133aa5
++- id: post958-schema
++  resource: ../../../crates/hoimin-cli/src/session/schema.rs
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: e1b725d36d5d4cad86ab45d75a7bb6f1dbfe61a4f8f3d54b0cb074f84c542805
++- id: post958-lifecycle-oracle
++  resource: ../../../crates/hoimin-cli/tests/lean_result_lifecycle_oracle.rs
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: c4be2b1548e9d1832723e686dad109d96cb361cb2f4310e78815a2175fa1acdd
++- id: post958-report
++  resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: 585817301a29f83d660b42c293025105adcdc1defd568e1b48a9027f8da6f17a
++- id: post958-progress
++  resource: ../../../crates/hoimin-cli/src/progress/compare.rs
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: f7414a5fc5d9db0cfe5762a07d487b53f4bc7c783719d71dc27f4c58765711a6
++- id: post958-config
++  resource: ../../../crates/hoimin-core/src/config.rs
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: 990c4227e4d3bdcc90d97957e47cf34ac63d07aabc39247a170e8e600066f2a6
++- id: post958-analyzer
++  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: fc838b85cc69ce2e0d5500a089b1f0d034ec82794b94a0a576bd7b3f30180318
++- id: post958-review
++  resource: ../../../crates/hoimin-cli/src/review/mod.rs
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: d7cb60b5ee7520d419d0de91442f2fe48f5ad70ef93cb147c9304a1c4bc2f7b2
++- id: post958-git
++  resource: ../../../crates/hoimin-cli/src/target/git/tracked.rs
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: 798eecf029794d88779e6e5f897d2a0ced356a44bd9dab4a8bf477a2ca7788d4
++- id: post958-release
++  resource: ../../../tools/release.py
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: 4e1951c826b512d57d06e8e3ed5eaeac1d29d07a6ff2c3061f57db41024d7e1c
++- id: post958-release-workflow
++  resource: ../../../.github/workflows/release.yml
++  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
++  working_tree: clean
++  sha256: a701c95964e2fb80eee328016cfb4f71d79e195f591505f56cb3d72fc764cb9a
++---
++
++# Scope and evidence
++
++Static review of main at `30d158c7ead3252c5c0aa398e8ab1819ffa9d75b`, after
++PRs #957 and #958 merged. The review covered core transitions, shell scheduling,
++process/resource/workspace ownership, analyzer/target/plan/review, persistence,
++progress, configuration and Python release tooling. Three independent domain
++reviews supplemented the coordinator's source inspection. No implementation,
++runtime tests, benchmarks or Lean proofs were executed during this audit.
++Existing tests were inspected as contracts and proposed validation targets.
++
++The software-design-philosophy criterion is net reduction in knowledge and
++coordination. The user explicitly permits breaking compatibility. That permits
++removing obsolete Rust constructors; it does not make current error rejection,
++platform behavior or independently observable lifecycle evidence obsolete.
++The catalog overview, architecture, runtime, selection, sessions and related
++historical audits were consulted before tracing current writers and readers.
++
++# Assessment
++
++The inspected boundaries satisfy six of eight diagnostics: **7.5/10**, using
++1.25 points per evidenced row. This is a scoped qualitative assessment, not a
++repository-wide measurement. Both findings are small maintenance improvements;
++no production failure was reproduced.
++
++| Diagnostic | Result | Evidence or required improvement |
++| --- | --- | --- |
++| Modules have describable purposes | Pass | Core transitions, shell I/O, discovery, selection and artifact readers have distinct roles. |
++| Interfaces are simpler than implementations | Pass | Typed requests, managed ownership and artifact readers hide substantial machinery. |
++| Implementation changes remain local | Needs work | Historical Top/TopRange compatibility requires duplicated construction and normalization across parser, plan and preview. Normalize once into one Top variant. |
++| Interface comments describe intent | Pass | Process drain, cancellation and workspace ownership comments identify evidence and lifetime limits. |
++| Design is reviewed with code | Pass | Recent maintenance records and this audit discuss alternatives and preservation obligations. |
++| Modules hide important design decisions | Pass | Core owns transitions, the collector owns output retention, and workspace/resource modules own cleanup. The collector's local Option pair remains a smaller improvement within that boundary. |
++| Module boundaries are discoverable | Pass | The architecture/runtime/selection/session concepts describe responsibilities and link their implementation evidence. |
++| 10–20% design-investment allocation | Unmeasured | Actual time allocation was not collected; no point awarded. |
++
++One Top representation addresses the failed locality row. Keeping Result in the
++collector reduces a local invariant without introducing another abstraction.
++An evidenced 10/10 would also require actual investment measurements; a code
++change cannot establish that criterion. No broad lifecycle enum or new generic
++state-management framework is recommended.
++
++# Findings
++
++## One normalized ranked request
++
++**Issue: [#959](https://github.com/HayaoSuzuki/hoimin/issues/959).** `VerifySelection` has Top and TopRange with the same
++count/policy. The parser distinguishes omitted offset from explicit zero; plan
++resolution and preview erase that distinction. The original fixed-batch design
++explicitly retained Top to preserve existing Rust construction. That requirement
++no longer applies. The recurring cost is synchronizing two variants and parser
++arms, then repeating normalization in consumers.[^post958-cli][^post958-plan]
++[^post958-preview][^post958-compat-intent]
++
++Use `Top { count, policy, offset }`, defaulting offset to zero at the parsing
++boundary. Retain raw optional input and clap constraints so illegal offset-only
++requests remain invalid. Remove TopRange, the extra constructor arm, the inner
++resolution match and the preview arm. Update Rust callers directly, with no
++alias or adapter. Preserve ranked order, retained-plan suffix clipping,
++max-mutants rejection, empty-plan error precedence and preview metadata.
++This does not change the ranking algorithm or saved formats.[^post958-plan]
++
++Implementation validation should compare omitted and explicit-zero offset,
++exercise all three policies and boundary offsets, retain the selection proptests
++and existing Lean paging correspondence tests, and compile all constructors.
++No new model is warranted for changing only the request representation.
++
++## Keep sink-or-error ownership in Result
++
++**Issue: [#960](https://github.com/HayaoSuzuki/hoimin/issues/960).** `collect_output_with_sink` receives `io::Result<S>` and
++splits it into two Options. During reception, successful sink ownership and
++first-error ownership are mutually exclusive, but each failed write must update
++both stores. Preserve the existing Result throughout reception and extract the
++sink only after EOF. This removes synchronized assignments and repeated
++first-error checks within one function.[^post958-output]
++
++The exclusivity claim applies to reception: current finalization failure can
++leave both a sink and error present before returning. No current invalid
++production transition was found. The proposed representation must still drain
++all chunks after create/write failure, count their bytes, drop a failed sink
++immediately, preserve the first error and avoid finalizing a failed sink.
++Early `?` during reception would violate the contract. Successful finalization
++runs once after EOF and its error must propagate.[^post958-output]
++
++The existing bounded-channel fault cases and output-retention corpus are relevant
++implementation gates. Add a focused finalization-failure behavioral case if
++existing coverage cannot observe that path. Use AAA and one concern per test;
++parameterize finite fault cases, reusing existing oracle inputs. Additional
++proptest coverage should address an actual uncovered input property. No new
++Lean proof or sink framework is warranted for this representation change.
++
++# Rejected candidates and current reasons
++
++The following candidates were reconsidered against current production flows,
++not rejected merely because an earlier audit rejected them.
++
++| Candidate | Current evidence and decision |
++| --- | --- |
++| Output continuation and cleanup classification from #955/#956 | PendingCompletion now owns output continuation; CleanupDisposition owns cleanup classification. Report-only evidence and report-started history have different jobs. Do not reopen resolved duplication. [^post958-machine][^post958-owned][^post958-shell] |
++| Core pending, run flags and session options | Completion ownership, active worker identity, cleanup reservation, attempted finish and observed outcomes have different lifetimes. A global state enum would combine independent axes. [^post958-machine] |
++| Core analysis queue and pending analysis | They coordinate at a narrow producer/consumer boundary. Bundling them is possible but no worthwhile independent change amplification was established. [^post958-machine] |
++| Shell in-flight counts and JoinSet | Counts represent unaccepted completions while task handles represent running/joinable tasks; task completion can precede event acceptance. Do not derive one from the other. [^post958-shell] |
++| Process output result and quiescence | A collector I/O error can coexist with settled work; aborting async work may lack proof that blocking I/O ended. Error outcome and cleanup evidence must remain distinct. [^post958-process] |
++| Admission gate and cancellation | They use similar synchronization, but prohibit new work and stop existing work respectively. An extraction would retain typed wrappers; no material net simplification was established. [^post958-process][^post958-shell] |
++| Resource closed and cleaned/terminated | Admission closes before cleanup, and failed cleanup must permit a retry. Windows notification consumption also differs from observed process exit. [^post958-linux][^post958-windows] |
++| Monitor handle and join status | Taking a handle transfers it to a blocking join; timeout can leave it running. Absence of the handle is not evidence of completed join. [^post958-disk] |
++| Managed-root flags and namespace states | Admission closure, durable readiness, live child ownership and rename/removal progression are independent evidence. Lock contention and partial failure produce valid combinations. [^post958-owned] |
++| Workspace registry and plan charges | Prepared blocking tasks temporarily own workspaces outside the registry; accounting must remain charged. Retention policy differs from successful physical cleanup. [^post958-workspace] |
++| Session finished and complete | Both complete and incomplete runs can be finalized. Real-process oracles read finished; releasing a lock does not distinguish finalization from a crash. [^post958-session][^post958-schema][^post958-lifecycle-oracle] |
++| Version and corruption checks | Schema 5 is accepted, empty stores initialized and other schemas rejected. Rechecking inside the transaction protects concurrent initialization. Fingerprint versions are a separate boundary. No old-format conversion ladder remains here. [^post958-schema][^post958-session] |
++| Shared report reader | Generic configuration preserves shared structural validation and current consumers' different needs. Optional fields represent current partial runs, not old-field repair. [^post958-report][^post958-machine] |
++| Progress projections and state | Latest state and consecutive stalls are distinct. A pair-only enum would duplicate most existing variants for one private producer. No useful net reduction demonstrated. [^post958-progress] |
++| Raw config and SessionMode | Optional path/resume represent unvalidated input; SessionMode already normalizes enabled ownership and intent. A second CLI-specific normalized type would duplicate conversion. [^post958-config][^post958-cli] |
++| Analyzer recording and control flow | Retained diagnostics, callback delivery and revisit suppression represent distinct behavior. Bounded heap, identity lookup and discarded-arrival evidence also serve different purposes. [^post958-analyzer] |
++| Prepared plans and review history | Immutable selection/provenance projections differ from executable choice; review history remains meaningful when no current row is applicable. No duplicate mutable authority demonstrated. [^post958-plan][^post958-review] |
++| Git Legacy mode | The fallback handles current rename/copy/unmerged/exceptional paths; removing it changes global patch semantics. Its name alone does not establish obsolete support. [^post958-git] |
++| all_legacy operator cohort | It supplies current defaults and historical fixture selection. Relocating its list retains the same knowledge elsewhere; no worthwhile simplification established. [^post958-config] |
++| Python import fallback | Direct-script invocation remains in release workflows while module imports serve tests. Standardizing invocations is possible, but the few branches do not justify a broad coordinated change in this audit. [^post958-release][^post958-release-workflow] |
++
++# Review and publication record
++
++Each domain reviewer recorded five separate passes. The coordinator also performed
++five passes at each stage; these are distinct checks, not repeated readings of
++the same diff.
++
++| Stage | Pass | Check and outcome |
++| --- | --- | --- |
++| Investigation | 1 | Pinned main after #957/#958, checked branch/remotes and isolated audit documentation. |
++| Investigation | 2 | Traced producers and consumers of state, including EOF and partial-cleanup transitions. |
++| Investigation | 3 | Distinguished current boundaries from historical compatibility using the explicit Top rationale. |
++| Investigation | 4 | Checked failure, timeout, retry and ownership-transfer counterexamples before proposing enums. |
++| Investigation | 5 | Compared replacement cost and existing tests; retained two bounded deletions and rejected broad rewrites. |
++| Proposal | 1 | Verified omitted offset equals zero after parsing; retained raw argument validation. |
++| Proposal | 2 | Corrected an initial draft: max-mutants rejects oversize selections; it does not truncate ranked requests. |
++| Proposal | 3 | Restricted sink/error exclusivity to reception and preserved EOF draining, sink drop and finalize errors. |
++| Proposal | 4 | Removed an unsupported implication that retention already has proptests; cited actual corpus tests and conditional additional coverage. |
++| Proposal | 5 | Independent reviewer challenged both drafts, their value, source links and validation scope. |
++| Publication | 1 | Rechecked open Issues and searched historical TopRange and collect_output_with_sink findings; #631 concerns allocation, not request representation. |
++| Publication | 2 | Checked immutable source locations and same-revision source hashes. |
++| Publication | 3 | Checked Japanese bodies for factual scope, low priority, no runtime defect claim and no adapter requirement. |
++| Publication | 4 | Created #959 and #960; retrieved both OPEN Issues and compared their full bodies byte-for-byte with the reviewed drafts. |
++| Publication | 5 | Checked structure, local links, reachability and 24 current-source hashes across 50 knowledge pages; strict site build and final diff review are recorded below. |
++
++Documentation validation on 2026-10-16 passed: the OKF checker inspected 50
++pages for structure, local links and reachability, checked source IDs/footnotes
++in the changed concepts, and verified all 24 current-source SHA-256 values.
++`python -m tools.docs_site --output site` completed with MkDocs strict mode.
++`git diff --check` passed. These are documentation checks, not runtime evidence.
++
++# Limits and recheck triggers
++
++This audit does not establish runtime correctness on macOS, Linux or Windows,
++performance, arbitrary interleavings or exhaustive absence of compatibility
++code. New tests and proofs belong to implementation work when behavior changes
++or existing evidence does not cover a changed path. Recheck these findings when
++ranked-request semantics, collector error handling, cleanup ownership, artifact
++versions or release entry points change. Open issue status was checked on
++2026-10-16; Issue references track the proposals after this static snapshot.
++
++[^post958-cli]: [Source: crates/hoimin-cli/src/cli.rs](../../../crates/hoimin-cli/src/cli.rs); revision and hash recorded above.
++[^post958-plan]: [Source: crates/hoimin-cli/src/plan.rs](../../../crates/hoimin-cli/src/plan.rs); revision and hash recorded above.
++[^post958-preview]: [Source: crates/hoimin-cli/src/plan/preview.rs](../../../crates/hoimin-cli/src/plan/preview.rs); revision and hash recorded above.
++[^post958-compat-intent]: [Source: docs/superpowers/specs/2026-09-14-issue-454-fixed-batches-design.md](../../../docs/superpowers/specs/2026-09-14-issue-454-fixed-batches-design.md); revision and hash recorded above.
++[^post958-output]: [Source: crates/hoimin-cli/src/process/output.rs](../../../crates/hoimin-cli/src/process/output.rs); revision and hash recorded above.
++[^post958-machine]: [Source: crates/hoimin-core/src/machine.rs](../../../crates/hoimin-core/src/machine.rs); revision and hash recorded above.
++[^post958-shell]: [Source: crates/hoimin-cli/src/shell.rs](../../../crates/hoimin-cli/src/shell.rs); revision and hash recorded above.
++[^post958-process]: [Source: crates/hoimin-cli/src/process/mod.rs](../../../crates/hoimin-cli/src/process/mod.rs); revision and hash recorded above.
++[^post958-owned]: [Source: crates/hoimin-cli/src/workspace/owned.rs](../../../crates/hoimin-cli/src/workspace/owned.rs); revision and hash recorded above.
++[^post958-workspace]: [Source: crates/hoimin-cli/src/workspace/mod.rs](../../../crates/hoimin-cli/src/workspace/mod.rs); revision and hash recorded above.
++[^post958-disk]: [Source: crates/hoimin-cli/src/workspace/disk.rs](../../../crates/hoimin-cli/src/workspace/disk.rs); revision and hash recorded above.
++[^post958-linux]: [Source: crates/hoimin-cli/src/resource/linux.rs](../../../crates/hoimin-cli/src/resource/linux.rs); revision and hash recorded above.
++[^post958-windows]: [Source: crates/hoimin-cli/src/resource/windows.rs](../../../crates/hoimin-cli/src/resource/windows.rs); revision and hash recorded above.
++[^post958-session]: [Source: crates/hoimin-cli/src/session/mod.rs](../../../crates/hoimin-cli/src/session/mod.rs); revision and hash recorded above.
++[^post958-schema]: [Source: crates/hoimin-cli/src/session/schema.rs](../../../crates/hoimin-cli/src/session/schema.rs); revision and hash recorded above.
++[^post958-lifecycle-oracle]: [Source: crates/hoimin-cli/tests/lean_result_lifecycle_oracle.rs](../../../crates/hoimin-cli/tests/lean_result_lifecycle_oracle.rs); revision and hash recorded above.
++[^post958-report]: [Source: crates/hoimin-cli/src/artifacts/run_report.rs](../../../crates/hoimin-cli/src/artifacts/run_report.rs); revision and hash recorded above.
++[^post958-progress]: [Source: crates/hoimin-cli/src/progress/compare.rs](../../../crates/hoimin-cli/src/progress/compare.rs); revision and hash recorded above.
++[^post958-config]: [Source: crates/hoimin-core/src/config.rs](../../../crates/hoimin-core/src/config.rs); revision and hash recorded above.
++[^post958-analyzer]: [Source: crates/hoimin-cli/src/analyzer/rust.rs](../../../crates/hoimin-cli/src/analyzer/rust.rs); revision and hash recorded above.
++[^post958-review]: [Source: crates/hoimin-cli/src/review/mod.rs](../../../crates/hoimin-cli/src/review/mod.rs); revision and hash recorded above.
++[^post958-git]: [Source: crates/hoimin-cli/src/target/git/tracked.rs](../../../crates/hoimin-cli/src/target/git/tracked.rs); revision and hash recorded above.
++[^post958-release]: [Source: tools/release.py](../../../tools/release.py); revision and hash recorded above.
++[^post958-release-workflow]: [Source: .github/workflows/release.yml](../../../.github/workflows/release.yml); revision and hash recorded above.
+diff --git a/docs/knowledge/audits/index.md b/docs/knowledge/audits/index.md
+index 1458c4886036f40f0aa89fb6c65b676734b15271..da02e0ee2763ebfb53d0b306fd871650d58cef5d 100644
+--- a/docs/knowledge/audits/index.md
++++ b/docs/knowledge/audits/index.md
+@@ -8,6 +8,8 @@ and an actual host execution are different evidence; see the
+ 
+ Read the relevant summary and follow its original sources:
+ 
++- [Design complexity after PR 958](design-complexity-post958.md) - Two bounded simplifications and rejected lifecycle rewrites.
++
+ - [Reading Lean evidence](lean-evidence.md) - Model proofs, finite search, Rust comparisons and host execution.
+ - [2026-09-11 boundary audit](boundary-2026-09.md) - Syntax, selection, execution and persistence findings, including static and unverified scope.
+ - [Progress-input validation and follow-up](progress-input.md) - Later fixes, 368 historical observations and changed comparison-test assumptions.
+diff --git a/docs/knowledge/design/runtime-lifecycle.md b/docs/knowledge/design/runtime-lifecycle.md
+index 9fb32d15f9c6ff2e8eee0aa26ed9e4c01eecdaab..5b92428749ef8ea7ef3290ec713c76ceb74211a8 100644
+--- a/docs/knowledge/design/runtime-lifecycle.md
++++ b/docs/knowledge/design/runtime-lifecycle.md
+@@ -704,3 +704,9 @@ stop guards and failure routing when adding an output continuation.
+ 
+ [^issue-955-machine]: [Pending completion ownership](../../../crates/hoimin-core/src/machine.rs).
+ [^issue-955-record]: [Issue 955 implementation and verification](../../maintenance/2026-10-16-issue-955.md).
++
++# Post-958 design review
++
++The [post-958 audit](../audits/design-complexity-post958.md) records current
++representation costs, proposed simplifications and preserved behavior. It is
++static evidence; it does not report a fresh runtime test or proof.
+diff --git a/docs/knowledge/design/selection-plan-verify.md b/docs/knowledge/design/selection-plan-verify.md
+index 0d40d5dee603f008594621280f070beffb8074e6..e622ae2f756a4b80cce63d32a4e29b89b1ee4312 100644
+--- a/docs/knowledge/design/selection-plan-verify.md
++++ b/docs/knowledge/design/selection-plan-verify.md
+@@ -736,3 +736,9 @@ platform.[^issue-936-tests]
+ [^issue-936-review-input]: [Review protected input identity checks](../../../crates/hoimin-cli/src/review/input.rs).
+ [^issue-936-tests]: [Reader and store protection tests](../../../crates/hoimin-cli/src/review/tests.rs).
+ [^issue-936-compatibility]: [Schema-8 regeneration notice](../../compatibility.md#single-saved-fingerprint-input-list-in-0100).
++
++# Post-958 design review
++
++The [post-958 audit](../audits/design-complexity-post958.md) records current
++representation costs, proposed simplifications and preserved behavior. It is
++static evidence; it does not report a fresh runtime test or proof.
+diff --git a/docs/knowledge/index.md b/docs/knowledge/index.md
+index 5ed7fcc8fd6b743830649f50228e48a24259df06..938693313a1d5836511077d93dcf9a0e8927be85 100644
+--- a/docs/knowledge/index.md
++++ b/docs/knowledge/index.md
+@@ -71,6 +71,8 @@ recorded revisions against the implementation you are changing:
+ 
+ # Audits and verification scope
+ 
++- [Design complexity after PR 958](audits/design-complexity-post958.md) - Types, obsolete compatibility and state ownership at the post-958 revision.
++
+ Treat these as evidence at their recorded revisions, inputs and environments,
+ not a claim that every current host or commit passed the same checks:
+ 

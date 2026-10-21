@@ -1,0 +1,274 @@
+diff --git a/docs/knowledge/audits/design-complexity-post964.md b/docs/knowledge/audits/design-complexity-post964.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..11f7367e4b9b90da5c923e9964a3f3fbe7f69039
+--- /dev/null
++++ b/docs/knowledge/audits/design-complexity-post964.md
+@@ -0,0 +1,256 @@
++---
++type: Audit
++title: Design complexity after PR 964
++description: Type, compatibility and duplicate-state review after disk statistics cleanup; two bounded follow-up issues.
++status: draft
++audit_revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++sources:
++- id: post964-copy
++  resource: ../../../crates/hoimin-cli/src/workspace/copy.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: ca797f9c5b99f21a95da9eff19b815f7b87c1f305a2e5d41a45aa3f3703c95aa
++- id: post964-windows
++  resource: ../../../crates/hoimin-cli/src/resource/windows.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: 459663a3f969e9acf4658845f0f84d90991450ba04e61d7a3aab3fdeaf1673c8
++- id: post964-machine
++  resource: ../../../crates/hoimin-core/src/machine.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: 509d0eb1f971cb48f2c0cf0f1afbc2db57a69b5065d5b9e614c81d4dd05eaba6
++- id: post964-budget
++  resource: ../../../crates/hoimin-core/src/budget.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: eac9191b3f8a531c0005bdc24a8eb33a9ec30133447880cbd942bc8591b3c01f
++- id: post964-disk
++  resource: ../../../crates/hoimin-core/src/disk.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: 8286ae8254bc1c944a56b8553d261171d06f8ad8b2a0342078c988e1c4c0d853
++- id: post964-process
++  resource: ../../../crates/hoimin-cli/src/process/mod.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: eabae4dc6c9f4690a397e81aa5386b511d65f671d731140ea890db7455cdd398
++- id: post964-shell
++  resource: ../../../crates/hoimin-cli/src/shell.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: 9e2ed121f889b39aa2df1abe7d9237a505e3965e8f84c523ea97d71694a26748
++- id: post964-analyzer
++  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: fc838b85cc69ce2e0d5500a089b1f0d034ec82794b94a0a576bd7b3f30180318
++- id: post964-analyzer-handler
++  resource: ../../../crates/hoimin-cli/src/analyzer/mod.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: 08bd2ea1ca7e95294d11e9af27c5afbfa476765531c8fdcccf7742dbaf2248b3
++- id: post964-target
++  resource: ../../../crates/hoimin-cli/src/target/git/tracked.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: 798eecf029794d88779e6e5f897d2a0ced356a44bd9dab4a8bf477a2ca7788d4
++- id: post964-plan
++  resource: ../../../crates/hoimin-cli/src/plan.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: ecee9e236c23c92c24820d2744501c6583c6201fe544caf295be932a0fd10942
++- id: post964-session
++  resource: ../../../crates/hoimin-cli/src/session/mod.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: a6d2221ead4358cd7b48bae6afce68dce85de32d0dba81ceec7dad5d98133aa5
++- id: post964-config
++  resource: ../../../crates/hoimin-core/src/config.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: 990c4227e4d3bdcc90d97957e47cf34ac63d07aabc39247a170e8e600066f2a6
++- id: post964-report-reader
++  resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: 585817301a29f83d660b42c293025105adcdc1defd568e1b48a9027f8da6f17a
++- id: post964-release
++  resource: ../../../tools/release.py
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: 4e1951c826b512d57d06e8e3ed5eaeac1d29d07a6ff2c3061f57db41024d7e1c
++- id: post964-provenance
++  resource: ../../../tools/pypi_provenance.py
++  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
++  working_tree: clean
++  sha256: 6676ffe0e8205137868f1fbbcf05979990e5ee888bf205173c293c64a03b3eb7
++---
++
++# Scope and method
++
++Static review on 2026-10-17 of main at
++`229ce38535142958ab75aa1b0462d8be37dbf77e`, after #964 and dependency update
++#965 merged. Three independent domain reviews covered analyzer/target/plan/review,
++execution/resource/workspace/metrics, and persistence/configuration/Python tooling.
++The coordinator traced core state, budget accounting and disk lifecycle, then
++independently checked both proposed changes. No runtime tests, implementation
++builds, benchmarks or Lean proof/compiler runs were performed for this audit.
++
++The criterion from software-design-philosophy is fewer maintained decisions,
++representations or caller obligations. Backward compatibility is not required.
++A current error boundary, platform capability or historical observation still
++needs its own justification before deletion. Previous audits supplied questions,
++not current evidence. Inspection covered declarations, current writers/readers,
++failure paths and selected test assertions; it was not a line-by-line review of
++all mutation operators or every OS implementation.
++
++The reviewed worktree is isolated on `audit/2026-10-17-post964`. The original
++working tree and its user files were left unchanged. Open Issues #743, #806 and
++#570 were checked; there were no open PRs at the start. #743 remains deferred
++pending concrete demand for another language, so this audit does not restart a
++generic plugin or language-separation project.
++
++# Assessment
++
++**7.5/10: six of eight diagnostic rows evidenced for the inspected boundaries.**
++This qualitative score is not a repository-wide correctness measure. The new
++Windows finding exposes a misleading ownership representation that earlier
++reviews did not identify; the lower score does not imply #964 introduced it.
++
++| Diagnostic | Result | Evidence or required action |
++| --- | --- | --- |
++| Module purposes are describable | Pass | Core decides transitions; shell executes effects; analyzer, workspace and persistence have distinct responsibilities. |
++| Interfaces are simpler than implementations | Pass | Typed requests, validated plans and managed ownership hide substantial implementation work. |
++| Implementation rules can change locally | Pass | Both new proposals stay inside their owning modules; shared candidate/report validation already has owners. Test/fuzz source inclusion remains layout coupling, not a new production policy split. |
++| Interface comments describe abstractions | Pass | Process cancellation, spool transfer and cleanup contracts explain lifetime and evidence limits. |
++| Design discussion occurs in review | Pass | Current maintenance records and this alternatives review record invariants and rejected simplifications. |
++| Modules hide important decisions | Pass | Transition, budget, storage, measurement and OS cleanup decisions have established owners. |
++| A newcomer can understand boundaries without reading implementations | Needs work | RootSignal suggests live violation propagation that never occurs; the copied plan allowance suggests a second meaningful amount. Resolve #966/#967 and document actual ownership. |
++| 10–20% actual design-time allocation | Unmeasured | No time-allocation evidence was collected. Measure the investment before awarding this row. |
++
++An evidenced 10/10 requires both the bounded ownership clarification and evidence
++for the investment criterion. Additional nominal enums would not supply either.
++
++# Finding 1: retain only the bound copy reservation ID
++
++[Issue #966](https://github.com/HayaoSuzuki/hoimin/issues/966), low priority.
++`PlanState.reservation` stores `(ReservationId, u64)`. Before binding, its sole
++production writer checks the request allowance against the immutable plan's
++`aggregate_bytes`; validation later compares that same request with the stored
++amount again. Plan clones retain the same aggregate and share the state. Thus
++this second comparison cannot reject an otherwise valid request through current
++production construction. `reservation_id()` only projects the ID. Replace the
++tuple with `Option<ReservationId>` and remove the duplicate comparison.
++[^post964-copy]
++
++Keep preflight/range/aggregate/reservation validation order, including zero
++allowance. Preserve initial binding, worker-slot admission and grant publication
++under their existing lock. Materialization failure releases the slot and partial
++charge but keeps the reservation bound. `CopyAllowance.granted/charged` remains
++necessary for publication and concurrent accounting; it is outside the deletion.
++The private copy module and private plan fields expose no external path that
++forges a different stored allowance.[^post964-copy]
++
++The Issue requests finite rejection/precedence tables and bounded generated
++requests against a fixed plan aggregate, with independent expected acceptance.
++Existing atomic binding, grant publication, failed-copy retry, worker-drop and
++accounting tests remain obligations. New Lean models are unnecessary if transition
++semantics remain unchanged; existing relevant correspondence tests should run.
++This audit establishes redundant representation, not a reproduced runtime bug.
++
++# Finding 2: remove the inert Windows violation carrier
++
++[Issue #967](https://github.com/HayaoSuzuki/hoimin/issues/967), low priority.
++`RootSignal.violations` has no writer after zero initialization. Run-wide
++`mark_active` is a no-op because memory/process limits live on nested root jobs.
++Yet `WindowsSupervisor` owns an Arc of this value and passes it through root
++registration and classification. `ActiveRoot.signal` stores a Weak that is never
++upgraded: only its presence is observed. It represents interest in receiving an
++exit notification, not shared violation state or observed liveness.
++[^post964-windows]
++
++Remove the zero-only carrier, its parameter plumbing and dead outer
++classification. Represent exit-notification interest directly with a documented
++bool or small enum. Preserve UUID/PID generation, retained process handles,
++notification-consumed versus process-signaled barriers, timeout behavior, and
++mutex release while waiting. Confirm actual job emptiness before processing
++ACTIVE_PROCESS_ZERO, and publish only interested roots. Detached generations must
++remain until their exit evidence is consumed; removing interest does not justify
++removing the registry entry.[^post964-windows]
++
++The real nested-job completion-port classifier remains, including memory-limit
++precedence when both violation kinds are observed. Do not restore run-wide
++attribution to sibling workers: that was the separately resolved bug
++[#340](https://github.com/HayaoSuzuki/hoimin/issues/340). AtomicU8 and Ordering still
++have test-only close-failure uses; process-handle Arcs have independent lifetime
++roles. The Issue requires native Windows checks for attach failures, delayed
++notifications, retained generations, handle waits and nested limits. Other-host
++builds or static inspection cannot substitute for those executions.
++[^post964-windows]
++
++# Other candidates examined
++
++| Candidate | Decision and counterexample |
++| --- | --- |
++| Disk statistics latest/global cache | #964 already removed them. The retained-history accessor preserves the established monitor boundary; do not reopen #963. |
++| Pending completion metadata and core flags | Worker identity, cleanup reservations and output continuations serve different completion validation. Attempts, outcome history and report progress are not mutually exclusive phases. No replacement demonstrated fewer maintained rules. [^post964-machine] |
++| Analysis diagnostic queue and deferred result | One producer transfers diagnostics out of its result, and one continuation consumes the queue then applies the result. Bundling this private pair is possible but did not remove repeated policy. [^post964-machine] |
++| Budget active/released/frontier | They support accounting, duplicate-release diagnostics and ID exhaustion. Deriving release history from dense allocation couples new invariants for no demonstrated current benefit. [^post964-budget] |
++| Disk lifecycle secondary history | Historical errors may exist before a primary stop; snapshot enrichment is a projection, not two independently updated primary histories. Cleanup and drain evidence cannot be inferred from task counts. [^post964-disk] |
++| Process start gate and cancellation | Synchronization algorithms resemble each other, but admission stopping and process termination have independent identities. A helper with wrappers adds pass-through interfaces; no current divergent rule or meaningful net gain was established. [^post964-process] |
++| Shell counters, cleanup and end-observation state | Completion-channel receipt and task join are separate events. An attempted end measurement can fail, so absent data does not mean unattempted. Retain these independent facts. [^post964-shell] |
++| Analyzer prefix, control flow and spool state | Prefix overflow survives eviction; several abrupt exit categories can coexist. Planning returns candidates while runtime transfers a spool with a different cleanup lifetime. Typed operators and shared projection already centralize names/validation. [^post964-analyzer][^post964-analyzer-handler] |
++| Target DiffPlan::Legacy | This is a live fallback for rename/copy/unmerged entries and long pathspecs, not old-format support. Removing it changes rename pairing or current bounded discovery behavior. [^post964-target] |
++| Ranked selection and saved plan metadata | One normalized Top request and checked selection feed execution and preview. Source records include files producing no candidates; candidate hashes cannot replace them. [^post964-plan] |
++| Persisted session finished versus complete | Incomplete finalization and abrupt ownership loss are distinct history. Current schema rejection and row validation detect invalid saved input; they are not repair/migration compatibility. [^post964-session] |
++| Raw configuration and all_legacy | Raw intent normalizes once to SessionMode. The operator cohort has live default/fuzz callers; renaming or inlining it only relocates membership knowledge. [^post964-config] |
++| Report DTOs and optional fields | Progress and review have different current configuration needs; shared structural validation handles both. Narrowing internal event types would add wire/projection layers without a demonstrated reduction. Optional current-mode fields are not legacy adapters. [^post964-report-reader] |
++| Release wrappers, entry modes and retries | Typed expected failures serve live exception-based callers. Direct-script/module invocation, Windows text normalization and bounded publication visibility have current callers and environments. No obsolete compatibility layer justified deletion. [^post964-release][^post964-provenance] |
++
++# Review and publication
++
++Each domain report recorded five concrete passes. The coordinator performed
++these additional reviews and independent challenges before publication:
++
++| Stage | Five passes and results |
++| --- | --- |
++| Investigation | 1: pinned fetched main and merged PRs; 2: searched current declarations/writers/readers; 3: separated independent observations from exclusive states; 4: traced failure/timeout/concurrent ownership counterexamples; 5: compared simpler alternatives and rejected extra abstraction without net gain. |
++| Proposals | 1: confirmed immutable aggregate and sole reservation writer; 2: checked clone visibility/rollback/grant publication; 3: searched all Windows signal references and preserved real nested classification; 4: independently challenged handle waits, notification interest and generation retention; 5: reviewed both Japanese drafts, adding fixed-plan property expectations, valid-request competition and explicit wait/empty-job safeguards. |
++| Publication | 1: checked open Issues/PRs; 2: searched all Issue states for PlanState, RootSignal, mark_active and reservation/allowance; 3: read resolved #340 and pinned source links; 4: created #966/#967 from reviewed drafts and checked their bodies; 5: checked this knowledge page's structure, source metadata, links and site rendering. |
++
++Publication readback confirmed both Issues OPEN with bodies matching the reviewed
++local drafts. Documentation verification on 2026-10-17 passed: 50 knowledge pages
++for structure, local links and reachability; changed-page source IDs/footnotes
++and all 16 recorded source hashes; strict site generation with
++`python -m tools.docs_site --output site`; and `git diff --check`. These checks
++validate documentation, not implementation behavior. A final independent read-only
++review of the Issue drafts and this audit found no material inconsistency.
++
++# Limits and recheck triggers
++
++This is static evidence, not a claim of fresh runtime, Windows, concurrency,
++performance or proof success. New test requirements in the Issues are future
++implementation obligations. In particular, the #963 implementation's passing
++tests were not rerun as part of this audit and are not current-audit results.
++Recheck if plan aggregate mutability, reservation writers, Windows notification
++producers, job limit placement or generation-retention rules change. Existing
++#743 remains a conditional broader design topic rather than a prerequisite for
++these two local reductions.
++
++[^post964-copy]: [Source: crates/hoimin-cli/src/workspace/copy.rs](../../../crates/hoimin-cli/src/workspace/copy.rs); audited revision and hash recorded above.
++[^post964-windows]: [Source: crates/hoimin-cli/src/resource/windows.rs](../../../crates/hoimin-cli/src/resource/windows.rs); audited revision and hash recorded above.
++[^post964-machine]: [Source: crates/hoimin-core/src/machine.rs](../../../crates/hoimin-core/src/machine.rs); audited revision and hash recorded above.
++[^post964-budget]: [Source: crates/hoimin-core/src/budget.rs](../../../crates/hoimin-core/src/budget.rs); audited revision and hash recorded above.
++[^post964-disk]: [Source: crates/hoimin-core/src/disk.rs](../../../crates/hoimin-core/src/disk.rs); audited revision and hash recorded above.
++[^post964-process]: [Source: crates/hoimin-cli/src/process/mod.rs](../../../crates/hoimin-cli/src/process/mod.rs); audited revision and hash recorded above.
++[^post964-shell]: [Source: crates/hoimin-cli/src/shell.rs](../../../crates/hoimin-cli/src/shell.rs); audited revision and hash recorded above.
++[^post964-analyzer]: [Source: crates/hoimin-cli/src/analyzer/rust.rs](../../../crates/hoimin-cli/src/analyzer/rust.rs); audited revision and hash recorded above.
++[^post964-analyzer-handler]: [Source: crates/hoimin-cli/src/analyzer/mod.rs](../../../crates/hoimin-cli/src/analyzer/mod.rs); audited revision and hash recorded above.
++[^post964-target]: [Source: crates/hoimin-cli/src/target/git/tracked.rs](../../../crates/hoimin-cli/src/target/git/tracked.rs); audited revision and hash recorded above.
++[^post964-plan]: [Source: crates/hoimin-cli/src/plan.rs](../../../crates/hoimin-cli/src/plan.rs); audited revision and hash recorded above.
++[^post964-session]: [Source: crates/hoimin-cli/src/session/mod.rs](../../../crates/hoimin-cli/src/session/mod.rs); audited revision and hash recorded above.
++[^post964-config]: [Source: crates/hoimin-core/src/config.rs](../../../crates/hoimin-core/src/config.rs); audited revision and hash recorded above.
++[^post964-report-reader]: [Source: crates/hoimin-cli/src/artifacts/run_report.rs](../../../crates/hoimin-cli/src/artifacts/run_report.rs); audited revision and hash recorded above.
++[^post964-release]: [Source: tools/release.py](../../../tools/release.py); audited revision and hash recorded above.
++[^post964-provenance]: [Source: tools/pypi_provenance.py](../../../tools/pypi_provenance.py); audited revision and hash recorded above.
+diff --git a/docs/knowledge/audits/index.md b/docs/knowledge/audits/index.md
+index 1458c4886036f40f0aa89fb6c65b676734b15271..a0c0af872405b5027e055fbb89e42a32ee0aef04 100644
+--- a/docs/knowledge/audits/index.md
++++ b/docs/knowledge/audits/index.md
+@@ -8,6 +8,7 @@ and an actual host execution are different evidence; see the
+ 
+ Read the relevant summary and follow its original sources:
+ 
++- [Design complexity after PR 964](design-complexity-post964.md) - Static type, compatibility and state-ownership audit; workspace reservation and Windows signal follow-ups.
+ - [Reading Lean evidence](lean-evidence.md) - Model proofs, finite search, Rust comparisons and host execution.
+ - [2026-09-11 boundary audit](boundary-2026-09.md) - Syntax, selection, execution and persistence findings, including static and unverified scope.
+ - [Progress-input validation and follow-up](progress-input.md) - Later fixes, 368 historical observations and changed comparison-test assumptions.
