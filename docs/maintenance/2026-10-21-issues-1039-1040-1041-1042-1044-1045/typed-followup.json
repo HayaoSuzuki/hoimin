@@ -1,0 +1,34 @@
+{
+  "base_revision": "79f22535197cdc922e12318386102f1806df625e",
+  "working_tree": "modified",
+  "sources": {
+    "crates/hoimin-python/src/analyzer/exception_hierarchy.rs": "f2da3385b3e24e5184c84a9c43bf2e38052175dbab2c3381be24c7f9989980d1",
+    "crates/hoimin-python/src/analyzer/exception_lookup_tests.rs": "3664d8fff255a3c9d5f680a95c3b5105889c60f09db9571a7afefa960d5f19e3"
+  },
+  "changes": [
+    "ExceptionSite replaces raised bool",
+    "RelatedEligibility owns empty-result reason",
+    "ChildClasses owns id/count updates and queries"
+  ],
+  "red": "Duplicate insertion invented a constructible sibling; expected assertion failed before fix.",
+  "checks": [
+    {
+      "command": "cargo test --locked --offline -p hoimin-python --all-features",
+      "result": "502 passed, 3 ignored; doctests 0",
+      "log_sha256": "1ce6a179af114eacd063c2f7411fb49154df291b918618fa8d0121a7da9a68c7"
+    },
+    {
+      "command": "cargo test --locked --offline -p hoimin-cli --all-features --lib --test plan",
+      "result": "library 975 passed/25 ignored; plan 150 passed/1 ignored",
+      "log_sha256": "cc8179c0d4d160fc1dad6a5bec5d0c0b726cdf1c89c4a8dbb5820fbe64a3adfb"
+    },
+    {
+      "command": "cargo clippy --locked --offline --workspace --all-targets --all-features -- -D warnings",
+      "result": "passed",
+      "log_sha256": "687c75f20e7e8119164db1ca81de73bc77269e736c420110e133514240081d97"
+    }
+  ],
+  "review": "Fresh-context static follow-up: no Important or Critical findings.",
+  "resource_scope": "Same ChildClasses representation; no new persistent state or heap allocation; existing independent-axis operation bounds pass.",
+  "evidence_limits": "Earlier full-workspace run and 216 release observations retain their recorded pre-refactor source. No new whole-workspace test run, release timings, or native Linux/Windows results claimed."
+}

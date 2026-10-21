@@ -5,6 +5,26 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: six-perf-record
+  resource: ../../maintenance/2026-10-21-issues-1039-1040-1041-1042-1044-1045/README.md
+  revision: 79f22535197cdc922e12318386102f1806df625e
+  working_tree: modified
+  sha256: 2361b6b7834e602c1c5a41fed9a31b706cdae9ced91f77ece2a67b83d05a0689
+- id: six-perf-imports
+  resource: ../../../crates/hoimin-python/src/analyzer/rust.rs
+  revision: ab940366085cccfadcfe182bfbf8f447613e25bc
+  working_tree: clean
+  sha256: 38c8753ee29f41504dab88b815296a7425b5c4495add87ec0a6ea8223e5aa912
+- id: six-perf-hierarchy
+  resource: ../../../crates/hoimin-python/src/analyzer/exception_hierarchy.rs
+  revision: 79f22535197cdc922e12318386102f1806df625e
+  working_tree: modified
+  sha256: f2da3385b3e24e5184c84a9c43bf2e38052175dbab2c3381be24c7f9989980d1
+- id: six-perf-lookup-tests
+  resource: ../../../crates/hoimin-python/src/analyzer/exception_lookup_tests.rs
+  revision: 79f22535197cdc922e12318386102f1806df625e
+  working_tree: modified
+  sha256: 3664d8fff255a3c9d5f680a95c3b5105889c60f09db9571a7afefa960d5f19e3
 - id: issue-1030-admission
   resource: ../../../crates/hoimin-python/src/analyzer/rust.rs
   revision: 1f7feae33fa310aae87fbadb390105f6d770439d
@@ -1542,3 +1562,38 @@ are separate measurements; none is process RSS.
 
 [^issue-1030-admission]: [Optional-call admission and unchanged child traversal](../../../crates/hoimin-python/src/analyzer/rust.rs).
 [^issue-1029-members]: [Eligible-member index and importer-specific visibility](../../../crates/hoimin-python/src/analyzer/exception_hierarchy.rs).
+
+
+# Qualified and exception lookup work (Issues #1039, #1040 and #1044)
+
+Qualified type spellings select the import bound to the first identifier. Only
+that binding can resolve the qualified prefix; unqualified alias preference and
+lexical ordering keep their previous rules.[^six-perf-imports]
+
+Each exception collector lazily scans visible aliases once on its first
+nongeneric class and retains borrowed private roots for its own lifetime.
+Method-local exclusions and their restoration remain independent. Related-class
+lookup chooses the smaller of the visible identity set and adjacency set. One
+constructible count per existing child group preserves constructor-policy and
+no-visible-destination reasons even for invisible relatives. No class-pair cache
+is retained. Operation gates vary aliases/classes and siblings/sites independently;
+an exhaustive reference checks sparse and dense outcomes.[^six-perf-hierarchy][^six-perf-lookup-tests]
+
+[^six-perf-imports]: [rust.rs](../../../crates/hoimin-python/src/analyzer/rust.rs).
+
+[^six-perf-hierarchy]: [exception_hierarchy.rs](../../../crates/hoimin-python/src/analyzer/exception_hierarchy.rs).
+
+[^six-perf-lookup-tests]: [exception_lookup_tests.rs](../../../crates/hoimin-python/src/analyzer/exception_lookup_tests.rs).
+
+The [implementation and measurement record](../../maintenance/2026-10-21-issues-1039-1040-1041-1042-1044-1045/README.md) separates operation gates,
+retained heap, guarded elapsed observations and sampled RSS limits.[^six-perf-record]
+
+[^six-perf-record]: [Six-issue implementation, measurements and validation](../../maintenance/2026-10-21-issues-1039-1040-1041-1042-1044-1045/README.md).
+
+The typed hierarchy follow-up uses `ExceptionSite` for raise/handler policy and
+`RelatedEligibility` for the three pre-visibility outcomes. Empty candidate
+sets map that outcome to the existing reason vocabulary. `ChildClasses` owns
+identity insertion and constructibility queries; inserting an existing identity
+cannot inflate its count. The representation and sparse/dense iteration bounds
+are unchanged. The original Boolean algorithm remains only in the test reference.
+[^six-perf-hierarchy][^six-perf-lookup-tests][^six-perf-record]

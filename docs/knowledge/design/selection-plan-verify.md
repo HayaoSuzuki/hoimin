@@ -5,6 +5,21 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: six-perf-record
+  resource: ../../maintenance/2026-10-21-issues-1039-1040-1041-1042-1044-1045/README.md
+  revision: 79f22535197cdc922e12318386102f1806df625e
+  working_tree: modified
+  sha256: 2361b6b7834e602c1c5a41fed9a31b706cdae9ced91f77ece2a67b83d05a0689
+- id: six-perf-verify
+  resource: ../../../crates/hoimin-cli/src/plan.rs
+  revision: ab940366085cccfadcfe182bfbf8f447613e25bc
+  working_tree: clean
+  sha256: 4990f857e033b4006cb0270f6bd612bcf47cf16d0a53f04bfbe14773f29dee17
+- id: six-perf-verify-heap
+  resource: ../../../crates/hoimin-cli/tests/manifest_buffer_lifetime.rs
+  revision: ab940366085cccfadcfe182bfbf8f447613e25bc
+  working_tree: clean
+  sha256: 0ff957ee52c84f0803faac5ec7555e508d1b84542f5e3df9e3287b8064f1fbf1
 - id: issue-1033-config
   resource: ../../../crates/hoimin-core/src/config.rs
   revision: 91b345996357900ee3d7b7f956d80d13c5aacba3
@@ -474,8 +489,8 @@ the semantic validators for selection, import roots, operators, argv, and limits
 Callers consume `into_data()` to edit fields and must pass the result through
 `TryFrom` before execution. `PlanConfig` remains persisted data, with fallible
 conversion to execution settings. Header validation still precedes source and
-fingerprint work; `VerifiedPlan` retains selected candidates and protected inputs
-with the accepted config.
+fingerprint work; `VerifiedPlan` retains checked selection IDs and protected inputs
+with the accepted config; preview payload ownership is described below.[^six-perf-verify]
 
 The request-to-snapshot environment transition still checks the exact requested
 names. Configuration acceptance performs no filesystem work and does not establish
@@ -1182,3 +1197,27 @@ do not change. Runtime enforcement remains per root tree; see
 
 [^issue-1033-config]: [Raw and normalized configuration validation](../../../crates/hoimin-core/src/config.rs).
 [^issue-1033-verify-test]: [Saved-plan verification regression](../../../crates/hoimin-cli/tests/plan.rs).
+
+
+# Preview ownership (Issue #1041)
+
+`prepare_verify_selection` returns a `VerifiedPlan` containing execution settings,
+selected IDs and protected input paths. It retains no preview rows or candidate
+original/replacement text. `prepare_verify_preview_selection` builds a
+`VerifyPreview` after the same manifest, source, fingerprint, ranking and selected
+candidate checks. The CLI chooses this entry point only for dry runs; saved and
+preview schemas are unchanged.[^six-perf-verify]
+
+A real public-preparation allocator gate independently varies candidate text and
+selected count after runtime warmup. It bounds the retained allocation delta,
+not peak validation heap or process RSS. Validation still parses the manifest
+and source, and dry runs still own their selected display payload.[^six-perf-verify-heap]
+
+[^six-perf-verify]: [plan.rs](../../../crates/hoimin-cli/src/plan.rs).
+
+[^six-perf-verify-heap]: [manifest_buffer_lifetime.rs](../../../crates/hoimin-cli/tests/manifest_buffer_lifetime.rs).
+
+The [implementation and measurement record](../../maintenance/2026-10-21-issues-1039-1040-1041-1042-1044-1045/README.md) separates operation gates,
+retained heap, guarded elapsed observations and sampled RSS limits.[^six-perf-record]
+
+[^six-perf-record]: [Six-issue implementation, measurements and validation](../../maintenance/2026-10-21-issues-1039-1040-1041-1042-1044-1045/README.md).

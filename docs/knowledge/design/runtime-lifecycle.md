@@ -5,6 +5,26 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: six-perf-record
+  resource: ../../maintenance/2026-10-21-issues-1039-1040-1041-1042-1044-1045/README.md
+  revision: 79f22535197cdc922e12318386102f1806df625e
+  working_tree: modified
+  sha256: 2361b6b7834e602c1c5a41fed9a31b706cdae9ced91f77ece2a67b83d05a0689
+- id: six-perf-worker-depth
+  resource: ../../../crates/hoimin-cli/src/workspace/root.rs
+  revision: ab940366085cccfadcfe182bfbf8f447613e25bc
+  working_tree: modified
+  sha256: 67cf45d6d7b5d689d90bfa95a702ca67da8f482f25f7cfad5b935b4eae195416
+- id: six-perf-output
+  resource: ../../../crates/hoimin-cli/src/process/output.rs
+  revision: ab940366085cccfadcfe182bfbf8f447613e25bc
+  working_tree: modified
+  sha256: cab4cc650cb79f9c5decbad9b01286f8cf532923a74a381bb4187f5fb9a3095e
+- id: six-perf-output-tests
+  resource: ../../../crates/hoimin-cli/src/process/output_io_tests.rs
+  revision: ab940366085cccfadcfe182bfbf8f447613e25bc
+  working_tree: modified
+  sha256: 3210ae7fc6e4dc5f523e77fe84d45280efcdd6a7baffb72b6e5aa164f674d0d8
 - id: issue-1033-machine
   resource: ../../../crates/hoimin-core/src/machine.rs
   revision: 91b345996357900ee3d7b7f956d80d13c5aacba3
@@ -1167,3 +1187,31 @@ when changing worker scheduling or resource-control scope. See the
 
 [^issue-1033-machine]: [Process requests and pending-effect invariant](../../../crates/hoimin-core/src/machine.rs).
 [^issue-1033-native-tests]: [Native root-limit and isolation tests](../../../crates/hoimin-cli/tests/process_handler.rs).
+
+
+# Reset ordering and aligned output writes (Issues #1042 and #1045)
+
+Worker entries retain the depth already checked during no-follow traversal.
+Sorting compares that depth and then the native path; reverse deletion retains
+the same child-before-parent order. Each entry adds one `usize` of metadata.
+The component-count gate observes actual path iteration only in test builds;
+production entries keep their native `PathBuf` representation.[^six-perf-worker-depth]
+
+An aligned nonzero ring cursor completes pending writes without starting a
+redundant seek. Zero logical position, skipped oversized prefixes and within-chunk
+wraps retain their required seeks. Completion still follows Tokio's existing
+pending-error normalization, preserving the first error's displayed diagnostic.
+The collector continues draining to EOF and drops a failed sink before further
+writes. Real-file tests check bytes, seek counts, required-seek failures and the
+baseline error kind, OS code and text.[^six-perf-output][^six-perf-output-tests]
+
+[^six-perf-worker-depth]: [root.rs](../../../crates/hoimin-cli/src/workspace/root.rs).
+
+[^six-perf-output]: [output.rs](../../../crates/hoimin-cli/src/process/output.rs).
+
+[^six-perf-output-tests]: [output_io_tests.rs](../../../crates/hoimin-cli/src/process/output_io_tests.rs).
+
+The [implementation and measurement record](../../maintenance/2026-10-21-issues-1039-1040-1041-1042-1044-1045/README.md) separates operation gates,
+retained heap, guarded elapsed observations and sampled RSS limits.[^six-perf-record]
+
+[^six-perf-record]: [Six-issue implementation, measurements and validation](../../maintenance/2026-10-21-issues-1039-1040-1041-1042-1044-1045/README.md).

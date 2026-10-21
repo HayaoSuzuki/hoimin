@@ -16,7 +16,10 @@ use hoimin_cli::target::git::{ResolveGitChanges, handle_git};
 use hoimin_cli::{
     analyzer::discover_targets,
     cli::{OutputFormat, ParsedCommand, TopSelectionPolicy, VerifySelection, parse_from},
-    plan::{PlanManifest, RankedPlanCandidate, create, prepare_verify, prepare_verify_selection},
+    plan::{
+        PlanManifest, RankedPlanCandidate, create, prepare_verify,
+        prepare_verify_preview_selection, prepare_verify_selection,
+    },
     shell,
     target::TargetHandler,
 };
@@ -1460,7 +1463,7 @@ async fn verify_rejects_changed_fingerprint_input_before_baseline() {
 }
 
 #[tokio::test]
-async fn verified_metrics_override_preserves_checked_execution_and_preview() {
+async fn verified_metrics_override_preserves_checked_execution() {
     let project = Project::new();
     let (path, _, marker) = write_plan_manifest(&project, &[]).await;
     let verified = prepare_verify_selection(
@@ -1481,7 +1484,6 @@ async fn verified_metrics_override_preserves_checked_execution_and_preview() {
         .verification_selection()
         .unwrap()
         .clone();
-    let expected_preview = verified.preview().clone();
     let destination =
         camino::Utf8PathBuf::from_path_buf(project.path.join("metrics.json")).unwrap();
     expected_config.output.metrics = Some(destination.clone());
@@ -1495,7 +1497,6 @@ async fn verified_metrics_override_preserves_checked_execution_and_preview() {
         updated.selection().verification_selection().unwrap(),
         &expected_metadata
     );
-    assert_eq!(updated.preview(), &expected_preview);
     assert!(!marker.exists());
 }
 
@@ -4494,15 +4495,17 @@ async fn verify_preview_omitted_and_zero_offsets_select_the_same_policy_prefix()
             panic!("expected verify");
         };
 
-        let omitted = prepare_verify_selection(&path, &omitted.selection, OutputFormat::Json)
-            .await
-            .unwrap();
-        let explicit = prepare_verify_selection(&path, &explicit.selection, OutputFormat::Json)
-            .await
-            .unwrap();
+        let omitted =
+            prepare_verify_preview_selection(&path, &omitted.selection, OutputFormat::Json)
+                .await
+                .unwrap();
+        let explicit =
+            prepare_verify_preview_selection(&path, &explicit.selection, OutputFormat::Json)
+                .await
+                .unwrap();
 
-        assert_eq!(omitted.preview(), explicit.preview(), "{policy}");
-        let preview = serde_json::to_value(omitted.preview()).unwrap();
+        assert_eq!(omitted, explicit, "{policy}");
+        let preview = serde_json::to_value(&omitted).unwrap();
         assert_eq!(preview["offset"], 0, "{policy}");
         assert_eq!(
             preview_ids(&preview),

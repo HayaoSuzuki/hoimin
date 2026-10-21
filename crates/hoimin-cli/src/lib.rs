@@ -108,9 +108,30 @@ where
             command_result(result, &mut stderr)
         }
         Ok(cli::ParsedCommand::Verify(args)) => {
-            let verified =
-                match plan::prepare_verify_selection(&args.manifest, &args.selection, args.format)
-                    .await
+            if args.dry_run {
+                match plan::prepare_verify_preview_selection(
+                    &args.manifest,
+                    &args.selection,
+                    args.format,
+                )
+                .await
+                {
+                    Ok(preview) => command_result(
+                        preview.write(args.format, &mut stdout).map(|()| 0),
+                        &mut stderr,
+                    ),
+                    Err(error) => {
+                        write_terminal_error(error.to_string(), stderr).await;
+                        2
+                    }
+                }
+            } else {
+                let verified = match plan::prepare_verify_selection(
+                    &args.manifest,
+                    &args.selection,
+                    args.format,
+                )
+                .await
                 {
                     Ok(verified) => verified,
                     Err(error) => {
@@ -118,15 +139,6 @@ where
                         return 2;
                     }
                 };
-            if args.dry_run {
-                command_result(
-                    verified
-                        .preview()
-                        .write(args.format, &mut stdout)
-                        .map(|()| 0),
-                    &mut stderr,
-                )
-            } else {
                 verified
                     .with_metrics(args.metrics)
                     .execute(

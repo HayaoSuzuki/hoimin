@@ -5,6 +5,16 @@ description: 決定的な回帰ゲートとrelease計測、未統合の依存、
 status: draft
 catalog_revision: 165a2d284a1af92eb02ffd214ba8c0070c2f3808
 sources:
+- id: six-perf-record
+  resource: ../../maintenance/2026-10-21-issues-1039-1040-1041-1042-1044-1045/README.md
+  revision: 79f22535197cdc922e12318386102f1806df625e
+  working_tree: modified
+  sha256: 2361b6b7834e602c1c5a41fed9a31b706cdae9ced91f77ece2a67b83d05a0689
+- id: six-perf-gates
+  resource: ../../performance/shapes.json
+  revision: ab940366085cccfadcfe182bfbf8f447613e25bc
+  working_tree: modified
+  sha256: 8e2a7370fe329f502865f46614ea57dfc5b685c1baedab2a672fa4d7cc63bbfa
 - id: issue-1031-record
   resource: ../../maintenance/2026-10-20-issue-1031/README.md
   revision: 3054427a1b1b9a7d2f5cdd1b6ce62053e6c417ac
@@ -254,3 +264,30 @@ report storage and child processes are outside this queue measurement. The
 separates those costs and the executed checks.[^issue-1031-record]
 
 [^issue-1031-record]: [Issue #1031 observations and limitations](../../maintenance/2026-10-20-issue-1031/README.md).
+
+
+# Six additional performance gates (Issues #1039–#1045)
+
+Six active gates cover qualified import lookup, private exception roots, sparse
+related classes, normal verify retained heap, worker-sort component visits and
+aligned ring seeks. Their inventories state independent input axes and the
+observed operation or allocation boundary. Timing and sampled RSS are release
+observations rather than pass/fail thresholds. No gate establishes constant
+whole-CLI memory.[^six-perf-gates]
+
+[^six-perf-gates]: [shapes.json](../../performance/shapes.json).
+
+The macOS arm64 release comparison records 36 cases and 216 guarded commands,
+with three alternating pairs per case and positive candidate-count controls.
+Plan JSON matched exactly; run comparison normalized time/UUID/resource fields.
+At 2,000 siblings × 2,000 sites the median changed from 1,646 to 56 ms; 64 MiB
+output changed from 475 to 315 ms. Deep reset changed from 2,183 to 2,188 ms.
+Qualified/private cases remain near the guard's 55–60 ms floor, so their work
+reduction is established by operation gates rather than a claimed CLI speedup.
+Twenty-five-millisecond sampled tree RSS can miss short-lived peaks and does not
+establish universal peak-memory improvement. The real normal-preparation gate
+retained 1,188/1,820/4,214 requested bytes for 1/5/16 selections, unchanged when
+text increased from 4 to 128 KiB. Validation peak heap is not measured or bounded
+by that gate.[^six-perf-record]
+
+[^six-perf-record]: [Six-issue implementation, measurements and validation](../../maintenance/2026-10-21-issues-1039-1040-1041-1042-1044-1045/README.md).

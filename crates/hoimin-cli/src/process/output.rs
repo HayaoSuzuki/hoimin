@@ -3,7 +3,7 @@ use std::io::{self, SeekFrom};
 use camino::Utf8PathBuf;
 use hoimin_core::OutputSpoolRef;
 use tokio::fs::{File, OpenOptions};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc;
 
 const PIPE_CHUNK_BYTES: usize = 8 * 1024;
@@ -105,8 +105,8 @@ async fn collect_output_with_sink<S: OutputSink>(
     })
 }
 
-async fn write_ring(
-    file: &mut File,
+async fn write_ring<F: AsyncSeek + AsyncWrite + Unpin>(
+    file: &mut F,
     capacity: u64,
     position: u64,
     chunk: &[u8],
@@ -120,7 +120,16 @@ async fn write_ring(
     let start = advance_ring(position, skipped, capacity);
     let first = retained_chunk_len(capacity - start, keep);
 
-    file.seek(SeekFrom::Start(start)).await?;
+    // A successful previous write leaves the physical cursor at the logical
+    // position, except at an exact ring boundary (physical capacity, logical 0).
+    // Skipping an oversized prefix can also change the required start offset.
+    if start != position || position == 0 {
+        file.seek(SeekFrom::Start(start)).await?;
+    } else {
+        // Seek also completes pending writes before the next write. Preserve
+        // Tokio's error normalization and ordering without issuing start_seek.
+        std::future::poll_fn(|cx| std::pin::Pin::new(&mut *file).poll_complete(cx)).await?;
+    }
     file.write_all(&chunk[chunk.len() - keep..chunk.len() - keep + first])
         .await?;
     if first < keep {
@@ -836,3 +845,7 @@ mod tests {
         assert_eq!(retained_chunk_len(u64::MAX, 16), 16);
     }
 }
+
+#[cfg(test)]
+#[path = "output_io_tests.rs"]
+mod io_tests;

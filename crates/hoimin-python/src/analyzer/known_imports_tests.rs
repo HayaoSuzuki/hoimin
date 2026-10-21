@@ -254,3 +254,67 @@ proptest! {
         prop_assert_eq!(left, right);
     }
 }
+
+thread_local! {
+    pub(super) static QUALIFIED_BINDING_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[test]
+fn qualified_spelling_work_is_independent_of_unrelated_imports() {
+    for imports_count in [1, 32, 256] {
+        use std::fmt::Write as _;
+        let mut source = String::new();
+        for i in 0..imports_count {
+            writeln!(source, "import typing as t{i}").unwrap();
+        }
+        let imports = imports_from(&source);
+        for annotations in [1, 16, 64] {
+            QUALIFIED_BINDING_VISITS.set(0);
+            for _ in 0..annotations {
+                assert_eq!(
+                    imports
+                        .spelling_for("t0.List", &["typing.Sequence"])
+                        .as_deref(),
+                    Some("t0.Sequence")
+                );
+            }
+            assert!(
+                QUALIFIED_BINDING_VISITS.get() <= annotations,
+                "imports={imports_count}, annotations={annotations}, visits={}",
+                QUALIFIED_BINDING_VISITS.get()
+            );
+        }
+    }
+}
+
+#[test]
+fn qualified_spelling_preserves_provider_prefix_and_shadowing() {
+    for (source, spelling, expected) in [
+        ("import typing as t\n", "t.List", Some("t.Sequence")),
+        ("import typing as t10\n", "t1.List", None),
+        (
+            "import collections.abc\n",
+            "collections.abc.List",
+            Some("collections.abc.Sequence"),
+        ),
+        (
+            "import collections.abc as abc\n",
+            "abc.List",
+            Some("abc.Sequence"),
+        ),
+        ("import typing as t\nt = 1\n", "t.List", None),
+        ("from typing import List as t\n", "t.List", None),
+    ] {
+        let imports = imports_from(source);
+        let targets = ["typing.Sequence", "collections.abc.Sequence"];
+        assert_eq!(
+            imports.spelling_for(spelling, &targets).as_deref(),
+            expected,
+            "{source}"
+        );
+        assert_eq!(
+            imports.spelling_for_where(spelling, &targets, |_| false),
+            None
+        );
+    }
+}

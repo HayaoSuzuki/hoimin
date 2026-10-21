@@ -1,0 +1,54 @@
+{
+  "source_revision": "4e2b4417acc4999676b47e6ee9e80b1b2fe8f607",
+  "workspace": {
+    "target_results": 185,
+    "passed": 3867,
+    "failed": 0,
+    "ignored": 33
+  },
+  "checks": [
+    {
+      "check": "workspace_all_features",
+      "status": "passed",
+      "log_sha256": "59486325bf9a3dc259209a8db45f495f325e8f409f3c210ca3b84f77c29825aa"
+    },
+    {
+      "check": "clippy_workspace_all_targets_all_features",
+      "status": "passed",
+      "log_sha256": "d76114ff19f2988ad488f2b6386ed0e20140fe3abc88c14ce63bd703cc46a852"
+    },
+    {
+      "check": "clippy_vendor",
+      "status": "passed",
+      "log_sha256": "90aeb4e2fd6e802241a33c1f73159349ada5bc3b5363865d93c48c89828fee85"
+    },
+    {
+      "check": "public_normal_verify_retained_heap",
+      "status": "passed",
+      "log_sha256": "bde9ae9227b7b07f8b5ed4c7ace1e511e089f20652fa0ec81e0a3c6f383d3589"
+    },
+    {
+      "check": "strict_docs_build",
+      "status": "passed",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "review": {
+    "mode": "fresh-context static review",
+    "reviewer": "gpt-6-astra high",
+    "initial_important": 2,
+    "resolved_important": 2,
+    "unresolved_important": 0,
+    "unresolved_critical": 0
+  },
+  "other_checks": [
+    "workspace and vendor fmt",
+    "performance registry (29 shapes; six new active gates)",
+    "50-page OKF YAML/reserved-file structure and entry-point reachability; four changed pages new source hashes and footnotes"
+  ],
+  "unverified": [
+    "Windows native execution",
+    "Linux native execution",
+    "whole-validation allocator peak; retained heap and sampled CLI RSS are separate metrics"
+  ]
+}

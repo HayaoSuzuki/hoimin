@@ -45,6 +45,30 @@ enum IneligibleReason {
     ConstructorPolicy,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ExceptionSite {
+    Raise,
+    Handler,
+}
+
+/// Eligibility before intersecting relatives with visible, allowed aliases.
+enum RelatedEligibility {
+    NoRelated,
+    ConstructorRejected,
+    Eligible,
+}
+
+impl RelatedEligibility {
+    fn empty_reason(self) -> IneligibleReason {
+        match self {
+            Self::NoRelated => IneligibleReason::NoRelatedClass,
+            Self::ConstructorRejected => IneligibleReason::ConstructorPolicy,
+            Self::Eligible => IneligibleReason::NoVisibleDestination,
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
 enum SiteOutcome<'a> {
     Candidates(Vec<&'a str>),
     Ineligible(IneligibleReason),
@@ -134,6 +158,43 @@ struct Class {
     constructible: bool,
 }
 
+#[derive(Default)]
+struct ChildClasses {
+    ids: BTreeSet<ClassId>,
+    constructible: usize,
+}
+
+impl ChildClasses {
+    // Class identities have immutable constructibility in the resolved index.
+    // Repeated insertion of an identity must not increase the summary count.
+    fn insert(&mut self, id: ClassId, constructible: bool) {
+        if self.ids.insert(id) {
+            self.constructible += usize::from(constructible);
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &ClassId> {
+        self.ids.iter()
+    }
+
+    fn len(&self) -> usize {
+        self.ids.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
+
+    fn has_constructible(&self) -> bool {
+        self.constructible > 0
+    }
+
+    // The source belongs to this parent's child group.
+    fn has_constructible_sibling(&self, source: &Class) -> bool {
+        self.constructible > usize::from(source.constructible)
+    }
+}
+
 /// Only compact summaries survive project parsing. No target module is executed.
 #[derive(Default)]
 pub struct ExceptionIndex {
@@ -142,7 +203,7 @@ pub struct ExceptionIndex {
     module_paths: BTreeMap<String, Utf8PathBuf>,
     classes: BTreeMap<ClassId, Class>,
     visible: BTreeMap<Utf8PathBuf, BTreeMap<ClassId, Vec<(String, usize)>>>,
-    children: BTreeMap<ClassId, BTreeSet<ClassId>>,
+    children: BTreeMap<ClassId, ChildClasses>,
 }
 
 fn reference(expression: &Expr) -> Option<String> {
@@ -885,12 +946,12 @@ impl ExceptionIndex {
             }
         }
         for (id, class) in &index.classes {
+            if cancelled() {
+                return Err(AnalysisError::Cancelled);
+            }
             if let Some(parent) = &class.parent {
-                index
-                    .children
-                    .entry(parent.clone())
-                    .or_default()
-                    .insert(id.clone());
+                let group = index.children.entry(parent.clone()).or_default();
+                group.insert(id.clone(), class.constructible);
             }
         }
         index.build_visible(cancelled)?;
@@ -1288,12 +1349,36 @@ impl ExceptionIndex {
         Ok(())
     }
 
+    fn related_eligibility(
+        &self,
+        class: &Class,
+        site: ExceptionSite,
+        siblings: Option<&ChildClasses>,
+        children: Option<&ChildClasses>,
+    ) -> RelatedEligibility {
+        if class.parent.is_none() && children.is_none_or(ChildClasses::is_empty) {
+            return RelatedEligibility::NoRelated;
+        }
+        match site {
+            ExceptionSite::Handler => RelatedEligibility::Eligible,
+            ExceptionSite::Raise
+                if class.parent.as_ref().is_some_and(|parent| {
+                    self.classes.get(parent).is_some_and(|c| c.constructible)
+                }) || siblings.is_some_and(|s| s.has_constructible_sibling(class))
+                    || children.is_some_and(ChildClasses::has_constructible) =>
+            {
+                RelatedEligibility::Eligible
+            }
+            ExceptionSite::Raise => RelatedEligibility::ConstructorRejected,
+        }
+    }
+
     fn replacements(
         &self,
         path: &Utf8Path,
         name: &str,
         before: usize,
-        raised: bool,
+        site: ExceptionSite,
         excluded: &BTreeSet<String>,
         budget: (usize, &dyn Fn() -> bool),
     ) -> SiteOutcome<'_> {
@@ -1313,37 +1398,35 @@ impl ExceptionIndex {
         let Some(class) = self.classes.get(&id) else {
             return SiteOutcome::Skipped(SkipReason::UnresolvedBinding);
         };
-        if raised && !class.constructible {
+        if site == ExceptionSite::Raise && !class.constructible {
             return SiteOutcome::Ineligible(IneligibleReason::ConstructorPolicy);
         }
         let siblings = class.parent.as_ref().and_then(|p| self.children.get(p));
         let children = self.children.get(&id);
-        let related = class
-            .parent
-            .iter()
-            .chain(siblings.into_iter().flatten())
-            .chain(children.into_iter().flatten());
+        // Parent, siblings (excluding self), and children are disjoint in the
+        // resolved single-parent acyclic graph. Counts retain eligibility facts
+        // even when none of those identities is visible in this module.
+        let eligibility = self.related_eligibility(class, site, siblings, children);
+        let related_count = usize::from(class.parent.is_some())
+            + siblings.map_or(0, |s| s.len().saturating_sub(1))
+            + children.map_or(0, ChildClasses::len);
+        let visible = self.visible.get(path);
         let mut result = BTreeSet::new();
-        let mut has_related = false;
-        let mut compatible = false;
-        for destination in related {
-            if (budget.1)() {
-                break;
-            }
+        let mut visit = |destination: &ClassId| {
+            #[cfg(test)]
+            lookup_tests::RELATED_VISITS.update(|n| n + 1);
             if *destination == id {
-                continue;
+                return;
             }
-            has_related = true;
-            if raised
+            if site == ExceptionSite::Raise
                 && !self
                     .classes
                     .get(destination)
                     .is_some_and(|c| c.constructible)
             {
-                continue;
+                return;
             }
-            compatible = true;
-            if let Some(aliases) = self.visible.get(path).and_then(|v| v.get(destination))
+            if let Some(aliases) = visible.and_then(|v| v.get(destination))
                 && let Some((name, _)) = aliases.iter().find(|(n, end)| {
                     *end <= before && !excluded.contains(n.split('.').next().unwrap())
                 })
@@ -1353,15 +1436,37 @@ impl ExceptionIndex {
                     result.pop_last();
                 }
             }
+        };
+        if let Some(visible) = visible.filter(|v| v.len() < related_count) {
+            for destination in visible.keys().take_while(|_| !(budget.1)()) {
+                let related = class.parent.as_ref() == Some(destination)
+                    || self.classes.get(destination).is_some_and(|other| {
+                        other.parent.as_ref() == Some(&id)
+                            || (class.parent.is_some() && other.parent == class.parent)
+                    });
+                if related {
+                    visit(destination);
+                }
+                #[cfg(test)]
+                if !related {
+                    lookup_tests::RELATED_VISITS.update(|n| n + 1);
+                }
+            }
+        } else {
+            for destination in class
+                .parent
+                .iter()
+                .chain(siblings.into_iter().flat_map(ChildClasses::iter))
+                .chain(children.into_iter().flat_map(ChildClasses::iter))
+            {
+                if (budget.1)() {
+                    break;
+                }
+                visit(destination);
+            }
         }
         if result.is_empty() {
-            SiteOutcome::Ineligible(if !has_related {
-                IneligibleReason::NoRelatedClass
-            } else if !compatible {
-                IneligibleReason::ConstructorPolicy
-            } else {
-                IneligibleReason::NoVisibleDestination
-            })
+            SiteOutcome::Ineligible(eligibility.empty_reason())
         } else {
             SiteOutcome::Candidates(result.into_iter().collect())
         }
@@ -1380,6 +1485,7 @@ impl ExceptionIndex {
             limit,
             path,
             excluded: BTreeSet::new(),
+            private_roots: None,
             deferred: None,
             class_name: None,
             disabled: false,
@@ -1405,6 +1511,7 @@ struct Collector<'i, 'p, F, C> {
     limit: usize,
     path: &'p Utf8Path,
     excluded: BTreeSet<String>,
+    private_roots: Option<BTreeSet<&'i str>>,
     deferred: Option<usize>,
     class_name: Option<String>,
     disabled: bool,
@@ -1417,7 +1524,7 @@ struct Collector<'i, 'p, F, C> {
 impl<F: FnMut(TextRange, String) -> Result<(), AnalysisError>, C: Fn() -> bool>
     Collector<'_, '_, F, C>
 {
-    fn occurrence(&mut self, expression: &Expr, raised: bool) {
+    fn occurrence(&mut self, expression: &Expr, site: ExceptionSite) {
         if self.stopped {
             return;
         }
@@ -1438,7 +1545,7 @@ impl<F: FnMut(TextRange, String) -> Result<(), AnalysisError>, C: Fn() -> bool>
             self.path,
             &name,
             before,
-            raised,
+            site,
             &self.excluded,
             (self.limit, self.cancelled),
         );
@@ -1503,19 +1610,35 @@ impl<'a, F: FnMut(TextRange, String) -> Result<(), AnalysisError>, C: Fn() -> bo
                         self.class_name.replace(d.name.to_string()),
                     );
                     self.excluded.insert("__class__".into());
-                    if let Some(visible) = self.index.visible.get(self.path) {
-                        for aliases in visible.values() {
-                            for (name, _) in aliases {
-                                if name
-                                    .split('.')
-                                    .any(|part| part.starts_with("__") && !part.ends_with("__"))
-                                {
-                                    self.excluded
-                                        .insert(name.split('.').next().unwrap().to_owned());
+                    if self.private_roots.is_none() {
+                        let mut roots = BTreeSet::new();
+                        if let Some(visible) = self.index.visible.get(self.path) {
+                            for aliases in visible.values() {
+                                for (name, _) in aliases {
+                                    #[cfg(test)]
+                                    lookup_tests::PRIVATE_ALIAS_VISITS.update(|n| n + 1);
+                                    if (self.cancelled)() {
+                                        self.stopped = true;
+                                        return;
+                                    }
+                                    if name
+                                        .split('.')
+                                        .any(|part| part.starts_with("__") && !part.ends_with("__"))
+                                    {
+                                        roots.insert(name.split('.').next().unwrap());
+                                    }
                                 }
                             }
                         }
+                        self.private_roots = Some(roots);
                     }
+                    self.excluded.extend(
+                        self.private_roots
+                            .as_ref()
+                            .unwrap()
+                            .iter()
+                            .map(|root| (*root).to_owned()),
+                    );
                     for stmt in &d.body {
                         if matches!(stmt, Stmt::FunctionDef(_)) {
                             self.visit_stmt(stmt);
@@ -1527,8 +1650,8 @@ impl<'a, F: FnMut(TextRange, String) -> Result<(), AnalysisError>, C: Fn() -> bo
             Stmt::Raise(r) => {
                 if let Some(expr) = &r.exc {
                     match expr.as_ref() {
-                        Expr::Call(c) => self.occurrence(&c.func, true),
-                        expr => self.occurrence(expr, true),
+                        Expr::Call(c) => self.occurrence(&c.func, ExceptionSite::Raise),
+                        expr => self.occurrence(expr, ExceptionSite::Raise),
                     }
                 }
             }
@@ -1538,7 +1661,7 @@ impl<'a, F: FnMut(TextRange, String) -> Result<(), AnalysisError>, C: Fn() -> bo
     fn visit_except_handler(&mut self, handler: &'a ruff_python_ast::ExceptHandler) {
         let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = handler;
         if let Some(type_) = &handler.type_ {
-            self.occurrence(type_, false);
+            self.occurrence(type_, ExceptionSite::Handler);
         }
         self.visit_body(&handler.body);
     }
@@ -1649,3 +1772,7 @@ mod visibility_tests;
 #[cfg(test)]
 #[path = "exception_import_graph_tests.rs"]
 mod exception_import_graph_tests;
+
+#[cfg(test)]
+#[path = "exception_lookup_tests.rs"]
+mod lookup_tests;
