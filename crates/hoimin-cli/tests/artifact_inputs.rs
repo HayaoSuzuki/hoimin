@@ -1,3 +1,10 @@
+use hoimin_cli::plan::{
+    PLAN_SCHEMA_VERSION, PlanManifest, RankedPlanCandidate, RankingReason, RankingReasonCode,
+};
+
+#[path = "support/plan_schema_fixture.rs"]
+mod plan_fixture;
+
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -169,7 +176,11 @@ rejected_input!(
 
 fn regular_manifest(root: &Path) -> PathBuf {
     let path = root.join("plan.json");
-    std::fs::write(&path, br#"{"schema_version":0}"#).unwrap();
+    // Keep the shape current: unsupported-version checks happen only after a
+    // complete typed decode, including any large trailing whitespace.
+    let mut manifest = plan_fixture::manifest(1, 32);
+    manifest.schema_version = 0;
+    std::fs::write(&path, serde_json::to_vec(&manifest).unwrap()).unwrap();
     path
 }
 

@@ -7,14 +7,14 @@
 
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, Read};
+use std::io::{self, BufReader, Read};
 
 use std::path::{Path, PathBuf};
 
 use hoimin_core::{
-    ExitPolicy, MutantFinished, MutationSummary, OutputEvent, ProcessTermination,
-    REPORT_SCHEMA_VERSION, ReportVersions, ResourceControl, VerificationSelection, exit_code_for,
-    summarize,
+    BaselineFinished, ExitPolicy, MutantFinished, MutationSummary, OutputEvent, ProcessTermination,
+    REPORT_SCHEMA_VERSION, ReportVersions, ResourceControl, RunSummary, VerificationSelection,
+    exit_code_for, summarize,
 };
 use serde::Deserialize;
 use thiserror::Error;
@@ -133,15 +133,34 @@ pub enum ProgressError {
     },
 }
 
+// A single-variant tagged enum would buffer the entire configuration before
+// ProgressConfig can ignore opaque descendants. Parse the tag as a struct field
+// instead, preserving duplicate/unknown-field checks on the original stream.
 #[derive(Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum ReportRunEvent<C> {
-    RunStarted(ReportRunStarted<C>),
+#[serde(transparent)]
+struct ReportRunEvent<C>(ReportRunStarted<C>);
+
+enum RunStartedKind {
+    RunStarted,
+}
+
+impl<'de> Deserialize<'de> for RunStartedKind {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // An externally tagged enum also accepts {"run_started": null}. The wire
+        // discriminator is strictly a JSON string, including in review inputs.
+        let kind = String::deserialize(deserializer)?;
+        match kind.as_str() {
+            "run_started" => Ok(Self::RunStarted),
+            other => Err(serde::de::Error::unknown_variant(other, &["run_started"])),
+        }
+    }
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ReportRunStarted<C> {
+    #[serde(rename = "kind")]
+    _kind: RunStartedKind,
     schema_version: u32,
     sequence: u64,
     run_id: String,
@@ -211,9 +230,7 @@ fn present_resume<'de, D: serde::Deserializer<'de>>(
 
 impl<C> ReportRunEvent<C> {
     fn value(&self) -> &ReportRunStarted<C> {
-        match self {
-            Self::RunStarted(value) => value,
-        }
+        &self.0
     }
 
     fn schema_version(&self) -> u32 {
@@ -241,6 +258,53 @@ struct RunReportDocument<C> {
     summary: OutputEvent,
 }
 
+// Once converted, every structural validator can use event payloads directly.
+// Schema validation deliberately precedes this conversion to retain diagnostics.
+struct ReportPayloads<C> {
+    run: ReportRunEvent<C>,
+    baseline: Option<BaselineFinished>,
+    mutants: Vec<MutantFinished>,
+    summary: RunSummary,
+}
+
+impl<C> RunReportDocument<C> {
+    fn into_payloads(self, path: &Path) -> Result<ReportPayloads<C>, ProgressError> {
+        let baseline = match self.baseline {
+            None => None,
+            Some(OutputEvent::BaselineFinished(value)) => Some(value),
+            Some(_) => {
+                return Err(invalid_structure(
+                    path,
+                    "baseline must be null or a baseline_finished event",
+                ));
+            }
+        };
+        let mutants = self
+            .mutants
+            .into_iter()
+            .map(|event| match event {
+                OutputEvent::MutantFinished(value) => Ok(value),
+                _ => Err(invalid_structure(
+                    path,
+                    "mutants must contain only mutant_finished events",
+                )),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let OutputEvent::RunFinished(summary) = self.summary else {
+            return Err(invalid_structure(
+                path,
+                "summary must be a run_finished event",
+            ));
+        };
+        Ok(ReportPayloads {
+            run: self.run,
+            baseline,
+            mutants,
+            summary,
+        })
+    }
+}
+
 /// Reads and validates one mutation run report.
 ///
 /// Accepts only current-schema JSON documents or JSONL reports.
@@ -252,7 +316,8 @@ struct RunReportDocument<C> {
 ///
 /// Returns an error when the report cannot be read, parsed, or structurally validated.
 pub fn read_report(path: &Path) -> Result<InputReport, ProgressError> {
-    read_buffered_report(path, BufReader::new(open_report(path)?))
+    let (reader, header) = progress_reader(path)?;
+    read_with_header(path, BufReader::new(reader), header)
 }
 
 /// Read with the same acceptance rules as `read_report`, hashing the bytes read.
@@ -260,8 +325,9 @@ pub fn read_report(path: &Path) -> Result<InputReport, ProgressError> {
 pub(crate) fn read_report_with_fingerprint(
     path: &Path,
 ) -> Result<(InputReport, blake3::Hash), ProgressError> {
-    let mut reader = FingerprintReader::new(open_report(path)?);
-    let report = read_buffered_report(path, BufReader::new(&mut reader))?;
+    let (reader, header) = progress_reader(path)?;
+    let mut reader = FingerprintReader::new(reader);
+    let report = read_with_header(path, BufReader::new(&mut reader), header)?;
     Ok((report, reader.fingerprint()))
 }
 
@@ -278,39 +344,53 @@ fn open_report(path: &Path) -> Result<File, ProgressError> {
         })
 }
 
-fn read_buffered_report(
+// Probe only routing evidence, then rewind the same descriptor. Neither pass
+// retains a raw report. Each pass has a finite byte budget from file metadata;
+// SnapshotReader rejects growth/truncation during the actual decoding pass.
+fn progress_reader(
     path: &Path,
-    mut reader: impl BufRead,
-) -> Result<InputReport, ProgressError> {
-    let mut bytes = Vec::new();
-    jsonl::read_line(path, &mut reader, &mut bytes)?;
-    let header = dispatch::probe(&bytes);
+) -> Result<(crate::artifacts::SnapshotReader, Option<dispatch::Header>), ProgressError> {
+    let file = open_report(path)?;
+    let read_error = |source| ProgressError::Read {
+        path: path.to_path_buf(),
+        source,
+    };
+    let mut reader = crate::artifacts::SnapshotReader::new(file).map_err(read_error)?;
+    let header = dispatch::probe_reader(BufReader::new(&mut reader));
+    reader.rewind().map_err(read_error)?;
     if let Some(header) = header {
         check_schema(path, header.schema_version)?;
     }
-    let document = if header.is_some_and(|header| header.format == dispatch::Format::Jsonl) {
-        jsonl::read_document(path, reader, bytes)?
-    } else {
-        reader
-            .read_to_end(&mut bytes)
-            .map_err(|source| ProgressError::Read {
-                path: path.to_path_buf(),
-                source,
-            })?;
-        // Pretty documents may not expose both discriminators on the first line.
-        let header = header.or_else(|| dispatch::probe(&bytes));
-        if let Some(header) = header {
-            check_schema(path, header.schema_version)?;
-        }
-        serde_json::from_slice::<RunReportDocument<ProgressConfig>>(&bytes).map_err(|source| {
-            ProgressError::Parse {
-                path: path.to_path_buf(),
-                source,
-            }
-        })?
-    };
+    Ok((reader, header))
+}
 
+fn read_with_header(
+    path: &Path,
+    reader: impl std::io::BufRead,
+    header: Option<dispatch::Header>,
+) -> Result<InputReport, ProgressError> {
+    let document = if header.is_some_and(|header| header.format == dispatch::Format::Jsonl) {
+        jsonl::read_document(path, reader)?
+    } else {
+        // from_reader also checks EOF, so trailing JSON and late file growth
+        // cannot be silently omitted from validation or the fingerprint.
+        serde_json::from_reader::<_, RunReportDocument<ProgressConfig>>(reader).map_err(
+            |source| ProgressError::Parse {
+                path: path.to_path_buf(),
+                source,
+            },
+        )?
+    };
     validate_document(path, document)
+}
+
+#[cfg(test)]
+fn read_buffered_report(path: &Path, bytes: &[u8]) -> Result<InputReport, ProgressError> {
+    let header = dispatch::probe(bytes);
+    if let Some(header) = header {
+        check_schema(path, header.schema_version)?;
+    }
+    read_with_header(path, bytes, header)
 }
 
 fn validate_document<C>(
@@ -318,10 +398,11 @@ fn validate_document<C>(
     document: RunReportDocument<C>,
 ) -> Result<InputReport, ProgressError> {
     validate_schema_versions(path, &document)?;
+    let document = document.into_payloads(path)?;
     validate_structure(path, &document)?;
 
     let source = path.to_path_buf();
-    let Some(OutputEvent::BaselineFinished(baseline)) = document.baseline else {
+    let Some(baseline) = document.baseline else {
         return Ok(InputReport::Unusable {
             source,
             reason: UnusableReason::MissingBaseline,
@@ -333,9 +414,7 @@ fn validate_document<C>(
             reason: UnusableReason::BaselineFailed,
         });
     }
-    let OutputEvent::RunFinished(summary) = document.summary else {
-        unreachable!("validate_structure requires a run_finished summary");
-    };
+    let summary = document.summary;
     if !summary.complete {
         return Ok(InputReport::Unusable {
             source,
@@ -343,14 +422,7 @@ fn validate_document<C>(
         });
     }
 
-    let mutants = document
-        .mutants
-        .into_iter()
-        .map(|event| match event {
-            OutputEvent::MutantFinished(mutant) => mutant,
-            _ => unreachable!("validate_structure requires only mutant_finished events"),
-        })
-        .collect();
+    let mutants = document.mutants;
     Ok(InputReport::Usable(UsableReport { source, mutants }))
 }
 
@@ -380,40 +452,9 @@ fn validate_schema_versions<C>(
     Ok(())
 }
 
-fn validate_structure<C>(
-    path: &Path,
-    document: &RunReportDocument<C>,
-) -> Result<(), ProgressError> {
-    if !matches!(
-        document.baseline,
-        None | Some(OutputEvent::BaselineFinished(_))
-    ) {
-        return Err(invalid_structure(
-            path,
-            "baseline must be null or a baseline_finished event",
-        ));
-    }
-    if document
-        .mutants
-        .iter()
-        .any(|event| !matches!(event, OutputEvent::MutantFinished(_)))
-    {
-        return Err(invalid_structure(
-            path,
-            "mutants must contain only mutant_finished events",
-        ));
-    }
-    if !matches!(document.summary, OutputEvent::RunFinished(_)) {
-        return Err(invalid_structure(
-            path,
-            "summary must be a run_finished event",
-        ));
-    }
+fn validate_structure<C>(path: &Path, document: &ReportPayloads<C>) -> Result<(), ProgressError> {
     let mut stable_identities = BTreeMap::new();
-    for event in &document.mutants {
-        let OutputEvent::MutantFinished(mutant) = event else {
-            unreachable!("mutant event kinds were validated above");
-        };
+    for mutant in &document.mutants {
         if let Some(expected_sequence) =
             stable_identities.insert(&mutant.candidate.id, mutant.candidate.sequence)
         {
@@ -428,14 +469,9 @@ fn validate_structure<C>(
     let statuses = document
         .mutants
         .iter()
-        .map(|event| match event {
-            OutputEvent::MutantFinished(mutant) => mutant.outcome.status(),
-            _ => unreachable!("mutant event kinds were validated above"),
-        })
+        .map(|mutant| mutant.outcome.status())
         .collect::<Vec<_>>();
-    let OutputEvent::RunFinished(summary) = &document.summary else {
-        unreachable!("summary event kind was validated above");
-    };
+    let summary = &document.summary;
     if summarize(&statuses) != summary.counts {
         return Err(invalid_structure(
             path,
@@ -448,29 +484,32 @@ fn validate_structure<C>(
     let events = document
         .baseline
         .iter()
-        .chain(document.mutants.iter())
-        .chain(std::iter::once(&document.summary));
+        .map(|event| (event.run_id.as_str(), event.sequence))
+        .chain(
+            document
+                .mutants
+                .iter()
+                .map(|event| (event.run_id.as_str(), event.sequence)),
+        )
+        .chain(std::iter::once((summary.run_id.as_str(), summary.sequence)));
     let mut previous_sequence = Some(document.run.sequence());
-    for event in events {
-        if event.run_id() != run_id {
+    for (event_run_id, sequence) in events {
+        if event_run_id != run_id {
             return Err(invalid_structure(
                 path,
                 "all present events must share run.run_id",
             ));
         }
-        if previous_sequence.is_some_and(|previous| event.sequence() <= previous) {
+        if previous_sequence.is_some_and(|previous| sequence <= previous) {
             return Err(invalid_structure(
                 path,
                 "event sequences must be strictly increasing in document order",
             ));
         }
-        previous_sequence = Some(event.sequence());
+        previous_sequence = Some(sequence);
     }
     // Keep structural diagnostics first, then guarantee identity for every consumer.
-    for event in &document.mutants {
-        let OutputEvent::MutantFinished(mutant) = event else {
-            unreachable!("mutant event kinds were validated above");
-        };
+    for mutant in &document.mutants {
         if !hoimin_core::CandidateIdentityRef::from(&mutant.candidate)
             .matches_id(&mutant.candidate.id)
         {
@@ -800,6 +839,63 @@ mod tests {
             let error = result.map(|_| ()).expect_err("duplicate jobs must be rejected");
             proptest::prop_assert!(error.to_string().contains("duplicate field `jobs`"));
         }
+    }
+
+    #[test]
+    fn fingerprint_covers_complete_json_and_jsonl_reads_including_whitespace() {
+        let directory = tempfile::tempdir().unwrap();
+        for input in [
+            current_report_json(),
+            include_str!("../../tests/golden/events/schema-v10-current.jsonl").to_owned(),
+        ] {
+            // More than one BufReader buffer, including a final blank line.
+            let bytes = format!("\n{}{}\n", input.trim_end(), " ".repeat(32 * 1024));
+            let path = directory.path().join("report");
+            std::fs::write(&path, &bytes).unwrap();
+            let (_, fingerprint) = read_report_with_fingerprint(&path).unwrap();
+            assert_eq!(fingerprint, blake3::hash(bytes.as_bytes()));
+        }
+    }
+
+    #[test]
+    fn progress_rejects_appends_instead_of_accepting_a_valid_prefix() {
+        use std::io::Write;
+        let directory = tempfile::tempdir().unwrap();
+        for input in [
+            current_report_json(),
+            include_str!("../../tests/golden/events/schema-v10-current.jsonl").to_owned(),
+        ] {
+            let path = directory.path().join("report");
+            std::fs::write(&path, &input).unwrap();
+            let (reader, header) = progress_reader(&path).unwrap();
+            let mut appended = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap();
+            appended.write_all(&vec![b' '; 32 * 1024]).unwrap();
+            let error = read_with_header(&path, BufReader::new(reader), header).unwrap_err();
+            assert!(
+                error.to_string().contains("grew while being read"),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn jsonl_streaming_keeps_physical_line_boundaries() {
+        let events = include_str!("../../tests/golden/events/schema-v10-current.jsonl");
+        let mut lines = events.lines();
+        let first = lines.next().unwrap();
+        let second = lines.next().unwrap();
+        let rest = lines.collect::<Vec<_>>().join("\n");
+        for malformed in [
+            format!("{first} {second}\n{rest}"),
+            format!("{}\n{}\n{second}\n{rest}", &first[..1], &first[1..]),
+        ] {
+            assert!(read_buffered_report(Path::new("report"), malformed.as_bytes()).is_err());
+        }
+        let valid = format!("\n  \n\t{events}\n  \t");
+        assert!(read_buffered_report(Path::new("report"), valid.as_bytes()).is_ok());
     }
 
     #[test]

@@ -19,6 +19,29 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Bounded Git capture and streaming artifact reads (Issues #1054–#1056)
+
+Target-inspection Git commands reject stdout above 64 MiB without accepting a
+partial selection. Stderr retains its first 64 KiB plus a truncation marker and
+drains the remainder. The output bounds apply to rename/unmerged whole-repository
+inspection too; no temporary spool or new CLI setting is introduced.
+
+Verify streams the current typed plan once; it no longer probes and reparses the
+JSON to prioritize regeneration guidance for obsolete shapes. Unsupported versions
+and obsolete fields still fail, but the first diagnostic may change. Current
+schema-first and schema-last encodings remain accepted.
+
+Progress streams JSON and JSONL without whole-document or physical-line byte
+buffers. Verify and progress use the opened file's initial length as their read
+budget and reject observed append/truncation rather than accept a valid prefix.
+This does not provide an atomic snapshot or detect all in-place rewrites. There
+is no fixed plan/report size cap added here; review's existing 64 MiB limit is
+unchanged. Decoded candidate/event payloads and comparison state still consume
+memory. Plan schema 10, report schema 10 and the package floor remain unchanged;
+no migration or fallback reader is added. Event `kind` discriminators require
+strings; object forms such as `{"baseline_finished": null}` are rejected before
+enum dispatch.
+
 ## Review source boundary and internal ownership cleanup (Issues #1050–#1053)
 
 Review source inspection now uses the same root-relative, no-follow file reader

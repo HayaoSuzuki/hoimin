@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::io::Read;
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 use camino::{Utf8Path, Utf8PathBuf};
@@ -479,22 +479,23 @@ async fn prepare_verify_with_discovery_control(
     .map(|checked| checked.verified)
 }
 
-fn read_manifest(path: &Path) -> Result<(Vec<PathBuf>, Vec<u8>), PlanError> {
+fn read_manifest(path: &Path) -> Result<(Vec<PathBuf>, PlanManifest), PlanError> {
     // Protect both the requested entry (which may be a final symlink) and
     // the file read through it. Keep invocation paths out of the saved config.
-    (|| -> std::io::Result<_> {
+    let open = || -> std::io::Result<_> {
         let inputs = vec![std::path::absolute(path)?, std::fs::canonicalize(path)?];
-        let mut file = crate::artifacts::open_regular_file(path)?.ok_or_else(|| {
+        let file = crate::artifacts::open_regular_file(path)?.ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "input is not a regular file",
             )
         })?;
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)?;
-        Ok((inputs, bytes))
-    })()
-    .map_err(|error| PlanError::ManifestInvalid(format!("{}: {error}", path.display())))
+        Ok((inputs, crate::artifacts::SnapshotReader::new(file)?))
+    };
+    let (inputs, reader) = open()
+        .map_err(|error| PlanError::ManifestInvalid(format!("{}: {error}", path.display())))?;
+    let manifest = schema::decode_reader(BufReader::new(reader))?;
+    Ok((inputs, manifest))
 }
 
 async fn prepare_verify_selection_inner(
@@ -503,9 +504,7 @@ async fn prepare_verify_selection_inner(
     format: OutputFormat,
     #[cfg(test)] control: Option<DiscoveryControl>,
 ) -> Result<CheckedPlan, PlanError> {
-    let (manifest_inputs, bytes) = read_manifest(manifest_path)?;
-    let manifest = decode_manifest(&bytes)?;
-    drop(bytes);
+    let (manifest_inputs, manifest) = read_manifest(manifest_path)?;
     validate_header(&manifest)?;
     validate_current_fingerprint_env(&manifest.normalized_config)?;
 

@@ -5,6 +5,11 @@ description: Current formats, usage changes and release versioning.
 status: draft
 catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
 sources:
+- id: issues-1054-compatibility
+  resource: ../compatibility.md
+  revision: f55f42c66b21861ae5302c057b4b600ec5d765c1
+  working_tree: modified
+  sha256: d5981898de11f7be97e7d3843d9a1605c551000d7bcd1a7b71595e3b0dc6dad5
 - id: issues-1050-compatibility
   resource: ../compatibility.md
   revision: 5265aa2cc9f36b6b98ded50c6823039d8999b665
@@ -274,3 +279,16 @@ introduced. Read the [change notice](../compatibility.md#review-source-boundary-
 when changing source handling.[^issues-1050-compatibility]
 
 [^issues-1050-compatibility]: [Current source-boundary notice](../compatibility.md).
+
+# Git capture and artifact read policy (Issues #1054–#1056)
+
+Git inspection now fails explicitly when a command's stdout exceeds 64 MiB;
+stderr retains a marked 64 KiB prefix while draining. Verify and progress stream
+artifacts within their initial opened-file length and reject observed size
+changes. No fixed plan/report size cap or new option is added. The plan's old-shape
+diagnostic precedence is removed while current-only rejection remains. Saved
+schema versions and the package floor do not change. See the current notice for
+retained payload memory and concurrent in-place rewrite limits.
+[^issues-1054-compatibility]
+
+[^issues-1054-compatibility]: [Current capture and reader notice](../compatibility.md#bounded-git-capture-and-streaming-artifact-reads-issues-10541056).

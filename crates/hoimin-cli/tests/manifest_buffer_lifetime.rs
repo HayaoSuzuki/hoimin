@@ -240,12 +240,12 @@ fn assert_manifest_lifetime_and_preview(count: usize) {
     );
     assert_eq!(
         ALLOCATIONS.load(Ordering::SeqCst),
-        1,
-        "unique input allocation"
+        0,
+        "stream decoding must not allocate a whole manifest input buffer"
     );
     assert_eq!(
         RELEASES.load(Ordering::SeqCst),
-        1,
+        0,
         "raw JSON must be freed before source reading"
     );
     assert_eq!(BUFFER.load(Ordering::SeqCst), 0);

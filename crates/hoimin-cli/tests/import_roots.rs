@@ -260,7 +260,9 @@ fn old_or_forged_plans_fail_before_baseline() {
     fs::write(&path, serde_json::to_vec(&old).unwrap()).unwrap();
     let rejected = Project::verify(&path);
     assert!(!rejected.status.success());
-    assert!(String::from_utf8_lossy(&rejected.stderr).contains("regenerate the plan"));
+    // Obsolete shapes fail typed decoding without special version-error precedence.
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("plan.manifest.invalid"));
+    assert!(!project.log.exists());
     for roots in [
         json!(["../outside"]),
         json!(["/absolute"]),

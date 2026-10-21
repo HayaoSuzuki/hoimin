@@ -1412,8 +1412,8 @@ macro_rules! verify_invalid_schema_document {
 verify_invalid_schema_document! {
     verify_rejects_duplicate_schema_original_bytes: br#"{"schema_version":10,"sch\u0065ma_version":9}"# => "duplicate field `schema_version`",
     verify_rejects_malformed_body_after_schema: br#"{"schema_version":10,"candidates":[}"# => "expected value",
-    verify_rejects_obsolete_trailing_content: br#"{"schema_version":9} null"# => "trailing characters",
-    verify_guides_obsolete_schema_last_before_old_shape: br#"{"obsolete_root":{},"schema_version":9}"# => "unsupported schema version 9; regenerate",
+    verify_rejects_obsolete_trailing_content: br#"{"schema_version":9} null"# => "missing field",
+    verify_rejects_obsolete_schema_last_shape: br#"{"obsolete_root":{},"schema_version":9}"# => "unknown field `obsolete_root`",
 }
 
 #[tokio::test]

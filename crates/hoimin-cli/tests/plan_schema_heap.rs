@@ -89,3 +89,36 @@ fn dom_control_exceeds_decoder_overhead_budget() {
     );
     eprintln!("plan-schema control direct={direct_peak} DOM={peak}");
 }
+
+#[test]
+fn streaming_plan_keeps_decoded_payload_without_whole_input_copy() {
+    use std::io::{BufReader, Read, Write};
+    let _observation = OBSERVATION.lock().unwrap();
+    let manifest = fixture::manifest(512, 4096);
+    let mut file = tempfile::tempfile().unwrap();
+    serde_json::to_writer(&mut file, &manifest).unwrap();
+    // Large valid trailing whitespace must not become retained parser storage.
+    file.write_all(&vec![b' '; 2 * 1024 * 1024]).unwrap();
+    let input_bytes = usize::try_from(file.metadata().unwrap().len()).unwrap();
+    std::io::Seek::rewind(&mut file).unwrap();
+    heap_tracking::begin();
+    let streamed = schema::decode_reader(BufReader::new(&mut file)).unwrap();
+    let streaming_peak = heap_tracking::finish();
+    assert_eq!(streamed.candidates, manifest.candidates);
+    drop(streamed);
+
+    std::io::Seek::rewind(&mut file).unwrap();
+    heap_tracking::begin();
+    let mut raw = Vec::new();
+    file.read_to_end(&mut raw).unwrap();
+    let buffered = schema::decode_manifest(&raw).unwrap();
+    let buffered_peak = heap_tracking::finish();
+    assert_eq!(buffered.candidates, manifest.candidates);
+    assert!(
+        buffered_peak >= streaming_peak + input_bytes - 64 * 1024,
+        "input={input_bytes}, streaming={streaming_peak}, buffered={buffered_peak}"
+    );
+    eprintln!(
+        "plan-stream input={input_bytes} streaming_peak={streaming_peak} buffered_peak={buffered_peak}"
+    );
+}

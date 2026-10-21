@@ -31,9 +31,9 @@ macro_rules! invalid_documents {
 }
 
 invalid_documents! {
-    obsolete_shape_gets_regeneration: br#"{"obsolete_root":{},"schema_version":9}"# => "unsupported schema version 9; regenerate",
-    future_shape_gets_regeneration: br#"{"schema_version":11,"future_field":{}}"# => "unsupported schema version 11; regenerate",
-    unsupported_first_duplicate_uses_first_route: br#"{"schema_version":9,"schema_version":10}"# => "unsupported schema version 9; regenerate",
+    obsolete_shape_is_rejected: br#"{"obsolete_root":{},"schema_version":9}"# => "unknown field `obsolete_root`",
+    future_shape_is_rejected: br#"{"schema_version":11,"future_field":{}}"# => "unknown field `future_field`",
+    unsupported_first_duplicate_is_typed_error: br#"{"schema_version":9,"schema_version":10}"# => "duplicate field `schema_version`",
     current_first_duplicate_is_typed_error: br#"{"schema_version":10,"schema_version":9}"# => "duplicate field `schema_version`",
     escaped_duplicate_is_typed_error: br#"{"schema_version":10,"sch\u0065ma_version":10}"# => "duplicate field `schema_version`",
     duplicate_kind_is_typed_error: br#"{"schema_version":10,"kind":"plan","kind":"plan"}"# => "duplicate field `kind`",
@@ -44,11 +44,20 @@ invalid_documents! {
     malformed_prefix_is_rejected: br#"{"candidates":[},"schema_version":10}"# => "expected value",
     malformed_current_body_is_rejected: br#"{"schema_version":10,"candidates":[}"# => "expected value",
     malformed_obsolete_body_precedes_guidance: br#"{"schema_version":9,"candidates":[}"# => "expected value",
-    obsolete_trailing_content_precedes_guidance: br#"{"schema_version":9} trailing"# => "trailing characters",
-    obsolete_invalid_escape_precedes_guidance: br#"{"schema_version":9,"old":"\q"}"# => "invalid escape",
-    obsolete_non_scalar_unicode_gets_version_rejection: br#"{"schema_version":9,"old":"\uD800"}"# => "unsupported schema version 9; regenerate",
-    obsolete_out_of_range_number_gets_version_rejection: br#"{"schema_version":9,"old":1e400}"# => "unsupported schema version 9; regenerate",
-    obsolete_non_utf8_string_gets_version_rejection: b"{\"schema_version\":9,\"old\":\"\xff\"}" => "unsupported schema version 9; regenerate",
+
+}
+
+#[test]
+fn obsolete_shapes_are_rejected_without_diagnostic_precedence() {
+    for bytes in [
+        br#"{"schema_version":9} trailing"#.as_slice(),
+        br#"{"schema_version":9,"old":"\q"}"#,
+        br#"{"schema_version":9,"old":"\uD800"}"#,
+        br#"{"schema_version":9,"old":1e400}"#,
+        b"{\"schema_version\":9,\"old\":\"\xff\"}",
+    ] {
+        assert!(decode_manifest(bytes).is_err());
+    }
 }
 
 #[test]
@@ -157,32 +166,6 @@ proptest! {
     #![proptest_config(proptest::test_runner::Config::with_cases(24))]
 
     #[test]
-    fn schema_first_probe_does_not_read_candidate_bodies(payload_bytes in 0_usize..65_537) {
-        let bytes = bytes_with_schema(0, false, payload_bytes);
-        let mut reader = Counted { input: &bytes, read: 0 };
-
-        let version = super::schema::probe_deserializer(
-            &mut serde_json::Deserializer::from_reader(&mut reader),
-        );
-
-        prop_assert_eq!(version, Some(10));
-        prop_assert!(reader.read < 32, "read {} bytes of {}", reader.read, bytes.len());
-    }
-
-    #[test]
-    fn schema_last_probe_scans_candidate_bodies(payload_bytes in 1_usize..32_769) {
-        let bytes = bytes_with_schema(7, false, payload_bytes);
-        let mut reader = Counted { input: &bytes, read: 0 };
-
-        let version = super::schema::probe_deserializer(
-            &mut serde_json::Deserializer::from_reader(&mut reader),
-        );
-
-        prop_assert_eq!(version, Some(10));
-        prop_assert!(reader.read >= bytes.len() - 1);
-    }
-
-    #[test]
     fn strict_decode_reads_all_bytes_for_reordered_escaped_schema(
         position in 0_usize..8,
         escaped in any::<bool>(),
@@ -192,10 +175,22 @@ proptest! {
         let mut reader = Counted { input: &bytes, read: 0 };
 
         let routed = decode_manifest(&bytes).unwrap();
-        let strict: PlanManifest = serde_json::from_reader(&mut reader).unwrap();
+        let strict = super::schema::decode_reader(&mut reader).unwrap();
 
         prop_assert_eq!(routed.candidates, strict.candidates);
         prop_assert_eq!(routed.schema_version, 10);
         prop_assert_eq!(reader.read, bytes.len());
+    }
+}
+
+#[test]
+fn current_shaped_old_and_future_versions_are_rejected() {
+    for version in [9, 11] {
+        let bytes = bytes_with_schema(7, false, 32);
+        let text = String::from_utf8(bytes).unwrap().replace(
+            "\"schema_version\":10",
+            &format!("\"schema_version\":{version}"),
+        );
+        assert!(message(text.as_bytes()).contains("unsupported schema version"));
     }
 }

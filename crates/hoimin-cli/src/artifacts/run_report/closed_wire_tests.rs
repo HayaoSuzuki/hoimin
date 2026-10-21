@@ -211,3 +211,27 @@ stream_event_case!(stream_mutant_start, 2);
 stream_event_case!(stream_mutant_finish, 3);
 stream_event_case!(stream_diagnostic, 4);
 stream_event_case!(stream_summary, 5);
+
+#[test]
+fn run_kind_requires_a_string_for_progress_and_review() {
+    for kind in [
+        serde_json::json!({"run_started": null}),
+        serde_json::json!(["run_started"]),
+        serde_json::Value::Null,
+        serde_json::json!(42),
+    ] {
+        let mut value = document();
+        value["run"]["kind"] = kind;
+        let (json, jsonl) = wires(&value);
+        let path = Path::new("report");
+        assert!(matches!(
+            read_buffered_report(path, json.as_bytes()),
+            Err(ProgressError::Parse { .. })
+        ));
+        assert!(read_buffered_report(path, jsonl.as_bytes()).is_err());
+        assert!(matches!(
+            read_review_json(path, json.as_bytes()),
+            Err(ProgressError::Parse { .. })
+        ));
+    }
+}
