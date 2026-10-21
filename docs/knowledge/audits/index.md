@@ -8,6 +8,7 @@ and an actual host execution are different evidence; see the
 
 Read the relevant summary and follow its original sources:
 
+- [October 2026 design-audit history](design-history-2026-10.md) - Eight archived reviews, completed follow-ups and conditions behind retained or later revised decisions.
 - [Reading Lean evidence](lean-evidence.md) - Model proofs, finite search, Rust comparisons and host execution.
 - [2026-09-11 boundary audit](boundary-2026-09.md) - Syntax, selection, execution and persistence findings, including static and unverified scope.
 - [Progress-input validation and follow-up](progress-input.md) - Later fixes, 368 historical observations and changed comparison-test assumptions.

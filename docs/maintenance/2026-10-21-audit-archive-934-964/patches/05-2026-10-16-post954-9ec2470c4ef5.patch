@@ -1,0 +1,251 @@
+diff --git a/docs/knowledge/audits/design-complexity-post954.md b/docs/knowledge/audits/design-complexity-post954.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a0786d2e388ef138acd2b8489603739a49775708
+--- /dev/null
++++ b/docs/knowledge/audits/design-complexity-post954.md
+@@ -0,0 +1,204 @@
++---
++type: Audit
++title: Design complexity after PR 954
++description: Typed ownership, compatibility and duplicated-state review of the post-954 main revision.
++status: draft
++audit_revision: 578b3657e744c1f6d13b57bcb010bd21bde873c2
++sources:
++- id: machine
++  resource: ../../../crates/hoimin-core/src/machine.rs
++  revision: 578b3657e744c1f6d13b57bcb010bd21bde873c2
++  working_tree: clean
++  sha256: 039cfcba5fe467827fd337b9ad69089c46438e89ed195a6a1f497eba78883918
++- id: shell
++  resource: ../../../crates/hoimin-cli/src/shell.rs
++  revision: 578b3657e744c1f6d13b57bcb010bd21bde873c2
++  working_tree: clean
++  sha256: 0271e86ec8f954a7f2f0ec13d90aab1e1c25718ceabcaac9956036085e074c93
++- id: owned
++  resource: ../../../crates/hoimin-cli/src/workspace/owned.rs
++  revision: 578b3657e744c1f6d13b57bcb010bd21bde873c2
++  working_tree: clean
++  sha256: bd8c49221e0098056b164bf0bf35ce9e90cec1c004fb40cb460c0e2e6fe825c4
++- id: session
++  resource: ../../../crates/hoimin-cli/src/session/mod.rs
++  revision: 578b3657e744c1f6d13b57bcb010bd21bde873c2
++  working_tree: clean
++  sha256: a6d2221ead4358cd7b48bae6afce68dce85de32d0dba81ceec7dad5d98133aa5
++- id: process
++  resource: ../../../crates/hoimin-cli/src/process/mod.rs
++  revision: 578b3657e744c1f6d13b57bcb010bd21bde873c2
++  working_tree: clean
++  sha256: eabae4dc6c9f4690a397e81aa5386b511d65f671d731140ea890db7455cdd398
++- id: lifecycle-oracle
++  resource: ../../../crates/hoimin-cli/tests/lean_result_lifecycle_oracle.rs
++  revision: 578b3657e744c1f6d13b57bcb010bd21bde873c2
++  working_tree: clean
++  sha256: c4be2b1548e9d1832723e686dad109d96cb361cb2f4310e78815a2175fa1acdd
++- id: plan
++  resource: ../../../crates/hoimin-cli/src/plan.rs
++  revision: 578b3657e744c1f6d13b57bcb010bd21bde873c2
++  working_tree: clean
++  sha256: a7e8dbef8e4f3fe3ca8b90a86c377cf9441ac94682b209ac22d554fb8f884210
++- id: analyzer
++  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
++  revision: 578b3657e744c1f6d13b57bcb010bd21bde873c2
++  working_tree: clean
++  sha256: fc838b85cc69ce2e0d5500a089b1f0d034ec82794b94a0a576bd7b3f30180318
++---
++
++# Scope and evidence
++
++Static review of main at `578b3657e744c1f6d13b57bcb010bd21bde873c2`, after
++PRs #952, #953 and #954 merged. The review covered core effect/worker state,
++shell dispatch and cleanup, workspace ownership, analyzer/plan/review/target,
++report/session/progress codecs, process/resource lifecycles and Python tool
++fallbacks. Existing open and recent closed Issues were checked on 2026-10-16.
++No implementation, runtime test, benchmark or Lean proof was executed during
++this audit. Earlier passing tests are not presented as fresh evidence.
++
++The software-design-philosophy review asks whether a change removes knowledge
++that callers currently have to duplicate. No compatibility adapter is required
++for proposed internal changes. Historical fixtures, corruption rejection,
++platform-specific behavior and independent completion evidence remain useful.
++
++# Assessment
++
++The inspected boundaries satisfy five of eight diagnostics: **6.25/10** using
++1.25 points per evidenced row. This is a qualitative scoped assessment, not a
++repository-wide numerical measurement or a comparison with earlier local scores.
++
++| Diagnostic | Result | Evidence or required improvement |
++| --- | --- | --- |
++| Modules have describable purposes | Pass | Core transitions, shell effects, analyzer discovery and artifact readers have explicit roles. |
++| Interfaces are simpler than implementations | Pass | Typed requests, verified plans and managed workspace APIs hide substantial machinery. |
++| Implementation changes remain local | Needs work | Output continuation knowledge spans the pending ledger and separate IDs/maps; cleanup classification spans workspace and shell. |
++| Interface comments describe intent | Pass | Process cancellation/drain, root lifecycle and typed request comments identify ownership and evidence limits. |
++| Design is reviewed with code | Pass | The recent issue-specific maintenance records and this review record concrete alternatives and rejected proposals. |
++| Important decisions have a single owner | Needs work | Cleanup classification is independently retained in two representations; output lifetime and continuation need synchronized registration. |
++| Module boundaries are discoverable | Pass | Existing architecture/runtime/selection/session concepts describe responsibilities; the findings concern internal ownership within these documented boundaries. |
++| 10–20% design-investment allocation | Unmeasured | No time-allocation evidence was collected; no point awarded. |
++
++The two proposed changes address the failed rows. Reaching an evidenced 10/10
++also requires measuring the investment criterion rather than assuming it from
++review activity. Improvement must reduce existing representations, not add a
++second generic state-management framework.
++
++# Proposed improvements
++
++## Output completion ownership
++
++[#955](https://github.com/HayaoSuzuki/hoimin/issues/955).
++
++`RunState.pending` owns effect lifetime, while `output_actions` and three
++singleton output IDs own continuation identity. `register`, acknowledgement,
++failure and retirement must coordinate these stores. An output pending record
++should own one explicit continuation, including a no-continuation variant for
++baseline output. Report-start acknowledgement history and terminal stop policy
++remain independent. This is a design burden; no production mismatch was
++observed.[^machine]
++
++Verification should preserve ordinary/synthetic start and finish ACKs, baseline
++no-op ACKs, diagnostic failure, final-report stop handling and late/duplicate
++completion rejection. Existing adversarial schedule and Lean correspondence
++tests are relevant. A representation-only change does not by itself require a
++new Lean state machine.
++
++## Internal cleanup result classification
++
++[#956](https://github.com/HayaoSuzuki/hoimin/issues/956).
++
++`CleanupRecord` stores report status and an independent retry reason; shell's
++`ManagedCleanupOutcome` repeats its result classification. Root cleanup emits
++Clean/Failed/Deferred, whereas the report status also includes Retained and
++CleanupAfterDelivery. An internal result can own its classification and attach
++retry information only to Deferred; report/lifecycle values should be
++projections. Remaining-root identity and cleanup-ready diagnostics retain their
++independent evidentiary meanings.[^owned][^shell]
++
++The current diagnostic-wording test can construct a Failed record inside a
++Deferred wrapper. That illustrates representational ambiguity, not a production
++failure. Replace the existing two layers; do not add a new pipeline. Preserve
++normal/outer execution/delivery paths and the bounded contention retry policy.
++
++# Candidates not raised
++
++- **Session `runs.finished`:** production decisions use ownership and `complete`,
++  but the real-CLI result-lifecycle oracle independently reads `finished` as
++  evidence that incomplete finalization ran. Ownership release and
++  `complete=false` also occur after a crash and are not equivalent evidence.
++  Removing the column would need new instrumentation or weaken an existing
++  check; simplification has not been demonstrated.[^session][^lifecycle-oracle]
++- **Start gate and cancellation protocol:** the two token types duplicate the
++  AtomicBool/Notify/Mutex protocol. They have independent admission/cancellation
++  semantics and must retain distinct instances and types. Private implementation
++  sharing is possible, but was deferred because wrapper cost and benefit are
++  smaller than the two ownership findings.[^process]
++- **Process drain flags and resource close flags:** process reap, output drain,
++  closed admission and completed cleanup are different observations, including
++  partial failure. No single derived state was established.[^process]
++- **Cleanup attempt versus safety/admission state:** local attempt history and
++  cleanup-ready durable-marker evidence are independent; neither can simply be
++  reconstructed from the other.[^shell][^owned]
++- **Plan discovery timeout string:** one consumer distinguishes a stable failure
++  code from two producers. A broad diagnostic-enum migration is disproportionate
++  to the current local coupling.[^plan]
++- **Analyzer callback, stored annotations and recording flag:** output strategy
++  and suppression during loop/finally revisits are independent. A single enum
++  would combine separate axes.[^analyzer]
++- **Ranking DTO fields, review history and filesystem classification:** these
++  serve saved explanation/validation, historical evidence and a pure-boundary
++  projection respectively. Their readers and existing validation contracts do
++  not establish redundant mutable ownership.
++- **Compatibility search:** old-schema migrations/field repair have already been
++  removed in recent changes. Opaque progress configuration, optional current
++  report fields, SQL corruption checks, current module/direct-script imports and
++  OS fallbacks were not classified as obsolete compatibility support.
++
++# Review record
++
++Investigation passes:
++
++1. Confirmed latest main and merged #949–951 fixes; compared open and recent
++   closed issue titles and relevant maintenance decisions.
++2. Traced production writers/readers, not just struct declarations or possible
++   arbitrary public construction.
++3. Followed ACK, failure, cancellation, retirement and cleanup timeout paths;
++   checked baseline no-continuation and delivery-specific report states.
++4. Separated cached projections, durable evidence and independent axes from
++   duplicate mutable decisions.
++5. Read existing tests/oracles; challenged and rejected the initial finished-column
++   deletion after discovering its independent real-process observation purpose.
++
++Proposal review passes:
++
++1. Bound each issue to an existing internal ownership boundary.
++2. Preserve external formats and separate report-only states from internal results.
++3. Specify behavioral tests rather than tests mirroring enum layout.
++4. Distinguish proposed changes, inspected behavior and unexecuted verification.
++5. Compare the net reduction with added abstractions; reject whole-machine and
++   generic pipeline rewrites.
++
++Publication review passes:
++
++1. Confirmed both Issue bodies use immutable links to the audited source revision.
++2. Rechecked open Issues immediately before creation; the two findings were absent.
++3. Verified each proposal explains its distinct scope from earlier completed Issues.
++4. An independent reader checked both drafts against production code and found
++   no blocking error; neither body claims a reproduced production failure.
++5. Read both published bodies back and compared them with the reviewed drafts;
++   both are open and match. Checked the final documentation diff for unrelated edits.
++
++Documentation validation passed: all 50 knowledge pages passed YAML/reserved-file,
++local-link and index-reachability checks; the new audit's eight source hashes and
++source IDs/footnotes matched. Strict documentation site generation and
++`git diff --check` passed. These checks validate this record, not runtime behavior.
++
++[^machine]: [Core effect lifecycle](../../../crates/hoimin-core/src/machine.rs).
++[^shell]: [Shell dispatch and cleanup](../../../crates/hoimin-cli/src/shell.rs).
++[^owned]: [Managed root ownership and cleanup](../../../crates/hoimin-cli/src/workspace/owned.rs).
++[^session]: [Session ownership and persistence](../../../crates/hoimin-cli/src/session/mod.rs).
++[^process]: [Process cancellation and drain evidence](../../../crates/hoimin-cli/src/process/mod.rs).
++[^lifecycle-oracle]: [Real-CLI lifecycle observations](../../../crates/hoimin-cli/tests/lean_result_lifecycle_oracle.rs).
++[^plan]: [Plan discovery classification](../../../crates/hoimin-cli/src/plan.rs).
++[^analyzer]: [Annotation collection and transfer](../../../crates/hoimin-cli/src/analyzer/rust.rs).
+diff --git a/docs/knowledge/audits/index.md b/docs/knowledge/audits/index.md
+index 1458c4886036f40f0aa89fb6c65b676734b15271..15b34d26683a23b4d921e40772fbe42872ad3239 100644
+--- a/docs/knowledge/audits/index.md
++++ b/docs/knowledge/audits/index.md
+@@ -8,6 +8,8 @@ and an actual host execution are different evidence; see the
+ 
+ Read the relevant summary and follow its original sources:
+ 
++- [Post-954 design complexity review](design-complexity-post954.md) - Typed ownership, compatibility, duplicated state and rejected simplifications at the recorded revision.
++
+ - [Reading Lean evidence](lean-evidence.md) - Model proofs, finite search, Rust comparisons and host execution.
+ - [2026-09-11 boundary audit](boundary-2026-09.md) - Syntax, selection, execution and persistence findings, including static and unverified scope.
+ - [Progress-input validation and follow-up](progress-input.md) - Later fixes, 368 historical observations and changed comparison-test assumptions.
+diff --git a/docs/knowledge/design/disk-failure.md b/docs/knowledge/design/disk-failure.md
+index b29cbe6d17c45e7d39c938aa74435feb4a86c395..212cb91a481de1fa41abba97e166b125f2ab7812 100644
+--- a/docs/knowledge/design/disk-failure.md
++++ b/docs/knowledge/design/disk-failure.md
+@@ -60,3 +60,9 @@ Use the [disk failure checks](../../development.md#disk-failure-contracts) to ch
+ 
+ [^disk-monitor]: [Monitor first-stop and complete-evidence matching](../../../crates/hoimin-cli/src/workspace/disk.rs).
+ [^disk-shell]: [Shell report evidence merging](../../../crates/hoimin-cli/src/shell.rs).
++
++## Post-954 design review
++
++The [post-954 audit](../audits/design-complexity-post954.md) records proposed
++internal ownership simplifications and their verification limits. These are
++unimplemented proposals, not changes to the contracts above.
+diff --git a/docs/knowledge/design/runtime-lifecycle.md b/docs/knowledge/design/runtime-lifecycle.md
+index fda15fb6fc00ab6c644a6a8865450d962666c29b..12dc56cf733f8e9a94b3553e6f1b5cd233b6ba41 100644
+--- a/docs/knowledge/design/runtime-lifecycle.md
++++ b/docs/knowledge/design/runtime-lifecycle.md
+@@ -626,3 +626,9 @@ boundary when adding a worker process role or changing completion acceptance.
+ [^issue-951-shell]: [Prepared worker requests and retained completion identity](../../../crates/hoimin-cli/src/shell.rs).
+ 
+ [^issue-951-record]: [Issue 951 design, implementation and verification reviews](../../maintenance/2026-10-16-issue-951.md).
++
++## Post-954 design review
++
++The [post-954 audit](../audits/design-complexity-post954.md) records proposed
++internal ownership simplifications and their verification limits. These are
++unimplemented proposals, not changes to the contracts above.

@@ -1,0 +1,2 @@
+# Preserve source-diff bytes, including whitespace-only context lines.
+patches/*.patch -text -whitespace

@@ -1,0 +1,861 @@
+{
+  "format": "hoimin-design-audit-archive-v1",
+  "archived_on": "2026-10-21",
+  "repository": "https://github.com/HayaoSuzuki/hoimin",
+  "comparison_revision": "fd5b68febcbbb7405d0ab4d0127b0c306b3ca5a4",
+  "patch_format": "git diff --binary --full-index --no-ext-diff --no-renames PARENT COMMIT",
+  "branches": [
+    {
+      "branch": "audit/2026-10-16-design-followup",
+      "head": "f373e999a19ab8ea3f6853e68a71bdb47d3485e9",
+      "audit_revision": "0d3fbc1a1821074d6ba8a2a212116241adc85c4e",
+      "findings": [
+        929,
+        930,
+        931
+      ],
+      "commits": [
+        "f373e999a19ab8ea3f6853e68a71bdb47d3485e9"
+      ],
+      "documents_absent_from_base": [
+        {
+          "path": "docs/knowledge/audits/design-2026-10-16.md",
+          "blob": "210f546c1ac0746618b4ca8fab0a469f923d5e0f",
+          "sha256": "59fd4d60aa113db369702698b40dd9ab2eedee66af0fb0657476a191502882b6"
+        },
+        {
+          "path": "docs/superpowers/reports/2026-10-16-design-audit-followup.md",
+          "blob": "6dd067a3e19b64395db7fcf8ca28ff26b4b81d27",
+          "sha256": "ec3aaf5e1966da6e300a9ae108132d22d5242613e2e5059a2765240938f3b251"
+        }
+      ]
+    },
+    {
+      "branch": "audit/2026-10-16-post934",
+      "head": "34307704947c42274fa867ec73b68e870155a97b",
+      "audit_revision": "5237d1e53a2c8b34fca80f6eeb7d644a01d732e2",
+      "findings": [
+        935,
+        936
+      ],
+      "commits": [
+        "34307704947c42274fa867ec73b68e870155a97b"
+      ],
+      "documents_absent_from_base": [
+        {
+          "path": "docs/knowledge/audits/design-2026-10-16-post934.md",
+          "blob": "082a7e75d6044a4ffe704b1e704a7095725f1645",
+          "sha256": "c2eddd83849d4ca444ea16eb706cad50099b136c37dac496d6e5137589e20b19"
+        }
+      ]
+    },
+    {
+      "branch": "audit/2026-10-16-post938",
+      "head": "f3fe72ae3bb03e1f241cd2913d919be438b5e296",
+      "audit_revision": "465ff928c1f2ceb9f9b8f8084465475e45799ee8",
+      "findings": [
+        939,
+        940,
+        941,
+        942,
+        943
+      ],
+      "commits": [
+        "f3fe72ae3bb03e1f241cd2913d919be438b5e296"
+      ],
+      "documents_absent_from_base": [
+        {
+          "path": "docs/maintenance/2026-10-16-post938-design-audit.md",
+          "blob": "091cde8b31cdd4169f559654432ec8c2e709b261",
+          "sha256": "9f61315922c987ea53b719f6f3330d43c43de22748fe90d32cd90577e3b809f7"
+        }
+      ]
+    },
+    {
+      "branch": "audit/2026-10-16-post948",
+      "head": "f6f4b8fc35dd5bb14e90b7daa109b7ca4db47c41",
+      "audit_revision": "ddb8ed9504beb04c06bfe11821ebcafffa332714",
+      "findings": [
+        949,
+        950,
+        951
+      ],
+      "commits": [
+        "f6f4b8fc35dd5bb14e90b7daa109b7ca4db47c41"
+      ],
+      "documents_absent_from_base": [
+        {
+          "path": "docs/maintenance/2026-10-16-post948-design-audit.md",
+          "blob": "7aa91d661859537262e8ea8e536449bd1997b6fe",
+          "sha256": "488b4cd4076c0ba424988247055030c62211b08fee625d37b3df544fa3868c58"
+        }
+      ]
+    },
+    {
+      "branch": "audit/2026-10-16-post954",
+      "head": "9ec2470c4ef558e26c6fec01d7552828b884cafc",
+      "audit_revision": "578b3657e744c1f6d13b57bcb010bd21bde873c2",
+      "findings": [
+        955,
+        956
+      ],
+      "commits": [
+        "9ec2470c4ef558e26c6fec01d7552828b884cafc"
+      ],
+      "documents_absent_from_base": [
+        {
+          "path": "docs/knowledge/audits/design-complexity-post954.md",
+          "blob": "a0786d2e388ef138acd2b8489603739a49775708",
+          "sha256": "fdca803437586bdf541d9cb2b6087635d301c8be997f0d06899b1cd5e64ead49"
+        }
+      ]
+    },
+    {
+      "branch": "audit/2026-10-16-post958",
+      "head": "fe1707ee82fdb7f1855689513d4494aaed7435f7",
+      "audit_revision": "30d158c7ead3252c5c0aa398e8ab1819ffa9d75b",
+      "findings": [
+        959,
+        960
+      ],
+      "commits": [
+        "fe1707ee82fdb7f1855689513d4494aaed7435f7"
+      ],
+      "documents_absent_from_base": [
+        {
+          "path": "docs/knowledge/audits/design-complexity-post958.md",
+          "blob": "b82a47cdf407ab7cedd789cae971db8512c1bcac",
+          "sha256": "06a0cf645b34f75518911d2a92d4024aa7e4118a75fa63e09d5487555d950b13"
+        }
+      ]
+    },
+    {
+      "branch": "audit/2026-10-17-post962",
+      "head": "40c005433eaa0ac57d440e2071085935cf4ce370",
+      "audit_revision": "a72ca276efbb6c98499878f5c1cdeaadd39c23b8",
+      "findings": [
+        963
+      ],
+      "commits": [
+        "40c005433eaa0ac57d440e2071085935cf4ce370"
+      ],
+      "documents_absent_from_base": [
+        {
+          "path": "docs/knowledge/audits/design-complexity-post962.md",
+          "blob": "80cc8fa7c7e811f5c1dc70fc1228a27aa99e36a9",
+          "sha256": "5b5b3ea90041decb6e0b0196d3b4d8b1180617a8789c69e5fec81726f4c08c16"
+        }
+      ]
+    },
+    {
+      "branch": "audit/2026-10-17-post964",
+      "head": "6c0b9a63fe7abab177820d06abd95b8ff74e8d53",
+      "audit_revision": "229ce38535142958ab75aa1b0462d8be37dbf77e",
+      "findings": [
+        966,
+        967
+      ],
+      "commits": [
+        "ea2fb180a7b5ee4bf52887ca9ee76130e0bb9601",
+        "6c0b9a63fe7abab177820d06abd95b8ff74e8d53"
+      ],
+      "documents_absent_from_base": [
+        {
+          "path": "docs/knowledge/audits/design-complexity-post964.md",
+          "blob": "9c56bd1c9ef8d3819e014567d9c564d3fcf29615",
+          "sha256": "1e2dfa09cf8fb862925a2d88aae32546c9f83496ff36cb77a4ea2d8f893f8be7"
+        }
+      ]
+    }
+  ],
+  "commits": [
+    {
+      "commit": "f373e999a19ab8ea3f6853e68a71bdb47d3485e9",
+      "parent": "0d3fbc1a1821074d6ba8a2a212116241adc85c4e",
+      "parent_tree": "f4fb097f1ac3d4ffff5dc04dc99234b965a8266e",
+      "tree": "72fbc81936bca205942248b608e4d71849449637",
+      "subject": "docs: record type and compatibility audit follow-ups",
+      "committed_at": "2026-10-16T02:15:32+09:00",
+      "patch": "patches/01-2026-10-16-design-followup-f373e999a19a.patch",
+      "sha256": "bfd793d795626859418d837fb82972d22f5a41c9feac184c955e4be7643bcf9f",
+      "postimages": [
+        {
+          "path": "docs/knowledge/audits/design-2026-10-16.md",
+          "blob": "210f546c1ac0746618b4ca8fab0a469f923d5e0f",
+          "sha256": "59fd4d60aa113db369702698b40dd9ab2eedee66af0fb0657476a191502882b6"
+        },
+        {
+          "path": "docs/knowledge/audits/index.md",
+          "blob": "630db75018a114969a33819ba7b86b37008eb208",
+          "sha256": "79102a7b12c371534e652384f2233d78e63ad89b3ebc86361c795bec3a527c86"
+        },
+        {
+          "path": "docs/knowledge/design/analyzer.md",
+          "blob": "abc83626f09bd7d0a0d121cf3fb7c210724db9c6",
+          "sha256": "2f255faaad19b0dc86f505e446f18c41e0ccd10c72cb17f989bfe8ae08ccbe20"
+        },
+        {
+          "path": "docs/knowledge/design/runtime-lifecycle.md",
+          "blob": "5f02d96d3924a1ddb38bbd1fe3e1595137159fd5",
+          "sha256": "d292df928a49c23bb882aa92ba106efc5074d60c87226f1dd39739bf893e1d42"
+        },
+        {
+          "path": "docs/knowledge/index.md",
+          "blob": "45300f62464f248e9d2e698af82130241a613fca",
+          "sha256": "9444616fca516cedfdfcc56ea7de157536a829cef4a01cc9f63dc0bcaca00f8c"
+        },
+        {
+          "path": "docs/knowledge/references/audit-documents.md",
+          "blob": "48813a2f3f0f0b84f91163c808b51e23bd842f25",
+          "sha256": "3f5d66f6b521e0557d90be6963582439001611c49230d37baf5f4f397198d710"
+        },
+        {
+          "path": "docs/superpowers/reports/2026-10-16-design-audit-followup.md",
+          "blob": "6dd067a3e19b64395db7fcf8ca28ff26b4b81d27",
+          "sha256": "ec3aaf5e1966da6e300a9ae108132d22d5242613e2e5059a2765240938f3b251"
+        }
+      ]
+    },
+    {
+      "commit": "34307704947c42274fa867ec73b68e870155a97b",
+      "parent": "5237d1e53a2c8b34fca80f6eeb7d644a01d732e2",
+      "parent_tree": "24ba020294809127d6260ab47caa3bce6b83e9a2",
+      "tree": "496de121c816b08571df558cf411fcfd2588d035",
+      "subject": "docs: record post-934 design audit and follow-up issues",
+      "committed_at": "2026-10-16T06:17:16+09:00",
+      "patch": "patches/02-2026-10-16-post934-34307704947c.patch",
+      "sha256": "eb505541e241e509d7f892956699454e4963ffef2a966236612d9d0bc61a605f",
+      "postimages": [
+        {
+          "path": "docs/knowledge/audits/design-2026-10-16-post934.md",
+          "blob": "082a7e75d6044a4ffe704b1e704a7095725f1645",
+          "sha256": "c2eddd83849d4ca444ea16eb706cad50099b136c37dac496d6e5137589e20b19"
+        },
+        {
+          "path": "docs/knowledge/audits/index.md",
+          "blob": "057411b5ea8a5a13e20e5cf75eaad67db1ba50a0",
+          "sha256": "29c779ab74269fc44d6fff0475be5704b5bb037e038de31b44006c4872ec9b50"
+        },
+        {
+          "path": "docs/knowledge/design/analyzer.md",
+          "blob": "eb6c007b02566fef88710f4707731a5d7119287e",
+          "sha256": "3a7fae6c6e23d7a25a6ab2d47ce116c393f7d6ca281e14bb955c2dc0476d4f0d"
+        },
+        {
+          "path": "docs/knowledge/design/selection-plan-verify.md",
+          "blob": "d3ff1f21fac4c6c55fa8353b7a13081b4f509778",
+          "sha256": "e9f0adfb5a15f30950efd220b0c0bb79f0a41e4349ebcfae74142ea2da3d63ef"
+        },
+        {
+          "path": "docs/knowledge/index.md",
+          "blob": "5f77dd7d94c47ab01ff61b0c806531a1e44c6b9c",
+          "sha256": "628a604c18ac7b756072da7a25329550d2b9e4a68c1122d84d41002a3a6a79f6"
+        }
+      ]
+    },
+    {
+      "commit": "f3fe72ae3bb03e1f241cd2913d919be438b5e296",
+      "parent": "465ff928c1f2ceb9f9b8f8084465475e45799ee8",
+      "parent_tree": "ab4dd962f947264ac98ae04a2dc1e16819764c4c",
+      "tree": "f24989c7c838cb5ff31fdc22a25d17bee36b4b9d",
+      "subject": "docs(audit): record post-938 type and state ownership findings",
+      "committed_at": "2026-10-16T07:06:52+09:00",
+      "patch": "patches/03-2026-10-16-post938-f3fe72ae3bb0.patch",
+      "sha256": "668762e1f773a79492e79a7e58a4e6f9ed81a305d12324bed058d575db5ec413",
+      "postimages": [
+        {
+          "path": "docs/knowledge/design/architecture.md",
+          "blob": "32fad0f73e60317d149f3e1d5fd79f8e7b53b01c",
+          "sha256": "32af95bb20ab26b12dbeeeafa1b126d664d458a75adc0f4a4548de354224ef0a"
+        },
+        {
+          "path": "docs/maintenance/2026-10-16-post938-design-audit.md",
+          "blob": "091cde8b31cdd4169f559654432ec8c2e709b261",
+          "sha256": "9f61315922c987ea53b719f6f3330d43c43de22748fe90d32cd90577e3b809f7"
+        }
+      ]
+    },
+    {
+      "commit": "f6f4b8fc35dd5bb14e90b7daa109b7ca4db47c41",
+      "parent": "ddb8ed9504beb04c06bfe11821ebcafffa332714",
+      "parent_tree": "2735755e856bcae8745cabbc269fbb0fa2aba284",
+      "tree": "a605ecff51e00acdd55f3ca1899ac4028c58e272",
+      "subject": "docs: record post-948 design audit and improvement issues",
+      "committed_at": "2026-10-16T14:38:34+09:00",
+      "patch": "patches/04-2026-10-16-post948-f6f4b8fc35dd.patch",
+      "sha256": "63dda5084784fa349371cd61caced0b277160c36fbe0a665499b711f28fdad4e",
+      "postimages": [
+        {
+          "path": "docs/knowledge/design/architecture.md",
+          "blob": "2e532666c42ed5a8d48f8274f444af8dcdb55ed3",
+          "sha256": "6972426826c568a8c1daf21d09409029ca34e0f971dab4babcb4bd7481c6cc3e"
+        },
+        {
+          "path": "docs/maintenance/2026-10-16-post948-design-audit.md",
+          "blob": "7aa91d661859537262e8ea8e536449bd1997b6fe",
+          "sha256": "488b4cd4076c0ba424988247055030c62211b08fee625d37b3df544fa3868c58"
+        }
+      ]
+    },
+    {
+      "commit": "9ec2470c4ef558e26c6fec01d7552828b884cafc",
+      "parent": "578b3657e744c1f6d13b57bcb010bd21bde873c2",
+      "parent_tree": "efa68c1f2c4c87fdb10c0e6631475b0687efd41c",
+      "tree": "b0500f218446e38be68ba821792548dc0b0ee53a",
+      "subject": "docs: audit design ownership after PR 954",
+      "committed_at": "2026-10-16T17:11:17+09:00",
+      "patch": "patches/05-2026-10-16-post954-9ec2470c4ef5.patch",
+      "sha256": "cd703ad064e9a27d3f4342785a0944bd1e38709513234cc9e25ef2b8343cd2da",
+      "postimages": [
+        {
+          "path": "docs/knowledge/audits/design-complexity-post954.md",
+          "blob": "a0786d2e388ef138acd2b8489603739a49775708",
+          "sha256": "fdca803437586bdf541d9cb2b6087635d301c8be997f0d06899b1cd5e64ead49"
+        },
+        {
+          "path": "docs/knowledge/audits/index.md",
+          "blob": "15b34d26683a23b4d921e40772fbe42872ad3239",
+          "sha256": "cbf09a438e1b6bb3db863473066703d59e4d3384ba3df986eab8bcd8375b1452"
+        },
+        {
+          "path": "docs/knowledge/design/disk-failure.md",
+          "blob": "212cb91a481de1fa41abba97e166b125f2ab7812",
+          "sha256": "7103024d9fc0bb71f9eb232e4d4a314d9f71a492cd58c06d2ed592d2c9b75845"
+        },
+        {
+          "path": "docs/knowledge/design/runtime-lifecycle.md",
+          "blob": "12dc56cf733f8e9a94b3553e6f1b5cd233b6ba41",
+          "sha256": "8aa9ce8745aeb676ab4d6b54718bb5d1ecf75a701ec44737bb12b8230bc41494"
+        }
+      ]
+    },
+    {
+      "commit": "fe1707ee82fdb7f1855689513d4494aaed7435f7",
+      "parent": "30d158c7ead3252c5c0aa398e8ab1819ffa9d75b",
+      "parent_tree": "0db5539aae79fab1dbf5356caf51b1118230e2cd",
+      "tree": "8543c32e01c85b7331df37100741046e81e45036",
+      "subject": "docs: audit design complexity after PR 958",
+      "committed_at": "2026-10-16T23:28:22+09:00",
+      "patch": "patches/06-2026-10-16-post958-fe1707ee82fd.patch",
+      "sha256": "7ad8daaaff63a85df61681cbd824e4c16207d8eefff3b5042ff11209b61818cb",
+      "postimages": [
+        {
+          "path": "docs/knowledge/audits/design-complexity-post958.md",
+          "blob": "b82a47cdf407ab7cedd789cae971db8512c1bcac",
+          "sha256": "06a0cf645b34f75518911d2a92d4024aa7e4118a75fa63e09d5487555d950b13"
+        },
+        {
+          "path": "docs/knowledge/audits/index.md",
+          "blob": "da02e0ee2763ebfb53d0b306fd871650d58cef5d",
+          "sha256": "9698cbbc104f82929120e088cfb2d684db01710a10e7971a87ed034b993cb119"
+        },
+        {
+          "path": "docs/knowledge/design/runtime-lifecycle.md",
+          "blob": "5b92428749ef8ea7ef3290ec713c76ceb74211a8",
+          "sha256": "8267c7642dcc19a7757b91b253f6ad425f40bacf53175712830ec84d8a446594"
+        },
+        {
+          "path": "docs/knowledge/design/selection-plan-verify.md",
+          "blob": "e622ae2f756a4b80cce63d32a4e29b89b1ee4312",
+          "sha256": "5f82690a09bb3d84b66e3303e4d9a4e09615704c108e1f9941ef2a8f9f3b133a"
+        },
+        {
+          "path": "docs/knowledge/index.md",
+          "blob": "938693313a1d5836511077d93dcf9a0e8927be85",
+          "sha256": "c5ee58c5fac34da49033ceb41d5dc65b34877804fad8f838214712964a766a1f"
+        }
+      ]
+    },
+    {
+      "commit": "40c005433eaa0ac57d440e2071085935cf4ce370",
+      "parent": "a72ca276efbb6c98499878f5c1cdeaadd39c23b8",
+      "parent_tree": "41dd17b317d53e912ce650389e105f72f5179824",
+      "tree": "1f8b81238873ba56a280a8b17c56bb35c059a855",
+      "subject": "docs: audit design complexity after PR 962",
+      "committed_at": "2026-10-17T00:18:05+09:00",
+      "patch": "patches/07-2026-10-17-post962-40c005433eaa.patch",
+      "sha256": "bcc477e013f9444f0f5a4e06ddffdb3a8a74d0d1ff08e7cfc55dc5e8a786aef2",
+      "postimages": [
+        {
+          "path": "docs/knowledge/audits/design-complexity-post962.md",
+          "blob": "80cc8fa7c7e811f5c1dc70fc1228a27aa99e36a9",
+          "sha256": "5b5b3ea90041decb6e0b0196d3b4d8b1180617a8789c69e5fec81726f4c08c16"
+        },
+        {
+          "path": "docs/knowledge/audits/index.md",
+          "blob": "2263d5eebe275150a194f8de06e76ba5d39accf9",
+          "sha256": "c7ebdc8494d98bca20cc92c811f57785c56070aed4dbfe20f7ca95a0230757b1"
+        },
+        {
+          "path": "docs/knowledge/design/runtime-lifecycle.md",
+          "blob": "ce105bf8f7acf6fd7c00ce95e01f6105eeff89e7",
+          "sha256": "5b8d72895e6225b813ab60a6da7e0da0aa6264ee783ff81f4c739dedf8d2c5dc"
+        },
+        {
+          "path": "docs/knowledge/index.md",
+          "blob": "99e5207d1b450e98d231c087e2308a8d9ef2ed13",
+          "sha256": "4a55c5ca24283084fdd8f3e996783a4e117ebe119e75f01727717748fc588dfb"
+        }
+      ]
+    },
+    {
+      "commit": "ea2fb180a7b5ee4bf52887ca9ee76130e0bb9601",
+      "parent": "229ce38535142958ab75aa1b0462d8be37dbf77e",
+      "parent_tree": "fdd81d10e04ffc8c22e0318df2e4e1ac48c91184",
+      "tree": "5ec81de9b6de83ae666cc95fc7ad0853776d9917",
+      "subject": "docs: audit state ownership after PR 964",
+      "committed_at": "2026-10-17T23:30:06+09:00",
+      "patch": "patches/08-2026-10-17-post964-ea2fb180a7b5.patch",
+      "sha256": "5631bd5eb7bfc0ed07656e4457206fdc62a20553b7e780c8e01ad631466e502e",
+      "postimages": [
+        {
+          "path": "docs/knowledge/audits/design-complexity-post964.md",
+          "blob": "11f7367e4b9b90da5c923e9964a3f3fbe7f69039",
+          "sha256": "55b46798dd64cc0e9d2c4e11eebb5549060c5d49657300a2f8a008497fda633c"
+        },
+        {
+          "path": "docs/knowledge/audits/index.md",
+          "blob": "a0c0af872405b5027e055fbb89e42a32ee0aef04",
+          "sha256": "f1a858745dacc06027b26972b62fe0bbc5e128f6cfa3496780c4df02beb0a63a"
+        }
+      ]
+    },
+    {
+      "commit": "6c0b9a63fe7abab177820d06abd95b8ff74e8d53",
+      "parent": "ea2fb180a7b5ee4bf52887ca9ee76130e0bb9601",
+      "parent_tree": "5ec81de9b6de83ae666cc95fc7ad0853776d9917",
+      "tree": "edab22200c3b0255f46c39cc86a3e693102bf8f2",
+      "subject": "docs: extend same-revision design audit to report and environment state",
+      "committed_at": "2026-10-17T23:35:36+09:00",
+      "patch": "patches/09-2026-10-17-post964-6c0b9a63fe7a.patch",
+      "sha256": "901145ea015df2f6887093c3e6f732eca96bbfe402fd8a9cd9b8ec8e5dc63d2d",
+      "postimages": [
+        {
+          "path": "docs/knowledge/audits/design-complexity-post964.md",
+          "blob": "9c56bd1c9ef8d3819e014567d9c564d3fcf29615",
+          "sha256": "1e2dfa09cf8fb862925a2d88aae32546c9f83496ff36cb77a4ea2d8f893f8be7"
+        }
+      ]
+    }
+  ],
+  "issue_snapshot": {
+    "observed_on": "2026-10-21",
+    "source": "GitHub GraphQL Issue state, stateReason and closing PR timeline",
+    "issues": [
+      {
+        "number": 570,
+        "title": "Dependency Dashboard",
+        "state": "OPEN",
+        "stateReason": null,
+        "closedAt": null,
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/570",
+        "closing_pull_requests": [],
+        "role": "background"
+      },
+      {
+        "number": 743,
+        "title": "design: 言語別CLIの独立配布に向けて共通実行基盤とPython依存を分離する",
+        "state": "OPEN",
+        "stateReason": null,
+        "closedAt": null,
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/743",
+        "closing_pull_requests": [],
+        "role": "background"
+      },
+      {
+        "number": 806,
+        "title": "research(fuzz): 独立したPython版cargo-fuzz専用ツールの実現性を検討する",
+        "state": "OPEN",
+        "stateReason": null,
+        "closedAt": null,
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/806",
+        "closing_pull_requests": [],
+        "role": "background"
+      },
+      {
+        "number": 929,
+        "title": "refactor(analyzer): 現行の生成元がない旧診断variantを削除する",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-15T19:32:48Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/929",
+        "closing_pull_requests": [
+          {
+            "number": 932,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/932",
+            "mergedAt": "2026-10-15T19:32:46Z"
+          }
+        ],
+        "role": "audit_finding"
+      },
+      {
+        "number": 930,
+        "title": "refactor(analyzer): トークン置換の演算子を文字列ではなくMutationOperatorで返す",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-15T19:34:43Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/930",
+        "closing_pull_requests": [
+          {
+            "number": 933,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/933",
+            "mergedAt": "2026-10-15T19:34:42Z"
+          }
+        ],
+        "role": "audit_finding"
+      },
+      {
+        "number": 931,
+        "title": "refactor(workspace): 変異適用のcandidateをApplyMutation内の一つに統一する",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-15T19:37:31Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/931",
+        "closing_pull_requests": [
+          {
+            "number": 934,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/934",
+            "mergedAt": "2026-10-15T19:37:29Z"
+          }
+        ],
+        "role": "audit_finding"
+      },
+      {
+        "number": 935,
+        "title": "refactor(analyzer): KnownImportsの排他的な束縛をEnumと単一mapへ集約する",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-15T21:55:45Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/935",
+        "closing_pull_requests": [
+          {
+            "number": 937,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/937",
+            "mergedAt": "2026-10-15T21:55:44Z"
+          }
+        ],
+        "role": "audit_finding"
+      },
+      {
+        "number": 936,
+        "title": "refactor(plan): fingerprint入力一覧の二重保存を廃止する",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-15T21:56:42Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/936",
+        "closing_pull_requests": [
+          {
+            "number": 938,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/938",
+            "mergedAt": "2026-10-15T21:56:41Z"
+          }
+        ],
+        "role": "audit_finding"
+      },
+      {
+        "number": 939,
+        "title": "fix(review): report設定の重複JSONキーを型検証前に消さない",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-16T05:24:16Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/939",
+        "closing_pull_requests": [
+          {
+            "number": 945,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/945",
+            "mergedAt": "2026-10-16T05:24:15Z"
+          }
+        ],
+        "role": "audit_finding"
+      },
+      {
+        "number": 940,
+        "title": "refactor(core): synthetic outcomeの型と所有場所を一つにする",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-16T03:50:29Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/940",
+        "closing_pull_requests": [
+          {
+            "number": 944,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/944",
+            "mergedAt": "2026-10-16T03:50:28Z"
+          }
+        ],
+        "role": "audit_finding"
+      },
+      {
+        "number": 941,
+        "title": "refactor(core): deadline・disk・cancelの共通停止遷移を集約する",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-16T05:24:27Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/941",
+        "closing_pull_requests": [
+          {
+            "number": 946,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/946",
+            "mergedAt": "2026-10-16T05:24:26Z"
+          }
+        ],
+        "role": "audit_finding"
+      },
+      {
+        "number": 942,
+        "title": "refactor(workspace): activeとpendingの所有権を単一registryとEnumで表す",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-16T05:24:40Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/942",
+        "closing_pull_requests": [
+          {
+            "number": 947,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/947",
+            "mergedAt": "2026-10-16T05:24:38Z"
+          }
+        ],
+        "role": "audit_finding"
+      },
+      {
+        "number": 943,
+        "title": "refactor(state): worker所属と候補数の冗長な状態保持を削除する",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-16T05:25:01Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/943",
+        "closing_pull_requests": [
+          {
+            "number": 948,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/948",
+            "mergedAt": "2026-10-16T05:24:59Z"
+          }
+        ],
+        "role": "audit_finding"
+      },
+      {
+        "number": 949,
+        "title": "refactor(config): 正規化済み設定のrootをSelection内の一つに集約する",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-16T07:56:51Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/949",
+        "closing_pull_requests": [
+          {
+            "number": 953,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/953",
+            "mergedAt": "2026-10-16T07:56:50Z"
+          }
+        ],
+        "role": "audit_finding"
+      },
+      {
+        "number": 950,
+        "title": "refactor(analyzer): 内部候補のoperatorをMutationOperatorのまま保持する",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-16T07:56:40Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/950",
+        "closing_pull_requests": [
+          {
+            "number": 952,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/952",
+            "mergedAt": "2026-10-16T07:56:38Z"
+          }
+        ],
+        "role": "audit_finding"
+      },
+      {
+        "number": 951,
+        "title": "refactor(shell): process dispatchのworkerと用途をrequestから導出する",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-16T07:57:03Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/951",
+        "closing_pull_requests": [
+          {
+            "number": 954,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/954",
+            "mergedAt": "2026-10-16T07:57:01Z"
+          }
+        ],
+        "role": "audit_finding"
+      },
+      {
+        "number": 955,
+        "title": "refactor(core): 出力ACKの継続処理をpending effectへ集約する",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-16T09:18:18Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/955",
+        "closing_pull_requests": [
+          {
+            "number": 957,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/957",
+            "mergedAt": "2026-10-16T09:18:16Z"
+          }
+        ],
+        "role": "audit_finding"
+      },
+      {
+        "number": 956,
+        "title": "refactor(cleanup): 内部清掃結果とreport用statusを分離して分類の二重保持をなくす",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-16T09:18:32Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/956",
+        "closing_pull_requests": [
+          {
+            "number": 958,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/958",
+            "mergedAt": "2026-10-16T09:18:31Z"
+          }
+        ],
+        "role": "audit_finding"
+      },
+      {
+        "number": 959,
+        "title": "refactor(verify): Top と TopRange を offset 付きの選択要求に統一する",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-16T15:09:42Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/959",
+        "closing_pull_requests": [
+          {
+            "number": 961,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/961",
+            "mergedAt": "2026-10-16T15:09:41Z"
+          }
+        ],
+        "role": "audit_finding"
+      },
+      {
+        "number": 960,
+        "title": "refactor(process): 出力 collector の sink と初回エラーを Result で管理する",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-16T15:09:53Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/960",
+        "closing_pull_requests": [
+          {
+            "number": 962,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/962",
+            "mergedAt": "2026-10-16T15:09:51Z"
+          }
+        ],
+        "role": "audit_finding"
+      },
+      {
+        "number": 963,
+        "title": "refactor(disk): 未使用の最新統計を削除し全体最小値を履歴から導出する",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-16T23:51:11Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/963",
+        "closing_pull_requests": [
+          {
+            "number": 964,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/964",
+            "mergedAt": "2026-10-16T23:51:10Z"
+          }
+        ],
+        "role": "audit_finding"
+      },
+      {
+        "number": 966,
+        "title": "refactor(workspace): PlanStateの予約許容量の重複保持を削除する",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-17T15:05:56Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/966",
+        "closing_pull_requests": [
+          {
+            "number": 968,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/968",
+            "mergedAt": "2026-10-17T15:05:55Z"
+          }
+        ],
+        "role": "audit_finding"
+      },
+      {
+        "number": 967,
+        "title": "refactor(windows): 未使用のRootSignalを削除し終了通知への関心を明示する",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-17T16:10:52Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/967",
+        "closing_pull_requests": [
+          {
+            "number": 970,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/970",
+            "mergedAt": "2026-10-17T16:10:51Z"
+          }
+        ],
+        "role": "audit_finding"
+      },
+      {
+        "number": 989,
+        "title": "refactor(config): 歴史的43演算子のall_legacy APIを廃止し現在のdefaultを直接定義する",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-18T17:25:15Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/989",
+        "closing_pull_requests": [
+          {
+            "number": 990,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/990",
+            "mergedAt": "2026-10-18T17:25:12Z"
+          }
+        ],
+        "role": "later_reassessment"
+      },
+      {
+        "number": 1051,
+        "title": "refactor(shell): 終了処理の観測・cleanup 試行・証跡の所有者を集約する",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-21T08:50:44Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/1051",
+        "closing_pull_requests": [
+          {
+            "number": 1057,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/1057",
+            "mergedAt": "2026-10-21T08:50:42Z"
+          }
+        ],
+        "role": "later_reassessment"
+      },
+      {
+        "number": 1055,
+        "title": "perf(artifacts): plan・report 読取りの全量バッファと保持メモリを整理する",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-21T10:10:26Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/1055",
+        "closing_pull_requests": [
+          {
+            "number": 1058,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/1058",
+            "mergedAt": "2026-10-21T10:10:24Z"
+          }
+        ],
+        "role": "later_reassessment"
+      },
+      {
+        "number": 1056,
+        "title": "refactor(plan): 旧版専用診断のための SchemaProbe と再パースを整理する",
+        "state": "CLOSED",
+        "stateReason": "COMPLETED",
+        "closedAt": "2026-10-21T10:10:26Z",
+        "url": "https://github.com/HayaoSuzuki/hoimin/issues/1056",
+        "closing_pull_requests": [
+          {
+            "number": 1058,
+            "url": "https://github.com/HayaoSuzuki/hoimin/pull/1058",
+            "mergedAt": "2026-10-21T10:10:24Z"
+          }
+        ],
+        "role": "later_reassessment"
+      }
+    ]
+  }
+}

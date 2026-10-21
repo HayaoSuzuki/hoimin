@@ -1,0 +1,272 @@
+diff --git a/docs/knowledge/audits/design-2026-10-16-post934.md b/docs/knowledge/audits/design-2026-10-16-post934.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..082a7e75d6044a4ffe704b1e704a7095725f1645
+--- /dev/null
++++ b/docs/knowledge/audits/design-2026-10-16-post934.md
+@@ -0,0 +1,211 @@
++---
++type: Audit
++title: Design audit after issues 929–931
++description: Typed binding state, duplicate plan inputs, and compatibility review after PRs 932–934.
++status: draft
++audit_revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
++sources:
++- id: analyzer
++  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
++  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
++  working_tree: clean
++- id: plan
++  resource: ../../../crates/hoimin-cli/src/plan.rs
++  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
++  working_tree: clean
++- id: config
++  resource: ../../../crates/hoimin-core/src/config.rs
++  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
++  working_tree: clean
++- id: review
++  resource: ../../../crates/hoimin-cli/src/review/input.rs
++  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
++  working_tree: clean
++- id: machine
++  resource: ../../../crates/hoimin-core/src/machine.rs
++  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
++  working_tree: clean
++- id: process
++  resource: ../../../crates/hoimin-cli/src/process/mod.rs
++  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
++  working_tree: clean
++- id: shell
++  resource: ../../../crates/hoimin-cli/src/shell.rs
++  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
++  working_tree: clean
++- id: session-schema
++  resource: ../../../crates/hoimin-cli/src/session/schema.rs
++  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
++  working_tree: clean
++- id: workspace
++  resource: ../../../crates/hoimin-cli/src/workspace/owned.rs
++  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
++  working_tree: clean
++- id: review-process
++  resource: ../../superpowers/plans/2026-10-16-issue-930.md
++  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
++  working_tree: clean
++---
++
++# Scope and evidence
++
++This audit inspected main at `5237d1e53a2c8b34fca80f6eeb7d644a01d732e2`
++on 2026-10-16, after PRs #932, #933 and #934 merged. It used the
++software-design-philosophy diagnostics to review analyzer bindings, configuration,
++core transitions, shell/process/workspace ownership, plan/review persistence and
++remaining compatibility paths. The user permits incompatible changes. No product
++code changed, and Rust, Python product tests and Lean proofs were not rerun.
++Test references below identify acceptance coverage to run during implementation,
++not successful executions from this audit.
++
++The audit was conducted on branch `audit/2026-10-16-post934`. Existing untracked
++files in the main checkout were left untouched. Current and closed GitHub issues
++were checked to exclude already resolved findings, especially #923–#925 and
++#929–#931. Independent domain reviews were followed by parent source inspection.
++
++# Accepted improvements
++
++## One binding category per local name
++
++[Issue #935](https://github.com/HayaoSuzuki/hoimin/issues/935) tracks this change.
++
++`KnownImports` stores direct imports, module imports and type variables in three
++collections. Production insertion paths invalidate the previous name before
++changing its category. Intersections, invalidation, copying and clearing must
++therefore coordinate three collections to maintain one fact. A private
++`KnownBinding::{Direct(String), Module(String), TypeVar}` in one map removes
++these synchronization steps and makes conflicting categories unrepresentable.
++This is an internal representation change, not an observed incorrect mutation.
++[^analyzer]
++
++Keep the distinctions used by consumers: known imports exclude TypeVar;
++type variables can shadow scalar names; typing/collections.abc wildcards retain
++module bindings; class global/nonlocal projection copies the whole binding;
++replacement spelling still prefers direct aliases and uses lexical tie-breaking.
++Preserve normalized facts consumed by existing binding-flow and exception/loop
++oracles. No new Lean model is required solely to change the representation.
++Single-map spelling searches may scan additional TypeVar entries, so no speedup
++is claimed. Retain clone/scale checks and use parameterized rebinding tests and
++intersection properties to validate the change.[^analyzer]
++
++## One saved fingerprint input list
++
++[Issue #936](https://github.com/HayaoSuzuki/hoimin/issues/936) tracks this change.
++
++`PlanManifest` repeats the same fingerprint input records at the top level and
++inside `normalized_config`. Creation fills both from the same RunConfig. Header
++validation validates both lists and compares them. Verify and review use the
++top-level list, while conversion to execution configuration uses the nested list.
++Retaining only `normalized_config.fingerprint_inputs` removes the duplicated
++storage and equality check.[^plan][^config][^review]
++
++Keep validation of the retained records, current-file re-resolution, pre-execution
++and copied-workspace checks, and review store alias protection. Mutation-source
++records in `sources` have a different role and remain separate. Change the plan
++schema and reject old plans with regeneration guidance; do not introduce an old
++field adapter or dual writer. Existing plan change/deletion tests and review
++destination tests should be supplemented by malformed nested records and
++fingerprint-only protected inputs.[^plan][^review][^shell]
++
++# Rejected changes and compatibility findings
++
++| Candidate | Reason to retain the current design |
++| --- | --- |
++| All operator strings converted to enums | Canonical persisted ordering differs from enum declaration order; no new benefit beyond the already completed token-producer change was established. |
++| `all_legacy` removed based on its name | It composes the current default operator selection, not an old-format reader. |
++| Control-flow exits replaced by one enum | Several exit categories can coexist; they are not exclusive states. |
++| Lexical name-resolution and annotation flow merged | They answer different questions about deferred references and control-flow bindings. |
++| Shell process-origin bool replaced by enum | Failure accounting still needs origin metadata; renaming the discriminator does not remove ownership or routing logic. |
++| Pending-effect fields replaced by a second effect enum | Current validation compares completion identity and cleanup reservations; a second taxonomy would add synchronization. |
++| Cleanup progress merged with disk lifecycle | Attempt history and cleanup admission are distinct observations. |
++| Process start gate merged with cancellation token | Both synchronize with spawn, but the start gate blocks admission while lifecycle cancellation also terminates active work. Shared mechanics alone do not justify merging their authorities. |
++| Root cleanup booleans replaced by a phase enum | Marker publication and child-creation admission are separate facts; no redundant transition rule was established. |
++| Optional report data or generic diagnostic codes removed | Current producers and readers use these contracts; optionality alone is not a compatibility adapter. |
++| Windows delete fallback or Git fallback removed | These handle current filesystem behavior and diff shapes, not obsolete saved formats. |
++
++The decisions above follow actual consumers rather than type shape alone.
++[^analyzer][^config][^machine][^shell][^process][^workspace]
++
++Current session initialization accepts its current schema and initializes new
++databases directly; it rejects unsupported initialized versions. Earlier schema
++migrations are already gone. Historical schema fixtures are not evidence that
++production still supports those formats. No additional substantial
++compatibility-only implementation was confirmed in the inspected paths.
++[^session-schema]
++
++`RunState::with_fingerprint` has no production caller; its test helper later
++overwrites that initial fingerprint with a preflight event. This is a small
++cleanup opportunity for adjacent work, not a separate issue in this audit.
++[^machine]
++
++# Diagnostic assessment
++
++The scoped static assessment is **7.5/10**: six of eight rows have supporting
++evidence. This is not a quantitative correctness or maintainability measurement.
++
++| Diagnostic | Assessment | Evidence or action needed |
++| --- | --- | --- |
++| Modules have describable responsibilities | Pass in inspected domains | State transitions, analysis, execution ownership and saved-input validation have distinct responsibilities. |
++| Interfaces are simpler than implementations | Pass | Process lifecycle and checked-plan APIs hide substantial coordination and validation. |
++| Implementation knowledge can change locally | Partial; not counted | The two accepted changes remove multi-collection synchronization and duplicate saved records. |
++| Interface comments describe promises | Pass | Process waiter-drop/drain and VerifiedPlan comments document ownership and allowed changes. |
++| Reviews discuss design complexity | Pass | Recent issue plans record design checks and alternatives; this does not establish time investment. |
++| Modules own important design decisions | Pass in inspected domains | The core owns transitions; process owns child lifecycle; plan owns saved-input validation. |
++| Boundaries are understandable without full implementations | Pass at documented API level | Process and shell module contracts explain distinct shutdown responsibilities; internal complexity remains. |
++| 10–20% of effort is spent on design improvement | Unmeasured; not counted | Source and review records do not measure elapsed design effort. Measure actual effort before assigning this point. |
++
++Address the two accepted findings and measure the currently unknown investment
++row before considering 10/10. Preserve separate authorities and observations
++when simplifying; adding enum variants is not itself evidence of improvement.
++[^plan][^process][^shell][^machine][^review-process]
++
++# Self-review record
++
++Each stage received at least five distinct checks:
++
++| Stage | Checks and resulting decisions |
++| --- | --- |
++| Scope | Confirmed main SHA; confirmed #929–#931 merged; isolated audit branch; compared open/closed issues; distinguished static inspection from fresh execution. |
++| Evidence | Traced all binding insertions; traced binding consumers and wildcard rules; traced both plan-record producers; enumerated top-level consumers; checked validation and protected-input paths. |
++| Design | Tested whether categories are exclusive; retained TypeVar and alias semantics; retained distinct sources/environment data; rejected unnecessary compatibility adapters; considered single-map search costs without claiming speedup. |
++| Publication | Checked fixed-revision links; separated proposals from existing behavior; stated validation requirements; checked prior issue overlap; reviewed wording for unsupported bug/performance/proof claims. |
++
++An independent reviewer checked both issue drafts against the same source
++revision for evidence, scope, safety, acceptance tests and prior issue overlap.
++No blocking concern was found. Review's early deserialization path was added to
++the old-plan regeneration-message acceptance condition. Both issues were then
++created in `HayaoSuzuki/hoimin`.
++
++# Documentation verification
++
++The initial metadata check found a malformed `sources` line in this new audit;
++it was corrected before the final check. All 50 OKF Markdown structures then
++passed the local structure check, local links in all five changed pages existed,
++and the ten cited source files exactly matched their recorded Git revision.
++Source IDs/footnotes and root-index reachability also passed. The documentation
++builder and `git diff --check` exited successfully. Published issue bodies were
++read back and matched the reviewed drafts.
++
++Five final checks covered source-revision identity, document reachability,
++proposal-versus-implementation wording, static-versus-executed evidence, and
++publication repository/body identity. No product test or new proof result is
++implied by these documentation checks.
++
++# Related contracts
++
++- [Analyzer](../design/analyzer.md)
++- [Selection, plan and verify](../design/selection-plan-verify.md)
++- [Runtime lifecycle](../design/runtime-lifecycle.md)
++- [Evidence limits](lean-evidence.md)
++- [Audit index](index.md)
++
++[^analyzer]: [Analyzer implementation](../../../crates/hoimin-cli/src/analyzer/rust.rs), especially KnownImports, AnnotationImports and binding-flow normalization.
++[^plan]: [Plan implementation](../../../crates/hoimin-cli/src/plan.rs), especially PlanManifest, creation, prepare_verify and validate_header.
++[^config]: [Configuration implementation](../../../crates/hoimin-core/src/config.rs), including operator defaults and PlanConfig conversions.
++[^review]: [Review input protection](../../../crates/hoimin-cli/src/review/input.rs).
++[^machine]: [Core transition implementation](../../../crates/hoimin-core/src/machine.rs).
++[^process]: [Process lifecycle contract and implementation](../../../crates/hoimin-cli/src/process/mod.rs).
++[^shell]: [Shell orchestration contract and implementation](../../../crates/hoimin-cli/src/shell.rs).
++[^session-schema]: [Session schema initialization](../../../crates/hoimin-cli/src/session/schema.rs).
++[^workspace]: [Managed workspace ownership and cleanup](../../../crates/hoimin-cli/src/workspace/owned.rs).
++[^review-process]: [Issue 930 implementation and review record](../../superpowers/plans/2026-10-16-issue-930.md).
+diff --git a/docs/knowledge/audits/index.md b/docs/knowledge/audits/index.md
+index 1458c4886036f40f0aa89fb6c65b676734b15271..057411b5ea8a5a13e20e5cf75eaad67db1ba50a0 100644
+--- a/docs/knowledge/audits/index.md
++++ b/docs/knowledge/audits/index.md
+@@ -8,6 +8,7 @@ and an actual host execution are different evidence; see the
+ 
+ Read the relevant summary and follow its original sources:
+ 
++- [Design audit after #929–#931](design-2026-10-16-post934.md) - Static review of typed bindings, duplicated plan inputs and compatibility paths at `5237d1e5`; follow-up issues #935 and #936.
+ - [Reading Lean evidence](lean-evidence.md) - Model proofs, finite search, Rust comparisons and host execution.
+ - [2026-09-11 boundary audit](boundary-2026-09.md) - Syntax, selection, execution and persistence findings, including static and unverified scope.
+ - [Progress-input validation and follow-up](progress-input.md) - Later fixes, 368 historical observations and changed comparison-test assumptions.
+diff --git a/docs/knowledge/design/analyzer.md b/docs/knowledge/design/analyzer.md
+index f4b5ab6f01010ec5b38cca17d3141b8763c16842..eb6c007b02566fef88710f4707731a5d7119287e 100644
+--- a/docs/knowledge/design/analyzer.md
++++ b/docs/knowledge/design/analyzer.md
+@@ -501,6 +501,10 @@ Issue #468 の設計では、`case -1` などの数値パターンに通常の
+ 
+ # 後続監査と再確認条件
+ 
++The [post-#934 design audit](../audits/design-2026-10-16-post934.md) records
++the proposed single-map binding representation in #935. It is a static finding,
++not an implemented change or new execution evidence.
++
+ [9月11日境界監査](../audits/boundary-2026-09.md)では、構文解析成功とPythonのコンパイル成功の差、ジェネリック型パラメータが有効な範囲、入力形状別の規模検証を追加課題に挙げた。先行報告で試験した入力と条件が異なるため、先行する成功結果だけではこれらの課題を判断できない。
+ 
+ 演算子、名前解決、変更範囲の検証、候補順序、保持構造を変更したら、対応する監査と実装比較用のテストを再確認する。原文の演算子数は報告時点の数値として読み、現行一覧は利用方法と実装を照合する。
+diff --git a/docs/knowledge/design/selection-plan-verify.md b/docs/knowledge/design/selection-plan-verify.md
+index d78d81ec55401db5ec8402e1a50123f61507abd9..d3ff1f21fac4c6c55fa8353b7a13081b4f509778 100644
+--- a/docs/knowledge/design/selection-plan-verify.md
++++ b/docs/knowledge/design/selection-plan-verify.md
+@@ -326,6 +326,10 @@ Issue #473 の設計では、明示symbolと同じファイルにある子symbol
+ 
+ # 関連する監査と再確認条件
+ 
++The [post-#934 design audit](../audits/design-2026-10-16-post934.md) records
++the proposal in #936 to remove duplicated saved fingerprint inputs. Current
++plans still contain both copies; the proposed schema change is not implemented.
++
+ 複数の対象指定や打切り条件は[境界監査](../audits/boundary-2026-09.md)、候補順序と保持上限は[解析器](analyzer.md)を参照する。保存形式、順位規則、候補集合、変更検知用入力、verifyの準備段階を変更したら、設計・実装・公開説明を再照合する。
+ 
+ # Issue 477: import設定の保存
+diff --git a/docs/knowledge/index.md b/docs/knowledge/index.md
+index 5ed7fcc8fd6b743830649f50228e48a24259df06..5f77dd7d94c47ab01ff61b0c806531a1e44c6b9c 100644
+--- a/docs/knowledge/index.md
++++ b/docs/knowledge/index.md
+@@ -74,6 +74,8 @@ recorded revisions against the implementation you are changing:
+ Treat these as evidence at their recorded revisions, inputs and environments,
+ not a claim that every current host or commit passed the same checks:
+ 
++- [Design audit after #929–#931](audits/design-2026-10-16-post934.md) - Static type/Enum and compatibility review; follow-up issues #935 and #936.
++
+ - [Additional audit Lean integration report](../superpowers/reports/2026-09-15-followup-lean-promotion.md) - Six models, 33 theorems, 58 inputs and unresolved implementation correspondence.
+ 
+ - [Nullable mutation eligibility](audits/nullable-gates-2026-09.md) - #564/#565 reproductions and Lean validation of name resolution and type-argument trees.
