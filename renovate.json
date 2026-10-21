@@ -54,7 +54,7 @@
       "minimumReleaseAge": "3 days"
     },
     {
-      "description": "Update pinned workflow linters and their lockfile together",
+      "description": "Update workflow linters and their lockfile together",
       "matchManagers": [
         "pep621"
       ],

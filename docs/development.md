@@ -439,9 +439,13 @@ findings instead of adding blanket exclusions or allowing failed audits to pass.
 CI uses Python 3.14, matching `project.requires-python`. The Renovate rule for
 `actions/python-versions` permits only that minor series; review the rule and
 workflow interpreters together when the supported Python range changes.
-Hypothesis is pinned identically in the `dev` and `fuzz` groups so lockfile
-regeneration cannot select a newer release than the update under review. Keep
-both pins and `uv.lock` synchronized when accepting its next update.
+Python dependency ranges control which updates are allowed. For example,
+`>=4.26.0,<5` permits minor and patch updates in the 4.x series, while
+`>=0.29.0,<1` permits updates throughout the 0.x series. Hypothesis uses the
+same range in the `dev` and `fuzz` groups. Run
+`uv sync -U --all-groups` to update and install all groups within their declared
+ranges. Exact versions remain recorded in `uv.lock`; CI uses the committed
+lockfile with `--frozen`.
 
 ## Property-based boundary tests
 
@@ -630,9 +634,10 @@ the local result does not establish hosted timing.
 
 ### Generate Python inputs with hypothesmith
 
-The optional `fuzz` dependency group pins hypothesmith 0.3.3. The lockfile also
-records Hypothesis, LibCST, and Lark; these dependencies are not installed by the
-ordinary dev-only sync. Run from the repository root:
+The optional `fuzz` dependency group permits hypothesmith updates from 0.3.3
+through the 0.x series. Hypothesis is shared with the `dev` group; hypothesmith,
+LibCST, and Lark require the `fuzz` group. Exact versions are recorded in the
+lockfile. Run from the repository root:
 
 ```console
 uv sync --frozen --group fuzz --no-install-project

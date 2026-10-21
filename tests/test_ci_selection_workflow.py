@@ -5,6 +5,7 @@ import tomllib
 from pathlib import Path
 
 import yaml
+from packaging.requirements import Requirement
 
 from tools.ci_selection import CATEGORIES, selected_jobs
 
@@ -199,13 +200,12 @@ def test_fork_checks_use_read_permissions_without_secrets_or_oidc() -> None:
     )
 
 
-def test_workflow_tool_pins_are_managed_by_renovate() -> None:
+def test_workflow_tools_are_managed_by_renovate() -> None:
     manifest = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     requirements = manifest["dependency-groups"]["workflow"]
 
     assert len(requirements) == 3
-    assert all("==" in requirement for requirement in requirements)
-    names = {requirement.split("==")[0] for requirement in requirements}
+    names = {Requirement(requirement).name for requirement in requirements}
     renovate = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))
 
     assert any(
