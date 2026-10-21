@@ -5269,30 +5269,24 @@ impl KnownImports {
         allowed: impl Fn(&str) -> bool,
     ) -> Option<String> {
         if let Some((prefix, _)) = source.rsplit_once('.') {
-            return self
-                .bindings
-                .iter()
-                .filter_map(|(local, binding)| {
-                    let KnownBinding::Module(module) = binding else {
-                        return None;
-                    };
-                    let suffix = if prefix == local {
-                        ""
-                    } else {
-                        prefix.strip_prefix(local)?.strip_prefix('.')?
-                    };
-                    let resolved_prefix = if suffix.is_empty() {
-                        module.clone()
-                    } else {
-                        format!("{module}.{suffix}")
-                    };
-                    targets.iter().find_map(|target| {
-                        let (target_module, member) = target.rsplit_once('.')?;
-                        (target_module == resolved_prefix && allowed(local))
-                            .then(|| format!("{prefix}.{member}"))
-                    })
-                })
-                .min();
+            // Import keys are local identifiers; only the first component can bind
+            // this qualified spelling. Other imports cannot provide its prefix.
+            let (local, suffix) = prefix.split_once('.').unwrap_or((prefix, ""));
+            #[cfg(test)]
+            known_imports_tests::QUALIFIED_BINDING_VISITS.update(|n| n + 1);
+            let KnownBinding::Module(module) = self.bindings.get(local)? else {
+                return None;
+            };
+            let resolved_prefix = if suffix.is_empty() {
+                module.clone()
+            } else {
+                format!("{module}.{suffix}")
+            };
+            return targets.iter().find_map(|target| {
+                let (target_module, member) = target.rsplit_once('.')?;
+                (target_module == resolved_prefix && allowed(local))
+                    .then(|| format!("{prefix}.{member}"))
+            });
         }
         let direct = self
             .bindings
