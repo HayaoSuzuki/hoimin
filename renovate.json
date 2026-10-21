@@ -5,6 +5,12 @@
   ],
   "minimumReleaseAge": "7 days",
   "internalChecksFilter": "strict",
+  "cargo": {
+    "rangeStrategy": "update-lockfile",
+    "lockFileMaintenance": {
+      "enabled": true
+    }
+  },
   "pep621": {
     "rangeStrategy": "update-lockfile",
     "lockFileMaintenance": {
