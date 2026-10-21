@@ -347,7 +347,7 @@
     },
     "schemaVersion": {
       "type": "integer",
-      "const": 9
+      "const": 10
     },
     "resumeOutcome": {
       "oneOf": [
@@ -1145,7 +1145,8 @@
         "counts",
         "complete",
         "exit_code",
-        "disk"
+        "disk",
+        "resolved_mutant_timeout"
       ],
       "properties": {
         "kind": { "const": "run_finished" },
@@ -1156,6 +1157,13 @@
         "complete": { "type": "boolean" },
         "exit_code": { "type": "integer", "enum": [0, 1, 2, 3, 4, 130] },
         "disk": { "$ref": "#/$defs/diskRunSummary" },
+        "resolved_mutant_timeout": {
+          "description": "Individual mutant process cap, not the run-wide deadline or elapsed time; null if no mutant request was constructed.",
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/mutationDuration" }
+          ]
+        },
         "verification_selection": { "$ref": "#/$defs/verificationSelection" }
       },
       "additionalProperties": false

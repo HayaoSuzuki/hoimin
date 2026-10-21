@@ -498,6 +498,16 @@ The defaults are:
 | `--fingerprint-file PATH` | none | fingerprints one exact root-relative file; does not copy worker files |
 | `--fingerprint-env NAME` | none | fingerprints an explicitly selected inherited variable; repeatable |
 
+The final run summary reports `resolved_mutant_timeout`, the individual cap
+actually passed in mutant process requests. JSON stores it in
+`summary.resolved_mutant_timeout`; JSONL stores it on `run_finished`. The value
+uses integer `secs` and `nanos` (for example, `{"secs": 6, "nanos": 800000000}`),
+and human output preserves the duration's precision. It is `null` in machine
+output, or `unresolved` in human output, if no mutant process request was built.
+A failed baseline therefore never reports an unused configured cap as resolved.
+This value is separate from process elapsed time and the total run deadline,
+which can interrupt execution before the individual cap expires.
+
 By default, there are no include/exclude overrides or SQLite session, and `--changed`, `--resume`, and `--allow-best-effort-memory` are disabled.
 
 Every numeric limit must be nonzero. Copy and total-timeout limits are run-wide.
@@ -1093,7 +1103,7 @@ When a baseline fails or reaches its process timeout, `run` and `verify` copy it
 
 `--format json` emits one document. `--format jsonl` emits flushed lifecycle events; diagnostics are JSON Lines on stderr. Public JSON contracts are versioned in [`run-result.schema.json`](json-schema/run-result.schema.json) and [`run-event.schema.json`](json-schema/run-event.schema.json). Event kinds are `run_started`, `baseline_finished`, `mutant_started`, `mutant_finished`, `diagnostic`, and `run_finished`. Parallel events are emitted in completion order; candidate sequence numbers allow stable reordering.
 
-Report schema 9 requires `status` in each JSON `mutants[]` record and JSONL
+Report schema 10 requires `status` in each JSON `mutants[]` record and JSONL
 `mutant_finished` event. Read this field for the candidate's verdict, for example
 `{"status":"not_run","outcome":"not_run"}`. The writer computes it from
 `outcome`; strict progress/review readers reject a disagreement with exit 2.
@@ -1612,7 +1622,7 @@ current candidates. `list --stale` includes stored candidates absent from the
 plan separately. List and show do not create a missing store.
 
 Plan-only output has execution state `not_loaded`. Add `--report run.json` for
-actual results from a complete schema-v9 JSON report with a passing baseline and
+actual results from a complete schema-v10 JSON report with a passing baseline and
 matching project/candidates. A plan candidate absent from the report is
 `not_in_report`; recording it with that report is rejected. JSONL and older
 reports are not supported by review. Plan-only recording remains allowed.

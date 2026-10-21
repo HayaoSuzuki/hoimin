@@ -1,0 +1,40 @@
+{
+  "issue": 1012,
+  "base": "9d457e322ff1ed91e69e448c1cd40e4a8949baca",
+  "platform": "macOS arm64",
+  "workspace_all_features": {
+    "passed": 3888,
+    "failed": 0,
+    "ignored": 33,
+    "suite_results": 186
+  },
+  "core_report_policy_default_features": {
+    "passed": 32,
+    "failed": 0
+  },
+  "pytest": {
+    "passed": 1223,
+    "skipped": 14
+  },
+  "clippy": "passed",
+  "ruff_changed_python_tests": "passed",
+  "docs_strict": "passed",
+  "okf": {
+    "pages": 50,
+    "changed_concepts": 4,
+    "checks": [
+      "YAML and reserved files",
+      "entry-point reachability",
+      "changed concept link targets",
+      "new source hashes and footnotes"
+    ]
+  },
+  "independent_static_review": "no Important or Critical findings",
+  "resources": {
+    "cargo_build_jobs": 2,
+    "shared_target": true,
+    "linked_venv": true,
+    "cargo_processes": "sequential",
+    "disk_free_gib_approx": 144
+  }
+}

@@ -210,11 +210,11 @@ fn report(root: &Path, golden: &str) -> PathBuf {
 }
 
 fn json_report(root: &Path) -> PathBuf {
-    report(root, "reports/schema-v9-current.json")
+    report(root, "reports/schema-v10-current.json")
 }
 
 fn jsonl_report(root: &Path) -> PathBuf {
-    report(root, "events/schema-v9-current.jsonl")
+    report(root, "events/schema-v10-current.jsonl")
 }
 
 #[cfg(unix)]
@@ -284,7 +284,7 @@ macro_rules! closed_report_progress {
             // Arrange: alter one raw event so duplicate keys survive until the reader.
             let root = tempfile::tempdir().unwrap();
             let mut events: Vec<serde_json::Value> =
-                include_str!("golden/events/schema-v9-current.jsonl")
+                include_str!("golden/events/schema-v10-current.jsonl")
                     .lines()
                     .map(|line| serde_json::from_str(line).unwrap())
                     .collect();
@@ -297,7 +297,7 @@ macro_rules! closed_report_progress {
                     .join("\n")
             } else {
                 let mut value: serde_json::Value =
-                    serde_json::from_str(include_str!("golden/reports/schema-v9-current.json"))
+                    serde_json::from_str(include_str!("golden/reports/schema-v10-current.json"))
                         .unwrap();
                 value[$field] = events[$index].clone();
                 serde_json::to_string(&value).unwrap()

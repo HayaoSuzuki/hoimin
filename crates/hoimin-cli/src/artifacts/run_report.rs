@@ -569,7 +569,7 @@ mod tests {
             fn $name() {
                 // Arrange: exercise the actual shared JSON artifact decoder.
                 let mut document: serde_json::Value = serde_json::from_str(include_str!(
-                    "../../tests/golden/reports/schema-v9-current.json"
+                    "../../tests/golden/reports/schema-v10-current.json"
                 ))
                 .unwrap();
                 if !$present {
@@ -610,7 +610,7 @@ mod tests {
 
     fn current_report_json() -> String {
         let document: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tests/golden/reports/schema-v9-current.json"
+            "../../tests/golden/reports/schema-v10-current.json"
         ))
         .unwrap();
         serde_json::to_string(&document).unwrap()
