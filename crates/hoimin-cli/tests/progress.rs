@@ -37,7 +37,7 @@ const TEST_MIN_FREE_SPACE: &str = "1B";
 fn input_rejects_historical_report_goldens() {
     let root = repo_root().join("crates/hoimin-cli/tests/golden");
     for (format, extension) in [("reports", "json"), ("events", "jsonl")] {
-        for version in [2, 3, 4, 5, 6, 7, 8] {
+        for version in [2, 3, 4, 5, 6, 7, 8, 9] {
             for era in ["original", "current"] {
                 let path = root
                     .join(format)
@@ -55,7 +55,7 @@ fn input_rejects_historical_report_goldens() {
 #[test]
 fn input_rejects_every_noncurrent_schema_in_json_and_jsonl() {
     let fixture = tempfile::tempdir().unwrap();
-    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, REPORT_SCHEMA_VERSION + 1] {
+    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, REPORT_SCHEMA_VERSION + 1] {
         let mut document = valid_report();
         document["schema_version"] = json!(version);
         for key in ["run", "baseline", "summary"] {
@@ -93,7 +93,7 @@ fn input_rejects_every_noncurrent_schema_in_json_and_jsonl() {
 #[test]
 fn input_dispatch_preserves_document_field_orders_and_opaque_config() {
     let fixture = tempfile::tempdir().unwrap();
-    let golden = "schema-v9-current.json";
+    let golden = "schema-v10-current.json";
     let source = repo_root()
         .join("crates/hoimin-cli/tests/golden/reports")
         .join(golden);
@@ -3175,6 +3175,7 @@ fn valid_report() -> Value {
         }],
         "summary": {
             "kind": "run_finished",
+            "resolved_mutant_timeout": {"secs": 5, "nanos": 0},
             "schema_version": REPORT_SCHEMA_VERSION,
             "sequence": 4,
             "run_id": "run-1",
@@ -3302,9 +3303,9 @@ macro_rules! disk_public_wire_case {
             // Arrange: the current golden has explicit-null janitor and valid event ordering.
             let fixture = tempfile::tempdir().unwrap();
             let source = repo_root().join(if $jsonl {
-                "crates/hoimin-cli/tests/golden/events/schema-v9-current.jsonl"
+                "crates/hoimin-cli/tests/golden/events/schema-v10-current.jsonl"
             } else {
-                "crates/hoimin-cli/tests/golden/reports/schema-v9-current.json"
+                "crates/hoimin-cli/tests/golden/reports/schema-v10-current.json"
             });
             let source = std::fs::read_to_string(source).unwrap();
             let mut values: Vec<Value> = if $jsonl {

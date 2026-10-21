@@ -225,6 +225,7 @@ pub struct RunState {
     workers: BTreeMap<u32, WorkerState>,
     scheduled_mutants: u64,
     baseline_elapsed: std::time::Duration,
+    resolved_mutant_timeout: Option<std::time::Duration>,
     summary: MutationSummary,
     disk_summary: crate::DiskRunSummary,
     output_sequence: u64,
@@ -282,6 +283,7 @@ impl RunState {
             workers: BTreeMap::new(),
             scheduled_mutants: 0,
             baseline_elapsed: std::time::Duration::ZERO,
+            resolved_mutant_timeout: None,
             summary: MutationSummary::default(),
             disk_summary,
             output_sequence: 0,
@@ -964,10 +966,12 @@ impl RunState {
         let candidate = self.candidate(worker)?;
         *self.worker_mut(worker)? = WorkerState::Running(candidate.clone());
         let id = self.allocate_id()?;
-        let timeout = match self.config.limits.mutant_timeout {
-            MutantTimeout::Auto => auto_mutant_timeout(self.baseline_elapsed),
-            MutantTimeout::Fixed(value) => value.get(),
-        };
+        let timeout = *self.resolved_mutant_timeout.get_or_insert_with(|| {
+            match self.config.limits.mutant_timeout {
+                MutantTimeout::Auto => auto_mutant_timeout(self.baseline_elapsed),
+                MutantTimeout::Fixed(value) => value.get(),
+            }
+        });
         Ok(vec![RunEffect::RunMutant(RunProcess {
             id,
             context: crate::MutantContext {
@@ -1195,6 +1199,7 @@ impl RunState {
         let output = EmitOutput {
             id,
             event: OutputEvent::RunFinished(RunSummary {
+                resolved_mutant_timeout: self.resolved_mutant_timeout,
                 schema_version: crate::REPORT_SCHEMA_VERSION,
                 sequence: self.output_sequence(),
                 run_id: self.run_id.clone(),
@@ -2148,6 +2153,107 @@ mod tests {
 
             assert_eq!(matches, accepted, "{received:?}");
         }
+    }
+
+    fn timeout_report_state(policy: super::MutantTimeout, baseline: Duration) -> RunState {
+        let mut raw = audit_config().into_data();
+        raw.limits.mutant_timeout = policy;
+        let mut state = RunState::new(
+            "timeout",
+            RunConfig::try_from(raw).unwrap(),
+            crate::ResourceControl {
+                mode: crate::ResourceMode::Hard,
+                mechanism: "test".into(),
+            },
+        );
+        state.baseline_elapsed = baseline;
+        state.workers.insert(
+            0,
+            super::WorkerState::Starting(crate::MutationCandidate {
+                id: "m1".into(),
+                sequence: 1,
+                path: "src/calc.py".into(),
+                span: crate::ByteSpan {
+                    start: 1,
+                    length: 1,
+                },
+                original: "+".into(),
+                replacement: "-".into(),
+                operator: "binary_add_sub".into(),
+                line: 1,
+                column: 1,
+                symbol: None,
+                file_hash: "hash".into(),
+            }),
+        );
+        state
+    }
+
+    fn assert_timeout_report_matches_process(
+        policy: super::MutantTimeout,
+        baseline: Duration,
+        expected: Duration,
+    ) {
+        // Arrange: use the production request constructor, not the report's formula.
+        let mut state = timeout_report_state(policy, baseline);
+        // Act.
+        let requests = state.mutant_process(0).unwrap();
+        let [RunEffect::RunMutant(process)] = requests.as_slice() else {
+            panic!("mutant request");
+        };
+        let output = state.final_report_effects().unwrap();
+        let RunEffect::EmitOutput(report) = &output[0] else {
+            panic!("final report");
+        };
+        let report = serde_json::to_value(&report.event).unwrap();
+        // Assert: literal boundary and the actual requested cap agree with the wire.
+        assert_eq!(process.limits.timeout, expected);
+        assert_eq!(
+            report.get("resolved_mutant_timeout"),
+            Some(&serde_json::to_value(process.limits.timeout).unwrap())
+        );
+    }
+
+    #[test]
+    fn resolved_timeout_report_matches_auto_floor() {
+        assert_timeout_report_matches_process(
+            super::MutantTimeout::Auto,
+            Duration::from_millis(1),
+            Duration::from_secs(5),
+        );
+    }
+
+    #[test]
+    fn resolved_timeout_report_keeps_auto_subsecond_precision() {
+        assert_timeout_report_matches_process(
+            super::MutantTimeout::Auto,
+            Duration::new(2, 900_000_001),
+            Duration::new(6, 800_000_002),
+        );
+    }
+
+    #[test]
+    fn resolved_timeout_report_matches_fixed_nanoseconds() {
+        let timeout = Duration::new(1, 234_567_891);
+        assert_timeout_report_matches_process(
+            super::MutantTimeout::Fixed(hoimin_budget_math::NonZeroDuration::new(timeout).unwrap()),
+            Duration::from_secs(10),
+            timeout,
+        );
+    }
+
+    #[test]
+    fn resolved_timeout_report_is_null_without_a_mutant_request() {
+        let mut state = timeout_report_state(super::MutantTimeout::Auto, Duration::from_secs(10));
+        let output = state.final_report_effects().unwrap();
+        let RunEffect::EmitOutput(report) = &output[0] else {
+            panic!("final report");
+        };
+        let report = serde_json::to_value(&report.event).unwrap();
+        assert_eq!(
+            report.get("resolved_mutant_timeout"),
+            Some(&serde_json::Value::Null)
+        );
     }
 
     fn audit_config() -> RunConfig {

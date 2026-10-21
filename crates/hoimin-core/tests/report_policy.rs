@@ -38,6 +38,7 @@ fn disk_filesystem_report_round_trips_through_json() {
     let mut disk = hoimin_core::DiskRunSummary::unmeasured(2_048, 256);
     disk.filesystems.push(filesystem);
     let event = OutputEvent::RunFinished(hoimin_core::RunSummary {
+        resolved_mutant_timeout: None,
         schema_version: hoimin_core::REPORT_SCHEMA_VERSION,
         sequence: 1,
         run_id: "run-1".into(),
@@ -74,6 +75,7 @@ fn disk_filesystem_delta_preserves_the_full_u64_difference() {
     let mut disk = hoimin_core::DiskRunSummary::unmeasured(u64::MAX, 1);
     disk.filesystems = vec![positive, negative];
     let event = OutputEvent::RunFinished(hoimin_core::RunSummary {
+        resolved_mutant_timeout: None,
         schema_version: hoimin_core::REPORT_SCHEMA_VERSION,
         sequence: 1,
         run_id: "wide-delta".into(),
@@ -778,6 +780,7 @@ fn all_event_variants_have_the_exact_public_kind() {
         .unwrap(),
         serde_json::from_value(json!({
             "kind": "run_finished", "schema_version": 1, "sequence": 6,
+            "resolved_mutant_timeout": null,
             "run_id": "run-1",
             "counts": { "killed": 0, "survived": 0, "timeout": 0,
                 "out_of_memory": 0, "process_limit": 0, "error": 0, "not_run": 0,
@@ -935,6 +938,7 @@ fn finished_event_with(
 fn run_finished_event(sequence: u64) -> OutputEvent {
     serde_json::from_value(json!({
         "kind": "run_finished",
+        "resolved_mutant_timeout": null,
         "schema_version": hoimin_core::REPORT_SCHEMA_VERSION,
         "sequence": sequence,
         "run_id": "run-1",

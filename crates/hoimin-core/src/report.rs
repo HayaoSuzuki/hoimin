@@ -11,7 +11,7 @@ use crate::{
 mod janitor;
 pub use janitor::*;
 
-pub const REPORT_SCHEMA_VERSION: u32 = 9;
+pub const REPORT_SCHEMA_VERSION: u32 = 10;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -645,6 +645,10 @@ impl Diagnostic {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RunSummary {
+    /// Individual cap passed to mutant requests; null if none was requested.
+    /// The run-wide deadline can interrupt a process before this cap expires.
+    #[serde(deserialize_with = "required_mutant_timeout")]
+    pub resolved_mutant_timeout: Option<std::time::Duration>,
     pub schema_version: u32,
     pub sequence: u64,
     pub run_id: String,
@@ -654,6 +658,19 @@ pub struct RunSummary {
     pub disk: DiskRunSummary,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verification_selection: Option<VerificationSelection>,
+}
+
+// Require an explicit null when no mutant process request was constructed.
+fn required_mutant_timeout<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<std::time::Duration>, D::Error> {
+    #[derive(Deserialize)]
+    struct ReportDuration(
+        #[serde(deserialize_with = "crate::resume::deserialize_report_duration")]
+        std::time::Duration,
+    );
+    Option::<ReportDuration>::deserialize(deserializer)
+        .map(|value| value.map(|ReportDuration(duration)| duration))
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]

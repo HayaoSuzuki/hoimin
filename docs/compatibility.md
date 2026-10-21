@@ -19,6 +19,26 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Resolved individual mutant timeout (report schema 10)
+
+JSON/JSONL report schema 10 adds the required nullable
+`run_finished.resolved_mutant_timeout` field. JSON places it in `summary`;
+JSONL places it in the final `run_finished` event. A resolved value is an exact
+`{ "secs": N, "nanos": N }` duration copied from the individual process request.
+`null` means no mutant process request was constructed in this run, including
+baseline failure, empty selections and runs that only reuse stored results.
+The human summary prints the same cap without truncating to whole seconds.
+
+This is the requested individual cap, not measured elapsed time, proof that a
+process started, or the remaining run-wide deadline. The total deadline can
+interrupt a process earlier. Timeout calculation, classification and exit codes
+are unchanged. There are no new timeout settings or saved-plan migrations.
+
+Progress/review readers accept the current report format directly. Older report
+versions are not supported by the current reader; rerun when a current result is
+needed. The package floor remains 0.14.0; plan schema 10, session schema 5,
+fingerprint schema 13 and progress output schema 3 are unchanged.
+
 ## Single progress output schema
 
 `progress --format json` emits schema 3 with or without `--details`.
@@ -35,13 +55,13 @@ minor series.
 
 Display limits still affect only listed transitions. Comparison counts,
 stalled/saturated decisions, regression exit policy and human output are
-unchanged. Progress still accepts only current report/event schema 9; plan schema
+unchanged. Progress accepts only current report/event schema 10; plan schema
 10, SQLite session schema 5, fingerprint schema 13, ranking rule 4, candidate
 schema 1 and mutant-ID v1 retain their formats.
 
 ## Structured startup cleanup in 0.14.0
 
-The package floor is 0.14.0 and JSON/JSONL reports use schema 9. The required
+Report schema 9 introduced the structured startup fields below; current schema 10 retains them. The required
 nullable `disk.janitor` field replaces `disk.stale_roots_reclaimed`. A null means
 no janitor observation is available; it is different from an observed empty scan.
 Read schema-8 reports with their producing binary or rerun with this version.
@@ -388,7 +408,7 @@ schemas 1–4 remain rejected; this change does not restore legacy migration pat
 | Interface | Maintenance rule | User action when it changes |
 | --- | --- | --- |
 | CLI arguments, defaults and exit codes | Document and test the current behavior. Cross-version invocation compatibility is not required. | Use the current help and usage guide. |
-| JSON and JSONL reports | Maintain one current schema. Progress accepts only report schema 9, matching the writer; review accepts current-schema JSON. | Rerun to obtain current output when needed. |
+| JSON and JSONL reports | Maintain one current schema. Progress accepts only report schema 10, matching the writer; review accepts current-schema JSON. | Rerun to obtain current output when needed. |
 | Saved plan, ranking and candidate IDs | These are checked execution inputs, not timeless interchange formats. Changes to schema, ranking, identity, source or fingerprints can invalidate a plan. | Regenerate the plan with the intended version and inputs. Do not hand-edit versions or IDs to bypass validation. |
 | Session database and resume | Resume requires the implementation's current schema and fingerprint checks. Historical database migration is not required. | Start a new session when an older database is rejected. |
 | Default operators, profiles and selection | Changes can alter candidate count, runtime and the population behind a score. | Review the operator set and budget; use matching candidates and validation settings for comparisons. |

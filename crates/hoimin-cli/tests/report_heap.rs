@@ -46,6 +46,7 @@ fn measured_peak(mutants: u64) -> usize {
         emit(
             &mut handler,
             OutputEvent::RunFinished(RunSummary {
+                resolved_mutant_timeout: None,
                 schema_version: 1,
                 sequence: mutants + 2,
                 run_id: "run-1".to_owned(),

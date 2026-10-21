@@ -323,6 +323,7 @@ mod correspondence {
                 })
             }
             "run_finished" => OutputEvent::RunFinished(RunSummary {
+                resolved_mutant_timeout: None,
                 schema_version: hoimin_core::REPORT_SCHEMA_VERSION,
                 sequence: event.sequence,
                 run_id: run_id.to_owned(),

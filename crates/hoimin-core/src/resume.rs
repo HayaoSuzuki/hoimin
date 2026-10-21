@@ -154,7 +154,7 @@ pub enum MutationOutcome {
         termination: ProcessTermination,
         output_state: ProcessOutputState,
         output: OutputSpoolRef,
-        #[serde(deserialize_with = "deserialize_execution_elapsed")]
+        #[serde(deserialize_with = "deserialize_report_duration")]
         elapsed: Duration,
     },
     Reused {
@@ -164,19 +164,19 @@ pub enum MutationOutcome {
     NotRun,
 }
 
-// Keep the new elapsed wire equal to the public schema. Serde's standard Duration
+// Keep report durations equal to the public wire schema. Serde's standard Duration
 // decoder also accepts sequences and normalizes oversized nanoseconds.
-fn deserialize_execution_elapsed<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+pub(crate) fn deserialize_report_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    struct ElapsedVisitor;
+    struct DurationVisitor;
 
-    impl<'de> serde::de::Visitor<'de> for ElapsedVisitor {
+    impl<'de> serde::de::Visitor<'de> for DurationVisitor {
         type Value = Duration;
 
         fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            formatter.write_str("an elapsed object with u64 secs and nanos below 1000000000")
+            formatter.write_str("a duration object with u64 secs and nanos below 1000000000")
         }
 
         fn visit_map<M>(self, map: M) -> Result<Duration, M::Error>
@@ -193,14 +193,14 @@ where
             let elapsed = Elapsed::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
             if elapsed.nanos >= 1_000_000_000 {
                 return Err(serde::de::Error::custom(
-                    "elapsed nanos must be below 1000000000",
+                    "duration nanos must be below 1000000000",
                 ));
             }
             Ok(Duration::new(elapsed.secs, elapsed.nanos))
         }
     }
 
-    deserializer.deserialize_map(ElapsedVisitor)
+    deserializer.deserialize_map(DurationVisitor)
 }
 
 /// Only conclusive outcomes qualify for reuse under the resume policy.

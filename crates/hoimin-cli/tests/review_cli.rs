@@ -600,7 +600,7 @@ macro_rules! closed_report_review {
             // Arrange.
             let (dir, mut args) = fixture().await;
             let mut value: Value =
-                serde_json::from_str(include_str!("golden/reports/schema-v9-current.json"))
+                serde_json::from_str(include_str!("golden/reports/schema-v10-current.json"))
                     .unwrap();
             value["run"]["normalized_config"]["selection"]["root"] = serde_json::json!(dir.path());
             value.pointer_mut($pointer).unwrap()["unexpected"] = 123.into();

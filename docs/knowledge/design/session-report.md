@@ -5,6 +5,31 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1012-machine
+  resource: ../../../crates/hoimin-core/src/machine.rs
+  revision: 9d457e322ff1ed91e69e448c1cd40e4a8949baca
+  working_tree: modified
+  sha256: dba580bb386e9a027e6affcf7e8007d756a3bf5662fe283f84bf5c56c88d31ec
+- id: issue-1012-wire
+  resource: ../../../crates/hoimin-core/src/report.rs
+  revision: 9d457e322ff1ed91e69e448c1cd40e4a8949baca
+  working_tree: modified
+  sha256: f3674b4cf88918e63ea4e5ce413f36719d4b0340b61a6ad5f63524674165c54a
+- id: issue-1012-duration
+  resource: ../../../crates/hoimin-core/src/resume.rs
+  revision: 9d457e322ff1ed91e69e448c1cd40e4a8949baca
+  working_tree: modified
+  sha256: f8176f3b4497d59622c9803c63e8c913f0316613ce276b115485af79c0755612
+- id: issue-1012-schema
+  resource: ../../json-schema/run-event.schema.json
+  revision: 9d457e322ff1ed91e69e448c1cd40e4a8949baca
+  working_tree: modified
+  sha256: 6713198b5af80b4ca991df8a9578cf0663952d7bf6f2cc1c6e66843aff96c5d4
+- id: issue-1012-cli-tests
+  resource: ../../../crates/hoimin-cli/tests/resolved_timeout.rs
+  revision: 9d457e322ff1ed91e69e448c1cd40e4a8949baca
+  working_tree: untracked
+  sha256: 3cd512099adcb60d52d55cbf01b645c728bcbcb4b0e6ac53f4ab9def0c142d55
 - id: issue-1028-render
   resource: ../../../crates/hoimin-cli/src/progress/render.rs
   revision: 1f7feae33fa310aae87fbadb390105f6d770439d
@@ -346,8 +371,8 @@ v1 bytes and valid schema-8 writer output.[^issue-992-identity][^issue-992-reade
 
 # Single project root in saved reports (Issue #949)
 
-Issue #949 introduced the single root in report schema 7. Current schema 9
-stores it only in
+Issue #949 introduced the single root in report schema 7. The schema-9
+implementation recorded here stores it only in
 `run.normalized_config.selection.root` for JSON and
 `normalized_config.selection.root` for `run_started` JSONL. Typed configuration
 readers reject the former outer root even when its value agrees. Review resolves
@@ -834,8 +859,8 @@ regressions.[^issue-1028-tests]
 
 The package floor remains 0.14.0. The current-format policy does not require
 backward compatibility or a minor-version increase for this output change.
-Report/event schema 9, plan schema 10, session schema 5 and fingerprint schema 13
-are unchanged. A progress output version is independent of the report input
+At the Issue #1028 snapshot, report/event schema 9, plan schema 10, session
+schema 5 and fingerprint schema 13 were unchanged. A progress output version is independent of the report input
 version.[^issue-1028-compatibility]
 
 The sources record their comparison revisions and content hashes.
@@ -847,3 +872,33 @@ selection, display limits, schema definitions or exit policy.
 [^issue-1028-schema]: [Current progress schema](../../json-schema/progress-result.schema.json).
 [^issue-1028-tests]: [Progress integration and schema checks](../../../crates/hoimin-cli/tests/progress.rs).
 [^issue-1028-compatibility]: [Current-format policy and progress output](../../compatibility.md).
+
+# Resolved individual mutant timeout (Issue #1012)
+
+Current report/event schema 10 requires `resolved_mutant_timeout` in the final
+summary. JSON places it under `summary`; JSONL includes it on `run_finished`.
+The machine stores the cap when constructing its first `RunMutant` request and
+shares that exact Duration with every subsequent request and the final summary.
+The reporter does not calculate a second value. Auto and fixed arithmetic,
+classification, exit policy and formal proof sources remain unchanged.[^issue-1012-machine][^issue-1012-wire]
+
+The field is either an object with integer `secs` and `nanos`, preserving
+nanoseconds, or explicit null. Null means no mutant process request was
+constructed, including failed baselines, empty selections, reuse-only runs and
+pre-dispatch stops. Missing fields, arrays, unknown duration fields and nanos
+outside 0..999,999,999 are rejected. The same canonical duration decoder serves
+elapsed and resolved timeout fields.[^issue-1012-duration][^issue-1012-schema]
+
+Human summaries display the resolved duration or explicitly label it unresolved.
+Public CLI regressions cover auto JSON, fixed JSONL/human, failed baselines and
+verify's saved fixed value. Current readers accept schema 10 directly; older
+reports must be regenerated. Plan schema 10, session schema 5, fingerprint
+schema 13 and progress output schema 3 retain their existing formats. Recheck
+the request/summary correspondence and no-request cases when changing dispatch
+or timeout resolution.[^issue-1012-cli-tests][^issue-1012-wire]
+
+[^issue-1012-machine]: [Execution requests and summary](../../../crates/hoimin-core/src/machine.rs).
+[^issue-1012-wire]: [Current report wire types](../../../crates/hoimin-core/src/report.rs).
+[^issue-1012-duration]: [Canonical report duration decoder](../../../crates/hoimin-core/src/resume.rs).
+[^issue-1012-schema]: [Current event schema](../../json-schema/run-event.schema.json).
+[^issue-1012-cli-tests]: [Public timeout reporting tests](../../../crates/hoimin-cli/tests/resolved_timeout.rs).

@@ -106,6 +106,8 @@ fuzz_target!(|data: &[u8]| {
         },
         _ => MutationOutcome::NotRun,
     };
+    let resolved_mutant_timeout = matches!(&outcome, MutationOutcome::Executed { .. })
+        .then(|| std::time::Duration::new(5, u32::from(selector)));
     let status = outcome.status();
     let candidate = candidate(mutant_id.clone(), 1, &payload);
     let events = [
@@ -141,6 +143,7 @@ fuzz_target!(|data: &[u8]| {
             diagnostics: Vec::new(),
         }),
         OutputEvent::RunFinished(RunSummary {
+            resolved_mutant_timeout,
             schema_version: hoimin_core::REPORT_SCHEMA_VERSION,
             sequence: 6,
             run_id: run_id.clone(),

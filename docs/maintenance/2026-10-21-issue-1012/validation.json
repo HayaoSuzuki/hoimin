@@ -1,0 +1,61 @@
+{
+  "issue": 1012,
+  "base": "9d457e322ff1ed91e69e448c1cd40e4a8949baca",
+  "platform": "macOS arm64",
+  "workspace_all_features": {
+    "passed": 3888,
+    "failed": 0,
+    "ignored": 33,
+    "suite_results": 186
+  },
+  "core_report_policy_default_features": {
+    "passed": 32,
+    "failed": 0
+  },
+  "pytest": {
+    "passed": 1223,
+    "skipped": 14
+  },
+  "clippy": "passed",
+  "ruff_changed_python_tests": "passed",
+  "docs_strict": "passed",
+  "okf": {
+    "pages": 50,
+    "changed_concepts": 4,
+    "checks": [
+      "YAML and reserved files",
+      "entry-point reachability",
+      "changed concept link targets",
+      "new source hashes and footnotes"
+    ]
+  },
+  "independent_static_review": "no Important or Critical findings",
+  "resources": {
+    "cargo_build_jobs": 2,
+    "shared_target": true,
+    "linked_venv": true,
+    "cargo_processes": "sequential",
+    "disk_free_gib_approx": 144
+  },
+  "fuzz_followup": {
+    "source_commit": "911d449aba3d929cf6870a50689f938e07f21e46",
+    "ci_job": 119081391328,
+    "root_cause": "independent fuzz workspace RunSummary constructor missing resolved_mutant_timeout",
+    "local_reproduction": "E0063",
+    "fmt": "passed",
+    "check_all_bins": "passed",
+    "clippy_all_bins": "passed",
+    "nightly": "nightly-2026-10-08",
+    "asan_build_targets": 7,
+    "report_sequence": {
+      "exit_code": 0,
+      "runs": 98270,
+      "seconds": 31,
+      "seed": 1049459887,
+      "rss_mb_final": 469,
+      "rss_limit_mb": 1024
+    },
+    "disk_free_gib_approx": 143,
+    "production_changes": false
+  }
+}

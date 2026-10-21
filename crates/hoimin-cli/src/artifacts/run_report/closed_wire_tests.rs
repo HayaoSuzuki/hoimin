@@ -2,14 +2,14 @@ use super::*;
 
 fn document() -> serde_json::Value {
     serde_json::from_str(include_str!(
-        "../../../tests/golden/reports/schema-v9-current.json"
+        "../../../tests/golden/reports/schema-v10-current.json"
     ))
     .unwrap()
 }
 
 fn wires(document: &serde_json::Value) -> (String, String) {
     let mut events: Vec<serde_json::Value> =
-        include_str!("../../../tests/golden/events/schema-v9-current.jsonl")
+        include_str!("../../../tests/golden/events/schema-v10-current.jsonl")
             .lines()
             .map(|line| serde_json::from_str(line).unwrap())
             .collect();
@@ -152,7 +152,7 @@ macro_rules! stream_event_case {
             use super::*;
 
             fn stream() -> Vec<String> {
-                include_str!("../../../tests/golden/events/schema-v9-current.jsonl")
+                include_str!("../../../tests/golden/events/schema-v10-current.jsonl")
                     .lines()
                     .map(str::to_owned)
                     .collect()

@@ -33,12 +33,12 @@ struct WriterState {
 }
 
 #[test]
-fn minimal_schema_v9_report_fixture_matches_the_published_schema() {
+fn minimal_schema_v10_report_fixture_matches_the_published_schema() {
     let root = repo_root();
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
     let report =
-        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v9-original.json"));
+        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v10-original.json"));
 
     assert_schema_valid(&result_schema, &report, &event_schema);
     assert_report_optionals(&report, false);
@@ -98,6 +98,7 @@ fn disk_stop_secondary_evidence_matches_the_published_event_schema() {
         ],
     });
     let event = serde_json::to_value(OutputEvent::RunFinished(RunSummary {
+        resolved_mutant_timeout: None,
         schema_version: REPORT_SCHEMA_VERSION,
         sequence: 1,
         run_id: "secondary-schema".to_owned(),
@@ -162,7 +163,7 @@ fn current_report_golden_matches_typed_semantic_regeneration() {
     let root = repo_root();
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
-    let path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v9-current.json");
+    let path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v10-current.json");
     let checked_bytes = std::fs::read(&path).unwrap();
     let checked: GoldenReportDocument = serde_json::from_slice(&checked_bytes).unwrap();
     let checked_value: serde_json::Value = serde_json::from_slice(&checked_bytes).unwrap();
@@ -182,8 +183,8 @@ fn report_event_goldens_are_typed_complete_sequences() {
     let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
     let root = repo.join("crates/hoimin-cli/tests/golden/events");
     for (name, current) in [
-        ("schema-v9-original.jsonl", false),
-        ("schema-v9-current.jsonl", true),
+        ("schema-v10-original.jsonl", false),
+        ("schema-v10-current.jsonl", true),
     ] {
         let text = std::fs::read_to_string(root.join(name)).unwrap();
         let checked = text
@@ -208,7 +209,7 @@ fn report_event_goldens_are_typed_complete_sequences() {
 fn current_event_golden_matches_typed_semantic_regeneration() {
     let root = repo_root();
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
-    let path = root.join("crates/hoimin-cli/tests/golden/events/schema-v9-current.jsonl");
+    let path = root.join("crates/hoimin-cli/tests/golden/events/schema-v10-current.jsonl");
     let text = std::fs::read_to_string(path).unwrap();
     let first: serde_json::Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
     assert_canonical_normalized_config(&first);
@@ -247,12 +248,12 @@ fn raw_goldens_reject_unknown_fields_before_typed_comparison() {
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
     let mut report =
-        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v9-current.json"));
+        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v10-current.json"));
     report["unexpected"] = serde_json::json!(true);
     assert_schema_invalid(&result_schema, &report, &event_schema);
 
     let line = std::fs::read_to_string(
-        root.join("crates/hoimin-cli/tests/golden/events/schema-v9-current.jsonl"),
+        root.join("crates/hoimin-cli/tests/golden/events/schema-v10-current.jsonl"),
     )
     .unwrap();
     let mut event: serde_json::Value = serde_json::from_str(line.lines().next().unwrap()).unwrap();
@@ -263,16 +264,16 @@ fn raw_goldens_reject_unknown_fields_before_typed_comparison() {
 #[test]
 fn raw_goldens_reject_duplicate_known_fields_before_value_parsing() {
     let root = repo_root();
-    let report_path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v9-current.json");
+    let report_path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v10-current.json");
     let report = std::fs::read_to_string(report_path).unwrap();
     let duplicate_report = report.replacen(
-        "\"schema_version\": 9,",
-        "\"schema_version\": 9,\n  \"schema_version\": 9,",
+        "\"schema_version\": 10,",
+        "\"schema_version\": 10,\n  \"schema_version\": 10,",
         1,
     );
     assert!(serde_json::from_str::<GoldenReportDocument>(&duplicate_report).is_err());
 
-    let event_path = root.join("crates/hoimin-cli/tests/golden/events/schema-v9-current.jsonl");
+    let event_path = root.join("crates/hoimin-cli/tests/golden/events/schema-v10-current.jsonl");
     let events = std::fs::read_to_string(event_path).unwrap();
     let first = events.lines().next().unwrap();
     let duplicate_event = first.replacen(
@@ -412,6 +413,7 @@ fn all_optional_report_events_at(current: bool, version: u32) -> Vec<OutputEvent
             "golden diagnostic",
         )),
         OutputEvent::RunFinished(RunSummary {
+            resolved_mutant_timeout: (version >= 10).then(|| std::time::Duration::from_secs(5)),
             schema_version: REPORT_SCHEMA_VERSION,
             sequence: 6,
             run_id: run_id.to_owned(),
@@ -930,6 +932,7 @@ fn actual_pre_baseline_report() -> serde_json::Value {
         &mut handler,
         2,
         OutputEvent::RunFinished(RunSummary {
+            resolved_mutant_timeout: None,
             schema_version: REPORT_SCHEMA_VERSION,
             sequence: 2,
             run_id: "pre-baseline".to_owned(),
@@ -1029,6 +1032,7 @@ fn documented_events() -> Vec<OutputEvent> {
     )));
     event_sequence += 1;
     events.push(OutputEvent::RunFinished(RunSummary {
+        resolved_mutant_timeout: None,
         schema_version: REPORT_SCHEMA_VERSION,
         sequence: event_sequence,
         run_id: "documented-run".to_owned(),
@@ -1818,6 +1822,7 @@ fn human_format_renders_none_score_for_runs_without_decidable_mutants() {
         .handle(EmitOutput {
             id: EffectId(1),
             event: OutputEvent::RunFinished(RunSummary {
+                resolved_mutant_timeout: None,
                 schema_version: REPORT_SCHEMA_VERSION,
                 sequence: 1,
                 run_id: "run-1".to_owned(),
@@ -2111,6 +2116,7 @@ fn events() -> Vec<OutputEvent> {
 
 fn run_summary(sequence: u64) -> OutputEvent {
     OutputEvent::RunFinished(RunSummary {
+        resolved_mutant_timeout: None,
         schema_version: REPORT_SCHEMA_VERSION,
         sequence,
         run_id: "run-1".to_owned(),
@@ -3163,3 +3169,79 @@ macro_rules! janitor_schema_presence_case {
 }
 janitor_schema_presence_case!(janitor_schema_rejects_missing_field, false);
 janitor_schema_presence_case!(janitor_schema_accepts_explicit_null, true);
+
+fn timeout_report_text(format: OutputFormat, timeout: Option<std::time::Duration>) -> String {
+    let stdout = SharedWriter::default();
+    let mut handler =
+        ReportHandler::new(format, stdout.clone(), io::sink(), std::env::temp_dir()).unwrap();
+    for mut event in events() {
+        if let OutputEvent::RunFinished(summary) = &mut event {
+            summary.resolved_mutant_timeout = timeout;
+        }
+        handler
+            .handle(EmitOutput {
+                id: EffectId(event.sequence()),
+                event,
+            })
+            .unwrap();
+    }
+    stdout.text()
+}
+
+#[test]
+fn resolved_mutant_timeout_json_preserves_nanoseconds() {
+    let text = timeout_report_text(
+        OutputFormat::Json,
+        Some(std::time::Duration::new(1, 234_567_891)),
+    );
+    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        value["summary"]["resolved_mutant_timeout"],
+        serde_json::json!({"secs":1,"nanos":234_567_891})
+    );
+}
+
+#[test]
+fn resolved_mutant_timeout_jsonl_preserves_nanoseconds() {
+    let text = timeout_report_text(
+        OutputFormat::Jsonl,
+        Some(std::time::Duration::new(1, 234_567_891)),
+    );
+    let summary: serde_json::Value = serde_json::from_str(text.lines().last().unwrap()).unwrap();
+    assert_eq!(
+        summary["resolved_mutant_timeout"],
+        serde_json::json!({"secs":1,"nanos":234_567_891})
+    );
+}
+
+#[test]
+fn resolved_mutant_timeout_human_preserves_nanoseconds() {
+    let text = timeout_report_text(
+        OutputFormat::Human,
+        Some(std::time::Duration::new(1, 234_567_891)),
+    );
+    let value = text
+        .lines()
+        .find_map(|line| line.strip_prefix("  resolved mutant timeout: "))
+        .unwrap();
+    assert_eq!(
+        humantime::parse_duration(value).unwrap(),
+        std::time::Duration::new(1, 234_567_891)
+    );
+}
+
+#[test]
+fn unresolved_mutant_timeout_human_is_explicit() {
+    let text = timeout_report_text(OutputFormat::Human, None);
+    assert!(text.contains("resolved mutant timeout: unresolved (no mutant process requested)"));
+}
+
+#[test]
+fn unresolved_mutant_timeout_json_is_null() {
+    let text = timeout_report_text(OutputFormat::Json, None);
+    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        value["summary"].get("resolved_mutant_timeout"),
+        Some(&serde_json::Value::Null)
+    );
+}

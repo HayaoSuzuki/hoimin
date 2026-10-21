@@ -5,8 +5,8 @@ use hoimin_core::{
     CandidateDescriptor, CandidateValidationContext, MutationOperatorSelection, MutationProfile,
     validate_candidate_with_context,
 };
-use libfuzzer_sys::fuzz_target;
 use hoimin_python::{AnalysisError, AnalyzeRequest, analyze_source_cancellable};
+use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|source: &str| {
     if source.len() > 4096 {

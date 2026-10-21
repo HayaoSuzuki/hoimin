@@ -5,6 +5,16 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1012-machine
+  resource: ../../../crates/hoimin-core/src/machine.rs
+  revision: 9d457e322ff1ed91e69e448c1cd40e4a8949baca
+  working_tree: modified
+  sha256: dba580bb386e9a027e6affcf7e8007d756a3bf5662fe283f84bf5c56c88d31ec
+- id: issue-1012-cli-tests
+  resource: ../../../crates/hoimin-cli/tests/resolved_timeout.rs
+  revision: 9d457e322ff1ed91e69e448c1cd40e4a8949baca
+  working_tree: untracked
+  sha256: 3cd512099adcb60d52d55cbf01b645c728bcbcb4b0e6ac53f4ab9def0c142d55
 - id: six-perf-record
   resource: ../../maintenance/2026-10-21-issues-1039-1040-1041-1042-1044-1045/README.md
   revision: 79f22535197cdc922e12318386102f1806df625e
@@ -1215,3 +1225,20 @@ The [implementation and measurement record](../../maintenance/2026-10-21-issues-
 retained heap, guarded elapsed observations and sampled RSS limits.[^six-perf-record]
 
 [^six-perf-record]: [Six-issue implementation, measurements and validation](../../maintenance/2026-10-21-issues-1039-1040-1041-1042-1044-1045/README.md).
+
+# Individual timeout metadata and the run deadline (Issue #1012)
+
+`resolved_mutant_timeout` records the individual cap placed on mutant process
+requests. It is resolved once when the machine constructs the first request;
+without a request the final summary contains null, even for a configured fixed
+value. This metadata does not certify that an OS process started, nor describe
+its elapsed time. The run-wide deadline may interrupt execution earlier; its
+clock, interrupt behavior and outcome classification remain unchanged.[^issue-1012-machine]
+
+The [report contract](session-report.md#resolved-individual-mutant-timeout-issue-1012)
+and public CLI tests cover the display boundary and unresolved baselines.
+Recheck this distinction when changing dispatch, baseline failure or global
+deadline handling.[^issue-1012-cli-tests]
+
+[^issue-1012-machine]: [Machine request and deadline handling](../../../crates/hoimin-core/src/machine.rs).
+[^issue-1012-cli-tests]: [Resolved timeout CLI regressions](../../../crates/hoimin-cli/tests/resolved_timeout.rs).

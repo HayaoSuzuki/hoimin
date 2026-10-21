@@ -5,6 +5,11 @@ description: Current formats, usage changes and release versioning.
 status: draft
 catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
 sources:
+- id: issue-1012-compatibility
+  resource: ../compatibility.md
+  revision: 9d457e322ff1ed91e69e448c1cd40e4a8949baca
+  working_tree: modified
+  sha256: 7891cbf424a3b01e699e6869478dcb8f5ea13605784cbbdb71ce05a6b55a95b5
 - id: issue-1028-compatibility
   resource: ../compatibility.md
   revision: 4759e485282bbf212687a814ddf7bd4f9d1c9aa3
@@ -78,10 +83,17 @@ sources:
 The package floor remains 0.14.0. Progress output uses schema 3 in both details
 modes, with required null details when not requested and a details
 object when requested, including unavailable comparisons. The canonical schema
-defines that one current output format. The input report contract and
-existing plan/session formats remain unchanged.[^issue-1028-compatibility]
+defines that one current output format. Existing plan/session formats remain unchanged.[^issue-1028-compatibility]
 
-Report/event schema 9 requires nullable
+Report/event schema 10 adds required nullable `resolved_mutant_timeout` to
+the final summary: exact integer `secs` and `nanos` from the mutant process
+request, or null if no such request was constructed. Human output displays the
+same cap or labels it unresolved. This is distinct from measured elapsed time
+and the run-wide deadline; timeout arithmetic and classification remain
+unchanged. Current readers require schema 10; rerun older reports as needed.
+No saved-plan migration or release-floor change is required.[^issue-1012-compatibility]
+
+Schema 10 retains the schema-9 requirement for nullable
 `disk.janitor` instead of `disk.stale_roots_reclaimed`, and requires derived
 `status` for each completed mutant. Strict Rust readers check status against
 outcome and discard the received projection. JSON Schema checks presence and
@@ -236,3 +248,5 @@ for implementation evidence.[^issue-939-compatibility]
 [^issue-939-compatibility]: [Duplicate report configuration notice](../compatibility.md#duplicate-report-configuration-fields).
 
 [^issue-1028-compatibility]: [Current-format policy and progress output](../compatibility.md).
+
+[^issue-1012-compatibility]: [Resolved individual timeout and schema 10](../compatibility.md#resolved-individual-mutant-timeout-report-schema-10).

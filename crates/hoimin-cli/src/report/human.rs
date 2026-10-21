@@ -155,6 +155,17 @@ fn write_selection(
 fn write_summary(writer: &mut impl Write, summary: &RunSummary) -> io::Result<()> {
     let counts = &summary.counts;
     writeln!(writer, "run summary:")?;
+    match summary.resolved_mutant_timeout {
+        Some(timeout) => writeln!(
+            writer,
+            "  resolved mutant timeout: {}",
+            humantime::format_duration(timeout)
+        )?,
+        None => writeln!(
+            writer,
+            "  resolved mutant timeout: unresolved (no mutant process requested)"
+        )?,
+    }
     if summary
         .verification_selection
         .as_ref()

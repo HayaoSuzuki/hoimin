@@ -69,7 +69,7 @@ def test_mutant_status_rejects_noncanonical_values(status: object) -> None:
     # Arrange
     report = json.loads(
         (
-            ROOT / "crates/hoimin-cli/tests/golden/reports/schema-v9-original.json"
+            ROOT / "crates/hoimin-cli/tests/golden/reports/schema-v10-original.json"
         ).read_text(encoding="utf-8")
     )
     event = report["mutants"][0]
@@ -84,7 +84,7 @@ def test_mutant_status_is_required_even_with_complete_outcome() -> None:
     # Arrange
     report = json.loads(
         (
-            ROOT / "crates/hoimin-cli/tests/golden/reports/schema-v9-original.json"
+            ROOT / "crates/hoimin-cli/tests/golden/reports/schema-v10-original.json"
         ).read_text(encoding="utf-8")
     )
     event = report["mutants"][0]
@@ -102,7 +102,7 @@ def test_mutant_status_schema_checks_shape_without_semantic_agreement(
     # Arrange: the fixture's Exit(7)/complete outcome remains killed in both cases.
     report = json.loads(
         (
-            ROOT / "crates/hoimin-cli/tests/golden/reports/schema-v9-original.json"
+            ROOT / "crates/hoimin-cli/tests/golden/reports/schema-v10-original.json"
         ).read_text(encoding="utf-8")
     )
     event = report["mutants"][0]

@@ -1,7 +1,7 @@
 use hoimin_core::OutputEvent;
 
 fn event(index: usize) -> String {
-    include_str!("../../hoimin-cli/tests/golden/events/schema-v9-current.jsonl")
+    include_str!("../../hoimin-cli/tests/golden/events/schema-v10-current.jsonl")
         .lines()
         .nth(index)
         .unwrap()
@@ -328,3 +328,38 @@ discriminator_position_case!(run_finished_position, 5);
 
 nested_case!(sampling, 6, "/verification_selection/sampling");
 nested_case!(reused, 7, "/outcome/reused");
+
+#[test]
+fn run_finished_requires_explicit_resolved_timeout_or_null() {
+    let mut wire: serde_json::Value = serde_json::from_str(&event(5)).unwrap();
+    wire.as_object_mut()
+        .unwrap()
+        .remove("resolved_mutant_timeout");
+    let error = serde_json::from_value::<OutputEvent>(wire).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("missing field `resolved_mutant_timeout`")
+    );
+}
+
+fn assert_invalid_resolved_timeout(value: serde_json::Value) {
+    let mut wire: serde_json::Value = serde_json::from_str(&event(5)).unwrap();
+    wire["resolved_mutant_timeout"] = value;
+    assert!(serde_json::from_value::<OutputEvent>(wire).is_err());
+}
+
+#[test]
+fn resolved_timeout_wire_rejects_array_duration() {
+    assert_invalid_resolved_timeout(serde_json::json!([1, 2]));
+}
+
+#[test]
+fn resolved_timeout_wire_rejects_unknown_duration_fields() {
+    assert_invalid_resolved_timeout(serde_json::json!({"secs":1,"nanos":2,"unexpected":3}));
+}
+
+#[test]
+fn resolved_timeout_wire_rejects_noncanonical_nanoseconds() {
+    assert_invalid_resolved_timeout(serde_json::json!({"secs":1,"nanos":1_000_000_000}));
+}
