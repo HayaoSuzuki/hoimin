@@ -133,6 +133,7 @@ pub(crate) struct WorkerEntry {
     pub(crate) native_path: PathBuf,
     pub(crate) logical_path: Option<Utf8PathBuf>,
     pub(crate) kind: WorkerEntryKind,
+    depth: usize,
 }
 
 struct CollectionFrame {
@@ -583,10 +584,8 @@ impl WorkerRoot {
         let mut entries = Vec::new();
         Self::collect_entries(self.handle(), self.path(), &mut entries)?;
         entries.sort_by(|left, right| {
-            left.native_path
-                .components()
-                .count()
-                .cmp(&right.native_path.components().count())
+            left.depth
+                .cmp(&right.depth)
                 .then_with(|| left.native_path.cmp(&right.native_path))
         });
         Ok(entries)
@@ -659,6 +658,7 @@ impl WorkerRoot {
                 native_path: native_path.clone(),
                 logical_path: logical_path.clone(),
                 kind,
+                depth,
             });
             if kind == WorkerEntryKind::Directory {
                 let child =
@@ -1555,6 +1555,62 @@ fn is_link_or_reparse(metadata: &cap_primitives::fs::Metadata) -> bool {
 
 #[cfg(test)]
 mod tests {
+    thread_local! {
+        pub(super) static SORT_COMPONENT_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
+
+    #[test]
+    fn worker_entry_sort_does_not_rescan_path_components() {
+        for depth in [1, 8, 32] {
+            for files in [1, 32, 128] {
+                let fixture = RootFixture::new();
+                let prefix = "nested/".repeat(depth);
+                fs::create_dir_all(fixture.worker.join(&prefix)).unwrap();
+                for i in (0..files).rev() {
+                    fs::write(fixture.worker.join(format!("{prefix}f{i:04}")), b"x").unwrap();
+                }
+                let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+                SORT_COMPONENT_VISITS.set(0);
+                let entries = root.entries().unwrap();
+                assert_eq!(entries.len(), depth + files);
+                assert!(entries.windows(2).all(|pair| {
+                    (
+                        pair[0].native_path.components().count(),
+                        &pair[0].native_path,
+                    ) <= (
+                        pair[1].native_path.components().count(),
+                        &pair[1].native_path,
+                    )
+                }));
+                assert_eq!(
+                    SORT_COMPONENT_VISITS.get(),
+                    0,
+                    "depth={depth}, files={files}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn worker_entries_keep_depth_then_native_path_order() {
+        let fixture = RootFixture::new();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+        assert!(root.entries().unwrap().is_empty());
+        fs::create_dir_all(fixture.worker.join("z/a")).unwrap();
+        fs::create_dir_all(fixture.worker.join("a")).unwrap();
+        fs::write(fixture.worker.join("z/a/leaf"), b"x").unwrap();
+        fs::write(fixture.worker.join("a/file"), b"x").unwrap();
+        fs::write(fixture.worker.join("b"), b"x").unwrap();
+        let entries = root.entries().unwrap();
+        assert_eq!(
+            entries
+                .iter()
+                .map(|e| e.native_path.as_path())
+                .collect::<Vec<_>>(),
+            ["a", "b", "z", "a/file", "z/a", "z/a/leaf"].map(Path::new)
+        );
+    }
+
     use std::ffi::OsStr;
     use std::fs;
     use std::sync::atomic::{AtomicBool, Ordering};
