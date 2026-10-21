@@ -1,0 +1,64 @@
+{
+  "issues": [
+    1050,
+    1051,
+    1052,
+    1053
+  ],
+  "base": "5265aa2cc9f36b6b98ded50c6823039d8999b665",
+  "platform": "macOS arm64",
+  "workspace_all_features": {
+    "passed": 3907,
+    "failed": 0,
+    "ignored": 33,
+    "suite_results": 187
+  },
+  "core_default_features": {
+    "passed": 875,
+    "failed": 0,
+    "ignored": 2,
+    "suite_results": 43
+  },
+  "pytest": {
+    "passed": 1223,
+    "skipped": 14,
+    "seconds": 52.33
+  },
+  "fmt": "passed",
+  "workspace_clippy": "passed",
+  "fuzz_workspace_check_all_bins": "passed",
+  "fuzz_workspace_clippy_all_bins": "passed",
+  "docs_strict": "passed",
+  "okf": {
+    "pages": 50,
+    "changed_concepts": 3,
+    "scope": [
+      "YAML/reserved files",
+      "entry-point reachability",
+      "changed concept link targets",
+      "new source hashes and footnotes"
+    ]
+  },
+  "independent_static_review": "no Critical/Important findings; actual-removal versus deferred-admission API refinement rereviewed",
+  "measurements": {
+    "core_two_candidates_256kib_per_text_no_session": {
+      "allocated_bytes_before": 6298100,
+      "allocated_bytes_after": 1053946,
+      "peak_extra_live_rust_bytes_after": 525248
+    },
+    "review_append_193_candidates_195_events": {
+      "data_selects_before": 195,
+      "data_selects_after": 2,
+      "peak_extra_live_rust_bytes_before": 1070912,
+      "peak_extra_live_rust_bytes_after": 23053
+    },
+    "scope": "bounded debug fixtures; Rust allocation only; excludes SQLite C heap and OS RSS; no general timing claim"
+  },
+  "resources": {
+    "cargo_jobs": 2,
+    "cargo_processes": "sequential",
+    "shared_target": true,
+    "linked_venv": true,
+    "large_benchmarks": false
+  }
+}

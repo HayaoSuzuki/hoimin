@@ -19,6 +19,26 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Review source boundary and internal ownership cleanup (Issues #1050–#1053)
+
+Review source inspection now uses the same root-relative, no-follow file reader
+as plan/verify. Internal and external symlink/reparse-point components are not
+followed; these sources produce `source_unavailable`. This replaces review's
+previous acceptance of internal links and its special input error for a resolved
+external link. Invalid relative candidate paths remain errors. Missing,
+unreadable, oversized and nonregular sources remain unavailable, with the 64 MiB
+source limit and nonblocking FIFO rejection preserved. Symlinks to regular
+plan/report artifacts retain their existing input policy.
+
+Review histories and revisions remain enabled. Selected review operations still
+validate the entire store, while retaining only the requested history. Worker
+candidate ownership and execution-finalization bookkeeping change internally;
+result classification, output/persistence acknowledgement, cleanup safety and
+shutdown deadlines retain their existing contracts. There is no new option,
+configuration file, compatibility adapter or migration. Report/event schema 10,
+plan schema 10, review schema 2, session schema 5, fingerprint schema 13 and the
+0.14.0 package floor are unchanged.
+
 ## Resolved individual mutant timeout (report schema 10)
 
 JSON/JSONL report schema 10 adds the required nullable

@@ -284,6 +284,14 @@ impl DiskLifecycle {
         apply_disk_lifecycle_event(self, event)
     }
 
+    /// Whether process/output drain and monitor join all succeeded.
+    /// This does not establish quiescence of a caller-owned measurement task.
+    /// Unlike a snapshot, this query does not clone root or diagnostic evidence.
+    #[must_use]
+    pub fn safety_succeeded(&self) -> bool {
+        all_safety_succeeded(self)
+    }
+
     #[must_use]
     pub fn may_finish(&self) -> bool {
         self.active == 0

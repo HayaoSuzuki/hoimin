@@ -8,11 +8,16 @@ use hoimin_core::{
     validate_candidate_with_context,
 };
 
+#[cfg(test)]
+#[path = "input_boundary_tests.rs"]
+mod input_boundary_tests;
+
 use super::ReviewError;
 use super::model::{ArtifactReference, ReportReference, ReviewKey, SourceState};
 use crate::artifacts::run_report::ReviewReport;
 use crate::artifacts::{READ_ONLY_ARTIFACT_LIMIT, bounded_read, open_regular_file};
 use crate::plan::ReadOnlyPlan;
+use crate::workspace::PortableFileReader;
 
 pub(crate) fn load_plan(path: &Path) -> Result<ReadOnlyPlan, ReviewError> {
     crate::plan::read_for_review(path).map_err(|error| ReviewError::Invalid(error.to_string()))
@@ -81,6 +86,7 @@ pub(crate) fn review_key(root: &Utf8Path, candidate: &MutationCandidate) -> Revi
 
 #[cfg(test)]
 thread_local! {
+    static BEFORE_SOURCE_OPEN: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
     pub(super) static SOURCE_WORK: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
 }
 
@@ -99,6 +105,7 @@ pub(crate) fn source_states(
             .push(index);
     }
     let mut results: Vec<_> = candidates.iter().map(|_| None).collect();
+    let reader = PortableFileReader::open(root.to_owned()).ok();
     // Visit files in first-occurrence order, including interleaved candidate paths.
     for candidate in candidates {
         let Some(indices) = groups.remove(candidate.path.as_path()) else {
@@ -107,7 +114,7 @@ pub(crate) fn source_states(
         let group: Vec<_> = indices.iter().map(|&index| candidates[index]).collect();
         for (index, result) in indices
             .into_iter()
-            .zip(source_states_for_file(root, &group))
+            .zip(source_states_for_file(reader.as_ref(), &group))
         {
             results[index] = Some(result);
         }
@@ -123,13 +130,14 @@ pub(crate) fn source_state(
     root: &Utf8Path,
     candidate: &MutationCandidate,
 ) -> Result<SourceState, ReviewError> {
-    source_states_for_file(root, &[candidate])
+    let reader = PortableFileReader::open(root.to_owned()).ok();
+    source_states_for_file(reader.as_ref(), &[candidate])
         .pop()
         .expect("one candidate has one source result")
 }
 
 fn source_states_for_file(
-    root: &Utf8Path,
+    reader: Option<&PortableFileReader>,
     candidates: &[&MutationCandidate],
 ) -> Vec<Result<SourceState, ReviewError>> {
     let source_path = &candidates[0].path;
@@ -142,22 +150,18 @@ fn source_states_for_file(
     if !hoimin_core::normalized_relative_path(source_path.as_str()) {
         return invalid("candidate path must be root-relative".into());
     }
-    let Ok(path) = std::fs::canonicalize(root.join(source_path)) else {
-        return candidates
-            .iter()
-            .map(|_| Ok(SourceState::Unavailable))
-            .collect();
-    };
-    if !path.starts_with(root.as_std_path()) {
-        return invalid("candidate source escapes project root".into());
-    }
-    // Bound allocation before constructing the shared source validator.
     #[cfg(test)]
-    SOURCE_WORK.with(|count| {
-        let (reads, contexts) = count.get();
-        count.set((reads + 1, contexts));
+    BEFORE_SOURCE_OPEN.with_borrow_mut(|hook| {
+        if let Some(hook) = hook.take() {
+            hook();
+        }
     });
-    let Ok(bytes) = bounded_read(&path, READ_ONLY_ARTIFACT_LIMIT) else {
+    // Share plan/verify's root-relative, no-follow read, including the byte bound.
+    // Symlinks inside and outside the project are equally unavailable.
+    let Some(bytes) = reader.and_then(|reader| {
+        let limit = usize::try_from(READ_ONLY_ARTIFACT_LIMIT).ok()?;
+        reader.read_bounded(source_path, limit).ok()
+    }) else {
         return candidates
             .iter()
             .map(|_| Ok(SourceState::Unavailable))
@@ -166,7 +170,7 @@ fn source_states_for_file(
     #[cfg(test)]
     SOURCE_WORK.with(|count| {
         let (reads, contexts) = count.get();
-        count.set((reads, contexts + 1));
+        count.set((reads + 1, contexts + 1));
     });
     let context = match CandidateValidationContext::new(&bytes) {
         Ok(context) => context,

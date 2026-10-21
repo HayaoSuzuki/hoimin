@@ -96,6 +96,9 @@ use crate::workspace::{
     DiskMeasurement, MaterializationPause, MaterializationPauseController, PreflightPause,
 };
 
+mod finalization;
+use finalization::{DrainEvidence, ExecutionFinalization};
+
 mod preparation;
 use preparation::{PreparationError, PreparationToken};
 
@@ -110,10 +113,7 @@ const fn cleanup_quiescence_proven(components: [bool; 4]) -> bool {
 }
 
 fn lifecycle_safety_succeeded(lifecycle: &ShellDiskLifecycle) -> bool {
-    let snapshot = lifecycle.snapshot();
-    snapshot.process_drain == DiskComponentState::Succeeded
-        && snapshot.output_drain == DiskComponentState::Succeeded
-        && snapshot.monitor_join == DiskComponentState::Succeeded
+    lifecycle.lifecycle.safety_succeeded()
 }
 
 /// Production-owned adapter for the disk lifecycle enforced at shell boundaries.
@@ -2863,16 +2863,9 @@ async fn run_loop_context(
     let mut shutdown_budget = timing.shutdown();
     let mut shutdown_expiry_reported = false;
     let mut disk_monitor = None;
-    let mut execution_safety_proven = false;
-    let mut final_measurement_joined = true;
-    let mut execution_cleanup = CleanupProgress::NotAttempted;
     let mut delivery_cleanup = CleanupProgress::NotAttempted;
-    let mut execution_preclean = None;
-    let mut execution_end_available: Option<BTreeMap<FilesystemKey, u64>> = None;
-    let mut execution_end_available_observed = false;
-    let mut execution_cleanup_record: Option<CleanupRecord> = None;
     let mut finalization_errors = Vec::new();
-    let mut disk_lifecycle = ShellDiskLifecycle::new([DiskRootId::Execution, DiskRootId::Delivery])
+    let mut finalization = ExecutionFinalization::new()
         .map_err(|error| format!("disk lifecycle initialization failed: {error}"))?;
     context.candidate_replay = Some(CandidateReplay::new(
         candidate_selection
@@ -2987,7 +2980,7 @@ async fn run_loop_context(
                     cancel_queued_effect(&effect, &mut metrics, &mut metrics_warnings);
                     continue;
                 }
-                if matches!(effect, RunEffect::Cleanup(_)) && !execution_safety_proven {
+                if matches!(effect, RunEffect::Cleanup(_)) && !finalization.safety_proven() {
                     let monitor = disk_monitor
                         .as_ref()
                         .expect("disk monitor started before cleanup");
@@ -3052,18 +3045,11 @@ async fn run_loop_context(
                         measure_managed_roots(&[measurement_root])
                     })
                     .await;
-                    let measurement = match measurement {
-                        Ok(measurement) => measurement,
-                        Err(error) => {
-                            final_measurement_joined = false;
-                            Err(std::io::Error::new(
-                                std::io::ErrorKind::TimedOut,
-                                error.to_string(),
-                            ))
-                        }
-                    };
+                    let measurement = finalization.observe_measurement(
+                        measurement.map(|result| result.map(|reading| reading.owned_bytes)),
+                    );
                     match measurement {
-                        Ok(reading) => execution_preclean = Some(reading),
+                        Ok(()) => {},
                         Err(error) if !disk_stop_delivered => {
                             effects.push_front(effect);
                             cancellation.cancel();
@@ -3112,57 +3098,16 @@ async fn run_loop_context(
                     if monitor_joined {
                         control.observe_finalization_event("monitor_joined");
                     }
-                    for (event, component) in [
-                        (
-                            if process_drain.all_reaped {
-                                DiskLifecycleEvent::ProcessDrainSucceeded
-                            } else {
-                                DiskLifecycleEvent::ProcessDrainFailed
-                            },
-                            "process drain",
-                        ),
-                        (
-                            if process_drain.output_drains_joined {
-                                DiskLifecycleEvent::OutputDrainSucceeded
-                            } else {
-                                DiskLifecycleEvent::OutputDrainFailed
-                            },
-                            "output drain",
-                        ),
-                        (
-                            if monitor_joined {
-                                DiskLifecycleEvent::MonitorJoinSucceeded
-                            } else {
-                                DiskLifecycleEvent::MonitorJoinFailed
-                            },
-                            "monitor join",
-                        ),
-                    ] {
-                        if !disk_lifecycle.apply(event) {
-                            return Err(format!(
-                                "disk lifecycle rejected {component} completion"
-                            ));
-                        }
-                    }
-                    if !cleanup_quiescence_proven([
-                        process_drain.all_reaped,
-                        process_drain.output_drains_joined,
+                    let safe = finalization.observe_inner_drains(DrainEvidence {
+                        process_reaped: process_drain.all_reaped,
+                        output_drained: process_drain.output_drains_joined,
                         monitor_joined,
-                        final_measurement_joined,
-                    ]) {
+                    })?;
+                    if !safe {
                         let id = effect.id();
-                        execution_cleanup_record = Some(CleanupRecord {
-                            disposition: CleanupDisposition::Deferred(None),
-                            evidence: CleanupEvidence {
-                                examined_entries: 0,
-                                removed_entries: 0,
-                                details: vec![CLEANUP_QUIESCENCE_UNPROVEN.to_owned()],
-                                omitted_detail_count: 0,
-                                remaining_root: Some(
-                                    context.spool_dir.execution_root.path().to_owned(),
-                                ),
-                            },
-                        });
+                        finalization.defer_without_attempt(
+                            context.spool_dir.execution_root.path().to_owned(),
+                        );
                         serial_completion = Some(ShellCompletion::Serial(RunEvent::EffectFailed(
                             EffectFailed::other(
                                 id,
@@ -3173,7 +3118,7 @@ async fn run_loop_context(
                         effects.push_front(effect);
                         break;
                     }
-                    execution_safety_proven = true;
+
                 }
                 if is_disk_guarded_dispatch(&effect) {
                     let failure = disk_monitor
@@ -3197,7 +3142,7 @@ async fn run_loop_context(
                         priority_event = Some(event);
                         break;
                     }
-                    if !disk_lifecycle.apply(DiskLifecycleEvent::DispatchRequested) {
+                    if !finalization.apply(DiskLifecycleEvent::DispatchRequested) {
                         return Err(
                             "disk lifecycle rejected guarded effect dispatch".to_owned(),
                         );
@@ -3333,16 +3278,12 @@ async fn run_loop_context(
                     RunEffect::EmitOutput(mut request)
                         if matches!(&request.event, OutputEvent::RunFinished(_)) =>
                     {
-                        if !execution_end_available_observed {
-                            execution_end_available_observed = true;
-                            match control.end_available(&[Arc::clone(
-                                &context.spool_dir.execution_root,
-                            )]) {
-                                Ok(available) => execution_end_available = Some(available),
-                                Err(error) => finalization_errors.push(format!(
-                                    "disk.measurement.failed: end free-space query failed: {error}"
-                                )),
-                            }
+                        if let Err(error) = finalization.observe_end_available(|| {
+                            control.end_available(&[Arc::clone(&context.spool_dir.execution_root)])
+                        }) {
+                            finalization_errors.push(format!(
+                                "disk.measurement.failed: end free-space query failed: {error}"
+                            ));
                         }
                         if let OutputEvent::RunFinished(summary) = &mut request.event {
                             let disk_stats = disk_monitor
@@ -3357,17 +3298,11 @@ async fn run_loop_context(
                                 u64::try_from(disk_stats.maximum_measurement.as_millis())
                                     .unwrap_or(u64::MAX);
                             summary.disk.janitor = Some(context.spool_dir.startup_reclaim.clone());
-                            summary.disk.removed_logical_bytes = (execution_cleanup == CleanupProgress::Cleaned)
-                                .then(|| execution_preclean.as_ref().map(|value| value.owned_bytes))
-                                .flatten();
                             summary.disk.filesystems = disk_stats
                                 .filesystems
                                 .iter()
                                 .map(|(key, filesystem)| {
-                                    let end_available_bytes = execution_end_available
-                                        .as_ref()
-                                        .and_then(|values| values.get(key))
-                                        .copied();
+                                    let end_available_bytes = finalization.end_available_bytes(*key);
                                     hoimin_core::DiskFilesystemReport {
                                         key: key.0.to_string(),
                                         start_available_bytes: Some(filesystem.start),
@@ -3379,17 +3314,6 @@ async fn run_loop_context(
                                     }
                                 })
                                 .collect();
-                            if let Some(report) = summary
-                                .disk
-                                .cleanup
-                                .iter_mut()
-                                .find(|report| report.root_id == "execution")
-                            {
-                                apply_execution_cleanup_evidence(
-                                    report,
-                                    execution_cleanup_record.as_ref(),
-                                );
-                            }
                             let latest_stop = {
                                 let receiver = disk_monitor
                                     .as_ref()
@@ -3402,9 +3326,7 @@ async fn run_loop_context(
                             {
                                 merge_monitor_stop(report, latest);
                             }
-                            if let Some(failure) = disk_lifecycle.snapshot().stop {
-                                merge_lifecycle_stop(summary, failure);
-                            }
+                            finalization.project_summary(summary);
                             apply_finalization_errors_to_summary(summary, &finalization_errors);
                             if summary.disk.enforcement.is_empty() {
                                 summary
@@ -3495,7 +3417,7 @@ async fn run_loop_context(
                         } else {
                             DiskLifecycleEvent::ReportFailed
                         };
-                        if !disk_lifecycle.apply(report_event) {
+                        if !finalization.apply(report_event) {
                             return Err("disk lifecycle rejected report completion".to_owned());
                         }
                         context.spool_dir.release_delivery_spool();
@@ -3507,14 +3429,14 @@ async fn run_loop_context(
                         #[cfg(test)]
                         control.observe_finalization_event("delivery_cleanup_requested_once");
                         delivery_cleanup = CleanupProgress::Attempted;
-                        if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
+                        if !finalization.apply(DiskLifecycleEvent::CleanupRequested {
                             root: DiskRootId::Delivery,
                         }) {
                             return Err(
                                 "disk lifecycle rejected delivery cleanup request".to_owned(),
                             );
                         }
-                        if execution_safety_proven {
+                        if finalization.safety_proven() {
                             let cleanup_result = cleanup_managed_root(
                                 Arc::clone(&context.spool_dir.delivery_root),
                                 &cleanup_budget,
@@ -3526,7 +3448,7 @@ async fn run_loop_context(
                             CleanupDisposition::Clean => {
                                 delivery_errors
                                     .extend(delivery_cleanup_secondary_errors(&cleanup));
-                                if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+                                if !finalization.apply(DiskLifecycleEvent::CleanupCompleted {
                                     root: DiskRootId::Delivery,
                                     outcome: DiskCleanupOutcome::Clean,
                                 }) {
@@ -3545,7 +3467,7 @@ async fn run_loop_context(
                             CleanupDisposition::Failed
                             | CleanupDisposition::Deferred(_) => {
                                 let outcome = disk_cleanup_outcome;
-                                if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+                                if !finalization.apply(DiskLifecycleEvent::CleanupCompleted {
                                     root: DiskRootId::Delivery,
                                     outcome,
                                 }) {
@@ -3566,7 +3488,7 @@ async fn run_loop_context(
                                 .spool_dir
                                 .delivery_root
                                 .abandon_for_janitor(detail.clone());
-                            if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+                            if !finalization.apply(DiskLifecycleEvent::CleanupCompleted {
                                 root: DiskRootId::Delivery,
                                 outcome: DiskCleanupOutcome::Deferred(detail.clone()),
                             }) {
@@ -3594,7 +3516,7 @@ async fn run_loop_context(
                             finalization_errors.clear();
                             return Err(error);
                         }
-                        if !disk_lifecycle.apply(DiskLifecycleEvent::FinishRequested) {
+                        if !finalization.apply(DiskLifecycleEvent::FinishRequested) {
                             return Err("disk lifecycle rejected run completion".to_owned());
                         }
                         let event = RunEvent::OutputEmitted(
@@ -3649,7 +3571,7 @@ async fn run_loop_context(
                             ));
                             let selection = tokio::select! {
                                 biased;
-                                changed = disk_stop.changed(), if !disk_stop_delivered && !execution_safety_proven => {
+                                changed = disk_stop.changed(), if !disk_stop_delivered && !finalization.safety_proven() => {
                                     changed.map_err(|_| {
                                         "disk.measurement.failed: disk monitor stop channel closed"
                                             .to_owned()
@@ -3897,7 +3819,7 @@ async fn run_loop_context(
             } else {
                 tokio::select! {
                     biased;
-                    changed = disk_stop.changed(), if !disk_stop_delivered && !execution_safety_proven => {
+                    changed = disk_stop.changed(), if !disk_stop_delivered && !finalization.safety_proven() => {
                         changed.map_err(|_| {
                             "disk.measurement.failed: disk monitor stop channel closed".to_owned()
                         })?;
@@ -4121,8 +4043,8 @@ async fn run_loop_context(
             };
             finalization_errors.append(&mut context.blocking_secondary_errors);
             if let RunEvent::CleanupFinished(value) = &event
-                && execution_safety_proven
-                && execution_cleanup != CleanupProgress::Cleaned
+                && finalization.safety_proven()
+                && !finalization.cleaned()
             {
                 let id = value.id;
                 context.analyzer.release_candidate_spool();
@@ -4132,20 +4054,15 @@ async fn run_loop_context(
                 });
                 #[cfg(test)]
                 control.observe_finalization_event("workspace_cleanup_requested_once");
-                execution_cleanup = CleanupProgress::Attempted;
                 #[cfg(test)]
                 if control.take_duplicate_execution_cleanup_request()
-                    && !disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
-                        root: DiskRootId::Execution,
-                    })
+                    && !finalization.request_cleanup()
                 {
                     return Err(
                         "disk lifecycle rejected injected execution cleanup request".to_owned(),
                     );
                 }
-                if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
-                    root: DiskRootId::Execution,
-                }) {
+                if !finalization.request_cleanup() {
                     return Err(
                         "disk lifecycle rejected execution cleanup request".to_owned(),
                     );
@@ -4174,29 +4091,21 @@ async fn run_loop_context(
                     &cleanup_budget,
                 )
                 .await;
-                let disk_cleanup_outcome = cleanup_result.disk_outcome();
                 let ManagedCleanupOutcome { record: cleanup, error } = cleanup_result;
-                match cleanup.disposition {
+                let disposition = cleanup.disposition;
+                let accepted = finalization.complete_cleanup(cleanup, &error);
+                match disposition {
                     CleanupDisposition::Clean => {
-                        if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
-                            root: DiskRootId::Execution,
-                            outcome: DiskCleanupOutcome::Clean,
-                        }) {
+                        if !accepted {
                             return Err(
                                 "disk lifecycle rejected clean execution cleanup".to_owned(),
                             );
                         }
-                        execution_cleanup = CleanupProgress::Cleaned;
                         #[cfg(test)]
                         control.observe_finalization_event("workspace_absent");
-                        execution_cleanup_record = Some(cleanup);
                     }
                     CleanupDisposition::Failed => {
-                        execution_cleanup_record = Some(cleanup);
-                        if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
-                            root: DiskRootId::Execution,
-                            outcome: disk_cleanup_outcome,
-                        }) {
+                        if !accepted {
                             return Err(
                                 "disk lifecycle rejected failed execution cleanup".to_owned(),
                             );
@@ -4208,11 +4117,7 @@ async fn run_loop_context(
                         ));
                     }
                     CleanupDisposition::Deferred(_) => {
-                        execution_cleanup_record = Some(cleanup);
-                        if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
-                            root: DiskRootId::Execution,
-                            outcome: disk_cleanup_outcome,
-                        }) {
+                        if !accepted {
                             return Err(
                                 "disk lifecycle rejected deferred execution cleanup".to_owned(),
                             );
@@ -4479,7 +4384,7 @@ async fn run_loop_context(
             .expect("outer finalization established a shutdown budget");
         report_admission.restrict_to(budget.deadline());
         let _disk_stats = disk_monitor.as_ref().map(DiskMonitor::stats);
-        let (process_reaped, output_drained, process_errors) = if execution_safety_proven {
+        let (process_reaped, output_drained, process_errors) = if finalization.safety_proven() {
             (true, true, Vec::new())
         } else {
             let git_drain = context
@@ -4508,7 +4413,7 @@ async fn run_loop_context(
                 report.secondary_errors,
             )
         };
-        let monitor_joined = if execution_safety_proven {
+        let monitor_joined = if finalization.safety_proven() {
             true
         } else if let Some(monitor) = disk_monitor.as_ref() {
             let remaining = shutdown_budget
@@ -4520,39 +4425,14 @@ async fn run_loop_context(
         } else {
             true
         };
-        let lifecycle_snapshot = disk_lifecycle.snapshot();
-        if lifecycle_snapshot.process_drain == DiskComponentState::Pending
-            && !disk_lifecycle.apply(if process_reaped {
-                DiskLifecycleEvent::ProcessDrainSucceeded
-            } else {
-                DiskLifecycleEvent::ProcessDrainFailed
-            })
-        {
-            finalization_errors
-                .push("disk lifecycle rejected outer process drain completion".to_owned());
-        }
-        let lifecycle_snapshot = disk_lifecycle.snapshot();
-        if lifecycle_snapshot.output_drain == DiskComponentState::Pending
-            && !disk_lifecycle.apply(if output_drained {
-                DiskLifecycleEvent::OutputDrainSucceeded
-            } else {
-                DiskLifecycleEvent::OutputDrainFailed
-            })
-        {
-            finalization_errors
-                .push("disk lifecycle rejected outer output drain completion".to_owned());
-        }
-        let lifecycle_snapshot = disk_lifecycle.snapshot();
-        if lifecycle_snapshot.monitor_join == DiskComponentState::Pending
-            && !disk_lifecycle.apply(if monitor_joined {
-                DiskLifecycleEvent::MonitorJoinSucceeded
-            } else {
-                DiskLifecycleEvent::MonitorJoinFailed
-            })
-        {
-            finalization_errors
-                .push("disk lifecycle rejected outer monitor join completion".to_owned());
-        }
+        let execution_quiescent = finalization.observe_outer_drains(
+            DrainEvidence {
+                process_reaped,
+                output_drained,
+                monitor_joined,
+            },
+            &mut finalization_errors,
+        );
         let mut report_released = delivery_cleanup != CleanupProgress::NotAttempted;
         if !report_released && tokio::time::Instant::now() < budget.deadline() {
             match budget.wait(context.report.flush_and_release_spool()).await {
@@ -4567,12 +4447,6 @@ async fn run_loop_context(
                 Err(_) => finalization_errors.push(budget.expiry_error(0, 1)),
             }
         }
-        let execution_quiescent = cleanup_quiescence_proven([
-            process_reaped,
-            output_drained,
-            monitor_joined,
-            final_measurement_joined,
-        ]) && lifecycle_safety_succeeded(&disk_lifecycle);
         let close = close_context_resources(
             &mut context,
             shutdown_budget
@@ -4612,41 +4486,31 @@ async fn run_loop_context(
             run_result = append_finalization_error(run_result, error);
         }
         if execution_safe_to_remove {
-            if execution_cleanup == CleanupProgress::NotAttempted {
+            if !finalization.cleanup_attempted() {
                 context.analyzer.release_candidate_spool();
                 context.spool_dir.release_execution_spool();
-                execution_cleanup = CleanupProgress::Attempted;
-                if disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
-                    root: DiskRootId::Execution,
-                }) {
+                if finalization.request_cleanup() {
                     let cleanup_result =
                         cleanup_managed_root(Arc::clone(&context.spool_dir.execution_root), budget)
                             .await;
-                    let disk_cleanup_outcome = cleanup_result.disk_outcome();
                     let ManagedCleanupOutcome {
                         record: cleanup,
                         error,
                     } = cleanup_result;
-                    match cleanup.disposition {
+                    let disposition = cleanup.disposition;
+                    let accepted = finalization.complete_cleanup(cleanup, &error);
+                    match disposition {
                         CleanupDisposition::Clean => {
-                            if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
-                                root: DiskRootId::Execution,
-                                outcome: DiskCleanupOutcome::Clean,
-                            }) {
+                            if !accepted {
                                 run_result = append_finalization_error(
                                     run_result,
                                     "disk lifecycle rejected outer clean execution cleanup"
                                         .to_owned(),
                                 );
                             }
-                            execution_cleanup = CleanupProgress::Cleaned;
                         }
                         CleanupDisposition::Failed | CleanupDisposition::Deferred(_) => {
-                            let outcome = disk_cleanup_outcome;
-                            if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
-                                root: DiskRootId::Execution,
-                                outcome,
-                            }) {
+                            if !accepted {
                                 run_result = append_finalization_error(
                                     run_result,
                                     "disk lifecycle rejected outer incomplete execution cleanup"
@@ -4666,25 +4530,16 @@ async fn run_loop_context(
                     );
                 }
             }
-            if execution_cleanup != CleanupProgress::Cleaned {
+            if !finalization.cleaned() {
                 context
                     .spool_dir
                     .execution_root
                     .abandon_for_janitor("execution-root cleanup was already attempted".to_owned());
             }
         } else {
-            if execution_cleanup == CleanupProgress::NotAttempted {
-                execution_cleanup = CleanupProgress::Attempted;
-                let requested = disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
-                    root: DiskRootId::Execution,
-                });
-                let completed = requested
-                    && disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
-                        root: DiskRootId::Execution,
-                        outcome: DiskCleanupOutcome::Deferred(
-                            CLEANUP_QUIESCENCE_UNPROVEN.to_owned(),
-                        ),
-                    });
+            if !finalization.cleanup_attempted() {
+                let completed =
+                    finalization.defer_cleanup(context.spool_dir.execution_root.path().to_owned());
                 if !completed {
                     run_result = append_finalization_error(
                         run_result,
@@ -4692,7 +4547,7 @@ async fn run_loop_context(
                     );
                 }
             }
-            if execution_cleanup != CleanupProgress::Cleaned {
+            if !finalization.cleaned() {
                 context
                     .spool_dir
                     .execution_root
@@ -4701,8 +4556,8 @@ async fn run_loop_context(
         }
         if delivery_safe_to_remove {
             if delivery_cleanup == CleanupProgress::NotAttempted {
-                if disk_lifecycle.snapshot().report == DiskComponentState::Pending
-                    && !disk_lifecycle.apply(DiskLifecycleEvent::ReportFailed)
+                if finalization.snapshot().report == DiskComponentState::Pending
+                    && !finalization.apply(DiskLifecycleEvent::ReportFailed)
                 {
                     run_result = append_finalization_error(
                         run_result,
@@ -4711,7 +4566,7 @@ async fn run_loop_context(
                 }
                 context.spool_dir.release_delivery_spool();
                 delivery_cleanup = CleanupProgress::Attempted;
-                if disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
+                if finalization.apply(DiskLifecycleEvent::CleanupRequested {
                     root: DiskRootId::Delivery,
                 }) {
                     let cleanup_result =
@@ -4724,7 +4579,7 @@ async fn run_loop_context(
                     } = cleanup_result;
                     match cleanup.disposition {
                         CleanupDisposition::Clean => {
-                            if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+                            if !finalization.apply(DiskLifecycleEvent::CleanupCompleted {
                                 root: DiskRootId::Delivery,
                                 outcome: DiskCleanupOutcome::Clean,
                             }) {
@@ -4743,7 +4598,7 @@ async fn run_loop_context(
                         }
                         CleanupDisposition::Failed | CleanupDisposition::Deferred(_) => {
                             let outcome = disk_cleanup_outcome;
-                            if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+                            if !finalization.apply(DiskLifecycleEvent::CleanupCompleted {
                                 root: DiskRootId::Delivery,
                                 outcome,
                             }) {
@@ -4773,16 +4628,16 @@ async fn run_loop_context(
                     .abandon_for_janitor("delivery-root cleanup was already attempted".to_owned());
             }
         } else {
-            if disk_lifecycle.snapshot().report == DiskComponentState::Pending {
-                let _ = disk_lifecycle.apply(DiskLifecycleEvent::ReportFailed);
+            if finalization.snapshot().report == DiskComponentState::Pending {
+                let _ = finalization.apply(DiskLifecycleEvent::ReportFailed);
             }
             if delivery_cleanup == CleanupProgress::NotAttempted {
                 delivery_cleanup = CleanupProgress::Attempted;
-                let requested = disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
+                let requested = finalization.apply(DiskLifecycleEvent::CleanupRequested {
                     root: DiskRootId::Delivery,
                 });
                 let completed = requested
-                    && disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+                    && finalization.apply(DiskLifecycleEvent::CleanupCompleted {
                         root: DiskRootId::Delivery,
                         outcome: DiskCleanupOutcome::Deferred(
                             CLEANUP_QUIESCENCE_UNPROVEN.to_owned(),

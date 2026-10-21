@@ -1236,7 +1236,7 @@ The project root is stored only in `normalized_config.selection.root` (under
 plans; read old reports with their producing binary or rerun with this version.
 See the [0.12.0 compatibility notice](compatibility.md#discovery-timeout-ownership-in-0120).
 
-Run JSON/JSONL emit schema 8; consumers validating the closed schema must update. `progress` accepts only schema-8 JSON/JSONL and rejects historical, unsupported future and mixed-version reports. When `--resume` is requested, JSON and JSONL include `run_started.resume` (the `run.resume` field in a JSON report): `{"status":"resumed"}` or `{"status":"fresh","reason":"CODE"}`. Human output also explains whether the saved run is continuing or a new run is starting. Runs without `--resume` omit this field.
+Run JSON/JSONL emit schema 10; consumers validating the closed schema must update. `progress` accepts only schema-10 JSON/JSONL and rejects historical, unsupported future and mixed-version reports. When `--resume` is requested, JSON and JSONL include `run_started.resume` (the `run.resume` field in a JSON report): `{"status":"resumed"}` or `{"status":"fresh","reason":"CODE"}`. Human output also explains whether the saved run is continuing or a new run is starting. Runs without `--resume` omit this field.
 
 A compatible incomplete run always wins, even if newer runs are incompatible. If an eligible row appears only during the later history inspection, `candidate_changed` takes precedence. Otherwise reasons use this precedence: `budget_decreased` (matching incomplete runs require a higher `--max-mutants`), `matching_run_complete`, `fingerprint_mismatch` (other incomplete history), `no_incomplete_run` (only nonmatching complete history), then `no_prior_run`. `candidate_changed` means session history changed during resume selection. These codes describe observed history, not which configuration field or file changed. Existing old-schema, corrupt-data, database-read, and ownership errors remain errors.
 
@@ -1617,9 +1617,14 @@ append a duplicate event.
 The store is bound to one canonical project root and each candidate's full
 descriptor and source hash. It is not automatically transferred to another
 checkout or moved root. Modified sources are `stale`; missing or unreadable
-sources are `source_unavailable`. These assessments do not count as reviewed
-current candidates. `list --stale` includes stored candidates absent from the
-plan separately. List and show do not create a missing store.
+sources are `source_unavailable`. Review reads sources through the same
+root-relative file reader as plan/verify. Symlink and reparse-point components
+are not followed, including links whose targets are inside the project; those
+sources are unavailable. Nonregular sources are also unavailable, without
+waiting for a FIFO writer. Invalid relative paths remain input errors.
+These assessments do not count as reviewed current candidates. `list --stale`
+includes stored candidates absent from the plan separately. List and show do
+not create a missing store.
 
 Plan-only output has execution state `not_loaded`. Add `--report run.json` for
 actual results from a complete schema-v10 JSON report with a passing baseline and

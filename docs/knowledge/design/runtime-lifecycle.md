@@ -5,6 +5,31 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issues-1050-finalization
+  resource: ../../../crates/hoimin-cli/src/shell/finalization.rs
+  revision: 5265aa2cc9f36b6b98ded50c6823039d8999b665
+  working_tree: untracked
+  sha256: 37ad268c0f2b63999caa0223623d60bd3d001ec7bbde6912157eb658e42ba369
+- id: issues-1050-shell
+  resource: ../../../crates/hoimin-cli/src/shell.rs
+  revision: 5265aa2cc9f36b6b98ded50c6823039d8999b665
+  working_tree: modified
+  sha256: 6bdea41007a4543da57ae78e5e973e68aea2f3e019966cf3e0f69bd6b430f62f
+- id: issues-1050-disk
+  resource: ../../../crates/hoimin-core/src/disk.rs
+  revision: 5265aa2cc9f36b6b98ded50c6823039d8999b665
+  working_tree: modified
+  sha256: d4d53195235328516a206f7890e74addb424ae5aaf17d8785ab353ca66986a27
+- id: issues-1050-machine
+  resource: ../../../crates/hoimin-core/src/machine.rs
+  revision: 5265aa2cc9f36b6b98ded50c6823039d8999b665
+  working_tree: modified
+  sha256: 993bdb7ea2c5cedbdf931ccdd192940625b8b800a68eee6d318f0b3e70babf54
+- id: issues-1050-worker-tests
+  resource: ../../../crates/hoimin-core/tests/worker_candidate_heap.rs
+  revision: 5265aa2cc9f36b6b98ded50c6823039d8999b665
+  working_tree: untracked
+  sha256: 374a31e46c2ee930903c08e659bddea363a1032338582a57b3f48073842e6a22
 - id: issue-1012-machine
   resource: ../../../crates/hoimin-core/src/machine.rs
   revision: 9d457e322ff1ed91e69e448c1cd40e4a8949baca
@@ -1242,3 +1267,40 @@ deadline handling.[^issue-1012-cli-tests]
 
 [^issue-1012-machine]: [Machine request and deadline handling](../../../crates/hoimin-core/src/machine.rs).
 [^issue-1012-cli-tests]: [Resolved timeout CLI regressions](../../../crates/hoimin-cli/tests/resolved_timeout.rs).
+
+# Finalization evidence ownership and worker moves (Issues #1051 and #1052)
+
+`ExecutionFinalization` owns lifecycle admission, scan quiescence, cleanup
+attempts/results and end-space observation. Safety is derived from canonical
+process/output/monitor completion and the owned scan state. The lifecycle's
+query does not clone root or diagnostic evidence, avoiding snapshots on scheduler
+safety checks. An unjoined scan remains unsafe after a later successful
+observation; a joined measurement error does not fabricate a byte count.[^issues-1050-finalization][^issues-1050-disk]
+
+Actual-removal admission requires all four quiescence conditions. A separate
+deferred-cleanup API records evidence without granting removal permission.
+An attempt is recorded before admission and remains terminal after refusal;
+pre-attempt deferral evidence does not claim that removal was tried. Normal and
+outer finalization share these transitions and summary projection. Delivery-root
+and report completion retain their distinct lifecycle conditions.[^issues-1050-finalization]
+
+The shell retains the first shutdown deadline, failure precedence, resource
+ownership and janitor retention. Existing fault injection exercises process,
+output, monitor and measurement failures, recordless/deferred cleanup, duplicate
+requests and late completion. The `ShellDiskLifecycle` production adapter remains
+connected to existing Lean correspondence checks; model/proof sources and their
+scope have not been expanded.[^issues-1050-shell]
+
+Worker phase changes move candidate payloads. Identity-only operations borrow
+fields and clone only necessary IDs. Apply, output and persistence effects keep
+independent copies until acknowledgement; stop/reuse/finished records remain.
+The allocation regression uses bounded public-transition fixtures with large and
+small source texts. It measures transition allocations and additional live Rust
+bytes, not sustained scheduling, persistent execution or OS RSS. Recheck ACK
+ownership and failure recovery when changing those moves.[^issues-1050-machine][^issues-1050-worker-tests]
+
+[^issues-1050-finalization]: [Finalization owner and state tests](../../../crates/hoimin-cli/src/shell/finalization.rs).
+[^issues-1050-shell]: [Normal/outer cleanup and fault injection](../../../crates/hoimin-cli/src/shell.rs).
+[^issues-1050-disk]: [Canonical allocation-free lifecycle query](../../../crates/hoimin-core/src/disk.rs).
+[^issues-1050-machine]: [Worker payload ownership and ACK transitions](../../../crates/hoimin-core/src/machine.rs).
+[^issues-1050-worker-tests]: [Bounded public-transition allocation regression](../../../crates/hoimin-core/tests/worker_candidate_heap.rs).

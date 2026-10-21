@@ -1412,12 +1412,11 @@ fn source_batch_rejects_canonical_root_escape() {
     )
     .unwrap();
     let states = super::input::source_states(&root, &[&candidate, &candidate]);
-    assert!(states.into_iter().all(|state| {
-        state
-            .unwrap_err()
-            .to_string()
-            .contains("escapes project root")
-    }));
+    assert!(
+        states
+            .into_iter()
+            .all(|state| matches!(state, Ok(SourceState::Unavailable)))
+    );
 }
 
 #[test]

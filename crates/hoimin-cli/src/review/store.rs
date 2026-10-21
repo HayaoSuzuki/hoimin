@@ -6,8 +6,8 @@ use rusqlite::{Connection, OpenFlags, TransactionBehavior, params};
 
 use super::ReviewError;
 use super::model::{
-    ReviewDraft, ReviewEvent, ReviewKey, ReviewState, SourceState, applicability, apply_update,
-    validate_draft,
+    ReviewDraft, ReviewEvent, ReviewKey, ReviewState, SourceState, applicability,
+    apply_update_owned, validate_draft,
 };
 
 const APPLICATION_ID: i64 = 0x484d_5256;
@@ -17,6 +17,34 @@ const METADATA: &str = "CREATE TABLE metadata (project TEXT NOT NULL UNIQUE)";
 const CANDIDATES: &str =
     "CREATE TABLE candidates (id TEXT PRIMARY KEY NOT NULL, key_json TEXT NOT NULL)";
 const EVENTS: &str = "CREATE TABLE review_events (candidate_id TEXT NOT NULL REFERENCES candidates(id), revision BLOB NOT NULL CHECK(length(revision)=8), draft_json TEXT NOT NULL, PRIMARY KEY(candidate_id, revision))";
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct StoreWork {
+    pub data_queries: usize,
+    pub key_decodes: usize,
+    pub draft_decodes: usize,
+    pub cloned_events: usize,
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static STORE_WORK: std::cell::RefCell<StoreWork> = std::cell::RefCell::default();
+}
+
+fn data_query<'a>(
+    connection: &'a Connection,
+    sql: &str,
+) -> rusqlite::Result<rusqlite::Statement<'a>> {
+    #[cfg(test)]
+    STORE_WORK.with_borrow_mut(|work| work.data_queries += 1);
+    connection.prepare(sql)
+}
+
+struct ValidatedSnapshot {
+    entries: Vec<(ReviewKey, ReviewState)>,
+    event_count: usize,
+}
 
 pub(super) struct ReviewStore {
     connection: Connection,
@@ -96,9 +124,19 @@ impl ReviewStore {
 
     pub(super) fn snapshot(&mut self) -> Result<Vec<(ReviewKey, ReviewState)>, ReviewError> {
         let transaction = self.connection.transaction()?;
-        let result = read_snapshot(&transaction, &self.project)?;
+        let result = read_snapshot(&transaction, &self.project, None)?;
         transaction.commit()?;
-        Ok(result)
+        Ok(result.entries)
+    }
+
+    pub(super) fn candidate(
+        &mut self,
+        candidate_id: &str,
+    ) -> Result<Option<(ReviewKey, ReviewState)>, ReviewError> {
+        let transaction = self.connection.transaction()?;
+        let mut result = read_snapshot(&transaction, &self.project, Some(candidate_id))?;
+        transaction.commit()?;
+        Ok(result.entries.pop())
     }
 
     pub(super) fn append(
@@ -139,28 +177,25 @@ impl ReviewStore {
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let result = (|| {
             validate_schema(&transaction, &self.project)?;
-            let snapshot = read_snapshot(&transaction, &self.project)?;
-            let total: usize = snapshot.iter().map(|(_, state)| state.history.len()).sum();
-            if total >= EVENT_LIMIT {
+            let mut selected = read_snapshot(&transaction, &self.project, Some(&key.candidate_id))?;
+            if selected.event_count >= EVENT_LIMIT {
                 return Err(invalid("review event limit reached"));
             }
-            let current = snapshot
-                .iter()
-                .find(|(stored, _)| stored.candidate_id == key.candidate_id);
-            let empty = ReviewState::default();
-            let (stored_key, state) = current.map_or((key, &empty), |(key, state)| (key, state));
-            let updated = apply_update(
+            let current = selected.entries.pop();
+            let new_candidate = current.is_none();
+            let (stored_key, state) =
+                current.unwrap_or_else(|| (key.clone(), ReviewState::default()));
+            let updated = apply_update_owned(
                 state,
-                applicability(key, stored_key, source),
+                applicability(key, &stored_key, source),
                 expected_revision,
                 draft,
             )?;
             let event = updated
                 .history
                 .last()
-                .ok_or_else(|| invalid("missing review event"))?
-                .clone();
-            if current.is_none() {
+                .ok_or_else(|| invalid("missing review event"))?;
+            if new_candidate {
                 validate_key(key, &self.project)?;
                 transaction.execute(
                     "INSERT INTO candidates(id, key_json) VALUES (?1, ?2)",
@@ -286,60 +321,79 @@ fn validate_key(key: &ReviewKey, project: &Utf8Path) -> Result<(), ReviewError> 
     Ok(())
 }
 
+// Every operation validates the complete store in one ordered scan. Selection
+// controls retention only: malformed unrelated candidates and orphan events must
+// still reject a read or write. Drafts not requested by the caller are dropped
+// immediately after validation rather than accumulating in a full snapshot.
 fn read_snapshot(
     connection: &Connection,
     project: &Utf8Path,
-) -> Result<Vec<(ReviewKey, ReviewState)>, ReviewError> {
-    let count: i64 =
-        connection.query_row("SELECT count(*) FROM review_events", [], |row| row.get(0))?;
+    selected: Option<&str>,
+) -> Result<ValidatedSnapshot, ReviewError> {
+    let count: i64 = data_query(connection, "SELECT count(*) FROM review_events")?
+        .query_row([], |row| row.get(0))?;
     let count = usize::try_from(count).map_err(|_| invalid("invalid event count"))?;
     if count > EVENT_LIMIT {
         return Err(invalid("review event limit exceeded"));
     }
-    let mut statement = connection.prepare("SELECT id, key_json FROM candidates ORDER BY id")?;
-    let rows = statement.query_map([], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-    })?;
-    let mut result = Vec::new();
+    let mut statement = data_query(
+        connection,
+        "SELECT c.id, c.key_json, e.revision, e.draft_json FROM candidates c \
+         LEFT JOIN review_events e ON e.candidate_id=c.id ORDER BY c.id, e.revision",
+    )?;
+    let mut rows = statement.query([])?;
+    let mut result: Vec<(ReviewKey, ReviewState)> = Vec::new();
+    let mut previous_id: Option<String> = None;
+    let mut expected_revision = 1_u64;
+    let mut retain = false;
     let mut events_seen = 0;
-    for row in rows {
-        let (id, json) = row?;
-        let key: ReviewKey = serde_json::from_str(&json)?;
-        validate_key(&key, project)?;
-        if key.candidate_id != id {
-            return Err(invalid("stored candidate identity conflict"));
-        }
-        let mut events = connection.prepare("SELECT revision, draft_json FROM review_events WHERE candidate_id=?1 ORDER BY revision")?;
-        let rows = events.query_map([&id], |row| {
-            Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, String>(1)?))
-        })?;
-        let mut history = Vec::new();
-        for row in rows {
-            let (revision, json) = row?;
-            let revision = u64::from_be_bytes(
-                revision
-                    .try_into()
-                    .map_err(|_| invalid("invalid stored revision"))?,
-            );
-            if revision
-                != u64::try_from(history.len())
-                    .unwrap_or(u64::MAX)
-                    .saturating_add(1)
-            {
-                return Err(invalid("noncontiguous review history"));
+    while let Some(row) = rows.next()? {
+        let id: String = row.get(0)?;
+        if previous_id.as_deref() != Some(id.as_str()) {
+            let json: String = row.get(1)?;
+            #[cfg(test)]
+            STORE_WORK.with_borrow_mut(|work| work.key_decodes += 1);
+            let key: ReviewKey = serde_json::from_str(&json)?;
+            validate_key(&key, project)?;
+            if key.candidate_id != id {
+                return Err(invalid("stored candidate identity conflict"));
             }
-            let draft: ReviewDraft = serde_json::from_str(&json)?;
-            validate_draft(&draft)?;
-            history.push(ReviewEvent { revision, draft });
+            retain = selected.is_none_or(|selected| selected == id);
+            if retain {
+                result.push((key, ReviewState::default()));
+            }
+            previous_id = Some(id);
+            expected_revision = 1;
         }
-        if history.is_empty() {
-            return Err(invalid("stored candidate has no history"));
+        let revision: Option<Vec<u8>> = row.get(2)?;
+        let revision = revision.ok_or_else(|| invalid("stored candidate has no history"))?;
+        let revision = u64::from_be_bytes(
+            revision
+                .try_into()
+                .map_err(|_| invalid("invalid stored revision"))?,
+        );
+        if revision != expected_revision {
+            return Err(invalid("noncontiguous review history"));
         }
-        events_seen += history.len();
-        result.push((key, ReviewState { history }));
+        expected_revision = expected_revision.saturating_add(1);
+        let json: String = row.get(3)?;
+        #[cfg(test)]
+        STORE_WORK.with_borrow_mut(|work| work.draft_decodes += 1);
+        let draft: ReviewDraft = serde_json::from_str(&json)?;
+        validate_draft(&draft)?;
+        events_seen += 1;
+        if retain {
+            let (_, state) = result
+                .last_mut()
+                .ok_or_else(|| invalid("missing review candidate"))?;
+            state.history.push(ReviewEvent { revision, draft });
+        }
     }
     if count != events_seen {
         return Err(invalid("orphan review events"));
     }
-    Ok(result)
+    Ok(ValidatedSnapshot {
+        entries: result,
+        event_count: count,
+    })
 }
