@@ -18,6 +18,7 @@ use super::{MAX_WORKER_TREE_DEPTH, WorkspaceError};
 #[cfg(test)]
 pub(crate) trait WorkspaceRaceHook: Send + Sync {
     fn parent_opened(&self, operation: &'static str, path: &Utf8Path);
+    fn mutation_bytes_read(&self, _bytes: u64) {}
 }
 
 #[cfg(test)]
@@ -171,12 +172,45 @@ impl MutationFile {
     pub(crate) fn read_to_end(
         &mut self,
         contents: &mut Vec<u8>,
+        expected_size: u64,
         path: &Utf8Path,
     ) -> Result<(), WorkspaceError> {
-        self.file
-            .read_to_end(contents)
-            .map(|_| ())
-            .map_err(|error| WorkspaceError::io("read mutation target", path, error))
+        let observed_size = self
+            .file
+            .metadata()
+            .map_err(|error| WorkspaceError::io("inspect mutation target", path, error))?
+            .len();
+        if observed_size != expected_size {
+            return Err(WorkspaceError::MutationHashMismatch {
+                path: path.to_owned(),
+            });
+        }
+        let capacity = usize::try_from(observed_size).map_err(|error| {
+            WorkspaceError::io("read mutation target", path, io::Error::other(error))
+        })?;
+        contents.try_reserve_exact(capacity).map_err(|error| {
+            WorkspaceError::io("read mutation target", path, io::Error::other(error))
+        })?;
+        let mut reader =
+            crate::finite_file::SnapshotReader::borrowed(&mut self.file, observed_size);
+        #[cfg(test)]
+        parent_opened("mutation-budget", path);
+        let result = reader.read_to_end(contents);
+        #[cfg(test)]
+        WORKSPACE_RACE_HOOK.with(|slot| {
+            if let Some(hook) = slot.borrow().as_ref() {
+                hook.mutation_bytes_read(std::io::Seek::stream_position(&mut self.file).unwrap());
+            }
+        });
+        result.map(|_| ()).map_err(|error| {
+            if crate::finite_file::is_snapshot_length_change(&error) {
+                WorkspaceError::MutationHashMismatch {
+                    path: path.to_owned(),
+                }
+            } else {
+                WorkspaceError::io("read mutation target", path, error)
+            }
+        })
     }
 
     pub(crate) fn into_writable(mut self, path: &Utf8Path) -> Result<File, WorkspaceError> {

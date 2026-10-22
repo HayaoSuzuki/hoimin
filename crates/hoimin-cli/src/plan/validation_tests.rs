@@ -952,3 +952,268 @@ async fn source_reader_reuses_its_root_capability_for_hash_and_bytes() {
 
     assert_eq!(source, b"original\n");
 }
+
+async fn issue_1081_asset_plan(
+    fingerprint_count: usize,
+    asset_count: usize,
+    asset_bytes: usize,
+) -> (
+    super::tests::Project,
+    super::PlanManifest,
+    tempfile::NamedTempFile,
+) {
+    let project = super::tests::Project::new();
+    for index in 0..asset_count {
+        std::fs::write(
+            project.root.join(format!("asset-{index}.bin")),
+            vec![42; asset_bytes],
+        )
+        .unwrap();
+    }
+    std::fs::write(project.root.join("input.txt"), "fingerprint input").unwrap();
+    let mut data = project.config().into_data();
+    if fingerprint_count == 1 {
+        data.fingerprint_files = vec!["input.txt".into()];
+    }
+    let output = super::create(
+        hoimin_core::RunConfig::try_from(data).unwrap(),
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    )
+    .await
+    .unwrap();
+    let artifact = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(
+        artifact.path(),
+        serde_json::to_vec(&output.manifest).unwrap(),
+    )
+    .unwrap();
+    (project, output.manifest, artifact)
+}
+
+fn issue_1081_selection(
+    manifest: &super::PlanManifest,
+    top_one: bool,
+) -> (Vec<String>, crate::cli::VerifySelection) {
+    if top_one {
+        let ids = vec![manifest.candidates[0].id.clone()];
+        (
+            ids,
+            crate::cli::VerifySelection::Top {
+                count: std::num::NonZeroUsize::new(1).unwrap(),
+                policy: crate::cli::TopSelectionPolicy::Strict,
+                offset: 0,
+            },
+        )
+    } else {
+        let ids: Vec<_> = manifest
+            .candidates
+            .iter()
+            .take(2)
+            .rev()
+            .map(|candidate| candidate.id.clone())
+            .collect();
+        (ids.clone(), crate::cli::VerifySelection::CandidateIds(ids))
+    }
+}
+
+#[tokio::test]
+async fn issue_1081_prepare_and_preview_do_not_read_or_hash_unrelated_assets() {
+    for fingerprint_count in [0, 1] {
+        for (asset_count, asset_bytes) in [(1, 4096), (4, 16384), (16, 65536)] {
+            let (_project, manifest, artifact) =
+                issue_1081_asset_plan(fingerprint_count, asset_count, asset_bytes).await;
+            let (ids, selection) = issue_1081_selection(&manifest, asset_count == 4);
+            crate::workspace::reset_source_content_metrics();
+            let prepared = super::prepare_verify_selection(
+                artifact.path(),
+                &selection,
+                crate::cli::OutputFormat::Json,
+            )
+            .await
+            .unwrap();
+            let metrics = crate::workspace::source_content_metrics();
+            assert_eq!(
+                (metrics.read_bytes, metrics.hash_bytes),
+                (0, 0),
+                "prepare F={fingerprint_count}, assets={asset_count}x{asset_bytes}: {metrics:?}"
+            );
+            assert_eq!(
+                prepared.selection.candidate_ids().unwrap(),
+                &ids.iter().cloned().collect::<BTreeSet<_>>()
+            );
+            let expected_preview_ids = if asset_count == 4 {
+                assert_eq!(prepared.selection.ordered_ids().unwrap(), ids);
+                ids.clone()
+            } else {
+                assert!(prepared.selection.ordered_ids().is_none());
+                let mut selected: Vec<_> = manifest
+                    .candidates
+                    .iter()
+                    .filter(|candidate| ids.contains(&candidate.id))
+                    .collect();
+                selected.sort_by_key(|candidate| candidate.sequence);
+                selected
+                    .into_iter()
+                    .map(|candidate| candidate.id.clone())
+                    .collect()
+            };
+            assert_eq!(
+                prepared.fingerprint_copy_inputs,
+                if fingerprint_count == 0 {
+                    BTreeSet::new()
+                } else {
+                    BTreeSet::from(["input.txt".into()])
+                }
+            );
+            crate::workspace::reset_source_content_metrics();
+            let preview = super::prepare_verify_preview_selection(
+                artifact.path(),
+                &selection,
+                crate::cli::OutputFormat::Json,
+            )
+            .await
+            .unwrap();
+            let metrics = crate::workspace::source_content_metrics();
+            assert_eq!(
+                (metrics.read_bytes, metrics.hash_bytes),
+                (0, 0),
+                "preview F={fingerprint_count}, assets={asset_count}x{asset_bytes}: {metrics:?}"
+            );
+            let mut rendered = Vec::new();
+            preview
+                .write(crate::cli::OutputFormat::Json, &mut rendered)
+                .unwrap();
+            let rendered: serde_json::Value = serde_json::from_slice(&rendered).unwrap();
+            assert_eq!(
+                rendered["candidates"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|candidate| candidate["id"].as_str().unwrap())
+                    .collect::<Vec<_>>(),
+                expected_preview_ids
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn issue_1081_membership_matches_content_manifest_selection() {
+    for (includes, excludes) in [
+        (vec![], vec![]),
+        (vec!["ignored/**"], vec![]),
+        (vec!["ignored/**"], vec!["**/excluded.txt"]),
+    ] {
+        let project = super::tests::Project::new();
+        std::fs::create_dir_all(project.root.join("ignored/nested")).unwrap();
+        std::fs::write(project.root.join(".gitignore"), "ignored/\n").unwrap();
+        for path in [
+            "plain.txt",
+            "ignored/nested/kept.txt",
+            "ignored/nested/excluded.txt",
+        ] {
+            std::fs::write(project.root.join(path), path).unwrap();
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("plain.txt", project.root.join("link.txt")).unwrap();
+            // Non-regular entries must not be admitted or opened as files.
+            let listener =
+                std::os::unix::net::UnixListener::bind(project.root.join("socket")).unwrap();
+            drop(listener);
+        }
+        let mut data = project.config().into_data();
+        data.selection.includes = includes.iter().map(|value| (*value).into()).collect();
+        data.selection.excludes = excludes.iter().map(|value| (*value).into()).collect();
+        data.fingerprint_files = vec![
+            "plain.txt".into(),
+            "ignored/nested/kept.txt".into(),
+            "ignored/nested/excluded.txt".into(),
+        ];
+        let options = crate::workspace::CopyOptions {
+            includes: data.selection.includes.clone(),
+            excludes: data.selection.excludes.clone(),
+            literal_exclusions: vec![],
+        };
+        let legacy = crate::workspace::build_validation_manifest(&project.root, &options).unwrap();
+        let output = super::create(
+            hoimin_core::RunConfig::try_from(data).unwrap(),
+            hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+        )
+        .await
+        .unwrap();
+        let expected: BTreeSet<_> = output
+            .manifest
+            .normalized_config
+            .fingerprint_inputs
+            .iter()
+            .filter(|record| legacy.entry(&record.path).is_some())
+            .map(|record| record.path.clone())
+            .collect();
+        let artifact = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            artifact.path(),
+            serde_json::to_vec(&output.manifest).unwrap(),
+        )
+        .unwrap();
+        let prepared = super::prepare_verify(
+            artifact.path(),
+            &[output.manifest.candidates[0].id.clone()],
+            crate::cli::OutputFormat::Json,
+        )
+        .await
+        .unwrap();
+        assert_eq!(prepared.fingerprint_copy_inputs, expected);
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn issue_1081_empty_fingerprints_skip_copy_selection_walk() {
+    let project = super::tests::Project::new();
+    let output = super::create(
+        project.config(),
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(output.manifest.normalized_config.fingerprint_inputs, []);
+    let artifact = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(
+        artifact.path(),
+        serde_json::to_vec(&output.manifest).unwrap(),
+    )
+    .unwrap();
+    // A copy walk must reject this selected path; no fingerprint membership is needed.
+    std::fs::write(project.root.join("native\\name.txt"), b"asset").unwrap();
+    assert!(matches!(
+        crate::workspace::build_validation_manifest(
+            &project.root,
+            &crate::workspace::CopyOptions::default()
+        ),
+        Err(crate::workspace::WorkspaceError::InvalidPath { .. })
+    ));
+    let selection =
+        crate::cli::VerifySelection::CandidateIds(vec![output.manifest.candidates[0].id.clone()]);
+    assert!(
+        super::prepare_verify_selection(
+            artifact.path(),
+            &selection,
+            crate::cli::OutputFormat::Json
+        )
+        .await
+        .unwrap()
+        .fingerprint_copy_inputs
+        .is_empty()
+    );
+    super::prepare_verify_preview_selection(
+        artifact.path(),
+        &selection,
+        crate::cli::OutputFormat::Json,
+    )
+    .await
+    .unwrap();
+}

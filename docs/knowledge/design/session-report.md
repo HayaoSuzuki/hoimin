@@ -5,6 +5,16 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1083-plan
+  resource: ../../../crates/hoimin-cli/src/plan.rs
+  revision: 6ad22aaa87c6298f8c84e3a2c00cbd016cf0b7db
+  working_tree: modified
+  sha256: 84c5774eacf043f9ddba81631484639af866a72cfcecac0cfc18719f780e61b9
+- id: issue-1083-store
+  resource: ../../../crates/hoimin-cli/src/review/store.rs
+  revision: 6ad22aaa87c6298f8c84e3a2c00cbd016cf0b7db
+  working_tree: modified
+  sha256: e55ff07f3b422d81e515312a0714723c26488b2124b6c061e1f9c8cca42bd085
 - id: issue-1077-admission
   resource: ../../../crates/hoimin-cli/src/review/store.rs
   revision: 12b34294ba2f61cd6b26425695b9ff08ed289875
@@ -1115,3 +1125,14 @@ persistent history and revision-conflict semantics remain.[^issue-1078-borrow]
 
 [^issue-1077-admission]: [Review store admission](../../../crates/hoimin-cli/src/review/store.rs).
 [^issue-1078-borrow]: [Borrowed review projection](../../../crates/hoimin-cli/src/review/mod.rs).
+
+## Borrowed review identity checks (Issue #1083)
+
+Read-only plan admission and stored review-key validation use the existing
+CandidateIdentityRef instead of materializing owned descriptors/identities just
+for stable-ID comparison. Schema, normalization and mismatch rejection keep their
+meaning. Persisted ReviewKey ownership, full descriptor comparison and source
+validation remain separate responsibilities.[^issue-1083-plan][^issue-1083-store]
+
+[^issue-1083-plan]: [Read-only plan identity validation](../../../crates/hoimin-cli/src/plan.rs).
+[^issue-1083-store]: [Stored key validation](../../../crates/hoimin-cli/src/review/store.rs).

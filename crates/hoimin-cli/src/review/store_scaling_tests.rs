@@ -562,3 +562,129 @@ fn assert_human_selected_history(
         assert!(human.contains("old candidate "));
     }
 }
+
+#[tokio::test]
+async fn issue_1083_read_only_plan_identity_does_not_clone_payloads() {
+    let (directory, plan_path) = super::tests::plan_fixture().await;
+    let mut manifest = crate::plan::read_for_review(&plan_path).unwrap().manifest;
+    manifest.candidates.truncate(1);
+    manifest.candidates[0].candidate.sequence = 1;
+    let mut measurements = Vec::new();
+    for payload in [4 * 1024, 16 * 1024, 64 * 1024] {
+        let candidate = &mut manifest.candidates[0].candidate;
+        candidate.original = "o".repeat(payload);
+        candidate.replacement = "r".repeat(payload);
+        let mut source = vec![b' '; usize::try_from(candidate.span.start).unwrap()];
+        source.extend_from_slice(candidate.original.as_bytes());
+        source.push(b'\n');
+        candidate.span.length = u64::try_from(candidate.original.len()).unwrap();
+        candidate.file_hash = blake3::hash(&source).to_hex().to_string();
+        candidate.id = hoimin_core::CandidateIdentityRef::from(&*candidate)
+            .stable_mutant_id()
+            .to_string();
+        let expected_id = candidate.id.clone();
+        std::fs::write(directory.path().join(&candidate.path), source).unwrap();
+        for record in &mut manifest.sources {
+            if record.path == candidate.path {
+                record.hash.clone_from(&candidate.file_hash);
+            }
+        }
+        std::fs::write(&plan_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        let (plan, measured) = measure(|| crate::plan::read_for_review(&plan_path).unwrap());
+        assert_eq!(plan.manifest.candidates[0].id, expected_id);
+        assert_eq!(plan.manifest.candidates[0].original.len(), payload);
+        assert_eq!(plan.manifest.candidates[0].replacement.len(), payload);
+        eprintln!("identity plan payload={payload}: {measured:?}");
+        measurements.push((payload, measured.peak_rust_bytes));
+        // Exercise public rendering separately from the allocation window.
+        let crate::cli::ParsedCommand::Review(args) = crate::cli::parse_from([
+            "hoimin",
+            "review",
+            "list",
+            plan_path.to_str().unwrap(),
+            "--store",
+            directory.path().join("absent.sqlite3").to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .unwrap() else {
+            panic!("review")
+        };
+        assert_identity_list_output(args, &manifest.candidates[0].candidate);
+    }
+    for (payload, peak) in measurements {
+        // JSON input storage, decoder and owned candidate remain necessary.
+        // A second descriptor and identity would retain three more payloads.
+        assert!(
+            peak <= (7 * payload + 32 * 1024) as i128,
+            "identity plan payload={payload} peak={peak}"
+        );
+    }
+    manifest.candidates[0].candidate.id = "0".repeat(64);
+    std::fs::write(&plan_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    assert!(crate::plan::read_for_review(&plan_path).is_err());
+}
+
+#[test]
+fn issue_1083_store_identity_does_not_clone_replacement() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut measurements = Vec::new();
+    for payload in [4 * 1024, 16 * 1024, 64 * 1024] {
+        let path = directory.path().join(format!("identity-{payload}.sqlite3"));
+        let mut target = key();
+        target.descriptor.replacement = "r".repeat(payload);
+        target.candidate_id = hoimin_core::CandidateIdentityRef::from(&target.descriptor)
+            .stable_mutant_id()
+            .to_string();
+        populate_selected_history(&path, &target, 1, 1024);
+        let mut store = ReviewStore::open_read(&path, &target.project)
+            .unwrap()
+            .unwrap();
+        let (row, measured) = measure(|| store.candidate(&target.candidate_id).unwrap().unwrap());
+        assert_eq!(row.0, target);
+        assert_eq!(row.1.history.len(), 1);
+        eprintln!("identity store payload={payload}: {measured:?}");
+        measurements.push((payload, measured.peak_rust_bytes));
+        // Corrupt identity through the real database reader, after measurement.
+        let mut corrupt = target.clone();
+        corrupt.descriptor.replacement.push('x');
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection
+            .execute(
+                "UPDATE candidates SET key_json=?1",
+                [serde_json::to_string(&corrupt).unwrap()],
+            )
+            .unwrap();
+        drop(connection);
+        assert!(store.candidate(&target.candidate_id).is_err());
+    }
+    for (payload, peak) in measurements {
+        // Retain the serialized DB row and decoded key, without a third copy.
+        assert!(
+            peak <= (2 * payload + 16 * 1024) as i128,
+            "identity store payload={payload} peak={peak}"
+        );
+    }
+}
+
+fn assert_identity_list_output(
+    mut args: crate::cli::ReviewArgs,
+    candidate: &hoimin_core::MutationCandidate,
+) {
+    let mut bytes = Vec::new();
+    assert_eq!(super::run(&args, &mut bytes).unwrap(), 0);
+    let document: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let row = &document["candidates"][0]["candidate"];
+    assert_eq!(row["id"], candidate.id);
+    assert_eq!(row["original"], candidate.original);
+    assert_eq!(row["replacement"], candidate.replacement);
+    let crate::cli::ReviewArgs::List(list) = &mut args else {
+        panic!("list fixture")
+    };
+    list.common.format = crate::cli::ReviewOutputFormat::Text;
+    bytes.clear();
+    assert_eq!(super::run(&args, &mut bytes).unwrap(), 0);
+    let human = String::from_utf8(bytes).unwrap();
+    assert!(human.contains(&candidate.id));
+    assert!(human.contains(candidate.path.as_str()));
+}

@@ -273,6 +273,34 @@ pub(super) fn hash_contents(
     })
 }
 
+/// Resolves selected-copy membership without consuming file contents.
+///
+/// Only requested paths are retained. Admission still checks every selected file
+/// through the same capability root used by content manifests; actual preflight
+/// independently reads and hashes contents before mutation.
+pub(crate) fn selected_copy_membership<'a>(
+    root: &Utf8Path,
+    options: &CopyOptions,
+    paths: impl IntoIterator<Item = &'a Utf8Path>,
+) -> Result<BTreeSet<Utf8PathBuf>, WorkspaceError> {
+    let requested: BTreeSet<_> = paths.into_iter().collect();
+    if requested.is_empty() {
+        return Ok(BTreeSet::new());
+    }
+    let source_root = super::WorkerRoot::open(root.to_owned())?;
+    let mut selected = BTreeSet::new();
+    walk_selected_entries(root, options, &mut |path, _native_path, is_directory| {
+        if !is_directory {
+            source_root.with_read_file(&path, |_file| Ok(()))?;
+            if requested.contains(path.as_path()) {
+                selected.insert(path);
+            }
+        }
+        Ok(())
+    })?;
+    Ok(selected)
+}
+
 pub(crate) fn inventory_logical_bytes(
     root: &Utf8Path,
     options: &CopyOptions,
@@ -465,6 +493,110 @@ mod tests {
         BudgetLedger, EffectId, RunBudgets, WorkspaceCopyGrant, reserve_workspace_copy,
     };
     use std::time::Duration;
+
+    #[test]
+    fn issue_1081_membership_matches_manifest_for_literal_exclusions() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(directory.path()).unwrap();
+        fs::create_dir(root.join("nested")).unwrap();
+        for path in ["keep.txt", "nested/file.txt", "nested/other.txt"] {
+            fs::write(root.join(path), path).unwrap();
+        }
+        let requested = [
+            Utf8PathBuf::from("keep.txt"),
+            Utf8PathBuf::from("nested/file.txt"),
+            Utf8PathBuf::from("nested/other.txt"),
+            Utf8PathBuf::from("missing.txt"),
+            Utf8PathBuf::from("nested"),
+        ];
+        for literal_exclusions in [
+            vec![],
+            vec![LiteralExclusion::File("nested/file.txt".into())],
+            vec![LiteralExclusion::Tree("nested".into())],
+        ] {
+            let options = CopyOptions {
+                includes: vec!["nested/**".into()],
+                literal_exclusions,
+                ..CopyOptions::default()
+            };
+            let (legacy, _) = build_manifest(root, &options).unwrap();
+            let expected = requested
+                .iter()
+                .filter(|path| legacy.entry(path).is_some())
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            assert_eq!(
+                selected_copy_membership(
+                    root,
+                    &options,
+                    requested.iter().map(Utf8PathBuf::as_path)
+                )
+                .unwrap(),
+                expected
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn issue_1081_membership_preserves_non_utf8_admission_errors() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(directory.path()).unwrap();
+        fs::write(root.join("requested.txt"), b"input").unwrap();
+        fs::write(
+            directory
+                .path()
+                .join(std::ffi::OsString::from_vec(vec![0xff])),
+            b"unrelated",
+        )
+        .unwrap();
+        let options = CopyOptions::default();
+        assert!(matches!(
+            build_manifest(root, &options),
+            Err(WorkspaceError::NonUtf8Path)
+        ));
+        assert!(matches!(
+            selected_copy_membership(root, &options, [Utf8Path::new("requested.txt")]),
+            Err(WorkspaceError::NonUtf8Path)
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn issue_1081_membership_preserves_invalid_native_path_errors() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(directory.path()).unwrap();
+        fs::write(root.join("native\\name.txt"), b"asset").unwrap();
+        let options = CopyOptions::default();
+        assert!(matches!(
+            build_manifest(root, &options),
+            Err(WorkspaceError::InvalidPath { .. })
+        ));
+        assert!(matches!(
+            selected_copy_membership(root, &options, [Utf8Path::new("requested.txt")]),
+            Err(WorkspaceError::InvalidPath { .. })
+        ));
+    }
+
+    #[test]
+    fn issue_1081_membership_preserves_invalid_glob_errors() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(directory.path()).unwrap();
+        let options = CopyOptions {
+            includes: vec!["[".into()],
+            ..CopyOptions::default()
+        };
+        assert!(matches!(
+            build_manifest(root, &options),
+            Err(WorkspaceError::InvalidGlob(_))
+        ));
+        assert!(matches!(
+            selected_copy_membership(root, &options, [Utf8Path::new("requested.txt")]),
+            Err(WorkspaceError::InvalidGlob(_))
+        ));
+    }
 
     fn prepared_plan() -> (tempfile::TempDir, WorkspacePlan, WorkspaceCopyGrant) {
         let source = tempfile::tempdir().unwrap();

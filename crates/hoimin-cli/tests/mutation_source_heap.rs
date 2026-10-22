@@ -1,4 +1,4 @@
-//! One test owns allocator windows around real worker mutation applications.
+//! Serialized tests own allocator windows around real worker mutation applications.
 use camino::Utf8Path;
 use hoimin_cli::workspace::{CopyOptions, WorkspacePlan};
 use hoimin_core::{
@@ -11,8 +11,11 @@ mod heap_tracking;
 #[global_allocator]
 static ALLOCATOR: heap_tracking::TrackingAllocator = heap_tracking::TrackingAllocator;
 
+static ALLOCATION_WINDOW: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[test]
 fn equal_length_mutation_does_not_allocate_a_second_source_body() {
+    let _window = ALLOCATION_WINDOW.lock().unwrap();
     let mut observations = Vec::new();
     for size in [64 * 1024, 256 * 1024, 1024 * 1024] {
         for offset in [1, size / 2, size - 4] {
@@ -86,4 +89,68 @@ fn equal_length_mutation_does_not_allocate_a_second_source_body() {
             "size={size} offset={offset} peak={peak} bound={bound}"
         );
     }
+}
+
+#[test]
+fn issue_1082_wrong_size_apply_rejects_before_allocating_the_body() {
+    let _window = ALLOCATION_WINDOW.lock().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    let source = b"# old\n";
+    std::fs::write(project.path().join("source.py"), source).unwrap();
+    let root = Utf8Path::from_path(project.path()).unwrap();
+    let plan = WorkspacePlan::preflight(root, EffectId(1), 1, CopyOptions::default()).unwrap();
+    let mut ledger = BudgetLedger::new(RunBudgets {
+        memory: 1,
+        copy: plan.aggregate_bytes(),
+        processes: 1,
+    });
+    let grant = reserve_workspace_copy(&mut ledger, &plan.completed()).unwrap();
+    let mut worker = plan
+        .create_worker(&grant.create_worker(EffectId(2), 0).unwrap())
+        .unwrap();
+    let mut candidate = MutationCandidate {
+        id: String::new(),
+        sequence: 0,
+        path: "source.py".into(),
+        span: ByteSpan {
+            start: 2,
+            length: 3,
+        },
+        original: "old".into(),
+        replacement: "new".into(),
+        operator: "test".into(),
+        line: 1,
+        column: 2,
+        symbol: None,
+        file_hash: blake3::hash(source).to_hex().to_string(),
+    };
+    candidate.id = validate_candidate(source, &CandidateDescriptor::from(&candidate))
+        .unwrap()
+        .to_string();
+    let target = worker.root().join("source.py");
+    let enlarged = vec![b'x'; 128 * 1024];
+    std::fs::write(&target, &enlarged).unwrap();
+    let mut permissions = std::fs::metadata(&target).unwrap().permissions();
+    permissions.set_readonly(true);
+    std::fs::set_permissions(&target, permissions).unwrap();
+
+    heap_tracking::begin();
+    let result = worker.apply_mutation(&candidate);
+    let peak = heap_tracking::finish();
+    eprintln!("wrong-size rejection peak={peak}");
+
+    assert!(matches!(
+        result,
+        Err(hoimin_cli::workspace::WorkspaceError::MutationHashMismatch { .. })
+    ));
+    assert_eq!(std::fs::read(&target).unwrap(), enlarged);
+    assert!(std::fs::metadata(&target).unwrap().permissions().readonly());
+    assert_eq!(
+        std::fs::read(project.path().join("source.py")).unwrap(),
+        source
+    );
+    assert!(
+        peak < 32 * 1024,
+        "wrong-size rejection allocated {peak} bytes"
+    );
 }

@@ -21,7 +21,7 @@ impl WorkerWorkspace {
         })?;
         let mut target = self.root.open_mutation_file(&candidate.path)?;
         let mut bytes = Vec::new();
-        target.read_to_end(&mut bytes, &candidate.path)?;
+        target.read_to_end(&mut bytes, expected.size, &candidate.path)?;
         let validation = mutation_context(
             &bytes,
             candidate,
@@ -304,6 +304,74 @@ mod tests {
         ))
         .to_string();
         (project, worker, candidate)
+    }
+
+    struct MutationReadObservation {
+        target: Utf8PathBuf,
+        changed: Vec<u8>,
+        consumed: std::sync::atomic::AtomicU64,
+    }
+
+    impl WorkspaceRaceHook for MutationReadObservation {
+        fn parent_opened(&self, operation: &'static str, _path: &Utf8Path) {
+            if operation == "mutation-budget" {
+                // The writer runs only after the reader has fixed its descriptor budget.
+                if self.changed.len() > b"original\n".len() {
+                    use std::io::Write;
+                    fs::OpenOptions::new()
+                        .append(true)
+                        .open(&self.target)
+                        .unwrap()
+                        .write_all(&self.changed[b"original\n".len()..])
+                        .unwrap();
+                } else {
+                    fs::OpenOptions::new()
+                        .write(true)
+                        .open(&self.target)
+                        .unwrap()
+                        .set_len(self.changed.len() as u64)
+                        .unwrap();
+                }
+                make_read_only(&self.target);
+            }
+        }
+
+        fn mutation_bytes_read(&self, bytes: u64) {
+            self.consumed.store(bytes, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn issue_1082_apply_rejects_append_and_truncate_with_finite_descriptor_read() {
+        let mut appended = b"original\n".to_vec();
+        appended.extend_from_slice(&[b'x'; 4096]);
+        for changed in [appended, b"ori".to_vec()] {
+            let (project, mut worker, candidate) = worker_and_candidate();
+            let target = worker.root().join(&candidate.path);
+            let hook = Arc::new(MutationReadObservation {
+                target: target.clone(),
+                changed: changed.clone(),
+                consumed: std::sync::atomic::AtomicU64::new(u64::MAX),
+            });
+            let guard = install_workspace_race_hook(hook.clone());
+            let result = worker.apply_mutation(&candidate);
+            drop(guard);
+            assert!(matches!(
+                result,
+                Err(super::WorkspaceError::MutationHashMismatch { .. })
+            ));
+            assert_eq!(fs::read(&target).unwrap(), changed);
+            assert!(fs::metadata(&target).unwrap().permissions().readonly());
+            assert_eq!(
+                fs::read(project.path().join(&candidate.path)).unwrap(),
+                b"original\n"
+            );
+            let consumed = hook.consumed.load(Ordering::SeqCst);
+            assert!(
+                consumed <= b"original\n".len() as u64 + 1,
+                "consumed {consumed} bytes after a 9-byte budget"
+            );
+        }
     }
 
     #[test]

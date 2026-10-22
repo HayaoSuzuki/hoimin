@@ -10,8 +10,8 @@ use std::io::Read;
 /// producer. This is a resource boundary, not an atomic filesystem snapshot:
 /// concurrent in-place rewrites are not detected. Finite bytes do not impose a
 /// filesystem I/O time bound. Callers must consume EOF.
-pub(crate) struct SnapshotReader {
-    file: File,
+pub(crate) struct SnapshotReader<R = File> {
+    file: R,
     remaining: u64,
     length: u64,
 }
@@ -34,7 +34,42 @@ impl SnapshotReader {
     }
 }
 
-impl Read for SnapshotReader {
+impl<'file> SnapshotReader<&'file mut File> {
+    /// Borrow an opened descriptor after its observed length has been checked.
+    pub(crate) fn borrowed(file: &'file mut File, length: u64) -> Self {
+        Self {
+            file,
+            remaining: length,
+            length,
+        }
+    }
+}
+
+#[derive(Debug)]
+enum SnapshotLengthChange {
+    Grew,
+    Shrank,
+}
+
+impl std::fmt::Display for SnapshotLengthChange {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Grew => "file grew while being read; retry with a completed file",
+            Self::Shrank => "file shrank while being read; retry with a completed file",
+        })
+    }
+}
+
+impl std::error::Error for SnapshotLengthChange {}
+
+/// Distinguish descriptor length changes from ordinary filesystem read errors.
+pub(crate) fn is_snapshot_length_change(error: &std::io::Error) -> bool {
+    error
+        .get_ref()
+        .is_some_and(<dyn std::error::Error + Send + Sync>::is::<SnapshotLengthChange>)
+}
+
+impl<R: Read> Read for SnapshotReader<R> {
     fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
         if output.is_empty() {
             return Ok(0);
@@ -44,7 +79,7 @@ impl Read for SnapshotReader {
             if self.file.read(&mut extra)? != 0 {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    "file grew while being read; retry with a completed file",
+                    SnapshotLengthChange::Grew,
                 ));
             }
             return Ok(0);
@@ -56,7 +91,7 @@ impl Read for SnapshotReader {
         if count == 0 {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::UnexpectedEof,
-                "file shrank while being read; retry with a completed file",
+                SnapshotLengthChange::Shrank,
             ));
         }
         self.remaining -= count as u64;
@@ -83,10 +118,9 @@ mod tests {
         let mut bytes = [0; 8192];
         assert_eq!(reader.read(&mut bytes).unwrap(), 4);
         assert_eq!(&bytes[..4], b"null");
-        assert_eq!(
-            reader.read(&mut bytes).unwrap_err().kind(),
-            std::io::ErrorKind::InvalidData
-        );
+        let growth = reader.read(&mut bytes).unwrap_err();
+        assert_eq!(growth.kind(), std::io::ErrorKind::InvalidData);
+        assert!(is_snapshot_length_change(&growth));
         // One byte beyond the original length, rather than the whole append.
         assert_eq!(std::io::Seek::stream_position(&mut reader.file).unwrap(), 5);
     }
@@ -102,9 +136,17 @@ mod tests {
         assert_eq!(bytes, b"null");
         let mut shortened = SnapshotReader::new(File::open(&path).unwrap()).unwrap();
         File::create(&path).unwrap();
-        assert_eq!(
-            shortened.read(&mut [0; 8]).unwrap_err().kind(),
-            std::io::ErrorKind::UnexpectedEof
-        );
+        let shrink = shortened.read(&mut [0; 8]).unwrap_err();
+        assert_eq!(shrink.kind(), std::io::ErrorKind::UnexpectedEof);
+        assert!(is_snapshot_length_change(&shrink));
+        for kind in [
+            std::io::ErrorKind::InvalidData,
+            std::io::ErrorKind::UnexpectedEof,
+        ] {
+            assert!(!is_snapshot_length_change(&std::io::Error::new(
+                kind,
+                "ordinary filesystem error"
+            )));
+        }
     }
 }

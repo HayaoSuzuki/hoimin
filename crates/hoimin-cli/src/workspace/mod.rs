@@ -42,7 +42,10 @@ pub(crate) use disk::{DiskMeasurement, MeterReading};
 pub(crate) use disk::{
     DiskMonitor, FilesystemKey, available_for_managed_roots, measure_managed_roots,
 };
+pub(crate) use manifest::selected_copy_membership;
 pub use manifest::{ManifestEntry, WorkspaceManifest};
+#[cfg(test)]
+pub(crate) use manifest::{reset_source_content_metrics, source_content_metrics};
 use operation::{WorkerOperationOutcome, create_worker, reset_worker};
 pub(crate) use owned::{
     CleanupDisposition, CleanupEvidence, CleanupRecord, ManagedChild, ManagedRootCoordinator,
@@ -57,6 +60,7 @@ const WORKSPACE_PATH_POLICY: hoimin_core::RelativePathPolicy = if cfg!(unix) {
     hoimin_core::RelativePathPolicy::Portable
 };
 
+#[cfg(test)]
 pub(crate) fn build_validation_manifest(
     root: &Utf8Path,
     options: &CopyOptions,

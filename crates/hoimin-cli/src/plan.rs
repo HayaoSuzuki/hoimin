@@ -86,9 +86,8 @@ pub(crate) fn read_for_review(path: &Path) -> Result<ReadOnlyPlan, PlanError> {
     let project = Utf8PathBuf::from_path_buf(project)
         .map_err(|_| invalid("project root is not UTF-8".into()))?;
     for candidate in &manifest.candidates {
-        let descriptor = CandidateDescriptor::from(&candidate.candidate);
-        let id = hoimin_core::stable_mutant_id(&hoimin_core::CandidateIdentity::from(&descriptor));
-        if id.as_str() != candidate.id {
+        if !hoimin_core::CandidateIdentityRef::from(&candidate.candidate).matches_id(&candidate.id)
+        {
             return Err(invalid("candidate id does not match its descriptor".into()));
         }
         #[cfg(test)]
@@ -543,15 +542,15 @@ async fn prepare_verify_selection_inner(
         excludes: config.selection.excludes.clone(),
         literal_exclusions: Vec::new(),
     };
-    let copy_manifest =
-        crate::workspace::build_validation_manifest(&config.selection.root, &copy_options)
-            .map_err(|error| PlanError::Workspace(error.to_string()))?;
-    let fingerprint_copy_inputs = config
-        .fingerprint_inputs
-        .iter()
-        .filter(|record| copy_manifest.entry(&record.path).is_some())
-        .map(|record| record.path.clone())
-        .collect();
+    let fingerprint_copy_inputs = crate::workspace::selected_copy_membership(
+        &config.selection.root,
+        &copy_options,
+        config
+            .fingerprint_inputs
+            .iter()
+            .map(|record| record.path.as_path()),
+    )
+    .map_err(|error| PlanError::Workspace(error.to_string()))?;
     let discovered_ids = validate_requested_candidates(
         &manifest,
         candidate_ids,
