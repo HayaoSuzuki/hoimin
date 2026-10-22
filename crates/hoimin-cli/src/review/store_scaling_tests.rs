@@ -54,13 +54,13 @@ unsafe impl GlobalAlloc for MeasuringAllocator {
 static ALLOCATOR: MeasuringAllocator = MeasuringAllocator;
 
 #[derive(Debug)]
-struct Measurement {
+pub(super) struct Measurement {
     work: StoreWork,
-    peak_rust_bytes: i128,
+    pub(super) peak_rust_bytes: i128,
     elapsed: Duration,
 }
 
-fn measure<T>(operation: impl FnOnce() -> T) -> (T, Measurement) {
+pub(super) fn measure<T>(operation: impl FnOnce() -> T) -> (T, Measurement) {
     struct Reset;
     impl Drop for Reset {
         fn drop(&mut self) {
@@ -859,4 +859,110 @@ fn assert_issue_1087_output(
         "operator {operator:?}: total {count}, reviewed 0, unreviewed {count}, stale 0, source_unavailable 0, assessments {{}}"
     ).unwrap();
     assert_eq!(String::from_utf8(bytes).unwrap(), expected);
+}
+
+pub(super) fn issue_1089_candidates(
+    count: usize,
+    payload: usize,
+) -> (Vec<u8>, Vec<hoimin_core::MutationCandidate>) {
+    let original = format!("'{}'", "o".repeat(payload - 2));
+    let source = format!("{original}\n").into_bytes();
+    let file_hash = blake3::hash(&source).to_hex().to_string();
+    let candidates = (0..count)
+        .map(|index| {
+            let mut candidate = hoimin_core::MutationCandidate {
+                id: String::new(),
+                sequence: u64::try_from(index + 1).unwrap(),
+                path: "subject.py".into(),
+                span: hoimin_core::ByteSpan {
+                    start: 0,
+                    length: u64::try_from(payload).unwrap(),
+                },
+                original: original.clone(),
+                replacement: format!("'{index:04}{}'", "r".repeat(payload - 6)),
+                operator: "string_literal_empty".into(),
+                line: 1,
+                column: 0,
+                symbol: Some("selected".into()),
+                file_hash: file_hash.clone(),
+            };
+            candidate.id = hoimin_core::CandidateIdentityRef::from(&candidate)
+                .stable_mutant_id()
+                .to_string();
+            candidate
+        })
+        .collect();
+    (source, candidates)
+}
+
+#[test]
+fn issue_1089_execution_comparison_does_not_copy_descriptor_payloads() {
+    let mut observations = Vec::new();
+    for count in [16, 64] {
+        for payload in [4 * 1024, 16 * 1024, 64 * 1024] {
+            let (_, candidates) = issue_1089_candidates(count, payload);
+            let document: serde_json::Value = serde_json::from_str(include_str!(
+                "../../tests/golden/reports/schema-v10-current.json"
+            ))
+            .unwrap();
+            let mut wire = document["mutants"][0].clone();
+            wire.as_object_mut().unwrap().remove("kind");
+            let template: hoimin_core::MutantFinished = serde_json::from_value(wire).unwrap();
+            let reported: Vec<_> = candidates
+                .iter()
+                .map(|candidate| {
+                    let mut result = template.clone();
+                    result.candidate = candidate.clone();
+                    result
+                })
+                .collect();
+            let index = reported
+                .iter()
+                .map(|result| (result.candidate.id.as_str(), result))
+                .collect();
+            let ((), measurement) = measure(|| {
+                for candidate in &candidates {
+                    let result = super::execution(candidate, Some(&index)).unwrap();
+                    assert!(matches!(result, super::render::ReviewExecution::Result(_)));
+                }
+            });
+            eprintln!(
+                "issue_1089 execution count={count} payload={payload} peak={}",
+                measurement.peak_rust_bytes
+            );
+            observations.push((count, payload, measurement.peak_rust_bytes));
+        }
+    }
+    assert!(
+        observations.iter().all(|(_, _, peak)| *peak < 4096),
+        "descriptor comparison copied payloads: {observations:?}"
+    );
+}
+
+#[test]
+fn issue_1089_execution_excludes_sequence_but_checks_symbol() {
+    let (_, candidates) = issue_1089_candidates(1, 32);
+    let candidate = &candidates[0];
+    let mut reported = hoimin_core::MutantFinished {
+        schema_version: hoimin_core::REPORT_SCHEMA_VERSION,
+        sequence: 1,
+        run_id: "run".into(),
+        candidate: candidate.clone(),
+        outcome: hoimin_core::MutationOutcome::NotRun,
+        resource_mode: hoimin_core::ResourceMode::BestEffort,
+        diagnostics: Vec::new(),
+    };
+    reported.candidate.sequence = 0;
+    {
+        let index = std::collections::HashMap::from([(candidate.id.as_str(), &reported)]);
+        assert!(matches!(
+            super::execution(candidate, Some(&index)).unwrap(),
+            super::render::ReviewExecution::Result(hoimin_core::MutationStatus::NotRun)
+        ));
+    }
+    reported.candidate.symbol = None;
+    let index = std::collections::HashMap::from([(candidate.id.as_str(), &reported)]);
+    assert!(
+        matches!(super::execution(candidate, Some(&index)), Err(error) if error.to_string().contains("descriptor differs"))
+    );
 }

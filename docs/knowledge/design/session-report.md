@@ -5,6 +5,16 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1089-plan
+  resource: ../../../crates/hoimin-cli/src/plan.rs
+  revision: 5064140df8e8f24df42045664d72dbf887ef8372
+  working_tree: modified
+  sha256: e34591c735a58bd8ca351e275c854bb54fe7a0a0f5124777bd10f15d3a5e9a6b
+- id: issue-1089-mutation
+  resource: ../../../crates/hoimin-cli/src/workspace/mutation.rs
+  revision: 5064140df8e8f24df42045664d72dbf887ef8372
+  working_tree: modified
+  sha256: 955b4304f5b6fae66eca93581a4eabff3f7f6f028d1bb46baf88eab8d1064dfa
 - id: issue-1085-admission
   resource: ../../../crates/hoimin-cli/src/session/schema.rs
   revision: 11eb28d3ff43c441c3aabc78cd7fa6d7d0c72493
@@ -1165,3 +1175,25 @@ for public CLI and closed-database regression coverage.
 
 [^issue-1085-admission]: [Session admission before SQLite access](../../../crates/hoimin-cli/src/session/schema.rs).
 [^issue-1085-links]: [Native descriptor link counts](../../../crates/hoimin-cli/src/file_links.rs).
+
+# Complete borrowed descriptors during verify and mutation (Issue #1089)
+
+Verify compares rediscovered and planned descriptors using the complete borrowed
+CandidateDescriptorRef; source validation accepts the current candidate without
+an owned descriptor projection. Schema, path, span, original/replacement,
+operator, location, symbol and hash remain comparison inputs. Assigned ID and
+sequence remain excluded from descriptor comparison; the separate stable-ID
+check still validates identity.[^issue-1089-plan]
+
+Worker mutation validation likewise passes the current candidate to the shared
+core source validator. Manifest length/hash, finite reads, encoding, original
+matching, stable identity, permission and write ordering retain their checks.
+Source bytes and runtime-contract evidence retain ownership independently of
+the descriptor view.[^issue-1089-mutation]
+
+See the [implementation evidence](../../maintenance/2026-10-22-issue-1089/README.md)
+for measured representative validation/comparison windows and limits.
+
+[^issue-1089-plan]: [crates/hoimin-cli/src/plan.rs](../../../crates/hoimin-cli/src/plan.rs).
+
+[^issue-1089-mutation]: [crates/hoimin-cli/src/workspace/mutation.rs](../../../crates/hoimin-cli/src/workspace/mutation.rs).

@@ -6,7 +6,7 @@ mod store;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use hoimin_core::CandidateDescriptor;
+use hoimin_core::CandidateDescriptorRef;
 
 use crate::artifacts::run_report::ReviewReport;
 use crate::cli::ReviewArgs;
@@ -215,7 +215,7 @@ fn execution(
     let Some(mutant) = report.get(candidate.id.as_str()) else {
         return Ok(ReviewExecution::NotInReport);
     };
-    if CandidateDescriptor::from(candidate) != CandidateDescriptor::from(&mutant.candidate) {
+    if CandidateDescriptorRef::from(candidate) != CandidateDescriptorRef::from(&mutant.candidate) {
         return Err(ReviewError::Invalid(
             "report candidate descriptor differs from stored candidate".into(),
         ));

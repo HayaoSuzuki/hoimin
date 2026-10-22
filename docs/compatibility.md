@@ -19,6 +19,14 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Borrowed complete descriptor comparisons (#1089)
+
+Verify, worker mutation and review comparison/source-validation paths use borrowed
+candidate metadata. Full descriptor fields, error precedence, stable IDs,
+encoding and output/persistence schemas retain their existing contract. Review
+source validation reuses the ID already returned by core validation. No artifact
+regeneration or migration is introduced by this ownership change.
+
 ## Session hardlinks and borrowed discovery/rendering (#1085–#1087)
 
 Existing session DBs with multiple hard links are now rejected before file-backed
