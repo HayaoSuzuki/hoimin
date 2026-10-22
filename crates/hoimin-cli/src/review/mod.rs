@@ -120,8 +120,8 @@ pub fn run(args: &ReviewArgs, stdout: &mut dyn std::io::Write) -> Result<i32, Re
             #[cfg(test)]
             JOIN_WORK.with_borrow_mut(|work| work.snapshot_probes += 1);
             let stored = reviewed.get(key.candidate_id.as_str()).copied();
-            let empty = ReviewState::default();
-            let (stored_key, state) = stored.map_or((&key, &empty), |(key, state)| (key, state));
+            let stored_key = stored.map_or(&key, |(key, _)| key);
+            let history = stored.map_or(&[][..], |(_, state)| state.history.as_slice());
             let applicable = model::applicability(&key, stored_key, source?);
             if applicable == Applicability::IdentityConflict {
                 return Err(ReviewError::Invalid(
@@ -133,10 +133,10 @@ pub fn run(args: &ReviewArgs, stdout: &mut dyn std::io::Write) -> Result<i32, Re
                 candidate: candidate.clone(),
                 execution,
                 review: (applicable == Applicability::Current)
-                    .then(|| state.history.last().cloned())
+                    .then(|| history.last())
                     .flatten(),
                 applicability: applicable,
-                history: state.history.clone(),
+                history,
             });
         }
         let stale_candidates = if include_stale {
@@ -274,11 +274,11 @@ fn record_store(
     Ok((key, state))
 }
 
-fn stale_rows(
+fn stale_rows<'a>(
     plan: &input::PlanCandidates<'_>,
-    snapshot: &[(model::ReviewKey, ReviewState)],
+    snapshot: &'a [(model::ReviewKey, ReviewState)],
     report: Option<&ReportCandidates<'_>>,
-) -> Result<Vec<ReviewRow>, ReviewError> {
+) -> Result<Vec<ReviewRow<'a>>, ReviewError> {
     let mut stale_candidates = Vec::new();
     for (key, state) in snapshot {
         #[cfg(test)]
@@ -305,7 +305,7 @@ fn stale_rows(
             candidate,
             review: None,
             applicability: Applicability::Stale,
-            history: state.history.clone(),
+            history: &state.history,
         });
     }
     Ok(stale_candidates)

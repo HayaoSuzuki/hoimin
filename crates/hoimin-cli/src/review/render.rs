@@ -10,22 +10,22 @@ use crate::cli::ReviewOutputFormat;
 use crate::human_text::HumanText;
 
 #[derive(Serialize)]
-pub(super) struct ReviewDocument {
+pub(super) struct ReviewDocument<'a> {
     pub schema_version: u32,
     pub command: &'static str,
     pub project: camino::Utf8PathBuf,
-    pub candidates: Vec<ReviewRow>,
-    pub stale_candidates: Vec<ReviewRow>,
+    pub candidates: Vec<ReviewRow<'a>>,
+    pub stale_candidates: Vec<ReviewRow<'a>>,
     pub operators: Vec<OperatorReviewCounts>,
 }
 
 #[derive(Serialize)]
-pub(super) struct ReviewRow {
+pub(super) struct ReviewRow<'a> {
     pub candidate: MutationCandidate,
     pub execution: ReviewExecution,
-    pub review: Option<ReviewEvent>,
+    pub review: Option<&'a ReviewEvent>,
     pub applicability: Applicability,
-    pub history: Vec<ReviewEvent>,
+    pub history: &'a [ReviewEvent],
 }
 
 #[derive(Serialize)]
@@ -47,7 +47,7 @@ pub(super) struct OperatorReviewCounts {
     pub assessments: BTreeMap<Assessment, u64>,
 }
 
-pub(super) fn counts(rows: &[ReviewRow]) -> Vec<OperatorReviewCounts> {
+pub(super) fn counts(rows: &[ReviewRow<'_>]) -> Vec<OperatorReviewCounts> {
     let mut operators = BTreeMap::<String, OperatorReviewCounts>::new();
     for row in rows {
         let entry = operators.entry(row.candidate.operator.clone()).or_default();
@@ -73,7 +73,7 @@ pub(super) fn counts(rows: &[ReviewRow]) -> Vec<OperatorReviewCounts> {
 }
 
 pub(super) fn write(
-    document: &ReviewDocument,
+    document: &ReviewDocument<'_>,
     format: ReviewOutputFormat,
     writer: &mut dyn Write,
 ) -> Result<(), ReviewError> {
@@ -104,7 +104,7 @@ pub(super) fn write(
                 assessment,
                 row.applicability
             )?;
-            for event in &row.history {
+            for event in row.history {
                 // Quote each external field through the shared human projection.
                 writeln!(
                     writer,

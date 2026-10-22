@@ -22,19 +22,12 @@ impl WorkerWorkspace {
         let mut target = self.root.open_mutation_file(&candidate.path)?;
         let mut bytes = Vec::new();
         target.read_to_end(&mut bytes, &candidate.path)?;
-        let actual_hash = blake3::hash(&bytes);
-        if candidate.file_hash != expected.blake3.to_hex().as_str()
-            || actual_hash != expected.blake3
-        {
-            return Err(WorkspaceError::MutationHashMismatch {
-                path: candidate.path.clone(),
-            });
-        }
-        let validation = CandidateValidationContext::new(&bytes).map_err(|_| {
-            WorkspaceError::MutationSpanInvalid {
-                path: candidate.path.clone(),
-            }
-        })?;
+        let validation = mutation_context(
+            &bytes,
+            candidate,
+            expected.blake3,
+            CandidateValidationContext::new,
+        )?;
         let stable_id =
             validate_candidate_with_context(&validation, &CandidateDescriptor::from(candidate))
                 .map_err(|error| match error {
@@ -94,27 +87,64 @@ impl WorkerWorkspace {
                 path: candidate.path.clone(),
             }
         })?;
-        let mut mutated = Vec::with_capacity(bytes.len() - length + replacement.len());
-        mutated.extend_from_slice(&bytes[..start]);
-        mutated.extend_from_slice(&replacement);
-        mutated.extend_from_slice(&bytes[end..]);
+        // Release every borrow of the source before reusing its owned buffer.
+        drop(validation);
+        // Contract builds retain independent pre-mutation evidence. Normal
+        // builds do not keep a second full body for a disabled postcondition.
+        #[cfg(feature = "contracts")]
+        let original = bytes.clone();
+        drop(bytes.splice(start..end, replacement.iter().copied()));
         let mut file = target.into_writable(&candidate.path)?;
         file.seek(SeekFrom::Start(0))
             .map_err(|error| WorkspaceError::io("write mutation target", &candidate.path, error))?;
         file.set_len(0)
             .map_err(|error| WorkspaceError::io("write mutation target", &candidate.path, error))?;
-        file.write_all(&mutated)
+        file.write_all(&bytes)
             .and_then(|()| file.flush())
             .map_err(|error| WorkspaceError::io("write mutation target", &candidate.path, error))?;
 
         hoimin_core::contract_ensure!(
             "workspace.mutation.post",
-            mutated[..start] == bytes[..start]
-                && mutated[start + replacement.len()..] == bytes[end..],
+            bytes[..start] == original[..start]
+                && bytes[start + replacement.len()..] == original[end..],
             &candidate.path,
         );
         Ok(())
     }
+}
+
+/// Build source facts once while preserving hash-mismatch precedence even when
+/// construction fails on the raw/decoded size boundary. The private factory
+/// lets tests exercise that branch without allocating multi-gigabyte sources.
+fn mutation_context<'source>(
+    source: &'source [u8],
+    candidate: &MutationCandidate,
+    expected_hash: blake3::Hash,
+    build: impl FnOnce(
+        &'source [u8],
+    ) -> Result<CandidateValidationContext<'source>, CandidateValidationError>,
+) -> Result<CandidateValidationContext<'source>, WorkspaceError> {
+    let expected = expected_hash.to_hex();
+    if candidate.file_hash != expected.as_str() {
+        return Err(WorkspaceError::MutationHashMismatch {
+            path: candidate.path.clone(),
+        });
+    }
+    let validation = build(source);
+    let matches = match &validation {
+        Ok(context) => context.file_hash() == expected.as_str(),
+        // A failed constructor has not produced a usable hash. Only this
+        // exceptional path needs a separate raw hash before choosing the error.
+        Err(_) => blake3::hash(source) == expected_hash,
+    };
+    if !matches {
+        return Err(WorkspaceError::MutationHashMismatch {
+            path: candidate.path.clone(),
+        });
+    }
+    validation.map_err(|_| WorkspaceError::MutationSpanInvalid {
+        path: candidate.path.clone(),
+    })
 }
 
 #[cfg(test)]
@@ -234,6 +264,184 @@ mod tests {
                 .unwrap()
                 .to_string();
         (project, worker, candidate)
+    }
+
+    fn source_worker(
+        source: &[u8],
+        span: ByteSpan,
+        original: &str,
+        replacement: &str,
+        location: (u32, u32),
+    ) -> (tempfile::TempDir, WorkerWorkspace, MutationCandidate) {
+        let project = tempfile::tempdir().unwrap();
+        fs::write(project.path().join("source.py"), source).unwrap();
+        let root = Utf8Path::from_path(project.path()).unwrap();
+        let plan = WorkspacePlan::preflight(root, EffectId(1), 1, CopyOptions::default()).unwrap();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: plan.aggregate_bytes(),
+            processes: 1,
+        });
+        let grant = reserve_workspace_copy(&mut ledger, &plan.completed()).unwrap();
+        let worker = plan
+            .create_worker(&grant.create_worker(EffectId(2), 0).unwrap())
+            .unwrap();
+        let mut candidate = MutationCandidate {
+            id: String::new(),
+            sequence: 0,
+            path: "source.py".into(),
+            span,
+            original: original.into(),
+            replacement: replacement.into(),
+            operator: "test".into(),
+            line: location.0,
+            column: location.1,
+            symbol: None,
+            file_hash: blake3::hash(source).to_hex().to_string(),
+        };
+        candidate.id = hoimin_core::stable_mutant_id(&hoimin_core::CandidateIdentity::from(
+            &CandidateDescriptor::from(&candidate),
+        ))
+        .to_string();
+        (project, worker, candidate)
+    }
+
+    #[test]
+    fn source_reuse_preserves_growth_shrink_unicode_bom_and_latin1() {
+        for (source, original, replacement, start, length, location, expected) in [
+            (
+                &b"# old\n"[..],
+                "old",
+                "longer",
+                2,
+                3,
+                (1, 2),
+                &b"# longer\n"[..],
+            ),
+            (
+                &b"# original\n"[..],
+                "original",
+                "x",
+                2,
+                8,
+                (1, 2),
+                &b"# x\n"[..],
+            ),
+            (
+                "# éx\n".as_bytes(),
+                "é",
+                "顔",
+                2,
+                2,
+                (1, 2),
+                "# 顔x\n".as_bytes(),
+            ),
+            (
+                &b"\xef\xbb\xbf# old\n"[..],
+                "old",
+                "xy",
+                5,
+                3,
+                (1, 2),
+                &b"\xef\xbb\xbf# xy\n"[..],
+            ),
+            (
+                &b"# coding: latin-1\n# \xe9x\n"[..],
+                "é",
+                "àà",
+                20,
+                1,
+                (2, 2),
+                &b"# coding: latin-1\n# \xe0\xe0x\n"[..],
+            ),
+        ] {
+            let (project, mut worker, candidate) = source_worker(
+                source,
+                ByteSpan { start, length },
+                original,
+                replacement,
+                location,
+            );
+            worker.apply_mutation(&candidate).unwrap();
+            assert_eq!(worker.read("source.py").unwrap(), expected);
+            assert_eq!(fs::read(project.path().join("source.py")).unwrap(), source);
+            worker.reset().unwrap();
+            assert_eq!(worker.read("source.py").unwrap(), source);
+        }
+    }
+
+    #[test]
+    fn unrepresentable_replacement_preserves_worker_bytes_and_permissions() {
+        let source = b"# coding: latin-1\n# \xe9x\n";
+        let (project, mut worker, candidate) = source_worker(
+            source,
+            ByteSpan {
+                start: 20,
+                length: 1,
+            },
+            "é",
+            "顔",
+            (2, 2),
+        );
+        let target = worker.root().join("source.py");
+        make_read_only(&target);
+        let permissions = permission_fingerprint(&target);
+        assert!(matches!(
+            worker.apply_mutation(&candidate),
+            Err(super::WorkspaceError::MutationSpanInvalid { .. })
+        ));
+        assert_eq!(worker.read("source.py").unwrap(), source);
+        assert_eq!(fs::read(project.path().join("source.py")).unwrap(), source);
+        assert_eq!(permission_fingerprint(&target), permissions);
+    }
+
+    #[test]
+    fn hash_mismatch_precedes_invalid_span_and_location_without_writing() {
+        for changed_worker in [false, true] {
+            let (_project, mut worker, mut candidate) = worker_and_candidate();
+            candidate.span.start = u64::MAX;
+            candidate.line = u32::MAX;
+            if changed_worker {
+                fs::write(worker.root().join(&candidate.path), b"changed\n").unwrap();
+            } else {
+                candidate.file_hash = "0".repeat(64);
+            }
+            let before = worker.read(&candidate.path).unwrap();
+            assert!(matches!(
+                worker.apply_mutation(&candidate),
+                Err(super::WorkspaceError::MutationHashMismatch { .. })
+            ));
+            assert_eq!(worker.read(&candidate.path).unwrap(), before);
+        }
+    }
+
+    #[test]
+    fn mutation_context_failure_keeps_hash_mismatch_precedence() {
+        let (_project, _worker, mut candidate) = worker_and_candidate();
+        let source = b"original\n";
+        let current = blake3::hash(source);
+        let different = blake3::hash(b"changed\n");
+        for (expected, candidate_hash, hash_failure) in [
+            (current, current, false),
+            (different, different, true),
+            (current, different, true),
+        ] {
+            candidate.file_hash = candidate_hash.to_hex().to_string();
+            let result = super::mutation_context(source, &candidate, expected, |_| {
+                Err(hoimin_core::CandidateValidationError::SourceTooLarge)
+            });
+            if hash_failure {
+                assert!(matches!(
+                    result,
+                    Err(super::WorkspaceError::MutationHashMismatch { .. })
+                ));
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(super::WorkspaceError::MutationSpanInvalid { .. })
+                ));
+            }
+        }
     }
 
     #[test]

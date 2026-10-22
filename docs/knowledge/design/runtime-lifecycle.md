@@ -5,6 +5,11 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1079-source
+  resource: ../../../crates/hoimin-cli/src/workspace/mutation.rs
+  revision: 12b34294ba2f61cd6b26425695b9ff08ed289875
+  working_tree: modified
+  sha256: 47ba59e5b82f07270917c2f67b750e75b68bacd5554873548589a237e025b9c7
 - id: issues-1054-git
   resource: ../../../crates/hoimin-cli/src/target/git/runner.rs
   revision: f55f42c66b21861ae5302c057b4b600ec5d765c1
@@ -1361,3 +1366,15 @@ is recorded separately. Existing formal models do not establish all Win32 packet
 and PID-generation details; a successful model proof is not native execution.
 
 [^issues-1067-windows]: [crates/hoimin-cli/src/resource/windows.rs](../../../crates/hoimin-cli/src/resource/windows.rs).
+
+## Mutation source ownership (Issue #1079)
+
+Mutation application reuses the validation context's raw hash and then its owned
+source buffer. All candidate/span/location/original-text checks and replacement
+encoding finish before the context is dropped and the buffer is spliced. Existing
+writable-reopen checks still precede truncation and writes. Constructor failure
+retains hash-mismatch precedence through an exceptional raw-hash check.
+Contract builds retain an independent original body for prefix/suffix evidence;
+normal builds do not retain a second whole mutated body.[^issue-1079-source]
+
+[^issue-1079-source]: [Validated mutation application](../../../crates/hoimin-cli/src/workspace/mutation.rs).

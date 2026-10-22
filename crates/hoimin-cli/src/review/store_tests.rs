@@ -541,3 +541,266 @@ fn reopening_store_preserves_report_reference_history() {
     // Assert
     assert_eq!(snapshot[0].1.history[0].draft, value);
 }
+
+fn directory_bytes(
+    path: &std::path::Path,
+) -> std::collections::BTreeMap<std::ffi::OsString, Vec<u8>> {
+    std::fs::read_dir(path)
+        .unwrap()
+        .map(|entry| {
+            let entry = entry.unwrap();
+            (entry.file_name(), std::fs::read(entry.path()).unwrap())
+        })
+        .collect()
+}
+
+fn closed_foreign_wal(path: &std::path::Path) {
+    let connection = rusqlite::Connection::open(path).unwrap();
+    connection
+        .execute_batch(
+            "PRAGMA journal_mode=WAL;
+             PRAGMA application_id=12345;
+             PRAGMA user_version=37;
+             CREATE TABLE foreign_data(value TEXT);
+             INSERT INTO foreign_data VALUES ('keep me');",
+        )
+        .unwrap();
+    connection.close().unwrap();
+    let bytes = std::fs::read(path).unwrap();
+    assert_eq!(&bytes[..16], b"SQLite format 3\0");
+    assert_eq!(&bytes[18..20], &[2, 2]);
+    let companions = crate::artifacts::SqliteCompanions::new(path);
+    assert!(!companions.wal.exists());
+    assert!(!companions.shm.exists());
+}
+
+// Query a disposable copy: even observation with an ordinary SQLite connection
+// could otherwise create sidecars and hide the admission bug from our baseline.
+fn assert_foreign_wal_contents(path: &std::path::Path) {
+    let directory = tempfile::tempdir().unwrap();
+    let copy = directory.path().join("copy.sqlite3");
+    std::fs::copy(path, &copy).unwrap();
+    let connection = rusqlite::Connection::open(&copy).unwrap();
+    let observed: (i64, i64, String, String, String) = connection
+        .query_row(
+            "SELECT (SELECT application_id FROM pragma_application_id),
+                    (SELECT user_version FROM pragma_user_version),
+                    (SELECT journal_mode FROM pragma_journal_mode),
+                    (SELECT sql FROM sqlite_schema WHERE name='foreign_data'),
+                    (SELECT value FROM foreign_data)",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        observed,
+        (
+            12345,
+            37,
+            "wal".into(),
+            "CREATE TABLE foreign_data(value TEXT)".into(),
+            "keep me".into()
+        )
+    );
+}
+
+#[test]
+fn foreign_wal_read_admission_preserves_all_files() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("foreign.sqlite3");
+    closed_foreign_wal(&path);
+    let before = directory_bytes(directory.path());
+    assert_eq!(before.len(), 1);
+
+    assert!(ReviewStore::open_read(&path, &key().project).is_err());
+
+    assert!(
+        directory_bytes(directory.path()) == before,
+        "rejection changed database or companions"
+    );
+    assert_foreign_wal_contents(&path);
+}
+
+#[test]
+fn foreign_wal_write_admission_preserves_all_files() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("foreign.sqlite3");
+    closed_foreign_wal(&path);
+    let before = directory_bytes(directory.path());
+
+    assert!(ReviewStore::open_write(&path, &key().project).is_err());
+
+    assert!(
+        directory_bytes(directory.path()) == before,
+        "rejection changed database or companions"
+    );
+    assert_foreign_wal_contents(&path);
+}
+
+#[tokio::test]
+async fn foreign_wal_public_list_and_show_preserve_all_files() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(directory.path().join("sample.py"), "value = 1\n").unwrap();
+    let crate::cli::ParsedCommand::Plan(args) = crate::cli::parse_from([
+        "hoimin",
+        "plan",
+        "--root",
+        directory.path().to_str().unwrap(),
+        "--file",
+        "sample.py",
+        "--allow-best-effort-memory",
+        "--min-free-space",
+        "1B",
+        "--",
+        "must-not-execute",
+    ])
+    .unwrap() else {
+        panic!("plan")
+    };
+    let (config, discovery) = args.into_configs().unwrap();
+    let output = crate::plan::create(config, discovery).await.unwrap();
+    let candidate = output.manifest.candidates[0].id.clone();
+    let plan_path = directory.path().join("plan.json");
+    std::fs::write(&plan_path, serde_json::to_vec(&output.manifest).unwrap()).unwrap();
+    // Keep the store in its own directory so the snapshot covers every entry.
+    let stores = tempfile::tempdir().unwrap();
+    let path = stores.path().join("foreign.sqlite3");
+    for command in ["list", "show"] {
+        closed_foreign_wal(&path);
+        let before = directory_bytes(stores.path());
+        let common = crate::cli::ReviewCommonArgs {
+            plan: plan_path.clone(),
+            store: path.clone(),
+            report: None,
+            format: crate::cli::ReviewOutputFormat::Json,
+        };
+        let args = if command == "list" {
+            crate::cli::ReviewArgs::List(crate::cli::ReviewListArgs {
+                common,
+                stale: false,
+            })
+        } else {
+            crate::cli::ReviewArgs::Show(crate::cli::ReviewShowArgs {
+                common,
+                candidate: candidate.clone(),
+            })
+        };
+        let mut output = Vec::new();
+
+        assert!(super::run(&args, &mut output).is_err());
+
+        assert!(output.is_empty(), "rejected store must not render output");
+        assert!(
+            directory_bytes(stores.path()) == before,
+            "{command} rejection changed database or companions"
+        );
+        assert_foreign_wal_contents(&path);
+        std::fs::remove_file(&path).unwrap();
+    }
+}
+
+#[test]
+fn delete_store_admission_preserves_history_and_files_on_native_path() {
+    assert_delete_store_path(std::ffi::OsStr::new("reviews-日本語 #% space.sqlite3"));
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let name = std::ffi::OsStr::from_bytes(b"reviews-\xff.sqlite3");
+        let probe = tempfile::tempdir().unwrap();
+        if rusqlite::Connection::open(probe.path().join(name)).is_ok() {
+            assert_delete_store_path(name);
+        } else {
+            // Some filesystem/VFS environments reject non-UTF8 paths even
+            // without URI access. Admission must preserve that rejection.
+            let directory = tempfile::tempdir().unwrap();
+            let before = directory_bytes(directory.path());
+            assert!(ReviewStore::open_write(&directory.path().join(name), &key().project).is_err());
+            assert!(
+                directory_bytes(directory.path()) == before,
+                "rejected native path changed files"
+            );
+        }
+    }
+}
+
+fn assert_delete_store_path(name: &std::ffi::OsStr) {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join(name);
+    let key = key();
+    let mut store = ReviewStore::open_write(&path, &key.project).unwrap();
+    store.append(&key, SourceState::Fresh, 0, draft()).unwrap();
+    drop(store);
+    let before = directory_bytes(directory.path());
+    assert_eq!(&std::fs::read(&path).unwrap()[18..20], &[1, 1]);
+
+    let mut store = ReviewStore::open_read(&path, &key.project)
+        .unwrap()
+        .unwrap();
+    let snapshot = store.snapshot().unwrap();
+    assert_eq!(snapshot.len(), 1);
+    assert_eq!(snapshot[0].1.history.len(), 1);
+    assert_eq!(snapshot[0].1.history[0].revision, 1);
+    drop(store);
+    drop(ReviewStore::open_write(&path, &key.project).unwrap());
+
+    assert!(
+        directory_bytes(directory.path()) == before,
+        "admission changed DELETE store or companions"
+    );
+}
+
+#[test]
+fn store_admission_rejects_directory_and_symlink() {
+    let directory = tempfile::tempdir().unwrap();
+    assert!(ReviewStore::open_read(directory.path(), &key().project).is_err());
+    assert!(ReviewStore::open_write(directory.path(), &key().project).is_err());
+    #[cfg(unix)]
+    {
+        let database = directory.path().join("reviews.sqlite3");
+        drop(ReviewStore::open_write(&database, &key().project).unwrap());
+        let alias = directory.path().join("alias.sqlite3");
+        std::os::unix::fs::symlink(&database, &alias).unwrap();
+        let before = std::fs::read(&database).unwrap();
+        assert!(ReviewStore::open_read(&alias, &key().project).is_err());
+        assert!(ReviewStore::open_write(&alias, &key().project).is_err());
+        assert!(
+            std::fs::read(&database).unwrap() == before,
+            "symlink rejection changed database bytes"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn store_admission_rejects_fifo_without_waiting_for_writer() {
+    use std::os::unix::ffi::OsStrExt;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("store.fifo");
+    let native_path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+    // SAFETY: native_path is NUL terminated and mode grants owner access only.
+    assert_eq!(unsafe { libc::mkfifo(native_path.as_ptr(), 0o600) }, 0);
+    let (send, receive) = std::sync::mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        send.send((
+            ReviewStore::open_read(&path, &key().project).is_err(),
+            ReviewStore::open_write(&path, &key().project).is_err(),
+        ))
+        .unwrap();
+    });
+
+    assert_eq!(
+        receive
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("store admission blocked on FIFO"),
+        (true, true)
+    );
+    reader.join().unwrap();
+}

@@ -8,6 +8,7 @@ and an actual host execution are different evidence; see the
 
 Read the relevant summary and follow its original sources:
 
+- [Design and resource audit after PR 1076](design-2026-10-22-post1076.md) - Review admission, borrowed history rendering and mutation source work; #1077–#1079 and implementation follow-up in PR #1080.
 - [Design and resource audit after PR 1069](design-2026-10-22-post1069.md) - Original manifest read budgets, first-store publication and rejected type/state changes; #1070–#1071.
 - [Design and resource audit after PR 1064](design-2026-10-22-post1064.md) - Source scope, finite reads, Windows state and evidence navigation; #1065–#1068 and implementation follow-up.
 - [Design and resource audit after PR 1059](design-2026-10-22-post1059.md) - Historical findings, rejected state simplifications and implemented #1060–#1063 follow-ups.
