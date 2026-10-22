@@ -1070,6 +1070,12 @@ ten paths, and followed by the number of additional paths omitted. Control
 characters in paths are escaped. Earlier discovery or read errors retain their
 own diagnostic rather than being classified as record differences.
 
+Dry-run validates the saved plan and selected candidates without copying the
+workspace. Fingerprint copy membership uses path selection rather than reading
+every unrelated copied asset; with no fingerprint inputs that walk is skipped.
+Copy-content read or length-change errors may therefore appear during actual
+preflight, and a successful preview does not certify all copied asset bodies.
+
 The [preview schema](json-schema/verify-preview.schema.json) is independent
 of run reports: `kind` is `verify_preview` and `schema_version` is 2. JSON and
 JSONL each contain one object; `--format human` prints metadata and candidate rows.

@@ -5,6 +5,16 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1082-read
+  resource: ../../../crates/hoimin-cli/src/workspace/root.rs
+  revision: 6ad22aaa87c6298f8c84e3a2c00cbd016cf0b7db
+  working_tree: modified
+  sha256: 1abc6da2fa561f81c26e1a7c36403b4e50a2207db617f63cb217cd3ea32909d7
+- id: issue-1082-finite
+  resource: ../../../crates/hoimin-cli/src/finite_file.rs
+  revision: 6ad22aaa87c6298f8c84e3a2c00cbd016cf0b7db
+  working_tree: modified
+  sha256: 7a0b021747f3f1160ccc8a5f06d992cbcb13961fe36cb35e21d157b70b7c20e8
 - id: issue-1079-source
   resource: ../../../crates/hoimin-cli/src/workspace/mutation.rs
   revision: 12b34294ba2f61cd6b26425695b9ff08ed289875
@@ -1378,3 +1388,19 @@ Contract builds retain an independent original body for prefix/suffix evidence;
 normal builds do not retain a second whole mutated body.[^issue-1079-source]
 
 [^issue-1079-source]: [Validated mutation application](../../../crates/hoimin-cli/src/workspace/mutation.rs).
+
+## Finite worker mutation input (Issue #1082)
+
+The opened mutation descriptor must match its manifest's expected size before
+body allocation. A borrowed SnapshotReader consumes that length plus at most one
+growth-probe byte and rejects shortening. Typed length-change failures become
+mutation hash mismatch; unrelated I/O and fallible reservation errors remain I/O.
+This happens before writable reopen, permissions or content changes. The normal
+one-buffer/one-hash path and independent contract evidence remain.[^issue-1082-read][^issue-1082-finite]
+
+This finite byte budget does not bound filesystem I/O time or promise a coherent
+snapshot under arbitrary concurrent in-place writes. No fixed cap is imposed on
+valid stable source files.[^issue-1082-finite]
+
+[^issue-1082-read]: [Mutation descriptor admission](../../../crates/hoimin-cli/src/workspace/root.rs).
+[^issue-1082-finite]: [Shared finite descriptor reader](../../../crates/hoimin-cli/src/finite_file.rs).

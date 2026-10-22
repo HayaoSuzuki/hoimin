@@ -353,9 +353,10 @@ fn validate_schema(connection: &Connection, project: &Utf8Path) -> Result<(), Re
 }
 
 fn validate_key(key: &ReviewKey, project: &Utf8Path) -> Result<(), ReviewError> {
-    let id = hoimin_core::stable_mutant_id(&hoimin_core::CandidateIdentity::from(&key.descriptor));
+    let valid_id =
+        hoimin_core::CandidateIdentityRef::from(&key.descriptor).matches_id(&key.candidate_id);
     if key.project != project
-        || id.as_str() != key.candidate_id
+        || !valid_id
         || !hoimin_core::normalized_relative_path(key.descriptor.path.as_str())
         || key.descriptor.schema_version != hoimin_core::CANDIDATE_SCHEMA_VERSION
     {

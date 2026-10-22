@@ -19,6 +19,19 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Copy membership, finite mutation reads and borrowed identity (#1081–#1083)
+
+Verify preparation and dry-run determine fingerprint copy membership without
+reading/hash-checking every copied asset. Empty fingerprint inputs skip that
+walk. Actual copying/preflight retains independent snapshot and fingerprint
+checks; incidental content failures can surface there instead of during
+preparation. Dry-run does not validate every copied asset body.
+
+Mutation reads reject descriptor-size mismatch before allocation and use a
+finite expected-length read plus a growth probe before permissions or writes.
+Review identity checks use existing borrowed fields. There is no new fixed
+source limit, option, format, compatibility adapter or migration.
+
 ## Review journal admission and source ownership (#1077–#1079)
 
 Review rejects SQLite WAL/non-DELETE headers before ordinary SQLite access,

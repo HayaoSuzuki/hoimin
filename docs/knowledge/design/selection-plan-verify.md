@@ -5,6 +5,16 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1081-plan
+  resource: ../../../crates/hoimin-cli/src/plan.rs
+  revision: 6ad22aaa87c6298f8c84e3a2c00cbd016cf0b7db
+  working_tree: modified
+  sha256: 84c5774eacf043f9ddba81631484639af866a72cfcecac0cfc18719f780e61b9
+- id: issue-1081-membership
+  resource: ../../../crates/hoimin-cli/src/workspace/manifest.rs
+  revision: 6ad22aaa87c6298f8c84e3a2c00cbd016cf0b7db
+  working_tree: modified
+  sha256: b3e4071cec1c7f801d74a43381a5ab41e2ffefa87fc1dd96a31c0fbe4a770654
 - id: issue-1070-manifest
   resource: ../../../crates/hoimin-cli/src/workspace/manifest.rs
   revision: d45174b7d5b337e9792e2f9559c4c4adf81fa9ab
@@ -1327,3 +1337,21 @@ when adding a raw-file workspace consumer.[^issue-1070-tests]
 
 Implementation results and platform limits are recorded in the
 [Issues #1070–#1071 evidence](../../maintenance/2026-10-22-issues-1070-1071/README.md).
+
+## Copy membership during verify preparation (Issue #1081)
+
+Prepare and preview resolve fingerprint copy membership without building a
+content-hashed copy manifest. The same selected-entry walker and capability
+admission are used; the membership result retains only requested matching paths.
+The shared walker may transiently retain skipped-symlink diagnostics. Empty fingerprint
+inputs skip this walk. Required saved source/fingerprint/candidate validation
+remains shared by execution and preview.[^issue-1081-plan][^issue-1081-membership]
+
+Actual preflight still builds an independent copied snapshot and checks
+fingerprint freshness/ABA. Incidental copy-content read/growth/shrink failures
+can surface at preflight instead of preparation; preview does not perform copying
+or attest all copy-file bodies were readable. Preparation output is not a cached
+snapshot to reuse during execution.[^issue-1081-plan]
+
+[^issue-1081-plan]: [Verify preparation](../../../crates/hoimin-cli/src/plan.rs).
+[^issue-1081-membership]: [Capability-relative copy membership](../../../crates/hoimin-cli/src/workspace/manifest.rs).
