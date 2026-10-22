@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{
-    CandidateDescriptor, CandidateValidationContext, FingerprintInputFile, MutationCandidate,
+    CandidateDescriptorRef, CandidateValidationContext, FingerprintInputFile, MutationCandidate,
     OutputConfig, PlanConfig, RunConfig, RunSelection, TargetSlice, VerificationSelection,
     VerificationTopPolicy, normalized_relative_path, validate_candidate_with_context,
 };
@@ -985,7 +985,7 @@ async fn validate_requested_candidates(
                 "candidate is not discoverable under the planned configuration: {candidate_id}"
             ))
         })?;
-        if CandidateDescriptor::from(*current) != CandidateDescriptor::from(*planned) {
+        if CandidateDescriptorRef::from(*current) != CandidateDescriptorRef::from(*planned) {
             return Err(PlanError::CandidateInvalid(format!(
                 "candidate descriptor differs for {candidate_id}"
             )));
@@ -1054,21 +1054,18 @@ async fn validate_requested_descriptors(
             let context = CandidateValidationContext::new(&source)
                 .map_err(|error| PlanError::CandidateInvalid(error.to_string()))?;
             for candidate in file_candidates {
-                let result = validate_candidate_with_context(
-                    &context,
-                    &CandidateDescriptor::from(candidate),
-                )
-                .map_err(|error| PlanError::CandidateInvalid(error.to_string()))
-                .and_then(|stable_id| {
-                    if stable_id.as_str() == candidate.id {
-                        Ok(())
-                    } else {
-                        Err(PlanError::CandidateInvalid(format!(
-                            "candidate stable id differs for {}",
-                            candidate.id
-                        )))
-                    }
-                });
+                let result = validate_candidate_with_context(&context, candidate)
+                    .map_err(|error| PlanError::CandidateInvalid(error.to_string()))
+                    .and_then(|stable_id| {
+                        if stable_id.as_str() == candidate.id {
+                            Ok(())
+                        } else {
+                            Err(PlanError::CandidateInvalid(format!(
+                                "candidate stable id differs for {}",
+                                candidate.id
+                            )))
+                        }
+                    });
                 results.insert(candidate.id.as_str(), result);
             }
             // The source and its borrowed index are released before reading another file.

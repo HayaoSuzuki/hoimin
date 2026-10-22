@@ -154,3 +154,68 @@ fn issue_1082_wrong_size_apply_rejects_before_allocating_the_body() {
         "wrong-size rejection allocated {peak} bytes"
     );
 }
+
+#[test]
+fn issue_1089_large_descriptor_apply_does_not_copy_metadata_bodies() {
+    let _window = ALLOCATION_WINDOW.lock().unwrap();
+    let mut observations = Vec::new();
+    for size in [4 * 1024, 16 * 1024, 64 * 1024] {
+        let project = tempfile::tempdir().unwrap();
+        let original = format!("'{}'", "o".repeat(size - 3));
+        let source = format!("{original}\n");
+        let replacement = format!("'{}'", "r".repeat(size - 3));
+        assert_eq!(source.len(), size);
+        std::fs::write(project.path().join("source.py"), &source).unwrap();
+        let root = Utf8Path::from_path(project.path()).unwrap();
+        let plan = WorkspacePlan::preflight(root, EffectId(1), 1, CopyOptions::default()).unwrap();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: plan.aggregate_bytes(),
+            processes: 1,
+        });
+        let grant = reserve_workspace_copy(&mut ledger, &plan.completed()).unwrap();
+        let mut worker = plan
+            .create_worker(&grant.create_worker(EffectId(2), 0).unwrap())
+            .unwrap();
+        let mut candidate = MutationCandidate {
+            id: String::new(),
+            sequence: 1,
+            path: "source.py".into(),
+            span: ByteSpan {
+                start: 0,
+                length: u64::try_from(original.len()).unwrap(),
+            },
+            original,
+            replacement,
+            operator: "string_literal_empty".into(),
+            line: 1,
+            column: 0,
+            symbol: None,
+            file_hash: blake3::hash(source.as_bytes()).to_hex().to_string(),
+        };
+        candidate.id = hoimin_core::CandidateIdentityRef::from(&candidate)
+            .stable_mutant_id()
+            .to_string();
+        heap_tracking::begin();
+        let result = worker.apply_mutation(&candidate);
+        let peak = heap_tracking::finish();
+        result.unwrap();
+        eprintln!("issue_1089 apply size={size} peak={peak}");
+        observations.push((size, peak));
+        assert_eq!(
+            std::fs::read_to_string(project.path().join("source.py")).unwrap(),
+            source
+        );
+        assert_eq!(
+            std::fs::read_to_string(worker.root().join("source.py")).unwrap(),
+            format!("{}\n", candidate.replacement)
+        );
+    }
+    let source_bodies = if cfg!(feature = "contracts") { 2 } else { 1 };
+    assert!(
+        observations
+            .iter()
+            .all(|(size, peak)| *peak < source_bodies * size + 32 * 1024),
+        "metadata copies exceed source evidence allowance: {observations:?}"
+    );
+}

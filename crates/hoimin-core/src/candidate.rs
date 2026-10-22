@@ -121,6 +121,72 @@ pub struct CandidateDescriptor {
     pub file_hash: String,
 }
 
+/// Complete mutation metadata borrowed for validation and comparison.
+///
+/// Equality includes the same fields and path semantics as `CandidateDescriptor`;
+/// assigned ID and discovery order are deliberately excluded. This view does
+/// not own source evidence or change the serialized descriptor used by stores.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CandidateDescriptorRef<'a> {
+    pub schema_version: u32,
+    pub path: &'a Utf8Path,
+    pub span: ByteSpan,
+    pub original: &'a str,
+    pub replacement: &'a str,
+    pub operator: &'a str,
+    pub line: u32,
+    pub column: u32,
+    pub symbol: Option<&'a str>,
+    pub file_hash: &'a str,
+}
+
+impl<'a> From<&'a CandidateDescriptor> for CandidateDescriptorRef<'a> {
+    fn from(candidate: &'a CandidateDescriptor) -> Self {
+        Self {
+            schema_version: candidate.schema_version,
+            path: &candidate.path,
+            span: candidate.span,
+            original: &candidate.original,
+            replacement: &candidate.replacement,
+            operator: &candidate.operator,
+            line: candidate.line,
+            column: candidate.column,
+            symbol: candidate.symbol.as_deref(),
+            file_hash: &candidate.file_hash,
+        }
+    }
+}
+
+impl<'a> From<&'a MutationCandidate> for CandidateDescriptorRef<'a> {
+    fn from(candidate: &'a MutationCandidate) -> Self {
+        Self {
+            schema_version: CANDIDATE_SCHEMA_VERSION,
+            path: &candidate.path,
+            span: candidate.span,
+            original: &candidate.original,
+            replacement: &candidate.replacement,
+            operator: &candidate.operator,
+            line: candidate.line,
+            column: candidate.column,
+            symbol: candidate.symbol.as_deref(),
+            file_hash: &candidate.file_hash,
+        }
+    }
+}
+
+impl<'a> From<CandidateDescriptorRef<'a>> for CandidateIdentityRef<'a> {
+    fn from(candidate: CandidateDescriptorRef<'a>) -> Self {
+        Self {
+            schema_version: candidate.schema_version,
+            file_hash: candidate.file_hash,
+            path: candidate.path,
+            span: candidate.span,
+            operator: candidate.operator,
+            replacement: candidate.replacement,
+        }
+    }
+}
+
 /// Projects mutation metadata for validation, excluding assigned ID and discovery order.
 impl From<&MutationCandidate> for CandidateDescriptor {
     fn from(candidate: &MutationCandidate) -> Self {
@@ -552,13 +618,17 @@ pub fn candidate_validation_scratch_bytes(candidate: &CandidateDescriptor) -> Op
 
 /// Validates a candidate using source facts shared by a batch from the same file.
 ///
+/// Accepts borrowed metadata from current candidates or stored descriptors;
+/// validation never requires an owned projection of their payload strings.
+///
 /// # Errors
 ///
 /// Returns [`CandidateValidationError`] when the candidate metadata, path, hash, span, source text, or reported location is invalid.
-pub fn validate_candidate_with_context(
+pub fn validate_candidate_with_context<'candidate>(
     context: &CandidateValidationContext<'_>,
-    candidate: &CandidateDescriptor,
+    candidate: impl Into<CandidateDescriptorRef<'candidate>>,
 ) -> Result<MutantId, CandidateValidationError> {
+    let candidate = candidate.into();
     if candidate.schema_version != CANDIDATE_SCHEMA_VERSION {
         return Err(CandidateValidationError::UnsupportedSchema);
     }
@@ -586,7 +656,7 @@ pub fn validate_candidate_with_context(
         .as_ref()
         .map_or_else(
             |_| Ok(std::borrow::Cow::Borrowed(candidate.original.as_bytes())),
-            |decoded| decoded.encoding().encode(&candidate.original),
+            |decoded| decoded.encoding().encode(candidate.original),
         )
         .map_err(|_| CandidateValidationError::OriginalMismatch)?;
     if context.source.get(start..end) != Some(original.as_ref()) {
@@ -606,7 +676,7 @@ pub fn validate_candidate_with_context(
         .ok_or(CandidateValidationError::OriginalMismatch)?;
     decoded
         .encoding()
-        .encode(&candidate.replacement)
+        .encode(candidate.replacement)
         .map_err(|error| CandidateValidationError::InvalidEncoding(error.to_string()))?;
     let (line, column) = context
         .source_index

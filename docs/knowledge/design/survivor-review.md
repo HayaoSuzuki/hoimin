@@ -5,6 +5,21 @@ description: 候補の同定、評価履歴、stale判定、実行結果へ影�
 status: draft
 catalog_revision: d46f13a43667323b8d0374d6c5409942f4c3c822
 sources:
+- id: issue-1089-core
+  resource: ../../../crates/hoimin-core/src/candidate.rs
+  revision: 5064140df8e8f24df42045664d72dbf887ef8372
+  working_tree: modified
+  sha256: ce80a074580637f18b9e9b62a3b161ea59dc4c30b36e94230f3d74966c1f1eb2
+- id: issue-1089-review
+  resource: ../../../crates/hoimin-cli/src/review/mod.rs
+  revision: 5064140df8e8f24df42045664d72dbf887ef8372
+  working_tree: modified
+  sha256: a1989068bd5a9e1d8c48f3eae9037635674f848f7bcb24c9b0dc457b04fcc8fc
+- id: issue-1089-input
+  resource: ../../../crates/hoimin-cli/src/review/input.rs
+  revision: 5064140df8e8f24df42045664d72dbf887ef8372
+  working_tree: modified
+  sha256: 249dcfb03394849dcaf5952377b9e02c929666893643c2717f15340b2b054f26
 - id: issue-1087-rows
   resource: ../../../crates/hoimin-cli/src/review/mod.rs
   revision: 11eb28d3ff43c441c3aabc78cd7fa6d7d0c72493
@@ -310,3 +325,28 @@ SQLite's C heap, RSS and end-to-end latency are outside that measurement.
 
 [^issue-1087-rows]: [Borrow current candidates and own stale descriptors](../../../crates/hoimin-cli/src/review/mod.rs).
 [^issue-1087-render]: [Candidate and history lifetimes in ReviewRow](../../../crates/hoimin-cli/src/review/render.rs).
+
+# Borrowed descriptor equality and source validation (Issue #1089)
+
+CandidateDescriptorRef compares the complete mutation metadata while borrowing
+strings from a current candidate or stored descriptor. Review's report/execution
+matching uses this view. It excludes assigned ID and sequence, and retains every
+other descriptor field and Utf8Path equality. Identity-only comparison would
+omit original/location/symbol; full MutationCandidate equality would include
+bookkeeping. Neither is an equivalent replacement.[^issue-1089-core][^issue-1089-review]
+
+Source-state validation passes the current candidate to the same core validator
+and compares the stable ID it returns, eliminating the second identity hash.
+Stale source, original/encoding/location errors and identity conflict keep their
+existing priority. Owned persisted keys, stale candidates and history retain
+their current lifetimes.[^issue-1089-input]
+
+The [implementation evidence](../../maintenance/2026-10-22-issue-1089/README.md)
+records allocation windows around actual execution comparison and warm source
+validation. It does not claim zero allocations for the entire review command.
+
+[^issue-1089-core]: [crates/hoimin-core/src/candidate.rs](../../../crates/hoimin-core/src/candidate.rs).
+
+[^issue-1089-review]: [crates/hoimin-cli/src/review/mod.rs](../../../crates/hoimin-cli/src/review/mod.rs).
+
+[^issue-1089-input]: [crates/hoimin-cli/src/review/input.rs](../../../crates/hoimin-cli/src/review/input.rs).

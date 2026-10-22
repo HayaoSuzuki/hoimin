@@ -1,7 +1,7 @@
 use std::io::{Seek, SeekFrom, Write};
 
 use hoimin_core::{
-    CandidateDescriptor, CandidateValidationContext, CandidateValidationError, MutationCandidate,
+    CandidateValidationContext, CandidateValidationError, MutationCandidate,
     validate_candidate_with_context,
 };
 
@@ -28,32 +28,32 @@ impl WorkerWorkspace {
             expected.blake3,
             CandidateValidationContext::new,
         )?;
-        let stable_id =
-            validate_candidate_with_context(&validation, &CandidateDescriptor::from(candidate))
-                .map_err(|error| match error {
-                    CandidateValidationError::FileHashMismatch => {
-                        WorkspaceError::MutationHashMismatch {
-                            path: candidate.path.clone(),
-                        }
+        let stable_id = validate_candidate_with_context(&validation, candidate).map_err(
+            |error| match error {
+                CandidateValidationError::FileHashMismatch => {
+                    WorkspaceError::MutationHashMismatch {
+                        path: candidate.path.clone(),
                     }
-                    CandidateValidationError::OriginalMismatch => {
-                        WorkspaceError::MutationOriginalMismatch {
-                            path: candidate.path.clone(),
-                        }
+                }
+                CandidateValidationError::OriginalMismatch => {
+                    WorkspaceError::MutationOriginalMismatch {
+                        path: candidate.path.clone(),
                     }
-                    CandidateValidationError::SourceTooLarge
-                    | CandidateValidationError::UnsupportedSchema
-                    | CandidateValidationError::InvalidPath
-                    | CandidateValidationError::SpanOutOfBounds
-                    | CandidateValidationError::LocationMismatch
-                    | CandidateValidationError::InvalidEncoding(_)
-                    | CandidateValidationError::InvalidUtf8
-                    | CandidateValidationError::InvalidMutation => {
-                        WorkspaceError::MutationSpanInvalid {
-                            path: candidate.path.clone(),
-                        }
+                }
+                CandidateValidationError::SourceTooLarge
+                | CandidateValidationError::UnsupportedSchema
+                | CandidateValidationError::InvalidPath
+                | CandidateValidationError::SpanOutOfBounds
+                | CandidateValidationError::LocationMismatch
+                | CandidateValidationError::InvalidEncoding(_)
+                | CandidateValidationError::InvalidUtf8
+                | CandidateValidationError::InvalidMutation => {
+                    WorkspaceError::MutationSpanInvalid {
+                        path: candidate.path.clone(),
                     }
-                })?;
+                }
+            },
+        )?;
         if stable_id.as_str() != candidate.id {
             return Err(WorkspaceError::MutationSpanInvalid {
                 path: candidate.path.clone(),

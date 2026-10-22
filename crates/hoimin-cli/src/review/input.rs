@@ -4,7 +4,7 @@ use std::path::Path;
 
 use camino::Utf8Path;
 use hoimin_core::{
-    CandidateDescriptor, CandidateValidationContext, MutationCandidate,
+    CandidateDescriptor, CandidateDescriptorRef, CandidateValidationContext, MutationCandidate,
     validate_candidate_with_context,
 };
 
@@ -55,11 +55,11 @@ pub(crate) fn load_report(
         ));
     }
     for mutant in &report.mutants {
-        let descriptor = CandidateDescriptor::from(&mutant.candidate);
+        let descriptor = CandidateDescriptorRef::from(&mutant.candidate);
         #[cfg(test)]
         super::JOIN_WORK.with_borrow_mut(|work| work.plan_probes += 1);
         if let Some(planned) = planned.get(mutant.candidate.id.as_str())
-            && CandidateDescriptor::from(*planned) != descriptor
+            && CandidateDescriptorRef::from(*planned) != descriptor
         {
             return Err(ReviewError::Invalid(
                 "report candidate descriptor differs from plan".into(),
@@ -189,10 +189,9 @@ fn validate_source_state(
     if context.file_hash() != candidate.file_hash {
         return Ok(SourceState::Stale);
     }
-    let descriptor = CandidateDescriptor::from(candidate);
-    validate_candidate_with_context(context, &descriptor)
+    let stable_id = validate_candidate_with_context(context, candidate)
         .map_err(|error| ReviewError::Invalid(error.to_string()))?;
-    if !hoimin_core::CandidateIdentityRef::from(candidate).matches_id(&candidate.id) {
+    if stable_id.as_str() != candidate.id {
         return Err(ReviewError::Invalid("candidate identity conflict".into()));
     }
     Ok(SourceState::Fresh)
@@ -293,4 +292,69 @@ fn file_identity(file: &File) -> std::io::Result<(u64, u64)> {
         u64::from(info.dwVolumeSerialNumber),
         (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
     ))
+}
+
+#[cfg(test)]
+mod descriptor_allocation_tests {
+    use super::*;
+    use crate::review::store_scaling_tests::{issue_1089_candidates, measure};
+
+    #[test]
+    fn issue_1089_source_validation_preserves_stale_and_error_precedence() {
+        let (source, mut candidates) = issue_1089_candidates(1, 32);
+        let context = CandidateValidationContext::new(&source).unwrap();
+        let candidate = &mut candidates[0];
+        candidate.id = "invalid assigned identity".into();
+        assert!(
+            validate_source_state(&context, candidate)
+                .unwrap_err()
+                .to_string()
+                .contains("identity conflict")
+        );
+        candidate.original = "different original".into();
+        assert!(
+            validate_source_state(&context, candidate)
+                .unwrap_err()
+                .to_string()
+                .contains("original text does not match")
+        );
+        candidate.file_hash.clear();
+        assert_eq!(
+            validate_source_state(&context, candidate).unwrap(),
+            SourceState::Stale
+        );
+    }
+
+    #[test]
+    fn issue_1089_source_validation_does_not_copy_descriptor_payloads() {
+        let mut observations = Vec::new();
+        for count in [16, 64] {
+            for payload in [4 * 1024, 16 * 1024, 64 * 1024] {
+                let (source, candidates) = issue_1089_candidates(count, payload);
+                let context = CandidateValidationContext::new(&source).unwrap();
+                // Source decoding/index creation is independent work, outside the comparison window.
+                assert_eq!(
+                    validate_source_state(&context, &candidates[0]).unwrap(),
+                    SourceState::Fresh
+                );
+                let ((), measurement) = measure(|| {
+                    for candidate in &candidates {
+                        assert_eq!(
+                            validate_source_state(&context, candidate).unwrap(),
+                            SourceState::Fresh
+                        );
+                    }
+                });
+                eprintln!(
+                    "issue_1089 source count={count} payload={payload} peak={}",
+                    measurement.peak_rust_bytes
+                );
+                observations.push((count, payload, measurement.peak_rust_bytes));
+            }
+        }
+        assert!(
+            observations.iter().all(|(_, _, peak)| *peak < 4096),
+            "source validation copied payloads: {observations:?}"
+        );
+    }
 }

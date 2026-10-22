@@ -1,0 +1,124 @@
+{
+  "unit": "measuring-thread peak requested Rust heap bytes; excludes SQLite C heap/RSS",
+  "observations": [
+    {
+      "phase": "execution",
+      "candidates": 16,
+      "original_bytes_each": 4096,
+      "replacement_bytes_each": 4096,
+      "before_peak_rust_bytes": 16588,
+      "after_peak_rust_bytes": 0
+    },
+    {
+      "phase": "source",
+      "candidates": 16,
+      "original_bytes_each": 4096,
+      "replacement_bytes_each": 4096,
+      "before_peak_rust_bytes": 8371,
+      "after_peak_rust_bytes": 77
+    },
+    {
+      "phase": "execution",
+      "candidates": 16,
+      "original_bytes_each": 16384,
+      "replacement_bytes_each": 16384,
+      "before_peak_rust_bytes": 65740,
+      "after_peak_rust_bytes": 0
+    },
+    {
+      "phase": "source",
+      "candidates": 16,
+      "original_bytes_each": 16384,
+      "replacement_bytes_each": 16384,
+      "before_peak_rust_bytes": 32947,
+      "after_peak_rust_bytes": 77
+    },
+    {
+      "phase": "execution",
+      "candidates": 16,
+      "original_bytes_each": 65536,
+      "replacement_bytes_each": 65536,
+      "before_peak_rust_bytes": 262348,
+      "after_peak_rust_bytes": 0
+    },
+    {
+      "phase": "execution",
+      "candidates": 64,
+      "original_bytes_each": 4096,
+      "replacement_bytes_each": 4096,
+      "before_peak_rust_bytes": 16588,
+      "after_peak_rust_bytes": 0
+    },
+    {
+      "phase": "execution",
+      "candidates": 64,
+      "original_bytes_each": 16384,
+      "replacement_bytes_each": 16384,
+      "before_peak_rust_bytes": 65740,
+      "after_peak_rust_bytes": 0
+    },
+    {
+      "phase": "source",
+      "candidates": 16,
+      "original_bytes_each": 65536,
+      "replacement_bytes_each": 65536,
+      "before_peak_rust_bytes": 131251,
+      "after_peak_rust_bytes": 77
+    },
+    {
+      "phase": "source",
+      "candidates": 64,
+      "original_bytes_each": 4096,
+      "replacement_bytes_each": 4096,
+      "before_peak_rust_bytes": 8371,
+      "after_peak_rust_bytes": 77
+    },
+    {
+      "phase": "execution",
+      "candidates": 64,
+      "original_bytes_each": 65536,
+      "replacement_bytes_each": 65536,
+      "before_peak_rust_bytes": 262348,
+      "after_peak_rust_bytes": 0
+    },
+    {
+      "phase": "source",
+      "candidates": 64,
+      "original_bytes_each": 16384,
+      "replacement_bytes_each": 16384,
+      "before_peak_rust_bytes": 32947,
+      "after_peak_rust_bytes": 77
+    },
+    {
+      "phase": "source",
+      "candidates": 64,
+      "original_bytes_each": 65536,
+      "replacement_bytes_each": 65536,
+      "before_peak_rust_bytes": 131251,
+      "after_peak_rust_bytes": 77
+    }
+  ],
+  "worker": {
+    "unit": "global test allocator peak requested Rust heap bytes; serialized mutation windows, excludes fixture setup/RSS",
+    "observations": [
+      {
+        "source_bytes": 4096,
+        "restored_owned_projection_normal_peak_rust_bytes": 12535,
+        "fixed_normal_peak_rust_bytes": 4252,
+        "fixed_contracts_peak_rust_bytes": 8259
+      },
+      {
+        "source_bytes": 16384,
+        "restored_owned_projection_normal_peak_rust_bytes": 49399,
+        "fixed_normal_peak_rust_bytes": 16540,
+        "fixed_contracts_peak_rust_bytes": 32835
+      },
+      {
+        "source_bytes": 65536,
+        "restored_owned_projection_normal_peak_rust_bytes": 196855,
+        "fixed_normal_peak_rust_bytes": 65692,
+        "fixed_contracts_peak_rust_bytes": 131139
+      }
+    ]
+  }
+}
