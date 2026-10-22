@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::io::Write;
 
@@ -21,7 +22,7 @@ pub(super) struct ReviewDocument<'a> {
 
 #[derive(Serialize)]
 pub(super) struct ReviewRow<'a> {
-    pub candidate: MutationCandidate,
+    pub candidate: Cow<'a, MutationCandidate>,
     pub execution: ReviewExecution,
     pub review: Option<&'a ReviewEvent>,
     pub applicability: Applicability,

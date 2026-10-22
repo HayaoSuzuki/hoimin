@@ -455,7 +455,7 @@ pub fn analyze_source_with_exceptions(
     let line_index = LineIndex::new(source);
     let mut token_candidates =
         CandidatePrefix::new(request.max_candidates, request.payload.clone());
-    let tokens: Vec<_> = parsed.tokens().iter().collect();
+    let tokens: &[ruff_python_ast::token::Token] = parsed.tokens();
     for (index, token) in tokens.iter().enumerate() {
         if cancelled() {
             return Err(AnalysisError::Cancelled);
@@ -479,11 +479,9 @@ pub fn analyze_source_with_exceptions(
         let previous = tokens[..index]
             .iter()
             .rev()
-            .copied()
             .find(|token| !token.kind().is_trivia());
         let next = tokens[index + 1..]
             .iter()
-            .copied()
             .find(|token| !token.kind().is_trivia());
         let trivia_before_next = tokens
             .get(index + 1)

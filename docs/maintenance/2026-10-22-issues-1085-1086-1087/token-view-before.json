@@ -1,0 +1,224 @@
+[
+  {
+    "candidates": [
+      {
+        "column": 8,
+        "id": "m1_57eaf0959166d8583aa36ae86602d6e2b0e1754c289ba04b6c35fd72a02e40f4",
+        "line": 2,
+        "operator": "integer_literal_neighbor",
+        "original": "-1",
+        "path": "subject.py",
+        "replacement": "(-2)",
+        "span": {
+          "length": 2,
+          "start": 35
+        },
+        "symbol": "selected"
+      },
+      {
+        "column": 8,
+        "id": "m1_0661a16a6cf0fad4db5885af7cfdea33f9c30661284ab1ab37c34680f42c44e7",
+        "line": 2,
+        "operator": "integer_literal_neighbor",
+        "original": "-1",
+        "path": "subject.py",
+        "replacement": "(0)",
+        "span": {
+          "length": 2,
+          "start": 35
+        },
+        "symbol": "selected"
+      },
+      {
+        "column": 8,
+        "id": "m1_1ded67bb5700fb54a4a5198b8fcee6f5646090746d18628fa1d2cdb863913bfd",
+        "line": 2,
+        "operator": "unary_sign",
+        "original": "-",
+        "path": "subject.py",
+        "replacement": "+",
+        "span": {
+          "length": 1,
+          "start": 35
+        },
+        "symbol": "selected"
+      },
+      {
+        "column": 11,
+        "id": "m1_b6c4a26da5a0af2165a16c3e47eae741df85f91417a30fca3a6eba40edc9b52a",
+        "line": 2,
+        "operator": "binary_add_sub",
+        "original": "+",
+        "path": "subject.py",
+        "replacement": "-",
+        "span": {
+          "length": 1,
+          "start": 38
+        },
+        "symbol": "selected"
+      }
+    ],
+    "diagnostics": [
+      {
+        "code": "candidate_limit",
+        "column": null,
+        "line": null,
+        "message": null,
+        "path": "subject.py"
+      }
+    ],
+    "peak": 2880,
+    "pointer_bytes": 8,
+    "source_bytes": 972,
+    "tokens": 360,
+    "truncated": true
+  },
+  {
+    "candidates": [
+      {
+        "column": 8,
+        "id": "m1_ef5638cf5b270862dd9ff3a0a985b222a2d1d033ac18641e9f16e13bcb859f6e",
+        "line": 2,
+        "operator": "integer_literal_neighbor",
+        "original": "-1",
+        "path": "subject.py",
+        "replacement": "(-2)",
+        "span": {
+          "length": 2,
+          "start": 35
+        },
+        "symbol": "selected"
+      },
+      {
+        "column": 8,
+        "id": "m1_0af335bba7e5acc367a15eb50b2918404a6094fb750ac5145df4e3dc50e743e9",
+        "line": 2,
+        "operator": "integer_literal_neighbor",
+        "original": "-1",
+        "path": "subject.py",
+        "replacement": "(0)",
+        "span": {
+          "length": 2,
+          "start": 35
+        },
+        "symbol": "selected"
+      },
+      {
+        "column": 8,
+        "id": "m1_be5f2a01688d65170884f50646c8b3cde5afc3df06764523a9f0583e936749ec",
+        "line": 2,
+        "operator": "unary_sign",
+        "original": "-",
+        "path": "subject.py",
+        "replacement": "+",
+        "span": {
+          "length": 1,
+          "start": 35
+        },
+        "symbol": "selected"
+      },
+      {
+        "column": 11,
+        "id": "m1_eddd1f210228113e00014ef812b8229ac70ec59bcf12d4182791247c97177c6f",
+        "line": 2,
+        "operator": "binary_add_sub",
+        "original": "+",
+        "path": "subject.py",
+        "replacement": "-",
+        "span": {
+          "length": 1,
+          "start": 38
+        },
+        "symbol": "selected"
+      }
+    ],
+    "diagnostics": [
+      {
+        "code": "candidate_limit",
+        "column": null,
+        "line": null,
+        "message": null,
+        "path": "subject.py"
+      }
+    ],
+    "peak": 12000,
+    "pointer_bytes": 8,
+    "source_bytes": 4050,
+    "tokens": 1500,
+    "truncated": true
+  },
+  {
+    "candidates": [
+      {
+        "column": 8,
+        "id": "m1_86ecfa488ac08176913720a01b7bbf24e28264c5663a5e522a6f3c936721d1cb",
+        "line": 2,
+        "operator": "integer_literal_neighbor",
+        "original": "-1",
+        "path": "subject.py",
+        "replacement": "(-2)",
+        "span": {
+          "length": 2,
+          "start": 35
+        },
+        "symbol": "selected"
+      },
+      {
+        "column": 8,
+        "id": "m1_b7224d3d14efc412e378eb0ae1c39627f5bfb6b09f474adc9315251dd6fef87e",
+        "line": 2,
+        "operator": "integer_literal_neighbor",
+        "original": "-1",
+        "path": "subject.py",
+        "replacement": "(0)",
+        "span": {
+          "length": 2,
+          "start": 35
+        },
+        "symbol": "selected"
+      },
+      {
+        "column": 8,
+        "id": "m1_cea0ec5340a39cdd57cb15d04bab051770a5779c2e935ea5e1cd839238d3b273",
+        "line": 2,
+        "operator": "unary_sign",
+        "original": "-",
+        "path": "subject.py",
+        "replacement": "+",
+        "span": {
+          "length": 1,
+          "start": 35
+        },
+        "symbol": "selected"
+      },
+      {
+        "column": 11,
+        "id": "m1_f6c4ca6ead6e1e915df734251d2713dd92c870ccc3d88ee38f78b01cc1622586",
+        "line": 2,
+        "operator": "binary_add_sub",
+        "original": "+",
+        "path": "subject.py",
+        "replacement": "-",
+        "span": {
+          "length": 1,
+          "start": 38
+        },
+        "symbol": "selected"
+      }
+    ],
+    "diagnostics": [
+      {
+        "code": "candidate_limit",
+        "column": null,
+        "line": null,
+        "message": null,
+        "path": "subject.py"
+      }
+    ],
+    "peak": 48480,
+    "pointer_bytes": 8,
+    "source_bytes": 16362,
+    "tokens": 6060,
+    "truncated": true
+  }
+]

@@ -5,6 +5,16 @@ description: 候補の同定、評価履歴、stale判定、実行結果へ影�
 status: draft
 catalog_revision: d46f13a43667323b8d0374d6c5409942f4c3c822
 sources:
+- id: issue-1087-rows
+  resource: ../../../crates/hoimin-cli/src/review/mod.rs
+  revision: 11eb28d3ff43c441c3aabc78cd7fa6d7d0c72493
+  working_tree: modified
+  sha256: bcf44365e9d8cab492b07d57c6b2529d0b3699e00887282f114e80e3a011e1b6
+- id: issue-1087-render
+  resource: ../../../crates/hoimin-cli/src/review/render.rs
+  revision: 11eb28d3ff43c441c3aabc78cd7fa6d7d0c72493
+  working_tree: modified
+  sha256: eb160caac884aa692371f93705aaea4c0b045db7731aa2f1bd711565ec3998c8
 - id: issues-1050-input
   resource: ../../../crates/hoimin-cli/src/review/input.rs
   revision: 5265aa2cc9f36b6b98ded50c6823039d8999b665
@@ -282,3 +292,21 @@ corruption detection and retention when changing these readers.[^issues-1050-sto
 [^issues-1050-store]: [Global validation and selected retention](../../../crates/hoimin-cli/src/review/store.rs).
 [^issues-1050-model]: [Shared revision rules and owned append](../../../crates/hoimin-cli/src/review/model.rs).
 [^issues-1050-store-tests]: [Query, heap and corruption regressions](../../../crates/hoimin-cli/src/review/store_scaling_tests.rs).
+
+# Candidate ownership during rendering (Issue #1087)
+
+Private ReviewRow uses Cow for its candidate. Current rows borrow descriptors
+from the loaded plan, which remains alive through synchronous rendering. Stale
+rows own descriptors reconstructed from stored keys, including sequence zero,
+and can outlive the temporary reconstruction. Both continue borrowing history
+from the snapshot. This changes internal ownership without changing serialized
+candidate fields, human output, stale matching or persisted keys.
+[^issue-1087-rows][^issue-1087-render]
+
+The [implementation evidence](../../maintenance/2026-10-22-issues-1085-1086-1087/README.md)
+measures live Rust allocations at the public JSON command's first actual write,
+when a decoder peak would no longer obscure a second retained candidate copy.
+SQLite's C heap, RSS and end-to-end latency are outside that measurement.
+
+[^issue-1087-rows]: [Borrow current candidates and own stale descriptors](../../../crates/hoimin-cli/src/review/mod.rs).
+[^issue-1087-render]: [Candidate and history lifetimes in ReviewRow](../../../crates/hoimin-cli/src/review/render.rs).

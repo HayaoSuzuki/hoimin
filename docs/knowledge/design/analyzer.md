@@ -5,6 +5,11 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1086-tokens
+  resource: ../../../crates/hoimin-python/src/analyzer/rust.rs
+  revision: 11eb28d3ff43c441c3aabc78cd7fa6d7d0c72493
+  working_tree: modified
+  sha256: 1ee0e54693881a76b0076c8ba8868952f2f46baf98ba8328740c37405183698b
 - id: issue-1074-project
   resource: ../../../crates/hoimin-cli/src/analyzer/exception_project.rs
   revision: 03c7e00fc2087fa87c3c0ee9ab9f70c766fc6956
@@ -1698,3 +1703,18 @@ fingerprint エラーが先の解析エラーに隠れない。prepared origin �
 
 小さい実入力での allocation 観測、回帰試験と測定範囲は
 [実装記録](../../maintenance/2026-10-22-issues-1073-1074-1075/README.md)に記す。
+
+# Borrowed token storage (Issue #1086)
+
+Token candidate discovery borrows the parser's contiguous token slice. Previous
+and next significant-token searches retain their order and return references to
+the same parser-owned tokens. There is no second Vec of references proportional
+to the full token count. The parsed module remains alive through discovery.
+Candidate limits, trivia handling, diagnostics and cancellation checks retain
+their existing responsibilities.[^issue-1086-tokens]
+
+Temporary instrumentation of the actual token-view acquisition, candidate/output
+comparison and its limits are recorded in the
+[implementation evidence](../../maintenance/2026-10-22-issues-1085-1086-1087/README.md).
+
+[^issue-1086-tokens]: [Token discovery over parser storage](../../../crates/hoimin-python/src/analyzer/rust.rs).

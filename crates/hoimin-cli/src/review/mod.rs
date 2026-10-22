@@ -3,6 +3,7 @@ pub mod model;
 mod render;
 mod store;
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use hoimin_core::CandidateDescriptor;
@@ -130,7 +131,7 @@ pub fn run(args: &ReviewArgs, stdout: &mut dyn std::io::Write) -> Result<i32, Re
             }
             let execution = execution(candidate, reported.as_ref())?;
             candidates.push(ReviewRow {
-                candidate: candidate.clone(),
+                candidate: Cow::Borrowed(candidate),
                 execution,
                 review: (applicable == Applicability::Current)
                     .then(|| history.last())
@@ -302,7 +303,7 @@ fn stale_rows<'a>(
         };
         stale_candidates.push(ReviewRow {
             execution: execution(&candidate, report)?,
-            candidate,
+            candidate: Cow::Owned(candidate),
             review: None,
             applicability: Applicability::Stale,
             history: &state.history,

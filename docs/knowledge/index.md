@@ -76,6 +76,7 @@ recorded revisions against the implementation you are changing:
 Treat these as evidence at their recorded revisions, inputs and environments,
 not a claim that every current host or commit passed the same checks:
 
+- [Design and resource audit after PR 1084](audits/design-2026-10-22-post1084.md) - Reproduced session hardlink source modification, borrowed tokens and review candidates; #1085–#1087, audit included with implementation.
 - [Design and resource audit after PR 1080](audits/design-2026-10-22-post1080.md) - Verify membership work, finite mutation reads and borrowed identity; #1081–#1083 and implementation follow-up.
 - [Design and resource audit after PR 1076](audits/design-2026-10-22-post1076.md) - Review admission, borrowed history rendering and mutation source work; #1077–#1079 and implementation follow-up in PR #1080.
 - [Design and resource audit after PR 1069](audits/design-2026-10-22-post1069.md) - Original manifest read budgets, first-store publication and rejected type/state changes; #1070–#1071 and implementation follow-up.

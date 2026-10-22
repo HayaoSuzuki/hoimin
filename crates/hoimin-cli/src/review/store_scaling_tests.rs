@@ -1,5 +1,6 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
+use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
 use super::model::*;
@@ -687,4 +688,175 @@ fn assert_identity_list_output(
     let human = String::from_utf8(bytes).unwrap();
     assert!(human.contains(&candidate.id));
     assert!(human.contains(candidate.path.as_str()));
+}
+
+// Observe the actual public command's render phase. Unlike a Vec output sink,
+// this writer retains no JSON; the decoder's input and source contexts have
+// already been dropped before serde_json issues its first write.
+#[derive(Default)]
+struct Issue1087RenderWriter {
+    first_write_live_bytes: Option<i128>,
+    bytes: usize,
+}
+
+impl std::io::Write for Issue1087RenderWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if self.first_write_live_bytes.is_none() {
+            self.first_write_live_bytes =
+                ALLOCATIONS.with(|counter| counter.get().map(|(live, _)| live));
+        }
+        self.bytes += bytes.len();
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn issue_1087_current_candidate_payloads_are_retained_once_at_first_json_write() {
+    let (directory, plan_path) = super::tests::plan_fixture().await;
+    let mut manifest = crate::plan::read_for_review(&plan_path).unwrap().manifest;
+    let template = manifest.candidates[0].clone();
+    for count in [16, 64] {
+        let mut measurements = Vec::new();
+        for payload in [4 * 1024, 16 * 1024, 64 * 1024] {
+            manifest.candidates = (0..count)
+                .map(|index| {
+                    let mut row = template.clone();
+                    // A valid Python expression, with distinct equal-size payloads.
+                    row.candidate.replacement = format!("'{index:04}{}'", "r".repeat(payload - 6));
+                    assert_eq!(row.replacement.len(), payload);
+                    row.candidate.sequence = u64::try_from(index + 1).unwrap();
+                    row.candidate.id = hoimin_core::CandidateIdentityRef::from(&row.candidate)
+                        .stable_mutant_id()
+                        .to_string();
+                    row
+                })
+                .collect();
+            // All preceding ranking keys are identical; stable ID breaks ties.
+            manifest
+                .candidates
+                .sort_by(|left, right| left.id.cmp(&right.id));
+            for (index, row) in manifest.candidates.iter_mut().enumerate() {
+                row.rank = index + 1;
+            }
+            let encoded = serde_json::to_vec(&manifest).unwrap();
+            assert!(encoded.len() < 8 * 1024 * 1024);
+            std::fs::write(&plan_path, encoded).unwrap();
+            let checked = super::input::load_plan(&plan_path).unwrap();
+            assert!(
+                super::input::source_states(
+                    &checked.project,
+                    &checked
+                        .manifest
+                        .candidates
+                        .iter()
+                        .map(|row| &row.candidate)
+                        .collect::<Vec<_>>()
+                )
+                .into_iter()
+                .all(|state| state.unwrap() == SourceState::Fresh)
+            );
+            let project = checked.project.clone();
+            drop(checked);
+            let crate::cli::ParsedCommand::Review(args) = crate::cli::parse_from([
+                "hoimin",
+                "review",
+                "list",
+                plan_path.to_str().unwrap(),
+                "--store",
+                directory.path().join("absent.sqlite3").to_str().unwrap(),
+                "--format",
+                "json",
+            ])
+            .unwrap() else {
+                panic!("review list")
+            };
+            let mut writer = Issue1087RenderWriter::default();
+            let (code, _) = measure(|| super::run(&args, &mut writer).unwrap());
+            assert_eq!(code, 0);
+            assert!(writer.bytes >= count * payload);
+            let live = writer
+                .first_write_live_bytes
+                .expect("actual JSON write observed");
+            assert!(
+                live >= (count * payload) as i128,
+                "the loaded plan must retain its payloads"
+            );
+            eprintln!("issue_1087 count={count} replacement_bytes={payload} render_live={live}");
+            measurements.push((payload, live));
+            // Full content and ordering are checked with allocation tracking off.
+            assert_issue_1087_output(args, &manifest, &project);
+        }
+        for pair in measurements.windows(2) {
+            let payload_growth = count * (pair[1].0 - pair[0].0);
+            let live_growth = pair[1].1 - pair[0].1;
+            // The plan needs one payload population. Fixed-size row/index metadata
+            // and allocator capacity receive 128 KiB; a second population fails.
+            assert!(
+                live_growth <= payload_growth as i128 + 128 * 1024,
+                "count={count}: live_growth={live_growth}, single_population_growth={payload_growth}; {measurements:?}"
+            );
+        }
+    }
+}
+
+fn assert_issue_1087_output(
+    mut args: crate::cli::ReviewArgs,
+    manifest: &crate::plan::PlanManifest,
+    project: &camino::Utf8Path,
+) {
+    let mut bytes = Vec::new();
+    assert_eq!(super::run(&args, &mut bytes).unwrap(), 0);
+    let rows: Vec<_> = manifest
+        .candidates
+        .iter()
+        .map(|row| {
+            serde_json::json!({
+                "candidate": row.candidate,
+                "execution": {"state": "not_loaded"},
+                "review": null,
+                "applicability": "current",
+                "history": [],
+            })
+        })
+        .collect();
+    let operator = &manifest.candidates[0].operator;
+    let count = manifest.candidates.len();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&bytes).unwrap(),
+        serde_json::json!({
+            "schema_version": 2,
+            "command": "list",
+            "project": project,
+            "candidates": rows,
+            "stale_candidates": [],
+            "operators": [{"operator": operator, "total": count, "reviewed": 0,
+                "unreviewed": count, "stale": 0, "source_unavailable": 0, "assessments": {}}],
+        })
+    );
+    let crate::cli::ReviewArgs::List(list) = &mut args else {
+        panic!("list")
+    };
+    list.common.format = crate::cli::ReviewOutputFormat::Text;
+    bytes.clear();
+    assert_eq!(super::run(&args, &mut bytes).unwrap(), 0);
+    let mut expected =
+        String::from("Human assessments (execution outcomes and mutation scores are unchanged)\n");
+    for row in &manifest.candidates {
+        write!(
+            expected,
+            "candidate {:?} {:?}:{} unreviewed Current\n  execution: not_loaded\n",
+            row.id,
+            row.path.as_str(),
+            row.line,
+        )
+        .unwrap();
+    }
+    writeln!(expected,
+        "operator {operator:?}: total {count}, reviewed 0, unreviewed {count}, stale 0, source_unavailable 0, assessments {{}}"
+    ).unwrap();
+    assert_eq!(String::from_utf8(bytes).unwrap(), expected);
 }

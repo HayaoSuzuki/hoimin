@@ -257,16 +257,7 @@ impl MutationFile {
 }
 
 fn reject_shared_mutation_target(file: &File, path: &Utf8Path) -> Result<(), WorkspaceError> {
-    #[cfg(unix)]
-    let links = {
-        use std::os::unix::fs::MetadataExt;
-
-        file.metadata()
-            .map_err(|error| WorkspaceError::io("inspect mutation target links", path, error))?
-            .nlink()
-    };
-    #[cfg(windows)]
-    let links = windows::file_link_count(file)
+    let links = crate::file_links::file_link_count(file)
         .map_err(|error| WorkspaceError::io("inspect mutation target links", path, error))?;
 
     if links > 1 {

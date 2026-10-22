@@ -19,6 +19,18 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Session hardlinks and borrowed discovery/rendering (#1085–#1087)
+
+Existing session DBs with multiple hard links are now rejected before file-backed
+SQLite access or ownership lock creation. This includes current sessions opened
+through intentional hardlink aliases. Choose a new session path; aliases are not
+removed or converted. New paths and single-link empty/current sessions remain
+supported. This admission rule does not change session schema 5.
+
+Token discovery borrows parser storage, and current review rows borrow plan
+candidates through rendering. Stale review descriptors remain owned. CLI output,
+candidate IDs, wire schemas and dependencies do not change.
+
 ## Copy membership, finite mutation reads and borrowed identity (#1081–#1083)
 
 Verify preparation and dry-run determine fingerprint copy membership without

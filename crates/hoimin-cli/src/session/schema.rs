@@ -18,6 +18,10 @@ pub enum SchemaError {
         "SQLite database is not an empty database or a compatible hoimin session; start a new session at a different --session path"
     )]
     InvalidIdentity,
+    #[error(
+        "SQLite session database shares its file with another hard link; start a new session at a different --session path"
+    )]
+    SharedFile,
     #[error("failed to inspect SQLite session: {0}")]
     Inspect(#[from] std::io::Error),
     #[error("SQLite refused WAL journal mode and remained in {0} mode")]
@@ -34,7 +38,7 @@ pub(crate) fn open(path: &Path) -> Result<Connection, SchemaError> {
         // Closed WAL databases need an immutable advisory read to avoid
         // creating companion files. Rollback-mode and empty databases use
         // ordinary SQLite reads so a concurrent initializer's locks apply.
-        let connection = if has_wal_header(path)? {
+        let connection = if inspect_existing_database(path)? {
             Connection::open_with_flags(
                 immutable_uri(path)?,
                 rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
@@ -50,21 +54,32 @@ pub(crate) fn open(path: &Path) -> Result<Connection, SchemaError> {
     Ok(connection)
 }
 
-fn has_wal_header(path: &Path) -> Result<bool, std::io::Error> {
+fn inspect_existing_database(path: &Path) -> Result<bool, SchemaError> {
     if !std::fs::metadata(path)?.is_file() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "session database must be a regular file",
-        ));
+        )
+        .into());
     }
     let mut file = std::fs::File::open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "session database must be a regular file",
+        )
+        .into());
+    }
+    if crate::file_links::file_link_count(&file)? > 1 {
+        return Err(SchemaError::SharedFile);
+    }
     let mut header = [0; 20];
     match file.read_exact(&mut header) {
         Ok(()) => {
             Ok(header.starts_with(b"SQLite format 3\0") && header[18] == 2 && header[19] == 2)
         }
         Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
-        Err(error) => Err(error),
+        Err(error) => Err(error.into()),
     }
 }
 
@@ -293,6 +308,49 @@ mod tests {
     use std::sync::{Arc, Condvar, Mutex, PoisonError};
     use std::thread;
     use std::time::Duration;
+
+    #[test]
+    fn issue_1085_single_link_zero_byte_session_initializes_and_reopens() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("session.sqlite3");
+        std::fs::write(&path, []).unwrap();
+        let handler = super::super::SessionHandler::open(&path).unwrap();
+        assert_eq!(user_version(&handler.connection), SCHEMA_VERSION);
+        drop(handler);
+        let reopened = super::super::SessionHandler::open(&path).unwrap();
+        assert_eq!(user_version(&reopened.connection), SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn issue_1085_empty_hardlinked_session_is_rejected_without_disk_changes() {
+        assert_hardlinked_session_rejected(false);
+    }
+
+    #[test]
+    fn issue_1085_current_hardlinked_session_is_rejected_without_disk_changes() {
+        assert_hardlinked_session_rejected(true);
+    }
+
+    fn assert_hardlinked_session_rejected(current: bool) {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        if current {
+            drop(super::super::SessionHandler::open(&source).unwrap());
+        } else {
+            std::fs::write(&source, []).unwrap();
+        }
+        let alias = temp.path().join("session.sqlite3");
+        std::fs::hard_link(&source, &alias).unwrap();
+        let files_before = directory_bytes(temp.path());
+        let result = super::super::SessionHandler::open(&alias);
+        let rejected = result.is_err();
+        drop(result);
+        assert!(
+            directory_bytes(temp.path()) == files_before,
+            "hardlink admission changed database, companion, or lock artifacts"
+        );
+        assert!(rejected, "hardlinked session was admitted");
+    }
 
     // These fixtures are closed before open: admission must not change their
     // journal mode, headers, contents, or leave SQLite companion files behind.
