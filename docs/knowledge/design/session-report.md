@@ -5,6 +5,16 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1077-admission
+  resource: ../../../crates/hoimin-cli/src/review/store.rs
+  revision: 12b34294ba2f61cd6b26425695b9ff08ed289875
+  working_tree: modified
+  sha256: 2ba3f3f8acd7f0e6afbaa715af20b2b175dc66fb4e7e222f533d50a644896212
+- id: issue-1078-borrow
+  resource: ../../../crates/hoimin-cli/src/review/mod.rs
+  revision: 12b34294ba2f61cd6b26425695b9ff08ed289875
+  working_tree: modified
+  sha256: 84a821117d03f5c7e8c1472829fd61a0ecd1ad2aa10e507191c9b892284663a4
 - id: issue-1073-correspondence
   resource: ../../../formal/HoiminOracle/HoiminOracle/SchemaMigrationCases.lean
   revision: 03c7e00fc2087fa87c3c0ee9ab9f70c766fc6956
@@ -1089,3 +1099,19 @@ lookup・保存・finish は確立した session にだけ実行する。既存�
 を参照する。過去の Lean モデルの結果を、新しい DB 識別処理の証明として扱わない。
 
 [^issue-1073-correspondence]: [Schema oracle correspondence modes](../../../formal/HoiminOracle/HoiminOracle/SchemaMigrationCases.lean).
+
+## Review admission and display ownership (Issues #1077–#1078)
+
+Existing review stores are inspected as regular files before SQLite is opened.
+A SQLite journal header other than DELETE format is rejected without opening
+SQLite, so rejecting a foreign WAL store cannot create its `-wal`/`-shm` files.
+This bounded inspection does not claim protection against concurrent path
+replacement, foreign writers or hot-journal recovery.[^issue-1077-admission]
+
+The loaded snapshot owns review events through synchronous rendering. Private
+rows borrow their history slice and latest event rather than cloning a second
+history. JSON still includes both the latest review and complete history;
+persistent history and revision-conflict semantics remain.[^issue-1078-borrow]
+
+[^issue-1077-admission]: [Review store admission](../../../crates/hoimin-cli/src/review/store.rs).
+[^issue-1078-borrow]: [Borrowed review projection](../../../crates/hoimin-cli/src/review/mod.rs).

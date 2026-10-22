@@ -1,3 +1,4 @@
+use std::io::Read;
 use std::path::Path;
 use std::time::Duration;
 
@@ -262,6 +263,20 @@ fn check_file(path: &Path) -> Result<(), ReviewError> {
         return Err(invalid(
             "review store must be a regular file of at most 16 MiB",
         ));
+    }
+    let file = crate::artifacts::open_regular_file(path)?
+        .ok_or_else(|| invalid("review store must be a regular file of at most 16 MiB"))?;
+    if file.metadata()?.len() > DB_LIMIT {
+        return Err(invalid(
+            "review store must be a regular file of at most 16 MiB",
+        ));
+    }
+    let mut header = Vec::with_capacity(20);
+    file.take(20).read_to_end(&mut header)?;
+    // Review stores use DELETE mode. Even a read-only SQLite admission query
+    // can create WAL/SHM files, so reject other journal formats before opening.
+    if header.starts_with(b"SQLite format 3\0") && header.get(18..20) != Some(&[1, 1]) {
+        return Err(invalid("review store requires DELETE journal mode"));
     }
     Ok(())
 }

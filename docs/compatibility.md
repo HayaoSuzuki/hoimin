@@ -19,6 +19,19 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Review journal admission and source ownership (#1077–#1079)
+
+Review rejects SQLite WAL/non-DELETE headers before ordinary SQLite access,
+including read-only list/show, to avoid creating companions for a rejected
+closed database. Current DELETE stores remain supported. No journal conversion,
+repair, migration or sidecar deletion is added; concurrent foreign writers and
+SQLite crash recovery remain outside this check.
+
+Review rendering borrows already loaded history. Mutation application reuses its
+validated hash and owned source buffer, retaining independent original evidence
+only for enabled runtime contracts. Candidate validation, error precedence,
+encoding, original-file protection and JSON/human output remain. No public option,
+wire format, dependency or package-floor change is introduced.
 
 ## Session database admission and internal ownership (#1073–#1075)
 

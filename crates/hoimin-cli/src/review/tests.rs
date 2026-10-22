@@ -192,7 +192,7 @@ fn draft_accepts_multiline_reason_without_evidence() {
     assert!(result.is_ok());
 }
 
-async fn plan_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
+pub(super) async fn plan_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
     plan_fixture_with_source("value = 1\n").await
 }
 
@@ -231,7 +231,8 @@ async fn old_candidate_without_report_is_not_loaded() {
     let key =
         super::input::review_key(&plan.project, &plan.manifest.candidates.remove(0).candidate);
     let state = apply_update(&ReviewState::default(), Applicability::Current, 0, draft()).unwrap();
-    let rows = super::stale_rows(&super::input::index_plan(&plan), &[(key, state)], None).unwrap();
+    let snapshot = [(key, state)];
+    let rows = super::stale_rows(&super::input::index_plan(&plan), &snapshot, None).unwrap();
     assert!(matches!(
         rows[0].execution,
         super::render::ReviewExecution::NotLoaded
@@ -580,9 +581,10 @@ async fn old_candidate_report_retains_matching_execution_result() {
         super::input::review_key(&plan.project, &plan.manifest.candidates.remove(0).candidate);
     let state = apply_update(&ReviewState::default(), Applicability::Current, 0, draft()).unwrap();
 
+    let snapshot = [(key, state)];
     let rows = super::stale_rows(
         &super::input::index_plan(&plan),
-        &[(key, state)],
+        &snapshot,
         Some(&super::index_report(&report)),
     )
     .unwrap();
@@ -604,9 +606,10 @@ async fn old_candidate_report_rejects_descriptor_mismatch() {
     key.descriptor.original = "different".into();
     let state = apply_update(&ReviewState::default(), Applicability::Current, 0, draft()).unwrap();
 
+    let snapshot = [(key, state)];
     let result = super::stale_rows(
         &super::input::index_plan(&plan),
-        &[(key, state)],
+        &snapshot,
         Some(&super::index_report(&report)),
     );
 
@@ -1551,8 +1554,15 @@ async fn recording_report_preserves_reference_when_showing_history() {
         "--expected-revision".into(),
         "0".into(),
     ]);
-    let (code, _, err) = run_review_cli(record).await;
+    let (code, recorded, err) = run_review_cli(record).await;
     assert_eq!(code, 0, "{err}");
+    let recorded: serde_json::Value = serde_json::from_str(&recorded).unwrap();
+    let recorded_row = &recorded["candidates"][0];
+    assert_eq!(recorded["command"], "record");
+    assert_eq!(recorded_row["history"].as_array().unwrap().len(), 1);
+    assert_eq!(recorded_row["review"], recorded_row["history"][0]);
+    assert_eq!(recorded_row["review"]["revision"], 1);
+    assert_eq!(recorded_row["review"]["draft"]["reason"], "missing check");
     let report_bytes = std::fs::read(&report_path).unwrap();
     let report_input: serde_json::Value = serde_json::from_slice(&report_bytes).unwrap();
     let expected = ReportReference {

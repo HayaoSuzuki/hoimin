@@ -309,3 +309,256 @@ fn unrelated_corruption_is_rejected_and_append_rolls_back() {
         assert_eq!(std::fs::read(&path).unwrap(), before, "{corruption}");
     }
 }
+
+// The command writes directly into a counter during measurement. Holding its
+// serialized JSON would obscure the extra in-memory history being tested.
+#[derive(Default)]
+struct CountingWriter(usize);
+
+impl std::io::Write for CountingWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0 += bytes.len();
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn populate_selected_history(
+    path: &std::path::Path,
+    target: &ReviewKey,
+    history: usize,
+    text_bytes: usize,
+) {
+    drop(ReviewStore::open_write(path, &target.project).unwrap());
+    let mut connection = rusqlite::Connection::open(path).unwrap();
+    let transaction = connection.transaction().unwrap();
+    transaction
+        .execute(
+            "INSERT INTO candidates(id, key_json) VALUES (?1, ?2)",
+            rusqlite::params![target.candidate_id, serde_json::to_string(target).unwrap()],
+        )
+        .unwrap();
+    let mut annotation = draft();
+    annotation.reason = "r".repeat(text_bytes);
+    annotation.evidence = vec!["e".repeat(text_bytes.min(2048))];
+    super::model::validate_draft(&annotation).unwrap();
+    let json = serde_json::to_string(&annotation).unwrap();
+    for revision in 1..=u64::try_from(history).unwrap() {
+        transaction
+            .execute(
+                "INSERT INTO review_events(candidate_id, revision, draft_json) VALUES (?1, ?2, ?3)",
+                rusqlite::params![target.candidate_id, revision.to_be_bytes().as_slice(), json],
+            )
+            .unwrap();
+    }
+    transaction.commit().unwrap();
+    assert!(std::fs::metadata(path).unwrap().len() <= 1024 * 1024);
+}
+
+#[tokio::test]
+async fn selected_review_history_is_retained_once_while_rendering() {
+    let (directory, plan_path) = super::tests::plan_fixture().await;
+    let plan = super::input::load_plan(&plan_path).unwrap();
+    let current = super::input::review_key(&plan.project, &plan.manifest.candidates[0].candidate);
+    for command in ["show", "list", "list-stale"] {
+        let mut target = current.clone();
+        if command == "list-stale" {
+            target.descriptor.replacement = "987654321".into();
+            target.candidate_id = hoimin_core::stable_mutant_id(
+                &hoimin_core::CandidateIdentity::from(&target.descriptor),
+            )
+            .to_string();
+            assert!(
+                plan.manifest
+                    .candidates
+                    .iter()
+                    .all(|row| row.candidate.id != target.candidate_id)
+            );
+        }
+        for text_bytes in [1024, 4096] {
+            let mut measurements = Vec::new();
+            for history in [1, 16, 64] {
+                let path = directory
+                    .path()
+                    .join(format!("{command}-{text_bytes}-{history}.sqlite3"));
+                populate_selected_history(&path, &target, history, text_bytes);
+                let mut cli_arguments = vec![
+                    "hoimin",
+                    "review",
+                    if command == "show" { "show" } else { "list" },
+                    plan_path.to_str().unwrap(),
+                    "--store",
+                    path.to_str().unwrap(),
+                    "--format",
+                    "json",
+                ];
+                if command == "show" {
+                    cli_arguments.extend(["--candidate", current.candidate_id.as_str()]);
+                } else if command == "list-stale" {
+                    cli_arguments.push("--stale");
+                }
+                let crate::cli::ParsedCommand::Review(args) =
+                    crate::cli::parse_from(cli_arguments).unwrap()
+                else {
+                    panic!("review")
+                };
+                let mut writer = CountingWriter::default();
+                let (code, measured) = measure(|| super::run(&args, &mut writer).unwrap());
+                assert_eq!(code, 0);
+                assert!(writer.0 >= history * (text_bytes + text_bytes.min(2048)));
+
+                // Validate actual output separately, after the allocator is off.
+                let mut bytes = Vec::new();
+                assert_eq!(super::run(&args, &mut bytes).unwrap(), 0);
+                let document: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                let field = if command == "list-stale" {
+                    "stale_candidates"
+                } else {
+                    "candidates"
+                };
+                let row = document[field]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|row| row["candidate"]["id"] == target.candidate_id)
+                    .unwrap();
+                let events = row["history"].as_array().unwrap();
+                assert_eq!(events.len(), history);
+                for (index, event) in events.iter().enumerate() {
+                    assert_eq!(event["revision"], index + 1);
+                    assert_eq!(event["draft"]["reason"], "r".repeat(text_bytes));
+                    assert_eq!(
+                        event["draft"]["evidence"][0],
+                        "e".repeat(text_bytes.min(2048))
+                    );
+                }
+                if command == "list-stale" {
+                    assert!(row["review"].is_null());
+                    assert_eq!(row["applicability"], "stale");
+                } else {
+                    assert_eq!(&row["review"], events.last().unwrap());
+                    assert_eq!(row["applicability"], "current");
+                }
+                assert_human_selected_history(args, command, history, text_bytes);
+                eprintln!(
+                    "selected {command} history={history} text_bytes={text_bytes}: {measured:?}"
+                );
+                measurements.push(measured);
+            }
+            // One snapshot must retain the text. Row metadata, event capacity,
+            // decoder scratch and plan/source validation get 96 KiB of slack;
+            // retaining a second 64-event history exceeds this even at 1 KiB.
+            let payload_growth = 63 * (text_bytes + text_bytes.min(2048));
+            let growth = measurements[2].peak_rust_bytes - measurements[0].peak_rust_bytes;
+            assert!(
+                growth <= payload_growth as i128 + 96 * 1024,
+                "{command} text_bytes={text_bytes}: growth={growth}, single_history_payload_growth={payload_growth}; {measurements:?}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn selected_record_history_is_retained_once_after_saving() {
+    let (directory, plan_path) = super::tests::plan_fixture().await;
+    let plan = super::input::load_plan(&plan_path).unwrap();
+    let target = super::input::review_key(&plan.project, &plan.manifest.candidates[0].candidate);
+    let reason = "r".repeat(4096);
+    let evidence = "e".repeat(2048);
+    let mut measurements = Vec::new();
+    for history in [1, 16, 64] {
+        let path = directory.path().join(format!("record-{history}.sqlite3"));
+        populate_selected_history(&path, &target, history, reason.len());
+        let revision = history.to_string();
+        let crate::cli::ParsedCommand::Review(args) = crate::cli::parse_from([
+            "hoimin",
+            "review",
+            "record",
+            plan_path.to_str().unwrap(),
+            "--store",
+            path.to_str().unwrap(),
+            "--candidate",
+            &target.candidate_id,
+            "--format",
+            "json",
+            "--assessment",
+            "actionable",
+            "--reason",
+            &reason,
+            "--evidence",
+            &evidence,
+            "--expected-revision",
+            &revision,
+        ])
+        .unwrap() else {
+            panic!("record")
+        };
+        let mut writer = CountingWriter::default();
+        let (code, measured) = measure(|| super::run(&args, &mut writer).unwrap());
+        assert_eq!(code, 0);
+        assert!(writer.0 >= (history + 1) * (reason.len() + evidence.len()));
+
+        // Read through the command again to prove the new event is durable and
+        // the latest assessment still appears both in review and in history.
+        let crate::cli::ParsedCommand::Review(show) = crate::cli::parse_from([
+            "hoimin",
+            "review",
+            "show",
+            plan_path.to_str().unwrap(),
+            "--store",
+            path.to_str().unwrap(),
+            "--candidate",
+            &target.candidate_id,
+            "--format",
+            "json",
+        ])
+        .unwrap() else {
+            panic!("show")
+        };
+        let mut bytes = Vec::new();
+        assert_eq!(super::run(&show, &mut bytes).unwrap(), 0);
+        let document: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let row = &document["candidates"][0];
+        let events = row["history"].as_array().unwrap();
+        assert_eq!(events.len(), history + 1);
+        assert_eq!(row["review"]["revision"], history + 1);
+        assert_eq!(&row["review"], events.last().unwrap());
+        assert_eq!(row["review"]["draft"]["reason"], reason);
+        assert_eq!(row["review"]["draft"]["evidence"][0], evidence);
+        eprintln!("selected record history={history}: {measured:?}");
+        measurements.push(measured);
+    }
+    let payload_growth = 63 * (reason.len() + evidence.len());
+    let growth = measurements[2].peak_rust_bytes - measurements[0].peak_rust_bytes;
+    assert!(
+        growth <= payload_growth as i128 + 96 * 1024,
+        "record growth={growth}, single_history_payload_growth={payload_growth}; {measurements:?}"
+    );
+}
+
+fn assert_human_selected_history(
+    mut args: crate::cli::ReviewArgs,
+    command: &str,
+    history: usize,
+    text_bytes: usize,
+) {
+    let common = match &mut args {
+        crate::cli::ReviewArgs::Show(args) => &mut args.common,
+        crate::cli::ReviewArgs::List(args) => &mut args.common,
+        crate::cli::ReviewArgs::Record(_) => unreachable!(),
+    };
+    common.format = crate::cli::ReviewOutputFormat::Text;
+    let mut human = Vec::new();
+    assert_eq!(super::run(&args, &mut human).unwrap(), 0);
+    let human = String::from_utf8(human).unwrap();
+    assert_eq!(human.matches("  revision ").count(), history);
+    assert!(human.contains(&format!("  revision {history} Actionable:")));
+    assert!(human.contains(&"r".repeat(text_bytes)));
+    assert!(human.contains(&"e".repeat(text_bytes.min(2048))));
+    if command == "list-stale" {
+        assert!(human.contains("old candidate "));
+    }
+}
