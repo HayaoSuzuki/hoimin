@@ -1147,6 +1147,55 @@ async fn stale_rows_keep_snapshot_order() {
 }
 
 #[tokio::test]
+async fn issue_1087_stale_candidate_preserves_complete_metadata_and_sequence_zero() {
+    let (_dir, path) = plan_fixture().await;
+    let mut plan = super::input::load_plan(&path).unwrap();
+    let candidates = std::mem::take(&mut plan.manifest.candidates);
+    let state = apply_update(&ReviewState::default(), Applicability::Current, 0, draft()).unwrap();
+    let snapshot: Vec<_> = candidates
+        .iter()
+        .rev()
+        .map(|row| {
+            (
+                super::input::review_key(&plan.project, &row.candidate),
+                state.clone(),
+            )
+        })
+        .collect();
+    let rows = super::stale_rows(&super::input::index_plan(&plan), &snapshot, None).unwrap();
+    assert_eq!(rows.len(), snapshot.len());
+    for (row, (key, state)) in rows.iter().zip(&snapshot) {
+        assert!(matches!(row.candidate, std::borrow::Cow::Owned(_)));
+        assert_eq!(row.candidate.sequence, 0);
+        assert_eq!(row.candidate.id, key.candidate_id);
+        assert_eq!(
+            CandidateDescriptor::from(row.candidate.as_ref()),
+            key.descriptor
+        );
+        assert_eq!(row.applicability, Applicability::Stale);
+        assert!(row.review.is_none());
+        assert!(std::ptr::eq(row.history, state.history.as_slice()));
+        let serialized = serde_json::to_value(row).unwrap();
+        let mut expected = serde_json::to_value(
+            &candidates
+                .iter()
+                .find(|candidate| candidate.id == key.candidate_id)
+                .unwrap()
+                .candidate,
+        )
+        .unwrap();
+        expected["sequence"] = 0.into();
+        assert_eq!(
+            serialized,
+            serde_json::json!({
+                "candidate": expected, "execution": {"state": "not_loaded"},
+                "review": null, "applicability": "stale", "history": state.history,
+            })
+        );
+    }
+}
+
+#[tokio::test]
 async fn checked_report_duplicate_error_precedes_identity_conflict() {
     let (_dir, path, report_path) = report_fixture().await;
     let plan = super::input::load_plan(&path).unwrap();

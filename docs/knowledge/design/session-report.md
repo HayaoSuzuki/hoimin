@@ -5,6 +5,16 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1085-admission
+  resource: ../../../crates/hoimin-cli/src/session/schema.rs
+  revision: 11eb28d3ff43c441c3aabc78cd7fa6d7d0c72493
+  working_tree: modified
+  sha256: 416c1a569781ec3eaf11569cc4c210769f1a698cbff155041d003d0ba571831b
+- id: issue-1085-links
+  resource: ../../../crates/hoimin-cli/src/file_links.rs
+  revision: 11eb28d3ff43c441c3aabc78cd7fa6d7d0c72493
+  working_tree: modified
+  sha256: 6492447baf8846938a6fdd1442523e352ca9a9b826e8c29322010ca041be17b5
 - id: issue-1083-plan
   resource: ../../../crates/hoimin-cli/src/plan.rs
   revision: 6ad22aaa87c6298f8c84e3a2c00cbd016cf0b7db
@@ -1136,3 +1146,22 @@ validation remain separate responsibilities.[^issue-1083-plan][^issue-1083-store
 
 [^issue-1083-plan]: [Read-only plan identity validation](../../../crates/hoimin-cli/src/plan.rs).
 [^issue-1083-store]: [Stored key validation](../../../crates/hoimin-cli/src/review/store.rs).
+
+# Session hardlink admission (Issue #1085)
+
+Existing session paths must point to regular files with a single hard link.
+Admission checks the opened descriptor's native link count before opening any
+file-backed SQLite connection, enabling WAL, initializing schema or creating a
+run ownership lock. A multi-link file is rejected even when it already contains
+a current session; hoimin does not unlink, convert or repair it. New destinations
+and single-link empty/current databases keep the existing admission behavior.
+[^issue-1085-admission][^issue-1085-links]
+
+This protects pre-existing aliases, including a session path sharing an empty
+project source. It is not synchronization against concurrent path replacement or
+link creation. No schema version, legacy reader or migration is introduced.
+See the [implementation evidence](../../maintenance/2026-10-22-issues-1085-1086-1087/README.md)
+for public CLI and closed-database regression coverage.
+
+[^issue-1085-admission]: [Session admission before SQLite access](../../../crates/hoimin-cli/src/session/schema.rs).
+[^issue-1085-links]: [Native descriptor link counts](../../../crates/hoimin-cli/src/file_links.rs).

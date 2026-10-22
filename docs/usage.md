@@ -1277,6 +1277,12 @@ The limit counts reused results as well as newly executed mutants: increasing
 the latest accepted limit, and a lower limit cannot resume that run. A baseline
 still runs on every invocation. Other verdict-affecting limits must remain compatible.
 
+Existing session databases must have exactly one hard link. hoimin rejects a
+multi-link file before SQLite writes or creates companion files, including when
+it contains a current session. Use a new `--session PATH`; hoimin does not remove
+aliases or repair the file. New paths and single-link empty/current databases
+remain supported.
+
 SQLite sessions use schema 5, which stores one typed mutation outcome per result.
 hoimin creates this schema directly for an uninitialized database and reopens
 existing schema-5 databases without rewriting saved rows. Schema versions 1-4

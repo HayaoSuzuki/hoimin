@@ -5,6 +5,7 @@ mod artifacts;
 mod baseline_output;
 pub mod cli;
 mod copy_policy;
+mod file_links;
 mod fingerprint_env;
 pub mod fingerprint_inputs;
 mod finite_file;

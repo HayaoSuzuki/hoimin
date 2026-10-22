@@ -29,6 +29,8 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 use windows_sys::Win32::System::IO::IO_STATUS_BLOCK;
 
+use crate::file_links::file_link_count;
+
 use super::{
     WindowsCreateDisposition, WindowsFinalOperation, WorkspaceError, make_file_writable,
     windows_final_name_units_are_valid,
@@ -74,18 +76,6 @@ pub(super) fn reopen_mutation_file(
             path: logical_path.to_owned(),
         })
     }
-}
-
-pub(super) fn file_link_count(file: &File) -> io::Result<u32> {
-    // SAFETY: information is writable and file owns a live handle.
-    let information = unsafe {
-        let mut information: BY_HANDLE_FILE_INFORMATION = zeroed();
-        if GetFileInformationByHandle(file.as_raw_handle() as HANDLE, &raw mut information) == 0 {
-            return Err(io::Error::last_os_error());
-        }
-        information
-    };
-    Ok(information.nNumberOfLinks)
 }
 
 pub(super) fn write_with<T>(
