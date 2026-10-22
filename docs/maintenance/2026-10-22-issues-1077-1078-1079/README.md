@@ -2,9 +2,11 @@
 
 Implementation continues from main `12b34294ba2f61cd6b26425695b9ff08ed289875`
 on `audit/issues-1077-1078-1079`, the worktree containing the post-1076 audit.
-That audit page and its two navigation edits remain uncommitted as requested.
-This record and current contracts do not depend on that untracked page being
-present. The audit's historical source hashes are not rewritten.
+The audit page and its two navigation edits were initially kept uncommitted.
+At the user's subsequent request, [the audit](../../knowledge/audits/design-2026-10-22-post1076.md)
+and navigation are included in the same PR #1080. Its historical source hashes
+are not rewritten; a separate follow-up distinguishes implementation evidence
+from the original audit observations.
 
 ## Reject review WAL stores before SQLite access (#1077)
 
@@ -129,7 +131,7 @@ encoding/error-order coverage was added and passed.
 - Ruff format/check and ty: passed without dependency synchronization.
 - Documentation tests: 21 passed; generated site build passed.
 - Knowledge references: zero missing links/resources or unreachable pages;
-  55 local pages include the intentionally uncommitted audit.
+  55 pages include the audit added to this PR.
 
 The first workspace run lacked the worktree's `.venv` reference and failed
 Python-launch fixtures. A symlink to the existing shared environment fixed this
