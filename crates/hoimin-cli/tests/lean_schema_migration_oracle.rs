@@ -80,7 +80,9 @@ fn validate_case(item: &OracleCase) -> Result<(), String> {
                 && results_are(item, "ok", "ok")
         }
         "rollback" => {
-            item.mode == "strict"
+            // The abstract transaction can fail after beginning initialization;
+            // the old foreign-table fixture now fails public admission first.
+            item.mode == "model-only"
                 && item.initial_version == "fresh"
                 && item.initial_legacy_row
                 && item.expected_version == "fresh"
@@ -124,7 +126,7 @@ fn known_event(value: &str) -> bool {
 fn lean_schema_migration_corpus_is_valid() {
     let cases = parse_corpus(CORPUS).expect("Lean schema migration corpus must be valid");
     assert_eq!(cases.len(), 8);
-    assert_eq!(cases.iter().filter(|item| item.mode == "strict").count(), 7);
+    assert_eq!(cases.iter().filter(|item| item.mode == "strict").count(), 6);
 }
 
 #[test]
@@ -145,6 +147,53 @@ fn schema_migration_corpus_rejects_unknown_fields_and_duplicate_ids() {
         1,
     );
     assert!(parse_corpus(&wrong_premise).is_err());
+}
+
+#[test]
+fn schema_migration_corpus_rejects_strict_rollback_correspondence() {
+    let mut rollback = CORPUS
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|item| item["scenario"] == "rollback")
+        .expect("rollback model case");
+    rollback["mode"] = serde_json::json!("strict");
+    assert!(parse_corpus(&rollback.to_string()).is_err());
+}
+
+#[test]
+fn rollback_model_fixture_is_rejected_before_public_initialization() {
+    let cases = parse_corpus(CORPUS).expect("valid Lean schema migration corpus");
+    let item = cases
+        .iter()
+        .find(|item| item.scenario == "rollback")
+        .unwrap();
+    assert_eq!(item.mode, "model-only");
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("session.sqlite3");
+    prepare_fixture(item, &path).unwrap();
+    let before = std::fs::read(&path).unwrap();
+    let files_before: BTreeSet<_> = std::fs::read_dir(directory.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+
+    assert!(matches!(
+        SessionHandler::open(&path),
+        Err(SessionError::Schema(SchemaError::InvalidIdentity))
+    ));
+
+    assert!(
+        std::fs::read(&path).unwrap() == before,
+        "admission changed the foreign fixture bytes"
+    );
+    let files_after: BTreeSet<_> = std::fs::read_dir(directory.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(files_after, files_before);
+    let connection = Connection::open(&path).unwrap();
+    assert_eq!(user_version(&connection).unwrap(), 0);
+    assert!(observe_marker(item, &connection).unwrap());
 }
 
 #[test]
@@ -169,7 +218,7 @@ fn run_strict_case(item: &OracleCase) -> Result<(), String> {
     };
     let actual_results = match item.scenario.as_str() {
         "concurrent_fresh" => open_concurrently(&path)?,
-        "rollback" | "unsupported" => vec![
+        "unsupported" => vec![
             classify_open(SessionHandler::open(&path), expected_unsupported),
             "not_run".to_owned(),
         ],
@@ -231,7 +280,7 @@ fn prepare_fixture(item: &OracleCase, path: &Path) -> Result<(), String> {
                 ))
                 .map_err(|error| error.to_string())
         }
-        scenario => Err(format!("cannot prepare strict scenario {scenario}")),
+        scenario => Err(format!("cannot prepare schema fixture scenario {scenario}")),
     }
 }
 

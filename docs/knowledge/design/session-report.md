@@ -5,6 +5,21 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1073-correspondence
+  resource: ../../../formal/HoiminOracle/HoiminOracle/SchemaMigrationCases.lean
+  revision: 03c7e00fc2087fa87c3c0ee9ab9f70c766fc6956
+  working_tree: modified
+  sha256: dad6aeb5e49b0071758e611814942697b968f036ec4de0001dbcb64d95c5a37f
+- id: issue-1073-schema
+  resource: ../../../crates/hoimin-cli/src/session/schema.rs
+  revision: 03c7e00fc2087fa87c3c0ee9ab9f70c766fc6956
+  working_tree: modified
+  sha256: 55a54dc28ee87d4224410e7e6dbdc30697ce6a6575eeebc183cf05077c1f5019
+- id: issue-1075-identity
+  resource: ../../../crates/hoimin-core/src/machine.rs
+  revision: 03c7e00fc2087fa87c3c0ee9ab9f70c766fc6956
+  working_tree: modified
+  sha256: 835e5c9b7026eff2493507fbb6a8f00ed431dabaf24b64b5bb4f446d196f9784
 - id: issue-1071-store
   resource: ../../../crates/hoimin-cli/src/review/store.rs
   revision: d45174b7d5b337e9792e2f9559c4c4adf81fa9ab
@@ -501,9 +516,9 @@ Issue #472 の設計では、指定されたsessionのDB、WAL・SHM・journal�
 一方、run所有権の修正報告では、macOSとLinuxの非rootユーザー環境で、Leanの期待値と公開APIの結果を比較する20件の `strict` ケースが一致した。有限の実行順序を調べる探索は深さ4までであり、深さ8は当時の時間制限で完了していない。これらの結果が示す範囲に、Windows・実際のクラッシュ・SQLite自体の正しさは含まれない。[^ownership-report]
 
 Issue #895以降、session DBはschema 5だけを開く。
-新規DB（`user_version = 0`）にはschema 5を一つのトランザクションで直接作成し、旧版1〜4と未対応の新しい版は変更せず拒否する。
+初期化できるのは、新規パスまたは `user_version = 0`・`application_id = 0` で schema object がない空の DB だけとする。schema 5を一つのトランザクションで直接作成し、旧版1〜4と未対応の新しい版は変更せず拒否する。
 過去の移行監査は当時の実装の記録であり、現在の移行対応を示さない。
-`SchemaMigration`という既存のモジュール名を保つ現行モデルとcorpusは、新規初期化の競合、ロック取得後の版再確認、初期化失敗のrollback、未対応版の拒否を対象とする。
+`SchemaMigration`という既存のモジュール名を保つ現行モデルとcorpusは、新規初期化の競合、ロック取得後の版再確認、初期化失敗のrollback、未対応版の拒否を対象とする。公開 API と比較する strict は 6 件で、強制した stale read と抽象 rollback の 2 件は model-only とする。旧 rollback fixture は別用途の table を持つため、現行 API では DDL より前に拒否される。実際の DDL rollback は schema 所有者の SQLITE_FULL 試験で確認し、この fixture の拒否と区別する。[^issue-1073-correspondence]
 SQLiteのWAL実装や実際のクラッシュを証明するものではない。[^current-initialization]
 
 # 結果の生成と読取りの責務
@@ -1046,3 +1061,31 @@ scope is recorded separately.[^issue-1071-tests]
 See [Issues #1070–#1071 evidence](../../maintenance/2026-10-22-issues-1070-1071/README.md)
 for current verification, rather than extending earlier formal-model results to
 filesystem publication.
+
+# session 受入れと実行 ID の所有者（Issues #1073・#1075）
+
+session の受入れは版番号だけで決めない。application ID が 0 であり、現行
+initializer と同じ table・制約・index を持つ schema 5 を受け入れる。必須の
+budget 制約がない過去の nullable schema 5 は、行が有効でも拒否する。別用途の
+DB や未対応版に WAL を設定せず、新しい保存先を案内する。[^issue-1073-schema]
+
+閉じた WAL DB の事前確認には immutable read を使い、補助ファイルの生成を
+避ける。rollback mode では通常の read-only 接続で初期化中のロックを尊重する。
+書込み接続の版・用途・schema 検査は同じ read transaction で行い、空の DB の
+初期化前には書込みロック下で再確認する。WAL 設定は受入れ・初期化の後とする。
+これは任意の同時書換えや hot journal recovery の保証ではなく、immutable な
+事前確認は active WAL frame を読まない。[^issue-1073-schema]
+
+`RunState` は `RunIdentity::Ephemeral` / `Session` に ID を一つだけ所有する。
+設定上の session mode と、create/resume の受理によって session が確立した事実を
+区別する。確立時に生成 ID を置き換え、report・process・result は同じ ID を読む。
+lookup・保存・finish は確立した session にだけ実行する。既存の最終化状態は別の
+責務として残し、ID のための重複フィールドや fallback を設けない。[^issue-1075-identity]
+
+[^issue-1073-schema]: [Session admission and initialization](../../../crates/hoimin-cli/src/session/schema.rs).
+[^issue-1075-identity]: [Single run-identity owner](../../../crates/hoimin-core/src/machine.rs).
+
+動作検証と保証の範囲は [実装記録](../../maintenance/2026-10-22-issues-1073-1074-1075/README.md)
+を参照する。過去の Lean モデルの結果を、新しい DB 識別処理の証明として扱わない。
+
+[^issue-1073-correspondence]: [Schema oracle correspondence modes](../../../formal/HoiminOracle/HoiminOracle/SchemaMigrationCases.lean).

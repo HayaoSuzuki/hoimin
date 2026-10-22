@@ -1803,9 +1803,11 @@ Fingerprint schema 13 omits `max_mutants` from verdict compatibility; this
 budget rule was introduced in schema 10. SQLite schema 5 persists each run's
 accepted limit as a positive eight-byte big-endian unsigned value. Newly created
 DBs enforce NOT NULL as well as the BLOB type, length and positivity constraints.
-Existing valid schema-5 DBs reopen without rewriting their DDL or data. A NULL
-budget in an earlier nullable schema-5 DB fails as `session.corrupt`, like other
-invalid budget types or lengths; no compatibility fallback repairs it.
+Existing DBs with the current required-budget schema reopen without rewriting
+their DDL or data. Earlier nullable schema-5 DBs are rejected at admission even
+when their rows contain positive budgets. Start a new session; no compatibility
+fallback repairs their schema. Malformed rows in an otherwise current schema
+remain subject to runtime validation.
 Selection finds the newest
 compatible incomplete run whose accepted limit does not exceed the requested
 limit. After acquiring the existing run ownership lock, a conditional update
@@ -1821,24 +1823,39 @@ and equality with fresh execution.
 
 ## Session schema initialization
 
-`session/schema.rs` owns a single current DDL batch. A version-0 database is
-initialized directly as schema 5 inside an immediate transaction. After acquiring
-the write lock, the initializer rereads `user_version`; a concurrent opener that
-now sees 5 commits without creating tables again. A failed DDL batch rolls back
-all tables, indexes and the version change. WAL, foreign keys, a five-second busy
-timeout and WAL contention retry remain enabled.
+`session/schema.rs` owns admission and a single current DDL batch. Only a new
+path or an actually empty database with `user_version = 0`, `application_id = 0`
+and no schema objects may initialize. A current schema-5 database must have
+application ID zero and the canonical tables, constraints and indexes, including
+the required positive budget. Admission compares normalized schema SQL from the
+same initializer; it does not accept arbitrary schemas that merely use version 5.
 
-Existing schema-5 databases reopen. Versions 1-4, negative versions and future
-versions produce `SchemaError::UnsupportedVersion` with new-session guidance;
-existing tables, data and `user_version` are preserved. Old golden databases test
-refusal and preservation, while the current golden tests reopen, stored results,
-diagnostics and budgets. Current results store typed outcome JSON.
+Existing databases are inspected before writable configuration. A closed WAL DB
+uses an immutable advisory read to avoid creating companion files; rollback-mode
+DBs use ordinary read-only SQLite access so initializer locks apply. A live read
+transaction then checks version, application ID and schema in one snapshot. For
+an empty DB, an immediate transaction repeats admission under the write lock and
+creates schema 5 only if it is still empty. Failed initialization rolls back.
+WAL is enabled only after admission/initialization. Foreign keys, a five-second
+busy timeout and WAL contention retry remain enabled.
+
+Foreign, unsupported and earlier nullable schema-5 databases are rejected with
+new-session guidance. Closed on-disk regressions check unchanged database bytes,
+logical contents, journal mode and companion files. There is no migration,
+automatic repair or deletion. These checks do not guarantee immutable admission
+under arbitrary concurrent foreign writers, filesystem replacement races or
+hot-journal recovery; immutable preflight does not inspect active WAL frames.
+Current required-budget golden tests cover reopening, results, diagnostics and
+budgets; older goldens cover refusal and preservation.
 
 The `SchemaMigration` model and executable names retain their audit lineage.
 Their live model now creates current directly from fresh and rejects initialized
 unsupported versions. The strict Rust adapter checks public session opens;
-the forced stale-read schedule remains model-only there, and a schema unit test
-uses a rendezvous to force both fresh reads before either initializer takes the
+six cases remain strict; the forced stale-read schedule and abstract rollback
+case are model-only. The old rollback fixture contains foreign tables and now
+fails admission before DDL; it is tested separately for unchanged rejection.
+A schema-owner unit test uses SQLITE_FULL to exercise real DDL rollback. Another
+schema unit test uses a rendezvous to force both fresh reads before either initializer takes the
 write lock. Historical migration reports describe the earlier implementation.
 
 ## Target discovery inventory

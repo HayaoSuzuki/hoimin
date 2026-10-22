@@ -160,8 +160,7 @@ impl SessionHandler {
     /// configured.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, SessionError> {
         let artifacts = SessionArtifacts::resolve(path).map_err(SessionError::Ownership)?;
-        let mut connection = Connection::open(artifacts.database())?;
-        schema::configure(&mut connection)?;
+        let connection = schema::open(artifacts.database())?;
         let lock_directory = artifacts.lock_directory();
         Ok(Self {
             connection,

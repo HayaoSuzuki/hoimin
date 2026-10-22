@@ -10,7 +10,7 @@ mod types;
 #[path = "analyzer/visitor.rs"]
 mod visitor;
 
-pub use rust::exception_hierarchy::{ExceptionIndex, MAX_SUMMARY_ENTRIES};
+pub use rust::exception_hierarchy::{ExceptionIndex, ExceptionIndexBuilder, MAX_SUMMARY_ENTRIES};
 pub use rust::{
     AnalysisError, AnalyzeRequest, AnalyzerOutput, analyze_source_cancellable,
     analyze_source_with_exceptions, definition_names, payload,

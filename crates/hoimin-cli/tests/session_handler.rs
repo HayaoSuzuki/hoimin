@@ -107,7 +107,8 @@ fn golden_schema_five_loads_the_stored_mutant_after_resume() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("session.sqlite3");
     std::fs::copy(
-        repo_root().join("crates/hoimin-cli/tests/golden/sessions/schema-v5.sqlite3"),
+        repo_root()
+            .join("crates/hoimin-cli/tests/golden/sessions/schema-v5-required-budget.sqlite3"),
         &path,
     )
     .unwrap();
@@ -1838,20 +1839,10 @@ fn lookup_rejects_corrupt_outcome_candidate_mismatch_and_completed_runs() {
 
     let null_path = temp.path().join("null.sqlite3");
     create_nullable_corrupt_database(&null_path);
-    let mut handler = SessionHandler::open(&null_path).unwrap();
-    let resumed = handler
-        .load(&LoadSession {
-            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
-            id: EffectId(13),
-            fingerprint: RunFingerprint::from_bytes([0; 32]),
-        })
-        .unwrap();
-    assert_eq!(resumed_run(resumed).run_id, "run-null");
-    let failed = handler
-        .lookup(&lookup_request(14, "run-null", "m-null"))
-        .unwrap_err();
-    assert_eq!(failed.id, EffectId(14));
-    assert_eq!(failed.failure.code(), "session.corrupt");
+    // A partial schema is rejected at admission before any runtime query can
+    // mistake it for a supported session. Corrupt values in a supported schema
+    // remain covered by the cases above.
+    assert!(SessionHandler::open(&null_path).is_err());
 }
 
 #[test]
@@ -2252,14 +2243,13 @@ fn copy_nullable_budget_golden() -> (tempfile::TempDir, PathBuf) {
     (directory, path)
 }
 
-fn current_schema_with_null_budget() -> (tempfile::TempDir, SessionHandler, Connection) {
+fn previous_schema_with_null_budget() -> (tempfile::TempDir, PathBuf, Connection) {
     let (directory, path) = copy_nullable_budget_golden();
     let observer = Connection::open(&path).unwrap();
     observer
         .execute("UPDATE runs SET max_mutants=NULL", [])
         .unwrap();
-    let handler = SessionHandler::open(&path).unwrap();
-    (directory, handler, observer)
+    (directory, path, observer)
 }
 
 fn budget_load_request(budget: usize) -> LoadSession {
@@ -2271,24 +2261,27 @@ fn budget_load_request(budget: usize) -> LoadSession {
 }
 
 #[test]
-fn nullable_current_schema_rejects_null_budget_as_corrupt() {
-    // Arrange
-    let (_directory, mut handler, _observer) = current_schema_with_null_budget();
-    // Act
-    let result = handler.load(&budget_load_request(100));
-    // Assert
-    assert_eq!(result.unwrap_err().failure.code(), "session.corrupt");
+fn previous_nullable_schema_is_rejected_at_admission() {
+    let (_directory, path, _observer) = previous_schema_with_null_budget();
+    assert!(matches!(
+        SessionHandler::open(&path),
+        Err(hoimin_cli::session::SessionError::Schema(
+            hoimin_cli::session::SchemaError::InvalidIdentity
+        ))
+    ));
 }
 
 #[test]
-fn null_budget_rejection_preserves_stored_data() {
-    // Arrange
-    let (_directory, mut handler, observer) = current_schema_with_null_budget();
+fn previous_nullable_schema_rejection_preserves_stored_data() {
+    let (_directory, path, observer) = previous_schema_with_null_budget();
     let before = logical_rows(&observer);
-    // Act
-    let _result = handler.load(&budget_load_request(100));
-    // Assert
+    let bytes_before = std::fs::read(&path).unwrap();
+    assert!(SessionHandler::open(&path).is_err());
     assert_eq!(logical_rows(&observer), before);
+    assert!(
+        std::fs::read(&path).unwrap() == bytes_before,
+        "rejected nullable schema changed database bytes"
+    );
 }
 
 proptest::proptest! {
@@ -2314,9 +2307,11 @@ proptest::proptest! {
     }
 
     #[test]
-    fn previous_current_budget_resumes_without_schema_rewrite(budget in 100usize..=usize::MAX) {
+    fn current_budget_resumes_without_schema_rewrite(budget in 100usize..=usize::MAX) {
         // Arrange
-        let (_directory, path) = copy_nullable_budget_golden();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("current.sqlite3");
+        std::fs::copy(repo_root().join("crates/hoimin-cli/tests/golden/sessions/schema-v5-required-budget.sqlite3"), &path).unwrap();
         let observer = Connection::open(&path).unwrap();
         let before = schema_sql(&observer);
         // Act

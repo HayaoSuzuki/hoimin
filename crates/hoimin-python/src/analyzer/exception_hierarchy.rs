@@ -879,51 +879,108 @@ fn module_name(path: &Utf8Path, root: &Utf8Path) -> Option<String> {
     }
 }
 
+/// Builds an index from reserved paths and borrowed, per-file source text.
+///
+/// Only owned summaries survive `add_source`. Mapping and summary errors are
+/// retained until `finish`, allowing callers to finish bounded input validation
+/// and preserve acquisition-error precedence without retaining source bodies.
+#[must_use]
+pub struct ExceptionIndexBuilder {
+    pending: Result<IndexBuild, AnalysisError>,
+}
+
+struct IndexBuild {
+    index: ExceptionIndex,
+    binding_count: usize,
+    dependency_count: usize,
+}
+
+impl ExceptionIndexBuilder {
+    pub fn new(
+        paths: &[Utf8PathBuf],
+        roots: &[Utf8PathBuf],
+        inputs: &[Utf8PathBuf],
+        cancelled: &impl Fn() -> bool,
+    ) -> Self {
+        Self {
+            pending: map_modules(paths, roots, inputs, cancelled).map(|module_paths| IndexBuild {
+                index: ExceptionIndex {
+                    module_paths,
+                    ..ExceptionIndex::default()
+                },
+                binding_count: 0,
+                dependency_count: 0,
+            }),
+        }
+    }
+
+    /// Borrows this source only during summary extraction. The first mapping or
+    /// analysis failure is reported by `finish`; subsequent sources are ignored.
+    pub fn add_source(&mut self, path: &Utf8Path, source: &str, cancelled: &impl Fn() -> bool) {
+        if let Ok(build) = &mut self.pending
+            && let Err(error) = build.add_source(path, source, cancelled)
+        {
+            self.pending = Err(error);
+        }
+    }
+
+    /// Resolves imports, classes and visibility after all source acquisition.
+    ///
+    /// # Errors
+    /// Returns the first mapping/summary failure, cancellation or hierarchy bounds.
+    pub fn finish(self, cancelled: &impl Fn() -> bool) -> Result<ExceptionIndex, AnalysisError> {
+        self.pending?.index.finish_index(cancelled)
+    }
+}
+
+impl IndexBuild {
+    fn add_source(
+        &mut self,
+        path: &Utf8Path,
+        source: &str,
+        cancelled: &impl Fn() -> bool,
+    ) -> Result<(), AnalysisError> {
+        if cancelled() {
+            return Err(AnalysisError::Cancelled);
+        }
+        self.index
+            .source_hashes
+            .insert(path.to_owned(), blake3::hash(source.as_bytes()));
+        let parsed = match depth::parse_checked(source, cancelled) {
+            Ok(parsed) => parsed,
+            Err(depth::CheckedParseError::InvalidSyntax) => return Ok(()),
+            Err(depth::CheckedParseError::Analysis(error)) => return Err(error),
+        };
+        let summary = Module::parse(parsed.syntax())?;
+        self.binding_count += summary.bindings.len();
+        self.dependency_count += summary.dependencies.len();
+        if self.binding_count > MAX_SUMMARY_ENTRIES || self.dependency_count > MAX_SUMMARY_ENTRIES {
+            return Err(AnalysisError::HierarchyLimit);
+        }
+        self.index.modules.insert(path.to_owned(), summary);
+        Ok(())
+    }
+}
+
 impl ExceptionIndex {
     pub(crate) fn from_sources(
         sources: &[(Utf8PathBuf, String)],
         roots: &[Utf8PathBuf],
         cancelled: &impl Fn() -> bool,
     ) -> Result<Self, AnalysisError> {
-        Self::from_sources_with_inputs(sources, roots, &[], cancelled)
+        let paths = sources
+            .iter()
+            .map(|(path, _)| path.clone())
+            .collect::<Vec<_>>();
+        let mut builder = ExceptionIndexBuilder::new(&paths, roots, &[], cancelled);
+        for (path, source) in sources {
+            builder.add_source(path, source, cancelled);
+        }
+        builder.finish(cancelled)
     }
 
-    /// Builds a bounded index from acquired decoded sources and reserved input paths.
-    ///
-    /// # Errors
-    /// Returns an error on cancellation, excessive AST depth or hierarchy bounds.
-    pub fn from_sources_with_inputs(
-        sources: &[(Utf8PathBuf, String)],
-        roots: &[Utf8PathBuf],
-        inputs: &[Utf8PathBuf],
-        cancelled: &impl Fn() -> bool,
-    ) -> Result<Self, AnalysisError> {
-        let mut index = Self {
-            module_paths: map_modules(sources, roots, inputs, cancelled)?,
-            ..Self::default()
-        };
-        let mut binding_count = 0usize;
-        let mut dependency_count = 0usize;
-        for (path, source) in sources {
-            if cancelled() {
-                return Err(AnalysisError::Cancelled);
-            }
-            index
-                .source_hashes
-                .insert(path.clone(), blake3::hash(source.as_bytes()));
-            let parsed = match depth::parse_checked(source, cancelled) {
-                Ok(parsed) => parsed,
-                Err(depth::CheckedParseError::InvalidSyntax) => continue,
-                Err(depth::CheckedParseError::Analysis(error)) => return Err(error),
-            };
-            let summary = Module::parse(parsed.syntax())?;
-            binding_count += summary.bindings.len();
-            dependency_count += summary.dependencies.len();
-            if binding_count > MAX_SUMMARY_ENTRIES || dependency_count > MAX_SUMMARY_ENTRIES {
-                return Err(AnalysisError::HierarchyLimit);
-            }
-            index.modules.insert(path.clone(), summary);
-        }
+    fn finish_index(self, cancelled: &impl Fn() -> bool) -> Result<Self, AnalysisError> {
+        let mut index = self;
         index.resolve_relative_imports(cancelled)?;
         index.exclude_submodule_collisions(cancelled)?;
         index.exclude_mutated_imports(cancelled)?;
@@ -1668,7 +1725,7 @@ impl<'a, F: FnMut(TextRange, String) -> Result<(), AnalysisError>, C: Fn() -> bo
 }
 
 fn map_modules(
-    sources: &[(Utf8PathBuf, String)],
+    paths: &[Utf8PathBuf],
     roots: &[Utf8PathBuf],
     inputs: &[Utf8PathBuf],
     cancelled: &impl Fn() -> bool,
@@ -1677,7 +1734,7 @@ fn map_modules(
     let mut claimed = BTreeSet::new();
     for root in roots {
         let mut mappings = BTreeMap::<String, Option<Utf8PathBuf>>::new();
-        for path in sources.iter().map(|(path, _)| path).chain(inputs) {
+        for path in paths.iter().chain(inputs) {
             if cancelled() {
                 return Err(AnalysisError::Cancelled);
             }
