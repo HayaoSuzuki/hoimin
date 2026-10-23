@@ -89,8 +89,6 @@ async fn preview(path: &Path, offset: usize, count: usize) -> serde_json::Value 
         "--selection-policy".into(),
         "line-diverse".into(),
         "--dry-run".into(),
-        "--format".into(),
-        "json".into(),
     ])
     .await;
     assert_eq!(code, 0, "{err}");
@@ -145,8 +143,6 @@ async fn line_diverse_execution_matches_preview_order_and_preserves_report_scope
         "1".into(),
         "--selection-policy".into(),
         "line-diverse".into(),
-        "--format".into(),
-        "json".into(),
     ])
     .await;
     assert_eq!(code, 1, "{err}");
@@ -185,8 +181,6 @@ async fn line_diverse_execution_matches_preview_order_and_preserves_report_scope
         "progress".into(),
         report_path.as_os_str().to_owned(),
         report_path.as_os_str().to_owned(),
-        "--format".into(),
-        "json".into(),
     ])
     .await;
     assert_eq!(code, 0, "{err}");

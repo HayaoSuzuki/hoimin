@@ -153,7 +153,7 @@ pub fn run(args: &ReviewArgs, stdout: &mut dyn std::io::Write) -> Result<i32, Re
             candidates,
             stale_candidates,
         };
-        render::write(&document, common.format, stdout)?;
+        render::write(&document, stdout)?;
         Ok(0)
     })
 }

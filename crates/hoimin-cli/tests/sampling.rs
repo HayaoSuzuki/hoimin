@@ -219,8 +219,6 @@ async fn sample_execution_matches_preview_and_preserves_sample_scope() {
         "progress".into(),
         report_path.clone().into_os_string(),
         report_path.into_os_string(),
-        "--format".into(),
-        "json".into(),
     ])
     .await;
     assert_eq!(code, 0, "{err}");
@@ -394,12 +392,7 @@ async fn different_samples_keep_progress_candidate_set_checks() {
         std::fs::write(&report_path, serde_json::to_vec(&report).unwrap()).unwrap();
         paths.push(report_path.into_os_string());
     }
-    let mut args = vec![
-        "hoimin".into(),
-        "progress".into(),
-        "--format".into(),
-        "json".into(),
-    ];
+    let mut args = vec!["hoimin".into(), "progress".into()];
     args.extend(paths);
     let (code, progress, err) = cli(args).await;
     assert_eq!(code, 0, "{err}");

@@ -260,7 +260,7 @@ fn assert_manifest_lifetime_and_preview(count: usize) {
             OutputFormat::Json,
         ))
         .unwrap()
-        .write(OutputFormat::Json, &mut api_bytes)
+        .write(&mut api_bytes)
         .unwrap();
     let api: serde_json::Value = serde_json::from_slice(&api_bytes).unwrap();
     let rows = api["candidates"].as_array().unwrap();

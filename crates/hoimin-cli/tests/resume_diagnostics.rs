@@ -198,35 +198,3 @@ async fn jsonl_reports_resume_at_start() {
         }
     }
 }
-
-#[tokio::test]
-async fn human_reports_resume_at_start() {
-    let fixture = Fixture::new();
-    let format = "human";
-    let fresh = fixture.run("session.db", true, 1, format).await;
-    let resumed = fixture.run("session.db", true, 1, format).await;
-
-    assert_eq!(fresh.code, 4);
-    assert_eq!(resumed.code, 4);
-
-    assert!(
-        fresh
-            .stdout
-            .lines()
-            .nth(1)
-            .unwrap()
-            .contains("starting new run [no_prior_run]"),
-        "{}",
-        fresh.stdout
-    );
-    assert!(
-        resumed
-            .stdout
-            .lines()
-            .nth(1)
-            .unwrap()
-            .contains("continuing saved run"),
-        "{}",
-        resumed.stdout
-    );
-}

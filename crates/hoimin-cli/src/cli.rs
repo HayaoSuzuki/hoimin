@@ -15,7 +15,7 @@ use hoimin_core::{
     name = "hoimin",
     version,
     about = "Bounded mutation testing for focused Python changes",
-    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --changed-context --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-workspace-size --min-free-space\n  --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl|human> --metrics <PATH> --session --resume"
+    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --changed-context --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-workspace-size --min-free-space\n  --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl> --metrics <PATH> --session --resume"
 )]
 struct RootCli {
     #[command(subcommand)]
@@ -56,13 +56,6 @@ pub enum ReviewArgs {
     Record(ReviewRecordArgs),
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
-pub enum ReviewOutputFormat {
-    #[default]
-    Text,
-    Json,
-}
-
 #[derive(Debug, Args)]
 pub struct ReviewCommonArgs {
     pub plan: PathBuf,
@@ -70,8 +63,6 @@ pub struct ReviewCommonArgs {
     pub store: PathBuf,
     #[arg(long)]
     pub report: Option<PathBuf>,
-    #[arg(long, value_enum, default_value = "text")]
-    pub format: ReviewOutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -111,13 +102,6 @@ pub struct ReviewRecordArgs {
 pub enum OutputFormat {
     Json,
     Jsonl,
-    Human,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-pub enum ProgressOutputFormat {
-    Human,
-    Json,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
@@ -389,10 +373,6 @@ struct RawProgressArgs {
     )]
     patience: NonZeroUsize,
 
-    /// Render the comparison as human-readable text or JSON.
-    #[arg(long, value_enum, default_value_t = ProgressOutputFormat::Human)]
-    format: ProgressOutputFormat,
-
     /// Show identified changes in the final adjacent input pair.
     #[arg(long)]
     details: bool,
@@ -413,7 +393,6 @@ pub struct ProgressArgs {
     pub details_limit: usize,
     pub reports: Vec<PathBuf>,
     pub patience: NonZeroUsize,
-    pub format: ProgressOutputFormat,
 }
 
 #[derive(Debug)]
@@ -621,7 +600,6 @@ impl TryFrom<Command> for ParsedCommand {
                 details_limit: raw.details_limit,
                 reports: raw.reports,
                 patience: raw.patience,
-                format: raw.format,
             })),
             Command::Review(args) => Ok(Self::Review(args.command)),
         }
@@ -786,7 +764,6 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
             format: match format {
                 OutputFormat::Json => hoimin_core::OutputFormat::Json,
                 OutputFormat::Jsonl => hoimin_core::OutputFormat::Jsonl,
-                OutputFormat::Human => hoimin_core::OutputFormat::Human,
             },
             metrics,
         },

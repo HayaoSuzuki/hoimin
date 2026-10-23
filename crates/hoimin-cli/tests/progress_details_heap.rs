@@ -1,10 +1,7 @@
 #[path = "support/candidate_identity.rs"]
 mod candidate_identity;
 
-use hoimin_cli::{
-    cli::{ProgressArgs, ProgressOutputFormat},
-    progress,
-};
+use hoimin_cli::{cli::ProgressArgs, progress};
 use serde_json::{Value, json};
 use std::{
     alloc::{GlobalAlloc, Layout, System},
@@ -84,7 +81,6 @@ fn detail_allocations_do_not_scale_with_candidate_body_size() {
                 fail_on_regression: false,
                 reports: paths.to_vec(),
                 patience: NonZeroUsize::new(3).unwrap(),
-                format: ProgressOutputFormat::Json,
                 details,
                 details_limit: 2,
             };

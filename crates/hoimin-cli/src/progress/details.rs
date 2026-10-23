@@ -3,8 +3,6 @@ use std::collections::{BTreeMap, HashSet};
 use hoimin_core::{MutantFinished, MutationStatus};
 use serde::Serialize;
 
-use crate::human_text::HumanText;
-
 use super::{UsableReport, compare::CandidateSetEligibility};
 
 #[derive(Debug, Serialize)]
@@ -61,46 +59,6 @@ impl Details {
             limit,
             changes,
         }
-    }
-
-    pub(super) fn render(&self, out: &mut impl std::io::Write) -> std::io::Result<()> {
-        writeln!(
-            out,
-            "details: inputs {} -> {} (zero-based), available={}, eligibility={}",
-            self.previous_input,
-            self.current_input,
-            self.available,
-            self.eligibility.unwrap_or("n/a")
-        )?;
-        for entry in &self.changes.transitions {
-            writeln!(
-                out,
-                "  {}: {:?}:{}:{} {:?} {} -> {} id={:?} previous={:?}:{}:{}",
-                entry.classification,
-                HumanText(&entry.path),
-                entry.line,
-                entry.column,
-                HumanText(&entry.operator),
-                status_name(entry.previous_status),
-                status_name(entry.current_status),
-                HumanText(&entry.id),
-                HumanText(&entry.previous_path),
-                entry.previous_line,
-                entry.previous_column
-            )?;
-        }
-        writeln!(
-            out,
-            "details limit: {}; omitted: {}; unidentified: {}",
-            self.limit, self.changes.omitted, self.changes.unidentified
-        )
-    }
-}
-
-fn status_name(status: MutationStatus) -> &'static str {
-    match status {
-        MutationStatus::Killed | MutationStatus::Survived => status.as_str(),
-        _ => unreachable!("only changed conclusive statuses become details"),
     }
 }
 

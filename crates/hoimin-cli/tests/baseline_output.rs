@@ -64,12 +64,7 @@ async fn failed_baseline_logs_reach_all_cli_formats_before_clean_cleanup() {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("case.py"), "value = 1 + 2\n").unwrap();
     let script = "import sys; print('AUDIT_BASELINE_STDOUT', flush=True); print('AUDIT_BASELINE_STDERR', file=sys.stderr, flush=True); raise SystemExit(7)";
-    let cases: [FormatCase; 3] = [
-        (
-            "human",
-            |output| String::from_utf8(output.stderr.clone()).unwrap(),
-            |_| {},
-        ),
+    let cases: [FormatCase; 2] = [
         ("json", diagnostics, |output| {
             let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
             assert_eq!(report["baseline"]["termination"]["Exit"], 7);

@@ -6,8 +6,7 @@ use hoimin_core::{RunSelection, VerificationSelection};
 use serde::Serialize;
 
 use super::PlanManifest;
-use crate::cli::{OutputFormat, VerifySelection};
-use crate::human_text::HumanText;
+use crate::cli::VerifySelection;
 
 /// Validated selection metadata, independent of execution reports and outcomes.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -85,58 +84,12 @@ impl VerifyPreview {
         }
     }
 
-    /// Writes one preview document, or a human-readable header and candidate rows.
+    /// Writes one JSON preview document followed by a newline.
     ///
     /// # Errors
     /// Returns a destination write or serialization error.
-    pub fn write(&self, format: OutputFormat, writer: &mut impl Write) -> Result<(), String> {
-        match format {
-            OutputFormat::Json | OutputFormat::Jsonl => {
-                serde_json::to_writer(&mut *writer, self).map_err(|error| error.to_string())?;
-                writeln!(writer).map_err(|error| error.to_string())
-            }
-            OutputFormat::Human => self.write_human(writer).map_err(|error| error.to_string()),
-        }
-    }
-
-    fn write_human(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        let selection = &self.verification_selection;
-        writeln!(
-            writer,
-            "verify preview: mode={} policy={} requested={} selected={} scope={} plan_truncated={} offset={} retained_candidates={}",
-            selection.mode().as_str(),
-            selection.policy().as_str(),
-            selection.requested(),
-            selection.selected(),
-            selection.scope().as_str(),
-            selection.plan_truncated(),
-            self.offset
-                .map_or_else(|| "null".to_owned(), |offset| offset.to_string()),
-            self.retained_candidates,
-        )?;
-        if let Some(sampling) = selection.sampling() {
-            writeln!(
-                writer,
-                "sample: population={} seed={} (preview only; no outcomes)",
-                sampling.population(),
-                sampling.seed()
-            )?;
-        }
-        for candidate in &self.candidates {
-            writeln!(
-                writer,
-                "{}: {} rank={} {}:{}:{} operator={} {:?} -> {:?}",
-                candidate.selection_order,
-                HumanText(&candidate.id),
-                candidate.rank,
-                HumanText(candidate.path.as_str()),
-                candidate.line,
-                candidate.column,
-                HumanText(&candidate.operator),
-                HumanText(&candidate.original),
-                HumanText(&candidate.replacement)
-            )?;
-        }
-        Ok(())
+    pub fn write(&self, writer: &mut impl Write) -> Result<(), String> {
+        serde_json::to_writer(&mut *writer, self).map_err(|error| error.to_string())?;
+        writeln!(writer).map_err(|error| error.to_string())
     }
 }

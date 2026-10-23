@@ -43,8 +43,6 @@ async fn fixture_named(name: &str) -> (tempfile::TempDir, Vec<String>) {
         plan.to_str().unwrap().into(),
         "--store".into(),
         dir.path().join("reviews.sqlite3").to_str().unwrap().into(),
-        "--format".into(),
-        "json".into(),
     ];
     (dir, args)
 }
@@ -65,6 +63,27 @@ fn record_args(args: &[String]) -> Vec<String> {
         "0".into(),
     ]);
     record
+}
+
+#[tokio::test]
+async fn agent_output_review_defaults_to_json() {
+    let (_dir, args) = fixture().await;
+
+    let (code, out, err) = run(args).await;
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
+    let document: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(document["schema_version"], 2);
+    assert!(
+        document["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| {
+                row["applicability"] == "current" && row["execution"]["state"] == "not_loaded"
+            })
+    );
+    assert_ne!(document["candidates"].as_array().unwrap().len(), 0);
 }
 
 #[tokio::test]
@@ -173,7 +192,7 @@ async fn review_output_failure_is_not_duplicate_write() {
     let output_failure_code = run_with_writers(args.clone(), BrokenOutput, errors.clone()).await;
     let retry_code = run(args.clone()).await.0;
     args[2] = "show".into();
-    args.truncate(10);
+    args.truncate(8);
     let (_, out, _) = run(args).await;
     let value: Value = serde_json::from_slice(&out).unwrap();
 
@@ -533,9 +552,9 @@ async fn review_missing_source_with_store_is_unavailable() {
 }
 
 #[cfg(unix)]
-async fn assert_review_projection(name: &str, quoted_path: &str, format: &str) {
+async fn assert_review_projection(name: &str) {
     // Arrange: record one review and derive its ID from the saved plan.
-    let (_dir, mut args) = fixture_named(name).await;
+    let (_dir, args) = fixture_named(name).await;
     let plan: Value = serde_json::from_slice(&std::fs::read(&args[3]).unwrap()).unwrap();
     let id = plan["candidates"][0]["id"].as_str().unwrap();
     let mut record = record_args(&args);
@@ -544,55 +563,36 @@ async fn assert_review_projection(name: &str, quoted_path: &str, format: &str) {
     record.extend(["--evidence".into(), "証拠\n\tsecond".into()]);
     let (code, _, err) = run(record).await;
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
-    *args.last_mut().unwrap() = format.into();
 
-    // Act: each generated format case observes one independent public result.
     let (code, out, err) = run(args).await;
 
-    // Assert.
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
-    if format == "json" {
-        let document: Value = serde_json::from_slice(&out).unwrap();
-        let candidate = &document["candidates"][0];
-        assert_eq!(candidate["candidate"]["id"], id);
-        assert_eq!(candidate["candidate"]["path"], name);
-        assert_eq!(
-            candidate["history"][0]["draft"]["reason"],
-            "理由\n\t\"quoted\" \\literal"
-        );
-        assert_eq!(
-            candidate["history"][0]["draft"]["evidence"][0],
-            "証拠\n\tsecond"
-        );
-    } else {
-        let text = String::from_utf8(out).unwrap();
-        assert!(
-            text.contains(&format!("candidate \"{id}\" {quoted_path}:1 ")),
-            "{text:?}"
-        );
-        assert!(
-            text.contains(r#""理由\n\t\"quoted\" \\literal"; evidence ["証拠\n\tsecond"]"#),
-            "{text:?}"
-        );
-        assert!(
-            !text.chars().any(|c| c.is_control() && c != '\n'),
-            "{text:?}"
-        );
-    }
+    let document: Value = serde_json::from_slice(&out).unwrap();
+    let candidate = &document["candidates"][0];
+    assert_eq!(candidate["candidate"]["id"], id);
+    assert_eq!(candidate["candidate"]["path"], name);
+    assert_eq!(
+        candidate["history"][0]["draft"]["reason"],
+        "理由\n\t\"quoted\" \\literal"
+    );
+    assert_eq!(
+        candidate["history"][0]["draft"]["evidence"][0],
+        "証拠\n\tsecond"
+    );
+    // JSON escapes external control characters while preserving decoded values.
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        !text.chars().any(|c| c.is_control() && c != '\n'),
+        "{text:?}"
+    );
 }
 
 #[cfg(unix)]
 macro_rules! review_projection_case {
-    ($case:ident, $name:expr, $quoted_path:expr) => {
-        mod $case {
-            #[tokio::test]
-            async fn human() {
-                super::assert_review_projection($name, $quoted_path, "text").await;
-            }
-            #[tokio::test]
-            async fn json() {
-                super::assert_review_projection($name, $quoted_path, "json").await;
-            }
+    ($case:ident, $name:expr) => {
+        #[tokio::test]
+        async fn $case() {
+            assert_review_projection($name).await;
         }
     };
 }
@@ -600,9 +600,9 @@ macro_rules! review_projection_case {
 #[cfg(unix)]
 mod review_external_field_projection {
     use super::assert_review_projection;
-    review_projection_case!(esc, "sample\x1b[31m.py", r#""sample\u{1b}[31m.py""#);
-    review_projection_case!(line_controls, "sample\r\n\t.py", r#""sample\r\n\t.py""#);
-    review_projection_case!(unicode, "日本語🦀.py", "\"日本語🦀.py\"");
+    review_projection_case!(esc, "sample\x1b[31m.py");
+    review_projection_case!(line_controls, "sample\r\n\t.py");
+    review_projection_case!(unicode, "日本語🦀.py");
 }
 
 macro_rules! closed_report_review {

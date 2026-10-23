@@ -88,22 +88,6 @@ async fn fixed_timeout_is_reported_by_the_public_jsonl_command() {
     );
 }
 
-#[tokio::test]
-async fn fixed_timeout_is_reported_precisely_by_the_public_human_command() {
-    let root = tempfile::tempdir().unwrap();
-    std::fs::write(root.path().join("sample.py"), "x = True\n").unwrap();
-    let (exit, text) = invoke(run_args(root.path(), "human", Some("1.234567891s"), "pass")).await;
-    let duration = text
-        .lines()
-        .find_map(|line| line.strip_prefix("  resolved mutant timeout: "))
-        .unwrap();
-    assert_eq!(exit, 1);
-    assert_eq!(
-        humantime::parse_duration(duration).unwrap(),
-        Duration::new(1, 234_567_891)
-    );
-}
-
 async fn assert_failed_baseline_leaves_timeout_unresolved(policy: Option<&str>) {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("sample.py"), "x = True\n").unwrap();

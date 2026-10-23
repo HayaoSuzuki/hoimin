@@ -1,5 +1,4 @@
 pub(crate) mod delivery;
-mod human;
 mod json;
 mod jsonl;
 
@@ -25,7 +24,6 @@ pub(crate) struct PreparedReport {
 /// A JSON spool belongs only to JSON output. Releasing it preserves the format
 /// for stderr diagnostics, but further non-diagnostic events must be rejected.
 enum ReportEncoding {
-    Human,
     Jsonl,
     Json(JsonReport),
     JsonReleased,
@@ -36,7 +34,6 @@ impl PreparedReport {
         let encoding = match format {
             OutputFormat::Json => ReportEncoding::Json(JsonReport::new(spool_dir.as_ref())?),
             OutputFormat::Jsonl => ReportEncoding::Jsonl,
-            OutputFormat::Human => ReportEncoding::Human,
         };
         Ok(Self { encoding })
     }
@@ -99,7 +96,6 @@ where
         let encoding = match format {
             OutputFormat::Json => ReportEncoding::Json(JsonReport::with_spool(spool)),
             OutputFormat::Jsonl => ReportEncoding::Jsonl,
-            OutputFormat::Human => ReportEncoding::Human,
         };
         Self {
             encoding,
@@ -128,14 +124,8 @@ where
             // arbitrary library writers retain their own synchronization policy.
             let stderr = io::stderr();
             let _record = self.lock_stdio_stderr.then(|| stderr.lock());
-            match &self.encoding {
-                ReportEncoding::Human => human::write_event(&mut self.stderr, &event)
-                    .map_err(|error| human_failed(id, &error))?,
-                ReportEncoding::Json(_) | ReportEncoding::Jsonl | ReportEncoding::JsonReleased => {
-                    jsonl::write_buffered_event(&mut self.stderr, &event)
-                        .map_err(|error| serialization_failed(id, &error))?;
-                }
-            }
+            jsonl::write_buffered_event(&mut self.stderr, &event)
+                .map_err(|error| serialization_failed(id, &error))?;
             return Ok(OutputEmitted { id });
         }
 
@@ -155,17 +145,6 @@ where
                     },
                 });
             }
-            ReportEncoding::Human => human::write_event(&mut self.stdout, &event)
-                .map_err(|error| human_failed(id, &error))?,
-        }
-        if matches!(self.encoding, ReportEncoding::Human)
-            && let OutputEvent::MutantFinished(value) = &event
-            && !value.diagnostics.is_empty()
-        {
-            let stderr = io::stderr();
-            let _record = self.lock_stdio_stderr.then(|| stderr.lock());
-            human::write_mutant_diagnostics(&mut self.stderr, &value.diagnostics)
-                .map_err(|error| human_failed(id, &error))?;
         }
         Ok(OutputEmitted { id })
     }
@@ -220,16 +199,6 @@ fn json_failed(id: hoimin_core::EffectId, error: JsonError) -> EffectFailed {
         },
     };
     EffectFailed { id, failure }
-}
-
-fn human_failed(id: hoimin_core::EffectId, error: &io::Error) -> EffectFailed {
-    EffectFailed {
-        id,
-        failure: EffectFailure::ReportIo {
-            operation: "write human report event".to_owned(),
-            message: error.to_string(),
-        },
-    }
 }
 
 #[cfg(test)]

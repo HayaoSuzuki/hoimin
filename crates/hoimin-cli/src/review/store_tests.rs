@@ -680,7 +680,6 @@ async fn foreign_wal_public_list_and_show_preserve_all_files() {
             plan: plan_path.clone(),
             store: path.clone(),
             report: None,
-            format: crate::cli::ReviewOutputFormat::Json,
         };
         let args = if command == "list" {
             crate::cli::ReviewArgs::List(crate::cli::ReviewListArgs {

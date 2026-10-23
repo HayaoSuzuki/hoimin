@@ -7,8 +7,6 @@ use serde::Serialize;
 
 use super::ReviewError;
 use super::model::{Applicability, Assessment, ReviewEvent};
-use crate::cli::ReviewOutputFormat;
-use crate::human_text::HumanText;
 
 #[derive(Serialize)]
 pub(super) struct ReviewDocument<'a> {
@@ -75,71 +73,9 @@ pub(super) fn counts(rows: &[ReviewRow<'_>]) -> Vec<OperatorReviewCounts> {
 
 pub(super) fn write(
     document: &ReviewDocument<'_>,
-    format: ReviewOutputFormat,
     writer: &mut dyn Write,
 ) -> Result<(), ReviewError> {
-    if format == ReviewOutputFormat::Json {
-        serde_json::to_writer(&mut *writer, document)?;
-        writeln!(writer)?;
-        return Ok(());
-    }
-    writeln!(
-        writer,
-        "Human assessments (execution outcomes and mutation scores are unchanged)"
-    )?;
-    for (label, rows) in [
-        ("candidate", &document.candidates),
-        ("old candidate", &document.stale_candidates),
-    ] {
-        for row in rows {
-            let assessment = row.review.as_ref().map_or_else(
-                || "unreviewed".to_owned(),
-                |event| serde_json::to_string(&event.draft.assessment).unwrap_or_default(),
-            );
-            writeln!(
-                writer,
-                "{label} {:?} {:?}:{} {} {:?}",
-                HumanText(&row.candidate.id),
-                HumanText(row.candidate.path.as_str()),
-                row.candidate.line,
-                assessment,
-                row.applicability
-            )?;
-            for event in row.history {
-                // Quote each external field through the shared human projection.
-                writeln!(
-                    writer,
-                    "  revision {} {:?}: {:?}; evidence {:?}",
-                    event.revision,
-                    event.draft.assessment,
-                    HumanText(&event.draft.reason),
-                    event
-                        .draft
-                        .evidence
-                        .iter()
-                        .map(|value| HumanText(value))
-                        .collect::<Vec<_>>()
-                )?;
-            }
-            match row.execution {
-                ReviewExecution::Result(status) => writeln!(writer, "  execution: {status:?}")?,
-                ReviewExecution::NotLoaded => writeln!(writer, "  execution: not_loaded")?,
-                ReviewExecution::NotInReport => writeln!(writer, "  execution: not_in_report")?,
-            }
-        }
-    }
-    for count in &document.operators {
-        writeln!(
-            writer,
-            "operator {:?}: total {}, reviewed {}, unreviewed {}, stale {}, source_unavailable {}, assessments {:?}",
-            HumanText(&count.operator),
-            count.total,
-            count.reviewed,
-            count.unreviewed,
-            count.stale,
-            count.source_unavailable,
-            count.assessments
-        )?;
-    }
+    serde_json::to_writer(&mut *writer, document)?;
+    writeln!(writer)?;
     Ok(())
 }

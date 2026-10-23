@@ -422,7 +422,7 @@ fn fixture_run_config() -> RunConfig {
         },
         test_argv: vec![CommandArg::Unix(b"python".to_vec())],
         output: OutputConfig {
-            format: OutputFormat::Human,
+            format: OutputFormat::Jsonl,
             metrics: None,
         },
         ..RawRunConfig::default()

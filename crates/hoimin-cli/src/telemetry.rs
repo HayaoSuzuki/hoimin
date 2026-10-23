@@ -1,32 +1,18 @@
 //! Binary-owned diagnostics. Sink I/O never runs on the executor thread.
 
-use std::fmt;
-use std::io::{self, IsTerminal, Write};
+use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, mpsc};
-use std::time::{Duration, Instant};
+use std::sync::{Arc, mpsc};
+use std::time::Duration;
 
-use tracing::field::{Field, Visit};
-use tracing::{Event, Subscriber};
-use tracing_subscriber::filter::{EnvFilter, LevelFilter, filter_fn};
-use tracing_subscriber::layer::{Context, SubscriberExt};
+use tracing_subscriber::filter::{EnvFilter, LevelFilter};
+use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{Layer, Registry};
 
-const PROGRESS_TARGET: &str = "hoimin_cli::progress";
-const REFRESH: Duration = Duration::from_secs(1);
 const FLUSH_BUDGET: Duration = Duration::from_millis(250);
 const MAX_RECORD_BYTES: usize = 64 * 1024;
 const QUEUE_CAPACITY: usize = 128;
-
-#[derive(Clone)]
-struct Snapshot {
-    stage: String,
-    completed: u64,
-    started: Instant,
-}
-
-type Progress = Arc<Mutex<Option<Snapshot>>>;
 
 pub(super) struct Guard {
     stop: Arc<AtomicBool>,
@@ -37,6 +23,7 @@ pub(super) struct Guard {
 impl Drop for Guard {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
+        // Wake an idle receiver; a full queue already guarantees it can make progress.
         let _ = self.sender.try_send(Vec::new());
         // A blocked stderr must not extend execution/shutdown deadlines indefinitely.
         let _ = self.done.recv_timeout(FLUSH_BUDGET);
@@ -44,95 +31,24 @@ impl Drop for Guard {
 }
 
 pub(super) fn init() -> Option<Guard> {
-    let terminal = io::stderr().is_terminal();
-    let (guard, writer, progress) = output_worker(io::stderr(), terminal).ok()?;
+    let (guard, writer) = output_worker(io::stderr()).ok()?;
     let filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::OFF.into())
         .with_regex(false)
         .try_from_env()
         .unwrap_or_else(|_| EnvFilter::new("off"));
     let logs = tracing_subscriber::fmt::layer()
+        .json()
         .with_ansi(false)
-        .with_writer(move || RecordWriter::new(writer.clone()));
-    let logs = if terminal {
-        logs.with_filter(filter).boxed()
-    } else {
-        logs.json().with_filter(filter).boxed()
-    };
-    let progress = terminal.then(|| {
-        ProgressLayer(progress).with_filter(filter_fn(|metadata| {
-            metadata.target() == PROGRESS_TARGET && metadata.is_event()
-        }))
-    });
-    Registry::default()
-        .with(logs)
-        .with(progress)
-        .try_init()
-        .ok()?;
+        .with_writer(move || RecordWriter::new(writer.clone()))
+        .with_filter(filter);
+    Registry::default().with(logs).try_init().ok()?;
     Some(guard)
 }
 
 pub(super) fn finish(exit_code: i32) {
     tracing::info!(target: "hoimin_cli::progress", finished = true, exit_code, "command finished");
     tracing::debug!(target: "hoimin_cli", exit_code, "command completed");
-}
-
-struct ProgressLayer(Progress);
-
-#[derive(Default)]
-struct Update {
-    stage: Option<String>,
-    completed: Option<u64>,
-    finished: bool,
-}
-
-impl Visit for Update {
-    fn record_str(&mut self, field: &Field, value: &str) {
-        if field.name() == "stage" {
-            self.stage = Some(value.to_owned());
-        }
-    }
-
-    fn record_u64(&mut self, field: &Field, value: u64) {
-        if field.name() == "completed" {
-            self.completed = Some(value);
-        }
-    }
-
-    fn record_bool(&mut self, field: &Field, value: bool) {
-        if field.name() == "finished" {
-            self.finished = value;
-        }
-    }
-
-    fn record_debug(&mut self, _: &Field, _: &dyn fmt::Debug) {}
-}
-
-impl<S: Subscriber> Layer<S> for ProgressLayer {
-    fn on_event(&self, event: &Event<'_>, _: Context<'_, S>) {
-        let mut update = Update::default();
-        event.record(&mut update);
-        let mut progress = self
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(stage) = update.stage {
-            let snapshot = progress.get_or_insert_with(|| Snapshot {
-                stage: stage.clone(),
-                completed: 0,
-                started: Instant::now(),
-            });
-            snapshot.stage = stage;
-        }
-        if let Some(snapshot) = progress.as_mut() {
-            if let Some(completed) = update.completed {
-                snapshot.completed = completed;
-            }
-            if update.finished {
-                "finished".clone_into(&mut snapshot.stage);
-            }
-        }
-    }
 }
 
 struct RecordWriter {
@@ -177,24 +93,15 @@ impl Drop for RecordWriter {
 
 fn output_worker(
     mut sink: impl Write + Send + 'static,
-    terminal: bool,
-) -> io::Result<(Guard, mpsc::SyncSender<Vec<u8>>, Progress)> {
+) -> io::Result<(Guard, mpsc::SyncSender<Vec<u8>>)> {
     let (sender, receiver) = mpsc::sync_channel::<Vec<u8>>(QUEUE_CAPACITY);
     let (done_tx, done) = mpsc::channel();
     let stop = Arc::new(AtomicBool::new(false));
-    let progress: Progress = Arc::default();
-    let worker_progress = Arc::clone(&progress);
     let worker_stop = Arc::clone(&stop);
     std::thread::Builder::new()
         .name("hoimin-diagnostics".to_owned())
         .spawn(move || {
-            let _ = write_output(
-                &mut sink,
-                &receiver,
-                &worker_stop,
-                &worker_progress,
-                terminal,
-            );
+            let _ = write_output(&mut sink, &receiver, &worker_stop);
             let _ = done_tx.send(());
         })?;
     Ok((
@@ -204,7 +111,6 @@ fn output_worker(
             done,
         },
         sender,
-        progress,
     ))
 }
 
@@ -212,54 +118,24 @@ fn write_output(
     sink: &mut impl Write,
     receiver: &mpsc::Receiver<Vec<u8>>,
     stop: &AtomicBool,
-    progress: &Progress,
-    terminal: bool,
 ) -> io::Result<()> {
-    let mut next_refresh = Instant::now() + REFRESH;
     while !stop.load(Ordering::Acquire) {
-        match receiver.recv_timeout(next_refresh.saturating_duration_since(Instant::now())) {
+        match receiver.recv() {
             Ok(bytes) => sink.write_all(&bytes)?,
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
-        }
-        if Instant::now() >= next_refresh {
-            if terminal {
-                render_progress(sink, progress)?;
-            }
-            next_refresh = Instant::now() + REFRESH;
+            Err(_) => break,
         }
     }
     // A finite snapshot avoids waiting for producers during shutdown.
     for bytes in receiver.try_iter().take(QUEUE_CAPACITY) {
         sink.write_all(&bytes)?;
     }
-    if terminal {
-        render_progress(sink, progress)?;
-    }
     sink.flush()
-}
-
-fn render_progress(sink: &mut impl Write, progress: &Progress) -> io::Result<()> {
-    let snapshot = progress
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone();
-    if let Some(snapshot) = snapshot {
-        writeln!(
-            sink,
-            "hoimin: {} | {} completed | elapsed {}s",
-            snapshot.stage,
-            snapshot.completed,
-            snapshot.started.elapsed().as_secs()
-        )?;
-        sink.flush()?;
-    }
-    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
 
     #[test]
     fn full_queue_and_oversized_records_drop_whole_records() {
@@ -280,37 +156,88 @@ mod tests {
         assert!(receiver.try_recv().is_err());
     }
 
+    struct FlushNotice {
+        written: mpsc::Sender<()>,
+        flushed: mpsc::Sender<()>,
+    }
+
+    impl Write for FlushNotice {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.written.send(()).unwrap();
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.flushed.send(()).unwrap();
+            Ok(())
+        }
+    }
+
     #[test]
-    fn progress_counts_and_timer_survive_stage_changes() {
-        let progress: Progress = Arc::default();
-        let subscriber = Registry::default().with(ProgressLayer(Arc::clone(&progress)));
-        tracing::subscriber::with_default(subscriber, || {
-            // Help finishes without ever starting progress.
-            finish(0);
-            let mut output = Vec::new();
-            render_progress(&mut output, &progress).unwrap();
-            assert_eq!(output, Vec::<u8>::new());
-            tracing::info!(stage = "testing mutants", completed = 2_u64);
-            progress.lock().unwrap().as_mut().unwrap().started =
-                Instant::now().checked_sub(Duration::from_secs(9)).unwrap();
-            tracing::info!(stage = "cleaning up");
-            finish(1);
-            render_progress(&mut output, &progress).unwrap();
-            let output = String::from_utf8(output).unwrap();
-            assert!(
-                output.contains("finished | 2 completed | elapsed "),
-                "{output}"
-            );
-            let seconds: u64 = output
-                .split("elapsed ")
-                .nth(1)
-                .unwrap()
-                .trim()
-                .trim_end_matches('s')
-                .parse()
-                .unwrap();
-            assert!(seconds >= 9, "{output}");
-        });
+    fn idle_worker_flushes_on_drop_with_a_live_publisher() {
+        let (written_tx, written_rx) = mpsc::channel();
+        let (flushed_tx, flushed_rx) = mpsc::channel();
+        let (guard, sender) = output_worker(FlushNotice {
+            written: written_tx,
+            flushed: flushed_tx,
+        })
+        .unwrap();
+        sender.send(b"record\n".to_vec()).unwrap();
+        written_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        drop(guard);
+        flushed_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        // Keeping this publisher alive prevents channel disconnect from waking the worker.
+        drop(sender);
+    }
+
+    #[test]
+    fn shutdown_drains_queued_records_despite_a_live_publisher() {
+        let (sender, receiver) = mpsc::sync_channel(QUEUE_CAPACITY);
+        sender.send(b"first\n".to_vec()).unwrap();
+        sender.send(b"second\n".to_vec()).unwrap();
+        let mut output = Vec::new();
+        write_output(&mut output, &receiver, &AtomicBool::new(true)).unwrap();
+        assert_eq!(output, b"first\nsecond\n");
+        drop(sender);
+    }
+
+    struct ReplenishingSink {
+        sender: mpsc::SyncSender<Vec<u8>>,
+        output: Vec<u8>,
+        flushed: bool,
+        remaining: usize,
+    }
+
+    impl Write for ReplenishingSink {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.output.extend_from_slice(bytes);
+            if self.remaining > 0 {
+                self.sender.try_send(b"record\n".to_vec()).unwrap();
+                self.remaining -= 1;
+            }
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.flushed = true;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn shutdown_drain_is_finite_when_a_publisher_keeps_queuing() {
+        let (sender, receiver) = mpsc::sync_channel(QUEUE_CAPACITY);
+        sender.send(b"record\n".to_vec()).unwrap();
+        let mut sink = ReplenishingSink {
+            sender,
+            output: Vec::new(),
+            flushed: false,
+            remaining: QUEUE_CAPACITY + 1,
+        };
+        write_output(&mut sink, &receiver, &AtomicBool::new(true)).unwrap();
+        assert_eq!(sink.output, b"record\n".repeat(QUEUE_CAPACITY));
+        assert!(sink.flushed);
+        assert_eq!(receiver.try_recv().unwrap(), b"record\n");
     }
 
     struct BlockedSink {
@@ -339,7 +266,7 @@ mod tests {
             entered: entered_tx,
             release: Some(release_rx),
         };
-        let (guard, sender, _) = output_worker(sink, false).unwrap();
+        let (guard, sender) = output_worker(sink).unwrap();
         sender.send(b"first\n".to_vec()).unwrap();
         entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
         let start = Instant::now();

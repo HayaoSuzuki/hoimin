@@ -415,7 +415,6 @@ pub struct RawRunConfig {
 pub enum OutputFormat {
     Json,
     Jsonl,
-    Human,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

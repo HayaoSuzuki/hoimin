@@ -108,7 +108,7 @@ hoimin verify "$plan_path" --candidate '<ID_FROM_PLAN_JSON>' --format json \
 
 ## Compare and stop honestly
 
-Use `hoimin progress --format json` only when every supplied report covers the identical candidate-ID set.
+Use `hoimin progress` only when every supplied report covers the identical candidate-ID set.
 Do not use arbitrary one-candidate or changing-subset verify reports to infer
 improvement, stalls, or saturation. When a planned candidate remains unverified, say so. When
 `PLAN.json` was truncated, also say that candidates outside its retained partial set were never

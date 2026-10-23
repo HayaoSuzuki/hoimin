@@ -125,7 +125,7 @@ SKILLS = {
                 "   run, cancellation, or error stops the loop for diagnosis."
             ),
             (
-                "Use `hoimin progress --format json` only when every supplied "
+                "Use `hoimin progress` only when every supplied "
                 "report covers the identical candidate-ID set.\n"
                 "Do not use arbitrary one-candidate or changing-subset verify "
                 "reports to infer\n"

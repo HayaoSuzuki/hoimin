@@ -114,10 +114,9 @@ where
                 )
                 .await
                 {
-                    Ok(preview) => command_result(
-                        preview.write(args.format, &mut stdout).map(|()| 0),
-                        &mut stderr,
-                    ),
+                    Ok(preview) => {
+                        command_result(preview.write(&mut stdout).map(|()| 0), &mut stderr)
+                    }
                     Err(error) => {
                         write_terminal_error(error.to_string(), stderr).await;
                         2

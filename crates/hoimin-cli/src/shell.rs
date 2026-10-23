@@ -7633,7 +7633,7 @@ mod tests {
 
     #[tokio::test]
     async fn owned_report_io_failure_releases_managed_roots_without_output_acknowledgement() {
-        for format in ["json", "jsonl", "human"] {
+        for format in ["json", "jsonl"] {
             let project = tempfile::tempdir().unwrap();
             let config = output_failure_test_config(&project, format);
             let control = RunControl::new();
@@ -7769,7 +7769,7 @@ mod tests {
 
     #[tokio::test]
     async fn every_output_format_rejects_ack_on_write_or_delivery_cleanup_failure() {
-        for format in ["json", "jsonl", "human"] {
+        for format in ["json", "jsonl"] {
             let project = tempfile::tempdir().unwrap();
             let config = output_failure_test_config(&project, format);
             let control = RunControl::new();

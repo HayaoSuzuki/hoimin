@@ -388,7 +388,7 @@ async fn public_output(
     }
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
     command
-        .args(["progress", "--format", "json", "--patience"])
+        .args(["progress", "--patience"])
         .arg(item.patience.to_string())
         .args(&reports)
         .kill_on_drop(true);

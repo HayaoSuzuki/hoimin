@@ -31,7 +31,6 @@ where
         fail_on_regression,
         reports,
         patience,
-        format,
         details,
         details_limit,
     } = args;
@@ -68,7 +67,6 @@ where
     drop(previous);
     let result = accumulator.into_result();
     render::render(
-        format,
         &inputs,
         &eligibilities,
         &result,
