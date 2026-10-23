@@ -19,6 +19,20 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Dependency reduction (#1096–#1098)
+
+`hoimin completions` and shell-script generation are removed. Use the current
+CLI help and reference; no command alias or replacement generator is provided.
+File locking now uses Rust's standard library instead of fs2.
+
+Managed-workspace coordinators use schema 2 with full BLAKE3 slot digests instead
+of CRC32. New workspaces use `hoimin-workspaces-v2` under the temporary parent.
+The old `hoimin-workspaces-v1` directory is neither read, migrated nor reclaimed
+by this version. It may be removed manually after all older hoimin processes
+using it have exited and any retained artifacts are no longer needed.
+Unsupported coordinator files placed in the new namespace are rejected without
+rewriting them. Plan, report, review and session schemas are unchanged.
+
 ## Session companion hardlink admission (#1094)
 
 Existing journal/WAL/SHM entries must be regular, non-symlink files with a single

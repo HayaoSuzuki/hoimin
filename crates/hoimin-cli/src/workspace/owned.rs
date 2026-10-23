@@ -131,13 +131,45 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
-    fn platform_lock_contention_is_classified_as_retryable() {
-        assert!(super::lock_error_is_busy(&fs2::lock_contended_error()));
-        assert!(!super::lock_error_is_busy(&std::io::Error::new(
-            std::io::ErrorKind::PermissionDenied,
-            "hard lock failure",
-        )));
+    fn bootstrap_returns_hard_lock_errors_without_retrying() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = Utf8Path::from_path(directory.path())
+            .unwrap()
+            .join("coordinator");
+        std::fs::write(&path, b"unchanged").unwrap();
+        // O_PATH owns a valid descriptor that cannot perform file locking.
+        let file = std::fs::File::from(
+            rustix::fs::open(
+                path.as_std_path(),
+                rustix::fs::OFlags::PATH,
+                rustix::fs::Mode::empty(),
+            )
+            .unwrap(),
+        );
+        assert!(matches!(
+            file.try_lock(),
+            Err(std::fs::TryLockError::Error(_))
+        ));
+
+        let result = super::lock_file_until(
+            &file,
+            std::time::Instant::now() + std::time::Duration::from_secs(1),
+            &path,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(super::WorkspaceError::Io {
+                    operation: "lock coordinator",
+                    ..
+                })
+            ),
+            "{result:?}"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), b"unchanged");
     }
 
     #[cfg(windows)]
@@ -691,7 +723,7 @@ mod tests {
             super::file_identity(&lease_reader).unwrap(),
             retained_lease_identity
         );
-        assert!(fs2::FileExt::try_lock_exclusive(&lease_reader).is_err());
+        assert!(std::fs::File::try_lock(&lease_reader).is_err());
         let heartbeat_updater = super::super::root::windows::open_regular_file_for_update_shared(
             &root.dir,
             std::ffi::OsStr::new(super::HEARTBEAT_FILE),
@@ -824,7 +856,7 @@ mod tests {
         root.mark_cleanup_ready().unwrap();
         {
             let lease = root.lease.lock().unwrap();
-            fs2::FileExt::unlock(lease.as_deref().unwrap()).unwrap();
+            std::fs::File::unlock(lease.as_deref().unwrap()).unwrap();
         }
 
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
@@ -834,7 +866,7 @@ mod tests {
         assert!(published.exists());
         {
             let lease = root.lease.lock().unwrap();
-            fs2::FileExt::try_lock_exclusive(lease.as_deref().unwrap()).unwrap();
+            std::fs::File::try_lock(lease.as_deref().unwrap()).unwrap();
         }
         let cleanup = root.cleanup(std::time::Duration::from_secs(5));
         assert_eq!(
@@ -865,7 +897,7 @@ mod tests {
             .unwrap();
         {
             let lease = root.lease.lock().unwrap();
-            fs2::FileExt::unlock(lease.as_deref().unwrap()).unwrap();
+            std::fs::File::unlock(lease.as_deref().unwrap()).unwrap();
         }
         drop(root);
         let future = std::time::SystemTime::now() + std::time::Duration::from_hours(25);
@@ -878,7 +910,7 @@ mod tests {
     }
 
     #[test]
-    fn coordinator_uses_the_fixed_two_slot_crc_layout() {
+    fn coordinator_uses_full_blake3_digests_in_fixed_slots() {
         let parent = tempfile::tempdir().unwrap();
         let parent = Utf8Path::from_path(parent.path()).unwrap();
         let _coordinator = ManagedRootCoordinator::open(parent).unwrap();
@@ -889,15 +921,54 @@ mod tests {
         for start in [1, 513] {
             let slot = &bytes[start..start + 512];
             assert_eq!(&slot[0..8], b"HMCUR001");
-            assert_eq!(u32::from_le_bytes(slot[8..12].try_into().unwrap()), 1);
+            assert_eq!(u32::from_le_bytes(slot[8..12].try_into().unwrap()), 2);
             assert_eq!(u64::from_le_bytes(slot[12..20].try_into().unwrap()), 0);
             assert_eq!(u16::from_le_bytes(slot[20..22].try_into().unwrap()), 0);
-            assert!(slot[22..508].iter().all(|byte| *byte == 0));
-            assert_eq!(
-                u32::from_le_bytes(slot[508..512].try_into().unwrap()),
-                crc32fast::hash(&slot[..508])
-            );
+            assert!(slot[22..480].iter().all(|byte| *byte == 0));
+            assert_eq!(&slot[480..512], blake3::hash(&slot[..480]).as_bytes());
         }
+    }
+
+    #[test]
+    fn new_coordinator_namespace_leaves_old_workspaces_untouched() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let old = parent.join("hoimin-workspaces-v1");
+        std::fs::create_dir(&old).unwrap();
+        std::fs::write(old.join(COORDINATOR_FILE), b"old coordinator").unwrap();
+        std::fs::write(old.join("retained-source.py"), b"value = True\n").unwrap();
+
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        assert_ne!(coordinator.path, old);
+        assert_eq!(
+            std::fs::read(old.join(COORDINATOR_FILE)).unwrap(),
+            b"old coordinator"
+        );
+        assert_eq!(
+            std::fs::read(old.join("retained-source.py")).unwrap(),
+            b"value = True\n"
+        );
+    }
+
+    #[test]
+    fn old_coordinator_schema_is_rejected_without_rewriting() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let path = coordinator.path.join(COORDINATOR_FILE);
+        drop(coordinator);
+        // Schema 1's empty slot, with its CRC32 precomputed independently.
+        let mut slot = [0_u8; 512];
+        slot[..8].copy_from_slice(b"HMCUR001");
+        slot[8..12].copy_from_slice(&1_u32.to_le_bytes());
+        slot[508..].copy_from_slice(&[100, 205, 203, 59]);
+        let mut bytes = vec![0];
+        bytes.extend_from_slice(&slot);
+        bytes.extend_from_slice(&slot);
+        std::fs::write(&path, &bytes).unwrap();
+
+        assert!(ManagedRootCoordinator::open(parent).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
     }
 
     #[test]
@@ -1141,8 +1212,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(file.metadata().unwrap().len(), 1_025);
-        fs2::FileExt::try_lock_exclusive(&file).unwrap();
-        fs2::FileExt::unlock(&file).unwrap();
+        std::fs::File::try_lock(&file).unwrap();
+        std::fs::File::unlock(&file).unwrap();
     }
 
     #[cfg(unix)]
@@ -1279,10 +1350,10 @@ mod tests {
                 .write(true)
                 .open(writer_path)
                 .unwrap();
-            fs2::FileExt::lock_exclusive(&file).unwrap();
+            std::fs::File::lock(&file).unwrap();
             file.write_all(&super::initial_coordinator_bytes()).unwrap();
             file.sync_all().unwrap();
-            fs2::FileExt::unlock(&file).unwrap();
+            std::fs::File::unlock(&file).unwrap();
         });
 
         let coordinator =
@@ -1401,6 +1472,49 @@ mod tests {
         std::fs::write(&path, bytes).unwrap();
 
         ManagedRootCoordinator::open(parent).unwrap();
+    }
+
+    #[test]
+    fn damaged_newest_digest_recovers_the_previous_cursor() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let path = coordinator.path.join(COORDINATOR_FILE);
+        let first_cursor = "run-00000000-0000-0000-0000-000000000001";
+        let next_cursor = "run-00000000-0000-0000-0000-000000000002";
+        let guard = super::CoordinatorLockGuard::acquire(&coordinator).unwrap();
+        let (slot, state) = super::read_coordinator_state(&coordinator.file, &path).unwrap();
+        super::persist_coordinator_cursor(&coordinator.file, &path, slot, &state, first_cursor)
+            .unwrap();
+        let (slot, state) = super::read_coordinator_state(&coordinator.file, &path).unwrap();
+        assert_eq!(
+            (slot, state.generation, state.cursor.as_str()),
+            (1, 1, first_cursor)
+        );
+        super::persist_coordinator_cursor(&coordinator.file, &path, slot, &state, next_cursor)
+            .unwrap();
+        let (slot, state) = super::read_coordinator_state(&coordinator.file, &path).unwrap();
+        assert_eq!(
+            (slot, state.generation, state.cursor.as_str()),
+            (0, 2, next_cursor)
+        );
+        guard.unlock(&path).unwrap();
+        drop(coordinator);
+        let mut bytes = std::fs::read(&path).unwrap();
+        bytes[481] ^= 1; // First slot's BLAKE3 digest; its payload is intact.
+        std::fs::write(&path, &bytes).unwrap();
+
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let (slot, state) = super::read_coordinator_state(&coordinator.file, &path).unwrap();
+        assert_eq!(
+            (slot, state.generation, state.cursor.as_str()),
+            (1, 1, first_cursor)
+        );
+        drop(coordinator);
+        bytes[993] ^= 1; // Damage the second digest too: neither slot is usable.
+        std::fs::write(&path, &bytes).unwrap();
+        assert!(ManagedRootCoordinator::open(parent).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
     }
 
     #[test]
@@ -1913,7 +2027,7 @@ mod tests {
         let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
         let competing =
             super::open_regular_file_nofollow(&coordinator.dir, COORDINATOR_FILE).unwrap();
-        fs2::FileExt::try_lock_exclusive(&competing).unwrap();
+        std::fs::File::try_lock(&competing).unwrap();
 
         let mut cleanup = root.cleanup(std::time::Duration::from_secs(5));
         cleanup.evidence.details.clear();
@@ -2199,7 +2313,7 @@ mod tests {
         // Establish an abandoned, unlocked fixture even while that copy stays open.
         {
             let lease = root.lease.lock().unwrap();
-            fs2::FileExt::unlock(lease.as_deref().unwrap()).unwrap();
+            std::fs::File::unlock(lease.as_deref().unwrap()).unwrap();
         }
         drop(root);
 
@@ -2324,7 +2438,7 @@ mod tests {
         };
         let replacement_lease = replacement.lease.lock().unwrap();
         let marker = replacement_lease.as_deref().unwrap();
-        fs2::FileExt::unlock(marker).unwrap();
+        std::fs::File::unlock(marker).unwrap();
         let mut options = cap_std::fs::OpenOptions::new();
         options.write(true).truncate(true);
         let mut marker_writer = replacement
@@ -2334,7 +2448,7 @@ mod tests {
         serde_json::to_writer(&mut marker_writer, &copied_marker).unwrap();
         marker_writer.sync_all().unwrap();
         drop(marker_writer);
-        fs2::FileExt::try_lock_exclusive(marker).unwrap();
+        std::fs::File::try_lock(marker).unwrap();
         let claim = original.claim_with_handle_handoff(
             &coordinator.dir,
             &original_name,
@@ -2378,8 +2492,11 @@ mod tests {
             lease_identity
         );
         let competing = super::open_regular_file_nofollow(&root.dir, super::LEASE_FILE).unwrap();
-        let lock_error = fs2::FileExt::try_lock_exclusive(&competing).unwrap_err();
-        assert!(super::lock_error_is_busy(&lock_error), "{lock_error}");
+        let lock_error = std::fs::File::try_lock(&competing).unwrap_err();
+        assert!(
+            matches!(lock_error, std::fs::TryLockError::WouldBlock),
+            "{lock_error}"
+        );
         drop(competing);
         drop(lease);
         let heartbeat = root.heartbeat.lock().unwrap();
@@ -2441,7 +2558,7 @@ mod tests {
             .unwrap();
         {
             let lease = root.lease.lock().unwrap();
-            fs2::FileExt::unlock(lease.as_deref().unwrap()).unwrap();
+            std::fs::File::unlock(lease.as_deref().unwrap()).unwrap();
         }
         drop(root);
 
@@ -2636,7 +2753,7 @@ mod tests {
         // Closing the owner's handle alone does not establish an unlocked fixture.
         {
             let lease = root.lease.lock().unwrap();
-            fs2::FileExt::unlock(lease.as_deref().unwrap()).unwrap();
+            std::fs::File::unlock(lease.as_deref().unwrap()).unwrap();
         }
         drop(root);
         coordinator
@@ -2942,7 +3059,7 @@ mod tests {
         // Establish the abandoned, unlocked fixture even while a fork retains its copy.
         {
             let lease = root.lease.lock().unwrap();
-            fs2::FileExt::unlock(lease.as_deref().unwrap()).unwrap();
+            std::fs::File::unlock(lease.as_deref().unwrap()).unwrap();
         }
         drop(root);
         coordinator
@@ -2970,7 +3087,6 @@ use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use camino::{Utf8Path, Utf8PathBuf};
-use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 
 use super::WorkspaceError;
@@ -3048,7 +3164,7 @@ fn owned_directory_entries(dir: &cap_std::fs::Dir) -> std::io::Result<OwnedDirec
     }
 }
 
-const MANAGED_DIR: &str = "hoimin-workspaces-v1";
+const MANAGED_DIR: &str = "hoimin-workspaces-v2";
 const STAGING_PREFIX: &str = ".staging-";
 const ACTIVE_PREFIX: &str = "run-";
 const DELETING_PREFIX: &str = ".deleting-";
@@ -3060,14 +3176,16 @@ const COORDINATOR_FILE: &str = ".hoimin-coordinator";
 const COORDINATOR_BYTES: u64 = 1_025;
 const COORDINATOR_LAYOUT_BYTES: usize = 1_025;
 const COORDINATOR_SLOT_BYTES: usize = 512;
-const COORDINATOR_CURSOR_BYTES: usize = 480;
+// Full BLAKE3 digest occupies the final 32 bytes of each fixed-size slot.
+const COORDINATOR_DIGEST_OFFSET: usize = COORDINATOR_SLOT_BYTES - blake3::OUT_LEN;
+const COORDINATOR_CURSOR_BYTES: usize = COORDINATOR_DIGEST_OFFSET - 22;
 type LocalCoordinatorLock = Arc<Mutex<()>>;
 type LocalCoordinatorRegistry = Mutex<HashMap<(u64, u64), Weak<Mutex<()>>>>;
 type LocalCoordinatorRegistryGuard<'a> =
     std::sync::MutexGuard<'a, HashMap<(u64, u64), Weak<Mutex<()>>>>;
 static COORDINATOR_LOCAL_LOCKS: OnceLock<LocalCoordinatorRegistry> = OnceLock::new();
 const COORDINATOR_MAGIC: &[u8; 8] = b"HMCUR001";
-const COORDINATOR_SCHEMA: u32 = 1;
+const COORDINATOR_SCHEMA: u32 = 2;
 const LEASE_SCHEMA: u32 = 1;
 const MAX_MARKER_BYTES: u64 = 64 * 1024;
 const MAX_MANAGED_CHILDREN: usize = 100_000;
@@ -3148,13 +3266,13 @@ impl<'a> CoordinatorLockGuard<'a> {
                 return Ok(None);
             }
         };
-        match FileExt::try_lock_exclusive(&coordinator.file) {
+        match File::try_lock(&coordinator.file) {
             Ok(()) => Ok(Some(Self {
                 file: &coordinator.file,
                 _local: local,
                 locked: true,
             })),
-            Err(error) if lock_error_is_busy(&error) => Ok(None),
+            Err(std::fs::TryLockError::WouldBlock) => Ok(None),
             Err(error) => Err(WorkspaceError::io(
                 "lock coordinator",
                 &coordinator.path,
@@ -3170,14 +3288,14 @@ impl<'a> CoordinatorLockGuard<'a> {
         loop {
             ensure_bootstrap_deadline(deadline, &coordinator.path, "lock coordinator")?;
             match coordinator.local_lock.try_lock() {
-                Ok(local) => match FileExt::try_lock_exclusive(&coordinator.file) {
+                Ok(local) => match File::try_lock(&coordinator.file) {
                     Ok(()) => {
                         if let Err(error) = ensure_bootstrap_deadline(
                             deadline,
                             &coordinator.path,
                             "lock coordinator",
                         ) {
-                            let _ = FileExt::unlock(&coordinator.file);
+                            let _ = File::unlock(&coordinator.file);
                             return Err(error);
                         }
                         return Ok(Self {
@@ -3186,7 +3304,7 @@ impl<'a> CoordinatorLockGuard<'a> {
                             locked: true,
                         });
                     }
-                    Err(error) if lock_error_is_busy(&error) => drop(local),
+                    Err(std::fs::TryLockError::WouldBlock) => drop(local),
                     Err(error) => {
                         return Err(WorkspaceError::io(
                             "lock coordinator",
@@ -3215,7 +3333,7 @@ impl<'a> CoordinatorLockGuard<'a> {
     }
 
     fn unlock(mut self, path: &Utf8Path) -> Result<(), WorkspaceError> {
-        FileExt::unlock(self.file)
+        File::unlock(self.file)
             .map_err(|error| WorkspaceError::io("unlock coordinator", path, error))?;
         self.locked = false;
         Ok(())
@@ -3225,7 +3343,7 @@ impl<'a> CoordinatorLockGuard<'a> {
 impl Drop for CoordinatorLockGuard<'_> {
     fn drop(&mut self) {
         if self.locked {
-            let _ = FileExt::unlock(self.file);
+            let _ = File::unlock(self.file);
         }
     }
 }
@@ -3822,14 +3940,14 @@ fn initialize_new_coordinator(
         ensure_bootstrap_deadline(deadline, coordinator_path, "secure coordinator")?;
         validate_coordinator_file(&mut file, coordinator_path)?;
         ensure_bootstrap_deadline(deadline, coordinator_path, "validate coordinator")?;
-        FileExt::unlock(&file)
+        File::unlock(&file)
             .map_err(|error| WorkspaceError::io("unlock coordinator", coordinator_path, error))?;
         ensure_bootstrap_deadline(deadline, coordinator_path, "unlock coordinator")
     })();
     match initialized {
         Ok(()) => Ok(file),
         Err(error) => {
-            let _ = FileExt::unlock(&file);
+            let _ = File::unlock(&file);
             drop(file);
             if let Err(cleanup) = remove_new_coordinator_if_identity(dir, identity) {
                 return Err(WorkspaceError::io(
@@ -3913,7 +4031,7 @@ fn open_initialized_coordinator_until(
             == 0;
         ensure_bootstrap_deadline(deadline, coordinator_path, "inspect coordinator")?;
         if is_uninitialized {
-            FileExt::unlock(&file).map_err(|error| {
+            File::unlock(&file).map_err(|error| {
                 WorkspaceError::io("unlock coordinator", coordinator_path, error)
             })?;
             if std::time::Instant::now() >= deadline {
@@ -3933,7 +4051,7 @@ fn open_initialized_coordinator_until(
         ensure_bootstrap_deadline(deadline, coordinator_path, "secure coordinator")?;
         validate_coordinator_file(&mut file, coordinator_path)?;
         ensure_bootstrap_deadline(deadline, coordinator_path, "validate coordinator")?;
-        FileExt::unlock(&file)
+        File::unlock(&file)
             .map_err(|error| WorkspaceError::io("unlock coordinator", coordinator_path, error))?;
         ensure_bootstrap_deadline(deadline, coordinator_path, "unlock coordinator")?;
         return Ok(file);
@@ -3986,17 +4104,17 @@ fn lock_file_until(
 ) -> Result<(), WorkspaceError> {
     loop {
         ensure_bootstrap_deadline(deadline, path, "lock coordinator bootstrap")?;
-        match FileExt::try_lock_exclusive(file) {
+        match File::try_lock(file) {
             Ok(()) => {
                 if let Err(error) =
                     ensure_bootstrap_deadline(deadline, path, "lock coordinator bootstrap")
                 {
-                    let _ = FileExt::unlock(file);
+                    let _ = File::unlock(file);
                     return Err(error);
                 }
                 return Ok(());
             }
-            Err(error) if lock_error_is_busy(&error) => {
+            Err(std::fs::TryLockError::WouldBlock) => {
                 if std::time::Instant::now() >= deadline {
                     return Err(WorkspaceError::io(
                         "lock coordinator bootstrap",
@@ -4011,14 +4129,6 @@ fn lock_file_until(
             }
             Err(error) => return Err(WorkspaceError::io("lock coordinator", path, error)),
         }
-    }
-}
-
-fn lock_error_is_busy(error: &std::io::Error) -> bool {
-    let contended = fs2::lock_contended_error();
-    match (error.raw_os_error(), contended.raw_os_error()) {
-        (Some(actual), Some(expected)) => actual == expected,
-        _ => error.kind() == contended.kind(),
     }
 }
 
@@ -4074,8 +4184,8 @@ fn coordinator_slot_bytes(
             .to_le_bytes(),
     );
     slot[22..22 + cursor.len()].copy_from_slice(cursor.as_bytes());
-    let crc = crc32fast::hash(&slot[..508]);
-    slot[508..].copy_from_slice(&crc.to_le_bytes());
+    let digest = blake3::hash(&slot[..COORDINATOR_DIGEST_OFFSET]);
+    slot[COORDINATOR_DIGEST_OFFSET..].copy_from_slice(digest.as_bytes());
     Ok(slot)
 }
 
@@ -4126,9 +4236,11 @@ fn decode_coordinator_slot(slot: &[u8]) -> Option<CoordinatorSlot> {
     let valid = &slot[..8] == COORDINATOR_MAGIC
         && u32::from_le_bytes(slot[8..12].try_into().expect("fixed slot")) == COORDINATOR_SCHEMA
         && cursor_len <= COORDINATOR_CURSOR_BYTES
-        && slot[22 + cursor_len..508].iter().all(|byte| *byte == 0)
-        && u32::from_le_bytes(slot[508..512].try_into().expect("fixed slot"))
-            == crc32fast::hash(&slot[..508]);
+        && slot[22 + cursor_len..COORDINATOR_DIGEST_OFFSET]
+            .iter()
+            .all(|byte| *byte == 0)
+        && &slot[COORDINATOR_DIGEST_OFFSET..]
+            == blake3::hash(&slot[..COORDINATOR_DIGEST_OFFSET]).as_bytes();
     if !valid {
         return None;
     }
@@ -4591,7 +4703,7 @@ impl ManagedRunRoot {
             lease
                 .sync_all()
                 .map_err(|error| WorkspaceError::io("flush lease marker", &lease_path, error))?;
-            FileExt::try_lock_exclusive(&lease)
+            File::try_lock(&lease)
                 .map_err(|error| WorkspaceError::io("lock lease marker", &lease_path, error))?;
             let heartbeat_path = staging_path.join(HEARTBEAT_FILE);
             let mut heartbeat =
@@ -4959,7 +5071,7 @@ impl ManagedRunRoot {
         let local_guard = self.coordinator_local_lock.try_lock().map_err(|error| {
             WorkspaceError::io("lock coordinator", &self.path, error.to_string())
         })?;
-        FileExt::try_lock_exclusive(&self.coordinator_file)
+        File::try_lock(&self.coordinator_file)
             .map_err(|error| WorkspaceError::io("lock coordinator", &self.path, error))?;
         let claim = self.claim_with_handle_handoff(
             &self.coordinator_dir,
@@ -4967,7 +5079,7 @@ impl ManagedRunRoot {
             destination_name,
             &|| Ok(()),
         );
-        let unlock = FileExt::unlock(&self.coordinator_file)
+        let unlock = File::unlock(&self.coordinator_file)
             .map_err(|error| WorkspaceError::io("unlock coordinator", &self.path, error));
         drop(local_guard);
         match (claim, unlock) {
@@ -5527,8 +5639,8 @@ impl ManagedRunRoot {
                     return record;
                 }
             };
-            if let Err(error) = FileExt::try_lock_exclusive(&self.coordinator_file) {
-                if lock_error_is_busy(&error) {
+            if let Err(error) = File::try_lock(&self.coordinator_file) {
+                if matches!(error, std::fs::TryLockError::WouldBlock) {
                     record.disposition = CleanupDisposition::Deferred(Some(
                         CleanupRetryReason::CoordinatorContention,
                     ));
@@ -5559,7 +5671,7 @@ impl ManagedRunRoot {
                     }
                 },
             );
-            let unlock = FileExt::unlock(&self.coordinator_file);
+            let unlock = File::unlock(&self.coordinator_file);
             if let Err(error) = unlock {
                 if NamespaceLifecycle::load(&self.namespace) == NamespaceLifecycle::Deleting {
                     record.evidence.remaining_root = Some(
@@ -6078,8 +6190,8 @@ impl ManagedRunRoot {
                     continue;
                 }
             };
-            if let Err(error) = FileExt::try_lock_exclusive(&lease) {
-                let reason = if lock_error_is_busy(&error) {
+            if let Err(error) = File::try_lock(&lease) {
+                let reason = if matches!(error, std::fs::TryLockError::WouldBlock) {
                     JanitorReason::ActiveLease
                 } else {
                     JanitorReason::LeaseLockFailed
@@ -7338,7 +7450,7 @@ fn reopen_locked_lease(
     {
         return Err(WorkspaceError::InvalidPath { path: lease_path });
     }
-    FileExt::try_lock_exclusive(&lease)
+    File::try_lock(&lease)
         .map_err(|error| WorkspaceError::io("lock workspace lease", &lease_path, error))?;
     if read_marker_file(&lease).as_ref() != Some(&expected.marker) {
         return Err(WorkspaceError::InvalidPath { path: lease_path });

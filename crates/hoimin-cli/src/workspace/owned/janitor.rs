@@ -346,7 +346,7 @@ mod boundary_tests {
         }
         let observed_root = root.dir.try_clone().unwrap();
         root.mark_cleanup_ready().unwrap();
-        fs2::FileExt::unlock(root.lease.lock().unwrap().as_deref().unwrap()).unwrap();
+        std::fs::File::unlock(root.lease.lock().unwrap().as_deref().unwrap()).unwrap();
         drop(root);
         let stopped = || {
             payload

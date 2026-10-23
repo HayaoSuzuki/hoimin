@@ -223,7 +223,7 @@ async fn successful_clap_displays_use_stdout() {
 }
 
 #[tokio::test]
-async fn completions_command_writes_shell_script_to_stdout() {
+async fn removed_completions_command_reports_an_error_without_stdout() {
     let stdout = CollectingWriter::default();
     let stderr = CollectingWriter::default();
 
@@ -234,14 +234,10 @@ async fn completions_command_writes_shell_script_to_stdout() {
     )
     .await;
 
-    assert_eq!(exit, 0);
-    assert!(stderr.is_empty(), "{stderr:?}");
-    let stdout = String::from_utf8(stdout.snapshot()).unwrap();
-    assert!(
-        stdout.contains("_hoimin"),
-        "missing hoimin completion function"
-    );
-    assert!(stdout.contains("--changed-context"));
+    assert_eq!(exit, 2);
+    assert!(stdout.is_empty(), "{stdout:?}");
+    let stderr = String::from_utf8(stderr.snapshot()).unwrap();
+    assert!(stderr.contains("unrecognized subcommand"), "{stderr}");
 }
 
 #[tokio::test]

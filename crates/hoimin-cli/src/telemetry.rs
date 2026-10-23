@@ -285,7 +285,7 @@ mod tests {
         let progress: Progress = Arc::default();
         let subscriber = Registry::default().with(ProgressLayer(Arc::clone(&progress)));
         tracing::subscriber::with_default(subscriber, || {
-            // Help/completions finish without ever starting progress.
+            // Help finishes without ever starting progress.
             finish(0);
             let mut output = Vec::new();
             render_progress(&mut output, &progress).unwrap();

@@ -5,7 +5,6 @@ use std::path::PathBuf;
 
 use camino::Utf8PathBuf;
 use clap::{ArgGroup, Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
-use clap_complete::Shell;
 use hoimin_core::{
     CommandArg, ConfigError, LineRange, LineSelection, MutationOperatorSelection, MutationProfile,
     OutputConfig, RawRunConfig, RawRunLimits, RunConfig, SessionConfig, SymbolSelection,
@@ -39,15 +38,6 @@ enum Command {
     Progress(RawProgressArgs),
     /// Record and inspect human assessments independently of test outcomes.
     Review(ReviewCommand),
-    /// Generate shell completion scripts.
-    Completions(CompletionsArgs),
-}
-
-#[derive(Debug, Args)]
-pub struct CompletionsArgs {
-    /// Shell to generate completions for.
-    #[arg(value_enum)]
-    pub shell: Shell,
 }
 
 #[derive(Debug, Args)]
@@ -499,7 +489,6 @@ pub enum ParsedCommand {
     Verify(VerifyArgs),
     Progress(ProgressArgs),
     Review(ReviewArgs),
-    Completions(CompletionsArgs),
 }
 
 #[derive(Debug)]
@@ -635,16 +624,11 @@ impl TryFrom<Command> for ParsedCommand {
                 format: raw.format,
             })),
             Command::Review(args) => Ok(Self::Review(args.command)),
-            Command::Completions(args) => Ok(Self::Completions(args)),
         }
     }
 }
 
-pub fn write_completions(shell: Shell, writer: &mut impl std::io::Write) {
-    clap_complete::generate(shell, &mut root_command(), "hoimin", writer);
-}
-
-/// Builds the shared command definition used by parsing, completions and documentation.
+/// Builds the shared command definition used by parsing and documentation.
 /// Usage/help use the trusted product name even when the executable is renamed.
 #[must_use]
 pub fn root_command() -> clap::Command {

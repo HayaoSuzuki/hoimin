@@ -301,7 +301,6 @@ These are branches of the same CLI application, not additional containers.
 | `verify --dry-run` | Checked plan → preview | Writes a preview without baseline/mutant execution |
 | `progress` | Validated saved reports → comparison → rendering | Reads reports; no mutation test execution |
 | `review list/show/record` | Plan, optional report and current source identity → review store | Reads assessments or records revisioned assessments separately from run results |
-| `completions` | CLI definitions → completion script writer | Writes a shell completion script |
 
 Shared [artifact readers](../../crates/hoimin-cli/src/artifacts/mod.rs) open
 plan/report inputs as regular files and provide bounded reads where required.
