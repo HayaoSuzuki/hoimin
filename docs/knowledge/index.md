@@ -76,6 +76,7 @@ recorded revisions against the implementation you are changing:
 Treat these as evidence at their recorded revisions, inputs and environments,
 not a claim that every current host or commit passed the same checks:
 
+- [Design and resource audit after PR 1093](audits/design-2026-10-23-post1093.md) - Fixed JSON buffer and Tokio follow-up, new type/state/performance candidates declined, session companion defect; audit included with #1094 implementation.
 - [Design and resource audit after PR 1090](audits/design-2026-10-23-post1090.md) - JSON record buffer/write tradeoff, retained type/state boundaries and unresolved companion admission; audit included with #1092 implementation.
 - [Design and resource audit after PR 1088](audits/design-2026-10-22-post1088.md) - Session companion hardlinks and transient descriptor copies; audit included with #1089 implementation.
 - [Design and resource audit after PR 1084](audits/design-2026-10-22-post1084.md) - Reproduced session hardlink source modification, borrowed tokens and review candidates; #1085–#1087, audit included with implementation.

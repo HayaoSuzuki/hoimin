@@ -19,6 +19,17 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Session companion hardlink admission (#1094)
+
+Existing journal/WAL/SHM entries must be regular, non-symlink files with a single
+hard link before any file-backed SQLite connection. Shared files now fail session
+admission even when the database is missing, empty, current, foreign or unsupported;
+source and session artifacts remain untouched. Nonregular, inaccessible and
+symlink entries also fail inspection before SQLite can create the database.
+Ordinary single-link sessions and resume remain supported. Choose a different
+session destination for a rejected alias; hoimin does not delete or repair it.
+No schema, CLI option, dependency or package-floor change is introduced.
+
 ## Fixed-capacity JSON mutant serialization (#1092)
 
 Each JSON mutant record now uses a record-local 8 KiB buffer rather than a
