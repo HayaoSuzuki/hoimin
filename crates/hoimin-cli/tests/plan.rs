@@ -719,7 +719,7 @@ async fn changed_selection_plan_matches_the_real_run_candidate_and_id() {
         hoimin_cli::run_with_writers(run_args, run_stdout.clone(), run_stderr.clone()).await;
     assert_eq!(
         run_code,
-        1,
+        0,
         "stderr={}",
         String::from_utf8_lossy(&run_stderr.snapshot())
     );
@@ -2296,7 +2296,7 @@ async fn assert_real_cli_top_selection(
 
     assert_eq!(
         code,
-        1,
+        0,
         "stderr={}",
         String::from_utf8_lossy(&stderr.snapshot())
     );
@@ -2380,7 +2380,7 @@ async fn verify_runs_only_requested_candidates() {
 
     assert_eq!(
         code,
-        1,
+        0,
         "stderr={}",
         String::from_utf8_lossy(&stderr.snapshot())
     );
@@ -2619,7 +2619,7 @@ async fn verify_top_budget_shortfall_warns_on_stderr_and_preserves_json_and_plan
 
     assert_eq!(
         code,
-        1,
+        0,
         "stderr={}",
         String::from_utf8_lossy(&stderr.snapshot())
     );
@@ -2660,7 +2660,7 @@ async fn verify_top_budget_shortfall_preserves_jsonl_stdout() {
 
     assert_eq!(
         code,
-        1,
+        0,
         "stderr={}",
         String::from_utf8_lossy(&stderr.snapshot())
     );
@@ -2704,7 +2704,7 @@ async fn verify_explicit_candidates_do_not_emit_budget_shortfall_warning() {
 
     assert_eq!(
         code,
-        1,
+        0,
         "stderr={}",
         String::from_utf8_lossy(&stderr.snapshot())
     );
@@ -3071,7 +3071,7 @@ async fn root_selection_excludes_uncopyable_sources_in_plan_run_and_verify() {
         stdout.clear();
         stderr.clear();
         let code = hoimin_cli::run_with_writers(command, stdout.clone(), stderr.clone()).await;
-        assert_eq!(code, 1, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+        assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
         let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         // pins: issue #452 — source discovery previously admitted files omitted from copying.
         assert_eq!(report["summary"]["complete"], true);
@@ -3306,10 +3306,10 @@ async fn fitting_candidate_record_limits_agree_for_plan_verify_and_direct_run() 
     let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
 
     assert_eq!(plan_exit, 0);
-    assert_eq!(verify_exit, 1, "{verify_stderr}");
+    assert_eq!(verify_exit, 0, "{verify_stderr}");
     assert_eq!(verified_report["summary"]["complete"], true);
     assert_eq!(verified_report["summary"]["counts"]["survived"], 1);
-    assert_eq!(code, 1, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
     assert_eq!(report["summary"]["complete"], true);
     assert_eq!(report["baseline"]["termination"]["Exit"], 0);
 
@@ -3522,7 +3522,7 @@ async fn fixed_batch_real_cli_reports_disjoint_ids_and_repeated_progress() {
         .unwrap();
         assert_eq!(
             output.status.code(),
-            Some(1),
+            Some(0),
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
@@ -3609,7 +3609,7 @@ async fn verify_metrics_exports_existing_sidecar_for_each_selection() {
         let stdout = CollectingWriter::default();
         let stderr = CollectingWriter::default();
         let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
-        assert_eq!(exit, 1, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+        assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
         let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         let metrics: hoimin_core::RunMetrics =
             serde_json::from_slice(&std::fs::read(&metrics_path).unwrap()).unwrap();
@@ -3643,7 +3643,7 @@ async fn verify_metrics_preserves_write_warning_and_source_collision_contracts()
     for (destination, expected_exit, diagnostic) in [
         (
             coordinator.path().join("missing/metrics.json"),
-            1,
+            0,
             "metrics.write",
         ),
         (source.clone(), 2, "metrics.destination"),
@@ -3672,7 +3672,7 @@ async fn verify_metrics_preserves_write_warning_and_source_collision_contracts()
             "{}",
             String::from_utf8_lossy(&stderr.snapshot())
         );
-        assert_eq!(marker.exists(), expected_exit == 1);
+        assert_eq!(marker.exists(), expected_exit == 0);
         assert_eq!(std::fs::read(&source).unwrap(), original);
     }
 }
@@ -3738,7 +3738,7 @@ async fn verify_metrics_real_cli_uses_invocation_directory_and_preserves_results
         .unwrap();
     assert_eq!(
         actual.status.code(),
-        Some(1),
+        Some(0),
         "{}",
         String::from_utf8_lossy(&actual.stderr)
     );
@@ -4599,7 +4599,7 @@ async fn verify_preview_public_cli_preserves_policy_range_and_execution_order_wi
         let run = preview_cli(&path, &args, temporary.path()).await;
         assert_eq!(
             run.status.code(),
-            Some(1),
+            Some(0),
             "{}",
             String::from_utf8_lossy(&run.stderr)
         );
@@ -4668,7 +4668,7 @@ async fn verify_preview_explicit_ids_follow_discovery_not_rank_argument_or_saved
     assert!(!project.path.join("session.sqlite3").exists());
     assert_eq!(std::fs::read_dir(temporary.path()).unwrap().count(), 0);
     let run = preview_cli(&path, &args, temporary.path()).await;
-    assert_eq!(run.status.code(), Some(1));
+    assert_eq!(run.status.code(), Some(0));
     assert_eq!(preview_started_ids(&run.stdout), expected);
 }
 
@@ -5163,7 +5163,7 @@ async fn verify_metrics_manifest_collision_is_also_rejected_with_owned_writers()
 
 #[tokio::test]
 async fn verify_metrics_manifest_distinct_entries_remain_replaceable() {
-    for (baseline_fails, expected_exit) in [(false, 1), (true, 3)] {
+    for (baseline_fails, expected_exit) in [(false, 0), (true, 3)] {
         let project = Project::new();
         let coordinator = tempfile::tempdir().unwrap();
         let marker = coordinator.path().join("marker");
@@ -5611,7 +5611,7 @@ async fn baseline_restoration_matches_full_run_and_single_candidate_verification
         let run_err = CollectingWriter::default();
         assert_eq!(
             hoimin_cli::run_with_writers(args, run_out.clone(), run_err.clone()).await,
-            1,
+            0,
             "{}",
             String::from_utf8_lossy(&run_err.snapshot())
         );
@@ -5628,7 +5628,7 @@ async fn baseline_restoration_matches_full_run_and_single_candidate_verification
             ];
             assert_eq!(
                 hoimin_cli::run_with_writers(args, verify_out.clone(), verify_err.clone()).await,
-                1,
+                0,
                 "{}",
                 String::from_utf8_lossy(&verify_err.snapshot())
             );

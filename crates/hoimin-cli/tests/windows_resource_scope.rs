@@ -195,7 +195,7 @@ async fn assert_scope(
         .unwrap();
     assert_eq!(
         output.status.code(),
-        Some(1),
+        Some(0),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );

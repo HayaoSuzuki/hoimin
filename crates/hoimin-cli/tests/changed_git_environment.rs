@@ -204,7 +204,7 @@ async fn target_git_sanitization_preserves_user_test_environment() {
     // Assert: a successful real baseline executed with the original value.
     assert_eq!(
         output.status.code(),
-        Some(1), // The baseline passes and the deliberately untested mutant survives.
+        Some(0), // The baseline passes and the deliberately untested mutant survives.
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );

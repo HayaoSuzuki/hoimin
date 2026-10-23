@@ -53,7 +53,7 @@ async fn cli(args: Vec<OsString>) -> (i32, serde_json::Value) {
     let stderr = CollectingWriter::default();
     let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
     assert!(
-        code <= 1,
+        code == 0,
         "exit={code}, stderr={}",
         String::from_utf8_lossy(&stderr.snapshot())
     );
@@ -164,7 +164,10 @@ async fn verify_negative_neighbor_detects_tail_boundary_missed_by_sign_flip() {
             "json".into(),
         ])
         .await;
-        assert_eq!(code, 1, "one surviving mutant should set exit 1");
+        assert_eq!(
+            code, 0,
+            "a completed run with a surviving mutant should succeed"
+        );
         assert_eq!(report["baseline"]["termination"]["Exit"], 0);
         assert_eq!(report["summary"]["counts"]["killed"], killed);
         assert_eq!(report["summary"]["counts"]["survived"], 1);

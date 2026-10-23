@@ -201,7 +201,7 @@ async fn import_only_run_does_not_count_duplicate_key_kills() {
             .unwrap();
         assert_eq!(
             output.status.code(),
-            Some(i32::from(survived > 0)),
+            Some(0),
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );

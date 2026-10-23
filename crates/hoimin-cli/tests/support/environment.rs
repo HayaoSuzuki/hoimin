@@ -87,7 +87,7 @@ impl Fixture {
             .code()
             .expect("infrastructure error: CLI terminated by signal");
         assert!(
-            matches!(exit_code, 0 | 1 | 3 | 4),
+            matches!(exit_code, 0 | 3 | 4),
             "infrastructure error: exit={exit_code} stdout={} stderr={}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)

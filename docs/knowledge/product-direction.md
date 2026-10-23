@@ -6,8 +6,9 @@ status: draft
 sources:
 - id: principles
   resource: ../product-principles.md
-  working_tree: untracked
-  sha256: f730f155b1e03a4b0fe84c8491b8e9f13f3ad99148e674713c82d3d6370433cd
+  revision: 1d192acf04de8983697c76ba2e4344965bb359a3
+  working_tree: clean
+  sha256: a47cf69d7e61d2a04888be04ff1aa349b3915909cf6c7307ab855bf7aaa8c8ab
 ---
 
 # Local test improvement by AI agents
@@ -26,9 +27,13 @@ and suspected equivalence is not a proof.[^principles]
 
 Resource limits, termination, cleanup, and honest partial results are central to
 delegated local execution. Their existing backend and aggregation limits remain
-in force. CI is an optional product use, while hoimin's own development and release
-checks remain required. Prioritize useful improvements and clear evidence over
-exhaustive runs or score maximization.[^principles]
+in force. The 2026-10-23 clarification places users' CI integration outside the
+product scope and removes mutation-score and regression gates. Complete run/verify
+executions and valid progress comparisons return success regardless of survivors
+or regressions. Agents inspect statuses, scores and histories to select their next
+steps. hoimin's own development and release checks remain required. Prioritize
+useful improvements and clear evidence over exhaustive runs or score
+maximization.[^principles]
 
 Read [runtime contracts](design/runtime-lifecycle.md),
 [selection and saved plans](design/selection-plan-verify.md), and
@@ -37,4 +42,4 @@ mechanisms. This decision adds no execution feature, new guarantee, or Issue-sta
 change. Recheck it when a proposal introduces score gates, automatic assessment
 effects, expanded resource consumption, or distributed execution.
 
-[^principles]: [Product principles](../product-principles.md), the maintainer's direction recorded from the 2026-10-12 discussion.
+[^principles]: [Product principles](../product-principles.md), the maintainer's direction recorded on 2026-10-12 and clarified on 2026-10-23.

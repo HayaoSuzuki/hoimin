@@ -175,7 +175,7 @@ fn issue_1094_ordinary_session_creation_and_resume_still_run_baseline() {
         let output = command.output().unwrap();
         assert_eq!(
             output.status.code(),
-            Some(if resume { 1 } else { 4 }),
+            Some(if resume { 0 } else { 4 }),
             "{output:?}"
         );
         assert!(marker.exists());

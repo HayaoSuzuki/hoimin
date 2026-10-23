@@ -150,7 +150,7 @@ theorem baseline_precedes_lower (policy : ExitPolicy)
     (baseline : policy.baselineFailed = true) : exitCode policy = 3 := by
   simp [exitCode, notInterrupted, noInfrastructure, baseline]
 
-theorem incomplete_precedes_survivors (policy : ExitPolicy)
+theorem incomplete_exit (policy : ExitPolicy)
     (notInterrupted : policy.interrupted = false)
     (noInfrastructure : policy.infrastructureError = false)
     (baselinePassed : policy.baselineFailed = false)
@@ -158,16 +158,17 @@ theorem incomplete_precedes_survivors (policy : ExitPolicy)
   simp [exitCode, notInterrupted, noInfrastructure, baselinePassed, incompleteRun]
 
 theorem survivor_only_is_complete :
-    complete { survivors := true } = true ∧ exitCode { survivors := true } = 1 := by
+    (observe [.survived] {}).complete = true ∧
+      (observe [.survived] {}).exitCode = 0 := by
   decide
 
 theorem complete_iff_no_failure_flags (policy : ExitPolicy) :
     complete policy = true ↔ policy.infrastructureError = false ∧
       policy.baselineFailed = false ∧ policy.incomplete = false ∧
       policy.interrupted = false := by
-  rcases policy with ⟨infrastructure, baseline, incompleteRun, survivors, interrupted⟩
+  rcases policy with ⟨infrastructure, baseline, incompleteRun, interrupted⟩
   cases infrastructure <;> cases baseline <;> cases incompleteRun <;>
-    cases survivors <;> cases interrupted <;> decide
+    cases interrupted <;> decide
 
 theorem composed_complete_iff (counts : Counts) (flags : RunFlags) :
     complete (composePolicy counts flags) = true ↔
@@ -179,8 +180,14 @@ theorem composed_complete_iff (counts : Counts) (flags : RunFlags) :
   simp [composePolicy, policyFromCounts, and_assoc, and_left_comm,
     and_comm]
 
-theorem survivors_do_not_change_completeness (policy : ExitPolicy) :
-    complete { policy with survivors := !policy.survivors } = complete policy := by
+theorem complete_exit_is_success (policy : ExitPolicy)
+    (completed : complete policy = true) : exitCode policy = 0 := by
+  obtain ⟨infrastructure, baseline, incompleteRun, interrupted⟩ :=
+    (complete_iff_no_failure_flags policy).mp completed
+  simp [exitCode, infrastructure, baseline, incompleteRun, interrupted]
+
+theorem survived_record_preserves_policy (counts : Counts) (flags : RunFlags) :
+    composePolicy (record counts .survived) flags = composePolicy counts flags := by
   rfl
 
 theorem observation_order_invariant

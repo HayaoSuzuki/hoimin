@@ -361,10 +361,6 @@ struct RawVerifyArgs {
 
 #[derive(Debug, Args)]
 struct RawProgressArgs {
-    /// Exit 1 when the latest state is regressing; indeterminate stays 0, errors stay 2.
-    #[arg(long)]
-    fail_on_regression: bool,
-
     /// Consecutive unchanged comparisons before the history is saturated.
     #[arg(
         long,
@@ -388,7 +384,6 @@ struct RawProgressArgs {
 
 #[derive(Debug)]
 pub struct ProgressArgs {
-    pub fail_on_regression: bool,
     pub details: bool,
     pub details_limit: usize,
     pub reports: Vec<PathBuf>,
@@ -595,7 +590,6 @@ impl TryFrom<Command> for ParsedCommand {
                 }))
             }
             Command::Progress(raw) => Ok(Self::Progress(ProgressArgs {
-                fail_on_regression: raw.fail_on_regression,
                 details: raw.details,
                 details_limit: raw.details_limit,
                 reports: raw.reports,

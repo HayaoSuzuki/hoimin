@@ -188,7 +188,7 @@ async fn sample_execution_matches_preview_and_preserves_sample_scope() {
         serde_json::json!(ids)
     );
     let (code, report, err) = cli(verify_args(&path, 3, 42)).await;
-    assert_eq!(code, 1, "{err}");
+    assert_eq!(code, 0, "{err}");
     assert_eq!(&report["run"]["verification_selection"], selection);
     assert_eq!(&report["summary"]["verification_selection"], selection);
     assert_eq!(report["summary"]["complete"], true);
@@ -387,7 +387,7 @@ async fn different_samples_keep_progress_candidate_set_checks() {
     let mut paths = Vec::new();
     for seed in [1, 42] {
         let (code, report, err) = cli(verify_args(&path, 3, seed)).await;
-        assert_eq!(code, 1, "{err}");
+        assert_eq!(code, 0, "{err}");
         let report_path = path.with_file_name(format!("report-{seed}.json"));
         std::fs::write(&report_path, serde_json::to_vec(&report).unwrap()).unwrap();
         paths.push(report_path.into_os_string());
@@ -481,7 +481,7 @@ async fn sample_authored_project_evaluation() {
         ])
         .await;
         let reference_seconds = started.elapsed().as_secs_f64();
-        assert!(matches!(code, 0 | 1), "{err}");
+        assert!(code == 0, "{err}");
         assert_eq!(reference["summary"]["complete"], true);
         let reference_score = reference["summary"]["counts"]["score"].as_f64().unwrap();
         let population_results: Vec<_> = reference["mutants"].as_array().unwrap().iter().map(|m| serde_json::json!({"id":m["candidate"]["id"], "operator":m["candidate"]["operator"], "status":mutation_outcome::status(m)})).collect();
@@ -491,7 +491,7 @@ async fn sample_authored_project_evaluation() {
                 let started = std::time::Instant::now();
                 let (code, report, err) = cli(verify_args(&path, count, seed)).await;
                 let seconds = started.elapsed().as_secs_f64();
-                assert!(matches!(code, 0 | 1), "{err}");
+                assert!(code == 0, "{err}");
                 assert_eq!(report["summary"]["complete"], true);
                 let score = report["summary"]["counts"]["score"].as_f64().unwrap();
                 let mutants: Vec<_> = report["mutants"].as_array().unwrap().iter().map(|m| serde_json::json!({"id":m["candidate"]["id"], "operator":m["candidate"]["operator"], "status":mutation_outcome::status(m)})).collect();

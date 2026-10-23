@@ -6,6 +6,8 @@ It makes small changes to copies of your source and runs your tests to find beha
 An agent investigates selected survivors, adds tests grounded in the intended behavior, and verifies the improvement.
 Humans provide specification decisions and review changes.
 Mutation scores are diagnostic observations; equivalent mutants and specification-permitted changes make them unsuitable as a standalone quality target.
+hoimin targets local work and provides no mutation-score or regression CI gate.
+A completed run exits successfully even when mutants survive; inspect the JSON results to choose the next test improvement.
 See the [product principles](docs/product-principles.md).
 See also the [documentation](https://hayaosuzuki.github.io/hoimin/) for installation, the agent workflow, resource limits, and command references.
 

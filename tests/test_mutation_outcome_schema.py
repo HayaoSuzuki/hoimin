@@ -111,3 +111,26 @@ def test_mutant_status_schema_checks_shape_without_semantic_agreement(
     errors = list(Draft202012Validator(SCHEMA).iter_errors(event))
     # Assert: strict Rust readers, rather than generic Schema, enforce agreement.
     assert errors == []
+
+
+@pytest.mark.parametrize("exit_code", [0, 2, 3, 4, 130])
+def test_run_summary_accepts_execution_exit_codes(exit_code: int) -> None:
+    report = json.loads(
+        (
+            ROOT / "crates/hoimin-cli/tests/golden/reports/schema-v10-current.json"
+        ).read_text(encoding="utf-8")
+    )
+    event = report["summary"]
+    event["exit_code"] = exit_code
+    assert not list(Draft202012Validator(SCHEMA).iter_errors(event))
+
+
+def test_run_summary_rejects_removed_survivor_exit_code() -> None:
+    report = json.loads(
+        (
+            ROOT / "crates/hoimin-cli/tests/golden/reports/schema-v10-current.json"
+        ).read_text(encoding="utf-8")
+    )
+    event = report["summary"]
+    event["exit_code"] = 1
+    assert list(Draft202012Validator(SCHEMA).iter_errors(event))

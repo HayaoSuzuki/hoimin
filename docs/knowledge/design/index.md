@@ -13,7 +13,7 @@ The contracts cover these boundaries:
 - [Target selection, plan and verify](selection-plan-verify.md) - Discovery versus execution, ranking, subsets, sampling, previews and saved-format changes.
 - [Disk failure payloads](disk-failure.md) - Required stop evidence, exact deduplication, report projection, and saved failure format.
 - [Resources, cleanup and final output](runtime-lifecycle.md) - OS-specific limits, typed process identity, and process, workspace and report completion conditions.
-- [Session ownership and report validation](session-report.md) - Persistence, structural decoding, consumer usability policy and JSON diagnostics.
+- [Session ownership and report validation](session-report.md) - Persistence, structural decoding, consumer usability and local execution exit policy.
 - [JSON mutant record writing](json-report-spool.md) - Batched writes, acknowledgement, short writes and poisoned output state.
 - [Fingerprint input glob traversal](fingerprint-inputs.md) - Shared traversal, input-order errors and unselected files.
 - [Survivor assessments versus execution outcomes](survivor-review.md) - Candidate identity, review-owned input acceptance, JSON presentation and historical evidence.

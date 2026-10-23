@@ -131,9 +131,8 @@ private def caseJson (item : OracleCase) : Lean.Json :=
     ("reports", .arr (item.reports.toArray.map reportJson)),
     ("expected", Lean.Json.mkObj [
       ("latest_state", .str (latestStateName expected.latest)),
-      ("default_exit_code", Lean.toJson (progressExitCode false false expected.latest)),
-      ("regression_exit_code", Lean.toJson (progressExitCode true false expected.latest)),
-      ("error_exit_code", Lean.toJson (progressExitCode true true expected.latest)),
+      ("exit_code", Lean.toJson (progressExitCode false)),
+      ("error_exit_code", Lean.toJson (progressExitCode true)),
       ("consecutive_stalls", Lean.toJson expected.consecutiveStalls),
       ("saturated", Lean.toJson (expected.latest == .saturated)),
       ("comparisons", .arr (expected.comparisons.toArray.map comparisonJson)),
@@ -287,7 +286,7 @@ private def printSensitivity : IO UInt32 := do
   IO.println s!"duplicate_content_detected={duplicateContentSensitivity}"
   IO.println s!"inconclusive_exclusion_detected={inconclusiveSensitivity}"
   IO.println s!"detail_identity_cap_adjacency_detected={detailSensitivity}"
-  IO.println s!"regression_exit_detected={exitSensitivity}"
+  IO.println s!"completion_exit_detected={exitSensitivity}"
   return if sensitivityPasses && detailSensitivity && exitSensitivity then 0 else 2
 
 private def printCases : IO UInt32 := do

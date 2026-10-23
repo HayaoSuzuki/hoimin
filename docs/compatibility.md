@@ -19,6 +19,19 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Local execution without CI gates
+
+`run` and `verify` return 0 for a complete run, including one with surviving
+mutants. Exit 1 for survivors is removed. Statuses, counts, mutation scores,
+history and review data remain available in JSON/JSONL. Infrastructure errors
+return 2, baseline failures 3, incomplete runs 4 and cancellation 130.
+
+`progress --fail-on-regression` is removed without an alias or fallback. Valid
+comparisons return 0 for every comparison state; inspect `latest.state` in JSON.
+Input, validation and output failures return 2. Resource controls and hoimin's
+own development and release CI remain required. Users' CI integration and
+mutation-score or regression gates are outside the intended product scope.
+
 ## Agent-oriented output (#1100–#1103)
 
 Run and verify accept only `--format json` and `--format jsonl`; `human` output
@@ -258,8 +271,10 @@ an object. The old output shapes are removed without a compatibility path.
 The package floor remains 0.14.0; this format change does not require a new
 minor series.
 
-Display limits still affect only listed transitions. Comparison counts,
-stalled/saturated decisions and regression exit policy are unchanged. Progress accepts only current report/event schema 10; plan schema
+Display limits still affect only listed transitions. Comparison counts
+and stalled/saturated decisions retain their comparison rules. For current exit
+codes, see [local execution without CI gates](#local-execution-without-ci-gates).
+Progress accepts only current report/event schema 10; plan schema
 10, SQLite session schema 5, fingerprint schema 13, ranking rule 4, candidate
 schema 1 and mutant-ID v1 retain their formats.
 

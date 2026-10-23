@@ -88,7 +88,6 @@ fn measure_history_with_details(
 ) -> (usize, Value) {
     let reports = std::iter::repeat_n(path.to_path_buf(), history).collect();
     let args = ProgressArgs {
-        fail_on_regression: false,
         details,
         details_limit: 100,
         reports,
@@ -100,7 +99,7 @@ fn measure_history_with_details(
     heap_tracking::begin();
     let result = progress::run(args, &mut stdout, &mut stderr);
     let peak = heap_tracking::finish();
-    assert_eq!(result.unwrap(), 0);
+    result.unwrap();
     let warnings = String::from_utf8(stderr).unwrap();
     assert_eq!(warnings.lines().count(), history - 1);
     assert!(warnings.lines().all(|line| line.contains("same path")));

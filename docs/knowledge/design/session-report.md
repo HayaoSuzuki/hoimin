@@ -5,6 +5,31 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: local-exit-implementation
+  resource: ../../../crates/hoimin-core/src/report.rs
+  revision: 1d192acf04de8983697c76ba2e4344965bb359a3
+  working_tree: clean
+  sha256: b05effca875352062dcc58b2e71c7421ec9ab1a44170a933e7fc4e925a7a96c4
+- id: local-exit-model
+  resource: ../../../formal/HoiminOracle/HoiminOracle/MutationScoreExitPolicyModel.lean
+  revision: 1d192acf04de8983697c76ba2e4344965bb359a3
+  working_tree: clean
+  sha256: 48530b2e41ad3b0bfa3041419b382b530804f8eaf461f7fafd9636abf39451ff
+- id: local-exit-proofs
+  resource: ../../../formal/HoiminOracle/HoiminOracle/MutationScoreExitPolicyProofs.lean
+  revision: 1d192acf04de8983697c76ba2e4344965bb359a3
+  working_tree: clean
+  sha256: e5e4921ca8140a74ad2be4a9f16784804dee1bd5812d043986be35d3767a0242
+- id: local-exit-correspondence
+  resource: ../../../crates/hoimin-core/tests/lean_mutation_score_exit_policy_oracle.rs
+  revision: 1d192acf04de8983697c76ba2e4344965bb359a3
+  working_tree: clean
+  sha256: e9e8d2cca8ea875b2bc0d8cf79e4ce9bc23b1c6972127d7c731465a0fec65925
+- id: local-exit-policy
+  resource: ../../usage.md
+  revision: 1d192acf04de8983697c76ba2e4344965bb359a3
+  working_tree: clean
+  sha256: 04408b018d7fb26baa5e2cf184a95ca84df7e7498cc9c61c69881ae3f06efa06
 - id: issue-1089-plan
   resource: ../../../crates/hoimin-cli/src/plan.rs
   revision: 5064140df8e8f24df42045664d72dbf887ef8372
@@ -1033,6 +1058,29 @@ reader boundaries.[^issue-1027-tests]
 [^issue-1027-reader]: [Shared progress/review typed readers](../../../crates/hoimin-cli/src/artifacts/run_report.rs).
 [^issue-1027-tests]: [JSON/JSONL closed-object regression matrix](../../../crates/hoimin-cli/src/artifacts/run_report/closed_wire_tests.rs).
 
+# Local execution exit policy
+
+A complete `run` or `verify` returns 0 even when mutants survive. Reports retain
+mutant statuses, counts, scores and histories for agent investigation. Errors,
+baseline failures, incomplete runs and cancellation retain exit codes 2, 3, 4 and
+130 respectively. Progress emits comparison states in JSON and provides no
+regression exit gate.[^local-exit-policy]
+
+The core exit policy has four independent fault flags: interruption,
+infrastructure error, baseline failure and incompleteness. It no longer carries
+a survivor flag; killed/survived counts still determine the reported mutation
+score.[^local-exit-implementation] The Lean model and proofs express the same
+fault precedence and complete-run success rule. The Rust oracle adapter checks
+the generated cases against the policy and score functions; that correspondence
+does not establish native process or filesystem behavior.[^local-exit-model][^local-exit-proofs][^local-exit-correspondence]
+
+[^local-exit-policy]: [Current result and exit-code contract](../../usage.md#results) and [progress comparisons](../../usage.md#mutation-progress-reports).
+[^local-exit-implementation]: [Core exit policy and mutation summary](../../../crates/hoimin-core/src/report.rs).
+[^local-exit-model]: [Mutation score and exit-policy model](../../../formal/HoiminOracle/HoiminOracle/MutationScoreExitPolicyModel.lean).
+[^local-exit-proofs]: [Score and exit-policy proofs](../../../formal/HoiminOracle/HoiminOracle/MutationScoreExitPolicyProofs.lean).
+[^local-exit-correspondence]: [Rust correspondence with generated policy cases](../../../crates/hoimin-core/tests/lean_mutation_score_exit_policy_oracle.rs).
+
+
 # Progress output schema 3 (Issue #1028)
 
 Progress JSON emits schema 3 for both details modes. The required `details`
@@ -1041,10 +1089,11 @@ its availability and eligibility fields; an unusable final adjacent pair yields
 `available: false`. The canonical schema permits exactly these null/object
 forms and rejects missing details and superseded output versions.[^issue-1028-render][^issue-1028-schema]
 
-Details limits bound the listed transitions. They do not alter comparison counts,
-stalled/saturated decisions or the regression exit policy. The progress tests
-cover zero and ordinary limits, available and unavailable pairs, unequal candidate
-sets, and duplicate-identity input rejection. At the Issue #1028 snapshot they compared output
+Details limits bound the listed transitions. They do not alter comparison counts
+or stalled/saturated decisions. The regression exit gate was later removed;
+valid comparisons now return 0 for every state, while input, validation and
+output failures return 2.[^local-exit-policy] The progress tests cover zero and
+ordinary limits, available and unavailable pairs, unequal candidate sets, and duplicate-identity input rejection. At the Issue #1028 snapshot they compared output
 with a shared golden and retained JSONL, human output and input-reader
 regressions; #1104 subsequently removed the human renderer.[^issue-1028-tests]
 

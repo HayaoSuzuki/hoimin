@@ -5,6 +5,11 @@ description: Current formats, usage changes and release versioning.
 status: draft
 catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
 sources:
+- id: local-exit-policy
+  resource: ../compatibility.md
+  revision: 1d192acf04de8983697c76ba2e4344965bb359a3
+  working_tree: clean
+  sha256: a56c1320e18ff581f71968160e5d5cc1272e7f22cb71ad8ab7c4c8f7d47e9a9a
 - id: issues-1054-compatibility
   resource: ../compatibility.md
   revision: f55f42c66b21861ae5302c057b4b600ec5d765c1
@@ -85,7 +90,6 @@ sources:
   revision: 3aaf82b0d5b695a548dda33ea248ceaa1dd68219
   working_tree: clean
   sha256: f00dd5b9e1daa9f50c1289a0b3a1f2f684be377ce954a8ceae19ed1e55c247f0
-
 ---
 
 # Current saved formats and release floor
@@ -161,6 +165,19 @@ retain those historical versions.
 [^issue-984-compatibility]: [Baseline restoration and its compatibility change](../compatibility.md#baseline-restoration-and-result-reuse-in-0130).
 [^issue-949-compatibility]: [Historical single-root notice](../compatibility.md#single-normalized-project-root-in-0110).
 
+
+# Local execution exit policy
+
+Complete `run` and `verify` executions return 0, including runs with survivors.
+The survivor exit code 1 and `progress --fail-on-regression` have been removed
+without compatibility aliases. Valid progress comparisons return 0 for all
+comparison states. Inspect reported statuses, scores and `latest.state` to plan
+local test improvements. Execution errors retain 2, baseline failures 3,
+incomplete runs 4 and cancellation 130; progress input, validation and output
+failures retain 2. Resource controls, histories and reviews remain part of the
+local workflow.[^local-exit-policy]
+
+[^local-exit-policy]: [Current local execution policy](../compatibility.md#local-execution-without-ci-gates).
 
 # Compatibility scope
 

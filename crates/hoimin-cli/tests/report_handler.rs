@@ -600,7 +600,7 @@ async fn documentation_contract() {
         let stderr = CollectingWriter::default();
         let exit = hoimin_cli::run_with_writers(argv, stdout.clone(), stderr.clone()).await;
         assert!(
-            matches!(exit, 0 | 1),
+            exit == 0,
             "documented command returned an infrastructure error: {exit}; command: {command:?}\nstderr: {}",
             String::from_utf8_lossy(&stderr.snapshot())
         );
@@ -2247,7 +2247,7 @@ async fn line_diverse_public_reports_and_previews_match_current_schemas() {
     let result_schema = read_schema(&repo.join("docs/json-schema/run-result.schema.json"));
     let preview_schema = read_schema(&repo.join("docs/json-schema/verify-preview.schema.json"));
     let mut reports = Vec::new();
-    for (dry, extra_args, expected_code) in [(false, &[][..], 1), (true, &["--dry-run"][..], 0)] {
+    for (dry, extra_args, expected_code) in [(false, &[][..], 0), (true, &["--dry-run"][..], 0)] {
         for format in ["json", "jsonl"] {
             stdout.clear();
             stderr.clear();
@@ -2334,7 +2334,7 @@ async fn sample_public_reports_and_previews_match_current_schemas() {
     let result_schema = read_schema(&repo.join("docs/json-schema/run-result.schema.json"));
     let preview_schema = read_schema(&repo.join("docs/json-schema/verify-preview.schema.json"));
     let mut reports = Vec::new();
-    for (dry, extra_args, expected_code) in [(false, &[][..], 1), (true, &["--dry-run"][..], 0)] {
+    for (dry, extra_args, expected_code) in [(false, &[][..], 0), (true, &["--dry-run"][..], 0)] {
         for format in ["json", "jsonl"] {
             stdout.clear();
             stderr.clear();

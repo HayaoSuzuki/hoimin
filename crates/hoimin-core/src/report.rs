@@ -332,7 +332,6 @@ pub struct ExitPolicy {
     pub infrastructure_error: bool,
     pub baseline_failed: bool,
     pub incomplete: bool,
-    pub survivors: bool,
     pub interrupted: bool,
 }
 
@@ -345,17 +344,15 @@ impl ExitPolicy {
                 || summary.out_of_memory > 0
                 || summary.process_limit > 0
                 || summary.not_run > 0,
-            survivors: summary.survived > 0,
             ..Self::default()
         }
     }
 }
 
 #[must_use]
-pub fn exit_code(incomplete: bool, survivors: bool, interrupted: bool) -> i32 {
+pub fn exit_code(incomplete: bool, interrupted: bool) -> i32 {
     exit_code_for(ExitPolicy {
         incomplete,
-        survivors,
         interrupted,
         ..ExitPolicy::default()
     })
@@ -372,7 +369,7 @@ pub fn exit_code_for(policy: ExitPolicy) -> i32 {
     } else if policy.incomplete {
         4
     } else {
-        i32::from(policy.survivors)
+        0
     }
 }
 

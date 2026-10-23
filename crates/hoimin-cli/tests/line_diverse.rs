@@ -145,7 +145,7 @@ async fn line_diverse_execution_matches_preview_order_and_preserves_report_scope
         "line-diverse".into(),
     ])
     .await;
-    assert_eq!(code, 1, "{err}");
+    assert_eq!(code, 0, "{err}");
     assert_eq!(
         report["run"]["verification_selection"],
         preview["verification_selection"]

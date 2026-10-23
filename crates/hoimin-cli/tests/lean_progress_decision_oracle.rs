@@ -46,8 +46,7 @@ struct OracleMutant {
 #[serde(deny_unknown_fields)]
 struct ExpectedHistory {
     latest_state: String,
-    default_exit_code: i32,
-    regression_exit_code: i32,
+    exit_code: i32,
     error_exit_code: i32,
     consecutive_stalls: u64,
     saturated: bool,
@@ -281,9 +280,7 @@ fn build_report(case_id: &str, report_index: usize, input: &OracleReport) -> Val
     document["summary"]["run_id"] = json!(run_id);
     document["summary"]["counts"] = counts;
     document["summary"]["complete"] = json!(true);
-    document["summary"]["exit_code"] = json!(i32::from(
-        document["summary"]["counts"]["survived"].as_u64().unwrap() > 0
-    ));
+    document["summary"]["exit_code"] = json!(0);
 
     if !input.usable {
         match input.reason.as_deref() {
@@ -376,7 +373,6 @@ fn expected_public_candidate_id(candidate_id: u64, content_key: u64) -> &'static
 async fn public_output(
     item: &OracleCase,
     details: bool,
-    gate: bool,
     malformed_suffix: bool,
 ) -> Result<std::process::Output, String> {
     let fixture = tempfile::tempdir().map_err(|error| error.to_string())?;
@@ -395,9 +391,6 @@ async fn public_output(
     if details {
         command.args(["--details", "--details-limit", "1"]);
     }
-    if gate {
-        command.arg("--fail-on-regression");
-    }
     tokio::time::timeout(Duration::from_secs(30), command.output())
         .await
         .map_err(|_| format!("infrastructure-error case={}: CLI timed out", item.id))?
@@ -409,9 +402,9 @@ async fn public_output(
         })
 }
 
-async fn public_progress(item: &OracleCase, details: bool, gate: bool) -> Result<Value, String> {
-    let output = public_output(item, details, gate, false).await?;
-    if !matches!(output.status.code(), Some(0 | 1)) {
+async fn public_progress(item: &OracleCase, details: bool) -> Result<Value, String> {
+    let output = public_output(item, details, false).await?;
+    if !output.status.success() {
         return Err(format!(
             "infrastructure-error case={}: exit={:?} stderr={}",
             item.id,
@@ -419,15 +412,10 @@ async fn public_progress(item: &OracleCase, details: bool, gate: bool) -> Result
             String::from_utf8_lossy(&output.stderr)
         ));
     }
-    let expected = if gate {
-        item.expected.regression_exit_code
-    } else {
-        item.expected.default_exit_code
-    };
     assert_eq!(
         output.status.code(),
-        Some(expected),
-        "semantic mismatch case={} gate={gate}",
+        Some(item.expected.exit_code),
+        "semantic mismatch case={}",
         item.id
     );
     serde_json::from_slice(&output.stdout).map_err(|error| {
@@ -595,7 +583,7 @@ fn lean_progress_decision_corpus_is_valid() {
 async fn public_progress_matches_every_strict_lean_case() {
     let cases = parse_corpus().expect("valid Lean corpus");
     for item in cases.iter().filter(|item| item.mode == "strict") {
-        let actual = public_progress(item, false, false)
+        let actual = public_progress(item, false)
             .await
             .unwrap_or_else(|error| panic!("{error}"));
         assert_case_matches(item, &actual);
@@ -697,7 +685,7 @@ async fn public_progress_details_match_generated_latest_pair_expectations() {
         .iter()
         .filter(|item| item.mode == "strict")
     {
-        let actual = public_progress(item, true, false)
+        let actual = public_progress(item, true)
             .await
             .unwrap_or_else(|error| panic!("{error}"));
         assert_case_matches(item, &actual);
@@ -753,20 +741,16 @@ async fn public_progress_details_match_generated_latest_pair_expectations() {
 }
 
 #[tokio::test]
-async fn public_regression_exit_matches_lean_without_changing_output() {
+async fn public_completion_and_error_exits_match_lean() {
     for item in parse_corpus()
         .unwrap()
         .iter()
         .filter(|item| item.mode == "strict")
     {
         for details in [false, true] {
-            let default = public_progress(item, details, false).await.unwrap();
-            let gated = public_progress(item, details, true).await.unwrap();
-            // Each invocation has temporary input paths; compare semantic output.
-            assert_case_matches(item, &gated);
-            assert_eq!(default["latest"], gated["latest"], "{}", item.id);
-            assert_eq!(default["details"], gated["details"], "{}", item.id);
-            let failed = public_output(item, details, true, true).await.unwrap();
+            let actual = public_progress(item, details).await.unwrap();
+            assert_case_matches(item, &actual);
+            let failed = public_output(item, details, true).await.unwrap();
             assert_eq!(
                 failed.status.code(),
                 Some(item.expected.error_exit_code),

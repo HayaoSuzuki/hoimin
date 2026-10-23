@@ -82,7 +82,7 @@ async fn public_runtime_emits_measured_disk_and_cleanup_evidence() {
     let exit = run_isolated(args, &mut stdout, &mut stderr).await;
 
     assert!(
-        matches!(exit, 0 | 1),
+        exit == 0,
         "exit={exit}, stderr={:?}",
         String::from_utf8_lossy(&stderr)
     );
@@ -168,11 +168,7 @@ async fn public_jsonl_runtime_emits_disk_evidence() {
 
     let exit = run_isolated(args, &mut stdout, &mut stderr).await;
 
-    assert!(
-        matches!(exit, 0 | 1),
-        "stderr={:?}",
-        String::from_utf8_lossy(&stderr)
-    );
+    assert!(exit == 0, "stderr={:?}", String::from_utf8_lossy(&stderr));
     let finished = String::from_utf8(stdout)
         .unwrap()
         .lines()
@@ -211,11 +207,7 @@ async fn public_json_runtime_emits_disk_policy_evidence() {
 
     let exit = run_isolated(args, &mut stdout, &mut stderr).await;
 
-    assert!(
-        matches!(exit, 0 | 1),
-        "stderr={:?}",
-        String::from_utf8_lossy(&stderr)
-    );
+    assert!(exit == 0, "stderr={:?}", String::from_utf8_lossy(&stderr));
     let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
     let disk = &report["summary"]["disk"];
     assert_eq!(

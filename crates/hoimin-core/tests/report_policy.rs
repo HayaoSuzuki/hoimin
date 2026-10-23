@@ -295,10 +295,33 @@ fn score_uses_only_killed_and_survived() {
 }
 
 #[test]
+fn completed_runs_with_survivors_keep_their_scores_and_succeed() {
+    for (statuses, score, killed, survived) in [
+        (
+            vec![MutationStatus::Survived, MutationStatus::Survived],
+            0.0,
+            0,
+            2,
+        ),
+        (
+            vec![MutationStatus::Killed, MutationStatus::Survived],
+            0.5,
+            1,
+            1,
+        ),
+    ] {
+        let summary = summarize(&statuses);
+        assert_eq!(summary.score, Some(score));
+        assert_eq!(summary.killed, killed);
+        assert_eq!(summary.survived, survived);
+        assert_eq!(exit_code_for(ExitPolicy::from_summary(&summary)), 0);
+    }
+}
+
+#[test]
 fn process_limit_and_survivor_produce_an_incomplete_exit() {
     let summary = summarize(&[MutationStatus::Survived, MutationStatus::ProcessLimit]);
     let policy = ExitPolicy::from_summary(&summary);
-    assert!(policy.survivors);
     assert!(policy.incomplete);
     assert_eq!(exit_code_for(policy), 4);
 }
@@ -322,30 +345,27 @@ fn error_results_take_infrastructure_exit_precedence() {
     let policy = ExitPolicy::from_summary(&error_survivor_and_incomplete);
     assert!(policy.infrastructure_error);
     assert!(policy.incomplete);
-    assert!(policy.survivors);
     assert_eq!(exit_code_for(policy), 2);
 }
 
 #[test]
 fn no_candidates_has_a_null_score_and_success_exit() {
     assert_eq!(summarize(&[]).score, None);
-    assert_eq!(exit_code(false, false, false), 0);
+    assert_eq!(exit_code(false, false), 0);
 }
 
 #[test]
-fn incomplete_takes_precedence_over_survivors() {
-    assert_eq!(exit_code(true, true, false), 4);
-    assert_eq!(exit_code(false, true, false), 1);
-    assert_eq!(exit_code(false, false, false), 0);
-    assert_eq!(exit_code(true, true, true), 130);
+fn incomplete_and_interrupted_runs_preserve_their_exit_codes() {
+    assert_eq!(exit_code(true, false), 4);
+    assert_eq!(exit_code(false, false), 0);
+    assert_eq!(exit_code(false, true), 130);
+    assert_eq!(exit_code(true, true), 130);
 }
 
 #[test]
 fn complete_exit_policy_has_stable_precedence() {
     let mut policy = ExitPolicy::default();
     assert_eq!(exit_code_for(policy), 0);
-    policy.survivors = true;
-    assert_eq!(exit_code_for(policy), 1);
     policy.incomplete = true;
     assert_eq!(exit_code_for(policy), 4);
     policy.baseline_failed = true;

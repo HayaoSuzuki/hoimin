@@ -146,8 +146,7 @@ apply the [execution prerequisites](#before-execution) before planning.
     should survive because both `0 + 0` and `0 - 0` equal zero. Use the candidate
     ID and replacement from the plan to investigate the actual change. A timeout,
     error, resource stop or incomplete report is not a survivor; see [results](#results).
-    This verification exits **1**, meaning a complete run with a survivor; that
-    is the expected observation here, not a broken baseline. Check
+    This verification exits **0** because it completed, including the survivor. Check
     `summary.complete`, `summary.counts` and `baseline.termination` in the report.
 
 6. Keep `calc.py` unchanged and add this test to `test_calc.py`. The requirement
@@ -896,7 +895,7 @@ score. Equivalent or specification-permitted changes may survive without indicat
 a useful test improvement. An agent's suspected-equivalent assessment is a judgment,
 not a proof, and does not change the execution outcome. Compare scores only with
 their candidate sets and verification conditions in view; they are not a standalone
-quality guarantee or a default CI acceptance target.
+quality guarantee or a CI acceptance target.
 
 ### Mutation-progress reports
 
@@ -954,7 +953,11 @@ hoimin progress reports/*.json
 
 Comparisons require adjacent reports that are both complete and have successful baselines. `saturated` means the configured number of consecutive comparable stalls was reached. Only immediately adjacent stalled comparisons contribute to this count. An improving, regressing, or indeterminate comparison resets the consecutive stall chain.
 
-By default, valid progress comparisons exit with code 0. Add `--fail-on-regression` to exit with code 1 only when `latest.state` is `regressing`; `indeterminate` still exits 0. The gate uses the final adjacent pair, so a historical regression followed by improvement or an unusable report does not fail the gate. Input, validation, and output failures retain exit code 2. The command writes its complete JSON result before returning the regression exit code. JSON output exposes `latest.state` for callers that need a different policy. A surviving mutant is not proof of behavioral equivalence.
+Valid progress comparisons exit with code 0, including `regressing` and
+`indeterminate` results. Inspect JSON `latest.state` and the comparison history
+to decide what to investigate next. Input, validation, and output failures exit
+with code 2. Progress provides no regression gate. A surviving mutant is not
+proof of behavioral equivalence.
 
 The JSON `previous_score`, `current_score`, and `score_delta` fields use the intersection of common mutants with conclusive
 results in both reports. Read the latest run summary for its whole-run mutation
@@ -1194,14 +1197,15 @@ Exit codes are:
 
 | Code | Meaning |
 | ---: | --- |
-| `0` | complete, with no survivor |
-| `1` | complete, with at least one survivor |
+| `0` | complete, including runs with survivors |
 | `2` | CLI, configuration, analyzer, storage, workspace, or other infrastructure error |
 | `3` | baseline failed |
 | `4` | incomplete because of timeout, memory/process/candidate/mutant limits, or `not_run` |
 | `130` | user cancellation |
 
-Higher-priority conditions win in this order: cancellation, infrastructure error, baseline failure, incomplete result, survivor.
+Higher-priority conditions win in this order: cancellation, infrastructure error, baseline failure, incomplete result.
+Survivors remain visible in mutant statuses, summary counts and scores; they do
+not change the exit code of a complete run.
 
 For `run`, `--total-timeout` starts after CLI configuration validation and before
 capturing environment values or reading and hashing fingerprint inputs. Startup

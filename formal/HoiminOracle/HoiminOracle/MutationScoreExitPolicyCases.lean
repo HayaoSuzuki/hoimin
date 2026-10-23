@@ -31,24 +31,22 @@ def bools : List Bool := [false, true]
 def policyId (policy : ExitPolicy) : String :=
   let bit (value : Bool) := if value then "1" else "0"
   "policy_" ++ bit policy.infrastructureError ++ bit policy.baselineFailed ++
-    bit policy.incomplete ++ bit policy.survivors ++ bit policy.interrupted
+    bit policy.incomplete ++ bit policy.interrupted
 
 def policyCases : List OracleCase :=
   bools.flatMap fun infrastructure =>
     bools.flatMap fun baseline =>
       bools.flatMap fun incompleteRun =>
-        bools.flatMap fun survivors =>
-          bools.map fun interrupted =>
-            let policy : ExitPolicy := {
-              infrastructureError := infrastructure
-              baselineFailed := baseline
-              incomplete := incompleteRun
-              survivors := survivors
-              interrupted := interrupted }
-            { id := policyId policy
-              mode := "strict"
-              scenario := "exit_policy"
-              directPolicy := policy }
+        bools.map fun interrupted =>
+          let policy : ExitPolicy := {
+            infrastructureError := infrastructure
+            baselineFailed := baseline
+            incomplete := incompleteRun
+            interrupted := interrupted }
+          { id := policyId policy
+            mode := "strict"
+            scenario := "exit_policy"
+            directPolicy := policy }
 
 def composedCases : List OracleCase :=
   [ { id := "composed_summary_error", mode := "internal-fixture", scenario := "composed",
@@ -102,42 +100,28 @@ def brokenSurvivorNumerator (counts : Counts) : Option ExactFraction :=
 def brokenIncomplete (counts : Counts) : Bool :=
   counts.timeout > 0 || counts.outOfMemory > 0 || counts.processLimit > 0
 
-def brokenSurvivorBeforeIncomplete (policy : ExitPolicy) : Nat :=
+def brokenSurvivorExit (counts : Counts) (flags : RunFlags) : Nat :=
+  let policy := composePolicy counts flags
+  if complete policy && counts.survived > 0 then 1 else exitCode policy
+
+def brokenIncompleteBeforeBaseline (policy : ExitPolicy) : Nat :=
   if policy.interrupted then 130
   else if policy.infrastructureError then 2
-  else if policy.baselineFailed then 3
-  else if policy.survivors then 1
-  else if policy.incomplete then 4 else 0
-
-def brokenSurvivorBeforeBaseline (policy : ExitPolicy) : Nat :=
-  if policy.interrupted then 130
-  else if policy.infrastructureError then 2
-  else if policy.survivors then 1
-  else if policy.baselineFailed then 3
-  else if policy.incomplete then 4 else 0
-
-def brokenSurvivorBeforeInfrastructure (policy : ExitPolicy) : Nat :=
-  if policy.interrupted then 130
-  else if policy.survivors then 1
-  else if policy.infrastructureError then 2
-  else if policy.baselineFailed then 3
-  else if policy.incomplete then 4 else 0
-
-def brokenSurvivorBeforeInterrupted (policy : ExitPolicy) : Nat :=
-  if policy.survivors then 1 else exitCode { policy with survivors := false }
+  else if policy.incomplete then 4
+  else if policy.baselineFailed then 3 else 0
 
 def brokenBaselineBeforeInfrastructure (policy : ExitPolicy) : Nat :=
   if policy.interrupted then 130
   else if policy.baselineFailed then 3
   else if policy.infrastructureError then 2
   else if policy.incomplete then 4
-  else if policy.survivors then 1 else 0
+  else 0
 
 def brokenInfrastructureBeforeInterrupted (policy : ExitPolicy) : Nat :=
   if policy.infrastructureError then 2 else exitCode policy
 
-def brokenSurvivorCompleteness (policy : ExitPolicy) : Bool :=
-  complete policy && !policy.survivors
+def brokenSurvivorCompleteness (counts : Counts) : Bool :=
+  complete (policyFromCounts counts) && counts.survived == 0
 
 def brokenRunFinishedComplete (counts : Counts) (flags : RunFlags) : Bool :=
   let policy := composePolicy counts flags
@@ -159,21 +143,13 @@ def numeratorSensitivity : Bool :=
 def incompleteClassSensitivity : Bool :=
   brokenIncomplete (summarize [.notRun]) != (policyFromCounts (summarize [.notRun])).incomplete
 
-def survivorBeforeIncompleteSensitivity : Bool :=
-  brokenSurvivorBeforeIncomplete { incomplete := true, survivors := true } !=
-    exitCode { incomplete := true, survivors := true }
+def survivorExitSensitivity : Bool :=
+  let counts := summarize [.survived]
+  brokenSurvivorExit counts {} != exitCode (composePolicy counts {})
 
-def survivorBeforeBaselineSensitivity : Bool :=
-  brokenSurvivorBeforeBaseline { baselineFailed := true, survivors := true } !=
-    exitCode { baselineFailed := true, survivors := true }
-
-def survivorBeforeInfrastructureSensitivity : Bool :=
-  brokenSurvivorBeforeInfrastructure { infrastructureError := true, survivors := true } !=
-    exitCode { infrastructureError := true, survivors := true }
-
-def survivorBeforeInterruptedSensitivity : Bool :=
-  brokenSurvivorBeforeInterrupted { interrupted := true, survivors := true } !=
-    exitCode { interrupted := true, survivors := true }
+def incompletePrecedenceSensitivity : Bool :=
+  brokenIncompleteBeforeBaseline { incomplete := true, baselineFailed := true } !=
+    exitCode { incomplete := true, baselineFailed := true }
 
 def baselinePrecedenceSensitivity : Bool :=
   brokenBaselineBeforeInfrastructure { infrastructureError := true, baselineFailed := true } !=
@@ -184,7 +160,8 @@ def interruptionPrecedenceSensitivity : Bool :=
     exitCode { infrastructureError := true, interrupted := true }
 
 def survivorCompleteSensitivity : Bool :=
-  brokenSurvivorCompleteness { survivors := true } != complete { survivors := true }
+  let counts := summarize [.survived]
+  brokenSurvivorCompleteness counts != complete (policyFromCounts counts)
 
 def runFinishedCompleteSensitivity : Bool :=
   let counts := summarize [.notRun]
@@ -193,8 +170,7 @@ def runFinishedCompleteSensitivity : Bool :=
 def sensitivityPasses : Bool :=
   wrongCountSensitivity && denominatorSensitivity && zeroScoreSensitivity &&
     numeratorSensitivity && incompleteClassSensitivity &&
-    survivorBeforeIncompleteSensitivity && survivorBeforeBaselineSensitivity &&
-    survivorBeforeInfrastructureSensitivity && survivorBeforeInterruptedSensitivity &&
+    survivorExitSensitivity && incompletePrecedenceSensitivity &&
     baselinePrecedenceSensitivity && interruptionPrecedenceSensitivity &&
     survivorCompleteSensitivity && runFinishedCompleteSensitivity
 
