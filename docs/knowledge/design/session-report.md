@@ -453,6 +453,16 @@ sources:
   working_tree: modified
   sha256: 6dc4ae3fda223f4b3a2a0654042d98eac38f1fe010e267f79321d282388f0eb2
 
+- id: issue-1094-admission
+  resource: ../../../crates/hoimin-cli/src/session/schema.rs
+  revision: e8f0e7b7f86a849d1305ef1ccaddd80c1df80f0b
+  working_tree: modified
+  sha256: 705da2e21a4855f6a40d1e5360fd8b59f8edf42c23c23746ecbec4e0842955ab
+- id: issue-1094-public
+  resource: ../../../crates/hoimin-cli/tests/session_hardlinks.rs
+  revision: e8f0e7b7f86a849d1305ef1ccaddd80c1df80f0b
+  working_tree: modified
+  sha256: 1df772f2c399d48506234f7503fc5210ac85f66e6b1e2f86f7f0e5a99de25252
 ---
 
 # 導出したstatusの送受信（Issue #1010）
@@ -1197,3 +1207,24 @@ for measured representative validation/comparison windows and limits.
 [^issue-1089-plan]: [crates/hoimin-cli/src/plan.rs](../../../crates/hoimin-cli/src/plan.rs).
 
 [^issue-1089-mutation]: [crates/hoimin-cli/src/workspace/mutation.rs](../../../crates/hoimin-cli/src/workspace/mutation.rs).
+
+# Session companion admission (Issue #1094)
+
+Before any file-backed SQLite connection, session admission also checks existing
+journal, WAL and SHM entries. Missing entries are allowed; symlinks/nonregular
+entries and inspection errors fail before SQLite can create or modify artifacts.
+For regular entries, the opened descriptor must have one native hard link. A
+shared companion produces the same typed SharedFile category as a shared database
+body, even for foreign or unsupported databases. The check uses the canonical
+SessionArtifacts database path and SqliteCompanions native suffixes.
+[^issue-1094-admission][^issue-1094-public]
+
+No unlink/repair/journal-mode conversion, schema migration, public setting,
+dependency or project-wide inode index is introduced. Single-link sessions and
+actual incomplete-run resume remain supported. The checks do not synchronize
+with concurrent pathname replacement or link creation. See the
+[implementation evidence](../../maintenance/2026-10-23-issue-1094/README.md) for the
+RED/GREEN matrices, normal controls and platform verification scope.
+
+[^issue-1094-admission]: [Pre-connection companion and native unit checks](../../../crates/hoimin-cli/src/session/schema.rs).
+[^issue-1094-public]: [Public CLI source-protection and resume regressions](../../../crates/hoimin-cli/tests/session_hardlinks.rs).

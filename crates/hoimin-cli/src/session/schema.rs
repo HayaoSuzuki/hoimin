@@ -19,7 +19,7 @@ pub enum SchemaError {
     )]
     InvalidIdentity,
     #[error(
-        "SQLite session database shares its file with another hard link; start a new session at a different --session path"
+        "SQLite session file shares its file with another hard link; start a new session at a different --session path"
     )]
     SharedFile,
     #[error("failed to inspect SQLite session: {0}")]
@@ -31,8 +31,10 @@ pub enum SchemaError {
 }
 
 /// Inspects an existing database read-only before opening it for session writes.
-/// Only empty databases and the current session schema may enable WAL.
+/// Existing companions must be regular, single-link files before any SQLite
+/// connection can touch them. Only empty databases and the current schema may enable WAL.
 pub(crate) fn open(path: &Path) -> Result<Connection, SchemaError> {
+    inspect_existing_companions(path)?;
     let expected = current_schema()?;
     if path.exists() {
         // Closed WAL databases need an immutable advisory read to avoid
@@ -52,6 +54,34 @@ pub(crate) fn open(path: &Path) -> Result<Connection, SchemaError> {
     let mut connection = Connection::open(path)?;
     configure_with_schema(&mut connection, &expected, || {})?;
     Ok(connection)
+}
+
+fn inspect_existing_companions(database: &Path) -> Result<(), SchemaError> {
+    let companions = crate::artifacts::SqliteCompanions::new(database);
+    // Even a read-only SQLite connection can touch sidecars. Validate every
+    // existing descriptor before opening the database, without creating files.
+    for path in [&companions.journal, &companions.wal, &companions.shm] {
+        let invalid = || {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "session companion must be a regular file, not a symlink: {}",
+                    path.display()
+                ),
+            )
+        };
+        match std::fs::symlink_metadata(path) {
+            Ok(metadata) if !metadata.is_file() => return Err(invalid().into()),
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.into()),
+        }
+        let file = crate::artifacts::open_regular_file(path)?.ok_or_else(invalid)?;
+        if crate::file_links::file_link_count(&file)? > 1 {
+            return Err(SchemaError::SharedFile);
+        }
+    }
+    Ok(())
 }
 
 fn inspect_existing_database(path: &Path) -> Result<bool, SchemaError> {
@@ -350,6 +380,210 @@ mod tests {
             "hardlink admission changed database, companion, or lock artifacts"
         );
         assert!(rejected, "hardlinked session was admitted");
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum CompanionDatabase {
+        Missing,
+        Empty,
+        Current,
+        Foreign,
+        Unsupported,
+    }
+
+    fn prepare_companion_database(path: &Path, state: CompanionDatabase) {
+        match state {
+            CompanionDatabase::Missing => {}
+            CompanionDatabase::Empty => std::fs::write(path, []).unwrap(),
+            CompanionDatabase::Current => drop(super::super::SessionHandler::open(path).unwrap()),
+            CompanionDatabase::Foreign => Connection::open(path)
+                .unwrap()
+                .execute_batch(
+                    "CREATE TABLE app_data(value); INSERT INTO app_data VALUES ('keep');",
+                )
+                .unwrap(),
+            CompanionDatabase::Unsupported => Connection::open(path)
+                .unwrap()
+                .pragma_update(None, "user_version", 99)
+                .unwrap(),
+        }
+    }
+
+    fn directory_snapshot(path: &Path) -> Vec<(std::ffi::OsString, Vec<u8>, std::fs::Permissions)> {
+        let mut entries = std::fs::read_dir(path)
+            .unwrap()
+            .map(|entry| {
+                let entry = entry.unwrap();
+                (
+                    entry.file_name(),
+                    std::fs::read(entry.path()).unwrap(),
+                    entry.metadata().unwrap().permissions(),
+                )
+            })
+            .collect::<Vec<_>>();
+        entries.sort_by(|left, right| left.0.cmp(&right.0));
+        entries
+    }
+
+    #[test]
+    fn issue_1094_shared_companions_are_rejected_before_any_sqlite_side_effects() {
+        let mut failures = Vec::new();
+        for state in [
+            CompanionDatabase::Missing,
+            CompanionDatabase::Empty,
+            CompanionDatabase::Current,
+            CompanionDatabase::Foreign,
+            CompanionDatabase::Unsupported,
+        ] {
+            for suffix in ["-journal", "-wal", "-shm"] {
+                let temp = tempfile::tempdir().unwrap();
+                let database = temp.path().join("session.sqlite3");
+                prepare_companion_database(&database, state);
+                let source = temp.path().join("source.py");
+                std::fs::write(&source, []).unwrap();
+                let companion = database.with_file_name(format!("session.sqlite3{suffix}"));
+                std::fs::hard_link(&source, &companion).unwrap();
+                let before = directory_snapshot(temp.path());
+                let result = super::super::SessionHandler::open(&database);
+                let rejected = matches!(
+                    &result,
+                    Err(super::super::SessionError::Schema(SchemaError::SharedFile))
+                );
+                let error = result.as_ref().err().map(ToString::to_string);
+                drop(result);
+                let after = directory_snapshot(temp.path());
+                if !rejected || before != after {
+                    failures.push(format!("{state:?} {suffix}: shared rejection={rejected}, source bytes={}, disk unchanged={}, error={error:?}",
+                        std::fs::metadata(&source).unwrap().len(), before == after));
+                }
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    #[test]
+    fn issue_1094_single_link_companions_allow_initialization_and_reopen() {
+        for state in [
+            CompanionDatabase::Missing,
+            CompanionDatabase::Empty,
+            CompanionDatabase::Current,
+        ] {
+            for suffix in ["-journal", "-wal", "-shm"] {
+                let temp = tempfile::tempdir().unwrap();
+                let path = temp.path().join("session.sqlite3");
+                prepare_companion_database(&path, state);
+                std::fs::write(path.with_file_name(format!("session.sqlite3{suffix}")), [])
+                    .unwrap();
+                let handler = super::super::SessionHandler::open(&path).unwrap();
+                assert_eq!(user_version(&handler.connection), SCHEMA_VERSION);
+                drop(handler);
+                let reopened = super::super::SessionHandler::open(&path).unwrap();
+                assert_eq!(user_version(&reopened.connection), SCHEMA_VERSION);
+            }
+        }
+    }
+
+    #[test]
+    fn issue_1094_populated_single_link_wal_and_shm_allow_session_open() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("session.sqlite3");
+        drop(super::super::SessionHandler::open(&path).unwrap());
+        let writer = Connection::open(&path).unwrap();
+        writer.pragma_update(None, "wal_autocheckpoint", 0).unwrap();
+        // Populate WAL with ordinary header updates, ending at the current
+        // version. Keep the idle connection alive so SQLite retains WAL/SHM.
+        writer
+            .pragma_update(None, "user_version", SCHEMA_VERSION + 1)
+            .unwrap();
+        writer
+            .pragma_update(None, "user_version", SCHEMA_VERSION)
+            .unwrap();
+        let companions = crate::artifacts::SqliteCompanions::new(&path);
+        for companion in [&companions.wal, &companions.shm] {
+            let file = std::fs::File::open(companion).unwrap();
+            assert!(file.metadata().unwrap().len() > 0);
+            assert_eq!(crate::file_links::file_link_count(&file).unwrap(), 1);
+        }
+        let handler = super::super::SessionHandler::open(&path).unwrap();
+        assert_eq!(user_version(&handler.connection), SCHEMA_VERSION);
+        drop(handler);
+        drop(writer);
+        let reopened = super::super::SessionHandler::open(&path).unwrap();
+        assert_eq!(user_version(&reopened.connection), SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn issue_1094_companion_directories_are_rejected_before_database_creation() {
+        for suffix in ["-journal", "-wal", "-shm"] {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("session.sqlite3");
+            let directory = path.with_file_name(format!("session.sqlite3{suffix}"));
+            std::fs::create_dir(&directory).unwrap();
+            std::fs::write(directory.join("keep"), b"keep").unwrap();
+            assert!(matches!(
+                super::super::SessionHandler::open(&path),
+                Err(super::super::SessionError::Schema(SchemaError::Inspect(_)))
+            ));
+            assert!(!path.exists());
+            assert_eq!(std::fs::read(directory.join("keep")).unwrap(), b"keep");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn issue_1094_companion_symlinks_are_rejected_before_database_creation() {
+        for suffix in ["-journal", "-wal", "-shm"] {
+            for dangling in [false, true] {
+                let temp = tempfile::tempdir().unwrap();
+                let path = temp.path().join("session.sqlite3");
+                let source = temp.path().join("source.py");
+                if !dangling {
+                    std::fs::write(&source, b"keep").unwrap();
+                }
+                let companion = path.with_file_name(format!("session.sqlite3{suffix}"));
+                std::os::unix::fs::symlink(&source, &companion).unwrap();
+                assert!(matches!(
+                    super::super::SessionHandler::open(&path),
+                    Err(super::super::SessionError::Schema(SchemaError::Inspect(_)))
+                ));
+                assert!(!path.exists());
+                assert!(
+                    std::fs::symlink_metadata(&companion)
+                        .unwrap()
+                        .file_type()
+                        .is_symlink()
+                );
+                if dangling {
+                    assert!(!source.exists());
+                } else {
+                    assert_eq!(std::fs::read(&source).unwrap(), b"keep");
+                }
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn issue_1094_unreadable_companion_fails_before_database_creation() {
+        use std::os::unix::fs::PermissionsExt;
+        // SAFETY: geteuid has no arguments or memory preconditions.
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("session.sqlite3");
+        let companion = path.with_file_name("session.sqlite3-wal");
+        std::fs::write(&companion, b"keep").unwrap();
+        let permissions = std::fs::metadata(&companion).unwrap().permissions();
+        std::fs::set_permissions(&companion, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let result = super::super::SessionHandler::open(&path);
+        std::fs::set_permissions(&companion, permissions).unwrap();
+        assert!(matches!(
+            result,
+            Err(super::super::SessionError::Schema(SchemaError::Inspect(_)))
+        ));
+        assert!(!path.exists());
+        assert_eq!(std::fs::read(&companion).unwrap(), b"keep");
     }
 
     // These fixtures are closed before open: admission must not change their

@@ -1040,6 +1040,11 @@ sources:
   resource: ../../superpowers/specs/2026-10-12-fuzz-adoption-design.md
   working_tree: untracked
   sha256: 874f2ee7e360a8e11a75ab51124fb76438647f75801349cfc2f7a9306405c653
+- id: issue-1094-companion-design
+  resource: ../../superpowers/specs/2026-10-23-issue-1094-session-companions-design.md
+  revision: e8f0e7b7f86a849d1305ef1ccaddd80c1df80f0b
+  working_tree: untracked
+  sha256: d271a0a399f60f851a6db833764b0ec8986336c4ed96800965623aba3251d103
 ---
 
 # 収録一覧
@@ -1780,3 +1785,9 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | Selection and immutable metadata performance design | [Design](../../superpowers/specs/2026-10-20-perf-three-design.md) [^perf-three-design] |
 
 [^perf-three-design]: [Selection and immutable metadata performance design](../../superpowers/specs/2026-10-20-perf-three-design.md).
+
+## Session companion admission
+
+- [Issue #1094 session companion design](../../superpowers/specs/2026-10-23-issue-1094-session-companions-design.md) — pre-connection native link checks and normal-session preservation. [^issue-1094-companion-design]
+
+[^issue-1094-companion-design]: [Session companion hardlink admission](../../superpowers/specs/2026-10-23-issue-1094-session-companions-design.md).
