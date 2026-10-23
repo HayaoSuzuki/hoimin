@@ -71,7 +71,6 @@ structure ExitPolicy where
   infrastructureError : Bool := false
   baselineFailed : Bool := false
   incomplete : Bool := false
-  survivors : Bool := false
   interrupted : Bool := false
   deriving Repr, DecidableEq, BEq
 
@@ -79,7 +78,6 @@ def policyFromCounts (counts : Counts) : ExitPolicy where
   infrastructureError := counts.error > 0
   incomplete := counts.timeout > 0 || counts.outOfMemory > 0 ||
     counts.processLimit > 0 || counts.notRun > 0
-  survivors := counts.survived > 0
 
 structure RunFlags where
   infrastructureError : Bool := false
@@ -93,7 +91,6 @@ def composePolicy (counts : Counts) (flags : RunFlags) : ExitPolicy :=
   { infrastructureError := flags.infrastructureError || summary.infrastructureError
     baselineFailed := flags.baselineFailed
     incomplete := flags.incomplete || summary.incomplete
-    survivors := summary.survivors
     interrupted := flags.interrupted }
 
 def exitCode (policy : ExitPolicy) : Nat :=
@@ -101,7 +98,6 @@ def exitCode (policy : ExitPolicy) : Nat :=
   else if policy.infrastructureError then 2
   else if policy.baselineFailed then 3
   else if policy.incomplete then 4
-  else if policy.survivors then 1
   else 0
 
 def complete (policy : ExitPolicy) : Bool :=

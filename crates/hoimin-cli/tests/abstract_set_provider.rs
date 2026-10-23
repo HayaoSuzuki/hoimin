@@ -49,13 +49,7 @@ async fn invoke(source: &str, mode: &str, operator: &str) -> serde_json::Value {
     let stderr = CollectingWriter::default();
     let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
     // The import-only command leaves the valid mutant alive (score below 1).
-    let expected_exit = i32::from(mode == "run");
-    assert_eq!(
-        exit,
-        expected_exit,
-        "{}",
-        String::from_utf8_lossy(&stderr.snapshot())
-    );
+    assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
     serde_json::from_slice(&stdout.snapshot()).unwrap()
 }
 

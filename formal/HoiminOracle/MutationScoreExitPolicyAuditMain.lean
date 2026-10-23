@@ -37,7 +37,6 @@ private def policyJson (policy : ExitPolicy) : Lean.Json := Lean.Json.mkObj [
   ("infrastructure_error", Lean.toJson policy.infrastructureError),
   ("baseline_failed", Lean.toJson policy.baselineFailed),
   ("incomplete", Lean.toJson policy.incomplete),
-  ("survivors", Lean.toJson policy.survivors),
   ("interrupted", Lean.toJson policy.interrupted) ]
 
 private def flagsJson (flags : RunFlags) : Lean.Json := Lean.Json.mkObj [
@@ -103,10 +102,8 @@ private def printSensitivity : IO UInt32 := do
   IO.println s!"zero_score_detected={zeroScoreSensitivity}"
   IO.println s!"wrong_numerator_detected={numeratorSensitivity}"
   IO.println s!"incomplete_class_detected={incompleteClassSensitivity}"
-  IO.println s!"survivor_before_incomplete_detected={survivorBeforeIncompleteSensitivity}"
-  IO.println s!"survivor_before_baseline_detected={survivorBeforeBaselineSensitivity}"
-  IO.println s!"survivor_before_infrastructure_detected={survivorBeforeInfrastructureSensitivity}"
-  IO.println s!"survivor_before_interrupted_detected={survivorBeforeInterruptedSensitivity}"
+  IO.println s!"survivor_exit_detected={survivorExitSensitivity}"
+  IO.println s!"incomplete_precedence_detected={incompletePrecedenceSensitivity}"
   IO.println s!"baseline_precedence_detected={baselinePrecedenceSensitivity}"
   IO.println s!"interruption_precedence_detected={interruptionPrecedenceSensitivity}"
   IO.println s!"survivor_complete_detected={survivorCompleteSensitivity}"
@@ -120,7 +117,7 @@ private def printCases : IO UInt32 := do
 private def printStats : IO UInt32 := do
   IO.println s!"fixed_cases={cases.length}"
   IO.println s!"exit_policy_cases={policyCases.length}"
-  IO.println "boolean_policy_domain=32"
+  IO.println "boolean_policy_domain=16"
   IO.println "status_sensitivity_domain=7"
   return 0
 

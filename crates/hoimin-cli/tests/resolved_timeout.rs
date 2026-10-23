@@ -68,7 +68,7 @@ async fn auto_timeout_is_reported_by_the_public_json_command() {
     std::fs::write(root.path().join("sample.py"), "x = True\n").unwrap();
     let (exit, text) = invoke(run_args(root.path(), "json", None, "pass")).await;
     let report: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(exit, 1);
+    assert_eq!(exit, 0);
     assert_eq!(
         report["summary"]["resolved_mutant_timeout"],
         serde_json::json!({"secs":5,"nanos":0})
@@ -81,7 +81,7 @@ async fn fixed_timeout_is_reported_by_the_public_jsonl_command() {
     std::fs::write(root.path().join("sample.py"), "x = True\n").unwrap();
     let (exit, text) = invoke(run_args(root.path(), "jsonl", Some("1.234567891s"), "pass")).await;
     let report: serde_json::Value = serde_json::from_str(text.lines().last().unwrap()).unwrap();
-    assert_eq!(exit, 1);
+    assert_eq!(exit, 0);
     assert_eq!(
         report["resolved_mutant_timeout"],
         serde_json::json!({"secs":1,"nanos":234_567_891})
@@ -138,7 +138,7 @@ async fn verify_reports_the_saved_fixed_timeout() {
     ])
     .await;
     let report: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(exit, 1);
+    assert_eq!(exit, 0);
     assert_eq!(
         report["summary"]["resolved_mutant_timeout"],
         serde_json::json!({"secs":1,"nanos":234_567_891})

@@ -114,7 +114,7 @@ async fn assert_latin1_flow(source: &[u8], first_candidate_line: u32) {
         stderr.clear();
         assert_eq!(
             hoimin_cli::run_with_writers(command, stdout.clone(), stderr.clone()).await,
-            1,
+            0,
             "{}",
             String::from_utf8_lossy(&stderr.snapshot())
         );

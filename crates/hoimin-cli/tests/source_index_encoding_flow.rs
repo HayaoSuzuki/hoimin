@@ -95,7 +95,7 @@ async fn flow(encoding: &str, ending: &str) {
 
         let code = hoimin_cli::run_with_writers(command, stdout.clone(), stderr.clone()).await;
 
-        assert_eq!(code, 1, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+        assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
         let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         let mutants = report["mutants"].as_array().unwrap();
         assert_eq!(mutants.len(), 1);

@@ -2,8 +2,9 @@
 
 This page describes CI for developing and releasing hoimin itself. The product's
 primary use is [local, resource-bounded test improvement by an AI agent](product-principles.md).
-Running hoimin against a user's project in CI is optional; a universal mutation-score
-gate is not the default product goal. This distinction does not relax the checks below.
+Running hoimin against a user's project in CI is outside the intended product
+scope. Product commands provide no mutation-score or regression gate. The checks
+below validate hoimin itself.
 
 CI always runs change selection and `CI result`.
 For pull requests, it computes the diff from the merge base of the base and head commits; for pushes and merge queues, it uses the event's base commit.

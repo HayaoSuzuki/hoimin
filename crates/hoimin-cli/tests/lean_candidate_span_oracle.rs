@@ -556,7 +556,7 @@ async fn public_plan_and_verify_preserve_all_strict_candidate_fields() {
     let code = hoimin_cli::run_with_writers(verify, stdout.clone(), stderr.clone()).await;
     assert_eq!(
         code,
-        1,
+        0,
         "stderr={}",
         String::from_utf8_lossy(&stderr.snapshot())
     );

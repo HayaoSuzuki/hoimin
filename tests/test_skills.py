@@ -54,12 +54,13 @@ SKILLS = {
                 "session."
             ),
             (
-                "- `verify` exit 0 means the selected candidates completed with"
-                " no survivor. Exit 1 means at least\n"
-                "  one selected candidate survived. Exit 3 means the fresh "
-                "baseline failed. Exit 4 is incomplete;\n"
-                "  exit 130 is cancelled. For exits 2, 3, 4, or 130, stop and "
-                "diagnose before changing tests."
+                "- `verify` exit 0 means the selected candidates completed,"
+                " including when candidates survived.\n"
+                "  Read the report's statuses and counts to choose the next"
+                " improvement. Exit 3 means the fresh\n"
+                "  baseline failed. Exit 4 is incomplete; exit 130 is cancelled."
+                " For exits 2, 3, 4, or 130, stop\n"
+                "  and diagnose before changing tests."
             ),
             (
                 "- A `plan.source.changed` or `plan.fingerprint_input.changed` "

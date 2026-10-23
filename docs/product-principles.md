@@ -6,9 +6,9 @@ survivors, add useful behavioral tests, and verify those improvements within a
 resource budget. Humans resolve specification questions and review proposed
 changes; they should not have to classify a large undifferentiated survivor list.
 
-This page records the maintainer's product direction clarified on 2026-10-12.
-It describes priorities, not a new CLI contract or an autonomous LLM inside
-hoimin. An external agent uses the CLI and the [distributed skills](agent-skills.md).
+The maintainer established this direction on 2026-10-12 and clarified the
+local-only scope on 2026-10-23. An external agent uses the CLI and the
+[distributed skills](agent-skills.md); hoimin contains no autonomous LLM.
 
 ## Optimize for useful test improvements
 
@@ -70,12 +70,14 @@ memory limits, and disk monitoring is cooperative unless backed by a verified
 quota. Read the [resource contract](usage.md#limits-and-defaults) and
 [disk-safe execution guide](usage.md#disk-safe-execution) before choosing budgets.
 
-## Keep CI and research subordinate to the local workflow
+## Keep product features focused on local work
 
-CI execution remains supported as an optional use. A universal mutation-score
-gate, exhaustive runs, distributed scheduling, and whole-population estimates
-are not the primary workflow. This does not weaken hoimin's own development CI,
-release checks, or resource-control tests.
+Running hoimin in users' CI pipelines is outside the intended product scope.
+Do not add mutation-score thresholds, regression gates or compatibility aliases
+for those features. Complete run/verify executions return success even with
+survivors, and valid progress comparisons return success even with regressions.
+Agents use the reported statuses, scores and histories to choose useful work.
+Keep hoimin's own development CI, release checks and resource-control tests.
 
 Evaluate proposals by the useful test improvements an agent can make within a
 local budget, the clarity of the evidence, and the cost of operating and
@@ -85,9 +87,9 @@ that merely repeat implementation details or add cost without protecting a
 meaningful behavior; preserve checks for incorrect verdicts, input validation,
 resource control, cleanup, and distribution failures.
 
-This direction supports keeping CI result aggregation (#760) and sampling
-intervals (#765) deferred until concrete demand exists. Static prechecks (#758)
-need a demonstrated benefit beyond the existing verification command. Higher
+User-facing CI result aggregation (#760) is outside this product scope.
+Sampling intervals (#765) remain deferred until concrete local demand exists.
+Static prechecks (#758) need a demonstrated benefit beyond the existing verification command. Higher
 order mutation proposals (#762–#764) need small, inexpensive evidence of useful
 test improvements before product infrastructure is built. These are prioritization
 criteria, not implementation commitments or changes to Issue states.

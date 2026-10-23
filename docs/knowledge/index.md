@@ -42,7 +42,7 @@ commands rather than copying commands from a dated design or execution report:
 - [AAA test structure](test-structure.md) - Readable arrangement, subject operations and assertions in Python and Rust tests.
 - [Updating the Rust pin and minimum version](rust-toolchains.md) - Stable updates, nightly validation, update PRs and distribution checks.
 - [Publishing wheels to PyPI](pypi-publishing.md) - Automatic publication through TestPyPI, Trusted Publisher registration, attestations and reruns.
-- [Compatibility and change notices](compatibility.md) - Public interfaces, version floors, migration guidance and review.
+- [Compatibility and change notices](compatibility.md) - Current CLI contracts, local execution exit codes, historical format changes and compatibility policy.
 
 - [Archive and wheel execution checks](artifact-smoke.md) - Byte identity, Linux ABI, evidence and publication gates.
 
@@ -63,7 +63,7 @@ recorded revisions against the implementation you are changing:
 - [Python analysis and candidates](design/analyzer.md) - Syntax, name resolution, user-defined exceptions, byte ranges and input scale.
 - [Target selection, plan and verify](design/selection-plan-verify.md) - Ranking, subsets, seeded sampling and saved-format revision questions.
 - [Resources and cleanup](design/runtime-lifecycle.md) - OS-specific limits, cleanup ownership and report writing.
-- [Sessions and reports](design/session-report.md) - Database ownership, structural report validation, consumer policy and opt-in JSON diagnostics.
+- [Sessions and reports](design/session-report.md) - Database ownership, report validation, local execution exit policy and opt-in JSON diagnostics.
 - [JSON mutant spool](design/json-report-spool.md) - Record-level writing and acknowledgement/poison contracts on failure.
 
 - [Fingerprint input globs](design/fingerprint-inputs.md) - Shared traversal across include globs and input-order errors.

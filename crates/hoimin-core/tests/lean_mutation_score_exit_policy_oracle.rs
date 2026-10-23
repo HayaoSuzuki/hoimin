@@ -40,7 +40,6 @@ struct Policy {
     infrastructure_error: bool,
     baseline_failed: bool,
     incomplete: bool,
-    survivors: bool,
     interrupted: bool,
 }
 
@@ -105,8 +104,8 @@ fn expected_ids() -> BTreeSet<String> {
     .into_iter()
     .map(str::to_owned)
     .collect::<BTreeSet<_>>();
-    for bits in 0_u8..32 {
-        ids.insert(format!("policy_{bits:05b}"));
+    for bits in 0_u8..16 {
+        ids.insert(format!("policy_{bits:04b}"));
     }
     ids
 }
@@ -124,8 +123,8 @@ fn validate_corpus(cases: &[CorpusCase]) -> Result<(), String> {
         .filter(|case| case.scenario == "exit_policy")
         .map(|case| case.direct_policy)
         .collect::<BTreeSet<_>>();
-    if policies.len() != 32 {
-        return Err("exit policy rows do not cover 32 unique assignments".to_owned());
+    if policies.len() != 16 {
+        return Err("exit policy rows do not cover 16 unique assignments".to_owned());
     }
     Ok(())
 }
@@ -199,7 +198,6 @@ impl From<Policy> for ExitPolicy {
             infrastructure_error: value.infrastructure_error,
             baseline_failed: value.baseline_failed,
             incomplete: value.incomplete,
-            survivors: value.survivors,
             interrupted: value.interrupted,
         }
     }
@@ -210,7 +208,6 @@ fn policy_from_rust(value: ExitPolicy) -> Policy {
         infrastructure_error: value.infrastructure_error,
         baseline_failed: value.baseline_failed,
         incomplete: value.incomplete,
-        survivors: value.survivors,
         interrupted: value.interrupted,
     }
 }
@@ -226,7 +223,7 @@ fn strict_score_projection(score: Fraction) -> f64 {
 #[test]
 fn corpus_is_closed_typed_and_exhaustive() {
     let cases = parse_corpus(CORPUS).unwrap();
-    assert_eq!(cases.len(), 48);
+    assert_eq!(cases.len(), 32);
     let ids = cases
         .iter()
         .map(|case| case.id.clone())
@@ -246,7 +243,7 @@ fn corpus_is_closed_typed_and_exhaustive() {
             .iter()
             .filter(|case| case.scenario == "exit_policy")
             .count(),
-        32
+        16
     );
     assert_eq!(
         cases
@@ -255,7 +252,7 @@ fn corpus_is_closed_typed_and_exhaustive() {
             .map(|case| case.direct_policy)
             .collect::<BTreeSet<_>>()
             .len(),
-        32
+        16
     );
 }
 

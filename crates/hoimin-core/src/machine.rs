@@ -387,7 +387,6 @@ impl RunState {
                 || summary_policy.infrastructure_error,
             baseline_failed: self.flags.outcome.baseline_failed,
             incomplete: self.flags.outcome.incomplete || summary_policy.incomplete,
-            survivors: summary_policy.survivors,
             interrupted: self.flags.report.interrupted,
         }
     }
@@ -2348,7 +2347,6 @@ mod tests {
         infrastructure_error: bool,
         baseline_failed: bool,
         incomplete: bool,
-        survivors: bool,
         interrupted: bool,
     }
 
@@ -2423,7 +2421,6 @@ mod tests {
                 infrastructure_error: case.expected_policy.infrastructure_error,
                 baseline_failed: case.expected_policy.baseline_failed,
                 incomplete: case.expected_policy.incomplete,
-                survivors: case.expected_policy.survivors,
                 interrupted: case.expected_policy.interrupted,
             };
             let policy = state.exit_policy();
@@ -2531,7 +2528,6 @@ mod tests {
                                     || summary.infrastructure_error,
                                 baseline_failed,
                                 incomplete: incomplete || summary.incomplete,
-                                survivors: summary.survivors,
                                 interrupted,
                             };
                             let policy = state.exit_policy();

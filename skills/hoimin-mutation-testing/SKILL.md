@@ -133,9 +133,10 @@ Each `verify` runs a fresh baseline and never reuses a session.
 - `plan` exit 0 produces a complete manifest. Exit 4 produces a partial manifest; IDs present in
   it are still valid verification choices. Exit 2 writes no usable manifest: repair the input and
   plan again.
-- `verify` exit 0 means the selected candidates completed with no survivor. Exit 1 means at least
-  one selected candidate survived. Exit 3 means the fresh baseline failed. Exit 4 is incomplete;
-  exit 130 is cancelled. For exits 2, 3, 4, or 130, stop and diagnose before changing tests.
+- `verify` exit 0 means the selected candidates completed, including when candidates survived.
+  Read the report's statuses and counts to choose the next improvement. Exit 3 means the fresh
+  baseline failed. Exit 4 is incomplete; exit 130 is cancelled. For exits 2, 3, 4, or 130, stop
+  and diagnose before changing tests.
 - A `plan.source.changed` or `plan.fingerprint_input.changed` rejection means the manifest is
   stale. Regenerate it before any further verify. Also replan when selector, operators, profile,
   limits, or test argv must change.

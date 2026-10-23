@@ -437,7 +437,7 @@ async fn changed_selection_real_run_uses_only_the_edited_function() {
     )
     .await;
 
-    assert_eq!(run.exit_code, 1, "stderr={}", run.stderr);
+    assert_eq!(run.exit_code, 0, "stderr={}", run.stderr);
     let mutants = run.document["mutants"].as_array().unwrap();
     assert_eq!(mutants.len(), 1);
     let expected = BTreeSet::from([(
@@ -551,7 +551,7 @@ async fn protocol_contracts_distinguish_generated_mutants_in_external_tests() {
         let source_path = project.path().join("src/calc.py");
         std::fs::write(&source_path, source).unwrap();
 
-        for (command, status, exit_code) in [(weak, "survived", 1), (strong, "killed", 0)] {
+        for (command, status, exit_code) in [(weak, "survived", 0), (strong, "killed", 0)] {
             let command = format!("from src.calc import probe\n{command}\n");
             let run =
                 run_project_options(project.path(), 1, &command, &["--operators", operator]).await;
@@ -676,7 +676,7 @@ async fn exception_handler_type_collection_candidates_are_excluded() {
     .await;
 
     assert_eq!(
-        run.exit_code, 1,
+        run.exit_code, 0,
         "stderr={} stdout={}",
         run.stderr, run.stdout
     );
@@ -839,7 +839,7 @@ async fn ty_kills_a_nullable_contract_mutant() {
 async fn ty_reports_a_surviving_nullable_contract_mutant() {
     let run = run_type_checker(&ty_executable(), "survived").await;
 
-    assert_eq!(run.exit_code, 1);
+    assert_eq!(run.exit_code, 0);
     assert_eq!(run.statuses, ["survived"]);
 }
 
@@ -4466,7 +4466,7 @@ async fn parenthesized_exception_to_bare_run_survives_value_error_test() {
         &["--operators", "exception_exception_to_bare"],
     )
     .await;
-    assert_eq!(run.exit_code, 1, "{}", run.stderr);
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
     assert_eq!(run.document["summary"]["complete"], true);
     // pins: issue #451 — `except ()` incorrectly killed this mutant.
     assert_eq!(run.statuses, ["survived"]);

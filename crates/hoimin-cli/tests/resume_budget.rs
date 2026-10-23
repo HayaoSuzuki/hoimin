@@ -88,11 +88,7 @@ impl Fixture {
             .expect("resume CLI deadline")
             .unwrap()
         });
-        let expected_exit = if limit < 3 {
-            4
-        } else {
-            i32::from(!self.killed)
-        };
+        let expected_exit = if limit < 3 { 4 } else { 0 };
         assert_eq!(
             output.status.code(),
             Some(expected_exit),

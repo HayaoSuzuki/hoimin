@@ -101,7 +101,7 @@ async fn bounded(mut command: tokio::process::Command) -> Output {
 async fn plan_tracks_environment_without_plaintext_and_verify_checks_before_baseline() {
     let secret = "private-plan-environment-marker-628-unique";
     for (environment, exit_code, marker_exists, expected_errors) in [
-        (secret, 1, true, [].as_slice()),
+        (secret, 0, true, [].as_slice()),
         (
             "different",
             2,
@@ -182,7 +182,7 @@ async fn untracked_plan_persists_explicit_state_and_ignores_environment_changes(
         json!({"state":"untracked"})
     );
     let output = fixture.verify(&manifest, OsStr::new("after")).await;
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(0));
     assert!(fixture.marker.exists());
 }
 

@@ -565,6 +565,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn complete_report_with_survivors_requires_success_exit() {
+        let mut counts = MutationSummary::default();
+        counts.record(hoimin_core::MutationStatus::Survived);
+
+        assert!(validate_summary_coherence(Path::new("report.json"), &counts, true, 0).is_ok());
+        assert!(validate_summary_coherence(Path::new("report.json"), &counts, true, 1).is_err());
+        assert!(validate_summary_coherence(Path::new("report.json"), &counts, false, 0).is_err());
+    }
+
+    #[test]
     fn review_decode_errors_identify_report_without_progress_context() {
         let error = read_typed_json(Path::new("review-input.json"), b"{")
             .expect_err("malformed report must fail");

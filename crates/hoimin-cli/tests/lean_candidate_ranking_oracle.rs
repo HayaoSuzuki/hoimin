@@ -209,7 +209,7 @@ async fn public_plan_and_verify_match_the_lean_diverse_tier_case() {
         let run = run_cli(verify_args(&plan_path, item.limit, policy))
             .await
             .unwrap_or_else(|error| panic!("public verify {policy}: {error}"));
-        assert_eq!(run.code, 1, "policy={policy}; stderr={}", run.stderr);
+        assert_eq!(run.code, 0, "policy={policy}; stderr={}", run.stderr);
         let actual = selected_roles(&run.stdout, &id_roles).expect("selected role order");
         assert_eq!(&actual, expected, "policy={policy}");
         assert_eq!(std::fs::read(&plan_path).unwrap(), plan_before);

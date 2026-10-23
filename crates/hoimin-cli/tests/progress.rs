@@ -34,6 +34,20 @@ use tokio::io::AsyncReadExt;
 const TEST_MIN_FREE_SPACE: &str = "1B";
 
 #[test]
+fn progress_rejects_removed_ci_gate() {
+    assert!(
+        hoimin_cli::cli::parse_from([
+            "hoimin",
+            "progress",
+            "--fail-on-regression",
+            "before.json",
+            "after.json",
+        ])
+        .is_err()
+    );
+}
+
+#[test]
 fn input_rejects_historical_report_goldens() {
     let root = repo_root().join("crates/hoimin-cli/tests/golden");
     for (format, extension) in [("reports", "json"), ("events", "jsonl")] {
@@ -265,7 +279,7 @@ async fn real_run_reports_expose_exact_regression_through_progress() {
     .await;
     assert_eq!(
         after_output.status.code(),
-        Some(1),
+        Some(0),
         "stdout={} stderr={}",
         String::from_utf8_lossy(&after_output.stdout),
         String::from_utf8_lossy(&after_output.stderr)
@@ -312,13 +326,6 @@ async fn real_run_reports_expose_exact_regression_through_progress() {
     assert_eq!(entry["column"], 16);
     assert_eq!(entry["previous_status"], "killed");
     assert_eq!(entry["current_status"], "survived");
-    command.arg("--fail-on-regression");
-    let gated = bounded_output(&mut command, Duration::from_secs(30))
-        .await
-        .unwrap();
-    assert_eq!(gated.status.code(), Some(1));
-    assert_eq!(gated.stdout, output.stdout);
-    assert_eq!(gated.stderr, output.stderr);
     let improvement = progress_details(&[after, before], 100).await;
     assert_eq!(
         improvement["details"]["transitions"][0]["previous_status"],
@@ -347,7 +354,7 @@ async fn real_run_shifted_ids_preserve_content_fallback_for_json_and_jsonl() {
                 .unwrap();
             assert_eq!(
                 output.status.code(),
-                Some(1),
+                Some(0),
                 "{}",
                 String::from_utf8_lossy(&output.stderr)
             );
@@ -1402,7 +1409,7 @@ async fn duplicate_input_detection_distinguishes_independent_and_resumed_reports
     changed_result["summary"]["counts"]["killed"] = json!(0);
     changed_result["summary"]["counts"]["survived"] = json!(1);
     changed_result["summary"]["counts"]["score"] = json!(0.0);
-    changed_result["summary"]["exit_code"] = json!(1);
+    changed_result["summary"]["exit_code"] = json!(0);
     for (name, report, expected_state) in [
         ("independent", independent, "stalled"),
         ("resumed", resumed, "stalled"),
@@ -1553,7 +1560,7 @@ async fn output_preserves_intersection_score_when_candidate_sets_differ() {
     candidate_identity::assign_id(&mut added["candidate"]);
     added["outcome"]["executed"]["termination"] = json!({ "Exit": 1 });
     added["status"] = json!("killed");
-    before["summary"]["exit_code"] = json!(1);
+    before["summary"]["exit_code"] = json!(0);
     before["summary"]["counts"] = json!({
         "killed": 0,
         "survived": 1,
@@ -1602,7 +1609,7 @@ async fn output_latest_state_is_indeterminate_after_an_unusable_report() {
     before["summary"]["counts"]["killed"] = json!(0);
     before["summary"]["counts"]["survived"] = json!(1);
     before["summary"]["counts"]["score"] = json!(0.0);
-    before["summary"]["exit_code"] = json!(1);
+    before["summary"]["exit_code"] = json!(0);
     let after = valid_report();
     let mut incomplete = valid_report();
     incomplete["summary"]["complete"] = json!(false);
@@ -3010,8 +3017,7 @@ macro_rules! stolen_identity_test {
                 write_json(&fixture, "after.json", &after)
             };
             // Act
-            let (code, stdout, stderr) =
-                progress_with_gate(&[before, after.clone()], true, true).await;
+            let (code, stdout, stderr) = progress_output(&[before, after.clone()], true).await;
             // Assert
             assert_eq!(code, 2);
             assert_eq!(stdout, Vec::<u8>::new());
@@ -3042,9 +3048,9 @@ macro_rules! identity_status_test {
                 write_json(&fixture, "after.json", &after)
             };
             // Act
-            let (code, stdout, stderr) = progress_with_gate(&[before, after], true, true).await;
+            let (code, stdout, stderr) = progress_output(&[before, after], true).await;
             // Assert
-            assert_eq!(code, 1, "{}", String::from_utf8_lossy(&stderr));
+            assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
             let result: Value = serde_json::from_slice(&stdout).unwrap();
             assert_eq!(result["latest"]["state"], "regressing");
             assert_eq!(result["comparisons"][0]["regressions"], 1);
@@ -3073,9 +3079,9 @@ macro_rules! identity_order_test {
                 write_json(&fixture, "after.json", &after)
             };
             // Act
-            let (code, stdout, stderr) = progress_with_gate(&[before, after], true, true).await;
+            let (code, stdout, stderr) = progress_output(&[before, after], true).await;
             // Assert
-            assert_eq!(code, 1, "{}", String::from_utf8_lossy(&stderr));
+            assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
             let result: Value = serde_json::from_slice(&stdout).unwrap();
             assert_eq!(result["details"]["eligibility"], "matching");
             assert_eq!(result["comparisons"][0]["common"], 2);
@@ -3930,7 +3936,7 @@ fn detail_report(statuses: &[(&str, MutationStatus)]) -> Value {
     let counts = hoimin_core::summarize(&statuses);
     report["summary"]["sequence"] = json!(statuses.len() + 3);
     report["summary"]["counts"] = serde_json::to_value(counts).unwrap();
-    report["summary"]["exit_code"] = json!(i32::from(statuses.contains(&MutationStatus::Survived)));
+    report["summary"]["exit_code"] = json!(0);
     report
 }
 
@@ -3973,7 +3979,7 @@ macro_rules! progress_json_contract_case {
                 })
                 .collect::<Vec<_>>();
             let limit: Option<usize> = $limit;
-            let mut args = regression_gate_args(&reports, limit.is_some(), true);
+            let mut args = progress_args(&reports, limit.is_some());
             if let Some(limit) = limit {
                 args.extend(["--details-limit".to_owned(), limit.to_string()]);
             }
@@ -3982,10 +3988,10 @@ macro_rules! progress_json_contract_case {
             let schema =
                 read_schema(&repo_root().join("docs/json-schema/progress-result.schema.json"));
 
-            // Act: changing presentation must preserve the gate and aggregate decisions.
+            // Act: changing presentation must preserve the exit status and aggregate decisions.
             let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
             let actual: Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
-            let (plain_code, plain, plain_stderr) = progress_with_gate(&reports, false, true).await;
+            let (plain_code, plain, plain_stderr) = progress_output(&reports, false).await;
             let plain: Value = serde_json::from_slice(&plain).unwrap();
 
             // Assert: one version and required details distinguish the request from availability.
@@ -4035,28 +4041,28 @@ progress_json_contract_case!(
     "regressing",
     None,
     "regressing",
-    1
+    0
 );
 progress_json_contract_case!(
     progress_json_contract_zero,
     "regressing",
     Some(0),
     "regressing",
-    1
+    0
 );
 progress_json_contract_case!(
     progress_json_contract_one,
     "regressing",
     Some(1),
     "regressing",
-    1
+    0
 );
 progress_json_contract_case!(
     progress_json_contract_full,
     "regressing",
     Some(100),
     "regressing",
-    1
+    0
 );
 progress_json_contract_case!(
     progress_json_contract_unavailable_default,
@@ -4142,7 +4148,7 @@ macro_rules! progress_duplicate_identity_case {
                 ]),
             );
             let limit: Option<usize> = $limit;
-            let mut args = regression_gate_args(&[before, after], limit.is_some(), true);
+            let mut args = progress_args(&[before, after], limit.is_some());
             if let Some(limit) = limit {
                 args.extend(["--details-limit".to_owned(), limit.to_string()]);
             }
@@ -4447,36 +4453,26 @@ async fn details_default_cap_and_partial_sets_are_explicit() {
     assert_eq!(value["latest"]["state"], "indeterminate");
 }
 
-fn regression_gate_args(reports: &[PathBuf], details: bool, gate: bool) -> Vec<String> {
+fn progress_args(reports: &[PathBuf], details: bool) -> Vec<String> {
     let mut args = vec!["hoimin".to_owned(), "progress".to_owned()];
     if details {
         args.push("--details".to_owned());
-    }
-    if gate {
-        args.push("--fail-on-regression".to_owned());
     }
     args.extend(reports.iter().map(|path| path.to_str().unwrap().to_owned()));
     args
 }
 
-async fn progress_with_gate(
-    reports: &[PathBuf],
-    details: bool,
-    gate: bool,
-) -> (i32, Vec<u8>, Vec<u8>) {
+async fn progress_output(reports: &[PathBuf], details: bool) -> (i32, Vec<u8>, Vec<u8>) {
     let out = CollectingWriter::default();
     let err = CollectingWriter::default();
-    let status = hoimin_cli::run_with_writers(
-        regression_gate_args(reports, details, gate),
-        out.clone(),
-        err.clone(),
-    )
-    .await;
+    let status =
+        hoimin_cli::run_with_writers(progress_args(reports, details), out.clone(), err.clone())
+            .await;
     (status, out.snapshot(), err.snapshot())
 }
 
 #[tokio::test]
-async fn regression_exit_uses_latest_state_and_preserves_all_output() {
+async fn completed_progress_succeeds_for_every_comparison_state() {
     let fixture = tempfile::tempdir().unwrap();
     let killed = write_json(
         &fixture,
@@ -4496,43 +4492,37 @@ async fn regression_exit_uses_latest_state_and_preserves_all_output() {
     different_doc["mutants"][0]["candidate"]["file_hash"] = json!("different");
     candidate_identity::assign_id(&mut different_doc["mutants"][0]["candidate"]);
     let different = write_json(&fixture, "different.json", &different_doc);
-    for (reports, state, expected_exit) in [
-        (vec![killed.clone(), survived.clone()], "regressing", 1),
-        (vec![survived.clone(), killed.clone()], "improving", 0),
-        (vec![killed.clone(), killed.clone()], "stalled", 0),
-        (vec![killed.clone(); 4], "saturated", 0),
-        (vec![killed.clone(), different], "indeterminate", 0),
+    for (reports, state) in [
+        (vec![killed.clone(), survived.clone()], "regressing"),
+        (vec![survived.clone(), killed.clone()], "improving"),
+        (vec![killed.clone(), killed.clone()], "stalled"),
+        (vec![killed.clone(); 4], "saturated"),
+        (vec![killed.clone(), different], "indeterminate"),
         (
             vec![killed.clone(), survived.clone(), killed.clone()],
             "improving",
-            0,
         ),
         (
             vec![killed.clone(), survived.clone(), gap.clone()],
             "indeterminate",
-            0,
         ),
-        (vec![gap, killed.clone(), survived.clone()], "regressing", 1),
+        (vec![gap, killed.clone(), survived.clone()], "regressing"),
     ] {
         for details in [false, true] {
-            let plain = progress_with_gate(&reports, details, false).await;
-            assert_eq!(plain.0, 0, "{}", String::from_utf8_lossy(&plain.2));
-            let gated = progress_with_gate(&reports, details, true).await;
+            let (status, out, err) = progress_output(&reports, details).await;
             assert_eq!(
-                gated.0,
-                expected_exit,
+                status,
+                0,
                 "{state} details={details}: {}",
-                String::from_utf8_lossy(&gated.2)
+                String::from_utf8_lossy(&err)
             );
-            assert_eq!(gated.1, plain.1);
-            assert_eq!(gated.2, plain.2);
-            assert_json_regression_state(&gated.1, state);
+            assert_json_regression_state(&out, state);
         }
     }
 }
 
 #[tokio::test]
-async fn regression_exit_does_not_hide_trailing_invalid_input() {
+async fn progress_rejects_trailing_invalid_input_before_output() {
     let fixture = tempfile::tempdir().unwrap();
     let killed = write_json(
         &fixture,
@@ -4546,14 +4536,13 @@ async fn regression_exit_does_not_hide_trailing_invalid_input() {
     );
     let invalid = fixture.path().join("invalid.json");
     std::fs::write(&invalid, "{").unwrap();
-    let (status, out, err) = progress_with_gate(
+    let (status, out, err) = progress_output(
         &[
             killed.clone(),
             killed.clone(),
             survived.clone(),
             invalid.clone(),
         ],
-        true,
         true,
     )
     .await;
@@ -4567,18 +4556,18 @@ async fn regression_exit_does_not_hide_trailing_invalid_input() {
     );
 }
 
-struct GateFailingWriter;
-impl std::io::Write for GateFailingWriter {
+struct ProgressFailingWriter;
+impl std::io::Write for ProgressFailingWriter {
     fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-        Err(std::io::Error::other("gate fixture write failure"))
+        Err(std::io::Error::other("progress fixture write failure"))
     }
     fn flush(&mut self) -> std::io::Result<()> {
-        Err(std::io::Error::other("gate fixture flush failure"))
+        Err(std::io::Error::other("progress fixture flush failure"))
     }
 }
 
 #[tokio::test]
-async fn regression_exit_never_overrides_stdout_or_stderr_errors() {
+async fn progress_reports_stdout_and_stderr_failures() {
     let fixture = tempfile::tempdir().unwrap();
     let killed = write_json(
         &fixture,
@@ -4592,8 +4581,8 @@ async fn regression_exit_never_overrides_stdout_or_stderr_errors() {
     );
     let error = CollectingWriter::default();
     let status = hoimin_cli::run_with_writers(
-        regression_gate_args(&[killed.clone(), survived.clone()], true, true),
-        GateFailingWriter,
+        progress_args(&[killed.clone(), survived.clone()], true),
+        ProgressFailingWriter,
         error.clone(),
     )
     .await;
@@ -4601,17 +4590,13 @@ async fn regression_exit_never_overrides_stdout_or_stderr_errors() {
     assert!(
         String::from_utf8(error.snapshot())
             .unwrap()
-            .contains("gate fixture write failure")
+            .contains("progress fixture write failure")
     );
     let out = CollectingWriter::default();
     let status = hoimin_cli::run_with_writers(
-        regression_gate_args(
-            &[killed.clone(), killed.clone(), survived.clone()],
-            true,
-            true,
-        ),
+        progress_args(&[killed.clone(), killed.clone(), survived.clone()], true),
         out.clone(),
-        GateFailingWriter,
+        ProgressFailingWriter,
     )
     .await;
     assert_eq!(status, 2);

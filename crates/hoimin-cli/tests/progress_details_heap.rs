@@ -73,12 +73,11 @@ fn detail_allocations_do_not_scale_with_candidate_body_size() {
             doc["summary"]["counts"]["killed"] = json!(killed);
             doc["summary"]["counts"]["survived"] = json!(survived);
             doc["summary"]["counts"]["score"] = json!(score);
-            doc["summary"]["exit_code"] = json!(i32::from(survived > 0));
+            doc["summary"]["exit_code"] = json!(0);
             std::fs::write(path, serde_json::to_vec(&doc).unwrap()).unwrap();
         }
         let measure = |details, expected_transitions| {
             let args = ProgressArgs {
-                fail_on_regression: false,
                 reports: paths.to_vec(),
                 patience: NonZeroUsize::new(3).unwrap(),
                 details,
@@ -91,7 +90,7 @@ fn detail_allocations_do_not_scale_with_candidate_body_size() {
             let result = progress::run(args, &mut out, &mut err);
             ACTIVE.store(false, Ordering::Relaxed);
             let bytes = ALLOCATED.load(Ordering::Relaxed);
-            assert_eq!(result.unwrap(), 0);
+            result.unwrap();
             let doc: Value = serde_json::from_slice(&out).unwrap();
             assert_eq!(doc["comparisons"][0]["regressions"], 12);
             assert_eq!(

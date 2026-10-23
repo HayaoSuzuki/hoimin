@@ -86,9 +86,10 @@ where
                 .await
                 .unwrap_or(2)
         }
-        Ok(cli::ParsedCommand::Progress(args)) => {
-            command_result(progress::run(args, &mut stdout, &mut stderr), &mut stderr)
-        }
+        Ok(cli::ParsedCommand::Progress(args)) => command_result(
+            progress::run(args, &mut stdout, &mut stderr).map(|()| 0),
+            &mut stderr,
+        ),
         Ok(cli::ParsedCommand::Review(args)) => {
             command_result(review::run(&args, &mut stdout), &mut stderr)
         }

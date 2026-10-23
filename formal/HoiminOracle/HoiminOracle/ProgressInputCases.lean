@@ -46,7 +46,7 @@ def brokenBlindCompleteTrust (input : Input) : Bool := input.reportedComplete
 
 def brokenOmitInconclusive (input : Input) : Bool :=
   input.reportedComplete &&
-    input.reportedExit == (if (summarize input.statuses).survived > 0 then 1 else 0)
+    input.reportedExit == 0
 
 def brokenReversedErrorPrecedence (input : Input) : Bool :=
   coherent (summarize input.statuses) input.reportedComplete input.reportedExit ||

@@ -196,9 +196,6 @@ Arguments:
           Ordered run report files to compare
 
 Options:
-      --fail-on-regression
-          Exit 1 when the latest state is regressing; indeterminate stays 0, errors stay 2
-
       --patience <PATIENCE>
           Consecutive unchanged comparisons before the history is saturated
 
@@ -219,11 +216,6 @@ Options:
 Argument constraints:
 
 ```text
---fail-on-regression
-  required: false
-  arity: 0
-  repeatable: false
-  default: false
 --patience
   required: false
   arity: 1

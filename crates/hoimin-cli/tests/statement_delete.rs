@@ -54,7 +54,7 @@ async fn cli(args: Vec<OsString>) -> (i32, serde_json::Value) {
     let stderr = CollectingWriter::default();
     let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
     assert!(
-        code <= 1,
+        code == 0,
         "exit={code}, stderr={}",
         String::from_utf8_lossy(&stderr.snapshot())
     );

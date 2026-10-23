@@ -38,13 +38,12 @@ pub fn run<Stdout, Stderr>(
     args: ProgressArgs,
     stdout: &mut Stdout,
     stderr: &mut Stderr,
-) -> Result<i32, ProgressError>
+) -> Result<(), ProgressError>
 where
     Stdout: Write,
     Stderr: Write,
 {
     let ProgressArgs {
-        fail_on_regression,
         reports,
         patience,
         details,
@@ -89,8 +88,5 @@ where
         final_details.as_ref(),
         stdout,
         stderr,
-    )?;
-    Ok(i32::from(
-        fail_on_regression && result.latest == ProgressState::Regressing,
-    ))
+    )
 }

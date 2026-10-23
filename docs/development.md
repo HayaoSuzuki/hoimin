@@ -6,9 +6,9 @@ For using hoimin to improve another project's tests, see the
 [plan/verify workflow](usage.md#plan-and-verify-with-an-agent).
 
 Maintain the current CLI and saved formats without cross-version compatibility
-requirements. The intended workflow is local and short-lived; do not assume
-users' CI integrations or long-term plan retention. Follow the
-[change policy](compatibility.md) when changing usage or formats.
+requirements. The intended workflow is local and short-lived; users' CI
+integrations are outside the product scope, and long-term plan retention is not
+a requirement. Follow the [change policy](compatibility.md) when changing usage or formats.
 
 For the runtime boundary, component responsibilities and execution flow, start
 with the [C4 architecture views](architecture/c4-model.md), maintained as Markdown
@@ -43,7 +43,8 @@ Read the [product principles](product-principles.md) when evaluating changes.
 The primary user is an AI agent improving tests locally under explicit resource
 budgets, with humans resolving specification questions and reviewing changes.
 Prioritize useful behavioral tests, reproducible evidence, and safe termination
-over increasing mutation scores or scaling CI. Memory and disk controls, cleanup,
+over increasing mutation scores. Do not add user-facing CI gates or preserve
+removed gates through compatibility aliases. Memory and disk controls, cleanup,
 and honest incomplete results are core requirements. Existing development CI and
 validation remain required; this direction does not relax them.
 

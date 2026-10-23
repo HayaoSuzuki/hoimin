@@ -159,7 +159,7 @@ async fn timed_out_baseline_exports_logs_and_success_is_quiet() {
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["baseline"]["termination"], "Timeout");
     let output = run(root.path(), "json", "print('SUCCESS_LOG')", &[]).await;
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(0));
     assert!(!diagnostics(&output).contains("baseline.output"));
     assert!(!String::from_utf8_lossy(&output.stderr).contains("SUCCESS_LOG"));
 }
