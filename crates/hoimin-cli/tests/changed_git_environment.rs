@@ -1,5 +1,7 @@
 #![cfg(unix)]
 
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -65,7 +67,7 @@ async fn plan(root: &Path, context: Option<u32>, diff_opts: Option<&str>) -> Val
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    serde_json::from_slice(&output.stdout).unwrap()
+    jsonl_report::from_slice(&output.stdout).unwrap()
 }
 
 async fn context_case(context: Option<u32>, diff_opts: Option<&str>, rename: bool) {

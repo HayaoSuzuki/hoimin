@@ -1,6 +1,6 @@
 use hoimin_core::{
     CommandArg, ConfigError, FingerprintInputFile, MAX_JOBS, MAX_TIMEOUT, MutationOperator,
-    MutationProfile, OutputConfig, OutputFormat, PlanConfig, RawRunConfig, RawRunLimits, RunConfig,
+    MutationProfile, OutputConfig, PlanConfig, RawRunConfig, RawRunLimits, RunConfig,
     SessionConfig,
 };
 
@@ -421,10 +421,7 @@ fn fixture_run_config() -> RunConfig {
             ..RawRunLimits::default()
         },
         test_argv: vec![CommandArg::Unix(b"python".to_vec())],
-        output: OutputConfig {
-            format: OutputFormat::Jsonl,
-            metrics: None,
-        },
+        output: OutputConfig { metrics: None },
         ..RawRunConfig::default()
     })
     .unwrap()

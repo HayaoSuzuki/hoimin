@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use collecting_writer::CollectingWriter;
 
 use std::ffi::OsString;
@@ -30,7 +32,7 @@ async fn cli(args: Vec<OsString>) -> serde_json::Value {
         "exit={code}: {}",
         String::from_utf8_lossy(&stderr.snapshot())
     );
-    serde_json::from_slice(&stdout.snapshot()).unwrap()
+    jsonl_report::from_slice(&stdout.snapshot()).unwrap()
 }
 
 async fn plan(root: &Path, selection: &[&str]) -> serde_json::Value {
@@ -165,7 +167,6 @@ async fn saved_explicit_subset_prepares_and_verifies_without_expansion() {
     let prepared = hoimin_cli::plan::prepare_verify(
         &path,
         &[selected["candidates"][0]["id"].as_str().unwrap().to_owned()],
-        hoimin_cli::cli::OutputFormat::Json,
     )
     .await
     .unwrap();
@@ -180,8 +181,6 @@ async fn saved_explicit_subset_prepares_and_verifies_without_expansion() {
         path.into_os_string(),
         "--top".into(),
         "1".into(),
-        "--format".into(),
-        "json".into(),
     ])
     .await;
     assert_eq!(report["baseline"]["termination"]["Exit"], 0);

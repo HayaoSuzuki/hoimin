@@ -3,8 +3,13 @@ type: Contract
 title: Compatibility and change notices
 description: Current formats, usage changes and release versioning.
 status: draft
-catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
+catalog_revision: 6e9f34cf4ef6c3930ebca53b96034e446a0c992b
 sources:
+- id: current-jsonl-contract
+  resource: ../compatibility.md
+  working_tree: modified
+  revision: bcbb8bea00188ca27c0dd98a1e10a5c3a40a0d56
+  sha256: d3cde017c7a078819cd698980c7177c36f19f33ee6bfe30fef15d3d2e5a8b05c
 - id: local-exit-policy
   resource: ../compatibility.md
   revision: 1d192acf04de8983697c76ba2e4344965bb359a3
@@ -81,16 +86,43 @@ sources:
 
 - id: priority-six-compatibility
   resource: ../compatibility.md
-  revision: 3aaf82b0d5b695a548dda33ea248ceaa1dd68219
+  revision: 6e9f34cf4ef6c3930ebca53b96034e446a0c992b
   working_tree: modified
-  sha256: 6dc4ae3fda223f4b3a2a0654042d98eac38f1fe010e267f79321d282388f0eb2
+  sha256: 1110a08a917fae5ff9be9098330e8fa78837b4e72b11c551e7a5700a888b4200
 
 - id: priority-six-graph-evidence
   resource: ../maintenance/2026-10-19-issue-1005/report.md
   revision: 3aaf82b0d5b695a548dda33ea248ceaa1dd68219
   working_tree: clean
   sha256: f00dd5b9e1daa9f50c1289a0b3a1f2f684be377ce954a8ceae19ed1e55c247f0
+- id: crate-feature-scope
+  resource: ../compatibility.md
+  revision: 462f97b26749ea0caa3b83879c94bdd3cdce0f50
+  working_tree: modified
+  sha256: 629eb823778e2dc483df5f3d3f08a144f39961feac1443aeffbdc2d62e364f8f
 ---
+
+# Current CLI and logging feature scope
+
+Help and errors use plain text; automatic color and spelling suggestions have
+been removed. `RUST_LOG` supports default levels and module/target levels,
+including comma-separated combinations. Advanced span/field filters are outside
+the supported syntax. Logging remains opt-in JSONL with bounded records/queue and
+finite shutdown waiting. The optional Rust `contracts` feature uses repository
+macros without the external crate; budget checks still cover successful and error
+results. No saved-artifact regeneration is required.[^crate-feature-scope]
+
+[^crate-feature-scope]: [CLI and logging feature notice](../compatibility.md#reduced-cli-and-logging-features).
+
+# Current execution reports
+
+`run` and `verify` emit JSONL execution events and reject `--format`. Progress
+and review accept only JSONL execution reports. Aggregate JSON execution reports
+are removed without an alias or conversion fallback. Plan, verify dry-run,
+progress, review and metrics retain single JSON documents. Existing session and
+execution-safety behavior is preserved.[^current-jsonl-contract]
+
+[^current-jsonl-contract]: [Current CLI and output policy](../compatibility.md#agent-oriented-output-11001103).
 
 # Current saved formats and release floor
 
@@ -116,10 +148,12 @@ Rerun to obtain current reports. Changing their version
 number does not convert them.[^priority-six-compatibility]
 
 Plan schema 10, SQLite session schema 5, fingerprint schema 13, ranking rule 4,
-candidate schema 1 and mutant-ID v1 retain their formats. Runtime verbosity is
-not saved configuration. Rust callers use checked `RunConfig` construction,
-fallible plan conversion and explicit `ReportPresentation` arguments; migrate
-those call sites directly.[^priority-six-compatibility]
+candidate schema 1 and mutant-ID v1 retain their formats. Run and verify always
+include bounded ordinary retention details alongside failure diagnostics. The
+`--verbose` flag, `ReportPresentation` type and runtime argument, and
+`detail_omissions.suppressed_normal_details` field have been removed. Rust callers
+use checked `RunConfig` construction and fallible plan conversion; migrate
+execution call sites directly.[^priority-six-compatibility]
 
 New exception-hierarchy analysis applies deterministic SCC-weighted depth at 256.
 It can conservatively exclude more candidates without changing saved identities

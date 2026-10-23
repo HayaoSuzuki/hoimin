@@ -1,3 +1,5 @@
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use camino::Utf8Path;
 use hoimin_cli::workspace::{CopyOptions, WorkspacePlan};
 use hoimin_core::{BudgetLedger, EffectId, RunBudgets, reserve_workspace_copy};
@@ -194,7 +196,7 @@ async fn public_cli_baseline_and_mutants_see_empty_fixture_directory() {
             .env_remove("PYTHONPATH").kill_on_drop(true).output())
         .await.expect("directory CLI deadline").unwrap();
     assert_eq!(output.status.code(), Some(0), "{output:?}");
-    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
     assert_eq!(report["baseline"]["termination"]["Exit"], 0);
     assert_eq!(report["summary"]["counts"]["killed"], 2);
     assert!(temp.path().join("fixture/empty").is_dir());

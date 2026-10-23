@@ -1,3 +1,5 @@
+#[path = "jsonl_report.rs"]
+mod jsonl_report;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -97,7 +99,7 @@ impl Fixture {
             "unexpected diagnostic: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let report: Value = jsonl_report::from_slice(&output.stdout).unwrap();
         let metrics = serde_json::from_slice(&std::fs::read(metrics).unwrap()).unwrap();
         Run {
             exit_code,

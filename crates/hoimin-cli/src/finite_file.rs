@@ -13,24 +13,12 @@ use std::io::Read;
 pub(crate) struct SnapshotReader<R = File> {
     file: R,
     remaining: u64,
-    length: u64,
 }
 
 impl SnapshotReader {
     pub(crate) fn new(file: File) -> std::io::Result<Self> {
         let remaining = file.metadata()?.len();
-        Ok(Self {
-            file,
-            remaining,
-            length: remaining,
-        })
-    }
-
-    /// Reuse the same opened file and byte budget for a routing probe.
-    pub(crate) fn rewind(&mut self) -> std::io::Result<()> {
-        std::io::Seek::rewind(&mut self.file)?;
-        self.remaining = self.length;
-        Ok(())
+        Ok(Self { file, remaining })
     }
 }
 
@@ -40,7 +28,6 @@ impl<'file> SnapshotReader<&'file mut File> {
         Self {
             file,
             remaining: length,
-            length,
         }
     }
 }

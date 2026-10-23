@@ -1,3 +1,5 @@
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use std::{num::NonZeroUsize, path::Path};
 
 use hoimin_cli::{cli::ProgressArgs, progress};
@@ -25,7 +27,7 @@ fn progress_heap_peak_is_independent_of_history_length() {
     ] {
         let document = large_report(mutants);
         assert_eq!(document["mutants"].as_array().unwrap().len(), mutants);
-        std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
+        std::fs::write(&path, jsonl_report::to_vec(&document)).unwrap();
         drop(document);
         let bytes = std::fs::metadata(&path).unwrap().len();
         assert!(bytes > previous_bytes);

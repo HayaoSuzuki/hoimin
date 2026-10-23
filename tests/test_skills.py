@@ -240,3 +240,14 @@ def test_skill_required_workflows(name: str, block: str) -> None:
     body = "\n".join(lines[closing + 1 :])
 
     assert block in body
+
+
+@pytest.mark.parametrize("name", SKILLS)
+def test_execution_examples_use_jsonl_without_format_selection(name: str) -> None:
+    body = (ROOT / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
+    verify = next(
+        line for line in body.splitlines() if line.startswith("hoimin verify ")
+    )
+    assert "--format" not in verify
+    assert "$temp_dir/verify-001.jsonl" in body
+    assert "schema-10 JSONL" in body

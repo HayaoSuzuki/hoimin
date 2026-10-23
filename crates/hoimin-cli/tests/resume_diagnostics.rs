@@ -1,3 +1,5 @@
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 #[path = "support/mutation_outcome.rs"]
 mod mutation_outcome;
 use serde_json::{Value, json};
@@ -26,7 +28,7 @@ impl Fixture {
         Self { directory }
     }
 
-    async fn run(&self, database: &str, resume: bool, budget: usize, format: &str) -> Run {
+    async fn run(&self, database: &str, resume: bool, budget: usize) -> Run {
         #[cfg(windows)]
         let relative = "../../.venv/Scripts/python.exe";
         #[cfg(not(windows))]
@@ -52,8 +54,6 @@ impl Fixture {
                 "--allow-best-effort-memory",
                 "--min-free-space",
                 "1B",
-                "--format",
-                format,
                 "--session",
             ])
             .arg(self.directory.path().join(database))
@@ -79,18 +79,8 @@ impl Fixture {
             String::from_utf8_lossy(&output.stderr)
         );
         let stdout = String::from_utf8(output.stdout).unwrap();
-        let report = if format == "json" {
-            Some(serde_json::from_str::<Value>(&stdout).unwrap())
-        } else {
-            None
-        };
-        let header = if let Some(value) = &report {
-            Some(value["run"].clone())
-        } else if format == "jsonl" {
-            Some(serde_json::from_str(stdout.lines().next().unwrap()).unwrap())
-        } else {
-            None
-        };
+        let report = Some(jsonl_report::from_slice::<Value>(stdout.as_bytes()).unwrap());
+        let header = Some(report.as_ref().unwrap()["run"].clone());
         Run {
             code: output.status.code().unwrap(),
             stdout,
@@ -103,9 +93,9 @@ impl Fixture {
 #[tokio::test]
 async fn fresh_resume_reasons_and_reused_outcomes_are_visible_without_changing_execution() {
     let fixture = Fixture::new();
-    let first = fixture.run("session.db", true, 1, "json").await;
+    let first = fixture.run("session.db", true, 1).await;
     let first_header = first.header.unwrap();
-    let second = fixture.run("session.db", true, 1, "json").await;
+    let second = fixture.run("session.db", true, 1).await;
     let second_header = second.header.unwrap();
     let report = second.report.unwrap();
     std::fs::write(
@@ -113,7 +103,7 @@ async fn fresh_resume_reasons_and_reused_outcomes_are_visible_without_changing_e
         "value = 1 + 2\nother = 4 + 5\n# changed\n",
     )
     .unwrap();
-    let mismatch = fixture.run("session.db", true, 1, "json").await;
+    let mismatch = fixture.run("session.db", true, 1).await;
     let header = mismatch.header.unwrap();
 
     assert_eq!(first.code, 4);
@@ -143,8 +133,8 @@ async fn fresh_resume_reasons_and_reused_outcomes_are_visible_without_changing_e
 #[tokio::test]
 async fn complete_history_has_specific_reason() {
     let fixture = Fixture::new();
-    let complete = fixture.run("complete.db", false, 2, "json").await;
-    let restarted = fixture.run("complete.db", true, 2, "json").await;
+    let complete = fixture.run("complete.db", false, 2).await;
+    let restarted = fixture.run("complete.db", true, 2).await;
 
     assert_eq!(complete.code, 0);
     assert!(complete.header.unwrap().get("resume").is_none());
@@ -163,8 +153,8 @@ async fn decreased_budget_history_has_specific_reason() {
         "value = 1 + 2\nother = 4 + 5\nthird = 6 + 7\n",
     )
     .unwrap();
-    let initial = fixture.run("budget.db", false, 2, "json").await;
-    let lower = fixture.run("budget.db", true, 1, "json").await;
+    let initial = fixture.run("budget.db", false, 2).await;
+    let lower = fixture.run("budget.db", true, 1).await;
 
     assert_eq!(initial.code, 4);
     assert_eq!(lower.code, 4);
@@ -177,9 +167,8 @@ async fn decreased_budget_history_has_specific_reason() {
 #[tokio::test]
 async fn jsonl_reports_resume_at_start() {
     let fixture = Fixture::new();
-    let format = "jsonl";
-    let fresh = fixture.run("session.db", true, 1, format).await;
-    let resumed = fixture.run("session.db", true, 1, format).await;
+    let fresh = fixture.run("session.db", true, 1).await;
+    let resumed = fixture.run("session.db", true, 1).await;
 
     assert_eq!(fresh.code, 4);
     assert_eq!(resumed.code, 4);

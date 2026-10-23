@@ -247,8 +247,7 @@
           "required": [
             "normal_details",
             "issue_details",
-            "truncated_details",
-            "suppressed_normal_details"
+            "truncated_details"
           ],
           "properties": {
             "normal_details": {
@@ -260,10 +259,6 @@
               "minimum": 0
             },
             "truncated_details": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "suppressed_normal_details": {
               "type": "integer",
               "minimum": 0
             }
@@ -848,6 +843,13 @@
               "properties": { "analyzer_timeout": false }
             },
             "root": false,
+            "output": {
+              "type": "object",
+              "properties": {
+                "metrics": { "type": ["string", "null"] }
+              },
+              "additionalProperties": false
+            },
             "resume": false,
             "session": { "$ref": "#/$defs/sessionMode" },
             "environment": {

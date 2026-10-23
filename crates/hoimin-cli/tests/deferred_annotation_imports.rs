@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use collecting_writer::CollectingWriter;
 
 use std::ffi::OsString;
@@ -48,9 +50,7 @@ async fn invoke_operator(
         "--min-free-space".into(),
         "1B".into(),
     ];
-    if command == "run" {
-        args.extend(["--format".into(), "json".into()]);
-    }
+
     args.extend(["--".into(), python().into_os_string(), "check.py".into()]);
     let stdout = CollectingWriter::default();
     let stderr = CollectingWriter::default();
@@ -61,7 +61,7 @@ async fn invoke_operator(
     .await
     .expect("public command timed out");
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
-    serde_json::from_slice(&stdout.snapshot()).unwrap()
+    jsonl_report::from_slice(&stdout.snapshot()).unwrap()
 }
 
 async fn plan(source: &str) -> PlanManifest {

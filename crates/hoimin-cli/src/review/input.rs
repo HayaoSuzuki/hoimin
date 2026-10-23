@@ -52,7 +52,7 @@ pub(crate) fn load_report(
     planned: &PlanCandidates<'_>,
 ) -> Result<(ReviewReport, ReportReference), ReviewError> {
     let bytes = bounded_read(path, READ_ONLY_ARTIFACT_LIMIT)?;
-    let report = crate::artifacts::run_report::read_typed_json(path, &bytes)
+    let report = crate::artifacts::run_report::read_typed_jsonl(path, &bytes)
         .map_err(|error| ReviewError::Invalid(error.to_string()))?;
     let project =
         std::fs::canonicalize(&report.normalized_config.selection.root).map_err(|source| {

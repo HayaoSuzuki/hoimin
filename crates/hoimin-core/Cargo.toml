@@ -11,11 +11,10 @@ workspace = true
 
 [features]
 default = []
-contracts = ["dep:contract_checks"]
+contracts = []
 
 [dependencies]
 hoimin-budget-math = { path = "../hoimin-budget-math", features = ["serde"] }
-contract_checks = { package = "contracts", version = ">=0.6.11, <1", optional = true }
 blake3 = "1.8"
 camino = { version = "1.1", features = ["serde1"] }
 serde = { version = "1.0", features = ["derive"] }

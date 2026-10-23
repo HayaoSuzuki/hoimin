@@ -1,4 +1,6 @@
 #![cfg(windows)]
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 #[path = "support/mutation_outcome.rs"]
 mod mutation_outcome;
 
@@ -168,8 +170,6 @@ async fn assert_scope(
             "40s",
             "--total-timeout",
             "90s",
-            "--format",
-            "json",
             "--",
         ])
         .arg(python())
@@ -199,7 +199,7 @@ async fn assert_scope(
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let report: Value = jsonl_report::from_slice(&output.stdout).unwrap();
     assert_eq!(
         report["baseline"]["termination"],
         serde_json::json!({"Exit": 0})

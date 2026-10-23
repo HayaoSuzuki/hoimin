@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 #[path = "support/mutation_outcome.rs"]
 mod mutation_outcome;
 use collecting_writer::CollectingWriter;
@@ -59,7 +61,7 @@ async fn cli(args: Vec<OsString>) -> (i32, serde_json::Value) {
     );
     (
         code,
-        serde_json::from_slice(&stdout.snapshot()).expect("one JSON document"),
+        jsonl_report::from_slice(&stdout.snapshot()).expect("one JSON document"),
     )
 }
 
@@ -160,8 +162,6 @@ async fn verify_negative_neighbor_detects_tail_boundary_missed_by_sign_flip() {
             manifest.into_os_string(),
             "--top".into(),
             candidates.len().to_string().into(),
-            "--format".into(),
-            "json".into(),
         ])
         .await;
         assert_eq!(

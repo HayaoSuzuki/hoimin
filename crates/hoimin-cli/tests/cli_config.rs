@@ -411,7 +411,6 @@ fn plan_normalizes_selection_with_json_output_and_disabled_session() {
         panic!("expected plan");
     };
     let config = args.into_configs().unwrap().0;
-    assert_eq!(config.output.format, hoimin_core::OutputFormat::Json);
     assert_eq!(config.session, hoimin_core::SessionMode::Disabled);
     assert_eq!(config.fingerprint_includes, ["pyproject.toml"]);
     assert_eq!(config.fingerprint_files, ["pyproject.toml"]);
@@ -446,8 +445,6 @@ fn verify_accepts_candidate_selection_and_format_override() {
         "hoimin",
         "verify",
         "plan.json",
-        "--format",
-        "jsonl",
         "--candidate",
         "m1_a",
         "--candidate",
@@ -461,7 +458,6 @@ fn verify_accepts_candidate_selection_and_format_override() {
         args.selection,
         VerifySelection::CandidateIds(vec!["m1_a".into(), "m2_b".into()])
     );
-    assert_eq!(args.format, hoimin_cli::cli::OutputFormat::Jsonl);
 }
 
 #[test]
@@ -992,7 +988,6 @@ fn root_help_exposes_the_run_contract() {
         "--max-memory",
         "--max-workspace-size",
         "--min-free-space",
-        "--format",
         "--session",
         "-- <TEST_ARGV>",
     ] {
@@ -1076,8 +1071,6 @@ fn parse_run_config_parses_ranges_limits_and_output() {
         "2",
         "--max-memory",
         "2GiB",
-        "--format",
-        "jsonl",
         "--",
         "python",
         "-m",
@@ -1091,7 +1084,6 @@ fn parse_run_config_parses_ranges_limits_and_output() {
         config.selection.lines[0].range,
         hoimin_core::LineRange { start: 4, end: 7 }
     );
-    assert_eq!(config.output.format, hoimin_core::OutputFormat::Jsonl);
     assert_eq!(config.test_argv.len(), 3);
 }
 
@@ -2073,54 +2065,6 @@ fn help_limits_discovery_timeout_to_plan() {
 }
 
 #[test]
-fn verbose_is_runtime_only_and_does_not_change_checked_run_config() {
-    // Arrange.
-    let plain = [
-        "hoimin",
-        "run",
-        "--file",
-        "src/calc.py",
-        "--",
-        "python",
-        "-m",
-        "pytest",
-    ];
-    let verbose = [
-        "hoimin",
-        "run",
-        "--verbose",
-        "--file",
-        "src/calc.py",
-        "--",
-        "python",
-        "-m",
-        "pytest",
-    ];
-    // Act.
-    let ParsedCommand::Run(args) = parse_from(verbose).unwrap() else {
-        panic!("run");
-    };
-    let is_verbose = args.verbose;
-    let verbose_config = parse_config_from(verbose).unwrap();
-    let plain_config = parse_config_from(plain).unwrap();
-    // Assert.
-    assert!(is_verbose);
-    assert_eq!(verbose_config, plain_config);
-}
-
-#[test]
-fn verify_accepts_runtime_verbose_without_a_plan_override() {
-    // Arrange / Act.
-    let ParsedCommand::Verify(args) =
-        parse_from(["hoimin", "verify", "plan.json", "--top", "1", "--verbose"]).unwrap()
-    else {
-        panic!("verify");
-    };
-    // Assert.
-    assert!(args.verbose);
-}
-
-#[test]
 fn agent_output_rejects_retired_formats_and_redundant_selectors() {
     assert!(
         parse_from([
@@ -2174,5 +2118,85 @@ fn agent_output_rejects_retired_formats_and_redundant_selectors() {
             ])
             .is_err()
         );
+    }
+}
+
+#[test]
+fn removed_typo_suggestions_preserve_context_and_usage() {
+    let error = hoimin_cli::cli::parse_from([
+        "hoimin",
+        "plan",
+        "--max-mutant",
+        "1",
+        "--file",
+        "target.py",
+        "--",
+        "python",
+        "-c",
+        "pass",
+    ])
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("--max-mutant"), "{error}");
+    assert!(error.contains("Usage:"), "{error}");
+    assert!(!error.contains("similar argument"), "{error}");
+}
+
+#[test]
+fn removed_terminal_color_preserves_help_content() {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .arg("--help")
+        .env("CLICOLOR_FORCE", "1")
+        .env_remove("NO_COLOR")
+        .env_remove("RUST_LOG")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let help = String::from_utf8(output.stdout).unwrap();
+    assert!(help.contains("Usage:"), "{help}");
+    assert!(help.contains("Commands:"), "{help}");
+    assert!(!help.contains('\u{1b}'), "{help}");
+}
+
+#[test]
+fn run_and_verify_reject_removed_format_option() {
+    for format in ["json", "jsonl"] {
+        assert!(
+            parse_from([
+                "hoimin", "run", "--file", "calc.py", "--format", format, "--", "python"
+            ])
+            .is_err()
+        );
+        assert!(
+            parse_from([
+                "hoimin",
+                "verify",
+                "plan.json",
+                "--top",
+                "1",
+                "--format",
+                format
+            ])
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn run_and_verify_reject_removed_verbose_option() {
+    for args in [
+        vec![
+            "hoimin",
+            "run",
+            "--file",
+            "calc.py",
+            "--verbose",
+            "--",
+            "python",
+        ],
+        vec!["hoimin", "verify", "plan.json", "--top", "1", "--verbose"],
+    ] {
+        let error = parse_from(args).unwrap_err().to_string();
+        assert!(error.contains("--verbose"), "{error}");
     }
 }

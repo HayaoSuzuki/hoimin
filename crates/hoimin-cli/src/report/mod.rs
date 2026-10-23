@@ -1,123 +1,33 @@
 pub(crate) mod delivery;
-mod json;
 mod jsonl;
 
-use std::io::{self, Read, Seek, Write};
-use std::path::Path;
+use std::io::{self, Write};
 
-use hoimin_core::{
-    EffectFailed, EffectFailure, EmitOutput, OutputEmitted, OutputEvent, OutputFormat,
-};
+use hoimin_core::{EffectFailed, EffectFailure, EmitOutput, OutputEmitted, OutputEvent};
 
-use self::json::{JsonError, JsonReport};
-
-/// Runtime presentation only: never part of saved plans, sessions or fingerprints.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct ReportPresentation {
-    pub verbose: bool,
-}
-
-pub(crate) struct PreparedReport {
-    encoding: ReportEncoding,
-}
-
-/// A JSON spool belongs only to JSON output. Releasing it preserves the format
-/// for stderr diagnostics, but further non-diagnostic events must be rejected.
-enum ReportEncoding {
-    Jsonl,
-    Json(JsonReport),
-    JsonReleased,
-}
-
-impl PreparedReport {
-    pub(crate) fn new(format: OutputFormat, spool_dir: impl AsRef<Path>) -> io::Result<Self> {
-        let encoding = match format {
-            OutputFormat::Json => ReportEncoding::Json(JsonReport::new(spool_dir.as_ref())?),
-            OutputFormat::Jsonl => ReportEncoding::Jsonl,
-        };
-        Ok(Self { encoding })
-    }
-
-    pub(crate) fn attach<Stdout, Stderr>(
-        self,
-        stdout: Stdout,
-        stderr: Stderr,
-    ) -> ReportHandler<Stdout, Stderr>
-    where
-        Stdout: Write,
-        Stderr: Write,
-    {
-        ReportHandler {
-            encoding: self.encoding,
-            presentation: ReportPresentation::default(),
-            stdout,
-            stderr,
-            lock_stdio_stderr: false,
-        }
-    }
-}
-
+/// Streams execution events as JSON Lines, with diagnostics on stderr.
 pub struct ReportHandler<Stdout, Stderr> {
-    encoding: ReportEncoding,
-    presentation: ReportPresentation,
     stdout: Stdout,
     stderr: Stderr,
     lock_stdio_stderr: bool,
 }
 
-impl<Stdout, Stderr> ReportHandler<Stdout, Stderr>
-where
-    Stdout: Write,
-    Stderr: Write,
-{
-    /// Creates a report handler backed by a temporary JSON spool when required.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the JSON spool cannot be created.
-    pub fn new(
-        format: OutputFormat,
-        stdout: Stdout,
-        stderr: Stderr,
-        spool_dir: impl AsRef<Path>,
-    ) -> io::Result<Self> {
-        Ok(PreparedReport::new(format, spool_dir)?.attach(stdout, stderr))
-    }
-
-    pub fn with_mutant_spool<Spool>(
-        format: OutputFormat,
-        stdout: Stdout,
-        stderr: Stderr,
-        spool: Spool,
-    ) -> Self
-    where
-        Spool: Read + Write + Seek + Send + 'static,
-    {
-        let encoding = match format {
-            OutputFormat::Json => ReportEncoding::Json(JsonReport::with_spool(spool)),
-            OutputFormat::Jsonl => ReportEncoding::Jsonl,
-        };
+impl<Stdout: Write, Stderr: Write> ReportHandler<Stdout, Stderr> {
+    pub fn new(stdout: Stdout, stderr: Stderr) -> Self {
         Self {
-            encoding,
-            presentation: ReportPresentation::default(),
             stdout,
             stderr,
             lock_stdio_stderr: false,
         }
     }
 
-    /// Emits one output event.
+    /// Emits and flushes one event before acknowledging delivery.
     ///
     /// # Errors
     ///
-    /// Returns an error when the configured report cannot serialize or write the event.
+    /// Returns an error when the event cannot be serialized or written.
     pub fn handle(&mut self, request: EmitOutput) -> Result<OutputEmitted, EffectFailed> {
-        let EmitOutput { id, mut event } = request;
-        if let OutputEvent::RunFinished(summary) = &mut event
-            && let Some(janitor) = &mut summary.disk.janitor
-        {
-            janitor.project_details(self.presentation.verbose);
-        }
+        let EmitOutput { id, event } = request;
         if matches!(event, OutputEvent::Diagnostic(_)) {
             // Keep streaming serialization atomic with respect to the tracing
             // output thread. Only owned CLI stdio uses this reentrant lock;
@@ -129,40 +39,14 @@ where
             return Ok(OutputEmitted { id });
         }
 
-        match &mut self.encoding {
-            ReportEncoding::Jsonl => jsonl::write_event(&mut self.stdout, &event)
-                .map_err(|error| serialization_failed(id, &error))?,
-            ReportEncoding::Json(report) => {
-                report
-                    .record(&event, &mut self.stdout)
-                    .map_err(|error| json_failed(id, error))?;
-            }
-            ReportEncoding::JsonReleased => {
-                return Err(EffectFailed {
-                    id,
-                    failure: EffectFailure::ReportState {
-                        message: "JSON report state was not initialized".to_owned(),
-                    },
-                });
-            }
-        }
+        jsonl::write_event(&mut self.stdout, &event)
+            .map_err(|error| serialization_failed(id, &error))?;
         Ok(OutputEmitted { id })
     }
 
-    #[must_use]
-    pub fn with_presentation(mut self, presentation: ReportPresentation) -> Self {
-        self.presentation = presentation;
-        self
-    }
-
-    pub(crate) fn flush_and_release_spool(&mut self) -> io::Result<()> {
+    pub(crate) fn flush(&mut self) -> io::Result<()> {
         let stdout = self.stdout.flush();
         let stderr = self.stderr.flush();
-        // Release the descendant spool handle even when either external writer fails. Windows
-        // cannot claim the delivery directory while any descendant file remains open.
-        if matches!(self.encoding, ReportEncoding::Json(_)) {
-            self.encoding = ReportEncoding::JsonReleased;
-        }
         stdout.and(stderr)
     }
 }
@@ -179,75 +63,4 @@ fn serialization_failed(id: hoimin_core::EffectId, error: &serde_json::Error) ->
         }
     };
     EffectFailed { id, failure }
-}
-
-fn json_failed(id: hoimin_core::EffectId, error: JsonError) -> EffectFailed {
-    let failure = match error {
-        JsonError::Io { operation, source } => EffectFailure::ReportIo {
-            operation: operation.to_owned(),
-            message: source.to_string(),
-        },
-        JsonError::Serialization(error) if error.is_io() => EffectFailure::ReportIo {
-            operation: "serialize JSON report".to_owned(),
-            message: error.to_string(),
-        },
-        JsonError::Serialization(error) => EffectFailure::ReportSerialization {
-            message: error.to_string(),
-        },
-        JsonError::State(message) => EffectFailure::ReportState {
-            message: message.to_owned(),
-        },
-    };
-    EffectFailed { id, failure }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn assert_send<T: Send>() {}
-
-    #[test]
-    fn prepared_report_is_send() {
-        assert_send::<PreparedReport>();
-    }
-
-    #[test]
-    fn released_json_rejects_report_events_but_retains_stderr_diagnostics() {
-        let mut handler = ReportHandler::with_mutant_spool(
-            OutputFormat::Json,
-            Vec::new(),
-            Vec::new(),
-            io::Cursor::new(Vec::new()),
-        );
-        handler.flush_and_release_spool().unwrap();
-        let diagnostic = EmitOutput {
-            id: hoimin_core::EffectId(1),
-            event: OutputEvent::Diagnostic(hoimin_core::Diagnostic::new(
-                "run",
-                1,
-                "warning",
-                "late",
-                "late diagnostic",
-            )),
-        };
-        let started = EmitOutput {
-            id: hoimin_core::EffectId(2),
-            event: OutputEvent::MutantStarted(hoimin_core::MutantStarted::new("run", 2, "m1", 1)),
-        };
-
-        let acknowledged = handler.handle(diagnostic).unwrap();
-        let rejected = handler.handle(started).unwrap_err();
-
-        assert_eq!(acknowledged.id, hoimin_core::EffectId(1));
-        assert_eq!(rejected.id, hoimin_core::EffectId(2));
-        assert!(matches!(
-            rejected.failure,
-            EffectFailure::ReportState { .. }
-        ));
-        assert_eq!(handler.stdout, [] as [u8; 0]);
-        let emitted: serde_json::Value = serde_json::from_slice(&handler.stderr).unwrap();
-        assert_eq!(emitted["kind"], "diagnostic");
-        assert_eq!(emitted["code"], "late");
-    }
 }

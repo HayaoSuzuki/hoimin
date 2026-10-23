@@ -833,10 +833,8 @@ fn issue_1089_execution_comparison_does_not_copy_descriptor_payloads() {
     for count in [16, 64] {
         for payload in [4 * 1024, 16 * 1024, 64 * 1024] {
             let (_, candidates) = issue_1089_candidates(count, payload);
-            let document: serde_json::Value = serde_json::from_str(include_str!(
-                "../../tests/golden/reports/schema-v10-current.json"
-            ))
-            .unwrap();
+            let document: serde_json::Value =
+                crate::artifacts::run_report::test_support::current_report_view();
             let mut wire = document["mutants"][0].clone();
             wire.as_object_mut().unwrap().remove("kind");
             let template: hoimin_core::MutantFinished = serde_json::from_value(wire).unwrap();

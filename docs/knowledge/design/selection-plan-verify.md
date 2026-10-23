@@ -3,8 +3,13 @@ type: Contract
 title: 対象選択・plan・verifyの契約
 description: 候補発見と実行の分離、ランキング、部分集合、保存形式の版の不整合を整理する。
 status: draft
-catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+catalog_revision: bcbb8bea00188ca27c0dd98a1e10a5c3a40a0d56
 sources:
+- id: current-jsonl-contract
+  resource: ../../compatibility.md
+  working_tree: modified
+  revision: bcbb8bea00188ca27c0dd98a1e10a5c3a40a0d56
+  sha256: d3cde017c7a078819cd698980c7177c36f19f33ee6bfe30fef15d3d2e5a8b05c
 - id: issue-1081-plan
   resource: ../../../crates/hoimin-cli/src/plan.rs
   revision: 6ad22aaa87c6298f8c84e3a2c00cbd016cf0b7db
@@ -136,9 +141,9 @@ sources:
   sha256: 8516c95c43ed3442929466044a72b4d1941d697760353617e7c68a8b46c1650f
 - id: task-10-current-preview
   resource: ../../../crates/hoimin-cli/src/plan/preview.rs
-  revision: c74410f56c8389ef246567318ddcade724dbe3f7
+  revision: bcbb8bea00188ca27c0dd98a1e10a5c3a40a0d56
   working_tree: clean
-  sha256: a4abe92ead1ac8ee04c620d93b36e967a461c1cf836947c5f31ee697ba41d322
+  sha256: 6559e0ec2e10ca201830f1925dfb133802cd8f9071cab137008f4d5be4e75ce1
 - id: issue-959-config-tests
   resource: ../../../crates/hoimin-cli/tests/cli_config.rs
   revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
@@ -738,7 +743,7 @@ fileまたはlineだけを指定した場合、rootからの探索は指定フ�
 
 offsetは0始まりでtopとの併用を必須とし、候補ID指定とは併用しない。保持数以上のoffsetと空planはbaseline前に拒否する。末尾を越える件数は残りに切り詰め、max_mutantsは飛ばした件数を除く実際のバッチに適用する。truncated planの範囲は保持済み候補だけであり、完全実行の扱いへ変更しない。[^issue-454]
 
-JSON/JSONLのmutant記録に実際の候補IDを残す。バッチの再実行では範囲と選択規則を保存し、同じID集合のレポートだけでprogress履歴を作る。異なるバッチのscoreや飽和判定は合成しない。[^issue-454]
+JSONLのmutant記録に実際の候補IDを残す。[^current-jsonl-contract]バッチの再実行では範囲と選択規則を保存し、同じID集合のレポートだけでprogress履歴を作る。異なるバッチのscoreや飽和判定は合成しない。[^issue-454]
 
 [^issue-454]: [Issue 454: Fixed verify batches](../../superpowers/specs/2026-09-14-issue-454-fixed-batches-design.md)。
 
@@ -746,7 +751,7 @@ JSON/JSONLのmutant記録に実際の候補IDを残す。バッチの再実行�
 
 `verify PLAN --dry-run` は通常のverifyと同じplan・ソース・fingerprint・候補の検証を行い、選択結果を出力して終了する。baselineと変異テスト、workerコピー、session作成、実行metricsは発生しない。`--metrics` との併用は拒否する。候補ID・top指定の有効なpreviewはtruncated planでも終了コード0となる。sample指定はtruncated planを拒否し、入力不正は2となる。[^issue-695-design]実行時の資源確保までは確認しない。[^issue-599]
 
-JSONとJSONLは、独立したschema 2の `verify_preview` オブジェクトを1件出力する。`candidates` 配列は選択順で、各行にID、保存rank、バッチ内の `selection_order`、path、lineを含む。rank・選択順・行番号は1始まりである。top指定の `offset` は0始まり、明示ID指定ではnullとなる。既存の選択metadataに加え、保持数を `retained_candidates` に記録する。[^task-10-current-preview]
+previewは、独立したschema 2の `verify_preview` JSONオブジェクトを1件出力する。[^current-jsonl-contract]`candidates` 配列は選択順で、各行にID、保存rank、バッチ内の `selection_order`、path、lineを含む。rank・選択順・行番号は1始まりである。top指定の `offset` は0始まり、明示ID指定ではnullとなる。既存の選択metadataに加え、保持数を `retained_candidates` に記録する。[^task-10-current-preview]
 
 Issue #599の導入時はschema 1だった。以下の当時の設計・実装・schemaの出典は、その履歴として保持する。[^issue-599][^issue-599-preview][^issue-599-schema]
 
@@ -1355,3 +1360,5 @@ snapshot to reuse during execution.[^issue-1081-plan]
 
 [^issue-1081-plan]: [Verify preparation](../../../crates/hoimin-cli/src/plan.rs).
 [^issue-1081-membership]: [Capability-relative copy membership](../../../crates/hoimin-cli/src/workspace/manifest.rs).
+
+[^current-jsonl-contract]: [Current CLI and execution-output policy](../../compatibility.md#agent-oriented-output-11001103).

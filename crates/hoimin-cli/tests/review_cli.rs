@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use collecting_writer::CollectingWriter;
 
 use hoimin_cli::run_with_writers;
@@ -617,7 +619,7 @@ macro_rules! closed_report_review {
             value["run"]["normalized_config"]["selection"]["root"] = serde_json::json!(dir.path());
             value.pointer_mut($pointer).unwrap()["unexpected"] = 123.into();
             let report = dir.path().join("report.json");
-            std::fs::write(&report, serde_json::to_vec(&value).unwrap()).unwrap();
+            std::fs::write(&report, jsonl_report::to_vec(&value)).unwrap();
             args.extend(["--report".into(), report.to_str().unwrap().into()]);
 
             // Act.

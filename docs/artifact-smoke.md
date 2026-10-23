@@ -14,8 +14,11 @@ unexpected member, link, duplicate or wrong version fails. The helper is private
 CI code for these validated artifacts, not a product archive-import interface.
 
 `tests/wheel_smoke.py` supplies the shared tiny add/pytest mutation fixture.
-Version/help, nonempty JSON mutant results, at least one killed/survived result
-and unchanged source bytes are required. Existing wheel installation checks on
+Version/help, a JSONL execution stream, at least one killed/survived result,
+and unchanged source bytes are required. The shared invocation uses the default
+output without `--format`. The stream must begin with `run_started` and end with
+a complete `run_finished` carrying exit code 0; aggregate JSON and truncated
+streams are rejected. Existing wheel installation checks on
 Windows, macOS and Linux are retained rather than repeated in archive jobs.
 The wheel's installed executable is also selected by absolute path.
 

@@ -49,7 +49,7 @@ Safety options:
   --max-output --max-copy-size --max-workspace-size --min-free-space
   --max-processes --allow-best-effort-memory
 Output/session options:
-  --format <json|jsonl> --metrics <PATH> --session --resume
+  --metrics <PATH> --session --resume
 ```
 
 Argument constraints:
@@ -77,9 +77,6 @@ Arguments:
           Path to a version-5 plan manifest
 
 Options:
-      --verbose
-          Include bounded details for ordinary startup cleanup holds
-
       --candidate <ID>
           Candidate ID to execute; repeat for multiple planned candidates
 
@@ -108,12 +105,6 @@ Options:
       --metrics <PATH>
           Write execution metrics to PATH, relative to the invocation directory
 
-      --format <FORMAT>
-          Machine-readable output format
-
-          [default: json]
-          [possible values: json, jsonl]
-
   -h, --help
           Print help (see a summary with '-h')
 
@@ -123,11 +114,6 @@ Execution and resource settings come from PLAN and cannot be overridden. Disk sa
 Argument constraints:
 
 ```text
---verbose
-  required: false
-  arity: 0
-  repeatable: false
-  default: false
 manifest
   required: true
   arity: 1
@@ -171,12 +157,6 @@ manifest
   required: false
   arity: 1
   repeatable: false
---format
-  required: false
-  arity: 1
-  repeatable: false
-  default: json
-  values: json, jsonl
 --help
   required: false
   arity: 0
@@ -506,9 +486,6 @@ Arguments:
           Test executable and arguments, passed directly without a shell
 
 Options:
-      --verbose
-          Include bounded details for ordinary startup cleanup holds
-
       --root <DIR>
           Project root used to resolve relative paths
 
@@ -632,12 +609,6 @@ Options:
       --allow-best-effort-memory
           Permit best-effort memory enforcement when hard limits are unavailable
 
-      --format <FORMAT>
-          Machine-readable output format
-
-          [default: json]
-          [possible values: json, jsonl]
-
       --metrics <PATH>
           Write performance metrics to PATH
 
@@ -677,11 +648,6 @@ Mutation operator IDs and selector families:
 Argument constraints:
 
 ```text
---verbose
-  required: false
-  arity: 0
-  repeatable: false
-  default: false
 --root
   required: false
   arity: 1
@@ -822,12 +788,6 @@ Argument constraints:
   arity: 0
   repeatable: false
   default: false
---format
-  required: false
-  arity: 1
-  repeatable: false
-  default: json
-  values: json, jsonl
 --metrics
   required: false
   arity: 1

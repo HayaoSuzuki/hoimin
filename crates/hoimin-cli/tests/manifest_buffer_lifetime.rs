@@ -13,7 +13,7 @@ use std::sync::{Mutex, mpsc};
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
-use hoimin_cli::cli::{OutputFormat, TopSelectionPolicy, VerifySelection};
+use hoimin_cli::cli::{TopSelectionPolicy, VerifySelection};
 use hoimin_cli::plan::{PlanManifest, prepare_verify_preview_selection, prepare_verify_selection};
 
 struct ManifestAllocator;
@@ -216,11 +216,7 @@ fn assert_manifest_lifetime_and_preview(count: usize) {
         offset: 0,
     };
     let gate = hold_blocking_reader(&runtime);
-    let mut prepare = Box::pin(prepare_verify_selection(
-        &path,
-        &requested,
-        OutputFormat::Json,
-    ));
+    let mut prepare = Box::pin(prepare_verify_selection(&path, &requested));
     let entered = runtime.enter();
     MANIFEST_BYTES.store(manifest_size, Ordering::SeqCst);
     ALLOCATIONS.store(0, Ordering::SeqCst);
@@ -254,11 +250,7 @@ fn assert_manifest_lifetime_and_preview(count: usize) {
     let mut api_bytes = Vec::new();
     drop(verified);
     runtime
-        .block_on(prepare_verify_preview_selection(
-            &path,
-            &requested,
-            OutputFormat::Json,
-        ))
+        .block_on(prepare_verify_preview_selection(&path, &requested))
         .unwrap()
         .write(&mut api_bytes)
         .unwrap();
@@ -327,20 +319,12 @@ fn normal_prepare_retained_heap_is_independent_of_preview_payload() {
             // a second, independently checked preparation.
             drop(
                 runtime
-                    .block_on(prepare_verify_selection(
-                        &path,
-                        &request,
-                        OutputFormat::Json,
-                    ))
+                    .block_on(prepare_verify_selection(&path, &request))
                     .unwrap(),
             );
             let before = LIVE_BYTES.load(Ordering::SeqCst);
             let verified = runtime
-                .block_on(prepare_verify_selection(
-                    &path,
-                    &request,
-                    OutputFormat::Json,
-                ))
+                .block_on(prepare_verify_selection(&path, &request))
                 .unwrap();
             let retained = LIVE_BYTES.load(Ordering::SeqCst).saturating_sub(before);
             eprintln!("normal-prepare payload={payload} selected={selected} retained={retained}");

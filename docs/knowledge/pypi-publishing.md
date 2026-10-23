@@ -22,14 +22,14 @@ sources:
   revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
 - id: wheel-smoke
   resource: ../../tests/wheel_smoke.py
-  revision: ff50918cb14ff39c67c0a594b665fd29d73080b4
+  revision: e0009c4ff3392f6c47a98a06722151fc76302941
   working_tree: modified
-  sha256: 4132f96832912a24f6c7af14bff21fb53b3650f60d39c73aa4d1e9e56cf84369
+  sha256: d7cea7105dc65b3b9d5938a1e2fd9f68d902b97b43038a9d56ac4e2218f4a6de
 - id: wheel-smoke-tests
   resource: ../../tests/test_wheel_smoke.py
-  revision: ff50918cb14ff39c67c0a594b665fd29d73080b4
+  revision: e0009c4ff3392f6c47a98a06722151fc76302941
   working_tree: modified
-  sha256: e8653a2473cc383c6c99911cc9f095beb3133fb6233f74c5e85ae71845f220ba
+  sha256: be6d7640de77a9a8108c4219cfcaa0766ca5c3df3b2407ad936836f26d51a027
 - id: release-workflow
   resource: ../../.github/workflows/release.yml
   revision: afab14d952113004ee999ea279358f16f2a0c6c6
@@ -87,6 +87,11 @@ Preview preparation uses read permissions; only post-merge tag reservation and p
 GitHub Release builds use event `github.sha` for PR and manual validation, and `pull_request_target`'s `merge_commit_sha` for post-merge publication. PR-update payloads can contain stale `merge_commit_sha` values, so validation must not use that field to choose its target. Checkout, downstream commit inputs, and concurrency groups use the same selection conditions.[^release-workflow][^ci-tests]
 
 Post-build wheel smoke tests check `Elastic-2.0` and the transferred repository's Repository, Issues, and Changelog URLs before isolated installation and CLI execution. Metadata regressions reject the former `MIT` license and former organization's URLs. Update these expectations when changing the license or public URLs.[^wheel-smoke][^wheel-smoke-tests]
+
+The installed CLI smoke uses default JSONL output without `--format`. It requires
+initial/final run events, a successful complete summary and at least one
+conclusive mutant outcome; it rejects retired aggregate output and incomplete
+streams. The archive smoke shares this execution helper.[^wheel-smoke][^wheel-smoke-tests]
 
 License-text comparison tolerates only CRLF/LF differences from Windows checkout. Text or whitespace changes are rejected; wheel bytes and SHA-256 verification remain unchanged.[^validator][^tests]
 

@@ -55,7 +55,7 @@ can write UTF-16 output that hoimin cannot read as a saved JSON plan.
 For a direct run, replace `src/calc.py` with an existing target file:
 
 ```console
-hoimin run --root . --file src/calc.py --format json -- python -m pytest -q
+hoimin run --root . --file src/calc.py -- python -m pytest -q
 ```
 
 ### Plan and verify with an agent
@@ -139,15 +139,16 @@ apply the [execution prerequisites](#before-execution) before planning.
 
     ```console
     hoimin verify PLAN.json --top 1 --dry-run > reports/preview.json
-    hoimin verify PLAN.json --top 1 --format json > reports/before.json
+    hoimin verify PLAN.json --top 1 > reports/before.jsonl
     ```
 
-    Inspect `reports/before.json`: the baseline should pass and the candidate
+    Inspect `reports/before.jsonl`: the baseline should pass and the candidate
     should survive because both `0 + 0` and `0 - 0` equal zero. Use the candidate
     ID and replacement from the plan to investigate the actual change. A timeout,
     error, resource stop or incomplete report is not a survivor; see [results](#results).
     This verification exits **0** because it completed, including the survivor. Check
-    `summary.complete`, `summary.counts` and `baseline.termination` in the report.
+    `complete` and `counts` on the final `run_finished` event, and `termination`
+    on the `baseline_finished` event.
 
 6. Keep `calc.py` unchanged and add this test to `test_calc.py`. The requirement
     is addition, so distinct nonzero inputs distinguish it from subtraction:
@@ -167,8 +168,8 @@ apply the [execution prerequisites](#before-execution) before planning.
 7. Verify the same selection from the unchanged plan and compare reports:
 
     ```console
-    hoimin verify PLAN.json --top 1 --format json > reports/after.json
-    hoimin progress reports/before.json reports/after.json
+    hoimin verify PLAN.json --top 1 > reports/after.jsonl
+    hoimin progress reports/before.jsonl reports/after.jsonl
     ```
 
     The new baseline should pass and the same candidate should be killed by the
@@ -245,8 +246,8 @@ must be regenerated with the current `hoimin plan`.
 
 `--candidate` is repeatable, so one `verify` invocation can execute multiple planned candidates.
 `verify` inherits the test command, execution limits, timeout settings, and resource policy from
-`PLAN.json`; only verify-specific output choices such as `--format` are selected at verify
-time. It cannot override plan-time settings. In particular, `verify --top` retains all limits
+`PLAN.json`; execution output is always a JSONL event stream. It cannot override
+plan-time settings. In particular, `verify --top` retains all limits
 from the manifest. A timeout-capacity warning is an estimate, not a guaranteed failure, and does
 not adjust those limits automatically. To change `--jobs` or `--total-timeout`, create a new plan;
 the same applies to `--allow-best-effort-memory` or another execution or resource setting.
@@ -280,7 +281,7 @@ atomic snapshot and does not detect every in-place edit.
 Use a narrower selector to check one symbol:
 
 ```console
-hoimin run --root . --source src --symbol calc:add --format jsonl -- python -m pytest -q
+hoimin run --root . --source src --symbol calc:add -- python -m pytest -q
 ```
 
 Everything after `--` is passed directly as native argv to the child process. hoimin does not join it into a command string, invoke a shell, expand globs or variables, or interpret shell quoting.
@@ -302,8 +303,8 @@ to `run` as well.
 ```bash
 mkdir -p ../hoimin-diagnostics
 RUST_LOG=hoimin_cli=debug hoimin run --root . --file calc.py \
-  --format json -- python -m pytest -q \
-  > ../hoimin-diagnostics/result.json 2> ../hoimin-diagnostics/debug.jsonl
+  -- python -m pytest -q \
+  > ../hoimin-diagnostics/result.jsonl 2> ../hoimin-diagnostics/debug.jsonl
 ```
 
 **PowerShell 7:**
@@ -313,9 +314,9 @@ New-Item -ItemType Directory -Force ../hoimin-diagnostics | Out-Null
 $previousRustLog = $env:RUST_LOG
 try {
     $env:RUST_LOG = 'hoimin_cli=debug'
-    hoimin run --root . --file calc.py --format json `
+    hoimin run --root . --file calc.py `
       -- python -m pytest -q `
-      > ../hoimin-diagnostics/result.json 2> ../hoimin-diagnostics/debug.jsonl
+      > ../hoimin-diagnostics/result.jsonl 2> ../hoimin-diagnostics/debug.jsonl
 } finally {
     $env:RUST_LOG = $previousRustLog
 }
@@ -329,6 +330,12 @@ worker, and mutant identifiers connect logs from concurrent test processes.
 Use `RUST_LOG=hoimin_cli::progress=info` for execution-stage records and completed
 mutant counts. Counts include reused results and exclude candidates that were
 not run. These records follow execution events rather than a periodic timer.
+
+`RUST_LOG` supports a default level (`info`), module/target levels
+(`hoimin_cli=debug`), and comma-separated combinations
+(`warn,hoimin_cli::process=debug`). Levels are `off`, `error`, `warn`, `info`,
+`debug`, and `trace`. Advanced span or field directives are outside the supported
+logging syntax.
 
 Logging is off by default. `RUST_LOG=off`, an empty value, or an invalid filter
 disables tracing. Library callers choose their own tracing subscriber. Tracing
@@ -371,7 +378,7 @@ root independently of the selected file:
 ```console
 hoimin run --root . --file src/calc.py --import-root src -- python -m pytest -q
 hoimin plan --root . --line src/calc.py:10-12 --import-root src -- python -m pytest -q > plan.json
-hoimin verify plan.json --top 1 --format json
+hoimin verify plan.json --top 1
 ```
 
 `--import-root DIR` is repeatable on `run` and `plan`. It adds worker import
@@ -496,15 +503,14 @@ The defaults are:
 | `--max-workspace-size` | `8GiB` | logical bytes in generated workspaces and run-owned output |
 | `--min-free-space` | `10GiB` | mandatory filesystem reserve before more work starts |
 | `--max-processes` | `64` | per root tree, including the root; Linux cgroup counts tasks, including threads |
-| `--format` | `json` | `json` or `jsonl` |
 | `--profile full` / `--profile focused` | `full` | candidate-selection profile |
 | `--fingerprint-include GLOB` | none | invalidates compatible session reuse; does not copy worker files |
 | `--fingerprint-file PATH` | none | fingerprints one exact root-relative file; does not copy worker files |
 | `--fingerprint-env NAME` | none | fingerprints an explicitly selected inherited variable; repeatable |
 
 The final run summary reports `resolved_mutant_timeout`, the individual cap
-actually passed in mutant process requests. JSON stores it in
-`summary.resolved_mutant_timeout`; JSONL stores it on `run_finished`. The value
+actually passed in mutant process requests. The `run_finished` event stores it
+as `resolved_mutant_timeout`. The value
 uses integer `secs` and `nanos` (for example, `{"secs": 6, "nanos": 800000000}`).
 It is `null` if no mutant process request was built.
 A failed baseline therefore never reports an unused configured cap as resolved.
@@ -865,7 +871,7 @@ are also excluded. See the development guide for the exact accepted shapes.
 For example, run a type checker against nullable and collection annotation mutations:
 
 ```console
-hoimin run --root . --source src --operators type_nullable,type_collections --format json -- uv run ty check
+hoimin run --root . --source src --operators type_nullable,type_collections -- uv run ty check
 ```
 
 For example, append `--exclude-operators type_nullable_add` to retain
@@ -908,22 +914,20 @@ in order: self-comparisons still count as stalls and can reach saturation, and
 unusable reports still break the stall chain. No strict rejection is applied.
 Different reports that share a run ID (for example, before and after resume)
 are not duplicates on that basis. Copy detection compares raw bytes, so the
-same execution saved as JSON and JSONL, or with different whitespace, is not
+same execution saved with different whitespace is not
 detected as a copy. Copy confirmation is best-effort if files change or become
 unreadable after validation; reports should remain unchanged during comparison.
 
-Inputs may mix JSON documents and JSONL event streams saved from
-`hoimin run --format jsonl`, both using report schema 10. Older and unsupported
-future schemas are rejected with exit code 2. Detection uses content, not
-filename. JSON input is decoded directly; JSONL input is decoded one physical
-line at a time without a raw line buffer. There is no fixed total-size or line
-limit. Memory still includes finished mutant results, sequence-validation state,
+Inputs are JSONL event streams saved from `hoimin run` or `hoimin verify`, using
+report schema 10. Aggregate JSON documents and older or unsupported future schemas
+are rejected with exit code 2. Each physical line is decoded as an event.
+There is no fixed total-size or line limit. Memory still includes finished mutant results, sequence-validation state,
 and the current event's decoding storage. Progress retains only adjacent report
 pairs for comparison. The initial-file-length read policy described above also
 applies to progress. For example:
 
 ```console
-hoimin progress reports/before.json reports/after.jsonl
+hoimin progress reports/before.jsonl reports/after.jsonl
 ```
 
 JSONL is read one event per nonblank line. `run_started` must come first and
@@ -933,7 +937,7 @@ Run IDs, event sequence, baseline order, mutant identities, results and summary
 counts must be consistent. Truncated lines, missing completion, mixed runs and
 duplicate events are rejected with exit code 2. A valid stream whose completed
 summary marks the run incomplete, or whose baseline failed, is unusable for
-comparison just like its JSON document. CRLF and a complete final line without
+comparison. CRLF and a complete final line without
 a newline are accepted.
 
 Read historical reports with their producing binary, or run the tests again with
@@ -941,14 +945,14 @@ the intended Hoimin version to generate new reports. Reports are not converted
 or rewritten automatically. Regenerating a plan alone cannot recreate a past
 execution report.
 
-The JSONL reader retains comparison candidates and one reusable event buffer;
+The JSONL reader retains comparison candidates and event decoding state;
 it does not retain the diagnostic/start-event history or the entire input
 string. Its memory use still depends on candidate data and the largest event.
 
 
 ```console
-hoimin progress --patience 3 reports/before.json reports/after.json reports/latest.json
-hoimin progress reports/*.json
+hoimin progress --patience 3 reports/before.jsonl reports/after.jsonl reports/latest.jsonl
+hoimin progress reports/*.jsonl
 ```
 
 Comparisons require adjacent reports that are both complete and have successful baselines. `saturated` means the configured number of consecutive comparable stalls was reached. Only immediately adjacent stalled comparisons contribute to this count. An improving, regressing, or indeterminate comparison resets the consecutive stall chain.
@@ -972,13 +976,13 @@ Omitting `--offset` is equivalent to `--offset 0`, including in preview output:
 ```console
 hoimin plan --root . --source src --max-mutants 100 -- python -m pytest -q > plan.json
 mkdir -p reports
-hoimin verify plan.json --top 100 --offset 0 > reports/batch-a-001.json
-hoimin verify plan.json --top 20 --offset 100 > reports/batch-b-001.json
+hoimin verify plan.json --top 100 --offset 0 > reports/batch-a-001.jsonl
+hoimin verify plan.json --top 20 --offset 100 > reports/batch-b-001.jsonl
 # After improving tests, repeat the same ranges from the same plan.
-hoimin verify plan.json --top 100 --offset 0 > reports/batch-a-002.json
-hoimin verify plan.json --top 20 --offset 100 > reports/batch-b-002.json
-hoimin progress reports/batch-a-001.json reports/batch-a-002.json
-hoimin progress reports/batch-b-001.json reports/batch-b-002.json
+hoimin verify plan.json --top 100 --offset 0 > reports/batch-a-002.jsonl
+hoimin verify plan.json --top 20 --offset 100 > reports/batch-b-002.jsonl
+hoimin progress reports/batch-a-001.jsonl reports/batch-a-002.jsonl
+hoimin progress reports/batch-b-001.jsonl reports/batch-b-002.jsonl
 ```
 
 This example partitions a plan with 120 retained candidates. Keep the same
@@ -986,7 +990,7 @@ This example partitions a plan with 120 retained candidates. Keep the same
 uses the complete equal-score file-round-robin order; `line-diverse` uses the
 complete equal-score start-line-round-robin order. Both apply offset/top after
 ordering, so page boundaries never restart the rotation. Changing
-the policy between batches can change membership. The JSON/JSONL mutant records
+the policy between batches can change membership. The JSONL mutant events
 retain the actual selected candidate IDs; save the range/policy commands with
 those reports for reruns.
 
@@ -1010,9 +1014,9 @@ ranks. Both the positive count and unsigned 64-bit seed are required:
 
 ```console
 hoimin verify plan.json --sample 100 --seed 42 --dry-run > sample-preview.json
-hoimin verify plan.json --sample 100 --seed 42 > reports/sample-001.json
-hoimin verify plan.json --sample 100 --seed 42 > reports/sample-002.json
-hoimin progress reports/sample-001.json reports/sample-002.json
+hoimin verify plan.json --sample 100 --seed 42 > reports/sample-001.jsonl
+hoimin verify plan.json --sample 100 --seed 42 > reports/sample-002.jsonl
+hoimin progress reports/sample-001.jsonl reports/sample-002.jsonl
 ```
 
 The population consists of the candidates in the complete saved plan, as limited
@@ -1029,7 +1033,7 @@ The same plan, count, seed and algorithm version produce the same IDs and dispat
 order across platforms. Parallel test completion order and elapsed time can vary.
 Increasing the count keeps the previous selection as a prefix.
 
-Preview, JSON and JSONL run metadata use `mode: sample`,
+Preview and JSONL run metadata use `mode: sample`,
 `scope: sampled_candidates` and the versioned `policy` above. The
 `verification_selection.sampling` object contains `population`, `seed` and
 `selected_ids` in dispatch order; `requested` and `selected` distinguish requested
@@ -1069,8 +1073,8 @@ Copy-content read or length-change errors may therefore appear during actual
 preflight, and a successful preview does not certify all copied asset bodies.
 
 The [preview schema](json-schema/verify-preview.schema.json) is independent
-of run reports: `kind` is `verify_preview` and `schema_version` is 2. Both
-`--format json` and `--format jsonl` return one JSON object.
+of run reports: `kind` is `verify_preview` and `schema_version` is 2.
+Dry-run always returns one JSON object.
 The ordered `candidates` array gives each candidate's `id`, saved `rank`,
 `selection_order`, `path`, `line`, `column`, `operator`, `original` and `replacement`.
 Details come from the same validated plan candidate. Rank, line and batch selection
@@ -1115,11 +1119,11 @@ scores, and their saturation states must not be combined into a synthetic whole-
 Judge overall completion from each batch's latest complete report for the same current test revision,
 accounting for the union of candidate IDs selected from the plan.
 
-When a baseline fails or reaches its process timeout, `run` and `verify` copy its retained combined stdout/stderr to stderr before execution cleanup. Redirect stderr to save these diagnostics, for example `hoimin run ... --format json > result.json 2> baseline.log`. Machine-readable formats keep stdout unchanged and encode stderr diagnostics as JSON Lines (`baseline.output`). The header records retained/observed byte counts and truncation; `--max-output` limits the retained tail. Output is streamed in 16 KiB chunks, preserving split UTF-8 characters; invalid bytes become U+FFFD and terminal control characters other than newline/tab are escaped. Chunk offsets refer to retained raw bytes. Successful baselines stay quiet. Read failures produce `baseline.output.read`; cancellation or a blocked diagnostic sink can stop export at the existing total timeout and shutdown grace, so interrupted export may be partial.
+When a baseline fails or reaches its process timeout, `run` and `verify` copy its retained combined stdout/stderr to stderr before execution cleanup. Redirect stderr to save these diagnostics, for example `hoimin run ... > result.jsonl 2> baseline.log`. Execution reporting keeps stdout unchanged and encodes stderr diagnostics as JSON Lines (`baseline.output`). The header records retained/observed byte counts and truncation; `--max-output` limits the retained tail. Output is streamed in 16 KiB chunks, preserving split UTF-8 characters; invalid bytes become U+FFFD and terminal control characters other than newline/tab are escaped. Chunk offsets refer to retained raw bytes. Successful baselines stay quiet. Read failures produce `baseline.output.read`; cancellation or a blocked diagnostic sink can stop export at the existing total timeout and shutdown grace, so interrupted export may be partial.
 
-`--format json` emits one document. `--format jsonl` emits flushed lifecycle events; diagnostics are JSON Lines on stderr. Public JSON contracts are versioned in [`run-result.schema.json`](json-schema/run-result.schema.json) and [`run-event.schema.json`](json-schema/run-event.schema.json). Event kinds are `run_started`, `baseline_finished`, `mutant_started`, `mutant_finished`, `diagnostic`, and `run_finished`. Parallel events are emitted in completion order; candidate sequence numbers allow stable reordering.
+`run` and `verify` emit flushed JSONL lifecycle events; diagnostics are JSON Lines on stderr. The execution event contract is versioned in [`run-event.schema.json`](json-schema/run-event.schema.json). Event kinds are `run_started`, `baseline_finished`, `mutant_started`, `mutant_finished`, `diagnostic`, and `run_finished`. Parallel events are emitted in completion order; candidate sequence numbers allow stable reordering.
 
-Report schema 10 requires `status` in each JSON `mutants[]` record and JSONL
+Report schema 10 requires `status` in each JSONL
 `mutant_finished` event. Read this field for the candidate's verdict, for example
 `{"status":"not_run","outcome":"not_run"}`. The writer computes it from
 `outcome`; strict progress/review readers reject a disagreement with exit 2.
@@ -1127,14 +1131,14 @@ JSON Schema checks the required field and its seven allowed values; only the
 strict reader checks equality with the outcome. Summary, progress and resume
 continue to derive their classifications from outcome evidence.
 
-JSON mutant records and JSONL `mutant_finished` events include the full candidate
+JSONL `mutant_finished` events include the full candidate
 ID, source position, operator, original and replacement expressions, and verdict.
 Use these fields to identify results when parallel workers finish in a different
 order.
 
 The final summary's `complete` is `false` when any mutant is inconclusive or the run fails or is interrupted. It is `true` only when every selected mutant is `killed` or `survived` and no run-level failure occurred; a successful run with no candidates is also complete. Therefore, an exit code of `4` always has `complete: false`.
 
-`progress` accepts JSON and JSONL reports from regular files, including symlinks
+`progress` accepts JSONL reports from regular files, including symlinks
 to regular files. It rejects directories, missing paths and nonregular inputs;
 on Unix this includes writerless FIFOs without waiting for a writer. Review's
 64 MiB input limit does not apply to `progress`.
@@ -1165,17 +1169,17 @@ independent of whether details were requested. See the
 
 ### Operational metrics
 
-Run metrics are an opt-in operational sidecar, separate from the run JSON. Write them by passing a destination to `--metrics`:
+Run metrics are an opt-in operational sidecar, separate from the execution event stream. Write them by passing a destination to `--metrics`:
 
 ```console
 hoimin run --root . --source src --metrics metrics.json -- python -m pytest -q
-hoimin verify plan.json --top 20 --metrics batch-metrics.json > batch-report.json
-hoimin verify plan.json --candidate m1_ID --metrics candidate-metrics.json > candidate-report.json
+hoimin verify plan.json --top 20 --metrics batch-metrics.json > batch-report.jsonl
+hoimin verify plan.json --candidate m1_ID --metrics candidate-metrics.json > candidate-report.jsonl
 ```
 
 `verify --metrics` supports explicit candidate IDs and both strict and diverse top selections. Relative metrics paths use the directory where you invoke hoimin, independently of the saved project root. The destination is not stored in the plan and does not change candidate selection or execution limits. Metrics begin when shell execution starts; plan validation and rediscovery time are not included. A failure during plan preparation leaves the destination untouched. Once execution starts, failed baselines and interrupted runs follow the same sidecar and warning rules as `run`.
 
-The sidecar uses the versioned [`run-metrics.schema.json`](json-schema/run-metrics.schema.json) contract. Its `executed` count never exceeds `discovered` and equals the sum of per-worker `processes`. Metrics are operational observations: they do not affect resume compatibility and are not embedded in the run-result document. A metrics write failure warns without changing the mutation result. A confirmed collision with the verify input manifest, a selected source, explicit fingerprint input, session database, active SQLite companion or session ownership lock is rejected before the baseline. You can write metrics inside the project or replace an existing metrics file. For a verify input specified through a symlink, both the specified entry and its resolved file are protected. A separate hardlink or final symlink can be replaced while preserving its protected referent.
+The sidecar uses the versioned [`run-metrics.schema.json`](json-schema/run-metrics.schema.json) contract. Its `executed` count never exceeds `discovered` and equals the sum of per-worker `processes`. Metrics are operational observations: they do not affect resume compatibility and are not embedded in execution events. A metrics write failure warns without changing the mutation result. A confirmed collision with the verify input manifest, a selected source, explicit fingerprint input, session database, active SQLite companion or session ownership lock is rejected before the baseline. You can write metrics inside the project or replace an existing metrics file. For a verify input specified through a symlink, both the specified entry and its resolved file are protected. A separate hardlink or final symlink can be replaced while preserving its protected referent.
 
 Hoimin checks the entry that the final atomic rename replaces and retains its parent directory handle through writing and temporary-file cleanup. Renaming or replacing the parent's original pathname does not redirect metrics into a replacement directory: output stays in the retained directory or fails safely. On Windows, the retained handle can prevent the parent from being renamed. If Hoimin cannot establish a safe destination identity, it skips metrics and emits a `metrics.write` warning without changing the mutation result. This includes unresolved filesystem case behavior and some prospective non-ASCII or Windows alias names.
 
@@ -1248,12 +1252,11 @@ of an OS operation.
 
 ## Sessions and resume
 
-The project root is stored only in `normalized_config.selection.root` (under
-`run` for JSON reports). Saved plans use schema 10. Regenerate schema-9 and older
+The project root is stored only in `run_started.normalized_config.selection.root`. Saved plans use schema 10. Regenerate schema-9 and older
 plans; read old reports with their producing binary or rerun with this version.
 See the [0.12.0 compatibility notice](compatibility.md#discovery-timeout-ownership-in-0120).
 
-Run JSON/JSONL emit schema 10; consumers validating the closed schema must update. `progress` accepts only schema-10 JSON/JSONL and rejects historical, unsupported future and mixed-version reports. When `--resume` is requested, JSON and JSONL include `run_started.resume` (the `run.resume` field in a JSON report): `{"status":"resumed"}` or `{"status":"fresh","reason":"CODE"}`. Runs without `--resume` omit this field.
+Run and verify emit schema-10 JSONL; consumers validating the closed schema must update. `progress` accepts only schema-10 JSONL and rejects historical, unsupported future and mixed-version reports. When `--resume` is requested, events include `run_started.resume`: `{"status":"resumed"}` or `{"status":"fresh","reason":"CODE"}`. Runs without `--resume` omit this field.
 
 A compatible incomplete run always wins, even if newer runs are incompatible. If an eligible row appears only during the later history inspection, `candidate_changed` takes precedence. Otherwise reasons use this precedence: `budget_decreased` (matching incomplete runs require a higher `--max-mutants`), `matching_run_complete`, `fingerprint_mismatch` (other incomplete history), `no_incomplete_run` (only nonmatching complete history), then `no_prior_run`. `candidate_changed` means session history changed during resume selection. These codes describe observed history, not which configuration field or file changed. Existing old-schema, corrupt-data, database-read, and ownership errors remain errors.
 
@@ -1650,10 +1653,10 @@ These assessments do not count as reviewed current candidates. `list --stale`
 includes stored candidates absent from the plan separately. List and show do
 not create a missing store.
 
-Plan-only output has execution state `not_loaded`. Add `--report run.json` for
-actual results from a complete schema-v10 JSON report with a passing baseline and
+Plan-only output has execution state `not_loaded`. Add `--report run.jsonl` for
+actual results from a complete schema-v10 JSONL execution stream with a passing baseline and
 matching project/candidates. A plan candidate absent from the report is
-`not_in_report`; recording it with that report is rejected. JSONL and older
+`not_in_report`; recording it with that report is rejected. Aggregate JSON and older
 reports are not supported by review. Plan-only recording remains allowed.
 
 Limits are 64 MiB per plan/report, 16 MiB per store, and 10,000 events per store.

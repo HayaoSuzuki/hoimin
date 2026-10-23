@@ -3,7 +3,7 @@ type: Contract
 title: session所有権とレポートの検証
 description: 保存・復旧の権限、スキーマ移行、結果の生成側と読取り側の検証責務を整理する。
 status: draft
-catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+catalog_revision: 6e9f34cf4ef6c3930ebca53b96034e446a0c992b
 sources:
 - id: local-exit-implementation
   resource: ../../../crates/hoimin-core/src/report.rs
@@ -209,14 +209,19 @@ sources:
   recovered_blob: 4b5d7cfc1193ddd9e69a6c75cc566c965df1d88c
 - id: issue-1015-wire
   resource: ../../../crates/hoimin-core/src/report.rs
-  revision: 8720b41a0d08f375d98bda7cfa6202be779f3226
+  revision: 6e9f34cf4ef6c3930ebca53b96034e446a0c992b
+  working_tree: clean
+  sha256: b05effca875352062dcc58b2e71c7421ec9ab1a44170a933e7fc4e925a7a96c4
+- id: issue-1015-janitor
+  resource: ../../../crates/hoimin-core/src/report/janitor.rs
+  revision: 6e9f34cf4ef6c3930ebca53b96034e446a0c992b
   working_tree: modified
-  sha256: c89bddbf335142d9586ecbc3e155893c273af3718fb223e3975e66e97954a013
+  sha256: c35b0ffe4db423ee053acaf494de3d0f5eeeb4692b56ed3496a45ac3c25f09f9
 - id: issue-1015-compatibility
   resource: ../../compatibility.md
-  revision: 8720b41a0d08f375d98bda7cfa6202be779f3226
+  revision: 6e9f34cf4ef6c3930ebca53b96034e446a0c992b
   working_tree: modified
-  sha256: 5e7c0deae74941aa9651590a7b1e6d7465a75fa8e2063090b7398c30214aafa9
+  sha256: 1110a08a917fae5ff9be9098330e8fa78837b4e72b11c551e7a5700a888b4200
 - id: issue-1004-reader
   resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
   revision: 6d78789eca05fad577b2a8dcce83077f9389ee06
@@ -389,10 +394,10 @@ sources:
   working_tree: modified
   sha256: c6d0546d6e35310263c0af07e69ec7a2a96b5cd4ff21063ad59265c2ee562d90
 - id: schema
-  resource: ../../json-schema/run-result.schema.json
-  revision: 31245fbf096967b36bc15523067080b506f88fe9
+  resource: ../../json-schema/run-event.schema.json
+  revision: bcbb8bea00188ca27c0dd98a1e10a5c3a40a0d56
   working_tree: modified
-  sha256: 52016f274d790ac4aca7a220a2214d79bb31ab20a3815035b7105e63719584a7
+  sha256: 138e91eff19449de5bb39548f1b11a69b4a41eba1e41a3d33ec14b895248a4f6
 - id: issue-488
   resource: ../../superpowers/specs/2026-09-11-issue-488-windows-resource-scope-design.md
   working_tree: untracked
@@ -497,51 +502,52 @@ sources:
   sha256: 1df772f2c399d48506234f7503fc5210ac85f66e6b1e2f86f7f0e5a99de25252
 - id: current-report-boundary
   resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
-  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
-  working_tree: clean
-  sha256: 76370098b699c6f1973fb416ee06df7514351591f5307b326a4c122e50bb99b1
+  revision: bcbb8bea00188ca27c0dd98a1e10a5c3a40a0d56
+  working_tree: modified
+  sha256: 08d74dfcd48c82c4fd45e7e26172c84bf4ff98ed60f97b6d47a6307a2f994b9a
 - id: current-progress-input
   resource: ../../../crates/hoimin-cli/src/progress/input.rs
-  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
-  working_tree: clean
-  sha256: d4eb7eadf6a0bb40beced8ea7fd3a97d0c27151f7a0a312f666b0a69a0e1bf56
+  revision: bcbb8bea00188ca27c0dd98a1e10a5c3a40a0d56
+  working_tree: modified
+  sha256: 67f32d1981554b266a979c205a32122693ffde740961ed0b7fd27b04b63ceb02
 - id: current-progress-errors
   resource: ../../../crates/hoimin-cli/src/progress/mod.rs
-  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
+  revision: bcbb8bea00188ca27c0dd98a1e10a5c3a40a0d56
   working_tree: clean
-  sha256: 033232c1633695dfc2d3fdc61223b8895e18698329053acea78e17ab4484b9be
+  sha256: 086838ab315e348dd32a4e9d08c31a42f9a6978ad08cd3ede2f276a5176219f2
 - id: current-review-input
   resource: ../../../crates/hoimin-cli/src/review/input.rs
-  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
-  working_tree: clean
-  sha256: 8a46ba185af8e294190b266cf6b6dcbab4675053fc651d73ea4b31b04aa52355
+  revision: bcbb8bea00188ca27c0dd98a1e10a5c3a40a0d56
+  working_tree: modified
+  sha256: 23c9b1eb94ce51cd16deaf1f0bee765d9213046c23fb7d189d0c2057cd7a9d62
 - id: current-run-render
   resource: ../../../crates/hoimin-cli/src/report/mod.rs
-  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
-  working_tree: clean
-  sha256: d103920f89e50a23bc91e0f5a0a7eca41089f4a56c04a0b4394c33ee9945006b
+  revision: bcbb8bea00188ca27c0dd98a1e10a5c3a40a0d56
+  working_tree: modified
+  sha256: 331d1e1d279288c2c9c73b7ec3e4347f23e760a155d438fdd001a40c63418dd9
 - id: current-telemetry
   resource: ../../../crates/hoimin-cli/src/telemetry.rs
-  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
+  revision: bcbb8bea00188ca27c0dd98a1e10a5c3a40a0d56
   working_tree: clean
-  sha256: 3e5909f6887c4de4fcbef8fc76b70d77c0926223e00866d54d323c2855c87cbf
+  sha256: e4bd89401b4f2b43f018d24fc3c38ef539c8c546779c3878ca11738c16290328
 - id: current-output-contract
   resource: ../../../docs/compatibility.md
-  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
+  revision: bcbb8bea00188ca27c0dd98a1e10a5c3a40a0d56
   working_tree: modified
-  sha256: 2d002bcd959d3ae787563a7e6e103d751dcabad8131500d017663241f1cfe8aa
+  sha256: d3cde017c7a078819cd698980c7177c36f19f33ee6bfe30fef15d3d2e5a8b05c
 ---
 
 # Current report, reader and diagnostic boundaries
 
-At the recorded PR #1105 source revision, `run` and `verify` write JSON or JSONL
-reports. `progress` and `review` each write JSON without a format selector.
-Human report renderers and periodic terminal progress were removed in #1104;
-the historical sections below retain their original scope. CLI arguments, saved
-schemas and exit policy do not change as part of #1105's boundary cleanup.
+The current working tree makes JSONL the only execution-report format for `run`
+and `verify`. Both reject `--format`. Progress and review accept only these
+JSONL execution streams; aggregate JSON execution documents are unsupported.
+Plan, verify dry-run, progress, review and metrics each retain a single JSON
+document. The historical issue sections below describe their recorded revisions,
+including removed aggregate JSON and human report behavior.
 [^current-run-render][^current-output-contract]
 
-The artifact decoder owns typed/projected JSON decoding and structural checks:
+The artifact decoder owns typed/projected JSONL event decoding and structural checks:
 closed payloads, schema versions, event sequencing, candidate identity and
 summary coherence. It returns `DecodedReport<C>` or neutral `ReportReadError`
 without resolving project paths or deciding a command's usability policy.
@@ -551,7 +557,10 @@ a complete run with a passing baseline after structural validation. These are
 consumer rules, not compatibility repairs.[^current-report-boundary][^current-progress-input][^current-progress-errors][^current-review-input]
 
 Tracing is opt-in through `RUST_LOG` and emits JSON Lines to stderr for terminals
-and redirected streams. Logging defaults to off. The diagnostics worker retains
+and redirected streams. Default-level and module/target-level directives support
+comma-separated combinations, such as `warn,hoimin_cli=debug`. Advanced span/field
+filters are outside the supported logging syntax. Empty or invalid filters disable
+tracing; logging defaults to off. The diagnostics worker retains
 a bounded queue, a 64 KiB record limit, whole-record dropping under pressure and
 a maximum 250 ms shutdown wait. It has no terminal refresh timer or progress
 snapshot. Command errors/warnings and captured test-output diagnostics retain
@@ -676,9 +685,9 @@ JSON Schemaは結果の構造を定める元資料として保持する。ただ
 
 # progressのレポート入力スキーマ
 
-Progress reads JSON documents and JSONL streams matching `REPORT_SCHEMA_VERSION`
-(9). It rejects older and unsupported future versions without a legacy decoder
-or conversion. Review requires current-schema JSON. Both consumers reject
+Progress and review read JSONL streams matching `REPORT_SCHEMA_VERSION`
+(10). They reject aggregate JSON documents and older or unsupported future
+versions without a legacy decoder or conversion. Both consumers reject
 unknown fields in schema-closed event payloads and descendants; progress retains
 open outer configuration fields while checking recognized closed children.
 [^issue-1027-report][^issue-1027-reader]
@@ -710,7 +719,7 @@ Issue487では、実際に選択したbackendのmodeと識別用mechanismを、r
 [^ownership-report]: [2026-09-07-issue-363-session-ownership.md](../../superpowers/reports/2026-09-07-issue-363-session-ownership.md)。
 [^migration]: [2026-08-11-lean-schema-migration-concurrency-audit.md](../../superpowers/reports/2026-08-11-lean-schema-migration-concurrency-audit.md)。
 [^reader]: [run_report.rs](../../../crates/hoimin-cli/src/artifacts/run_report.rs)。
-[^schema]: [run-result.schema.json](../../json-schema/run-result.schema.json)。
+[^schema]: [run-event.schema.json](../../json-schema/run-event.schema.json)。
 
 [^issue-488]: [2026-09-11-issue-488-windows-resource-scope-design.md](../../superpowers/specs/2026-09-11-issue-488-windows-resource-scope-design.md)。
 
@@ -1013,13 +1022,16 @@ omissions. Readers reject older report versions instead of adapting their shapes
 [^issue-1015-wire]
 
 The 0.14.0 package floor carries this report change. Plan schema 10, session schema
-5, fingerprint 13 and candidate identities do not change. CLI `--verbose` is passed
-as runtime ReportPresentation, outside checked/saved RunConfig and PlanConfig.
-Default and verbose output share factual counts and exit policy; only ordinary
-retention details and their presentation-suppression count differ. This section
-supersedes earlier current report-version and floor statements, without changing
-historical verification evidence.[^issue-1015-compatibility]
+5, fingerprint 13 and candidate identities do not change. Run and verify always
+include bounded ordinary retention details and failure diagnostics. The CLI
+`--verbose` flag, runtime `ReportPresentation` type and argument, and
+`detail_omissions.suppressed_normal_details` field have been removed. Detail
+capacity losses and message truncations remain explicit; counts and exit policy
+do not depend on retained details. This section supersedes earlier current
+report-version and floor statements, without changing historical verification
+evidence.[^issue-1015-compatibility][^issue-1015-janitor]
 
+[^issue-1015-janitor]: [Current janitor wire types](../../../crates/hoimin-core/src/report/janitor.rs).
 [^issue-1015-wire]: [Core report types and required-nullable decoder](../../../crates/hoimin-core/src/report.rs).
 [^issue-1015-compatibility]: [Schema 9 compatibility notice](../../compatibility.md#structured-startup-cleanup-in-0140).
 

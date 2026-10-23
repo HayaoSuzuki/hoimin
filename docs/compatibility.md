@@ -19,11 +19,27 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Reduced CLI and logging features
+
+CLI help and errors use plain text. Automatic color and spelling suggestions for
+unknown commands or arguments are removed; help, usage and error context remain.
+
+`RUST_LOG` accepts default levels and module/target levels, including
+comma-separated combinations such as `warn,hoimin_cli=debug`. Advanced span and
+field filtering is outside the supported syntax. Replace such directives with
+level/module filters. Logging remains opt-in JSON Lines on stderr, with bounded
+records/queue and a finite shutdown wait; an invalid filter disables tracing.
+
+The optional Rust `contracts` feature remains available and tested in hoimin's
+own CI. It now uses repository macros without the external `contracts` crate.
+Budget invariants and reserve accounting checks cover successful and error
+results. These feature changes require no saved-artifact regeneration.
+
 ## Local execution without CI gates
 
 `run` and `verify` return 0 for a complete run, including one with surviving
 mutants. Exit 1 for survivors is removed. Statuses, counts, mutation scores,
-history and review data remain available in JSON/JSONL. Infrastructure errors
+history and review data remain available in structured output. Infrastructure errors
 return 2, baseline failures 3, incomplete runs 4 and cancellation 130.
 
 `progress --fail-on-regression` is removed without an alias or fallback. Valid
@@ -34,9 +50,10 @@ mutation-score or regression gates are outside the intended product scope.
 
 ## Agent-oriented output (#1100–#1103)
 
-Run and verify accept only `--format json` and `--format jsonl`; `human` output
-and human verify-preview rows are removed. Progress and review always emit their
-current JSON documents and no longer accept `--format`, including `--format json`.
+Run and verify emit JSONL event streams and reject every `--format` option.
+Aggregate JSON execution reports are removed; progress and review accept only
+JSONL execution streams. Plan, verify dry-run, progress, review and metrics retain
+their single JSON documents. Progress and review also reject `--format`.
 Their comparison/history behavior and JSON schemas are unchanged. Update command
 invocations; no old-format alias or fallback is provided.
 
@@ -188,7 +205,7 @@ outside this check; no fixed size cap or atomic snapshot is added.
 Review decodes its current typed JSON document directly. Old report shapes remain
 rejected, but they no longer receive a guaranteed unsupported-schema diagnostic
 before typed shape errors. Current schema/configuration checks still precede
-project-root access; progress retains JSON/JSONL routing and review's 64 MiB input
+project-root access; progress retains streaming JSONL decoding and review's 64 MiB input
 limit remains unchanged. Rerun with this version when an old report is rejected.
 
 Internal atomic updates use `try_update` under the existing Rust 1.99.0 floor.
@@ -206,7 +223,7 @@ JSON to prioritize regeneration guidance for obsolete shapes. Unsupported versio
 and obsolete fields still fail, but the first diagnostic may change. Current
 schema-first and schema-last encodings remain accepted.
 
-Progress streams JSON and JSONL without whole-document or physical-line byte
+Progress streams JSONL without whole-document or physical-line byte
 buffers. Verify and progress use the opened file's initial length as their read
 budget and reject observed append/truncation rather than accept a valid prefix.
 This does not provide an atomic snapshot or detect all in-place rewrites. There
@@ -296,12 +313,14 @@ does not establish its semantic consistency with outcome. Update custom report
 producers to include the matching field. Human completion rows now include the
 full candidate ID together with location, operator, expressions and verdict.
 
-`run --verbose` and `verify --verbose` include bounded details for ordinary
-startup retention (young roots, active leases and retain markers). Default output
-keeps the structured summary and failure/incomplete-cleanup diagnostics. Both
-modes preserve counts, cleanup classifications and exit codes. Verbosity is a
-runtime presentation option: plan schema 10, session schema 5, fingerprint 13,
-candidate schema 1 and mutant-ID v1 are unchanged.
+`run` and `verify` include bounded details for ordinary startup retention (young
+roots, active leases and retain markers), failures and incomplete cleanup. The
+`--verbose` flag has been removed. Details retain at most 256 records, with at
+most 4096 UTF-8 bytes per message; failures take priority over ordinary holds.
+Capacity losses and message truncations remain explicit, and
+`detail_omissions.suppressed_normal_details` has been removed. Cleanup
+classifications and exit codes are unchanged. Plan schema 10, session schema 5,
+fingerprint 13, candidate schema 1 and mutant-ID v1 retain their formats.
 
 Janitor reports inspected, reclaimed, already absent, preserved and unresolved
 roots separately. Deleted-entry counts include acknowledged marker, child and
@@ -313,9 +332,9 @@ roots and bounded-detail loss are reported separately. Unknown scan tails stay
 unknown. This notice supersedes earlier current report-version and package-floor
 statements below.
 
-Rust execution callers pass a nonserialized `ReportPresentation` argument to
-`run_loop`, `run_loop_with_control` and `VerifiedPlan::execute`. Migrate callers
-directly; no saved configuration field or compatibility overload is provided.
+Rust execution callers no longer pass a `ReportPresentation` argument to
+`run_loop`, `run_loop_with_control` or `VerifiedPlan::execute`; the presentation
+type and argument have been removed. Migrate callers directly.
 
 Rust callers construct or edit `RunConfigData`, then use `RunConfig::try_from`
 to obtain immutable checked execution settings. Shared reads remain available;
@@ -429,8 +448,8 @@ original arguments and resource limits. Use the newly generated candidate IDs:
 
 ```console
 hoimin plan --root . --source src --fingerprint-file pyproject.toml -- python -m pytest -q > plan-v9.json
-hoimin verify plan-v9.json --candidate '<ID_FROM_PLAN_V9>' --format json
-hoimin review list plan-v9.json --store reviews.sqlite3 --format json
+hoimin verify plan-v9.json --candidate '<ID_FROM_PLAN_V9>'
+hoimin review list plan-v9.json --store reviews.sqlite3
 ```
 
 Update JSON/JSONL report consumers to schema 7. Progress and review reject older
@@ -461,8 +480,8 @@ guidance before decoding their old fields. For example:
 
 ```console
 hoimin plan --root . --source src --fingerprint-file pyproject.toml -- python -m pytest -q > plan-v8.json
-hoimin verify plan-v8.json --candidate '<ID_FROM_PLAN_V8>' --format json
-hoimin review list plan-v8.json --store reviews.sqlite3 --format json
+hoimin verify plan-v8.json --candidate '<ID_FROM_PLAN_V8>'
+hoimin review list plan-v8.json --store reviews.sqlite3
 ```
 
 Retain platform-specific options and resource limits from the original invocation
@@ -627,7 +646,7 @@ schemas 1–4 remain rejected; this change does not restore legacy migration pat
 | Interface | Maintenance rule | User action when it changes |
 | --- | --- | --- |
 | CLI arguments, defaults and exit codes | Document and test the current behavior. Cross-version invocation compatibility is not required. | Use the current help and usage guide. |
-| JSON and JSONL reports | Maintain one current schema. Progress accepts only report schema 10, matching the writer; review accepts current-schema JSON. | Rerun to obtain current output when needed. |
+| JSONL execution reports | Maintain one current schema. Progress and review accept only report schema 10, matching the writer. | Rerun to obtain current output when needed. |
 | Saved plan, ranking and candidate IDs | These are checked execution inputs, not timeless interchange formats. Changes to schema, ranking, identity, source or fingerprints can invalidate a plan. | Regenerate the plan with the intended version and inputs. Do not hand-edit versions or IDs to bypass validation. |
 | Session database and resume | Resume requires the implementation's current schema and fingerprint checks. Historical database migration is not required. | Start a new session when an older database is rejected. |
 | Default operators, profiles and selection | Changes can alter candidate count, runtime and the population behind a score. | Review the operator set and budget; use matching candidates and validation settings for comparisons. |

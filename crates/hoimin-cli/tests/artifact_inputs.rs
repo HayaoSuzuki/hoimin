@@ -223,18 +223,8 @@ fn report(root: &Path, golden: &str) -> PathBuf {
     path
 }
 
-fn json_report(root: &Path) -> PathBuf {
-    report(root, "reports/schema-v10-current.json")
-}
-
 fn jsonl_report(root: &Path) -> PathBuf {
     report(root, "events/schema-v10-current.jsonl")
-}
-
-#[cfg(unix)]
-fn json_report_symlink(root: &Path) -> PathBuf {
-    let target = json_report(root);
-    symlink(&target, root)
 }
 
 #[cfg(unix)]
@@ -264,10 +254,7 @@ macro_rules! accepted_report {
     };
 }
 
-accepted_report!(progress_accepts_regular_json, json_report);
 accepted_report!(progress_accepts_regular_jsonl, jsonl_report);
-#[cfg(unix)]
-accepted_report!(progress_accepts_json_symlink, json_report_symlink);
 #[cfg(unix)]
 accepted_report!(progress_accepts_jsonl_symlink, jsonl_report_symlink);
 
@@ -286,7 +273,7 @@ fn large_manifest(root: &Path) -> PathBuf {
 }
 
 fn large_report(root: &Path) -> PathBuf {
-    let path = json_report(root);
+    let path = jsonl_report(root);
     pad_beyond_review_limit(&path);
     path
 }
@@ -309,7 +296,7 @@ accepted_report!(
 );
 
 macro_rules! closed_report_progress {
-    ($name:ident, $jsonl:expr, $index:expr, $field:literal) => {
+    ($name:ident, $index:expr) => {
         #[test]
         fn $name() {
             // Arrange: alter one raw event so duplicate keys survive until the reader.
@@ -320,18 +307,12 @@ macro_rules! closed_report_progress {
                     .map(|line| serde_json::from_str(line).unwrap())
                     .collect();
             events[$index]["unexpected"] = 123.into();
-            let wire = if $jsonl {
+            let wire = {
                 events
                     .iter()
                     .map(|event| serde_json::to_string(event).unwrap())
                     .collect::<Vec<_>>()
                     .join("\n")
-            } else {
-                let mut value: serde_json::Value =
-                    serde_json::from_str(include_str!("golden/reports/schema-v10-current.json"))
-                        .unwrap();
-                value[$field] = events[$index].clone();
-                serde_json::to_string(&value).unwrap()
             };
             let path = root.path().join("report");
             std::fs::write(&path, wire).unwrap();
@@ -350,12 +331,9 @@ macro_rules! closed_report_progress {
     };
 }
 
-closed_report_progress!(progress_rejects_json_unknown_run, false, 0, "run");
-closed_report_progress!(progress_rejects_json_unknown_baseline, false, 1, "baseline");
-closed_report_progress!(progress_rejects_json_unknown_summary, false, 5, "summary");
-closed_report_progress!(progress_rejects_jsonl_unknown_run, true, 0, "run");
-closed_report_progress!(progress_rejects_jsonl_unknown_baseline, true, 1, "baseline");
-closed_report_progress!(progress_rejects_jsonl_unknown_mutant_start, true, 2, "");
-closed_report_progress!(progress_rejects_jsonl_unknown_mutant_finish, true, 3, "");
-closed_report_progress!(progress_rejects_jsonl_unknown_diagnostic, true, 4, "");
-closed_report_progress!(progress_rejects_jsonl_unknown_summary, true, 5, "summary");
+closed_report_progress!(progress_rejects_jsonl_unknown_run, 0);
+closed_report_progress!(progress_rejects_jsonl_unknown_baseline, 1);
+closed_report_progress!(progress_rejects_jsonl_unknown_mutant_start, 2);
+closed_report_progress!(progress_rejects_jsonl_unknown_mutant_finish, 3);
+closed_report_progress!(progress_rejects_jsonl_unknown_diagnostic, 4);
+closed_report_progress!(progress_rejects_jsonl_unknown_summary, 5);

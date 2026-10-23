@@ -1,3 +1,5 @@
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use std::collections::HashSet;
 #[cfg(unix)]
 use std::{
@@ -346,8 +348,6 @@ fn spawn_scenario(
         .arg(TEST_MIN_FREE_SPACE)
         .arg("--session")
         .arg(&paths.session)
-        .arg("--format")
-        .arg("json")
         .arg("--allow-best-effort-memory");
     if case.scenario == "total_timeout_reaps_descendant" {
         command.arg("--total-timeout").arg("1s");
@@ -444,7 +444,7 @@ async fn reap_fixture_processes(processes: &FixtureProcesses) -> Result<(), Stri
 
 #[cfg(unix)]
 fn observe_report(bytes: &[u8]) -> Result<String, String> {
-    let report: serde_json::Value = serde_json::from_slice(bytes).map_err(|error| {
+    let report: serde_json::Value = jsonl_report::from_slice(bytes).map_err(|error| {
         format!(
             "invalid JSON report: {error}; output={:?}",
             String::from_utf8_lossy(bytes)

@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use collecting_writer::CollectingWriter;
 use hoimin_cli::plan::PlanManifest;
 use std::ffi::OsString;
@@ -65,7 +67,7 @@ async fn flow(encoding: &str, ending: &str) {
     let code = hoimin_cli::run_with_writers(args.clone(), stdout.clone(), stderr.clone()).await;
 
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
-    let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    let manifest: PlanManifest = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
     assert_eq!(manifest.candidates.len(), 1);
     let candidate = &manifest.candidates[0];
     assert_eq!(
@@ -96,7 +98,7 @@ async fn flow(encoding: &str, ending: &str) {
         let code = hoimin_cli::run_with_writers(command, stdout.clone(), stderr.clone()).await;
 
         assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
-        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
         let mutants = report["mutants"].as_array().unwrap();
         assert_eq!(mutants.len(), 1);
         assert_eq!(mutants[0]["candidate"]["id"], candidate.id);

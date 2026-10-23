@@ -29,7 +29,7 @@ pub enum UnusableReason {
     Incomplete,
 }
 
-/// Reads a current-schema JSON/JSONL report and classifies its usability for progress.
+/// Reads a current-schema JSONL report and classifies its usability for progress.
 ///
 /// # Errors
 /// Returns an error when reading, decoding, or structural validation fails.

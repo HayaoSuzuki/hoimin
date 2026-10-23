@@ -93,7 +93,6 @@
         "binary_add_sub"
       ],
       "output": {
-        "format": "json",
         "metrics": "metrics.json"
       },
       "profile": "full",

@@ -317,7 +317,7 @@ for an unexpected result is an assertion, rather than a choice of test scenario.
 Prefer property-based tests when a parameter table samples a wider input domain
 governed by one invariant. Keep the original boundaries as explicit examples,
 use bounded strategies, and retain shrinking. Keep finite categories exhaustive
-(platforms, output formats, error kinds and oracle corpus rows). Avoid generating
+(platforms, execution event kinds, error kinds and oracle corpus rows). Avoid generating
 large numbers of expensive subprocess cases when focused examples suffice.
 
 See [Semaphore's AAA guide](https://semaphore.io/blog/aaa-pattern-test-automation)
@@ -525,7 +525,7 @@ replay.
 
 The unused analyzer JSONL parser and its `analyzer_protocol` target were
 [retired in #851](maintenance/2026-10-13-analyzer-protocol.md). This does not
-affect JSON/JSONL reports or the current in-process analyzer.
+affect execution reporting or the current in-process analyzer.
 
 Install cargo-fuzz and the pinned nightly (the locked libfuzzer-sys version
 requires a C++17 compiler).
@@ -1583,23 +1583,23 @@ for callers which use exceptions. deal checks relationships on these pure
 transformations; it does not replace input validation or wrap publication I/O.
 An incorrect successful result is a programming error, not an invalid-input error.
 
-Rust's optional `contracts` feature enables `contracts` 0.6.11, imported as
-`contract_checks`. Budget reserve/release postconditions check every explicit
-normal return, including errors; reserve also compares the old scalar total
-with the new total. Default builds do not compile this dependency or evaluate
-snapshots/conditions. Use the contract test commands below for feature builds.
+Rust's optional `contracts` feature enables the repository's standard-library
+`contract_require!` and `contract_ensure!` macros without an external contract
+crate. Budget reserve/release check the invariant after successful and error
+results. Reserve also checks that the reserved total increases by the requested
+amount on success and stays unchanged on error. Its fallible operations run
+inside a closure so `?` returns to the shared postcondition checks. Preserve that
+boundary when changing allocation or validation.
+
+Disabled builds evaluate neither contract conditions nor the old-total snapshot.
 Keep allocator uniqueness assertions and ordinary validation unconditional.
-
-The upstream macro rewrites `return`, but does not intercept `?`: reserve keeps
-an explicit allocator-error return so postconditions cannot be bypassed. Do not
-replace it with `?` without revalidating the generated code. The internal budget
-panic format now identifies the function, condition and stable
-`budget.total.invariant` or `budget.reserve.accounting` ID, rather than the old
-custom context payload. Other custom checks retain their existing timing and
-diagnostic payloads; the [review record](reviews/2026-10-12-typed-results-and-contracts.md)
-maps these sites. No global contract-disable feature or deal toggle is used.
-
-See [licensing](licensing.md) for the version-scoped MPL allowance and notice.
+Contract diagnostics include the condition, context and stable
+`budget.total.invariant` or `budget.reserve.accounting` ID. The repository's own
+CI still tests feature-enabled builds. The
+[October 12 review](reviews/2026-10-12-typed-results-and-contracts.md) records the
+former third-party macro adoption; it does not describe the current Rust
+implementation. Python deal/returns checks and existing Lean/Creusot proofs
+retain their separate scopes.
 
 Use the normal Rust tests, contract tests, and Lean oracle checks to validate
 changes to the Rust implementation. Select a package, integration test, or test
@@ -2068,12 +2068,15 @@ cargo test -p hoimin-cli --test exception_hierarchy
 
 ## Report input and source-access ownership
 
-`artifacts::run_report` decodes current JSON/JSONL and validates structure,
+`artifacts::run_report` decodes current JSONL execution streams and validates structure,
 sequence, identity and summary coherence. Its `DecodedReport<C>` handoff and
 `ReportReadError` carry data and input failures. Progress owns unusable-report
 classification and output errors; review owns project-root resolution and its
 complete-run/passing-baseline requirement. Keep the shared decoder independent
-of either command's output policy or filesystem identity checks.
+of either command's output policy or filesystem identity checks. Aggregate JSON
+execution reports and format dispatch are unsupported. The execution event schema
+is [`run-event.schema.json`](json-schema/run-event.schema.json); plan, verify dry-run,
+progress, review and metrics retain their single JSON documents.
 
 `source_file::PortableFileReader` exposes capability-relative reads and hashes
 with read-specific errors. Workspace mutation, restoration and cleanup retain

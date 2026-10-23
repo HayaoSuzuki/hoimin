@@ -40,7 +40,7 @@ in `formal/creusot/toolchain.json`; update the proof environment and artifacts
 together when changing that version.
 
 The version ranges do not widen the license exceptions below. A new resolved
-version of `contracts` or `libfuzzer-sys` still requires the corresponding source
+version of `libfuzzer-sys` still requires the corresponding source
 review and scoped exception update.
 
 ## Licenses and sources
@@ -85,11 +85,9 @@ dependencies. A dependency version change still needs upstream review even when
 the list of script names is unchanged. Renovate updates use the same checks and
 review procedure; SBOM records remain separate release evidence.
 
-`contracts` 0.6.11 has an exact-version MPL-2.0 exception for optional budget
-postconditions and scalar snapshots. Its proc-macro source and return rewriting
-were reviewed before adoption; it has no custom build script. This exception
-does not admit other MPL dependencies. See [licensing](licensing.md) for the
-preserved notice and custom-build distribution guidance.
+The optional Rust `contracts` feature uses repository macros and adds no
+third-party contract dependency or MPL-2.0 exception. The October 12 adoption
+review and preserved notice describe the removed dependency.
 
 `creusot-std` and `creusot-std-proc` 0.14.0 have exact-version
 LGPL-2.1-or-later exceptions for verification. `cfg(creusot)` selects them;

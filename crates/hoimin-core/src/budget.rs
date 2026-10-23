@@ -103,46 +103,34 @@ impl BudgetLedger {
     ///
     /// Panics if the allocator's next identifier has already been used.
     ///
-    #[cfg_attr(
-        feature = "contracts",
-        contract_checks::ensures(
-            self.invariant(),
-            "budget.total.invariant"
-        )
-    )]
-    #[cfg_attr(
-        feature = "contracts",
-        contract_checks::ensures(
-            old(self.reserved(kind)).checked_add(if ret.is_ok() { amount } else { 0 })
-                == Some(self.reserved(kind)),
-            "budget.reserve.accounting"
-        )
-    )]
-    // contracts 0.6.11 rewrites explicit returns, but not the `?` operator.
-    // Keep the allocator error inside the postcondition's generated return block.
-    #[allow(clippy::question_mark)]
     pub fn reserve(
         &mut self,
         kind: BudgetKind,
         amount: u64,
     ) -> Result<ReservationId, ReserveError> {
         let reserved = self.reserved(kind);
-        let available = self.limit(kind).saturating_sub(reserved);
-        if let Err(error) = check_budget_amount(kind, amount, available) {
-            return Err(error.into());
-        }
-        let id = match self.allocate_reservation_id() {
-            Ok(id) => id,
-            Err(error) => {
-                return Err(error);
-            }
-        };
-        let replaced = self.reservations.insert(id, Reservation { kind, amount });
-        assert!(
-            replaced.is_none(),
-            "allocated reservation identifier must be unique"
+        #[cfg(feature = "contracts")]
+        let previously_reserved = reserved;
+        // Keep fallible operations inside the closure so every result is checked below.
+        let result = (|| {
+            let available = self.limit(kind).saturating_sub(reserved);
+            check_budget_amount(kind, amount, available)?;
+            let id = self.allocate_reservation_id()?;
+            let replaced = self.reservations.insert(id, Reservation { kind, amount });
+            assert!(
+                replaced.is_none(),
+                "allocated reservation identifier must be unique"
+            );
+            Ok(id)
+        })();
+        crate::contract_ensure!("budget.total.invariant", self.invariant(), self);
+        crate::contract_ensure!(
+            "budget.reserve.accounting",
+            previously_reserved.checked_add(if result.is_ok() { amount } else { 0 })
+                == Some(self.reserved(kind)),
+            self
         );
-        Ok(id)
+        result
     }
 
     fn allocate_reservation_id(&mut self) -> Result<ReservationId, ReserveError> {
@@ -160,20 +148,17 @@ impl BudgetLedger {
     ///
     /// Returns [`BudgetError::AlreadyReleased`] for a reservation released before, or [`BudgetError::UnknownReservation`] for an unknown ID.
     ///
-    #[cfg_attr(
-        feature = "contracts",
-        contract_checks::ensures(self.invariant(), "budget.total.invariant")
-    )]
     pub fn release(&mut self, id: ReservationId) -> Result<(), BudgetError> {
-        if self.reservations.remove(&id).is_some() {
+        let result = if self.reservations.remove(&id).is_some() {
             self.released.insert(id);
-            return Ok(());
-        }
-        if self.released.contains(&id) {
+            Ok(())
+        } else if self.released.contains(&id) {
             Err(BudgetError::AlreadyReleased(id))
         } else {
             Err(BudgetError::UnknownReservation(id))
-        }
+        };
+        crate::contract_ensure!("budget.total.invariant", self.invariant(), self);
+        result
     }
 
     #[must_use]

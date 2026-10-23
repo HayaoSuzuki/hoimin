@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use collecting_writer::CollectingWriter;
 
 use std::ffi::OsString;
@@ -33,7 +35,7 @@ async fn filesystem_reserve_stops_before_the_test_command_is_dispatched() {
     .await;
 
     assert_eq!(exit, 2);
-    let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
     assert_eq!(
         report["summary"]["disk"]["stop"]["code"],
         "filesystem.reserve.reached"
@@ -74,7 +76,7 @@ async fn planned_snapshot_and_worker_bytes_stop_at_the_exact_limit() {
     .await;
 
     assert_eq!(exit, 2);
-    let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
     assert_eq!(
         report["summary"]["disk"]["stop"]["code"],
         "workspace.size.exceeded"
@@ -121,7 +123,7 @@ async fn copy_inventory_limit_stops_before_the_test_command_is_dispatched() {
 
     // Assert.
     assert_eq!(exit, 2, "{}", String::from_utf8_lossy(&stderr.snapshot()));
-    let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
     assert!(
         String::from_utf8(stderr.snapshot())
             .unwrap()

@@ -1,13 +1,10 @@
-use std::io::{self, Read, Seek, SeekFrom, Write};
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicUsize, Ordering},
-};
+use std::io;
+use std::sync::Mutex;
 
 use hoimin_cli::report::ReportHandler;
 use hoimin_core::{
     ByteSpan, EffectId, EmitOutput, MutantFinished, MutationCandidate, MutationSummary,
-    OutputEvent, OutputFormat, ProcessTermination, ResourceMode, RunStarted, RunSummary,
+    OutputEvent, ProcessTermination, ResourceMode, RunStarted, RunSummary,
 };
 
 #[path = "support/heap_tracking.rs"]
@@ -21,7 +18,7 @@ static ALLOCATOR: TrackingAllocator = TrackingAllocator;
 static MEASUREMENT: Mutex<()> = Mutex::new(());
 
 #[test]
-fn json_heap_peak_is_independent_of_mutant_count() {
+fn jsonl_heap_peak_is_independent_of_mutant_count() {
     let _guard = MEASUREMENT.lock().unwrap();
     let small_peak = measured_peak(32);
     let large_peak = measured_peak(10_000);
@@ -37,12 +34,10 @@ fn json_heap_peak_is_independent_of_mutant_count() {
 }
 
 fn measured_peak(mutants: u64) -> usize {
-    let spool = tempfile::tempdir().unwrap();
     heap_tracking::begin();
 
     {
-        let mut handler =
-            ReportHandler::new(OutputFormat::Json, io::sink(), io::sink(), spool.path()).unwrap();
+        let mut handler = ReportHandler::new(io::sink(), io::sink());
         emit(
             &mut handler,
             OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
@@ -125,69 +120,42 @@ fn test_resource_control() -> hoimin_core::ResourceControl {
     }
 }
 
-#[derive(Default)]
-struct SpoolCounts {
-    writes: AtomicUsize,
-    bytes: AtomicUsize,
-    flushes: AtomicUsize,
-}
+#[derive(Clone, Default)]
+struct CountingWriter(std::sync::Arc<std::sync::atomic::AtomicUsize>);
 
-struct DiscardSpool(Arc<SpoolCounts>);
-
-impl Write for DiscardSpool {
+impl io::Write for CountingWriter {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0.writes.fetch_add(1, Ordering::Relaxed);
-        self.0.bytes.fetch_add(bytes.len(), Ordering::Relaxed);
+        self.0
+            .fetch_add(bytes.len(), std::sync::atomic::Ordering::Relaxed);
         Ok(bytes.len())
     }
-
     fn flush(&mut self) -> io::Result<()> {
-        self.0.flushes.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
 }
 
-impl Read for DiscardSpool {
-    fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
-        panic!("measurement must not finalize the discarded report")
-    }
-}
-
-impl Seek for DiscardSpool {
-    fn seek(&mut self, _: SeekFrom) -> io::Result<u64> {
-        panic!("measurement must not finalize the discarded report")
-    }
-}
-
 #[test]
-fn json_record_heap_is_bounded_for_large_candidate_payloads() {
+fn jsonl_record_heap_is_bounded_for_large_candidate_payloads() {
     let _guard = MEASUREMENT.lock().unwrap();
-    let mut measurements = Vec::new();
     for count in [16, 64] {
         for payload_bytes in [1, 4 * 1024, 16 * 1024, 64 * 1024] {
-            let counts = Arc::new(SpoolCounts::default());
-            let mut handler = ReportHandler::with_mutant_spool(
-                OutputFormat::Json,
-                io::sink(),
-                io::sink(),
-                DiscardSpool(Arc::clone(&counts)),
-            );
+            let stdout = CountingWriter::default();
+            let mut handler = ReportHandler::new(stdout.clone(), io::sink());
             emit(
                 &mut handler,
                 OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
             );
+            stdout.0.store(0, std::sync::atomic::Ordering::Relaxed);
+            let mut expected_bytes = 0;
             let mut peak = 0;
-            let mut expected_bytes = count - 1; // commas between records
             for index in 0..count {
-                let mut event = mutant_finished(index as u64 + 2, index as u64);
+                let mut event = mutant_finished(index + 2, index);
                 let OutputEvent::MutantFinished(mutant) = &mut event else {
                     unreachable!()
                 };
                 mutant.candidate.original = "a".repeat(payload_bytes);
                 mutant.candidate.replacement = "b".repeat(payload_bytes);
-                expected_bytes += serde_json::to_vec(&event).unwrap().len();
-                // Payload, expected JSON and handler setup are outside the window.
-                // Reset per event so consumed payloads do not hide later allocations.
+                expected_bytes += serde_json::to_vec(&event).unwrap().len() + 1;
                 let request = EmitOutput {
                     id: EffectId(event.sequence()),
                     event,
@@ -198,23 +166,14 @@ fn json_record_heap_is_bounded_for_large_candidate_payloads() {
                 result.unwrap();
                 peak = peak.max(event_peak);
             }
-            let writes = counts.writes.load(Ordering::Relaxed);
-            let bytes = counts.bytes.load(Ordering::Relaxed);
-            let flushes = counts.flushes.load(Ordering::Relaxed);
-            assert_eq!(bytes, expected_bytes);
-            if payload_bytes == 1 {
-                assert_eq!(writes, count);
-            }
-            eprintln!(
-                "record measurement: count={count} payload_bytes={payload_bytes} peak={peak} writes={writes} bytes={bytes} flushes={flushes}"
+            assert_eq!(
+                stdout.0.load(std::sync::atomic::Ordering::Relaxed),
+                expected_bytes
             );
-            measurements.push((count, payload_bytes, peak));
+            assert!(
+                peak <= 16 * 1024,
+                "count={count}, payload={payload_bytes}: record allocated {peak} bytes"
+            );
         }
-    }
-    for (count, payload, peak) in measurements {
-        assert!(
-            peak <= 16 * 1024,
-            "count={count}, payload={payload} bytes per string: record allocated {peak} bytes"
-        );
     }
 }

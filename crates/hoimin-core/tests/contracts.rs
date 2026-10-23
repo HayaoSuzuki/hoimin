@@ -5,40 +5,39 @@ use hoimin_core::{ContractInvariant, contract_ensure, contract_require};
 #[derive(Debug)]
 struct Invalid;
 
-#[cfg_attr(
-    feature = "contracts",
-    contract_checks::ensures(
-        {
-            evaluations.set(evaluations.get() + 1);
-            ret == old({ evaluations.set(evaluations.get() + 1); 7 })
-        },
-        "test.attribute.snapshot"
-    )
-)]
-fn snapshot_probe(evaluations: &Cell<u32>) -> u32 {
-    std::hint::black_box(evaluations);
-    7
-}
-
 #[cfg(feature = "contracts")]
 #[test]
-fn enabled_attribute_evaluates_snapshot_and_postcondition() {
+fn enabled_ensure_evaluates_condition_without_evaluating_success_context() {
     let evaluations = Cell::new(0);
-
-    let result = snapshot_probe(&evaluations);
-
-    assert_eq!(result, 7);
-    assert_eq!(evaluations.get(), 2);
+    contract_ensure!(
+        "test.enabled",
+        {
+            evaluations.set(evaluations.get() + 1);
+            true
+        },
+        {
+            evaluations.set(evaluations.get() + 1);
+            7
+        }
+    );
+    assert_eq!(evaluations.get(), 1);
 }
 
 #[cfg(not(feature = "contracts"))]
 #[test]
-fn disabled_attribute_does_not_evaluate_snapshot_or_postcondition() {
+fn disabled_ensure_does_not_evaluate_condition_or_context() {
     let evaluations = Cell::new(0);
-
-    let result = snapshot_probe(&evaluations);
-
-    assert_eq!(result, 7);
+    contract_ensure!(
+        "test.disabled",
+        {
+            evaluations.set(evaluations.get() + 1);
+            false
+        },
+        {
+            evaluations.set(evaluations.get() + 1);
+            7
+        }
+    );
     assert_eq!(evaluations.get(), 0);
 }
 

@@ -28,8 +28,6 @@ impl ReportDelivery {
     {
         Self {
             state: OwnedDeliveryState::Idle(ReportHandler {
-                encoding: handler.encoding,
-                presentation: handler.presentation,
                 stdout: Box::new(handler.stdout),
                 stderr: Box::new(handler.stderr),
                 lock_stdio_stderr: std::any::TypeId::of::<Stderr>()
@@ -50,7 +48,7 @@ impl ReportDelivery {
             .ok_or_else(|| delivery_failed(id, "output acknowledgement was missing"))
     }
 
-    pub(crate) async fn flush_and_release_spool(&mut self) -> io::Result<()> {
+    pub(crate) async fn flush(&mut self) -> io::Result<()> {
         if matches!(self.state, OwnedDeliveryState::Running(_)) {
             let _ = self.join(EffectId(u64::MAX)).await;
         }
@@ -155,7 +153,7 @@ impl ReportDelivery {
             let result = match operation {
                 ReportOperation::Emit(request) => handler.handle(*request).map(Some),
                 ReportOperation::Flush => handler
-                    .flush_and_release_spool()
+                    .flush()
                     .map(|()| None)
                     .map_err(|error| delivery_failed(id, error.to_string())),
             };
@@ -236,12 +234,7 @@ mod tests {
             let _lock = io::stderr().lock();
             let _ = acquired_tx.send(());
         });
-        let handler = ReportHandler::with_mutant_spool(
-            hoimin_core::OutputFormat::Json,
-            io::sink(),
-            io::stderr(),
-            io::Cursor::new(Vec::new()),
-        );
+        let handler = ReportHandler::new(io::sink(), io::stderr());
         let mut delivery = ReportDelivery::new(handler, Arc::new(()));
         let handler = idle_handler(&mut delivery);
         let interleaved = Arc::new(AtomicBool::new(false));
@@ -276,7 +269,7 @@ mod tests {
 
     use std::sync::Mutex;
 
-    use hoimin_core::{OutputEvent, OutputFormat, RunStarted};
+    use hoimin_core::{OutputEvent, RunStarted};
 
     use super::*;
 
@@ -341,12 +334,7 @@ mod tests {
                 Ok(())
             }
         }
-        let handler = ReportHandler::with_mutant_spool(
-            OutputFormat::Jsonl,
-            PanickingWriter,
-            io::sink(),
-            io::Cursor::new(Vec::new()),
-        );
+        let handler = ReportHandler::new(PanickingWriter, io::sink());
         let mut delivery = ReportDelivery::new(handler, Arc::new(()));
         let error = delivery.handle(event(17)).await.unwrap_err();
         let later_error = delivery.handle(event(18)).await.unwrap_err();
@@ -400,8 +388,7 @@ mod tests {
             });
             started_rx.await.unwrap();
             let bytes = Arc::new(Mutex::new(Vec::new()));
-            let handler = ReportHandler::with_mutant_spool(
-                OutputFormat::Jsonl,
+            let handler = ReportHandler::new(
                 GatedWriter {
                     entered: None,
                     release: mpsc::channel().1,
@@ -409,7 +396,6 @@ mod tests {
                     gate_flush: false,
                 },
                 io::sink(),
-                io::Cursor::new(Vec::new()),
             );
             let mut delivery = ReportDelivery::new(handler, Arc::new(()));
             let mut write = Box::pin(delivery.handle(event(1)));
@@ -445,8 +431,7 @@ mod tests {
         let bytes = Arc::new(Mutex::new(Vec::new()));
         let owner = Arc::new(());
         let lease = Arc::downgrade(&owner);
-        let handler = ReportHandler::with_mutant_spool(
-            OutputFormat::Jsonl,
+        let handler = ReportHandler::new(
             GatedWriter {
                 entered: Some(entered_tx),
                 release: release_rx,
@@ -454,7 +439,6 @@ mod tests {
                 gate_flush: false,
             },
             io::sink(),
-            io::Cursor::new(Vec::new()),
         );
         let mut delivery = ReportDelivery::new(handler, owner);
         let mut write = Box::pin(delivery.handle(event(7)));
@@ -487,8 +471,7 @@ mod tests {
         let (release_tx, release_rx) = mpsc::channel();
         let owner = Arc::new(());
         let lease = Arc::downgrade(&owner);
-        let handler = ReportHandler::with_mutant_spool(
-            OutputFormat::Jsonl,
+        let handler = ReportHandler::new(
             GatedWriter {
                 entered: Some(entered_tx),
                 release: release_rx,
@@ -496,10 +479,9 @@ mod tests {
                 gate_flush: true,
             },
             io::sink(),
-            io::Cursor::new(Vec::new()),
         );
         let mut delivery = ReportDelivery::new(handler, owner);
-        let mut flush = Box::pin(delivery.flush_and_release_spool());
+        let mut flush = Box::pin(delivery.flush());
         tokio::select! {
             result = &mut flush => panic!("acknowledged a blocked flush: {result:?}"),
             entered = entered_rx => entered.unwrap(),

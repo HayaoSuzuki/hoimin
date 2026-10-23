@@ -132,13 +132,24 @@ mod tests {
         }
         // Act.
         ledger.detail(JanitorReason::DeleteFailed, "failed root: denied".into());
-        let mut report = ledger.finish();
-        report.project_details(false);
+        let report = ledger.finish();
         // Assert.
-        assert_eq!(report.details.len(), 1);
-        assert_eq!(report.details[0].message, "failed root: denied");
+        assert_eq!(report.details.len(), 256);
+        assert!(
+            report
+                .details
+                .iter()
+                .any(|detail| detail.message == "failed root: denied")
+        );
+        assert_eq!(
+            report
+                .details
+                .iter()
+                .filter(|detail| detail.reason == JanitorReason::Young)
+                .count(),
+            255
+        );
         assert_eq!(report.detail_omissions.normal_details, 1);
-        assert_eq!(report.detail_omissions.suppressed_normal_details, 255);
     }
 
     #[test]

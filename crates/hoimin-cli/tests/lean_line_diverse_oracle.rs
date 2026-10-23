@@ -209,8 +209,6 @@ async fn public_plan_and_verify_match_lean_line_diversity() {
             "--selection-policy".into(),
             case.policy.clone(),
             "--dry-run".into(),
-            "--format".into(),
-            "json".into(),
         ])
         .await;
         assert_case(&case, code, &stdout, &stderr, &roles, &ranks);

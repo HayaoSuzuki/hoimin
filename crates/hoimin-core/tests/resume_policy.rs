@@ -6,9 +6,8 @@ use std::time::Duration;
 use hoimin_budget_math::MutantTimeout;
 use hoimin_core::{
     CommandArg, FingerprintInput, FingerprintInputFile, LineRange, MutationProfile, MutationStatus,
-    OutputConfig, OutputFormat, RawRunConfig, RawRunLimits, ResourceMode, ResumeDecision,
-    ReusedMutationStatus, RunConfig, SourceHash, StoredResult, TargetSlice, fingerprint,
-    resume_policy,
+    OutputConfig, RawRunConfig, RawRunLimits, ResourceMode, ResumeDecision, ReusedMutationStatus,
+    RunConfig, SourceHash, StoredResult, TargetSlice, fingerprint, resume_policy,
 };
 use proptest::prelude::*;
 
@@ -43,7 +42,6 @@ fn config_with_metrics(path: &str) -> RunConfig {
         files: vec!["src/a.py".into()],
         test_argv: vec![CommandArg::Unix(b"python".to_vec())],
         output: OutputConfig {
-            format: OutputFormat::Json,
             metrics: Some(path.into()),
         },
         ..RawRunConfig::default()

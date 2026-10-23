@@ -1,3 +1,5 @@
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -180,7 +182,7 @@ fn issue_1094_ordinary_session_creation_and_resume_still_run_baseline() {
         );
         assert!(marker.exists());
         std::fs::remove_file(&marker).unwrap();
-        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
         assert_eq!(report["summary"]["complete"], resume);
         if resume {
             assert_eq!(report["run"]["run_id"].as_str(), original_run_id.as_deref());

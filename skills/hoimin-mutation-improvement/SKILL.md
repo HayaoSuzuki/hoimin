@@ -81,7 +81,7 @@ python3 -c 'import shutil, sys; limit = 10 * 1024**3; sys.exit(0 if all(shutil.d
 
 1. Read a candidate ID from `PLAN.json` and verify it. Preserve the report.
 
-   Use the derived `status` in schema-9 JSON `mutants[]` or JSONL
+   Use the derived `status` in schema-10 JSONL
    `mutant_finished` for its verdict. A nonzero termination alone does not establish
    killed: `close_timed_out` output makes `Exit(1)` an `error`. Strict readers reject
    status/outcome disagreement with exit 2; JSON Schema alone checks only shape.
@@ -90,9 +90,13 @@ python3 -c 'import shutil, sys; limit = 10 * 1024**3; sys.exit(0 if all(shutil.d
    cases before continuing the improvement loop.
 
 ```console
-hoimin verify "$plan_path" --candidate '<ID_FROM_PLAN_JSON>' --format json \
-  > "$temp_dir/verify-001.json"
+hoimin verify "$plan_path" --candidate '<ID_FROM_PLAN_JSON>' \
+  > "$temp_dir/verify-001.jsonl"
 ```
+
+Execution writes JSONL events without a format selector. Read candidate results
+from `mutant_finished` and the final counts/completeness from `run_finished`.
+Keep the event stream unchanged for progress or review input.
 
 2. If it survives, read its original expression, replacement, symbol, and line.
    Investigate the contract first. Only for a justified test gap, add or strengthen

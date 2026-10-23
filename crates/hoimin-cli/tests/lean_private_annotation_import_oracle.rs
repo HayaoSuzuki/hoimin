@@ -3,6 +3,8 @@
 
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use collecting_writer::CollectingWriter;
 
 use std::collections::BTreeSet;
@@ -153,9 +155,7 @@ fn command(root: &Path, case: &Case, mode: &str) -> Vec<OsString> {
     ];
     let line = target_line(case);
     args.extend(["--line".into(), format!("subject.py:{line}-{line}").into()]);
-    if mode == "run" {
-        args.extend(["--format".into(), "json".into()]);
-    }
+
     let check = if mode == "run" {
         let expected = if case.endpoint == "source" {
             "tuple[int]"
@@ -223,7 +223,7 @@ async fn private_annotation_import_public_plan_and_cpython_match_lean() {
             case.id,
             String::from_utf8_lossy(&observed.stderr)
         );
-        let observed: serde_json::Value = serde_json::from_slice(&observed.stdout)
+        let observed: serde_json::Value = jsonl_report::from_slice(&observed.stdout)
             .expect("infrastructure error: invalid CPython observation");
         assert_eq!(
             observed["keys"],
@@ -257,7 +257,7 @@ async fn private_annotation_import_public_plan_and_cpython_match_lean() {
             String::from_utf8_lossy(&stderr.snapshot())
         );
         let plan: PlanManifest =
-            serde_json::from_slice(&stdout.snapshot()).expect("infrastructure error: plan JSON");
+            jsonl_report::from_slice(&stdout.snapshot()).expect("infrastructure error: plan JSON");
         assert_eq!(
             plan.candidates.len(),
             case.candidate_count,
@@ -341,7 +341,7 @@ async fn private_annotation_import_public_run_does_not_count_custom_pairs() {
             case.id,
             String::from_utf8_lossy(&stderr.snapshot())
         );
-        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(report["summary"]["complete"], true, "{}", case.id);
         assert_eq!(report["summary"]["counts"]["killed"], 0, "{}", case.id);
         assert!(
@@ -444,7 +444,7 @@ async fn private_alias_reverse_writes_and_lexical_context_public_controls() {
         .await
         .expect("infrastructure error: boundary plan timeout");
         assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
-        let plan: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let plan: PlanManifest = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(plan.candidates.len(), expected, "{source}");
     }
 }

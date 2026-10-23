@@ -1,3 +1,5 @@
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use std::ffi::OsString;
 use std::process::Output;
 
@@ -153,7 +155,7 @@ async fn legitimate_empty_sources_still_succeed() {
                 "{}",
                 String::from_utf8_lossy(&output.stderr)
             );
-            let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            let value: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
             assert!(
                 value[result_field].as_array().unwrap().is_empty(),
                 "unexpected {result_field}: {}",

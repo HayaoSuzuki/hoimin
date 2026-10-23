@@ -18,6 +18,7 @@ from wheel_smoke import (
     assert_mutation_result,
     environment_hoimin,
     environment_python,
+    exercise_cli,
     is_compatible_wheel,
     isolated_environment,
     run,
@@ -629,7 +630,7 @@ def executed_smoke_outcome(termination: object, output_state: str) -> dict[str, 
 def test_mutation_result_accepts_complete_executed_exits(exit_code: int) -> None:
     # Arrange
     outcome = executed_smoke_outcome({"Exit": exit_code}, "complete")
-    output = json.dumps({"mutants": [{"outcome": outcome}]})
+    output = mutation_jsonl_output([{"outcome": outcome}])
 
     # Act
     actual = assert_mutation_result(output)
@@ -641,7 +642,7 @@ def test_mutation_result_accepts_complete_executed_exits(exit_code: int) -> None
 @given(status=st.sampled_from(["killed", "survived"]))
 def test_mutation_result_accepts_conclusive_reused_outcomes(status: str) -> None:
     # Arrange
-    output = json.dumps({"mutants": [{"outcome": {"reused": {"status": status}}}]})
+    output = mutation_jsonl_output([{"outcome": {"reused": {"status": status}}}])
 
     # Act
     actual = assert_mutation_result(output)
@@ -661,7 +662,7 @@ def test_mutation_result_accepts_conclusive_reused_outcomes(status: str) -> None
 def test_mutation_result_rejects_close_timeout_outcomes(termination: object) -> None:
     # Arrange
     outcome = executed_smoke_outcome(termination, "close_timed_out")
-    output = json.dumps({"mutants": [{"outcome": outcome}]})
+    output = mutation_jsonl_output([{"outcome": outcome}])
 
     # Act / Assert
     with pytest.raises(
@@ -676,7 +677,7 @@ def test_mutation_result_rejects_close_timeout_outcomes(termination: object) -> 
 def test_mutation_result_rejects_complete_non_exit_outcomes(termination: str) -> None:
     # Arrange
     outcome = executed_smoke_outcome(termination, "complete")
-    output = json.dumps({"mutants": [{"outcome": outcome}]})
+    output = mutation_jsonl_output([{"outcome": outcome}])
 
     # Act / Assert
     with pytest.raises(
@@ -687,7 +688,7 @@ def test_mutation_result_rejects_complete_non_exit_outcomes(termination: str) ->
 
 def test_mutation_result_rejects_not_run() -> None:
     # Arrange
-    output = json.dumps({"mutants": [{"outcome": "not_run"}]})
+    output = mutation_jsonl_output([{"outcome": "not_run"}])
 
     # Act / Assert
     with pytest.raises(
@@ -698,7 +699,7 @@ def test_mutation_result_rejects_not_run() -> None:
 
 def test_mutation_result_rejects_flat_legacy_status() -> None:
     # Arrange
-    output = json.dumps({"mutants": [{"status": "killed"}]})
+    output = mutation_jsonl_output([{"status": "killed"}])
 
     # Act / Assert
     with pytest.raises(KeyError, match="outcome"):
@@ -707,8 +708,72 @@ def test_mutation_result_rejects_flat_legacy_status() -> None:
 
 def test_mutation_result_rejects_an_empty_mutant_list() -> None:
     # Arrange
-    output = '{"mutants": []}'
+    output = mutation_jsonl_output([])
 
     # Act / Assert
     with pytest.raises(AssertionError, match="mutation run produced no mutants"):
+        assert_mutation_result(output)
+
+
+def mutation_jsonl_output(mutants: list[dict[str, object]]) -> str:
+    events = [
+        {"kind": "run_started"},
+        *[{"kind": "mutant_finished", **mutant} for mutant in mutants],
+        {"kind": "run_finished", "complete": True, "exit_code": 0},
+    ]
+    return "\n".join(json.dumps(event) for event in events) + "\n"
+
+
+def test_mutation_result_accepts_default_jsonl_output() -> None:
+    output = mutation_jsonl_output(
+        [{"outcome": executed_smoke_outcome({"Exit": 1}, "complete")}]
+    )
+    assert assert_mutation_result(output) is None
+
+
+def test_exercise_cli_uses_default_jsonl_output(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    executable = tmp_path / "hoimin"
+    executable.touch()
+    output = mutation_jsonl_output(
+        [{"outcome": executed_smoke_outcome({"Exit": 1}, "complete")}]
+    )
+
+    def execute(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if argv[1] == "--version":
+            return subprocess.CompletedProcess(argv, 0, "hoimin 0.14.0\n", "")
+        if argv[1] == "--help":
+            return subprocess.CompletedProcess(argv, 0, "Usage: hoimin <COMMAND>\n", "")
+        assert "--format" not in argv
+        return subprocess.CompletedProcess(argv, 0, output, "")
+
+    mocker.patch("wheel_smoke.run", side_effect=execute)
+    exercise_cli(executable, Path(sys.executable), tmp_path / "fixture", "0.14.0")
+
+
+@pytest.mark.parametrize(
+    "boundary", ["start", "finish", "incomplete", "failure", "aggregate", "empty"]
+)
+def test_mutation_result_rejects_invalid_jsonl_completion(boundary: str) -> None:
+    events = [
+        json.loads(line)
+        for line in mutation_jsonl_output(
+            [{"outcome": executed_smoke_outcome({"Exit": 1}, "complete")}]
+        ).splitlines()
+    ]
+    if boundary == "start":
+        events.pop(0)
+    elif boundary == "finish":
+        events.pop()
+    elif boundary == "incomplete":
+        events[-1]["complete"] = False
+    elif boundary == "failure":
+        events[-1]["exit_code"] = 4
+    elif boundary == "aggregate":
+        events = [{"mutants": [events[1]]}]
+    else:
+        events = []
+    output = "\n".join(json.dumps(event) for event in events)
+    with pytest.raises(AssertionError):
         assert_mutation_result(output)

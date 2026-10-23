@@ -372,10 +372,8 @@ mod detail_tests {
     use super::*;
 
     fn report(entries: &[(&str, &str, MutationStatus)]) -> UsableReport {
-        let value: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tests/golden/reports/schema-v10-current.json"
-        ))
-        .unwrap();
+        let value: serde_json::Value =
+            crate::artifacts::run_report::test_support::current_report_view();
         let hoimin_core::OutputEvent::MutantFinished(template) =
             serde_json::from_value(value["mutants"][0].clone()).unwrap()
         else {

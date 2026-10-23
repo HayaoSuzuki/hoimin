@@ -15,7 +15,7 @@ use hoimin_core::{
     name = "hoimin",
     version,
     about = "Bounded mutation testing for focused Python changes",
-    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --changed-context --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-workspace-size --min-free-space\n  --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl> --metrics <PATH> --session --resume"
+    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --changed-context --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-workspace-size --min-free-space\n  --max-processes --allow-best-effort-memory\nOutput/session options:\n  --metrics <PATH> --session --resume"
 )]
 struct RootCli {
     #[command(subcommand)]
@@ -96,12 +96,6 @@ pub struct ReviewRecordArgs {
     pub evidence: Vec<String>,
     #[arg(long)]
     pub expected_revision: u64,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-pub enum OutputFormat {
-    Json,
-    Jsonl,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
@@ -249,15 +243,8 @@ struct RawMutationArgs {
 
 #[derive(Debug, Args)]
 pub struct RunArgs {
-    /// Include bounded details for ordinary startup cleanup holds.
-    #[arg(long)]
-    pub verbose: bool,
     #[command(flatten)]
     mutation: RawMutationArgs,
-
-    /// Machine-readable output format.
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    pub format: OutputFormat,
 
     /// Write performance metrics to PATH.
     #[arg(long, value_name = "PATH")]
@@ -301,9 +288,6 @@ struct RawPlanArgs {
     after_help = "Execution and resource settings come from PLAN and cannot be overridden. Disk safety limits --max-workspace-size and --min-free-space are inherited from PLAN. Create a new plan to change them."
 )]
 struct RawVerifyArgs {
-    /// Include bounded details for ordinary startup cleanup holds.
-    #[arg(long)]
-    verbose: bool,
     /// Path to a version-5 plan manifest.
     #[arg(value_name = "PLAN")]
     manifest: PathBuf,
@@ -353,10 +337,6 @@ struct RawVerifyArgs {
     /// Write execution metrics to PATH, relative to the invocation directory.
     #[arg(long, value_name = "PATH")]
     metrics: Option<PathBuf>,
-
-    /// Machine-readable output format.
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    format: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -444,12 +424,10 @@ pub enum VerifySelection {
 
 #[derive(Debug)]
 pub struct VerifyArgs {
-    pub verbose: bool,
     pub dry_run: bool,
     pub metrics: Option<Utf8PathBuf>,
     pub manifest: PathBuf,
     pub selection: VerifySelection,
-    pub format: OutputFormat,
 }
 
 #[derive(Debug)]
@@ -553,10 +531,8 @@ impl TryFrom<Command> for ParsedCommand {
                 Ok(Self::Plan(PlanArgs {
                     analyzer_timeout: raw.analyzer_timeout,
                     run_args: RunArgs {
-                        verbose: false,
                         mutation: raw.mutation,
                         test_argv: raw.test_argv,
-                        format: OutputFormat::Json,
                         metrics: None,
                         session: None,
                         resume: false,
@@ -581,12 +557,10 @@ impl TryFrom<Command> for ParsedCommand {
                     },
                 };
                 Ok(Self::Verify(VerifyArgs {
-                    verbose: raw.verbose,
                     dry_run: raw.dry_run,
                     metrics: raw.metrics.map(metrics_path).transpose()?,
                     manifest: raw.manifest,
                     selection,
-                    format: raw.format,
                 }))
             }
             Command::Progress(raw) => Ok(Self::Progress(ProgressArgs {
@@ -678,9 +652,7 @@ pub(crate) fn run_config_from_args(
 
 fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
     let RunArgs {
-        verbose: _,
         mutation: args,
-        format,
         metrics,
         session,
         resume,
@@ -754,13 +726,7 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         profile: args.profile.into(),
         limits,
         test_argv: test_argv.iter().map(command_arg).collect(),
-        output: OutputConfig {
-            format: match format {
-                OutputFormat::Json => hoimin_core::OutputFormat::Json,
-                OutputFormat::Jsonl => hoimin_core::OutputFormat::Jsonl,
-            },
-            metrics,
-        },
+        output: OutputConfig { metrics },
         session,
         resume,
     })

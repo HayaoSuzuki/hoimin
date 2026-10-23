@@ -1,3 +1,5 @@
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 #[path = "support/mutation_outcome.rs"]
 mod mutation_outcome;
 use std::fs;
@@ -96,7 +98,7 @@ impl Fixture {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let report: Value = jsonl_report::from_slice(&output.stdout).unwrap();
         assert_eq!(report["baseline"]["termination"]["Exit"], 0);
         assert_eq!(
             report["run"]["normalized_config"]["limits"]["max_mutants"],

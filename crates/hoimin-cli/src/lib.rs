@@ -72,9 +72,6 @@ where
 {
     match command {
         Ok(cli::ParsedCommand::Run(args)) => {
-            let presentation = report::ReportPresentation {
-                verbose: args.verbose,
-            };
             let config = match cli::run_config_from_args(args) {
                 Ok(config) => config,
                 Err(error) => {
@@ -82,9 +79,7 @@ where
                     return 2;
                 }
             };
-            shell::run_loop(config, stdout, stderr, presentation)
-                .await
-                .unwrap_or(2)
+            shell::run_loop(config, stdout, stderr).await.unwrap_or(2)
         }
         Ok(cli::ParsedCommand::Progress(args)) => command_result(
             progress::run(args, &mut stdout, &mut stderr).map(|()| 0),
@@ -109,12 +104,7 @@ where
         }
         Ok(cli::ParsedCommand::Verify(args)) => {
             if args.dry_run {
-                match plan::prepare_verify_preview_selection(
-                    &args.manifest,
-                    &args.selection,
-                    args.format,
-                )
-                .await
+                match plan::prepare_verify_preview_selection(&args.manifest, &args.selection).await
                 {
                     Ok(preview) => {
                         command_result(preview.write(&mut stdout).map(|()| 0), &mut stderr)
@@ -125,28 +115,17 @@ where
                     }
                 }
             } else {
-                let verified = match plan::prepare_verify_selection(
-                    &args.manifest,
-                    &args.selection,
-                    args.format,
-                )
-                .await
-                {
-                    Ok(verified) => verified,
-                    Err(error) => {
-                        write_terminal_error(error.to_string(), stderr).await;
-                        return 2;
-                    }
-                };
+                let verified =
+                    match plan::prepare_verify_selection(&args.manifest, &args.selection).await {
+                        Ok(verified) => verified,
+                        Err(error) => {
+                            write_terminal_error(error.to_string(), stderr).await;
+                            return 2;
+                        }
+                    };
                 verified
                     .with_metrics(args.metrics)
-                    .execute(
-                        stdout,
-                        stderr,
-                        report::ReportPresentation {
-                            verbose: args.verbose,
-                        },
-                    )
+                    .execute(stdout, stderr)
                     .await
                     .unwrap_or(2)
             }
@@ -189,3 +168,7 @@ fn command_result(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/support/jsonl_report.rs"]
+mod test_report;

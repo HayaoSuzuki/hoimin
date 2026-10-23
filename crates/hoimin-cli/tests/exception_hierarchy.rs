@@ -1,8 +1,9 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use collecting_writer::CollectingWriter;
 
-use hoimin_cli::cli::OutputFormat;
 use hoimin_cli::plan::RankedPlanCandidate;
 use hoimin_core::RunConfig;
 use std::path::{Path, PathBuf};
@@ -77,11 +78,11 @@ async fn hierarchy_plan_verify_detects_dependency_changes_additions_and_deletion
             .collect::<Vec<_>>();
         let saved = dir.path().join("plan.json");
         std::fs::write(&saved, serde_json::to_vec(&plan.manifest).unwrap()).unwrap();
-        hoimin_cli::plan::prepare_verify(&saved, &ids, OutputFormat::Json)
+        hoimin_cli::plan::prepare_verify(&saved, &ids)
             .await
             .unwrap();
         change_dependency(dir.path());
-        let error = hoimin_cli::plan::prepare_verify(&saved, &ids, OutputFormat::Json)
+        let error = hoimin_cli::plan::prepare_verify(&saved, &ids)
             .await
             .unwrap_err();
         assert!(
@@ -180,7 +181,7 @@ async fn run_mutants(root: &Path, test: &str) -> serde_json::Value {
     let stderr = CollectingWriter::default();
     let status = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
     assert_eq!(status, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
-    serde_json::from_slice(&stdout.snapshot()).unwrap()
+    jsonl_report::from_slice(&stdout.snapshot()).unwrap()
 }
 
 #[tokio::test]

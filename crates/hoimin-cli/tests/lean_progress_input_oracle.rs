@@ -1,5 +1,7 @@
 #[path = "support/candidate_identity.rs"]
 mod candidate_identity;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 #[path = "support/mutation_outcome.rs"]
 mod mutation_outcome;
 use std::{collections::BTreeSet, process::Stdio, time::Duration};
@@ -140,20 +142,14 @@ fn report_json_from_lean_case(case: &LeanOracleCase) -> Value {
 }
 
 async fn observe_cli_self_comparison(case: &LeanOracleCase) -> Result<CliObservation, String> {
-    observe_cli_encoding(case, false).await
+    observe_cli_encoding(case).await
 }
 
-async fn observe_cli_encoding(
-    case: &LeanOracleCase,
-    jsonl: bool,
-) -> Result<CliObservation, String> {
+async fn observe_cli_encoding(case: &LeanOracleCase) -> Result<CliObservation, String> {
     let fixture = tempfile::tempdir().map_err(|error| error.to_string())?;
     let path = fixture.path().join(format!("{}.report", case.id));
-    std::fs::write(
-        &path,
-        encode_report(&report_json_from_lean_case(case), jsonl),
-    )
-    .map_err(|error| error.to_string())?;
+    std::fs::write(&path, encode_report(&report_json_from_lean_case(case)))
+        .map_err(|error| error.to_string())?;
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
     command
         .args(["progress", "--patience", "1"])
@@ -183,7 +179,7 @@ async fn observe_cli_encoding(
             })
         }
         Some(0) => {
-            let result: Value = serde_json::from_slice(&output.stdout)
+            let result: Value = jsonl_report::from_slice(&output.stdout)
                 .map_err(|error| format!("CLI JSON: {error}"))?;
             let inputs = result["inputs"].as_array().ok_or("missing inputs")?;
             if inputs.len() != 2
@@ -261,10 +257,7 @@ async fn killed_exit_zero_minimal_regression_follows_lean() {
     assert_eq!(observed.history, case.expected_history, "v{schema}");
 }
 
-fn encode_report(document: &Value, jsonl: bool) -> Vec<u8> {
-    if !jsonl {
-        return serde_json::to_vec(document).unwrap();
-    }
+fn encode_report(document: &Value) -> Vec<u8> {
     let mut events = vec![document["run"].clone()];
     if !document["baseline"].is_null() {
         events.push(document["baseline"].clone());
@@ -332,11 +325,9 @@ async fn shared_reader_progress_formats_follow_lean() {
             );
         }
         selected_cases += 1;
-        for (encoding, jsonl) in [("json-v6", false), ("jsonl-v6", true)]
-            .into_iter()
-            .filter(|(_, jsonl)| !jsonl || case.baseline != "missing" || case.statuses.is_empty())
-        {
-            let observed = observe_cli_encoding(&case, jsonl).await;
+        if case.baseline != "missing" || case.statuses.is_empty() {
+            let encoding = "jsonl-v6";
+            let observed = observe_cli_encoding(&case).await;
             let (status, reason) = classify_observation(&case, &observed);
             println!(
                 "BOUNDARY_OBSERVATION {}",
@@ -361,7 +352,7 @@ fn shared_reader_fixture_encodings_preserve_fields_and_projection_premises() {
     let mut projection_gaps = 0;
     for case in cases {
         let document = report_json_from_lean_case(&case);
-        let encoded = encode_report(&document, true);
+        let encoded = encode_report(&document);
         let events: Vec<Value> = encoded
             .split(|byte| *byte == b'\n')
             .filter(|line| !line.is_empty())

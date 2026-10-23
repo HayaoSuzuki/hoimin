@@ -2768,60 +2768,35 @@ mod tests {
         assert!(coordinator.dir.symlink_metadata(&staging).is_err());
     }
 
-    macro_rules! young_pre_lease_projection_case {
-        ($name:ident, $verbose:expr, $details:literal, $suppressed:literal) => {
-            #[test]
-            fn $name() {
-                // Arrange: a crash after mkdir but before lease creation.
-                let parent = tempfile::tempdir().unwrap();
-                let coordinator =
-                    ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap())
-                        .unwrap();
-                let staging = format!("{}{}", super::STAGING_PREFIX, uuid::Uuid::new_v4());
-                drop(super::create_owned_directory(&coordinator.dir, &staging).unwrap());
+    #[test]
+    fn young_pre_lease_staging_retains_normal_detail() {
+        // Arrange: a crash after mkdir but before lease creation.
+        let parent = tempfile::tempdir().unwrap();
+        let coordinator =
+            ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap()).unwrap();
+        let staging = format!("{}{}", super::STAGING_PREFIX, uuid::Uuid::new_v4());
+        drop(super::create_owned_directory(&coordinator.dir, &staging).unwrap());
 
-                // Act.
-                let mut report =
-                    ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
-                report.project_details($verbose);
+        // Act.
+        let report = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
 
-                // Assert: the same ordinary hold is retained in either projection.
-                assert_eq!(report.inspected_roots, 1);
-                assert_eq!(report.preserved_roots, 1, "{report:?}");
-                assert_eq!(
-                    report.preserved_by_reason,
-                    std::collections::BTreeMap::from([(hoimin_core::JanitorReason::Young, 1)])
-                );
-                assert_eq!(report.unresolved_roots, 0);
-                assert!(report.unresolved_by_reason.is_empty());
-                assert_eq!(report.reclaimed_roots, 0);
-                assert_eq!(report.removed_entries, 0);
-                assert_eq!(report.details.len(), $details);
-                assert_eq!(
-                    report.detail_omissions.suppressed_normal_details,
-                    $suppressed
-                );
-                if $verbose {
-                    assert_eq!(report.details[0].reason, hoimin_core::JanitorReason::Young);
-                    assert!(report.details[0].message.contains(&staging));
-                }
-                let candidate = super::open_owned_directory(&coordinator.dir, &staging).unwrap();
-                assert!(super::inspect_empty_directory(&candidate).unwrap());
-            }
-        };
+        // Assert: ordinary hold details are retained without affecting cleanup decisions.
+        assert_eq!(report.inspected_roots, 1);
+        assert_eq!(report.preserved_roots, 1, "{report:?}");
+        assert_eq!(
+            report.preserved_by_reason,
+            std::collections::BTreeMap::from([(hoimin_core::JanitorReason::Young, 1)])
+        );
+        assert_eq!(report.unresolved_roots, 0);
+        assert!(report.unresolved_by_reason.is_empty());
+        assert_eq!(report.reclaimed_roots, 0);
+        assert_eq!(report.removed_entries, 0);
+        assert_eq!(report.details.len(), 1);
+        assert_eq!(report.details[0].reason, hoimin_core::JanitorReason::Young);
+        assert!(report.details[0].message.contains(&staging));
+        let candidate = super::open_owned_directory(&coordinator.dir, &staging).unwrap();
+        assert!(super::inspect_empty_directory(&candidate).unwrap());
     }
-    young_pre_lease_projection_case!(
-        young_pre_lease_staging_default_suppresses_normal_detail,
-        false,
-        0,
-        1
-    );
-    young_pre_lease_projection_case!(
-        young_pre_lease_staging_verbose_retains_normal_detail,
-        true,
-        1,
-        0
-    );
 
     macro_rules! invalid_pre_lease_case {
         ($name:ident, $prefix:expr, $entry:expr, $hours:expr) => {
@@ -2841,8 +2816,7 @@ mod tests {
                 let now = std::time::SystemTime::now() + std::time::Duration::from_hours($hours);
 
                 // Act.
-                let mut report = ManagedRunRoot::reclaim_abandoned(&coordinator, now);
-                report.project_details(false);
+                let report = ManagedRunRoot::reclaim_abandoned(&coordinator, now);
 
                 // Assert: still unresolved and visible by default; no deletion.
                 assert_eq!(report.inspected_roots, 1);
@@ -2900,10 +2874,8 @@ mod tests {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
 
         // Act.
-        let mut report =
-            ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
+        let report = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
-        report.project_details(false);
 
         // Assert: failed candidate inspection cannot masquerade as Young.
         assert_eq!(report.preserved_roots, 0, "{report:?}");
@@ -2940,8 +2912,7 @@ mod tests {
             path,
         );
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let mut report = ledger.finish();
-        report.project_details(false);
+        let report = ledger.finish();
 
         // Assert: callers receive the failure, and default output retains its cause.
         assert_eq!(
@@ -2971,10 +2942,9 @@ mod tests {
         // Act.
         let empty = super::janitor_empty_probe(&candidate, &mut ledger, path);
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let mut report = ledger.finish();
-        report.project_details(false);
+        let report = ledger.finish();
 
-        // Assert: no positive empty evidence, and the failure survives default projection.
+        // Assert: no positive empty evidence, and the failure remains in the report.
         assert!(!empty);
         assert_eq!(report.details.len(), 1);
         assert_eq!(

@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use collecting_writer::CollectingWriter;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -522,7 +524,7 @@ async fn public_plan_and_verify_preserve_all_strict_candidate_fields() {
         "stderr={}",
         String::from_utf8_lossy(&stderr.snapshot())
     );
-    let manifest: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    let manifest: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
     let candidates = manifest["candidates"].as_array().unwrap();
     let mut selected_ids = Vec::new();
     for case in &cases {
@@ -545,8 +547,6 @@ async fn public_plan_and_verify_preserve_all_strict_candidate_fields() {
         OsString::from("hoimin"),
         OsString::from("verify"),
         plan.into_os_string(),
-        OsString::from("--format"),
-        OsString::from("json"),
     ];
     for id in &selected_ids {
         verify.extend([OsString::from("--candidate"), OsString::from(id)]);
@@ -560,7 +560,7 @@ async fn public_plan_and_verify_preserve_all_strict_candidate_fields() {
         "stderr={}",
         String::from_utf8_lossy(&stderr.snapshot())
     );
-    let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
     let mutants = report["mutants"].as_array().unwrap();
     assert_eq!(mutants.len(), selected_ids.len());
     assert_eq!(
