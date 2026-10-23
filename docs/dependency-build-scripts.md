@@ -4,6 +4,11 @@ Observed 2026-10-21 from locked, all-feature, unfiltered Cargo metadata.
 Regenerate and review with the [dependency policy](dependency-policy.md).
 Names/versions identify build targets; their contents have not been certified.
 
+Rechecked the main workspace on 2026-10-23 after Tokio 1.54.0 → 1.54.1:
+locked all-feature metadata still has 223 packages and the same 53 custom-build
+targets listed below. Tokio has no custom-build target. The fuzz graph and its
+lockfile are unchanged by this update.
+
 ## main workspace
 
 Graph packages: 223. Normal, build and dev dependencies included.

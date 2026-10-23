@@ -105,3 +105,36 @@ benchmark is implied. Cargo uses two build jobs, no incremental compilation and
 no development debug info; test commands reuse cached dependencies offline and
 locked. Owned target/site outputs and the short test temporary directory are
 removed after checks; audit/worktree and local evidence remain.
+
+## Follow-up: dependency audit on PR #1093
+
+The [initial CI dependency audit](https://github.com/HayaoSuzuki/hoimin/actions/runs/39882316045/job/120182312386)
+failed on the inherited Tokio 1.54.0 lock entry. RustSec RUSTSEC-2026-0384
+identifies an Interval/time-driver race and marks >=1.54.1 as patched; 1.54.0 was
+also yanked. The official 1.54.1 changelog records the timer-change revert in
+[tokio-rs/tokio#8692](https://github.com/tokio-rs/tokio/pull/8692).
+
+At the user's request, root Cargo.lock now selects 1.54.1 with the registry
+checksum. Cargo's incidental Windows dependency-edge reselection was excluded;
+locked all-feature metadata validates the minimal result. Parsed lockfile
+comparison confirms Tokio is the only changed package; dependency requirements,
+fuzz/Cargo.lock, CLI/schema, package floors and runtime code are unchanged.
+The custom-build inventory was rechecked: 223 packages, the same 53 custom-build
+targets, and no Tokio build script.
+
+The official cargo-audit 0.22.2 aarch64 macOS release binary reproduces the old
+lockfile failure (one vulnerability and the yanked warning). Both updated root
+and unchanged fuzz lockfiles then pass against the same RustSec snapshot,
+`640bf5a9f06e66d8721e8772766531fe77c8630d`. The tool/DB were kept in the ignored local evidence directory during verification;
+no audit ignore or policy exception was added. This is a fresh dependency audit,
+separate from the pre-update #1092 test results above. Follow-up verification completed:
+
+- `cargo test --offline --locked --workspace --all-features`: 4,012 passed,
+  34 ignored, no failures, using two build jobs and a short private TMPDIR.
+- Documentation tests: 21 passed; site generation and knowledge inventory passed.
+- Read-only follow-up review verified the minimal lock change, crate checksum,
+  advisory/changelog correspondence and unchanged custom-build inventory.
+
+The downloaded audit tool and DB are removed after verification; logs and a copy
+of the advisory are retained locally. Historical #1092 allocation/source hashes
+above are unchanged by this dependency patch.
