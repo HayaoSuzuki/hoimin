@@ -2176,3 +2176,40 @@ fn agent_output_rejects_retired_formats_and_redundant_selectors() {
         );
     }
 }
+
+#[test]
+fn removed_typo_suggestions_preserve_context_and_usage() {
+    let error = hoimin_cli::cli::parse_from([
+        "hoimin",
+        "plan",
+        "--max-mutant",
+        "1",
+        "--file",
+        "target.py",
+        "--",
+        "python",
+        "-c",
+        "pass",
+    ])
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("--max-mutant"), "{error}");
+    assert!(error.contains("Usage:"), "{error}");
+    assert!(!error.contains("similar argument"), "{error}");
+}
+
+#[test]
+fn removed_terminal_color_preserves_help_content() {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .arg("--help")
+        .env("CLICOLOR_FORCE", "1")
+        .env_remove("NO_COLOR")
+        .env_remove("RUST_LOG")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let help = String::from_utf8(output.stdout).unwrap();
+    assert!(help.contains("Usage:"), "{help}");
+    assert!(help.contains("Commands:"), "{help}");
+    assert!(!help.contains('\u{1b}'), "{help}");
+}

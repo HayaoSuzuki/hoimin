@@ -330,6 +330,12 @@ Use `RUST_LOG=hoimin_cli::progress=info` for execution-stage records and complet
 mutant counts. Counts include reused results and exclude candidates that were
 not run. These records follow execution events rather than a periodic timer.
 
+`RUST_LOG` supports a default level (`info`), module/target levels
+(`hoimin_cli=debug`), and comma-separated combinations
+(`warn,hoimin_cli::process=debug`). Levels are `off`, `error`, `warn`, `info`,
+`debug`, and `trace`. Advanced span or field directives are outside the supported
+logging syntax.
+
 Logging is off by default. `RUST_LOG=off`, an empty value, or an invalid filter
 disables tracing. Library callers choose their own tracing subscriber. Tracing
 uses a bounded queue: a slow sink can lose log records, and shutdown waits at most

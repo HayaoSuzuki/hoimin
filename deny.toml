@@ -48,14 +48,6 @@ name = "libfuzzer-sys"
 version = "=0.4.13"
 allow = ["NCSA"]
 
-# Optional proc macro for boundary postconditions and scalar old() snapshots.
-# Reviewed published source: https://docs.rs/crate/contracts/0.6.11/source/LICENSE
-# Re-review source, generated code, notices and this exact allowance on upgrades.
-[[licenses.exceptions]]
-name = "contracts"
-version = "=0.6.11"
-allow = ["MPL-2.0"]
-
 # Verification-only crates selected by cfg(creusot); normal builds exclude them.
 # Reviewed upstream license at Creusot v0.14.0, commit 65349025c67e69fcd7479f1f420fa5904f69bc27.
 # Re-review source, macro output, proof artifacts and notices on any upgrade.

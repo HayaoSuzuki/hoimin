@@ -522,14 +522,14 @@ sources:
   sha256: d103920f89e50a23bc91e0f5a0a7eca41089f4a56c04a0b4394c33ee9945006b
 - id: current-telemetry
   resource: ../../../crates/hoimin-cli/src/telemetry.rs
-  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
-  working_tree: clean
-  sha256: 3e5909f6887c4de4fcbef8fc76b70d77c0926223e00866d54d323c2855c87cbf
+  revision: 462f97b26749ea0caa3b83879c94bdd3cdce0f50
+  working_tree: modified
+  sha256: e4bd89401b4f2b43f018d24fc3c38ef539c8c546779c3878ca11738c16290328
 - id: current-output-contract
   resource: ../../../docs/compatibility.md
-  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
+  revision: 462f97b26749ea0caa3b83879c94bdd3cdce0f50
   working_tree: modified
-  sha256: 2d002bcd959d3ae787563a7e6e103d751dcabad8131500d017663241f1cfe8aa
+  sha256: 629eb823778e2dc483df5f3d3f08a144f39961feac1443aeffbdc2d62e364f8f
 ---
 
 # Current report, reader and diagnostic boundaries
@@ -551,7 +551,10 @@ a complete run with a passing baseline after structural validation. These are
 consumer rules, not compatibility repairs.[^current-report-boundary][^current-progress-input][^current-progress-errors][^current-review-input]
 
 Tracing is opt-in through `RUST_LOG` and emits JSON Lines to stderr for terminals
-and redirected streams. Logging defaults to off. The diagnostics worker retains
+and redirected streams. Default-level and module/target-level directives support
+comma-separated combinations, such as `warn,hoimin_cli=debug`. Advanced span/field
+filters are outside the supported logging syntax. Empty or invalid filters disable
+tracing; logging defaults to off. The diagnostics worker retains
 a bounded queue, a 64 KiB record limit, whole-record dropping under pressure and
 a maximum 250 ms shutdown wait. It has no terminal refresh timer or progress
 snapshot. Command errors/warnings and captured test-output diagnostics retain

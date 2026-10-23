@@ -1583,23 +1583,23 @@ for callers which use exceptions. deal checks relationships on these pure
 transformations; it does not replace input validation or wrap publication I/O.
 An incorrect successful result is a programming error, not an invalid-input error.
 
-Rust's optional `contracts` feature enables `contracts` 0.6.11, imported as
-`contract_checks`. Budget reserve/release postconditions check every explicit
-normal return, including errors; reserve also compares the old scalar total
-with the new total. Default builds do not compile this dependency or evaluate
-snapshots/conditions. Use the contract test commands below for feature builds.
+Rust's optional `contracts` feature enables the repository's standard-library
+`contract_require!` and `contract_ensure!` macros without an external contract
+crate. Budget reserve/release check the invariant after successful and error
+results. Reserve also checks that the reserved total increases by the requested
+amount on success and stays unchanged on error. Its fallible operations run
+inside a closure so `?` returns to the shared postcondition checks. Preserve that
+boundary when changing allocation or validation.
+
+Disabled builds evaluate neither contract conditions nor the old-total snapshot.
 Keep allocator uniqueness assertions and ordinary validation unconditional.
-
-The upstream macro rewrites `return`, but does not intercept `?`: reserve keeps
-an explicit allocator-error return so postconditions cannot be bypassed. Do not
-replace it with `?` without revalidating the generated code. The internal budget
-panic format now identifies the function, condition and stable
-`budget.total.invariant` or `budget.reserve.accounting` ID, rather than the old
-custom context payload. Other custom checks retain their existing timing and
-diagnostic payloads; the [review record](reviews/2026-10-12-typed-results-and-contracts.md)
-maps these sites. No global contract-disable feature or deal toggle is used.
-
-See [licensing](licensing.md) for the version-scoped MPL allowance and notice.
+Contract diagnostics include the condition, context and stable
+`budget.total.invariant` or `budget.reserve.accounting` ID. The repository's own
+CI still tests feature-enabled builds. The
+[October 12 review](reviews/2026-10-12-typed-results-and-contracts.md) records the
+former third-party macro adoption; it does not describe the current Rust
+implementation. Python deal/returns checks and existing Lean/Creusot proofs
+retain their separate scopes.
 
 Use the normal Rust tests, contract tests, and Lean oracle checks to validate
 changes to the Rust implementation. Select a package, integration test, or test

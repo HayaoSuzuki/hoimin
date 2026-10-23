@@ -38,7 +38,13 @@ fn redirected_plan_stays_machine_readable_without_logging() {
 
 #[test]
 fn debug_logs_are_opt_in_json_records_on_stderr() {
-    let output = plan(Some("hoimin_cli=debug"));
+    for filter in ["debug", "hoimin_cli=debug"] {
+        assert_debug_plan_logs(filter);
+    }
+}
+
+fn assert_debug_plan_logs(filter: &str) {
+    let output = plan(Some(filter));
     assert!(output.status.success(), "{output:?}");
     serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap();
     let stderr = String::from_utf8(output.stderr).unwrap();
@@ -59,8 +65,36 @@ fn debug_logs_are_opt_in_json_records_on_stderr() {
 }
 
 #[test]
+fn module_filter_only_enables_matching_diagnostics() {
+    let output = plan(Some("hoimin_cli::plan=debug"));
+    assert!(output.status.success(), "{output:?}");
+    serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let logs: Vec<serde_json::Value> = stderr
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert!(!logs.is_empty(), "module filter must enable diagnostics");
+    assert!(
+        logs.iter().all(|log| log["target"]
+            .as_str()
+            .unwrap()
+            .starts_with("hoimin_cli::plan")),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn removed_span_filters_do_not_enable_diagnostics() {
+    let output = plan(Some("hoimin_cli[plan]=debug"));
+    assert!(output.status.success(), "{output:?}");
+    serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap();
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
+#[test]
 fn disabled_or_invalid_filter_does_not_change_command_result() {
-    for filter in ["off", "hoimin_cli=warn", "hoimin_cli=invalid-level"] {
+    for filter in ["", "off", "hoimin_cli=warn", "hoimin_cli=invalid-level"] {
         let output = plan(Some(filter));
         assert!(output.status.success(), "{filter}: {output:?}");
         serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap();

@@ -90,7 +90,24 @@ sources:
   revision: 3aaf82b0d5b695a548dda33ea248ceaa1dd68219
   working_tree: clean
   sha256: f00dd5b9e1daa9f50c1289a0b3a1f2f684be377ce954a8ceae19ed1e55c247f0
+- id: crate-feature-scope
+  resource: ../compatibility.md
+  revision: 462f97b26749ea0caa3b83879c94bdd3cdce0f50
+  working_tree: modified
+  sha256: 629eb823778e2dc483df5f3d3f08a144f39961feac1443aeffbdc2d62e364f8f
 ---
+
+# Current CLI and logging feature scope
+
+Help and errors use plain text; automatic color and spelling suggestions have
+been removed. `RUST_LOG` supports default levels and module/target levels,
+including comma-separated combinations. Advanced span/field filters are outside
+the supported syntax. Logging remains opt-in JSONL with bounded records/queue and
+finite shutdown waiting. The optional Rust `contracts` feature uses repository
+macros without the external crate; budget checks still cover successful and error
+results. No saved-artifact regeneration is required.[^crate-feature-scope]
+
+[^crate-feature-scope]: [CLI and logging feature notice](../compatibility.md#reduced-cli-and-logging-features).
 
 # Current saved formats and release floor
 

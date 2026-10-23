@@ -1,7 +1,7 @@
 use std::fmt::Write as _;
 use std::path::Path;
 
-use clap::{Arg, ArgAction, ColorChoice, Command};
+use clap::{Arg, ArgAction, Command};
 
 const REGENERATE: &str = "cargo run --locked -p hoimin-cli --example generate_cli_reference";
 
@@ -54,12 +54,8 @@ fn render_command(command: &mut Command, path: &str, output: &mut String) {
     if !aliases.is_empty() {
         code_block(output, &format!("Command aliases: {}", aliases.join(", ")));
     }
-    // Override terminal-dependent formatting on every command, including children.
-    let mut help_command = command
-        .clone()
-        .color(ColorChoice::Never)
-        .term_width(100)
-        .max_term_width(100);
+    // Fix help width on every command, including children.
+    let mut help_command = command.clone().term_width(100).max_term_width(100);
     code_block(output, &help_command.render_long_help().to_string());
     let mut metadata = String::new();
     for arg in command.get_arguments().filter(|arg| visible(arg)) {

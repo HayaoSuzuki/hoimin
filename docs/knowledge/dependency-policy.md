@@ -22,14 +22,14 @@ sources:
   sha256: 354b84133c997f5fca425c30a916c69f94fe5cd3ac22a2b19475d55fb28a83e7
 - id: policy
   resource: ../dependency-policy.md
-  revision: c2ccb34946bd581cac41b1ca924b7491ab0c16ac
+  revision: 462f97b26749ea0caa3b83879c94bdd3cdce0f50
   working_tree: modified
-  sha256: 623a49ceefb2daa5c3083367fae930c2fbcf6eba50a6abc2a75da1f5290dc913
+  sha256: 7a83b9486d2cb15409898cf1f7fb45e1e7a3da2a6ca245ae5d4738db012deed0
 - id: config
   resource: ../../deny.toml
-  revision: c2ccb34946bd581cac41b1ca924b7491ab0c16ac
-  working_tree: clean
-  sha256: 52e8fcb676d9b637ec20a61ebe498915727c31f64face81a6ce4d3090aad2463
+  revision: 462f97b26749ea0caa3b83879c94bdd3cdce0f50
+  working_tree: modified
+  sha256: 6a163126e8cf5ec5667d1d04ad86ea4ef7f7fd63524232f84cdeb123270ce9ec
 - id: workflow
   resource: ../../.github/workflows/dependency-audit.yml
   revision: c2ccb34946bd581cac41b1ca924b7491ab0c16ac
@@ -37,9 +37,9 @@ sources:
   sha256: 09436fc28383b7188d7c5e7282880962d365ec52984234f75a9f5466d1d481b6
 - id: development
   resource: ../development.md
-  revision: c2ccb34946bd581cac41b1ca924b7491ab0c16ac
+  revision: 462f97b26749ea0caa3b83879c94bdd3cdce0f50
   working_tree: modified
-  sha256: 56050a9b19490aed98e1784ba55ae11eb4b2ff8a4d0501b7e4634be6f56a1b5d
+  sha256: eb6e66876840d9a00154dfb75311bbb34620a2bf43d885e4a59b5717f91475d7
 ---
 
 # Check scope
@@ -68,7 +68,9 @@ Maintain vulnerability audits and SBOMs as separate checks and evidence.[^policy
 [^config]: [Allowlist configuration](../../deny.toml).
 [^workflow]: [Dependency audit workflow](../../.github/workflows/dependency-audit.yml).
 
-The optional `contracts` 0.6.11 proc macro has an exact-version MPL-2.0 exception; the global allow-list remains unchanged. See [typed results and contracts](typed-results-and-contracts.md).[^policy][^config]
+The optional Rust `contracts` feature uses repository macros without an external
+contract crate or MPL-2.0 exception. Dated adoption reviews describe the former
+dependency. See [typed results and contracts](typed-results-and-contracts.md).[^policy][^config]
 
 # Development update constraints
 

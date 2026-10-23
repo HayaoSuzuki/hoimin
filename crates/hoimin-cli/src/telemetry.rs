@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
-use tracing_subscriber::filter::{EnvFilter, LevelFilter};
+use tracing_subscriber::filter::Targets;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{Layer, Registry};
@@ -32,11 +32,11 @@ impl Drop for Guard {
 
 pub(super) fn init() -> Option<Guard> {
     let (guard, writer) = output_worker(io::stderr()).ok()?;
-    let filter = EnvFilter::builder()
-        .with_default_directive(LevelFilter::OFF.into())
-        .with_regex(false)
-        .try_from_env()
-        .unwrap_or_else(|_| EnvFilter::new("off"));
+    let filter = std::env::var("RUST_LOG")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .and_then(|value| value.parse::<Targets>().ok())
+        .unwrap_or_default();
     let logs = tracing_subscriber::fmt::layer()
         .json()
         .with_ansi(false)

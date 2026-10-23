@@ -19,6 +19,22 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Reduced CLI and logging features
+
+CLI help and errors use plain text. Automatic color and spelling suggestions for
+unknown commands or arguments are removed; help, usage and error context remain.
+
+`RUST_LOG` accepts default levels and module/target levels, including
+comma-separated combinations such as `warn,hoimin_cli=debug`. Advanced span and
+field filtering is outside the supported syntax. Replace such directives with
+level/module filters. Logging remains opt-in JSON Lines on stderr, with bounded
+records/queue and a finite shutdown wait; an invalid filter disables tracing.
+
+The optional Rust `contracts` feature remains available and tested in hoimin's
+own CI. It now uses repository macros without the external `contracts` crate.
+Budget invariants and reserve accounting checks cover successful and error
+results. These feature changes require no saved-artifact regeneration.
+
 ## Local execution without CI gates
 
 `run` and `verify` return 0 for a complete run, including one with surviving
