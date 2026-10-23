@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use camino::{Utf8Path, Utf8PathBuf};
 
-use crate::workspace::{PortableFileReadError, PortableFileReader};
+use crate::source_file::{PortableFileReadError, PortableFileReader};
 
 /// Acquires plan sources from one capability root without blocking the executor.
 /// Root acquisition is lazy so descriptor errors keep their requested-ID priority.
@@ -41,7 +41,7 @@ impl SourceReader {
                 let root = self.root.clone();
                 self.reader = Some(Arc::new(
                     blocking(move || {
-                        PortableFileReader::open(root).map_err(PortableFileReadError::from)
+                        PortableFileReader::open(&root).map_err(PortableFileReadError::from)
                     })
                     .await?,
                 ));
@@ -68,7 +68,7 @@ async fn blocking<T: Send + 'static>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workspace::{WorkspaceRaceHook, install_workspace_race_hook};
+    use crate::source_file::{WorkspaceRaceHook, install_workspace_race_hook};
     use std::io::Write;
 
     struct ChangeAfterBudget {

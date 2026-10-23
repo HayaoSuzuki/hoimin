@@ -8,11 +8,8 @@ mod manifest;
 mod mutation;
 mod operation;
 mod owned;
-mod reader;
 mod reset;
 mod root;
-#[cfg(test)]
-pub(crate) use root::{WorkspaceRaceHook, install_workspace_race_hook};
 mod stream;
 
 #[cfg(test)]
@@ -51,7 +48,6 @@ pub(crate) use owned::{
     CleanupDisposition, CleanupEvidence, CleanupRecord, ManagedChild, ManagedRootCoordinator,
     ManagedRunRoot, OwnerKind, ReclaimReport, truncate_diagnostic_detail,
 };
-pub(crate) use reader::{PortableFileReadError, PortableFileReader, hash_portable_file};
 use root::WorkerRoot;
 
 const WORKSPACE_PATH_POLICY: hoimin_core::RelativePathPolicy = if cfg!(unix) {
@@ -441,7 +437,7 @@ fn make_cleanup_wrapper_accessible(
         .metadata()
         .map_err(|error| WorkspaceError::io("inspect cleanup wrapper", error_path, error))?;
     #[cfg(test)]
-    root::parent_opened("cleanup-wrapper", error_path);
+    crate::source_file::parent_opened("cleanup-wrapper", error_path);
     let mut permissions = metadata.permissions();
     #[cfg(unix)]
     {
@@ -576,7 +572,7 @@ impl WorkerWorkspace {
             self.cleanup_wrapper = None;
         }
         #[cfg(test)]
-        root::parent_opened("cleanup-final", &wrapper_error_path);
+        crate::source_file::parent_opened("cleanup-final", &wrapper_error_path);
         match self.temp.try_cleanup().map_err(worker_cleanup_error) {
             Ok(()) => {
                 self.cleanup_complete = true;

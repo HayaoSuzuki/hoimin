@@ -810,7 +810,7 @@ impl<'a> SnapshotWriter<'a> {
         let mut source = crate::finite_file::SnapshotReader::new(source)
             .map_err(|error| WorkspaceError::io("read original metadata", path, error))?;
         #[cfg(test)]
-        super::root::parent_opened("snapshot-budget", path);
+        crate::source_file::parent_opened("snapshot-budget", path);
         self.write_reader(path, &mut source, metadata.len(), metadata.permissions())
     }
 

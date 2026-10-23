@@ -2065,6 +2065,28 @@ cargo test -p hoimin-cli --lib hierarchy
 cargo test -p hoimin-cli --test exception_hierarchy
 ```
 
+## Report input and source-access ownership
+
+`artifacts::run_report` decodes current JSON/JSONL and validates structure,
+sequence, identity and summary coherence. Its `DecodedReport<C>` handoff and
+`ReportReadError` carry data and input failures. Progress owns unusable-report
+classification and output errors; review owns project-root resolution and its
+complete-run/passing-baseline requirement. Keep the shared decoder independent
+of either command's output policy or filesystem identity checks.
+
+`source_file::PortableFileReader` exposes capability-relative reads and hashes
+with read-specific errors. Workspace mutation, restoration and cleanup retain
+their own authority and adapt shared file-access errors. Reuse the low-level
+no-follow opener and parent traversal when changing either path; preserve finite
+read budgets, retained handles and Windows share/access/disposition semantics.
+See the [C4 ownership views](architecture/c4-model.md) and
+[report contract](knowledge/design/session-report.md#current-report-reader-and-diagnostic-boundaries).
+
+CLI-specific oracle configuration belongs in CLI `tests/support`. Shared Python
+corpus helpers contain cases and expectations, and live allocation probes belong
+in test support. Historical measurement code under `docs/maintenance` remains
+archived evidence rather than an implementation dependency for current tests.
+
 ## Progress JSON contract
 
 [`progress-result.schema.json`](json-schema/progress-result.schema.json) is the

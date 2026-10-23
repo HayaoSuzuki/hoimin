@@ -3,8 +3,6 @@ use std::fs::File;
 use std::io::Write;
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
-#[cfg(test)]
-use std::sync::Arc;
 
 use camino::{Utf8Path, Utf8PathBuf};
 #[cfg(unix)]
@@ -14,49 +12,17 @@ use cap_primitives::fs::FollowSymlinks;
 use cap_primitives::fs::OpenOptionsExt;
 
 use super::{MAX_WORKER_TREE_DEPTH, WorkspaceError};
+#[cfg(unix)]
+use crate::source_file::open_readable_directory;
+pub(super) use crate::source_file::open_retained_directory;
+#[cfg(any(windows, test))]
+use crate::source_file::windows_final_name_units_are_valid;
 
+use crate::source_file::{SourceFileError, is_link_or_reparse, is_nofollow_link_error};
 #[cfg(test)]
-pub(crate) trait WorkspaceRaceHook: Send + Sync {
-    fn parent_opened(&self, operation: &'static str, path: &Utf8Path);
-    fn mutation_bytes_read(&self, _bytes: u64) {}
-}
-
+use crate::source_file::{WORKSPACE_RACE_HOOK, parent_opened};
 #[cfg(test)]
-thread_local! {
-    static WORKSPACE_RACE_HOOK: std::cell::RefCell<Option<Arc<dyn WorkspaceRaceHook>>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-#[cfg(test)]
-pub(crate) struct WorkspaceRaceHookGuard;
-
-#[cfg(test)]
-impl Drop for WorkspaceRaceHookGuard {
-    fn drop(&mut self) {
-        WORKSPACE_RACE_HOOK.with(|slot| {
-            slot.borrow_mut().take();
-        });
-    }
-}
-
-#[cfg(test)]
-pub(crate) fn install_workspace_race_hook(
-    hook: Arc<dyn WorkspaceRaceHook>,
-) -> WorkspaceRaceHookGuard {
-    WORKSPACE_RACE_HOOK.with(|slot| {
-        assert!(slot.borrow_mut().replace(hook).is_none());
-    });
-    WorkspaceRaceHookGuard
-}
-
-#[cfg(test)]
-pub(super) fn parent_opened(operation: &'static str, path: &Utf8Path) {
-    WORKSPACE_RACE_HOOK.with(|slot| {
-        if let Some(hook) = slot.borrow().as_ref() {
-            hook.parent_opened(operation, path);
-        }
-    });
-}
+use crate::source_file::{WorkspaceRaceHook, install_workspace_race_hook};
 
 #[cfg(windows)]
 pub(crate) mod windows;
@@ -74,6 +40,7 @@ enum WindowsFinalOperation {
     InspectForWrite,
     InspectMutation,
     WriteMutation,
+    #[cfg(test)]
     Read,
     Write,
     Remove,
@@ -87,10 +54,11 @@ impl WindowsFinalOperation {
             Self::InspectForWrite
             | Self::InspectMutation
             | Self::WriteMutation
-            | Self::Read
             | Self::Remove
             | Self::RemoveEntry => WindowsCreateDisposition::Open,
             Self::Write => WindowsCreateDisposition::OpenIf,
+            #[cfg(test)]
+            Self::Read => WindowsCreateDisposition::Open,
         }
     }
 
@@ -103,17 +71,6 @@ impl WindowsFinalOperation {
     const fn accepts_directory_or_reparse(self) -> bool {
         matches!(self, Self::RemoveEntry)
     }
-}
-
-#[cfg(any(windows, test))]
-fn windows_final_name_units_are_valid(name: &[u16]) -> bool {
-    !name.is_empty()
-        && name != [u16::from(b'.')]
-        && name != [u16::from(b'.'), u16::from(b'.')]
-        && !name.contains(&u16::from(b'/'))
-        && !name.contains(&u16::from(b'\\'))
-        && !name.contains(&u16::from(b':'))
-        && !name.contains(&0)
 }
 
 #[derive(Debug)]
@@ -268,6 +225,23 @@ fn reject_shared_mutation_target(file: &File, path: &Utf8Path) -> Result<(), Wor
     Ok(())
 }
 
+impl From<SourceFileError> for WorkspaceError {
+    fn from(error: SourceFileError) -> Self {
+        match error {
+            SourceFileError::InvalidPath { path } => Self::InvalidPath { path },
+            SourceFileError::Io {
+                operation,
+                path,
+                message,
+            } => Self::Io {
+                operation,
+                path,
+                message,
+            },
+        }
+    }
+}
+
 #[allow(dead_code)]
 impl WorkerRoot {
     pub(crate) fn open(path: Utf8PathBuf) -> Result<Self, WorkspaceError> {
@@ -306,30 +280,13 @@ impl WorkerRoot {
     }
 
     pub(crate) fn read(&self, path: &Utf8Path) -> Result<Vec<u8>, WorkspaceError> {
-        self.with_read_file(path, |file| {
-            let mut file = crate::finite_file::SnapshotReader::new(file)
-                .map_err(|error| WorkspaceError::io("inspect worker file", path, error))?;
-            #[cfg(test)]
-            parent_opened("read-budget", path);
-            let mut contents = Vec::new();
-            file.read_to_end(&mut contents)
-                .map_err(|error| WorkspaceError::io("read worker file", path, error))?;
-            Ok(contents)
-        })
+        crate::source_file::read(self.handle(), path, super::WORKSPACE_PATH_POLICY)
+            .map_err(Into::into)
     }
 
     pub(crate) fn hash(&self, path: &Utf8Path) -> Result<blake3::Hash, WorkspaceError> {
-        self.with_read_file(path, |file| {
-            let file = crate::finite_file::SnapshotReader::new(file)
-                .map_err(|error| WorkspaceError::io("inspect worker file", path, error))?;
-            #[cfg(test)]
-            parent_opened("read-budget", path);
-            let mut hasher = blake3::Hasher::new();
-            hasher
-                .update_reader(file)
-                .map_err(|error| WorkspaceError::io("read worker file", path, error))?;
-            Ok(hasher.finalize())
-        })
+        crate::source_file::hash(self.handle(), path, super::WORKSPACE_PATH_POLICY)
+            .map_err(Into::into)
     }
 
     pub(super) fn with_read_file<T>(
@@ -337,62 +294,12 @@ impl WorkerRoot {
         path: &Utf8Path,
         consume: impl FnOnce(File) -> Result<T, WorkspaceError>,
     ) -> Result<T, WorkspaceError> {
-        let (parent, name) = self.open_parent(path, false)?;
-        #[cfg(test)]
-        parent_opened("read", path);
-        Self::reject_non_file(&parent, &name, path, "read worker file")?;
-        #[cfg(windows)]
-        {
-            match windows::open_read(&parent, &name, path).and_then(consume) {
-                Ok(contents) => Ok(contents),
-                Err(_) if Self::entry_is_non_file(&parent, &name) => {
-                    Err(WorkspaceError::InvalidPath {
-                        path: path.to_owned(),
-                    })
-                }
-                Err(error) => Err(error),
-            }
-        }
-        #[cfg(unix)]
-        {
-            let mut options = cap_primitives::fs::OpenOptions::new();
-            options
-                .read(true)
-                .follow(FollowSymlinks::No)
-                .custom_flags(libc::O_NONBLOCK);
-            let file = match cap_primitives::fs::open(&parent, Path::new(&name), &options) {
-                Ok(file) => file,
-                Err(error) => {
-                    if Self::entry_is_non_file(&parent, &name) {
-                        return Err(WorkspaceError::InvalidPath {
-                            path: path.to_owned(),
-                        });
-                    }
-                    return Err(Self::map_entry_error("read worker file", path, error));
-                }
-            };
-            let metadata = file
-                .metadata()
-                .map_err(|error| WorkspaceError::io("inspect worker file", path, error))?;
-            if !metadata.is_file() {
-                return Err(WorkspaceError::InvalidPath {
-                    path: path.to_owned(),
-                });
-            }
-            consume(file)
-        }
-    }
-
-    pub(crate) fn is_missing(&self, path: &Utf8Path) -> Result<bool, WorkspaceError> {
-        let Some((parent, name)) = self.open_parent_if_present(path)? else {
-            return Ok(true);
-        };
-
-        match cap_primitives::fs::stat(&parent, Path::new(&name), FollowSymlinks::No) {
-            Ok(_) => Ok(false),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(true),
-            Err(error) => Err(Self::map_entry_error("inspect worker file", path, error)),
-        }
+        crate::source_file::with_read_file(
+            self.handle(),
+            path,
+            super::WORKSPACE_PATH_POLICY,
+            consume,
+        )
     }
 
     pub(crate) fn open_mutation_file(
@@ -593,30 +500,13 @@ impl WorkerRoot {
         &self,
         path: &Utf8Path,
     ) -> Result<Option<(File, OsString)>, WorkspaceError> {
-        let components = Self::components(path)?;
-        let (name, parents) = components.split_last().expect("validated nonempty path");
-        let mut parent = self
-            .handle()
-            .try_clone()
-            .map_err(|error| WorkspaceError::io("clone worker root", path, error))?;
-
-        for component in parents {
-            let component = Path::new(component);
-            if cap_primitives::fs::stat(&parent, component, FollowSymlinks::No)
-                .is_ok_and(|metadata| is_link_or_reparse(&metadata))
-            {
-                return Err(WorkspaceError::InvalidPath {
-                    path: path.to_owned(),
-                });
-            }
-            match cap_primitives::fs::open_dir_nofollow(&parent, component) {
-                Ok(opened) => parent = opened,
-                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-                Err(error) => return Err(Self::map_parent_error(path, error)),
-            }
-        }
-
-        Ok(Some((parent, OsString::from(name))))
+        crate::source_file::open_parent(
+            self.handle(),
+            path,
+            super::WORKSPACE_PATH_POLICY,
+            true,
+            None,
+        )
     }
 
     pub(crate) fn entries(&self) -> Result<Vec<WorkerEntry>, WorkspaceError> {
@@ -1086,7 +976,8 @@ impl WorkerRoot {
             return Ok(false);
         }
         #[cfg(windows)]
-        let mut file = windows::open_read(&parent, &name, path)?;
+        let mut file =
+            crate::source_file::with_read_file_at(&parent, &name, path, Ok::<_, WorkspaceError>)?;
         #[cfg(unix)]
         let mut file = {
             let mut options = cap_primitives::fs::OpenOptions::new();
@@ -1205,41 +1096,27 @@ impl WorkerRoot {
         path: &Utf8Path,
         create: bool,
     ) -> Result<(File, OsString), WorkspaceError> {
-        let components = Self::components(path)?;
-        let (name, parents) = components.split_last().expect("validated nonempty path");
-        let mut parent = self
-            .handle()
-            .try_clone()
-            .map_err(|error| WorkspaceError::io("clone worker root", path, error))?;
-
-        for component in parents {
-            let component_path = Path::new(component);
-            if cap_primitives::fs::stat(&parent, component_path, FollowSymlinks::No)
-                .is_ok_and(|metadata| is_link_or_reparse(&metadata))
-            {
-                return Err(WorkspaceError::InvalidPath {
-                    path: path.to_owned(),
-                });
-            }
-            let opened = match cap_primitives::fs::open_dir_nofollow(&parent, component_path) {
-                Ok(opened) => opened,
-                Err(error) if create && error.kind() == io::ErrorKind::NotFound => {
-                    make_directory_writable(&parent, path)?;
-                    cap_primitives::fs::create_dir(
-                        &parent,
-                        component_path,
-                        &cap_primitives::fs::DirOptions::new(),
-                    )
-                    .map_err(|error| Self::map_parent_error(path, error))?;
-                    cap_primitives::fs::open_dir_nofollow(&parent, component_path)
-                        .map_err(|error| Self::map_parent_error(path, error))?
-                }
-                Err(error) => return Err(Self::map_parent_error(path, error)),
-            };
-            parent = opened;
-        }
-
-        Ok((parent, OsString::from(name)))
+        let mut create_directory = |parent: &File, component: &Path| {
+            make_directory_writable(parent, path)?;
+            cap_primitives::fs::create_dir(
+                parent,
+                component,
+                &cap_primitives::fs::DirOptions::new(),
+            )
+            .map_err(|error| Self::map_parent_error(path, error))
+        };
+        crate::source_file::open_parent(
+            self.handle(),
+            path,
+            super::WORKSPACE_PATH_POLICY,
+            false,
+            if create {
+                Some(&mut create_directory)
+            } else {
+                None
+            },
+        )
+        .map(|parent| parent.expect("missing parents return an error"))
     }
 
     fn map_parent_error(logical_path: &Utf8Path, error: io::Error) -> WorkspaceError {
@@ -1265,28 +1142,6 @@ impl WorkerRoot {
             Ok(_) => Ok(()),
             Err(error) => Err(Self::map_entry_error(operation, logical_path, error)),
         }
-    }
-
-    fn reject_non_file(
-        parent: &File,
-        name: &OsString,
-        logical_path: &Utf8Path,
-        operation: &'static str,
-    ) -> Result<(), WorkspaceError> {
-        match cap_primitives::fs::stat(parent, Path::new(name), FollowSymlinks::No) {
-            Ok(metadata) if is_link_or_reparse(&metadata) || !metadata.is_file() => {
-                Err(WorkspaceError::InvalidPath {
-                    path: logical_path.to_owned(),
-                })
-            }
-            Ok(_) => Ok(()),
-            Err(error) => Err(Self::map_entry_error(operation, logical_path, error)),
-        }
-    }
-
-    fn entry_is_non_file(parent: &File, name: &OsString) -> bool {
-        cap_primitives::fs::stat(parent, Path::new(name), FollowSymlinks::No)
-            .is_ok_and(|metadata| is_link_or_reparse(&metadata) || !metadata.is_file())
     }
 
     fn reject_link_if_present(
@@ -1348,28 +1203,6 @@ pub(super) fn open_cleanup_directory(path: &Path) -> io::Result<File> {
     }
     #[cfg(not(windows))]
     open_retained_directory(path)
-}
-
-pub(super) fn open_retained_directory(path: &Path) -> io::Result<File> {
-    let directory =
-        cap_primitives::fs::open_ambient_dir(path, cap_primitives::ambient_authority())?;
-    // Linux capability opens return O_PATH descriptors, which cannot be used with fchmod.
-    // Bind a readable handle now, before worker code can remove directory permissions.
-    #[cfg(target_os = "linux")]
-    let directory = open_readable_directory(&directory, Path::new("."))?;
-    Ok(directory)
-}
-
-#[cfg(unix)]
-fn open_readable_directory(parent: &File, name: &Path) -> io::Result<File> {
-    let mut options = cap_primitives::fs::OpenOptions::new();
-    options
-        .read(true)
-        .follow(FollowSymlinks::No)
-        .custom_flags(libc::O_DIRECTORY | libc::O_NONBLOCK);
-    // Do not use open_dir_nofollow: on Linux it requests O_PATH and succeeds even for
-    // mode-000 directories. Removal needs a readable, fchmod-capable descriptor.
-    cap_primitives::fs::open(parent, name, &options)
 }
 
 #[cfg(unix)]
@@ -1567,34 +1400,6 @@ fn remove_link_or_reparse(
     };
     #[cfg(unix)]
     result.map_err(|error| WorkerRoot::map_entry_error("remove worker link", path, error))
-}
-
-#[cfg(unix)]
-fn is_nofollow_link_error(error: &io::Error) -> bool {
-    error.raw_os_error() == Some(libc::ELOOP)
-}
-
-#[cfg(windows)]
-fn is_nofollow_link_error(error: &io::Error) -> bool {
-    error
-        .raw_os_error()
-        .and_then(|code| u32::try_from(code).ok())
-        == Some(windows_sys::Win32::Foundation::ERROR_STOPPED_ON_SYMLINK)
-}
-
-#[cfg(unix)]
-fn is_link_or_reparse(metadata: &cap_primitives::fs::Metadata) -> bool {
-    metadata.file_type().is_symlink()
-}
-
-#[cfg(windows)]
-fn is_link_or_reparse(metadata: &cap_primitives::fs::Metadata) -> bool {
-    use cap_primitives::fs::MetadataExt;
-
-    metadata.file_type().is_symlink()
-        || metadata.file_attributes()
-            & windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT
-            != 0
 }
 
 #[cfg(test)]

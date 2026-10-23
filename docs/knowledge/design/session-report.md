@@ -175,10 +175,13 @@ sources:
   working_tree: modified
   sha256: b000930d1bd41fe60dd9dc9e459c3947cb667711ceec450c0d8673c95904f993
 - id: issue-1010-human
-  resource: ../../../crates/hoimin-cli/src/report/human.rs
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/34e3349099ce7fd61838629ee8c0d0b814e65a5d/crates/hoimin-cli/src/report/human.rs
+  original_resource: ../../../crates/hoimin-cli/src/report/human.rs
   revision: 6ea967d6b1682596d6a2c0dda3d1c458f9ce5e6a
   working_tree: modified
   sha256: bc69723f31cb4e44a565471939a52377f48b25c3faf807e461509679675945dd
+  recovered_revision: 34e3349099ce7fd61838629ee8c0d0b814e65a5d
+  recovered_blob: 4b5d7cfc1193ddd9e69a6c75cc566c965df1d88c
 - id: issue-1015-wire
   resource: ../../../crates/hoimin-core/src/report.rs
   revision: 8720b41a0d08f375d98bda7cfa6202be779f3226
@@ -205,10 +208,14 @@ sources:
   working_tree: untracked
   sha256: 00322fd04c933a8ee575787e2f65bbb641059fd043a8493d76beca57a6ccf357
 - id: issue-1002-human-report
-  resource: ../../../crates/hoimin-cli/src/report/human.rs
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/34e3349099ce7fd61838629ee8c0d0b814e65a5d/crates/hoimin-cli/src/report/human.rs
+  original_resource: ../../../crates/hoimin-cli/src/report/human.rs
   revision: b02ee7d51709de664ee88db68abca34025db3487
   working_tree: modified
   sha256: 996c546875b4f7563cb35df742d4cd23aad5dc6e83f4c8d5a6aa69aedad3d4c1
+  reference_revision: 34e3349099ce7fd61838629ee8c0d0b814e65a5d
+  reference_sha256: bc69723f31cb4e44a565471939a52377f48b25c3faf807e461509679675945dd
+  reference_scope: Integrated renderer; original working-tree bytes were not recovered.
 - id: issue-1002-human-tests
   resource: ../../../crates/hoimin-cli/tests/report_handler.rs
   revision: 3d9e33d178a451e39e182495f4a5bb3a4c5ebfa0
@@ -463,7 +470,72 @@ sources:
   revision: e8f0e7b7f86a849d1305ef1ccaddd80c1df80f0b
   working_tree: modified
   sha256: 1df772f2c399d48506234f7503fc5210ac85f66e6b1e2f86f7f0e5a99de25252
+- id: current-report-boundary
+  resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
+  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
+  working_tree: clean
+  sha256: 76370098b699c6f1973fb416ee06df7514351591f5307b326a4c122e50bb99b1
+- id: current-progress-input
+  resource: ../../../crates/hoimin-cli/src/progress/input.rs
+  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
+  working_tree: clean
+  sha256: d4eb7eadf6a0bb40beced8ea7fd3a97d0c27151f7a0a312f666b0a69a0e1bf56
+- id: current-progress-errors
+  resource: ../../../crates/hoimin-cli/src/progress/mod.rs
+  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
+  working_tree: clean
+  sha256: 033232c1633695dfc2d3fdc61223b8895e18698329053acea78e17ab4484b9be
+- id: current-review-input
+  resource: ../../../crates/hoimin-cli/src/review/input.rs
+  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
+  working_tree: clean
+  sha256: 8a46ba185af8e294190b266cf6b6dcbab4675053fc651d73ea4b31b04aa52355
+- id: current-run-render
+  resource: ../../../crates/hoimin-cli/src/report/mod.rs
+  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
+  working_tree: clean
+  sha256: d103920f89e50a23bc91e0f5a0a7eca41089f4a56c04a0b4394c33ee9945006b
+- id: current-telemetry
+  resource: ../../../crates/hoimin-cli/src/telemetry.rs
+  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
+  working_tree: clean
+  sha256: 3e5909f6887c4de4fcbef8fc76b70d77c0926223e00866d54d323c2855c87cbf
+- id: current-output-contract
+  resource: ../../../docs/compatibility.md
+  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
+  working_tree: modified
+  sha256: 2d002bcd959d3ae787563a7e6e103d751dcabad8131500d017663241f1cfe8aa
 ---
+
+# Current report, reader and diagnostic boundaries
+
+At the recorded PR #1105 source revision, `run` and `verify` write JSON or JSONL
+reports. `progress` and `review` each write JSON without a format selector.
+Human report renderers and periodic terminal progress were removed in #1104;
+the historical sections below retain their original scope. CLI arguments, saved
+schemas and exit policy do not change as part of #1105's boundary cleanup.
+[^current-run-render][^current-output-contract]
+
+The artifact decoder owns typed/projected JSON decoding and structural checks:
+closed payloads, schema versions, event sequencing, candidate identity and
+summary coherence. It returns `DecodedReport<C>` or neutral `ReportReadError`
+without resolving project paths or deciding a command's usability policy.
+Progress classifies missing/failed baselines and incomplete runs and owns its
+output serialization/write errors. Review resolves project identity and requires
+a complete run with a passing baseline after structural validation. These are
+consumer rules, not compatibility repairs.[^current-report-boundary][^current-progress-input][^current-progress-errors][^current-review-input]
+
+Tracing is opt-in through `RUST_LOG` and emits JSON Lines to stderr for terminals
+and redirected streams. Logging defaults to off. The diagnostics worker retains
+a bounded queue, a 64 KiB record limit, whole-record dropping under pressure and
+a maximum 250 ms shutdown wait. It has no terminal refresh timer or progress
+snapshot. Command errors/warnings and captured test-output diagnostics retain
+their separate presentation; the tracing stream is not a mutation-result report.
+[^current-telemetry][^current-run-render][^current-output-contract]
+
+These descriptions come from source inspection. Documentation validation in
+this update does not establish new runtime, native Windows or proof results.
+
 
 # 導出したstatusの送受信（Issue #1010）
 
@@ -685,15 +757,11 @@ session; the current typed-outcome contract uses SQLite schema 5. [^issue-887-en
 [^issue-563-repair]: [修正設計](../../superpowers/specs/2026-09-24-issue-563-design.md)。
 
 
-## 実行中の進捗と診断ログ（2026-09-26）
+## 過去の端末進捗と診断ログ（2026-09-26、#1104で廃止）
 
-`run`・`plan`・`verify` は、標準エラー出力（stderr）が端末なら、処理段階・完了件数・経過時間を約1秒ごとに表示する。完了件数には保存済み結果の再利用を含め、`not_run` を除く。候補を作るだけの `plan` では完了件数は0となる。stderrをリダイレクトすると進捗表示は止まり、stdoutには選択した形式の結果を出力する。保存済みレポートを比較する `progress` コマンドは、この実行中表示の対象に含めない。[^tracing-readme]
+2026-09-26時点では、`run`・`plan`・`verify` が端末stderrへ処理段階・完了件数・経過時間を約1秒ごとに表示していた。診断ログも端末ではテキスト、リダイレクト先ではJSON Linesを使っていた。この表示と端末による形式切替は#1104で削除した。現在の契約は冒頭の節を参照する。[^tracing-readme][^tracing-runtime]
 
-診断ログは `RUST_LOG=hoimin_cli=debug` などで有効にする。端末stderrではテキスト、リダイレクト先ではJSON Linesを使う。有効時には既存の診断イベントとtracingのログが同じstderrに出るため、読取り側は両形式を区別する必要がある。tracingのログにはrun-eventのスキーマを適用しない。未指定・空文字・無効なフィルター・`off` ではログを出さず、端末の進捗表示は続ける。[^tracing-readme][^tracing-runtime]
-
-CLIはログを容量制限付きキューから別スレッドへ渡す。キューが満杯の場合や1レコードが64 KiBを超える場合は、レコード全体を破棄する。終了時の出力待ちは最大250 msとするため、診断ログの完全な保存は保証しない。変異結果の集計にはレポートを使う。ライブラリを組み込む場合は、呼出し側でtracing subscriberを設定する。[^tracing-runtime]
-
-端末判定、フィルター、完了件数、stderrの書込み単位を変える場合は、通常実行・再開・出力先の詰まりを再検証する。今回の実行結果とOSの範囲は[レビュー記録](../../superpowers/reports/2026-09-26-tracing-progress.md)を参照する。
+当時の実行結果とOSの範囲は[レビュー記録](../../superpowers/reports/2026-09-26-tracing-progress.md)に残す。これらの結果を現在の診断workerの検証結果として扱わない。
 
 [^tracing-readme]: [利用方法](../../usage.md)。
 [^tracing-runtime]: [CLIの診断出力](../../../crates/hoimin-cli/src/telemetry.rs)。
@@ -877,7 +945,15 @@ execution explicit.[^issue-985-admission]
 [^issue-992-reader]: [crates/hoimin-cli/src/artifacts/run_report.rs](../../../crates/hoimin-cli/src/artifacts/run_report.rs).
 
 
-# External strings in human reports (Issue #1002)
+# Historical human report escaping (Issue #1002; retired in #1104)
+
+This section records the retired renderer and its original test observations.
+The linked committed renderer shows the integrated implementation at `34e33490`.
+The Issue #1002 intermediate working-tree SHA remains in the source metadata;
+those exact intermediate bytes were not recovered, so `reference_sha256`
+identifies the linked committed file separately. Current JSON serializers retain
+logical field values, and the remaining `HumanText` uses serve plain errors, help
+and warnings rather than a human report format.[^issue-1002-human-report][^current-run-render][^current-output-contract]
 
 Human run events, fingerprint provenance, session diagnostics and ordinary event
 diagnostics share the `HumanText` presentation policy with preview, review and
@@ -899,7 +975,7 @@ results, not evidence of native Linux/Windows execution or of Unicode visual
 spoofing prevention.[^issue-1002-human-tests]
 
 [^issue-1002-human-text]: [Shared human text projection](../../../crates/hoimin-cli/src/human_text.rs).
-[^issue-1002-human-report]: [Human event and diagnostic rendering](../../../crates/hoimin-cli/src/report/human.rs).
+[^issue-1002-human-report]: [Integrated historical human renderer](https://github.com/HayaoSuzuki/hoimin/blob/34e3349099ce7fd61838629ee8c0d0b814e65a5d/crates/hoimin-cli/src/report/human.rs).
 [^issue-1002-human-tests]: [Human and machine report regression tests](../../../crates/hoimin-cli/tests/report_handler.rs).
 
 ## Janitor report schema 9 (Issue #1015)
@@ -923,7 +999,7 @@ historical verification evidence.[^issue-1015-compatibility]
 [^issue-1015-compatibility]: [Schema 9 compatibility notice](../../compatibility.md#structured-startup-cleanup-in-0140).
 
 [^issue-1010-wire]: [MutantFinishedの直列化と検査](../../../crates/hoimin-core/src/report.rs)。
-[^issue-1010-human]: [humanの完了行](../../../crates/hoimin-cli/src/report/human.rs)。
+[^issue-1010-human]: [当時のhuman完了行](https://github.com/HayaoSuzuki/hoimin/blob/34e3349099ce7fd61838629ee8c0d0b814e65a5d/crates/hoimin-cli/src/report/human.rs)。
 
 [^priority-six-compatibility]: [Current combined schema-9 notice](../../compatibility.md#structured-startup-cleanup-in-0140).
 
@@ -968,9 +1044,9 @@ forms and rejects missing details and superseded output versions.[^issue-1028-re
 Details limits bound the listed transitions. They do not alter comparison counts,
 stalled/saturated decisions or the regression exit policy. The progress tests
 cover zero and ordinary limits, available and unavailable pairs, unequal candidate
-sets, and duplicate-identity input rejection. They compare the current output
-with a shared golden and retain JSONL, human output and input-reader
-regressions.[^issue-1028-tests]
+sets, and duplicate-identity input rejection. At the Issue #1028 snapshot they compared output
+with a shared golden and retained JSONL, human output and input-reader
+regressions; #1104 subsequently removed the human renderer.[^issue-1028-tests]
 
 The package floor remains 0.14.0. The current-format policy does not require
 backward compatibility or a minor-version increase for this output change.
@@ -1004,8 +1080,7 @@ pre-dispatch stops. Missing fields, arrays, unknown duration fields and nanos
 outside 0..999,999,999 are rejected. The same canonical duration decoder serves
 elapsed and resolved timeout fields.[^issue-1012-duration][^issue-1012-schema]
 
-Human summaries display the resolved duration or explicitly label it unresolved.
-Public CLI regressions cover auto JSON, fixed JSONL/human, failed baselines and
+Public CLI regressions cover auto JSON, fixed JSONL, failed baselines and
 verify's saved fixed value. Current readers accept schema 10 directly; older
 reports must be regenerated. Plan schema 10, session schema 5, fingerprint
 schema 13 and progress output schema 3 retain their existing formats. Recheck
@@ -1069,9 +1144,10 @@ reading, not an atomic snapshot or detection of all same-length rewrites.
 [^issue-1061-duplicate]
 
 Review's JSON-only entry decodes the current typed configuration/document once
-and checks the document schema before resolving the project root. It no longer
+and checks the document schema before the review caller resolves the project root. It no longer
 probes the header solely to prioritize unsupported-schema guidance for obsolete
-shapes. Nested event, structure, complete-run and passing-baseline checks remain.
+shapes. Nested event and structure checks remain in the decoder; complete-run and
+passing-baseline policy now belongs to review input processing.
 Progress's JSON/JSONL dispatch probe is still necessary and remains separate;
 review retains its existing 64 MiB input bound.[^issue-1062-review]
 
@@ -1228,3 +1304,11 @@ RED/GREEN matrices, normal controls and platform verification scope.
 
 [^issue-1094-admission]: [Pre-connection companion and native unit checks](../../../crates/hoimin-cli/src/session/schema.rs).
 [^issue-1094-public]: [Public CLI source-protection and resume regressions](../../../crates/hoimin-cli/tests/session_hardlinks.rs).
+
+[^current-report-boundary]: [Neutral structural report reader](../../../crates/hoimin-cli/src/artifacts/run_report.rs).
+[^current-progress-input]: [Progress usability classification](../../../crates/hoimin-cli/src/progress/input.rs).
+[^current-progress-errors]: [Progress output and input errors](../../../crates/hoimin-cli/src/progress/mod.rs).
+[^current-review-input]: [Review input acceptance](../../../crates/hoimin-cli/src/review/input.rs).
+[^current-run-render]: [Current execution report encoders](../../../crates/hoimin-cli/src/report/mod.rs).
+[^current-telemetry]: [Binary-owned JSON diagnostics](../../../crates/hoimin-cli/src/telemetry.rs).
+[^current-output-contract]: [Current CLI and format policy](../../compatibility.md).

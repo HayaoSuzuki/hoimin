@@ -194,7 +194,7 @@ pub fn build_manifest(
         let mut file = crate::finite_file::SnapshotReader::new(file)
             .map_err(|error| WorkspaceError::io("read original metadata", path, error))?;
         #[cfg(test)]
-        super::root::parent_opened("manifest-budget", path);
+        crate::source_file::parent_opened("manifest-budget", path);
         hash_contents(path, &mut file, |_| Ok(()))
     })
 }

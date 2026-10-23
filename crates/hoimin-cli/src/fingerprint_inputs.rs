@@ -6,7 +6,8 @@ use ignore::WalkBuilder;
 use ignore::overrides::{Override, OverrideBuilder};
 
 use crate::portable_path;
-use crate::workspace::{self, PortableFileReadError, WorkspaceManifest};
+use crate::source_file::{self, PortableFileReadError};
+use crate::workspace::WorkspaceManifest;
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum FingerprintInputError {
@@ -60,7 +61,7 @@ fn resolve_controlled(
     for file in files {
         check_stopped(stopped)?;
         let path = resolve_exact(file)?;
-        let digest = workspace::hash_portable_file(root, &path).map_err(|error| match error {
+        let digest = source_file::hash_portable_file(root, &path).map_err(|error| match error {
             PortableFileReadError::NotFound => FingerprintInputError::NotFound(file.clone()),
             PortableFileReadError::Other(error) => {
                 FingerprintInputError::ExactUnsupportedFile(format!("{path}: {error}"))
@@ -75,7 +76,7 @@ fn resolve_controlled(
             check_stopped(stopped)?;
             let digest = exact_digest.map_or_else(
                 || {
-                    workspace::hash_portable_file(root, &path).map_err(|error| match error {
+                    source_file::hash_portable_file(root, &path).map_err(|error| match error {
                         PortableFileReadError::NotFound => {
                             FingerprintInputError::UnsupportedFile(format!("{path}: not found"))
                         }

@@ -1,8 +1,7 @@
 //! Run-report decoding shared by progress and review.
 //!
-//! Progress reads current-schema JSON/JSONL and reports unusable runs without
-//! rejecting their valid structure. Review requires a complete current-schema JSON
-//! document with a passing baseline. Callers own plan matching, source freshness,
+//! Current-schema JSON/JSONL decoding and structural validation have one owner.
+//! Consumers own usability, project resolution, plan matching, source freshness,
 //! duplicate handling and command output.
 
 use std::collections::BTreeMap;
@@ -12,7 +11,7 @@ use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
 
 use hoimin_core::{
-    BaselineFinished, ExitPolicy, MutantFinished, MutationSummary, OutputEvent, ProcessTermination,
+    BaselineFinished, ExitPolicy, MutantFinished, MutationSummary, OutputEvent,
     REPORT_SCHEMA_VERSION, ReportVersions, ResourceControl, RunSummary, VerificationSelection,
     exit_code_for, summarize,
 };
@@ -22,116 +21,62 @@ use thiserror::Error;
 mod dispatch;
 mod jsonl;
 
+/// Structurally checked report data. Consumers own usability and project policy.
 #[derive(Debug)]
-pub enum InputReport {
-    Usable(UsableReport),
-    Unusable {
-        source: PathBuf,
-        reason: UnusableReason,
-    },
+pub(crate) struct DecodedReport<C> {
+    pub(crate) normalized_config: C,
+    pub(crate) run_id: String,
+    pub(crate) baseline: Option<BaselineFinished>,
+    pub(crate) mutants: Vec<MutantFinished>,
+    pub(crate) summary: RunSummary,
 }
 
-#[derive(Debug)]
-pub struct UsableReport {
-    pub source: PathBuf,
-    pub mutants: Vec<MutantFinished>,
-}
-
-pub(crate) struct ReviewReport {
-    pub project: camino::Utf8PathBuf,
-    pub run_id: String,
-    pub mutants: Vec<MutantFinished>,
-}
-
-/// Decode a complete current-schema JSON report with a passing baseline.
-///
-/// Validates report structure and resolves the embedded configuration's project
-/// root through the filesystem. Missing or non-UTF-8 roots are errors. `path`
-/// identifies the report in diagnostics; the caller supplies already-bounded
-/// bytes and checks the resulting project and candidates against its plan.
-///
-/// # Errors
-///
-/// Returns an error for invalid JSON, unsupported schema, invalid configuration
-/// or structure, an unusable run, or failure to resolve the project root.
-pub(crate) fn read_review_json(path: &Path, bytes: &[u8]) -> Result<ReviewReport, ProgressError> {
-    let document: RunReportDocument<hoimin_core::RunConfig> = serde_json::from_slice(bytes)
-        .map_err(|source| ProgressError::Parse {
-            path: path.to_path_buf(),
-            source,
-        })?;
-    check_schema(path, document.schema_version)?;
-    let run_id = document.run.run_id().to_owned();
-    let project = std::fs::canonicalize(&document.run.value().normalized_config.selection.root)
-        .map_err(|source| ProgressError::Read {
-            path: path.to_path_buf(),
-            source,
-        })?;
-    let project = camino::Utf8PathBuf::from_path_buf(project)
-        .map_err(|_| invalid_structure(path, "review project root is not UTF-8"))?;
-    match validate_document(path, document)? {
-        InputReport::Usable(report) => Ok(ReviewReport {
-            project,
-            run_id,
-            mutants: report.mutants,
-        }),
-        InputReport::Unusable { .. } => Err(invalid_structure(
-            path,
-            "review requires a complete report with a passing baseline",
-        )),
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UnusableReason {
-    MissingBaseline,
-    BaselineFailed,
-    Incomplete,
+/// Decode current-schema JSON with the complete typed configuration.
+/// The caller supplies bounded bytes and applies project and usability policy.
+pub(crate) fn read_typed_json(
+    path: &Path,
+    bytes: &[u8],
+) -> Result<DecodedReport<hoimin_core::RunConfig>, ReportReadError> {
+    let document = serde_json::from_slice(bytes).map_err(|source| ReportReadError::Parse {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    validate_document(path, document)
 }
 
 #[derive(Debug, Error)]
-pub enum ProgressError {
-    #[error("could not read progress report {path}: {source}")]
+pub enum ReportReadError {
+    #[error("could not read report {path}: {source}")]
     Read {
         path: PathBuf,
         #[source]
         source: std::io::Error,
     },
-    #[error("could not parse progress report {path}: {source}")]
+    #[error("could not parse report {path}: {source}")]
     Parse {
         path: PathBuf,
         #[source]
         source: serde_json::Error,
     },
     #[error(
-        "unsupported schema version {found} in progress report {path}; expected {REPORT_SCHEMA_VERSION}; read old reports with their producing binary or rerun with this version"
+        "unsupported schema version {found} in report {path}; expected {REPORT_SCHEMA_VERSION}; read old reports with their producing binary or rerun with this version"
     )]
     UnsupportedSchema { path: PathBuf, found: u32 },
-    #[error("invalid structure in progress report {path}: {message}")]
+    #[error("invalid structure in report {path}: {message}")]
     InvalidStructure {
         path: PathBuf,
         message: &'static str,
     },
-    #[error("invalid structure in progress report {path}: {source}")]
+    #[error("invalid structure in report {path}: {source}")]
     InvalidResult {
         path: PathBuf,
         #[source]
         source: hoimin_core::ReportSequenceError,
     },
-    #[error("could not serialize progress output: {source}")]
-    Serialize {
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("could not write progress output: {source}")]
-    Write {
-        #[source]
-        source: std::io::Error,
-    },
 }
 
 // A single-variant tagged enum would buffer the entire configuration before
-// ProgressConfig can ignore opaque descendants. Parse the tag as a struct field
+// ReportConfigProjection can ignore opaque descendants. Parse the tag as a struct field
 // instead, preserving duplicate/unknown-field checks on the original stream.
 #[derive(Deserialize)]
 #[serde(transparent)]
@@ -171,12 +116,13 @@ struct ReportRunStarted<C> {
     _resume: Option<hoimin_core::ResumeOutcome>,
 }
 
-// Progress needs only the report's closed configuration descendants. Unknown
-// configuration fields stay opaque, without buffering the known children into
-// Value maps that would discard their duplicate keys.
-struct ProgressConfig;
+// Project only closed configuration descendants for readers that do not need
+// the complete RunConfig. Other configuration fields stay opaque, without
+// buffering known children into Value maps that would discard duplicate keys.
+#[derive(Debug)]
+pub(crate) struct ReportConfigProjection;
 
-impl<'de> Deserialize<'de> for ProgressConfig {
+impl<'de> Deserialize<'de> for ReportConfigProjection {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
         struct Config {
@@ -196,14 +142,14 @@ impl<'de> Deserialize<'de> for ProgressConfig {
 
         struct Visitor;
         impl<'de> serde::de::Visitor<'de> for Visitor {
-            type Value = ProgressConfig;
+            type Value = ReportConfigProjection;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 formatter.write_str("a normalized_config object or null")
             }
 
             fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
-                Ok(ProgressConfig)
+                Ok(ReportConfigProjection)
             }
 
             fn visit_map<M: serde::de::MapAccess<'de>>(
@@ -211,7 +157,7 @@ impl<'de> Deserialize<'de> for ProgressConfig {
                 map: M,
             ) -> Result<Self::Value, M::Error> {
                 Config::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
-                Ok(ProgressConfig)
+                Ok(ReportConfigProjection)
             }
         }
 
@@ -265,7 +211,7 @@ struct ReportPayloads<C> {
 }
 
 impl<C> RunReportDocument<C> {
-    fn into_payloads(self, path: &Path) -> Result<ReportPayloads<C>, ProgressError> {
+    fn into_payloads(self, path: &Path) -> Result<ReportPayloads<C>, ReportReadError> {
         let baseline = match self.baseline {
             None => None,
             Some(OutputEvent::BaselineFinished(value)) => Some(value),
@@ -305,15 +251,16 @@ impl<C> RunReportDocument<C> {
 /// Reads and validates one mutation run report.
 ///
 /// Accepts only current-schema JSON documents or JSONL reports.
-/// Structurally valid runs with no baseline, a failing baseline or incomplete
-/// results return `InputReport::Unusable`. This reader does not apply review's
-/// byte limit or resolve the embedded project root.
+/// Returns structurally checked data without applying consumer usability policy.
+/// This reader does not apply review's byte limit or resolve the project root.
 ///
 /// # Errors
 ///
 /// Returns an error when the report cannot be read, parsed, or structurally validated.
-pub fn read_report(path: &Path) -> Result<InputReport, ProgressError> {
-    let (reader, header) = progress_reader(path)?;
+pub(crate) fn read_report(
+    path: &Path,
+) -> Result<DecodedReport<ReportConfigProjection>, ReportReadError> {
+    let (reader, header) = report_reader(path)?;
     read_with_header(path, BufReader::new(reader), header)
 }
 
@@ -321,21 +268,21 @@ pub fn read_report(path: &Path) -> Result<InputReport, ProgressError> {
 /// The fingerprint describes this read; callers own subsequent duplicate checks.
 pub(crate) fn read_report_with_fingerprint(
     path: &Path,
-) -> Result<(InputReport, blake3::Hash), ProgressError> {
-    let (reader, header) = progress_reader(path)?;
+) -> Result<(DecodedReport<ReportConfigProjection>, blake3::Hash), ReportReadError> {
+    let (reader, header) = report_reader(path)?;
     let mut reader = FingerprintReader::new(reader);
     let report = read_with_header(path, BufReader::new(&mut reader), header)?;
     Ok((report, reader.fingerprint()))
 }
 
-fn open_report(path: &Path) -> Result<File, ProgressError> {
+fn open_report(path: &Path) -> Result<File, ReportReadError> {
     crate::artifacts::open_regular_file(path)
         .and_then(|file| {
             file.ok_or_else(|| {
                 io::Error::new(io::ErrorKind::InvalidInput, "input is not a regular file")
             })
         })
-        .map_err(|source| ProgressError::Read {
+        .map_err(|source| ReportReadError::Read {
             path: path.to_path_buf(),
             source,
         })
@@ -344,11 +291,11 @@ fn open_report(path: &Path) -> Result<File, ProgressError> {
 // Probe only routing evidence, then rewind the same descriptor. Neither pass
 // retains a raw report. Each pass has a finite byte budget from file metadata;
 // SnapshotReader rejects growth/truncation during the actual decoding pass.
-fn progress_reader(
+fn report_reader(
     path: &Path,
-) -> Result<(crate::finite_file::SnapshotReader, Option<dispatch::Header>), ProgressError> {
+) -> Result<(crate::finite_file::SnapshotReader, Option<dispatch::Header>), ReportReadError> {
     let file = open_report(path)?;
-    let read_error = |source| ProgressError::Read {
+    let read_error = |source| ReportReadError::Read {
         path: path.to_path_buf(),
         source,
     };
@@ -365,14 +312,14 @@ fn read_with_header(
     path: &Path,
     reader: impl std::io::BufRead,
     header: Option<dispatch::Header>,
-) -> Result<InputReport, ProgressError> {
+) -> Result<DecodedReport<ReportConfigProjection>, ReportReadError> {
     let document = if header.is_some_and(|header| header.format == dispatch::Format::Jsonl) {
         jsonl::read_document(path, reader)?
     } else {
         // from_reader also checks EOF, so trailing JSON and late file growth
         // cannot be silently omitted from validation or the fingerprint.
-        serde_json::from_reader::<_, RunReportDocument<ProgressConfig>>(reader).map_err(
-            |source| ProgressError::Parse {
+        serde_json::from_reader::<_, RunReportDocument<ReportConfigProjection>>(reader).map_err(
+            |source| ReportReadError::Parse {
                 path: path.to_path_buf(),
                 source,
             },
@@ -382,7 +329,10 @@ fn read_with_header(
 }
 
 #[cfg(test)]
-fn read_buffered_report(path: &Path, bytes: &[u8]) -> Result<InputReport, ProgressError> {
+fn read_buffered_report(
+    path: &Path,
+    bytes: &[u8],
+) -> Result<DecodedReport<ReportConfigProjection>, ReportReadError> {
     let header = dispatch::probe(bytes);
     if let Some(header) = header {
         check_schema(path, header.schema_version)?;
@@ -393,41 +343,26 @@ fn read_buffered_report(path: &Path, bytes: &[u8]) -> Result<InputReport, Progre
 fn validate_document<C>(
     path: &Path,
     document: RunReportDocument<C>,
-) -> Result<InputReport, ProgressError> {
+) -> Result<DecodedReport<C>, ReportReadError> {
     validate_schema_versions(path, &document)?;
     let document = document.into_payloads(path)?;
     validate_structure(path, &document)?;
 
-    let source = path.to_path_buf();
-    let Some(baseline) = document.baseline else {
-        return Ok(InputReport::Unusable {
-            source,
-            reason: UnusableReason::MissingBaseline,
-        });
-    };
-    if baseline.termination != ProcessTermination::Exit(0) {
-        return Ok(InputReport::Unusable {
-            source,
-            reason: UnusableReason::BaselineFailed,
-        });
-    }
-    let summary = document.summary;
-    if !summary.complete {
-        return Ok(InputReport::Unusable {
-            source,
-            reason: UnusableReason::Incomplete,
-        });
-    }
-
-    let mutants = document.mutants;
-    Ok(InputReport::Usable(UsableReport { source, mutants }))
+    let run_id = document.run.run_id().to_owned();
+    Ok(DecodedReport {
+        normalized_config: document.run.0.normalized_config,
+        run_id,
+        baseline: document.baseline,
+        mutants: document.mutants,
+        summary: document.summary,
+    })
 }
 
-fn check_schema(path: &Path, found: u32) -> Result<(), ProgressError> {
+fn check_schema(path: &Path, found: u32) -> Result<(), ReportReadError> {
     if found == REPORT_SCHEMA_VERSION {
         Ok(())
     } else {
-        Err(ProgressError::UnsupportedSchema {
+        Err(ReportReadError::UnsupportedSchema {
             path: path.to_path_buf(),
             found,
         })
@@ -437,7 +372,7 @@ fn check_schema(path: &Path, found: u32) -> Result<(), ProgressError> {
 fn validate_schema_versions<C>(
     path: &Path,
     document: &RunReportDocument<C>,
-) -> Result<(), ProgressError> {
+) -> Result<(), ReportReadError> {
     let versions = std::iter::once(document.schema_version)
         .chain(std::iter::once(document.run.schema_version()))
         .chain(document.baseline.iter().map(OutputEvent::schema_version))
@@ -449,7 +384,7 @@ fn validate_schema_versions<C>(
     Ok(())
 }
 
-fn validate_structure<C>(path: &Path, document: &ReportPayloads<C>) -> Result<(), ProgressError> {
+fn validate_structure<C>(path: &Path, document: &ReportPayloads<C>) -> Result<(), ReportReadError> {
     let mut stable_identities = BTreeMap::new();
     for mutant in &document.mutants {
         if let Some(expected_sequence) =
@@ -524,7 +459,7 @@ fn validate_summary_coherence(
     counts: &MutationSummary,
     complete: bool,
     reported_exit_code: i32,
-) -> Result<(), ProgressError> {
+) -> Result<(), ReportReadError> {
     let counts_policy = ExitPolicy::from_summary(counts);
     let exit_matches_completion = if complete {
         counts.inconclusive == 0 && reported_exit_code == exit_code_for(counts_policy)
@@ -564,8 +499,8 @@ fn exit_can_result_from_run_failure(counts_policy: ExitPolicy, reported_exit_cod
         .any(|policy| exit_code_for(policy) == reported_exit_code)
 }
 
-fn invalid_structure(path: &Path, message: &'static str) -> ProgressError {
-    ProgressError::InvalidStructure {
+fn invalid_structure(path: &Path, message: &'static str) -> ReportReadError {
+    ReportReadError::InvalidStructure {
         path: path.to_path_buf(),
         message,
     }
@@ -630,10 +565,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn review_decode_errors_identify_report_without_progress_context() {
+        let error = read_typed_json(Path::new("review-input.json"), b"{")
+            .expect_err("malformed report must fail");
+        let diagnostic = error.to_string();
+        assert!(
+            diagnostic.contains("report review-input.json"),
+            "{diagnostic}"
+        );
+        assert!(!diagnostic.contains("progress"), "{diagnostic}");
+    }
+
+    #[test]
+    fn review_decoder_leaves_completion_policy_to_caller() {
+        let project = tempfile::tempdir().unwrap();
+        let mut document: serde_json::Value = serde_json::from_str(&current_report_json()).unwrap();
+        document["run"]["normalized_config"]["selection"]["root"] =
+            serde_json::json!(project.path());
+        document["summary"]["complete"] = serde_json::json!(false);
+        document["summary"]["exit_code"] = serde_json::json!(4);
+        let result = read_typed_json(
+            Path::new("review-input.json"),
+            &serde_json::to_vec(&document).unwrap(),
+        );
+        assert!(
+            result.is_ok(),
+            "structurally valid incomplete report must decode"
+        );
+    }
+
+    #[test]
     fn review_rejects_old_root_shape() {
         let bytes = include_bytes!("../../tests/golden/reports/schema-v6-current.json");
 
-        assert!(read_review_json(Path::new("old.json"), bytes).is_err());
+        assert!(read_typed_json(Path::new("old.json"), bytes).is_err());
     }
 
     #[test]
@@ -649,11 +614,10 @@ mod tests {
         let payload = serde_json::to_string(&document).unwrap();
         let wire = format!(r#"{{"schema_version":6,{}"#, &payload[1..]);
 
-        let error = read_review_json(Path::new("old.json"), wire.as_bytes())
-            .err()
-            .expect("old shape must fail during typed decode");
+        let error = read_typed_json(Path::new("old.json"), wire.as_bytes())
+            .expect_err("old shape must fail during typed decode");
 
-        assert!(matches!(error, ProgressError::Parse { .. }), "{error}");
+        assert!(matches!(error, ReportReadError::Parse { .. }), "{error}");
     }
 
     fn current_report_json() -> String {
@@ -683,12 +647,12 @@ mod tests {
                 &payload[..payload.len() - 1]
             ),
         ] {
-            let report = read_review_json(Path::new("report.json"), wire.as_bytes())
+            let report = read_typed_json(Path::new("report.json"), wire.as_bytes())
                 .unwrap_or_else(|error| panic!("{error}"));
 
             assert_eq!(
-                report.project.as_std_path(),
-                std::fs::canonicalize(project.path()).unwrap()
+                report.normalized_config.selection.root.as_std_path(),
+                project.path()
             );
             assert_eq!(report.run_id, "schema-v10-current");
             assert_eq!(report.mutants.len(), 1);
@@ -703,19 +667,19 @@ mod tests {
             serde_json::json!(project.path().join("missing-project"));
         document["schema_version"] = serde_json::json!(9);
 
-        let result = read_review_json(
+        let result = read_typed_json(
             Path::new("report.json"),
             &serde_json::to_vec(&document).unwrap(),
         );
 
         assert!(matches!(
             result,
-            Err(ProgressError::UnsupportedSchema { found: 9, .. })
+            Err(ReportReadError::UnsupportedSchema { found: 9, .. })
         ));
     }
 
     fn reject_config_before_root_read(change: fn(&mut serde_json::Value), expected: &str) {
-        // Arrange: the valid control reaches canonicalization and fails there.
+        // Arrange: project availability must not affect typed configuration validation.
         let project = tempfile::tempdir().unwrap();
         let mut document: serde_json::Value = serde_json::from_str(&current_report_json()).unwrap();
         document["run"]["normalized_config"]["selection"]["root"] =
@@ -723,14 +687,14 @@ mod tests {
         change(&mut document["run"]["normalized_config"]);
 
         // Act
-        let result = read_review_json(
+        let result = read_typed_json(
             Path::new("report.json"),
             &serde_json::to_vec(&document).unwrap(),
         );
 
         // Assert
-        let error = result.err().expect("invalid config must fail");
-        assert!(matches!(error, ProgressError::Parse { .. }), "{error}");
+        let error = result.expect_err("invalid config must fail");
+        assert!(matches!(error, ReportReadError::Parse { .. }), "{error}");
         assert!(error.to_string().contains(expected), "{error}");
     }
 
@@ -767,7 +731,7 @@ mod tests {
     }
 
     #[test]
-    fn review_valid_config_reaches_project_root_read() {
+    fn review_decoder_does_not_resolve_project_root() {
         // Arrange
         let project = tempfile::tempdir().unwrap();
         let mut document: serde_json::Value = serde_json::from_str(&current_report_json()).unwrap();
@@ -777,13 +741,13 @@ mod tests {
         document["run"]["normalized_config"]["limits"]["max_processes"] = serde_json::json!(1);
 
         // Act
-        let result = read_review_json(
+        let result = read_typed_json(
             Path::new("report.json"),
             &serde_json::to_vec(&document).unwrap(),
         );
 
         // Assert
-        assert!(matches!(result, Err(ProgressError::Read { .. })));
+        assert!(result.is_ok(), "decoder must not resolve project roots");
     }
 
     #[test]
@@ -805,11 +769,11 @@ mod tests {
             let raw = original_json.replacen(original, replacement, 1);
 
             // Act
-            let result = read_review_json(Path::new("report.json"), raw.as_bytes());
+            let result = read_typed_json(Path::new("report.json"), raw.as_bytes());
 
             // Assert
             assert!(
-                matches!(result, Err(ProgressError::Parse { .. })),
+                matches!(result, Err(ReportReadError::Parse { .. })),
                 "accepted {replacement}"
             );
         }
@@ -866,11 +830,11 @@ mod tests {
             let raw = original_json.replacen(original, duplicate, 1);
 
             // Act
-            let result = read_review_json(Path::new("report.json"), raw.as_bytes());
+            let result = read_typed_json(Path::new("report.json"), raw.as_bytes());
 
             // Assert
             assert!(
-                matches!(result, Err(ProgressError::Parse { .. })),
+                matches!(result, Err(ReportReadError::Parse { .. })),
                 "accepted {duplicate}"
             );
         }
@@ -895,7 +859,7 @@ mod tests {
             let raw = original.replacen(r#""jobs":1"#, &duplicate, 1);
 
             // Act
-            let result = read_review_json(Path::new("report.json"), raw.as_bytes());
+            let result = read_typed_json(Path::new("report.json"), raw.as_bytes());
 
             // Assert
             let error = result.map(|_| ()).expect_err("duplicate jobs must be rejected");
@@ -929,7 +893,7 @@ mod tests {
         ] {
             let path = directory.path().join("report");
             std::fs::write(&path, &input).unwrap();
-            let (reader, header) = progress_reader(&path).unwrap();
+            let (reader, header) = report_reader(&path).unwrap();
             let mut appended = std::fs::OpenOptions::new()
                 .append(true)
                 .open(&path)

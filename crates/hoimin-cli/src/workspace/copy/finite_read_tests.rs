@@ -1,5 +1,6 @@
 use super::*;
-use crate::workspace::{WorkspaceHandler, WorkspaceRaceHook, install_workspace_race_hook};
+use crate::source_file::{WorkspaceRaceHook, install_workspace_race_hook};
+use crate::workspace::WorkspaceHandler;
 
 #[derive(Clone, Copy)]
 enum Change {
@@ -45,7 +46,7 @@ fn changing_hook(
     path: Utf8PathBuf,
     operation: &'static str,
     change: Change,
-) -> super::super::root::WorkspaceRaceHookGuard {
+) -> crate::source_file::WorkspaceRaceHookGuard {
     install_workspace_race_hook(Arc::new(ChangeAfterBudget {
         path,
         operation,

@@ -14,10 +14,15 @@ mod input_boundary_tests;
 
 use super::ReviewError;
 use super::model::{ArtifactReference, ReportReference, ReviewKey, SourceState};
-use crate::artifacts::run_report::ReviewReport;
 use crate::artifacts::{READ_ONLY_ARTIFACT_LIMIT, bounded_read, open_regular_file};
 use crate::plan::ReadOnlyPlan;
-use crate::workspace::PortableFileReader;
+use crate::source_file::PortableFileReader;
+
+pub(crate) struct ReviewReport {
+    pub project: camino::Utf8PathBuf,
+    pub run_id: String,
+    pub mutants: Vec<hoimin_core::MutantFinished>,
+}
 
 pub(crate) fn load_plan(path: &Path) -> Result<ReadOnlyPlan, ReviewError> {
     crate::plan::read_for_review(path).map_err(|error| ReviewError::Invalid(error.to_string()))
@@ -47,8 +52,33 @@ pub(crate) fn load_report(
     planned: &PlanCandidates<'_>,
 ) -> Result<(ReviewReport, ReportReference), ReviewError> {
     let bytes = bounded_read(path, READ_ONLY_ARTIFACT_LIMIT)?;
-    let report = crate::artifacts::run_report::read_review_json(path, &bytes)
+    let report = crate::artifacts::run_report::read_typed_json(path, &bytes)
         .map_err(|error| ReviewError::Invalid(error.to_string()))?;
+    let project =
+        std::fs::canonicalize(&report.normalized_config.selection.root).map_err(|source| {
+            ReviewError::ReportProject {
+                report: path.to_owned(),
+                project: report.normalized_config.selection.root.clone(),
+                source,
+            }
+        })?;
+    let project = camino::Utf8PathBuf::from_path_buf(project)
+        .map_err(|_| ReviewError::Invalid("review project root is not UTF-8".into()))?;
+    if report
+        .baseline
+        .as_ref()
+        .is_none_or(|baseline| baseline.termination != hoimin_core::ProcessTermination::Exit(0))
+        || !report.summary.complete
+    {
+        return Err(ReviewError::Invalid(
+            "review requires a complete report with a passing baseline".into(),
+        ));
+    }
+    let report = ReviewReport {
+        project,
+        run_id: report.run_id,
+        mutants: report.mutants,
+    };
     if report.project != plan.project {
         return Err(ReviewError::Invalid(
             "report belongs to another project".into(),
@@ -105,7 +135,7 @@ pub(crate) fn source_states(
             .push(index);
     }
     let mut results: Vec<_> = candidates.iter().map(|_| None).collect();
-    let reader = PortableFileReader::open(root.to_owned()).ok();
+    let reader = PortableFileReader::open(root).ok();
     // Visit files in first-occurrence order, including interleaved candidate paths.
     for candidate in candidates {
         let Some(indices) = groups.remove(candidate.path.as_path()) else {
@@ -130,7 +160,7 @@ pub(crate) fn source_state(
     root: &Utf8Path,
     candidate: &MutationCandidate,
 ) -> Result<SourceState, ReviewError> {
-    let reader = PortableFileReader::open(root.to_owned()).ok();
+    let reader = PortableFileReader::open(root).ok();
     source_states_for_file(reader.as_ref(), &[candidate])
         .pop()
         .expect("one candidate has one source result")

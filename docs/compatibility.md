@@ -703,6 +703,24 @@ This internal Rust source migration does not require a version-floor increase.
 CLI arguments, exit codes, report schemas, plans and sessions do not change;
 existing files require no conversion or deletion.
 
+## Report-reader and source-access boundaries (PR #1105)
+
+This internal cleanup changes neither CLI arguments, JSON/JSONL schemas, exit
+policy nor saved plans/sessions. Existing valid artifacts need no regeneration
+for this change, and no version-floor increase is included.
+
+Shared report-input diagnostics now use neutral report wording, including when
+review reads them. Review performs project-root resolution and its complete-run/
+passing-baseline checks after structural validation. If a report has both an
+invalid structure and an unavailable project root, the structural error takes
+precedence. Root-resolution errors identify the report and requested project.
+
+For Rust callers, `progress::read_report` returns `ReportReadError` for input
+failures. `ProgressError` wraps input errors and owns progress output
+serialization/write failures. Source reads within the CLI use `source_file`
+without depending on workspace lifecycle types. See the
+[developer boundary description](development.md#report-input-and-source-access-ownership).
+
 ## PR and release notices
 
 Fill in the PR template's usage and format section before merging. Describe:

@@ -784,6 +784,62 @@ async fn progress_preserves_opaque_report_import_roots() {
 }
 
 #[tokio::test]
+async fn review_missing_project_error_identifies_report_and_project() {
+    let (dir, path, report_path) = report_fixture().await;
+    let plan = super::input::load_plan(&path).unwrap();
+    let planned = super::input::index_plan(&plan);
+    let missing = dir.path().join("missing-project");
+    let mut report: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
+    report["run"]["normalized_config"]["selection"]["root"] = missing.to_str().unwrap().into();
+    std::fs::write(&report_path, serde_json::to_vec(&report).unwrap()).unwrap();
+
+    let error = super::input::load_report(&report_path, &plan, &planned)
+        .err()
+        .expect("missing project must fail review admission");
+    let diagnostic = error.to_string();
+    assert!(
+        diagnostic.contains(report_path.to_str().unwrap()),
+        "{diagnostic}"
+    );
+    assert!(
+        diagnostic.contains(missing.to_str().unwrap()),
+        "{diagnostic}"
+    );
+}
+
+#[tokio::test]
+async fn review_requires_usable_report_after_structural_decode() {
+    let (_dir, path, report_path) = report_fixture().await;
+    let plan = super::input::load_plan(&path).unwrap();
+    let planned = super::input::index_plan(&plan);
+    let original: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
+    assert!(super::input::load_report(&report_path, &plan, &planned).is_ok());
+    for state in ["incomplete", "failed baseline", "missing baseline"] {
+        let mut report = original.clone();
+        match state {
+            "incomplete" => {
+                report["summary"]["complete"] = false.into();
+                report["summary"]["exit_code"] = 4.into();
+            }
+            "failed baseline" => report["baseline"]["termination"]["Exit"] = 1.into(),
+            "missing baseline" => report["baseline"] = serde_json::Value::Null,
+            _ => unreachable!(),
+        }
+        std::fs::write(&report_path, serde_json::to_vec(&report).unwrap()).unwrap();
+        let error = super::input::load_report(&report_path, &plan, &planned)
+            .err()
+            .expect("review must reject unusable reports");
+        assert!(
+            matches!(error, super::ReviewError::Invalid(ref message)
+                if message == "review requires a complete report with a passing baseline"),
+            "{state}: {error}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn review_rejects_report_with_changed_identity_or_execution() {
     let changes: [(&str, &str, serde_json::Value); 6] = [
         ("incomplete", "/summary/complete", false.into()),

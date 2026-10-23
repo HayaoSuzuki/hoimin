@@ -163,8 +163,8 @@ mod tests {
     };
 
     use super::super::manifest::{build_metrics, reset_build_metrics};
-    use super::super::root::{WorkspaceRaceHook, install_workspace_race_hook};
     use super::super::{CopyOptions, WorkerWorkspace, WorkspacePlan};
+    use crate::source_file::{WorkspaceRaceHook, install_workspace_race_hook};
 
     #[cfg(unix)]
     type TestPermissionFingerprint = u32;

@@ -168,11 +168,11 @@ mod tests {
     use camino::Utf8Path;
     use hoimin_core::{BudgetLedger, EffectId, RunBudgets, reserve_workspace_copy};
 
-    use super::super::root::{WorkspaceRaceHook, install_workspace_race_hook};
     use super::super::{
         CopyOptions, ResetIoMetrics, WorkerWorkspace, WorkspaceError, WorkspacePlan,
         current_reset_io_metrics, reset_io_metrics,
     };
+    use crate::source_file::{WorkspaceRaceHook, install_workspace_race_hook};
 
     #[cfg(unix)]
     type TestPermissionFingerprint = u32;

@@ -1,4 +1,4 @@
-#[path = "../../../docs/maintenance/2026-10-20-issue-1007/probe.rs"]
+#[path = "support/workspace_metadata_probe.rs"]
 mod probe;
 
 #[test]

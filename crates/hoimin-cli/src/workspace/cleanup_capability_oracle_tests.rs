@@ -146,7 +146,7 @@ mod unix {
     use hoimin_core::{BudgetLedger, EffectId, RunBudgets, reserve_workspace_copy};
 
     use super::{OracleCase, parse_corpus};
-    use crate::workspace::root::{WorkspaceRaceHook, install_workspace_race_hook};
+    use crate::source_file::{WorkspaceRaceHook, install_workspace_race_hook};
     use crate::workspace::{CopyOptions, WorkerWorkspace, WorkspaceError, WorkspacePlan};
 
     struct Fixture {
