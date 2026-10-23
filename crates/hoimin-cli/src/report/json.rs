@@ -1,4 +1,4 @@
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io::{self, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use hoimin_core::{OutputEvent, REPORT_SCHEMA_VERSION};
@@ -91,17 +91,27 @@ impl JsonReport {
     }
 
     fn write_mutant(&mut self, event: &OutputEvent) -> Result<(), JsonError> {
-        let mut record = Vec::new();
-        if self.has_mutants {
-            record.push(b',');
-        }
-        serde_json::to_writer(&mut record, event).map_err(JsonError::Serialization)?;
-        self.mutants
-            .write_all(&record)
-            .map_err(|source| JsonError::Io {
-                operation: "write mutant record",
-                source,
-            })?;
+        let mut record = BufWriter::with_capacity(8 * 1024, &mut self.mutants);
+        let result = (|| {
+            if self.has_mutants {
+                record.write_all(b",").map_err(serde_json::Error::io)?;
+            }
+            serde_json::to_writer(&mut record, event)?;
+            record.flush().map_err(serde_json::Error::io)
+        })();
+        // A failed write must not be retried by BufWriter's Drop. Explicit flush
+        // completes delivery before the effect is acknowledged.
+        let _ = record.into_parts();
+        result.map_err(|error| {
+            if error.is_io() {
+                JsonError::Io {
+                    operation: "write mutant record",
+                    source: error.into(),
+                }
+            } else {
+                JsonError::Serialization(error)
+            }
+        })?;
         self.has_mutants = true;
         Ok(())
     }

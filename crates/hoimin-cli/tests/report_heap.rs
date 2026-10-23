@@ -1,4 +1,8 @@
-use std::io;
+use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicUsize, Ordering},
+};
 
 use hoimin_cli::report::ReportHandler;
 use hoimin_core::{
@@ -14,8 +18,11 @@ use heap_tracking::TrackingAllocator;
 #[global_allocator]
 static ALLOCATOR: TrackingAllocator = TrackingAllocator;
 
+static MEASUREMENT: Mutex<()> = Mutex::new(());
+
 #[test]
 fn json_heap_peak_is_independent_of_mutant_count() {
+    let _guard = MEASUREMENT.lock().unwrap();
     let small_peak = measured_peak(32);
     let large_peak = measured_peak(10_000);
 
@@ -115,5 +122,99 @@ fn test_resource_control() -> hoimin_core::ResourceControl {
     hoimin_core::ResourceControl {
         mode: hoimin_core::ResourceMode::Hard,
         mechanism: "test_supplied_hard".into(),
+    }
+}
+
+#[derive(Default)]
+struct SpoolCounts {
+    writes: AtomicUsize,
+    bytes: AtomicUsize,
+    flushes: AtomicUsize,
+}
+
+struct DiscardSpool(Arc<SpoolCounts>);
+
+impl Write for DiscardSpool {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0.writes.fetch_add(1, Ordering::Relaxed);
+        self.0.bytes.fetch_add(bytes.len(), Ordering::Relaxed);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.0.flushes.fetch_add(1, Ordering::Relaxed);
+        Ok(())
+    }
+}
+
+impl Read for DiscardSpool {
+    fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+        panic!("measurement must not finalize the discarded report")
+    }
+}
+
+impl Seek for DiscardSpool {
+    fn seek(&mut self, _: SeekFrom) -> io::Result<u64> {
+        panic!("measurement must not finalize the discarded report")
+    }
+}
+
+#[test]
+fn json_record_heap_is_bounded_for_large_candidate_payloads() {
+    let _guard = MEASUREMENT.lock().unwrap();
+    let mut measurements = Vec::new();
+    for count in [16, 64] {
+        for payload_bytes in [1, 4 * 1024, 16 * 1024, 64 * 1024] {
+            let counts = Arc::new(SpoolCounts::default());
+            let mut handler = ReportHandler::with_mutant_spool(
+                OutputFormat::Json,
+                io::sink(),
+                io::sink(),
+                DiscardSpool(Arc::clone(&counts)),
+            );
+            emit(
+                &mut handler,
+                OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
+            );
+            let mut peak = 0;
+            let mut expected_bytes = count - 1; // commas between records
+            for index in 0..count {
+                let mut event = mutant_finished(index as u64 + 2, index as u64);
+                let OutputEvent::MutantFinished(mutant) = &mut event else {
+                    unreachable!()
+                };
+                mutant.candidate.original = "a".repeat(payload_bytes);
+                mutant.candidate.replacement = "b".repeat(payload_bytes);
+                expected_bytes += serde_json::to_vec(&event).unwrap().len();
+                // Payload, expected JSON and handler setup are outside the window.
+                // Reset per event so consumed payloads do not hide later allocations.
+                let request = EmitOutput {
+                    id: EffectId(event.sequence()),
+                    event,
+                };
+                heap_tracking::begin();
+                let result = handler.handle(request);
+                let event_peak = heap_tracking::finish();
+                result.unwrap();
+                peak = peak.max(event_peak);
+            }
+            let writes = counts.writes.load(Ordering::Relaxed);
+            let bytes = counts.bytes.load(Ordering::Relaxed);
+            let flushes = counts.flushes.load(Ordering::Relaxed);
+            assert_eq!(bytes, expected_bytes);
+            if payload_bytes == 1 {
+                assert_eq!(writes, count);
+            }
+            eprintln!(
+                "record measurement: count={count} payload_bytes={payload_bytes} peak={peak} writes={writes} bytes={bytes} flushes={flushes}"
+            );
+            measurements.push((count, payload_bytes, peak));
+        }
+    }
+    for (count, payload, peak) in measurements {
+        assert!(
+            peak <= 16 * 1024,
+            "count={count}, payload={payload} bytes per string: record allocated {peak} bytes"
+        );
     }
 }

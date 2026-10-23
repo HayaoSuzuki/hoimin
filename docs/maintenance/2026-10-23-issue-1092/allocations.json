@@ -1,0 +1,144 @@
+{
+  "base_revision": "21c5659d4a6a37633bd1a29f691debd0e84f4280",
+  "measurement": "additional requested Rust heap during each actual ReportHandler::handle call; fixture data allocated before window; noncollecting spool",
+  "before": [
+    {
+      "events": 16,
+      "bytes_per_string": 1,
+      "requested_heap_peak_bytes": 512,
+      "spool_writes": 16,
+      "spool_bytes": 7849,
+      "spool_flushes": 0
+    },
+    {
+      "events": 16,
+      "bytes_per_string": 4096,
+      "requested_heap_peak_bytes": 17112,
+      "spool_writes": 16,
+      "spool_bytes": 138889,
+      "spool_flushes": 0
+    },
+    {
+      "events": 16,
+      "bytes_per_string": 16384,
+      "requested_heap_peak_bytes": 66264,
+      "spool_writes": 16,
+      "spool_bytes": 532105,
+      "spool_flushes": 0
+    },
+    {
+      "events": 16,
+      "bytes_per_string": 65536,
+      "requested_heap_peak_bytes": 262872,
+      "spool_writes": 16,
+      "spool_bytes": 2104969,
+      "spool_flushes": 0
+    },
+    {
+      "events": 64,
+      "bytes_per_string": 1,
+      "requested_heap_peak_bytes": 512,
+      "spool_writes": 64,
+      "spool_bytes": 31513,
+      "spool_flushes": 0
+    },
+    {
+      "events": 64,
+      "bytes_per_string": 4096,
+      "requested_heap_peak_bytes": 17112,
+      "spool_writes": 64,
+      "spool_bytes": 555673,
+      "spool_flushes": 0
+    },
+    {
+      "events": 64,
+      "bytes_per_string": 16384,
+      "requested_heap_peak_bytes": 66264,
+      "spool_writes": 64,
+      "spool_bytes": 2128537,
+      "spool_flushes": 0
+    },
+    {
+      "events": 64,
+      "bytes_per_string": 65536,
+      "requested_heap_peak_bytes": 262872,
+      "spool_writes": 64,
+      "spool_bytes": 8419993,
+      "spool_flushes": 0
+    }
+  ],
+  "after": [
+    {
+      "events": 16,
+      "bytes_per_string": 1,
+      "requested_heap_peak_bytes": 8192,
+      "spool_writes": 16,
+      "spool_bytes": 7849,
+      "spool_flushes": 16
+    },
+    {
+      "events": 16,
+      "bytes_per_string": 4096,
+      "requested_heap_peak_bytes": 8192,
+      "spool_writes": 32,
+      "spool_bytes": 138889,
+      "spool_flushes": 16
+    },
+    {
+      "events": 16,
+      "bytes_per_string": 16384,
+      "requested_heap_peak_bytes": 8192,
+      "spool_writes": 80,
+      "spool_bytes": 532105,
+      "spool_flushes": 16
+    },
+    {
+      "events": 16,
+      "bytes_per_string": 65536,
+      "requested_heap_peak_bytes": 8192,
+      "spool_writes": 80,
+      "spool_bytes": 2104969,
+      "spool_flushes": 16
+    },
+    {
+      "events": 64,
+      "bytes_per_string": 1,
+      "requested_heap_peak_bytes": 8192,
+      "spool_writes": 64,
+      "spool_bytes": 31513,
+      "spool_flushes": 64
+    },
+    {
+      "events": 64,
+      "bytes_per_string": 4096,
+      "requested_heap_peak_bytes": 8192,
+      "spool_writes": 128,
+      "spool_bytes": 555673,
+      "spool_flushes": 64
+    },
+    {
+      "events": 64,
+      "bytes_per_string": 16384,
+      "requested_heap_peak_bytes": 8192,
+      "spool_writes": 320,
+      "spool_bytes": 2128537,
+      "spool_flushes": 64
+    },
+    {
+      "events": 64,
+      "bytes_per_string": 65536,
+      "requested_heap_peak_bytes": 8192,
+      "spool_writes": 320,
+      "spool_bytes": 8419993,
+      "spool_flushes": 64
+    }
+  ],
+  "combined_run_observation": {
+    "mode": "both report_heap tests, default harness threads; process-global allocator may observe harness allocations",
+    "events": 16,
+    "bytes_per_string": 1,
+    "requested_heap_peak_bytes": 8800
+  },
+  "after_mode": "only json_record_heap_is_bounded_for_large_candidate_payloads, --test-threads=1",
+  "before_mode": "only json_record_heap_is_bounded_for_large_candidate_payloads"
+}
