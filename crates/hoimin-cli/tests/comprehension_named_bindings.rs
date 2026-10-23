@@ -1,3 +1,5 @@
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -204,8 +206,6 @@ async fn false_kill_regression_runs_with_passing_baseline() {
             "subject.py",
             "--operators",
             "collection_any_all",
-            "--format",
-            "json",
             "--min-free-space",
             "1B",
             "--allow-best-effort-memory",
@@ -214,7 +214,7 @@ async fn false_kill_regression_runs_with_passing_baseline() {
         .arg(python())
         .args(["subject.py"]);
     let result = output(command).await;
-    let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&result.stdout).unwrap();
     assert_eq!(report["summary"]["counts"]["killed"], 0, "{report}");
     assert!(report["mutants"].as_array().unwrap().is_empty(), "{report}");
     assert_eq!(report["baseline"]["termination"]["Exit"], 0, "{report}");
@@ -417,8 +417,6 @@ async fn first_iterable_mutation_is_detected_by_real_run() {
             "subject.py",
             "--operators",
             "collection_any_all",
-            "--format",
-            "json",
             "--jobs",
             "1",
             "--baseline-timeout",
@@ -433,7 +431,7 @@ async fn first_iterable_mutation_is_detected_by_real_run() {
         .arg(python())
         .arg("subject.py");
     let result = output(command).await;
-    let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&result.stdout).unwrap();
     assert_eq!(report["baseline"]["termination"]["Exit"], 0, "{report}");
     assert_eq!(report["summary"]["counts"]["killed"], 1, "{report}");
     assert_eq!(report["mutants"].as_array().unwrap().len(), 1, "{report}");

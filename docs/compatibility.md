@@ -39,7 +39,7 @@ results. These feature changes require no saved-artifact regeneration.
 
 `run` and `verify` return 0 for a complete run, including one with surviving
 mutants. Exit 1 for survivors is removed. Statuses, counts, mutation scores,
-history and review data remain available in JSON/JSONL. Infrastructure errors
+history and review data remain available in structured output. Infrastructure errors
 return 2, baseline failures 3, incomplete runs 4 and cancellation 130.
 
 `progress --fail-on-regression` is removed without an alias or fallback. Valid
@@ -50,9 +50,10 @@ mutation-score or regression gates are outside the intended product scope.
 
 ## Agent-oriented output (#1100–#1103)
 
-Run and verify accept only `--format json` and `--format jsonl`; `human` output
-and human verify-preview rows are removed. Progress and review always emit their
-current JSON documents and no longer accept `--format`, including `--format json`.
+Run and verify emit JSONL event streams and reject every `--format` option.
+Aggregate JSON execution reports are removed; progress and review accept only
+JSONL execution streams. Plan, verify dry-run, progress, review and metrics retain
+their single JSON documents. Progress and review also reject `--format`.
 Their comparison/history behavior and JSON schemas are unchanged. Update command
 invocations; no old-format alias or fallback is provided.
 
@@ -204,7 +205,7 @@ outside this check; no fixed size cap or atomic snapshot is added.
 Review decodes its current typed JSON document directly. Old report shapes remain
 rejected, but they no longer receive a guaranteed unsupported-schema diagnostic
 before typed shape errors. Current schema/configuration checks still precede
-project-root access; progress retains JSON/JSONL routing and review's 64 MiB input
+project-root access; progress retains streaming JSONL decoding and review's 64 MiB input
 limit remains unchanged. Rerun with this version when an old report is rejected.
 
 Internal atomic updates use `try_update` under the existing Rust 1.99.0 floor.
@@ -222,7 +223,7 @@ JSON to prioritize regeneration guidance for obsolete shapes. Unsupported versio
 and obsolete fields still fail, but the first diagnostic may change. Current
 schema-first and schema-last encodings remain accepted.
 
-Progress streams JSON and JSONL without whole-document or physical-line byte
+Progress streams JSONL without whole-document or physical-line byte
 buffers. Verify and progress use the opened file's initial length as their read
 budget and reject observed append/truncation rather than accept a valid prefix.
 This does not provide an atomic snapshot or detect all in-place rewrites. There
@@ -445,8 +446,8 @@ original arguments and resource limits. Use the newly generated candidate IDs:
 
 ```console
 hoimin plan --root . --source src --fingerprint-file pyproject.toml -- python -m pytest -q > plan-v9.json
-hoimin verify plan-v9.json --candidate '<ID_FROM_PLAN_V9>' --format json
-hoimin review list plan-v9.json --store reviews.sqlite3 --format json
+hoimin verify plan-v9.json --candidate '<ID_FROM_PLAN_V9>'
+hoimin review list plan-v9.json --store reviews.sqlite3
 ```
 
 Update JSON/JSONL report consumers to schema 7. Progress and review reject older
@@ -477,8 +478,8 @@ guidance before decoding their old fields. For example:
 
 ```console
 hoimin plan --root . --source src --fingerprint-file pyproject.toml -- python -m pytest -q > plan-v8.json
-hoimin verify plan-v8.json --candidate '<ID_FROM_PLAN_V8>' --format json
-hoimin review list plan-v8.json --store reviews.sqlite3 --format json
+hoimin verify plan-v8.json --candidate '<ID_FROM_PLAN_V8>'
+hoimin review list plan-v8.json --store reviews.sqlite3
 ```
 
 Retain platform-specific options and resource limits from the original invocation
@@ -643,7 +644,7 @@ schemas 1–4 remain rejected; this change does not restore legacy migration pat
 | Interface | Maintenance rule | User action when it changes |
 | --- | --- | --- |
 | CLI arguments, defaults and exit codes | Document and test the current behavior. Cross-version invocation compatibility is not required. | Use the current help and usage guide. |
-| JSON and JSONL reports | Maintain one current schema. Progress accepts only report schema 10, matching the writer; review accepts current-schema JSON. | Rerun to obtain current output when needed. |
+| JSONL execution reports | Maintain one current schema. Progress and review accept only report schema 10, matching the writer. | Rerun to obtain current output when needed. |
 | Saved plan, ranking and candidate IDs | These are checked execution inputs, not timeless interchange formats. Changes to schema, ranking, identity, source or fingerprints can invalidate a plan. | Regenerate the plan with the intended version and inputs. Do not hand-edit versions or IDs to bypass validation. |
 | Session database and resume | Resume requires the implementation's current schema and fingerprint checks. Historical database migration is not required. | Start a new session when an older database is rejected. |
 | Default operators, profiles and selection | Changes can alter candidate count, runtime and the population behind a score. | Review the operator set and budget; use matching candidates and validation settings for comparisons. |

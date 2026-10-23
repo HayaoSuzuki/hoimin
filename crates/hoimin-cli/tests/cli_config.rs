@@ -411,7 +411,6 @@ fn plan_normalizes_selection_with_json_output_and_disabled_session() {
         panic!("expected plan");
     };
     let config = args.into_configs().unwrap().0;
-    assert_eq!(config.output.format, hoimin_core::OutputFormat::Json);
     assert_eq!(config.session, hoimin_core::SessionMode::Disabled);
     assert_eq!(config.fingerprint_includes, ["pyproject.toml"]);
     assert_eq!(config.fingerprint_files, ["pyproject.toml"]);
@@ -446,8 +445,6 @@ fn verify_accepts_candidate_selection_and_format_override() {
         "hoimin",
         "verify",
         "plan.json",
-        "--format",
-        "jsonl",
         "--candidate",
         "m1_a",
         "--candidate",
@@ -461,7 +458,6 @@ fn verify_accepts_candidate_selection_and_format_override() {
         args.selection,
         VerifySelection::CandidateIds(vec!["m1_a".into(), "m2_b".into()])
     );
-    assert_eq!(args.format, hoimin_cli::cli::OutputFormat::Jsonl);
 }
 
 #[test]
@@ -992,7 +988,6 @@ fn root_help_exposes_the_run_contract() {
         "--max-memory",
         "--max-workspace-size",
         "--min-free-space",
-        "--format",
         "--session",
         "-- <TEST_ARGV>",
     ] {
@@ -1076,8 +1071,6 @@ fn parse_run_config_parses_ranges_limits_and_output() {
         "2",
         "--max-memory",
         "2GiB",
-        "--format",
-        "jsonl",
         "--",
         "python",
         "-m",
@@ -1091,7 +1084,6 @@ fn parse_run_config_parses_ranges_limits_and_output() {
         config.selection.lines[0].range,
         hoimin_core::LineRange { start: 4, end: 7 }
     );
-    assert_eq!(config.output.format, hoimin_core::OutputFormat::Jsonl);
     assert_eq!(config.test_argv.len(), 3);
 }
 
@@ -2212,4 +2204,28 @@ fn removed_terminal_color_preserves_help_content() {
     assert!(help.contains("Usage:"), "{help}");
     assert!(help.contains("Commands:"), "{help}");
     assert!(!help.contains('\u{1b}'), "{help}");
+}
+
+#[test]
+fn run_and_verify_reject_removed_format_option() {
+    for format in ["json", "jsonl"] {
+        assert!(
+            parse_from([
+                "hoimin", "run", "--file", "calc.py", "--format", format, "--", "python"
+            ])
+            .is_err()
+        );
+        assert!(
+            parse_from([
+                "hoimin",
+                "verify",
+                "plan.json",
+                "--top",
+                "1",
+                "--format",
+                format
+            ])
+            .is_err()
+        );
+    }
 }

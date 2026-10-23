@@ -349,8 +349,6 @@ fn verify_args(path: &Path, limit: u64, policy: &str) -> Vec<OsString> {
         limit.to_string().into(),
         "--selection-policy".into(),
         policy.into(),
-        "--format".into(),
-        "jsonl".into(),
     ]
 }
 

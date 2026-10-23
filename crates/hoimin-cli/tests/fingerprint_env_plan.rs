@@ -1,3 +1,5 @@
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Output;
@@ -72,7 +74,7 @@ impl Fixture {
         );
         assert_eq!(output.stderr, Vec::<u8>::new());
         assert!(!self.marker.exists());
-        serde_json::from_slice(&output.stdout).unwrap()
+        jsonl_report::from_slice(&output.stdout).unwrap()
     }
 
     async fn verify(&self, manifest: &Value, value: &OsStr) -> Output {

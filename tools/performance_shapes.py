@@ -9,8 +9,9 @@ import statistics
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
-from typing import NotRequired, TypedDict, TypeGuard
+from typing import Literal, NotRequired, TypedDict, TypeGuard
 
 ROOT = Path(__file__).resolve().parents[1]
 GROWTH_SIZE_COUNT = 3
@@ -543,20 +544,82 @@ class SemanticMismatch(ValueError):  # noqa: N818 - Preserve the public exceptio
     """The CLI completed but its observable result violates the fixture."""
 
 
+class ExecutionSummary(TypedDict):
+    kind: Literal["run_finished"]
+    complete: bool
+    exit_code: int
+
+
+@dataclass(frozen=True)
+class ExecutionOutput:
+    mutants: list[dict[str, object]]
+    summary: ExecutionSummary
+
+
+def execution_summary(event: dict[str, object]) -> ExecutionSummary:
+    complete, exit_code = event.get("complete"), event.get("exit_code")
+    if not isinstance(complete, bool) or type(exit_code) is not int:
+        msg = "invalid execution summary"
+        raise SemanticMismatch(msg)
+    return {"kind": "run_finished", "complete": complete, "exit_code": exit_code}
+
+
+def load_execution_output(path: Path) -> ExecutionOutput:
+    """Read execution events, requiring exactly one final typed summary."""
+    mutants: list[dict[str, object]] = []
+    summary: ExecutionSummary | None = None
+    started = False
+    with path.open(encoding="utf-8") as stream:
+        for line in filter(str.strip, stream):
+            event: object = json.loads(line)
+            if not is_object(event) or summary is not None:
+                msg = "invalid execution event stream"
+                raise SemanticMismatch(msg)
+            kind = event.get("kind")
+            if not started:
+                if kind != "run_started":
+                    msg = "missing initial run_started event"
+                    raise SemanticMismatch(msg)
+                started = True
+            elif kind == "run_started":
+                msg = "duplicate run_started event"
+                raise SemanticMismatch(msg)
+            if kind == "mutant_finished":
+                mutants.append(event)
+            elif kind == "run_finished":
+                summary = execution_summary(event)
+            elif kind not in {
+                "run_started",
+                "baseline_finished",
+                "mutant_started",
+                "diagnostic",
+            }:
+                msg = "unknown execution event kind"
+                raise SemanticMismatch(msg)
+    if summary is None:
+        msg = "missing final run_finished event"
+        raise SemanticMismatch(msg)
+    return ExecutionOutput(mutants, summary)
+
+
 def validate_output(
-    document: dict[str, object], fixture: ExpectedOutput
+    document: dict[str, object] | ExecutionOutput, fixture: ExpectedOutput
 ) -> Observation:
     if fixture["mode"] == "plan":
+        if isinstance(document, ExecutionOutput):
+            msg = "expected a plan document"
+            raise SemanticMismatch(msg)
         records = document.get("candidates")
         if document.get("truncated") is not fixture["truncated"]:
             msg = "unexpected truncation"
             raise SemanticMismatch(msg)
     else:
-        records = document.get("mutants")
-        summary = document.get("summary", {})
-        if not is_object(summary) or summary.get("complete") is not (
-            not fixture["truncated"]
-        ):
+        if not isinstance(document, ExecutionOutput):
+            msg = "expected execution events"
+            raise SemanticMismatch(msg)
+        records = document.mutants
+        summary = document.summary
+        if summary["complete"] is not (not fixture["truncated"]):
             msg = "unexpected execution completeness"
             raise SemanticMismatch(msg)
     if not isinstance(records, list) or len(records) != fixture["expected_candidates"]:
@@ -622,11 +685,9 @@ def measure_once(
             str(manifest),
             "--top",
             str(fixture["expected_candidates"]),
-            "--format",
-            "json",
         ]
     elif fixture["mode"] == "run":
-        command = [str(binary), "run", *common, "--format", "json", *test]
+        command = [str(binary), "run", *common, *test]
     stats_path = artifact / "resource.json"
     guard = [
         sys.executable,
@@ -642,8 +703,11 @@ def measure_once(
         "--",
         *command,
     ]
+    stdout_path = artifact / (
+        "stdout.json" if fixture["mode"] == "plan" else "stdout.jsonl"
+    )
     with (
-        (artifact / "stdout.json").open("wb") as out,
+        stdout_path.open("wb") as out,
         (artifact / "stderr.txt").open("wb") as err,
     ):
         completed = subprocess.run(  # noqa: S603 - Trusted CLI/test arguments; no shell execution.
@@ -654,20 +718,29 @@ def measure_once(
         msg = "invalid resource observation"
         raise ValueError(msg)
     rss = observed_rss(stats)
-    expected_exit = (
-        4 if fixture["truncated"] else (0 if fixture["mode"] == "plan" else 1)
-    )
+    expected_exit = 4 if fixture["truncated"] else 0
     if completed.returncode != expected_exit:
         msg = f"CLI exit {completed.returncode}; expected {expected_exit}"
         raise ValueError(msg)
-    observation = validate_output(load_object(artifact / "stdout.json"), fixture)
+    output = (
+        load_object(stdout_path)
+        if fixture["mode"] == "plan"
+        else load_execution_output(stdout_path)
+    )
+    if (
+        isinstance(output, ExecutionOutput)
+        and output.summary["exit_code"] != completed.returncode
+    ):
+        msg = "execution summary exit code disagrees with process"
+        raise SemanticMismatch(msg)
+    observation = validate_output(output, fixture)
     return dict(
         argv=command,
         elapsed_ms=stats["elapsed_ms"],
         sampled_tree_rss_bytes=rss,
         sample_ms=sample_ms,
         exit_code=completed.returncode,
-        output_document_bytes=(artifact / "stdout.json").stat().st_size,
+        output_document_bytes=stdout_path.stat().st_size,
         **observation,
     )
 

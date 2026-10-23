@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from jsonschema import Draft202012Validator
@@ -12,6 +13,15 @@ SCHEMA = json.loads(
 )
 VALIDATOR = Draft202012Validator(SCHEMA["$defs"]["mutationDuration"])
 U64_MAX = 2**64 - 1
+
+
+def load_event(kind: str) -> dict[str, Any]:
+    source = ROOT / "crates/hoimin-cli/tests/golden/events/schema-v10-current.jsonl"
+    return next(
+        event
+        for line in source.read_text().splitlines()
+        if (event := json.loads(line))["kind"] == kind
+    )
 
 
 @pytest.mark.parametrize("seconds", [0, U64_MAX])
@@ -67,12 +77,7 @@ def test_elapsed_rejects_unknown_fields() -> None:
 @pytest.mark.parametrize("status", [None, "unknown", 1])
 def test_mutant_status_rejects_noncanonical_values(status: object) -> None:
     # Arrange
-    report = json.loads(
-        (
-            ROOT / "crates/hoimin-cli/tests/golden/reports/schema-v10-original.json"
-        ).read_text(encoding="utf-8")
-    )
-    event = report["mutants"][0]
+    event = load_event("mutant_finished")
     event["status"] = status
     # Act
     errors = list(Draft202012Validator(SCHEMA).iter_errors(event))
@@ -82,12 +87,7 @@ def test_mutant_status_rejects_noncanonical_values(status: object) -> None:
 
 def test_mutant_status_is_required_even_with_complete_outcome() -> None:
     # Arrange
-    report = json.loads(
-        (
-            ROOT / "crates/hoimin-cli/tests/golden/reports/schema-v10-original.json"
-        ).read_text(encoding="utf-8")
-    )
-    event = report["mutants"][0]
+    event = load_event("mutant_finished")
     event.pop("status", None)
     # Act
     errors = list(Draft202012Validator(SCHEMA).iter_errors(event))
@@ -100,12 +100,7 @@ def test_mutant_status_schema_checks_shape_without_semantic_agreement(
     status: str,
 ) -> None:
     # Arrange: the fixture's Exit(7)/complete outcome remains killed in both cases.
-    report = json.loads(
-        (
-            ROOT / "crates/hoimin-cli/tests/golden/reports/schema-v10-original.json"
-        ).read_text(encoding="utf-8")
-    )
-    event = report["mutants"][0]
+    event = load_event("mutant_finished")
     event["status"] = status
     # Act
     errors = list(Draft202012Validator(SCHEMA).iter_errors(event))
@@ -115,22 +110,25 @@ def test_mutant_status_schema_checks_shape_without_semantic_agreement(
 
 @pytest.mark.parametrize("exit_code", [0, 2, 3, 4, 130])
 def test_run_summary_accepts_execution_exit_codes(exit_code: int) -> None:
-    report = json.loads(
-        (
-            ROOT / "crates/hoimin-cli/tests/golden/reports/schema-v10-current.json"
-        ).read_text(encoding="utf-8")
-    )
-    event = report["summary"]
+    event = load_event("run_finished")
     event["exit_code"] = exit_code
     assert not list(Draft202012Validator(SCHEMA).iter_errors(event))
 
 
 def test_run_summary_rejects_removed_survivor_exit_code() -> None:
-    report = json.loads(
-        (
-            ROOT / "crates/hoimin-cli/tests/golden/reports/schema-v10-current.json"
-        ).read_text(encoding="utf-8")
-    )
-    event = report["summary"]
+    event = load_event("run_finished")
     event["exit_code"] = 1
+    assert list(Draft202012Validator(SCHEMA).iter_errors(event))
+
+
+@pytest.mark.parametrize("metrics", [None, "metrics.json"])
+def test_execution_config_accepts_metrics_only(metrics: str | None) -> None:
+    event = load_event("run_started")
+    event["normalized_config"]["output"] = {"metrics": metrics}
+    assert not list(Draft202012Validator(SCHEMA).iter_errors(event))
+
+
+def test_execution_config_rejects_removed_format_selection() -> None:
+    event = load_event("run_started")
+    event["normalized_config"]["output"] = {"format": "jsonl", "metrics": None}
     assert list(Draft202012Validator(SCHEMA).iter_errors(event))

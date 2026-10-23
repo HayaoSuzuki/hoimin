@@ -491,7 +491,9 @@ def test_partial_verify_has_explicit_incomplete_contract() -> None:
         "expected_candidates": 2,
         "truncated": True,
     }
-    observed: dict[str, object] = {"mutants": [{}, {}], "summary": {"complete": False}}
+    observed = shapes.ExecutionOutput(
+        [{}, {}], {"kind": "run_finished", "complete": False, "exit_code": 4}
+    )
 
     validated = shapes.validate_output(observed, fixture)
 
@@ -511,10 +513,9 @@ def test_partial_verify_rejects_inconsistent_completion(
         "expected_candidates": 2,
         "truncated": truncated,
     }
-    observed: dict[str, object] = {
-        "mutants": [{}, {}],
-        "summary": {"complete": complete},
-    }
+    observed = shapes.ExecutionOutput(
+        [{}, {}], {"kind": "run_finished", "complete": complete, "exit_code": 4}
+    )
 
     with pytest.raises(shapes.SemanticMismatch):
         shapes.validate_output(observed, fixture)
@@ -639,3 +640,45 @@ def test_measurement_rejects_malformed_resource_observations(
 
     with pytest.raises(ValueError, match="invalid resource observation"):
         shapes.measure_once(Path("hoimin"), fixture, tmp_path / "project", artifact, 25)
+
+
+@pytest.mark.parametrize(
+    "events",
+    [
+        [{"kind": "run_started"}],
+        [{"kind": "run_finished", "complete": True, "exit_code": 0}],
+        [
+            {"kind": "run_started"},
+            {"kind": "run_finished", "complete": "yes", "exit_code": 0},
+        ],
+        [
+            {"kind": "run_started"},
+            {"kind": "run_finished", "complete": True, "exit_code": 0},
+            {"kind": "diagnostic"},
+        ],
+        [{"schema_version": 10, "run": {}, "mutants": [], "summary": {}}],
+    ],
+)
+def test_execution_reader_rejects_incomplete_or_nonstream_output(
+    tmp_path: Path, events: list[dict[str, object]]
+) -> None:
+    source = tmp_path / "run.jsonl"
+    source.write_text("\n".join(json.dumps(event) for event in events))
+    with pytest.raises(shapes.SemanticMismatch):
+        shapes.load_execution_output(source)
+
+
+def test_execution_reader_collects_finished_events_and_final_summary(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "run.jsonl"
+    events = [
+        {"kind": "run_started"},
+        {"kind": "mutant_started"},
+        {"kind": "mutant_finished", "status": "survived"},
+        {"kind": "run_finished", "complete": True, "exit_code": 0},
+    ]
+    source.write_text("\n".join(json.dumps(event) for event in events))
+    result = shapes.load_execution_output(source)
+    assert result.mutants == [events[2]]
+    assert result.summary == events[3]

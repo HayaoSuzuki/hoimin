@@ -1,3 +1,5 @@
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 #[path = "support/mutation_outcome.rs"]
 mod mutation_outcome;
 use std::path::{Path, PathBuf};
@@ -42,8 +44,6 @@ async fn run_script(root: &Path, metrics: Option<&Path>, options: &[&str], scrip
         "calc.py",
         "--operators",
         "binary_add_sub",
-        "--format",
-        "json",
         "--allow-best-effort-memory",
         "--min-free-space",
         "1B",
@@ -154,7 +154,7 @@ fn assert_collision(output: &Output, temp: &Path, protected: &Path, expected: &[
     assert!(!temp.join("baseline-marker").exists());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("metrics.destination.collision"), "{stderr}");
-    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
     assert!(report["baseline"].is_null(), "{report}");
     assert_eq!(report["summary"]["complete"], false);
     assert!(
@@ -253,7 +253,7 @@ async fn metrics_allows_in_root_creation_and_existing_file_updates() {
     let metrics = root.join("metrics.json");
     let ordinary = run_optional(&root, None, &[]).await;
     assert!(ordinary.status.success());
-    let ordinary: serde_json::Value = serde_json::from_slice(&ordinary.stdout).unwrap();
+    let ordinary: serde_json::Value = jsonl_report::from_slice(&ordinary.stdout).unwrap();
     for previous in [None, Some(b"old metrics\n".as_slice())] {
         if let Some(bytes) = previous {
             std::fs::write(&metrics, bytes).unwrap();
@@ -264,7 +264,7 @@ async fn metrics_allows_in_root_creation_and_existing_file_updates() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
         assert_eq!(
             report["mutants"][0]["candidate"],
             ordinary["mutants"][0]["candidate"]
@@ -530,7 +530,7 @@ async fn metrics_records_controlled_copy_admission_failure_without_starting_work
 
     assert_eq!(output.status.code(), Some(2));
     assert!(!temp.path().join("baseline-marker").exists());
-    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
     assert!(report["baseline"].is_null());
     assert_eq!(report["summary"]["complete"], false);
     assert_eq!(report["summary"]["exit_code"], 2);
@@ -714,7 +714,7 @@ async fn metrics_withholds_prospective_windows_short_alias_without_overwriting_s
     let run_id: String = connection
         .query_row("SELECT run_id FROM runs", [], |row| row.get(0))
         .unwrap();
-    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
     assert_eq!(report["run"]["run_id"], run_id);
 }
 
@@ -877,7 +877,7 @@ async fn metrics_and_in_root_session_complete_without_copying_session_artifacts(
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
     assert_eq!(report["baseline"]["termination"]["Exit"], 0);
     assert_eq!(report["summary"]["complete"], true);
     assert_eq!(report["summary"]["counts"]["killed"], 1);

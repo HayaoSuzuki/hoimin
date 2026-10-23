@@ -1,3 +1,5 @@
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use std::ffi::OsString;
 
 // Each CLI process owns a distinct managed-root namespace. Concurrent tests must
@@ -68,8 +70,6 @@ async fn public_runtime_emits_measured_disk_and_cleanup_evidence() {
         project.path().as_os_str().to_owned(),
         OsString::from("--file"),
         OsString::from("target.py"),
-        OsString::from("--format"),
-        OsString::from("json"),
         OsString::from("--max-mutants"),
         OsString::from("1"),
         OsString::from("--allow-best-effort-memory"),
@@ -86,7 +86,7 @@ async fn public_runtime_emits_measured_disk_and_cleanup_evidence() {
         "exit={exit}, stderr={:?}",
         String::from_utf8_lossy(&stderr)
     );
-    let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&stdout).unwrap();
     let disk = &report["summary"]["disk"];
     assert!(disk["sample_count"].as_u64().unwrap() >= 3, "{disk}");
     assert!(disk["removed_logical_bytes"].as_u64().is_some(), "{disk}");
@@ -121,8 +121,6 @@ async fn public_initial_reserve_failure_uses_the_typed_report_path_before_dispat
         project.path().as_os_str().to_owned(),
         OsString::from("--file"),
         OsString::from("target.py"),
-        OsString::from("--format"),
-        OsString::from("json"),
         OsString::from("--min-free-space"),
         OsString::from("18446744073709551615B"),
         OsString::from("--allow-best-effort-memory"),
@@ -135,7 +133,7 @@ async fn public_initial_reserve_failure_uses_the_typed_report_path_before_dispat
     let exit = run_isolated(args, &mut stdout, &mut stderr).await;
 
     assert_ne!(exit, 0, "stderr={:?}", String::from_utf8_lossy(&stderr));
-    let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&stdout).unwrap();
     assert_eq!(
         report["summary"]["disk"]["stop"]["code"],
         "filesystem.reserve.reached"
@@ -155,8 +153,6 @@ async fn public_jsonl_runtime_emits_disk_evidence() {
         project.path().as_os_str().to_owned(),
         OsString::from("--file"),
         OsString::from("target.py"),
-        OsString::from("--format"),
-        OsString::from("jsonl"),
         OsString::from("--max-mutants"),
         OsString::from("1"),
         OsString::from("--allow-best-effort-memory"),
@@ -194,8 +190,6 @@ async fn public_json_runtime_emits_disk_policy_evidence() {
         project.path().as_os_str().to_owned(),
         OsString::from("--file"),
         OsString::from("target.py"),
-        OsString::from("--format"),
-        OsString::from("json"),
         OsString::from("--max-mutants"),
         OsString::from("1"),
         OsString::from("--allow-best-effort-memory"),
@@ -208,7 +202,7 @@ async fn public_json_runtime_emits_disk_policy_evidence() {
     let exit = run_isolated(args, &mut stdout, &mut stderr).await;
 
     assert!(exit == 0, "stderr={:?}", String::from_utf8_lossy(&stderr));
-    let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&stdout).unwrap();
     let disk = &report["summary"]["disk"];
     assert_eq!(
         disk["configured_max_owned_bytes"],

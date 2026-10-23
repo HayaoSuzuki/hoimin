@@ -1,5 +1,7 @@
 #[path = "support/candidate_identity.rs"]
 mod candidate_identity;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 #[path = "support/mutation_outcome.rs"]
 mod mutation_outcome;
 use std::collections::BTreeSet;
@@ -284,7 +286,11 @@ fn build_report(case_id: &str, report_index: usize, input: &OracleReport) -> Val
 
     if !input.usable {
         match input.reason.as_deref() {
-            Some("missing_baseline") => document["baseline"] = Value::Null,
+            Some("missing_baseline") => {
+                document["baseline"] = Value::Null;
+                document["mutants"] = json!([]);
+                document["summary"]["counts"] = summary_counts(&[]);
+            }
             Some("baseline_failed") => {
                 document["baseline"]["termination"] = json!({ "Exit": 1 });
             }
@@ -352,7 +358,7 @@ fn write_reports(fixture: &tempfile::TempDir, item: &OracleCase) -> Vec<PathBuf>
                     json!(format!("hash-role-{}", mutant.candidate_id));
                 candidate_identity::assign_id(&mut event["candidate"]);
             }
-            std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
+            std::fs::write(&path, jsonl_report::to_vec(&document)).unwrap();
             path
         })
         .collect()
@@ -418,7 +424,7 @@ async fn public_progress(item: &OracleCase, details: bool) -> Result<Value, Stri
         "semantic mismatch case={}",
         item.id
     );
-    serde_json::from_slice(&output.stdout).map_err(|error| {
+    jsonl_report::from_slice(&output.stdout).map_err(|error| {
         format!(
             "infrastructure-error case={}: invalid JSON: {error}; stdout={}",
             item.id,

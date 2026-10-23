@@ -7,7 +7,7 @@ An agent investigates selected survivors, adds tests grounded in the intended be
 Humans provide specification decisions and review changes.
 Mutation scores are diagnostic observations; equivalent mutants and specification-permitted changes make them unsuitable as a standalone quality target.
 hoimin targets local work and provides no mutation-score or regression CI gate.
-A completed run exits successfully even when mutants survive; inspect the JSON results to choose the next test improvement.
+A completed run exits successfully even when mutants survive; inspect the JSONL events to choose the next test improvement.
 See the [product principles](docs/product-principles.md).
 See also the [documentation](https://hayaosuzuki.github.io/hoimin/) for installation, the agent workflow, resource limits, and command references.
 
@@ -28,7 +28,7 @@ From your project directory, use a Python environment with passing tests and the
 Choose the [OS memory policy](docs/usage.md#before-execution) first, then replace `src/calc.py` with an existing file:
 
 ```console
-hoimin run --root . --file src/calc.py --format json -- python -m pytest -q
+hoimin run --root . --file src/calc.py -- python -m pytest -q
 ```
 
 Everything after `--` is your project's test command.

@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use collecting_writer::CollectingWriter;
 
 use hoimin_cli::plan::PlanManifest;
@@ -49,7 +51,8 @@ async fn implicit_finally_matches_lean_public_plan() {
         .await
         .expect("plan deadline");
         assert_eq!(exit, 0, "infrastructure error: {}: {:?}", case.id, stderr);
-        let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).expect("plan JSON");
+        let manifest: PlanManifest =
+            jsonl_report::from_slice(&stdout.snapshot()).expect("plan JSON");
         assert_eq!(
             manifest.candidates.len(),
             case.candidate_count,
@@ -114,7 +117,7 @@ print(json.dumps(ns['observed'] == typing.Sequence[int]))
             .expect("infrastructure error: Python deadline")
             .expect("infrastructure error: Python launch");
             assert!(output.status.success(), "{}: {:?}", case.id, output.stderr);
-            let observed: bool = serde_json::from_slice(&output.stdout).unwrap();
+            let observed: bool = jsonl_report::from_slice(&output.stdout).unwrap();
             assert_eq!(observed, *expected, "{}: raises={raises}", case.id);
             observations += 1;
         }
@@ -150,8 +153,6 @@ assert ns['observed'] == set[int]
                 "subject.py",
                 "--operators",
                 "type_list_sequence",
-                "--format",
-                "json",
                 "--min-free-space",
                 "1B",
                 "--allow-best-effort-memory",
@@ -166,7 +167,7 @@ assert ns['observed'] == set[int]
     .expect("infrastructure error: run deadline")
     .expect("infrastructure error: run launch");
     assert!(output.status.success(), "{:?}", output.stderr);
-    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
     assert_eq!(report["baseline"]["termination"]["Exit"], 0, "{report}");
     assert_eq!(report["summary"]["counts"]["killed"], 0, "{report}");
     assert_eq!(report["summary"]["complete"], true, "{report}");

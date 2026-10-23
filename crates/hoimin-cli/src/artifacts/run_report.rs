@@ -1,6 +1,6 @@
 //! Run-report decoding shared by progress and review.
 //!
-//! Current-schema JSON/JSONL decoding and structural validation have one owner.
+//! Current-schema JSONL decoding and structural validation have one owner.
 //! Consumers own usability, project resolution, plan matching, source freshness,
 //! duplicate handling and command output.
 
@@ -11,14 +11,12 @@ use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
 
 use hoimin_core::{
-    BaselineFinished, ExitPolicy, MutantFinished, MutationSummary, OutputEvent,
-    REPORT_SCHEMA_VERSION, ReportVersions, ResourceControl, RunSummary, VerificationSelection,
-    exit_code_for, summarize,
+    BaselineFinished, ExitPolicy, MutantFinished, MutationSummary, REPORT_SCHEMA_VERSION,
+    ReportVersions, ResourceControl, RunSummary, VerificationSelection, exit_code_for, summarize,
 };
 use serde::Deserialize;
 use thiserror::Error;
 
-mod dispatch;
 mod jsonl;
 
 /// Structurally checked report data. Consumers own usability and project policy.
@@ -31,17 +29,12 @@ pub(crate) struct DecodedReport<C> {
     pub(crate) summary: RunSummary,
 }
 
-/// Decode current-schema JSON with the complete typed configuration.
-/// The caller supplies bounded bytes and applies project and usability policy.
-pub(crate) fn read_typed_json(
+/// Decode bounded JSONL bytes with the complete typed configuration.
+pub(crate) fn read_typed_jsonl(
     path: &Path,
     bytes: &[u8],
 ) -> Result<DecodedReport<hoimin_core::RunConfig>, ReportReadError> {
-    let document = serde_json::from_slice(bytes).map_err(|source| ReportReadError::Parse {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    validate_document(path, document)
+    read_stream(path, bytes)
 }
 
 #[derive(Debug, Error)]
@@ -130,6 +123,8 @@ impl<'de> Deserialize<'de> for ReportConfigProjection {
             _environment: Option<hoimin_core::EnvironmentSnapshot>,
             #[serde(default, rename = "session")]
             _session: Option<hoimin_core::SessionMode>,
+            #[serde(default, rename = "output")]
+            _output: Option<hoimin_core::OutputConfig>,
             #[serde(default, rename = "selection")]
             _selection: Option<Selection>,
         }
@@ -189,20 +184,7 @@ impl<C> ReportRunEvent<C> {
     }
 }
 
-// Decode configuration with the consumer's type before any Value map can discard
-// duplicate fields. Event structure validation is shared independently of that type.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RunReportDocument<C> {
-    schema_version: u32,
-    run: ReportRunEvent<C>,
-    baseline: Option<OutputEvent>,
-    mutants: Vec<OutputEvent>,
-    summary: OutputEvent,
-}
-
-// Once converted, every structural validator can use event payloads directly.
-// Schema validation deliberately precedes this conversion to retain diagnostics.
+// Streaming decoding retains only payloads needed by report consumers.
 struct ReportPayloads<C> {
     run: ReportRunEvent<C>,
     baseline: Option<BaselineFinished>,
@@ -210,47 +192,9 @@ struct ReportPayloads<C> {
     summary: RunSummary,
 }
 
-impl<C> RunReportDocument<C> {
-    fn into_payloads(self, path: &Path) -> Result<ReportPayloads<C>, ReportReadError> {
-        let baseline = match self.baseline {
-            None => None,
-            Some(OutputEvent::BaselineFinished(value)) => Some(value),
-            Some(_) => {
-                return Err(invalid_structure(
-                    path,
-                    "baseline must be null or a baseline_finished event",
-                ));
-            }
-        };
-        let mutants = self
-            .mutants
-            .into_iter()
-            .map(|event| match event {
-                OutputEvent::MutantFinished(value) => Ok(value),
-                _ => Err(invalid_structure(
-                    path,
-                    "mutants must contain only mutant_finished events",
-                )),
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let OutputEvent::RunFinished(summary) = self.summary else {
-            return Err(invalid_structure(
-                path,
-                "summary must be a run_finished event",
-            ));
-        };
-        Ok(ReportPayloads {
-            run: self.run,
-            baseline,
-            mutants,
-            summary,
-        })
-    }
-}
-
 /// Reads and validates one mutation run report.
 ///
-/// Accepts only current-schema JSON documents or JSONL reports.
+/// Accepts only current-schema JSONL reports.
 /// Returns structurally checked data without applying consumer usability policy.
 /// This reader does not apply review's byte limit or resolve the project root.
 ///
@@ -260,8 +204,8 @@ impl<C> RunReportDocument<C> {
 pub(crate) fn read_report(
     path: &Path,
 ) -> Result<DecodedReport<ReportConfigProjection>, ReportReadError> {
-    let (reader, header) = report_reader(path)?;
-    read_with_header(path, BufReader::new(reader), header)
+    let reader = report_reader(path)?;
+    read_stream(path, BufReader::new(reader))
 }
 
 /// Read with the same acceptance rules as `read_report`, hashing the bytes read.
@@ -269,9 +213,9 @@ pub(crate) fn read_report(
 pub(crate) fn read_report_with_fingerprint(
     path: &Path,
 ) -> Result<(DecodedReport<ReportConfigProjection>, blake3::Hash), ReportReadError> {
-    let (reader, header) = report_reader(path)?;
+    let reader = report_reader(path)?;
     let mut reader = FingerprintReader::new(reader);
-    let report = read_with_header(path, BufReader::new(&mut reader), header)?;
+    let report = read_stream(path, BufReader::new(&mut reader))?;
     Ok((report, reader.fingerprint()))
 }
 
@@ -288,44 +232,30 @@ fn open_report(path: &Path) -> Result<File, ReportReadError> {
         })
 }
 
-// Probe only routing evidence, then rewind the same descriptor. Neither pass
-// retains a raw report. Each pass has a finite byte budget from file metadata;
-// SnapshotReader rejects growth/truncation during the actual decoding pass.
-fn report_reader(
-    path: &Path,
-) -> Result<(crate::finite_file::SnapshotReader, Option<dispatch::Header>), ReportReadError> {
-    let file = open_report(path)?;
-    let read_error = |source| ReportReadError::Read {
-        path: path.to_path_buf(),
-        source,
-    };
-    let mut reader = crate::finite_file::SnapshotReader::new(file).map_err(read_error)?;
-    let header = dispatch::probe_reader(BufReader::new(&mut reader));
-    reader.rewind().map_err(read_error)?;
-    if let Some(header) = header {
-        check_schema(path, header.schema_version)?;
-    }
-    Ok((reader, header))
+// Bound the streaming pass to the descriptor's initial size. SnapshotReader
+// rejects growth and truncation rather than accepting a valid report prefix.
+fn report_reader(path: &Path) -> Result<crate::finite_file::SnapshotReader, ReportReadError> {
+    crate::finite_file::SnapshotReader::new(open_report(path)?).map_err(|source| {
+        ReportReadError::Read {
+            path: path.to_path_buf(),
+            source,
+        }
+    })
 }
 
-fn read_with_header(
+fn read_stream<C: serde::de::DeserializeOwned>(
     path: &Path,
     reader: impl std::io::BufRead,
-    header: Option<dispatch::Header>,
-) -> Result<DecodedReport<ReportConfigProjection>, ReportReadError> {
-    let document = if header.is_some_and(|header| header.format == dispatch::Format::Jsonl) {
-        jsonl::read_document(path, reader)?
-    } else {
-        // from_reader also checks EOF, so trailing JSON and late file growth
-        // cannot be silently omitted from validation or the fingerprint.
-        serde_json::from_reader::<_, RunReportDocument<ReportConfigProjection>>(reader).map_err(
-            |source| ReportReadError::Parse {
-                path: path.to_path_buf(),
-                source,
-            },
-        )?
-    };
-    validate_document(path, document)
+) -> Result<DecodedReport<C>, ReportReadError> {
+    let payloads = jsonl::read_payloads(path, reader)?;
+    validate_structure(path, &payloads)?;
+    Ok(DecodedReport {
+        run_id: payloads.run.run_id().to_owned(),
+        normalized_config: payloads.run.0.normalized_config,
+        baseline: payloads.baseline,
+        mutants: payloads.mutants,
+        summary: payloads.summary,
+    })
 }
 
 #[cfg(test)]
@@ -333,29 +263,7 @@ fn read_buffered_report(
     path: &Path,
     bytes: &[u8],
 ) -> Result<DecodedReport<ReportConfigProjection>, ReportReadError> {
-    let header = dispatch::probe(bytes);
-    if let Some(header) = header {
-        check_schema(path, header.schema_version)?;
-    }
-    read_with_header(path, bytes, header)
-}
-
-fn validate_document<C>(
-    path: &Path,
-    document: RunReportDocument<C>,
-) -> Result<DecodedReport<C>, ReportReadError> {
-    validate_schema_versions(path, &document)?;
-    let document = document.into_payloads(path)?;
-    validate_structure(path, &document)?;
-
-    let run_id = document.run.run_id().to_owned();
-    Ok(DecodedReport {
-        normalized_config: document.run.0.normalized_config,
-        run_id,
-        baseline: document.baseline,
-        mutants: document.mutants,
-        summary: document.summary,
-    })
+    read_stream(path, bytes)
 }
 
 fn check_schema(path: &Path, found: u32) -> Result<(), ReportReadError> {
@@ -367,21 +275,6 @@ fn check_schema(path: &Path, found: u32) -> Result<(), ReportReadError> {
             found,
         })
     }
-}
-
-fn validate_schema_versions<C>(
-    path: &Path,
-    document: &RunReportDocument<C>,
-) -> Result<(), ReportReadError> {
-    let versions = std::iter::once(document.schema_version)
-        .chain(std::iter::once(document.run.schema_version()))
-        .chain(document.baseline.iter().map(OutputEvent::schema_version))
-        .chain(document.mutants.iter().map(OutputEvent::schema_version))
-        .chain(std::iter::once(document.summary.schema_version()));
-    for found in versions {
-        check_schema(path, found)?;
-    }
-    Ok(())
 }
 
 fn validate_structure<C>(path: &Path, document: &ReportPayloads<C>) -> Result<(), ReportReadError> {
@@ -533,16 +426,70 @@ impl<R: Read> Read for FingerprintReader<R> {
 }
 
 #[cfg(test)]
+pub(crate) mod test_support {
+    pub(crate) fn report_view(bytes: &[u8]) -> serde_json::Value {
+        let events: Vec<serde_json::Value> = std::str::from_utf8(bytes)
+            .unwrap()
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        let first = events.first().unwrap();
+        serde_json::json!({
+            "schema_version": first["schema_version"],
+            "run": first,
+            "baseline": events.iter().find(|event| event["kind"] == "baseline_finished"),
+            "mutants": events.iter().filter(|event| event["kind"] == "mutant_finished").collect::<Vec<_>>(),
+            "summary": events.iter().find(|event| event["kind"] == "run_finished").unwrap(),
+        })
+    }
+
+    pub(crate) fn current_report_view() -> serde_json::Value {
+        report_view(include_bytes!(
+            "../../tests/golden/events/schema-v10-current.jsonl"
+        ))
+    }
+
+    // Tests edit payloads through a named view, then serialize the real event
+    // protocol including the starts that must match each finished candidate.
+    pub(crate) fn jsonl_bytes(view: &serde_json::Value) -> Vec<u8> {
+        let mut events = vec![view["run"].clone()];
+        if !view["baseline"].is_null() {
+            events.push(view["baseline"].clone());
+        }
+        for mutant in view["mutants"].as_array().unwrap() {
+            events.push(serde_json::json!({
+                "kind": "mutant_started", "schema_version": mutant["schema_version"],
+                "run_id": mutant["run_id"], "sequence": mutant["sequence"].as_u64().unwrap() - 1,
+                "mutant_id": mutant["candidate"]["id"], "mutant_sequence": mutant["candidate"]["sequence"],
+            }));
+            events.push(mutant.clone());
+        }
+        events.push(view["summary"].clone());
+        events
+            .iter()
+            .map(|event| serde_json::to_string(event).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n")
+            .into_bytes()
+    }
+}
+
+#[cfg(test)]
 mod tests {
+    #[test]
+    fn aggregate_json_reports_are_rejected() {
+        let bytes = serde_json::to_vec(&super::test_support::current_report_view()).unwrap();
+        assert!(super::read_buffered_report(std::path::Path::new("legacy.json"), &bytes).is_err());
+        assert!(super::read_typed_jsonl(std::path::Path::new("legacy.json"), &bytes).is_err());
+    }
+
     macro_rules! required_janitor_case {
         ($name:ident, $present:expr) => {
             #[test]
             fn $name() {
-                // Arrange: exercise the actual shared JSON artifact decoder.
-                let mut document: serde_json::Value = serde_json::from_str(include_str!(
-                    "../../tests/golden/reports/schema-v10-current.json"
-                ))
-                .unwrap();
+                // Arrange: exercise the actual shared JSONL artifact decoder.
+                let mut document = super::test_support::current_report_view();
                 if !$present {
                     document["summary"]["disk"]
                         .as_object_mut()
@@ -551,7 +498,7 @@ mod tests {
                 }
                 let dir = tempfile::tempdir().unwrap();
                 let path = dir.path().join("report.json");
-                std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
+                std::fs::write(&path, jsonl_bytes(&document)).unwrap();
                 // Act.
                 let result = super::read_report(&path);
                 // Assert.
@@ -562,6 +509,7 @@ mod tests {
     required_janitor_case!(artifact_reader_rejects_missing_janitor, false);
     required_janitor_case!(artifact_reader_accepts_explicit_null_janitor, true);
 
+    use super::test_support::{current_report_view, jsonl_bytes};
     use super::*;
 
     #[test]
@@ -576,7 +524,7 @@ mod tests {
 
     #[test]
     fn review_decode_errors_identify_report_without_progress_context() {
-        let error = read_typed_json(Path::new("review-input.json"), b"{")
+        let error = read_typed_jsonl(Path::new("review-input.json"), b"{")
             .expect_err("malformed report must fail");
         let diagnostic = error.to_string();
         assert!(
@@ -589,15 +537,12 @@ mod tests {
     #[test]
     fn review_decoder_leaves_completion_policy_to_caller() {
         let project = tempfile::tempdir().unwrap();
-        let mut document: serde_json::Value = serde_json::from_str(&current_report_json()).unwrap();
+        let mut document = current_report_view();
         document["run"]["normalized_config"]["selection"]["root"] =
             serde_json::json!(project.path());
         document["summary"]["complete"] = serde_json::json!(false);
         document["summary"]["exit_code"] = serde_json::json!(4);
-        let result = read_typed_json(
-            Path::new("review-input.json"),
-            &serde_json::to_vec(&document).unwrap(),
-        );
+        let result = read_typed_jsonl(Path::new("review-input.json"), &jsonl_bytes(&document));
         assert!(
             result.is_ok(),
             "structurally valid incomplete report must decode"
@@ -608,7 +553,7 @@ mod tests {
     fn review_rejects_old_root_shape() {
         let bytes = include_bytes!("../../tests/golden/reports/schema-v6-current.json");
 
-        assert!(read_typed_json(Path::new("old.json"), bytes).is_err());
+        assert!(read_typed_jsonl(Path::new("old.json"), bytes).is_err());
     }
 
     #[test]
@@ -624,40 +569,47 @@ mod tests {
         let payload = serde_json::to_string(&document).unwrap();
         let wire = format!(r#"{{"schema_version":6,{}"#, &payload[1..]);
 
-        let error = read_typed_json(Path::new("old.json"), wire.as_bytes())
+        let error = read_typed_jsonl(Path::new("old.json"), wire.as_bytes())
             .expect_err("old shape must fail during typed decode");
 
         assert!(matches!(error, ReportReadError::Parse { .. }), "{error}");
     }
 
-    fn current_report_json() -> String {
-        let document: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tests/golden/reports/schema-v10-current.json"
-        ))
-        .unwrap();
-        serde_json::to_string(&document).unwrap()
+    fn current_report_jsonl() -> String {
+        String::from_utf8(jsonl_bytes(&current_report_view())).unwrap()
     }
 
     #[test]
     fn review_accepts_current_schema_first_and_last() {
         let project = tempfile::tempdir().unwrap();
-        let mut document: serde_json::Value = serde_json::from_str(&current_report_json()).unwrap();
+        let mut document = current_report_view();
         document["run"]["normalized_config"]["selection"]["root"] =
             serde_json::json!(project.path());
-        let schema = document
+        let mut events: Vec<serde_json::Value> = std::str::from_utf8(&jsonl_bytes(&document))
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        let schema = events[0]
             .as_object_mut()
             .unwrap()
             .remove("schema_version")
             .unwrap();
-        let payload = serde_json::to_string(&document).unwrap();
-        for wire in [
+        let payload = serde_json::to_string(&events[0]).unwrap();
+        let rest = events[1..]
+            .iter()
+            .map(|event| serde_json::to_string(event).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n");
+        for first in [
             format!(r#"{{"schema_version":{schema},{}"#, &payload[1..]),
             format!(
                 r#"{},"schema_version":{schema}}}"#,
                 &payload[..payload.len() - 1]
             ),
         ] {
-            let report = read_typed_json(Path::new("report.json"), wire.as_bytes())
+            let wire = format!("{first}\n{rest}");
+            let report = read_typed_jsonl(Path::new("report.json"), wire.as_bytes())
                 .unwrap_or_else(|error| panic!("{error}"));
 
             assert_eq!(
@@ -670,17 +622,14 @@ mod tests {
     }
 
     #[test]
-    fn review_checks_document_schema_before_project_root_read() {
+    fn review_checks_event_schema_before_project_root_read() {
         let project = tempfile::tempdir().unwrap();
-        let mut document: serde_json::Value = serde_json::from_str(&current_report_json()).unwrap();
+        let mut document = current_report_view();
         document["run"]["normalized_config"]["selection"]["root"] =
             serde_json::json!(project.path().join("missing-project"));
-        document["schema_version"] = serde_json::json!(9);
+        document["run"]["schema_version"] = serde_json::json!(9);
 
-        let result = read_typed_json(
-            Path::new("report.json"),
-            &serde_json::to_vec(&document).unwrap(),
-        );
+        let result = read_typed_jsonl(Path::new("report.json"), &jsonl_bytes(&document));
 
         assert!(matches!(
             result,
@@ -691,16 +640,13 @@ mod tests {
     fn reject_config_before_root_read(change: fn(&mut serde_json::Value), expected: &str) {
         // Arrange: project availability must not affect typed configuration validation.
         let project = tempfile::tempdir().unwrap();
-        let mut document: serde_json::Value = serde_json::from_str(&current_report_json()).unwrap();
+        let mut document = current_report_view();
         document["run"]["normalized_config"]["selection"]["root"] =
             serde_json::json!(project.path().join("missing-project"));
         change(&mut document["run"]["normalized_config"]);
 
         // Act
-        let result = read_typed_json(
-            Path::new("report.json"),
-            &serde_json::to_vec(&document).unwrap(),
-        );
+        let result = read_typed_jsonl(Path::new("report.json"), &jsonl_bytes(&document));
 
         // Assert
         let error = result.expect_err("invalid config must fail");
@@ -744,17 +690,14 @@ mod tests {
     fn review_decoder_does_not_resolve_project_root() {
         // Arrange
         let project = tempfile::tempdir().unwrap();
-        let mut document: serde_json::Value = serde_json::from_str(&current_report_json()).unwrap();
+        let mut document = current_report_view();
         document["run"]["normalized_config"]["selection"]["root"] =
             serde_json::json!(project.path().join("missing-project"));
         document["run"]["normalized_config"]["limits"]["jobs"] = serde_json::json!(4);
         document["run"]["normalized_config"]["limits"]["max_processes"] = serde_json::json!(1);
 
         // Act
-        let result = read_typed_json(
-            Path::new("report.json"),
-            &serde_json::to_vec(&document).unwrap(),
-        );
+        let result = read_typed_jsonl(Path::new("report.json"), &jsonl_bytes(&document));
 
         // Assert
         assert!(result.is_ok(), "decoder must not resolve project roots");
@@ -774,12 +717,12 @@ mod tests {
             (r#""jobs":1"#, r#""jobs":0"#),
         ] {
             // Arrange
-            let original_json = current_report_json();
+            let original_json = current_report_jsonl();
             assert_eq!(original_json.matches(original).count(), 1);
             let raw = original_json.replacen(original, replacement, 1);
 
             // Act
-            let result = read_typed_json(Path::new("report.json"), raw.as_bytes());
+            let result = read_typed_jsonl(Path::new("report.json"), raw.as_bytes());
 
             // Assert
             assert!(
@@ -835,12 +778,12 @@ mod tests {
             (r#""mode":"resume""#, r#""mode":"resume","mode":"resume""#),
         ] {
             // Arrange: insert duplicates after serialization so no Value map can erase them.
-            let original_json = current_report_json();
+            let original_json = current_report_jsonl();
             assert_eq!(original_json.matches(original).count(), 1);
             let raw = original_json.replacen(original, duplicate, 1);
 
             // Act
-            let result = read_typed_json(Path::new("report.json"), raw.as_bytes());
+            let result = read_typed_jsonl(Path::new("report.json"), raw.as_bytes());
 
             // Assert
             assert!(
@@ -856,7 +799,7 @@ mod tests {
             first in 1_u16..=256,
             second in 1_u16..=256,
             escaped_first in proptest::bool::ANY,
-            whitespace in "[ \\t\\r\\n]{0,8}",
+            whitespace in "[ \\t\\r]{0,8}",
         ) {
             // Arrange: both values are valid in isolation; escaped names denote the same key.
             let (first_key, second_key) = if escaped_first {
@@ -865,11 +808,11 @@ mod tests {
                 (r#""jobs""#, r#""\u006aobs""#)
             };
             let duplicate = format!("{first_key}:{first},{whitespace}{second_key}:{second}");
-            let original = current_report_json().replace(r#""max_processes":64"#, r#""max_processes":256"#);
+            let original = current_report_jsonl().replace(r#""max_processes":64"#, r#""max_processes":256"#);
             let raw = original.replacen(r#""jobs":1"#, &duplicate, 1);
 
             // Act
-            let result = read_typed_json(Path::new("report.json"), raw.as_bytes());
+            let result = read_typed_jsonl(Path::new("report.json"), raw.as_bytes());
 
             // Assert
             let error = result.map(|_| ()).expect_err("duplicate jobs must be rejected");
@@ -878,10 +821,10 @@ mod tests {
     }
 
     #[test]
-    fn fingerprint_covers_complete_json_and_jsonl_reads_including_whitespace() {
+    fn fingerprint_covers_complete_jsonl_reads_including_whitespace() {
         let directory = tempfile::tempdir().unwrap();
         for input in [
-            current_report_json(),
+            current_report_jsonl(),
             include_str!("../../tests/golden/events/schema-v10-current.jsonl").to_owned(),
         ] {
             // More than one BufReader buffer, including a final blank line.
@@ -898,18 +841,19 @@ mod tests {
         use std::io::Write;
         let directory = tempfile::tempdir().unwrap();
         for input in [
-            current_report_json(),
+            current_report_jsonl(),
             include_str!("../../tests/golden/events/schema-v10-current.jsonl").to_owned(),
         ] {
             let path = directory.path().join("report");
             std::fs::write(&path, &input).unwrap();
-            let (reader, header) = report_reader(&path).unwrap();
+            let reader = report_reader(&path).unwrap();
             let mut appended = std::fs::OpenOptions::new()
                 .append(true)
                 .open(&path)
                 .unwrap();
             appended.write_all(&vec![b' '; 32 * 1024]).unwrap();
-            let error = read_with_header(&path, BufReader::new(reader), header).unwrap_err();
+            let error =
+                read_stream::<ReportConfigProjection>(&path, BufReader::new(reader)).unwrap_err();
             assert!(
                 error.to_string().contains("grew while being read"),
                 "{error}"

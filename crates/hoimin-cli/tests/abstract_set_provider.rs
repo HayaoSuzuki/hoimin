@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 #[path = "support/mutation_outcome.rs"]
 mod mutation_outcome;
 use collecting_writer::CollectingWriter;
@@ -36,9 +38,7 @@ async fn invoke(source: &str, mode: &str, operator: &str) -> serde_json::Value {
         "1B".into(),
         "--allow-best-effort-memory".into(),
     ];
-    if mode == "run" {
-        args.extend(["--format".into(), "json".into()]);
-    }
+
     args.extend([
         "--".into(),
         python().into(),
@@ -50,7 +50,7 @@ async fn invoke(source: &str, mode: &str, operator: &str) -> serde_json::Value {
     let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
     // The import-only command leaves the valid mutant alive (score below 1).
     assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
-    serde_json::from_slice(&stdout.snapshot()).unwrap()
+    jsonl_report::from_slice(&stdout.snapshot()).unwrap()
 }
 
 fn evaluate(source: &str, expected: &str) {

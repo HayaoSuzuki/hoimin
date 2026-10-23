@@ -410,27 +410,11 @@ pub struct RawRunConfig {
     pub resume: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum OutputFormat {
-    Json,
-    Jsonl,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OutputConfig {
-    pub format: OutputFormat,
     #[serde(default)]
     pub metrics: Option<Utf8PathBuf>,
-}
-
-impl Default for OutputConfig {
-    fn default() -> Self {
-        Self {
-            format: OutputFormat::Json,
-            metrics: None,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

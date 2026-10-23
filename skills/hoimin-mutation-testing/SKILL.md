@@ -28,7 +28,7 @@ cancelled, error, and not-run results distinct from conclusive outcomes. Do not
 silently relax limits or retry an unchanged resource-exhausting run. Consult the
 user before increasing agreed resource consumption or accepting weaker enforcement.
 
-In schema-9 JSON `mutants[]` and JSONL `mutant_finished`, read the derived `status`
+In schema-10 JSONL `mutant_finished` events, read the derived `status`
 for the candidate verdict. Do not infer killed from a nonzero exit alone:
 `Exit(1)` with `outcome.executed.output_state: "close_timed_out"` is `error`.
 Strict readers reject status/outcome disagreement with exit 2; generic JSON Schema
@@ -120,9 +120,13 @@ hoimin plan --root . --source <dir> --allow-best-effort-memory \
 Read `candidates[].id` from `PLAN.json`; choose one ID and pass that exact ID to `verify`:
 
 ```console
-hoimin verify "$plan_path" --candidate '<ID_FROM_PLAN_JSON>' --format json \
-  > "$temp_dir/verify-001.json"
+hoimin verify "$plan_path" --candidate '<ID_FROM_PLAN_JSON>' \
+  > "$temp_dir/verify-001.jsonl"
 ```
+
+Execution writes JSONL events without a format selector. Read candidate results
+from `mutant_finished` and the final counts/completeness from `run_finished`.
+Keep the event stream unchanged for progress or review input.
 
 Everything after `--` in `plan` remains the normal test command's native argv; do not turn it
 into a shell command string. `plan` runs no baseline, test command, worker copy, or session.

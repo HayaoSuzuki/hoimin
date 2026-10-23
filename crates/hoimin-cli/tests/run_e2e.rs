@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 #[path = "support/mutation_outcome.rs"]
 mod mutation_outcome;
 use collecting_writer::CollectingWriter;
@@ -37,7 +39,7 @@ fn full_report_transport() -> (std::os::unix::net::UnixStream, std::os::fd::Owne
 async fn stalled_report_consumer_cannot_outlive_total_timeout_and_grace() {
     use std::process::Stdio;
 
-    for format in ["jsonl", "json"] {
+    {
         let project = tempfile::tempdir().unwrap();
         std::fs::write(project.path().join("target.py"), "pass\n").unwrap();
         let (consumer, producer, _) = full_report_transport();
@@ -47,8 +49,6 @@ async fn stalled_report_consumer_cannot_outlive_total_timeout_and_grace() {
             .args([
                 "--file",
                 "target.py",
-                "--format",
-                format,
                 "--allow-best-effort-memory",
                 "--total-timeout",
                 "1s",
@@ -72,10 +72,10 @@ async fn stalled_report_consumer_cannot_outlive_total_timeout_and_grace() {
         let diagnostics = diagnostics.await.unwrap();
         let status = status
             .unwrap_or_else(|_| {
-                panic!("format={format}: stalled report exceeded timeout plus grace: {diagnostics}")
+                panic!("format=jsonl: stalled report exceeded timeout plus grace: {diagnostics}")
             })
             .unwrap();
-        assert_eq!(status.code(), Some(2), "format={format}: {diagnostics}");
+        assert_eq!(status.code(), Some(2), "format=jsonl: {diagnostics}");
     }
 }
 
@@ -84,7 +84,7 @@ async fn stalled_report_consumer_cannot_outlive_total_timeout_and_grace() {
 async fn stalled_stderr_cannot_reenter_an_unbounded_terminal_diagnostic() {
     use std::process::Stdio;
 
-    for format in ["json", "jsonl"] {
+    {
         let project = tempfile::tempdir().unwrap();
         std::fs::write(project.path().join("target.py"), "def broken(:\n").unwrap();
         let (consumer, producer, _) = full_report_transport();
@@ -94,8 +94,6 @@ async fn stalled_stderr_cannot_reenter_an_unbounded_terminal_diagnostic() {
             .args([
                 "--file",
                 "target.py",
-                "--format",
-                format,
                 "--allow-best-effort-memory",
                 "--total-timeout",
                 "1s",
@@ -117,7 +115,7 @@ async fn stalled_stderr_cannot_reenter_an_unbounded_terminal_diagnostic() {
                 .unwrap()
                 .code(),
             Some(2),
-            "format={format}"
+            "format=jsonl"
         );
     }
 }
@@ -128,7 +126,7 @@ async fn first_sigint_bounds_a_started_report_write() {
     use std::io::Read;
     use std::process::Stdio;
 
-    for format in ["jsonl", "json"] {
+    {
         let project = tempfile::tempdir().unwrap();
         std::fs::write(project.path().join("target.py"), "pass\n").unwrap();
         let (mut consumer, producer, filled) = full_report_transport();
@@ -140,8 +138,6 @@ async fn first_sigint_bounds_a_started_report_write() {
             .args([
                 "--file",
                 "target.py",
-                "--format",
-                format,
                 "--allow-best-effort-memory",
                 "--total-timeout",
                 "30s",
@@ -181,7 +177,7 @@ async fn first_sigint_bounds_a_started_report_write() {
         reap_test_child(&mut child).await.unwrap();
         assert_eq!(
             outcome
-                .unwrap_or_else(|error| panic!("format={format}: {error}"))
+                .unwrap_or_else(|error| panic!("format=jsonl: {error}"))
                 .code(),
             Some(2)
         );
@@ -768,8 +764,6 @@ async fn real_binary_json_report_and_diagnostic_use_separate_streams() {
         .arg("src")
         .arg("--file")
         .arg("src/calc.py")
-        .arg("--format")
-        .arg("json")
         .arg("--allow-best-effort-memory")
         .arg("--")
         .arg(python_executable())
@@ -798,8 +792,23 @@ async fn real_binary_json_report_and_diagnostic_use_separate_streams() {
         .into_iter::<serde_json::Value>()
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
-    assert_eq!(reports.len(), 1, "stdout must contain exactly one report");
-    assert_eq!(reports[0]["summary"]["complete"], false);
+    assert_eq!(
+        reports
+            .iter()
+            .filter(|event| event["kind"] == "run_started")
+            .count(),
+        1
+    );
+    assert_eq!(
+        reports
+            .iter()
+            .filter(|event| event["kind"] == "run_finished")
+            .count(),
+        1
+    );
+    assert_eq!(reports.first().unwrap()["kind"], "run_started");
+    assert_eq!(reports.last().unwrap()["kind"], "run_finished");
+    assert_eq!(reports.last().unwrap()["complete"], false);
     assert!(
         !String::from_utf8_lossy(&output.stdout).contains("analyzer.invalid_syntax"),
         "diagnostic leaked to stdout"
@@ -1011,8 +1020,6 @@ async fn joinset_and_completion_queue_stay_bounded_across_many_mutants() {
         OsString::from("src/calc.py"),
         OsString::from("--jobs"),
         OsString::from("4"),
-        OsString::from("--format"),
-        OsString::from("json"),
         OsString::from("--allow-best-effort-memory"),
         OsString::from("--"),
         python.as_os_str().to_owned(),
@@ -1034,7 +1041,7 @@ async fn joinset_and_completion_queue_stay_bounded_across_many_mutants() {
     .unwrap();
 
     assert_eq!(exit, 0);
-    let document: serde_json::Value = serde_json::from_slice(&stdout.bytes()).unwrap();
+    let document: serde_json::Value = jsonl_report::from_slice(&stdout.bytes()).unwrap();
     assert!(document["mutants"].as_array().unwrap().len() >= 20);
     assert!(control.max_process_tasks() <= 4);
     assert!(control.max_completion_in_flight() <= 5);
@@ -1322,8 +1329,6 @@ async fn import_only_match_negative_literal_has_no_unary_mutant_to_kill() {
             "subject.py",
             "--operators",
             "unary_sign",
-            "--format",
-            "json",
             "--allow-best-effort-memory",
             "--",
         ])
@@ -1337,17 +1342,23 @@ async fn import_only_match_negative_literal_has_no_unary_mutant_to_kill() {
         "run stderr={}",
         String::from_utf8_lossy(&run.stderr)
     );
-    let report: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&run.stdout).unwrap();
     assert_eq!(report["mutants"], serde_json::json!([]));
     assert_eq!(report["summary"]["counts"]["killed"], 0);
 }
 
 #[tokio::test]
-async fn session_is_not_created_when_the_option_is_absent_and_stdout_is_one_json_document() {
+async fn session_is_not_created_when_the_option_is_absent_and_stdout_is_jsonl() {
     let run = run_fixture(&["-m", "pytest", "-q", "tests"]).await;
 
     assert!(!fixture_root().join(".hoimin.sqlite3").exists());
-    assert_eq!(run.stdout.lines().count(), 1);
+    let events: Vec<serde_json::Value> = run
+        .stdout
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(events.first().unwrap()["kind"], "run_started");
+    assert_eq!(events.last().unwrap()["kind"], "run_finished");
     assert!(
         run.stderr.is_empty(),
         "unexpected diagnostics: {}",
@@ -1376,8 +1387,6 @@ async fn fingerprint_include_unmatched_fails_before_creating_session() {
         database.as_os_str().to_owned(),
         OsString::from("--fingerprint-include"),
         OsString::from("missing.toml"),
-        OsString::from("--format"),
-        OsString::from("json"),
         OsString::from("--allow-best-effort-memory"),
         OsString::from("--"),
         python.as_os_str().to_owned(),
@@ -1454,8 +1463,7 @@ async fn fingerprint_include_is_reported() {
         "pyproject.toml"
     );
 
-    let jsonl =
-        run_fixture_options_extra_with_format(&test_args, None, false, "jsonl", &options).await;
+    let jsonl = run_fixture_options_extra_jsonl(&test_args, None, false, &options).await;
     assert_eq!(jsonl.exit_code, 0, "stderr={}", jsonl.stderr);
     let run_started = jsonl
         .stdout
@@ -1494,8 +1502,7 @@ async fn fingerprint_file_is_reported() {
         ["pyproject.toml"]
     );
 
-    let jsonl =
-        run_fixture_options_extra_with_format(&test_args, None, false, "jsonl", &options).await;
+    let jsonl = run_fixture_options_extra_jsonl(&test_args, None, false, &options).await;
     assert_eq!(jsonl.exit_code, 0, "stderr={}", jsonl.stderr);
     let run_started = jsonl
         .stdout
@@ -1758,8 +1765,8 @@ async fn concurrent_real_cli_runs_refuse_live_session_ownership() {
 
     assert_eq!(incomplete_runs, 1);
     assert_eq!(second.exit_code, 2);
-    let second_document: serde_json::Value =
-        serde_json::from_str(&second.stdout).expect("refused process must emit a JSON report");
+    let second_document: serde_json::Value = jsonl_report::from_slice(second.stdout.as_bytes())
+        .expect("refused process must emit a JSON report");
     assert_eq!(second_document["summary"]["complete"], false);
     assert!(
         second.stderr.contains("session.resume.active"),
@@ -2025,7 +2032,7 @@ async fn sqlite_session_can_be_resumed_after_repeated_mutant_limits() {
 #[tokio::test]
 async fn focused_profile_is_reported_and_omits_arid_candidates() {
     let project = focused_profile_project();
-    let run = run_focused_profile(project.path(), "focused", "json", None, false, 100).await;
+    let run = run_focused_profile(project.path(), "focused", None, false, 100).await;
 
     assert_eq!(
         run.document["run"]["normalized_config"]["profile"],
@@ -2039,7 +2046,7 @@ async fn focused_profile_is_reported_and_omits_arid_candidates() {
         .collect();
     assert_eq!(lines, vec![4, 4, 4, 4, 4, 9, 9, 9, 9, 9]);
 
-    let jsonl = run_focused_profile(project.path(), "focused", "jsonl", None, false, 100).await;
+    let jsonl = run_focused_profile(project.path(), "focused", None, false, 100).await;
     let run_started = jsonl
         .stdout
         .lines()
@@ -2055,12 +2062,11 @@ async fn focused_profile_does_not_resume_full_profile_session() {
     let sessions = tempfile::tempdir().unwrap();
     let database = sessions.path().join("session.sqlite3");
 
-    let full = run_focused_profile(project.path(), "full", "json", Some(&database), false, 1).await;
+    let full = run_focused_profile(project.path(), "full", Some(&database), false, 1).await;
     assert_eq!(full.exit_code, 4, "stderr={}", full.stderr);
     assert_eq!(full.document["summary"]["complete"], false);
 
-    let focused =
-        run_focused_profile(project.path(), "focused", "json", Some(&database), true, 1).await;
+    let focused = run_focused_profile(project.path(), "focused", Some(&database), true, 1).await;
     assert_eq!(focused.exit_code, 4, "stderr={}", focused.stderr);
     assert_eq!(focused.document["summary"]["complete"], false);
 
@@ -2180,7 +2186,6 @@ async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
         project.path(),
         coordinator.path(),
         &session,
-        "jsonl",
         &["--operators", "binary_add_sub", "--total-timeout", "5s"],
     );
     let stdout_pipe = child.stdout.take().unwrap();
@@ -2340,8 +2345,6 @@ async fn injected_ctrl_c_finishes_incomplete_or_defers_when_tree_quiescence_is_u
         OsString::from("4"),
         OsString::from("--session"),
         session.as_os_str().to_owned(),
-        OsString::from("--format"),
-        OsString::from("json"),
         OsString::from("--allow-best-effort-memory"),
         OsString::from("--"),
         python.as_os_str().to_owned(),
@@ -2406,7 +2409,7 @@ async fn injected_ctrl_c_finishes_incomplete_or_defers_when_tree_quiescence_is_u
         );
     }
     let document: serde_json::Value =
-        serde_json::from_slice(&stdout.bytes()).expect("parseable cancelled report");
+        jsonl_report::from_slice(&stdout.bytes()).expect("parseable cancelled report");
     assert_eq!(document["summary"]["complete"], false);
     for expected in
         [&[][..], &[hoimin_core::PROCESS_LIFECYCLE_FAILED][..]][usize::from(cleanup_deferred)]
@@ -2464,7 +2467,7 @@ async fn first_interrupt_scenario() {
     write_parallel_project(project.path());
     let session = coordinator.path().join("session.sqlite3");
     let (mut child, active, descendant_ready) =
-        spawn_interrupt_fixture(project.path(), coordinator.path(), &session, "json", &[]);
+        spawn_interrupt_fixture(project.path(), coordinator.path(), &session, &[]);
     // Drain stdout while the child is running; a complete JSON report can exceed the pipe buffer.
     let mut stdout_reader = child.stdout.take().unwrap();
     let stdout_task = tokio::spawn(async move {
@@ -2519,7 +2522,7 @@ async fn first_interrupt_scenario() {
     let stdout = stdout.unwrap_or_else(|error| panic!("cancelled stdout was not UTF-8: {error}"));
 
     assert_eq!(status.code(), Some(130));
-    let report: serde_json::Value = serde_json::from_str(&stdout)
+    let report: serde_json::Value = jsonl_report::from_slice(stdout.as_bytes())
         .unwrap_or_else(|error| panic!("cancelled stdout must be JSON ({error}): {stdout:?}"));
     assert_eq!(report["summary"]["complete"], false);
     assert_eq!(session_complete(&session), 0);
@@ -2723,8 +2726,6 @@ async fn serial_output_that_requests_stop_is_accepted_before_cancellation() {
         OsString::from("src/calc.py"),
         OsString::from("--jobs"),
         OsString::from("1"),
-        OsString::from("--format"),
-        OsString::from("jsonl"),
         OsString::from("--allow-best-effort-memory"),
         OsString::from("--metrics"),
         metrics_path.as_os_str().to_owned(),
@@ -2811,8 +2812,6 @@ async fn failed_mutant_started_output_prevents_process_start() {
         OsString::from("src"),
         OsString::from("--file"),
         OsString::from("src/calc.py"),
-        OsString::from("--format"),
-        OsString::from("jsonl"),
         OsString::from("--allow-best-effort-memory"),
         OsString::from("--"),
         python.as_os_str().to_owned(),
@@ -2860,8 +2859,6 @@ async fn worker_pythonpath_rewrites_an_original_src_root_to_the_mutated_copy() {
         OsString::from("src"),
         OsString::from("--file"),
         OsString::from("src/hoimin_worker_import_probe/calc.py"),
-        OsString::from("--format"),
-        OsString::from("json"),
         OsString::from("--allow-best-effort-memory"),
         OsString::from("--"),
         python.as_os_str().to_owned(),
@@ -2876,7 +2873,7 @@ async fn worker_pythonpath_rewrites_an_original_src_root_to_the_mutated_copy() {
         .unwrap();
 
     let document: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("complete JSON report");
+        jsonl_report::from_slice(&output.stdout).expect("complete JSON report");
     assert!(
         output.status.success(),
         "{}",
@@ -3018,7 +3015,7 @@ async fn assert_baseline_generated_file_lifecycle(python_name: &str) {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_eq!(output.status.code(), Some(0), "{stderr}");
-    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
     assert_eq!(report["baseline"]["termination"]["Exit"], 0, "{stderr}");
     assert_eq!(report["mutants"].as_array().unwrap().len(), 1);
     assert_eq!(mutation_outcome::status(&report["mutants"][0]), "killed");
@@ -3080,7 +3077,7 @@ async fn baseline_and_mutants_can_read_colon_named_workspace_fixtures() {
         .output()
         .await
         .unwrap();
-    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
     assert_eq!(
         report["baseline"]["termination"]["Exit"],
         0,
@@ -3124,8 +3121,6 @@ async fn run_type_checker(checker: &Path, expected_status: &str) -> FixtureRun {
         OsString::from("type_nullable"),
         OsString::from("--max-mutants"),
         OsString::from("1"),
-        OsString::from("--format"),
-        OsString::from("json"),
         OsString::from("--allow-best-effort-memory"),
         OsString::from("--"),
         checker.as_os_str().to_owned(),
@@ -3155,14 +3150,13 @@ async fn run_fixture_options_extra(
     resume: bool,
     extra_options: &[&str],
 ) -> FixtureRun {
-    run_fixture_options_extra_with_format(test_args, session, resume, "json", extra_options).await
+    run_fixture_options_extra_jsonl(test_args, session, resume, extra_options).await
 }
 
-async fn run_fixture_options_extra_with_format(
+async fn run_fixture_options_extra_jsonl(
     test_args: &[&str],
     session: Option<&Path>,
     resume: bool,
-    format: &str,
     extra_options: &[&str],
 ) -> FixtureRun {
     let root = fixture_root();
@@ -3178,8 +3172,6 @@ async fn run_fixture_options_extra_with_format(
         OsString::from("src"),
         OsString::from("--file"),
         OsString::from("src/calc.py"),
-        OsString::from("--format"),
-        OsString::from(format),
         OsString::from("--allow-best-effort-memory"),
         OsString::from("--"),
         python.as_os_str().to_owned(),
@@ -3203,15 +3195,11 @@ async fn run_fixture_options_extra_with_format(
     let exit_code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
     let stdout = String::from_utf8(stdout.snapshot()).unwrap();
     let stderr = String::from_utf8(stderr.snapshot()).unwrap();
-    let document = if format == "json" {
-        serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
+    let document: serde_json::Value = jsonl_report::from_slice(stdout.as_bytes()).unwrap_or_else(|error| {
             panic!(
                 "invalid JSON report ({error}); exit={exit_code}; stdout={stdout:?}; stderr={stderr:?}"
             )
-        })
-    } else {
-        serde_json::Value::Null
-    };
+        });
     let statuses = document["mutants"]
         .as_array()
         .map(|mutants| {
@@ -3237,7 +3225,7 @@ async fn run_fixture_options_extra_with_format(
 fn fixture_run(exit_code: i32, stdout: Vec<u8>, stderr: Vec<u8>) -> FixtureRun {
     let stdout = String::from_utf8(stdout).unwrap();
     let stderr = String::from_utf8(stderr).unwrap();
-    let document: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
+    let document: serde_json::Value = jsonl_report::from_slice(stdout.as_bytes()).unwrap_or_else(|error| {
         panic!(
             "invalid JSON report ({error}); exit={exit_code}; stdout={stdout:?}; stderr={stderr:?}"
         )
@@ -3430,8 +3418,6 @@ fn real_cli_session_args(
     args.extend([
         OsString::from("--max-mutants"),
         OsString::from("1"),
-        OsString::from("--format"),
-        OsString::from("json"),
         OsString::from("--allow-best-effort-memory"),
         OsString::from("--"),
         python_executable().into_os_string(),
@@ -3498,7 +3484,6 @@ fn focused_profile_project() -> tempfile::TempDir {
 async fn run_focused_profile(
     root: &Path,
     profile: &str,
-    format: &str,
     session: Option<&Path>,
     resume: bool,
     max_mutants: usize,
@@ -3519,8 +3504,6 @@ async fn run_focused_profile(
         OsString::from(profile),
         OsString::from("--max-mutants"),
         OsString::from(max_mutants.to_string()),
-        OsString::from("--format"),
-        OsString::from(format),
         OsString::from("--allow-best-effort-memory"),
         OsString::from("--"),
         python.as_os_str().to_owned(),
@@ -3544,15 +3527,11 @@ async fn run_focused_profile(
     let exit_code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
     let stdout = String::from_utf8(stdout.snapshot()).unwrap();
     let stderr = String::from_utf8(stderr.snapshot()).unwrap();
-    let document = if format == "json" {
-        serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
+    let document: serde_json::Value = jsonl_report::from_slice(stdout.as_bytes()).unwrap_or_else(|error| {
             panic!(
                 "invalid JSON report ({error}); exit={exit_code}; stdout={stdout:?}; stderr={stderr:?}"
             )
-        })
-    } else {
-        serde_json::Value::Null
-    };
+        });
     let statuses = document["mutants"]
         .as_array()
         .map(|mutants| {
@@ -3616,8 +3595,6 @@ async fn run_project_with_session_options(
     args.extend([
         OsString::from("--max-mutants"),
         OsString::from(max_mutants.to_string()),
-        OsString::from("--format"),
-        OsString::from("json"),
         OsString::from("--allow-best-effort-memory"),
         OsString::from("--"),
         python.as_os_str().to_owned(),
@@ -3629,7 +3606,7 @@ async fn run_project_with_session_options(
     let exit_code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
     let stdout = String::from_utf8(stdout.snapshot()).unwrap();
     let stderr = String::from_utf8(stderr.snapshot()).unwrap();
-    let document: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
+    let document: serde_json::Value = jsonl_report::from_slice(stdout.as_bytes()).unwrap_or_else(|error| {
         panic!(
             "invalid JSON report ({error}); exit={exit_code}; stdout={stdout:?}; stderr={stderr:?}"
         )
@@ -3677,8 +3654,6 @@ async fn run_project_options(
         OsString::from("src/calc.py"),
         OsString::from("--jobs"),
         OsString::from(jobs.to_string()),
-        OsString::from("--format"),
-        OsString::from("json"),
         OsString::from("--allow-best-effort-memory"),
         OsString::from("--"),
         python.as_os_str().to_owned(),
@@ -3695,7 +3670,7 @@ async fn run_project_options(
     let exit_code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
     let stdout = String::from_utf8(stdout.snapshot()).unwrap();
     let stderr = String::from_utf8(stderr.snapshot()).unwrap();
-    let document: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
+    let document: serde_json::Value = jsonl_report::from_slice(stdout.as_bytes()).unwrap_or_else(|error| {
         panic!(
             "invalid JSON report ({error}); exit={exit_code}; stdout={stdout:?}; stderr={stderr:?}"
         )
@@ -3914,7 +3889,7 @@ fn spawn_second_interrupt_fixture(
     coordinator: &Path,
     session: &Path,
 ) -> (tokio::process::Child, PathBuf, PathBuf) {
-    spawn_interrupt_fixture(project, coordinator, session, "jsonl", &[])
+    spawn_interrupt_fixture(project, coordinator, session, &[])
 }
 
 #[cfg(any(unix, windows))]
@@ -3922,7 +3897,6 @@ fn spawn_interrupt_fixture(
     project: &Path,
     coordinator: &Path,
     session: &Path,
-    format: &str,
     extra_run_args: &[&str],
 ) -> (tokio::process::Child, PathBuf, PathBuf) {
     let active = coordinator.join("active");
@@ -3958,8 +3932,6 @@ fn spawn_interrupt_fixture(
         .arg("1")
         .arg("--session")
         .arg(session)
-        .arg("--format")
-        .arg(format)
         .arg("--allow-best-effort-memory")
         .args(extra_run_args)
         .arg("--")
@@ -4294,16 +4266,6 @@ type ResourceReport = (
     serde_json::Value,
 );
 
-fn parse_resource_json(stdout: &[u8]) -> ResourceReport {
-    let doc: serde_json::Value = serde_json::from_slice(stdout).unwrap();
-    (
-        doc["run"].clone(),
-        doc["baseline"].clone(),
-        doc["mutants"].as_array().unwrap().clone(),
-        doc["summary"].clone(),
-    )
-}
-
 fn parse_resource_jsonl(stdout: &[u8]) -> ResourceReport {
     let events: Vec<serde_json::Value> = String::from_utf8_lossy(stdout)
         .lines()
@@ -4325,10 +4287,8 @@ fn parse_resource_jsonl(stdout: &[u8]) -> ResourceReport {
 // Uses a real timeout to leave the session incomplete; never edits saved results.
 #[tokio::test]
 async fn selected_resource_policy_survives_fresh_and_natural_resume_reports() {
-    for (format, parse) in [
-        ("json", parse_resource_json as fn(&[u8]) -> ResourceReport),
-        ("jsonl", parse_resource_jsonl),
-    ] {
+    {
+        let parse = parse_resource_jsonl;
         let project = tempfile::tempdir().unwrap();
         let sessions = tempfile::tempdir().unwrap();
         let session = sessions.path().join("session.sqlite");
@@ -4340,7 +4300,7 @@ async fn selected_resource_policy_survives_fresh_and_natural_resume_reports() {
 
         let mut reports = Vec::new();
         for resume in [false, true] {
-            let stdout = resource_policy_run(project.path(), &session, format, resume).await;
+            let stdout = resource_policy_run(project.path(), &session, resume).await;
             let (run, baseline, mutants, summary) = parse(&stdout);
             assert_eq!(summary["complete"], false);
             assert_eq!(mutants.len(), 2);
@@ -4409,7 +4369,7 @@ async fn selected_resource_policy_survives_fresh_and_natural_resume_reports() {
     }
 }
 
-async fn resource_policy_run(root: &Path, session: &Path, format: &str, resume: bool) -> Vec<u8> {
+async fn resource_policy_run(root: &Path, session: &Path, resume: bool) -> Vec<u8> {
     let command = "from pathlib import Path; import time; s=Path('calc.py').read_text(); first,second=s.split('def second'); time.sleep(6) if 'a - b' in second else None; assert 'a - b' not in first";
     let mut args: Vec<OsString> = ["hoimin", "run", "--root"]
         .into_iter()
@@ -4428,8 +4388,6 @@ async fn resource_policy_run(root: &Path, session: &Path, format: &str, resume: 
             "1B",
             "--mutant-timeout",
             "2s",
-            "--format",
-            format,
             "--allow-best-effort-memory",
             "--session",
         ]
@@ -4525,7 +4483,8 @@ async fn active_session_artifacts_allow_real_cli_in_root() {
                         String::from_utf8_lossy(&output.stdout),
                         String::from_utf8_lossy(&output.stderr)
                     );
-                    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+                    let report: serde_json::Value =
+                        jsonl_report::from_slice(&output.stdout).unwrap();
                     assert_eq!(report["baseline"]["termination"]["Exit"], 0);
                     let mutants = report["mutants"].as_array().unwrap();
                     let killed = mutants
@@ -4602,7 +4561,7 @@ async fn active_session_artifacts_follow_root_parent_and_database_aliases() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
         assert_eq!(report["baseline"]["termination"]["Exit"], 0);
         assert_eq!(mutation_outcome::status(&report["mutants"][0]), "killed");
     }
@@ -4673,7 +4632,7 @@ async fn active_session_artifacts_missing_parent_fails_preflight_without_creatio
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("session.path"));
-    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
     assert!(report["baseline"].is_null());
     assert_eq!(report["summary"]["complete"], false);
     assert!(!missing_parent.exists());
@@ -4759,7 +4718,7 @@ async fn assert_active_session_aliased_lock_tree_is_excluded(jobs: &str, mode: &
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
     command
         .current_dir(&root)
-        .args("run --root . --file calc.py --operators boolean_literal --include ** --format json --allow-best-effort-memory --min-free-space 1B --total-timeout 20s".split_whitespace())
+        .args("run --root . --file calc.py --operators boolean_literal --include ** --allow-best-effort-memory --min-free-space 1B --total-timeout 20s".split_whitespace())
         .args(["--jobs", jobs])
         .arg("--session")
         .arg(&session)
@@ -4778,7 +4737,7 @@ async fn assert_active_session_aliased_lock_tree_is_excluded(jobs: &str, mode: &
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
     assert_eq!(report["baseline"]["termination"]["Exit"], 0);
     assert_eq!(report["summary"]["complete"], true);
     assert_eq!(report["mutants"].as_array().unwrap().len(), 1);
@@ -4848,11 +4807,11 @@ async fn active_session_lock_tree_alias_supports_natural_resume() {
     for resume in [false, true] {
         let stdout = tokio::time::timeout(
             Duration::from_secs(30),
-            resource_policy_run(root, &root.join("session.db"), "json", resume),
+            resource_policy_run(root, &root.join("session.db"), resume),
         )
         .await
         .expect("bounded session resume");
-        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let report: serde_json::Value = jsonl_report::from_slice(&stdout).unwrap();
         assert_eq!(report["baseline"]["termination"]["Exit"], 0);
         assert_eq!(report["summary"]["complete"], false);
         let mutants = report["mutants"].as_array().unwrap();
@@ -4919,7 +4878,7 @@ async fn active_session_lock_tree_invalid_aliases_fail_before_baseline() {
         assert_eq!(output.status.code(), Some(2));
         let diagnostics = String::from_utf8_lossy(&output.stderr);
         assert!(diagnostics.contains(code), "{diagnostics}");
-        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
         assert!(report["baseline"].is_null());
         assert!(!root.join("session.db").exists());
         assert_eq!(std::fs::read(root.join("src/calc.py")).unwrap(), source);
@@ -4953,8 +4912,6 @@ async fn stalled_baseline_log_consumer_respects_total_timeout_and_grace() {
         .args([
             "--file",
             "target.py",
-            "--format",
-            "json",
             "--allow-best-effort-memory",
             "--min-free-space",
             TEST_MIN_FREE_SPACE,

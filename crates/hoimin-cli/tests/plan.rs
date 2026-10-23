@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 #[path = "support/mutation_outcome.rs"]
 mod mutation_outcome;
 use collecting_writer::CollectingWriter;
@@ -15,7 +17,7 @@ use std::time::{Duration, Instant};
 use hoimin_cli::target::git::{ResolveGitChanges, handle_git};
 use hoimin_cli::{
     analyzer::discover_targets,
-    cli::{OutputFormat, ParsedCommand, TopSelectionPolicy, VerifySelection, parse_from},
+    cli::{ParsedCommand, TopSelectionPolicy, VerifySelection, parse_from},
     plan::{
         PlanManifest, RankedPlanCandidate, create, prepare_verify,
         prepare_verify_preview_selection, prepare_verify_selection,
@@ -26,7 +28,7 @@ use hoimin_cli::{
 #[cfg(unix)]
 use hoimin_core::EffectId;
 use hoimin_core::{
-    MAX_JOBS, MutationCandidate, OutputFormat as CoreOutputFormat, VerificationSelectionPolicy,
+    MAX_JOBS, MutationCandidate, VerificationSelectionPolicy,
     VerificationSelectionScope as VerifySelectionScope,
 };
 
@@ -331,13 +333,9 @@ async fn plans_for_new_operator_families_pass_verify() {
             .id
             .clone();
 
-        let verified = prepare_verify(
-            &path,
-            std::slice::from_ref(&candidate_id),
-            OutputFormat::Json,
-        )
-        .await
-        .unwrap_or_else(|error| panic!("{selector} plan failed verification: {error}"));
+        let verified = prepare_verify(&path, std::slice::from_ref(&candidate_id))
+            .await
+            .unwrap_or_else(|error| panic!("{selector} plan failed verification: {error}"));
 
         assert_eq!(
             verified.selection().candidate_ids(),
@@ -454,7 +452,7 @@ async fn explicit_class_symbol_ranks_and_verifies_its_method_before_an_unrelated
         String::from_utf8_lossy(&verify_err.snapshot())
     );
     assert_eq!(verify_err.snapshot(), Vec::<u8>::new());
-    let report: serde_json::Value = serde_json::from_slice(&verify_out.snapshot()).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&verify_out.snapshot()).unwrap();
     assert_eq!(
         report["baseline"]["termination"],
         serde_json::json!({"Exit": 0})
@@ -515,14 +513,6 @@ async fn public_plans_preserve_bom_sources_and_python_columns() {
         *args.last_mut().unwrap() = OsString::from(&test_command);
         let mut run_args = args.clone();
         run_args[1] = OsString::from("run");
-        let separator = run_args
-            .iter()
-            .position(|argument| argument == "--")
-            .unwrap();
-        run_args.splice(
-            separator..separator,
-            [OsString::from("--format"), OsString::from("json")],
-        );
         let ParsedCommand::Plan(plan) = parse_from(args).unwrap() else {
             panic!("expected plan arguments");
         };
@@ -557,8 +547,6 @@ async fn public_plans_preserve_bom_sources_and_python_columns() {
             path.as_os_str().to_owned(),
             OsString::from("--candidate"),
             OsString::from(&planned_id),
-            OsString::from("--format"),
-            OsString::from("json"),
         ];
         for (mode, execution_args) in [("verify", verify_args), ("run", run_args)] {
             assert_planned_boolean_is_killed(
@@ -594,7 +582,7 @@ async fn assert_planned_boolean_is_killed(
         "{name} {mode}: stderr={}",
         String::from_utf8_lossy(&stderr.snapshot()),
     );
-    let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
     assert_eq!(
         report["baseline"]["termination"]["Exit"], 0,
         "{name} {mode}",
@@ -634,8 +622,6 @@ async fn cli_verify_rejects_a_bom_counted_column_before_baseline() {
         path.as_os_str().to_owned(),
         OsString::from("--candidate"),
         OsString::from(requested),
-        OsString::from("--format"),
-        OsString::from("json"),
     ];
     let stdout = CollectingWriter::default();
     let stderr = CollectingWriter::default();
@@ -723,7 +709,7 @@ async fn changed_selection_plan_matches_the_real_run_candidate_and_id() {
         "stderr={}",
         String::from_utf8_lossy(&run_stderr.snapshot())
     );
-    let run_report: serde_json::Value = serde_json::from_slice(&run_stdout.snapshot()).unwrap();
+    let run_report: serde_json::Value = jsonl_report::from_slice(&run_stdout.snapshot()).unwrap();
     let run_mutants = run_report["mutants"].as_array().unwrap();
     assert_eq!(run_mutants.len(), 1);
     assert_eq!(json_candidate_tuples(run_mutants), expected);
@@ -1085,8 +1071,6 @@ async fn verify_analyzer_timeout_dispatch_stops_before_the_test_command() {
         path.as_os_str().to_owned(),
         OsString::from("--candidate"),
         OsString::from(requested),
-        OsString::from("--format"),
-        OsString::from("jsonl"),
     ];
     let stdout = CollectingWriter::default();
     let stderr = CollectingWriter::default();
@@ -1113,9 +1097,7 @@ async fn verify_rejects_changed_source_before_baseline() {
     )
     .unwrap();
 
-    let error = prepare_verify(&path, &requested, OutputFormat::Json)
-        .await
-        .unwrap_err();
+    let error = prepare_verify(&path, &requested).await.unwrap_err();
 
     assert_error_code(error, "plan.source.changed");
     assert!(!marker.exists());
@@ -1133,9 +1115,7 @@ async fn verify_reports_source_change_before_ranking_for_changed_symbol_plan() {
         &["commit", "--quiet", "-m", "commit planned change"],
     );
 
-    let error = prepare_verify(&path, &requested, OutputFormat::Json)
-        .await
-        .unwrap_err();
+    let error = prepare_verify(&path, &requested).await.unwrap_err();
 
     assert_error_code(error, "plan.source.changed");
     assert!(!marker.exists());
@@ -1236,9 +1216,7 @@ async fn verify_preserves_independent_worker_and_process_limits_without_running_
     let requested = vec![manifest.candidates[0].id.clone()];
 
     // Act
-    let verified = prepare_verify(&path, &requested, OutputFormat::Json)
-        .await
-        .unwrap();
+    let verified = prepare_verify(&path, &requested).await.unwrap();
 
     // Assert
     assert_eq!(verified.config().limits.jobs.get(), 4);
@@ -1272,9 +1250,7 @@ async fn verify_rejects_invalid_normalized_config_before_project_work() {
         write_json(&path, &value);
 
         std::fs::remove_file(project.path.join("src/calc.py")).unwrap();
-        let error = prepare_verify(&path, &requested, OutputFormat::Json)
-            .await
-            .unwrap_err();
+        let error = prepare_verify(&path, &requested).await.unwrap_err();
 
         let diagnostic = error.to_string();
         let expected = format!("plan.manifest.invalid: {expected_message}");
@@ -1326,9 +1302,7 @@ async fn verify_rejects_obsolete_selection_representation_before_project_work() 
         std::fs::remove_file(project.path.join("src/calc.py")).unwrap();
 
         // Act.
-        let error = prepare_verify(&path, &requested, OutputFormat::Json)
-            .await
-            .unwrap_err();
+        let error = prepare_verify(&path, &requested).await.unwrap_err();
 
         // Assert.
         let diagnostic = error.to_string();
@@ -1353,9 +1327,7 @@ async fn verify_rejects_previous_plan_schema_before_project_work() {
     std::fs::remove_file(project.path.join("src/calc.py")).unwrap();
 
     // Act.
-    let error = prepare_verify(&path, &requested, OutputFormat::Json)
-        .await
-        .unwrap_err();
+    let error = prepare_verify(&path, &requested).await.unwrap_err();
 
     // Assert.
     assert_eq!(
@@ -1377,7 +1349,7 @@ macro_rules! verify_reordered_schema {
             let bytes = format!("{{{},{}}}", body.strip_suffix('}').unwrap(), $key);
             std::fs::write(&path, bytes).unwrap();
 
-            let verified = prepare_verify(&path, std::slice::from_ref(&id), OutputFormat::Json)
+            let verified = prepare_verify(&path, std::slice::from_ref(&id))
                 .await.unwrap();
 
             assert_eq!(verified.selection().candidate_ids(), Some(&BTreeSet::from([id])));
@@ -1399,7 +1371,7 @@ macro_rules! verify_invalid_schema_document {
             let path = project.path.join("invalid-plan.json");
             std::fs::write(&path, $input).unwrap();
 
-            let error = prepare_verify(&path, &["unused".into()], OutputFormat::Json)
+            let error = prepare_verify(&path, &["unused".into()])
                 .await.unwrap_err();
 
             let diagnostic = error.to_string();
@@ -1435,9 +1407,7 @@ async fn verify_prioritizes_invalid_normalized_config_over_requested_id_limits()
     assert_eq!(tampered.normalized_config.test_argv, Vec::new());
     write_json(&path, &value);
 
-    let error = prepare_verify(&path, &requested, OutputFormat::Json)
-        .await
-        .unwrap_err();
+    let error = prepare_verify(&path, &requested).await.unwrap_err();
 
     assert_eq!(
         error.to_string(),
@@ -1454,9 +1424,7 @@ async fn verify_rejects_changed_fingerprint_input_before_baseline() {
     let requested = vec![manifest.candidates[0].id.clone()];
     std::fs::write(project.path.join("config.toml"), "[changed]\n").unwrap();
 
-    let error = prepare_verify(&path, &requested, OutputFormat::Json)
-        .await
-        .unwrap_err();
+    let error = prepare_verify(&path, &requested).await.unwrap_err();
 
     assert_error_code(error, "plan.fingerprint_input.changed");
     assert!(!marker.exists());
@@ -1473,7 +1441,6 @@ async fn verified_metrics_override_preserves_checked_execution() {
             policy: TopSelectionPolicy::Strict,
             offset: 0,
         },
-        OutputFormat::Json,
     )
     .await
     .unwrap();
@@ -1506,9 +1473,7 @@ async fn verify_rejects_fingerprint_input_deleted_after_preparation_before_execu
     let (path, manifest, marker) =
         write_plan_manifest(&project, &["--fingerprint-include", "config.toml"]).await;
     let requested = vec![manifest.candidates[0].id.clone()];
-    let verified = prepare_verify(&path, &requested, OutputFormat::Jsonl)
-        .await
-        .unwrap();
+    let verified = prepare_verify(&path, &requested).await.unwrap();
     std::fs::remove_file(project.path.join("config.toml")).unwrap();
     let stdout = CollectingWriter::default();
     let stderr = CollectingWriter::default();
@@ -1565,13 +1530,11 @@ async fn verify_exact_file_ignores_nested_names_but_rejects_root_change() {
     let requested = vec![manifest.candidates[0].id.clone()];
 
     std::fs::write(&nested, "nested = 2\n").unwrap();
-    let verified = prepare_verify(&path, &requested, OutputFormat::Json).await;
+    let verified = prepare_verify(&path, &requested).await;
     assert!(verified.is_ok(), "{verified:?}");
 
     std::fs::write(project.path.join("pyproject.toml"), "value = 2\n").unwrap();
-    let error = prepare_verify(&path, &requested, OutputFormat::Json)
-        .await
-        .unwrap_err();
+    let error = prepare_verify(&path, &requested).await.unwrap_err();
     assert_error_code(error, "plan.fingerprint_input.changed");
     assert!(!marker.exists());
 }
@@ -1604,8 +1567,6 @@ async fn verify_rejects_absent_required_arrays_before_baseline() {
                     path.to_str().unwrap(),
                     "--candidate",
                     &requested,
-                    "--format",
-                    "jsonl",
                 ],
                 stdout.clone(),
                 stderr.clone(),
@@ -1630,9 +1591,7 @@ async fn verify_rejects_removed_outer_root_before_baseline() {
     value["normalized_config"]["root"] = serde_json::json!(project.path);
     write_json(&path, &value);
 
-    let error = prepare_verify(&path, &requested, OutputFormat::Json)
-        .await
-        .unwrap_err();
+    let error = prepare_verify(&path, &requested).await.unwrap_err();
 
     assert!(error.to_string().contains("unknown field `root`"));
     assert!(!marker.exists());
@@ -1647,9 +1606,7 @@ async fn verify_rejects_tampered_candidate_before_baseline() {
     value["candidates"][0]["original"] = serde_json::json!("wrong");
     write_json(&path, &value);
 
-    let error = prepare_verify(&path, &requested, OutputFormat::Json)
-        .await
-        .unwrap_err();
+    let error = prepare_verify(&path, &requested).await.unwrap_err();
 
     assert_error_code(error, "plan.candidate.invalid");
     assert!(!marker.exists());
@@ -1675,9 +1632,7 @@ async fn verify_rejects_a_tampered_requested_symbol_after_scoped_rediscovery() {
     value["candidates"][requested_index]["symbol"] = serde_json::json!("forged");
     write_json(&path, &value);
 
-    let error = prepare_verify(&path, &[requested], OutputFormat::Json)
-        .await
-        .unwrap_err();
+    let error = prepare_verify(&path, &[requested]).await.unwrap_err();
 
     assert_error_code(error, "plan.candidate.invalid");
     assert!(!marker.exists());
@@ -1691,9 +1646,7 @@ async fn verify_rejects_malformed_headers_and_source_paths() {
     let original = serde_json::to_value(manifest).unwrap();
 
     std::fs::write(&path, b"{").unwrap();
-    let error = prepare_verify(&path, &requested, OutputFormat::Json)
-        .await
-        .unwrap_err();
+    let error = prepare_verify(&path, &requested).await.unwrap_err();
     assert_error_code(error, "plan.manifest.invalid");
 
     let cases: [(&str, serde_json::Value, &[&str]); 5] = [
@@ -1712,9 +1665,7 @@ async fn verify_rejects_malformed_headers_and_source_paths() {
         *value.pointer_mut(pointer).unwrap() = replacement;
         write_json(&path, &value);
 
-        let error = prepare_verify(&path, &requested, OutputFormat::Json)
-            .await
-            .unwrap_err();
+        let error = prepare_verify(&path, &requested).await.unwrap_err();
         for message in expected_messages {
             assert!(error.to_string().contains(message), "{error}");
         }
@@ -1733,9 +1684,7 @@ async fn verify_rejects_a_ranking_version_three_plan_before_baseline_with_regene
     value["ranking_rule_version"] = serde_json::json!(3);
     write_json(&path, &value);
 
-    let error = prepare_verify(&path, &requested, OutputFormat::Json)
-        .await
-        .unwrap_err();
+    let error = prepare_verify(&path, &requested).await.unwrap_err();
 
     assert_eq!(
         error.to_string(),
@@ -1756,20 +1705,15 @@ async fn verify_rejects_duplicate_manifest_candidates_and_missing_requested_ids(
         .push(candidate);
     write_json(&path, &duplicate);
 
-    let error = prepare_verify(
-        &path,
-        &[manifest.candidates[0].id.clone()],
-        OutputFormat::Json,
-    )
-    .await
-    .unwrap_err();
+    let error = prepare_verify(&path, &[manifest.candidates[0].id.clone()])
+        .await
+        .unwrap_err();
     assert_error_code(error, "plan.manifest.invalid");
 
     write_json(&path, &serde_json::to_value(manifest).unwrap());
     let error = prepare_verify(
         &path,
         &["m1_0000000000000000000000000000000000000000000000000000000000000000".to_owned()],
-        OutputFormat::Json,
     )
     .await
     .unwrap_err();
@@ -1785,14 +1729,13 @@ async fn verify_deduplicates_requested_ids_and_rejects_max_mutants_overflow() {
     let first = manifest.candidates[0].id.clone();
     let second = manifest.candidates[1].id.clone();
 
-    let verified = prepare_verify(&path, &[first.clone(), first.clone()], OutputFormat::Jsonl)
+    let verified = prepare_verify(&path, &[first.clone(), first.clone()])
         .await
         .unwrap();
     assert_eq!(
         verified.selection().candidate_ids(),
         Some(&BTreeSet::from([first.clone()]))
     );
-    assert_eq!(verified.config().output.format, CoreOutputFormat::Jsonl);
     assert_eq!(
         verified.config().session,
         hoimin_core::SessionMode::Disabled
@@ -1801,9 +1744,7 @@ async fn verify_deduplicates_requested_ids_and_rejects_max_mutants_overflow() {
     let mut overflow = serde_json::to_value(manifest).unwrap();
     overflow["normalized_config"]["limits"]["max_mutants"] = serde_json::json!(1);
     write_json(&path, &overflow);
-    let error = prepare_verify(&path, &[first, second], OutputFormat::Json)
-        .await
-        .unwrap_err();
+    let error = prepare_verify(&path, &[first, second]).await.unwrap_err();
     assert_error_code(error, "plan.candidate.invalid");
     assert!(!marker.exists());
 }
@@ -1815,15 +1756,12 @@ async fn truncated_plan_accepts_a_contained_candidate() {
     assert!(manifest.truncated);
     let requested = vec![manifest.candidates[0].id.clone()];
 
-    let verified = prepare_verify(&path, &requested, OutputFormat::Jsonl)
-        .await
-        .unwrap();
+    let verified = prepare_verify(&path, &requested).await.unwrap();
 
     assert!(matches!(
         verified.selection().candidate_ids(),
         Some(ids) if ids.len() == 1
     ));
-    assert_eq!(verified.config().output.format, CoreOutputFormat::Jsonl);
     assert!(!marker.exists());
 }
 
@@ -1845,13 +1783,9 @@ async fn truncated_plan_accepts_a_retained_candidate_from_a_later_file() {
         .unwrap();
     assert_eq!(candidate.sequence, 2);
 
-    let verified = prepare_verify(
-        &path,
-        std::slice::from_ref(&candidate.id),
-        OutputFormat::Jsonl,
-    )
-    .await
-    .unwrap();
+    let verified = prepare_verify(&path, std::slice::from_ref(&candidate.id))
+        .await
+        .unwrap();
 
     assert!(
         verified
@@ -1880,13 +1814,9 @@ async fn verify_accepts_a_requested_candidate_from_a_later_file() {
         .unwrap();
     assert!(candidate.sequence > 1);
 
-    let verified = prepare_verify(
-        &path,
-        std::slice::from_ref(&candidate.id),
-        OutputFormat::Json,
-    )
-    .await
-    .unwrap();
+    let verified = prepare_verify(&path, std::slice::from_ref(&candidate.id))
+        .await
+        .unwrap();
 
     assert_eq!(
         verified.selection().candidate_ids(),
@@ -1922,7 +1852,7 @@ async fn verify_does_not_analyze_an_unrequested_file_after_source_record_validat
         .hash = blake3::hash(&unrequested_bytes).to_hex().to_string();
     write_json(&path, &serde_json::to_value(manifest).unwrap());
 
-    let verified = prepare_verify(&path, &[requested], OutputFormat::Json).await;
+    let verified = prepare_verify(&path, &[requested]).await;
 
     assert!(verified.is_ok(), "{verified:?}");
     assert!(!marker.exists());
@@ -1954,7 +1884,7 @@ async fn verify_accepts_generated_sequence_permutations_and_same_span_operators(
         .id
         .clone();
 
-    let verified = prepare_verify(&path, &[requested], OutputFormat::Json).await;
+    let verified = prepare_verify(&path, &[requested]).await;
 
     assert!(verified.is_ok(), "{verified:?}");
     assert!(!marker.exists());
@@ -1970,9 +1900,7 @@ async fn verify_rejects_candidate_sequences_that_are_not_a_complete_permutation(
     value["candidates"][0]["sequence"] = serde_json::json!(manifest.candidates[1].sequence);
     write_json(&path, &value);
 
-    let error = prepare_verify(&path, &[requested], OutputFormat::Json)
-        .await
-        .unwrap_err();
+    let error = prepare_verify(&path, &[requested]).await.unwrap_err();
 
     assert_error_code(error, "plan.candidate.invalid");
     assert!(!marker.exists());
@@ -1997,7 +1925,6 @@ async fn verify_top_resolves_the_saved_rank_prefix_and_retained_scope() {
             policy: TopSelectionPolicy::Strict,
             offset: 0,
         },
-        OutputFormat::Json,
     )
     .await
     .unwrap();
@@ -2042,7 +1969,6 @@ async fn verify_top_above_a_truncated_plan_selects_every_retained_candidate() {
             policy: TopSelectionPolicy::Strict,
             offset: 0,
         },
-        OutputFormat::Json,
     )
     .await
     .unwrap();
@@ -2121,7 +2047,6 @@ async fn verify_top_diverse_round_robins_equal_score_candidates_without_mutating
             policy: TopSelectionPolicy::Diverse,
             offset: 0,
         },
-        OutputFormat::Json,
     )
     .await
     .unwrap();
@@ -2178,7 +2103,6 @@ async fn verify_top_diverse_does_not_cross_score_tiers() {
             policy: TopSelectionPolicy::Diverse,
             offset: 0,
         },
-        OutputFormat::Json,
     )
     .await
     .unwrap();
@@ -2288,7 +2212,7 @@ async fn assert_real_cli_top_selection(
     if let Some(policy) = policy {
         args.extend([OsString::from("--selection-policy"), OsString::from(policy)]);
     }
-    args.extend([OsString::from("--format"), OsString::from("jsonl")]);
+
     let stdout = CollectingWriter::default();
     let stderr = CollectingWriter::default();
 
@@ -2367,8 +2291,6 @@ async fn verify_runs_only_requested_candidates() {
         OsString::from("hoimin"),
         OsString::from("verify"),
         path.as_os_str().to_owned(),
-        OsString::from("--format"),
-        OsString::from("jsonl"),
     ];
     for candidate_id in &requested {
         args.extend([OsString::from("--candidate"), OsString::from(candidate_id)]);
@@ -2431,7 +2353,6 @@ async fn verify_runs_only_requested_candidates() {
     );
     let mut expected_config = serde_json::to_value(&manifest.normalized_config).unwrap();
     expected_config.as_object_mut().unwrap().remove("discovery");
-    expected_config["output"]["format"] = serde_json::json!("jsonl");
     expected_config["session"] = serde_json::json!({ "mode": "disabled" });
     assert_eq!(started["normalized_config"], expected_config);
     let actual = events
@@ -2476,7 +2397,7 @@ async fn verify_top_empty_plan_preserves_offset_error_precedence() {
                 offset,
             };
 
-            let error = prepare_verify_selection(&path, &selection, OutputFormat::Json)
+            let error = prepare_verify_selection(&path, &selection)
                 .await
                 .unwrap_err();
 
@@ -2504,7 +2425,7 @@ async fn assert_empty_top_selection_is_rejected(policy: &str) {
     assert!(!manifest.truncated);
     let original_plan = std::fs::read(&path).unwrap();
 
-    for format in ["json", "jsonl"] {
+    {
         let args = [
             OsString::from("hoimin"),
             OsString::from("verify"),
@@ -2513,15 +2434,13 @@ async fn assert_empty_top_selection_is_rejected(policy: &str) {
             OsString::from("5"),
             OsString::from("--selection-policy"),
             OsString::from(policy),
-            OsString::from("--format"),
-            OsString::from(format),
         ];
         let stdout = CollectingWriter::default();
         let stderr = CollectingWriter::default();
 
         let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
-        assert_eq!(code, 2, "policy={policy}, format={format}");
+        assert_eq!(code, 2, "policy={policy}, format=jsonl");
         assert!(stdout.is_empty(), "empty verification emitted run output");
         let stderr = String::from_utf8(stderr.snapshot()).unwrap();
         for expected in ["plan.candidate.invalid", "--top", "no retained candidates"] {
@@ -2563,7 +2482,7 @@ async fn verify_top_executes_the_highest_ranked_retained_candidate() {
         marker.exists(),
         "verify must execute the baseline and selected mutant"
     );
-    let document: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    let document: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
     assert!(!document["baseline"].is_null());
     assert_selected_resource_policy(&document["run"], &document["baseline"]);
     let expected_selection = serde_json::json!({
@@ -2609,8 +2528,6 @@ async fn verify_top_budget_shortfall_warns_on_stderr_and_preserves_json_and_plan
         path.as_os_str().to_owned(),
         OsString::from("--top"),
         OsString::from("2"),
-        OsString::from("--format"),
-        OsString::from("json"),
     ];
     let stdout = CollectingWriter::default();
     let stderr = CollectingWriter::default();
@@ -2623,7 +2540,7 @@ async fn verify_top_budget_shortfall_warns_on_stderr_and_preserves_json_and_plan
         "stderr={}",
         String::from_utf8_lossy(&stderr.snapshot())
     );
-    let _: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    let _: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
     assert!(
         !String::from_utf8_lossy(&stdout.snapshot()).contains("budget.projected_shortfall"),
         "budget warning leaked to JSON stdout"
@@ -2650,8 +2567,6 @@ async fn verify_top_budget_shortfall_preserves_jsonl_stdout() {
         path.as_os_str().to_owned(),
         OsString::from("--top"),
         OsString::from("2"),
-        OsString::from("--format"),
-        OsString::from("jsonl"),
     ];
     let stdout = CollectingWriter::default();
     let stderr = CollectingWriter::default();
@@ -2691,8 +2606,6 @@ async fn verify_explicit_candidates_do_not_emit_budget_shortfall_warning() {
         OsString::from("hoimin"),
         OsString::from("verify"),
         path.as_os_str().to_owned(),
-        OsString::from("--format"),
-        OsString::from("json"),
     ];
     for candidate in manifest.candidates.iter().take(2) {
         args.extend([OsString::from("--candidate"), OsString::from(&candidate.id)]);
@@ -2708,7 +2621,7 @@ async fn verify_explicit_candidates_do_not_emit_budget_shortfall_warning() {
         "stderr={}",
         String::from_utf8_lossy(&stderr.snapshot())
     );
-    let _: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    let _: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
     assert!(
         !String::from_utf8_lossy(&stderr.snapshot()).contains("budget.projected_shortfall"),
         "explicit candidate IDs must not emit the top-ranked budget warning"
@@ -3072,7 +2985,7 @@ async fn root_selection_excludes_uncopyable_sources_in_plan_run_and_verify() {
         stderr.clear();
         let code = hoimin_cli::run_with_writers(command, stdout.clone(), stderr.clone()).await;
         assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
-        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
         // pins: issue #452 — source discovery previously admitted files omitted from copying.
         assert_eq!(report["summary"]["complete"], true);
         assert_eq!(report["baseline"]["termination"]["Exit"], 0);
@@ -3153,7 +3066,7 @@ async fn python_physical_lines_match_plan_run_and_verify_selection() {
             stderr.clear();
             let code = hoimin_cli::run_with_writers(command, stdout.clone(), stderr.clone()).await;
             assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
-            let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+            let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
             assert_eq!(report["summary"]["complete"], true);
             // pins: issue #455 — lone CR previously produced an empty successful run.
             assert_eq!(report["summary"]["counts"]["killed"], 1);
@@ -3297,13 +3210,13 @@ async fn fitting_candidate_record_limits_agree_for_plan_verify_and_direct_run() 
     ];
     let verify_exit = hoimin_cli::run_with_writers(verify, stdout.clone(), stderr.clone()).await;
     let verify_stderr = String::from_utf8_lossy(&stderr.snapshot()).into_owned();
-    let verified_report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    let verified_report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
 
     args[1] = "run".into();
     stdout.clear();
     stderr.clear();
     let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
-    let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
 
     assert_eq!(plan_exit, 0);
     assert_eq!(verify_exit, 0, "{verify_stderr}");
@@ -3333,7 +3246,7 @@ async fn oversized_candidate_record_limits_agree_for_plan_verify_and_direct_run(
     stderr.clear();
     let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
     assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr.snapshot()));
-    let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
     assert_eq!(report["summary"]["complete"], false);
     assert_eq!(report["baseline"]["termination"]["Exit"], 0);
 
@@ -3373,7 +3286,7 @@ async fn fixed_batch_partition_covers_120_candidates_without_overriding_limits()
             .unwrap() else {
                 panic!("verify args");
             };
-            let verified = prepare_verify_selection(&args.manifest, &args.selection, args.format)
+            let verified = prepare_verify_selection(&args.manifest, &args.selection)
                 .await
                 .unwrap();
             assert_eq!(verified.config().limits, manifest.normalized_config.limits);
@@ -3418,7 +3331,7 @@ async fn fixed_batch_bounds_preserve_truncation_and_reject_invalid_ranges() {
         policy: TopSelectionPolicy::Strict,
         offset,
     };
-    let suffix = prepare_verify_selection(&path, &selection(usize::MAX, 1), OutputFormat::Json)
+    let suffix = prepare_verify_selection(&path, &selection(usize::MAX, 1))
         .await
         .unwrap();
     assert!(
@@ -3446,12 +3359,12 @@ async fn fixed_batch_bounds_preserve_truncation_and_reject_invalid_ranges() {
     );
     assert_eq!(suffix.config().limits, manifest.normalized_config.limits);
     for offset in [2, 3, usize::MAX] {
-        let error = prepare_verify_selection(&path, &selection(1, offset), OutputFormat::Json)
+        let error = prepare_verify_selection(&path, &selection(1, offset))
             .await
             .unwrap_err();
         assert!(error.to_string().contains("--offset"), "{error}");
     }
-    let error = prepare_verify_selection(&path, &selection(2, 0), OutputFormat::Json)
+    let error = prepare_verify_selection(&path, &selection(2, 0))
         .await
         .unwrap_err();
     assert!(error.to_string().contains("exceeds max_mutants 1"));
@@ -3526,7 +3439,7 @@ async fn fixed_batch_real_cli_reports_disjoint_ids_and_repeated_progress() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
         assert_eq!(report["run"]["verification_selection"]["selected"], 1);
         assert_eq!(report["mutants"].as_array().unwrap().len(), 1);
         ids.push(
@@ -3610,7 +3523,7 @@ async fn verify_metrics_exports_existing_sidecar_for_each_selection() {
         let stderr = CollectingWriter::default();
         let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
         assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
-        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
         let metrics: hoimin_core::RunMetrics =
             serde_json::from_slice(&std::fs::read(&metrics_path).unwrap()).unwrap();
         metrics.validate().unwrap();
@@ -3743,8 +3656,8 @@ async fn verify_metrics_real_cli_uses_invocation_directory_and_preserves_results
         String::from_utf8_lossy(&actual.stderr)
     );
     assert_eq!(actual.status.code(), control.status.code());
-    let expected: serde_json::Value = serde_json::from_slice(&control.stdout).unwrap();
-    let report: serde_json::Value = serde_json::from_slice(&actual.stdout).unwrap();
+    let expected: serde_json::Value = jsonl_report::from_slice(&control.stdout).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&actual.stdout).unwrap();
     for field in ["candidate", "status"] {
         let values = |v: &serde_json::Value| {
             v["mutants"]
@@ -3819,8 +3732,6 @@ async fn verify_metrics_exports_baseline_failure_with_jsonl_output() {
             path.into_os_string(),
             OsString::from("--top"),
             OsString::from("1"),
-            OsString::from("--format"),
-            OsString::from("jsonl"),
             OsString::from("--metrics"),
             metrics_path.as_os_str().to_owned(),
         ],
@@ -3885,8 +3796,6 @@ async fn verify_metrics_exports_total_timeout_with_jsonl_output() {
             path.into_os_string(),
             OsString::from("--top"),
             OsString::from("1"),
-            OsString::from("--format"),
-            OsString::from("jsonl"),
             OsString::from("--metrics"),
             metrics_path.as_os_str().to_owned(),
         ],
@@ -3975,9 +3884,7 @@ async fn preparation_errors_precede_the_analyzer_deadline_without_baseline() {
         manifest.normalized_config.discovery = plan.into_configs().unwrap().1;
         prepare(&project, &mut manifest);
         write_json(&path, &serde_json::to_value(manifest).unwrap());
-        let error = prepare_verify(&path, &[requested], OutputFormat::Json)
-            .await
-            .unwrap_err();
+        let error = prepare_verify(&path, &[requested]).await.unwrap_err();
         let message = error.to_string();
 
         assert!(message.contains(expected), "{stage}: {message}");
@@ -4495,14 +4402,12 @@ async fn verify_preview_omitted_and_zero_offsets_select_the_same_policy_prefix()
             panic!("expected verify");
         };
 
-        let omitted =
-            prepare_verify_preview_selection(&path, &omitted.selection, OutputFormat::Json)
-                .await
-                .unwrap();
-        let explicit =
-            prepare_verify_preview_selection(&path, &explicit.selection, OutputFormat::Json)
-                .await
-                .unwrap();
+        let omitted = prepare_verify_preview_selection(&path, &omitted.selection)
+            .await
+            .unwrap();
+        let explicit = prepare_verify_preview_selection(&path, &explicit.selection)
+            .await
+            .unwrap();
 
         assert_eq!(omitted, explicit, "{policy}");
         let preview = serde_json::to_value(&omitted).unwrap();
@@ -4545,8 +4450,6 @@ async fn verify_preview_public_cli_preserves_policy_range_and_execution_order_wi
             offset,
             "--selection-policy",
             policy,
-            "--format",
-            "jsonl",
         ];
         let mut dry_args = args.to_vec();
         dry_args.push("--dry-run");
@@ -4632,8 +4535,6 @@ async fn verify_preview_explicit_ids_follow_discovery_not_rank_argument_or_saved
         &manifest.candidates[1].id,
         "--candidate",
         &manifest.candidates[0].id,
-        "--format",
-        "jsonl",
     ];
     let mut dry_args = args.to_vec();
     dry_args.push("--dry-run");
@@ -4696,14 +4597,7 @@ async fn verify_preview_truncated_formats_owned_dispatch_and_runtime_boundary() 
     assert!(!marker.exists());
     let run = preview_cli(
         &path,
-        &[
-            "--top",
-            "99",
-            "--selection-policy",
-            "line-diverse",
-            "--format",
-            "jsonl",
-        ],
+        &["--top", "99", "--selection-policy", "line-diverse"],
         execution_tmp.path(),
     )
     .await;
@@ -4719,15 +4613,14 @@ async fn verify_preview_truncated_formats_owned_dispatch_and_runtime_boundary() 
     manifest.normalized_config.limits.min_free_space = std::num::NonZeroU64::new(u64::MAX).unwrap();
     write_json(&path, &serde_json::to_value(&manifest).unwrap());
     let temporary = tempfile::tempdir().unwrap();
-    for (format, verify_output) in truncated_preview_formats() {
+    {
+        let verify_output = assert_json_truncated_preview;
         let args = [
             "--top",
             "99",
             "--selection-policy",
             "line-diverse",
             "--dry-run",
-            "--format",
-            format,
         ];
         let output = preview_cli(&path, &args, temporary.path()).await;
         assert!(
@@ -4968,13 +4861,9 @@ async fn changed_context_discovers_neighbor_operators_and_survives_verify() {
             );
             let plan_path = project.path.join("saved-plan.json");
             std::fs::write(&plan_path, stdout.snapshot()).unwrap();
-            let verified = prepare_verify(
-                &plan_path,
-                std::slice::from_ref(&candidate.id),
-                OutputFormat::Json,
-            )
-            .await
-            .unwrap();
+            let verified = prepare_verify(&plan_path, std::slice::from_ref(&candidate.id))
+                .await
+                .unwrap();
             assert_eq!(
                 verified
                     .config()
@@ -5236,8 +5125,6 @@ fn preview_candidate_value(candidate: &RankedPlanCandidate, order: usize) -> ser
     })
 }
 
-type CheckPreviewRows = fn(&str, &[&RankedPlanCandidate], &serde_json::Value);
-
 fn assert_json_preview_rows(
     text: &str,
     expected: &[&RankedPlanCandidate],
@@ -5286,7 +5173,7 @@ fn assert_json_preview_rows(
 }
 
 #[tokio::test]
-async fn verify_preview_details_distinguish_same_line_mutations_in_all_formats() {
+async fn verify_preview_details_distinguish_same_line_mutations() {
     let project =
         Project::new_with_source("def acceptable(value):\n    return value > 0 and value < 10\n");
     let coordinator = tempfile::tempdir().unwrap();
@@ -5353,14 +5240,11 @@ async fn verify_preview_details_distinguish_same_line_mutations_in_all_formats()
             vec![left, boolean, right],
         ),
     ] {
-        let formats: [(&str, CheckPreviewRows); 2] = [
-            ("json", assert_json_preview_rows),
-            ("jsonl", assert_json_preview_rows),
-        ];
-        for (format, verify_output) in formats {
+        {
+            let verify_output = assert_json_preview_rows;
             let temporary = tempfile::tempdir().unwrap();
             let mut args = selection.clone();
-            args.extend(["--dry-run", "--format", format]);
+            args.extend(["--dry-run"]);
             let output = preview_cli(&path, &args, temporary.path()).await;
             assert!(
                 output.status.success(),
@@ -5393,14 +5277,10 @@ async fn verify_preview_details_escape_multiline_quoted_text_without_extra_rows(
     assert_eq!(candidate.column, 0);
     assert_eq!(candidate.original, "[\n\t\"a\\\\b\", 'say \"hi\"',\n]");
     assert_eq!(candidate.replacement, "(\n\t\"a\\\\b\", 'say \"hi\"',\n)");
-    for (format, verify_output) in multiline_preview_formats() {
+    {
+        let verify_output = assert_json_multiline_preview;
         let temporary = tempfile::tempdir().unwrap();
-        let output = preview_cli(
-            &path,
-            &["--top", "1", "--dry-run", "--format", format],
-            temporary.path(),
-        )
-        .await;
+        let output = preview_cli(&path, &["--top", "1", "--dry-run"], temporary.path()).await;
         assert!(
             output.status.success(),
             "{}",
@@ -5421,15 +5301,6 @@ fn remove_optional_marker(marker: &Path) {
     }
 }
 
-type CheckTruncatedPreview = fn(&[u8], &PlanManifest);
-
-fn truncated_preview_formats() -> [(&'static str, CheckTruncatedPreview); 2] {
-    [
-        ("json", assert_json_truncated_preview),
-        ("jsonl", assert_json_truncated_preview),
-    ]
-}
-
 fn assert_json_truncated_preview(stdout: &[u8], manifest: &PlanManifest) {
     let value: serde_json::Value = serde_json::from_slice(stdout).unwrap();
     assert_eq!(value["verification_selection"]["plan_truncated"], true);
@@ -5441,15 +5312,6 @@ fn assert_json_truncated_preview(stdout: &[u8], manifest: &PlanManifest) {
         value["candidates"][0],
         preview_candidate_value(&manifest.candidates[0], 1)
     );
-}
-
-type CheckMultilinePreview = fn(&str, &RankedPlanCandidate);
-
-fn multiline_preview_formats() -> [(&'static str, CheckMultilinePreview); 2] {
-    [
-        ("json", assert_json_multiline_preview),
-        ("jsonl", assert_json_multiline_preview),
-    ]
 }
 
 fn assert_json_multiline_preview(text: &str, candidate: &RankedPlanCandidate) {
@@ -5615,7 +5477,7 @@ async fn baseline_restoration_matches_full_run_and_single_candidate_verification
             "{}",
             String::from_utf8_lossy(&run_err.snapshot())
         );
-        let full: serde_json::Value = serde_json::from_slice(&run_out.snapshot()).unwrap();
+        let full: serde_json::Value = jsonl_report::from_slice(&run_out.snapshot()).unwrap();
         for selection in [["--candidate", selected.as_str()], ["--top", "1"]] {
             let verify_out = CollectingWriter::default();
             let verify_err = CollectingWriter::default();
@@ -5632,7 +5494,8 @@ async fn baseline_restoration_matches_full_run_and_single_candidate_verification
                 "{}",
                 String::from_utf8_lossy(&verify_err.snapshot())
             );
-            let single: serde_json::Value = serde_json::from_slice(&verify_out.snapshot()).unwrap();
+            let single: serde_json::Value =
+                jsonl_report::from_slice(&verify_out.snapshot()).unwrap();
             // Assert.
             let mutant = &single["mutants"][0];
             assert!(mutant["candidate"]["id"].is_string());
@@ -5699,16 +5562,11 @@ async fn baseline_contamination_plan(
     let plan_path = root.join("plan.json");
     std::fs::write(&plan_path, plan_out.snapshot()).unwrap();
     args[1] = "run".into();
-    let separator = args.iter().position(|arg| arg == "--").unwrap();
-    args.splice(
-        separator..separator,
-        [OsString::from("--format"), "json".into()],
-    );
     (args, manifest, plan_path)
 }
 
 #[cfg(unix)]
-async fn assert_preview_filename(name: &str, format: &str) {
+async fn assert_preview_filename(name: &str) {
     // Arrange: real native filenames and a command with an observable side effect.
     let project = Project::new_with_sources(&[(name, "value = 1 + 2\n")]);
     let (path, manifest, marker) =
@@ -5720,16 +5578,11 @@ async fn assert_preview_filename(name: &str, format: &str) {
     let temporary = tempfile::tempdir().unwrap();
 
     // Act.
-    let output = preview_cli(
-        &path,
-        &["--top", "1", "--dry-run", "--format", format],
-        temporary.path(),
-    )
-    .await;
+    let output = preview_cli(&path, &["--top", "1", "--dry-run"], temporary.path()).await;
 
     // Assert: JSON preserves the native filename and dry-run has no side effects.
     assert!(output.status.success(), "{name:?}: {output:?}");
-    assert!(!marker.exists(), "{name:?}: {format}");
+    assert!(!marker.exists(), "{name:?}: jsonl");
     assert_eq!(std::fs::read(&path).unwrap(), before);
     assert_eq!(std::fs::read_dir(temporary.path()).unwrap().count(), 0);
     let text = String::from_utf8(output.stdout).unwrap();
@@ -5751,11 +5604,7 @@ macro_rules! preview_filename_case {
         mod $case {
             #[tokio::test]
             async fn json() {
-                super::assert_preview_filename($name, "json").await;
-            }
-            #[tokio::test]
-            async fn jsonl() {
-                super::assert_preview_filename($name, "jsonl").await;
+                super::assert_preview_filename($name).await;
             }
         }
     };
@@ -5835,7 +5684,7 @@ mod malformed_argument_diagnostics {
             "plan.json",
             "--top",
             "1",
-            "--format",
+            "--selection-policy",
             "bad\x1b[31m\r\n\t"
         ],
         r"bad\u{1b}[31m\r\n\t",
@@ -5850,28 +5699,28 @@ mod malformed_argument_diagnostics {
     malformed_argument_case!(lf_subcommand, &["hoimin", "\n"], r"\n", "\n\nUsage: ");
     malformed_argument_case!(tab_subcommand, &["hoimin", "\t"], r"\t", "\n\nUsage: ");
     malformed_argument_case!(
-        lf_format,
+        lf_top_policy,
         &[
             "hoimin",
             "verify",
             "plan.json",
             "--top",
             "1",
-            "--format",
+            "--selection-policy",
             "\n"
         ],
         r"\n",
         "\n  [possible values:"
     );
     malformed_argument_case!(
-        tab_format,
+        tab_top_policy,
         &[
             "hoimin",
             "verify",
             "plan.json",
             "--top",
             "1",
-            "--format",
+            "--selection-policy",
             "\t"
         ],
         r"\t",

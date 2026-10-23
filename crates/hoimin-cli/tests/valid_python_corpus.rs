@@ -1,3 +1,5 @@
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use hoimin_python::AnalyzerCandidate;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -119,7 +121,7 @@ print(json.dumps(results))
             String::from_utf8_lossy(&output.stderr)
         ));
     }
-    serde_json::from_slice(&output.stdout)
+    jsonl_report::from_slice(&output.stdout)
         .map_err(|e| format!("infrastructure-error: CPython response: {e}"))
 }
 
@@ -817,8 +819,6 @@ async fn slice_tuple_import_only_run_does_not_count_syntax_error_as_killed() {
                 "subject.py",
                 "--operators",
                 "collection_list_tuple",
-                "--format",
-                "json",
                 "--min-free-space",
                 "1B",
                 "--allow-best-effort-memory",
@@ -837,7 +837,7 @@ async fn slice_tuple_import_only_run_does_not_count_syntax_error_as_killed() {
         "run failed: {}",
         String::from_utf8_lossy(&result.stderr)
     );
-    let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&result.stdout).unwrap();
     assert_eq!(report["baseline"]["termination"]["Exit"], 0, "{report}");
     assert_eq!(report["summary"]["counts"]["killed"], 0, "{report}");
     assert!(report["mutants"].as_array().unwrap().is_empty(), "{report}");

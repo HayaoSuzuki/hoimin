@@ -1,3 +1,5 @@
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -148,8 +150,6 @@ async fn with_suppression_public_run_does_not_count_invalid_kill() {
             "subject.py",
             "--operators",
             "type_list_sequence",
-            "--format",
-            "json",
             "--allow-best-effort-memory",
             "--min-free-space",
             "1B",
@@ -158,7 +158,7 @@ async fn with_suppression_public_run_does_not_count_invalid_kill() {
         .arg(python())
         .args(["-B", "check.py"]);
     let result = output(command).await;
-    let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&result.stdout).unwrap();
     assert_eq!(report["baseline"]["termination"]["Exit"], 0, "{report}");
     assert_eq!(report["summary"]["counts"]["killed"], 0, "{report}");
     assert_eq!(report["summary"]["complete"], true, "{report}");

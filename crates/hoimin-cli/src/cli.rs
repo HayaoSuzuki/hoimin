@@ -15,7 +15,7 @@ use hoimin_core::{
     name = "hoimin",
     version,
     about = "Bounded mutation testing for focused Python changes",
-    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --changed-context --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-workspace-size --min-free-space\n  --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl> --metrics <PATH> --session --resume"
+    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --changed-context --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-workspace-size --min-free-space\n  --max-processes --allow-best-effort-memory\nOutput/session options:\n  --metrics <PATH> --session --resume"
 )]
 struct RootCli {
     #[command(subcommand)]
@@ -96,12 +96,6 @@ pub struct ReviewRecordArgs {
     pub evidence: Vec<String>,
     #[arg(long)]
     pub expected_revision: u64,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-pub enum OutputFormat {
-    Json,
-    Jsonl,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
@@ -255,10 +249,6 @@ pub struct RunArgs {
     #[command(flatten)]
     mutation: RawMutationArgs,
 
-    /// Machine-readable output format.
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    pub format: OutputFormat,
-
     /// Write performance metrics to PATH.
     #[arg(long, value_name = "PATH")]
     pub metrics: Option<PathBuf>,
@@ -353,10 +343,6 @@ struct RawVerifyArgs {
     /// Write execution metrics to PATH, relative to the invocation directory.
     #[arg(long, value_name = "PATH")]
     metrics: Option<PathBuf>,
-
-    /// Machine-readable output format.
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    format: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -449,7 +435,6 @@ pub struct VerifyArgs {
     pub metrics: Option<Utf8PathBuf>,
     pub manifest: PathBuf,
     pub selection: VerifySelection,
-    pub format: OutputFormat,
 }
 
 #[derive(Debug)]
@@ -556,7 +541,6 @@ impl TryFrom<Command> for ParsedCommand {
                         verbose: false,
                         mutation: raw.mutation,
                         test_argv: raw.test_argv,
-                        format: OutputFormat::Json,
                         metrics: None,
                         session: None,
                         resume: false,
@@ -586,7 +570,6 @@ impl TryFrom<Command> for ParsedCommand {
                     metrics: raw.metrics.map(metrics_path).transpose()?,
                     manifest: raw.manifest,
                     selection,
-                    format: raw.format,
                 }))
             }
             Command::Progress(raw) => Ok(Self::Progress(ProgressArgs {
@@ -680,7 +663,6 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
     let RunArgs {
         verbose: _,
         mutation: args,
-        format,
         metrics,
         session,
         resume,
@@ -754,13 +736,7 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         profile: args.profile.into(),
         limits,
         test_argv: test_argv.iter().map(command_arg).collect(),
-        output: OutputConfig {
-            format: match format {
-                OutputFormat::Json => hoimin_core::OutputFormat::Json,
-                OutputFormat::Jsonl => hoimin_core::OutputFormat::Jsonl,
-            },
-            metrics,
-        },
+        output: OutputConfig { metrics },
         session,
         resume,
     })

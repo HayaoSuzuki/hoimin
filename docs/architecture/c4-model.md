@@ -7,12 +7,13 @@ A human maintainer supplies requirements and reviews proposed test changes.
 hoimin contains no LLM and does not edit tests or decide whether a survivor
 justifies a new test.
 
-This description was checked against implementation commit
-[`d153ffb6`](https://github.com/HayaoSuzuki/hoimin/tree/d153ffb6896174b5515416b08c3a97b9745eb03a)
-on 2026-10-23. It includes the structured-output simplification in #1104 and the
-source-access, report-decoding and test-support boundary cleanup in #1105.
-Source links below identify the owners of each responsibility; the diagrams
-describe implemented boundaries rather than proposed language backends or services.
+This description includes the current working-tree JSONL-only execution-report
+change, based on commit `bcbb8bea00188ca27c0dd98a1e10a5c3a40a0d56`.
+The earlier architecture inspection covered the structured-output simplification
+in #1104 and source-access, report-decoding and test-support boundary cleanup
+in #1105. Source links below identify the owners of each responsibility;
+the diagrams describe implemented boundaries. This update records source
+inspection rather than new runtime or native-platform verification.
 
 ## How to read these views
 
@@ -88,7 +89,7 @@ flowchart LR
     subgraph SYS["hoimin software system"]
         C["hoimin CLI<br/>[Application container]<br/>Rust executable / Tokio"]
         W[("Execution storage<br/>[Data container]<br/>Snapshot, worker copies and execution spools")]
-        D[("Delivery storage<br/>[Data container]<br/>Report spools with separate ownership")]
+        D[("Delivery storage<br/>[Data container]<br/>Managed root with separate ownership")]
         F[("Exchange artifacts<br/>[Data container]<br/>Saved plans, reports and optional metrics")]
         S[("Session database<br/>[Data container]<br/>Optional SQLite: execution results and resume")]
         R[("Review database<br/>[Data container]<br/>SQLite: revisioned assessments and evidence")]
@@ -152,7 +153,7 @@ primitives, including the Windows handle-relative implementation.
 
 The runtime creates reusable worker copies from a shared preflight snapshot.
 Execution storage and delivery storage have separate cleanup conditions so a
-report writer can retain its spool after execution resources become reclaimable.
+report writer can retain its delivery-root lease after execution resources become reclaimable.
 Managed roots use leases, filesystem coordination and cleanup evidence; a
 worker is a copy/slot, not another deployed application. Linux resource setup
 can invoke a private launcher mode of the same executable.
@@ -176,14 +177,14 @@ Sources: [workspace members](../../Cargo.toml),
 
 | Command | Main path | Result and persistent effects |
 | --- | --- | --- |
-| `run` | Normalize configuration → shell → core/effect handlers | JSON or JSONL execution report; baseline/mutant processes; optional session and metrics |
+| `run` | Normalize configuration → shell → core/effect handlers | JSONL execution event stream; baseline/mutant processes; optional session and metrics |
 | `plan` | Targets and fingerprints → analyzer → candidate ranking | JSON plan; no baseline/mutant test execution |
-| `verify` | Saved plan/current-input checks → `VerifiedPlan` → shell | JSON or JSONL execution report for selected candidates; configured persistence |
-| `verify --dry-run` | Verification preparation → preview | One JSON preview in either accepted output mode; no baseline/mutant test execution |
+| `verify` | Saved plan/current-input checks → `VerifiedPlan` → shell | JSONL execution event stream for selected candidates; configured persistence |
+| `verify --dry-run` | Verification preparation → preview | One JSON preview; no baseline/mutant test execution |
 | `progress` | Validated reports in caller-supplied chronological order → incremental comparison | JSON comparison, regression and multi-report saturation evidence; no test execution |
 | `review list/show/record` | Plan/current sources and optional report → review store | JSON assessments/history; `record` appends with an expected revision |
 
-`run` and `verify` accept `--format json|jsonl`. Progress and review each have one
+`run` and `verify` always emit JSONL and reject `--format`. Progress and review each have one
 JSON representation and no format flag. Help, actionable errors and captured
 test output remain available. Shell-completion generation and human report
 renderers have been removed.
@@ -221,7 +222,7 @@ flowchart LR
         DISC["Discovery<br/>target / analyzer / hoimin-python<br/>Select paths, analyze source and spool candidates"]
         WS["Workspace ownership<br/>workspace<br/>Copy, mutate, restore and reclaim"]
         PROC["Process and resource control<br/>process / resource<br/>Execute test trees, capture output and apply OS limits"]
-        REP["Report delivery<br/>report<br/>Encode structured output and own writers/spools"]
+        REP["Report delivery<br/>report<br/>Encode structured output and own writers"]
         SES["Session persistence<br/>session<br/>Admit databases, own runs and persist results"]
         FEEDBACK["Comparison and assessment<br/>progress / review<br/>Read evidence and manage review history"]
     end
@@ -339,11 +340,9 @@ Sources: [artifact readers](../../crates/hoimin-cli/src/artifacts/mod.rs),
 
 ### Output, disk and shutdown ownership
 
-JSON execution reports stream mutant records into a delivery spool and assemble
-the final document from it. JSONL emits event records incrementally. The JSON
-writer uses a fixed-size buffer for mutant serialization, so serialization does
-not require an additional full-record byte vector. Candidate bodies, captured
-output and consumer-side data still have their own memory costs.
+Execution reports emit JSONL event records incrementally. There is no aggregate
+JSON delivery spool. Candidate bodies, captured process output and consumer-side
+data still have their own memory costs.
 
 `DiskLifecycle` owns admission for dispatch, cleanup and final acknowledgement.
 The shell's `CleanupProgress` records attempts, including rejected attempts, and
@@ -358,7 +357,7 @@ work owns its writer and delivery-root leases. When safe removal cannot be
 established, the shell defers reclamation and preserves incomplete-cleanup
 evidence instead of treating a recovered task payload as successful completion.
 
-Sources: [JSON spool](../../crates/hoimin-cli/src/report/json.rs),
+Sources: [JSONL event writer](../../crates/hoimin-cli/src/report/jsonl.rs),
 [owned delivery](../../crates/hoimin-cli/src/report/delivery.rs),
 [disk lifecycle](../../crates/hoimin-core/src/disk.rs),
 [shared manifest](../../crates/hoimin-cli/src/workspace/manifest.rs),
@@ -513,7 +512,7 @@ sequenceDiagram
     Shell->>Workspace: Complete execution-root cleanup
     Note over Shell,Workspace: Monitor and final measurement must also be quiescent
     Shell->>Report: Deliver final report and flush
-    Report-->>Shell: Delivery result and spool release
+    Report-->>Shell: Delivery result and owner release
     Shell->>Workspace: Complete delivery-root cleanup
     Shell->>Core: Accept final OutputEmitted after lifecycle admission
     Shell-->>Caller: Exit status after delivery

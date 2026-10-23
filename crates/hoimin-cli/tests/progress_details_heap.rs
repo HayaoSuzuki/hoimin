@@ -1,5 +1,7 @@
 #[path = "support/candidate_identity.rs"]
 mod candidate_identity;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 
 use hoimin_cli::{cli::ProgressArgs, progress};
 use serde_json::{Value, json};
@@ -74,7 +76,7 @@ fn detail_allocations_do_not_scale_with_candidate_body_size() {
             doc["summary"]["counts"]["survived"] = json!(survived);
             doc["summary"]["counts"]["score"] = json!(score);
             doc["summary"]["exit_code"] = json!(0);
-            std::fs::write(path, serde_json::to_vec(&doc).unwrap()).unwrap();
+            std::fs::write(path, jsonl_report::to_vec(&doc)).unwrap();
         }
         let measure = |details, expected_transitions| {
             let args = ProgressArgs {

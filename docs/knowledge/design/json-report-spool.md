@@ -1,8 +1,8 @@
 ---
-type: Contract
+type: Reference
 title: JSONレポートのmutant record書込み
 description: mutantイベントの固定容量buffer、ack、short write、poisoned状態の契約。
-status: draft
+status: deprecated
 source_revision: 165a2d284a1af92eb02ffd214ba8c0070c2f3808
 sources:
   - id: issue-1012-wire
@@ -26,7 +26,7 @@ sources:
     working_tree: clean
     sha256: 76d7312dba2c393de9f8c9b47c0f767df0c4100df53a47a07142ba5897eabd19
   - id: implementation
-    resource: ../../../crates/hoimin-cli/src/report/json.rs
+    resource: https://github.com/tokyogas-tech/hoimin/blob/bd8de5bdee2f0e4033623e5b44eff5f62db89b72/crates/hoimin-cli/src/report/json.rs
     revision: bd8de5bdee2f0e4033623e5b44eff5f62db89b72
     working_tree: clean
     sha256: 3357da3117212874872b3a1c5245bd8b94dcfd58bee4322edab3758503db16f3
@@ -36,7 +36,7 @@ sources:
     working_tree: clean
     sha256: 98836b9bec5c5f828ba8763439e33670967c7b616d531f6f8bdbd8fe34adbd15
   - id: issue-1092-implementation
-    resource: ../../../crates/hoimin-cli/src/report/json.rs
+    resource: https://github.com/tokyogas-tech/hoimin/blob/e8f0e7b7f86a849d1305ef1ccaddd80c1df80f0b/crates/hoimin-cli/src/report/json.rs
     revision: 21c5659d4a6a37633bd1a29f691debd0e84f4280
     working_tree: modified
     sha256: 2460bd92ad12bbf8a5781557c5a74fa422bd1084947baf81eef29f60a23b7fff
@@ -51,6 +51,14 @@ sources:
     working_tree: modified
     sha256: b027e917711cd58b66a1c554519dce5d09c4eca47a02af635afec5b758329ab1
 ---
+
+# Historical aggregate JSON writer
+
+The aggregate JSON execution writer and its delivery spool have been removed
+from the current working tree. `run` and `verify` now emit JSONL events only;
+progress and review accept that event stream. The sections below preserve the
+contracts at their recorded revisions and do not describe the current writer.
+See the [current execution-report contract](session-report.md#current-report-reader-and-diagnostic-boundaries).
 
 # mutant recordの書込み
 
@@ -73,7 +81,7 @@ schema 9で導入された`status`は、spoolへ書き込むイベントの直�
 最終レポートでは従来どおりspoolをflushして先頭へseekし、stdoutへcopyする。このflushはRustのwriter契約であり、永続媒体への同期完了を意味しない。writer境界または最終出力手順を変更した場合は、ackとエラー時点を再確認する。
 
 [^design]: [Issue 463 design](../../superpowers/specs/2026-09-14-issue-463-json-record-write-design.md)。
-[^implementation]: [json.rs](../../../crates/hoimin-cli/src/report/json.rs)。
+[^implementation]: [json.rs](https://github.com/tokyogas-tech/hoimin/blob/bd8de5bdee2f0e4033623e5b44eff5f62db89b72/crates/hoimin-cli/src/report/json.rs)。
 [^tests]: [report handler tests](../../../crates/hoimin-cli/tests/report_handler.rs)。
 
 [^issue-1010-wire]: [導出statusのreport境界](../../../crates/hoimin-core/src/report.rs)。
@@ -92,6 +100,6 @@ assembly.[^issue-1012-wire][^issue-1012-handler-tests]
 [^issue-1012-wire]: [Current summary wire type](../../../crates/hoimin-core/src/report.rs).
 [^issue-1012-handler-tests]: [Summary output tests](../../../crates/hoimin-cli/tests/report_handler.rs).
 
-[^issue-1092-implementation]: [固定容量のrecord書込み](../../../crates/hoimin-cli/src/report/json.rs)。
+[^issue-1092-implementation]: [固定容量のrecord書込み](https://github.com/tokyogas-tech/hoimin/blob/e8f0e7b7f86a849d1305ef1ccaddd80c1df80f0b/crates/hoimin-cli/src/report/json.rs)。
 [^issue-1092-tests]: [書込み失敗と最終bytesの回帰テスト](../../../crates/hoimin-cli/tests/report_handler.rs)。
 [^issue-1092-heap]: [実handlerの割当とwrite回数](../../../crates/hoimin-cli/tests/report_heap.rs)。

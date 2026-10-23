@@ -1,30 +1,11 @@
 use super::*;
 
 fn document() -> serde_json::Value {
-    serde_json::from_str(include_str!(
-        "../../../tests/golden/reports/schema-v10-current.json"
-    ))
-    .unwrap()
+    test_support::current_report_view()
 }
 
-fn wires(document: &serde_json::Value) -> (String, String) {
-    let mut events: Vec<serde_json::Value> =
-        include_str!("../../../tests/golden/events/schema-v10-current.jsonl")
-            .lines()
-            .map(|line| serde_json::from_str(line).unwrap())
-            .collect();
-    events[0] = document["run"].clone();
-    events[1] = document["baseline"].clone();
-    events[3] = document["mutants"][0].clone();
-    events[5] = document["summary"].clone();
-    (
-        serde_json::to_string(document).unwrap(),
-        events
-            .iter()
-            .map(|event| serde_json::to_string(event).unwrap())
-            .collect::<Vec<_>>()
-            .join("\n"),
-    )
+fn wire(document: &serde_json::Value) -> String {
+    String::from_utf8(test_support::jsonl_bytes(document)).unwrap()
 }
 
 macro_rules! closed_case {
@@ -33,26 +14,11 @@ macro_rules! closed_case {
             use super::*;
 
             #[test]
-            fn json_unknown_is_rejected() {
-                // Arrange.
-                let mut value = document();
-                value.pointer_mut($pointer).unwrap()["unexpected"] = 123.into();
-                let (wire, _) = wires(&value);
-                // Act.
-                let result = read_buffered_report(Path::new("report.json"), wire.as_bytes());
-                // Assert.
-                assert!(
-                    matches!(result, Err(ReportReadError::Parse { .. })),
-                    "{result:?}"
-                );
-            }
-
-            #[test]
             fn jsonl_unknown_is_rejected() {
                 // Arrange.
                 let mut value = document();
                 value.pointer_mut($pointer).unwrap()["unexpected"] = 123.into();
-                let (_, wire) = wires(&value);
+                let wire = wire(&value);
                 // Act.
                 let result = read_buffered_report(Path::new("report.jsonl"), wire.as_bytes());
                 // Assert.
@@ -67,9 +33,9 @@ macro_rules! closed_case {
                 // Arrange.
                 let mut value = document();
                 value.pointer_mut($pointer).unwrap()["unexpected"] = 123.into();
-                let (wire, _) = wires(&value);
+                let wire = wire(&value);
                 // Act.
-                let result = read_typed_json(Path::new("report.json"), wire.as_bytes());
+                let result = read_typed_jsonl(Path::new("report.json"), wire.as_bytes());
                 // Assert.
                 assert!(matches!(result, Err(ReportReadError::Parse { .. })));
             }
@@ -82,16 +48,15 @@ macro_rules! closed_case {
                 let original = serde_json::to_string(payload).unwrap();
                 let duplicate =
                     original.replacen('{', &format!("{{\"{}\":{},", $field, payload[$field]), 1);
-                let (json, _) = wires(&value);
-                let wire = json.replacen(&original, &duplicate, 1);
+                let wire = wire(&value).replacen(&original, &duplicate, 1);
                 // Act.
-                let result = read_typed_json(Path::new("report.json"), wire.as_bytes());
+                let result = read_typed_jsonl(Path::new("report.json"), wire.as_bytes());
                 // Assert.
                 assert!(matches!(result, Err(ReportReadError::Parse { .. })));
             }
 
             macro_rules! duplicate_case {
-                ($test:ident, $jsonl:expr) => {
+                ($test:ident) => {
                     #[test]
                     fn $test() {
                         // Arrange.
@@ -103,9 +68,7 @@ macro_rules! closed_case {
                             &format!("{{\"{}\":{},", $field, payload[$field]),
                             1,
                         );
-                        let (json, jsonl) = wires(&value);
-                        let wire =
-                            if $jsonl { jsonl } else { json }.replacen(&original, &duplicate, 1);
+                        let wire = wire(&value).replacen(&original, &duplicate, 1);
                         // Act.
                         let result = read_buffered_report(Path::new("report"), wire.as_bytes());
                         // Assert.
@@ -116,8 +79,7 @@ macro_rules! closed_case {
                     }
                 };
             }
-            duplicate_case!(json_duplicate_is_rejected, false);
-            duplicate_case!(jsonl_duplicate_is_rejected, true);
+            duplicate_case!(jsonl_duplicate_is_rejected);
         }
     };
 }
@@ -135,6 +97,7 @@ closed_case!(resources, "/run/resource_control", "mode");
 closed_case!(resume, "/run/resume", "status");
 closed_case!(environment, "/run/normalized_config/environment", "state");
 closed_case!(session, "/run/normalized_config/session", "mode");
+closed_case!(output_config, "/run/normalized_config/output", "metrics");
 closed_case!(
     session_config,
     "/run/normalized_config/session/config",
@@ -222,15 +185,14 @@ fn run_kind_requires_a_string_for_progress_and_review() {
     ] {
         let mut value = document();
         value["run"]["kind"] = kind;
-        let (json, jsonl) = wires(&value);
+        let jsonl = wire(&value);
         let path = Path::new("report");
         assert!(matches!(
-            read_buffered_report(path, json.as_bytes()),
+            read_buffered_report(path, jsonl.as_bytes()),
             Err(ReportReadError::Parse { .. })
         ));
-        assert!(read_buffered_report(path, jsonl.as_bytes()).is_err());
         assert!(matches!(
-            read_typed_json(path, json.as_bytes()),
+            read_typed_jsonl(path, jsonl.as_bytes()),
             Err(ReportReadError::Parse { .. })
         ));
     }

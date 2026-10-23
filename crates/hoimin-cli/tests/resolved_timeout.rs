@@ -1,11 +1,13 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use collecting_writer::CollectingWriter;
 use std::ffi::OsString;
 use std::path::Path;
 use std::time::Duration;
 
-fn run_args(root: &Path, format: &str, fixed: Option<&str>, code: &str) -> Vec<OsString> {
+fn run_args(root: &Path, fixed: Option<&str>, code: &str) -> Vec<OsString> {
     let mut args: Vec<OsString> = ["hoimin", "run", "--root"]
         .into_iter()
         .map(Into::into)
@@ -20,8 +22,6 @@ fn run_args(root: &Path, format: &str, fixed: Option<&str>, code: &str) -> Vec<O
             "--max-mutants",
             "1",
             "--allow-best-effort-memory",
-            "--format",
-            format,
         ]
         .into_iter()
         .map(OsString::from),
@@ -66,8 +66,8 @@ async fn invoke(args: Vec<OsString>) -> (i32, String) {
 async fn auto_timeout_is_reported_by_the_public_json_command() {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("sample.py"), "x = True\n").unwrap();
-    let (exit, text) = invoke(run_args(root.path(), "json", None, "pass")).await;
-    let report: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let (exit, text) = invoke(run_args(root.path(), None, "pass")).await;
+    let report: serde_json::Value = jsonl_report::from_slice(text.as_bytes()).unwrap();
     assert_eq!(exit, 0);
     assert_eq!(
         report["summary"]["resolved_mutant_timeout"],
@@ -79,7 +79,7 @@ async fn auto_timeout_is_reported_by_the_public_json_command() {
 async fn fixed_timeout_is_reported_by_the_public_jsonl_command() {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("sample.py"), "x = True\n").unwrap();
-    let (exit, text) = invoke(run_args(root.path(), "jsonl", Some("1.234567891s"), "pass")).await;
+    let (exit, text) = invoke(run_args(root.path(), Some("1.234567891s"), "pass")).await;
     let report: serde_json::Value = serde_json::from_str(text.lines().last().unwrap()).unwrap();
     assert_eq!(exit, 0);
     assert_eq!(
@@ -91,8 +91,8 @@ async fn fixed_timeout_is_reported_by_the_public_jsonl_command() {
 async fn assert_failed_baseline_leaves_timeout_unresolved(policy: Option<&str>) {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("sample.py"), "x = True\n").unwrap();
-    let (exit, text) = invoke(run_args(root.path(), "json", policy, "raise SystemExit(1)")).await;
-    let report: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let (exit, text) = invoke(run_args(root.path(), policy, "raise SystemExit(1)")).await;
+    let report: serde_json::Value = jsonl_report::from_slice(text.as_bytes()).unwrap();
     assert_eq!(exit, 3);
     assert_eq!(
         report["baseline"]["termination"],
@@ -119,12 +119,10 @@ async fn failed_baseline_does_not_report_a_fixed_timeout_as_resolved() {
 async fn verify_reports_the_saved_fixed_timeout() {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("sample.py"), "x = True\n").unwrap();
-    let mut args = run_args(root.path(), "json", Some("1.234567891s"), "pass");
+    let mut args = run_args(root.path(), Some("1.234567891s"), "pass");
     args[1] = "plan".into();
-    for option in ["--max-mutants", "--format"] {
-        let index = args.iter().position(|arg| arg == option).unwrap();
-        args.drain(index..index + 2);
-    }
+    let index = args.iter().position(|arg| arg == "--max-mutants").unwrap();
+    args.drain(index..index + 2);
     let (exit, text) = invoke(args).await;
     assert_eq!(exit, 0);
     let manifest = root.path().join("plan.json");
@@ -137,7 +135,7 @@ async fn verify_reports_the_saved_fixed_timeout() {
         "1".into(),
     ])
     .await;
-    let report: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(text.as_bytes()).unwrap();
     assert_eq!(exit, 0);
     assert_eq!(
         report["summary"]["resolved_mutant_timeout"],

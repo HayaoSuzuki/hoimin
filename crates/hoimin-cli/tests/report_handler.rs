@@ -4,21 +4,17 @@ mod collecting_writer;
 mod mutation_outcome;
 use collecting_writer::CollectingWriter;
 
-use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicUsize, Ordering},
-};
+use std::sync::{Arc, Mutex};
 
 use hoimin_cli::report::ReportHandler;
 use hoimin_core::{
     BaselineFinished, ByteSpan, CommandArg, Diagnostic, EffectFailure, EffectId, EmitOutput,
     MutantFinished, MutantStarted, MutationCandidate, MutationStatus, MutationSummary, OutputEvent,
-    OutputFormat, OutputSpoolRef, ProcessOutputState, ProcessTermination, REPORT_SCHEMA_VERSION,
-    ReportSequence, ResourceMode, RunStarted, RunSummary, SessionDiagnostic, VerificationSelection,
+    OutputSpoolRef, ProcessOutputState, ProcessTermination, REPORT_SCHEMA_VERSION, ReportSequence,
+    ResourceMode, RunStarted, RunSummary, SessionDiagnostic, VerificationSelection,
 };
-use serde::{Deserialize, Serialize};
 
 const TEST_MIN_FREE_SPACE: &str = "1B";
 
@@ -30,18 +26,6 @@ struct WriterState {
     bytes: Vec<u8>,
     flushes: usize,
     writes: usize,
-}
-
-#[test]
-fn minimal_schema_v10_report_fixture_matches_the_published_schema() {
-    let root = repo_root();
-    let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
-    let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
-    let report =
-        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v10-original.json"));
-
-    assert_schema_valid(&result_schema, &report, &event_schema);
-    assert_report_optionals(&report, false);
 }
 
 #[test]
@@ -149,34 +133,6 @@ fn environment_snapshot_schema_requires_a_complete_closed_state() {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
-struct GoldenReportDocument {
-    schema_version: u32,
-    run: OutputEvent,
-    baseline: OutputEvent,
-    mutants: Vec<OutputEvent>,
-    summary: OutputEvent,
-}
-
-#[test]
-fn current_report_golden_matches_typed_semantic_regeneration() {
-    let root = repo_root();
-    let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
-    let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
-    let path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v10-current.json");
-    let checked_bytes = std::fs::read(&path).unwrap();
-    let checked: GoldenReportDocument = serde_json::from_slice(&checked_bytes).unwrap();
-    let checked_value: serde_json::Value = serde_json::from_slice(&checked_bytes).unwrap();
-    assert_schema_valid(&result_schema, &checked_value, &event_schema);
-    assert_canonical_normalized_config(&checked_value["run"]);
-    let regenerated: GoldenReportDocument =
-        serde_json::from_slice(&render_json_report(&all_optional_report_events(true))).unwrap();
-
-    assert_eq!(checked, regenerated);
-    assert_eq!(checked.schema_version, REPORT_SCHEMA_VERSION);
-    assert_report_optionals(&serde_json::to_value(&checked).unwrap(), true);
-}
-
 #[test]
 fn report_event_goldens_are_typed_complete_sequences() {
     let repo = repo_root();
@@ -246,12 +202,6 @@ fn assert_canonical_normalized_config(event: &serde_json::Value) {
 fn raw_goldens_reject_unknown_fields_before_typed_comparison() {
     let root = repo_root();
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
-    let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
-    let mut report =
-        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v10-current.json"));
-    report["unexpected"] = serde_json::json!(true);
-    assert_schema_invalid(&result_schema, &report, &event_schema);
-
     let line = std::fs::read_to_string(
         root.join("crates/hoimin-cli/tests/golden/events/schema-v10-current.jsonl"),
     )
@@ -264,15 +214,6 @@ fn raw_goldens_reject_unknown_fields_before_typed_comparison() {
 #[test]
 fn raw_goldens_reject_duplicate_known_fields_before_value_parsing() {
     let root = repo_root();
-    let report_path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v10-current.json");
-    let report = std::fs::read_to_string(report_path).unwrap();
-    let duplicate_report = report.replacen(
-        "\"schema_version\": 10,",
-        "\"schema_version\": 10,\n  \"schema_version\": 10,",
-        1,
-    );
-    assert!(serde_json::from_str::<GoldenReportDocument>(&duplicate_report).is_err());
-
     let event_path = root.join("crates/hoimin-cli/tests/golden/events/schema-v10-current.jsonl");
     let events = std::fs::read_to_string(event_path).unwrap();
     let first = events.lines().next().unwrap();
@@ -437,53 +378,6 @@ fn all_optional_report_events_at(current: bool, version: u32) -> Vec<OutputEvent
     .collect()
 }
 
-fn render_json_report(events: &[OutputEvent]) -> Vec<u8> {
-    let spool = tempfile::tempdir().unwrap();
-    let stdout = SharedWriter::default();
-    let mut handler =
-        ReportHandler::new(OutputFormat::Json, stdout.clone(), io::sink(), spool.path()).unwrap();
-    for (index, event) in events.iter().cloned().enumerate() {
-        emit(
-            &mut handler,
-            u64::try_from(index).expect("fixture event count fits u64"),
-            event,
-        );
-    }
-    stdout.0.lock().unwrap().bytes.clone()
-}
-
-fn assert_report_optionals(document: &serde_json::Value, current: bool) {
-    for pointer in [
-        "/run/normalized_config",
-        "/run/normalized_config/selection/changed/diff_base",
-        "/run/normalized_config/output/metrics",
-        "/run/normalized_config/session",
-        "/mutants/0/candidate/symbol",
-        "/mutants/0/outcome/executed/termination",
-        "/mutants/0/outcome/executed/output",
-        "/summary/counts/score",
-    ] {
-        assert!(
-            document
-                .pointer(pointer)
-                .is_some_and(|value| !value.is_null()),
-            "missing populated report optional {pointer}"
-        );
-    }
-    assert_eq!(
-        document
-            .pointer("/run/verification_selection")
-            .is_some_and(|value| !value.is_null()),
-        current
-    );
-    assert_eq!(
-        document
-            .pointer("/summary/verification_selection")
-            .is_some_and(|value| !value.is_null()),
-        current
-    );
-}
-
 fn assert_event_optionals(events: &[OutputEvent], current: bool) {
     let OutputEvent::RunStarted(started) = &events[0] else {
         panic!("golden sequence must begin with run_started");
@@ -604,7 +498,7 @@ async fn documentation_contract() {
             "documented command returned an infrastructure error: {exit}; command: {command:?}\nstderr: {}",
             String::from_utf8_lossy(&stderr.snapshot())
         );
-        documented_outputs.push((config.output.format, stdout.snapshot(), stderr.snapshot()));
+        documented_outputs.push((stdout.snapshot(), stderr.snapshot()));
     }
 
     assert!(
@@ -612,96 +506,64 @@ async fn documentation_contract() {
         "a Usage run example must enable metrics"
     );
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
-    let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
     assert_eq!(
         event_schema["$schema"],
         "https://json-schema.org/draft/2020-12/schema"
     );
-    assert_eq!(
-        result_schema["$schema"],
-        "https://json-schema.org/draft/2020-12/schema"
-    );
-    for (_, stdout, _) in documented_outputs
-        .iter()
-        .filter(|(format, _, _)| *format == OutputFormat::Json)
-    {
-        let document: serde_json::Value = serde_json::from_slice(stdout).unwrap();
-        assert_schema_valid(&result_schema, &document, &event_schema);
-        documented_type_operator |= document["mutants"].as_array().is_some_and(|mutants| {
-            mutants.iter().any(|mutant| {
-                mutant["candidate"]["operator"]
-                    .as_str()
-                    .is_some_and(|operator| operator.starts_with("type_"))
-            })
-        });
-    }
-    for (_, stdout, stderr) in documented_outputs
-        .iter()
-        .filter(|(format, _, _)| *format == OutputFormat::Jsonl)
-    {
+    for (stdout, stderr) in &documented_outputs {
         for line in stdout
             .split(|byte| *byte == b'\n')
             .chain(stderr.split(|byte| *byte == b'\n'))
             .filter(|line| !line.is_empty())
         {
-            let event = serde_json::from_slice(line).unwrap();
+            let event: serde_json::Value = serde_json::from_slice(line).unwrap();
             assert_schema_valid(&event_schema, &event, &event_schema);
+            documented_type_operator |= event["candidate"]["operator"]
+                .as_str()
+                .is_some_and(|operator| operator.starts_with("type_"));
         }
     }
-
     assert!(
         documented_type_operator,
-        "a documented JSON command must validate a type-operator candidate"
+        "a documented command must validate a type-operator candidate"
     );
-    let (document, jsonl_events) = actual_documented_reports();
-    assert_schema_valid(&result_schema, &document, &event_schema);
+    let jsonl_events = actual_documented_reports();
     for event in &jsonl_events {
         assert_schema_valid(&event_schema, event, &event_schema);
     }
-    assert_eq!(
-        document["run"]["verification_selection"]["policy"],
-        "file_round_robin_v1"
-    );
-    assert_eq!(
-        document["summary"]["verification_selection"]["policy"],
-        "file_round_robin_v1"
-    );
     for kind in ["run_started", "run_finished"] {
         let event = jsonl_events
             .iter()
             .find(|event| event["kind"] == kind)
-            .unwrap_or_else(|| panic!("missing {kind} fixture"));
+            .unwrap();
         assert_eq!(
             event["verification_selection"]["policy"],
             "file_round_robin_v1"
         );
+        let mut missing_policy = event.clone();
+        missing_policy["verification_selection"]
+            .as_object_mut()
+            .unwrap()
+            .remove("policy");
+        assert_schema_invalid(&event_schema, &missing_policy, &event_schema);
     }
-
-    let mut missing_result_policy = document.clone();
-    missing_result_policy["run"]["verification_selection"]
-        .as_object_mut()
-        .unwrap()
-        .remove("policy");
-    assert_schema_invalid(&result_schema, &missing_result_policy, &event_schema);
-
-    let mut unknown_event_policy = jsonl_events
-        .iter()
-        .find(|event| event["kind"] == "run_started")
-        .unwrap()
-        .clone();
-    unknown_event_policy["verification_selection"]["policy"] = serde_json::json!("weighted");
-    assert_schema_invalid(&event_schema, &unknown_event_policy, &event_schema);
-
-    let incomplete = actual_pre_baseline_report();
-    assert!(incomplete["baseline"].is_null());
-    assert_schema_valid(&result_schema, &incomplete, &event_schema);
-
-    let mut invalid = document.clone();
+    let mut invalid = jsonl_events[0].clone();
+    invalid["verification_selection"]["policy"] = serde_json::json!("weighted");
+    assert_schema_invalid(&event_schema, &invalid, &event_schema);
+    invalid = jsonl_events[0].clone();
     invalid["schema_version"] = serde_json::json!(REPORT_SCHEMA_VERSION + 1);
-    assert_schema_invalid(&result_schema, &invalid, &event_schema);
-    invalid = document.clone();
+    assert_schema_invalid(&event_schema, &invalid, &event_schema);
+    invalid = jsonl_events[0].clone();
     invalid["unexpected"] = serde_json::json!(true);
-    assert_schema_invalid(&result_schema, &invalid, &event_schema);
+    assert_schema_invalid(&event_schema, &invalid, &event_schema);
+    let incomplete = actual_pre_baseline_report();
+    assert_eq!(incomplete.len(), 2);
+    assert_eq!(incomplete[0]["kind"], "run_started");
+    assert_eq!(incomplete[1]["kind"], "run_finished");
+    assert_eq!(incomplete[1]["complete"], false);
+    for event in &incomplete {
+        assert_schema_valid(&event_schema, event, &event_schema);
+    }
 
     let mut invalid_event = jsonl_events
         .iter()
@@ -731,27 +593,27 @@ async fn documentation_contract() {
 
 #[test]
 fn documented_bash_continuations_form_one_command() {
-    let markdown = "```bash\nRUST_LOG=debug hoimin run --file calc.py \\\n  --format json -- python -m pytest -q \\\n  > result.json\n```";
+    let markdown = "```bash\nRUST_LOG=debug hoimin run --file calc.py \\\n  -- python -m pytest -q \\\n  > result.jsonl\n```";
 
     let commands = fenced_run_commands(markdown);
 
     assert_eq!(commands.len(), 1);
     assert_eq!(
         commands[0].join(" "),
-        "RUST_LOG=debug hoimin run --file calc.py --format json -- python -m pytest -q > result.json"
+        "RUST_LOG=debug hoimin run --file calc.py -- python -m pytest -q > result.jsonl"
     );
 }
 
 #[test]
 fn documented_powershell_continuations_form_one_command() {
-    let markdown = "```powershell\ntry {\n    hoimin run --file calc.py --format json `\n      -- python -m pytest -q `\n      > result.json\n} finally {\n    $env:RUST_LOG = $previousRustLog\n}\n```";
+    let markdown = "```powershell\ntry {\n    hoimin run --file calc.py `\n      -- python -m pytest -q `\n      > result.jsonl\n} finally {\n    $env:RUST_LOG = $previousRustLog\n}\n```";
 
     let commands = fenced_run_commands(markdown);
 
     assert_eq!(commands.len(), 1);
     assert_eq!(
         commands[0].join(" "),
-        "hoimin run --file calc.py --format json -- python -m pytest -q > result.json"
+        "hoimin run --file calc.py -- python -m pytest -q > result.jsonl"
     );
 }
 
@@ -870,49 +732,24 @@ fn repo_root() -> PathBuf {
         .to_owned()
 }
 
-fn actual_documented_reports() -> (serde_json::Value, Vec<serde_json::Value>) {
-    let event_records = documented_events();
-    let spool = tempfile::tempdir().unwrap();
-
-    let json_stdout = SharedWriter::default();
-    let mut json = ReportHandler::new(
-        OutputFormat::Json,
-        json_stdout.clone(),
-        io::sink(),
-        spool.path(),
-    )
-    .unwrap();
-    for event in event_records.iter().cloned() {
-        emit(&mut json, event.sequence(), event);
+fn actual_documented_reports() -> Vec<serde_json::Value> {
+    let stdout = SharedWriter::default();
+    let stderr = SharedWriter::default();
+    let mut handler = ReportHandler::new(stdout.clone(), stderr.clone());
+    for event in documented_events() {
+        emit(&mut handler, event.sequence(), event);
     }
-    let document = serde_json::from_str(json_stdout.text().trim()).unwrap();
-
-    let json_lines_stdout = SharedWriter::default();
-    let jsonl_stderr = SharedWriter::default();
-    let mut jsonl = ReportHandler::new(
-        OutputFormat::Jsonl,
-        json_lines_stdout.clone(),
-        jsonl_stderr.clone(),
-        spool.path(),
-    )
-    .unwrap();
-    for event in event_records {
-        emit(&mut jsonl, event.sequence(), event);
-    }
-    let events = json_lines_stdout
+    stdout
         .text()
         .lines()
-        .chain(jsonl_stderr.text().lines())
+        .chain(stderr.text().lines())
         .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
-    (document, events)
+        .collect()
 }
 
-fn actual_pre_baseline_report() -> serde_json::Value {
+fn actual_pre_baseline_report() -> Vec<serde_json::Value> {
     let stdout = SharedWriter::default();
-    let spool = tempfile::tempdir().unwrap();
-    let mut handler =
-        ReportHandler::new(OutputFormat::Json, stdout.clone(), io::sink(), spool.path()).unwrap();
+    let mut handler = ReportHandler::new(stdout.clone(), io::sink());
     emit(
         &mut handler,
         1,
@@ -937,7 +774,11 @@ fn actual_pre_baseline_report() -> serde_json::Value {
             verification_selection: None,
         }),
     );
-    serde_json::from_str(stdout.text().trim()).unwrap()
+    stdout
+        .text()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
 }
 
 fn documented_verification_selection() -> VerificationSelection {
@@ -1197,13 +1038,7 @@ fn instance_has_type(instance: &serde_json::Value, kind: &str) -> bool {
 fn jsonl_flushes_each_event_and_keeps_diagnostics_on_stderr() {
     let stdout = SharedWriter::default();
     let stderr = SharedWriter::default();
-    let mut handler = ReportHandler::new(
-        OutputFormat::Jsonl,
-        stdout.clone(),
-        stderr.clone(),
-        std::env::temp_dir(),
-    )
-    .unwrap();
+    let mut handler = ReportHandler::new(stdout.clone(), stderr.clone());
 
     let emitted = handler
         .handle(EmitOutput {
@@ -1256,13 +1091,7 @@ fn jsonl_flushes_each_event_and_keeps_diagnostics_on_stderr() {
 fn jsonl_uses_all_exact_event_kinds_and_flushes_each_record() {
     let stdout = SharedWriter::default();
     let stderr = SharedWriter::default();
-    let mut handler = ReportHandler::new(
-        OutputFormat::Jsonl,
-        stdout.clone(),
-        stderr.clone(),
-        std::env::temp_dir(),
-    )
-    .unwrap();
+    let mut handler = ReportHandler::new(stdout.clone(), stderr.clone());
 
     for (offset, event) in events().into_iter().enumerate() {
         handler
@@ -1297,58 +1126,8 @@ fn jsonl_uses_all_exact_event_kinds_and_flushes_each_record() {
 }
 
 #[test]
-fn json_streams_mutants_from_disk_into_one_document() {
-    let stdout = SharedWriter::default();
-    let stderr = SharedWriter::default();
-    let spool = tempfile::tempdir().unwrap();
-    let mut handler = ReportHandler::new(
-        OutputFormat::Json,
-        stdout.clone(),
-        stderr.clone(),
-        spool.path(),
-    )
-    .unwrap();
-    let event_records = events();
-    for event in event_records.iter().cloned() {
-        handler
-            .handle(EmitOutput {
-                id: EffectId(event.sequence()),
-                event,
-            })
-            .unwrap();
-    }
-
-    let document: serde_json::Value = serde_json::from_str(stdout.text().trim()).unwrap();
-    assert_eq!(document["schema_version"], REPORT_SCHEMA_VERSION);
-    assert_eq!(document["run"]["kind"], "run_started");
-    assert_eq!(document["baseline"]["kind"], "baseline_finished");
-    assert_eq!(document["mutants"].as_array().unwrap().len(), 1);
-    assert_eq!(document["mutants"][0]["kind"], "mutant_finished");
-    assert_eq!(document["summary"]["kind"], "run_finished");
-    assert!(!stdout.text().contains("diagnostic"));
-    assert!(stderr.text().contains("\"kind\":\"diagnostic\""));
-    assert_eq!(stdout.flushes(), 1);
-    assert_eq!(
-        stdout.text(),
-        format!(
-            "{{\"schema_version\":{REPORT_SCHEMA_VERSION},\"run\":{},\"baseline\":{},\"mutants\":[{}],\"summary\":{}}}\n",
-            serde_json::to_string(&event_records[0]).unwrap(),
-            serde_json::to_string(&event_records[1]).unwrap(),
-            serde_json::to_string(&event_records[3]).unwrap(),
-            serde_json::to_string(&event_records[5]).unwrap(),
-        )
-    );
-}
-
-#[test]
 fn report_errors_are_typed_and_echo_the_effect_id() {
-    let mut handler = ReportHandler::new(
-        OutputFormat::Jsonl,
-        FailingWriter,
-        io::sink(),
-        std::env::temp_dir(),
-    )
-    .unwrap();
+    let mut handler = ReportHandler::new(FailingWriter, io::sink());
     let failed = handler
         .handle(EmitOutput {
             id: EffectId(99),
@@ -1361,213 +1140,13 @@ fn report_errors_are_typed_and_echo_the_effect_id() {
         .unwrap_err();
     assert_eq!(failed.id, EffectId(99));
     assert!(matches!(failed.failure, EffectFailure::ReportIo { .. }));
-
-    let spool = tempfile::tempdir().unwrap();
-    let mut handler =
-        ReportHandler::new(OutputFormat::Json, io::sink(), io::sink(), spool.path()).unwrap();
-    emit(
-        &mut handler,
-        1,
-        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
-    );
-    let failed = handler
-        .handle(EmitOutput {
-            id: EffectId(100),
-            event: OutputEvent::RunStarted(RunStarted::minimal(
-                "run-1",
-                2,
-                test_resource_control(),
-            )),
-        })
-        .unwrap_err();
-    assert_eq!(failed.id, EffectId(100));
-    assert!(matches!(failed.failure, EffectFailure::ReportState { .. }));
-
-    let mut handler = ReportHandler::new(
-        OutputFormat::Jsonl,
-        FailingWriter,
-        io::sink(),
-        std::env::temp_dir(),
-    )
-    .unwrap();
-    let failed = handler
-        .handle(EmitOutput {
-            id: EffectId(101),
-            event: OutputEvent::RunStarted(RunStarted::minimal(
-                "run-1",
-                1,
-                test_resource_control(),
-            )),
-        })
-        .unwrap_err();
-    assert_eq!(failed.id, EffectId(101));
-    assert!(matches!(failed.failure, EffectFailure::ReportIo { .. }));
-}
-
-#[test]
-fn partial_stdout_failure_poisons_json_report() {
-    let spool = tempfile::tempdir().unwrap();
-    let mut handler = ReportHandler::new(
-        OutputFormat::Json,
-        FailAfter::new(24),
-        io::sink(),
-        spool.path(),
-    )
-    .unwrap();
-    emit(
-        &mut handler,
-        1,
-        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
-    );
-    let failed = handler
-        .handle(EmitOutput {
-            id: EffectId(2),
-            event: run_summary(2),
-        })
-        .unwrap_err();
-    assert_eq!(failed.id, EffectId(2));
-    assert!(matches!(failed.failure, EffectFailure::ReportIo { .. }));
-
-    let retry = handler
-        .handle(EmitOutput {
-            id: EffectId(3),
-            event: run_summary(3),
-        })
-        .unwrap_err();
-    assert_eq!(retry.id, EffectId(3));
-    assert!(matches!(retry.failure, EffectFailure::ReportState { .. }));
-}
-
-#[test]
-fn partial_mutant_spool_failure_poisons_json_report() {
-    let mut handler = ReportHandler::with_mutant_spool(
-        OutputFormat::Json,
-        io::sink(),
-        io::sink(),
-        FailAfter::new(12),
-    );
-    emit(
-        &mut handler,
-        1,
-        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
-    );
-    let failed = handler
-        .handle(EmitOutput {
-            id: EffectId(2),
-            event: mutant_finished(2, 0),
-        })
-        .unwrap_err();
-    assert_eq!(failed.id, EffectId(2));
-    assert!(matches!(failed.failure, EffectFailure::ReportIo { .. }));
-
-    let retry = handler
-        .handle(EmitOutput {
-            id: EffectId(3),
-            event: mutant_finished(3, 0),
-        })
-        .unwrap_err();
-    assert_eq!(retry.id, EffectId(3));
-    assert!(matches!(retry.failure, EffectFailure::ReportState { .. }));
-}
-
-#[test]
-fn json_spool_writes_one_complete_record_per_mutant() {
-    let calls = Arc::new(AtomicUsize::new(0));
-    let stdout = SharedWriter::default();
-    let mut handler = ReportHandler::with_mutant_spool(
-        OutputFormat::Json,
-        stdout.clone(),
-        io::sink(),
-        CountingSpool::new(usize::MAX, Arc::clone(&calls)),
-    );
-    emit(
-        &mut handler,
-        1,
-        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
-    );
-    for index in 0..100 {
-        emit(&mut handler, index + 2, mutant_finished(index + 2, index));
-    }
-    emit(&mut handler, 102, run_summary(102));
-
-    assert_eq!(calls.load(Ordering::Relaxed), 100);
-    let document: serde_json::Value = serde_json::from_str(stdout.text().trim()).unwrap();
-    assert_eq!(document["mutants"].as_array().unwrap().len(), 100);
-    assert!(
-        document["mutants"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|mutant| mutant["status"] == "killed")
-    );
-}
-
-#[test]
-fn json_spool_retries_short_writes_until_the_complete_record_is_stored() {
-    let calls = Arc::new(AtomicUsize::new(0));
-    let stdout = SharedWriter::default();
-    let mut handler = ReportHandler::with_mutant_spool(
-        OutputFormat::Json,
-        stdout.clone(),
-        io::sink(),
-        CountingSpool::new(7, Arc::clone(&calls)),
-    );
-    emit(
-        &mut handler,
-        1,
-        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
-    );
-    emit(&mut handler, 2, mutant_finished(2, 0));
-    emit(&mut handler, 3, run_summary(3));
-
-    assert!(calls.load(Ordering::Relaxed) > 1);
-    let document: serde_json::Value = serde_json::from_str(stdout.text().trim()).unwrap();
-    assert_eq!(document["mutants"][0]["kind"], "mutant_finished");
-    assert_eq!(document["mutants"][0]["status"], "killed");
-}
-
-#[test]
-fn zero_progress_mutant_spool_write_fails_before_ack_and_poisons_report() {
-    let calls = Arc::new(AtomicUsize::new(0));
-    let mut handler = ReportHandler::with_mutant_spool(
-        OutputFormat::Json,
-        io::sink(),
-        io::sink(),
-        CountingSpool::new(0, Arc::clone(&calls)),
-    );
-    let failed = handler
-        .handle(EmitOutput {
-            id: EffectId(1),
-            event: mutant_finished(1, 0),
-        })
-        .unwrap_err();
-
-    assert_eq!(failed.id, EffectId(1));
-    assert!(matches!(
-        failed.failure,
-        EffectFailure::ReportIo { ref operation, .. } if operation == "write mutant record"
-    ));
-    assert_eq!(calls.load(Ordering::Relaxed), 1);
-    let retry = handler
-        .handle(EmitOutput {
-            id: EffectId(2),
-            event: mutant_finished(2, 0),
-        })
-        .unwrap_err();
-    assert!(matches!(retry.failure, EffectFailure::ReportState { .. }));
 }
 
 #[test]
 fn jsonl_completions_keep_identity_when_workers_finish_in_reverse_order() {
     // Arrange: both candidates have started before B completes ahead of A.
     let stdout = SharedWriter::default();
-    let mut handler = ReportHandler::new(
-        OutputFormat::Jsonl,
-        stdout.clone(),
-        io::sink(),
-        std::env::temp_dir(),
-    )
-    .unwrap();
+    let mut handler = ReportHandler::new(stdout.clone(), io::sink());
     let mut first = mutant_finished(4, 0);
     let mut second = mutant_finished(3, 1);
     for (event, id, original) in [
@@ -1638,8 +1217,6 @@ async fn public_parallel_run_emits_complete_jsonl_events() {
             "--allow-best-effort-memory",
             "--min-free-space",
             "1B",
-            "--format",
-            "jsonl",
             "--",
         ])
         .arg(python)
@@ -1690,88 +1267,6 @@ impl Write for FailingWriter {
 
     fn flush(&mut self) -> io::Result<()> {
         Err(io::Error::other("fixture flush failure"))
-    }
-}
-
-struct FailAfter {
-    inner: Cursor<Vec<u8>>,
-    remaining: usize,
-}
-
-struct CountingSpool {
-    inner: Cursor<Vec<u8>>,
-    max_chunk: usize,
-    calls: Arc<AtomicUsize>,
-}
-
-impl CountingSpool {
-    fn new(max_chunk: usize, calls: Arc<AtomicUsize>) -> Self {
-        Self {
-            inner: Cursor::new(Vec::new()),
-            max_chunk,
-            calls,
-        }
-    }
-}
-
-impl Write for CountingSpool {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.calls.fetch_add(1, Ordering::Relaxed);
-        let length = bytes.len().min(self.max_chunk);
-        self.inner.write(&bytes[..length])
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-impl Read for CountingSpool {
-    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
-        self.inner.read(bytes)
-    }
-}
-
-impl Seek for CountingSpool {
-    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
-        self.inner.seek(position)
-    }
-}
-
-impl FailAfter {
-    fn new(remaining: usize) -> Self {
-        Self {
-            inner: Cursor::new(Vec::new()),
-            remaining,
-        }
-    }
-}
-
-impl Write for FailAfter {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if self.remaining == 0 {
-            return Err(io::Error::other("injected partial write failure"));
-        }
-        let written = self.remaining.min(buf.len());
-        self.inner.write_all(&buf[..written])?;
-        self.remaining -= written;
-        Ok(written)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-impl Read for FailAfter {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.inner.read(buf)
-    }
-}
-
-impl Seek for FailAfter {
-    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
-        self.inner.seek(position)
     }
 }
 
@@ -1880,52 +1375,47 @@ fn test_resource_control() -> hoimin_core::ResourceControl {
 
 #[test]
 fn json_diagnostics_coalesce_writes_without_changing_bytes_or_event_flushes() {
-    let spool = tempfile::tempdir().unwrap();
-    for format in [OutputFormat::Json, OutputFormat::Jsonl] {
-        for unit in ["x", "x\n", "\"\\\n\t\r\u{0000}é"] {
-            for size in [16 * 1024, 1024 * 1024] {
-                let message = unit.repeat(size / unit.len());
-                let stderr = SharedWriter::default();
-                let stdout = SharedWriter::default();
-                let mut handler =
-                    ReportHandler::new(format, stdout.clone(), stderr.clone(), spool.path())
-                        .unwrap();
-                let event = OutputEvent::Diagnostic(Diagnostic::new(
-                    "run",
-                    1,
-                    "error",
-                    "baseline.output",
-                    message.clone(),
-                ));
-                let expected = serde_json::to_string(&event).unwrap() + "\n";
-                let ack = handler
-                    .handle(EmitOutput {
-                        id: EffectId(42),
-                        event,
-                    })
-                    .unwrap();
-                assert_eq!(ack.id, EffectId(42));
-                let state = stderr.0.lock().unwrap();
-                assert_eq!(state.bytes, expected.as_bytes());
-                assert_eq!(state.flushes, 1);
-                let value: serde_json::Value = serde_json::from_slice(&state.bytes).unwrap();
-                assert_eq!(value["message"], message);
-                let bound = expected.len().div_ceil(4096) + 8;
-                eprintln!(
-                    "diagnostic format={format:?} payload={} encoded={} writes={} bound={bound}",
-                    message.len(),
-                    expected.len(),
-                    state.writes
-                );
-                assert!(
-                    state.writes <= bound,
-                    "unbuffered diagnostic writes={} bound={bound}",
-                    state.writes
-                );
-                drop(state);
-                assert_eq!(stdout.text(), "");
-                assert_eq!(stdout.flushes(), 0);
-            }
+    for unit in ["x", "x\n", "\"\\\n\t\r\u{0000}é"] {
+        for size in [16 * 1024, 1024 * 1024] {
+            let message = unit.repeat(size / unit.len());
+            let stderr = SharedWriter::default();
+            let stdout = SharedWriter::default();
+            let mut handler = ReportHandler::new(stdout.clone(), stderr.clone());
+            let event = OutputEvent::Diagnostic(Diagnostic::new(
+                "run",
+                1,
+                "error",
+                "baseline.output",
+                message.clone(),
+            ));
+            let expected = serde_json::to_string(&event).unwrap() + "\n";
+            let ack = handler
+                .handle(EmitOutput {
+                    id: EffectId(42),
+                    event,
+                })
+                .unwrap();
+            assert_eq!(ack.id, EffectId(42));
+            let state = stderr.0.lock().unwrap();
+            assert_eq!(state.bytes, expected.as_bytes());
+            assert_eq!(state.flushes, 1);
+            let value: serde_json::Value = serde_json::from_slice(&state.bytes).unwrap();
+            assert_eq!(value["message"], message);
+            let bound = expected.len().div_ceil(4096) + 8;
+            eprintln!(
+                "diagnostic format=jsonl payload={} encoded={} writes={} bound={bound}",
+                message.len(),
+                expected.len(),
+                state.writes
+            );
+            assert!(
+                state.writes <= bound,
+                "unbuffered diagnostic writes={} bound={bound}",
+                state.writes
+            );
+            drop(state);
+            assert_eq!(stdout.text(), "");
+            assert_eq!(stdout.flushes(), 0);
         }
     }
 }
@@ -1976,84 +1466,77 @@ impl Write for DiagnosticFaultWriter {
 
 #[test]
 fn buffered_diagnostic_failures_do_not_acknowledge_or_retry_on_drop() {
-    let spool = tempfile::tempdir().unwrap();
-    for format in [OutputFormat::Json, OutputFormat::Jsonl] {
-        for (mode, minimum_writes, maximum_writes, maximum_bytes, expected_flushes) in [
-            (DiagnosticFault::PartialError, 2, 2, 4, 0),
-            (DiagnosticFault::Zero, 1, 1, 0, 0),
-            (DiagnosticFault::Flush, 0, usize::MAX, usize::MAX, 1),
-        ] {
-            for message in ["small".to_owned(), "x\n".repeat(16384)] {
-                let state = Arc::new(Mutex::new(WriterState::default()));
-                let writer = DiagnosticFaultWriter {
-                    mode,
-                    state: state.clone(),
-                };
-                let mut handler =
-                    ReportHandler::new(format, io::sink(), writer, spool.path()).unwrap();
-                let failure = handler
-                    .handle(EmitOutput {
-                        id: EffectId(77),
-                        event: OutputEvent::Diagnostic(Diagnostic::new(
-                            "run",
-                            1,
-                            "error",
-                            "baseline.output",
-                            message,
-                        )),
-                    })
-                    .unwrap_err();
-                assert_eq!(failure.id, EffectId(77));
-                assert!(
-                    matches!(failure.failure, EffectFailure::ReportIo { ref operation, .. } if operation == "write JSON Lines event")
-                );
-                drop(handler);
-                let state = state.lock().unwrap();
-                assert!(
-                    (minimum_writes..=maximum_writes).contains(&state.writes),
-                    "retried after write error: {format:?}"
-                );
-                assert!(state.bytes.len() <= maximum_bytes);
-                assert_eq!(state.flushes, expected_flushes);
-            }
+    for (mode, minimum_writes, maximum_writes, maximum_bytes, expected_flushes) in [
+        (DiagnosticFault::PartialError, 2, 2, 4, 0),
+        (DiagnosticFault::Zero, 1, 1, 0, 0),
+        (DiagnosticFault::Flush, 0, usize::MAX, usize::MAX, 1),
+    ] {
+        for message in ["small".to_owned(), "x\n".repeat(16384)] {
+            let state = Arc::new(Mutex::new(WriterState::default()));
+            let writer = DiagnosticFaultWriter {
+                mode,
+                state: state.clone(),
+            };
+            let mut handler = ReportHandler::new(io::sink(), writer);
+            let failure = handler
+                .handle(EmitOutput {
+                    id: EffectId(77),
+                    event: OutputEvent::Diagnostic(Diagnostic::new(
+                        "run",
+                        1,
+                        "error",
+                        "baseline.output",
+                        message,
+                    )),
+                })
+                .unwrap_err();
+            assert_eq!(failure.id, EffectId(77));
+            assert!(
+                matches!(failure.failure, EffectFailure::ReportIo { ref operation, .. } if operation == "write JSON Lines event")
+            );
+            drop(handler);
+            let state = state.lock().unwrap();
+            assert!(
+                (minimum_writes..=maximum_writes).contains(&state.writes),
+                "retried after write error: jsonl"
+            );
+            assert!(state.bytes.len() <= maximum_bytes);
+            assert_eq!(state.flushes, expected_flushes);
         }
     }
 }
 
 #[test]
 fn buffered_diagnostics_retry_interrupted_writes_and_flush_each_record() {
-    let spool = tempfile::tempdir().unwrap();
-    for format in [OutputFormat::Json, OutputFormat::Jsonl] {
-        let state = Arc::new(Mutex::new(WriterState::default()));
-        let writer = DiagnosticFaultWriter {
-            mode: DiagnosticFault::Interrupted,
-            state: state.clone(),
-        };
-        let mut handler = ReportHandler::new(format, io::sink(), writer, spool.path()).unwrap();
-        let mut expected = String::new();
-        for sequence in 1..=3 {
-            let event = OutputEvent::Diagnostic(Diagnostic::new(
-                "run",
-                sequence,
-                "error",
-                "baseline.output",
-                format!("record-{sequence}\n"),
-            ));
-            expected += &(serde_json::to_string(&event).unwrap() + "\n");
-            assert_eq!(
-                handler
-                    .handle(EmitOutput {
-                        id: EffectId(sequence),
-                        event
-                    })
-                    .unwrap()
-                    .id,
-                EffectId(sequence)
-            );
-            let observed = state.lock().unwrap();
-            assert_eq!(observed.bytes, expected.as_bytes());
-            assert_eq!(observed.flushes, usize::try_from(sequence).unwrap());
-        }
+    let state = Arc::new(Mutex::new(WriterState::default()));
+    let writer = DiagnosticFaultWriter {
+        mode: DiagnosticFault::Interrupted,
+        state: state.clone(),
+    };
+    let mut handler = ReportHandler::new(io::sink(), writer);
+    let mut expected = String::new();
+    for sequence in 1..=3 {
+        let event = OutputEvent::Diagnostic(Diagnostic::new(
+            "run",
+            sequence,
+            "error",
+            "baseline.output",
+            format!("record-{sequence}\n"),
+        ));
+        expected += &(serde_json::to_string(&event).unwrap() + "\n");
+        assert_eq!(
+            handler
+                .handle(EmitOutput {
+                    id: EffectId(sequence),
+                    event
+                })
+                .unwrap()
+                .id,
+            EffectId(sequence)
+        );
+        let observed = state.lock().unwrap();
+        assert_eq!(observed.bytes, expected.as_bytes());
+        assert_eq!(observed.flushes, usize::try_from(sequence).unwrap());
     }
 }
 
@@ -2109,83 +1592,58 @@ fn historical_schema_three_goldens_validate_the_archived_raw_contract() {
 }
 
 #[tokio::test]
-async fn public_resume_reports_validate_current_schema_in_json_and_jsonl() {
+async fn public_resume_reports_validate_current_schema_in_jsonl() {
     let repo = repo_root();
     let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
-    let result_schema = read_schema(&repo.join("docs/json-schema/run-result.schema.json"));
     let python = repository_python();
     let mut reports = Vec::new();
-    for format in ["json", "jsonl"] {
-        let fixture = tempfile::tempdir().unwrap();
-        let root = fixture.path().join("project");
-        std::fs::create_dir(&root).unwrap();
-        std::fs::write(root.join("calc.py"), "value = 1 + 2\nother = 4 + 5\n").unwrap();
-        for expected in [
-            serde_json::json!({"status":"fresh","reason":"no_prior_run"}),
-            serde_json::json!({"status":"resumed"}),
-        ] {
-            let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
-            command
-                .args(["run", "--root"])
-                .arg(&root)
-                .args([
-                    "--file",
-                    "calc.py",
-                    "--operators",
-                    "binary_add_sub",
-                    "--max-mutants",
-                    "1",
-                    "--allow-best-effort-memory",
-                    "--min-free-space",
-                    "1B",
-                    "--resume",
-                    "--format",
-                    format,
-                    "--session",
-                ])
-                .arg(fixture.path().join("session.db"))
-                .env("TMPDIR", fixture.path())
-                .env("TMP", fixture.path())
-                .env("TEMP", fixture.path())
-                .arg("--")
-                .arg(&python)
-                .args(["-c", "import calc; assert calc.value == 3"])
-                .kill_on_drop(true);
-            let output = tokio::time::timeout(std::time::Duration::from_secs(30), command.output())
-                .await
-                .unwrap()
-                .unwrap();
-            assert_eq!(
-                output.status.code(),
-                Some(4),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            assert_eq!(output.stderr, Vec::<u8>::new());
-            reports.push((format, output.stdout, expected));
-        }
-    }
-    for (_, stdout, expected) in reports.iter().filter(|(format, _, _)| *format == "json") {
-        let document: serde_json::Value = serde_json::from_slice(stdout).unwrap();
-        assert_schema_valid(&result_schema, &document, &event_schema);
-        assert_eq!(document["schema_version"], REPORT_SCHEMA_VERSION);
-        assert_eq!(document["run"]["resume"], *expected);
-        let mutant = document["mutants"]
-            .as_array()
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path().join("project");
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(root.join("calc.py"), "value = 1 + 2\nother = 4 + 5\n").unwrap();
+    for expected in [
+        serde_json::json!({"status":"fresh","reason":"no_prior_run"}),
+        serde_json::json!({"status":"resumed"}),
+    ] {
+        let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
+        command
+            .args(["run", "--root"])
+            .arg(&root)
+            .args([
+                "--file",
+                "calc.py",
+                "--operators",
+                "binary_add_sub",
+                "--max-mutants",
+                "1",
+                "--allow-best-effort-memory",
+                "--min-free-space",
+                "1B",
+                "--resume",
+                "--session",
+            ])
+            .arg(fixture.path().join("session.db"))
+            .env("TMPDIR", fixture.path())
+            .env("TMP", fixture.path())
+            .env("TEMP", fixture.path())
+            .arg("--")
+            .arg(&python)
+            .args(["-c", "import calc; assert calc.value == 3"])
+            .kill_on_drop(true);
+        let output = tokio::time::timeout(std::time::Duration::from_secs(30), command.output())
+            .await
             .unwrap()
-            .iter()
-            .find(|mutant| mutant["status"] == "killed")
             .unwrap();
-        if expected["status"] == "resumed" {
-            assert_eq!(
-                mutant["outcome"],
-                serde_json::json!({"reused":{"status":"killed"}})
-            );
-        } else {
-            assert!(mutant["outcome"].get("executed").is_some());
-        }
+        assert_eq!(
+            output.status.code(),
+            Some(4),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(output.stderr, Vec::<u8>::new());
+        reports.push((output.stdout, expected));
     }
-    for (_, stdout, expected) in reports.iter().filter(|(format, _, _)| *format == "jsonl") {
+    for (stdout, expected) in &reports {
         let events: Vec<serde_json::Value> = std::str::from_utf8(stdout)
             .unwrap()
             .lines()
@@ -2244,52 +1702,37 @@ async fn line_diverse_public_reports_and_previews_match_current_schemas() {
     let plan = directory.path().join("plan.json");
     std::fs::write(&plan, stdout.snapshot()).unwrap();
     let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
-    let result_schema = read_schema(&repo.join("docs/json-schema/run-result.schema.json"));
     let preview_schema = read_schema(&repo.join("docs/json-schema/verify-preview.schema.json"));
     let mut reports = Vec::new();
     for (dry, extra_args, expected_code) in [(false, &[][..], 0), (true, &["--dry-run"][..], 0)] {
-        for format in ["json", "jsonl"] {
-            stdout.clear();
-            stderr.clear();
-            let mut args = vec![
-                "hoimin".into(),
-                "verify".into(),
-                plan.as_os_str().to_owned(),
-                "--top".into(),
-                "1".into(),
-                "--selection-policy".into(),
-                "line-diverse".into(),
-                "--format".into(),
-                format.into(),
-            ];
-            args.extend(extra_args.iter().map(std::ffi::OsString::from));
-            let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
-            assert_eq!(
-                code,
-                expected_code,
-                "{}",
-                String::from_utf8_lossy(&stderr.snapshot())
-            );
-            let text = String::from_utf8(stdout.snapshot()).unwrap();
-            assert!(text.contains("line_round_robin_v1"));
-            reports.push((dry, format, stdout.snapshot()));
-        }
+        stdout.clear();
+        stderr.clear();
+        let mut args = vec![
+            "hoimin".into(),
+            "verify".into(),
+            plan.as_os_str().to_owned(),
+            "--top".into(),
+            "1".into(),
+            "--selection-policy".into(),
+            "line-diverse".into(),
+        ];
+        args.extend(extra_args.iter().map(std::ffi::OsString::from));
+        let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+        assert_eq!(
+            code,
+            expected_code,
+            "{}",
+            String::from_utf8_lossy(&stderr.snapshot())
+        );
+        let text = String::from_utf8(stdout.snapshot()).unwrap();
+        assert!(text.contains("line_round_robin_v1"));
+        reports.push((dry, stdout.snapshot()));
     }
-    for (_, _, bytes) in reports.iter().filter(|(dry, _, _)| *dry) {
+    for (_, bytes) in reports.iter().filter(|(dry, _)| *dry) {
         let document = serde_json::from_slice(bytes).unwrap();
         assert_schema_valid(&preview_schema, &document, &event_schema);
     }
-    for (_, _, bytes) in reports
-        .iter()
-        .filter(|(dry, format, _)| !*dry && *format == "json")
-    {
-        let document = serde_json::from_slice(bytes).unwrap();
-        assert_schema_valid(&result_schema, &document, &event_schema);
-    }
-    for (_, _, bytes) in reports
-        .iter()
-        .filter(|(dry, format, _)| !*dry && *format == "jsonl")
-    {
+    for (_, bytes) in reports.iter().filter(|(dry, _)| !*dry) {
         for line in std::str::from_utf8(bytes).unwrap().lines() {
             let event = serde_json::from_str(line).unwrap();
             assert_schema_valid(&event_schema, &event, &event_schema);
@@ -2331,52 +1774,37 @@ async fn sample_public_reports_and_previews_match_current_schemas() {
     let plan = directory.path().join("plan.json");
     std::fs::write(&plan, stdout.snapshot()).unwrap();
     let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
-    let result_schema = read_schema(&repo.join("docs/json-schema/run-result.schema.json"));
     let preview_schema = read_schema(&repo.join("docs/json-schema/verify-preview.schema.json"));
     let mut reports = Vec::new();
     for (dry, extra_args, expected_code) in [(false, &[][..], 0), (true, &["--dry-run"][..], 0)] {
-        for format in ["json", "jsonl"] {
-            stdout.clear();
-            stderr.clear();
-            let mut args = vec![
-                "hoimin".into(),
-                "verify".into(),
-                plan.as_os_str().to_owned(),
-                "--sample".into(),
-                "1".into(),
-                "--seed".into(),
-                "18446744073709551615".into(),
-                "--format".into(),
-                format.into(),
-            ];
-            args.extend(extra_args.iter().map(std::ffi::OsString::from));
-            let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
-            assert_eq!(
-                code,
-                expected_code,
-                "{}",
-                String::from_utf8_lossy(&stderr.snapshot())
-            );
-            let text = String::from_utf8(stdout.snapshot()).unwrap();
-            assert!(text.contains("splitmix64_fisher_yates_v1"));
-            reports.push((dry, format, stdout.snapshot()));
-        }
+        stdout.clear();
+        stderr.clear();
+        let mut args = vec![
+            "hoimin".into(),
+            "verify".into(),
+            plan.as_os_str().to_owned(),
+            "--sample".into(),
+            "1".into(),
+            "--seed".into(),
+            "18446744073709551615".into(),
+        ];
+        args.extend(extra_args.iter().map(std::ffi::OsString::from));
+        let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+        assert_eq!(
+            code,
+            expected_code,
+            "{}",
+            String::from_utf8_lossy(&stderr.snapshot())
+        );
+        let text = String::from_utf8(stdout.snapshot()).unwrap();
+        assert!(text.contains("splitmix64_fisher_yates_v1"));
+        reports.push((dry, stdout.snapshot()));
     }
-    for (_, _, bytes) in reports.iter().filter(|(dry, _, _)| *dry) {
+    for (_, bytes) in reports.iter().filter(|(dry, _)| *dry) {
         let document = serde_json::from_slice(bytes).unwrap();
         assert_schema_valid(&preview_schema, &document, &event_schema);
     }
-    for (_, _, bytes) in reports
-        .iter()
-        .filter(|(dry, format, _)| !*dry && *format == "json")
-    {
-        let document = serde_json::from_slice(bytes).unwrap();
-        assert_schema_valid(&result_schema, &document, &event_schema);
-    }
-    for (_, _, bytes) in reports
-        .iter()
-        .filter(|(dry, format, _)| !*dry && *format == "jsonl")
-    {
+    for (_, bytes) in reports.iter().filter(|(dry, _)| !*dry) {
         for line in std::str::from_utf8(bytes).unwrap().lines() {
             let event = serde_json::from_str(line).unwrap();
             assert_schema_valid(&event_schema, &event, &event_schema);
@@ -2411,11 +1839,10 @@ macro_rules! human_text_cases {
     };
 }
 
-fn assert_machine_values(raw: &str, _escaped: &str, format: OutputFormat) {
+fn assert_machine_values(raw: &str, _escaped: &str) {
     let stdout = SharedWriter::default();
     let stderr = SharedWriter::default();
-    let mut handler =
-        ReportHandler::new(format, stdout.clone(), stderr.clone(), std::env::temp_dir()).unwrap();
+    let mut handler = ReportHandler::new(stdout.clone(), stderr.clone());
     let mut event = mutant_finished(2, 0);
     let OutputEvent::MutantFinished(value) = &mut event else {
         unreachable!()
@@ -2457,16 +1884,11 @@ fn assert_machine_values(raw: &str, _escaped: &str, format: OutputFormat) {
     );
 
     let text = stdout.text();
-    let mutant: serde_json::Value = match format {
-        OutputFormat::Json => {
-            serde_json::from_str::<serde_json::Value>(&text).unwrap()["mutants"][0].clone()
-        }
-        OutputFormat::Jsonl => text
-            .lines()
-            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
-            .find(|event| event["kind"] == "mutant_finished")
-            .unwrap(),
-    };
+    let mutant: serde_json::Value = text
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|event| event["kind"] == "mutant_finished")
+        .unwrap();
     assert_eq!(
         mutant["candidate"],
         serde_json::to_value(candidate).unwrap()
@@ -2475,12 +1897,7 @@ fn assert_machine_values(raw: &str, _escaped: &str, format: OutputFormat) {
     assert_eq!(mutant["diagnostics"][0]["level"], raw);
     assert_eq!(mutant["diagnostics"][0]["code"], raw);
     assert_eq!(mutant["diagnostics"][0]["message"], raw);
-    let run: serde_json::Value = match format {
-        OutputFormat::Json => {
-            serde_json::from_str::<serde_json::Value>(&text).unwrap()["run"].clone()
-        }
-        OutputFormat::Jsonl => serde_json::from_str(text.lines().next().unwrap()).unwrap(),
-    };
+    let run: serde_json::Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
     let config = &run["normalized_config"];
     assert_eq!(config["fingerprint_includes"][0], raw);
     assert_eq!(config["fingerprint_files"][0], raw);
@@ -2493,45 +1910,33 @@ fn assert_machine_values(raw: &str, _escaped: &str, format: OutputFormat) {
 }
 
 human_text_cases!(
-    machine_json_preserves_external_values,
-    assert_machine_values,
-    OutputFormat::Json
-);
-human_text_cases!(
     machine_jsonl_preserves_external_values,
-    assert_machine_values,
-    OutputFormat::Jsonl
+    assert_machine_values
 );
 
 proptest::proptest! {
     #![proptest_config(proptest::test_runner::Config { failure_persistence: None, ..proptest::test_runner::Config::default() })]
     #[test]
     fn machine_fields_preserve_arbitrary_text(raw in proptest::prelude::any::<String>()) {
-        for format in [OutputFormat::Json, OutputFormat::Jsonl] {
-            assert_machine_values(&raw, "", format);
-        }
+        assert_machine_values(&raw, "");
     }
 }
 
 #[test]
 fn machine_diagnostic_preserves_transcript_and_ordinary_message_layout() {
     let message = "baseline token=out offset=0:\n日本語\t\\u{1b}[31m\r\u{7f}\n";
-    for format in [OutputFormat::Json, OutputFormat::Jsonl] {
-        for code in ["baseline.output", "ordinary"] {
-            let stderr = SharedWriter::default();
-            let mut handler =
-                ReportHandler::new(format, io::sink(), stderr.clone(), std::env::temp_dir())
-                    .unwrap();
-            emit(
-                &mut handler,
-                1,
-                OutputEvent::Diagnostic(Diagnostic::new("run", 1, "warn\x1b", code, message)),
-            );
-            let wire: serde_json::Value = serde_json::from_str(&stderr.text()).unwrap();
-            assert_eq!(wire["level"], "warn\x1b");
-            assert_eq!(wire["code"], code);
-            assert_eq!(wire["message"], message);
-        }
+    for code in ["baseline.output", "ordinary"] {
+        let stderr = SharedWriter::default();
+        let mut handler = ReportHandler::new(io::sink(), stderr.clone());
+        emit(
+            &mut handler,
+            1,
+            OutputEvent::Diagnostic(Diagnostic::new("run", 1, "warn\x1b", code, message)),
+        );
+        let wire: serde_json::Value = serde_json::from_str(&stderr.text()).unwrap();
+        assert_eq!(wire["level"], "warn\x1b");
+        assert_eq!(wire["code"], code);
+        assert_eq!(wire["message"], message);
     }
 }
 
@@ -2542,13 +1947,7 @@ fn assert_started_identifier(raw: &str, _escaped: &str, label: &str) {
         _ => unreachable!(),
     };
     let stdout = SharedWriter::default();
-    let mut handler = ReportHandler::new(
-        OutputFormat::Jsonl,
-        stdout.clone(),
-        io::sink(),
-        std::env::temp_dir(),
-    )
-    .unwrap();
+    let mut handler = ReportHandler::new(stdout.clone(), io::sink());
 
     emit(&mut handler, 1, event);
 
@@ -2573,7 +1972,7 @@ human_text_cases!(
 );
 
 macro_rules! janitor_presentation_case {
-    ($name:ident, $format:expr, $verbose:expr) => {
+    ($name:ident, $verbose:expr) => {
         #[test]
         fn $name() {
             // Arrange: ordinary hold and a real failure share one report.
@@ -2623,10 +2022,8 @@ macro_rules! janitor_presentation_case {
                 remaining_root: Some("current-incomplete-root".into()),
             });
             let exit = summary.exit_code;
-            let spool = tempfile::tempdir().unwrap();
             let stdout = SharedWriter::default();
-            let mut handler = ReportHandler::new($format, stdout.clone(), io::sink(), spool.path())
-                .unwrap()
+            let mut handler = ReportHandler::new(stdout.clone(), io::sink())
                 .with_presentation(hoimin_cli::report::ReportPresentation { verbose: $verbose });
 
             // Act.
@@ -2645,11 +2042,8 @@ macro_rules! janitor_presentation_case {
                 text.contains("measurement-root: inspection denied"),
                 "{text}"
             );
-            let wire: serde_json::Value = if $format == OutputFormat::Json {
-                serde_json::from_str::<serde_json::Value>(&text).unwrap()["summary"].clone()
-            } else {
-                serde_json::from_str(text.lines().last().unwrap()).unwrap()
-            };
+            let wire: serde_json::Value =
+                serde_json::from_str(text.lines().last().unwrap()).unwrap();
             let schema = read_schema(&repo_root().join("docs/json-schema/run-event.schema.json"));
             assert_schema_valid(&schema, &wire, &schema);
             assert_eq!(wire["disk"]["janitor"]["inspected_roots"], 2);
@@ -2662,10 +2056,8 @@ macro_rules! janitor_presentation_case {
         }
     };
 }
-janitor_presentation_case!(janitor_json_default, OutputFormat::Json, false);
-janitor_presentation_case!(janitor_json_verbose, OutputFormat::Json, true);
-janitor_presentation_case!(janitor_jsonl_default, OutputFormat::Jsonl, false);
-janitor_presentation_case!(janitor_jsonl_verbose, OutputFormat::Jsonl, true);
+janitor_presentation_case!(janitor_jsonl_default, false);
+janitor_presentation_case!(janitor_jsonl_verbose, true);
 
 macro_rules! janitor_schema_presence_case {
     ($name:ident, $present:expr) => {
@@ -2692,10 +2084,9 @@ macro_rules! janitor_schema_presence_case {
 janitor_schema_presence_case!(janitor_schema_rejects_missing_field, false);
 janitor_schema_presence_case!(janitor_schema_accepts_explicit_null, true);
 
-fn timeout_report_text(format: OutputFormat, timeout: Option<std::time::Duration>) -> String {
+fn timeout_report_text(timeout: Option<std::time::Duration>) -> String {
     let stdout = SharedWriter::default();
-    let mut handler =
-        ReportHandler::new(format, stdout.clone(), io::sink(), std::env::temp_dir()).unwrap();
+    let mut handler = ReportHandler::new(stdout.clone(), io::sink());
     for mut event in events() {
         if let OutputEvent::RunFinished(summary) = &mut event {
             summary.resolved_mutant_timeout = timeout;
@@ -2711,24 +2102,8 @@ fn timeout_report_text(format: OutputFormat, timeout: Option<std::time::Duration
 }
 
 #[test]
-fn resolved_mutant_timeout_json_preserves_nanoseconds() {
-    let text = timeout_report_text(
-        OutputFormat::Json,
-        Some(std::time::Duration::new(1, 234_567_891)),
-    );
-    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(
-        value["summary"]["resolved_mutant_timeout"],
-        serde_json::json!({"secs":1,"nanos":234_567_891})
-    );
-}
-
-#[test]
 fn resolved_mutant_timeout_jsonl_preserves_nanoseconds() {
-    let text = timeout_report_text(
-        OutputFormat::Jsonl,
-        Some(std::time::Duration::new(1, 234_567_891)),
-    );
+    let text = timeout_report_text(Some(std::time::Duration::new(1, 234_567_891)));
     let summary: serde_json::Value = serde_json::from_str(text.lines().last().unwrap()).unwrap();
     assert_eq!(
         summary["resolved_mutant_timeout"],
@@ -2737,171 +2112,11 @@ fn resolved_mutant_timeout_jsonl_preserves_nanoseconds() {
 }
 
 #[test]
-fn unresolved_mutant_timeout_json_is_null() {
-    let text = timeout_report_text(OutputFormat::Json, None);
-    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+fn unresolved_mutant_timeout_jsonl_is_null() {
+    let text = timeout_report_text(None);
+    let value: serde_json::Value = serde_json::from_str(text.lines().last().unwrap()).unwrap();
     assert_eq!(
-        value["summary"].get("resolved_mutant_timeout"),
+        value.get("resolved_mutant_timeout"),
         Some(&serde_json::Value::Null)
     );
-}
-
-#[derive(Clone, Copy, Debug)]
-enum SpoolFault {
-    Error,
-    Zero,
-    Flush,
-    Interrupted,
-}
-
-struct FaultSpool {
-    inner: Cursor<Vec<u8>>,
-    calls: Arc<AtomicUsize>,
-    fault: SpoolFault,
-    fail_at: usize,
-}
-
-impl Write for FaultSpool {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        let call = self.calls.fetch_add(1, Ordering::Relaxed) + 1;
-        if call == self.fail_at {
-            match self.fault {
-                SpoolFault::Error => return Err(io::Error::other("injected write failure")),
-                SpoolFault::Zero => return Ok(0),
-                SpoolFault::Interrupted => return Err(io::ErrorKind::Interrupted.into()),
-                SpoolFault::Flush => {}
-            }
-        }
-        let length = if matches!(self.fault, SpoolFault::Interrupted) {
-            bytes.len().min(7)
-        } else {
-            bytes.len()
-        };
-        self.inner.write(&bytes[..length])
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        if matches!(self.fault, SpoolFault::Flush) {
-            Err(io::Error::other("injected flush failure"))
-        } else {
-            Ok(())
-        }
-    }
-}
-
-impl Read for FaultSpool {
-    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
-        self.inner.read(bytes)
-    }
-}
-impl Seek for FaultSpool {
-    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
-        self.inner.seek(position)
-    }
-}
-
-fn payload_mutant(sequence: u64, bytes: usize) -> OutputEvent {
-    let mut event = mutant_finished(sequence, sequence - 2);
-    let OutputEvent::MutantFinished(mutant) = &mut event else {
-        unreachable!()
-    };
-    // Cross buffer boundaries inside escaped strings as well as plain text.
-    mutant.candidate.original = "\"\\\n日本語".repeat(bytes / 4 + 1);
-    mutant.candidate.replacement = "x".repeat(bytes);
-    event
-}
-
-#[test]
-fn json_record_failures_do_not_ack_retry_on_drop_or_accept_later_events() {
-    for bytes in [1, 64 * 1024] {
-        for fault in [SpoolFault::Error, SpoolFault::Zero, SpoolFault::Flush] {
-            let calls = Arc::new(AtomicUsize::new(0));
-            let fail_at = if bytes == 1 { 1 } else { 2 };
-            let mut handler = ReportHandler::with_mutant_spool(
-                OutputFormat::Json,
-                io::sink(),
-                io::sink(),
-                FaultSpool {
-                    inner: Cursor::new(Vec::new()),
-                    calls: Arc::clone(&calls),
-                    fault,
-                    fail_at,
-                },
-            );
-            emit(
-                &mut handler,
-                1,
-                OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
-            );
-            let failed = handler
-                .handle(EmitOutput {
-                    id: EffectId(2),
-                    event: payload_mutant(2, bytes),
-                })
-                .unwrap_err();
-            assert_eq!(failed.id, EffectId(2));
-            assert!(
-                matches!(failed.failure, EffectFailure::ReportIo { ref operation, .. }
-                if operation == "write mutant record"),
-                "{fault:?}: {:?}",
-                failed.failure
-            );
-            let after_failure = calls.load(Ordering::Relaxed);
-            if !matches!(fault, SpoolFault::Flush) {
-                assert_eq!(after_failure, fail_at, "Drop retried a failed record");
-            }
-            for event in [payload_mutant(3, bytes), run_summary(4)] {
-                let failed = handler
-                    .handle(EmitOutput {
-                        id: EffectId(event.sequence()),
-                        event,
-                    })
-                    .unwrap_err();
-                assert!(matches!(failed.failure, EffectFailure::ReportState { .. }));
-            }
-            drop(handler);
-            assert_eq!(calls.load(Ordering::Relaxed), after_failure);
-        }
-    }
-}
-
-#[test]
-fn json_large_escaped_records_preserve_exact_bytes_after_interrupted_short_writes() {
-    let calls = Arc::new(AtomicUsize::new(0));
-    let stdout = SharedWriter::default();
-    let mut handler = ReportHandler::with_mutant_spool(
-        OutputFormat::Json,
-        stdout.clone(),
-        io::sink(),
-        FaultSpool {
-            inner: Cursor::new(Vec::new()),
-            calls: Arc::clone(&calls),
-            fault: SpoolFault::Interrupted,
-            fail_at: 2,
-        },
-    );
-    let start = OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control()));
-    let mutants = [
-        payload_mutant(2, 1),
-        payload_mutant(3, 8192),
-        payload_mutant(4, 64 * 1024),
-    ];
-    let summary = run_summary(5);
-    let expected = format!(
-        "{{\"schema_version\":{REPORT_SCHEMA_VERSION},\"run\":{},\"baseline\":null,\"mutants\":[{}],\"summary\":{}}}\n",
-        serde_json::to_string(&start).unwrap(),
-        mutants
-            .iter()
-            .map(|event| serde_json::to_string(event).unwrap())
-            .collect::<Vec<_>>()
-            .join(","),
-        serde_json::to_string(&summary).unwrap()
-    );
-    emit(&mut handler, 1, start);
-    for event in mutants {
-        emit(&mut handler, event.sequence(), event);
-    }
-    emit(&mut handler, 5, summary);
-    assert_eq!(stdout.text(), expected);
-    assert!(calls.load(Ordering::Relaxed) > 3);
 }

@@ -64,7 +64,7 @@ recorded revisions against the implementation you are changing:
 - [Target selection, plan and verify](design/selection-plan-verify.md) - Ranking, subsets, seeded sampling and saved-format revision questions.
 - [Resources and cleanup](design/runtime-lifecycle.md) - OS-specific limits, cleanup ownership and report writing.
 - [Sessions and reports](design/session-report.md) - Database ownership, report validation, local execution exit policy and opt-in JSON diagnostics.
-- [JSON mutant spool](design/json-report-spool.md) - Record-level writing and acknowledgement/poison contracts on failure.
+- [Historical JSON mutant spool](design/json-report-spool.md) - Retired aggregate writer contracts and their recorded evidence.
 
 - [Fingerprint input globs](design/fingerprint-inputs.md) - Shared traversal across include globs and input-order errors.
 - [Collection annotation references](design/annotation-builtins.md) - Bidirectional concrete types, deferred evaluation and scope checks.

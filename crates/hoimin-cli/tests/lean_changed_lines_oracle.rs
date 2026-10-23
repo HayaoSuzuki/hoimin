@@ -2,6 +2,8 @@
 
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use collecting_writer::CollectingWriter;
 
 use std::collections::BTreeSet;
@@ -191,7 +193,7 @@ async fn invoke(args: Vec<OsString>) -> Value {
         "infrastructure error: {}",
         String::from_utf8_lossy(&stderr.snapshot())
     );
-    serde_json::from_slice(&stdout.snapshot()).expect("infrastructure error: invalid CLI JSON")
+    jsonl_report::from_slice(&stdout.snapshot()).expect("infrastructure error: invalid CLI JSON")
 }
 
 async fn assert_external_coordinates(root: &Path, case: &Case) {

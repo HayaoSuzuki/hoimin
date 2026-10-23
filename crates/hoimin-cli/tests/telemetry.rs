@@ -1,3 +1,5 @@
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
@@ -28,7 +30,7 @@ fn plan(log: Option<&str>) -> Output {
 fn redirected_plan_stays_machine_readable_without_logging() {
     let output = plan(None);
     assert!(output.status.success(), "{output:?}");
-    let manifest: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let manifest: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
     assert!(
         !manifest["candidates"].as_array().unwrap().is_empty(),
         "{manifest}"
@@ -46,7 +48,7 @@ fn debug_logs_are_opt_in_json_records_on_stderr() {
 fn assert_debug_plan_logs(filter: &str) {
     let output = plan(Some(filter));
     assert!(output.status.success(), "{output:?}");
-    serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap();
+    jsonl_report::from_slice::<serde_json::Value>(&output.stdout).unwrap();
     let stderr = String::from_utf8(output.stderr).unwrap();
     let logs: Vec<serde_json::Value> = stderr
         .lines()
@@ -68,7 +70,7 @@ fn assert_debug_plan_logs(filter: &str) {
 fn module_filter_only_enables_matching_diagnostics() {
     let output = plan(Some("hoimin_cli::plan=debug"));
     assert!(output.status.success(), "{output:?}");
-    serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap();
+    jsonl_report::from_slice::<serde_json::Value>(&output.stdout).unwrap();
     let stderr = String::from_utf8(output.stderr).unwrap();
     let logs: Vec<serde_json::Value> = stderr
         .lines()
@@ -88,7 +90,7 @@ fn module_filter_only_enables_matching_diagnostics() {
 fn removed_span_filters_do_not_enable_diagnostics() {
     let output = plan(Some("hoimin_cli[plan]=debug"));
     assert!(output.status.success(), "{output:?}");
-    serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap();
+    jsonl_report::from_slice::<serde_json::Value>(&output.stdout).unwrap();
     assert!(output.stderr.is_empty(), "{output:?}");
 }
 
@@ -97,7 +99,7 @@ fn disabled_or_invalid_filter_does_not_change_command_result() {
     for filter in ["", "off", "hoimin_cli=warn", "hoimin_cli=invalid-level"] {
         let output = plan(Some(filter));
         assert!(output.status.success(), "{filter}: {output:?}");
-        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap();
+        jsonl_report::from_slice::<serde_json::Value>(&output.stdout).unwrap();
         assert!(output.stderr.is_empty(), "{filter}: {output:?}");
     }
 }
@@ -119,8 +121,6 @@ async fn logged_session_run(
             "binary_add_sub",
             "--jobs",
             "1",
-            "--format",
-            "json",
             "--max-mutants",
             budget,
             "--min-free-space",
@@ -152,7 +152,7 @@ async fn reused_result_updates_progress_before_the_next_process_starts() {
     let output = logged_session_run(root.path(), &project, &python, "2").await;
 
     let stderr = String::from_utf8(output.stderr).unwrap();
-    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
     let logs: Vec<serde_json::Value> = stderr
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
@@ -199,8 +199,6 @@ async fn spawned_process_logs_keep_run_and_mutant_context_without_changing_repor
         .args([
             "--file",
             "target.py",
-            "--format",
-            "jsonl",
             "--operators",
             "binary_add_sub",
             "--max-mutants",
@@ -319,8 +317,6 @@ async fn debug_logging_to_stalled_stderr_keeps_the_execution_deadline() {
         .args([
             "--file",
             "target.py",
-            "--format",
-            "json",
             "--total-timeout",
             "1s",
             "--min-free-space",
@@ -364,8 +360,6 @@ async fn terminal_is_quiet_with_logging_off() {
         .args([
             "--file",
             "target.py",
-            "--format",
-            "json",
             "--operators",
             "binary_add_sub",
             "--max-mutants",
@@ -388,7 +382,7 @@ async fn terminal_is_quiet_with_logging_off() {
         .unwrap();
     let stderr = capture.join().unwrap();
     assert_eq!(output.status.code(), Some(0), "{stderr}");
-    serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap();
+    jsonl_report::from_slice::<serde_json::Value>(&output.stdout).unwrap();
     assert_eq!(stderr, "");
 }
 
@@ -428,7 +422,7 @@ async fn terminal_diagnostic_logs_are_json_without_progress_lines() {
         .unwrap();
     let stderr = capture.join().unwrap();
     assert!(output.status.success(), "{stderr}");
-    let manifest: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let manifest: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
     assert_ne!(manifest["candidates"].as_array().unwrap().len(), 0);
     let logs = stderr
         .lines()

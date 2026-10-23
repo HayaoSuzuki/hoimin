@@ -1,4 +1,6 @@
 //! Public subprocess regressions: a native stack overflow must not kill the test runner.
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
@@ -66,8 +68,8 @@ fn assert_plan_and_run_depth_rejection(
         ("plan", &[], |output| {
             assert!(output.stdout.is_empty(), "failed analysis emitted a plan");
         }),
-        ("run", &["--format", "json"], |output| {
-            let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        ("run", &[], |output| {
+            let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
             assert_eq!(report["summary"]["complete"], false);
             assert!(
                 !report["baseline"].is_null(),

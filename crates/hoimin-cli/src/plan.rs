@@ -14,7 +14,7 @@ use thiserror::Error;
 use crate::analyzer::Discovery;
 #[cfg(test)]
 use crate::analyzer::DiscoveryControl;
-use crate::cli::{OutputFormat, TopSelectionPolicy, VerifySelection};
+use crate::cli::{TopSelectionPolicy, VerifySelection};
 use crate::fingerprint_inputs;
 use crate::resource::{self, ResourceError};
 use crate::shell;
@@ -393,12 +393,10 @@ fn plan_output(manifest: PlanManifest) -> Result<PlanOutput, PlanError> {
 pub async fn prepare_verify(
     manifest_path: impl AsRef<Path>,
     requested_ids: &[String],
-    format: OutputFormat,
 ) -> Result<VerifiedPlan, PlanError> {
     prepare_verify_selection(
         manifest_path,
         &VerifySelection::CandidateIds(requested_ids.to_vec()),
-        format,
     )
     .await
 }
@@ -413,13 +411,11 @@ pub async fn prepare_verify(
 pub async fn prepare_verify_selection(
     manifest_path: impl AsRef<Path>,
     requested_selection: &VerifySelection,
-    format: OutputFormat,
 ) -> Result<VerifiedPlan, PlanError> {
     crate::live_progress::stage("validating saved plan");
     prepare_verify_selection_inner(
         manifest_path.as_ref(),
         requested_selection,
-        format,
         #[cfg(test)]
         None,
     )
@@ -436,13 +432,11 @@ pub async fn prepare_verify_selection(
 pub async fn prepare_verify_preview_selection(
     manifest_path: impl AsRef<Path>,
     requested_selection: &VerifySelection,
-    format: OutputFormat,
 ) -> Result<VerifyPreview, PlanError> {
     crate::live_progress::stage("validating saved plan");
     let checked = prepare_verify_selection_inner(
         manifest_path.as_ref(),
         requested_selection,
-        format,
         #[cfg(test)]
         None,
     )
@@ -465,13 +459,11 @@ struct CheckedPlan {
 async fn prepare_verify_with_discovery_control(
     manifest_path: impl AsRef<Path>,
     requested_ids: Vec<String>,
-    format: OutputFormat,
     control: Option<DiscoveryControl>,
 ) -> Result<VerifiedPlan, PlanError> {
     prepare_verify_selection_inner(
         manifest_path.as_ref(),
         &VerifySelection::CandidateIds(requested_ids),
-        format,
         control,
     )
     .await
@@ -500,7 +492,6 @@ fn read_manifest(path: &Path) -> Result<(Vec<PathBuf>, PlanManifest), PlanError>
 async fn prepare_verify_selection_inner(
     manifest_path: &Path,
     requested_selection: &VerifySelection,
-    format: OutputFormat,
     #[cfg(test)] control: Option<DiscoveryControl>,
 ) -> Result<CheckedPlan, PlanError> {
     let (manifest_inputs, manifest) = read_manifest(manifest_path)?;
@@ -514,7 +505,7 @@ async fn prepare_verify_selection_inner(
     let mut config = manifest
         .normalized_config
         .clone()
-        .into_run_config(output_config(format))
+        .into_run_config(OutputConfig::default())
         .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
     let targets = TargetHandler::resolve(&config.selection)
         .await
@@ -1089,16 +1080,6 @@ fn requested_discovery_targets(
         .collect()
 }
 
-fn output_config(format: OutputFormat) -> OutputConfig {
-    OutputConfig {
-        format: match format {
-            OutputFormat::Json => hoimin_core::OutputFormat::Json,
-            OutputFormat::Jsonl => hoimin_core::OutputFormat::Jsonl,
-        },
-        metrics: None,
-    }
-}
-
 fn plan_diagnostic(diagnostic: &AnalyzerDiagnostic) -> PlanDiagnostic {
     PlanDiagnostic {
         code: diagnostic.code.canonical_name().to_owned(),
@@ -1124,7 +1105,7 @@ mod tests {
     };
 
     use crate::analyzer::DiscoveryControl;
-    use crate::cli::{OutputFormat, ParsedCommand, parse_from};
+    use crate::cli::{ParsedCommand, parse_from};
 
     use super::{
         DiscoveryCaller, PLAN_SCHEMA_VERSION, PlanError, PlanManifest, RANKING_RULE_VERSION,
@@ -1534,7 +1515,6 @@ mod tests {
         let operation = tokio::spawn(prepare_verify_with_discovery_control(
             manifest_path.into_std_path_buf(),
             requested,
-            OutputFormat::Json,
             Some(control),
         ));
         wait_for_discovery_entry(entered).await;
@@ -1584,7 +1564,6 @@ mod tests {
         let verified = prepare_verify_with_discovery_control(
             manifest_path.into_std_path_buf(),
             vec![output.manifest.candidates[0].id.clone()],
-            OutputFormat::Json,
             Some(DiscoveryControl::new(
                 Arc::new(tempfile::tempdir().unwrap()),
                 || {},

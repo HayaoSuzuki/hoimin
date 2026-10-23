@@ -49,7 +49,7 @@ Safety options:
   --max-output --max-copy-size --max-workspace-size --min-free-space
   --max-processes --allow-best-effort-memory
 Output/session options:
-  --format <json|jsonl> --metrics <PATH> --session --resume
+  --metrics <PATH> --session --resume
 ```
 
 Argument constraints:
@@ -108,12 +108,6 @@ Options:
       --metrics <PATH>
           Write execution metrics to PATH, relative to the invocation directory
 
-      --format <FORMAT>
-          Machine-readable output format
-
-          [default: json]
-          [possible values: json, jsonl]
-
   -h, --help
           Print help (see a summary with '-h')
 
@@ -171,12 +165,6 @@ manifest
   required: false
   arity: 1
   repeatable: false
---format
-  required: false
-  arity: 1
-  repeatable: false
-  default: json
-  values: json, jsonl
 --help
   required: false
   arity: 0
@@ -632,12 +620,6 @@ Options:
       --allow-best-effort-memory
           Permit best-effort memory enforcement when hard limits are unavailable
 
-      --format <FORMAT>
-          Machine-readable output format
-
-          [default: json]
-          [possible values: json, jsonl]
-
       --metrics <PATH>
           Write performance metrics to PATH
 
@@ -822,12 +804,6 @@ Argument constraints:
   arity: 0
   repeatable: false
   default: false
---format
-  required: false
-  arity: 1
-  repeatable: false
-  default: json
-  values: json, jsonl
 --metrics
   required: false
   arity: 1

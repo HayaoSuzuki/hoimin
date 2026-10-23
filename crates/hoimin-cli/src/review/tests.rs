@@ -1,3 +1,4 @@
+use crate::artifacts::run_report::test_support::{current_report_view, jsonl_bytes, report_view};
 use camino::Utf8PathBuf;
 use hoimin_core::{ByteSpan, CandidateDescriptor, CandidateIdentity, stable_mutant_id};
 
@@ -272,7 +273,7 @@ async fn plan_readers_reject_old_shapes_without_rewriting() {
                     .map(|_| ())
                     .map_err(|error| error.to_string())
             } else {
-                crate::plan::prepare_verify(&path, &[], crate::cli::OutputFormat::Json)
+                crate::plan::prepare_verify(&path, &[])
                     .await
                     .map(|_| ())
                     .map_err(|error| error.to_string())
@@ -301,7 +302,7 @@ async fn plan_readers_reject_obsolete_top_level_fingerprint_inputs() {
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         } else {
-            crate::plan::prepare_verify(&path, &[], crate::cli::OutputFormat::Json)
+            crate::plan::prepare_verify(&path, &[])
                 .await
                 .map(|_| ())
                 .map_err(|error| error.to_string())
@@ -344,7 +345,7 @@ async fn plan_readers_reject_duplicate_known_fields() {
                     .map(|_| ())
                     .map_err(|error| error.to_string())
             } else {
-                crate::plan::prepare_verify(&path, &[], crate::cli::OutputFormat::Json)
+                crate::plan::prepare_verify(&path, &[])
                     .await
                     .map(|_| ())
                     .map_err(|error| error.to_string())
@@ -402,7 +403,7 @@ async fn plan_readers_reject_malformed_nested_fingerprint_records() {
                     .map(|_| ())
                     .map_err(|error| error.to_string())
             } else {
-                crate::plan::prepare_verify(&path, &[], crate::cli::OutputFormat::Json)
+                crate::plan::prepare_verify(&path, &[])
                     .await
                     .map(|_| ())
                     .map_err(|error| error.to_string())
@@ -553,10 +554,7 @@ fn malformed_artifact_reference_is_rejected() {
 async fn report_fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
     let (dir, path) = plan_fixture().await;
     let plan = super::input::load_plan(&path).unwrap();
-    let mut report: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tests/golden/reports/schema-v10-current.json"
-    ))
-    .unwrap();
+    let mut report = current_report_view();
     let config = plan
         .manifest
         .normalized_config
@@ -567,7 +565,7 @@ async fn report_fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::
     report["mutants"][0]["candidate"] =
         serde_json::to_value(&plan.manifest.candidates[0].candidate).unwrap();
     let report_path = dir.path().join("report.json");
-    std::fs::write(&report_path, serde_json::to_vec(&report).unwrap()).unwrap();
+    std::fs::write(&report_path, jsonl_bytes(&report)).unwrap();
     (dir, path, report_path)
 }
 
@@ -633,13 +631,12 @@ async fn public_review_rejects_contradictory_status_after_matching_control() {
     let (dir, path, report_path) = report_fixture().await;
     let store = dir.path().join("status-reviews.sqlite3");
     let plan = super::input::load_plan(&path).unwrap();
-    let mut wire: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
+    let mut wire: serde_json::Value = report_view(&std::fs::read(&report_path).unwrap());
     wire["mutants"][0]["status"] = serde_json::json!("killed");
-    std::fs::write(&report_path, serde_json::to_vec(&wire).unwrap()).unwrap();
+    std::fs::write(&report_path, jsonl_bytes(&wire)).unwrap();
     super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan)).unwrap();
     wire["mutants"][0]["status"] = serde_json::json!("survived");
-    std::fs::write(&report_path, serde_json::to_vec(&wire).unwrap()).unwrap();
+    std::fs::write(&report_path, jsonl_bytes(&wire)).unwrap();
     let out = crate::test_writer::CollectingWriter::default();
     let err = crate::test_writer::CollectingWriter::default();
     // Act.
@@ -671,10 +668,9 @@ async fn reject_semantic_report_at_command(change: fn(&mut serde_json::Value), e
     // Arrange: a usable matching report and valid plan isolate config acceptance.
     let (dir, plan, report_path) = report_fixture().await;
     let store = dir.path().join("missing-reviews.sqlite3");
-    let mut report: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
+    let mut report: serde_json::Value = report_view(&std::fs::read(&report_path).unwrap());
     change(&mut report["run"]["normalized_config"]);
-    std::fs::write(&report_path, serde_json::to_vec(&report).unwrap()).unwrap();
+    std::fs::write(&report_path, jsonl_bytes(&report)).unwrap();
     let argv = vec![
         "hoimin".to_owned(),
         "review".into(),
@@ -733,8 +729,7 @@ async fn review_rejects_absent_report_import_roots() {
         // Arrange
         let (_dir, path, report_path) = report_fixture().await;
         let plan = super::input::load_plan(&path).unwrap();
-        let mut report: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
+        let mut report: serde_json::Value = report_view(&std::fs::read(&report_path).unwrap());
         report["run"]["normalized_config"]
             .as_object_mut()
             .unwrap()
@@ -742,7 +737,7 @@ async fn review_rejects_absent_report_import_roots() {
         if let Some(replacement) = replacement {
             report["run"]["normalized_config"]["import_roots"] = replacement;
         }
-        std::fs::write(&report_path, serde_json::to_vec(&report).unwrap()).unwrap();
+        std::fs::write(&report_path, jsonl_bytes(&report)).unwrap();
 
         // Act
         let result =
@@ -761,8 +756,7 @@ async fn progress_preserves_opaque_report_import_roots() {
     for replacement in [None, Some(serde_json::Value::Null)] {
         // Arrange
         let (_dir, _path, report_path) = report_fixture().await;
-        let mut report: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
+        let mut report: serde_json::Value = report_view(&std::fs::read(&report_path).unwrap());
         report["run"]["normalized_config"]
             .as_object_mut()
             .unwrap()
@@ -770,7 +764,7 @@ async fn progress_preserves_opaque_report_import_roots() {
         if let Some(replacement) = replacement {
             report["run"]["normalized_config"]["import_roots"] = replacement;
         }
-        std::fs::write(&report_path, serde_json::to_vec(&report).unwrap()).unwrap();
+        std::fs::write(&report_path, jsonl_bytes(&report)).unwrap();
 
         // Act
         let result = crate::progress::read_report(&report_path);
@@ -789,10 +783,9 @@ async fn review_missing_project_error_identifies_report_and_project() {
     let plan = super::input::load_plan(&path).unwrap();
     let planned = super::input::index_plan(&plan);
     let missing = dir.path().join("missing-project");
-    let mut report: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
+    let mut report: serde_json::Value = report_view(&std::fs::read(&report_path).unwrap());
     report["run"]["normalized_config"]["selection"]["root"] = missing.to_str().unwrap().into();
-    std::fs::write(&report_path, serde_json::to_vec(&report).unwrap()).unwrap();
+    std::fs::write(&report_path, jsonl_bytes(&report)).unwrap();
 
     let error = super::input::load_report(&report_path, &plan, &planned)
         .err()
@@ -813,8 +806,7 @@ async fn review_requires_usable_report_after_structural_decode() {
     let (_dir, path, report_path) = report_fixture().await;
     let plan = super::input::load_plan(&path).unwrap();
     let planned = super::input::index_plan(&plan);
-    let original: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
+    let original: serde_json::Value = report_view(&std::fs::read(&report_path).unwrap());
     assert!(super::input::load_report(&report_path, &plan, &planned).is_ok());
     for state in ["incomplete", "failed baseline", "missing baseline"] {
         let mut report = original.clone();
@@ -824,10 +816,15 @@ async fn review_requires_usable_report_after_structural_decode() {
                 report["summary"]["exit_code"] = 4.into();
             }
             "failed baseline" => report["baseline"]["termination"]["Exit"] = 1.into(),
-            "missing baseline" => report["baseline"] = serde_json::Value::Null,
+            "missing baseline" => {
+                report["baseline"] = serde_json::Value::Null;
+                report["mutants"] = serde_json::json!([]);
+                report["summary"]["counts"] =
+                    serde_json::to_value(hoimin_core::MutationSummary::default()).unwrap();
+            }
             _ => unreachable!(),
         }
-        std::fs::write(&report_path, serde_json::to_vec(&report).unwrap()).unwrap();
+        std::fs::write(&report_path, jsonl_bytes(&report)).unwrap();
         let error = super::input::load_report(&report_path, &plan, &planned)
             .err()
             .expect("review must reject unusable reports");
@@ -855,15 +852,14 @@ async fn review_rejects_report_with_changed_identity_or_execution() {
             "/mutants/0/candidate/original",
             "wrong".into(),
         ),
-        ("version", "/schema_version", 3.into()),
+        ("version", "/run/schema_version", 3.into()),
     ];
     for (change, pointer, replacement) in changes {
         let (_dir, path, report_path) = report_fixture().await;
         let plan = super::input::load_plan(&path).unwrap();
-        let mut value: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
+        let mut value: serde_json::Value = report_view(&std::fs::read(&report_path).unwrap());
         *value.pointer_mut(pointer).unwrap() = replacement;
-        std::fs::write(&report_path, serde_json::to_vec(&value).unwrap()).unwrap();
+        std::fs::write(&report_path, jsonl_bytes(&value)).unwrap();
 
         let result =
             super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan));
@@ -995,10 +991,7 @@ fn write_matching_report(
     plan: &crate::plan::ReadOnlyPlan,
     candidates: &[&hoimin_core::MutationCandidate],
 ) {
-    let mut report: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tests/golden/reports/schema-v10-current.json"
-    ))
-    .unwrap();
+    let mut report = current_report_view();
     report["run"]["normalized_config"] = serde_json::to_value(
         plan.manifest
             .normalized_config
@@ -1015,14 +1008,14 @@ fn write_matching_report(
             .map(|(index, candidate)| {
                 let mut mutant = template.clone();
                 mutant["candidate"] = serde_json::to_value(candidate).unwrap();
-                mutant["sequence"] = (index + 4).into();
+                mutant["sequence"] = (index * 2 + 4).into();
                 mutant
             })
             .collect(),
     );
-    report["summary"]["sequence"] = (candidates.len() + 4).into();
+    report["summary"]["sequence"] = (candidates.len() * 2 + 3).into();
     report["summary"]["counts"]["killed"] = candidates.len().into();
-    std::fs::write(path, serde_json::to_vec(&report).unwrap()).unwrap();
+    std::fs::write(path, jsonl_bytes(&report)).unwrap();
 }
 
 fn populate_matching_snapshot(store_path: &std::path::Path, plan: &crate::plan::ReadOnlyPlan) {
@@ -1129,10 +1122,9 @@ async fn common_reader_rejects_report_identity_before_review_project_checks() {
     // Arrange
     let (_dir, path, report_path) = report_fixture().await;
     let mut plan = super::input::load_plan(&path).unwrap();
-    let mut value: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
+    let mut value: serde_json::Value = report_view(&std::fs::read(&report_path).unwrap());
     value["mutants"][0]["candidate"]["replacement"] = "forged".into();
-    std::fs::write(&report_path, serde_json::to_vec(&value).unwrap()).unwrap();
+    std::fs::write(&report_path, jsonl_bytes(&value)).unwrap();
     plan.project = camino::Utf8PathBuf::from("another-project");
     // Act
     let error = super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan))
@@ -1244,24 +1236,22 @@ async fn issue_1087_stale_candidate_preserves_complete_metadata_and_sequence_zer
 }
 
 #[tokio::test]
-async fn checked_report_duplicate_error_precedes_identity_conflict() {
+async fn checked_report_rejects_duplicate_candidate_lifecycle() {
     let (_dir, path, report_path) = report_fixture().await;
     let plan = super::input::load_plan(&path).unwrap();
-    let mut value: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
+    let mut value: serde_json::Value = report_view(&std::fs::read(&report_path).unwrap());
     value["mutants"][0]["candidate"]["id"] = "forged".into();
     let mut duplicate = value["mutants"][0].clone();
-    duplicate["sequence"] = 5.into();
+    duplicate["sequence"] = 6.into();
     value["mutants"].as_array_mut().unwrap().push(duplicate);
     value["summary"]["counts"]["killed"] = 2.into();
-    std::fs::write(&report_path, serde_json::to_vec(&value).unwrap()).unwrap();
+    value["summary"]["sequence"] = 7.into();
+    std::fs::write(&report_path, jsonl_bytes(&value)).unwrap();
     let error = super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan))
         .err()
         .unwrap();
     assert!(
-        error
-            .to_string()
-            .contains("mutant stable IDs must appear at most once"),
+        error.to_string().contains("reused a stable identity"),
         "{error}"
     );
 }
@@ -1657,7 +1647,7 @@ async fn recording_report_preserves_reference_when_showing_history() {
     assert_eq!(recorded_row["review"]["revision"], 1);
     assert_eq!(recorded_row["review"]["draft"]["reason"], "missing check");
     let report_bytes = std::fs::read(&report_path).unwrap();
-    let report_input: serde_json::Value = serde_json::from_slice(&report_bytes).unwrap();
+    let report_input: serde_json::Value = report_view(&report_bytes);
     let expected = ReportReference {
         artifact: ArtifactReference {
             path: std::fs::canonicalize(&report_path).unwrap(),

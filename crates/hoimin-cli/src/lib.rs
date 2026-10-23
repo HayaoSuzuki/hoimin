@@ -109,12 +109,7 @@ where
         }
         Ok(cli::ParsedCommand::Verify(args)) => {
             if args.dry_run {
-                match plan::prepare_verify_preview_selection(
-                    &args.manifest,
-                    &args.selection,
-                    args.format,
-                )
-                .await
+                match plan::prepare_verify_preview_selection(&args.manifest, &args.selection).await
                 {
                     Ok(preview) => {
                         command_result(preview.write(&mut stdout).map(|()| 0), &mut stderr)
@@ -125,19 +120,14 @@ where
                     }
                 }
             } else {
-                let verified = match plan::prepare_verify_selection(
-                    &args.manifest,
-                    &args.selection,
-                    args.format,
-                )
-                .await
-                {
-                    Ok(verified) => verified,
-                    Err(error) => {
-                        write_terminal_error(error.to_string(), stderr).await;
-                        return 2;
-                    }
-                };
+                let verified =
+                    match plan::prepare_verify_selection(&args.manifest, &args.selection).await {
+                        Ok(verified) => verified,
+                        Err(error) => {
+                            write_terminal_error(error.to_string(), stderr).await;
+                            return 2;
+                        }
+                    };
                 verified
                     .with_metrics(args.metrics)
                     .execute(
@@ -189,3 +179,7 @@ fn command_result(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/support/jsonl_report.rs"]
+mod test_report;

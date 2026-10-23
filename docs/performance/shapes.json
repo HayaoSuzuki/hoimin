@@ -540,7 +540,7 @@
         "hoimin-cli",
         "--test",
         "report_heap",
-        "json_heap_peak_is_independent_of_mutant_count",
+        "jsonl_heap_peak_is_independent_of_mutant_count",
         "--",
         "--exact"
       ]
@@ -677,7 +677,7 @@
       ]
     },
     {
-      "id": "spool-writes",
+      "id": "event-flushes",
       "status": "active",
       "issue": "https://github.com/tokyogas-tech/hoimin/issues/463",
       "metric": "operations",
@@ -688,7 +688,7 @@
         "hoimin-cli",
         "--test",
         "report_handler",
-        "json_spool_writes_one_complete_record_per_mutant",
+        "jsonl_uses_all_exact_event_kinds_and_flushes_each_record",
         "--",
         "--exact"
       ]

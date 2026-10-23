@@ -11,19 +11,17 @@ fn progress_decode_does_not_retain_raw_document_or_jsonl_line() {
     let directory = tempfile::tempdir().unwrap();
     let document: serde_json::Value =
         serde_json::from_str(include_str!("golden/reports/schema-v10-current.json")).unwrap();
-    for jsonl in [false, true] {
+    {
         let small = directory.path().join("small");
         let large = directory.path().join("large");
-        write_report(&small, &document, jsonl, 32);
-        write_report(&large, &document, jsonl, 4 * 1024 * 1024);
+        write_report(&small, &document, 32);
+        write_report(&large, &document, 4 * 1024 * 1024);
         let small_peak = measured_peak(&small);
         let large_peak = measured_peak(&large);
-        eprintln!(
-            "progress decode jsonl={jsonl}: small_peak={small_peak}, large_peak={large_peak}"
-        );
+        eprintln!("progress decode jsonl=true: small_peak={small_peak}, large_peak={large_peak}");
         assert!(
             large_peak <= small_peak + 128 * 1024,
-            "jsonl={jsonl}, small peak={small_peak}, large peak={large_peak}"
+            "jsonl=true, small peak={small_peak}, large peak={large_peak}"
         );
     }
 }
@@ -36,11 +34,11 @@ fn measured_peak(path: &std::path::Path) -> usize {
     peak
 }
 
-fn write_report(path: &std::path::Path, document: &serde_json::Value, jsonl: bool, padding: usize) {
+fn write_report(path: &std::path::Path, document: &serde_json::Value, padding: usize) {
     let mut file = std::io::BufWriter::new(std::fs::File::create(path).unwrap());
     // Padding is deliberately inside the first physical line. Progress ignores
     // unknown normalized_config descendants, so none belongs in the result.
-    if jsonl {
+    {
         let mut run = document["run"].clone();
         run["normalized_config"]["future_padding"] = serde_json::json!("PLACEHOLDER");
         write_padded(&mut file, &run, padding);
@@ -69,10 +67,6 @@ fn write_report(path: &std::path::Path, document: &serde_json::Value, jsonl: boo
         let mut summary = document["summary"].clone();
         summary["sequence"] = (sequence + 1).into();
         serde_json::to_writer(&mut file, &summary).unwrap();
-    } else {
-        let mut report = document.clone();
-        report["run"]["normalized_config"]["future_padding"] = serde_json::json!("PLACEHOLDER");
-        write_padded(&mut file, &report, padding);
     }
     file.flush().unwrap();
 }

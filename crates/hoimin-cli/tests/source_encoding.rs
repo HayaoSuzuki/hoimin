@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use collecting_writer::CollectingWriter;
 
 use std::collections::BTreeSet;
@@ -58,7 +60,7 @@ async fn assert_latin1_flow(source: &[u8], first_candidate_line: u32) {
         "{}",
         String::from_utf8_lossy(&stderr.snapshot())
     );
-    let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    let manifest: PlanManifest = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
     assert_eq!(manifest.candidates.len(), 3);
     assert!(!log.exists());
     let planned_ids = manifest
@@ -118,7 +120,7 @@ async fn assert_latin1_flow(source: &[u8], first_candidate_line: u32) {
             "{}",
             String::from_utf8_lossy(&stderr.snapshot())
         );
-        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(
             report["baseline"]["termination"],
             serde_json::json!({"Exit": 0})
@@ -238,7 +240,7 @@ async fn accepted_cookie_placements_preserve_original_plan_hashes() {
             "{}",
             String::from_utf8_lossy(&compiled.stderr)
         );
-        let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let manifest: PlanManifest = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(manifest.candidates.len(), 1);
         assert_eq!(
             manifest.candidates[0].file_hash,
@@ -273,7 +275,7 @@ async fn latin1_symbol_selection_uses_shared_decoding_in_plan_run_and_verify() {
         "{}",
         String::from_utf8_lossy(&stderr.snapshot())
     );
-    let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    let manifest: PlanManifest = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
     assert_eq!(manifest.candidates.len(), 1);
     assert_eq!(manifest.candidates[0].symbol.as_deref(), Some("café"));
     let plan_path = output.path().join("plan.json");
@@ -295,7 +297,7 @@ async fn latin1_symbol_selection_uses_shared_decoding_in_plan_run_and_verify() {
             "{}",
             String::from_utf8_lossy(&stderr.snapshot())
         );
-        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(
             report["mutants"][0]["candidate"]["id"],
             manifest.candidates[0].id

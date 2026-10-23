@@ -3,8 +3,13 @@ type: Contract
 title: Compatibility and change notices
 description: Current formats, usage changes and release versioning.
 status: draft
-catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
+catalog_revision: bcbb8bea00188ca27c0dd98a1e10a5c3a40a0d56
 sources:
+- id: current-jsonl-contract
+  resource: ../compatibility.md
+  working_tree: modified
+  revision: bcbb8bea00188ca27c0dd98a1e10a5c3a40a0d56
+  sha256: d3cde017c7a078819cd698980c7177c36f19f33ee6bfe30fef15d3d2e5a8b05c
 - id: local-exit-policy
   resource: ../compatibility.md
   revision: 1d192acf04de8983697c76ba2e4344965bb359a3
@@ -108,6 +113,16 @@ macros without the external crate; budget checks still cover successful and erro
 results. No saved-artifact regeneration is required.[^crate-feature-scope]
 
 [^crate-feature-scope]: [CLI and logging feature notice](../compatibility.md#reduced-cli-and-logging-features).
+
+# Current execution reports
+
+`run` and `verify` emit JSONL execution events and reject `--format`. Progress
+and review accept only JSONL execution reports. Aggregate JSON execution reports
+are removed without an alias or conversion fallback. Plan, verify dry-run,
+progress, review and metrics retain single JSON documents. Existing session and
+execution-safety behavior is preserved.[^current-jsonl-contract]
+
+[^current-jsonl-contract]: [Current CLI and output policy](../compatibility.md#agent-oriented-output-11001103).
 
 # Current saved formats and release floor
 

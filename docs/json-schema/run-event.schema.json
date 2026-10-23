@@ -848,6 +848,13 @@
               "properties": { "analyzer_timeout": false }
             },
             "root": false,
+            "output": {
+              "type": "object",
+              "properties": {
+                "metrics": { "type": ["string", "null"] }
+              },
+              "additionalProperties": false
+            },
             "resume": false,
             "session": { "$ref": "#/$defs/sessionMode" },
             "environment": {

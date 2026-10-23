@@ -3,10 +3,7 @@ use std::path::Path;
 
 use hoimin_core::{OutputEvent, ReportSequence, RunStarted};
 
-use super::{
-    ReportConfigProjection, ReportReadError, ReportRunEvent, RunReportDocument, check_schema,
-    invalid_structure,
-};
+use super::{ReportPayloads, ReportReadError, ReportRunEvent, check_schema, invalid_structure};
 
 /// Expose one physical line as an independent JSON input without retaining its
 /// bytes. Very long lines have no additional raw-line allocation; event payload
@@ -66,11 +63,11 @@ fn read_event<T: serde::de::DeserializeOwned>(
     })
 }
 
-pub(super) fn read_document(
+pub(super) fn read_payloads<C: serde::de::DeserializeOwned>(
     path: &Path,
     mut reader: impl BufRead,
-) -> Result<RunReportDocument<ReportConfigProjection>, ReportReadError> {
-    let run: ReportRunEvent<ReportConfigProjection> = read_event(path, &mut reader)?
+) -> Result<ReportPayloads<C>, ReportReadError> {
+    let run: ReportRunEvent<C> = read_event(path, &mut reader)?
         .ok_or_else(|| invalid_structure(path, "JSONL report requires run_started"))?;
     check_schema(path, run.schema_version())?;
     let started = run.value();
@@ -102,14 +99,14 @@ pub(super) fn read_document(
                 source,
             })?;
         match event {
-            OutputEvent::BaselineFinished(_) => {
+            OutputEvent::BaselineFinished(value) => {
                 if baseline.is_some() || saw_mutant {
                     return Err(invalid_structure(
                         path,
                         "baseline must occur once before mutant events",
                     ));
                 }
-                baseline = Some(event);
+                baseline = Some(value);
             }
             OutputEvent::MutantStarted(_) => {
                 if baseline.is_none() {
@@ -120,8 +117,8 @@ pub(super) fn read_document(
                 }
                 saw_mutant = true;
             }
-            OutputEvent::MutantFinished(_) => mutants.push(event),
-            OutputEvent::RunFinished(_) => summary = Some(event),
+            OutputEvent::MutantFinished(value) => mutants.push(value),
+            OutputEvent::RunFinished(value) => summary = Some(value),
             OutputEvent::Diagnostic(_) => {}
             OutputEvent::RunStarted(_) => {
                 unreachable!("ReportSequence rejects duplicate run starts")
@@ -130,8 +127,7 @@ pub(super) fn read_document(
     }
     let summary =
         summary.ok_or_else(|| invalid_structure(path, "JSONL report requires run_finished"))?;
-    Ok(RunReportDocument {
-        schema_version: run.schema_version(),
+    Ok(ReportPayloads {
         run,
         baseline,
         mutants,

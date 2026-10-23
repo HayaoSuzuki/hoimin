@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 #[path = "support/mutation_outcome.rs"]
 mod mutation_outcome;
 use collecting_writer::CollectingWriter;
@@ -58,7 +60,7 @@ async fn cli(args: Vec<OsString>) -> (i32, serde_json::Value, String) {
     let code = hoimin_cli::run_with_writers(args, out.clone(), err.clone()).await;
     (
         code,
-        serde_json::from_slice(&out.snapshot()).unwrap_or(serde_json::Value::Null),
+        jsonl_report::from_slice(&out.snapshot()).unwrap_or(serde_json::Value::Null),
         String::from_utf8(err.snapshot()).unwrap(),
     )
 }
@@ -213,7 +215,7 @@ async fn sample_execution_matches_preview_and_preserves_sample_scope() {
         assert_eq!(first, second);
     }
     let report_path = path.with_file_name("report.json");
-    std::fs::write(&report_path, serde_json::to_vec(&report).unwrap()).unwrap();
+    std::fs::write(&report_path, jsonl_report::to_vec(&report)).unwrap();
     let (code, progress, err) = cli(vec![
         "hoimin".into(),
         "progress".into(),
@@ -389,7 +391,7 @@ async fn different_samples_keep_progress_candidate_set_checks() {
         let (code, report, err) = cli(verify_args(&path, 3, seed)).await;
         assert_eq!(code, 0, "{err}");
         let report_path = path.with_file_name(format!("report-{seed}.json"));
-        std::fs::write(&report_path, serde_json::to_vec(&report).unwrap()).unwrap();
+        std::fs::write(&report_path, jsonl_report::to_vec(&report)).unwrap();
         paths.push(report_path.into_os_string());
     }
     let mut args = vec!["hoimin".into(), "progress".into()];

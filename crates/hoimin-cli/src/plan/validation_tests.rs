@@ -1024,13 +1024,9 @@ async fn issue_1081_prepare_and_preview_do_not_read_or_hash_unrelated_assets() {
                 issue_1081_asset_plan(fingerprint_count, asset_count, asset_bytes).await;
             let (ids, selection) = issue_1081_selection(&manifest, asset_count == 4);
             crate::workspace::reset_source_content_metrics();
-            let prepared = super::prepare_verify_selection(
-                artifact.path(),
-                &selection,
-                crate::cli::OutputFormat::Json,
-            )
-            .await
-            .unwrap();
+            let prepared = super::prepare_verify_selection(artifact.path(), &selection)
+                .await
+                .unwrap();
             let metrics = crate::workspace::source_content_metrics();
             assert_eq!(
                 (metrics.read_bytes, metrics.hash_bytes),
@@ -1066,13 +1062,9 @@ async fn issue_1081_prepare_and_preview_do_not_read_or_hash_unrelated_assets() {
                 }
             );
             crate::workspace::reset_source_content_metrics();
-            let preview = super::prepare_verify_preview_selection(
-                artifact.path(),
-                &selection,
-                crate::cli::OutputFormat::Json,
-            )
-            .await
-            .unwrap();
+            let preview = super::prepare_verify_preview_selection(artifact.path(), &selection)
+                .await
+                .unwrap();
             let metrics = crate::workspace::source_content_metrics();
             assert_eq!(
                 (metrics.read_bytes, metrics.hash_bytes),
@@ -1157,13 +1149,10 @@ async fn issue_1081_membership_matches_content_manifest_selection() {
             serde_json::to_vec(&output.manifest).unwrap(),
         )
         .unwrap();
-        let prepared = super::prepare_verify(
-            artifact.path(),
-            &[output.manifest.candidates[0].id.clone()],
-            crate::cli::OutputFormat::Json,
-        )
-        .await
-        .unwrap();
+        let prepared =
+            super::prepare_verify(artifact.path(), &[output.manifest.candidates[0].id.clone()])
+                .await
+                .unwrap();
         assert_eq!(prepared.fingerprint_copy_inputs, expected);
     }
 }
@@ -1197,21 +1186,13 @@ async fn issue_1081_empty_fingerprints_skip_copy_selection_walk() {
     let selection =
         crate::cli::VerifySelection::CandidateIds(vec![output.manifest.candidates[0].id.clone()]);
     assert!(
-        super::prepare_verify_selection(
-            artifact.path(),
-            &selection,
-            crate::cli::OutputFormat::Json
-        )
-        .await
-        .unwrap()
-        .fingerprint_copy_inputs
-        .is_empty()
+        super::prepare_verify_selection(artifact.path(), &selection)
+            .await
+            .unwrap()
+            .fingerprint_copy_inputs
+            .is_empty()
     );
-    super::prepare_verify_preview_selection(
-        artifact.path(),
-        &selection,
-        crate::cli::OutputFormat::Json,
-    )
-    .await
-    .unwrap();
+    super::prepare_verify_preview_selection(artifact.path(), &selection)
+        .await
+        .unwrap();
 }

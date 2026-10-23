@@ -78,7 +78,7 @@ use crate::analyzer::{AnalyzerHandler, CandidateReplay};
 use crate::metrics::{MetricsCollector, MetricsError, finalize_metrics};
 use crate::metrics_destination::{MetricsDestination, validate_metrics_destination};
 use crate::process::{ProcessCancellation, ProcessHandler, ProcessRequest, ProcessStartGate};
-use crate::report::PreparedReport;
+use crate::report::ReportHandler;
 use crate::report::delivery::ReportDelivery;
 #[cfg(not(any(windows, target_os = "linux")))]
 use crate::resource::PortableBackend;
@@ -1288,7 +1288,6 @@ struct PreparedShellSetup {
     workspace: WorkspaceHandler,
     analyzer: AnalyzerHandler,
     process: Arc<ProcessHandler>,
-    report: PreparedReport,
     spool_dir: Arc<ManagedShellRoots>,
     config: RunConfig,
     // Keep this last so every handler/root clone is dropped before an armed rollback.
@@ -1457,7 +1456,7 @@ enum ShellSetupBoundary {
     BackendCreated,
     ProcessCreated,
     AnalyzerCreated,
-    ReportCreated,
+    DeliveryReady,
 }
 
 fn prepare_shell_setup_sync_in(
@@ -1525,9 +1524,7 @@ fn prepare_shell_setup_controlled(
     .with_exception_project(&config);
     boundary(ShellSetupBoundary::AnalyzerCreated);
     preparation_check(timing)?;
-    let report = PreparedReport::new(config.output.format, delivery_spool.path())
-        .map_err(|error| error.to_string())?;
-    boundary(ShellSetupBoundary::ReportCreated);
+    boundary(ShellSetupBoundary::DeliveryReady);
     preparation_check(timing)?;
     let spool_dir = Arc::new(ManagedShellRoots {
         execution_root,
@@ -1540,7 +1537,6 @@ fn prepare_shell_setup_controlled(
         workspace,
         analyzer,
         process,
-        report,
         spool_dir,
         config,
         rollback,
@@ -2094,7 +2090,6 @@ impl ShellContext {
             workspace,
             analyzer,
             process,
-            report,
             spool_dir,
             config,
             rollback,
@@ -2114,9 +2109,7 @@ impl ShellContext {
             candidate_replay: Some(CandidateReplay::new([])),
             process,
             report: ReportDelivery::new(
-                report
-                    .attach(stdout, stderr)
-                    .with_presentation(presentation),
+                ReportHandler::new(stdout, stderr).with_presentation(presentation),
                 delivery_owner,
             ),
             session: None,
@@ -3359,7 +3352,7 @@ async fn run_loop_context(
                                 if emitted.is_ok() {
                                     control.observe_finalization_event("run_finished_written");
                                 }
-                                let flushed = context.report.flush_and_release_spool().await;
+                                let flushed = context.report.flush().await;
                                 (emitted, flushed)
                             };
                             tokio::pin!(delivery);
@@ -4435,7 +4428,7 @@ async fn run_loop_context(
         );
         let mut report_released = delivery_cleanup != CleanupProgress::NotAttempted;
         if !report_released && tokio::time::Instant::now() < budget.deadline() {
-            match budget.wait(context.report.flush_and_release_spool()).await {
+            match budget.wait(context.report.flush()).await {
                 Ok(result) => {
                     report_released = context.report.is_quiescent();
                     if let Err(error) = result {
@@ -4747,7 +4740,7 @@ async fn run_loop_context(
             && context.report.is_quiescent()
             && tokio::time::Instant::now() < budget.deadline()
         {
-            let _ = budget.wait(context.report.flush_and_release_spool()).await;
+            let _ = budget.wait(context.report.flush()).await;
         }
         result
     };
@@ -5580,10 +5573,7 @@ mod tests {
         config
     }
 
-    fn output_failure_test_config(
-        project: &TempDir,
-        format: &str,
-    ) -> RunConfig<hoimin_core::EnvironmentRequest> {
+    fn output_failure_test_config(project: &TempDir) -> RunConfig<hoimin_core::EnvironmentRequest> {
         std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
         let mut args = vec![
             OsString::from("hoimin"),
@@ -5592,8 +5582,6 @@ mod tests {
             project.path().as_os_str().to_owned(),
             OsString::from("--file"),
             OsString::from("target.py"),
-            OsString::from("--format"),
-            OsString::from(format),
             OsString::from("--allow-best-effort-memory"),
             OsString::from("--"),
         ];
@@ -5605,7 +5593,7 @@ mod tests {
     // rejects these IDs during preparation, before runtime spool exhaustion.
     async fn run_missing_explicit_candidate(source: &str, missing_id: &str) -> (String, Vec<u8>) {
         let project = tempfile::tempdir().unwrap();
-        let config = output_failure_test_config(&project, "json")
+        let config = output_failure_test_config(&project)
             .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
             .unwrap();
         std::fs::write(project.path().join("target.py"), source).unwrap();
@@ -5742,7 +5730,7 @@ mod tests {
     async fn preparation_cancellation_bounds_initial_disk_measurement() {
         // Arrange: the initial monitor sample owns roots until its meter returns.
         let project = tempfile::tempdir().unwrap();
-        let config = output_failure_test_config(&project, "json");
+        let config = output_failure_test_config(&project);
         let (entered_tx, entered_rx) = std::sync::mpsc::channel();
         let release = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
         let control = RunControl::with_disk_meter(BlockingAfterCallMeter {
@@ -5790,7 +5778,7 @@ mod tests {
     async fn preparation_cancellation_skips_invalid_fingerprint_inputs() {
         // Arrange: cancelled preparation must not inspect missing input files.
         let project = tempfile::tempdir().unwrap();
-        let config = output_failure_test_config(&project, "json");
+        let config = output_failure_test_config(&project);
         let mut data = config.into_data();
         data.fingerprint_files = vec!["missing.toml".into()];
         let config = RunConfig::try_from(data).unwrap();
@@ -5885,8 +5873,6 @@ mod tests {
             project.path().as_os_str().to_owned(),
             OsString::from("--file"),
             OsString::from("target.py"),
-            OsString::from("--format"),
-            OsString::from("json"),
             OsString::from("--min-free-space"),
             OsString::from("18446744073709551615B"),
             OsString::from("--allow-best-effort-memory"),
@@ -5910,7 +5896,7 @@ mod tests {
 
         assert_ne!(exit, 0);
         assert_eq!(observed.dispatched_effect_count(), 0);
-        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(
             report["summary"]["disk"]["stop"]["code"],
             hoimin_core::FILESYSTEM_RESERVE_REACHED
@@ -5928,8 +5914,6 @@ mod tests {
             project.path().as_os_str().to_owned(),
             OsString::from("--file"),
             OsString::from("target.py"),
-            OsString::from("--format"),
-            OsString::from("json"),
             OsString::from("--allow-best-effort-memory"),
             OsString::from("--"),
             OsString::from("unused-test-command"),
@@ -5951,7 +5935,7 @@ mod tests {
 
         assert_ne!(exit, 0);
         assert_eq!(observed.dispatched_effect_count(), 0);
-        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(
             report["summary"]["disk"]["stop"]["code"],
             hoimin_core::DISK_MEASUREMENT_FAILED
@@ -6209,8 +6193,6 @@ mod tests {
             project.path().as_os_str().to_owned(),
             OsString::from("--file"),
             OsString::from("target.py"),
-            OsString::from("--format"),
-            OsString::from("json"),
             OsString::from("--allow-best-effort-memory"),
             OsString::from("--"),
             OsString::from("definitely-missing-hoimin-executable"),
@@ -6243,7 +6225,7 @@ mod tests {
         .expect("disk stop should complete through the typed state machine");
 
         assert_ne!(exit, 0);
-        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
         let stop = &report["summary"]["disk"]["stop"];
         assert_eq!(stop["code"], hoimin_core::FILESYSTEM_RESERVE_REACHED);
         assert!(
@@ -6272,8 +6254,6 @@ mod tests {
             project.path().as_os_str().to_owned(),
             OsString::from("--file"),
             OsString::from("target.py"),
-            OsString::from("--format"),
-            OsString::from("json"),
             OsString::from("--allow-best-effort-memory"),
             OsString::from("--"),
             OsString::from("definitely-missing-hoimin-executable"),
@@ -6304,7 +6284,7 @@ mod tests {
         .expect("monitor stop should complete through the typed state machine");
 
         assert_ne!(exit, 0);
-        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
         let stop = &report["summary"]["disk"]["stop"];
         assert_eq!(stop["code"], hoimin_core::DISK_MEASUREMENT_FAILED);
         assert_eq!(stop["message"], "post-drain statvfs failed");
@@ -6473,8 +6453,6 @@ mod tests {
             project.path().as_os_str().to_owned(),
             OsString::from("--file"),
             OsString::from("target.py"),
-            OsString::from("--format"),
-            OsString::from("json"),
             OsString::from("--allow-best-effort-memory"),
             OsString::from("--"),
         ];
@@ -6529,7 +6507,12 @@ mod tests {
             "cleanup raced an unjoined final measurement: {roots:?}"
         );
         assert!(
-            stdout.is_empty(),
+            !stdout
+                .snapshot()
+                .split(|byte| *byte == b'\n')
+                .filter(|line| !line.is_empty())
+                .map(|line| serde_json::from_slice::<serde_json::Value>(line).unwrap())
+                .any(|event| event["kind"] == "run_finished"),
             "expired delivery admitted a final report"
         );
         assert!(
@@ -6551,8 +6534,6 @@ mod tests {
             project.path().as_os_str().to_owned(),
             OsString::from("--file"),
             OsString::from("target.py"),
-            OsString::from("--format"),
-            OsString::from("json"),
             OsString::from("--allow-best-effort-memory"),
             OsString::from("--"),
         ];
@@ -6577,7 +6558,7 @@ mod tests {
             error.contains(hoimin_core::WORKSPACE_CLEANUP_DEFERRED),
             "{error}"
         );
-        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(
             report["summary"]["disk"]["stop"]["code"],
             hoimin_core::PROCESS_LIFECYCLE_FAILED
@@ -6606,8 +6587,6 @@ mod tests {
             project.path().as_os_str().to_owned(),
             OsString::from("--file"),
             OsString::from("target.py"),
-            OsString::from("--format"),
-            OsString::from("json"),
             OsString::from("--allow-best-effort-memory"),
             OsString::from("--"),
         ];
@@ -6636,7 +6615,7 @@ mod tests {
             error.contains(hoimin_core::WORKSPACE_CLEANUP_DEFERRED),
             "{error}"
         );
-        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
         let stop = &report["summary"]["disk"]["stop"];
         assert_eq!(stop["code"], hoimin_core::FILESYSTEM_RESERVE_REACHED);
         assert!(
@@ -6674,8 +6653,6 @@ mod tests {
             project.path().as_os_str().to_owned(),
             OsString::from("--file"),
             OsString::from("target.py"),
-            OsString::from("--format"),
-            OsString::from("json"),
             OsString::from("--min-free-space"),
             OsString::from("1B"),
             OsString::from("--allow-best-effort-memory"),
@@ -6722,7 +6699,7 @@ mod tests {
             roots[0].exists(),
             "outer finalization retried and removed the deferred execution root"
         );
-        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
         let execution_cleanup = report["summary"]["disk"]["cleanup"]
             .as_array()
             .unwrap()
@@ -6756,8 +6733,6 @@ mod tests {
             project.path().as_os_str().to_owned(),
             OsString::from("--file"),
             OsString::from("target.py"),
-            OsString::from("--format"),
-            OsString::from("json"),
             OsString::from("--min-free-space"),
             OsString::from("1B"),
             OsString::from("--allow-best-effort-memory"),
@@ -6793,7 +6768,7 @@ mod tests {
         .expect_err("an unjoined monitor must keep the run incomplete");
 
         assert!(error.contains("disk.measurement.failed"), "{error}");
-        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(
             report["summary"]["disk"]["stop"]["code"],
             hoimin_core::DISK_MEASUREMENT_FAILED
@@ -7154,8 +7129,6 @@ mod tests {
             project.path().as_os_str().to_owned(),
             OsString::from("--file"),
             OsString::from("target.py"),
-            OsString::from("--format"),
-            OsString::from("json"),
             OsString::from("--min-free-space"),
             OsString::from("1B"),
             OsString::from("--allow-best-effort-memory"),
@@ -7188,7 +7161,7 @@ mod tests {
         )
         .await;
 
-        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
         let execution_cleanup = report["summary"]["disk"]["cleanup"]
             .as_array()
             .unwrap()
@@ -7338,7 +7311,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn final_json_contains_runtime_disk_measurement_and_cleanup_evidence() {
+    async fn final_report_contains_runtime_disk_measurement_and_cleanup_evidence() {
         let project = tempfile::tempdir().unwrap();
         std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
         let mut args = vec![
@@ -7348,8 +7321,6 @@ mod tests {
             project.path().as_os_str().to_owned(),
             OsString::from("--file"),
             OsString::from("target.py"),
-            OsString::from("--format"),
-            OsString::from("json"),
             OsString::from("--allow-best-effort-memory"),
             OsString::from("--"),
         ];
@@ -7370,7 +7341,7 @@ mod tests {
             0
         );
 
-        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
         let disk = &report["summary"]["disk"];
         assert!(disk["sample_count"].as_u64().unwrap() >= 3, "{disk}");
         assert!(disk["minimum_available_bytes"].as_u64().is_some());
@@ -7410,8 +7381,6 @@ mod tests {
             project.path().as_os_str().to_owned(),
             OsString::from("--file"),
             OsString::from("target.py"),
-            OsString::from("--format"),
-            OsString::from("json"),
             OsString::from("--min-free-space"),
             OsString::from("1B"),
             OsString::from("--allow-best-effort-memory"),
@@ -7440,7 +7409,7 @@ mod tests {
             .unwrap(),
             0
         );
-        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(
             report["summary"]["disk"]["filesystems"][0]["available_bytes_change"],
             -500
@@ -7458,8 +7427,6 @@ mod tests {
             project.path().as_os_str().to_owned(),
             OsString::from("--file"),
             OsString::from("target.py"),
-            OsString::from("--format"),
-            OsString::from("json"),
             OsString::from("--allow-best-effort-memory"),
             OsString::from("--"),
         ];
@@ -7481,7 +7448,7 @@ mod tests {
         .expect_err("required end-free evidence failure must keep the run incomplete");
 
         assert!(error.contains("disk.measurement.failed"), "{error}");
-        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(report["summary"]["complete"], false);
         assert_eq!(
             report["summary"]["disk"]["stop"]["code"],
@@ -7516,6 +7483,8 @@ mod tests {
         entered: Option<tokio::sync::oneshot::Sender<()>>,
         release: std::sync::mpsc::Receiver<()>,
         pause_flush: bool,
+        record: Vec<u8>,
+        terminal: bool,
     }
 
     impl PausedReportWriter {
@@ -7532,25 +7501,31 @@ mod tests {
 
     impl Write for PausedReportWriter {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            if !self.pause_flush {
+            self.record.extend_from_slice(bytes);
+            self.terminal |= self
+                .record
+                .windows(b"run_finished".len())
+                .any(|part| part == b"run_finished");
+            if !self.pause_flush && self.terminal {
                 self.pause()?;
             }
             Ok(bytes.len())
         }
 
         fn flush(&mut self) -> std::io::Result<()> {
-            if self.pause_flush {
+            if self.pause_flush && self.terminal {
                 self.pause()?;
             }
+            self.record.clear();
             Ok(())
         }
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn interrupted_owned_json_delivery_retains_its_spool_until_write_or_flush_returns() {
+    async fn interrupted_delivery_retains_its_owner_until_write_or_flush_returns() {
         for pause_flush in [false, true] {
             let project = tempfile::tempdir().unwrap();
-            let config = output_failure_test_config(&project, "json");
+            let config = output_failure_test_config(&project);
             assert_host_independent_test_reserve(&config);
             let mut control = RunControl::new();
             control.shutdown_grace = Duration::from_millis(50);
@@ -7561,6 +7536,8 @@ mod tests {
                 entered: Some(entered_tx),
                 release: release_rx,
                 pause_flush,
+                record: Vec::new(),
+                terminal: false,
             };
             let diagnostics = SharedDiagnosticCapture::default();
             let captured = diagnostics.clone();
@@ -7592,16 +7569,10 @@ mod tests {
                         .to_string_lossy()
                         .starts_with("report-")
                 })
-                .expect("delivery child exists during JSON write");
-            let spool = std::fs::read_dir(&child)
-                .unwrap()
-                .next()
-                .unwrap()
-                .unwrap()
-                .path();
+                .expect("delivery child exists during JSONL write");
             observed.cancel();
             let result = tokio::time::timeout(Duration::from_secs(1), &mut run).await;
-            let retained = delivery.exists() && child.exists() && spool.exists();
+            let retained = delivery.exists() && child.exists();
             let execution_removed = !roots[0].exists();
             let acknowledged = observed
                 .finalization_events()
@@ -7633,37 +7604,35 @@ mod tests {
 
     #[tokio::test]
     async fn owned_report_io_failure_releases_managed_roots_without_output_acknowledgement() {
-        for format in ["json", "jsonl"] {
-            let project = tempfile::tempdir().unwrap();
-            let config = output_failure_test_config(&project, format);
-            let control = RunControl::new();
-            let observed = control.clone();
-            assert_eq!(
-                run_loop_with_control(
-                    config,
-                    AlwaysFailingWriter,
-                    Vec::new(),
-                    control,
-                    crate::report::ReportPresentation::default()
-                )
-                .await
-                .unwrap_or(2),
-                2
-            );
-            assert!(
-                observed
-                    .managed_root_paths()
-                    .iter()
-                    .all(|root| !root.exists()),
-                "format={format}"
-            );
-            assert!(
-                !observed
-                    .finalization_events()
-                    .contains(&"output_acknowledged"),
-                "format={format}"
-            );
-        }
+        let project = tempfile::tempdir().unwrap();
+        let config = output_failure_test_config(&project);
+        let control = RunControl::new();
+        let observed = control.clone();
+        assert_eq!(
+            run_loop_with_control(
+                config,
+                AlwaysFailingWriter,
+                Vec::new(),
+                control,
+                crate::report::ReportPresentation::default()
+            )
+            .await
+            .unwrap_or(2),
+            2
+        );
+        assert!(
+            observed
+                .managed_root_paths()
+                .iter()
+                .all(|root| !root.exists()),
+            "JSONL delivery"
+        );
+        assert!(
+            !observed
+                .finalization_events()
+                .contains(&"output_acknowledged"),
+            "JSONL delivery"
+        );
     }
 
     #[tokio::test]
@@ -7677,8 +7646,6 @@ mod tests {
             project.path().as_os_str().to_owned(),
             OsString::from("--file"),
             OsString::from("target.py"),
-            OsString::from("--format"),
-            OsString::from("json"),
             OsString::from("--allow-best-effort-memory"),
             OsString::from("--"),
         ];
@@ -7722,8 +7689,6 @@ mod tests {
             project.path().as_os_str().to_owned(),
             OsString::from("--file"),
             OsString::from("target.py"),
-            OsString::from("--format"),
-            OsString::from("json"),
             OsString::from("--allow-best-effort-memory"),
             OsString::from("--"),
         ];
@@ -7768,75 +7733,73 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn every_output_format_rejects_ack_on_write_or_delivery_cleanup_failure() {
-        for format in ["json", "jsonl"] {
-            let project = tempfile::tempdir().unwrap();
-            let config = output_failure_test_config(&project, format);
-            let control = RunControl::new();
-            let observed = control.clone();
+    async fn output_rejects_ack_on_write_or_delivery_cleanup_failure() {
+        let project = tempfile::tempdir().unwrap();
+        let config = output_failure_test_config(&project);
+        let control = RunControl::new();
+        let observed = control.clone();
 
-            let error = run_loop_with_control(
-                config,
-                AlwaysFailingWriter,
-                Vec::new(),
-                control,
-                crate::report::ReportPresentation::default(),
-            )
-            .await
-            .expect_err("report write failure must not be acknowledged");
+        let error = run_loop_with_control(
+            config,
+            AlwaysFailingWriter,
+            Vec::new(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await
+        .expect_err("report write failure must not be acknowledged");
 
-            assert!(error.contains("report"), "format={format}: {error}");
-            assert!(
-                observed
-                    .managed_root_paths()
-                    .iter()
-                    .all(|root| !root.exists()),
-                "format={format}: report failure stranded a managed root"
-            );
-            assert!(
-                !observed
-                    .finalization_events()
-                    .contains(&"output_acknowledged"),
-                "format={format}: write failure was acknowledged"
-            );
+        assert!(error.contains("report"), "{error}");
+        assert!(
+            observed
+                .managed_root_paths()
+                .iter()
+                .all(|root| !root.exists()),
+            "report failure stranded a managed root"
+        );
+        assert!(
+            !observed
+                .finalization_events()
+                .contains(&"output_acknowledged"),
+            "write failure was acknowledged"
+        );
 
-            let project = tempfile::tempdir().unwrap();
-            let config = output_failure_test_config(&project, format);
-            let control = RunControl::new();
-            control.inject_delivery_cleanup_identity_failure();
-            let observed = control.clone();
+        let project = tempfile::tempdir().unwrap();
+        let config = output_failure_test_config(&project);
+        let control = RunControl::new();
+        control.inject_delivery_cleanup_identity_failure();
+        let observed = control.clone();
 
-            let error = run_loop_with_control(
-                config,
-                Vec::new(),
-                Vec::new(),
-                control,
-                crate::report::ReportPresentation::default(),
-            )
-            .await
-            .expect_err("delivery cleanup failure must not be acknowledged");
+        let error = run_loop_with_control(
+            config,
+            Vec::new(),
+            Vec::new(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await
+        .expect_err("delivery cleanup failure must not be acknowledged");
 
-            assert!(
-                error.contains(hoimin_core::WORKSPACE_CLEANUP_FAILED),
-                "format={format}: {error}"
-            );
-            let roots = observed.managed_root_paths();
-            assert!(!roots[0].exists(), "format={format}: execution root");
-            assert!(roots[1].exists(), "format={format}: replacement root");
-            assert!(
-                observed
-                    .delivery_cleanup_sentinel()
-                    .expect("original delivery sentinel")
-                    .exists(),
-                "format={format}: original delivery sentinel"
-            );
-            assert!(
-                !observed
-                    .finalization_events()
-                    .contains(&"output_acknowledged"),
-                "format={format}: cleanup failure was acknowledged"
-            );
-        }
+        assert!(
+            error.contains(hoimin_core::WORKSPACE_CLEANUP_FAILED),
+            "{error}"
+        );
+        let roots = observed.managed_root_paths();
+        assert!(!roots[0].exists(), "execution root");
+        assert!(roots[1].exists(), "replacement root");
+        assert!(
+            observed
+                .delivery_cleanup_sentinel()
+                .expect("original delivery sentinel")
+                .exists(),
+            "original delivery sentinel"
+        );
+        assert!(
+            !observed
+                .finalization_events()
+                .contains(&"output_acknowledged"),
+            "cleanup failure was acknowledged"
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -8024,8 +7987,12 @@ mod tests {
     preparation_stop_case!(preparation_cancel_after_process, ProcessCreated, true);
     preparation_stop_case!(preparation_timeout_after_analyzer, AnalyzerCreated, false);
     preparation_stop_case!(preparation_cancel_after_analyzer, AnalyzerCreated, true);
-    preparation_stop_case!(preparation_timeout_after_report, ReportCreated, false);
-    preparation_stop_case!(preparation_cancel_after_report, ReportCreated, true);
+    preparation_stop_case!(
+        preparation_timeout_after_delivery_ready,
+        DeliveryReady,
+        false
+    );
+    preparation_stop_case!(preparation_cancel_after_delivery_ready, DeliveryReady, true);
 
     #[test]
     fn every_managed_root_publication_boundary_rolls_back_on_unwind() {
@@ -8135,7 +8102,7 @@ mod tests {
             ShellSetupBoundary::BackendCreated,
             ShellSetupBoundary::ProcessCreated,
             ShellSetupBoundary::AnalyzerCreated,
-            ShellSetupBoundary::ReportCreated,
+            ShellSetupBoundary::DeliveryReady,
         ] {
             let project = tempfile::tempdir().unwrap();
             let managed_parent = tempfile::tempdir().unwrap();
@@ -8524,8 +8491,6 @@ mod tests {
             project.path().as_os_str().to_owned(),
             OsString::from("--file"),
             OsString::from("target.py"),
-            OsString::from("--format"),
-            OsString::from("json"),
             OsString::from("--allow-best-effort-memory"),
             OsString::from("--"),
         ];
@@ -8557,7 +8522,7 @@ mod tests {
                 .load(Ordering::Acquire),
             "the cancellation hook did not observe RunFinished"
         );
-        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(report["summary"]["complete"], true);
         assert!(
             !String::from_utf8(stderr.snapshot())

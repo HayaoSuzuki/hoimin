@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use collecting_writer::CollectingWriter;
 
 use std::env;
@@ -56,7 +58,7 @@ async fn plan(root: &Path, operator: &str) -> serde_json::Value {
         "stderr={}",
         String::from_utf8_lossy(&stderr.snapshot())
     );
-    serde_json::from_slice(&stdout.snapshot()).expect("plan writes one JSON document")
+    jsonl_report::from_slice(&stdout.snapshot()).expect("plan writes one JSON document")
 }
 
 fn run_python(root: &Path, harness: &str) -> Output {
@@ -205,7 +207,7 @@ async fn import_only_run_does_not_count_duplicate_key_kills() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
         assert_eq!(report["summary"]["counts"]["killed"], 0, "{report}");
         assert_eq!(report["baseline"]["termination"]["Exit"], 0);
         assert_eq!(report["summary"]["complete"], true);

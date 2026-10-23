@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use collecting_writer::CollectingWriter;
 
 use std::ffi::OsString;
@@ -16,7 +18,7 @@ fn python() -> PathBuf {
     })
 }
 
-fn command(root: &Path, mode: &str, format: &[&str], check: &str) -> Vec<OsString> {
+fn command(root: &Path, mode: &str, check: &str) -> Vec<OsString> {
     let mut args = vec![
         "hoimin".into(),
         mode.into(),
@@ -30,7 +32,6 @@ fn command(root: &Path, mode: &str, format: &[&str], check: &str) -> Vec<OsStrin
         "--min-free-space".into(),
         "1B".into(),
     ];
-    args.extend(format.iter().map(OsString::from));
     args.extend([
         "--".into(),
         python().into_os_string(),
@@ -114,7 +115,7 @@ async fn public_plan_observes_evaluation_order_and_preserves_source_spans() {
         let stdout = CollectingWriter::default();
         let stderr = CollectingWriter::default();
         let code = hoimin_cli::run_with_writers(
-            command(directory.path(), "plan", &[], "pass"),
+            command(directory.path(), "plan", "pass"),
             stdout.clone(),
             stderr.clone(),
         )
@@ -125,7 +126,7 @@ async fn public_plan_observes_evaluation_order_and_preserves_source_spans() {
             "{body}: {}",
             String::from_utf8_lossy(&stderr.snapshot())
         );
-        let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let manifest: PlanManifest = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(manifest.candidates.len(), expected, "{body}");
         for candidate in &manifest.candidates {
             let start = usize::try_from(candidate.span.start).unwrap();
@@ -148,7 +149,6 @@ async fn public_run_does_not_count_a_custom_callable_as_a_killed_mutant() {
         command(
             directory.path(),
             "run",
-            &["--format", "json"],
             "import subject; assert subject.observed == ['custom']",
         ),
         stdout.clone(),
@@ -156,7 +156,7 @@ async fn public_run_does_not_count_a_custom_callable_as_a_killed_mutant() {
     )
     .await;
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
-    let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
     assert_eq!(report["summary"]["complete"], true);
     assert_eq!(report["summary"]["counts"]["killed"], 0);
     assert!(

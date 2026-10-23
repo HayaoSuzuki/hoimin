@@ -1,3 +1,5 @@
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 #[path = "support/mutation_outcome.rs"]
 mod mutation_outcome;
 use std::fs;
@@ -89,9 +91,6 @@ impl Project {
                 "1B",
                 "--allow-best-effort-memory",
             ]);
-        if mode == "run" {
-            command.args(["--format", "json"]);
-        }
         if pythonpath {
             command.env("PYTHONPATH", self.root.join("src"));
         }
@@ -107,14 +106,14 @@ impl Project {
         Self::command()
             .arg("verify")
             .arg(path)
-            .args(["--top", "1", "--format", "json"])
+            .args(["--top", "1"])
             .output()
             .unwrap()
     }
 
     fn assert_killed(&self, output: &Output) -> Value {
         assert!(output.status.success(), "{output:?}");
-        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let report: Value = jsonl_report::from_slice(&output.stdout).unwrap();
         assert_eq!(report["baseline"]["termination"], json!({"Exit": 0}));
         let mutants = report["mutants"].as_array().unwrap();
         assert_eq!(mutants.len(), 1);
@@ -197,7 +196,7 @@ fn serialized_plan_verify_inherits_import_roots_and_preserves_plan() {
     );
     assert!(output.status.success(), "{output:?}");
     assert!(!project.log.exists());
-    let plan: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let plan: Value = jsonl_report::from_slice(&output.stdout).unwrap();
     assert_eq!(plan["schema_version"], 10);
     assert_eq!(plan["ranking_rule_version"], 4);
     assert_eq!(plan["normalized_config"]["import_roots"], json!(["src"]));
@@ -249,7 +248,7 @@ fn old_or_forged_plans_fail_before_baseline() {
         false,
     );
     assert!(output.status.success(), "{output:?}");
-    let plan: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let plan: Value = jsonl_report::from_slice(&output.stdout).unwrap();
     let path = project.temp.path().join("invalid-plan.json");
     let mut old = plan.clone();
     old["schema_version"] = json!(3);
@@ -289,7 +288,7 @@ fn empty_selected_import_root_survives_children_only_exclusion() {
         &["--import-root", "imports", "--exclude", "imports/**"],
         false,
     );
-    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let report: Value = jsonl_report::from_slice(&output.stdout).unwrap();
     assert_eq!(report["baseline"]["termination"]["Exit"], 0, "{output:?}");
     assert!(project.log.exists());
 }

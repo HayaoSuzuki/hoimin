@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use collecting_writer::CollectingWriter;
 
 use std::ffi::OsString;
@@ -57,7 +59,7 @@ async fn cli(args: Vec<OsString>) -> (i32, serde_json::Value) {
     );
     (
         code,
-        serde_json::from_slice(&stdout.snapshot()).expect("one JSON document"),
+        jsonl_report::from_slice(&stdout.snapshot()).expect("one JSON document"),
     )
 }
 
@@ -228,8 +230,6 @@ async fn optional_keywords_saved_plan_observes_explicit_option() {
             manifest.into_os_string(),
             "--top".into(),
             "1".into(),
-            "--format".into(),
-            "json".into(),
         ])
         .await;
         assert_eq!(report["baseline"]["termination"]["Exit"], 0);

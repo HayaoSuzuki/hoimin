@@ -3,6 +3,8 @@
 
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use collecting_writer::CollectingWriter;
 
 use std::collections::BTreeSet;
@@ -118,9 +120,7 @@ fn command(root: &Path, case: &Case, mode: &str) -> Vec<OsString> {
     ];
     let line = target_line(case);
     args.extend(["--line".into(), format!("subject.py:{line}-{line}").into()]);
-    if mode == "run" {
-        args.extend(["--format".into(), "json".into()]);
-    }
+
     let identities = serde_json::to_string(&case.runtime_identity).unwrap();
     let check = if mode == "run" {
         format!(
@@ -180,7 +180,7 @@ async fn prepared_annotation_import_public_plan_and_cpython_match_lean() {
             case.id,
             String::from_utf8_lossy(&observed.stderr)
         );
-        let identities: [bool; 2] = serde_json::from_slice(&observed.stdout)
+        let identities: [bool; 2] = jsonl_report::from_slice(&observed.stdout)
             .expect("infrastructure error: invalid CPython observation");
         assert_eq!(
             identities, case.runtime_identity,
@@ -208,7 +208,7 @@ async fn prepared_annotation_import_public_plan_and_cpython_match_lean() {
             String::from_utf8_lossy(&stderr.snapshot())
         );
         let plan: PlanManifest =
-            serde_json::from_slice(&stdout.snapshot()).expect("infrastructure error: plan JSON");
+            jsonl_report::from_slice(&stdout.snapshot()).expect("infrastructure error: plan JSON");
         assert_eq!(
             plan.candidates.len(),
             case.candidate_count,
@@ -300,7 +300,7 @@ async fn prepared_annotation_import_public_run_does_not_count_custom_pairs() {
             case.id,
             String::from_utf8_lossy(&stderr.snapshot())
         );
-        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(report["summary"]["complete"], true, "{}", case.id);
         assert_eq!(report["summary"]["counts"]["killed"], 0, "{}", case.id);
         assert!(

@@ -1,3 +1,5 @@
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 #[path = "support/mutation_outcome.rs"]
 mod mutation_outcome;
 use std::collections::{BTreeMap, BTreeSet};
@@ -527,8 +529,6 @@ fn build_cli_command(
         OsString::from(if two_mutants { "2" } else { "1" }),
         OsString::from("--min-free-space"),
         OsString::from(TEST_MIN_FREE_SPACE),
-        OsString::from("--format"),
-        OsString::from("json"),
         OsString::from("--allow-best-effort-memory"),
         OsString::from("--metrics"),
         metrics_path.as_os_str().to_owned(),
@@ -590,7 +590,7 @@ fn fixture_run_from_output(output: Output) -> Result<FixtureRun, String> {
         .map_err(|error| format!("stdout is not UTF-8: {error}"))?;
     let stderr = String::from_utf8(output.stderr)
         .map_err(|error| format!("stderr is not UTF-8: {error}"))?;
-    let document = serde_json::from_str(stdout.trim()).map_err(|error| {
+    let document = jsonl_report::from_slice(stdout.as_bytes()).map_err(|error| {
         format!(
             "invalid report JSON ({error}); exit={exit_code}; stdout={stdout:?}; stderr={stderr:?}"
         )

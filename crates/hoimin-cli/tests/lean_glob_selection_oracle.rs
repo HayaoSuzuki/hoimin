@@ -4,6 +4,8 @@
 
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use collecting_writer::CollectingWriter;
 
 use std::collections::BTreeSet;
@@ -145,7 +147,7 @@ async fn glob_discovery_core_and_public_plan_match_lean() {
             "{case:?}: {}",
             String::from_utf8_lossy(&stderr.snapshot())
         );
-        let plan: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+        let plan: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(plan["truncated"], false);
         assert_eq!(plan["diagnostics"], serde_json::json!([]));
         let candidates = plan["candidates"].as_array().unwrap();
@@ -192,7 +194,7 @@ async fn bracket_filename_public_run_keeps_the_mutation() {
     )
     .await;
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
-    let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
     assert_eq!(report["baseline"]["termination"]["Exit"], 0);
     assert_eq!(report["summary"]["counts"]["killed"], 1);
     assert_eq!(report["summary"]["complete"], true);

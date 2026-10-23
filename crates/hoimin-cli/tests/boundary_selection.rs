@@ -1,3 +1,5 @@
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 #[path = "support/mutation_outcome.rs"]
 mod mutation_outcome;
 use serde_json::{Value, json};
@@ -98,7 +100,7 @@ async fn literal_selector_fixture_respects_run_overflow_and_partial_verify() {
             "{}",
             String::from_utf8_lossy(&run_output.stderr)
         );
-        let run: Value = serde_json::from_slice(&run_output.stdout).unwrap();
+        let run: Value = jsonl_report::from_slice(&run_output.stdout).unwrap();
         let run_mutants = run["mutants"].as_array().unwrap();
         assert_eq!(
             run_mutants.len(),
@@ -142,7 +144,7 @@ async fn literal_selector_fixture_respects_run_overflow_and_partial_verify() {
             "{}",
             String::from_utf8_lossy(&verify_output.stderr)
         );
-        let verify: Value = serde_json::from_slice(&verify_output.stdout).unwrap();
+        let verify: Value = jsonl_report::from_slice(&verify_output.stdout).unwrap();
         assert_eq!(
             verify["mutants"]
                 .as_array()

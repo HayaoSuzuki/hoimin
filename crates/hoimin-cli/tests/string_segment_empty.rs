@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use collecting_writer::CollectingWriter;
 
 #[path = "support/encoded_source.rs"]
@@ -31,7 +33,7 @@ async fn cli(arguments: Vec<OsString>) -> serde_json::Value {
         "exit={code}: {}",
         String::from_utf8_lossy(&stderr.snapshot())
     );
-    serde_json::from_slice(&stdout.snapshot()).unwrap()
+    jsonl_report::from_slice(&stdout.snapshot()).unwrap()
 }
 
 async fn plan(root: &std::path::Path, selection: &[&str], test: &str) -> serde_json::Value {
@@ -386,8 +388,6 @@ async fn segment_saved_plans_distinguish_strong_and_weak_assertions() {
                 path.into_os_string(),
                 "--top".into(),
                 "1".into(),
-                "--format".into(),
-                "json".into(),
             ])
             .await;
             assert_eq!(report["baseline"]["termination"]["Exit"], 0);

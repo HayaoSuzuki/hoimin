@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/jsonl_report.rs"]
+mod jsonl_report;
 use collecting_writer::CollectingWriter;
 
 use std::ffi::OsString;
@@ -11,7 +13,7 @@ async fn cli(args: Vec<OsString>) -> (i32, serde_json::Value, String) {
     let code = hoimin_cli::run_with_writers(args, out.clone(), err.clone()).await;
     (
         code,
-        serde_json::from_slice(&out.snapshot()).unwrap_or(serde_json::Value::Null),
+        jsonl_report::from_slice(&out.snapshot()).unwrap_or(serde_json::Value::Null),
         String::from_utf8(err.snapshot()).unwrap(),
     )
 }
@@ -175,7 +177,7 @@ async fn line_diverse_execution_matches_preview_order_and_preserves_report_scope
     let _: hoimin_core::VerificationSelection =
         serde_json::from_value(report["run"]["verification_selection"].clone()).unwrap();
     let report_path = path.with_file_name("report.json");
-    std::fs::write(&report_path, serde_json::to_vec(&report).unwrap()).unwrap();
+    std::fs::write(&report_path, jsonl_report::to_vec(&report)).unwrap();
     let (code, progress, err) = cli(vec![
         "hoimin".into(),
         "progress".into(),
