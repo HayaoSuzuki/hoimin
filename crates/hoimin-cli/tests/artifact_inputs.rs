@@ -131,7 +131,7 @@ rejected_input!(
     progress_rejects_directory,
     progress,
     directory,
-    "could not read progress report"
+    "could not read report"
 );
 rejected_input!(
     verify_rejects_missing,
@@ -143,7 +143,7 @@ rejected_input!(
     progress_rejects_missing,
     progress,
     missing,
-    "could not read progress report"
+    "could not read report"
 );
 #[cfg(unix)]
 rejected_input!(

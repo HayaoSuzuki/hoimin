@@ -1,3 +1,5 @@
+#[path = "support/exception_hierarchy_config.rs"]
+mod configuration;
 #[path = "../../hoimin-python/tests/support/exception_hierarchy_oracle.rs"]
 mod corpus;
 use corpus::Observation;
@@ -16,7 +18,7 @@ async fn lean_exception_hierarchy_public_plan_correspondence() {
         let dir = tempfile::tempdir().unwrap();
         corpus::write_sources(&case, dir.path());
         let plan = hoimin_cli::plan::create(
-            corpus::config(&case, dir.path(), parse_config),
+            configuration::config(&case, dir.path(), parse_config),
             hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
         )
         .await
@@ -64,7 +66,7 @@ async fn lean_exception_hierarchy_public_plan_resource_errors() {
         corpus::write_sources(&case, dir.path());
 
         let result = hoimin_cli::plan::create(
-            corpus::config(&case, dir.path(), parse_config),
+            configuration::config(&case, dir.path(), parse_config),
             hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
         )
         .await;

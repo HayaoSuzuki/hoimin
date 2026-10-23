@@ -11,7 +11,23 @@ use compare::ProgressAccumulator;
 pub use compare::{Comparison, ProgressResult, ProgressState, compare_reports};
 use duplicate::DuplicateInputs;
 use input::{InputDisposition, read_report_with_fingerprint};
-pub use input::{InputReport, ProgressError, UnusableReason, UsableReport, read_report};
+pub use input::{InputReport, ReportReadError, UnusableReason, UsableReport, read_report};
+
+#[derive(Debug, thiserror::Error)]
+pub enum ProgressError {
+    #[error(transparent)]
+    Input(#[from] ReportReadError),
+    #[error("could not serialize progress output: {source}")]
+    Serialize {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("could not write progress output: {source}")]
+    Write {
+        #[source]
+        source: std::io::Error,
+    },
+}
 
 /// Reads, compares, and renders ordered mutation run reports.
 ///

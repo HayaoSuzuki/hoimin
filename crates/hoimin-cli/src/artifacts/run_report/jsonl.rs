@@ -4,7 +4,7 @@ use std::path::Path;
 use hoimin_core::{OutputEvent, ReportSequence, RunStarted};
 
 use super::{
-    ProgressConfig, ProgressError, ReportRunEvent, RunReportDocument, check_schema,
+    ReportConfigProjection, ReportReadError, ReportRunEvent, RunReportDocument, check_schema,
     invalid_structure,
 };
 
@@ -37,9 +37,9 @@ impl<R: BufRead> Read for LineReader<'_, R> {
 fn read_event<T: serde::de::DeserializeOwned>(
     path: &Path,
     reader: &mut impl BufRead,
-) -> Result<Option<T>, ProgressError> {
+) -> Result<Option<T>, ReportReadError> {
     loop {
-        let available = reader.fill_buf().map_err(|source| ProgressError::Read {
+        let available = reader.fill_buf().map_err(|source| ReportReadError::Read {
             path: path.to_path_buf(),
             source,
         })?;
@@ -60,7 +60,7 @@ fn read_event<T: serde::de::DeserializeOwned>(
         ended: false,
     })
     .map(Some)
-    .map_err(|source| ProgressError::Parse {
+    .map_err(|source| ReportReadError::Parse {
         path: path.to_path_buf(),
         source,
     })
@@ -69,8 +69,8 @@ fn read_event<T: serde::de::DeserializeOwned>(
 pub(super) fn read_document(
     path: &Path,
     mut reader: impl BufRead,
-) -> Result<RunReportDocument<ProgressConfig>, ProgressError> {
-    let run: ReportRunEvent<ProgressConfig> = read_event(path, &mut reader)?
+) -> Result<RunReportDocument<ReportConfigProjection>, ReportReadError> {
+    let run: ReportRunEvent<ReportConfigProjection> = read_event(path, &mut reader)?
         .ok_or_else(|| invalid_structure(path, "JSONL report requires run_started"))?;
     check_schema(path, run.schema_version())?;
     let started = run.value();
@@ -84,7 +84,7 @@ pub(super) fn read_document(
     let mut sequence = ReportSequence::new();
     sequence
         .observe(&OutputEvent::RunStarted(header))
-        .map_err(|source| ProgressError::InvalidResult {
+        .map_err(|source| ReportReadError::InvalidResult {
             path: path.to_path_buf(),
             source,
         })?;
@@ -97,7 +97,7 @@ pub(super) fn read_document(
         sequence
             .validate(&event)
             .and_then(|()| sequence.observe(&event))
-            .map_err(|source| ProgressError::InvalidResult {
+            .map_err(|source| ReportReadError::InvalidResult {
                 path: path.to_path_buf(),
                 source,
             })?;

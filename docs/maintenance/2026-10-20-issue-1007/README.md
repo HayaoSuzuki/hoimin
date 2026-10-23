@@ -37,3 +37,10 @@ Timing is fixed-workload evidence only. Clone timing windows after sharing can f
 For example, the1000-empty-file/16-worker median increased1711.187→1735.130ms while4000-empty-file/16-worker decreased6973.261→6688.566ms. No general materialization speedup is claimed. The4000-file/64-byte/16-worker case retained the same4,096,000-byte worker charge on both revisions, then released it after sequential worker destruction; logical snapshot-plus-worker payload was4,352,000 bytes.
 
 Reproduce with the exact bounded environment and commands in `verification.json`; `build_probe.py` links this same `probe.rs` to each immutable/current rlib directory, and `measure.py` runs the fixed grid. Full lifecycle/TDD/check receipts are recorded in the sibling ignored SDD Task2 report and `/tmp/hoimin-perf-three-task2`. Local macOS verification does not establish native Windows lock/cleanup cases; those remain for final CI.
+
+## Maintained test support
+
+The probe in this directory is the historical measurement source referenced by
+`verification.json` and `build_probe.py`. Ongoing allocation regression tests use
+[the maintained test helper](../../../crates/hoimin-cli/tests/support/workspace_metadata_probe.rs).
+Changes to current test support do not rewrite this archived probe or its receipts.

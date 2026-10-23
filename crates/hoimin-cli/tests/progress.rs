@@ -20,7 +20,7 @@ use std::{
 
 use camino::Utf8PathBuf;
 use hoimin_cli::progress::{
-    Comparison, InputReport, ProgressError, ProgressState, UnusableReason, UsableReport,
+    Comparison, InputReport, ProgressState, ReportReadError, UnusableReason, UsableReport,
     compare_reports, read_report,
 };
 use hoimin_core::{
@@ -44,7 +44,7 @@ fn input_rejects_historical_report_goldens() {
                     .join(format!("schema-v{version}-{era}.{extension}"));
                 let result = read_report(&path);
                 assert!(
-                    matches!(result, Err(ProgressError::UnsupportedSchema { found, .. }) if found == version),
+                    matches!(result, Err(ReportReadError::UnsupportedSchema { found, .. }) if found == version),
                     "historical input must be rejected: {path:?}: {result:?}"
                 );
             }
@@ -66,7 +66,7 @@ fn input_rejects_every_noncurrent_schema_in_json_and_jsonl() {
         }
         let path = write_json(&fixture, "old.json", &document);
         assert!(
-            matches!(read_report(&path), Err(ProgressError::UnsupportedSchema { found, .. }) if found == version),
+            matches!(read_report(&path), Err(ReportReadError::UnsupportedSchema { found, .. }) if found == version),
             "JSON schema {version}"
         );
         let mut events = jsonl_events(&document);
@@ -84,7 +84,7 @@ fn input_rejects_every_noncurrent_schema_in_json_and_jsonl() {
         )
         .unwrap();
         assert!(
-            matches!(read_report(&path), Err(ProgressError::UnsupportedSchema { found, .. }) if found == version),
+            matches!(read_report(&path), Err(ReportReadError::UnsupportedSchema { found, .. }) if found == version),
             "JSONL schema {version}"
         );
     }
@@ -219,7 +219,7 @@ fn current_report_requires_disk_summary() {
     std::fs::write(&path, serde_json::to_vec(&report).unwrap()).unwrap();
 
     let error = read_report(&path).unwrap_err();
-    assert!(matches!(error, ProgressError::Parse { .. }));
+    assert!(matches!(error, ReportReadError::Parse { .. }));
 }
 
 #[tokio::test]
@@ -612,7 +612,7 @@ fn input_rejects_repeated_stable_mutant_identities() {
         let report = write_json(&fixture, &format!("{name}.json"), &document);
         assert!(matches!(
             read_report(&report),
-            Err(ProgressError::InvalidStructure {
+            Err(ReportReadError::InvalidStructure {
                 message,
                 ..
             }) if message == expected_message
@@ -657,7 +657,7 @@ fn input_rejects_every_summary_mutant_consistency_mismatch() {
         let error = read_report(&report).unwrap_err();
         assert!(matches!(
             error,
-            ProgressError::InvalidStructure {
+            ReportReadError::InvalidStructure {
                 message: "summary counts must match mutant events",
                 ..
             }
@@ -716,7 +716,7 @@ fn input_rejects_a_non_null_score_without_decidable_mutants() {
 
     assert!(matches!(
         read_report(&report),
-        Err(ProgressError::InvalidStructure {
+        Err(ReportReadError::InvalidStructure {
             message: "summary counts must match mutant events",
             ..
         })
@@ -819,7 +819,7 @@ fn input_rejects_events_from_a_different_run() {
     let report = write_json(&fixture, "different-run.json", &document);
 
     let error = read_report(&report).unwrap_err();
-    assert!(matches!(error, ProgressError::InvalidStructure { .. }));
+    assert!(matches!(error, ReportReadError::InvalidStructure { .. }));
 }
 
 #[test]
@@ -830,7 +830,7 @@ fn input_rejects_nonmonotonic_event_sequences() {
     let report = write_json(&fixture, "nonmonotonic-sequence.json", &document);
 
     let error = read_report(&report).unwrap_err();
-    assert!(matches!(error, ProgressError::InvalidStructure { .. }));
+    assert!(matches!(error, ReportReadError::InvalidStructure { .. }));
 }
 
 #[test]
@@ -1717,7 +1717,7 @@ async fn output_malformed_json_returns_exit_two() {
     assert!(
         String::from_utf8(stderr)
             .unwrap()
-            .contains("could not parse progress report")
+            .contains("could not parse report")
     );
 }
 
@@ -1739,7 +1739,7 @@ async fn output_late_malformed_report_emits_no_earlier_warnings_or_output() {
     assert_eq!(stdout, Vec::<u8>::new());
     let diagnostic = String::from_utf8(stderr).unwrap();
     assert!(
-        diagnostic.contains("could not parse progress report"),
+        diagnostic.contains("could not parse report"),
         "{diagnostic}"
     );
     assert!(!diagnostic.contains("warning:"), "{diagnostic}");
@@ -1758,7 +1758,7 @@ async fn output_unreadable_path_returns_exit_two() {
     assert!(
         String::from_utf8(stderr)
             .unwrap()
-            .contains("could not read progress report")
+            .contains("could not read report")
     );
 }
 
@@ -1796,7 +1796,7 @@ async fn output_invalid_structure_returns_exit_two() {
     assert!(
         String::from_utf8(stderr)
             .unwrap()
-            .contains("invalid structure in progress report")
+            .contains("invalid structure in report")
     );
 }
 
@@ -1818,7 +1818,7 @@ async fn output_repeated_stable_identity_returns_exit_two() {
     assert_eq!(code, 2);
     assert_eq!(stdout, Vec::<u8>::new());
     let diagnostic = String::from_utf8(stderr).unwrap();
-    assert!(diagnostic.contains("invalid structure in progress report"));
+    assert!(diagnostic.contains("invalid structure in report"));
     assert!(diagnostic.contains("mutant stable IDs must map to one candidate sequence"));
 }
 
@@ -1835,7 +1835,7 @@ async fn output_inconsistent_summary_returns_exit_two() {
     assert_eq!(code, 2);
     assert_eq!(stdout, Vec::<u8>::new());
     let diagnostic = String::from_utf8(stderr).unwrap();
-    assert!(diagnostic.contains("invalid structure in progress report"));
+    assert!(diagnostic.contains("invalid structure in report"));
     assert!(diagnostic.contains("summary counts must match mutant events"));
 }
 
@@ -3193,7 +3193,7 @@ macro_rules! missing_execution_field_test {
             // Act
             let result = read_report(&path);
             // Assert
-            assert!(matches!(result, Err(ProgressError::Parse { .. })));
+            assert!(matches!(result, Err(ReportReadError::Parse { .. })));
         }
     };
 }
@@ -3619,7 +3619,7 @@ fn jsonl_rejects_corrupt_lifecycles_and_results() {
     std::fs::write(&path, text).unwrap();
     assert!(matches!(
         read_report(&path),
-        Err(ProgressError::Parse { .. })
+        Err(ReportReadError::Parse { .. })
     ));
 }
 
@@ -3789,7 +3789,7 @@ fn jsonl_checks_discarded_diagnostics_and_rejects_legacy_streams() {
     let path = write_jsonl(&fixture, &events);
     assert!(matches!(
         read_report(&path),
-        Err(ProgressError::UnsupportedSchema { found: 2, .. })
+        Err(ReportReadError::UnsupportedSchema { found: 2, .. })
     ));
     for (defect, field, replacement, accepted) in [
         ("none", "schema_version", json!(REPORT_SCHEMA_VERSION), true),
@@ -4560,7 +4560,7 @@ async fn regression_exit_does_not_hide_trailing_invalid_input() {
     assert_eq!(status, 2);
     assert_eq!(out, Vec::<u8>::new());
     let err = String::from_utf8(err).unwrap();
-    assert!(err.contains("could not parse progress report"), "{err}");
+    assert!(err.contains("could not parse report"), "{err}");
     assert!(
         !err.contains("same path"),
         "warnings must wait for validation: {err}"

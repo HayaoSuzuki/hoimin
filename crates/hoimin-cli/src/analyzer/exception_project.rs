@@ -78,7 +78,7 @@ impl ExceptionProject {
         if let Some(index) = self.index.lock().map_err(|e| e.to_string())?.as_ref() {
             return Ok(Arc::clone(index));
         }
-        let reader = crate::workspace::PortableFileReader::open(self.selection.root.clone())
+        let reader = crate::source_file::PortableFileReader::open(&self.selection.root)
             .map_err(|e| e.to_string())?;
         let paths = self.files(cancelled)?;
         // Reserved origins need paths, never all source bodies. Keep construction

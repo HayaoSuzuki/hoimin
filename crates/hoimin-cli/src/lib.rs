@@ -23,6 +23,7 @@ pub mod resource;
 pub mod review;
 pub mod session;
 pub mod shell;
+mod source_file;
 pub mod target;
 pub mod workspace;
 

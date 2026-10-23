@@ -75,8 +75,8 @@ use hoimin_core::{
 };
 
 use crate::process::ProcessCancellation;
+use crate::source_file::PortableFileReader;
 use crate::workspace::ManagedChild;
-use crate::workspace::PortableFileReader;
 #[cfg(test)]
 use tempfile::TempDir;
 
@@ -432,7 +432,7 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
         mut control,
     } = work;
     ensure_discovery_active(&cancellation)?;
-    let root = PortableFileReader::open(root.clone()).map_err(|error| {
+    let root = PortableFileReader::open(&root).map_err(|error| {
         EffectFailed::other(EffectId(0), "analyzer.source.read", error.to_string())
     })?;
     let exceptions = exception_project
@@ -671,11 +671,11 @@ impl AnalyzerHandler {
     fn read_source(
         &mut self,
         path: &Utf8Path,
-    ) -> Result<Vec<u8>, crate::workspace::PortableFileReadError> {
+    ) -> Result<Vec<u8>, crate::source_file::PortableFileReadError> {
         if self.root.is_none() {
             self.root = Some(
-                PortableFileReader::open(self.root_path.clone())
-                    .map_err(crate::workspace::PortableFileReadError::Other)?,
+                PortableFileReader::open(&self.root_path)
+                    .map_err(crate::source_file::PortableFileReadError::Other)?,
             );
         }
         self.root

@@ -1,3 +1,5 @@
+#[path = "../../tests/support/exception_hierarchy_config.rs"]
+mod configuration;
 #[path = "../../../hoimin-python/tests/support/exception_hierarchy_oracle.rs"]
 #[allow(dead_code)]
 mod corpus;
@@ -57,9 +59,12 @@ fn lean_exception_hierarchy_snapshot_correspondence() {
     for case in cases {
         let dir = tempfile::tempdir().unwrap();
         corpus::write_sources(&case, dir.path());
-        let config =
-            crate::shell::prepare_run_config(corpus::config(&case, dir.path(), parse_config))
-                .unwrap();
+        let config = crate::shell::prepare_run_config(configuration::config(
+            &case,
+            dir.path(),
+            parse_config,
+        ))
+        .unwrap();
         let project = ExceptionProject::from_config(&config).unwrap();
         let original = &case.files.iter().find(|(p, _)| p == "errors.py").unwrap().1;
         let service = &case

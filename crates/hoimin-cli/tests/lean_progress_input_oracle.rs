@@ -169,8 +169,8 @@ async fn observe_cli_encoding(
     let stderr = String::from_utf8_lossy(&output.stderr);
     match output.status.code() {
         Some(2)
-            if stderr.contains("invalid structure in progress report")
-                || stderr.contains("could not parse progress report") =>
+            if stderr.contains("invalid structure in report")
+                || stderr.contains("could not parse report") =>
         {
             if !output.stdout.is_empty() || !stderr.contains(path.to_str().unwrap()) {
                 return Err(format!(

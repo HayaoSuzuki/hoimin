@@ -18,7 +18,7 @@ pub use runner::GitRunner;
 
 use paths::GitPathScope;
 
-use crate::workspace::{PortableFileReadError, PortableFileReader, WorkspaceError};
+use crate::source_file::{PortableFileReadError, PortableFileReader, SourceFileError};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolveGitChanges {
@@ -500,7 +500,7 @@ async fn collect_current_worktree_paths(
     );
     let root = root.to_owned();
     let current = tokio::task::spawn_blocking(move || {
-        let reader = PortableFileReader::open(root)
+        let reader = PortableFileReader::open(&root)
             .map_err(|error| TargetError::GitFailed(error.to_string()))?;
         let mut current = BTreeMap::<Utf8PathBuf, Vec<LineRange>>::new();
         for path in paths {
@@ -534,7 +534,7 @@ fn read_current_source(
         Ok(contents) => Ok(Some(contents)),
         Err(
             PortableFileReadError::NotFound
-            | PortableFileReadError::Other(WorkspaceError::InvalidPath { .. }),
+            | PortableFileReadError::Other(SourceFileError::InvalidPath { .. }),
         ) => Ok(None),
         Err(error) => Err(TargetError::GitFailed(error.to_string())),
     }
@@ -564,7 +564,7 @@ impl GitChangedRanges {
         }
         let root = root.to_owned();
         tokio::task::spawn_blocking(move || {
-            let reader = PortableFileReader::open(root)
+            let reader = PortableFileReader::open(&root)
                 .map_err(|error| TargetError::GitFailed(error.to_string()))?;
             let mut physical = BTreeMap::new();
             for (path, ranges) in changed {

@@ -36,10 +36,13 @@ sources:
   working_tree: modified
   sha256: ffe19e39affe2ebe4ca68a6cadfe53c8a81503ead04312cb8e2784234c1d20c7
 - id: issues-1050-reader
-  resource: ../../../crates/hoimin-cli/src/workspace/reader.rs
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/f55f42c66b21861ae5302c057b4b600ec5d765c1/crates/hoimin-cli/src/workspace/reader.rs
+  original_resource: ../../../crates/hoimin-cli/src/workspace/reader.rs
   revision: 5265aa2cc9f36b6b98ded50c6823039d8999b665
   working_tree: modified
   sha256: 9b4abde6b56fe707e756b44f50fc41a1efdf63a5500cf5eabbfb7ad50530b830
+  recovered_revision: f55f42c66b21861ae5302c057b4b600ec5d765c1
+  recovered_blob: 7406aba5f9615333cd2986af329b5876b22f8bd2
 - id: issues-1050-boundary-tests
   resource: ../../../crates/hoimin-cli/src/review/input_boundary_tests.rs
   revision: 5265aa2cc9f36b6b98ded50c6823039d8999b665
@@ -129,10 +132,51 @@ sources:
   resource: ../../maintenance/2026-10-18-issues-971-979/task-3-report.md
   working_tree: untracked
   sha256: 307a571dbcb32919333ea375f082598bfe16708d19465b47b0daafeaed294748
-
+- id: current-review-input
+  resource: ../../../crates/hoimin-cli/src/review/input.rs
+  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
+  working_tree: clean
+  sha256: 8a46ba185af8e294190b266cf6b6dcbab4675053fc651d73ea4b31b04aa52355
+- id: current-review-errors
+  resource: ../../../crates/hoimin-cli/src/review/mod.rs
+  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
+  working_tree: clean
+  sha256: 93b556d6ccabfe4d0a4ac3fff8e2c5e6c1d677abf8b5a1190408c2407fe67a43
+- id: current-review-render
+  resource: ../../../crates/hoimin-cli/src/review/render.rs
+  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
+  working_tree: clean
+  sha256: d93cf5d2e6942a90244a3033b1a351f84d7145e8a6dcfd0e198dd9b75653e47c
+- id: current-source-reader
+  resource: ../../../crates/hoimin-cli/src/source_file/reader.rs
+  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
+  working_tree: clean
+  sha256: 9f7b840fb5d22ea95036d882e9cd1b462221471a54e3dace5e9e3f7cf8123238
+- id: current-report-decoder
+  resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
+  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
+  working_tree: clean
+  sha256: 76370098b699c6f1973fb416ee06df7514351591f5307b326a4c122e50bb99b1
 ---
 
 # survivorの評価と実行結果の分離
+
+## Current input and presentation boundary (PR #1105)
+
+Review writes its JSON document without a format selector. Shared report code
+returns structurally validated data and `ReportReadError`; review then resolves
+the project root and requires a complete run with a passing baseline. Structure
+errors therefore precede project-filesystem errors when both inputs are invalid.
+A failed root resolution identifies both the report and requested project, while
+retaining the underlying I/O error.[^current-report-decoder][^current-review-input][^current-review-errors][^current-review-render]
+
+Source observations use the shared `source_file::PortableFileReader`, with the
+review-specific byte cap applied by the review caller. Worker creation, mutation
+and cleanup state do not enter this reader's interface. Descriptor-relative
+opening and rejection of symlink/reparse components remain part of file access;
+review still decides whether a source is fresh, stale or unavailable. The earlier
+Issue #1050 reader below is historical evidence, not the current module path.
+[^current-source-reader][^current-review-input]
 
 ## 対象と契約
 
@@ -302,7 +346,7 @@ separates before/after observations and platform limits. Recheck path policy,
 corruption detection and retention when changing these readers.[^issues-1050-store-tests]
 
 [^issues-1050-input]: [Review source observations](../../../crates/hoimin-cli/src/review/input.rs).
-[^issues-1050-reader]: [Shared bounded root-relative reader](../../../crates/hoimin-cli/src/workspace/reader.rs).
+[^issues-1050-reader]: [Issue #1050 reader snapshot](https://github.com/HayaoSuzuki/hoimin/blob/f55f42c66b21861ae5302c057b4b600ec5d765c1/crates/hoimin-cli/src/workspace/reader.rs).
 [^issues-1050-boundary-tests]: [Source boundary regressions](../../../crates/hoimin-cli/src/review/input_boundary_tests.rs).
 [^issues-1050-store]: [Global validation and selected retention](../../../crates/hoimin-cli/src/review/store.rs).
 [^issues-1050-model]: [Shared revision rules and owned append](../../../crates/hoimin-cli/src/review/model.rs).
@@ -350,3 +394,9 @@ validation. It does not claim zero allocations for the entire review command.
 [^issue-1089-review]: [crates/hoimin-cli/src/review/mod.rs](../../../crates/hoimin-cli/src/review/mod.rs).
 
 [^issue-1089-input]: [crates/hoimin-cli/src/review/input.rs](../../../crates/hoimin-cli/src/review/input.rs).
+
+[^current-review-input]: [Review-owned input policy](../../../crates/hoimin-cli/src/review/input.rs).
+[^current-review-errors]: [Contextual review errors](../../../crates/hoimin-cli/src/review/mod.rs).
+[^current-review-render]: [Current review JSON](../../../crates/hoimin-cli/src/review/render.rs).
+[^current-source-reader]: [Shared portable reader](../../../crates/hoimin-cli/src/source_file/reader.rs).
+[^current-report-decoder]: [Structural report decoding](../../../crates/hoimin-cli/src/artifacts/run_report.rs).

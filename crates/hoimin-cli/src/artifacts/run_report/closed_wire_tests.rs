@@ -42,7 +42,7 @@ macro_rules! closed_case {
                 let result = read_buffered_report(Path::new("report.json"), wire.as_bytes());
                 // Assert.
                 assert!(
-                    matches!(result, Err(ProgressError::Parse { .. })),
+                    matches!(result, Err(ReportReadError::Parse { .. })),
                     "{result:?}"
                 );
             }
@@ -57,7 +57,7 @@ macro_rules! closed_case {
                 let result = read_buffered_report(Path::new("report.jsonl"), wire.as_bytes());
                 // Assert.
                 assert!(
-                    matches!(result, Err(ProgressError::Parse { .. })),
+                    matches!(result, Err(ReportReadError::Parse { .. })),
                     "{result:?}"
                 );
             }
@@ -69,9 +69,9 @@ macro_rules! closed_case {
                 value.pointer_mut($pointer).unwrap()["unexpected"] = 123.into();
                 let (wire, _) = wires(&value);
                 // Act.
-                let result = read_review_json(Path::new("report.json"), wire.as_bytes());
+                let result = read_typed_json(Path::new("report.json"), wire.as_bytes());
                 // Assert.
-                assert!(matches!(result, Err(ProgressError::Parse { .. })));
+                assert!(matches!(result, Err(ReportReadError::Parse { .. })));
             }
 
             #[test]
@@ -85,9 +85,9 @@ macro_rules! closed_case {
                 let (json, _) = wires(&value);
                 let wire = json.replacen(&original, &duplicate, 1);
                 // Act.
-                let result = read_review_json(Path::new("report.json"), wire.as_bytes());
+                let result = read_typed_json(Path::new("report.json"), wire.as_bytes());
                 // Assert.
-                assert!(matches!(result, Err(ProgressError::Parse { .. })));
+                assert!(matches!(result, Err(ReportReadError::Parse { .. })));
             }
 
             macro_rules! duplicate_case {
@@ -110,7 +110,7 @@ macro_rules! closed_case {
                         let result = read_buffered_report(Path::new("report"), wire.as_bytes());
                         // Assert.
                         assert!(
-                            matches!(result, Err(ProgressError::Parse { .. })),
+                            matches!(result, Err(ReportReadError::Parse { .. })),
                             "{result:?}"
                         );
                     }
@@ -165,7 +165,7 @@ macro_rules! stream_event_case {
                 // Act.
                 let result = read_buffered_report(Path::new("report.jsonl"), wire.as_bytes());
                 // Assert.
-                assert!(matches!(result, Ok(InputReport::Usable(_))), "{result:?}");
+                assert!(result.is_ok(), "{result:?}");
             }
 
             #[test]
@@ -226,12 +226,12 @@ fn run_kind_requires_a_string_for_progress_and_review() {
         let path = Path::new("report");
         assert!(matches!(
             read_buffered_report(path, json.as_bytes()),
-            Err(ProgressError::Parse { .. })
+            Err(ReportReadError::Parse { .. })
         ));
         assert!(read_buffered_report(path, jsonl.as_bytes()).is_err());
         assert!(matches!(
-            read_review_json(path, json.as_bytes()),
-            Err(ProgressError::Parse { .. })
+            read_typed_json(path, json.as_bytes()),
+            Err(ReportReadError::Parse { .. })
         ));
     }
 }

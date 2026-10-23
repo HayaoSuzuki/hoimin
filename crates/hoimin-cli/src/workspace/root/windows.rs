@@ -2,47 +2,37 @@ use std::ffi::{OsStr, OsString, c_void};
 use std::fs::File;
 use std::io;
 use std::mem::{size_of, zeroed};
-use std::os::windows::ffi::{OsStrExt, OsStringExt};
+use std::os::windows::ffi::OsStringExt;
 use std::os::windows::fs::MetadataExt;
-use std::os::windows::io::{AsRawHandle, FromRawHandle};
+use std::os::windows::io::AsRawHandle;
 use std::ptr;
 
 use camino::Utf8Path;
-use windows_sys::Wdk::Foundation::OBJECT_ATTRIBUTES;
 use windows_sys::Wdk::Storage::FileSystem::{
     FILE_DIRECTORY_FILE, FILE_NON_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_IF, FILE_OPEN_REPARSE_POINT,
-    FILE_RENAME_INFORMATION, FILE_SYNCHRONOUS_IO_NONALERT, FileRenameInformation, NtCreateFile,
+    FILE_RENAME_INFORMATION, FILE_SYNCHRONOUS_IO_NONALERT, FileRenameInformation,
     NtSetInformationFile,
 };
-use windows_sys::Win32::Foundation::{
-    ERROR_NO_MORE_FILES, HANDLE, OBJ_CASE_INSENSITIVE, RtlNtStatusToDosError, UNICODE_STRING,
-};
+use windows_sys::Win32::Foundation::{ERROR_NO_MORE_FILES, HANDLE};
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, DELETE, FILE_ATTRIBUTE_REPARSE_POINT, FILE_DISPOSITION_FLAG_DELETE,
     FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE, FILE_DISPOSITION_FLAG_POSIX_SEMANTICS,
     FILE_DISPOSITION_INFO, FILE_DISPOSITION_INFO_EX, FILE_ID_BOTH_DIR_INFO, FILE_LIST_DIRECTORY,
-    FILE_READ_ATTRIBUTES, FILE_READ_DATA, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
-    FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA, FileDispositionInfo, FileDispositionInfoEx,
-    FileIdBothDirectoryInfo, FileIdBothDirectoryRestartInfo, GetFileInformationByHandle,
-    GetFileInformationByHandleEx, GetVolumeInformationByHandleW, READ_CONTROL, SYNCHRONIZE,
-    SetFileInformationByHandle,
+    FILE_READ_ATTRIBUTES, FILE_READ_DATA, FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA,
+    FileDispositionInfo, FileDispositionInfoEx, FileIdBothDirectoryInfo,
+    FileIdBothDirectoryRestartInfo, GetFileInformationByHandle, GetFileInformationByHandleEx,
+    GetVolumeInformationByHandleW, READ_CONTROL, SYNCHRONIZE, SetFileInformationByHandle,
 };
 use windows_sys::Win32::System::IO::IO_STATUS_BLOCK;
 
 use crate::file_links::file_link_count;
+pub(crate) use crate::source_file::windows::NativeSharePolicy;
+use crate::source_file::windows::{encode_final_name, io_error_from_ntstatus};
 
 use super::{
     WindowsCreateDisposition, WindowsFinalOperation, WorkspaceError, make_file_writable,
     windows_final_name_units_are_valid,
 };
-
-pub(super) fn open_read(
-    parent: &File,
-    name: &OsString,
-    logical_path: &Utf8Path,
-) -> Result<File, WorkspaceError> {
-    open_final(parent, name, logical_path, WindowsFinalOperation::Read)
-}
 
 pub(super) fn open_mutation_file(
     parent: &File,
@@ -193,21 +183,6 @@ pub(crate) fn remove_open_entry_io_with_guard(
     }
     before_next_operation()?;
     mark_delete_by_handle(file)
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum NativeSharePolicy {
-    Shared,
-    Pinned,
-}
-
-impl NativeSharePolicy {
-    pub(crate) const fn access(self) -> u32 {
-        match self {
-            Self::Shared => FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-            Self::Pinned => FILE_SHARE_READ | FILE_SHARE_WRITE,
-        }
-    }
 }
 
 pub(crate) fn open_directory_shared(
@@ -474,55 +449,14 @@ fn open_relative(
     create_options: u32,
     share_policy: NativeSharePolicy,
 ) -> io::Result<File> {
-    if !windows_final_name_units_are_valid(&encode_final_name(name)) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "invalid final path component",
-        ));
-    }
-    let mut wide = encode_final_name(name);
-    let byte_len = wide
-        .len()
-        .checked_mul(size_of::<u16>())
-        .and_then(|length| u16::try_from(length).ok())
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "file name is too long"))?;
-    let unicode_name = UNICODE_STRING {
-        Length: byte_len,
-        MaximumLength: byte_len,
-        Buffer: wide.as_mut_ptr(),
-    };
-    let attributes = OBJECT_ATTRIBUTES {
-        Length: u32::try_from(size_of::<OBJECT_ATTRIBUTES>())
-            .expect("OBJECT_ATTRIBUTES size fits in u32"),
-        RootDirectory: parent.as_raw_handle() as HANDLE,
-        ObjectName: ptr::from_ref(&unicode_name),
-        Attributes: OBJ_CASE_INSENSITIVE,
-        SecurityDescriptor: ptr::null(),
-        SecurityQualityOfService: ptr::null(),
-    };
-    let mut handle: HANDLE = ptr::null_mut();
-    // SAFETY: all pointers reference live stack storage and no optional buffers are used.
-    let status = unsafe {
-        let mut io_status: IO_STATUS_BLOCK = zeroed();
-        NtCreateFile(
-            ptr::from_mut(&mut handle),
-            desired_access,
-            ptr::from_ref(&attributes),
-            ptr::from_mut(&mut io_status),
-            ptr::null(),
-            0,
-            share_policy.access(),
-            FILE_OPEN,
-            create_options,
-            ptr::null(),
-            0,
-        )
-    };
-    if status < 0 {
-        return Err(io_error_from_ntstatus(status));
-    }
-    // SAFETY: successful NtCreateFile returns one newly owned handle.
-    Ok(unsafe { File::from_raw_handle(handle.cast()) })
+    crate::source_file::windows::open_relative(
+        parent,
+        name,
+        desired_access,
+        create_options,
+        share_policy,
+        FILE_OPEN,
+    )
 }
 
 const DIRECTORY_ENTRY_BUFFER_BYTES: usize = 64 * 1024;
@@ -745,53 +679,17 @@ fn open_final_handle(
     name: &OsStr,
     operation: WindowsFinalOperation,
 ) -> Result<File, io::Error> {
-    let mut wide = encode_final_name(name);
-    let byte_len = wide
-        .len()
-        .checked_mul(size_of::<u16>())
-        .and_then(|length| u16::try_from(length).ok())
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "file name is too long"))?;
-    let unicode_name = UNICODE_STRING {
-        Length: byte_len,
-        MaximumLength: byte_len,
-        Buffer: wide.as_mut_ptr(),
-    };
-    let attributes = OBJECT_ATTRIBUTES {
-        Length: u32::try_from(size_of::<OBJECT_ATTRIBUTES>())
-            .expect("OBJECT_ATTRIBUTES size fits in u32"),
-        RootDirectory: parent.as_raw_handle() as HANDLE,
-        ObjectName: ptr::from_ref(&unicode_name),
-        Attributes: OBJ_CASE_INSENSITIVE,
-        SecurityDescriptor: ptr::null(),
-        SecurityQualityOfService: ptr::null(),
-    };
-    let mut handle: HANDLE = ptr::null_mut();
-    // SAFETY: `attributes` points to live stack values, `wide` remains allocated for the call,
-    // the output handle pointer and IO status block are writable, and no optional buffers are used.
-    let status = unsafe {
-        let mut io_status: IO_STATUS_BLOCK = zeroed();
-        NtCreateFile(
-            ptr::from_mut(&mut handle),
-            desired_access(operation),
-            ptr::from_ref(&attributes),
-            ptr::from_mut(&mut io_status),
-            ptr::null(),
-            0,
-            final_operation_share_policy(operation).access(),
-            match operation.create_disposition() {
-                WindowsCreateDisposition::Open => FILE_OPEN,
-                WindowsCreateDisposition::OpenIf => FILE_OPEN_IF,
-            },
-            create_options(operation),
-            ptr::null(),
-            0,
-        )
-    };
-    if status < 0 {
-        return Err(io_error_from_ntstatus(status));
-    }
-    // SAFETY: successful `NtCreateFile` returns one newly owned kernel handle.
-    Ok(unsafe { File::from_raw_handle(handle.cast()) })
+    crate::source_file::windows::open_relative(
+        parent,
+        name,
+        desired_access(operation),
+        create_options(operation),
+        final_operation_share_policy(operation),
+        match operation.create_disposition() {
+            WindowsCreateDisposition::Open => FILE_OPEN,
+            WindowsCreateDisposition::OpenIf => FILE_OPEN_IF,
+        },
+    )
 }
 
 const fn final_operation_share_policy(operation: WindowsFinalOperation) -> NativeSharePolicy {
@@ -802,8 +700,9 @@ const fn final_operation_share_policy(operation: WindowsFinalOperation) -> Nativ
         WindowsFinalOperation::InspectForWrite
         | WindowsFinalOperation::InspectMutation
         | WindowsFinalOperation::WriteMutation
-        | WindowsFinalOperation::Read
         | WindowsFinalOperation::Write => NativeSharePolicy::Shared,
+        #[cfg(test)]
+        WindowsFinalOperation::Read => NativeSharePolicy::Shared,
     }
 }
 
@@ -824,10 +723,6 @@ fn validate_final_name(name: &OsStr, logical_path: &Utf8Path) -> Result<(), Work
             path: logical_path.to_owned(),
         })
     }
-}
-
-fn encode_final_name(name: &OsStr) -> Vec<u16> {
-    name.encode_wide().collect()
 }
 
 fn validate_opened_file(file: File, logical_path: &Utf8Path) -> Result<File, WorkspaceError> {
@@ -867,6 +762,7 @@ const fn desired_access(operation: WindowsFinalOperation) -> u32 {
         WindowsFinalOperation::WriteMutation | WindowsFinalOperation::Write => {
             common | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES
         }
+        #[cfg(test)]
         WindowsFinalOperation::Read => common | FILE_READ_DATA,
         WindowsFinalOperation::Remove | WindowsFinalOperation::RemoveEntry => {
             common | DELETE | FILE_WRITE_ATTRIBUTES
@@ -880,17 +776,12 @@ const fn operation_name(operation: WindowsFinalOperation) -> &'static str {
         WindowsFinalOperation::InspectMutation | WindowsFinalOperation::WriteMutation => {
             "open mutation target"
         }
+        #[cfg(test)]
         WindowsFinalOperation::Read => "read worker file",
         WindowsFinalOperation::Write => "write worker file",
         WindowsFinalOperation::Remove => "remove worker file",
         WindowsFinalOperation::RemoveEntry => "remove worker entry",
     }
-}
-
-fn io_error_from_ntstatus(status: i32) -> io::Error {
-    // SAFETY: `RtlNtStatusToDosError` accepts every NTSTATUS value.
-    let code = unsafe { RtlNtStatusToDosError(status) };
-    io::Error::from_raw_os_error(i32::try_from(code).unwrap_or(i32::MAX))
 }
 
 fn mark_delete_by_handle(file: &File) -> io::Result<()> {
@@ -935,6 +826,9 @@ fn mark_delete_by_handle(file: &File) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    };
 
     #[test]
     fn removing_shared_readonly_entry_preserves_external_attributes() {

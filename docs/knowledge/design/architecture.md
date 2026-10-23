@@ -19,10 +19,10 @@ sources:
   working_tree: untracked
   sha256: cb53d6166cfe5bff6452f9367780465b1e95f8ffeb99f529d752cefdc856f57e
 - id: c4-runtime-views
-  resource: ../../architecture/c4-model.md
-  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
+  resource: ../../../docs/architecture/c4-model.md
+  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
   working_tree: modified
-  sha256: 14802e911c96d12604fbc97ec9b2d6db7470a2b67463b97919b0474ad7a53e1e
+  sha256: 36e5bd887981fcdddeb80697902d4fdac70e13fd5839c5b0e20fca9e529cfcef
 - id: relative-path-policy
   resource: ../../../crates/hoimin-core/src/relative_path.rs
   working_tree: untracked
@@ -33,9 +33,10 @@ sources:
   working_tree: modified
   sha256: 11c1696fc03fcf75f20359a788bcbf27d20b7dab10ba180ecca64e2ed6437d7f
 - id: portable-file-reader
-  resource: ../../../crates/hoimin-cli/src/workspace/reader.rs
-  working_tree: untracked
-  sha256: 53ae9eddd0e3c8e74f4de2c48e48d1c33c636ef98bed9428db7cd5dc59aecb0a
+  resource: ../../../crates/hoimin-cli/src/source_file/reader.rs
+  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
+  working_tree: clean
+  sha256: 9f7b840fb5d22ea95036d882e9cd1b462221471a54e3dace5e9e3f7cf8123238
 - id: candidate-path-policy
   resource: ../../../crates/hoimin-core/src/candidate.rs
   revision: b87a5a4a68d628679ac501573894fedb7149d5b6
@@ -118,12 +119,27 @@ sources:
   revision: e808dda124f8fdc7fd08ed2a49cb352bca90155e
   working_tree: modified
   sha256: 8cda66e46748a04d9971f26b5633e80a59e8ae252bbd94340b8d342800431717
+- id: source-file-boundary
+  resource: ../../../crates/hoimin-cli/src/source_file.rs
+  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
+  working_tree: clean
+  sha256: 50d4f421b2a18cd3f33d98049a30cd949f38ef5e5805e196252adccf4ba60654
+- id: cli-oracle-config
+  resource: ../../../crates/hoimin-cli/tests/support/exception_hierarchy_config.rs
+  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
+  working_tree: clean
+  sha256: 30e03ab23839b3315f8144ed43d83f2812e7eaad0f814ad205398404952a3474
+- id: workspace-allocation-probe
+  resource: ../../../crates/hoimin-cli/tests/support/workspace_metadata_probe.rs
+  revision: d153ffb6896174b5515416b08c3a97b9745eb03a
+  working_tree: clean
+  sha256: 5723c28aac8503dfa72f374437977392e701f2f477aa0a6f9fc3ffe934d4f206
 ---
 
 # Current C4 views
 
 The [C4 architecture views](../../architecture/c4-model.md) describe the runtime
-at `4e9f8ab7161cece688eecd6e50a0f16fbed3caec`: system context, application and data
+at the recorded PR #1105 source revision: system context, application and data
 containers, execution components, selected core types, and a successful-run
 sequence. They distinguish the linked Rust crates from runtime containers and
 the external test command from the in-process analyzer. This is source-based
@@ -263,7 +279,7 @@ Issue 477では、path-only `.pth` に登録した元のsrcディレクトリが
 
 [^workspace-path-selection]: [crates/hoimin-cli/src/workspace/mod.rs](../../../crates/hoimin-cli/src/workspace/mod.rs)。
 
-[^portable-file-reader]: [crates/hoimin-cli/src/workspace/reader.rs](../../../crates/hoimin-cli/src/workspace/reader.rs)。
+[^portable-file-reader]: [Portable source reader](../../../crates/hoimin-cli/src/source_file/reader.rs)。
 
 [^candidate-path-policy]: [crates/hoimin-core/src/candidate.rs](../../../crates/hoimin-core/src/candidate.rs)。
 
@@ -278,3 +294,30 @@ state machines or OS handlers. Creusot verifies these production bodies, while
 BudgetLedger transitions and OS timing retain their separate verification scope.
 See the [proof contract](../creusot-budget-proofs.md) and
 [updated C4 view](../../architecture/c4-model.md).
+
+## Shared file access and test-support ownership (PR #1105)
+
+The CLI's `source_file` module owns capability-relative parent traversal and
+regular-file reads, with `SourceFileError` and `PortableFileReadError` for read
+consumers. Analysis, Git selection, fingerprints, plan/verify and review use this
+boundary without importing `WorkerRoot` or `WorkspaceError`. Workspace operations
+retain mutation, restoration and cleanup authority and adapt shared access errors
+to their own type. Both paths use the same no-follow opening primitives, including
+the native Windows handle-relative opener.[^source-file-boundary][^portable-file-reader]
+
+Byte budgets come from the opened descriptor for ordinary source reads; callers
+can impose a separate fixed cap through bounded reads. These limits neither
+create an atomic filesystem snapshot nor impose a filesystem I/O deadline. The
+C4 views separate this source boundary from workspace lifetime ownership and
+from the core's pure execution decisions.[^source-file-boundary][^portable-file-reader][^c4-runtime-views]
+
+CLI oracle adapters construct execution configuration in CLI test support. The
+shared Python corpus helper supplies cases and expectations without depending on
+`RunConfig`. Live allocation regression tests compile their probe from
+`tests/support`; the earlier probe under `docs/maintenance` remains historical
+measurement evidence and is not their source dependency. This separation adds
+no runtime container or crate dependency.[^cli-oracle-config][^workspace-allocation-probe]
+
+[^source-file-boundary]: [Shared capability-relative file access](../../../crates/hoimin-cli/src/source_file.rs).
+[^cli-oracle-config]: [CLI oracle configuration](../../../crates/hoimin-cli/tests/support/exception_hierarchy_config.rs).
+[^workspace-allocation-probe]: [Maintained allocation probe](../../../crates/hoimin-cli/tests/support/workspace_metadata_probe.rs).

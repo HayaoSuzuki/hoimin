@@ -8,8 +8,8 @@ use std::collections::HashMap;
 
 use hoimin_core::CandidateDescriptorRef;
 
-use crate::artifacts::run_report::ReviewReport;
 use crate::cli::ReviewArgs;
+use input::ReviewReport;
 use model::{
     Applicability, ArtifactReference, ReportReference, ReviewDraft, ReviewState, SourceState,
 };
@@ -42,6 +42,13 @@ pub enum ReviewError {
     Update(#[from] model::UpdateRejection),
     #[error("review I/O failed: {0}")]
     Io(#[from] std::io::Error),
+    #[error("could not resolve project {project} from review report {report}: {source}")]
+    ReportProject {
+        report: std::path::PathBuf,
+        project: camino::Utf8PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
     #[error("review JSON failed: {0}")]
     Json(#[from] serde_json::Error),
     #[error("review database failed: {0}")]

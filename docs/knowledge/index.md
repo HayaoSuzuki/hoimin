@@ -59,16 +59,16 @@ commands rather than copying commands from a dated design or execution report:
 Use these topic summaries to locate rationale and source references. Check their
 recorded revisions against the implementation you are changing:
 
-- [Architecture](design/architecture.md) - Isolated copies, state transitions separated from I/O, and the Rust analyzer migration.
+- [Architecture](design/architecture.md) - C4 views, shared source access, test-support ownership, and state transitions separated from I/O.
 - [Python analysis and candidates](design/analyzer.md) - Syntax, name resolution, user-defined exceptions, byte ranges and input scale.
 - [Target selection, plan and verify](design/selection-plan-verify.md) - Ranking, subsets, seeded sampling and saved-format revision questions.
 - [Resources and cleanup](design/runtime-lifecycle.md) - OS-specific limits, cleanup ownership and report writing.
-- [Sessions and reports](design/session-report.md) - Database ownership, migration, read validation, live progress and diagnostic logs.
+- [Sessions and reports](design/session-report.md) - Database ownership, structural report validation, consumer policy and opt-in JSON diagnostics.
 - [JSON mutant spool](design/json-report-spool.md) - Record-level writing and acknowledgement/poison contracts on failure.
 
 - [Fingerprint input globs](design/fingerprint-inputs.md) - Shared traversal across include globs and input-order errors.
 - [Collection annotation references](design/annotation-builtins.md) - Bidirectional concrete types, deferred evaluation and scope checks.
-- [Survivor review](design/survivor-review.md) - Candidate identity, review history and separation from execution outcomes.
+- [Survivor review](design/survivor-review.md) - Candidate identity, review-owned input policy, JSON presentation and assessment history.
 - [Typed results and executable contracts](typed-results-and-contracts.md) - Expected failures, optional budget checks, and evidence limits.
 
 # Audits and verification scope
