@@ -8,6 +8,7 @@ and an actual host execution are different evidence; see the
 
 Read the relevant summary and follow its original sources:
 
+- [Design and resource audit after PR 1090](design-2026-10-23-post1090.md) - JSON record buffer/write tradeoff, retained type/state boundaries and unresolved companion admission; audit included with #1092 implementation.
 - [Design and resource audit after PR 1088](design-2026-10-22-post1088.md) - Session companion hardlinks and transient descriptor copies; audit included with #1089 implementation.
 - [Design and resource audit after PR 1084](design-2026-10-22-post1084.md) - Reproduced session hardlink source modification, borrowed tokens and review candidates; #1085–#1087, audit included with implementation.
 - [Design and resource audit after PR 1080](design-2026-10-22-post1080.md) - Verify membership work, finite mutation reads and borrowed identity; #1081–#1083 and implementation follow-up.

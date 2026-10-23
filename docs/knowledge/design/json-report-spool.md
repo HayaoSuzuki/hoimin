@@ -1,7 +1,7 @@
 ---
 type: Contract
 title: JSONレポートのmutant record書込み
-description: mutantイベントの一括書込み、ack、short write、poisoned状態の契約。
+description: mutantイベントの固定容量buffer、ack、short write、poisoned状態の契約。
 status: draft
 source_revision: 165a2d284a1af92eb02ffd214ba8c0070c2f3808
 sources:
@@ -35,13 +35,38 @@ sources:
     revision: bd8de5bdee2f0e4033623e5b44eff5f62db89b72
     working_tree: clean
     sha256: 98836b9bec5c5f828ba8763439e33670967c7b616d531f6f8bdbd8fe34adbd15
+  - id: issue-1092-implementation
+    resource: ../../../crates/hoimin-cli/src/report/json.rs
+    revision: 21c5659d4a6a37633bd1a29f691debd0e84f4280
+    working_tree: modified
+    sha256: 2460bd92ad12bbf8a5781557c5a74fa422bd1084947baf81eef29f60a23b7fff
+  - id: issue-1092-tests
+    resource: ../../../crates/hoimin-cli/tests/report_handler.rs
+    revision: 21c5659d4a6a37633bd1a29f691debd0e84f4280
+    working_tree: modified
+    sha256: 83f3e3db810040d973cbed6f8ac3d28c8a958b8ff8e78a41f64e519e87e0b663
+  - id: issue-1092-heap
+    resource: ../../../crates/hoimin-cli/tests/report_heap.rs
+    revision: 21c5659d4a6a37633bd1a29f691debd0e84f4280
+    working_tree: modified
+    sha256: b027e917711cd58b66a1c554519dce5d09c4eca47a02af635afec5b758329ab1
 ---
 
 # mutant recordの書込み
 
-JSON形式のレポートは、mutantイベント一件と必要な先行カンマを一つのrecordとして一時バッファへ直列化し、spoolへ一回の`write_all`で渡す。全イベントをメモリに保持せず、履歴は管理対象のdelivery spoolに保存する。[^design][^implementation]
+JSON形式のレポートは、mutantイベント一件と必要な先行カンマを、処理中だけ存在する8 KiBの
+BufWriterで直列化する。#463の全量Vecは#1092で置き換えた。小さいrecordは一回、大きいrecordは
+複数回のまとまったwriteでspoolへ渡す。履歴全体はdelivery spoolへ保存し、encoded record全体を
+一時メモリに保持しない。[^issue-1092-implementation][^issue-1092-heap]
 
-成功応答は`write_all`の完了後に返す。短い正常書込みは残りを再試行し、途中のI/Oエラーまたは進捗のない書込みは元のeffectを失敗させる。失敗後のreportはpoisoned状態になり、同じhandlerで後続イベントを受理しない。[^design][^tests]
+成功応答は明示flushの成功後に返す。短い正常書込みとInterruptedは残りを再試行する。
+書込み・flush・直列化の失敗は元のeffectを失敗させ、into_partsで未送信bytesを破棄してDropによる
+再送を防ぐ。成功前にhas_mutantsを変更せず、失敗後は既存のpoisoned状態で後続eventと最終化を拒否する。
+I/O失敗はwrite mutant recordとして通知する。[^issue-1092-implementation][^issue-1092-tests]
+
+#463が定めた小recordのwrite集約と即時ack/failureの意図は維持する。
+通常サイズにも8 KiBを確保するため、小recordの一時heapは増える。変更前後の割当・write回数と
+測定範囲は[実装記録](../../maintenance/2026-10-23-issue-1092/README.md)に示す。[^design]
 
 schema 9で導入された`status`は、spoolへ書き込むイベントの直列化時にoutcomeから導出する。spoolから最終JSONへコピーする段階では分類し直さない。JSONLも同じ`MutantFinished`の直列化処理を使い、summaryとresumeはoutcomeを分類根拠にする。[^issue-1010-wire]
 
@@ -66,3 +91,7 @@ assembly.[^issue-1012-wire][^issue-1012-handler-tests]
 
 [^issue-1012-wire]: [Current summary wire type](../../../crates/hoimin-core/src/report.rs).
 [^issue-1012-handler-tests]: [Summary output tests](../../../crates/hoimin-cli/tests/report_handler.rs).
+
+[^issue-1092-implementation]: [固定容量のrecord書込み](../../../crates/hoimin-cli/src/report/json.rs)。
+[^issue-1092-tests]: [書込み失敗と最終bytesの回帰テスト](../../../crates/hoimin-cli/tests/report_handler.rs)。
+[^issue-1092-heap]: [実handlerの割当とwrite回数](../../../crates/hoimin-cli/tests/report_heap.rs)。

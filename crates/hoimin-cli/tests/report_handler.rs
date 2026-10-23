@@ -3245,3 +3245,163 @@ fn unresolved_mutant_timeout_json_is_null() {
         Some(&serde_json::Value::Null)
     );
 }
+
+#[derive(Clone, Copy, Debug)]
+enum SpoolFault {
+    Error,
+    Zero,
+    Flush,
+    Interrupted,
+}
+
+struct FaultSpool {
+    inner: Cursor<Vec<u8>>,
+    calls: Arc<AtomicUsize>,
+    fault: SpoolFault,
+    fail_at: usize,
+}
+
+impl Write for FaultSpool {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        let call = self.calls.fetch_add(1, Ordering::Relaxed) + 1;
+        if call == self.fail_at {
+            match self.fault {
+                SpoolFault::Error => return Err(io::Error::other("injected write failure")),
+                SpoolFault::Zero => return Ok(0),
+                SpoolFault::Interrupted => return Err(io::ErrorKind::Interrupted.into()),
+                SpoolFault::Flush => {}
+            }
+        }
+        let length = if matches!(self.fault, SpoolFault::Interrupted) {
+            bytes.len().min(7)
+        } else {
+            bytes.len()
+        };
+        self.inner.write(&bytes[..length])
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        if matches!(self.fault, SpoolFault::Flush) {
+            Err(io::Error::other("injected flush failure"))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl Read for FaultSpool {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        self.inner.read(bytes)
+    }
+}
+impl Seek for FaultSpool {
+    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+        self.inner.seek(position)
+    }
+}
+
+fn payload_mutant(sequence: u64, bytes: usize) -> OutputEvent {
+    let mut event = mutant_finished(sequence, sequence - 2);
+    let OutputEvent::MutantFinished(mutant) = &mut event else {
+        unreachable!()
+    };
+    // Cross buffer boundaries inside escaped strings as well as plain text.
+    mutant.candidate.original = "\"\\\n日本語".repeat(bytes / 4 + 1);
+    mutant.candidate.replacement = "x".repeat(bytes);
+    event
+}
+
+#[test]
+fn json_record_failures_do_not_ack_retry_on_drop_or_accept_later_events() {
+    for bytes in [1, 64 * 1024] {
+        for fault in [SpoolFault::Error, SpoolFault::Zero, SpoolFault::Flush] {
+            let calls = Arc::new(AtomicUsize::new(0));
+            let fail_at = if bytes == 1 { 1 } else { 2 };
+            let mut handler = ReportHandler::with_mutant_spool(
+                OutputFormat::Json,
+                io::sink(),
+                io::sink(),
+                FaultSpool {
+                    inner: Cursor::new(Vec::new()),
+                    calls: Arc::clone(&calls),
+                    fault,
+                    fail_at,
+                },
+            );
+            emit(
+                &mut handler,
+                1,
+                OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
+            );
+            let failed = handler
+                .handle(EmitOutput {
+                    id: EffectId(2),
+                    event: payload_mutant(2, bytes),
+                })
+                .unwrap_err();
+            assert_eq!(failed.id, EffectId(2));
+            assert!(
+                matches!(failed.failure, EffectFailure::ReportIo { ref operation, .. }
+                if operation == "write mutant record"),
+                "{fault:?}: {:?}",
+                failed.failure
+            );
+            let after_failure = calls.load(Ordering::Relaxed);
+            if !matches!(fault, SpoolFault::Flush) {
+                assert_eq!(after_failure, fail_at, "Drop retried a failed record");
+            }
+            for event in [payload_mutant(3, bytes), run_summary(4)] {
+                let failed = handler
+                    .handle(EmitOutput {
+                        id: EffectId(event.sequence()),
+                        event,
+                    })
+                    .unwrap_err();
+                assert!(matches!(failed.failure, EffectFailure::ReportState { .. }));
+            }
+            drop(handler);
+            assert_eq!(calls.load(Ordering::Relaxed), after_failure);
+        }
+    }
+}
+
+#[test]
+fn json_large_escaped_records_preserve_exact_bytes_after_interrupted_short_writes() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let stdout = SharedWriter::default();
+    let mut handler = ReportHandler::with_mutant_spool(
+        OutputFormat::Json,
+        stdout.clone(),
+        io::sink(),
+        FaultSpool {
+            inner: Cursor::new(Vec::new()),
+            calls: Arc::clone(&calls),
+            fault: SpoolFault::Interrupted,
+            fail_at: 2,
+        },
+    );
+    let start = OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control()));
+    let mutants = [
+        payload_mutant(2, 1),
+        payload_mutant(3, 8192),
+        payload_mutant(4, 64 * 1024),
+    ];
+    let summary = run_summary(5);
+    let expected = format!(
+        "{{\"schema_version\":{REPORT_SCHEMA_VERSION},\"run\":{},\"baseline\":null,\"mutants\":[{}],\"summary\":{}}}\n",
+        serde_json::to_string(&start).unwrap(),
+        mutants
+            .iter()
+            .map(|event| serde_json::to_string(event).unwrap())
+            .collect::<Vec<_>>()
+            .join(","),
+        serde_json::to_string(&summary).unwrap()
+    );
+    emit(&mut handler, 1, start);
+    for event in mutants {
+        emit(&mut handler, event.sequence(), event);
+    }
+    emit(&mut handler, 5, summary);
+    assert_eq!(stdout.text(), expected);
+    assert!(calls.load(Ordering::Relaxed) > 3);
+}

@@ -19,6 +19,15 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Fixed-capacity JSON mutant serialization (#1092)
+
+Each JSON mutant record now uses a record-local 8 KiB buffer rather than a
+whole-record Vec. Large records may require multiple spool writes; small records
+still use one write. Explicit flush completes before acknowledgement, and any
+write or flush failure poisons the report without a Drop retry. This flush does
+not promise durable storage. Final JSON bytes, schema, CLI options and dependencies
+are unchanged. Run/baseline metadata retains its separate owned buffers.
+
 ## Borrowed complete descriptor comparisons (#1089)
 
 Verify, worker mutation and review comparison/source-validation paths use borrowed
