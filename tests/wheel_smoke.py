@@ -100,8 +100,22 @@ def _has_conclusive_outcome(outcome: object) -> bool:
 
 
 def assert_mutation_result(output: str) -> None:
-    document = json.loads(output)
-    mutants = document["mutants"]
+    events = [json.loads(line) for line in output.splitlines() if line.strip()]
+    assert events, "mutation run produced no events"
+    assert events[0].get("kind") == "run_started", (
+        "mutation run requires an initial run_started event"
+    )
+    summary = events[-1]
+    assert summary.get("kind") == "run_finished", (
+        "mutation run requires a final run_finished event"
+    )
+    assert summary.get("complete") is True, (
+        f"mutation run did not complete successfully: {summary!r}"
+    )
+    assert summary.get("exit_code") == 0, (
+        f"mutation run returned an unsuccessful summary: {summary!r}"
+    )
+    mutants = [event for event in events if event.get("kind") == "mutant_finished"]
     assert mutants, "mutation run produced no mutants"
     assert any(_has_conclusive_outcome(mutant["outcome"]) for mutant in mutants), (
         f"mutation run had no killed or survived mutant: {mutants!r}"
@@ -329,8 +343,6 @@ def exercise_cli(
             "--total-timeout",
             "60s",
             "--allow-best-effort-memory",
-            "--format",
-            "json",
             "--",
             str(python),
             "-m",

@@ -243,9 +243,6 @@ struct RawMutationArgs {
 
 #[derive(Debug, Args)]
 pub struct RunArgs {
-    /// Include bounded details for ordinary startup cleanup holds.
-    #[arg(long)]
-    pub verbose: bool,
     #[command(flatten)]
     mutation: RawMutationArgs,
 
@@ -291,9 +288,6 @@ struct RawPlanArgs {
     after_help = "Execution and resource settings come from PLAN and cannot be overridden. Disk safety limits --max-workspace-size and --min-free-space are inherited from PLAN. Create a new plan to change them."
 )]
 struct RawVerifyArgs {
-    /// Include bounded details for ordinary startup cleanup holds.
-    #[arg(long)]
-    verbose: bool,
     /// Path to a version-5 plan manifest.
     #[arg(value_name = "PLAN")]
     manifest: PathBuf,
@@ -430,7 +424,6 @@ pub enum VerifySelection {
 
 #[derive(Debug)]
 pub struct VerifyArgs {
-    pub verbose: bool,
     pub dry_run: bool,
     pub metrics: Option<Utf8PathBuf>,
     pub manifest: PathBuf,
@@ -538,7 +531,6 @@ impl TryFrom<Command> for ParsedCommand {
                 Ok(Self::Plan(PlanArgs {
                     analyzer_timeout: raw.analyzer_timeout,
                     run_args: RunArgs {
-                        verbose: false,
                         mutation: raw.mutation,
                         test_argv: raw.test_argv,
                         metrics: None,
@@ -565,7 +557,6 @@ impl TryFrom<Command> for ParsedCommand {
                     },
                 };
                 Ok(Self::Verify(VerifyArgs {
-                    verbose: raw.verbose,
                     dry_run: raw.dry_run,
                     metrics: raw.metrics.map(metrics_path).transpose()?,
                     manifest: raw.manifest,
@@ -661,7 +652,6 @@ pub(crate) fn run_config_from_args(
 
 fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
     let RunArgs {
-        verbose: _,
         mutation: args,
         metrics,
         session,

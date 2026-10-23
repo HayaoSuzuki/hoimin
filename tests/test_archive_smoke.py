@@ -116,7 +116,7 @@ def test_preview_version_matches_python_metadata_spelling(
             subprocess.CompletedProcess(
                 [],
                 0,
-                '{"mutants":[{"outcome":{"executed":{"termination":{"Exit":1},"output_state":"complete","output":{"token":"smoke-output","retained":0,"observed":0},"elapsed":{"secs":0,"nanos":1}}}}]}',
+                '{"kind":"run_started"}\n{"kind":"mutant_finished","outcome":{"executed":{"termination":{"Exit":1},"output_state":"complete"}}}\n{"kind":"run_finished","complete":true,"exit_code":0}\n',
                 "",
             ),
         ],
@@ -165,7 +165,7 @@ def test_venv_interpreter_symlink_keeps_its_environment(
             subprocess.CompletedProcess(
                 [],
                 0,
-                '{"mutants":[{"outcome":{"executed":{"termination":{"Exit":1},"output_state":"complete","output":{"token":"smoke-output","retained":0,"observed":0},"elapsed":{"secs":0,"nanos":1}}}}]}',
+                '{"kind":"run_started"}\n{"kind":"mutant_finished","outcome":{"executed":{"termination":{"Exit":1},"output_state":"complete"}}}\n{"kind":"run_finished","complete":true,"exit_code":0}\n',
                 "",
             ),
         ],

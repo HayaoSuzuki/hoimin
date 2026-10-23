@@ -28,7 +28,6 @@ impl ReportDelivery {
     {
         Self {
             state: OwnedDeliveryState::Idle(ReportHandler {
-                presentation: handler.presentation,
                 stdout: Box::new(handler.stdout),
                 stderr: Box::new(handler.stderr),
                 lock_stdio_stderr: std::any::TypeId::of::<Stderr>()

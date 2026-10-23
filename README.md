@@ -45,8 +45,8 @@ See [licensing details](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/lic
 ### Startup cleanup reports
 
 `hoimin run` and `hoimin verify` summarize startup cleanup in `disk.janitor`
-(JSON/JSONL schema 10). Use `--verbose` to include ordinary
-root retention details. Failures and unfinished cleanup remain visible by default.
+(JSON/JSONL schema 10). Output includes bounded ordinary root retention details,
+failures and unfinished cleanup diagnostics.
 The summary separates roots from deleted entries and reports bounded scan/detail
 omissions. It does not estimate remaining roots or freed disk space. See the
 [compatibility notice](docs/compatibility.md#structured-startup-cleanup-in-0140).

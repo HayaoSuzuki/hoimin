@@ -1035,7 +1035,6 @@ async fn joinset_and_completion_queue_stay_bounded_across_many_mutants() {
         stdout.clone(),
         SharedBuffer::default(),
         control.clone(),
-        hoimin_cli::report::ReportPresentation::default(),
     )
     .await
     .unwrap();
@@ -2360,7 +2359,6 @@ async fn injected_ctrl_c_finishes_incomplete_or_defers_when_tree_quiescence_is_u
         stdout.clone(),
         stderr.clone(),
         control.clone(),
-        hoimin_cli::report::ReportPresentation::default(),
     );
     let cancel = async {
         let descendants =
@@ -2744,15 +2742,9 @@ async fn serial_output_that_requests_stop_is_accepted_before_cancellation() {
     };
     let stderr = CollectingWriter::default();
 
-    let exit = hoimin_cli::shell::run_loop_with_control(
-        config,
-        stdout,
-        stderr.clone(),
-        control,
-        hoimin_cli::report::ReportPresentation::default(),
-    )
-    .await
-    .unwrap();
+    let exit = hoimin_cli::shell::run_loop_with_control(config, stdout, stderr.clone(), control)
+        .await
+        .unwrap();
 
     assert_eq!(exit, 130);
     let events = String::from_utf8(accepted.snapshot()).unwrap();

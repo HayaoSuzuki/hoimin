@@ -7,9 +7,9 @@ catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
 sources:
 - id: guide
   resource: ../artifact-smoke.md
-  revision: 34723ff3f9b19c28140a6efad0651e542e25b8c1
+  revision: e0009c4ff3392f6c47a98a06722151fc76302941
   working_tree: modified
-  sha256: d6de40885b9261fe035c1b8de9f684cc0fbfd2e6d49bfea46858d75c9a3f12b8
+  sha256: 644089593bbd34b938133a37ad672893d0b6285286096463db573ac306e6a518
 - id: workflow
   resource: ../../.github/workflows/release.yml
   revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
@@ -22,9 +22,9 @@ sources:
   sha256: 448785c2eea428352cb841592c2e6b965ea2e660d505df227a622d382ebd4794
 - id: wheel
   resource: ../../tests/wheel_smoke.py
-  revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
+  revision: e0009c4ff3392f6c47a98a06722151fc76302941
   working_tree: modified
-  sha256: a36e258c5e538d1da0d98c42d3a70e9922ddfb3b4ac977a32714a53bc25726f3
+  sha256: d7cea7105dc65b3b9d5938a1e2fd9f68d902b97b43038a9d56ac4e2218f4a6de
 ---
 
 # Running distributed artifacts
@@ -33,8 +33,16 @@ A separate job downloads the checksum- and SBOM-validated `verified-release`, re
 Only known regular files are accepted; binary contents are copied to a fixed temporary path.
 Fixtures run outside the checkout, with no fallback to another binary.[^guide][^workflow][^archive]
 
-Wheels and archives share a small mutation fixture that checks version/help, JSON results, and preservation of the original source.
-Evidence is added to existing host-wheel validation; archive jobs do not duplicate that wheel validation.[^wheel][^guide]
+Wheels and archives share a small mutation fixture that checks version/help,
+a JSONL execution stream, and preservation of the original source. The shared
+invocation uses the default format without `--format`. Results must start with
+`run_started`, finish with a complete `run_finished` with exit code 0, and include
+at least one conclusive killed/survived outcome. Aggregate JSON and truncated
+streams are rejected. These framing checks do not replace the full report
+schema/lifecycle validator.[^wheel][^guide]
+
+Evidence is added to existing host-wheel validation; archive jobs do not duplicate
+that wheel validation.[^wheel][^guide]
 
 # Linux baseline and publication gates
 

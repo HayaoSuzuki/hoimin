@@ -313,12 +313,14 @@ does not establish its semantic consistency with outcome. Update custom report
 producers to include the matching field. Human completion rows now include the
 full candidate ID together with location, operator, expressions and verdict.
 
-`run --verbose` and `verify --verbose` include bounded details for ordinary
-startup retention (young roots, active leases and retain markers). Default output
-keeps the structured summary and failure/incomplete-cleanup diagnostics. Both
-modes preserve counts, cleanup classifications and exit codes. Verbosity is a
-runtime presentation option: plan schema 10, session schema 5, fingerprint 13,
-candidate schema 1 and mutant-ID v1 are unchanged.
+`run` and `verify` include bounded details for ordinary startup retention (young
+roots, active leases and retain markers), failures and incomplete cleanup. The
+`--verbose` flag has been removed. Details retain at most 256 records, with at
+most 4096 UTF-8 bytes per message; failures take priority over ordinary holds.
+Capacity losses and message truncations remain explicit, and
+`detail_omissions.suppressed_normal_details` has been removed. Cleanup
+classifications and exit codes are unchanged. Plan schema 10, session schema 5,
+fingerprint 13, candidate schema 1 and mutant-ID v1 retain their formats.
 
 Janitor reports inspected, reclaimed, already absent, preserved and unresolved
 roots separately. Deleted-entry counts include acknowledged marker, child and
@@ -330,9 +332,9 @@ roots and bounded-detail loss are reported separately. Unknown scan tails stay
 unknown. This notice supersedes earlier current report-version and package-floor
 statements below.
 
-Rust execution callers pass a nonserialized `ReportPresentation` argument to
-`run_loop`, `run_loop_with_control` and `VerifiedPlan::execute`. Migrate callers
-directly; no saved configuration field or compatibility overload is provided.
+Rust execution callers no longer pass a `ReportPresentation` argument to
+`run_loop`, `run_loop_with_control` or `VerifiedPlan::execute`; the presentation
+type and argument have been removed. Migrate callers directly.
 
 Rust callers construct or edit `RunConfigData`, then use `RunConfig::try_from`
 to obtain immutable checked execution settings. Shared reads remain available;

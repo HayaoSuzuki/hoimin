@@ -1971,93 +1971,85 @@ human_text_cases!(
     "mutant"
 );
 
-macro_rules! janitor_presentation_case {
-    ($name:ident, $verbose:expr) => {
-        #[test]
-        fn $name() {
-            // Arrange: ordinary hold and a real failure share one report.
-            let mut events = all_optional_report_events(true);
-            let OutputEvent::RunFinished(summary) = events.last_mut().unwrap() else {
-                panic!("summary");
-            };
-            let mut janitor = hoimin_core::JanitorSummary {
-                inspected_roots: 2,
-                preserved_roots: 1,
-                unresolved_roots: 1,
-                removed_entries: 3,
-                ..Default::default()
-            };
-            janitor
-                .preserved_by_reason
-                .insert(hoimin_core::JanitorReason::Young, 1);
-            janitor
-                .unresolved_by_reason
-                .insert(hoimin_core::JanitorReason::DeleteFailed, 1);
-            janitor.details = vec![
-                hoimin_core::JanitorDetail {
-                    reason: hoimin_core::JanitorReason::Young,
-                    message: "ordinary-young-root".into(),
-                },
-                hoimin_core::JanitorDetail {
-                    reason: hoimin_core::JanitorReason::DeleteFailed,
-                    message: "failed-root: permission denied".into(),
-                },
-            ];
-            summary.disk.janitor = Some(janitor);
-            summary.disk.stop = Some(hoimin_core::DiskStopReport {
-                code: "disk.measurement_failed".into(),
-                owned_bytes: None,
-                available_bytes: None,
-                message: Some("measurement-root: inspection denied".into()),
-                secondary: Vec::new(),
-            });
-            summary.disk.cleanup.push(hoimin_core::DiskCleanupReport {
-                root_id: "execution".into(),
-                owner: "hoimin".into(),
-                status: hoimin_core::DiskCleanupStatus::Deferred,
-                examined_entries: 4,
-                removed_entries: 1,
-                details: vec!["current cleanup timed out".into()],
-                omitted_detail_count: 0,
-                remaining_root: Some("current-incomplete-root".into()),
-            });
-            let exit = summary.exit_code;
-            let stdout = SharedWriter::default();
-            let mut handler = ReportHandler::new(stdout.clone(), io::sink())
-                .with_presentation(hoimin_cli::report::ReportPresentation { verbose: $verbose });
-
-            // Act.
-            for (index, event) in events.into_iter().enumerate() {
-                emit(&mut handler, index as u64, event);
-            }
-            let bytes = stdout.0.lock().unwrap().bytes.clone();
-            let text = String::from_utf8(bytes).unwrap();
-
-            // Assert: filtering never erases failures or changes facts.
-            assert_eq!(text.contains("ordinary-young-root"), $verbose);
-            assert!(text.contains("failed-root: permission denied"), "{text}");
-            assert!(text.contains("current cleanup timed out"), "{text}");
-            assert!(text.contains("current-incomplete-root"), "{text}");
-            assert!(
-                text.contains("measurement-root: inspection denied"),
-                "{text}"
-            );
-            let wire: serde_json::Value =
-                serde_json::from_str(text.lines().last().unwrap()).unwrap();
-            let schema = read_schema(&repo_root().join("docs/json-schema/run-event.schema.json"));
-            assert_schema_valid(&schema, &wire, &schema);
-            assert_eq!(wire["disk"]["janitor"]["inspected_roots"], 2);
-            assert_eq!(wire["disk"]["janitor"]["removed_entries"], 3);
-            assert_eq!(wire["exit_code"], exit);
-            assert_eq!(
-                wire["disk"]["cleanup"].as_array().unwrap().last().unwrap()["status"],
-                "deferred"
-            );
-        }
+#[test]
+fn janitor_details_preserve_holds_failures_and_counts() {
+    // Arrange: ordinary hold and a real failure share one report.
+    let mut events = all_optional_report_events(true);
+    let OutputEvent::RunFinished(summary) = events.last_mut().unwrap() else {
+        panic!("summary");
     };
+    let mut janitor = hoimin_core::JanitorSummary {
+        inspected_roots: 2,
+        preserved_roots: 1,
+        unresolved_roots: 1,
+        removed_entries: 3,
+        ..Default::default()
+    };
+    janitor
+        .preserved_by_reason
+        .insert(hoimin_core::JanitorReason::Young, 1);
+    janitor
+        .unresolved_by_reason
+        .insert(hoimin_core::JanitorReason::DeleteFailed, 1);
+    janitor.details = vec![
+        hoimin_core::JanitorDetail {
+            reason: hoimin_core::JanitorReason::Young,
+            message: "ordinary-young-root".into(),
+        },
+        hoimin_core::JanitorDetail {
+            reason: hoimin_core::JanitorReason::DeleteFailed,
+            message: "failed-root: permission denied".into(),
+        },
+    ];
+    summary.disk.janitor = Some(janitor);
+    summary.disk.stop = Some(hoimin_core::DiskStopReport {
+        code: "disk.measurement_failed".into(),
+        owned_bytes: None,
+        available_bytes: None,
+        message: Some("measurement-root: inspection denied".into()),
+        secondary: Vec::new(),
+    });
+    summary.disk.cleanup.push(hoimin_core::DiskCleanupReport {
+        root_id: "execution".into(),
+        owner: "hoimin".into(),
+        status: hoimin_core::DiskCleanupStatus::Deferred,
+        examined_entries: 4,
+        removed_entries: 1,
+        details: vec!["current cleanup timed out".into()],
+        omitted_detail_count: 0,
+        remaining_root: Some("current-incomplete-root".into()),
+    });
+    let exit = summary.exit_code;
+    let stdout = SharedWriter::default();
+    let mut handler = ReportHandler::new(stdout.clone(), io::sink());
+
+    // Act.
+    for (index, event) in events.into_iter().enumerate() {
+        emit(&mut handler, index as u64, event);
+    }
+    let bytes = stdout.0.lock().unwrap().bytes.clone();
+    let text = String::from_utf8(bytes).unwrap();
+
+    // Assert: ordinary holds and failures retain their details and factual counts.
+    assert!(text.contains("ordinary-young-root"));
+    assert!(text.contains("failed-root: permission denied"), "{text}");
+    assert!(text.contains("current cleanup timed out"), "{text}");
+    assert!(text.contains("current-incomplete-root"), "{text}");
+    assert!(
+        text.contains("measurement-root: inspection denied"),
+        "{text}"
+    );
+    let wire: serde_json::Value = serde_json::from_str(text.lines().last().unwrap()).unwrap();
+    let schema = read_schema(&repo_root().join("docs/json-schema/run-event.schema.json"));
+    assert_schema_valid(&schema, &wire, &schema);
+    assert_eq!(wire["disk"]["janitor"]["inspected_roots"], 2);
+    assert_eq!(wire["disk"]["janitor"]["removed_entries"], 3);
+    assert_eq!(wire["exit_code"], exit);
+    assert_eq!(
+        wire["disk"]["cleanup"].as_array().unwrap().last().unwrap()["status"],
+        "deferred"
+    );
 }
-janitor_presentation_case!(janitor_jsonl_default, false);
-janitor_presentation_case!(janitor_jsonl_verbose, true);
 
 macro_rules! janitor_schema_presence_case {
     ($name:ident, $present:expr) => {
@@ -2118,5 +2110,30 @@ fn unresolved_mutant_timeout_jsonl_is_null() {
     assert_eq!(
         value.get("resolved_mutant_timeout"),
         Some(&serde_json::Value::Null)
+    );
+}
+
+#[test]
+fn normal_cleanup_details_are_always_emitted() {
+    let stdout = SharedWriter::default();
+    let mut handler = ReportHandler::new(stdout.clone(), io::sink());
+    let mut summary = run_summary(1);
+    let OutputEvent::RunFinished(value) = &mut summary else {
+        unreachable!()
+    };
+    value.disk.janitor = Some(hoimin_core::JanitorSummary {
+        inspected_roots: 1,
+        preserved_roots: 1,
+        details: vec![hoimin_core::JanitorDetail {
+            reason: hoimin_core::JanitorReason::Young,
+            message: "ordinary-young-root".into(),
+        }],
+        ..Default::default()
+    });
+    emit(&mut handler, 1, summary);
+    let output: serde_json::Value = serde_json::from_str(&stdout.text()).unwrap();
+    assert_eq!(
+        output["disk"]["janitor"]["details"][0]["message"],
+        "ordinary-young-root"
     );
 }

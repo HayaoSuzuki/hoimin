@@ -34,7 +34,7 @@ pub enum JanitorReason {
 }
 
 impl JanitorReason {
-    /// Ordinary positive holds are the only details hidden in default output.
+    /// Classifies ordinary holds so bounded detail retention can prioritize failures.
     #[must_use]
     pub const fn is_normal_hold(self) -> bool {
         matches!(
@@ -77,8 +77,6 @@ pub struct JanitorDetailOmissions {
     pub normal_details: u64,
     pub issue_details: u64,
     pub truncated_details: u64,
-    /// Retained normal details hidden by presentation, not lost observations.
-    pub suppressed_normal_details: u64,
 }
 
 /// Janitor-owned facts. Root outcomes partition `inspected_roots`; deleted items
@@ -100,19 +98,4 @@ pub struct JanitorSummary {
     pub scan: JanitorScan,
     pub details: Vec<JanitorDetail>,
     pub detail_omissions: JanitorDetailOmissions,
-}
-
-impl JanitorSummary {
-    /// Projects only presentation. All counts, scan evidence and decisions survive.
-    pub fn project_details(&mut self, verbose: bool) {
-        if !verbose {
-            let before = self.details.len();
-            self.details
-                .retain(|detail| !detail.reason.is_normal_hold());
-            self.detail_omissions.suppressed_normal_details = self
-                .detail_omissions
-                .suppressed_normal_details
-                .saturating_add(u64::try_from(before - self.details.len()).unwrap_or(u64::MAX));
-        }
-    }
 }

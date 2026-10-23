@@ -1479,11 +1479,7 @@ async fn verify_rejects_fingerprint_input_deleted_after_preparation_before_execu
     let stderr = CollectingWriter::default();
 
     let exit = verified
-        .execute(
-            stdout.clone(),
-            stderr.clone(),
-            hoimin_cli::report::ReportPresentation::default(),
-        )
+        .execute(stdout.clone(), stderr.clone())
         .await
         .unwrap();
 

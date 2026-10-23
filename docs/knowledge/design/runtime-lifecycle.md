@@ -3,7 +3,7 @@ type: Decision
 title: 資源制限・終了時の後処理・最終出力
 description: OS別の資源制限と、プロセス終了・一時ファイル削除・レポート出力の完了条件を整理する。
 status: draft
-catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+catalog_revision: 6e9f34cf4ef6c3930ebca53b96034e446a0c992b
 sources:
 - id: issue-1082-read
   resource: ../../../crates/hoimin-cli/src/workspace/root.rs
@@ -140,14 +140,19 @@ sources:
   sha256: db8d0f3912f72dc6ad945a60a2f559c99faa1726c082d7f5c27188ba9f0ac304
 - id: issue-1015-owned
   resource: ../../../crates/hoimin-cli/src/workspace/owned.rs
-  revision: 8720b41a0d08f375d98bda7cfa6202be779f3226
+  revision: 6e9f34cf4ef6c3930ebca53b96034e446a0c992b
   working_tree: modified
-  sha256: 90ae595c91d048ef18a5d4e8a32fb42d362738341cb047db4155e9d997c1bf4f
+  sha256: 2ead77fc41dc06d5e545a39d4b57f9b7c80dfcd853d25afa8731e175bf705948
+- id: issue-1015-ledger
+  resource: ../../../crates/hoimin-cli/src/workspace/owned/janitor.rs
+  revision: 6e9f34cf4ef6c3930ebca53b96034e446a0c992b
+  working_tree: modified
+  sha256: 1ff5821eb3fa23182e5c9bc01f3245596d977540e2b356b33616382cbd1efd37
 - id: issue-1015-report
   resource: ../../../crates/hoimin-cli/src/report/mod.rs
-  revision: 8720b41a0d08f375d98bda7cfa6202be779f3226
+  revision: 6e9f34cf4ef6c3930ebca53b96034e446a0c992b
   working_tree: modified
-  sha256: 89761ec0f322a8ea1dcaebf37b5a3d367daf13221c646e165a552034b9606862
+  sha256: 00f0b00ca22fbbb2a6e7aad7ca1f55ef1aae1571ece85677da1bf8bd9016cf14
 - id: issue-994-controlled-metrics
   resource: ../../../crates/hoimin-cli/tests/metrics_destinations.rs
   revision: 7ea07bbf15c2fd76e126adbf1f0c55320c19fa1b
@@ -1126,13 +1131,14 @@ later unlock or verification fails, and that failure retains its diagnostic.
 Nested deletion progress survives failures without changing cleanup eligibility,
 capabilities, deadline checks or deferred-round scheduling.[^issue-1015-owned]
 
-`disk.janitor` is independent of execution/delivery CleanupDisposition. The report
-handler projects ordinary root details only in verbose mode; it does not change
-counts, retry eligibility or exit policy. Detail retention remains bounded to 256
-records and 4096 UTF-8 bytes per record, prioritizing failures over ordinary holds.
-Truncation, capacity loss and intentional suppression are separate counts.
-Current-run failed/deferred cleanup and measurement failures stay visible.
-[^issue-1015-report]
+`disk.janitor` is independent of execution/delivery CleanupDisposition. Reports
+include ordinary root details and failure diagnostics; retained details do not
+change counts, retry eligibility or exit policy. Detail retention remains bounded
+to 256 records and 4096 UTF-8 bytes per message, prioritizing failures over ordinary
+holds. Normal-detail capacity loss, issue-detail capacity loss and message
+truncation have separate counters. Current-run failed/deferred cleanup and
+measurement failures stay visible.
+[^issue-1015-report][^issue-1015-ledger]
 
 Directory enumeration is not candidate inspection. A completed enumeration can
 still select only 256 roots or postpone the wrapped cursor bucket. An interrupted
@@ -1145,7 +1151,8 @@ The implementation evidence does not establish native Linux/Windows behavior.
 [^issue-1015-owned]
 
 [^issue-1015-owned]: [Janitor evidence and bounded cleanup](../../../crates/hoimin-cli/src/workspace/owned.rs).
-[^issue-1015-report]: [Shared report projection](../../../crates/hoimin-cli/src/report/mod.rs).
+[^issue-1015-ledger]: [Bounded janitor evidence ledger](../../../crates/hoimin-cli/src/workspace/owned/janitor.rs).
+[^issue-1015-report]: [Shared report delivery](../../../crates/hoimin-cli/src/report/mod.rs).
 
 
 # Immutable manifest handles (Issue #1007)

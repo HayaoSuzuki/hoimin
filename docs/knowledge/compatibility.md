@@ -3,7 +3,7 @@ type: Contract
 title: Compatibility and change notices
 description: Current formats, usage changes and release versioning.
 status: draft
-catalog_revision: bcbb8bea00188ca27c0dd98a1e10a5c3a40a0d56
+catalog_revision: 6e9f34cf4ef6c3930ebca53b96034e446a0c992b
 sources:
 - id: current-jsonl-contract
   resource: ../compatibility.md
@@ -86,9 +86,9 @@ sources:
 
 - id: priority-six-compatibility
   resource: ../compatibility.md
-  revision: 3aaf82b0d5b695a548dda33ea248ceaa1dd68219
+  revision: 6e9f34cf4ef6c3930ebca53b96034e446a0c992b
   working_tree: modified
-  sha256: 6dc4ae3fda223f4b3a2a0654042d98eac38f1fe010e267f79321d282388f0eb2
+  sha256: 1110a08a917fae5ff9be9098330e8fa78837b4e72b11c551e7a5700a888b4200
 
 - id: priority-six-graph-evidence
   resource: ../maintenance/2026-10-19-issue-1005/report.md
@@ -148,10 +148,12 @@ Rerun to obtain current reports. Changing their version
 number does not convert them.[^priority-six-compatibility]
 
 Plan schema 10, SQLite session schema 5, fingerprint schema 13, ranking rule 4,
-candidate schema 1 and mutant-ID v1 retain their formats. Runtime verbosity is
-not saved configuration. Rust callers use checked `RunConfig` construction,
-fallible plan conversion and explicit `ReportPresentation` arguments; migrate
-those call sites directly.[^priority-six-compatibility]
+candidate schema 1 and mutant-ID v1 retain their formats. Run and verify always
+include bounded ordinary retention details alongside failure diagnostics. The
+`--verbose` flag, `ReportPresentation` type and runtime argument, and
+`detail_omissions.suppressed_normal_details` field have been removed. Rust callers
+use checked `RunConfig` construction and fallible plan conversion; migrate
+execution call sites directly.[^priority-six-compatibility]
 
 New exception-hierarchy analysis applies deterministic SCC-weighted depth at 256.
 It can conservatively exclude more candidates without changing saved identities

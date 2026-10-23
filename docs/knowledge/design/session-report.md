@@ -3,7 +3,7 @@ type: Contract
 title: session所有権とレポートの検証
 description: 保存・復旧の権限、スキーマ移行、結果の生成側と読取り側の検証責務を整理する。
 status: draft
-catalog_revision: bcbb8bea00188ca27c0dd98a1e10a5c3a40a0d56
+catalog_revision: 6e9f34cf4ef6c3930ebca53b96034e446a0c992b
 sources:
 - id: local-exit-implementation
   resource: ../../../crates/hoimin-core/src/report.rs
@@ -209,14 +209,19 @@ sources:
   recovered_blob: 4b5d7cfc1193ddd9e69a6c75cc566c965df1d88c
 - id: issue-1015-wire
   resource: ../../../crates/hoimin-core/src/report.rs
-  revision: 8720b41a0d08f375d98bda7cfa6202be779f3226
+  revision: 6e9f34cf4ef6c3930ebca53b96034e446a0c992b
+  working_tree: clean
+  sha256: b05effca875352062dcc58b2e71c7421ec9ab1a44170a933e7fc4e925a7a96c4
+- id: issue-1015-janitor
+  resource: ../../../crates/hoimin-core/src/report/janitor.rs
+  revision: 6e9f34cf4ef6c3930ebca53b96034e446a0c992b
   working_tree: modified
-  sha256: c89bddbf335142d9586ecbc3e155893c273af3718fb223e3975e66e97954a013
+  sha256: c35b0ffe4db423ee053acaf494de3d0f5eeeb4692b56ed3496a45ac3c25f09f9
 - id: issue-1015-compatibility
   resource: ../../compatibility.md
-  revision: 8720b41a0d08f375d98bda7cfa6202be779f3226
+  revision: 6e9f34cf4ef6c3930ebca53b96034e446a0c992b
   working_tree: modified
-  sha256: 5e7c0deae74941aa9651590a7b1e6d7465a75fa8e2063090b7398c30214aafa9
+  sha256: 1110a08a917fae5ff9be9098330e8fa78837b4e72b11c551e7a5700a888b4200
 - id: issue-1004-reader
   resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
   revision: 6d78789eca05fad577b2a8dcce83077f9389ee06
@@ -1017,13 +1022,16 @@ omissions. Readers reject older report versions instead of adapting their shapes
 [^issue-1015-wire]
 
 The 0.14.0 package floor carries this report change. Plan schema 10, session schema
-5, fingerprint 13 and candidate identities do not change. CLI `--verbose` is passed
-as runtime ReportPresentation, outside checked/saved RunConfig and PlanConfig.
-Default and verbose output share factual counts and exit policy; only ordinary
-retention details and their presentation-suppression count differ. This section
-supersedes earlier current report-version and floor statements, without changing
-historical verification evidence.[^issue-1015-compatibility]
+5, fingerprint 13 and candidate identities do not change. Run and verify always
+include bounded ordinary retention details and failure diagnostics. The CLI
+`--verbose` flag, runtime `ReportPresentation` type and argument, and
+`detail_omissions.suppressed_normal_details` field have been removed. Detail
+capacity losses and message truncations remain explicit; counts and exit policy
+do not depend on retained details. This section supersedes earlier current
+report-version and floor statements, without changing historical verification
+evidence.[^issue-1015-compatibility][^issue-1015-janitor]
 
+[^issue-1015-janitor]: [Current janitor wire types](../../../crates/hoimin-core/src/report/janitor.rs).
 [^issue-1015-wire]: [Core report types and required-nullable decoder](../../../crates/hoimin-core/src/report.rs).
 [^issue-1015-compatibility]: [Schema 9 compatibility notice](../../compatibility.md#structured-startup-cleanup-in-0140).
 

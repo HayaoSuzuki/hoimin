@@ -5,15 +5,8 @@ use std::io::{self, Write};
 
 use hoimin_core::{EffectFailed, EffectFailure, EmitOutput, OutputEmitted, OutputEvent};
 
-/// Runtime presentation only: never part of saved plans, sessions or fingerprints.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct ReportPresentation {
-    pub verbose: bool,
-}
-
 /// Streams execution events as JSON Lines, with diagnostics on stderr.
 pub struct ReportHandler<Stdout, Stderr> {
-    presentation: ReportPresentation,
     stdout: Stdout,
     stderr: Stderr,
     lock_stdio_stderr: bool,
@@ -22,7 +15,6 @@ pub struct ReportHandler<Stdout, Stderr> {
 impl<Stdout: Write, Stderr: Write> ReportHandler<Stdout, Stderr> {
     pub fn new(stdout: Stdout, stderr: Stderr) -> Self {
         Self {
-            presentation: ReportPresentation::default(),
             stdout,
             stderr,
             lock_stdio_stderr: false,
@@ -35,12 +27,7 @@ impl<Stdout: Write, Stderr: Write> ReportHandler<Stdout, Stderr> {
     ///
     /// Returns an error when the event cannot be serialized or written.
     pub fn handle(&mut self, request: EmitOutput) -> Result<OutputEmitted, EffectFailed> {
-        let EmitOutput { id, mut event } = request;
-        if let OutputEvent::RunFinished(summary) = &mut event
-            && let Some(janitor) = &mut summary.disk.janitor
-        {
-            janitor.project_details(self.presentation.verbose);
-        }
+        let EmitOutput { id, event } = request;
         if matches!(event, OutputEvent::Diagnostic(_)) {
             // Keep streaming serialization atomic with respect to the tracing
             // output thread. Only owned CLI stdio uses this reentrant lock;
@@ -55,12 +42,6 @@ impl<Stdout: Write, Stderr: Write> ReportHandler<Stdout, Stderr> {
         jsonl::write_event(&mut self.stdout, &event)
             .map_err(|error| serialization_failed(id, &error))?;
         Ok(OutputEmitted { id })
-    }
-
-    #[must_use]
-    pub fn with_presentation(mut self, presentation: ReportPresentation) -> Self {
-        self.presentation = presentation;
-        self
     }
 
     pub(crate) fn flush(&mut self) -> io::Result<()> {
