@@ -196,7 +196,7 @@ mod tests {
     #[test]
     fn actual_reference_is_current_and_covers_public_commands() {
         let text = render(hoimin_cli::cli::root_command());
-        for command in ["run", "plan", "verify", "progress", "completions"] {
+        for command in ["run", "plan", "verify", "progress", "review"] {
             assert!(text.contains(&format!("## hoimin {command}\n")));
         }
         for expected in [
@@ -205,7 +205,6 @@ mod tests {
             "--min-free-space",
             "default: 10GiB",
             "values: strict, diverse, line-diverse",
-            "values: bash, elvish, fish, powershell, zsh",
             "required group selection: --candidate, --top, --sample; multiple: false",
             "Execution and resource settings come from PLAN",
             "follows: --",

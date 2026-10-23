@@ -1,17 +1,18 @@
 # Build script inventory
 
-Observed 2026-10-21 from locked, all-feature, unfiltered Cargo metadata.
+Observed 2026-10-23 from locked, all-feature, unfiltered Cargo metadata.
 Regenerate and review with the [dependency policy](dependency-policy.md).
 Names/versions identify build targets; their contents have not been certified.
 
-Rechecked the main workspace on 2026-10-23 after Tokio 1.54.0 → 1.54.1:
-locked all-feature metadata still has 223 packages and the same 53 custom-build
-targets listed below. Tokio has no custom-build target. The fuzz graph and its
-lockfile are unchanged by this update.
+Issues #1096–#1098 remove fs2, crc32fast and clap_complete from the main graph.
+The winapi 0.3 package and its two architecture packages also disappear because
+only fs2 needed them. No retained package versions change. The removed build
+scripts are crc32fast and those three winapi packages; no scripts are added.
+The fuzz graph and lockfile are unchanged.
 
 ## main workspace
 
-Graph packages: 223. Normal, build and dev dependencies included.
+Graph packages: 217. Normal, build and dev dependencies included.
 
 | Package | Version |
 | --- | --- |
@@ -21,7 +22,6 @@ Graph packages: 223. Normal, build and dev dependencies included.
 | cap-fs-ext | 4.0.3 |
 | cap-primitives | 4.0.3 |
 | cap-std | 4.0.3 |
-| crc32fast | 1.5.3 |
 | crossbeam-deque | 0.8.8 |
 | crossbeam-epoch | 0.9.21 |
 | crossbeam-utils | 0.8.23 |
@@ -47,9 +47,6 @@ Graph packages: 223. Normal, build and dev dependencies included.
 | valuable | 0.1.1 |
 | wasm-bindgen | 0.2.129 |
 | wasm-bindgen-shared | 0.2.129 |
-| winapi | 0.3.9 |
-| winapi-i686-pc-windows-gnu | 0.4.0 |
-| winapi-x86_64-pc-windows-gnu | 0.4.0 |
 | windows_aarch64_gnullvm | 0.52.6 |
 | windows_aarch64_gnullvm | 0.53.1 |
 | windows_aarch64_msvc | 0.52.6 |

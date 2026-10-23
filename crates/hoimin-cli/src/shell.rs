@@ -7910,7 +7910,7 @@ mod tests {
             parent,
             &|stage| {
                 if stage == ShellSetupBoundary::RootsCreated {
-                    for entry in std::fs::read_dir(parent.join("hoimin-workspaces-v1")).unwrap() {
+                    for entry in std::fs::read_dir(parent.join("hoimin-workspaces-v2")).unwrap() {
                         let entry = entry.unwrap();
                         if entry.file_name().to_string_lossy().starts_with("run-") {
                             std::fs::create_dir(entry.path().join(".hoimin-cleanup-ready.json"))
@@ -7998,7 +7998,7 @@ mod tests {
                 let cause = if $cancel { ShutdownCause::Cancellation } else { ShutdownCause::TotalTimeout };
                 assert!(matches!(result, Err(PreparationError::Stopped(actual)) if actual == cause));
                 assert_eq!(observed.borrow().last(), Some(&selected));
-                let residual = std::fs::read_dir(parent.join("hoimin-workspaces-v1")).unwrap()
+                let residual = std::fs::read_dir(parent.join("hoimin-workspaces-v2")).unwrap()
                     .map(|entry| entry.unwrap().file_name()).filter(|name| name != ".hoimin-coordinator").collect::<Vec<_>>();
                 assert!(residual.is_empty(), "stopped preparation leaked roots: {residual:?}");
             }
@@ -8045,7 +8045,7 @@ mod tests {
             }));
 
             assert!(unwind.is_err(), "boundary {selected:?} did not unwind");
-            let managed = parent.join("hoimin-workspaces-v1");
+            let managed = parent.join("hoimin-workspaces-v2");
             let residual = std::fs::read_dir(&managed)
                 .unwrap()
                 .map(|entry| entry.unwrap().file_name())
@@ -8073,7 +8073,7 @@ mod tests {
             .unwrap()
             .to_owned();
         let abandoned = parent
-            .join("hoimin-workspaces-v1")
+            .join("hoimin-workspaces-v2")
             .join(format!(".deleting-{run_id}"));
         drop(abandoned_root);
         drop(coordinator);
@@ -8151,7 +8151,7 @@ mod tests {
             }));
 
             assert!(unwind.is_err(), "boundary {selected:?} did not unwind");
-            let managed = parent.join("hoimin-workspaces-v1");
+            let managed = parent.join("hoimin-workspaces-v2");
             let residual = std::fs::read_dir(&managed)
                 .unwrap()
                 .map(|entry| entry.unwrap().file_name())
@@ -8254,7 +8254,6 @@ mod tests {
     #[tokio::test]
     #[ignore = "subprocess fixture for rollback contention"]
     async fn rollback_contention_isolated_child() {
-        use fs2::FileExt;
         const COMPLETED: &str = "hoimin rollback contention assertions completed";
 
         let parent = tempfile::tempdir().unwrap();
@@ -8267,16 +8266,16 @@ mod tests {
         let coordinator_file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
-            .open(parent.join("hoimin-workspaces-v1/.hoimin-coordinator"))
+            .open(parent.join("hoimin-workspaces-v2/.hoimin-coordinator"))
             .unwrap();
-        FileExt::try_lock_exclusive(&coordinator_file).unwrap();
+        coordinator_file.try_lock().unwrap();
 
         drop(rollback);
         assert!(
             execution_path.exists(),
             "contention path unexpectedly deleted root"
         );
-        FileExt::unlock(&coordinator_file).unwrap();
+        coordinator_file.unlock().unwrap();
 
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
         assert_eq!(report.reclaimed_roots, 1, "{report:?}");

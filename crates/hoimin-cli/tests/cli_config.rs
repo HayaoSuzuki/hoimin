@@ -307,14 +307,14 @@ fn mutation_command_help_lists_all_operator_ids_and_selectors() {
 }
 
 #[test]
-fn completions_accept_supported_shells() {
+fn removed_completions_command_is_rejected_and_absent_from_help() {
     for shell in ["bash", "zsh", "fish", "powershell"] {
-        assert!(matches!(
-            parse_from(["hoimin", "completions", shell]).unwrap(),
-            ParsedCommand::Completions(_)
-        ));
+        assert!(parse_from(["hoimin", "completions", shell]).is_err());
     }
-    assert!(parse_from(["hoimin", "completions", "unsupported"]).is_err());
+    let help = hoimin_cli::cli::root_command()
+        .render_long_help()
+        .to_string();
+    assert!(!help.contains("completions"));
 }
 
 #[test]

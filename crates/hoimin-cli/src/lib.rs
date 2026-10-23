@@ -91,10 +91,6 @@ where
         Ok(cli::ParsedCommand::Review(args)) => {
             command_result(review::run(&args, &mut stdout), &mut stderr)
         }
-        Ok(cli::ParsedCommand::Completions(args)) => {
-            cli::write_completions(args.shell, &mut stdout);
-            0
-        }
         Ok(cli::ParsedCommand::Plan(args)) => {
             let result = async {
                 let (config, discovery) = args.into_configs().map_err(|error| error.to_string())?;

@@ -20,13 +20,12 @@ Bounded mutation testing for focused Python changes
 Usage: hoimin <COMMAND>
 
 Commands:
-  run          Run mutation tests for an explicitly selected target
-  plan         Discover mutation candidates without executing tests
-  verify       Execute one or more candidates using settings from a previously generated plan
-  progress     Compare chronologically ordered mutation run reports
-  review       Record and inspect human assessments independently of test outcomes
-  completions  Generate shell completion scripts
-  help         Print this message or the help of the given subcommand(s)
+  run       Run mutation tests for an explicitly selected target
+  plan      Discover mutation candidates without executing tests
+  verify    Execute one or more candidates using settings from a previously generated plan
+  progress  Compare chronologically ordered mutation run reports
+  review    Record and inspect human assessments independently of test outcomes
+  help      Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help
@@ -543,38 +542,6 @@ Usage: hoimin review help record
 Print this message or the help of the given subcommand(s)
 
 Usage: hoimin review help help
-```
-
-## hoimin completions
-
-```text
-Generate shell completion scripts
-
-Usage: hoimin completions <SHELL>
-
-Arguments:
-  <SHELL>
-          Shell to generate completions for
-
-          [possible values: bash, elvish, fish, powershell, zsh]
-
-Options:
-  -h, --help
-          Print help
-```
-
-Argument constraints:
-
-```text
-shell
-  required: true
-  arity: 1
-  repeatable: false
-  values: bash, elvish, fish, powershell, zsh
---help
-  required: false
-  arity: 0
-  repeatable: false
 ```
 
 ## hoimin run
@@ -1269,13 +1236,12 @@ Print this message or the help of the given subcommand(s)
 Usage: hoimin help [COMMAND]
 
 Commands:
-  verify       Execute one or more candidates using settings from a previously generated plan
-  progress     Compare chronologically ordered mutation run reports
-  review       Record and inspect human assessments independently of test outcomes
-  completions  Generate shell completion scripts
-  run          Run mutation tests for an explicitly selected target
-  plan         Discover mutation candidates without executing tests
-  help         Print this message or the help of the given subcommand(s)
+  verify    Execute one or more candidates using settings from a previously generated plan
+  progress  Compare chronologically ordered mutation run reports
+  review    Record and inspect human assessments independently of test outcomes
+  run       Run mutation tests for an explicitly selected target
+  plan      Discover mutation candidates without executing tests
+  help      Print this message or the help of the given subcommand(s)
 ```
 
 ## hoimin help verify
@@ -1329,14 +1295,6 @@ Usage: hoimin help review show
 Append a human assessment using an expected revision
 
 Usage: hoimin help review record
-```
-
-## hoimin help completions
-
-```text
-Generate shell completion scripts
-
-Usage: hoimin help completions
 ```
 
 ## hoimin help run

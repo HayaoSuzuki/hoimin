@@ -24,10 +24,7 @@ cap-fs-ext = "4.0"
 cap-primitives = "4.0"
 cap-std = "4.0.2"
 clap = { version = "4.5", features = ["derive"] }
-clap_complete = "4.6"
 camino = "1.1"
-crc32fast = "1.4"
-fs2 = ">=0.4.3, <1"
 hoimin-core = { path = "../hoimin-core" }
 hoimin-python = { path = "../hoimin-python" }
 humantime = "2.2"
