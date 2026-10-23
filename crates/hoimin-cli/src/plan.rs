@@ -1094,7 +1094,6 @@ fn output_config(format: OutputFormat) -> OutputConfig {
         format: match format {
             OutputFormat::Json => hoimin_core::OutputFormat::Json,
             OutputFormat::Jsonl => hoimin_core::OutputFormat::Jsonl,
-            OutputFormat::Human => hoimin_core::OutputFormat::Human,
         },
         metrics: None,
     }

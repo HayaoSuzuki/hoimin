@@ -55,7 +55,7 @@ can write UTF-16 output that hoimin cannot read as a saved JSON plan.
 For a direct run, replace `src/calc.py` with an existing target file:
 
 ```console
-hoimin run --root . --file src/calc.py --format human -- python -m pytest -q
+hoimin run --root . --file src/calc.py --format json -- python -m pytest -q
 ```
 
 ### Plan and verify with an agent
@@ -288,21 +288,9 @@ Everything after `--` is passed directly as native argv to the child process. ho
 
 ### Live progress and debugging
 
-When stderr is a terminal, `run`, `plan`, and `verify` show a progress line once
-per second during execution, plus a final line. Each line shows the current stage,
-completed mutant count, and elapsed wall time, including time spent waiting for
-tests. For example:
-
-```text
-hoimin: running baseline | 0 completed | elapsed 2s
-hoimin: testing mutants | 3 completed | elapsed 8s
-hoimin: finished | 4 completed | elapsed 10s
-```
-
-Completed counts include reused results and exclude candidates that were not run.
-`plan` discovers candidates without executing mutants, so its completed count is
-zero. Redirecting stderr disables live progress; stdout keeps its selected report
-format. The `hoimin progress` command compares saved reports and has no live display.
+`run`, `plan`, and `verify` emit no periodic terminal progress lines. To inspect
+execution stages, enable tracing with `RUST_LOG`. The `hoimin progress` command
+compares saved reports and returns a JSON document.
 
 For the example's `calc.py`, enable diagnostic logs with the command for your
 shell. Keep actively written logs outside the project root: writing a log inside
@@ -334,17 +322,20 @@ try {
 }
 ```
 
-Logs use text on terminal stderr and JSON Lines on redirected stderr. With logging
-enabled, redirected stderr can contain both tracing records and existing diagnostic
-events; tracing records do not use the versioned run-event schema. Filter by module,
+Logs use JSON Lines on stderr, including when stderr is a terminal. With logging
+enabled, stderr can contain both tracing records and existing diagnostic events;
+tracing records do not use the versioned run-event schema. Filter by module,
 such as `RUST_LOG=hoimin_cli::process=debug`, to inspect process execution. Run,
 worker, and mutant identifiers connect logs from concurrent test processes.
+Use `RUST_LOG=hoimin_cli::progress=info` for execution-stage records and completed
+mutant counts. Counts include reused results and exclude candidates that were
+not run. These records follow execution events rather than a periodic timer.
 
 Logging is off by default. `RUST_LOG=off`, an empty value, or an invalid filter
-disables it without disabling terminal progress. Library callers choose their own
-tracing subscriber. Diagnostic output uses a bounded queue: a slow sink can lose
-log records, and shutdown waits at most 250 ms to flush. These logs supplement
-the run reports; use the reports for complete mutation results.
+disables tracing. Library callers choose their own tracing subscriber. Tracing
+uses a bounded queue: a slow sink can lose log records, and shutdown waits at most
+250 ms to flush. These logs supplement the run reports; use the reports for
+complete mutation results.
 
 ## Select mutation targets
 
@@ -506,7 +497,7 @@ The defaults are:
 | `--max-workspace-size` | `8GiB` | logical bytes in generated workspaces and run-owned output |
 | `--min-free-space` | `10GiB` | mandatory filesystem reserve before more work starts |
 | `--max-processes` | `64` | per root tree, including the root; Linux cgroup counts tasks, including threads |
-| `--format` | `json` | `json`, `jsonl`, or `human` |
+| `--format` | `json` | `json` or `jsonl` |
 | `--profile full` / `--profile focused` | `full` | candidate-selection profile |
 | `--fingerprint-include GLOB` | none | invalidates compatible session reuse; does not copy worker files |
 | `--fingerprint-file PATH` | none | fingerprints one exact root-relative file; does not copy worker files |
@@ -515,9 +506,8 @@ The defaults are:
 The final run summary reports `resolved_mutant_timeout`, the individual cap
 actually passed in mutant process requests. JSON stores it in
 `summary.resolved_mutant_timeout`; JSONL stores it on `run_finished`. The value
-uses integer `secs` and `nanos` (for example, `{"secs": 6, "nanos": 800000000}`),
-and human output preserves the duration's precision. It is `null` in machine
-output, or `unresolved` in human output, if no mutant process request was built.
+uses integer `secs` and `nanos` (for example, `{"secs": 6, "nanos": 800000000}`).
+It is `null` if no mutant process request was built.
 A failed baseline therefore never reports an unused configured cap as resolved.
 This value is separate from process elapsed time and the total run deadline,
 which can interrupt execution before the individual cap expires.
@@ -911,9 +901,9 @@ quality guarantee or a default CI acceptance target.
 ### Mutation-progress reports
 
 Compare ordered run reports to track mutation-testing progress. Inputs are oldest-to-newest, and `--patience` defaults to three consecutive comparable stalls.
+The command returns JSON and accepts no `--format` selector.
 
-Repeated input paths and byte-identical copies produce warnings on stderr, in
-both human and JSON output modes. Warnings identify the repeated input and an
+Repeated input paths and byte-identical copies produce warnings on stderr. Warnings identify the repeated input and an
 earlier input, with `same path` or `identical bytes` as the reason. Inputs remain
 in order: self-comparisons still count as stalls and can reach saturation, and
 unusable reports still break the stall chain. No strict rejection is applied.
@@ -934,7 +924,7 @@ pairs for comparison. The initial-file-length read policy described above also
 applies to progress. For example:
 
 ```console
-hoimin progress --format json reports/before.json reports/after.jsonl
+hoimin progress reports/before.json reports/after.jsonl
 ```
 
 JSONL is read one event per nonblank line. `run_started` must come first and
@@ -959,15 +949,14 @@ string. Its memory use still depends on candidate data and the largest event.
 
 ```console
 hoimin progress --patience 3 reports/before.json reports/after.json reports/latest.json
-hoimin progress --format json reports/*.json
+hoimin progress reports/*.json
 ```
 
 Comparisons require adjacent reports that are both complete and have successful baselines. `saturated` means the configured number of consecutive comparable stalls was reached. Only immediately adjacent stalled comparisons contribute to this count. An improving, regressing, or indeterminate comparison resets the consecutive stall chain.
 
-By default, valid progress comparisons exit with code 0. Add `--fail-on-regression` to exit with code 1 only when `latest.state` is `regressing`; `indeterminate` still exits 0. The gate uses the final adjacent pair, so a historical regression followed by improvement or an unusable report does not fail the gate. Input, validation, and output failures retain exit code 2. The command writes its complete human or JSON result before returning the regression exit code. JSON output exposes `latest.state` for callers that need a different policy. A surviving mutant is not proof of behavioral equivalence.
+By default, valid progress comparisons exit with code 0. Add `--fail-on-regression` to exit with code 1 only when `latest.state` is `regressing`; `indeterminate` still exits 0. The gate uses the final adjacent pair, so a historical regression followed by improvement or an unusable report does not fail the gate. Input, validation, and output failures retain exit code 2. The command writes its complete JSON result before returning the regression exit code. JSON output exposes `latest.state` for callers that need a different policy. A surviving mutant is not proof of behavioral equivalence.
 
-The human `comparable score` and the JSON `previous_score`, `current_score`, and
-`score_delta` fields use the intersection of common mutants with conclusive
+The JSON `previous_score`, `current_score`, and `score_delta` fields use the intersection of common mutants with conclusive
 results in both reports. Read the latest run summary for its whole-run mutation
 score.
 
@@ -1077,20 +1066,19 @@ Copy-content read or length-change errors may therefore appear during actual
 preflight, and a successful preview does not certify all copied asset bodies.
 
 The [preview schema](json-schema/verify-preview.schema.json) is independent
-of run reports: `kind` is `verify_preview` and `schema_version` is 2. JSON and
-JSONL each contain one object; `--format human` prints metadata and candidate rows.
+of run reports: `kind` is `verify_preview` and `schema_version` is 2. Both
+`--format json` and `--format jsonl` return one JSON object.
 The ordered `candidates` array gives each candidate's `id`, saved `rank`,
 `selection_order`, `path`, `line`, `column`, `operator`, `original` and `replacement`.
 Details come from the same validated plan candidate. Rank, line and batch selection
-order start at 1; column is the plan's 0-based Python source column. Human rows
-show `path:line:column operator=NAME "original" -> "replacement"`; mutation text
-is quoted and escaped so newlines, tabs, quotes and backslashes stay within one row.
-Paths and other external human fields escape controls, including ESC, CR, LF and
-TAB; ordinary Unicode such as Japanese remains readable. This same display policy
-covers run results, review, progress warnings and command diagnostics. Candidate
-paths, IDs and JSON/JSONL string values retain their logical values. Baseline child
-transcripts keep their separate streamed-output policy, including readable newlines
-and tabs; dry-run never executes baseline or test commands.
+order start at 1; column is the plan's 0-based Python source column.
+
+Plain-text errors, help, progress warnings and command diagnostics escape controls
+in external fields, including ESC, CR, LF and TAB; ordinary Unicode such as Japanese
+remains readable. JSON encoders escape strings while preserving the logical values
+of paths, IDs and other fields. Baseline child transcripts keep their separate
+streamed-output policy, including readable newlines and tabs; dry-run never executes
+baseline or test commands.
 
 The closed version-1 preview schema does not accept these added fields. Clients
 that accept only preview version 1 must update to version 2; the CLI emits version 2
@@ -1136,10 +1124,10 @@ JSON Schema checks the required field and its seven allowed values; only the
 strict reader checks equality with the outcome. Summary, progress and resume
 continue to derive their classifications from outcome evidence.
 
-Human completion rows include the full candidate ID, `path:line:column`, operator,
-quoted original and replacement expressions, and verdict on one line. Control
-characters and Unicode line separators in those fields are escaped, so each row
-can be read on its own when parallel workers finish in a different order.
+JSON mutant records and JSONL `mutant_finished` events include the full candidate
+ID, source position, operator, original and replacement expressions, and verdict.
+Use these fields to identify results when parallel workers finish in a different
+order.
 
 The final summary's `complete` is `false` when any mutant is inconclusive or the run fails or is interrupted. It is `true` only when every selected mutant is `killed` or `survived` and no run-level failure occurred; a successful run with no candidates is also complete. Therefore, an exit code of `4` always has `complete: false`.
 
@@ -1151,8 +1139,8 @@ on Unix this includes writerless FIFOs without waiting for a writer. Review's
 Run `hoimin progress --details before.json after.json` to identify improvements and
 regressions in the **final adjacent input pair**. Details include candidate ID,
 operator, previous/current status and source positions (one-based lines, zero-based
-columns). Human output quotes and escapes strings. `--details-limit N` sets the
-maximum displayed changes (default 100; zero shows only omission counts), ordered
+columns). JSON string values preserve the original field values. `--details-limit N`
+sets the maximum returned changes (default 100; zero shows only omission counts), ordered
 lexicographically by candidate ID.
 
 The detail fields `previous_input` and `current_input` are zero-based indices into
@@ -1165,11 +1153,11 @@ limit; `unidentified` counts aggregate changes whose identity cannot be establis
 such as content-only matches with different IDs. All aggregate counts and decisions
 remain independent of the display limit.
 
-`progress --format json` uses [progress schema 3](json-schema/progress-result.schema.json)
+`progress` uses [progress schema 3](json-schema/progress-result.schema.json)
 with or without `--details`. The required `details` field is `null` when details
 were not requested. With `--details`, it is an object, including `available: false`
-when the final pair cannot be compared. Human output, aggregate decisions and
-exit status retain their existing behavior. See the
+when the final pair cannot be compared. Aggregate decisions and exit status are
+independent of whether details were requested. See the
 [current progress format](compatibility.md#single-progress-output-schema).
 
 ### Operational metrics
@@ -1261,7 +1249,7 @@ The project root is stored only in `normalized_config.selection.root` (under
 plans; read old reports with their producing binary or rerun with this version.
 See the [0.12.0 compatibility notice](compatibility.md#discovery-timeout-ownership-in-0120).
 
-Run JSON/JSONL emit schema 10; consumers validating the closed schema must update. `progress` accepts only schema-10 JSON/JSONL and rejects historical, unsupported future and mixed-version reports. When `--resume` is requested, JSON and JSONL include `run_started.resume` (the `run.resume` field in a JSON report): `{"status":"resumed"}` or `{"status":"fresh","reason":"CODE"}`. Human output also explains whether the saved run is continuing or a new run is starting. Runs without `--resume` omit this field.
+Run JSON/JSONL emit schema 10; consumers validating the closed schema must update. `progress` accepts only schema-10 JSON/JSONL and rejects historical, unsupported future and mixed-version reports. When `--resume` is requested, JSON and JSONL include `run_started.resume` (the `run.resume` field in a JSON report): `{"status":"resumed"}` or `{"status":"fresh","reason":"CODE"}`. Runs without `--resume` omit this field.
 
 A compatible incomplete run always wins, even if newer runs are incompatible. If an eligible row appears only during the later history inspection, `candidate_changed` takes precedence. Otherwise reasons use this precedence: `budget_decreased` (matching incomplete runs require a higher `--max-mutants`), `matching_run_complete`, `fingerprint_mismatch` (other incomplete history), `no_incomplete_run` (only nonmatching complete history), then `no_prior_run`. `candidate_changed` means session history changed during resume selection. These codes describe observed history, not which configuration field or file changed. Existing old-schema, corrupt-data, database-read, and ownership errors remain errors.
 
@@ -1326,7 +1314,7 @@ For executed outcomes, `close_timed_out` means `error` regardless of termination
 With `complete` output, exit 0 means `survived`, any other exit means `killed`,
 resource/time limits retain their named status, and cancellation means `not_run`.
 Diagnostics remain separate evidence and do not determine output state or status.
-Progress, review, summary counts, and human output derive these statuses. Baseline
+Progress, review, and summary counts derive these statuses. Baseline
 report fields retain their existing representation. Update strict report consumers
 to schema 8; old flat mutation result records are rejected without conversion.
 
@@ -1589,7 +1577,8 @@ supersedes the opt-in rollout described in the two original design reports.
 ## Human review of mutation candidates
 
 `review` records human assessments of saved plan candidates in an explicitly
-selected local SQLite sidecar. It does not run the analyzer or tests, alter the
+selected local SQLite sidecar. List, show and record return JSON and accept no
+`--format` selector. It does not run the analyzer or tests, alter the
 plan/report, change mutation scores or progress decisions, or suppress candidates.
 
 An external agent can also use these commands to record reasoned assessments
@@ -1600,7 +1589,7 @@ tests; an agent must retain uncertainty when it lacks evidence.
 Inspect the saved plan with these single-line commands in Bash or PowerShell 7:
 
 ```console
-hoimin review list PLAN.json --store reviews.sqlite3 --format json
+hoimin review list PLAN.json --store reviews.sqlite3
 hoimin review show PLAN.json --store reviews.sqlite3 --candidate CANDIDATE_ID
 ```
 
@@ -1636,7 +1625,7 @@ a useful test improvement; neither changes the actual mutation outcome.
 `record` requires a nonblank reason of at most 4096 UTF-8 bytes. Repeat
 `--evidence TEXT` for at most eight inert references, each at most 2048 bytes.
 References are not opened or executed. Control characters other than newline
-and tab are rejected. Text output escapes control characters.
+and tab are rejected. JSON output escapes strings and preserves their logical values.
 
 Use revision 0 for the first assessment. For an update, read the latest revision
 with `show` and pass it to `--expected-revision`. Concurrent or outdated writes

@@ -19,6 +19,21 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Agent-oriented output (#1100–#1103)
+
+Run and verify accept only `--format json` and `--format jsonl`; `human` output
+and human verify-preview rows are removed. Progress and review always emit their
+current JSON documents and no longer accept `--format`, including `--format json`.
+Their comparison/history behavior and JSON schemas are unchanged. Update command
+invocations; no old-format alias or fallback is provided.
+
+Terminal progress lines, TTY-based logging format selection and the periodic
+refresh timer are removed. Optional `RUST_LOG` tracing always uses JSON Lines.
+Logging remains off by default with bounded records/queue and finite shutdown
+waiting. JSONL execution events remain available for observing results as they
+arrive. Help, concrete errors, failed-test logs, history and saturation decisions
+remain available. Plain-text errors/help still escape external control characters.
+
 ## Dependency reduction (#1096–#1098)
 
 `hoimin completions` and shell-script generation are removed. Use the current
@@ -231,7 +246,7 @@ fingerprint schema 13 and progress output schema 3 are unchanged.
 
 ## Single progress output schema
 
-`progress --format json` emits schema 3 with or without `--details`.
+`progress` emits schema 3 with or without `--details`.
 The required `details` field is `null` when details were
 not requested; a requested object retains `available: false` when the final
 adjacent pair cannot be compared. The single current definition is
@@ -244,8 +259,7 @@ The package floor remains 0.14.0; this format change does not require a new
 minor series.
 
 Display limits still affect only listed transitions. Comparison counts,
-stalled/saturated decisions, regression exit policy and human output are
-unchanged. Progress accepts only current report/event schema 10; plan schema
+stalled/saturated decisions and regression exit policy are unchanged. Progress accepts only current report/event schema 10; plan schema
 10, SQLite session schema 5, fingerprint schema 13, ranking rule 4, candidate
 schema 1 and mutant-ID v1 retain their formats.
 

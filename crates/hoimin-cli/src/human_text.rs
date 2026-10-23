@@ -1,65 +1,22 @@
-//! Inert, single-line projections of external text for human renderers.
+//! Inert, single-line projections of external text for errors, help and warnings.
 
 use std::fmt::{self, Write};
 
 /// Escapes controls and Unicode line separators while preserving ordinary Unicode.
-/// `Display` leaves ordinary text unchanged; `Debug` adds string quotes and escapes
-/// quotes/backslashes. Apply once at the human field boundary, never to logical data
-/// or a complete rendered document whose separators belong to the renderer.
+/// Apply once to external fields in errors/help/warnings, never to logical JSON data
+/// or to a complete diagnostic whose layout belongs to its renderer.
 pub(crate) struct HumanText<'a>(pub(crate) &'a str);
 
-impl HumanText<'_> {
-    /// Preserve only the intentional LF/TAB layout of a baseline transcript.
-    /// All other controls still use the same escaping policy as ordinary fields.
-    pub(crate) fn baseline_output(&self) -> impl fmt::Display + '_ {
-        BaselineOutput(self.0)
-    }
-
-    fn write(
-        &self,
-        formatter: &mut fmt::Formatter<'_>,
-        quoted: bool,
-        baseline: bool,
-    ) -> fmt::Result {
-        if quoted {
-            formatter.write_char('"')?;
-        }
+impl fmt::Display for HumanText<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         for character in self.0.chars() {
-            if baseline && matches!(character, '\n' | '\t') {
-                formatter.write_char(character)?;
-            } else if character.is_control() || matches!(character, '\u{2028}' | '\u{2029}') {
+            if character.is_control() || matches!(character, '\u{2028}' | '\u{2029}') {
                 write!(formatter, "{}", character.escape_debug())?;
-            } else if quoted && matches!(character, '"' | '\\') {
-                formatter.write_char('\\')?;
-                formatter.write_char(character)?;
             } else {
                 formatter.write_char(character)?;
             }
         }
-        if quoted {
-            formatter.write_char('"')?;
-        }
         Ok(())
-    }
-}
-
-impl fmt::Display for HumanText<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.write(formatter, false, false)
-    }
-}
-
-impl fmt::Debug for HumanText<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.write(formatter, true, false)
-    }
-}
-
-struct BaselineOutput<'a>(&'a str);
-
-impl fmt::Display for BaselineOutput<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        HumanText(self.0).write(formatter, false, true)
     }
 }
 
@@ -104,15 +61,6 @@ mod tests {
     use proptest::prelude::*;
 
     #[test]
-    fn quoted_projection_preserves_unicode_and_escapes_string_delimiters_once() {
-        let raw = "日本語🦀 '\"\\\n\t\x1b";
-
-        let quoted = format!("{:?}", HumanText(raw));
-
-        assert_eq!(quoted, "\"日本語🦀 '\\\"\\\\\\n\\t\\u{1b}\"");
-    }
-
-    #[test]
     fn clap_contexts_escape_overlapping_values_without_changing_usage_layout() {
         use clap::error::{ContextKind, ContextValue, ErrorKind};
         let mut error = clap::Error::new(ErrorKind::ArgumentConflict);
@@ -152,8 +100,8 @@ mod tests {
     proptest! {
         #![proptest_config(ProptestConfig { failure_persistence: None, ..ProptestConfig::default() })]
         #[test]
-        fn projections_never_emit_controls_or_line_separators(raw in any::<String>(), quoted in any::<bool>()) {
-            let text = if quoted { format!("{:?}", HumanText(&raw)) } else { HumanText(&raw).to_string() };
+        fn projections_never_emit_controls_or_line_separators(raw in any::<String>()) {
+            let text = HumanText(&raw).to_string();
 
             prop_assert!(!text.chars().any(|c| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}')), "{:?}", text);
         }

@@ -1,9 +1,6 @@
 use std::{num::NonZeroUsize, path::Path};
 
-use hoimin_cli::{
-    cli::{ProgressArgs, ProgressOutputFormat},
-    progress,
-};
+use hoimin_cli::{cli::ProgressArgs, progress};
 use serde_json::{Value, json};
 
 #[path = "support/candidate_identity.rs"]
@@ -96,7 +93,6 @@ fn measure_history_with_details(
         details_limit: 100,
         reports,
         patience: NonZeroUsize::new(3).unwrap(),
-        format: ProgressOutputFormat::Json,
     };
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();

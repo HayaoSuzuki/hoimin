@@ -68,11 +68,7 @@ fn verify(path: &Path) -> Command {
 
 fn progress(path: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_hoimin"));
-    command
-        .arg("progress")
-        .arg(path)
-        .arg(path)
-        .args(["--format", "json"]);
+    command.arg("progress").arg(path).arg(path);
     command
 }
 

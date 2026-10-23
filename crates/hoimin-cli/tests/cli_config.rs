@@ -2,8 +2,7 @@ use std::fs;
 use std::num::NonZeroUsize;
 
 use hoimin_cli::cli::{
-    ParsedCommand, ProgressOutputFormat, TopSelectionPolicy, VerifySelection, parse_config_from,
-    parse_from,
+    ParsedCommand, TopSelectionPolicy, VerifySelection, parse_config_from, parse_from,
 };
 use hoimin_core::{MutationOperator, MutationOperatorSelection, MutationProfile};
 
@@ -376,7 +375,7 @@ fn verify_resolves_metrics_path_from_invocation_directory() {
 }
 
 #[test]
-fn progress_defaults_to_human_and_three_stalls() {
+fn progress_defaults_to_three_stalls() {
     let ParsedCommand::Progress(args) =
         parse_from(["hoimin", "progress", "before.json", "after.json"]).unwrap()
     else {
@@ -384,7 +383,6 @@ fn progress_defaults_to_human_and_three_stalls() {
     };
 
     assert_eq!(args.patience.get(), 3);
-    assert_eq!(args.format, ProgressOutputFormat::Human);
 }
 
 #[test]
@@ -2120,4 +2118,61 @@ fn verify_accepts_runtime_verbose_without_a_plan_override() {
     };
     // Assert.
     assert!(args.verbose);
+}
+
+#[test]
+fn agent_output_rejects_retired_formats_and_redundant_selectors() {
+    assert!(
+        parse_from([
+            "hoimin",
+            "run",
+            "--file",
+            "src/foo.py",
+            "--format",
+            "human",
+            "--",
+            "python"
+        ])
+        .is_err()
+    );
+    assert!(
+        parse_from([
+            "hoimin",
+            "verify",
+            "plan.json",
+            "--candidate",
+            "m1",
+            "--format",
+            "human"
+        ])
+        .is_err()
+    );
+    for format in ["human", "json"] {
+        assert!(
+            parse_from([
+                "hoimin",
+                "progress",
+                "--format",
+                format,
+                "before.json",
+                "after.json"
+            ])
+            .is_err()
+        );
+    }
+    for format in ["text", "json"] {
+        assert!(
+            parse_from([
+                "hoimin",
+                "review",
+                "list",
+                "plan.json",
+                "--store",
+                "review.sqlite3",
+                "--format",
+                format
+            ])
+            .is_err()
+        );
+    }
 }

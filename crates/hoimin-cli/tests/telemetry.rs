@@ -314,7 +314,7 @@ async fn debug_logging_to_stalled_stderr_keeps_the_execution_deadline() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn terminal_shows_heartbeat_and_completed_count_with_logging_off() {
+async fn terminal_is_quiet_with_logging_off() {
     use std::process::Stdio;
     use std::time::Duration;
 
@@ -355,12 +355,57 @@ async fn terminal_shows_heartbeat_and_completed_count_with_logging_off() {
     let stderr = capture.join().unwrap();
     assert_eq!(output.status.code(), Some(1), "{stderr}");
     serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap();
+    assert_eq!(stderr, "");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn terminal_diagnostic_logs_are_json_without_progress_lines() {
+    use std::process::Stdio;
+    use std::time::Duration;
+
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("target.py"), "x = 1 + 2\n").unwrap();
+    let (reader, writer) = terminal();
+    let capture = std::thread::spawn(move || read_terminal(reader));
+    let child = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .env("RUST_LOG", "hoimin_cli=debug")
+        .args(["plan", "--root"])
+        .arg(root.path())
+        .args([
+            "--file",
+            "target.py",
+            "--min-free-space",
+            "1B",
+            "--allow-best-effort-memory",
+            "--",
+            "python",
+            "-c",
+            "pass",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::from(writer))
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let output = tokio::time::timeout(Duration::from_secs(15), child.wait_with_output())
+        .await
+        .unwrap()
+        .unwrap();
+    let stderr = capture.join().unwrap();
+    assert!(output.status.success(), "{stderr}");
+    let manifest: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_ne!(manifest["candidates"].as_array().unwrap().len(), 0);
+    let logs = stderr
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert!(logs.iter().any(|log| log["level"] == "DEBUG"), "{stderr}");
     assert!(
-        stderr.contains("baseline") && stderr.contains("elapsed"),
+        logs.iter()
+            .any(|log| log["fields"]["stage"] == "analyzing sources"),
         "{stderr}"
     );
-    assert!(stderr.contains("1 completed"), "{stderr}");
-    assert!(!stderr.contains("DEBUG"), "{stderr}");
 }
 
 #[cfg(unix)]

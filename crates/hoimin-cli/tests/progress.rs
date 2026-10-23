@@ -285,10 +285,7 @@ async fn real_run_reports_expose_exact_regression_through_progress() {
     std::fs::write(&after, &after_output.stdout).unwrap();
 
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
-    command
-        .args(["progress", "--format", "json"])
-        .arg(&before)
-        .arg(&after);
+    command.arg("progress").arg(&before).arg(&after);
     let output = bounded_output(&mut command, Duration::from_secs(30))
         .await
         .unwrap();
@@ -307,7 +304,7 @@ async fn real_run_reports_expose_exact_regression_through_progress() {
     assert_eq!(progress["comparisons"][0]["previous_score"], 1.0);
     assert_eq!(progress["comparisons"][0]["current_score"], 0.0);
     assert_eq!(progress["comparisons"][0]["score_delta"], -1.0);
-    let detailed = progress_details(&[before.clone(), after.clone()], "json", 100).await;
+    let detailed = progress_details(&[before.clone(), after.clone()], 100).await;
     let entry = &detailed["details"]["transitions"][0];
     assert_eq!(entry["id"], before_mutants[0]["candidate"]["id"]);
     assert_eq!(entry["path"], "src/calc.py");
@@ -322,8 +319,15 @@ async fn real_run_reports_expose_exact_regression_through_progress() {
     assert_eq!(gated.status.code(), Some(1));
     assert_eq!(gated.stdout, output.stdout);
     assert_eq!(gated.stderr, output.stderr);
-    let improvement = progress_details(&[after, before], "human", 100).await;
-    assert!(improvement.as_str().unwrap().contains("survived -> killed"));
+    let improvement = progress_details(&[after, before], 100).await;
+    assert_eq!(
+        improvement["details"]["transitions"][0]["previous_status"],
+        "survived"
+    );
+    assert_eq!(
+        improvement["details"]["transitions"][0]["current_status"],
+        "killed"
+    );
 }
 
 #[tokio::test]
@@ -363,7 +367,7 @@ async fn real_run_shifted_ids_preserve_content_fallback_for_json_and_jsonl() {
             before.mutants[0].candidate.id,
             after.mutants[0].candidate.id
         );
-        let (exit, stdout, stderr) = run_progress(&reports, "json").await;
+        let (exit, stdout, stderr) = run_progress(&reports).await;
         assert_eq!(exit, 0);
         let output: Value = serde_json::from_slice(&stdout).unwrap();
         let comparison = &output["comparisons"][0];
@@ -1362,7 +1366,7 @@ async fn duplicate_input_paths_and_copies_preserve_json_saturation() {
             let fixture = tempfile::tempdir().unwrap();
             let (original, reports) = duplicate_input_paths(&fixture, jsonl, copied);
 
-            let (exit, stdout, stderr) = run_progress(&reports, "json").await;
+            let (exit, stdout, stderr) = run_progress(&reports).await;
 
             assert_eq!(exit, 0);
             assert_duplicate_warnings(stderr, &original, &reports, reason);
@@ -1371,24 +1375,6 @@ async fn duplicate_input_paths_and_copies_preserve_json_saturation() {
             assert_eq!(output["consecutive_stalls"], 3);
             assert_eq!(output["inputs"].as_array().unwrap().len(), 4);
             assert_eq!(output["comparisons"].as_array().unwrap().len(), 3);
-        }
-    }
-}
-
-#[tokio::test]
-async fn duplicate_input_paths_and_copies_preserve_human_saturation() {
-    for jsonl in [false, true] {
-        for (copied, reason) in [(false, "same path"), (true, "identical bytes")] {
-            let fixture = tempfile::tempdir().unwrap();
-            let (original, reports) = duplicate_input_paths(&fixture, jsonl, copied);
-
-            let (exit, stdout, stderr) = run_progress(&reports, "human").await;
-
-            assert_eq!(exit, 0);
-            assert_duplicate_warnings(stderr, &original, &reports, reason);
-            let output = String::from_utf8(stdout).unwrap();
-            assert!(output.contains("state: saturated"));
-            assert!(output.contains("stalls: 3"));
         }
     }
 }
@@ -1424,7 +1410,7 @@ async fn duplicate_input_detection_distinguishes_independent_and_resumed_reports
         ("changed-result", changed_result, "regressing"),
     ] {
         let next = write_json(&fixture, &format!("{name}.json"), &report);
-        let (exit, stdout, stderr) = run_progress(&[first.clone(), next], "json").await;
+        let (exit, stdout, stderr) = run_progress(&[first.clone(), next]).await;
         assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr));
         assert!(
             !String::from_utf8_lossy(&stderr).contains("repeats input"),
@@ -1435,7 +1421,7 @@ async fn duplicate_input_detection_distinguishes_independent_and_resumed_reports
     }
     // Equivalent serializations are intentionally outside byte-only detection.
     let jsonl = write_jsonl(&fixture, &jsonl_events(&original));
-    let (exit, _, stderr) = run_progress(&[first, jsonl], "json").await;
+    let (exit, _, stderr) = run_progress(&[first, jsonl]).await;
     assert_eq!(exit, 0);
     assert_eq!(stderr, Vec::<u8>::new());
 }
@@ -1456,7 +1442,7 @@ async fn duplicate_input_warnings_preserve_barriers_and_deferred_errors() {
         first.clone(),
         first,
     ];
-    let (exit, stdout, stderr) = run_progress(&reports, "json").await;
+    let (exit, stdout, stderr) = run_progress(&reports).await;
     assert_eq!(exit, 0);
     let output: Value = serde_json::from_slice(&stdout).unwrap();
     assert_eq!(output["latest"]["state"], "stalled");
@@ -1470,10 +1456,42 @@ async fn duplicate_input_warnings_preserve_barriers_and_deferred_errors() {
     std::fs::write(&invalid, "{").unwrap();
     let mut reports = reports;
     reports.push(invalid);
-    let (exit, stdout, stderr) = run_progress(&reports, "json").await;
+    let (exit, stdout, stderr) = run_progress(&reports).await;
     assert_eq!(exit, 2);
     assert_eq!(stdout, Vec::<u8>::new());
     assert!(!String::from_utf8_lossy(&stderr).contains("warning:"));
+}
+
+#[tokio::test]
+async fn agent_output_progress_defaults_to_json() {
+    let fixture = tempfile::tempdir().unwrap();
+    let before = write_json(&fixture, "before.json", &valid_report());
+    let after = write_json(&fixture, "after.json", &valid_report());
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let code = hoimin_cli::run_with_writers(
+        vec![
+            "hoimin".to_owned(),
+            "progress".to_owned(),
+            before.display().to_string(),
+            after.display().to_string(),
+        ],
+        stdout.clone(),
+        stderr.clone(),
+    )
+    .await;
+
+    assert_eq!(code, 0);
+    assert!(String::from_utf8_lossy(&stderr.snapshot()).contains("identical bytes"));
+    let output: Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    assert_eq!(output["schema_version"], 3);
+    assert_eq!(output["latest"]["state"], "stalled");
+    assert_eq!(output["latest"]["patience"], 3);
+    assert_eq!(output["latest"]["saturated"], false);
+    assert_eq!(output["inputs"].as_array().unwrap().len(), 2);
+    assert_eq!(output["inputs"][0]["usable"], true);
+    assert_eq!(output["comparisons"].as_array().unwrap().len(), 1);
+    assert_eq!(output["comparisons"][0]["current_score"], 1.0);
 }
 
 #[tokio::test]
@@ -1492,7 +1510,7 @@ async fn output_json_exposes_agent_decision_fields() {
         })
         .collect::<Vec<_>>();
 
-    let (code, stdout, stderr) = run_progress(&reports, "json").await;
+    let (code, stdout, stderr) = run_progress(&reports).await;
     let value: Value = serde_json::from_slice(&stdout).unwrap();
 
     assert_eq!(code, 0);
@@ -1507,44 +1525,21 @@ async fn output_json_exposes_agent_decision_fields() {
     assert_eq!(value["comparisons"][2]["state"], "stalled");
     assert_eq!(value["comparisons"][2]["current_score"], 1.0);
     assert_eq!(value["comparisons"][2]["score_delta"], 0.0);
-}
-
-#[tokio::test]
-async fn output_human_includes_latest_comparison_fields() {
-    let fixture = tempfile::tempdir().unwrap();
-    let reports = vec![
-        write_json(&fixture, "before.json", &valid_report()),
-        write_json(&fixture, "after.json", &valid_report()),
-    ];
-
-    let (code, stdout, stderr) = run_progress(&reports, "human").await;
-    let output = String::from_utf8(stdout).unwrap();
-
-    assert_eq!(code, 0);
-    let warnings = String::from_utf8(stderr).unwrap();
-    assert_eq!(warnings.lines().count(), 1);
-    assert!(warnings.contains("identical bytes"));
     for field in [
-        "state: stalled",
-        "comparable score: 1.000000",
-        "delta: +0.000000",
-        "improvements: 0",
-        "regressions: 0",
-        "carried_survivors: 0",
-        "added: 0",
-        "removed: 0",
-        "ambiguous: 0",
-        "inconclusive: 0",
-        "stalls: 1",
-        "patience: 3",
-        "saturated: false",
+        "improvements",
+        "regressions",
+        "carried_survivors",
+        "added",
+        "removed",
+        "ambiguous",
+        "inconclusive",
     ] {
-        assert!(output.contains(field), "missing `{field}` from:\n{output}");
+        assert_eq!(value["comparisons"][2][field], 0, "{field}");
     }
 }
 
 #[tokio::test]
-async fn output_labels_the_intersection_score_as_comparable() {
+async fn output_preserves_intersection_score_when_candidate_sets_differ() {
     let fixture = tempfile::tempdir().unwrap();
     let mut before = valid_report();
     before["mutants"][0]["outcome"]["executed"]["termination"] = json!({ "Exit": 0 });
@@ -1590,14 +1585,7 @@ async fn output_labels_the_intersection_score_as_comparable() {
         write_json(&fixture, "after.json", &after),
     ];
 
-    let (human_code, stdout, human_stderr) = run_progress(&reports, "human").await;
-    let output = String::from_utf8(stdout).unwrap();
-    assert_eq!(human_code, 0);
-    assert!(String::from_utf8_lossy(&human_stderr).contains("candidate"));
-    assert!(output.contains("comparable score: 0.000000"), "{output}");
-    assert!(!output.lines().any(|line| line.starts_with("score:")));
-
-    let (json_code, stdout, json_stderr) = run_progress(&reports, "json").await;
+    let (json_code, stdout, json_stderr) = run_progress(&reports).await;
     let document: Value = serde_json::from_slice(&stdout).unwrap();
     assert_eq!(json_code, 0);
     assert!(String::from_utf8_lossy(&json_stderr).contains("candidate"));
@@ -1606,7 +1594,7 @@ async fn output_labels_the_intersection_score_as_comparable() {
 }
 
 #[tokio::test]
-async fn output_human_omits_stale_comparison_fields_after_an_unusable_report() {
+async fn output_latest_state_is_indeterminate_after_an_unusable_report() {
     let fixture = tempfile::tempdir().unwrap();
     let mut before = valid_report();
     before["mutants"][0]["outcome"]["executed"]["termination"] = json!({ "Exit": 0 });
@@ -1625,27 +1613,15 @@ async fn output_human_omits_stale_comparison_fields_after_an_unusable_report() {
         write_json(&fixture, "incomplete.json", &incomplete),
     ];
 
-    let (code, stdout, stderr) = run_progress(&reports, "human").await;
-    let output = String::from_utf8(stdout).unwrap();
+    let (code, stdout, stderr) = run_progress(&reports).await;
+    let output: Value = serde_json::from_slice(&stdout).unwrap();
 
     assert_eq!(code, 0);
-    assert!(output.contains("state: indeterminate"), "{output}");
-    for stale_field in [
-        "score:",
-        "delta:",
-        "improvements:",
-        "regressions:",
-        "carried_survivors:",
-        "added:",
-        "removed:",
-        "ambiguous:",
-        "inconclusive:",
-    ] {
-        assert!(
-            !output.contains(stale_field),
-            "unexpected stale field {stale_field:?} in:\n{output}"
-        );
-    }
+    assert_eq!(output["latest"]["state"], "indeterminate");
+    assert_eq!(output["consecutive_stalls"], 0);
+    assert_eq!(output["comparisons"].as_array().unwrap().len(), 1);
+    assert_eq!(output["comparisons"][0]["state"], "improving");
+    assert_eq!(output["inputs"][2]["usable"], false);
     assert!(
         String::from_utf8(stderr)
             .unwrap()
@@ -1684,7 +1660,7 @@ async fn output_defers_mixed_history_rendering_until_all_reports_are_valid() {
         first.display(),
     );
 
-    let (code, stdout, stderr) = run_progress(&reports, "json").await;
+    let (code, stdout, stderr) = run_progress(&reports).await;
     assert_eq!(code, 0);
     assert_eq!(String::from_utf8(stderr).unwrap(), expected_diagnostics);
     let document: Value = serde_json::from_slice(&stdout).unwrap();
@@ -1700,13 +1676,6 @@ async fn output_defers_mixed_history_rendering_until_all_reports_are_valid() {
     );
     assert_eq!(document["comparisons"].as_array().unwrap().len(), 1);
     assert_eq!(document["comparisons"][0]["state"], "indeterminate");
-
-    let (code, stdout, stderr) = run_progress(&reports, "human").await;
-    assert_eq!(code, 0);
-    assert_eq!(String::from_utf8(stderr).unwrap(), expected_diagnostics);
-    let output = String::from_utf8(stdout).unwrap();
-    assert!(output.contains("state: indeterminate"), "{output}");
-    assert!(!output.contains("comparable score:"), "{output}");
 }
 
 #[tokio::test]
@@ -1741,7 +1710,7 @@ async fn output_malformed_json_returns_exit_two() {
     std::fs::write(&malformed, b"{ not json").unwrap();
     let valid = write_json(&fixture, "valid.json", &valid_report());
 
-    let (code, stdout, stderr) = run_progress(&[malformed, valid], "json").await;
+    let (code, stdout, stderr) = run_progress(&[malformed, valid]).await;
 
     assert_eq!(code, 2);
     assert_eq!(stdout, Vec::<u8>::new());
@@ -1763,22 +1732,17 @@ async fn output_late_malformed_report_emits_no_earlier_warnings_or_output() {
     let malformed = fixture.path().join("malformed.json");
     std::fs::write(&malformed, b"{ not json").unwrap();
 
-    for format in ["json", "human"] {
-        let (code, stdout, stderr) = run_progress(
-            &[valid.clone(), incomplete.clone(), malformed.clone()],
-            format,
-        )
-        .await;
+    let (code, stdout, stderr) =
+        run_progress(&[valid.clone(), incomplete.clone(), malformed.clone()]).await;
 
-        assert_eq!(code, 2, "{format}");
-        assert!(stdout.is_empty(), "{format}");
-        let diagnostic = String::from_utf8(stderr).unwrap();
-        assert!(
-            diagnostic.contains("could not parse progress report"),
-            "{format}: {diagnostic}"
-        );
-        assert!(!diagnostic.contains("warning:"), "{format}: {diagnostic}");
-    }
+    assert_eq!(code, 2);
+    assert_eq!(stdout, Vec::<u8>::new());
+    let diagnostic = String::from_utf8(stderr).unwrap();
+    assert!(
+        diagnostic.contains("could not parse progress report"),
+        "{diagnostic}"
+    );
+    assert!(!diagnostic.contains("warning:"), "{diagnostic}");
 }
 
 #[tokio::test]
@@ -1787,7 +1751,7 @@ async fn output_unreadable_path_returns_exit_two() {
     let missing = fixture.path().join("missing.json");
     let valid = write_json(&fixture, "valid.json", &valid_report());
 
-    let (code, stdout, stderr) = run_progress(&[missing, valid], "json").await;
+    let (code, stdout, stderr) = run_progress(&[missing, valid]).await;
 
     assert_eq!(code, 2);
     assert_eq!(stdout, Vec::<u8>::new());
@@ -1806,7 +1770,7 @@ async fn output_unsupported_schema_returns_exit_two() {
     let unsupported = write_json(&fixture, "unsupported.json", &unsupported);
     let valid = write_json(&fixture, "valid.json", &valid_report());
 
-    let (code, stdout, stderr) = run_progress(&[unsupported, valid], "json").await;
+    let (code, stdout, stderr) = run_progress(&[unsupported, valid]).await;
 
     assert_eq!(code, 2);
     assert_eq!(stdout, Vec::<u8>::new());
@@ -1825,7 +1789,7 @@ async fn output_invalid_structure_returns_exit_two() {
     let invalid = write_json(&fixture, "invalid.json", &invalid);
     let valid = write_json(&fixture, "valid.json", &valid_report());
 
-    let (code, stdout, stderr) = run_progress(&[invalid, valid], "json").await;
+    let (code, stdout, stderr) = run_progress(&[invalid, valid]).await;
 
     assert_eq!(code, 2);
     assert_eq!(stdout, Vec::<u8>::new());
@@ -1849,7 +1813,7 @@ async fn output_repeated_stable_identity_returns_exit_two() {
     let invalid = write_json(&fixture, "repeated-identity.json", &invalid);
     let valid = write_json(&fixture, "valid.json", &valid_report());
 
-    let (code, stdout, stderr) = run_progress(&[invalid, valid], "json").await;
+    let (code, stdout, stderr) = run_progress(&[invalid, valid]).await;
 
     assert_eq!(code, 2);
     assert_eq!(stdout, Vec::<u8>::new());
@@ -1866,7 +1830,7 @@ async fn output_inconsistent_summary_returns_exit_two() {
     let invalid = write_json(&fixture, "inconsistent-summary.json", &invalid);
     let valid = write_json(&fixture, "valid.json", &valid_report());
 
-    let (code, stdout, stderr) = run_progress(&[invalid, valid], "json").await;
+    let (code, stdout, stderr) = run_progress(&[invalid, valid]).await;
 
     assert_eq!(code, 2);
     assert_eq!(stdout, Vec::<u8>::new());
@@ -1890,7 +1854,7 @@ async fn output_unusable_reports_are_indeterminate_and_exit_zero() {
     let baseline_failed = write_json(&fixture, "baseline-failed.json", &baseline_failed);
 
     let (code, stdout, stderr) =
-        run_progress(&[missing_baseline, incomplete, baseline_failed], "json").await;
+        run_progress(&[missing_baseline, incomplete, baseline_failed]).await;
     let value: Value = serde_json::from_slice(&stdout).unwrap();
 
     assert_eq!(code, 0);
@@ -1918,7 +1882,7 @@ async fn output_warns_when_candidate_id_sets_differ() {
         write_json(&fixture, "after.json", &after),
     ];
 
-    let (code, stdout, stderr) = run_progress(&reports, "json").await;
+    let (code, stdout, stderr) = run_progress(&reports).await;
     let value: Value = serde_json::from_slice(&stdout).unwrap();
     let diagnostics = String::from_utf8(stderr).unwrap();
 
@@ -1953,7 +1917,7 @@ async fn output_ambiguity_is_structured_and_warned_on_stderr() {
         write_json(&fixture, "after.json", &different_ids),
     ];
 
-    let (code, stdout, stderr) = run_progress(&reports, "json").await;
+    let (code, stdout, stderr) = run_progress(&reports).await;
     let value: Value = serde_json::from_slice(&stdout).unwrap();
 
     assert_eq!(code, 0);
@@ -1981,7 +1945,7 @@ async fn progress_json_document_matches_its_schema() {
             write_json(&fixture, &format!("stalled-{index}.json"), &report)
         })
         .collect::<Vec<_>>();
-    let (code, stdout, _) = run_progress(&reports, "json").await;
+    let (code, stdout, _) = run_progress(&reports).await;
     assert_eq!(code, 0);
 
     let schema = read_schema(&repo_root().join("docs/json-schema/progress-result.schema.json"));
@@ -2367,13 +2331,8 @@ fn write_json(fixture: &tempfile::TempDir, name: &str, document: &Value) -> Path
     report
 }
 
-async fn run_progress(reports: &[PathBuf], format: &str) -> (i32, Vec<u8>, Vec<u8>) {
-    let mut argv = vec![
-        "hoimin".to_owned(),
-        "progress".to_owned(),
-        "--format".to_owned(),
-        format.to_owned(),
-    ];
+async fn run_progress(reports: &[PathBuf]) -> (i32, Vec<u8>, Vec<u8>) {
+    let mut argv = vec!["hoimin".to_owned(), "progress".to_owned()];
     argv.extend(
         reports
             .iter()
@@ -2939,10 +2898,10 @@ macro_rules! inconsistent_identity_test {
                 write_json(&fixture, "inconsistent.json", &document)
             };
             // Act
-            let (code, stdout, stderr) = run_progress(&[path.clone(), path.clone()], "json").await;
+            let (code, stdout, stderr) = run_progress(&[path.clone(), path.clone()]).await;
             // Assert: reject before either regression or saturation can be rendered.
             assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr));
-            assert!(stdout.is_empty());
+            assert_eq!(stdout, Vec::<u8>::new());
             let stderr = String::from_utf8(stderr).unwrap();
             assert!(stderr.contains(path.to_str().unwrap()));
             assert!(stderr.contains("candidate identity conflict"), "{stderr}");
@@ -2991,7 +2950,7 @@ macro_rules! identity_display_test {
                 write_json(&fixture, "after.json", &after)
             };
             // Act
-            let (code, stdout, stderr) = run_progress(&[before, after], "json").await;
+            let (code, stdout, stderr) = run_progress(&[before, after]).await;
             // Assert
             assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
             let value: Value = serde_json::from_slice(&stdout).unwrap();
@@ -3052,10 +3011,10 @@ macro_rules! stolen_identity_test {
             };
             // Act
             let (code, stdout, stderr) =
-                progress_with_gate(&[before, after.clone()], "json", true, true).await;
+                progress_with_gate(&[before, after.clone()], true, true).await;
             // Assert
             assert_eq!(code, 2);
-            assert!(stdout.is_empty());
+            assert_eq!(stdout, Vec::<u8>::new());
             let diagnostic = String::from_utf8(stderr).unwrap();
             assert!(diagnostic.contains(after.to_str().unwrap()));
             assert!(diagnostic.contains("candidate identity conflict"));
@@ -3083,8 +3042,7 @@ macro_rules! identity_status_test {
                 write_json(&fixture, "after.json", &after)
             };
             // Act
-            let (code, stdout, stderr) =
-                progress_with_gate(&[before, after], "json", true, true).await;
+            let (code, stdout, stderr) = progress_with_gate(&[before, after], true, true).await;
             // Assert
             assert_eq!(code, 1, "{}", String::from_utf8_lossy(&stderr));
             let result: Value = serde_json::from_slice(&stdout).unwrap();
@@ -3115,8 +3073,7 @@ macro_rules! identity_order_test {
                 write_json(&fixture, "after.json", &after)
             };
             // Act
-            let (code, stdout, stderr) =
-                progress_with_gate(&[before, after], "json", true, true).await;
+            let (code, stdout, stderr) = progress_with_gate(&[before, after], true, true).await;
             // Assert
             assert_eq!(code, 1, "{}", String::from_utf8_lossy(&stderr));
             let result: Value = serde_json::from_slice(&stdout).unwrap();
@@ -3344,7 +3301,6 @@ macro_rules! disk_public_wire_case {
                 .arg("progress")
                 .arg(&path)
                 .arg(&path)
-                .args(["--format", "json"])
                 .output()
                 .await
                 .unwrap();
@@ -3581,8 +3537,8 @@ async fn jsonl_and_document_inputs_have_identical_progress() {
             .as_str()
             .unwrap()
     );
-    let (expected_code, expected, _) = run_progress(&[json.clone(), json.clone()], "json").await;
-    let (actual_code, actual, errors) = run_progress(&[json, jsonl], "json").await;
+    let (expected_code, expected, _) = run_progress(&[json.clone(), json.clone()]).await;
+    let (actual_code, actual, errors) = run_progress(&[json, jsonl]).await;
     assert_eq!(actual_code, expected_code, "{errors:?}");
     let expected: Value = serde_json::from_slice(&expected).unwrap();
     let actual: Value = serde_json::from_slice(&actual).unwrap();
@@ -3801,7 +3757,7 @@ async fn jsonl_real_run_output_matches_document_progress() {
         ));
         reports.push(path);
     }
-    let (code, output, errors) = run_progress(&reports, "json").await;
+    let (code, output, errors) = run_progress(&reports).await;
     assert_eq!(code, 0, "{errors:?}");
     let output: Value = serde_json::from_slice(&output).unwrap();
     assert_eq!(output["latest"]["state"], "stalled");
@@ -3817,7 +3773,7 @@ async fn jsonl_invalid_input_has_no_partial_progress_output() {
     let mut events = jsonl_events(&valid_report());
     events.pop();
     let jsonl = write_jsonl(&fixture, &events);
-    let (code, output, error) = run_progress(&[json, jsonl.clone()], "json").await;
+    let (code, output, error) = run_progress(&[json, jsonl.clone()]).await;
     assert_eq!(code, 2);
     assert_eq!(output, Vec::<u8>::new());
     let error = String::from_utf8(error).unwrap();
@@ -3926,26 +3882,20 @@ fn jsonl_not_run_requires_start_and_preceding_baseline() {
     );
 }
 
-async fn progress_details(reports: &[PathBuf], format: &str, limit: usize) -> Value {
+async fn progress_details(reports: &[PathBuf], limit: usize) -> Value {
     let mut args = vec![
         "hoimin".to_owned(),
         "progress".to_owned(),
         "--details".to_owned(),
         "--details-limit".to_owned(),
         limit.to_string(),
-        "--format".to_owned(),
-        format.to_owned(),
     ];
     args.extend(reports.iter().map(|path| path.to_str().unwrap().to_owned()));
     let stdout = CollectingWriter::default();
     let stderr = CollectingWriter::default();
     let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
-    if format == "json" {
-        serde_json::from_slice(&stdout.snapshot()).unwrap()
-    } else {
-        json!(String::from_utf8(stdout.snapshot()).unwrap())
-    }
+    serde_json::from_slice(&stdout.snapshot()).unwrap()
 }
 
 fn detail_id(key: &str) -> String {
@@ -4023,7 +3973,7 @@ macro_rules! progress_json_contract_case {
                 })
                 .collect::<Vec<_>>();
             let limit: Option<usize> = $limit;
-            let mut args = regression_gate_args(&reports, "json", limit.is_some(), true);
+            let mut args = regression_gate_args(&reports, limit.is_some(), true);
             if let Some(limit) = limit {
                 args.extend(["--details-limit".to_owned(), limit.to_string()]);
             }
@@ -4035,8 +3985,7 @@ macro_rules! progress_json_contract_case {
             // Act: changing presentation must preserve the gate and aggregate decisions.
             let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
             let actual: Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
-            let (plain_code, plain, plain_stderr) =
-                progress_with_gate(&reports, "json", false, true).await;
+            let (plain_code, plain, plain_stderr) = progress_with_gate(&reports, false, true).await;
             let plain: Value = serde_json::from_slice(&plain).unwrap();
 
             // Assert: one version and required details distinguish the request from availability.
@@ -4193,7 +4142,7 @@ macro_rules! progress_duplicate_identity_case {
                 ]),
             );
             let limit: Option<usize> = $limit;
-            let mut args = regression_gate_args(&[before, after], "json", limit.is_some(), true);
+            let mut args = regression_gate_args(&[before, after], limit.is_some(), true);
             if let Some(limit) = limit {
                 args.extend(["--details-limit".to_owned(), limit.to_string()]);
             }
@@ -4237,7 +4186,7 @@ async fn progress_json_matches_current_golden() {
     );
 
     // Act
-    let (code, stdout, _) = run_progress(&[before, after], "json").await;
+    let (code, stdout, _) = run_progress(&[before, after]).await;
     let mut actual: Value = serde_json::from_slice(&stdout).unwrap();
     for input in actual["inputs"].as_array_mut().unwrap() {
         input["source"] = json!(
@@ -4268,10 +4217,10 @@ async fn details_identify_both_directions() {
         &detail_report(&[("a", MutationStatus::Survived)]),
     );
     let reports = [before, after];
-    let (code, original, stderr) = run_progress(&reports, "json").await;
+    let (code, original, stderr) = run_progress(&reports).await;
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
     let original: Value = serde_json::from_slice(&original).unwrap();
-    let detailed = progress_details(&reports, "json", 100).await;
+    let detailed = progress_details(&reports, 100).await;
     for field in [
         "inputs",
         "comparisons",
@@ -4294,7 +4243,7 @@ async fn details_identify_both_directions() {
         "column":0, "previous_path":"src/example.py", "previous_line":1, "previous_column":0,
         "operator":"integer_literal", "classification":"regression", "previous_status":"killed", "current_status":"survived"})
     );
-    let reverse = progress_details(&[reports[1].clone(), reports[0].clone()], "json", 100).await;
+    let reverse = progress_details(&[reports[1].clone(), reports[0].clone()], 100).await;
     assert_eq!(
         reverse["details"]["transitions"][0]["classification"],
         "improvement"
@@ -4306,16 +4255,6 @@ async fn details_identify_both_directions() {
     assert_eq!(
         reverse["details"]["transitions"][0]["current_status"],
         "killed"
-    );
-    let human = progress_details(&reports, "human", 100).await;
-    assert!(human.as_str().unwrap().contains("killed -> survived"));
-    let reverse_human =
-        progress_details(&[reports[1].clone(), reports[0].clone()], "human", 100).await;
-    assert!(
-        reverse_human
-            .as_str()
-            .unwrap()
-            .contains("survived -> killed")
     );
 }
 
@@ -4341,7 +4280,7 @@ async fn details_cap_and_order_do_not_change_aggregate_counts() {
         ]),
     );
     for limit in [0, 1, 2, 100] {
-        let detailed = progress_details(&[before.clone(), after.clone()], "json", limit).await;
+        let detailed = progress_details(&[before.clone(), after.clone()], limit).await;
         assert_eq!(detailed["comparisons"][0]["improvements"], 1);
         assert_eq!(detailed["comparisons"][0]["regressions"], 2);
         let entries = detailed["details"]["transitions"].as_array().unwrap();
@@ -4369,20 +4308,19 @@ async fn details_do_not_identify_content_only_matches_or_stale_pairs() {
     unusable["summary"]["complete"] = json!(false);
     unusable["summary"]["exit_code"] = json!(4);
     let gap = write_json(&fixture, "gap.json", &unusable);
-    let detailed = progress_details(&[before.clone(), after.clone()], "json", 100).await;
+    let detailed = progress_details(&[before.clone(), after.clone()], 100).await;
     assert_eq!(detailed["latest"]["state"], "indeterminate");
     assert_eq!(detailed["comparisons"][0]["regressions"], 1);
     assert_eq!(detailed["details"]["eligibility"], "different");
     assert_eq!(detailed["details"]["unidentified"], 1);
     assert_eq!(detailed["details"]["transitions"], json!([]));
-    let trailing =
-        progress_details(&[before.clone(), after.clone(), gap.clone()], "json", 100).await;
+    let trailing = progress_details(&[before.clone(), after.clone(), gap.clone()], 100).await;
     assert_eq!(trailing["details"]["previous_input"], 1);
     assert_eq!(trailing["details"]["current_input"], 2);
     assert_eq!(trailing["details"]["available"], false);
     assert!(trailing["details"]["eligibility"].is_null());
     assert_eq!(trailing["details"]["transitions"], json!([]));
-    let middle = progress_details(&[before.clone(), gap, before, after], "json", 100).await;
+    let middle = progress_details(&[before.clone(), gap, before, after], 100).await;
     assert_eq!(middle["details"]["previous_input"], 2);
     assert_eq!(middle["details"]["current_input"], 3);
 }
@@ -4399,7 +4337,7 @@ async fn details_schema_jsonl_and_quoted_locations_are_consistent() {
     }
     let before = write_json(&fixture, "before.json", &before_doc);
     let after = write_json(&fixture, "after.json", &after_doc);
-    let actual = progress_details(&[before.clone(), after.clone()], "json", 100).await;
+    let actual = progress_details(&[before.clone(), after.clone()], 100).await;
     let schema = read_schema(&repo_root().join("docs/json-schema/progress-result.schema.json"));
     assert_schema_valid(&schema, &actual);
     for pointer in ["/details", "/details/transitions/0"] {
@@ -4415,16 +4353,11 @@ async fn details_schema_jsonl_and_quoted_locations_are_consistent() {
     let mut invalid = actual.clone();
     invalid["details"]["transitions"][0]["current_status"] = json!("timeout");
     assert_schema_invalid(&schema, &invalid);
-    let human = progress_details(&[before, after], "human", 100).await;
-    let lines: Vec<_> = human
-        .as_str()
-        .unwrap()
-        .lines()
-        .filter(|line| line.starts_with("  regression:"))
-        .collect();
-    assert_eq!(lines.len(), 1);
-    assert!(lines[0].contains("src/a\\n\\\"b.py"));
-    assert!(lines[0].contains("previous=\"src/a\\n\\\"b.py\":9:0"));
+    let transition = &actual["details"]["transitions"][0];
+    assert_eq!(transition["path"], "src/a\n\"b.py");
+    assert_eq!(transition["previous_path"], "src/a\n\"b.py");
+    assert_eq!(transition["previous_line"], 9);
+    assert_eq!(transition["previous_column"], 0);
     let mut paths = Vec::new();
     for (name, doc) in [("before.jsonl", before_doc), ("after.jsonl", after_doc)] {
         let path = fixture.path().join(name);
@@ -4436,7 +4369,7 @@ async fn details_schema_jsonl_and_quoted_locations_are_consistent() {
         std::fs::write(&path, text).unwrap();
         paths.push(path);
     }
-    let jsonl = progress_details(&paths, "json", 100).await;
+    let jsonl = progress_details(&paths, 100).await;
     assert_eq!(actual["details"], jsonl["details"]);
 }
 
@@ -4482,8 +4415,6 @@ async fn details_default_cap_and_partial_sets_are_explicit() {
             "hoimin",
             "progress",
             "--details",
-            "--format",
-            "json",
             before.to_str().unwrap(),
             after.to_str().unwrap(),
         ],
@@ -4507,7 +4438,7 @@ async fn details_default_cap_and_partial_sets_are_explicit() {
         "partial.json",
         &detail_report(&after_entries[..1]),
     );
-    let value = progress_details(&[before, after], "json", 100).await;
+    let value = progress_details(&[before, after], 100).await;
     assert_eq!(value["details"]["eligibility"], "different");
     assert_eq!(
         value["details"]["transitions"][0]["id"],
@@ -4516,18 +4447,8 @@ async fn details_default_cap_and_partial_sets_are_explicit() {
     assert_eq!(value["latest"]["state"], "indeterminate");
 }
 
-fn regression_gate_args(
-    reports: &[PathBuf],
-    format: &str,
-    details: bool,
-    gate: bool,
-) -> Vec<String> {
-    let mut args = vec![
-        "hoimin".to_owned(),
-        "progress".to_owned(),
-        "--format".to_owned(),
-        format.to_owned(),
-    ];
+fn regression_gate_args(reports: &[PathBuf], details: bool, gate: bool) -> Vec<String> {
+    let mut args = vec!["hoimin".to_owned(), "progress".to_owned()];
     if details {
         args.push("--details".to_owned());
     }
@@ -4540,14 +4461,13 @@ fn regression_gate_args(
 
 async fn progress_with_gate(
     reports: &[PathBuf],
-    format: &str,
     details: bool,
     gate: bool,
 ) -> (i32, Vec<u8>, Vec<u8>) {
     let out = CollectingWriter::default();
     let err = CollectingWriter::default();
     let status = hoimin_cli::run_with_writers(
-        regression_gate_args(reports, format, details, gate),
+        regression_gate_args(reports, details, gate),
         out.clone(),
         err.clone(),
     )
@@ -4594,26 +4514,19 @@ async fn regression_exit_uses_latest_state_and_preserves_all_output() {
         ),
         (vec![gap, killed.clone(), survived.clone()], "regressing", 1),
     ] {
-        type VerifyState = fn(&[u8], &str);
-        let formats: [(&str, VerifyState); 2] = [
-            ("human", assert_human_regression_state),
-            ("json", assert_json_regression_state),
-        ];
-        for (format, verify_output) in formats {
-            for details in [false, true] {
-                let plain = progress_with_gate(&reports, format, details, false).await;
-                assert_eq!(plain.0, 0, "{}", String::from_utf8_lossy(&plain.2));
-                let gated = progress_with_gate(&reports, format, details, true).await;
-                assert_eq!(
-                    gated.0,
-                    expected_exit,
-                    "{state} {format} details={details}: {}",
-                    String::from_utf8_lossy(&gated.2)
-                );
-                assert_eq!(gated.1, plain.1);
-                assert_eq!(gated.2, plain.2);
-                verify_output(&gated.1, state);
-            }
+        for details in [false, true] {
+            let plain = progress_with_gate(&reports, details, false).await;
+            assert_eq!(plain.0, 0, "{}", String::from_utf8_lossy(&plain.2));
+            let gated = progress_with_gate(&reports, details, true).await;
+            assert_eq!(
+                gated.0,
+                expected_exit,
+                "{state} details={details}: {}",
+                String::from_utf8_lossy(&gated.2)
+            );
+            assert_eq!(gated.1, plain.1);
+            assert_eq!(gated.2, plain.2);
+            assert_json_regression_state(&gated.1, state);
         }
     }
 }
@@ -4633,28 +4546,25 @@ async fn regression_exit_does_not_hide_trailing_invalid_input() {
     );
     let invalid = fixture.path().join("invalid.json");
     std::fs::write(&invalid, "{").unwrap();
-    for format in ["human", "json"] {
-        let (status, out, err) = progress_with_gate(
-            &[
-                killed.clone(),
-                killed.clone(),
-                survived.clone(),
-                invalid.clone(),
-            ],
-            format,
-            true,
-            true,
-        )
-        .await;
-        assert_eq!(status, 2);
-        assert_eq!(out, Vec::<u8>::new());
-        let err = String::from_utf8(err).unwrap();
-        assert!(err.contains("could not parse progress report"), "{err}");
-        assert!(
-            !err.contains("same path"),
-            "warnings must wait for validation: {err}"
-        );
-    }
+    let (status, out, err) = progress_with_gate(
+        &[
+            killed.clone(),
+            killed.clone(),
+            survived.clone(),
+            invalid.clone(),
+        ],
+        true,
+        true,
+    )
+    .await;
+    assert_eq!(status, 2);
+    assert_eq!(out, Vec::<u8>::new());
+    let err = String::from_utf8(err).unwrap();
+    assert!(err.contains("could not parse progress report"), "{err}");
+    assert!(
+        !err.contains("same path"),
+        "warnings must wait for validation: {err}"
+    );
 }
 
 struct GateFailingWriter;
@@ -4680,35 +4590,32 @@ async fn regression_exit_never_overrides_stdout_or_stderr_errors() {
         "survived.json",
         &detail_report(&[("a", MutationStatus::Survived)]),
     );
-    for format in ["human", "json"] {
-        let error = CollectingWriter::default();
-        let status = hoimin_cli::run_with_writers(
-            regression_gate_args(&[killed.clone(), survived.clone()], format, true, true),
-            GateFailingWriter,
-            error.clone(),
-        )
-        .await;
-        assert_eq!(status, 2);
-        assert!(
-            String::from_utf8(error.snapshot())
-                .unwrap()
-                .contains("gate fixture write failure")
-        );
-        let out = CollectingWriter::default();
-        let status = hoimin_cli::run_with_writers(
-            regression_gate_args(
-                &[killed.clone(), killed.clone(), survived.clone()],
-                format,
-                true,
-                true,
-            ),
-            out.clone(),
-            GateFailingWriter,
-        )
-        .await;
-        assert_eq!(status, 2);
-        assert_eq!(out.snapshot(), Vec::<u8>::new());
-    }
+    let error = CollectingWriter::default();
+    let status = hoimin_cli::run_with_writers(
+        regression_gate_args(&[killed.clone(), survived.clone()], true, true),
+        GateFailingWriter,
+        error.clone(),
+    )
+    .await;
+    assert_eq!(status, 2);
+    assert!(
+        String::from_utf8(error.snapshot())
+            .unwrap()
+            .contains("gate fixture write failure")
+    );
+    let out = CollectingWriter::default();
+    let status = hoimin_cli::run_with_writers(
+        regression_gate_args(
+            &[killed.clone(), killed.clone(), survived.clone()],
+            true,
+            true,
+        ),
+        out.clone(),
+        GateFailingWriter,
+    )
+    .await;
+    assert_eq!(status, 2);
+    assert_eq!(out.snapshot(), Vec::<u8>::new());
 }
 
 #[test]
@@ -4759,10 +4666,6 @@ fn progress_resume_metadata_rejects_null_in_current_json_and_jsonl() {
     assert!(read_report(&jsonl).is_err());
 }
 
-fn assert_human_regression_state(bytes: &[u8], state: &str) {
-    assert!(String::from_utf8_lossy(bytes).contains(&format!("state: {state}\n")));
-}
-
 fn assert_json_regression_state(bytes: &[u8], state: &str) {
     let doc: Value = serde_json::from_slice(bytes).unwrap();
     assert_eq!(doc["latest"]["state"], state);
@@ -4776,7 +4679,7 @@ async fn progress_diagnostics_escape_external_report_paths() {
     document["baseline"] = Value::Null;
     let path = write_json(&fixture, "report\x1b[31m\r\n\t日本語.json", &document);
 
-    let (code, out, err) = run_progress(&[path.clone(), path.clone()], "json").await;
+    let (code, out, err) = run_progress(&[path.clone(), path.clone()]).await;
 
     assert_eq!(code, 0);
     let result: Value = serde_json::from_slice(&out).unwrap();

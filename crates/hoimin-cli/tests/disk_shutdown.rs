@@ -188,7 +188,7 @@ async fn public_jsonl_runtime_emits_disk_evidence() {
 }
 
 #[tokio::test]
-async fn public_human_runtime_emits_disk_policy_evidence() {
+async fn public_json_runtime_emits_disk_policy_evidence() {
     let project = tempfile::tempdir().unwrap();
     std::fs::write(project.path().join("target.py"), b"value = left + right\n").unwrap();
     let mut args = with_host_independent_reserve(vec![
@@ -199,7 +199,7 @@ async fn public_human_runtime_emits_disk_policy_evidence() {
         OsString::from("--file"),
         OsString::from("target.py"),
         OsString::from("--format"),
-        OsString::from("human"),
+        OsString::from("json"),
         OsString::from("--max-mutants"),
         OsString::from("1"),
         OsString::from("--allow-best-effort-memory"),
@@ -216,7 +216,11 @@ async fn public_human_runtime_emits_disk_policy_evidence() {
         "stderr={:?}",
         String::from_utf8_lossy(&stderr)
     );
-    let stdout = String::from_utf8(stdout).unwrap();
-    assert!(stdout.contains("disk max owned bytes:"), "{stdout}");
-    assert!(stdout.contains("disk minimum free bytes:"), "{stdout}");
+    let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    let disk = &report["summary"]["disk"];
+    assert_eq!(
+        disk["configured_max_owned_bytes"],
+        8 * 1024 * 1024 * 1024_u64
+    );
+    assert_eq!(disk["configured_min_free_bytes"], 1);
 }

@@ -37,7 +37,7 @@ fn full_report_transport() -> (std::os::unix::net::UnixStream, std::os::fd::Owne
 async fn stalled_report_consumer_cannot_outlive_total_timeout_and_grace() {
     use std::process::Stdio;
 
-    for format in ["jsonl", "json", "human"] {
+    for format in ["jsonl", "json"] {
         let project = tempfile::tempdir().unwrap();
         std::fs::write(project.path().join("target.py"), "pass\n").unwrap();
         let (consumer, producer, _) = full_report_transport();
@@ -84,7 +84,7 @@ async fn stalled_report_consumer_cannot_outlive_total_timeout_and_grace() {
 async fn stalled_stderr_cannot_reenter_an_unbounded_terminal_diagnostic() {
     use std::process::Stdio;
 
-    for format in ["json", "jsonl", "human"] {
+    for format in ["json", "jsonl"] {
         let project = tempfile::tempdir().unwrap();
         std::fs::write(project.path().join("target.py"), "def broken(:\n").unwrap();
         let (consumer, producer, _) = full_report_transport();
@@ -2047,18 +2047,6 @@ async fn focused_profile_is_reported_and_omits_arid_candidates() {
         .find(|record| record["kind"] == "run_started")
         .unwrap();
     assert_eq!(run_started["normalized_config"]["profile"], "focused");
-
-    let human = run_focused_profile(project.path(), "focused", "human", None, false, 100).await;
-    assert!(
-        human
-            .stdout
-            .lines()
-            .next()
-            .unwrap()
-            .contains("(profile: focused)"),
-        "human output was: {}",
-        human.stdout
-    );
 }
 
 #[tokio::test]

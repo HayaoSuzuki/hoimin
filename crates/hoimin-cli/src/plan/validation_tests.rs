@@ -1080,9 +1080,7 @@ async fn issue_1081_prepare_and_preview_do_not_read_or_hash_unrelated_assets() {
                 "preview F={fingerprint_count}, assets={asset_count}x{asset_bytes}: {metrics:?}"
             );
             let mut rendered = Vec::new();
-            preview
-                .write(crate::cli::OutputFormat::Json, &mut rendered)
-                .unwrap();
+            preview.write(&mut rendered).unwrap();
             let rendered: serde_json::Value = serde_json::from_slice(&rendered).unwrap();
             assert_eq!(
                 rendered["candidates"]

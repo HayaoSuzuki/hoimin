@@ -2,7 +2,6 @@ use std::io::Write;
 
 use serde::Serialize;
 
-use crate::cli::ProgressOutputFormat;
 use crate::human_text::HumanText;
 
 use super::compare::CandidateSetEligibility;
@@ -13,7 +12,6 @@ use super::{Comparison, ProgressError, ProgressResult, ProgressState, UnusableRe
 const PROGRESS_SCHEMA_VERSION: u32 = 3;
 
 pub(super) fn render<Stdout, Stderr>(
-    format: ProgressOutputFormat,
     inputs: &[InputDisposition],
     eligibilities: &[CandidateSetEligibility],
     result: &ProgressResult,
@@ -26,16 +24,7 @@ where
     Stderr: Write,
 {
     write_diagnostics(inputs, eligibilities, result, stderr)?;
-    match format {
-        ProgressOutputFormat::Human => {
-            render_human(inputs, result, stdout)?;
-            if let Some(details) = details {
-                details.render(stdout).map_err(write_error)?;
-            }
-            Ok(())
-        }
-        ProgressOutputFormat::Json => render_json(inputs, result, details, stdout),
-    }
+    render_json(inputs, result, details, stdout)
 }
 
 fn render_json<Stdout>(
@@ -65,61 +54,6 @@ where
     serde_json::to_writer(&mut *stdout, &document)
         .map_err(|source| ProgressError::Serialize { source })?;
     writeln!(stdout).map_err(write_error)
-}
-
-fn render_human<Stdout>(
-    inputs: &[InputDisposition],
-    result: &ProgressResult,
-    stdout: &mut Stdout,
-) -> Result<(), ProgressError>
-where
-    Stdout: Write,
-{
-    writeln!(stdout, "state: {}", state_name(result.latest)).map_err(write_error)?;
-    if let Some(comparison) = final_pair_is_usable(inputs)
-        .then_some(result.comparisons.last())
-        .flatten()
-    {
-        writeln!(
-            stdout,
-            "comparable score: {}",
-            optional_score(comparison.current_score, false)
-        )
-        .map_err(write_error)?;
-        writeln!(
-            stdout,
-            "delta: {}",
-            optional_score(comparison.score_delta, true)
-        )
-        .map_err(write_error)?;
-        writeln!(stdout, "improvements: {}", comparison.improvements).map_err(write_error)?;
-        writeln!(stdout, "regressions: {}", comparison.regressions).map_err(write_error)?;
-        writeln!(
-            stdout,
-            "carried_survivors: {}",
-            comparison.carried_survivors
-        )
-        .map_err(write_error)?;
-        writeln!(stdout, "added: {}", comparison.added).map_err(write_error)?;
-        writeln!(stdout, "removed: {}", comparison.removed).map_err(write_error)?;
-        writeln!(stdout, "ambiguous: {}", comparison.ambiguous).map_err(write_error)?;
-        writeln!(stdout, "inconclusive: {}", comparison.inconclusive).map_err(write_error)?;
-    }
-    writeln!(stdout, "stalls: {}", result.consecutive_stalls).map_err(write_error)?;
-    writeln!(stdout, "patience: {}", result.patience).map_err(write_error)?;
-    writeln!(
-        stdout,
-        "saturated: {}",
-        matches!(result.latest, ProgressState::Saturated)
-    )
-    .map_err(write_error)
-}
-
-fn final_pair_is_usable(inputs: &[InputDisposition]) -> bool {
-    inputs
-        .windows(2)
-        .last()
-        .is_some_and(|pair| pair.iter().all(InputDisposition::is_usable))
 }
 
 fn write_diagnostics<Stderr>(
@@ -185,14 +119,6 @@ where
         }
     }
     Ok(())
-}
-
-fn optional_score(value: Option<f64>, signed: bool) -> String {
-    match value {
-        Some(value) if signed => format!("{value:+.6}"),
-        Some(value) => format!("{value:.6}"),
-        None => "n/a".to_owned(),
-    }
 }
 
 fn state_name(state: ProgressState) -> &'static str {

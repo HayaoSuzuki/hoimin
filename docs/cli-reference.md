@@ -49,7 +49,7 @@ Safety options:
   --max-output --max-copy-size --max-workspace-size --min-free-space
   --max-processes --allow-best-effort-memory
 Output/session options:
-  --format <json|jsonl|human> --metrics <PATH> --session --resume
+  --format <json|jsonl> --metrics <PATH> --session --resume
 ```
 
 Argument constraints:
@@ -112,7 +112,7 @@ Options:
           Machine-readable output format
 
           [default: json]
-          [possible values: json, jsonl, human]
+          [possible values: json, jsonl]
 
   -h, --help
           Print help (see a summary with '-h')
@@ -176,7 +176,7 @@ manifest
   arity: 1
   repeatable: false
   default: json
-  values: json, jsonl, human
+  values: json, jsonl
 --help
   required: false
   arity: 0
@@ -204,12 +204,6 @@ Options:
 
           [default: 3]
 
-      --format <FORMAT>
-          Render the comparison as human-readable text or JSON
-
-          [default: human]
-          [possible values: human, json]
-
       --details
           Show identified changes in the final adjacent input pair
 
@@ -235,12 +229,6 @@ Argument constraints:
   arity: 1
   repeatable: false
   default: 3
---format
-  required: false
-  arity: 1
-  repeatable: false
-  default: human
-  values: human, json
 --details
   required: false
   arity: 0
@@ -306,10 +294,6 @@ Options:
       --report <REPORT>
 
 
-      --format <FORMAT>
-          [default: text]
-          [possible values: text, json]
-
       --stale
           Include stored candidates absent from the current plan in a separate list
 
@@ -332,12 +316,6 @@ plan
   required: false
   arity: 1
   repeatable: false
---format
-  required: false
-  arity: 1
-  repeatable: false
-  default: text
-  values: text, json
 --stale
   required: false
   arity: 0
@@ -367,10 +345,6 @@ Options:
       --report <REPORT>
 
 
-      --format <FORMAT>
-          [default: text]
-          [possible values: text, json]
-
       --candidate <CANDIDATE>
 
 
@@ -393,12 +367,6 @@ plan
   required: false
   arity: 1
   repeatable: false
---format
-  required: false
-  arity: 1
-  repeatable: false
-  default: text
-  values: text, json
 --candidate
   required: true
   arity: 1
@@ -426,10 +394,6 @@ Options:
 
       --report <REPORT>
 
-
-      --format <FORMAT>
-          [default: text]
-          [possible values: text, json]
 
       --candidate <CANDIDATE>
 
@@ -465,12 +429,6 @@ plan
   required: false
   arity: 1
   repeatable: false
---format
-  required: false
-  arity: 1
-  repeatable: false
-  default: text
-  values: text, json
 --candidate
   required: true
   arity: 1
@@ -686,7 +644,7 @@ Options:
           Machine-readable output format
 
           [default: json]
-          [possible values: json, jsonl, human]
+          [possible values: json, jsonl]
 
       --metrics <PATH>
           Write performance metrics to PATH
@@ -877,7 +835,7 @@ Argument constraints:
   arity: 1
   repeatable: false
   default: json
-  values: json, jsonl, human
+  values: json, jsonl
 --metrics
   required: false
   arity: 1

@@ -1785,14 +1785,14 @@ async fn verify_deduplicates_requested_ids_and_rejects_max_mutants_overflow() {
     let first = manifest.candidates[0].id.clone();
     let second = manifest.candidates[1].id.clone();
 
-    let verified = prepare_verify(&path, &[first.clone(), first.clone()], OutputFormat::Human)
+    let verified = prepare_verify(&path, &[first.clone(), first.clone()], OutputFormat::Jsonl)
         .await
         .unwrap();
     assert_eq!(
         verified.selection().candidate_ids(),
         Some(&BTreeSet::from([first.clone()]))
     );
-    assert_eq!(verified.config().output.format, CoreOutputFormat::Human);
+    assert_eq!(verified.config().output.format, CoreOutputFormat::Jsonl);
     assert_eq!(
         verified.config().session,
         hoimin_core::SessionMode::Disabled
@@ -3548,7 +3548,7 @@ async fn fixed_batch_real_cli_reports_disjoint_ids_and_repeated_progress() {
     let progress = tokio::time::timeout(
         std::time::Duration::from_secs(30),
         tokio::process::Command::new(binary)
-            .args(["progress", "--format", "json"])
+            .args(["progress"])
             .arg(coordinator.path().join("b-1.json"))
             .arg(coordinator.path().join("b-2.json"))
             .kill_on_drop(true)
@@ -5238,31 +5238,6 @@ fn preview_candidate_value(candidate: &RankedPlanCandidate, order: usize) -> ser
 
 type CheckPreviewRows = fn(&str, &[&RankedPlanCandidate], &serde_json::Value);
 
-fn assert_human_preview_rows(
-    text: &str,
-    expected: &[&RankedPlanCandidate],
-    _schema: &serde_json::Value,
-) {
-    let rows: Vec<_> = text.lines().skip(1).collect();
-    assert_eq!(rows.len(), expected.len());
-    for (index, candidate) in expected.iter().enumerate() {
-        assert_eq!(
-            rows[index],
-            format!(
-                "{}: {} rank={} {}:2:{} operator={} \"{}\" -> \"{}\"",
-                index + 1,
-                candidate.id,
-                candidate.rank,
-                candidate.path,
-                candidate.column,
-                candidate.operator,
-                candidate.original,
-                candidate.replacement
-            )
-        );
-    }
-}
-
 fn assert_json_preview_rows(
     text: &str,
     expected: &[&RankedPlanCandidate],
@@ -5378,10 +5353,9 @@ async fn verify_preview_details_distinguish_same_line_mutations_in_all_formats()
             vec![left, boolean, right],
         ),
     ] {
-        let formats: [(&str, CheckPreviewRows); 3] = [
+        let formats: [(&str, CheckPreviewRows); 2] = [
             ("json", assert_json_preview_rows),
             ("jsonl", assert_json_preview_rows),
-            ("human", assert_human_preview_rows),
         ];
         for (format, verify_output) in formats {
             let temporary = tempfile::tempdir().unwrap();
@@ -5449,58 +5423,33 @@ fn remove_optional_marker(marker: &Path) {
 
 type CheckTruncatedPreview = fn(&[u8], &PlanManifest);
 
-fn truncated_preview_formats() -> [(&'static str, CheckTruncatedPreview); 3] {
+fn truncated_preview_formats() -> [(&'static str, CheckTruncatedPreview); 2] {
     [
-        ("human", assert_human_truncated_preview),
         ("json", assert_json_truncated_preview),
         ("jsonl", assert_json_truncated_preview),
     ]
 }
 
-fn assert_human_truncated_preview(stdout: &[u8], manifest: &PlanManifest) {
-    let text = std::str::from_utf8(stdout).unwrap();
-    assert!(text.contains(&format!(
-        "{}:{}",
-        manifest.candidates[0].path, manifest.candidates[0].line
-    )));
-    for required in [
-        "verify preview",
-        "requested=99",
-        "selected=1",
-        "offset=0",
-        "plan_truncated=true",
-        "retained_candidates=1",
-        "rank=1",
-        manifest.candidates[0].id.as_str(),
-    ] {
-        assert!(text.contains(required), "missing {required}: {text}");
-    }
-}
-
-fn assert_json_truncated_preview(stdout: &[u8], _manifest: &PlanManifest) {
+fn assert_json_truncated_preview(stdout: &[u8], manifest: &PlanManifest) {
     let value: serde_json::Value = serde_json::from_slice(stdout).unwrap();
     assert_eq!(value["verification_selection"]["plan_truncated"], true);
     assert_eq!(value["verification_selection"]["requested"], 99);
     assert_eq!(value["verification_selection"]["selected"], 1);
     assert_eq!(value["retained_candidates"], 1);
+    assert_eq!(value["offset"], 0);
+    assert_eq!(
+        value["candidates"][0],
+        preview_candidate_value(&manifest.candidates[0], 1)
+    );
 }
 
 type CheckMultilinePreview = fn(&str, &RankedPlanCandidate);
 
-fn multiline_preview_formats() -> [(&'static str, CheckMultilinePreview); 3] {
+fn multiline_preview_formats() -> [(&'static str, CheckMultilinePreview); 2] {
     [
-        ("human", assert_human_multiline_preview),
         ("json", assert_json_multiline_preview),
         ("jsonl", assert_json_multiline_preview),
     ]
-}
-
-fn assert_human_multiline_preview(text: &str, _candidate: &RankedPlanCandidate) {
-    assert_eq!(text.lines().count(), 2);
-    assert!(!text.contains('\t'));
-    assert!(text.lines().nth(1).unwrap().ends_with(
-                r#"operator=collection_list_tuple "[\n\t\"a\\\\b\", 'say \"hi\"',\n]" -> "(\n\t\"a\\\\b\", 'say \"hi\"',\n)""#
-            ), "{text}");
 }
 
 fn assert_json_multiline_preview(text: &str, candidate: &RankedPlanCandidate) {
@@ -5759,7 +5708,7 @@ async fn baseline_contamination_plan(
 }
 
 #[cfg(unix)]
-async fn assert_preview_filename(name: &str, escaped: &str, format: &str) {
+async fn assert_preview_filename(name: &str, format: &str) {
     // Arrange: real native filenames and a command with an observable side effect.
     let project = Project::new_with_sources(&[(name, "value = 1 + 2\n")]);
     let (path, manifest, marker) =
@@ -5778,49 +5727,35 @@ async fn assert_preview_filename(name: &str, escaped: &str, format: &str) {
     )
     .await;
 
-    // Assert: only the human projection changes; dry-run never executes the command.
+    // Assert: JSON preserves the native filename and dry-run has no side effects.
     assert!(output.status.success(), "{name:?}: {output:?}");
     assert!(!marker.exists(), "{name:?}: {format}");
     assert_eq!(std::fs::read(&path).unwrap(), before);
     assert_eq!(std::fs::read_dir(temporary.path()).unwrap().count(), 0);
-    if format == "human" {
-        let text = String::from_utf8(output.stdout).unwrap();
-        assert_eq!(text.lines().count(), 2, "{name:?}: {text:?}");
-        assert!(
-            text.contains(&format!(
-                "1: {} rank=1 src/{escaped}:1:10 operator=binary_add_sub \"+\" -> \"-\"\n",
-                candidate.id
-            )),
-            "{name:?}: {text:?}"
-        );
-        assert!(
-            !text.chars().any(|c| c.is_control() && c != '\n'),
-            "{name:?}: {text:?}"
-        );
-    } else {
-        let preview: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(preview["candidates"][0]["path"], format!("src/{name}"));
-        assert_eq!(preview["candidates"][0]["id"], candidate.id);
-        assert_eq!(preview["candidates"][0]["original"], "+");
-        assert_eq!(preview["candidates"][0]["replacement"], "-");
-    }
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(text.lines().count(), 1, "{name:?}: {text:?}");
+    assert!(
+        !text.chars().any(|c| c.is_control() && c != '\n'),
+        "{name:?}: {text:?}"
+    );
+    let preview: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(preview["candidates"][0]["path"], format!("src/{name}"));
+    assert_eq!(preview["candidates"][0]["id"], candidate.id);
+    assert_eq!(preview["candidates"][0]["original"], "+");
+    assert_eq!(preview["candidates"][0]["replacement"], "-");
 }
 
 #[cfg(unix)]
 macro_rules! preview_filename_case {
-    ($case:ident, $name:expr, $escaped:expr) => {
+    ($case:ident, $name:expr) => {
         mod $case {
             #[tokio::test]
-            async fn human() {
-                super::assert_preview_filename($name, $escaped, "human").await;
-            }
-            #[tokio::test]
             async fn json() {
-                super::assert_preview_filename($name, $escaped, "json").await;
+                super::assert_preview_filename($name, "json").await;
             }
             #[tokio::test]
             async fn jsonl() {
-                super::assert_preview_filename($name, $escaped, "jsonl").await;
+                super::assert_preview_filename($name, "jsonl").await;
             }
         }
     };
@@ -5829,11 +5764,11 @@ macro_rules! preview_filename_case {
 #[cfg(unix)]
 mod verify_preview_external_filenames {
     use super::assert_preview_filename;
-    preview_filename_case!(esc, "calc\x1b[31m.py", r"calc\u{1b}[31m.py");
-    preview_filename_case!(cr, "calc\r.py", r"calc\r.py");
-    preview_filename_case!(lf, "calc\n.py", r"calc\n.py");
-    preview_filename_case!(tab, "calc\t.py", r"calc\t.py");
-    preview_filename_case!(unicode, "日本語🦀.py", "日本語🦀.py");
+    preview_filename_case!(esc, "calc\x1b[31m.py");
+    preview_filename_case!(cr, "calc\r.py");
+    preview_filename_case!(lf, "calc\n.py");
+    preview_filename_case!(tab, "calc\t.py");
+    preview_filename_case!(unicode, "日本語🦀.py");
 }
 
 #[tokio::test]

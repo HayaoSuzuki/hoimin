@@ -623,12 +623,6 @@ async fn documentation_contract() {
     );
     for (_, stdout, _) in documented_outputs
         .iter()
-        .filter(|(format, _, _)| *format == OutputFormat::Human)
-    {
-        assert_ne!(stdout, &Vec::<u8>::new());
-    }
-    for (_, stdout, _) in documented_outputs
-        .iter()
         .filter(|(format, _, _)| *format == OutputFormat::Json)
     {
         let document: serde_json::Value = serde_json::from_slice(stdout).unwrap();
@@ -1390,7 +1384,7 @@ fn report_errors_are_typed_and_echo_the_effect_id() {
     assert!(matches!(failed.failure, EffectFailure::ReportState { .. }));
 
     let mut handler = ReportHandler::new(
-        OutputFormat::Human,
+        OutputFormat::Jsonl,
         FailingWriter,
         io::sink(),
         std::env::temp_dir(),
@@ -1564,44 +1558,11 @@ fn zero_progress_mutant_spool_write_fails_before_ack_and_poisons_report() {
 }
 
 #[test]
-fn human_format_preserves_every_canonical_mutation_status_name() {
-    let stdout = SharedWriter::default();
-    let mut handler = ReportHandler::new(
-        OutputFormat::Human,
-        stdout.clone(),
-        io::sink(),
-        std::env::temp_dir(),
-    )
-    .unwrap();
-    for event in documented_events() {
-        emit(&mut handler, event.sequence(), event);
-    }
-
-    let text = stdout.text();
-    let mutant_lines: Vec<_> = text
-        .lines()
-        .filter(|line| line.starts_with("mutant finished:"))
-        .collect();
-    assert_eq!(
-        mutant_lines,
-        [
-            "mutant finished: m0 src/example.py:1:0 binary_add_sub \"+\" -> \"-\" killed",
-            "mutant finished: m1 src/example.py:1:1 binary_add_sub \"+\" -> \"-\" survived",
-            "mutant finished: m2 src/example.py:1:2 binary_add_sub \"+\" -> \"-\" timeout",
-            "mutant finished: m3 src/example.py:1:3 binary_add_sub \"+\" -> \"-\" out_of_memory",
-            "mutant finished: m4 src/example.py:1:4 binary_add_sub \"+\" -> \"-\" process_limit",
-            "mutant finished: m5 src/example.py:1:5 binary_add_sub \"+\" -> \"-\" error",
-            "mutant finished: m6 src/example.py:1:6 binary_add_sub \"+\" -> \"-\" not_run",
-        ]
-    );
-}
-
-#[test]
-fn human_completion_rows_keep_identity_when_workers_finish_in_reverse_order() {
+fn jsonl_completions_keep_identity_when_workers_finish_in_reverse_order() {
     // Arrange: both candidates have started before B completes ahead of A.
     let stdout = SharedWriter::default();
     let mut handler = ReportHandler::new(
-        OutputFormat::Human,
+        OutputFormat::Jsonl,
         stdout.clone(),
         io::sink(),
         std::env::temp_dir(),
@@ -1632,23 +1593,27 @@ fn human_completion_rows_keep_identity_when_workers_finish_in_reverse_order() {
     // Act.
     emit(&mut handler, 3, second);
     emit(&mut handler, 4, first);
-    // Assert: each completion is understandable without matching either start row.
-    let text = stdout.text();
-    let rows: Vec<_> = text
+    let rows: Vec<serde_json::Value> = stdout
+        .text()
         .lines()
-        .filter(|line| line.starts_with("mutant finished:"))
+        .map(|line| serde_json::from_str(line).unwrap())
+        .filter(|row: &serde_json::Value| row["kind"] == "mutant_finished")
         .collect();
-    assert_eq!(
-        rows,
-        [
-            "mutant finished: candidate-B src/example.py:1:0 binary \"right\\r\\u{1b}\" -> \"-\" killed",
-            "mutant finished: candidate-A src/example.py:1:0 binary \"left\\n\\t\\\"\" -> \"-\" killed",
-        ]
-    );
+    assert_eq!(rows.len(), 2);
+    for (row, id, original) in [
+        (&rows[0], "candidate-B", "right\r\x1b"),
+        (&rows[1], "candidate-A", "left\n\t\""),
+    ] {
+        assert_eq!(row["candidate"]["id"], id);
+        assert_eq!(row["candidate"]["original"], original);
+        assert_eq!(row["candidate"]["replacement"], "-");
+        assert_eq!(row["candidate"]["path"], "src/example.py");
+        assert_eq!(row["status"], "killed");
+    }
 }
 
 #[tokio::test]
-async fn public_parallel_run_emits_complete_human_rows() {
+async fn public_parallel_run_emits_complete_jsonl_events() {
     // Arrange: two candidates permit parallel work with no assumed completion order.
     let fixture = tempfile::tempdir().unwrap();
     std::fs::write(
@@ -1674,7 +1639,7 @@ async fn public_parallel_run_emits_complete_human_rows() {
             "--min-free-space",
             "1B",
             "--format",
-            "human",
+            "jsonl",
             "--",
         ])
         .arg(python)
@@ -1685,7 +1650,6 @@ async fn public_parallel_run_emits_complete_human_rows() {
         .output()
         .await
         .unwrap();
-    // Assert: the executable's delivery path keeps each full ID and verdict on its own row.
     assert_eq!(
         output.status.code(),
         Some(0),
@@ -1693,297 +1657,28 @@ async fn public_parallel_run_emits_complete_human_rows() {
         String::from_utf8_lossy(&output.stderr)
     );
     let text = String::from_utf8(output.stdout).unwrap();
-    let rows: Vec<_> = text
+    let rows: Vec<serde_json::Value> = text
         .lines()
-        .filter(|line| line.starts_with("mutant finished:"))
+        .map(|line| serde_json::from_str(line).unwrap())
+        .filter(|row: &serde_json::Value| row["kind"] == "mutant_finished")
         .collect();
     assert_eq!(rows.len(), 2, "{text}");
     let identities: std::collections::BTreeSet<_> = rows
         .iter()
         .map(|row| {
-            let fields: Vec<_> = row.split_whitespace().collect();
-            assert!(fields[2].starts_with("m1_"));
-            assert_eq!(fields[2].len(), 67);
-            assert!(fields[3].starts_with("calc.py:"));
-            assert!(
-                row.ends_with("binary_add_sub \"+\" -> \"-\" killed"),
-                "{row}"
-            );
-            fields[2]
+            let candidate = &row["candidate"];
+            let id = candidate["id"].as_str().unwrap();
+            assert!(id.starts_with("m1_"));
+            assert_eq!(id.len(), 67);
+            assert_eq!(candidate["path"], "calc.py");
+            assert_eq!(candidate["operator"], "binary_add_sub");
+            assert_eq!(candidate["original"], "+");
+            assert_eq!(candidate["replacement"], "-");
+            assert_eq!(row["status"], "killed");
+            id
         })
         .collect();
     assert_eq!(identities.len(), 2);
-}
-
-#[test]
-fn human_format_writes_progress_to_stdout_and_diagnostics_to_stderr() {
-    let stdout = SharedWriter::default();
-    let stderr = SharedWriter::default();
-    let mut handler = ReportHandler::new(
-        OutputFormat::Human,
-        stdout.clone(),
-        stderr.clone(),
-        std::env::temp_dir(),
-    )
-    .unwrap();
-    for event in events() {
-        handler
-            .handle(EmitOutput {
-                id: EffectId(event.sequence()),
-                event,
-            })
-            .unwrap();
-    }
-    assert!(stdout.text().contains("run started: run-1"));
-    assert!(stdout.text().contains("baseline finished: exit (0)"));
-    assert!(
-        stdout
-            .text()
-            .contains("mutant finished: m0 src/example.py:1:0 binary \"+\" -> \"-\" killed")
-    );
-    assert!(stdout.text().contains("run summary:"));
-    assert!(stdout.text().contains("killed: 1"));
-    assert!(stdout.text().contains("survived: 0"));
-    assert!(stdout.text().contains("timeout: 0"));
-    assert!(stdout.text().contains("out_of_memory: 0"));
-    assert!(stdout.text().contains("process_limit: 0"));
-    assert!(stdout.text().contains("error: 0"));
-    assert!(stdout.text().contains("not_run: 0"));
-    assert!(stdout.text().contains("score: 1.00"));
-    assert!(stdout.text().contains("complete: true"));
-    assert!(stdout.text().contains("exit: 0"));
-    assert!(stdout.text().contains("disk max owned bytes: 8589934592"));
-    assert!(
-        stdout
-            .text()
-            .contains("disk minimum free bytes: 10737418240")
-    );
-    assert!(!stdout.text().contains("diagnostic text"));
-    assert!(stderr.text().contains("warning x: diagnostic text"));
-    assert_eq!(stdout.flushes(), 5);
-    assert_eq!(stderr.flushes(), 1);
-}
-
-#[test]
-fn human_format_writes_mutant_output_timeout_diagnostic_to_stderr() {
-    let stdout = SharedWriter::default();
-    let stderr = SharedWriter::default();
-    let mut handler = ReportHandler::new(
-        OutputFormat::Human,
-        stdout.clone(),
-        stderr.clone(),
-        std::env::temp_dir(),
-    )
-    .unwrap();
-    let mut event = mutant_finished(1, 0);
-    let OutputEvent::MutantFinished(finished) = &mut event else {
-        unreachable!()
-    };
-    finished.outcome = hoimin_core::MutationOutcome::Executed {
-        termination: ProcessTermination::Timeout,
-        output_state: ProcessOutputState::CloseTimedOut,
-        output: output_ref(),
-        elapsed: std::time::Duration::from_millis(2),
-    };
-    finished.diagnostics.push(SessionDiagnostic {
-        mutant_id: finished.candidate.id.clone(),
-        level: "error".to_owned(),
-        code: "process.output.close.timeout".to_owned(),
-        message: "captured output may be incomplete".to_owned(),
-    });
-
-    handler
-        .handle(EmitOutput {
-            id: EffectId(1),
-            event,
-        })
-        .unwrap();
-
-    assert!(stdout.text().contains("error"));
-    assert!(
-        stderr
-            .text()
-            .contains("error process.output.close.timeout: captured output may be incomplete")
-    );
-}
-
-#[test]
-fn human_format_renders_none_score_for_runs_without_decidable_mutants() {
-    let stdout = SharedWriter::default();
-    let mut handler = ReportHandler::new(
-        OutputFormat::Human,
-        stdout.clone(),
-        io::sink(),
-        std::env::temp_dir(),
-    )
-    .unwrap();
-
-    handler
-        .handle(EmitOutput {
-            id: EffectId(1),
-            event: OutputEvent::RunFinished(RunSummary {
-                resolved_mutant_timeout: None,
-                schema_version: REPORT_SCHEMA_VERSION,
-                sequence: 1,
-                run_id: "run-1".to_owned(),
-                counts: MutationSummary::default(),
-                complete: false,
-                exit_code: 4,
-                disk: default_disk_summary(),
-                verification_selection: None,
-            }),
-        })
-        .unwrap();
-
-    assert!(stdout.text().contains("score: none"));
-    assert!(stdout.text().contains("complete: false"));
-    assert!(stdout.text().contains("exit: 4"));
-}
-
-#[test]
-fn human_format_includes_profile_and_fingerprint_provenance_for_normalized_runs() {
-    let stdout = SharedWriter::default();
-    let mut handler = ReportHandler::new(
-        OutputFormat::Human,
-        stdout.clone(),
-        io::sink(),
-        std::env::temp_dir(),
-    )
-    .unwrap();
-    let mut started = RunStarted::minimal("run-1", 1, test_resource_control());
-    started.normalized_config = Some({
-        let config = hoimin_cli::cli::parse_config_from([
-            "hoimin",
-            "run",
-            "--file",
-            "x.py",
-            "--profile",
-            "focused",
-            "--fingerprint-include",
-            "pyproject.toml",
-            "--fingerprint-file",
-            "pyproject.toml",
-            "--",
-            "check",
-        ])
-        .unwrap()
-        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
-        .unwrap();
-        config.with_fingerprint_inputs(vec![hoimin_core::FingerprintInputFile {
-            path: "pyproject.toml".into(),
-            hash: "sha256:fixture".into(),
-        }])
-    });
-
-    handler
-        .handle(EmitOutput {
-            id: EffectId(1),
-            event: OutputEvent::RunStarted(started),
-        })
-        .unwrap();
-
-    assert!(
-        stdout
-            .text()
-            .contains("run started: run-1 (profile: focused)")
-    );
-    assert!(
-        stdout
-            .text()
-            .contains("fingerprint includes: [pyproject.toml]")
-    );
-    assert!(
-        stdout
-            .text()
-            .contains("fingerprint files: [pyproject.toml]")
-    );
-    assert!(
-        stdout
-            .text()
-            .contains("fingerprint inputs: [pyproject.toml=")
-    );
-}
-
-#[test]
-fn human_format_includes_verification_selection_policy() {
-    let stdout = SharedWriter::default();
-    let mut handler = ReportHandler::new(
-        OutputFormat::Human,
-        stdout.clone(),
-        io::sink(),
-        std::env::temp_dir(),
-    )
-    .unwrap();
-    let mut started = RunStarted::minimal("run-1", 1, test_resource_control());
-    started.normalized_config = Some(
-        hoimin_cli::cli::parse_config_from(["hoimin", "run", "--file", "x.py", "--", "check"])
-            .unwrap()
-            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
-            .unwrap(),
-    );
-    started.verification_selection = Some(
-        VerificationSelection::top(
-            3,
-            3,
-            hoimin_core::VerificationTopPolicy::FileRoundRobinV1,
-            false,
-        )
-        .unwrap(),
-    );
-
-    handler
-        .handle(EmitOutput {
-            id: EffectId(1),
-            event: OutputEvent::RunStarted(started),
-        })
-        .unwrap();
-
-    assert!(stdout.text().contains(
-        "verification selection: mode=top policy=file_round_robin_v1 requested=3 selected=3 scope=retained_candidates plan_truncated=false"
-    ));
-}
-
-#[test]
-fn human_format_omits_fingerprint_provenance_without_patterns() {
-    let stdout = SharedWriter::default();
-    let mut handler = ReportHandler::new(
-        OutputFormat::Human,
-        stdout.clone(),
-        io::sink(),
-        std::env::temp_dir(),
-    )
-    .unwrap();
-    let mut started = RunStarted::minimal("run-1", 1, test_resource_control());
-    started.normalized_config = Some(
-        hoimin_cli::cli::parse_config_from([
-            "hoimin",
-            "run",
-            "--file",
-            "x.py",
-            "--profile",
-            "focused",
-            "--",
-            "check",
-        ])
-        .unwrap()
-        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
-        .unwrap(),
-    );
-
-    handler
-        .handle(EmitOutput {
-            id: EffectId(1),
-            event: OutputEvent::RunStarted(started),
-        })
-        .unwrap();
-
-    assert!(
-        stdout
-            .text()
-            .contains("run started: run-1 (profile: focused)")
-    );
-    assert!(!stdout.text().contains("fingerprint includes:"));
-    assert!(!stdout.text().contains("fingerprint inputs:"));
 }
 
 struct FailingWriter;
@@ -2553,7 +2248,7 @@ async fn line_diverse_public_reports_and_previews_match_current_schemas() {
     let preview_schema = read_schema(&repo.join("docs/json-schema/verify-preview.schema.json"));
     let mut reports = Vec::new();
     for (dry, extra_args, expected_code) in [(false, &[][..], 1), (true, &["--dry-run"][..], 0)] {
-        for format in ["json", "jsonl", "human"] {
+        for format in ["json", "jsonl"] {
             stdout.clear();
             stderr.clear();
             let mut args = vec![
@@ -2580,10 +2275,7 @@ async fn line_diverse_public_reports_and_previews_match_current_schemas() {
             reports.push((dry, format, stdout.snapshot()));
         }
     }
-    for (_, _, bytes) in reports
-        .iter()
-        .filter(|(dry, format, _)| *dry && *format != "human")
-    {
+    for (_, _, bytes) in reports.iter().filter(|(dry, _, _)| *dry) {
         let document = serde_json::from_slice(bytes).unwrap();
         assert_schema_valid(&preview_schema, &document, &event_schema);
     }
@@ -2643,7 +2335,7 @@ async fn sample_public_reports_and_previews_match_current_schemas() {
     let preview_schema = read_schema(&repo.join("docs/json-schema/verify-preview.schema.json"));
     let mut reports = Vec::new();
     for (dry, extra_args, expected_code) in [(false, &[][..], 1), (true, &["--dry-run"][..], 0)] {
-        for format in ["json", "jsonl", "human"] {
+        for format in ["json", "jsonl"] {
             stdout.clear();
             stderr.clear();
             let mut args = vec![
@@ -2670,10 +2362,7 @@ async fn sample_public_reports_and_previews_match_current_schemas() {
             reports.push((dry, format, stdout.snapshot()));
         }
     }
-    for (_, _, bytes) in reports
-        .iter()
-        .filter(|(dry, format, _)| *dry && *format != "human")
-    {
+    for (_, _, bytes) in reports.iter().filter(|(dry, _, _)| *dry) {
         let document = serde_json::from_slice(bytes).unwrap();
         assert_schema_valid(&preview_schema, &document, &event_schema);
     }
@@ -2722,109 +2411,28 @@ macro_rules! human_text_cases {
     };
 }
 
-fn assert_human_format_escapes_external_candidate_fields(raw: &str, escaped: &str) {
-    // Arrange: the same external value can reach either unquoted field.
+fn assert_machine_values(raw: &str, _escaped: &str, format: OutputFormat) {
     let stdout = SharedWriter::default();
-    let mut handler = ReportHandler::new(
-        OutputFormat::Human,
-        stdout.clone(),
-        io::sink(),
-        std::env::temp_dir(),
-    )
-    .unwrap();
-    let mut event = mutant_finished(1, 0);
+    let stderr = SharedWriter::default();
+    let mut handler =
+        ReportHandler::new(format, stdout.clone(), stderr.clone(), std::env::temp_dir()).unwrap();
+    let mut event = mutant_finished(2, 0);
     let OutputEvent::MutantFinished(value) = &mut event else {
         unreachable!()
     };
+    value.candidate.id = raw.into();
     value.candidate.path = raw.into();
     value.candidate.operator = raw.into();
-    value.candidate.id = raw.into();
-
-    // Act.
-    emit(&mut handler, 1, event);
-
-    // Assert: renderer separators remain real, each external field stays inert.
-    assert_eq!(
-        stdout.text(),
-        format!("mutant finished: {escaped} {escaped}:1:0 {escaped} \"+\" -> \"-\" killed\n"),
-        "{raw:?}"
-    );
-}
-
-human_text_cases!(
-    human_format_escapes_external_candidate_fields,
-    assert_human_format_escapes_external_candidate_fields
-);
-
-fn assert_human_format_escapes_event_diagnostics(raw: &str, escaped: &str) {
-    let stderr = SharedWriter::default();
-    let mut handler = ReportHandler::new(
-        OutputFormat::Human,
-        io::sink(),
-        stderr.clone(),
-        std::env::temp_dir(),
-    )
-    .unwrap();
-    let event = OutputEvent::Diagnostic(Diagnostic::new("run", 1, raw, raw, raw));
-
-    emit(&mut handler, 1, event);
-
-    assert_eq!(
-        stderr.text(),
-        format!("{escaped} {escaped}: {escaped}\n"),
-        "{raw:?}"
-    );
-}
-
-human_text_cases!(
-    human_format_escapes_event_diagnostics,
-    assert_human_format_escapes_event_diagnostics
-);
-
-fn assert_human_format_escapes_session_diagnostics(raw: &str, escaped: &str) {
-    let stderr = SharedWriter::default();
-    let mut handler = ReportHandler::new(
-        OutputFormat::Human,
-        io::sink(),
-        stderr.clone(),
-        std::env::temp_dir(),
-    )
-    .unwrap();
-    let mut event = mutant_finished(1, 0);
-    let OutputEvent::MutantFinished(value) = &mut event else {
-        unreachable!()
-    };
+    value.candidate.original = raw.into();
+    value.candidate.replacement = raw.into();
     value.diagnostics.push(SessionDiagnostic {
-        mutant_id: "m0".into(),
+        mutant_id: raw.into(),
         level: raw.into(),
         code: raw.into(),
         message: raw.into(),
     });
-
-    emit(&mut handler, 1, event);
-
-    assert_eq!(
-        stderr.text(),
-        format!("{escaped} {escaped}: {escaped}\n"),
-        "{raw:?}"
-    );
-}
-
-human_text_cases!(
-    human_format_escapes_session_diagnostics,
-    assert_human_format_escapes_session_diagnostics
-);
-
-fn assert_human_format_escapes_run_provenance(raw: &str, escaped: &str) {
-    let stdout = SharedWriter::default();
-    let mut handler = ReportHandler::new(
-        OutputFormat::Human,
-        stdout.clone(),
-        io::sink(),
-        std::env::temp_dir(),
-    )
-    .unwrap();
-    let mut started = RunStarted::minimal(raw, 1, test_resource_control());
+    let candidate = value.candidate.clone();
+    let mut started = RunStarted::minimal("run-1", 1, test_resource_control());
     let config =
         hoimin_cli::cli::parse_config_from(["hoimin", "run", "--file", "x.py", "--", "check"])
             .unwrap()
@@ -2840,57 +2448,12 @@ fn assert_human_format_escapes_run_provenance(raw: &str, escaped: &str) {
     started.normalized_config = Some(hoimin_core::RunConfig::try_from(config).unwrap());
 
     emit(&mut handler, 1, OutputEvent::RunStarted(started));
-
-    let text = stdout.text();
-    assert!(
-        text.contains(&format!("run started: {escaped} (profile:")),
-        "{raw:?}: {text:?}"
-    );
-    assert!(
-        text.contains(&format!("fingerprint includes: [{escaped}]\n")),
-        "{raw:?}: {text:?}"
-    );
-    assert!(
-        text.contains(&format!("fingerprint files: [{escaped}]\n")),
-        "{raw:?}: {text:?}"
-    );
-    assert!(
-        text.contains(&format!("fingerprint inputs: [{escaped}={escaped}]\n")),
-        "{raw:?}: {text:?}"
-    );
-}
-
-human_text_cases!(
-    human_format_escapes_run_provenance,
-    assert_human_format_escapes_run_provenance
-);
-
-fn assert_machine_values(raw: &str, _escaped: &str, format: OutputFormat) {
-    let stdout = SharedWriter::default();
-    let stderr = SharedWriter::default();
-    let mut handler =
-        ReportHandler::new(format, stdout.clone(), stderr.clone(), std::env::temp_dir()).unwrap();
-    let mut event = mutant_finished(2, 0);
-    let OutputEvent::MutantFinished(value) = &mut event else {
-        unreachable!()
-    };
-    value.candidate.path = raw.into();
-    value.candidate.operator = raw.into();
-    value.candidate.original = raw.into();
-    value.candidate.replacement = raw.into();
-    let candidate = value.candidate.clone();
-
-    emit(
-        &mut handler,
-        1,
-        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
-    );
     emit(&mut handler, 2, event);
     emit(&mut handler, 3, run_summary(3));
     emit(
         &mut handler,
         4,
-        OutputEvent::Diagnostic(Diagnostic::new("run-1", 4, "warning", "test", raw)),
+        OutputEvent::Diagnostic(Diagnostic::new("run-1", 4, raw, raw, raw)),
     );
 
     let text = stdout.text();
@@ -2903,13 +2466,29 @@ fn assert_machine_values(raw: &str, _escaped: &str, format: OutputFormat) {
             .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
             .find(|event| event["kind"] == "mutant_finished")
             .unwrap(),
-        OutputFormat::Human => unreachable!(),
     };
     assert_eq!(
         mutant["candidate"],
         serde_json::to_value(candidate).unwrap()
     );
+    assert_eq!(mutant["diagnostics"][0]["mutant_id"], raw);
+    assert_eq!(mutant["diagnostics"][0]["level"], raw);
+    assert_eq!(mutant["diagnostics"][0]["code"], raw);
+    assert_eq!(mutant["diagnostics"][0]["message"], raw);
+    let run: serde_json::Value = match format {
+        OutputFormat::Json => {
+            serde_json::from_str::<serde_json::Value>(&text).unwrap()["run"].clone()
+        }
+        OutputFormat::Jsonl => serde_json::from_str(text.lines().next().unwrap()).unwrap(),
+    };
+    let config = &run["normalized_config"];
+    assert_eq!(config["fingerprint_includes"][0], raw);
+    assert_eq!(config["fingerprint_files"][0], raw);
+    assert_eq!(config["fingerprint_inputs"][0]["path"], raw);
+    assert_eq!(config["fingerprint_inputs"][0]["hash"], raw);
     let diagnostic: serde_json::Value = serde_json::from_str(&stderr.text()).unwrap();
+    assert_eq!(diagnostic["level"], raw);
+    assert_eq!(diagnostic["code"], raw);
     assert_eq!(diagnostic["message"], raw);
 }
 
@@ -2927,86 +2506,36 @@ human_text_cases!(
 proptest::proptest! {
     #![proptest_config(proptest::test_runner::Config { failure_persistence: None, ..proptest::test_runner::Config::default() })]
     #[test]
-    fn human_completion_fields_stay_on_one_line(raw in proptest::prelude::any::<String>()) {
-        // Arrange: each external result field can contain arbitrary text.
-        let stdout = SharedWriter::default();
-        let mut handler = ReportHandler::new(OutputFormat::Human, stdout.clone(), io::sink(), std::env::temp_dir()).unwrap();
-        let mut event = mutant_finished(1, 0);
-        let OutputEvent::MutantFinished(row) = &mut event else { unreachable!() };
-        row.candidate.id.clone_from(&raw);
-        row.candidate.path = raw.clone().into();
-        row.candidate.operator.clone_from(&raw);
-        row.candidate.original.clone_from(&raw);
-        row.candidate.replacement.clone_from(&raw);
-        // Act.
-        emit(&mut handler, 1, event);
-        // Assert: only the renderer's final newline remains a control character.
-        let text = stdout.text();
-        let line = text.strip_suffix('\n').unwrap();
-        proptest::prop_assert!(!line.chars().any(|c| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}')), "{:?}", text);
-        proptest::prop_assert!(line.ends_with(" killed"));
-        proptest::prop_assert!(line.contains(" -> "));
-    }
-
-    #[test]
-    fn human_diagnostic_has_no_input_controls(raw in proptest::prelude::any::<String>()) {
-        let stderr = SharedWriter::default();
-        let mut handler = ReportHandler::new(OutputFormat::Human, io::sink(), stderr.clone(), std::env::temp_dir()).unwrap();
-        let event = OutputEvent::Diagnostic(Diagnostic::new("run", 1, "warning", "test", &raw));
-
-        emit(&mut handler, 1, event);
-
-        let text = stderr.text();
-        let line = text.strip_suffix('\n').unwrap();
-        proptest::prop_assert!(!line.chars().any(|c| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}')), "{:?}", text);
-    }
-}
-
-fn assert_baseline_layout(code: &str, expected: &str) {
-    let stderr = SharedWriter::default();
-    let mut handler = ReportHandler::new(
-        OutputFormat::Human,
-        io::sink(),
-        stderr.clone(),
-        std::env::temp_dir(),
-    )
-    .unwrap();
-    // The transcript has already escaped child ESC; preserve that text once.
-    // Defensively escape other controls even on the special transcript route.
-    let event = OutputEvent::Diagnostic(Diagnostic::new(
-        "run",
-        1,
-        "warn\x1b",
-        code,
-        "baseline token=out offset=0:\n日本語\t\\u{1b}[31m\r\u{7f}\n",
-    ));
-
-    emit(&mut handler, 1, event);
-
-    assert_eq!(stderr.text(), expected);
-}
-
-macro_rules! diagnostic_layout_case {
-    ($case:ident, $code:expr, $expected:expr) => {
-        #[test]
-        fn $case() {
-            assert_baseline_layout($code, $expected);
+    fn machine_fields_preserve_arbitrary_text(raw in proptest::prelude::any::<String>()) {
+        for format in [OutputFormat::Json, OutputFormat::Jsonl] {
+            assert_machine_values(&raw, "", format);
         }
-    };
+    }
 }
 
-diagnostic_layout_case!(
-    human_baseline_transcript_preserves_its_line_layout,
-    "baseline.output",
-    "warn\\u{1b} baseline.output: baseline token=out offset=0:\n日本語\t\\u{1b}[31m\\r\\u{7f}\n\n"
-);
-diagnostic_layout_case!(
-    human_ordinary_diagnostic_escapes_transcript_like_line_layout,
-    "ordinary",
-    "warn\\u{1b} ordinary: baseline token=out offset=0:\\n日本語\\t\\u{1b}[31m\\r\\u{7f}\\n\n"
-);
+#[test]
+fn machine_diagnostic_preserves_transcript_and_ordinary_message_layout() {
+    let message = "baseline token=out offset=0:\n日本語\t\\u{1b}[31m\r\u{7f}\n";
+    for format in [OutputFormat::Json, OutputFormat::Jsonl] {
+        for code in ["baseline.output", "ordinary"] {
+            let stderr = SharedWriter::default();
+            let mut handler =
+                ReportHandler::new(format, io::sink(), stderr.clone(), std::env::temp_dir())
+                    .unwrap();
+            emit(
+                &mut handler,
+                1,
+                OutputEvent::Diagnostic(Diagnostic::new("run", 1, "warn\x1b", code, message)),
+            );
+            let wire: serde_json::Value = serde_json::from_str(&stderr.text()).unwrap();
+            assert_eq!(wire["level"], "warn\x1b");
+            assert_eq!(wire["code"], code);
+            assert_eq!(wire["message"], message);
+        }
+    }
+}
 
-fn assert_started_identifier(raw: &str, escaped: &str, label: &str) {
+fn assert_started_identifier(raw: &str, _escaped: &str, label: &str) {
     let event = match label {
         "run" => OutputEvent::RunStarted(RunStarted::minimal(raw, 1, test_resource_control())),
         "mutant" => OutputEvent::MutantStarted(MutantStarted::new("run", 1, raw, 1)),
@@ -3014,7 +2543,7 @@ fn assert_started_identifier(raw: &str, escaped: &str, label: &str) {
     };
     let stdout = SharedWriter::default();
     let mut handler = ReportHandler::new(
-        OutputFormat::Human,
+        OutputFormat::Jsonl,
         stdout.clone(),
         io::sink(),
         std::env::temp_dir(),
@@ -3023,20 +2552,22 @@ fn assert_started_identifier(raw: &str, escaped: &str, label: &str) {
 
     emit(&mut handler, 1, event);
 
-    assert_eq!(
-        stdout.text(),
-        format!("{label} started: {escaped}\n"),
-        "{raw:?}"
-    );
+    let wire: serde_json::Value = serde_json::from_str(&stdout.text()).unwrap();
+    let field = if label == "run" {
+        "run_id"
+    } else {
+        "mutant_id"
+    };
+    assert_eq!(wire[field], raw);
 }
 
 human_text_cases!(
-    human_run_started_identifiers,
+    jsonl_run_started_identifiers,
     assert_started_identifier,
     "run"
 );
 human_text_cases!(
-    human_mutant_started_identifiers,
+    jsonl_mutant_started_identifiers,
     assert_started_identifier,
     "mutant"
 );
@@ -3114,27 +2645,20 @@ macro_rules! janitor_presentation_case {
                 text.contains("measurement-root: inspection denied"),
                 "{text}"
             );
-            if $format == OutputFormat::Human {
-                assert!(text.contains("inspected 2"), "{text}");
-                assert!(text.contains("removed entries 3"), "{text}");
-                assert!(text.contains(&format!("exit: {exit}")));
+            let wire: serde_json::Value = if $format == OutputFormat::Json {
+                serde_json::from_str::<serde_json::Value>(&text).unwrap()["summary"].clone()
             } else {
-                let wire: serde_json::Value = if $format == OutputFormat::Json {
-                    serde_json::from_str::<serde_json::Value>(&text).unwrap()["summary"].clone()
-                } else {
-                    serde_json::from_str(text.lines().last().unwrap()).unwrap()
-                };
-                let schema =
-                    read_schema(&repo_root().join("docs/json-schema/run-event.schema.json"));
-                assert_schema_valid(&schema, &wire, &schema);
-                assert_eq!(wire["disk"]["janitor"]["inspected_roots"], 2);
-                assert_eq!(wire["disk"]["janitor"]["removed_entries"], 3);
-                assert_eq!(wire["exit_code"], exit);
-                assert_eq!(
-                    wire["disk"]["cleanup"].as_array().unwrap().last().unwrap()["status"],
-                    "deferred"
-                );
-            }
+                serde_json::from_str(text.lines().last().unwrap()).unwrap()
+            };
+            let schema = read_schema(&repo_root().join("docs/json-schema/run-event.schema.json"));
+            assert_schema_valid(&schema, &wire, &schema);
+            assert_eq!(wire["disk"]["janitor"]["inspected_roots"], 2);
+            assert_eq!(wire["disk"]["janitor"]["removed_entries"], 3);
+            assert_eq!(wire["exit_code"], exit);
+            assert_eq!(
+                wire["disk"]["cleanup"].as_array().unwrap().last().unwrap()["status"],
+                "deferred"
+            );
         }
     };
 }
@@ -3142,8 +2666,6 @@ janitor_presentation_case!(janitor_json_default, OutputFormat::Json, false);
 janitor_presentation_case!(janitor_json_verbose, OutputFormat::Json, true);
 janitor_presentation_case!(janitor_jsonl_default, OutputFormat::Jsonl, false);
 janitor_presentation_case!(janitor_jsonl_verbose, OutputFormat::Jsonl, true);
-janitor_presentation_case!(janitor_human_default, OutputFormat::Human, false);
-janitor_presentation_case!(janitor_human_verbose, OutputFormat::Human, true);
 
 macro_rules! janitor_schema_presence_case {
     ($name:ident, $present:expr) => {
@@ -3212,28 +2734,6 @@ fn resolved_mutant_timeout_jsonl_preserves_nanoseconds() {
         summary["resolved_mutant_timeout"],
         serde_json::json!({"secs":1,"nanos":234_567_891})
     );
-}
-
-#[test]
-fn resolved_mutant_timeout_human_preserves_nanoseconds() {
-    let text = timeout_report_text(
-        OutputFormat::Human,
-        Some(std::time::Duration::new(1, 234_567_891)),
-    );
-    let value = text
-        .lines()
-        .find_map(|line| line.strip_prefix("  resolved mutant timeout: "))
-        .unwrap();
-    assert_eq!(
-        humantime::parse_duration(value).unwrap(),
-        std::time::Duration::new(1, 234_567_891)
-    );
-}
-
-#[test]
-fn unresolved_mutant_timeout_human_is_explicit() {
-    let text = timeout_report_text(OutputFormat::Human, None);
-    assert!(text.contains("resolved mutant timeout: unresolved (no mutant process requested)"));
 }
 
 #[test]

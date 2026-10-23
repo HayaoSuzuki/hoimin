@@ -26,7 +26,7 @@ From your project directory, use a Python environment with passing tests and the
 Choose the [OS memory policy](docs/usage.md#before-execution) first, then replace `src/calc.py` with an existing file:
 
 ```console
-hoimin run --root . --file src/calc.py --format human -- python -m pytest -q
+hoimin run --root . --file src/calc.py --format json -- python -m pytest -q
 ```
 
 Everything after `--` is your project's test command.
@@ -43,7 +43,7 @@ See [licensing details](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/lic
 ### Startup cleanup reports
 
 `hoimin run` and `hoimin verify` summarize startup cleanup in `disk.janitor`
-(JSON/JSONL schema 10) and in human output. Use `--verbose` to include ordinary
+(JSON/JSONL schema 10). Use `--verbose` to include ordinary
 root retention details. Failures and unfinished cleanup remain visible by default.
 The summary separates roots from deleted entries and reports bounded scan/detail
 omissions. It does not estimate remaining roots or freed disk space. See the

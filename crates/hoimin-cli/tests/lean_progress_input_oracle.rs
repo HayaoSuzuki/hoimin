@@ -156,7 +156,7 @@ async fn observe_cli_encoding(
     .map_err(|error| error.to_string())?;
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
     command
-        .args(["progress", "--format", "json", "--patience", "1"])
+        .args(["progress", "--patience", "1"])
         .arg(&path)
         .arg(&path)
         .kill_on_drop(true)

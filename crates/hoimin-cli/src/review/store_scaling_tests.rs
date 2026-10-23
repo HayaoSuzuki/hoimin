@@ -1,6 +1,5 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
-use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
 use super::model::*;
@@ -239,8 +238,6 @@ async fn show_streams_unrelated_history_and_keeps_the_selected_history() {
             path.to_str().unwrap(),
             "--candidate",
             &target.candidate_id,
-            "--format",
-            "json",
         ])
         .unwrap() else {
             panic!("review")
@@ -393,8 +390,6 @@ async fn selected_review_history_is_retained_once_while_rendering() {
                     plan_path.to_str().unwrap(),
                     "--store",
                     path.to_str().unwrap(),
-                    "--format",
-                    "json",
                 ];
                 if command == "show" {
                     cli_arguments.extend(["--candidate", current.candidate_id.as_str()]);
@@ -443,7 +438,6 @@ async fn selected_review_history_is_retained_once_while_rendering() {
                     assert_eq!(&row["review"], events.last().unwrap());
                     assert_eq!(row["applicability"], "current");
                 }
-                assert_human_selected_history(args, command, history, text_bytes);
                 eprintln!(
                     "selected {command} history={history} text_bytes={text_bytes}: {measured:?}"
                 );
@@ -483,8 +477,6 @@ async fn selected_record_history_is_retained_once_after_saving() {
             path.to_str().unwrap(),
             "--candidate",
             &target.candidate_id,
-            "--format",
-            "json",
             "--assessment",
             "actionable",
             "--reason",
@@ -513,8 +505,6 @@ async fn selected_record_history_is_retained_once_after_saving() {
             path.to_str().unwrap(),
             "--candidate",
             &target.candidate_id,
-            "--format",
-            "json",
         ])
         .unwrap() else {
             panic!("show")
@@ -538,30 +528,6 @@ async fn selected_record_history_is_retained_once_after_saving() {
         growth <= payload_growth as i128 + 96 * 1024,
         "record growth={growth}, single_history_payload_growth={payload_growth}; {measurements:?}"
     );
-}
-
-fn assert_human_selected_history(
-    mut args: crate::cli::ReviewArgs,
-    command: &str,
-    history: usize,
-    text_bytes: usize,
-) {
-    let common = match &mut args {
-        crate::cli::ReviewArgs::Show(args) => &mut args.common,
-        crate::cli::ReviewArgs::List(args) => &mut args.common,
-        crate::cli::ReviewArgs::Record(_) => unreachable!(),
-    };
-    common.format = crate::cli::ReviewOutputFormat::Text;
-    let mut human = Vec::new();
-    assert_eq!(super::run(&args, &mut human).unwrap(), 0);
-    let human = String::from_utf8(human).unwrap();
-    assert_eq!(human.matches("  revision ").count(), history);
-    assert!(human.contains(&format!("  revision {history} Actionable:")));
-    assert!(human.contains(&"r".repeat(text_bytes)));
-    assert!(human.contains(&"e".repeat(text_bytes.min(2048))));
-    if command == "list-stale" {
-        assert!(human.contains("old candidate "));
-    }
 }
 
 #[tokio::test]
@@ -605,13 +571,11 @@ async fn issue_1083_read_only_plan_identity_does_not_clone_payloads() {
             plan_path.to_str().unwrap(),
             "--store",
             directory.path().join("absent.sqlite3").to_str().unwrap(),
-            "--format",
-            "json",
         ])
         .unwrap() else {
             panic!("review")
         };
-        assert_identity_list_output(args, &manifest.candidates[0].candidate);
+        assert_identity_list_output(&args, &manifest.candidates[0].candidate);
     }
     for (payload, peak) in measurements {
         // JSON input storage, decoder and owned candidate remain necessary.
@@ -669,25 +633,17 @@ fn issue_1083_store_identity_does_not_clone_replacement() {
 }
 
 fn assert_identity_list_output(
-    mut args: crate::cli::ReviewArgs,
+    args: &crate::cli::ReviewArgs,
     candidate: &hoimin_core::MutationCandidate,
 ) {
     let mut bytes = Vec::new();
-    assert_eq!(super::run(&args, &mut bytes).unwrap(), 0);
+    assert_eq!(super::run(args, &mut bytes).unwrap(), 0);
     let document: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     let row = &document["candidates"][0]["candidate"];
     assert_eq!(row["id"], candidate.id);
     assert_eq!(row["original"], candidate.original);
     assert_eq!(row["replacement"], candidate.replacement);
-    let crate::cli::ReviewArgs::List(list) = &mut args else {
-        panic!("list fixture")
-    };
-    list.common.format = crate::cli::ReviewOutputFormat::Text;
-    bytes.clear();
-    assert_eq!(super::run(&args, &mut bytes).unwrap(), 0);
-    let human = String::from_utf8(bytes).unwrap();
-    assert!(human.contains(&candidate.id));
-    assert!(human.contains(candidate.path.as_str()));
+    assert_eq!(row["path"], candidate.path.as_str());
 }
 
 // Observe the actual public command's render phase. Unlike a Vec output sink,
@@ -768,8 +724,6 @@ async fn issue_1087_current_candidate_payloads_are_retained_once_at_first_json_w
                 plan_path.to_str().unwrap(),
                 "--store",
                 directory.path().join("absent.sqlite3").to_str().unwrap(),
-                "--format",
-                "json",
             ])
             .unwrap() else {
                 panic!("review list")
@@ -788,7 +742,7 @@ async fn issue_1087_current_candidate_payloads_are_retained_once_at_first_json_w
             eprintln!("issue_1087 count={count} replacement_bytes={payload} render_live={live}");
             measurements.push((payload, live));
             // Full content and ordering are checked with allocation tracking off.
-            assert_issue_1087_output(args, &manifest, &project);
+            assert_issue_1087_output(&args, &manifest, &project);
         }
         for pair in measurements.windows(2) {
             let payload_growth = count * (pair[1].0 - pair[0].0);
@@ -804,12 +758,12 @@ async fn issue_1087_current_candidate_payloads_are_retained_once_at_first_json_w
 }
 
 fn assert_issue_1087_output(
-    mut args: crate::cli::ReviewArgs,
+    args: &crate::cli::ReviewArgs,
     manifest: &crate::plan::PlanManifest,
     project: &camino::Utf8Path,
 ) {
     let mut bytes = Vec::new();
-    assert_eq!(super::run(&args, &mut bytes).unwrap(), 0);
+    assert_eq!(super::run(args, &mut bytes).unwrap(), 0);
     let rows: Vec<_> = manifest
         .candidates
         .iter()
@@ -837,28 +791,6 @@ fn assert_issue_1087_output(
                 "unreviewed": count, "stale": 0, "source_unavailable": 0, "assessments": {}}],
         })
     );
-    let crate::cli::ReviewArgs::List(list) = &mut args else {
-        panic!("list")
-    };
-    list.common.format = crate::cli::ReviewOutputFormat::Text;
-    bytes.clear();
-    assert_eq!(super::run(&args, &mut bytes).unwrap(), 0);
-    let mut expected =
-        String::from("Human assessments (execution outcomes and mutation scores are unchanged)\n");
-    for row in &manifest.candidates {
-        write!(
-            expected,
-            "candidate {:?} {:?}:{} unreviewed Current\n  execution: not_loaded\n",
-            row.id,
-            row.path.as_str(),
-            row.line,
-        )
-        .unwrap();
-    }
-    writeln!(expected,
-        "operator {operator:?}: total {count}, reviewed 0, unreviewed {count}, stale 0, source_unavailable 0, assessments {{}}"
-    ).unwrap();
-    assert_eq!(String::from_utf8(bytes).unwrap(), expected);
 }
 
 pub(super) fn issue_1089_candidates(

@@ -684,8 +684,6 @@ async fn reject_semantic_report_at_command(change: fn(&mut serde_json::Value), e
         report_path.to_str().unwrap().into(),
         "--store".into(),
         store.to_str().unwrap().into(),
-        "--format".into(),
-        "json".into(),
     ];
     let output = crate::test_writer::CollectingWriter::default();
     let errors = crate::test_writer::CollectingWriter::default();
@@ -859,8 +857,6 @@ async fn review_does_not_change_execution_results() {
         "allowed reorder".into(),
         "--expected-revision".into(),
         "0".into(),
-        "--format".into(),
-        "json".into(),
     ])
     .unwrap();
     let crate::cli::ParsedCommand::Review(args) = args else {
@@ -897,8 +893,6 @@ async fn missing_report_candidate_fixture() -> (tempfile::TempDir, Vec<String>) 
         report_path.to_str().unwrap().into(),
         "--candidate".into(),
         candidate.id.clone(),
-        "--format".into(),
-        "json".into(),
     ];
     (dir, argv)
 }
@@ -1032,8 +1026,6 @@ async fn matching_review_command_joins_once_and_keeps_plan_display_order() {
         "--report",
         report_path.to_str().unwrap(),
         "--stale",
-        "--format",
-        "json",
     ])
     .unwrap();
     let crate::cli::ParsedCommand::Review(args) = args else {
@@ -1250,8 +1242,6 @@ async fn review_list_reads_and_indexes_each_source_once_per_command() {
         path.to_str().unwrap().into(),
         "--store".into(),
         dir.path().join("reviews.sqlite3").to_str().unwrap().into(),
-        "--format".into(),
-        "json".into(),
     ];
     let crate::cli::ParsedCommand::Review(args) = crate::cli::parse_from(command_line).unwrap()
     else {
@@ -1588,8 +1578,6 @@ async fn recording_report_preserves_reference_when_showing_history() {
         store.to_str().unwrap().to_owned(),
         "--report".into(),
         report_path.to_str().unwrap().to_owned(),
-        "--format".into(),
-        "json".into(),
     ];
     let mut record = vec!["hoimin".into(), "review".into(), "record".into()];
     record.extend(common.clone());
