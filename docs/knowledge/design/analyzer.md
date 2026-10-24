@@ -681,9 +681,9 @@ sources:
   sha256: ee20d80550468bc2bb6e9e1f69631efedbf7a311d35f97479010d6f5d375d227
 - id: python315-syntax
   resource: ../../superpowers/specs/2026-10-24-python-315-syntax-design.md
-  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  revision: a8578a958702c8889dd8ad37ca813a09fe59b6a2
   working_tree: clean
-  sha256: 888e030f6717ac5a4fc1862dba1d2d253c894521ce3fc21e2b79e713b4f73ee3
+  sha256: e3ba8fa0209597b92031e623b90c050d2fdf02c60511879503f448ee9ade1b9b
 - id: python315-analyzer
   resource: ../../../crates/hoimin-python/src/analyzer/rust.rs
   revision: c9f17e694863aa512312bb570a61b9297073dc52
@@ -1740,7 +1740,7 @@ comparison and its limits are recorded in the
 
 # Python 3.15の構文と遅延import
 
-Ruff 0.17.2のparser・AST・周辺crateを同一コミットのvendorソースへ更新する。
+Ruff 0.17.2のparserは安全修正を含むvendorソースを使い、AST・周辺crateは同一コミットから公開されたcrates.io版0.0.19へ揃える。
 遅延importと内包表記・ジェネレーター式のアンパックを解析し、辞書内包表記の省略keyも訪問対象へ反映する。
 既存の深さ128の制限と反復破棄を維持する。[^python315-syntax]
 

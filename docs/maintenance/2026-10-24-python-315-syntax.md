@@ -144,3 +144,29 @@ PR: https://github.com/HayaoSuzuki/hoimin/pull/1109
 3. 主workspaceとparser manifestの直接Ruff依存は =0.0.19。main/fuzz両lockfileのRuff crateは0.0.19、parser以外はregistry source/checksumを持つ。
 4. main/fuzz両lockfileでRuff以外のpackage名・version集合が移行前と一致することを確認した。fuzzer本体・arbitrary・依存ポリシーは変更していない。
 5. 8 vendorディレクトリは専用worktreeのvendor直下であることを絶対パスで確認して削除した。sdist収録一覧、ライセンス通知、SBOM説明も現在の構成へ合わせた。
+
+## Registry移行の独立レビューと文書セルフレビュー
+
+1. fresh contextの独立レビューを1回実施した。main/fuzzのlocked・offline metadataを別途確認し、修正が必要な指摘はなかった。
+2. レビュアーはactiveな6外部crateのRustソース・データ計62ファイルを削除前のsnapshotと比較し、改行以外の差分がないことを確認した。未使用のcache/macrosは解決グラフに現れない。
+3. UnicodeのMIT・Apache・data通知がparserの共通LICENSEに完全に残ることを確認した。SBOMはparserだけにvendor由来を付け、外部componentのidentityとmetadataを維持する。
+4. 開発・release・vendor README・設計と関連OKFの現在の説明をregistry構成に合わせた。初回9 crate版の検証記録は履歴として残し、新しい検証と区別する。
+5. 9件の変更対象source recordsを実装コミット `a8578a958702c8889dd8ad37ca813a09fe59b6a2` のGit blobハッシュへ更新した。全60 OKFページの構造と更新したsource pins、strict site build、Ruff/ty、workspace/parser fmtが成功した。reference/conceptとして構成・根拠・読者の作業・用語・リンク・範囲・時点・重複・簡潔さ・未検証条件の10項目を点検し、10/10で未解決項目なし。
+
+## Registry移行の配布検証セルフレビュー
+
+1. 実装コミット `a8578a958702c8889dd8ad37ca813a09fe59b6a2` の構成でPython全体を再実行した。3.15.1は1255成功・48 skip、3.14.9も1255成功・48 skip、両方exit 0。
+2. 初回版の最終collection1395件から1303件への差は、削除したvendorファイルのarchive検証100件を除き、SBOMの外部identity検証7件とarchive除外検証1件を加えた結果である。機能の回帰テストは削除していない。
+3. 新sdistは1584375 bytes、SHA-256 `08727384120c3b518470e0a169bf320d453f8d3ae137169d1e61c0018deda0b8`。parser以外のvendorがないことと、展開後のlockfile・主要ソースがcheckoutと一致することを確認した。
+4. 展開した独立ソースを `uv build --wheel`、`MATURIN_PEP517_ARGS=--locked` で再構築した。並列数2、既存targetを再利用し、releaseビルドはexit 0。
+5. 再構築した同じwheelで両Python版の通常実行・変異検出・復元を確認し、両smokeのexit 0と同一SHA-256を照合した。wheel SHA-256は `02319f1f6e082e1edc1ade728a941434a594dc3ddd1d7303d639eccc6c759ea3`。Clippyのworkspace全target/全feature・parser単独、stacker無効のstandalone locked/offlineビルドも成功した。
+
+ローカル検証OSはWindows x86_64。macOS/Linuxの実行とbounded fuzzの新しいローカル成功は主張しない。
+
+## Registry移行後の最終確認・PR更新セルフレビュー
+
+1. 実装を固定した全体Rust検証は、3.15.1と3.14.9の両方で194 result groups、3770成功・32無視・失敗0、exit 0だった。Python全体・配布・Clippy・書式・型検査・独立レビューの結果も実ログと照合した。
+2. 現在の実装は `a8578a958702c8889dd8ad37ca813a09fe59b6a2`。source refsとその後の変更は文書のみで、検証したRustソース・主lockfile・fuzz lockfileを変更していない。
+3. PR本文をparserのみvendorの構成、registry由来のSBOM identity、移行後のテスト件数とwheel hashへ更新する。旧9 crate版の結果を新構成の証拠として流用せず、保守記録で区別した。
+4. 検証済みwheelとsdist・小さい証跡・debugキャッシュを保持し、展開ソース、追加3.15 venv、重複wheel、生成siteを削除した。`cargo clean --release` は1575 files、613.2 MiBを解放した。削除先は専用worktree配下の絶対パスを確認した。
+5. 送信対象は既存PR #1109の専用branch `python-315-syntax`。元のcheckoutの既存 `.gitignore` 変更を含めない。新HEADのCIはpush後に別途確認し、ローカルのWindows結果をmacOS/Linuxの実行結果へ拡張しない。

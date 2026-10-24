@@ -6,19 +6,19 @@ status: draft
 sources:
 - id: issues-992-998-sdist-config
   resource: ../../pyproject.toml
-  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  revision: a8578a958702c8889dd8ad37ca813a09fe59b6a2
   working_tree: clean
-  sha256: bc00c00ec207b8276055ee8049cb86e561168265a17f60ec99854ef4d88c852d
+  sha256: 5304c2030e5195b7310d9ba180bfb8140c2d1c090ec7d0b7d2e033b8a30723d5
 - id: issues-992-998-sdist-archive
   resource: ../../tests/test_sdist.py
-  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  revision: a8578a958702c8889dd8ad37ca813a09fe59b6a2
   working_tree: clean
-  sha256: ab60aec9e04243e9adec5219f864688f726bb70f13d719743244fd78b9b2e2c2
+  sha256: 13c574d05fa0bf1f1922924a96a3f17a5131a508fb064723230932e88367bf6a
 - id: issues-992-998-sbom-validator
   resource: ../../tools/sbom.py
-  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  revision: a8578a958702c8889dd8ad37ca813a09fe59b6a2
   working_tree: clean
-  sha256: 49343c440f34c701dc0c0032f916742cb59118745565560f79235b07b83842fc
+  sha256: 212a2ce81a4a4c1ca0fac063b4155e2eb81ca9c45fe3e563741b89f3a0dac7dd
 - id: issues-992-998-sbom-capture
   resource: ../../tools/capture_sbom.py
   revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
@@ -31,9 +31,9 @@ sources:
   sha256: a17fa37454e672512a1ccb3a8649783a89c9edd99b63da4679fe77a29228d96d
 - id: release
   resource: ../releases.md
-  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  revision: a8578a958702c8889dd8ad37ca813a09fe59b6a2
   working_tree: clean
-  sha256: f209b3654622a32376645778454a5a63b027ca5037fb596fe1997b5967c8a949
+  sha256: 803b0d8486e5f2a32bd364cdfb04aadc3f79e1c8bf0c268e70bd71a69fa04e20
 - id: design
   resource: ../superpowers/specs/2026-10-10-issue-741-sbom-design.md
   working_tree: untracked
@@ -45,9 +45,9 @@ sources:
   revision: 1d2c0912d029318fd40c09f3e6576735c0a740e3
 - id: python315-vendor
   resource: ../../vendor/ruff_python_parser/README.hoimin.md
-  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  revision: a8578a958702c8889dd8ad37ca813a09fe59b6a2
   working_tree: clean
-  sha256: 96799fb270161e1c40de6d320885671f8a3738d2857e4c5e4f9d01837ecbabd1
+  sha256: 9284faff3a13a4a441410693c217f08e652c65710591647a7c7340a214d1a41e
 ---
 
 # Mapping SBOMs to artifacts
@@ -67,13 +67,15 @@ original lockfile is restored before that rejection.[^issues-992-998-sbom-valida
 
 Before generating SHA256SUMS, reject missing required SBOMs, schema violations, metadata mismatches, and inconsistent graph references. PRs changing distribution inputs and manual runs also validate the aggregate artifact.[^ci] Preserve existing protection of published releases and wheel-only PyPI uploads.[^design]
 
-For every vendored Ruff crate, record its upstream package version, Ruff 0.17.2 VCS revision, and release-commit-pinned path and README. The README describes the parser safety adaptations. A Cargo-derived graph is not a complete binary inventory including OS libraries, and does not claim that build dependencies are shipped in the binary.[^release]
+For the vendored Ruff parser, record its upstream package version, Ruff 0.17.2 VCS revision, and release-commit-pinned path and README. External Ruff crates retain their captured registry identities and metadata. The README describes the parser safety adaptations. A Cargo-derived graph is not a complete binary inventory including OS libraries, and does not claim that build dependencies are shipped in the binary.[^release]
 
 # Source distribution build inputs
 
-Source distributions explicitly include all nine vendored Ruff crate manifests,
-Rust sources, Unicode build inputs, provenance README and license notices.
-Real-archive tests compare internal Python API and copied Ruff files with
+Source distributions explicitly include the patched parser manifest,
+Rust sources, provenance README and combined license notices.
+The other Ruff crates are registry dependencies recorded in Cargo.lock;
+the archive must not retain their former vendor directories.
+Real-archive tests compare internal Python API and patched parser files with
 their source bytes, and exclude untracked build/cache/scratch outputs. Cargo manifest checks compare text after CRLF-to-LF normalization, matching
 Maturin's archive normalization of workspace and local dependency manifests.
 Rust sources, build data, README and license notices retain raw byte checks.

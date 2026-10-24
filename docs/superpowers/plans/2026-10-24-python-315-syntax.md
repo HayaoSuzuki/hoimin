@@ -7,6 +7,8 @@
 **Tech Stack:** Rust 1.99, CPython 3.14.9 and 3.15.1, uv, Cargo, Ruff.
 **Spec:** ../specs/2026-10-24-python-315-syntax-design.md
 
+The dependency-source follow-up is recorded in [the registry migration plan](2026-10-24-python-315-registry.md). Only the patched parser remains vendored; the completed steps below record the initial syntax implementation.
+
 ## Global constraints
 
 - Python 3.14 and 3.15 remain supported.

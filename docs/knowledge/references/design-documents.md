@@ -1052,9 +1052,9 @@ sources:
   sha256: e5a0fefe437b90d86045864bf82831bcdc9a210147eb07c3211d3fbbadeb3cba
 - id: python-315-syntax-design
   resource: ../../superpowers/specs/2026-10-24-python-315-syntax-design.md
-  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  revision: a8578a958702c8889dd8ad37ca813a09fe59b6a2
   working_tree: clean
-  sha256: 888e030f6717ac5a4fc1862dba1d2d253c894521ce3fc21e2b79e713b4f73ee3
+  sha256: e3ba8fa0209597b92031e623b90c050d2fdf02c60511879503f448ee9ade1b9b
 ---
 
 # 収録一覧

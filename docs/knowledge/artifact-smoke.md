@@ -28,9 +28,9 @@ sources:
 
 - id: python-package
   resource: ../../pyproject.toml
-  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  revision: a8578a958702c8889dd8ad37ca813a09fe59b6a2
   working_tree: clean
-  sha256: bc00c00ec207b8276055ee8049cb86e561168265a17f60ec99854ef4d88c852d
+  sha256: 5304c2030e5195b7310d9ba180bfb8140c2d1c090ec7d0b7d2e033b8a30723d5
 - id: python-runtime-design
   resource: ../superpowers/specs/2026-10-24-python-314-315-design.md
   revision: 16d4d5ca955dff6ab5470e70481798bc96eed194
@@ -38,9 +38,9 @@ sources:
   sha256: e5a0fefe437b90d86045864bf82831bcdc9a210147eb07c3211d3fbbadeb3cba
 - id: python-syntax-design
   resource: ../superpowers/specs/2026-10-24-python-315-syntax-design.md
-  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  revision: a8578a958702c8889dd8ad37ca813a09fe59b6a2
   working_tree: clean
-  sha256: 888e030f6717ac5a4fc1862dba1d2d253c894521ce3fc21e2b79e713b4f73ee3
+  sha256: e3ba8fa0209597b92031e623b90c050d2fdf02c60511879503f448ee9ade1b9b
 ---
 
 # Running distributed artifacts

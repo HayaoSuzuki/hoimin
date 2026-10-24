@@ -31,11 +31,11 @@
 
 **Interfaces:** Consumes existing patched parser; produces a locked graph with only the parser as a local Ruff crate.
 
-- [ ] Update the SBOM test to assert that all eight external identities remain unchanged; add the archive exclusion assertion.
-- [ ] Run the affected tests and observe the expected failures.
-- [ ] Pin direct dependencies, remove eight vendor snapshots and their archive entries, and restrict SBOM vendor rewriting to the parser.
-- [ ] Refresh both lockfiles without unrelated upgrades; run metadata, archive and SBOM tests, formatting and Clippy.
-- [ ] Record five review passes and commit the dependency migration.
+- [x] Update the SBOM test to assert that all eight external identities remain unchanged; add the archive exclusion assertion.
+- [x] Run the affected tests and observe the expected failures.
+- [x] Pin direct dependencies, remove eight vendor snapshots and their archive entries, and restrict SBOM vendor rewriting to the parser.
+- [x] Refresh both lockfiles without unrelated upgrades; run metadata, archive and SBOM tests, formatting and Clippy.
+- [x] Record five review passes and commit the dependency migration.
 
 ## Task 2: Distribution, regression and PR update
 
@@ -43,11 +43,11 @@
 
 **Interfaces:** Consumes Task 1 graph; produces verified distributions and accurate source records.
 
-- [ ] Update current documentation and retain prior validation as historical evidence.
-- [ ] Run complete Rust and Python suites on 3.14.9 and 3.15.1.
-- [ ] Build an sdist and a locked wheel from its extracted source; smoke the same wheel with both interpreters.
-- [ ] Run one fresh review, fix findings, check documentation and source pins, and record five review passes.
-- [ ] Clean only obsolete task outputs, commit, push, update PR #1109, and inspect CI.
+- [x] Update current documentation and retain prior validation as historical evidence.
+- [x] Run complete Rust and Python suites on 3.14.9 and 3.15.1.
+- [x] Build an sdist and a locked wheel from its extracted source; smoke the same wheel with both interpreters.
+- [x] Run one fresh review, fix findings, check documentation and source pins, and record five review passes.
+- [x] Clean only obsolete task outputs, commit, push, update PR #1109, and inspect CI.
 
 ## Plan self-review
 
