@@ -118,3 +118,11 @@ PR: https://github.com/HayaoSuzuki/hoimin/pull/1109
 - 一時的なsource checkout、旧parserコピー、sdist展開コピー、3.15用追加venv、重複wheelとrelease build出力は削除済み。
 
 開発 `.venv` はPython 3.14.9。uvで導入したグローバルのPython 3.15.1も維持する。
+
+## CIのfuzz依存同期とセルフレビュー
+
+1. PRのfuzz依存ポリシー検証が独立した `fuzz/Cargo.lock` の未更新で失敗した。ローカルでも `cargo metadata --manifest-path fuzz/Cargo.toml --all-features --locked` の失敗を再現した。
+2. fuzz用lockだけを更新し、旧littrs依存を除去した。実行時のRustソースと主Cargo.lockは変更せず、前述の両版テスト・wheel検証の対象コードを維持した。
+3. `libfuzzer-sys 0.4.13` と `arbitrary 1.5.0` を保持し、`deny.toml` のライセンス例外やsource制約を緩和していないことを確認した。
+4. fuzzの解決グラフ内の7 Ruff crateがversion 0.0.19、sourceなし、ローカルvendor manifestを参照することを確認した。通常・offline両方のlocked metadataがexit 0になった。
+5. lock差分と `git diff --check` を確認した。依存ポリシー自体の最終結果は更新後のCIで確認する。ローカルでbounded fuzzを実行したという主張は追加しない。
