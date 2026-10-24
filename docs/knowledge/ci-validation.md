@@ -7,9 +7,9 @@ catalog_revision: 00893465e0328204453e5008dc3884035b85c7bd
 sources:
 - id: guide
   resource: ../ci.md
-  revision: c2ccb34946bd581cac41b1ca924b7491ab0c16ac
+  revision: 16d4d5ca955dff6ab5470e70481798bc96eed194
   working_tree: clean
-  sha256: 5263f51a8ee2c1c6dc2d66939a10a4a1ea070ecd78022766df1ababc8ff74b92
+  sha256: 49f4c0fce8236f4472a6578269d51d3bab73e76fedc5637d6435f6b9f313ff9c
 - id: planner
   resource: ../../tools/ci_selection.py
   revision: 1e60e54813dad14f124635496ed773b299bb4b90
@@ -17,14 +17,14 @@ sources:
   sha256: 44f27dd6683f6b362f3124fede5857675836ad93f13fff7ade1cdf793d205d81
 - id: ci
   resource: ../../.github/workflows/ci.yml
-  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
+  revision: 16d4d5ca955dff6ab5470e70481798bc96eed194
   working_tree: clean
-  sha256: 865f1adb4e81c7f848cb8eb06e0f0f3d0cd223d736e44b181784700b38a91968
+  sha256: d18561a3fe6a334590002643c5dcf2ee5d968ae3314100adef826aeba1a1d17a
 - id: release
   resource: ../../.github/workflows/release.yml
-  revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
-  working_tree: modified
-  sha256: 1432888965f0e344e82875b96a59b2ffb06c6185d1c63a5cd710d2d44bf7ee1f
+  revision: 16d4d5ca955dff6ab5470e70481798bc96eed194
+  working_tree: clean
+  sha256: 6b83317d06d13441652b5780036254fea6991fd6e21c860bcb67d0b5a0293df6
 ---
 
 # Selection and aggregation contracts
@@ -82,3 +82,13 @@ all three release targets using no-cache strategy replay. Its 30-minute budget
 includes image setup; tool-image caching cannot substitute for a new proof.
 Missing or stale source contracts/goals and final unproved goals fail the job.
 See the [proof contract and evidence](creusot-budget-proofs.md).[^ci]
+
+# Python runtime coverage
+
+Linux Rust validation and manual Windows/macOS Rust validation run with Python 3.14 and 3.15.
+Performance artifact names include the Python version so matrix jobs cannot overwrite one another.
+Change selection, aggregation and quality tooling retain Python 3.14 as their common baseline.[^guide][^ci]
+
+Development and release wheel jobs exercise the same wheel on both versions.
+Both release smoke steps must succeed before the platform artifacts can reach validation and publication.
+These workflow conditions describe required checks; successful local Windows execution does not establish successful hosted Linux/macOS execution.[^guide][^release]

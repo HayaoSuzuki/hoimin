@@ -245,3 +245,77 @@ def test_sbom_tool_path_is_scoped_to_capture_steps() -> None:
         if step.get("name") == "Generate and validate release SBOMs"
     )
     assert 'cygpath -u "$RUNNER_TEMP"' in windows_capture["run"]
+
+
+def test_rust_ci_tests_both_python_versions_without_artifact_collisions() -> None:
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    )
+    rust = workflow["jobs"]["rust"]
+    assert rust["strategy"]["matrix"]["python"] == ["3.14", "3.15"]
+    setup = next(
+        step
+        for step in rust["steps"]
+        if step.get("uses", "").startswith("actions/setup-python@")
+    )
+    assert setup["with"]["python-version"] == "${{ matrix.python }}"
+    upload = next(
+        step
+        for step in rust["steps"]
+        if step.get("uses", "").startswith("actions/upload-artifact@")
+    )
+    assert "${{ matrix.python }}" in upload["with"]["name"]
+
+
+def test_same_wheel_is_smoked_on_315_in_every_supported_platform_job() -> None:
+    command = (
+        "uv run --no-project --python 3.15 --with packaging==26.0 "
+        "python tests/wheel_smoke.py"
+    )
+    for filename, names in (
+        ("ci.yml", ("wheel-smoke",)),
+        ("non-linux-ci.yml", ("wheel-smoke",)),
+        ("release.yml", ("windows-wheel", "linux-wheel", "macos-wheel")),
+    ):
+        workflow = yaml.safe_load(
+            (ROOT / ".github/workflows" / filename).read_text(encoding="utf-8")
+        )
+        for name in names:
+            steps = workflow["jobs"][name]["steps"]
+            old = next(
+                i
+                for i, step in enumerate(steps)
+                if step.get("run")
+                == "uv run --frozen --no-sync python tests/wheel_smoke.py"
+            )
+            new = next(i for i, step in enumerate(steps) if step.get("run") == command)
+            assert new == old + 1, (filename, name)
+            assert not steps[new].get("continue-on-error", False)
+            if filename == "release.yml":
+                assert steps[new]["env"] == {
+                    "HOIMIN_SMOKE_REPORT": "wheel-smoke-315.json"
+                }
+                upload = next(
+                    step
+                    for step in steps[new + 1 :]
+                    if step.get("uses", "").startswith("actions/upload-artifact@")
+                )
+                assert upload["with"]["path"] == "wheel-smoke*.json"
+
+
+def test_renovate_preserves_both_supported_python_minor_lines() -> None:
+    config = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))
+    rules = [
+        rule
+        for rule in config["packageRules"]
+        if "actions/python-versions" in rule.get("matchPackageNames", [])
+    ]
+    assert any(rule.get("allowedVersions") == ">=3.14 <3.16" for rule in rules)
+    assert any(
+        set(rule.get("matchUpdateTypes", [])) == {"major", "minor"}
+        and rule.get("enabled") is False
+        for rule in rules
+    )
+    assert all(
+        not ("allowedVersions" in rule and "matchUpdateTypes" in rule) for rule in rules
+    )

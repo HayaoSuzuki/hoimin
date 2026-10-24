@@ -186,10 +186,13 @@ jobs:
       - run: uv run --frozen --no-sync python tests/wheel_smoke.py
         env:
           HOIMIN_SMOKE_REPORT: wheel-smoke.json
+      - run: uv run --no-project --python 3.15 --with packaging==26.0 python tests/wheel_smoke.py
+        env:
+          HOIMIN_SMOKE_REPORT: wheel-smoke-315.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: smoke-wheel-windows
-          path: wheel-smoke.json
+          path: wheel-smoke*.json
           if-no-files-found: error
       - name: Package verified binaries and wheels
         env:
@@ -291,10 +294,13 @@ jobs:
       - run: uv run --frozen --no-sync python tests/wheel_smoke.py
         env:
           HOIMIN_SMOKE_REPORT: wheel-smoke.json
+      - run: uv run --no-project --python 3.15 --with packaging==26.0 python tests/wheel_smoke.py
+        env:
+          HOIMIN_SMOKE_REPORT: wheel-smoke-315.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: smoke-wheel-linux
-          path: wheel-smoke.json
+          path: wheel-smoke*.json
           if-no-files-found: error
       - name: Package verified binaries and wheels
         env:
@@ -377,10 +383,13 @@ jobs:
       - run: uv run --frozen --no-sync python tests/wheel_smoke.py
         env:
           HOIMIN_SMOKE_REPORT: wheel-smoke.json
+      - run: uv run --no-project --python 3.15 --with packaging==26.0 python tests/wheel_smoke.py
+        env:
+          HOIMIN_SMOKE_REPORT: wheel-smoke-315.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: smoke-wheel-macos
-          path: wheel-smoke.json
+          path: wheel-smoke*.json
           if-no-files-found: error
       - name: Package verified binaries and wheels
         env:

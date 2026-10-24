@@ -26,7 +26,7 @@ def write_wheel(path: Path, *, license_expression: str = "Elastic-2.0") -> None:
         archive.writestr(
             prefix + "METADATA",
             "Metadata-Version: 2.4\nName: hoimin\nVersion: 1.2.3\n"
-            "Requires-Python: >=3.14,<3.15\n"
+            "Requires-Python: >=3.14,<3.16\n"
             f"License-Expression: {license_expression}\n"
             "License-File: LICENSE\n"
             "License-File: vendor/ruff_python_parser/LICENSE\n\nDescription\n",
@@ -110,7 +110,7 @@ def test_stages_only_verified_wheels_without_changing_bytes(
         assert path.read_bytes() == (release_assets / path.name).read_bytes()
 
 
-@pytest.mark.parametrize("requires_python", [">=3.14, <3.15", "<3.15,>=3.14"])
+@pytest.mark.parametrize("requires_python", [">=3.14, <3.16", "<3.16,>=3.14"])
 def test_accepts_equivalent_python_specifier_formatting(
     release_assets: Path, requires_python: str
 ) -> None:
@@ -118,7 +118,7 @@ def test_accepts_equivalent_python_specifier_formatting(
     with zipfile.ZipFile(wheel) as archive:
         files = {name: archive.read(name) for name in archive.namelist()}
     metadata = "hoimin-1.2.3.dist-info/METADATA"
-    files[metadata] = files[metadata].replace(b">=3.14,<3.15", requires_python.encode())
+    files[metadata] = files[metadata].replace(b">=3.14,<3.16", requires_python.encode())
     with zipfile.ZipFile(wheel, "w") as archive:
         for name, content in files.items():
             archive.writestr(name, content)
@@ -266,7 +266,7 @@ WHEEL_LICENSE = "hoimin-1.2.3.dist-info/licenses/LICENSE"
             lambda files: setitem(
                 files,
                 WHEEL_METADATA,
-                files[WHEEL_METADATA].replace(b">=3.14,<3.15", b">=3.8"),
+                files[WHEEL_METADATA].replace(b">=3.14,<3.16", b">=3.8"),
             ),
             id="wrong-python",
         ),

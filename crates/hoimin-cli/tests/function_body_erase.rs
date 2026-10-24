@@ -35,7 +35,7 @@ async fn compile(source: &str) {
         tokio::process::Command::new(python())
             .args([
                 "-c",
-                "import sys; assert sys.version_info[:2] == (3, 14), sys.version; compile(sys.argv[1], '<neighbor>', 'exec')",
+                "import sys; assert sys.version_info[:2] in ((3, 14), (3, 15)), sys.version; compile(sys.argv[1], '<neighbor>', 'exec')",
                 source,
             ])
             .kill_on_drop(true)
@@ -43,7 +43,7 @@ async fn compile(source: &str) {
     )
     .await
     .expect("CPython compiler deadline")
-    .expect("CPython 3.14; set HOIMIN_OPERATOR_TEST_PYTHON to its executable");
+    .expect("CPython 3.14 or 3.15; set HOIMIN_OPERATOR_TEST_PYTHON to its executable");
     assert!(
         output.status.success(),
         "{source}\n{}",
@@ -265,7 +265,7 @@ async fn body_erasure_preserves_encoded_docstrings_and_newlines() {
             );
             bytes.splice(start..end, b"pass".iter().copied());
             let result = tokio::process::Command::new(python()).args(["-c",
-                "import json,sys; assert sys.version_info[:2] == (3,14); ns={}; exec(compile(bytes(json.loads(sys.argv[1])), '<encoded>', 'exec'),ns); assert ns['f'].__doc__ == 'é'",
+                "import json,sys; assert sys.version_info[:2] in ((3, 14), (3, 15)); ns={}; exec(compile(bytes(json.loads(sys.argv[1])), '<encoded>', 'exec'),ns); assert ns['f'].__doc__ == 'é'",
                 &serde_json::to_string(&bytes).unwrap()]).output().await.unwrap();
             assert!(
                 result.status.success(),

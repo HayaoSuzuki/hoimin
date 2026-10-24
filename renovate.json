@@ -80,7 +80,21 @@
       "matchPackageNames": [
         "actions/python-versions"
       ],
-      "allowedVersions": ">=3.14 <3.15"
+      "allowedVersions": ">=3.14 <3.16"
+    },
+    {
+      "description": "Preserve the Python 3.14 and 3.15 CI lanes; review minor support changes manually",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "actions/python-versions"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor"
+      ],
+      "enabled": false
     }
   ]
 }

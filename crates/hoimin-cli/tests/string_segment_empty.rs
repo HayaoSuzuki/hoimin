@@ -89,7 +89,7 @@ async fn execute(source: &str, assertion: &str) {
     let mut child = tokio::process::Command::new(python());
     child.kill_on_drop(true).args([
         "-B", "-c",
-        "import sys; assert sys.version_info[:2]==(3,14); ns={}; exec(compile(sys.argv[1],'<mutant>','exec'),ns); exec(sys.argv[2],ns)",
+        "import sys; assert sys.version_info[:2]in ((3, 14), (3, 15)); ns={}; exec(compile(sys.argv[1],'<mutant>','exec'),ns); exec(sys.argv[2],ns)",
         source, assertion,
     ]);
     let output = tokio::time::timeout(std::time::Duration::from_secs(15), child.output())

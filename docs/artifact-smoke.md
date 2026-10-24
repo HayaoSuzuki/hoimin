@@ -21,6 +21,9 @@ a complete `run_finished` carrying exit code 0; aggregate JSON and truncated
 streams are rejected. Existing wheel installation checks on
 Windows, macOS and Linux are retained rather than repeated in archive jobs.
 The wheel's installed executable is also selected by absolute path.
+Each platform build job checks the same wheel with Python 3.14 and 3.15; the
+smoke helper selects its running Python for uvx as well as its temporary venv.
+The Linux glibc-floor job below remains a separate Python 3.14 check.
 
 ## Linux runtime and ABI evidence
 
@@ -42,7 +45,8 @@ glibc-floor runtime check, not coverage of all Linux installations.
 - `smoke-archive-<platform>`: archive name/SHA-256, binary SHA-256, expected and
   checked version, system, architecture, Python and libc; Linux symbol versions.
 - `smoke-wheel-<host>`: wheel name/SHA-256, checked version and runtime identity
-  from the existing build job's outside-checkout installation smoke.
+  from the build job's outside-checkout installation smoke, with separate
+  `wheel-smoke.json` (3.14) and `wheel-smoke-315.json` (3.15) reports.
 - `smoke-linux-abi`: the same wheel identity/runtime evidence at glibc 2.17,
   auditwheel output and the pinned container image identity.
 

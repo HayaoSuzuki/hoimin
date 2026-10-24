@@ -145,8 +145,12 @@ fn session_command(
         .arg(marker);
     #[cfg(windows)]
     command
-        .args(["cmd", "/C"])
-        .arg(format!("echo started > \"{}\"", marker.display()));
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.venv/Scripts/python.exe"))
+        .args([
+            "-c",
+            "from pathlib import Path; import sys; Path(sys.argv[1]).write_text('started', encoding='utf-8')",
+        ])
+        .arg(marker);
     command
 }
 

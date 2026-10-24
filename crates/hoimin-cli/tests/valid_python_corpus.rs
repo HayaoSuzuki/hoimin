@@ -85,7 +85,7 @@ async fn python_observe(
     let input = serde_json::json!({"sources": sources, "harness": harness});
     let script = r"
 import contextlib, io, json, sys
-assert sys.version_info[:2] == (3, 14), sys.version
+assert sys.version_info[:2] in ((3, 14), (3, 15)), sys.version
 request = json.loads(sys.argv[1])
 results = []
 for source in request['sources']:
