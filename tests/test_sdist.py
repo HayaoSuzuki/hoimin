@@ -46,7 +46,20 @@ def source_archive(tmp_path_factory: pytest.TempPathFactory) -> Path:
         "vendor/ruff_python_parser/LICENSE",
         *sorted(
             path.relative_to(ROOT).as_posix()
-            for path in (ROOT / "vendor/ruff_python_parser/src").rglob("*.rs")
+            for crate in (ROOT / "vendor").glob("ruff_*")
+            for path in crate.rglob("*")
+            if path.is_file()
+            and (
+                path.name
+                in {"Cargo.toml", "build.rs", "UnicodeData.txt", "NameAliases.txt"}
+                or path.name.startswith("LICENSE")
+                or (path.suffix == ".rs" and "src" in path.relative_to(crate).parts)
+            )
+            and path.relative_to(ROOT).as_posix()
+            not in {
+                "vendor/ruff_python_parser/Cargo.toml",
+                "vendor/ruff_python_parser/LICENSE",
+            }
         ),
     ],
 )
@@ -62,6 +75,10 @@ def test_sdist_retains_internal_python_api_and_patched_parser_bytes(
         assert source is not None
         actual = source.read()
 
+    if member.endswith("Cargo.toml"):
+        # Maturin rewrites local dependency manifests with LF, including CRLF checkouts.
+        actual = actual.replace(b"\r\n", b"\n")
+        expected = expected.replace(b"\r\n", b"\n")
     assert actual == expected
 
 
@@ -91,3 +108,13 @@ def test_sdist_retains_workspace_manifest_text(
 
     # Maturin rewrites workspace manifests with LF, including CRLF checkouts.
     assert actual.replace(b"\r\n", b"\n") == expected.replace(b"\r\n", b"\n")
+
+
+def test_sdist_only_vendors_the_patched_parser(source_archive: Path) -> None:
+    with tarfile.open(source_archive) as archive:
+        vendor_crates = {
+            name.split("/vendor/", 1)[1].split("/", 1)[0]
+            for name in archive.getnames()
+            if "/vendor/ruff_" in name
+        }
+    assert vendor_crates == {"ruff_python_parser"}

@@ -28,15 +28,19 @@ sources:
 
 - id: python-package
   resource: ../../pyproject.toml
-  revision: 16d4d5ca955dff6ab5470e70481798bc96eed194
+  revision: a8578a958702c8889dd8ad37ca813a09fe59b6a2
   working_tree: clean
-  sha256: 22594ccc32d6f477fa399d637265b0bfca7eaf308ba7530d98d1513f8e56bdab
-
+  sha256: 5304c2030e5195b7310d9ba180bfb8140c2d1c090ec7d0b7d2e033b8a30723d5
 - id: python-runtime-design
   resource: ../superpowers/specs/2026-10-24-python-314-315-design.md
   revision: 16d4d5ca955dff6ab5470e70481798bc96eed194
   working_tree: clean
   sha256: e5a0fefe437b90d86045864bf82831bcdc9a210147eb07c3211d3fbbadeb3cba
+- id: python-syntax-design
+  resource: ../superpowers/specs/2026-10-24-python-315-syntax-design.md
+  revision: a8578a958702c8889dd8ad37ca813a09fe59b6a2
+  working_tree: clean
+  sha256: e3ba8fa0209597b92031e623b90c050d2fdf02c60511879503f448ee9ade1b9b
 ---
 
 # Running distributed artifacts
@@ -76,7 +80,7 @@ Consult PR/review records for the scope of successful hosted execution; document
 # Supported Python runtimes
 
 The wheel permits Python 3.14 and 3.15 (`>=3.14,<3.16`).
-Support covers existing syntax and mutation operators; Python 3.15 lazy imports and unpacking in comprehensions remain outside this stage.[^python-package][^python-runtime-design]
+The Ruff 0.17.2 source snapshot supports Python 3.15 lazy imports and unpacking in comprehensions. Import identity proofs remain conservative for lazy bindings.[^python-package][^python-runtime-design][^python-syntax-design]
 
 Each platform release job checks the same wheel on both versions before packaging the release assets.
 The smoke helper uses its running interpreter for uvx and its temporary venv, and retains separate runtime reports.
@@ -84,3 +88,5 @@ The glibc 2.17 floor check remains a separate CPython 3.14 check; it does not es
 
 [^python-package]: [Python package metadata](../../pyproject.toml).
 [^python-runtime-design]: [Python 3.14・3.15の実行環境対応](../superpowers/specs/2026-10-24-python-314-315-design.md).
+
+[^python-syntax-design]: [Python 3.15構文と上流Ruffの取り込み](../superpowers/specs/2026-10-24-python-315-syntax-design.md).

@@ -1050,6 +1050,16 @@ sources:
   revision: 16d4d5ca955dff6ab5470e70481798bc96eed194
   working_tree: clean
   sha256: e5a0fefe437b90d86045864bf82831bcdc9a210147eb07c3211d3fbbadeb3cba
+- id: python-315-syntax-design
+  resource: ../../superpowers/specs/2026-10-24-python-315-syntax-design.md
+  revision: a8578a958702c8889dd8ad37ca813a09fe59b6a2
+  working_tree: clean
+  sha256: e3ba8fa0209597b92031e623b90c050d2fdf02c60511879503f448ee9ade1b9b
+- id: python315-fuzz-design
+  resource: ../../superpowers/specs/2026-10-24-python-315-fuzz-design.md
+  revision: 8e908943831decdb5fc83ca0ffb143459778240b
+  working_tree: clean
+  sha256: 4c842b26dc099c8f2d925d693bf7eb25c02495484e5ce83f4049e65f05cf138e
 ---
 
 # 収録一覧
@@ -1804,3 +1814,16 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | Python 3.14・3.15の実行環境対応 | [Design](../../superpowers/specs/2026-10-24-python-314-315-design.md) [^python-314-315-design] |
 
 [^python-314-315-design]: [Python 3.14・3.15の実行環境対応](../../superpowers/specs/2026-10-24-python-314-315-design.md).
+
+## Python 3.15 syntax
+
+- [Python 3.15構文と上流Ruffの取り込み](../../superpowers/specs/2026-10-24-python-315-syntax-design.md) — upstream parser and AST migration.
+
+
+## Python fuzz interpreter coverage
+
+| Original heading | Source |
+| --- | --- |
+| Python 3.14・3.15のfuzz入力生成 | [Design](../../superpowers/specs/2026-10-24-python-315-fuzz-design.md) [^python315-fuzz-design] |
+
+[^python315-fuzz-design]: [Python 3.14・3.15のfuzz入力生成](../../superpowers/specs/2026-10-24-python-315-fuzz-design.md).

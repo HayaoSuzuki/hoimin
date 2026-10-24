@@ -21,7 +21,7 @@ uv tool install --python 3.14 hoimin
 
 Wheels support Python 3.14 and 3.15 and support macOS Apple Silicon, Linux x86_64 (glibc), and Windows x86_64.
 Use `--python 3.15` to install with Python 3.15.
-Support covers the existing syntax and mutation operators; Python 3.15 lazy imports and unpacking in comprehensions are not yet supported.
+Python 3.15 lazy imports and unpacking in comprehensions are supported. Import-dependent mutations are conservative when lazy binding identity cannot be established.
 Run `uv tool update-shell` if `hoimin` is not on `PATH`, then open a new shell.
 
 ## Quick start

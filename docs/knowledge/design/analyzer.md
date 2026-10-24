@@ -679,7 +679,26 @@ sources:
   revision: 7bf4cd3b6b9537539911a8c43ee29529bf92a230
   working_tree: clean
   sha256: ee20d80550468bc2bb6e9e1f69631efedbf7a311d35f97479010d6f5d375d227
-
+- id: python315-syntax
+  resource: ../../superpowers/specs/2026-10-24-python-315-syntax-design.md
+  revision: a8578a958702c8889dd8ad37ca813a09fe59b6a2
+  working_tree: clean
+  sha256: e3ba8fa0209597b92031e623b90c050d2fdf02c60511879503f448ee9ade1b9b
+- id: python315-analyzer
+  resource: ../../../crates/hoimin-python/src/analyzer/rust.rs
+  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  working_tree: clean
+  sha256: 0a9e39c99e2f072f9fbd73f3a1defdc9bec8a60dd9187352c6de6b93abc778b2
+- id: python315-lazy-policy
+  resource: ../../../crates/hoimin-python/src/analyzer/rust/lazy_imports.rs
+  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  working_tree: clean
+  sha256: 0456554ad030dd9d616ff0e7e45babbce23b14c9dbb49c3a4bd3fa05ea07d68b
+- id: python315-compiler-oracle
+  resource: ../../../crates/hoimin-cli/tests/python315_syntax.rs
+  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  working_tree: clean
+  sha256: dcf6d024780f9eb902b767539e967ba6d9bc5c279a9e0748d5b0d34fa6d540b5
 ---
 
 # Shared pure Python analysis (Issues #995 and #996)
@@ -1718,3 +1737,16 @@ comparison and its limits are recorded in the
 [implementation evidence](../../maintenance/2026-10-22-issues-1085-1086-1087/README.md).
 
 [^issue-1086-tokens]: [Token discovery over parser storage](../../../crates/hoimin-python/src/analyzer/rust.rs).
+
+# Python 3.15の構文と遅延import
+
+Ruff 0.17.2のparserは安全修正を含むvendorソースを使い、AST・周辺crateは同一コミットから公開されたcrates.io版0.0.19へ揃える。
+遅延importと内包表記・ジェネレーター式のアンパックを解析し、辞書内包表記の省略keyも訪問対象へ反映する。
+既存の深さ128の制限と反復破棄を維持する。[^python315-syntax]
+
+遅延importのaliasを、通常のimportに基づく静的な参照先の証明へ使わない。
+`__lazy_modules__`またはソースに見えるlazy設定APIがあるモジュールは、callable・enum・注釈・project例外のimport由来の証明を抑制する。
+リテラルなどimportの証明が不要な候補は引き続き生成する。
+通常のeager importは既存の規則を維持する。[^python315-syntax]
+
+[^python315-syntax]: [Python 3.15構文と上流Ruffの取り込み](../../superpowers/specs/2026-10-24-python-315-syntax-design.md).

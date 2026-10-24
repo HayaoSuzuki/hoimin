@@ -91,7 +91,7 @@ jobs:
       - if: needs.changes.outputs.rust == 'true'
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - if: needs.changes.outputs.rust == 'true'
-        run: cargo clippy --locked -p littrs-ruff-python-parser --lib --no-deps -- -D warnings
+        run: cargo clippy --locked -p ruff_python_parser --lib --no-deps -- -D warnings
 
   fuzz:
     needs: [changes, quality]
@@ -170,6 +170,7 @@ jobs:
         python: ['3.14', '3.15']
     runs-on: ${{ matrix.os }}
     env:
+      UV_PYTHON: ${{ matrix.python }}
       CARGO_PROFILE_DEV_DEBUG: "0"
       CARGO_PROFILE_TEST_DEBUG: "0"
       CARGO_INCREMENTAL: "0"

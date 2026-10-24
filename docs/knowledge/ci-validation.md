@@ -17,14 +17,19 @@ sources:
   sha256: 44f27dd6683f6b362f3124fede5857675836ad93f13fff7ade1cdf793d205d81
 - id: ci
   resource: ../../.github/workflows/ci.yml
-  revision: 16d4d5ca955dff6ab5470e70481798bc96eed194
+  revision: c9f17e694863aa512312bb570a61b9297073dc52
   working_tree: clean
-  sha256: d18561a3fe6a334590002643c5dcf2ee5d968ae3314100adef826aeba1a1d17a
+  sha256: 259330a6453b89098cdb013a26b8ea0de65ae2327e53741af386857b63eb73da
 - id: release
   resource: ../../.github/workflows/release.yml
   revision: 16d4d5ca955dff6ab5470e70481798bc96eed194
   working_tree: clean
   sha256: 6b83317d06d13441652b5780036254fea6991fd6e21c860bcb67d0b5a0293df6
+- id: non-linux-ci
+  resource: ../../.github/workflows/non-linux-ci.yml
+  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  working_tree: clean
+  sha256: afe7874e2eb184a81898860bf3d29994daf8adc7f10fea0b612945c9aca40d95
 ---
 
 # Selection and aggregation contracts
@@ -85,10 +90,12 @@ See the [proof contract and evidence](creusot-budget-proofs.md).[^ci]
 
 # Python runtime coverage
 
-Linux Rust validation and manual Windows/macOS Rust validation run with Python 3.14 and 3.15.
+Linux Rust validation and manual Windows/macOS Rust validation run with Python 3.14 and 3.15. Each Rust matrix job sets `UV_PYTHON` to its selected version so the syntax compiler oracle uses the intended interpreter.[^non-linux-python]
 Performance artifact names include the Python version so matrix jobs cannot overwrite one another.
 Change selection, aggregation and quality tooling retain Python 3.14 as their common baseline.[^guide][^ci]
 
 Development and release wheel jobs exercise the same wheel on both versions.
 Both release smoke steps must succeed before the platform artifacts can reach validation and publication.
 These workflow conditions describe required checks; successful local Windows execution does not establish successful hosted Linux/macOS execution.[^guide][^release]
+
+[^non-linux-python]: [Manual non-Linux Rust matrix](../../.github/workflows/non-linux-ci.yml).

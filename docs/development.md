@@ -101,7 +101,8 @@ projects, converts validated candidates and writes spools. Dedicated heap/corpus
 tests and the Python fuzz target use the same Cargo API; private semantic and
 oracle tests run only in `hoimin-python`. Its `test-support` feature provides
 logical payload observations to CLI dev-dependencies and is absent from normal
-builds. The separate fuzz workspace keeps its parser patch at its own root.
+builds. The separate fuzz workspace resolves the same patched parser through
+`hoimin-python` and keeps its own committed lockfile.
 
 The analyzer owns an internal 16 MiB retained-payload budget shared across
 producers, conversion and files. Keep reservations beside the allocations they
@@ -360,7 +361,7 @@ uv run --frozen --no-sync ty check
 cargo fmt --all -- --check
 cargo fmt --manifest-path vendor/ruff_python_parser/Cargo.toml -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo clippy --locked -p littrs-ruff-python-parser --lib --no-deps -- -D warnings
+cargo clippy --locked -p ruff_python_parser --lib --no-deps -- -D warnings
 cargo test --workspace
 cargo test -p hoimin-core --features contracts
 cargo test -p hoimin-cli --features contracts
@@ -446,8 +447,13 @@ workflow interpreters together when the supported Python range changes.
 A separate rule disables major/minor Python updates so Renovate cannot replace
 the 3.14 lane with 3.15. Patch updates remain eligible; supported minor lines
 change through an explicit support review.
-Python 3.15 support covers the existing syntax and operators; lazy imports and
-unpacking in comprehensions remain unsupported by the vendored parser.
+Python 3.15 lazy imports and unpacking in comprehensions use the Ruff 0.17.2
+parser and aligned crates.io AST dependencies. Explicit lazy aliases do not
+establish trusted imports. A module mentioning `__lazy_modules__` or the lazy
+import configuration API disables import identity proofs for callable, enum,
+annotation and project exception mutations; ordinary literal/operator mutations
+remain available. The parser supports the syntax independently of the Python
+interpreter used to run hoimin; execute 3.15-only source with Python 3.15.
 Python dependency ranges control which updates are allowed. For example,
 `>=4.26.0,<5` permits minor and patch updates in the 4.x series, while
 `>=0.29.0,<1` permits updates throughout the 0.x series. Hypothesis uses the
@@ -524,8 +530,9 @@ not enter the shipping workspace or the ordinary `cargo test --workspace` run. T
 The Python analyzer target uses the same `hoimin-python` Cargo API as the CLI
 and dedicated corpus tests. Results keep their charged payload leases across
 that boundary. CLI modules retain source reads, project acquisition and candidate
-spools. Keep the root workspace's vendored Ruff parser patch in the separate
-fuzz workspace because Cargo patches are scoped to a workspace root.
+spools. Its local dependency resolves the patched parser and aligned registry
+crates through `hoimin-python`; keep the separate fuzz lockfile synchronized
+when those dependencies change.
 These are in-memory checks; filesystem discovery, file I/O, subprocesses, and
 mutation execution are outside their scope. The four structured targets reject
 inputs larger than 4096 bytes to bound per-input work, including during artifact
@@ -577,6 +584,15 @@ cargo fmt --manifest-path fuzz/Cargo.toml -- --check
 cargo clippy --locked --manifest-path fuzz/Cargo.toml --bins -- -D warnings
 ```
 
+To generate additional 3.15 inputs without changing the development venv:
+
+```console
+uv run --isolated --frozen --group fuzz --no-install-project --python 3.15 python tools/hypothesmith_corpus.py --strategy python315 --examples 50 --seed 20261024
+```
+
+The JSON output records the actual Python and generator package versions.
+This command generates corpus inputs; it does not execute libFuzzer.
+
 See the [cargo-fuzz documentation](https://rust-fuzz.github.io/book/cargo-fuzz.html).
 
 ### Bounded CI fuzzing
@@ -592,9 +608,23 @@ durations. This is a fixed budget; revisit it when normal test durations change.
 
 The first step sets a ten-minute active deadline, leaving approximately one
 minute for uploading diagnostics and saving small caches. `tools/ci_fuzz.py`
-deducts elapsed setup time, installs the optional Python dependencies, builds
-all fuzz targets, tests the generator, and generates 50 examples with each
-hypothesmith strategy. It divides the remaining time among all targets in
+deducts elapsed setup time and builds the Rust targets once. It then installs
+frozen fuzz dependencies into separate temporary environments for Python 3.14
+and 3.15. Each interpreter runs the generator tests and generates 50 examples
+with each Hypothesmith strategy (`grammar` and `libcst`). Python 3.15 also runs
+the `python315` structured strategy for lazy imports and synchronous/asynchronous
+unpacking in list, set and dict comprehensions and generator expressions.
+Every generated source is compiled with that lane's CPython, without execution;
+3.14 rejects a request for the `python315` strategy. Eleven fixed 3.15 seeds
+also enter the analyzer target. Both lanes feed the same hash-named corpus.
+
+The workflow's Python 3.14 setup is the campaign driver; every `uv sync` and
+`uv run` selects its generation interpreter explicitly with `--python`.
+Temporary environments are deleted after generation, including on failure,
+and never replace the development venv or enter the report/corpus. Python
+installation, synchronization, tests and generation remain inside the active
+deadline. The Rust-only campaign runs once on the combined inputs, avoiding
+a duplicated matrix build. It divides the remaining time among all targets in
 `fuzz/Cargo.toml`, reserving ten seconds per target for startup and shutdown.
 An exhausted budget, a failed command, or a target timeout fails the job; an
 unexecuted target is never counted as a pass. Subprocess timeouts kill the
@@ -604,7 +634,8 @@ The cargo-fuzz executable and discovered corpus are cached. Large compiled
 target directories are not cached, keeping post-job work small. CI builds use
 16 codegen units to reduce compilation time. Both generation and fuzzing use
 a seed derived from the workflow run ID. The `fuzz-report` artifact retains
-per-stage command logs, a JSON summary with timings and completed targets, and
+per-stage command logs (with Python-version suffixes for generation), a JSON
+summary with timings, explicit environment selectors and completed targets, and
 any crash inputs for seven days. Artifact upload runs even after failure,
 although cancellation or the hard job timeout can interrupt it. Use the saved
 crash input for replay; the seed alone does not reproduce a time-bounded run
@@ -621,7 +652,7 @@ gh workflow run fuzz.yml --ref main -f seconds=300
 ```
 
 The scheduled workflow uses the same pinned nightly, cargo-fuzz version,
-Hypothesmith generators, seeds, and resource limits as bounded CI. It passes a
+dual-interpreter generators, seeds, and resource limits as bounded CI. It passes a
 fixed per-target duration to `tools/ci_fuzz.py` instead of dividing an
 ten-minute CI budget. A 55-minute active deadline leaves five minutes for
 cache and artifact steps before the workflow's 60-minute limit.
@@ -1264,10 +1295,14 @@ mapped by both analyzer callers to `analyzer.depth` with the target path.
 Cancellation remains a separate error. Plan creation fails without a manifest;
 run reports incomplete analysis after its normal baseline stage.
 
-The parser is a local backport of `littrs-ruff-python-parser 0.6.2`, selected via
-the root Cargo patch. Ruff PR #25464's recursive checkpoints use `stacker`
-(locked to 0.1.25): each checks a 128 KiB red zone and grows a 1 MiB segment when
-needed. Context assignment, assignment/delete validation, old-decorator checks,
+The vendored parser is a source snapshot of Ruff 0.17.2,
+commit `30516b42ab972ffa2569e5efcfee81135da466d3`. Its aligned Ruff dependencies
+use crates.io version `0.0.19`; direct dependencies are pinned exactly.
+The parser standalone manifest and local safety adaptations are documented in
+[`README.hoimin.md`](../vendor/ruff_python_parser/README.hoimin.md).
+Recursive checkpoints use `stacker` (locked to 0.1.25): each checks a 128 KiB
+red zone and grows a 1 MiB segment when needed. The upstream unchecked-depth
+optimization is disabled. Context assignment, assignment/delete validation, old-decorator checks,
 and pattern-to-expression recovery have checkpoints too. This preserves the
 grammar and syntax diagnostics before applying Hoimin's AST-depth limit, without
 assuming that one larger worker stack is sufficient for every input.

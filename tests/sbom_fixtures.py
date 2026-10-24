@@ -42,7 +42,7 @@ def raw_bom() -> dict[str, Any]:
             }
             for name, version in [
                 ("hoimin-core", "1.2.3"),
-                ("littrs-ruff-python-parser", "0.6.2"),
+                ("ruff_python_parser", "0.0.19"),
                 ("stacker", "0.1.25"),
                 ("hoimin-python", "1.2.3"),
                 ("hoimin-budget-math", "1.2.3"),
@@ -51,11 +51,11 @@ def raw_bom() -> dict[str, Any]:
         "dependencies": [
             {"ref": "root", "dependsOn": ["hoimin-core", "hoimin-python"]},
             {"ref": "hoimin-core", "dependsOn": ["hoimin-budget-math"]},
-            {"ref": "littrs-ruff-python-parser", "dependsOn": ["stacker"]},
+            {"ref": "ruff_python_parser", "dependsOn": ["stacker"]},
             {"ref": "stacker", "dependsOn": []},
             {
                 "ref": "hoimin-python",
-                "dependsOn": ["hoimin-core", "littrs-ruff-python-parser"],
+                "dependsOn": ["hoimin-core", "ruff_python_parser"],
             },
             {"ref": "hoimin-budget-math", "dependsOn": []},
         ],

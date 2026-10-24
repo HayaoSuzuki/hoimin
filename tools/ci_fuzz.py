@@ -8,6 +8,7 @@ import subprocess
 import time
 import tomllib
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLCHAIN = "nightly-2026-10-08"
@@ -71,6 +72,7 @@ class Campaign:
         *,
         timeout: float | None = None,
         reserve: float = 0,
+        env: dict[str, str] | None = None,
     ) -> None:
         available = self.remaining() - reserve
         limit = available if timeout is None else min(timeout, available)
@@ -84,6 +86,9 @@ class Campaign:
             "timeout_seconds": limit,
             "status": "error",
         }
+        if env is not None:
+            # Record explicit selectors only, never the inherited environment.
+            stage["environment"] = env
         self.stages.append(stage)
         print(f"{name}: limit {limit:.1f}s", flush=True)  # noqa: T201 -- CI progress.
         try:
@@ -96,6 +101,7 @@ class Campaign:
                     stdout=log,
                     stderr=subprocess.STDOUT,
                     start_new_session=True,
+                    env=None if env is None else {**os.environ, **env},
                 ) as process,
             ):
                 try:
@@ -124,33 +130,64 @@ def run_campaign(campaign: Campaign, *, seconds_per_target: int | None = None) -
     targets = [target["name"] for target in manifest["bin"]]
     reserve = len(targets) * (STARTUP_MARGIN + 1)
     cargo = ["cargo", f"+{TOOLCHAIN}", "fuzz"]
-    python = ["uv", "run", "--frozen", "--no-sync", "python"]
-    campaign.run(
-        "dependencies",
-        ["uv", "sync", "--frozen", "--group", "fuzz", "--no-install-project"],
-        reserve=reserve,
-    )
     campaign.run("build", [*cargo, "build", "--codegen-units", "16"], reserve=reserve)
-    campaign.run(
-        "generator-tests",
-        [*python, "-m", "pytest", "-q", "tests/test_hypothesmith_corpus.py"],
-        reserve=reserve,
-    )
-    for strategy in ("grammar", "libcst"):
-        campaign.run(
-            f"generate-{strategy}",
-            [
-                *python,
-                "tools/hypothesmith_corpus.py",
-                "--strategy",
-                strategy,
-                "--examples",
-                "50",
-                "--seed",
-                str(campaign.seed),
-            ],
-            reserve=reserve,
-        )
+    # Interpreter-specific generation feeds one interpreter-independent Rust run.
+    # Temporary environments never replace the development venv or enter artifacts.
+    with TemporaryDirectory(prefix="hoimin-fuzz-python-") as environments:
+        for version in ("3.14", "3.15"):
+            suffix = version.replace(".", "")
+            env = {"UV_PROJECT_ENVIRONMENT": str(Path(environments) / version)}
+            python = [
+                "uv",
+                "run",
+                "--frozen",
+                "--no-sync",
+                "--python",
+                version,
+                "python",
+            ]
+            campaign.run(
+                f"dependencies-{suffix}",
+                [
+                    "uv",
+                    "sync",
+                    "--frozen",
+                    "--group",
+                    "fuzz",
+                    "--no-install-project",
+                    "--python",
+                    version,
+                ],
+                reserve=reserve,
+                env=env,
+            )
+            campaign.run(
+                f"generator-tests-{suffix}",
+                [*python, "-m", "pytest", "-q", "tests/test_hypothesmith_corpus.py"],
+                reserve=reserve,
+                env=env,
+            )
+            strategies = (
+                ("grammar", "libcst", "python315")
+                if version == "3.15"
+                else ("grammar", "libcst")
+            )
+            for strategy in strategies:
+                campaign.run(
+                    f"generate-{strategy}-{suffix}",
+                    [
+                        *python,
+                        "tools/hypothesmith_corpus.py",
+                        "--strategy",
+                        strategy,
+                        "--examples",
+                        "50",
+                        "--seed",
+                        str(campaign.seed),
+                    ],
+                    reserve=reserve,
+                    env=env,
+                )
     for index, target in enumerate(targets):
         seconds = (
             seconds_per_target

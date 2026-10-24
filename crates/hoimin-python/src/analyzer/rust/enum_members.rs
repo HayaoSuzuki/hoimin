@@ -30,6 +30,7 @@ struct Member {
 }
 
 struct Import {
+    is_lazy: bool,
     member: Option<String>,
     end: ruff_text_size::TextSize,
 }
@@ -40,6 +41,9 @@ impl EnumIndex {
         source: &str,
         cancelled: &impl Fn() -> bool,
     ) -> Result<Self, AnalysisCancelled> {
+        if super::lazy_imports::configuration_present(module, cancelled)? {
+            return Ok(Self::default());
+        }
         let (imports, names) = module_bindings(module, cancelled)?;
         let resolution = NameResolutionIndex::from_module_with_names(module, names.clone());
         let mut index = Self {
@@ -151,7 +155,7 @@ impl EnumIndex {
         };
         imports
             .get(name.id.as_str())
-            .is_some_and(|i| root.start() >= i.end)
+            .is_some_and(|i| !i.is_lazy && root.start() >= i.end)
             && self.resolves_module(root, name.id.as_str())
     }
 
@@ -312,12 +316,17 @@ impl EnumIndex {
 }
 fn imported_member<'a>(expression: &Expr, imports: &'a HashMap<String, Import>) -> Option<&'a str> {
     match expression {
-        Expr::Name(name) => imports.get(name.id.as_str())?.member.as_deref(),
+        Expr::Name(name) => imports
+            .get(name.id.as_str())
+            .filter(|i| !i.is_lazy)?
+            .member
+            .as_deref(),
         Expr::Attribute(a) => {
             let Expr::Name(name) = a.value.as_ref() else {
                 return None;
             };
-            if imports.get(name.id.as_str())?.member.is_some() {
+            let binding = imports.get(name.id.as_str())?;
+            if binding.is_lazy || binding.member.is_some() {
                 return None;
             }
             // Attribute's lifetime differs; return known static names.
@@ -460,6 +469,7 @@ fn module_bindings(
                         imports.insert(
                             alias.asname.as_ref().unwrap_or(&alias.name).to_string(),
                             Import {
+                                is_lazy: s.is_lazy,
                                 member: None,
                                 end: statement.end(),
                             },
@@ -474,6 +484,7 @@ fn module_bindings(
                     imports.insert(
                         alias.asname.as_ref().unwrap_or(&alias.name).to_string(),
                         Import {
+                            is_lazy: s.is_lazy,
                             member: Some(alias.name.to_string()),
                             end: statement.end(),
                         },

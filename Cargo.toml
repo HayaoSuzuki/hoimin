@@ -3,8 +3,10 @@ members = ["crates/hoimin-budget-math", "crates/hoimin-core", "crates/hoimin-cli
 exclude = ["vendor/ruff_python_parser"]
 resolver = "3"
 
-[patch.crates-io]
-littrs-ruff-python-parser = { path = "vendor/ruff_python_parser" }
+[workspace.dependencies]
+ruff_python_parser = { path = "vendor/ruff_python_parser", features = ["stacker"] }
+ruff_python_ast = "=0.0.19"
+ruff_text_size = "=0.0.19"
 
 [workspace.package]
 version = "0.14.0"

@@ -17,8 +17,8 @@ uv run --no-project --python 3.15 --with packaging==26.0 python tests/wheel_smok
 ```
 
 The same wheel is checked with Python 3.14 and 3.15 before publication.
-Python 3.15 support covers existing syntax and mutation operators; lazy imports
-and unpacking in comprehensions are not yet supported.
+Python 3.15 lazy imports and unpacking in comprehensions are supported.
+Import-dependent mutations remain conservative for lazy bindings.
 The smoke test installs the wheel into a new environment and runs the Rust-only CLI outside this checkout. For development verification, see [the development guide](development.md). Start design and audit work with [the OKF catalog](knowledge/index.md), and follow [the OKF workflow](okf-workflow.md) to keep it current with each relevant change.
 
 ```console
@@ -296,12 +296,14 @@ Ubuntu 22.04 host. Windows and macOS also receive separate documents for
 their two distribution forms. The capture runs after version adjustment,
 using the same target and Cargo feature flags as the build.
 
-The vendored `littrs-ruff-python-parser` is identified as a local modification
-through a commit-qualified Cargo package URL. Its pedigree, upstream package
-and VCS revision, Ruff backport revision, and commit-pinned
-`README.hoimin.md` link distinguish it from the unmodified crates.io package.
+The vendored Ruff parser is identified through a commit-qualified Cargo
+package URL. Its pedigree, upstream package version (`0.0.19`), Ruff 0.17.2
+VCS revision, and commit-pinned `README.hoimin.md` link identify the source
+snapshot and the parser safety adaptations.
 The README hash identifies the local-change description; the release commit
-identifies the complete vendored source tree.
+identifies the complete vendored parser source tree. Aligned external Ruff
+crates retain their captured crates.io package identities and metadata;
+the lockfile records their versions and checksums.
 
 Generation uses `cargo-cyclonedx 0.5.7`; JSON validation uses
 `jsonschema 4.25.1` and checked-in official schemas, without network schema

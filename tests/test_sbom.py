@@ -78,12 +78,10 @@ def test_sbom_preserves_transitive_graph_and_binds_artifact(tmp_path: Path) -> N
         "hoimin-budget-math",
         "hoimin-core",
         "hoimin-python",
-        "littrs-ruff-python-parser",
+        "ruff_python_parser",
         "stacker",
     }
-    parser = next(
-        c for c in data["components"] if c["name"] == "littrs-ruff-python-parser"
-    )
+    parser = next(c for c in data["components"] if c["name"] == "ruff_python_parser")
 
     assert parser["pedigree"]["notes"]
     assert COMMIT in parser["purl"]
@@ -339,7 +337,7 @@ def test_python_repository_component_requires_one_matching_version(
             node for node in data["dependencies"] if node["ref"] != "hoimin-python"
         ]
         data["dependencies"][0]["dependsOn"].remove("hoimin-python")
-        data["dependencies"][0]["dependsOn"].append("littrs-ruff-python-parser")
+        data["dependencies"][0]["dependsOn"].append("ruff_python_parser")
     elif corruption == "duplicate":
         data["components"].append({**component, "bom-ref": "python-duplicate"})
         data["dependencies"].append({"ref": "python-duplicate", "dependsOn": []})
@@ -382,3 +380,46 @@ def test_budget_math_identity_is_required(tmp_path: Path, corruption: str) -> No
 
     with pytest.raises(ValueError, match="wrong hoimin-budget-math version"):
         sbom.validate(path, asset, "linux-x86_64", "standalone", "1.2.3", COMMIT)
+
+
+@pytest.mark.parametrize(
+    "crate_name",
+    [
+        "ruff_python_ast",
+        "ruff_python_trivia",
+        "ruff_source_file",
+        "ruff_text_size",
+        "ruff_unicode_names2",
+        "ruff_unicode_names2_generator",
+        "ruff_cache",
+        "ruff_macros",
+    ],
+)
+def test_sbom_preserves_registry_ruff_identity(tmp_path: Path, crate_name: str) -> None:
+    source_tree(tmp_path)
+    asset = tmp_path / "hoimin-v1.2.3-linux-x86_64.tar.gz"
+    asset.write_bytes(b"archive")
+    raw = capture_file(tmp_path, "x86_64-unknown-linux-gnu")
+    capture = json.loads(raw.read_text())
+    capture["bom"]["components"].append(
+        {
+            "type": "library",
+            "name": crate_name,
+            "version": "0.0.19",
+            "bom-ref": "ast",
+            "purl": f"pkg:cargo/{crate_name}@0.0.19",
+            "properties": [{"name": "captured:source", "value": "crates.io"}],
+        }
+    )
+    capture["bom"]["dependencies"].append({"ref": "ast", "dependsOn": []})
+    next(d for d in capture["bom"]["dependencies"] if d["ref"] == "ruff_python_parser")[
+        "dependsOn"
+    ].append("ast")
+    expected = capture["bom"]["components"][-1].copy()
+    raw.write_text(json.dumps(capture))
+    path = sbom.finalize(
+        tmp_path, raw, asset, "linux-x86_64", "standalone", "1.2.3", COMMIT
+    )
+    data = json.loads(path.read_text())
+    component = next(c for c in data["components"] if c["name"] == crate_name)
+    assert component == expected

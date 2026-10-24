@@ -23,10 +23,6 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["raw_value"] }
 thiserror = "2.0"
 
-# The analyzer targets must use the same parser patch as the shipping workspace.
-[patch.crates-io]
-littrs-ruff-python-parser = { path = "../vendor/ruff_python_parser" }
-
 [[bin]]
 name = "source_encoding"
 path = "fuzz_targets/source_encoding.rs"

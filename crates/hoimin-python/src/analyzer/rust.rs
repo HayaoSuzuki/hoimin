@@ -58,6 +58,8 @@ mod fact_index;
 #[path = "rust/finally_work.rs"]
 mod finally_work;
 use finally_work::FinallyTransfer;
+#[path = "rust/lazy_imports.rs"]
+mod lazy_imports;
 #[path = "rust/mapping_keys.rs"]
 mod mapping_keys;
 #[path = "rust/operator_functions.rs"]
@@ -843,7 +845,7 @@ fn visit_type_param_expressions<'ast>(
     type_params: &'ast TypeParams,
     mut visit: impl FnMut(&'ast Expr),
 ) {
-    for parameter in type_params.iter() {
+    for parameter in type_params {
         match parameter {
             TypeParam::TypeVar(parameter) => {
                 if let Some(bound) = parameter.bound.as_deref() {
@@ -1704,7 +1706,7 @@ impl NameResolutionBuilder {
             return;
         };
         let scope = self.new_scope(NameScopeKind::TypeParameters);
-        for parameter in parameters.iter() {
+        for parameter in parameters {
             let name = match parameter {
                 TypeParam::TypeVar(parameter) => parameter.name.as_str(),
                 TypeParam::TypeVarTuple(parameter) => parameter.name.as_str(),
@@ -2329,7 +2331,9 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
             }
             Expr::DictComp(comprehension) => {
                 self.visit_comprehension_expression(&comprehension.generators, |this| {
-                    this.visit_expr(&comprehension.key);
+                    if let Some(key) = &comprehension.key {
+                        this.visit_expr(key);
+                    }
                     this.visit_expr(&comprehension.value);
                 });
                 return;
@@ -2684,8 +2688,8 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
         }
         match expression {
             Expr::Compare(compare) => {
-                let mut preceding_range = compare.left.range();
-                for comparator in &compare.comparators {
+                let mut preceding_range = compare.first_operand().range();
+                for comparator in compare.comparators() {
                     let comparator_range = comparator.range();
                     self.record_operator_tokens(
                         TextRange::new(preceding_range.end(), comparator_range.start()),
@@ -4956,12 +4960,12 @@ fn is_main_guard(expression: &Expr) -> bool {
     let Expr::Compare(compare) = expression else {
         return false;
     };
-    if compare.ops.len() != 1 || compare.ops[0] != CmpOp::Eq || compare.comparators.len() != 1 {
+    if compare.ops.len() != 1 || compare.ops[0] != CmpOp::Eq || compare.comparators().len() != 1 {
         return false;
     }
-    let right = &compare.comparators[0];
-    (is_dunder_name(compare.left.as_ref()) && is_main_literal(right))
-        || (is_main_literal(compare.left.as_ref()) && is_dunder_name(right))
+    let right = &compare.comparators()[0];
+    (is_dunder_name(compare.first_operand()) && is_main_literal(right))
+        || (is_main_literal(compare.first_operand()) && is_dunder_name(right))
 }
 
 fn is_dunder_name(expression: &Expr) -> bool {
@@ -5080,7 +5084,7 @@ impl KnownImports {
     }
 
     fn enter_type_params(&mut self, type_params: &TypeParams) {
-        for parameter in type_params.iter() {
+        for parameter in type_params {
             let name = match parameter {
                 TypeParam::TypeVar(parameter) => parameter.name.as_str(),
                 TypeParam::TypeVarTuple(parameter) => parameter.name.as_str(),
@@ -5145,7 +5149,7 @@ impl KnownImports {
                 ruff_python_ast::Identifier::as_str,
             );
             self.invalidate(local);
-            if matches!(name, "typing" | "collections.abc") {
+            if !import.is_lazy && matches!(name, "typing" | "collections.abc") {
                 let resolved = if alias.asname.is_some() { name } else { local };
                 self.bindings
                     .insert(local.to_owned(), KnownBinding::Module(resolved.to_owned()));
@@ -5178,7 +5182,8 @@ impl KnownImports {
                 .as_ref()
                 .map_or(imported, ruff_python_ast::Identifier::as_str);
             self.invalidate(local);
-            if let Some(module_name) = module_name
+            if !import.is_lazy
+                && let Some(module_name) = module_name
                 && matches!(module_name, "typing" | "collections.abc")
                 && (is_known_type_name(imported)
                     || (module_name == "collections.abc" && imported == "Set"))
@@ -7753,6 +7758,7 @@ pub(super) fn binding_flow_loop_head_snapshot_at_marker(
 }
 
 struct AnnotationImports<'a> {
+    eager_imports_available: bool,
     known: &'a KnownImports,
     resolution: &'a NameResolutionIndex,
     offset: usize,
@@ -7764,6 +7770,9 @@ impl AnnotationImports<'_> {
             self.known.bindings.get(local),
             Some(KnownBinding::Direct(_) | KnownBinding::Module(_))
         );
+        if known && !self.eager_imports_available {
+            return false;
+        }
         if !known && !self.resolution.imported_names.contains(local) {
             return true;
         }
@@ -7796,8 +7805,10 @@ impl AnnotationImports<'_> {
 
     fn spelling_for(&self, source: &str, targets: &[&str]) -> Option<String> {
         self.known.spelling_for_where(source, targets, |local| {
-            self.resolution
-                .annotation_import_stable(self.offset, local, true)
+            self.eager_imports_available
+                && self
+                    .resolution
+                    .annotation_import_stable(self.offset, local, true)
         })
     }
 }
@@ -7836,6 +7847,7 @@ fn type_annotation_candidates(
     {
         return candidates.finish();
     }
+    let eager_imports_available = !lazy_imports::configuration_present(module, cancelled)?;
     let traversal =
         AnnotationCollector::visit_each(module, cancelled, &mut |annotation, symbol, imports| {
             if candidates.failure.is_some() {
@@ -7846,6 +7858,7 @@ fn type_annotation_candidates(
                 return;
             }
             let checked = AnnotationImports {
+                eager_imports_available,
                 known: imports,
                 resolution: &facts.name_resolution,
                 offset: usize::from(annotation.range().start()),

@@ -9753,3 +9753,234 @@ fn analyze_selected_with_profile(
         source,
     )
 }
+
+#[test]
+fn python315_new_syntax_preserves_boolean_candidates_and_spans() {
+    for source in [
+        "lazy import json\nflag = True\n",
+        "lazy from pathlib import Path\nflag = True\n",
+        "result = [*xs for xs in rows if True]\n",
+        "result = {*xs for xs in rows if True}\n",
+        "result = {**d for d in rows if True}\n",
+        "result = (*xs for xs in rows if True)\n",
+        "async def f(rows):\n    return [*xs async for xs in rows if True]\n",
+    ] {
+        let output = analyze_with_only_operator(source, MutationOperator::BooleanLiteral);
+        assert!(
+            output.diagnostics.is_empty(),
+            "{source}: {:?}",
+            output.diagnostics
+        );
+        assert_eq!(output.candidates.len(), 1, "{source}");
+        let candidate = &output.candidates[0];
+        assert_eq!(candidate.original, "True", "{source}");
+        assert_eq!(
+            usize::try_from(candidate.span.start).unwrap(),
+            source.find("True").unwrap()
+        );
+    }
+}
+
+#[test]
+fn python315_lazy_callable_aliases_are_not_proven() {
+    for (import, call) in [
+        ("import operator as op", "op.add(1, 2)"),
+        ("from operator import add", "add(1, 2)"),
+    ] {
+        let eager = format!("{import}\nresult = {call}\n");
+        assert_eq!(
+            analyze_with_only_operator(&eager, MutationOperator::OperatorFunction)
+                .candidates
+                .len(),
+            1
+        );
+        for source in [
+            format!("lazy {eager}"),
+            format!("__lazy_modules__ = ['operator']\n{eager}"),
+            format!("__lazy_modules__ = provider()\n{eager}"),
+        ] {
+            let output = analyze_with_only_operator(&source, MutationOperator::OperatorFunction);
+            assert!(output.diagnostics.is_empty(), "{source}");
+            assert!(output.candidates.is_empty(), "{source}");
+        }
+    }
+}
+
+#[test]
+fn python315_lazy_annotation_aliases_are_not_proven() {
+    for import in ["from typing import Sequence", "import typing"] {
+        let name = if import.starts_with("from") {
+            "Sequence"
+        } else {
+            "typing.Sequence"
+        };
+        let eager = format!("{import}\nvalue: {name}[int]\n");
+        assert_eq!(
+            analyze_with_only_operator(&eager, MutationOperator::TypeListSequence)
+                .candidates
+                .len(),
+            1
+        );
+        for source in [
+            format!("lazy {eager}"),
+            format!("__lazy_modules__ = ['typing']\n{eager}"),
+        ] {
+            assert!(
+                analyze_with_only_operator(&source, MutationOperator::TypeListSequence)
+                    .candidates
+                    .is_empty(),
+                "{source}"
+            );
+        }
+    }
+}
+
+#[test]
+fn python315_lazy_enum_aliases_are_not_proven() {
+    let eager = "from enum import Enum\nclass Color(Enum):\n    RED = 1\n    BLUE = 2\ndef selected(): return Color.RED\n";
+    assert_eq!(
+        analyze_with_only_operator(eager, MutationOperator::EnumMemberReplace)
+            .candidates
+            .len(),
+        1
+    );
+    for source in [
+        format!("lazy {eager}"),
+        format!("__lazy_modules__ = ['enum']\n{eager}"),
+    ] {
+        assert!(
+            analyze_with_only_operator(&source, MutationOperator::EnumMemberReplace)
+                .candidates
+                .is_empty(),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn python315_lazy_project_exception_imports_are_not_proven() {
+    use super::exception_hierarchy::ExceptionIndex;
+    for prefix in ["lazy ", "__lazy_modules__ = ['errors']\n"] {
+        let source = format!("{prefix}from errors import Root, Child\ndef f(): raise Child()\n");
+        let input = vec![
+            (
+                "errors.py".into(),
+                "class Root(Exception): pass\nclass Child(Root): pass\n".into(),
+            ),
+            ("service.py".into(), source.clone()),
+        ];
+        let index = ExceptionIndex::from_sources(&input, &["".into()], &|| false).unwrap();
+        let operators = serde_json::from_value(serde_json::json!(["exception_hierarchy"])).unwrap();
+        let request = AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
+            path: Utf8Path::new("service.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile: MutationProfile::Full,
+            max_candidates: 100,
+        };
+        let output =
+            super::analyze_source_with_exceptions(&request, &source, &|| false, Some(&index))
+                .unwrap();
+        assert!(output.candidates.is_empty(), "{source}");
+    }
+}
+
+#[test]
+fn python315_lazy_external_writes_invalidate_other_modules() {
+    use super::exception_hierarchy::ExceptionIndex;
+    for import in [
+        "import errors as e",
+        "lazy import errors as e",
+        "__lazy_modules__ = ['errors']\nimport errors as e",
+    ] {
+        for write in ["", "e.Child = ValueError\n"] {
+            let source = "from errors import Root, Child\ndef f(): raise Child()\n";
+            let input = vec![
+                (
+                    "errors.py".into(),
+                    "class Root(Exception): pass\nclass Child(Root): pass\n".into(),
+                ),
+                ("patcher.py".into(), format!("{import}\n{write}")),
+                ("service.py".into(), source.into()),
+            ];
+            let index = ExceptionIndex::from_sources(&input, &["".into()], &|| false).unwrap();
+            let operators =
+                serde_json::from_value(serde_json::json!(["exception_hierarchy"])).unwrap();
+            let request = AnalyzeRequest {
+                payload: super::payload::PayloadBudget::default(),
+                path: Utf8Path::new("service.py"),
+                lines: &[],
+                symbols: &[],
+                operators: &operators,
+                profile: MutationProfile::Full,
+                max_candidates: 100,
+            };
+            let output =
+                super::analyze_source_with_exceptions(&request, source, &|| false, Some(&index))
+                    .unwrap();
+            assert_eq!(
+                output.candidates.is_empty(),
+                !write.is_empty(),
+                "{import}\n{write}"
+            );
+        }
+    }
+}
+
+#[test]
+fn python315_unpacking_comprehensions_preserve_import_shadowing() {
+    for (expression, expected) in [
+        ("{**{0: add(1, 2)} for add in values}", 0),
+        ("{**d for d in make_rows(add(1, 2))}", 1),
+        ("[*[add(1, 2)] for add in values]", 0),
+        ("(*[add(1, 2)] for add in values)", 0),
+        ("{*[add(1, 2)] for add in values}", 0),
+    ] {
+        let source = format!("from operator import add\nresult = {expression}\n");
+        let output = analyze_with_only_operator(&source, MutationOperator::OperatorFunction);
+        assert!(output.diagnostics.is_empty(), "{source}");
+        assert_eq!(output.candidates.len(), expected, "{source}");
+    }
+}
+
+#[test]
+fn python315_lazy_stdlib_aliases_preserve_write_and_escape_hazards() {
+    for source in [
+        "import operator as op\nlazy import operator as late\nlate.add = replacement\nresult = op.add(1,2)\n",
+        "import operator as op\nlazy import operator as late\nescape(late)\nresult = op.add(1,2)\n",
+    ] {
+        assert!(
+            analyze_with_only_operator(source, MutationOperator::OperatorFunction)
+                .candidates
+                .is_empty(),
+            "{source}"
+        );
+    }
+    let source = "from decimal import Decimal\nlazy from decimal import Decimal as late\nescape(late)\nresult = Decimal.from_float(value)\n";
+    assert_eq!(
+        analyze_with_only_operator(source, MutationOperator::StdlibConversionCallRemove)
+            .candidates
+            .len(),
+        0
+    );
+}
+
+#[test]
+fn python315_lazy_enum_aliases_preserve_write_and_escape_hazards() {
+    for action in [
+        "lazy import enum as late\nescape(late)\n",
+        "lazy from enum import Enum as late\nlate.__new__ = replacement\n",
+    ] {
+        let source = format!(
+            "from enum import Enum\n{action}class Color(Enum):\n    RED = 1\n    BLUE = 2\ndef selected(): return Color.RED\n"
+        );
+        assert!(
+            analyze_with_only_operator(&source, MutationOperator::EnumMemberReplace)
+                .candidates
+                .is_empty(),
+            "{source}"
+        );
+    }
+}

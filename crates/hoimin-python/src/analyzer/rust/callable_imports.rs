@@ -57,6 +57,9 @@ impl CallableImports {
         cancelled: &impl Fn() -> bool,
         modules: &'static [&'static str],
     ) -> Result<Self, AnalysisCancelled> {
+        if super::lazy_imports::configuration_present(module, cancelled)? {
+            return Ok(Self::default());
+        }
         let mut scan = ImportScan {
             modules,
             cancelled,
@@ -309,7 +312,11 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for ClassLookupScan<'_, F> {
             ),
             Expr::DictComp(comprehension) => self.visit_comprehension_scope(
                 &comprehension.generators,
-                [comprehension.key.as_ref(), comprehension.value.as_ref()],
+                comprehension
+                    .key
+                    .as_deref()
+                    .into_iter()
+                    .chain(std::iter::once(comprehension.value.as_ref())),
             ),
             Expr::Generator(comprehension) => self.visit_comprehension_scope(
                 &comprehension.generators,
@@ -363,6 +370,7 @@ impl<F: Fn() -> bool> ImportScan<'_, F> {
         module: &'static str,
         member: Option<&str>,
         range: TextRange,
+        eager: bool,
     ) {
         if member.is_none() {
             self.module_names.insert(local.to_owned());
@@ -377,7 +385,7 @@ impl<F: Fn() -> bool> ImportScan<'_, F> {
         } else {
             possible.modules.insert(module);
         }
-        if self.depth == 0 {
+        if eager && self.depth == 0 {
             self.trusted.insert(
                 local.to_owned(),
                 ImportedBinding {
@@ -416,7 +424,7 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for ImportScan<'_, F> {
                         .iter()
                         .find(|&&module| module == alias.name.as_str())
                     {
-                        self.import(local, module, None, statement.range());
+                        self.import(local, module, None, statement.range(), !import.is_lazy);
                     }
                 }
             }
@@ -442,7 +450,13 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for ImportScan<'_, F> {
                         && let Some(&module) =
                             self.modules.iter().find(|&&module| module == name.as_str())
                     {
-                        self.import(local, module, Some(alias.name.as_str()), statement.range());
+                        self.import(
+                            local,
+                            module,
+                            Some(alias.name.as_str()),
+                            statement.range(),
+                            !import.is_lazy,
+                        );
                     }
                 }
             }

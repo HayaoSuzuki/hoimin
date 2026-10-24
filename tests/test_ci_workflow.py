@@ -1995,10 +1995,7 @@ def test_development_guide_updates_pin_and_minimum_version_together() -> None:
         "cargo fmt --all -- --check",
         "cargo fmt --manifest-path vendor/ruff_python_parser/Cargo.toml -- --check",
         "cargo clippy --workspace --all-targets --all-features -- -D warnings",
-        (
-            "cargo clippy --locked -p littrs-ruff-python-parser "
-            "--lib --no-deps -- -D warnings"
-        ),
+        ("cargo clippy --locked -p ruff_python_parser --lib --no-deps -- -D warnings"),
         "cargo test --workspace",
         "cargo test -p hoimin-core --features contracts",
         "cargo test -p hoimin-cli --features contracts",
@@ -2565,3 +2562,11 @@ def test_non_linux_workspace_suite_runs_once_with_controlled_windows_concurrency
     ]
 
     assert selected == [expected_command]
+
+
+def test_python_syntax_matrix_pins_uv_interpreter() -> None:
+    for name in ("ci.yml", "non-linux-ci.yml"):
+        workflow = yaml.safe_load(
+            (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+        )
+        assert workflow["jobs"]["rust"]["env"]["UV_PYTHON"] == "${{ matrix.python }}"
