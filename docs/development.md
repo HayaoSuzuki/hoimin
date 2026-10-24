@@ -447,7 +447,7 @@ A separate rule disables major/minor Python updates so Renovate cannot replace
 the 3.14 lane with 3.15. Patch updates remain eligible; supported minor lines
 change through an explicit support review.
 Python 3.15 lazy imports and unpacking in comprehensions use the Ruff 0.17.2
-parser and aligned vendored AST dependencies. Explicit lazy aliases do not
+parser and aligned crates.io AST dependencies. Explicit lazy aliases do not
 establish trusted imports. A module mentioning `__lazy_modules__` or the lazy
 import configuration API disables import identity proofs for callable, enum,
 annotation and project exception mutations; ordinary literal/operator mutations
@@ -1269,9 +1269,10 @@ mapped by both analyzer callers to `analyzer.depth` with the target path.
 Cancellation remains a separate error. Plan creation fails without a manifest;
 run reports incomplete analysis after its normal baseline stage.
 
-The parser and its Ruff dependencies are a source snapshot of Ruff 0.17.2,
-commit `30516b42ab972ffa2569e5efcfee81135da466d3`, with standalone manifests
-and local safety adaptations documented in
+The vendored parser is a source snapshot of Ruff 0.17.2,
+commit `30516b42ab972ffa2569e5efcfee81135da466d3`. Its aligned Ruff dependencies
+use crates.io version `0.0.19`; direct dependencies are pinned exactly.
+The parser standalone manifest and local safety adaptations are documented in
 [`README.hoimin.md`](../vendor/ruff_python_parser/README.hoimin.md).
 Recursive checkpoints use `stacker` (locked to 0.1.25): each checks a 128 KiB
 red zone and grows a 1 MiB segment when needed. The upstream unchecked-depth

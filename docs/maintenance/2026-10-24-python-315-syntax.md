@@ -2,7 +2,9 @@
 
 専用worktreeの `python-315-syntax` ブランチで、マージ済みの `d5042077` を起点に作業する。
 Ruff 0.17.2 (`30516b42ab972ffa2569e5efcfee81135da466d3`) のparserと依存ASTを取り込む。
-初回のCargo git依存はWindowsの長いパスでcheckoutに失敗したため、必要な9 crateをvendorに固定した。
+初回のCargo git依存はWindowsの長いパスでcheckoutに失敗したため、当初は必要な9 crateをvendorに固定した。
+その後、同一版のcrates.io公開を確認し、利用者の承認を受けてparserだけをvendorに残す構成へ変更した。
+以下の初回検証は9 crate版の履歴であり、registry移行後の検証は末尾に区別して記録する。
 
 ## 調査段階のセルフレビュー
 
@@ -126,3 +128,19 @@ PR: https://github.com/HayaoSuzuki/hoimin/pull/1109
 3. `libfuzzer-sys 0.4.13` と `arbitrary 1.5.0` を保持し、`deny.toml` のライセンス例外やsource制約を緩和していないことを確認した。
 4. fuzzの解決グラフ内の7 Ruff crateがversion 0.0.19、sourceなし、ローカルvendor manifestを参照することを確認した。通常・offline両方のlocked metadataがexit 0になった。
 5. lock差分と `git diff --check` を確認した。依存ポリシー自体の最終結果は更新後のCIで確認する。ローカルでbounded fuzzを実行したという主張は追加しない。
+
+## Registry移行の設計・計画セルフレビュー
+
+1. 利用者が承認した構成を設計へ反映した。parserの安全修正を維持し、未変更の8 crateを外部依存へ戻す。
+2. 9 crateすべてにnon-yankedな0.0.19公開版が存在することを確認した。
+3. 隔離したWindows実験で、実際に取得した6外部crateのVCS情報が採用中の上流コミットと一致した。
+4. 通常Git取得やWindows全体の設定変更を必要とせず、registry依存でコンパイルと新構文の解析が成功した。
+5. 移行計画に両lockfile、配布、SBOM、両Python版、独立レビュー、リソース整理を含めた。既存の独自構文実装は追加しない。
+
+## Registry依存・配布設定のセルフレビュー
+
+1. SBOMの外部8 crateをvendorへ書き換えないテストと、sdistがparser以外のvendorを含まないテストは変更前に計9件失敗し、変更後は関連73件が成功した。
+2. parserの全Rustソースは移行前のハッシュと一致し、安全修正・再帰保護・反復破棄を変更していない。
+3. 主workspaceとparser manifestの直接Ruff依存は =0.0.19。main/fuzz両lockfileのRuff crateは0.0.19、parser以外はregistry source/checksumを持つ。
+4. main/fuzz両lockfileでRuff以外のpackage名・version集合が移行前と一致することを確認した。fuzzer本体・arbitrary・依存ポリシーは変更していない。
+5. 8 vendorディレクトリは専用worktreeのvendor直下であることを絶対パスで確認して削除した。sdist収録一覧、ライセンス通知、SBOM説明も現在の構成へ合わせた。

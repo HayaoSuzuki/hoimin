@@ -296,12 +296,14 @@ Ubuntu 22.04 host. Windows and macOS also receive separate documents for
 their two distribution forms. The capture runs after version adjustment,
 using the same target and Cargo feature flags as the build.
 
-Every vendored Ruff crate is identified through a commit-qualified Cargo
+The vendored Ruff parser is identified through a commit-qualified Cargo
 package URL. Its pedigree, upstream package version (`0.0.19`), Ruff 0.17.2
 VCS revision, and commit-pinned `README.hoimin.md` link identify the source
 snapshot and the parser safety adaptations.
 The README hash identifies the local-change description; the release commit
-identifies the complete vendored source tree.
+identifies the complete vendored parser source tree. Aligned external Ruff
+crates retain their captured crates.io package identities and metadata;
+the lockfile records their versions and checksums.
 
 Generation uses `cargo-cyclonedx 0.5.7`; JSON validation uses
 `jsonschema 4.25.1` and checked-in official schemas, without network schema

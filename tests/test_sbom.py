@@ -382,7 +382,20 @@ def test_budget_math_identity_is_required(tmp_path: Path, corruption: str) -> No
         sbom.validate(path, asset, "linux-x86_64", "standalone", "1.2.3", COMMIT)
 
 
-def test_sbom_identifies_vendored_upstream_ast(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "crate_name",
+    [
+        "ruff_python_ast",
+        "ruff_python_trivia",
+        "ruff_source_file",
+        "ruff_text_size",
+        "ruff_unicode_names2",
+        "ruff_unicode_names2_generator",
+        "ruff_cache",
+        "ruff_macros",
+    ],
+)
+def test_sbom_preserves_registry_ruff_identity(tmp_path: Path, crate_name: str) -> None:
     source_tree(tmp_path)
     asset = tmp_path / "hoimin-v1.2.3-linux-x86_64.tar.gz"
     asset.write_bytes(b"archive")
@@ -391,24 +404,22 @@ def test_sbom_identifies_vendored_upstream_ast(tmp_path: Path) -> None:
     capture["bom"]["components"].append(
         {
             "type": "library",
-            "name": "ruff_python_ast",
+            "name": crate_name,
             "version": "0.0.19",
             "bom-ref": "ast",
-            "purl": "pkg:cargo/ruff_python_ast@0.0.19",
+            "purl": f"pkg:cargo/{crate_name}@0.0.19",
+            "properties": [{"name": "captured:source", "value": "crates.io"}],
         }
     )
     capture["bom"]["dependencies"].append({"ref": "ast", "dependsOn": []})
     next(d for d in capture["bom"]["dependencies"] if d["ref"] == "ruff_python_parser")[
         "dependsOn"
     ].append("ast")
+    expected = capture["bom"]["components"][-1].copy()
     raw.write_text(json.dumps(capture))
     path = sbom.finalize(
         tmp_path, raw, asset, "linux-x86_64", "standalone", "1.2.3", COMMIT
     )
     data = json.loads(path.read_text())
-    ast = next(c for c in data["components"] if c["name"] == "ruff_python_ast")
-    assert COMMIT in ast["purl"]
-    assert ast["purl"].endswith("#vendor/ruff_python_ast")
-    props = {p["name"]: p["value"] for p in ast["properties"]}
-    assert props["hoimin:upstream:commit"] == "30516b42ab972ffa2569e5efcfee81135da466d3"
-    assert props["hoimin:vendor:commit"] == COMMIT
+    component = next(c for c in data["components"] if c["name"] == crate_name)
+    assert component == expected

@@ -27,19 +27,6 @@ SCOPE = "Cargo normal and build dependencies; excludes dev/fuzz and OS libraries
 REPOSITORY = "https://github.com/HayaoSuzuki/hoimin"
 PARSER = "ruff_python_parser"
 RUFF_VERSION = "0.0.19"
-VENDORED_RUFF = frozenset(
-    (
-        PARSER,
-        "ruff_python_ast",
-        "ruff_python_trivia",
-        "ruff_source_file",
-        "ruff_text_size",
-        "ruff_unicode_names2",
-        "ruff_unicode_names2_generator",
-        "ruff_cache",
-        "ruff_macros",
-    )
-)
 UPSTREAM = "30516b42ab972ffa2569e5efcfee81135da466d3"
 
 
@@ -139,7 +126,7 @@ def validate_graph(data: dict[str, Any], version: str, commit: str) -> None:
         "missing or duplicate vendored parser",
     )
     for component in components:
-        if component["name"] in VENDORED_RUFF:
+        if component["name"] == PARSER:
             validate_vendor(component, commit)
 
 
@@ -261,14 +248,14 @@ def finalize(  # noqa: PLR0913, PLR0917 -- Explicit release identity.
     ]
     for component in data["components"]:
         name = component["name"]
-        if name in VENDORED_RUFF:
+        if name == PARSER:
             source = quote(f"{REPOSITORY}@{commit}", safe="")
             component["purl"] = (
                 f"pkg:cargo/{name}@{component['version']}?vcs_url={source}#vendor/{name}"
             )
             component["pedigree"] = {
                 "notes": (
-                    "Ruff 0.17.2 source snapshot with standalone manifests; "
+                    "Ruff 0.17.2 parser with a standalone manifest; "
                     "parser retains hoimin stack growth, interpolation recovery "
                     "and iterative cleanup changes. "
                     "See pinned README.hoimin.md."

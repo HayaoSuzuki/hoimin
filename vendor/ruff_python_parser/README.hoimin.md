@@ -1,10 +1,10 @@
 # Ruff 0.17.2 source snapshot for hoimin
 
-The parser and its eight Ruff dependencies are copied from [Ruff 0.17.2](https://github.com/astral-sh/ruff/tree/30516b42ab972ffa2569e5efcfee81135da466d3), commit `30516b42ab972ffa2569e5efcfee81135da466d3`. Their internal crate version is `0.0.19`. The source closure comprises `ruff_python_parser`, `ruff_python_ast`, `ruff_python_trivia`, `ruff_source_file`, `ruff_text_size`, `ruff_unicode_names2`, `ruff_unicode_names2_generator`, `ruff_cache`, and `ruff_macros`. Optional cache/macro sources are included so Cargo can resolve the manifests without the Ruff workspace.
+The parser is copied from [Ruff 0.17.2](https://github.com/astral-sh/ruff/tree/30516b42ab972ffa2569e5efcfee81135da466d3), commit `30516b42ab972ffa2569e5efcfee81135da466d3`. Its internal crate version is `0.0.19`. Only the parser is vendored because it retains the safety adaptations below. Its aligned AST, trivia, text-size and Unicode dependencies come from crates.io version `0.0.19`; direct Ruff dependencies use exact version requirements. Both the main and fuzz lockfiles record registry checksums. The published packages' VCS metadata identifies the same upstream commit.
 
-The source snapshot includes upstream `src/` and the Unicode build script/data. Manifests expand upstream workspace package/dependency inheritance, replace Ruff paths with sibling vendor paths, omit upstream test/benchmark dependencies, and explicitly list build input patterns to exclude temporary files from sdists. Each package is excluded from hoimin workspace membership and has its own workspace boundary. Hoimin's integration tests exercise parsing and recovery; upstream's test harness is not packaged as a standalone suite.
+The parser manifest expands upstream workspace inheritance, omits upstream test/benchmark dependencies, and explicitly lists build input patterns to exclude temporary files from sdists. It is excluded from hoimin workspace membership and has its own workspace boundary. Hoimin's integration tests exercise parsing and recovery; upstream's test harness is not packaged as a standalone suite.
 
-Direct git dependencies were tried but Cargo's checkout failed on Windows at a long Ruff linter snapshot filename. Vendoring the required crates avoids making users configure Windows long-path support and makes sdists self-contained apart from normal crates.io dependencies.
+Direct git dependencies were initially tried but Cargo's checkout failed on Windows at a long Ruff linter snapshot filename. Published registry dependencies avoid that checkout entirely. Source distributions retain the patched parser; rebuilding also downloads normal crates.io dependencies under the committed Cargo.lock.
 
 ## Local parser changes
 
@@ -17,8 +17,8 @@ These protections are checked by the `analysis_depth` integration suite and `hoi
 
 ## Source and license verification
 
-All non-parser Rust sources and Unicode data are unchanged from the pinned upstream commit. Parser source changes are limited to the safety adaptations above. The original upstream fixtures under `resources/` predate this refresh and are not a supported test harness; hoimin owns the executable regression suite.
+The external Ruff packages are unmodified registry releases from the pinned upstream commit. Parser source changes are limited to the safety adaptations above. The original upstream fixtures under `resources/` predate this refresh and are not a supported test harness; hoimin owns the executable regression suite.
 
-Each Ruff crate retains the upstream MIT license. Unicode sources also retain their original MIT/Apache and Unicode notices. `ruff_python_parser/LICENSE` combines Ruff's full license/third-party notices with the Unicode notices so the existing wheel and standalone archive license path carries every vendored notice. Individual Unicode notices remain in the source distribution as well.
+The parser retains the upstream MIT license. External Unicode packages retain their original MIT/Apache and Unicode notices. `ruff_python_parser/LICENSE` combines Ruff's full license/third-party notices with the Unicode notices so the wheel and standalone archive license path also carries the relevant dependency notices.
 
-CI runs workspace formatting/Clippy, standalone parser formatting, and `cargo clippy --locked -p ruff_python_parser --lib --no-deps -- -D warnings`. Release SBOMs identify every included vendored Ruff crate with this upstream revision and the hoimin source commit, with a pinned reference and digest for this document.
+CI runs workspace formatting/Clippy, standalone parser formatting, and `cargo clippy --locked -p ruff_python_parser --lib --no-deps -- -D warnings`. Release SBOMs identify the vendored parser with this upstream revision and the hoimin source commit, with a pinned reference and digest for this document. External Ruff components retain their captured registry package identities and metadata.

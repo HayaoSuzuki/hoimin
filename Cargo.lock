@@ -1062,6 +1062,8 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 [[package]]
 name = "ruff_python_ast"
 version = "0.0.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da431a9b238a081641b44ca6d7f23fee662eb3e477c91c93b3f9189102dbe8b0"
 dependencies = [
  "aho-corasick",
  "arrayvec",
@@ -1104,6 +1106,8 @@ dependencies = [
 [[package]]
 name = "ruff_python_trivia"
 version = "0.0.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9ebaad7848941afbd76cd2472cb4defe6bfe01cfa2f1de80365dd4d590e52f0"
 dependencies = [
  "itertools",
  "memchr",
@@ -1117,6 +1121,8 @@ dependencies = [
 [[package]]
 name = "ruff_source_file"
 version = "0.0.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3c57cbabfbb290e2920b2b44ea4e4aacaa91d8c186176503006845933cc550b"
 dependencies = [
  "memchr",
  "ruff_text_size",
@@ -1125,6 +1131,8 @@ dependencies = [
 [[package]]
 name = "ruff_text_size"
 version = "0.0.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "090da8196d6ca8b9f0a8538ae002e539c3fbf994e30e1f8936b1e947d26a5be3"
 dependencies = [
  "get-size2",
 ]
@@ -1132,6 +1140,8 @@ dependencies = [
 [[package]]
 name = "ruff_unicode_names2"
 version = "0.0.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "990318296d360c7fe61c460e88499e9b6bbd9a7bccb77640470e18ad808f53d8"
 dependencies = [
  "phf",
  "ruff_unicode_names2_generator",
@@ -1140,6 +1150,8 @@ dependencies = [
 [[package]]
 name = "ruff_unicode_names2_generator"
 version = "0.0.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6dd63a83e42c5a2a93c2653e15e60bf81caa185bfd852f63d90d16f7edeaa06"
 dependencies = [
  "phf_codegen",
  "rand",

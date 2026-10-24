@@ -108,3 +108,13 @@ def test_sdist_retains_workspace_manifest_text(
 
     # Maturin rewrites workspace manifests with LF, including CRLF checkouts.
     assert actual.replace(b"\r\n", b"\n") == expected.replace(b"\r\n", b"\n")
+
+
+def test_sdist_only_vendors_the_patched_parser(source_archive: Path) -> None:
+    with tarfile.open(source_archive) as archive:
+        vendor_crates = {
+            name.split("/vendor/", 1)[1].split("/", 1)[0]
+            for name in archive.getnames()
+            if "/vendor/ruff_" in name
+        }
+    assert vendor_crates == {"ruff_python_parser"}

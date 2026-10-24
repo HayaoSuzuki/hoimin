@@ -24,10 +24,10 @@ path = "src/lib.rs"
 test = false
 
 [dependencies]
-ruff_python_ast = { path = "../ruff_python_ast", features = ["get-size"] }
-ruff_python_trivia = { path = "../ruff_python_trivia" }
-ruff_text_size = { path = "../ruff_text_size", features = ["get-size"] }
-ruff_unicode_names2 = { path = "../ruff_unicode_names2" }
+ruff_python_ast = { version = "=0.0.19", features = ["get-size"] }
+ruff_python_trivia = { version = "=0.0.19" }
+ruff_text_size = { version = "=0.0.19", features = ["get-size"] }
+ruff_unicode_names2 = { version = "=0.0.19" }
 bitflags = { version = "2.5.0", default-features = false }
 bstr = { version = "1.9.1", default-features = false, features = ["std"] }
 drop_bomb = { version = "0.1.5", default-features = false }

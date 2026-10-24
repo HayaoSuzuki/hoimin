@@ -7,9 +7,10 @@ Python 3.14・3.15の実行環境対応に続き、3.15の構文をhoiminの解�
 
 Ruff 0.17.2、コミット `30516b42ab972ffa2569e5efcfee81135da466d3` を使用する。
 この版のparserにはPEP 810の遅延importとPEP 798の内包表記アンパックが実装されている。
-parserのソースを既存のvendorへ更新し、AST・trivia・text-size・Unicode処理とそのビルド依存は同一コミットのvendorソースで揃える。
+parserのソースを既存のvendorへ更新し、AST・trivia・text-size・Unicode処理とそのビルド依存は、同一コミットから公開されたcrates.io版0.0.19で揃える。
+2026-10-24の追加検討と利用者の承認により、独自の安全修正を持つparserだけをvendorに残し、残り8 crateを外部依存へ戻す。
 Ruffの別の解析器やCLIは取り込まない。
-依存するvendorソースをsdistから再構築できることと、SBOMが実際のソースを識別することを検証する。
+parserソースを含むsdistをlockedなcrates.io依存から再構築できることと、SBOMが実際のソースを識別することを検証する。
 
 ## 解析時の意味
 
