@@ -1,0 +1,2 @@
+lazy import math as 値
+result = 値.sqrt(7)

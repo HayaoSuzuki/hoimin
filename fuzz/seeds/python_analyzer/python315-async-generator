@@ -1,0 +1,2 @@
+async def collect(data):
+    return (*値 async for 値 in data)

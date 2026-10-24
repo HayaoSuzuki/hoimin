@@ -4,11 +4,28 @@ import argparse
 import hashlib
 import json
 import platform
+import sys
 import warnings
 from importlib.metadata import version
 from pathlib import Path
 
 MAX_SOURCE_BYTES = 4096
+PYTHON315_TEMPLATES = (
+    "lazy import math as {name}\nresult = {name}.sqrt({number})\n",
+    "lazy from math import sqrt as {name}\nresult = {name}({number})\n",
+    (
+        "__lazy_modules__ = ['math']\n"
+        "import math as {name}\nresult = {name}.sqrt({number})\n"
+    ),
+    "data = [[{number}]]\nresult = [*{name} for {name} in data]\n",
+    "data = [[{number}]]\nresult = {{*{name} for {name} in data}}\n",
+    "data = [{{{number}: {number}}}]\nresult = {{**{name} for {name} in data}}\n",
+    "data = [[{number}]]\nresult = (*{name} for {name} in data)\n",
+    "async def collect(data):\n    return [*{name} async for {name} in data]\n",
+    "async def collect(data):\n    return {{*{name} async for {name} in data}}\n",
+    "async def collect(data):\n    return {{**{name} async for {name} in data}}\n",
+    "async def collect(data):\n    return (*{name} async for {name} in data)\n",
+)
 
 
 def store_source(source: str, output: Path, *, max_bytes: int) -> str:
@@ -45,19 +62,31 @@ def generate(
     if examples < 1 or not 1 <= max_bytes <= MAX_SOURCE_BYTES:
         msg = "examples must be positive; max-bytes must be between 1 and 4096"
         raise ValueError(msg)
-    if strategy not in {"grammar", "libcst"}:
-        msg = "strategy must be grammar or libcst"
+    if strategy not in {"grammar", "libcst", "python315"}:
+        msg = "strategy must be grammar, libcst or python315"
+        raise ValueError(msg)
+
+    if strategy == "python315" and sys.version_info < (3, 15):
+        msg = "python315 strategy requires Python 3.15 or later"
         raise ValueError(msg)
 
     # Optional dependencies: normal unit tests and --help need no fuzz extras.
     import hypothesmith  # noqa: PLC0415
     from hypothesis import HealthCheck, Phase, given, seed, settings  # noqa: PLC0415
+    from hypothesis import strategies as st  # noqa: PLC0415
 
-    source_strategy = (
-        hypothesmith.from_grammar()
-        if strategy == "grammar"
-        else hypothesmith.from_node()
-    )
+    if strategy == "python315":
+        source_strategy = st.tuples(
+            st.sampled_from(PYTHON315_TEMPLATES),
+            st.sampled_from(("item", "row", "値")),
+            st.integers(min_value=0, max_value=100),
+        ).map(lambda parts: parts[0].format(name=parts[1], number=parts[2]))
+    else:
+        source_strategy = (
+            hypothesmith.from_grammar()
+            if strategy == "grammar"
+            else hypothesmith.from_node()
+        )
     output.mkdir(parents=True, exist_ok=True)
     counts = dict.fromkeys(("written", "existing", "empty", "oversize", "invalid"), 0)
 
@@ -87,7 +116,9 @@ def main() -> int:
     )
     parser.add_argument("--examples", type=int, default=100)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--strategy", choices=("grammar", "libcst"), default="grammar")
+    parser.add_argument(
+        "--strategy", choices=("grammar", "libcst", "python315"), default="grammar"
+    )
     parser.add_argument("--max-bytes", type=int, default=MAX_SOURCE_BYTES)
     args = parser.parse_args()
     try:

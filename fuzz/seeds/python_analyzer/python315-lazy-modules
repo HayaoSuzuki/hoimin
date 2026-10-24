@@ -1,0 +1,3 @@
+__lazy_modules__ = ['math']
+import math as 値
+result = 値.sqrt(7)

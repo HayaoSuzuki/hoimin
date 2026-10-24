@@ -192,7 +192,13 @@ def test_campaign_reports_all_targets(
     ]
     report = json.loads((report_dir / "summary.json").read_text())
     stages = {stage["name"]: stage for stage in report["stages"]}
-    assert {"generate-grammar", "generate-libcst"} <= stages.keys()
+    assert {
+        "generate-grammar-314",
+        "generate-libcst-314",
+        "generate-grammar-315",
+        "generate-libcst-315",
+        "generate-python315-315",
+    } <= stages.keys()
     durations = []
     for name in campaign.completed_targets:
         argv = stages[name]["argv"]
@@ -327,3 +333,80 @@ def test_workflow_runs_fuzz_in_parallel_with_bounded_total_time() -> None:
     assert len(uploads) == 1
     assert uploads[0]["if"] == "always()"
     assert "fuzz/artifacts" in uploads[0]["with"]["path"]
+
+
+def test_campaign_generates_with_both_interpreters_before_one_fuzz_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+) -> None:
+    monkeypatch.setattr(ci_fuzz, "ROOT", tmp_path)
+    (tmp_path / "fuzz").mkdir()
+    (tmp_path / "fuzz/Cargo.toml").write_bytes((ROOT / "fuzz/Cargo.toml").read_bytes())
+    campaign = ci_fuzz.Campaign(time.time() + 300, tmp_path / "report", seed=7)
+
+    def create_environment(
+        name: str,
+        _argv: list[str],
+        *,
+        env: dict[str, str] | None = None,
+        **_options: object,
+    ) -> None:
+        if name.startswith("dependencies-"):
+            assert env is not None
+            environment = Path(env["UV_PROJECT_ENVIRONMENT"])
+            environment.mkdir(parents=True)
+            (environment / "sentinel").write_text("temporary")
+
+    run = mocker.patch.object(campaign, "run", side_effect=create_environment)
+
+    ci_fuzz.run_campaign(campaign, seconds_per_target=1)
+
+    calls = {call.args[0]: call for call in run.call_args_list}
+    environments = []
+    for version in ("3.14", "3.15"):
+        suffix = version.replace(".", "")
+        stages = [
+            f"dependencies-{suffix}",
+            f"generator-tests-{suffix}",
+            f"generate-grammar-{suffix}",
+            f"generate-libcst-{suffix}",
+        ]
+        if version == "3.15":
+            stages.append("generate-python315-315")
+        for name in stages:
+            argv = calls[name].args[1]
+            assert argv[argv.index("--python") + 1] == version
+        selected = [
+            calls[name].kwargs["env"]["UV_PROJECT_ENVIRONMENT"] for name in stages
+        ]
+        assert len(set(selected)) == 1
+        assert not Path(selected[0]).exists(), "generation environments must be cleaned"
+        environments.append(selected[0])
+    assert environments[0] != environments[1]
+    names = [call.args[0] for call in run.call_args_list]
+    assert names.count("build") == 1
+    assert names.index("generate-python315-315") < names.index("python_analyzer")
+    assert campaign.completed_targets == [
+        "source_encoding",
+        "source_index",
+        "candidate_validation",
+        "python_analyzer",
+        "report_sequence",
+        "target_resolution",
+        "sampling",
+    ]
+
+
+def test_child_environment_overlay_does_not_change_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOIMIN_FUZZ_OVERLAY", "parent")
+    campaign = ci_fuzz.Campaign(time.time() + 10, tmp_path, seed=1)
+    campaign.run(
+        "child-env",
+        [sys.executable, "-c", "import os; print(os.environ['HOIMIN_FUZZ_OVERLAY'])"],
+        env={"HOIMIN_FUZZ_OVERLAY": "child"},
+    )
+    assert (tmp_path / "child-env.log").read_text().strip() == "child"
+    assert os.environ["HOIMIN_FUZZ_OVERLAY"] == "parent"
+    report = json.loads((tmp_path / "summary.json").read_text())
+    assert report["stages"][0]["environment"] == {"HOIMIN_FUZZ_OVERLAY": "child"}
