@@ -36,7 +36,7 @@ class WheelMetadata:
 
 
 EXPECTED_WHEEL_METADATA = WheelMetadata(
-    requires_python=">=3.14,<3.15",
+    requires_python=">=3.14,<3.16",
     requires_dist=None,
     license_expression="Elastic-2.0",
     project_urls=[
@@ -375,7 +375,15 @@ def main() -> int:
         is_windows = os.name == "nt"
 
         distribution_help = run(
-            ["uvx", "--python", "3.14", "--from", str(wheel), "hoimin", "--help"],
+            [
+                "uvx",
+                "--python",
+                sys.executable,
+                "--from",
+                str(wheel),
+                "hoimin",
+                "--help",
+            ],
             cwd=temporary_root,
             env=environment,
         )
@@ -392,7 +400,7 @@ def main() -> int:
                 "install",
                 "--disable-pip-version-check",
                 str(wheel),
-                "pytest>=8.4,<9",
+                "pytest>=9,<10",
             ],
             cwd=temporary_root,
             env=environment,

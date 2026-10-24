@@ -32,7 +32,7 @@ async fn compile(source: &str) {
         tokio::process::Command::new(python())
             .args([
                 "-c",
-                "import sys; assert sys.version_info[:2] == (3, 14), sys.version; compile(sys.argv[1], '<neighbor>', 'exec')",
+                "import sys; assert sys.version_info[:2] in ((3, 14), (3, 15)), sys.version; compile(sys.argv[1], '<neighbor>', 'exec')",
                 source,
             ])
             .kill_on_drop(true)
@@ -40,7 +40,7 @@ async fn compile(source: &str) {
     )
     .await
     .expect("CPython compiler deadline")
-    .expect("CPython 3.14; set HOIMIN_OPERATOR_TEST_PYTHON to its executable");
+    .expect("CPython 3.14 or 3.15; set HOIMIN_OPERATOR_TEST_PYTHON to its executable");
     assert!(
         output.status.success(),
         "{source}\n{}",

@@ -13,8 +13,12 @@ The package is a native binary wheel, not a Python extension module. Build and s
 uv run maturin build --release
 uv sync --frozen --no-install-project
 uv run --frozen --no-sync python tests/wheel_smoke.py
+uv run --no-project --python 3.15 --with packaging==26.0 python tests/wheel_smoke.py
 ```
 
+The same wheel is checked with Python 3.14 and 3.15 before publication.
+Python 3.15 support covers existing syntax and mutation operators; lazy imports
+and unpacking in comprehensions are not yet supported.
 The smoke test installs the wheel into a new environment and runs the Rust-only CLI outside this checkout. For development verification, see [the development guide](development.md). Start design and audit work with [the OKF catalog](knowledge/index.md), and follow [the OKF workflow](okf-workflow.md) to keep it current with each relevant change.
 
 ```console
@@ -24,6 +28,7 @@ cargo test --workspace
 uv run maturin build --release
 uv sync --frozen --no-install-project
 uv run --frozen --no-sync python tests/wheel_smoke.py
+uv run --no-project --python 3.15 --with packaging==26.0 python tests/wheel_smoke.py
 ```
 
 Windows Job Object tests run on Windows and Linux hard-limit tests require a delegated cgroup v2 runner. The ordinary Linux CI job verifies the explicit best-effort path separately.
@@ -49,7 +54,7 @@ uv tool install --python 3.14 hoimin
 
 GitHub Releases retain standalone archives and wheels as release artifacts.
 The standalone Linux executable is built on Ubuntu 22.04; the wheel uses
-manylinux2014 for broader glibc compatibility. Wheels require Python 3.14.
+manylinux2014 for broader glibc compatibility. Wheels support Python 3.14 and 3.15.
 
 The Linux wheel build uses an official Maturin container pinned by OCI digest.
 When updating Maturin, update all three `MATURIN_VERSION` values and the Linux

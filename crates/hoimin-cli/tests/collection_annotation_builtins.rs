@@ -61,7 +61,7 @@ fn evaluate_expression(
 ) {
     let harness = r"
 import sys, typing, collections.abc, builtins
-assert sys.version_info[:2] == (3, 14), sys.version
+assert sys.version_info[:2] in ((3, 14), (3, 15)), sys.version
 source, access, evaluation_error, replacement = sys.argv[1:]
 namespace = {}
 code = compile(source, '<annotation-oracle>', 'exec')
@@ -87,7 +87,7 @@ else:
         ])
         .env("PYTHONDONTWRITEBYTECODE", "1")
         .output()
-        .expect("infrastructure error: CPython3.14 must be installed in .venv");
+        .expect("infrastructure error: CPython 3.14 or 3.15 must be installed in .venv");
     assert!(
         output.status.success(),
         "{}: {}",

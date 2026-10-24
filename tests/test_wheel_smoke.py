@@ -3,12 +3,15 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 import zipfile
 from pathlib import Path
 
 import pytest
+import wheel_smoke
 from hypothesis import given
 from hypothesis import strategies as st
+from packaging.specifiers import SpecifierSet
 from packaging.tags import Tag
 from pytest_mock import MockerFixture
 from wheel_smoke import (
@@ -21,6 +24,7 @@ from wheel_smoke import (
     exercise_cli,
     is_compatible_wheel,
     isolated_environment,
+    main,
     run,
     select_compatible_wheel,
     validate_wheel_metadata,
@@ -377,7 +381,7 @@ def test_discovers_the_current_compatible_wheel(tmp_path: Path) -> None:
 def test_reads_the_single_metadata_member(tmp_path: Path) -> None:
     wheel = tmp_path / "hoimin.whl"
     text = (
-        "Requires-Python: >=3.14, <3.15\n"
+        "Requires-Python: >=3.14, <3.16\n"
         "License-Expression: Elastic-2.0\n"
         "Project-URL: Changelog, https://github.com/HayaoSuzuki/hoimin/releases\n"
         "Project-URL: Issues, https://github.com/HayaoSuzuki/hoimin/issues\n"
@@ -389,7 +393,7 @@ def test_reads_the_single_metadata_member(tmp_path: Path) -> None:
     actual = wheel_metadata(wheel)
 
     assert actual == WheelMetadata(
-        requires_python=">=3.14, <3.15",
+        requires_python=">=3.14, <3.16",
         requires_dist=None,
         license_expression="Elastic-2.0",
         project_urls=[
@@ -421,7 +425,7 @@ def test_rejects_an_archive_with_multiple_metadata_members(tmp_path: Path) -> No
 
 def test_accepts_the_expected_metadata() -> None:
     metadata = WheelMetadata(
-        requires_python=">=3.14, <3.15",
+        requires_python=">=3.14, <3.16",
         requires_dist=None,
         license_expression="Elastic-2.0",
         project_urls=[
@@ -442,7 +446,7 @@ def test_accepts_the_expected_metadata() -> None:
         pytest.param(
             "Requires-Python",
             WheelMetadata(
-                requires_python=">=3.13,<3.15",
+                requires_python=">=3.13,<3.16",
                 requires_dist=None,
                 license_expression="Elastic-2.0",
                 project_urls=[
@@ -456,7 +460,7 @@ def test_accepts_the_expected_metadata() -> None:
         pytest.param(
             "Requires-Dist",
             WheelMetadata(
-                requires_python=">=3.14,<3.15",
+                requires_python=">=3.14,<3.16",
                 requires_dist=["pytest"],
                 license_expression="Elastic-2.0",
                 project_urls=[
@@ -470,7 +474,7 @@ def test_accepts_the_expected_metadata() -> None:
         pytest.param(
             "License-Expression",
             WheelMetadata(
-                requires_python=">=3.14,<3.15",
+                requires_python=">=3.14,<3.16",
                 requires_dist=None,
                 license_expression="MIT",
                 project_urls=[
@@ -484,7 +488,7 @@ def test_accepts_the_expected_metadata() -> None:
         pytest.param(
             "Project-URL",
             WheelMetadata(
-                requires_python=">=3.14,<3.15",
+                requires_python=">=3.14,<3.16",
                 requires_dist=None,
                 license_expression="Elastic-2.0",
                 project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
@@ -777,3 +781,45 @@ def test_mutation_result_rejects_invalid_jsonl_completion(boundary: str) -> None
     output = "\n".join(json.dumps(event) for event in events)
     with pytest.raises(AssertionError):
         assert_mutation_result(output)
+
+
+@pytest.mark.parametrize(
+    ("version", "supported"),
+    [("3.13.11", False), ("3.14.9", True), ("3.15.1", True), ("3.16.0", False)],
+)
+def test_distribution_supports_only_python_314_and_315(
+    version: str, *, supported: bool
+) -> None:
+    project = tomllib.loads(
+        (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(
+            encoding="utf-8"
+        )
+    )["project"]
+    assert (version in SpecifierSet(project["requires-python"])) is supported
+    assert "Programming Language :: Python :: 3.15" in project["classifiers"]
+
+
+def test_distribution_smoke_uses_the_running_python(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    wheel = tmp_path / "hoimin.whl"
+    mocker.patch.object(wheel_smoke, "wheel_path", return_value=wheel)
+    mocker.patch.object(
+        wheel_smoke, "wheel_metadata", return_value=wheel_smoke.EXPECTED_WHEEL_METADATA
+    )
+    mocker.patch.object(wheel_smoke.venv.EnvBuilder, "create")
+    mocker.patch.object(wheel_smoke, "exercise_cli")
+    calls = mocker.patch.object(
+        wheel_smoke, "run", return_value=subprocess.CompletedProcess([], 0, "", "")
+    )
+
+    assert main() == 0
+    assert calls.call_args_list[0].args[0] == [
+        "uvx",
+        "--python",
+        sys.executable,
+        "--from",
+        str(wheel),
+        "hoimin",
+        "--help",
+    ]

@@ -56,7 +56,7 @@ MANUAL_NON_LINUX_MATRIX_JOBS = {
 }
 MANUAL_NON_LINUX_JOB_NAMES = {
     "quality": "Manual quality (${{ matrix.os }})",
-    "rust": "Manual Rust (${{ matrix.os }})",
+    "rust": "Manual Rust (${{ matrix.os }}, Python ${{ matrix.python }})",
     "core-dependency-purity": ("Manual core dependency purity (windows-latest)"),
     "wheel-smoke": "Manual wheel smoke (${{ matrix.os }})",
 }
@@ -1663,7 +1663,10 @@ def test_automatic_ci_hosted_matrices_are_linux_only() -> None:
     for job_name in AUTOMATIC_LINUX_MATRIX_JOBS:
         matrix = mapping(jobs[job_name]["strategy"])["matrix"]
 
-        assert matrix == {"os": ["ubuntu-latest"]}, job_name
+        expected_matrix = {"os": ["ubuntu-latest"]}
+        if job_name == "rust":
+            expected_matrix["python"] = ["3.14", "3.15"]
+        assert matrix == expected_matrix, job_name
 
     matrix_runner_jobs = {
         job_name
@@ -1786,9 +1789,12 @@ def test_manual_non_linux_jobs_are_complete_and_independent() -> None:
     for job_name, expected_os in MANUAL_NON_LINUX_MATRIX_JOBS.items():
         job = jobs[job_name]
 
+        expected_matrix = {"os": expected_os}
+        if job_name == "rust":
+            expected_matrix["python"] = ["3.14", "3.15"]
         assert mapping(job["strategy"]) == {
             "fail-fast": False,
-            "matrix": {"os": expected_os},
+            "matrix": expected_matrix,
         }, job_name
         assert job["runs-on"] == "${{ matrix.os }}", job_name
 
@@ -2000,6 +2006,10 @@ def test_development_guide_updates_pin_and_minimum_version_together() -> None:
         "uvx maturin build --release",
         "uv sync --frozen --no-install-project",
         "uv run --frozen --no-sync python tests/wheel_smoke.py",
+        (
+            "uv run --no-project --python 3.15 --with packaging==26.0 "
+            "python tests/wheel_smoke.py"
+        ),
     ]
     fence = chr(96) * 3
     prefix = (

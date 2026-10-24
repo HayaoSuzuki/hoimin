@@ -70,9 +70,9 @@ async fn plan(source: &str) -> PlanManifest {
 
 fn evaluate(source: &str, expression: &str, expected: &str) {
     let output = Command::new(python()).args([
-        "-c", "import sys, typing, collections.abc\nassert sys.version_info[:2] == (3, 14)\nns = {}\nexec(sys.argv[1], ns)\nactual = eval(sys.argv[2], ns)\nexpected = eval(sys.argv[3])\nassert actual == expected, (actual, expected)",
+        "-c", "import sys, typing, collections.abc\nassert sys.version_info[:2] in ((3, 14), (3, 15))\nns = {}\nexec(sys.argv[1], ns)\nactual = eval(sys.argv[2], ns)\nexpected = eval(sys.argv[3])\nassert actual == expected, (actual, expected)",
         source, expression, expected,
-    ]).output().expect("CPython 3.14 required");
+    ]).output().expect("CPython 3.14 or 3.15 required");
     assert!(
         output.status.success(),
         "{}",

@@ -9,7 +9,9 @@ below validate hoimin itself.
 CI always runs change selection and `CI result`.
 For pull requests, it computes the diff from the merge base of the base and head commits; for pushes and merge queues, it uses the event's base commit.
 It also classifies deleted paths and the old paths of renamed files. Unknown paths, failed diff retrieval, and manual runs select all checks.
-All runners explicitly use Python 3.14, including change selection and result aggregation.
+Change selection, result aggregation and quality tooling use Python 3.14.
+The Linux and manual Windows/macOS Rust test jobs run on Python 3.14 and 3.15.
+Wheel smoke checks exercise the same built wheel on both versions in Linux CI, manual Windows/macOS CI and all three platform release jobs.
 
 The dependency audit workflow checks licenses and sources in both Rust workspaces in addition to vulnerability scanning.
 See the [dependency policy](dependency-policy.md) for its scope and build-script diff reviews.

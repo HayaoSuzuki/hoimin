@@ -8,7 +8,11 @@ uv tool install --python 3.14 hoimin
 hoimin --version
 ```
 
-Wheels require Python 3.14 and support macOS Apple Silicon (arm64), Linux x86_64
+Use `--python 3.15` for Python 3.15.
+Support covers the existing syntax and operators; Python 3.15 lazy imports and
+unpacking in comprehensions are not yet supported.
+
+Wheels support Python 3.14 and 3.15 and support macOS Apple Silicon (arm64), Linux x86_64
 with glibc, and Windows x86_64. Use a native arm64 shell on Apple Silicon.
 If `hoimin` is not on `PATH`, run `uv tool update-shell` and open a new shell.
 The project under test still needs its own Python environment and test dependencies.

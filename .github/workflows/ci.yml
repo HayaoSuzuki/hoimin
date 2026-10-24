@@ -161,12 +161,13 @@ jobs:
   rust:
     needs: [changes, quality]
     if: needs.changes.outputs.rust == 'true'
-    name: Rust (${{ matrix.os }})
+    name: Rust (${{ matrix.os }}, Python ${{ matrix.python }})
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
+        python: ['3.14', '3.15']
     runs-on: ${{ matrix.os }}
     env:
       CARGO_PROFILE_DEV_DEBUG: "0"
@@ -179,7 +180,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.14'
+          python-version: ${{ matrix.python }}
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
@@ -196,7 +197,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
-          name: performance-gates-${{ matrix.os }}
+          name: performance-gates-${{ matrix.os }}-${{ matrix.python }}
           path: ${{ runner.temp }}/performance-gates
       - run: uv run --frozen pytest tests/test_skills.py
 
@@ -773,6 +774,7 @@ jobs:
       - run: uvx maturin build --release
       - run: uv sync --frozen --no-install-project
       - run: uv run --frozen --no-sync python tests/wheel_smoke.py
+      - run: uv run --no-project --python 3.15 --with packaging==26.0 python tests/wheel_smoke.py
 
   linux-best-effort:
     name: Linux best effort

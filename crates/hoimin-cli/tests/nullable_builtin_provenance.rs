@@ -44,11 +44,11 @@ async fn plan(source: &str) -> PlanManifest {
 }
 
 fn evaluate(source: &str, expression: &str) {
-    let harness = "import sys\nassert sys.version_info[:2] == (3, 14), sys.version\nnamespace = {}\nexec(sys.argv[1], namespace)\nnamespace['__annotations__'] = namespace['__annotate__'](1)\nassert eval(sys.argv[2], namespace)\n";
+    let harness = "import sys\nassert sys.version_info[:2] in ((3, 14), (3, 15)), sys.version\nnamespace = {}\nexec(sys.argv[1], namespace)\nnamespace['__annotations__'] = namespace['__annotate__'](1)\nassert eval(sys.argv[2], namespace)\n";
     let result = Command::new(python())
         .args(["-c", harness, source, expression])
         .output()
-        .expect("CPython 3.14 must be available in .venv");
+        .expect("CPython 3.14 or 3.15 must be available in .venv");
     assert!(
         result.status.success(),
         "{source}: {}",

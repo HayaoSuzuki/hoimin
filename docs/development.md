@@ -368,6 +368,7 @@ uv run --frozen pytest
 uvx maturin build --release
 uv sync --frozen --no-install-project
 uv run --frozen --no-sync python tests/wheel_smoke.py
+uv run --no-project --python 3.15 --with packaging==26.0 python tests/wheel_smoke.py
 ```
 
 ## Measuring test execution costs
@@ -437,9 +438,16 @@ vulnerabilities; they do not prove the absence of security defects. Renovate
 continues to propose dependency and lockfile updates separately. Review and fix
 findings instead of adding blanket exclusions or allowing failed audits to pass.
 
-CI uses Python 3.14, matching `project.requires-python`. The Renovate rule for
-`actions/python-versions` permits only that minor series; review the rule and
+The package supports Python 3.14 and 3.15 (`>=3.14,<3.16`).
+Quality tooling, Ruff and ty retain Python 3.14 as the shared baseline; the Linux
+Rust test matrix runs with both versions. The Renovate rule for
+`actions/python-versions` permits these two minor series; review the rule and
 workflow interpreters together when the supported Python range changes.
+A separate rule disables major/minor Python updates so Renovate cannot replace
+the 3.14 lane with 3.15. Patch updates remain eligible; supported minor lines
+change through an explicit support review.
+Python 3.15 support covers the existing syntax and operators; lazy imports and
+unpacking in comprehensions remain unsupported by the vendored parser.
 Python dependency ranges control which updates are allowed. For example,
 `>=4.26.0,<5` permits minor and patch updates in the 4.x series, while
 `>=0.29.0,<1` permits updates throughout the 0.x series. Hypothesis uses the

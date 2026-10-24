@@ -30,12 +30,12 @@ fn evaluate(source: &str, id: &str) -> Vec<u8> {
     let output = Command::new(python)
         .args([
             "-c",
-            "import sys; assert sys.version_info[:2] == (3, 14); ns = {}; exec(compile(sys.argv[1], '<declaration-oracle>', 'exec'), ns); print(repr(ns['observed']))",
+            "import sys; assert sys.version_info[:2] in ((3, 14), (3, 15)); ns = {}; exec(compile(sys.argv[1], '<declaration-oracle>', 'exec'), ns); print(repr(ns['observed']))",
             source,
         ])
         .env("PYTHONDONTWRITEBYTECODE", "1")
         .output()
-        .expect("infrastructure error: CPython 3.14 must be installed in .venv");
+        .expect("infrastructure error: CPython 3.14 or 3.15 must be installed in .venv");
     assert!(
         output.status.success(),
         "{id}: {}",
