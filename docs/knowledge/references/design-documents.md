@@ -1045,6 +1045,11 @@ sources:
   revision: e8f0e7b7f86a849d1305ef1ccaddd80c1df80f0b
   working_tree: untracked
   sha256: d271a0a399f60f851a6db833764b0ec8986336c4ed96800965623aba3251d103
+- id: python-314-315-design
+  resource: ../../superpowers/specs/2026-10-24-python-314-315-design.md
+  revision: 16d4d5ca955dff6ab5470e70481798bc96eed194
+  working_tree: clean
+  sha256: e5a0fefe437b90d86045864bf82831bcdc9a210147eb07c3211d3fbbadeb3cba
 ---
 
 # 収録一覧
@@ -1791,3 +1796,11 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 - [Issue #1094 session companion design](../../superpowers/specs/2026-10-23-issue-1094-session-companions-design.md) — pre-connection native link checks and normal-session preservation. [^issue-1094-companion-design]
 
 [^issue-1094-companion-design]: [Session companion hardlink admission](../../superpowers/specs/2026-10-23-issue-1094-session-companions-design.md).
+
+## Python runtime compatibility
+
+| Original heading | Source |
+| --- | --- |
+| Python 3.14・3.15の実行環境対応 | [Design](../../superpowers/specs/2026-10-24-python-314-315-design.md) [^python-314-315-design] |
+
+[^python-314-315-design]: [Python 3.14・3.15の実行環境対応](../../superpowers/specs/2026-10-24-python-314-315-design.md).
