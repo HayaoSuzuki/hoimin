@@ -679,7 +679,26 @@ sources:
   revision: 7bf4cd3b6b9537539911a8c43ee29529bf92a230
   working_tree: clean
   sha256: ee20d80550468bc2bb6e9e1f69631efedbf7a311d35f97479010d6f5d375d227
-
+- id: python315-syntax
+  resource: ../../superpowers/specs/2026-10-24-python-315-syntax-design.md
+  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  working_tree: clean
+  sha256: 888e030f6717ac5a4fc1862dba1d2d253c894521ce3fc21e2b79e713b4f73ee3
+- id: python315-analyzer
+  resource: ../../../crates/hoimin-python/src/analyzer/rust.rs
+  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  working_tree: clean
+  sha256: 0a9e39c99e2f072f9fbd73f3a1defdc9bec8a60dd9187352c6de6b93abc778b2
+- id: python315-lazy-policy
+  resource: ../../../crates/hoimin-python/src/analyzer/rust/lazy_imports.rs
+  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  working_tree: clean
+  sha256: 0456554ad030dd9d616ff0e7e45babbce23b14c9dbb49c3a4bd3fa05ea07d68b
+- id: python315-compiler-oracle
+  resource: ../../../crates/hoimin-cli/tests/python315_syntax.rs
+  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  working_tree: clean
+  sha256: dcf6d024780f9eb902b767539e967ba6d9bc5c279a9e0748d5b0d34fa6d540b5
 ---
 
 # Shared pure Python analysis (Issues #995 and #996)

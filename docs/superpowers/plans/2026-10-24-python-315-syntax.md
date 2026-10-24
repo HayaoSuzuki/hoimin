@@ -44,16 +44,18 @@ Files: crates/hoimin-python/src/analyzer/rust.rs, related import resolvers and t
 
 Files: pyproject.toml, .github/workflows, tools/sbom.py, tests/test_sdist.py, tests/test_ci_workflow.py, tests/test_sbom.py and fixture helpers.
 
-- [ ] Update provenance/packaging test expectations before changing release integration; observe old expectations fail.
-- [ ] Include the complete parser source set, pin the new provenance, update Cargo package checks and fuzz wiring.
-- [ ] Run packaging, release/SBOM and workflow tests; build sdist and wheel and smoke the same wheel on both interpreters.
-- [ ] Review licenses, source inclusion, dependency identity, CI and offline validation in five passes.
+- [x] Update provenance/packaging test expectations before changing release integration; observe old expectations fail.
+- [x] Include the complete parser source set, pin the new provenance, update Cargo package checks and fuzz wiring.
+- [x] Run packaging, release/SBOM and workflow tests; build sdist and wheel and smoke the same wheel on both interpreters.
+- [x] Review licenses, source inclusion, dependency identity, CI and offline validation in five passes.
 
 ## Task 4: Complete validation and PR
 
 Files: README.md, relevant developer docs and OKF concepts, docs/maintenance/2026-10-24-python-315-syntax.md.
 
-- [ ] Run format/lint/type/workflow/docs checks and complete Rust/Python suites on both interpreters.
-- [ ] Update current documentation and OKF source references; catalog the design.
-- [ ] Review public claims, test evidence, resources, diff and PR content in five passes; obtain a fresh whole-branch review.
-- [ ] Clean only verified temporary targets; commit, push the dedicated branch, create and attach the PR.
+- [x] Run format/lint/type/workflow/docs checks and complete Rust/Python suites on both interpreters.
+- [x] Update current documentation and OKF source references; catalog the design.
+- [x] Review public claims, test evidence, resources, diff and PR content in five passes; obtain a fresh whole-branch review.
+- [x] Clean only verified temporary targets; commit, push the dedicated branch, create and attach the PR.
+
+Completed with [PR #1109](https://github.com/HayaoSuzuki/hoimin/pull/1109). Final validation and per-stage reviews: ../../maintenance/2026-10-24-python-315-syntax.md.

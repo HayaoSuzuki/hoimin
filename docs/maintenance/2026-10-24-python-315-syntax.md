@@ -38,7 +38,7 @@ Ruff 0.17.2 (`30516b42ab972ffa2569e5efcfee81135da466d3`) のparserと依存AST�
 
 ## 検証状況
 
-全体のテスト・配布検証・独立レビューは実行中。
+全体のテスト・配布検証・独立レビューを完了した。最終結果は後段に記載する。
 並列ビルド数2、incremental無効、debug情報なしで既存targetを再利用する。
 
 ## 配布段階のセルフレビュー
@@ -59,7 +59,7 @@ fresh contextのレビューを1回実施した。
 standalone parserのstacker無効時のビルドもE0433で失敗することを確認し、上流同様のcfg分岐を追加して成功させた。
 全体Rust検証ではキャンセル後のpoll回数が10ではなく109になる既存テストが失敗したため、走査のラッチとbodyの終了を修正した。
 修正後の解析器ユニットテストは520成功・3無視。
-これらの修正後の全体検証を完了してから、最終件数を記載する。
+修正後の最終コミットで、両Python版の全体Rust検証は各3770成功・32無視・失敗0。
 
 関連経路のセルフレビューでは、callableとenumでも遅延aliasを起源から除外する問題を再現した。
 これらも可能な起源・書き換え・escapeの追跡を保持し、信頼する候補の適格性だけをeager importに制限した。
@@ -67,4 +67,54 @@ standalone parserのstacker無効時のビルドもE0433で失敗することを
 
 配布再構築では、PEP517の出力先をCargoの `target/wheels` と同一にするとWindowsの自己コピーがWinError 32になった。
 出力先を分けると `uv build` によるsdistからのlocked wheel構築が成功した。
-意味解析の最終修正後も、sdistを再生成して同じ再構築・smokeを行う。
+意味解析の最終修正後にsdistを再生成し、再構築と両版smokeが成功した。
+
+## レビュー修正段階のセルフレビュー
+
+1. 外部moduleへの書き換えはeager/lazyの両方で検出し、書き換えなしの対照では既存候補を維持することを確認した。
+2. 例外階層ではmay-importの起源を残し、遅延importをeagerな依存グラフのedgeとして扱わないことを確認した。
+3. callableとenumも同じ観点で点検し、遅延aliasのwrite・escapeを検出する失敗から、可能な起源と適格性を分ける修正後の成功まで確認した。
+4. 内包表記のtarget遮蔽と最初のiterableの外側スコープ、キャンセルの最初の観測での停止を回帰テストで確認した。
+5. parserのstacker無効時ビルド、解析器522成功・3無視、全target・全featureのClippyを確認した。独立レビューの残存指摘はない。
+
+## 配布再構築とリソース
+
+最終実装コミットは `c9f17e694863aa512312bb570a61b9297073dc52`。
+sdistから展開した独立ソースを `uv build` と `--locked` でwheelへ再構築した。
+Cargo.lockと主要な解析・parser入力の展開後の内容を実装checkoutと照合した。
+同一wheelの通常実行・変異の検出・復元を3.14.9と3.15.1で確認し、両smokeコマンドのexit 0を確認した。
+wheel SHA-256: `5f3c86fa069afd02878b0e5d84977d6ac360270b3f5166aaf2a6a57277919bbf`。
+
+不要になった上流の一時checkout、旧parserコピー、sdist展開コピーを、絶対パスが専用タスク配下に収まることを確認して削除した。
+wheelとログを保持したまま `cargo clean --release` を実行し、1575 files、613.3 MiBを解放した。
+debugキャッシュは最終の両版Rust検証とレビュー用に保持する。
+
+## 最終検証のセルフレビュー
+
+1. 実装のHEADを固定し、最後のalias修正後に全体検証を再実行した。3.15.1は194 result groups、3770成功・32無視・失敗0でexit 0を確認した。3.14.9も同じ実装で194 result groups、3770成功・32無視・失敗0、exit 0を確認した。
+2. Python全体は両版で1346成功・48 skip。追加されたmatrixテストを含む最終の変更領域は両版344成功、最終source archiveとmatrixの134テストも両版で成功した。現時点のcollectionは1395件で、追加matrix 1件も検証済み。
+3. 同じwheelのSHA-256が両smoke報告と一致すること、主要な再構築入力が実装checkoutと一致すること、両smokeのexit 0を確認した。
+4. 全60 OKFページの構造、変更した脚注、14 source recordsのGit blob SHA-256とローカル参照、サイトビルドを検証した。文書の差分はreference/conceptとして10診断項目を点検し、10/10、未解決の検証項目なし。
+5. 既存主checkoutの変更を含めず、専用branchの実装コミットを固定した。3.15用一時venvと重複wheelを削除し、標準 `target/wheels` の検証済みwheel・小さいログ・debugキャッシュを保持する。開発 `.venv` は3.14.9を維持する。
+
+ローカルのOS検証範囲はWindows x86_64。
+Linux/macOSの実行・Linuxのbounded fuzzはこのローカル作業では実行しておらず、既存CIをその検証経路とする。
+3.15におけるglibc最低環境の新しい検証結果は主張しない。
+
+## 最終結果とPR準備のセルフレビュー
+
+1. 送信対象は専用branch `python-315-syntax`、baseは `main`。mainの追加更新と重複PRがないことを確認し、主checkoutの既存 `.gitignore` 変更を保持した。
+2. 最終実装のRust全体検証は、3.14.9・3.15.1ともに `cargo test --locked --workspace -- --test-threads=8` がexit 0。各194 result groups、3770成功・32無視・失敗0。
+3. PR本文のPython全体・最終変更領域・同一wheel・Clippy・fmt・Ruff・ty・workflow lint・文書検証の範囲を実ログと照合し、ローカル未実行のOS/fuzz条件を明記した。
+4. parserと8依存crate、Unicode通知、sdist収録制限、全vendor SBOM出典、既存operatorとCLI/schemaの不変、遅延importの保守的な候補抑制を説明した。新しい構文を実行するときはPython 3.15を使う。
+5. PR [#1109](https://github.com/HayaoSuzuki/hoimin/pull/1109) を作成し、このタスクへ紐付けた。本文は今回の実測値と過去の証跡を区別する。
+
+PR: https://github.com/HayaoSuzuki/hoimin/pull/1109
+
+### 保持した成果物
+
+- `target/wheels/hoimin-0.14.0-py3-none-win_amd64.whl`: 両版で検証した同一wheel。
+- 専用タスクの小さい検証ログとsmoke/hash報告、および再検証用debugキャッシュ。
+- 一時的なsource checkout、旧parserコピー、sdist展開コピー、3.15用追加venv、重複wheelとrelease build出力は削除済み。
+
+開発 `.venv` はPython 3.14.9。uvで導入したグローバルのPython 3.15.1も維持する。

@@ -6,19 +6,19 @@ status: draft
 sources:
 - id: issues-992-998-sdist-config
   resource: ../../pyproject.toml
-  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
+  revision: c9f17e694863aa512312bb570a61b9297073dc52
   working_tree: clean
-  sha256: 152f20bea30856e826524da74b812b2b8a9dce105b4431881cbda83de801cec6
+  sha256: bc00c00ec207b8276055ee8049cb86e561168265a17f60ec99854ef4d88c852d
 - id: issues-992-998-sdist-archive
   resource: ../../tests/test_sdist.py
-  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
+  revision: c9f17e694863aa512312bb570a61b9297073dc52
   working_tree: clean
-  sha256: f814313d63bee7a6ada4559e19cd2e17cd23b927eaf87dab3903070aedb877c5
+  sha256: ab60aec9e04243e9adec5219f864688f726bb70f13d719743244fd78b9b2e2c2
 - id: issues-992-998-sbom-validator
   resource: ../../tools/sbom.py
-  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
+  revision: c9f17e694863aa512312bb570a61b9297073dc52
   working_tree: clean
-  sha256: 8ba2531e849d5250d0e271cf2ec0800e0b89cbcadb4c68567003df182bf58b05
+  sha256: 49343c440f34c701dc0c0032f916742cb59118745565560f79235b07b83842fc
 - id: issues-992-998-sbom-capture
   resource: ../../tools/capture_sbom.py
   revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
@@ -31,9 +31,9 @@ sources:
   sha256: a17fa37454e672512a1ccb3a8649783a89c9edd99b63da4679fe77a29228d96d
 - id: release
   resource: ../releases.md
-  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
-  working_tree: modified
-  sha256: 68a8bd954295add52934ddf8e38a3429d9a90c351771f12f6b73081ccefc462a
+  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  working_tree: clean
+  sha256: f209b3654622a32376645778454a5a63b027ca5037fb596fe1997b5967c8a949
 - id: design
   resource: ../superpowers/specs/2026-10-10-issue-741-sbom-design.md
   working_tree: untracked
@@ -43,6 +43,11 @@ sources:
   working_tree: modified
   sha256: 83c27615f328d8d1157cb8d138ed4520227bfab96cd5687a7bea9aebcafb3e1c
   revision: 1d2c0912d029318fd40c09f3e6576735c0a740e3
+- id: python315-vendor
+  resource: ../../vendor/ruff_python_parser/README.hoimin.md
+  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  working_tree: clean
+  sha256: 96799fb270161e1c40de6d320885671f8a3738d2857e4c5e4f9d01837ecbabd1
 ---
 
 # Mapping SBOMs to artifacts

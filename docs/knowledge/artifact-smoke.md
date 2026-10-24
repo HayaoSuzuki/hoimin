@@ -28,15 +28,19 @@ sources:
 
 - id: python-package
   resource: ../../pyproject.toml
-  revision: 16d4d5ca955dff6ab5470e70481798bc96eed194
+  revision: c9f17e694863aa512312bb570a61b9297073dc52
   working_tree: clean
-  sha256: 22594ccc32d6f477fa399d637265b0bfca7eaf308ba7530d98d1513f8e56bdab
-
+  sha256: bc00c00ec207b8276055ee8049cb86e561168265a17f60ec99854ef4d88c852d
 - id: python-runtime-design
   resource: ../superpowers/specs/2026-10-24-python-314-315-design.md
   revision: 16d4d5ca955dff6ab5470e70481798bc96eed194
   working_tree: clean
   sha256: e5a0fefe437b90d86045864bf82831bcdc9a210147eb07c3211d3fbbadeb3cba
+- id: python-syntax-design
+  resource: ../superpowers/specs/2026-10-24-python-315-syntax-design.md
+  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  working_tree: clean
+  sha256: 888e030f6717ac5a4fc1862dba1d2d253c894521ce3fc21e2b79e713b4f73ee3
 ---
 
 # Running distributed artifacts

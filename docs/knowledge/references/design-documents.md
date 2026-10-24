@@ -1050,6 +1050,11 @@ sources:
   revision: 16d4d5ca955dff6ab5470e70481798bc96eed194
   working_tree: clean
   sha256: e5a0fefe437b90d86045864bf82831bcdc9a210147eb07c3211d3fbbadeb3cba
+- id: python-315-syntax-design
+  resource: ../../superpowers/specs/2026-10-24-python-315-syntax-design.md
+  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  working_tree: clean
+  sha256: 888e030f6717ac5a4fc1862dba1d2d253c894521ce3fc21e2b79e713b4f73ee3
 ---
 
 # 収録一覧
