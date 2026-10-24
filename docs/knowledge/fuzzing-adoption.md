@@ -19,6 +19,26 @@ sources:
   resource: ../superpowers/reports/issue-803/README.md
   working_tree: untracked
   sha256: e18042e4114ed937a162649afef6dcf1f4a3d39d4dacb8793276797f980a98fe
+- id: python315-design
+  resource: ../superpowers/specs/2026-10-24-python-315-fuzz-design.md
+  revision: 8e908943831decdb5fc83ca0ffb143459778240b
+  working_tree: clean
+  sha256: 4c842b26dc099c8f2d925d693bf7eb25c02495484e5ce83f4049e65f05cf138e
+- id: python315-generator
+  resource: ../../tools/hypothesmith_corpus.py
+  revision: 8e908943831decdb5fc83ca0ffb143459778240b
+  working_tree: clean
+  sha256: 7c7f282aab165eb34fc144de79273f52c4ad041441a95b127815262b651f9c28
+- id: python315-campaign
+  resource: ../../tools/ci_fuzz.py
+  revision: 8e908943831decdb5fc83ca0ffb143459778240b
+  working_tree: clean
+  sha256: 0a96e44bd61f299f982ac2dd6ec153236f1901e799bd863ab8fb472227eb8c5c
+- id: python315-guide
+  resource: ../development.md
+  revision: 8e908943831decdb5fc83ca0ffb143459778240b
+  working_tree: clean
+  sha256: 4ca769277121239b950ddc1d2bfcc174d05f67133b89f2c12bbbd3cbbab71355
 ---
 
 # Fuzzing maintenance adoption
@@ -73,3 +93,30 @@ comparison, not reconstruction of expired inputs.[^corpus-experiment]
 Issue #851 retires the unused analyzer JSONL parser, its `analyzer_protocol` target and five seeds. The live `python_analyzer` target still compiles production modules, now including `types.rs`; candidate validation and report lifecycle targets remain. CI enumerates the seven remaining manifest targets. Historical #805 counts describe that earlier revision, not the current inventory.[^issue-851-protocol]
 
 [^issue-851-protocol]: [Issue #851 maintenance record](../maintenance/2026-10-13-analyzer-protocol.md).
+
+
+# Python 3.14 and 3.15 input generation
+
+The campaign builds Rust fuzz targets once, then generates inputs in isolated
+3.14 and 3.15 environments. Both lanes run grammar/libcst generation and filter
+source with their own CPython compiler. The 3.15 lane adds structured lazy-import
+and unpacking-comprehension generation; eleven fixed seeds cover the new forms.
+Source is compiled, never executed, before entering the shared hash-named corpus.
+The raw-byte Rust analyzer target still exercises malformed-input rejection.
+These input properties do not establish mutant runtime semantics.[^python315-design][^python315-generator]
+
+Each uv invocation selects its interpreter explicitly. Temporary Python
+environments are removed after generation or failure and do not replace the
+development venv. Stage names, command arguments, explicit environment selectors
+and generator JSON identify the lane; inherited environment contents are not
+logged. Python setup/generation stays inside the existing deadline. Seven Rust
+targets run once with the original byte/time/RSS guards and failure handling.
+The workflow's 3.14 driver is distinct from its two generation interpreters.
+See the canonical [development procedure](../development.md#bounded-ci-fuzzing).[^python315-guide]
+Windows generator checks do not establish a Linux sanitizer campaign result.[^python315-campaign]
+
+[^python315-design]: [Python 3.14・3.15のfuzz入力生成](../superpowers/specs/2026-10-24-python-315-fuzz-design.md).
+[^python315-generator]: [Bounded source generation](../../tools/hypothesmith_corpus.py).
+[^python315-campaign]: [Campaign orchestration](../../tools/ci_fuzz.py).
+
+[^python315-guide]: [Development fuzz procedures](../development.md#bounded-ci-fuzzing).

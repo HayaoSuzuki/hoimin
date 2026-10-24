@@ -220,9 +220,7 @@ def test_python315_strategy_rejects_older_interpreter(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(sys.version_info < (3, 15), reason="Python 3.15 compiler required")
-def test_python315_templates_and_seeds_compile_without_execution(
-    tmp_path: Path,
-) -> None:
+def test_python315_templates_and_seeds_compile_without_execution() -> None:
     for template in corpus.PYTHON315_TEMPLATES:
         source = template.format(name="値", number=7)
         compile(source, "<python315-template>", "exec", dont_inherit=True)
@@ -232,6 +230,13 @@ def test_python315_templates_and_seeds_compile_without_execution(
         source = seed.read_bytes()
         assert len(source) <= MAX_CORPUS_BYTES
         compile(source, str(seed), "exec", dont_inherit=True)
+
+
+@pytest.mark.skipif(sys.version_info < (3, 15), reason="Python 3.15 compiler required")
+def test_python315_generator_compiles_bounded_sources(tmp_path: Path) -> None:
+    pytest.importorskip(
+        "hypothesmith", reason="install the optional fuzz dependency group"
+    )
     counts = corpus.generate(
         tmp_path, examples=50, random_seed=123, strategy="python315", max_bytes=4096
     )
