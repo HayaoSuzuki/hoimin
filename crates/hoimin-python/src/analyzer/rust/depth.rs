@@ -369,7 +369,7 @@ match value:
         };
         let elements = match assign.value.as_mut() {
             Expr::FString(expr) => {
-                let ruff_python_ast::FStringPart::FString(part) =
+                let ruff_python_ast::FStringPartMut::FString(part) =
                     expr.value.iter_mut().next().unwrap()
                 else {
                     panic!("f-string fixture")

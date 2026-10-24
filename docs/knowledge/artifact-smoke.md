@@ -76,7 +76,7 @@ Consult PR/review records for the scope of successful hosted execution; document
 # Supported Python runtimes
 
 The wheel permits Python 3.14 and 3.15 (`>=3.14,<3.16`).
-Support covers existing syntax and mutation operators; Python 3.15 lazy imports and unpacking in comprehensions remain outside this stage.[^python-package][^python-runtime-design]
+The Ruff 0.17.2 source snapshot supports Python 3.15 lazy imports and unpacking in comprehensions. Import identity proofs remain conservative for lazy bindings.[^python-package][^python-runtime-design][^python-syntax-design]
 
 Each platform release job checks the same wheel on both versions before packaging the release assets.
 The smoke helper uses its running interpreter for uvx and its temporary venv, and retains separate runtime reports.
@@ -84,3 +84,5 @@ The glibc 2.17 floor check remains a separate CPython 3.14 check; it does not es
 
 [^python-package]: [Python package metadata](../../pyproject.toml).
 [^python-runtime-design]: [Python 3.14・3.15の実行環境対応](../superpowers/specs/2026-10-24-python-314-315-design.md).
+
+[^python-syntax-design]: [Python 3.15構文と上流Ruffの取り込み](../superpowers/specs/2026-10-24-python-315-syntax-design.md).

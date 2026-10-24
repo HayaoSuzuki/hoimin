@@ -25,9 +25,22 @@ TARGETS = {platform.name: platform.rust_target for platform in RELEASE_PLATFORMS
 KINDS = ("standalone", "wheel")
 SCOPE = "Cargo normal and build dependencies; excludes dev/fuzz and OS libraries"
 REPOSITORY = "https://github.com/HayaoSuzuki/hoimin"
-PARSER = "littrs-ruff-python-parser"
-UPSTREAM = "f57d08328da8f205d4377c4e8b5a628ab05a3ee8"
-BACKPORT = "7a9aed24ffa150677657f9dde0eb252a8377c09d"
+PARSER = "ruff_python_parser"
+RUFF_VERSION = "0.0.19"
+VENDORED_RUFF = frozenset(
+    (
+        PARSER,
+        "ruff_python_ast",
+        "ruff_python_trivia",
+        "ruff_source_file",
+        "ruff_text_size",
+        "ruff_unicode_names2",
+        "ruff_unicode_names2_generator",
+        "ruff_cache",
+        "ruff_macros",
+    )
+)
+UPSTREAM = "30516b42ab972ffa2569e5efcfee81135da466d3"
 
 
 def digest(path: Path) -> str:
@@ -121,34 +134,42 @@ def validate_graph(data: dict[str, Any], version: str, commit: str) -> None:
             len(matches) == 1 and matches[0]["version"] == version,
             f"wrong {member} version",
         )
-    parsers = [c for c in components if c["name"] == PARSER]
-    require(len(parsers) == 1, "missing or duplicate vendored parser")
-    parser = parsers[0]
-    props = properties(parser.get("properties", []))
+    require(
+        sum(c["name"] == PARSER for c in components) == 1,
+        "missing or duplicate vendored parser",
+    )
+    for component in components:
+        if component["name"] in VENDORED_RUFF:
+            validate_vendor(component, commit)
+
+
+def validate_vendor(component: dict[str, Any], commit: str) -> None:
+    props = properties(component.get("properties", []))
+    name = component["name"]
     require(
         props.get("hoimin:upstream:commit") == UPSTREAM
-        and props.get("hoimin:backport:commit") == BACKPORT
         and props.get("hoimin:vendor:commit") == commit
-        and props.get("hoimin:upstream:package")
-        == "pkg:cargo/littrs-ruff-python-parser@0.6.2",
-        "missing parser provenance",
+        and props.get("hoimin:upstream:package") == f"pkg:cargo/{name}@{RUFF_VERSION}",
+        "missing Ruff provenance",
     )
     require(
         re.fullmatch(r"[0-9a-f]{64}", props.get("hoimin:vendor:readme-sha256", ""))
         is not None,
-        "missing parser README digest",
+        "missing Ruff README digest",
     )
     readme = f"{REPOSITORY}/blob/{commit}/vendor/ruff_python_parser/README.hoimin.md"
     require(
         {"type": "documentation", "url": readme}
-        in parser.get("externalReferences", []),
-        "missing pinned parser README reference",
+        in component.get("externalReferences", []),
+        "missing pinned Ruff README reference",
     )
+    source = quote(f"{REPOSITORY}@{commit}", safe="")
     require(
-        parser["version"] == "0.6.2"
-        and commit in parser["purl"]
-        and bool(parser.get("pedigree", {}).get("notes")),
-        "unidentified parser changes",
+        component["version"] == RUFF_VERSION
+        and component["purl"]
+        == f"pkg:cargo/{name}@{RUFF_VERSION}?vcs_url={source}#vendor/{name}"
+        and bool(component.get("pedigree", {}).get("notes")),
+        "unidentified Ruff source changes",
     )
 
 
@@ -239,27 +260,26 @@ def finalize(  # noqa: PLR0913, PLR0917 -- Explicit release identity.
         {"name": k, "value": v} for k, v in sorted(props.items())
     ]
     for component in data["components"]:
-        if component["name"] == PARSER:
-            source = f"{REPOSITORY}@{commit}"
+        name = component["name"]
+        if name in VENDORED_RUFF:
+            source = quote(f"{REPOSITORY}@{commit}", safe="")
             component["purl"] = (
-                f"pkg:cargo/{PARSER}@{component['version']}"
-                f"?vcs_url={quote(source, safe='')}#vendor/ruff_python_parser"
+                f"pkg:cargo/{name}@{component['version']}?vcs_url={source}#vendor/{name}"
             )
             component["pedigree"] = {
                 "notes": (
-                    "Locally modified parser; upstream package 0.6.2 with "
-                    "stack growth, "
-                    "interpolation recovery and iterative cleanup changes. "
+                    "Ruff 0.17.2 source snapshot with standalone manifests; "
+                    "parser retains hoimin stack growth, interpolation recovery "
+                    "and iterative cleanup changes. "
                     "See pinned README.hoimin.md."
                 )
             }
             component["properties"] = [
                 {
                     "name": "hoimin:upstream:package",
-                    "value": "pkg:cargo/littrs-ruff-python-parser@0.6.2",
+                    "value": f"pkg:cargo/{name}@{RUFF_VERSION}",
                 },
                 {"name": "hoimin:upstream:commit", "value": UPSTREAM},
-                {"name": "hoimin:backport:commit", "value": BACKPORT},
                 {"name": "hoimin:vendor:commit", "value": commit},
                 {
                     "name": "hoimin:vendor:readme-sha256",

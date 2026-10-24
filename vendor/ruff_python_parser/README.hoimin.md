@@ -1,20 +1,24 @@
-# Ruff parser backport for hoimin
+# Ruff 0.17.2 source snapshot for hoimin
 
-This directory contains `littrs-ruff-python-parser 0.6.2` from the crates.io package, with the parser-stack fix from [Ruff PR #25464](https://github.com/astral-sh/ruff/pull/25464), merge commit `7a9aed24ffa150677657f9dde0eb252a8377c09d`, adapted to the pinned AST and Vec-based implementation.
+The parser and its eight Ruff dependencies are copied from [Ruff 0.17.2](https://github.com/astral-sh/ruff/tree/30516b42ab972ffa2569e5efcfee81135da466d3), commit `30516b42ab972ffa2569e5efcfee81135da466d3`. Their internal crate version is `0.0.19`. The source closure comprises `ruff_python_parser`, `ruff_python_ast`, `ruff_python_trivia`, `ruff_source_file`, `ruff_text_size`, `ruff_unicode_names2`, `ruff_unicode_names2_generator`, `ruff_cache`, and `ruff_macros`. Optional cache/macro sources are included so Cargo can resolve the manifests without the Ruff workspace.
 
-The package's recorded VCS source is `chonkie-inc/littrs` commit `f57d08328da8f205d4377c4e8b5a628ab05a3ee8`, path `vendor/ruff_python_parser`. Its `src/`, `resources/`, and normalized `Cargo.toml` were copied from the published package. The upstream Ruff MIT license, including its third-party notices, is preserved in `LICENSE`; it was retrieved from the Ruff merge commit above because the published package omitted the license file.
+The source snapshot includes upstream `src/` and the Unicode build script/data. Manifests expand upstream workspace package/dependency inheritance, replace Ruff paths with sibling vendor paths, omit upstream test/benchmark dependencies, and explicitly list build input patterns to exclude temporary files from sdists. Each package is excluded from hoimin workspace membership and has its own workspace boundary. Hoimin's integration tests exercise parsing and recovery; upstream's test harness is not packaged as a standalone suite.
 
-## Local changes
+Direct git dependencies were tried but Cargo's checkout failed on Windows at a long Ruff linter snapshot filename. Vendoring the required crates avoids making users configure Windows long-path support and makes sdists self-contained apart from normal crates.io dependencies.
 
-- Add stacker (requirement 0.1.24, resolved to 0.1.25 in Hoimin's lockfile) and a `with_recursion` helper that checks available stack at every instrumented entry, with a 128 KiB red zone and 1 MiB growth segments.
-- Guard initial module/expression parsing, the binary-expression entry, lambda bodies, conditional else arms, recursive format specifications, pattern LHS parsing, nested suites, and async error recovery. These are the final PR #25464 checkpoints.
-- Do not copy upstream's 20-entry deferred-check optimization: the older parser's debug frame costs have not been shown to fit that unchecked budget. This changes stack probing, not syntax acceptance.
-- Preserve parser API, AST types, token positions, and ordinary error recovery. AST/trivia/text-size dependencies remain at the pinned compatible version.
-- Guard context assignment, assignment/delete target validation, pre-3.9 decorator traversal, and pattern-to-expression conversion with the same stack checks. These traverse already-built trees independently of the grammar checkpoints.
-- Accept either `FStringMiddle` or `TStringMiddle` as a literal element in `parse_interpolated_string_elements`, matching the FIRST set that a format specification already declares. The lexer tracks only the innermost f/t-string, so recovering from an unterminated nested string of the other kind (`f"{:{t"{m""m`) left it emitting that kind's middle token while the parser was back in the outer string's format specification; the element list then reached its `unreachable!` and aborted the process. Found by `cargo fuzz run python_analyzer`.
-- Add `ast_cleanup` with iterative destruction shared with Hoimin's depth guard. Use it when discarding speculative with/match trees, invalid keyword patterns, and the subpattern of an unrepresentable `as` pattern during expression recovery. Never rely on one stack check around recursive derived Drop.
-- Add a local workspace boundary for standalone formatting inside linked worktrees; ignore standalone build output and lockfiles. Hoimin builds and lint checks use the root lockfile.
+## Local parser changes
 
-Dynamic stack growth is limited by platform support and allocation availability. It is not a total memory bound. It does not automatically protect helper traversals or recursive destruction of an already-built tree. Hoimin retains its post-parse depth-128 rejection and iterative destruction, including partial syntax-error trees. See [issue #513 design](../../docs/superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md) and its implementation plan for coverage and native-platform evidence.
+- Enable the upstream `stacker` feature by default. Preserve a 128 KiB red zone, 1 MiB growth segments, and a stack probe at every recursion checkpoint (zero unchecked recursion entries).
+- Guard helper traversals for expression context, pre-3.9 decorators and pattern conversion, plus assignment/delete target validation.
+- Preserve iterative `ast_cleanup` for speculative with/match trees, invalid keyword patterns and discarded `as` subpatterns. Hoimin retains post-parse depth-128 rejection and iterative destruction of rejected/partial trees.
+- Accept either f-string or t-string middle token during interpolation recovery, retaining the mixed-string crash fix.
 
-The vendor is excluded from the workspace and selected by the workspace `[patch.crates-io]`. CI checks its formatting with `cargo fmt --manifest-path vendor/ruff_python_parser/Cargo.toml -- --check` and its library with `cargo clippy --locked -p littrs-ruff-python-parser --lib --no-deps -- -D warnings`, in addition to workspace checks. The published package omits upstream test dependencies; Hoimin's `analysis_depth` integration tests execute the parser directly as well as public plan/run, and `rust_analyzer` checks repeated reclamation. Keep this patch narrow and replace the vendor with a compatible published release only after the same regression and candidate-compatibility checks pass.
+These protections are checked by the `analysis_depth` integration suite and `hoimin-python` depth/reclamation tests. Dynamic stack growth is subject to platform support and allocation availability; it is not a total memory bound.
+
+## Source and license verification
+
+All non-parser Rust sources and Unicode data are unchanged from the pinned upstream commit. Parser source changes are limited to the safety adaptations above. The original upstream fixtures under `resources/` predate this refresh and are not a supported test harness; hoimin owns the executable regression suite.
+
+Each Ruff crate retains the upstream MIT license. Unicode sources also retain their original MIT/Apache and Unicode notices. `ruff_python_parser/LICENSE` combines Ruff's full license/third-party notices with the Unicode notices so the existing wheel and standalone archive license path carries every vendored notice. Individual Unicode notices remain in the source distribution as well.
+
+CI runs workspace formatting/Clippy, standalone parser formatting, and `cargo clippy --locked -p ruff_python_parser --lib --no-deps -- -D warnings`. Release SBOMs identify every included vendored Ruff crate with this upstream revision and the hoimin source commit, with a pinned reference and digest for this document.

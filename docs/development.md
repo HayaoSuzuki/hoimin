@@ -360,7 +360,7 @@ uv run --frozen --no-sync ty check
 cargo fmt --all -- --check
 cargo fmt --manifest-path vendor/ruff_python_parser/Cargo.toml -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo clippy --locked -p littrs-ruff-python-parser --lib --no-deps -- -D warnings
+cargo clippy --locked -p ruff_python_parser --lib --no-deps -- -D warnings
 cargo test --workspace
 cargo test -p hoimin-core --features contracts
 cargo test -p hoimin-cli --features contracts
@@ -446,8 +446,13 @@ workflow interpreters together when the supported Python range changes.
 A separate rule disables major/minor Python updates so Renovate cannot replace
 the 3.14 lane with 3.15. Patch updates remain eligible; supported minor lines
 change through an explicit support review.
-Python 3.15 support covers the existing syntax and operators; lazy imports and
-unpacking in comprehensions remain unsupported by the vendored parser.
+Python 3.15 lazy imports and unpacking in comprehensions use the Ruff 0.17.2
+parser and aligned vendored AST dependencies. Explicit lazy aliases do not
+establish trusted imports. A module mentioning `__lazy_modules__` or the lazy
+import configuration API disables import identity proofs for callable, enum,
+annotation and project exception mutations; ordinary literal/operator mutations
+remain available. The parser supports the syntax independently of the Python
+interpreter used to run hoimin; execute 3.15-only source with Python 3.15.
 Python dependency ranges control which updates are allowed. For example,
 `>=4.26.0,<5` permits minor and patch updates in the 4.x series, while
 `>=0.29.0,<1` permits updates throughout the 0.x series. Hypothesis uses the
@@ -1264,10 +1269,13 @@ mapped by both analyzer callers to `analyzer.depth` with the target path.
 Cancellation remains a separate error. Plan creation fails without a manifest;
 run reports incomplete analysis after its normal baseline stage.
 
-The parser is a local backport of `littrs-ruff-python-parser 0.6.2`, selected via
-the root Cargo patch. Ruff PR #25464's recursive checkpoints use `stacker`
-(locked to 0.1.25): each checks a 128 KiB red zone and grows a 1 MiB segment when
-needed. Context assignment, assignment/delete validation, old-decorator checks,
+The parser and its Ruff dependencies are a source snapshot of Ruff 0.17.2,
+commit `30516b42ab972ffa2569e5efcfee81135da466d3`, with standalone manifests
+and local safety adaptations documented in
+[`README.hoimin.md`](../vendor/ruff_python_parser/README.hoimin.md).
+Recursive checkpoints use `stacker` (locked to 0.1.25): each checks a 128 KiB
+red zone and grows a 1 MiB segment when needed. The upstream unchecked-depth
+optimization is disabled. Context assignment, assignment/delete validation, old-decorator checks,
 and pattern-to-expression recovery have checkpoints too. This preserves the
 grammar and syntax diagnostics before applying Hoimin's AST-depth limit, without
 assuming that one larger worker stack is sufficient for every input.

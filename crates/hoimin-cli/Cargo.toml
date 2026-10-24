@@ -48,9 +48,9 @@ libc = ">=0.2, <1"
 rustix = { version = "1.1", features = ["fs"] }
 
 [dev-dependencies]
-# Keep Ruff types aligned with the vendored parser's 0.6 series.
-ruff_python_ast = { version = "0.6.2", package = "littrs-ruff-python-ast" }
+# Keep Ruff types aligned with the parser's pinned upstream revision.
+ruff_python_ast = { workspace = true }
 hoimin-python = { path = "../hoimin-python", features = ["test-support"] }
-ruff_python_parser = { version = "0.6.2", package = "littrs-ruff-python-parser" }
+ruff_python_parser = { workspace = true }
 proptest = "1.7"
 tokio = { version = "1.47", features = ["test-util"] }

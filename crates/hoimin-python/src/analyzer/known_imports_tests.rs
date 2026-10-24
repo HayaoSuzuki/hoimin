@@ -150,6 +150,7 @@ fn type_variables_with_scalar_names_are_disallowed_annotations() {
         ));
         let resolution = NameResolutionIndex::default();
         let annotation_imports = AnnotationImports {
+            eager_imports_available: true,
             known: &imports,
             resolution: &resolution,
             offset: 0,
@@ -173,6 +174,7 @@ fn type_variables_are_not_treated_as_known_imports_for_stability() {
     let imports = imports_from("from typing import TypeVar\nT = TypeVar('T')\n");
     let resolution = NameResolutionIndex::default();
     let annotation_imports = AnnotationImports {
+        eager_imports_available: true,
         known: &imports,
         resolution: &resolution,
         offset: 0,

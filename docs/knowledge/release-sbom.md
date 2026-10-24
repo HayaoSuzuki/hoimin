@@ -62,17 +62,16 @@ original lockfile is restored before that rejection.[^issues-992-998-sbom-valida
 
 Before generating SHA256SUMS, reject missing required SBOMs, schema violations, metadata mismatches, and inconsistent graph references. PRs changing distribution inputs and manual runs also validate the aggregate artifact.[^ci] Preserve existing protection of published releases and wheel-only PyPI uploads.[^design]
 
-For the vendored parser, record its upstream package and VCS revision, Ruff patch origins, and release-commit-pinned path and README. A Cargo-derived graph is not a complete binary inventory including OS libraries, and does not claim that build dependencies are shipped in the binary.[^release]
+For every vendored Ruff crate, record its upstream package version, Ruff 0.17.2 VCS revision, and release-commit-pinned path and README. The README describes the parser safety adaptations. A Cargo-derived graph is not a complete binary inventory including OS libraries, and does not claim that build dependencies are shipped in the binary.[^release]
 
 # Source distribution build inputs
 
-Source distributions explicitly include the tracked vendored parser manifest,
-Rust sources, provenance README and license required by the root Cargo patch.
-Real-archive tests compare internal Python API and copied parser files with
-their source bytes, and exclude untracked build/cache/scratch outputs. The
-`hoimin-python/Cargo.toml` check compares text after CRLF-to-LF normalization,
-matching Maturin's archive normalization of that workspace manifest. The copied
-vendored manifest, Rust sources, README and license retain raw byte checks.
+Source distributions explicitly include all nine vendored Ruff crate manifests,
+Rust sources, Unicode build inputs, provenance README and license notices.
+Real-archive tests compare internal Python API and copied Ruff files with
+their source bytes, and exclude untracked build/cache/scratch outputs. Cargo manifest checks compare text after CRLF-to-LF normalization, matching
+Maturin's archive normalization of workspace and local dependency manifests.
+Rust sources, build data, README and license notices retain raw byte checks.
 The include inventory must be updated when vendored Rust modules are added or moved.[^issues-992-998-sdist-config][^issues-992-998-sdist-archive]
 
 # Evidence and recheck conditions

@@ -1,15 +1,15 @@
 use ruff_python_ast::name::Name;
 use ruff_python_ast::token::TokenKind;
 use ruff_python_ast::{
-    self as ast, AtomicNodeIndex, Expr, ExprContext, Number, Operator, Pattern, Singleton,
+    self as ast, AtomicNodeIndex, Expr, ExprContext, Number, Operator, Pattern, PatternKeys,
+    Patterns, Singleton,
 };
 use ruff_text_size::{Ranged, TextSize};
 
-use crate::ParseErrorType;
 use crate::parser::progress::ParserProgress;
 use crate::parser::{Parser, RecoveryContextKind, SequenceMatchPatternParentheses, recovery};
-use crate::token::TokenValue;
 use crate::token_set::TokenSet;
+use crate::{ParseErrorType, UnsupportedSyntaxErrorKind};
 
 use super::expression::ExpressionContext;
 
@@ -23,6 +23,7 @@ const LITERAL_PATTERN_START_SET: TokenSet = TokenSet::new([
     TokenKind::Float,
     TokenKind::Complex,
     TokenKind::Minus, // Unary minus
+    TokenKind::Plus,  // Unary plus
 ]);
 
 /// The set of tokens that can start a pattern.
@@ -30,10 +31,10 @@ const PATTERN_START_SET: TokenSet = TokenSet::new([
     // Star pattern
     TokenKind::Star,
     // Capture pattern
-    // Wildcard pattern ('_' is a name token)
+    // Wildcard pattern ('_' is an identifier token)
     // Value pattern (name or attribute)
     // Class pattern
-    TokenKind::Name,
+    TokenKind::Identifier,
     // Group pattern
     TokenKind::Lpar,
     // Sequence pattern
@@ -48,7 +49,7 @@ const MAPPING_PATTERN_START_SET: TokenSet = TokenSet::new([
     // Double star pattern
     TokenKind::DoubleStar,
     // Value pattern
-    TokenKind::Name,
+    TokenKind::Identifier,
 ])
 .union(LITERAL_PATTERN_START_SET);
 
@@ -124,7 +125,7 @@ impl Parser<'_> {
                 self.add_error(ParseErrorType::InvalidStarPatternUsage, &lhs);
             }
 
-            let ident = self.parse_identifier();
+            let ident = self.parse_match_pattern_target();
             lhs = Pattern::MatchAs(ast::PatternMatchAs {
                 range: self.node_range(start),
                 name: Some(ident),
@@ -184,15 +185,15 @@ impl Parser<'_> {
         let start = self.node_start();
         self.bump(TokenKind::Lbrace);
 
-        let mut keys = vec![];
-        let mut patterns = vec![];
+        let mut keys = PatternKeys::new();
+        let mut patterns = Patterns::new();
         let mut rest = None;
 
         self.parse_comma_separated_list(RecoveryContextKind::MatchPatternMapping, |parser| {
             let mapping_item_start = parser.node_start();
 
             if parser.eat(TokenKind::DoubleStar) {
-                let identifier = parser.parse_identifier();
+                let identifier = parser.parse_match_pattern_target();
                 if rest.is_some() {
                     parser.add_error(
                         ParseErrorType::OtherError(
@@ -288,6 +289,20 @@ impl Parser<'_> {
         }
     }
 
+    /// Parses a binding target in an `as` or mapping pattern.
+    fn parse_match_pattern_target(&mut self) -> ast::Identifier {
+        // test_err invalid_match_pattern_target
+        // match value:
+        //     case 1 as _: ...
+        //     case {**_}: ...
+        // after = 1
+        let identifier = self.parse_identifier();
+        if identifier.is_valid() && identifier.id == "_" {
+            self.add_error(ParseErrorType::InvalidMatchPatternTarget, &identifier);
+        }
+        identifier
+    }
+
     /// Parses a parenthesized pattern or a sequence pattern.
     ///
     /// # Panics
@@ -310,7 +325,7 @@ impl Parser<'_> {
         ) {
             // TODO(dhruvmanila): This recovery isn't possible currently because
             // of the soft keyword transformer. If there's a missing closing
-            // parenthesis, it'll consider `case` a name token instead.
+            // parenthesis, it'll consider `case` an identifier token instead.
             self.add_error(
                 ParseErrorType::OtherError(format!(
                     "Missing '{closing}'",
@@ -322,7 +337,7 @@ impl Parser<'_> {
 
         if self.eat(parentheses.closing_kind()) {
             return Pattern::MatchSequence(ast::PatternMatchSequence {
-                patterns: vec![],
+                patterns: Vec::new(),
                 range: self.node_range(start),
                 node_index: AtomicNodeIndex::NONE,
             });
@@ -423,9 +438,7 @@ impl Parser<'_> {
                 })
             }
             TokenKind::Complex => {
-                let TokenValue::Complex { real, imag } = self.bump_value(TokenKind::Complex) else {
-                    unreachable!()
-                };
+                let (real, imag) = self.bump_complex();
                 let range = self.node_range(start);
 
                 Pattern::MatchValue(ast::PatternMatchValue {
@@ -439,9 +452,7 @@ impl Parser<'_> {
                 })
             }
             TokenKind::Int => {
-                let TokenValue::Int(value) = self.bump_value(TokenKind::Int) else {
-                    unreachable!()
-                };
+                let value = self.bump_int();
                 let range = self.node_range(start);
 
                 Pattern::MatchValue(ast::PatternMatchValue {
@@ -455,9 +466,7 @@ impl Parser<'_> {
                 })
             }
             TokenKind::Float => {
-                let TokenValue::Float(value) = self.bump_value(TokenKind::Float) else {
-                    unreachable!()
-                };
+                let value = self.bump_float();
                 let range = self.node_range(start);
 
                 Pattern::MatchValue(ast::PatternMatchValue {
@@ -471,33 +480,64 @@ impl Parser<'_> {
                 })
             }
             kind => {
-                // The `+` is only for better error recovery.
-                if let Some(unary_arithmetic_op) = kind.as_unary_arithmetic_operator()
-                    && matches!(
+                if let Some(unary_arithmetic_op) = kind.as_unary_arithmetic_operator() {
+                    if matches!(
                         self.peek(),
                         TokenKind::Int | TokenKind::Float | TokenKind::Complex
-                    )
-                {
-                    let unary_expr = self
-                        .parse_unary_expression(unary_arithmetic_op, ExpressionContext::default());
-
-                    if unary_expr.op.is_u_add() {
-                        self.add_error(
-                            ParseErrorType::OtherError(
-                                "Unary '+' is not allowed as a literal pattern".to_string(),
-                            ),
-                            &unary_expr,
+                    ) {
+                        let unary_expr = self.parse_unary_expression(
+                            unary_arithmetic_op,
+                            ExpressionContext::default(),
                         );
-                    }
 
-                    return Pattern::MatchValue(ast::PatternMatchValue {
-                        value: Box::new(Expr::UnaryOp(unary_expr)),
-                        range: self.node_range(start),
-                        node_index: AtomicNodeIndex::NONE,
-                    });
+                        // test_err signed_pattern_non_literal_operand
+                        // # parse_options: {"target-version": "3.15"}
+                        // match value:
+                        //     case -1**2: ...
+                        //     case -1 .real: ...
+                        //     case -1[0]: ...
+                        //     case -1(): ...
+                        //     case {+1**2: _}: ...
+
+                        // Parse the full operand for error recovery, but only numeric literals
+                        // are valid after a sign in a literal pattern.
+                        if !unary_expr.operand.is_number_literal_expr() {
+                            self.add_error(
+                                ParseErrorType::OtherError(
+                                    "Expected a numeric literal after unary operator".to_string(),
+                                ),
+                                unary_expr.operand.range(),
+                            );
+                        }
+
+                        // test_ok unary_plus_py315
+                        // # parse_options: {"target-version": "3.15"}
+                        // match foo:
+                        //     case +1: ...
+                        //     # this is also now valid inside more complicated patterns
+                        //     case {+1: 2}: ...
+
+                        // test_err unary_plus_py314
+                        // # parse_options: {"target-version": "3.14"}
+                        // match foo:
+                        //     case +1: ...
+                        //     case {+1: 2}: ...
+                        if unary_expr.op.is_u_add() {
+                            self.add_unsupported_syntax_error(
+                                UnsupportedSyntaxErrorKind::UnaryPlusMatchPattern,
+                                unary_expr.range,
+                            );
+                        }
+
+                        return Pattern::MatchValue(ast::PatternMatchValue {
+                            value: Box::new(Expr::UnaryOp(unary_expr)),
+                            range: self.node_range(start),
+                            node_index: AtomicNodeIndex::NONE,
+                        });
+                    }
                 }
 
-                if self.at_name_or_keyword() {
+                if self.at_identifier_or_keyword() {
                     if self.peek() == TokenKind::Dot {
                         // test_ok match_attr_pattern_soft_keyword
                         // match foo:
@@ -505,7 +545,7 @@ impl Parser<'_> {
                         //     case case.bar: ...
                         //     case type.bar: ...
                         //     case match.case.type.bar.type.case.match: ...
-                        let id = Expr::Name(self.parse_name());
+                        let id = Expr::Name(self.parse_name(ExpressionContext::default()));
 
                         let attribute = self.parse_attr_expr_for_match_pattern(id, start);
 
@@ -618,7 +658,11 @@ impl Parser<'_> {
     /// Parses an attribute expression until the current token is not a `.`.
     fn parse_attr_expr_for_match_pattern(&mut self, mut lhs: Expr, start: TextSize) -> Expr {
         while self.current_token_kind() == TokenKind::Dot {
-            lhs = Expr::Attribute(self.parse_attribute_expression(lhs, start));
+            lhs = Expr::Attribute(self.parse_attribute_expression(
+                lhs,
+                start,
+                ExpressionContext::default(),
+            ));
         }
 
         lhs
@@ -678,7 +722,7 @@ impl Parser<'_> {
 
         self.bump(TokenKind::Lpar);
 
-        let mut patterns = vec![];
+        let mut patterns = Patterns::new();
         let mut keywords = vec![];
         let mut has_seen_pattern = false;
         let mut has_seen_keyword_pattern = false;

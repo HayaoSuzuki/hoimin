@@ -520,11 +520,11 @@ impl Escapes {
         marked
     }
 
-    fn import(&mut self, module: String, level: u32, bound: &str, origin: &str) {
+    fn import(&mut self, module: String, level: u32, bound: &str, origin: &str, eager: bool) {
         if self.limit_exceeded {
             return;
         }
-        self.imports.entry((module, level)).or_default().eager |= !self.deferred;
+        self.imports.entry((module, level)).or_default().eager |= eager && !self.deferred;
         for name in self.scopes.resolve(bound, true, false) {
             self.import_aliases.insert((name, origin.to_owned(), level));
         }
@@ -584,7 +584,7 @@ impl<'a> Visitor<'a> for Escapes {
                     } else {
                         bound.to_owned()
                     };
-                    self.import(module.clone(), 0, bound, &origin);
+                    self.import(module.clone(), 0, bound, &origin, !import.is_lazy);
                 }
             }
             Stmt::ImportFrom(import) => {
@@ -598,6 +598,7 @@ impl<'a> Visitor<'a> for Escapes {
                         import.level,
                         alias.asname.as_ref().unwrap_or(&alias.name),
                         &module,
+                        !import.is_lazy,
                     );
                 }
             }
@@ -668,7 +669,11 @@ impl<'a> Visitor<'a> for Escapes {
                 return;
             }
             Expr::DictComp(c) => {
-                self.comprehension(&c.generators, &[&c.key, &c.value]);
+                if let Some(key) = &c.key {
+                    self.comprehension(&c.generators, &[key, &c.value]);
+                } else {
+                    self.comprehension(&c.generators, &[&c.value]);
+                }
                 return;
             }
             Expr::Generator(c) => {
@@ -717,8 +722,61 @@ impl Module {
             .and_modify(|b| b.kind = BindingKind::Unknown)
             .or_insert(Binding { kind, end });
     }
+    fn record_import(&mut self, import: &ruff_python_ast::StmtImport, end: usize, uncertain: bool) {
+        for alias in &import.names {
+            let module = alias.name.to_string();
+            let name = alias.asname.as_ref().map_or_else(
+                || module.split('.').next().unwrap().to_owned(),
+                ToString::to_string,
+            );
+            let kind = if import.is_lazy || uncertain {
+                BindingKind::Unknown
+            } else {
+                self.loaded.entry(module.clone()).or_insert(end);
+                BindingKind::Import {
+                    module: if alias.asname.is_none() {
+                        name.clone()
+                    } else {
+                        module
+                    },
+                    member: None,
+                    level: 0,
+                }
+            };
+            self.insert(name, kind, end);
+        }
+    }
+    fn record_import_from(
+        &mut self,
+        import: &ruff_python_ast::StmtImportFrom,
+        end: usize,
+        uncertain: bool,
+    ) {
+        let module = import.module.as_ref().map_or("", |m| m.as_str());
+        for alias in &import.names {
+            self.dynamic |= alias.name.as_str() == "*";
+            let kind = if import.is_lazy || uncertain {
+                BindingKind::Unknown
+            } else {
+                BindingKind::Import {
+                    module: module.to_owned(),
+                    member: Some(alias.name.to_string()),
+                    level: import.level,
+                }
+            };
+            self.insert(
+                alias.asname.as_ref().unwrap_or(&alias.name).to_string(),
+                kind,
+                end,
+            );
+        }
+    }
     fn parse(module: &ModModule) -> Result<Self, AnalysisError> {
-        let mut result = Self::default();
+        let imports_uncertain = super::lazy_imports::configuration_present(module, &|| false)?;
+        let mut result = Self {
+            dynamic: imports_uncertain,
+            ..Self::default()
+        };
         for statement in &module.body {
             let headers = header_bindings(statement);
             result.dynamic |= headers.dynamic;
@@ -744,46 +802,8 @@ impl Module {
                     };
                     result.insert(d.name.to_string(), kind, end);
                 }
-                Stmt::Import(d) => {
-                    for alias in &d.names {
-                        let module = alias.name.to_string();
-                        let name = alias.asname.as_ref().map_or_else(
-                            || module.split('.').next().unwrap().to_owned(),
-                            ToString::to_string,
-                        );
-                        // Unaliased dotted imports bind only the package root.
-                        let bound_module = if alias.asname.is_none() {
-                            name.clone()
-                        } else {
-                            module.clone()
-                        };
-                        result.loaded.entry(module).or_insert(end);
-                        let kind = BindingKind::Import {
-                            module: bound_module,
-                            member: None,
-                            level: 0,
-                        };
-                        result.insert(name, kind, end);
-                    }
-                }
-                Stmt::ImportFrom(d) => {
-                    let imported = d.module.as_ref().map_or("", |m| m.as_str());
-
-                    for alias in &d.names {
-                        if alias.name.as_str() == "*" {
-                            result.dynamic = true;
-                        }
-                        result.insert(
-                            alias.asname.as_ref().unwrap_or(&alias.name).to_string(),
-                            BindingKind::Import {
-                                module: imported.to_owned(),
-                                member: Some(alias.name.to_string()),
-                                level: d.level,
-                            },
-                            end,
-                        );
-                    }
-                }
+                Stmt::Import(d) => result.record_import(d, end, imports_uncertain),
+                Stmt::ImportFrom(d) => result.record_import_from(d, end, imports_uncertain),
                 _ => {
                     let mut bindings = Bindings::default();
                     bindings.visit_stmt(statement);
@@ -813,6 +833,11 @@ impl Module {
         }
         result.dynamic |= escapes.bindings.dynamic;
         result.dependencies = escapes.imports;
+        if imports_uncertain {
+            for dependency in result.dependencies.values_mut() {
+                dependency.eager = false;
+            }
+        }
         for name in escapes.bindings.names {
             result.insert(name, BindingKind::Unknown, 0);
         }

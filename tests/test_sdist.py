@@ -46,7 +46,20 @@ def source_archive(tmp_path_factory: pytest.TempPathFactory) -> Path:
         "vendor/ruff_python_parser/LICENSE",
         *sorted(
             path.relative_to(ROOT).as_posix()
-            for path in (ROOT / "vendor/ruff_python_parser/src").rglob("*.rs")
+            for crate in (ROOT / "vendor").glob("ruff_*")
+            for path in crate.rglob("*")
+            if path.is_file()
+            and (
+                path.name
+                in {"Cargo.toml", "build.rs", "UnicodeData.txt", "NameAliases.txt"}
+                or path.name.startswith("LICENSE")
+                or (path.suffix == ".rs" and "src" in path.relative_to(crate).parts)
+            )
+            and path.relative_to(ROOT).as_posix()
+            not in {
+                "vendor/ruff_python_parser/Cargo.toml",
+                "vendor/ruff_python_parser/LICENSE",
+            }
         ),
     ],
 )
@@ -62,6 +75,10 @@ def test_sdist_retains_internal_python_api_and_patched_parser_bytes(
         assert source is not None
         actual = source.read()
 
+    if member.endswith("Cargo.toml"):
+        # Maturin rewrites local dependency manifests with LF, including CRLF checkouts.
+        actual = actual.replace(b"\r\n", b"\n")
+        expected = expected.replace(b"\r\n", b"\n")
     assert actual == expected
 
 

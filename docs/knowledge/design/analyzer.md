@@ -1718,3 +1718,16 @@ comparison and its limits are recorded in the
 [implementation evidence](../../maintenance/2026-10-22-issues-1085-1086-1087/README.md).
 
 [^issue-1086-tokens]: [Token discovery over parser storage](../../../crates/hoimin-python/src/analyzer/rust.rs).
+
+# Python 3.15の構文と遅延import
+
+Ruff 0.17.2のparser・AST・周辺crateを同一コミットのvendorソースへ更新する。
+遅延importと内包表記・ジェネレーター式のアンパックを解析し、辞書内包表記の省略keyも訪問対象へ反映する。
+既存の深さ128の制限と反復破棄を維持する。[^python315-syntax]
+
+遅延importのaliasを、通常のimportに基づく静的な参照先の証明へ使わない。
+`__lazy_modules__`またはソースに見えるlazy設定APIがあるモジュールは、callable・enum・注釈・project例外のimport由来の証明を抑制する。
+リテラルなどimportの証明が不要な候補は引き続き生成する。
+通常のeager importは既存の規則を維持する。[^python315-syntax]
+
+[^python315-syntax]: [Python 3.15構文と上流Ruffの取り込み](../../superpowers/specs/2026-10-24-python-315-syntax-design.md).

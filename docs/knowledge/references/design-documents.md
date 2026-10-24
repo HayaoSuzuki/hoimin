@@ -1804,3 +1804,7 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | Python 3.14・3.15の実行環境対応 | [Design](../../superpowers/specs/2026-10-24-python-314-315-design.md) [^python-314-315-design] |
 
 [^python-314-315-design]: [Python 3.14・3.15の実行環境対応](../../superpowers/specs/2026-10-24-python-314-315-design.md).
+
+## Python 3.15 syntax
+
+- [Python 3.15構文と上流Ruffの取り込み](../../superpowers/specs/2026-10-24-python-315-syntax-design.md) — upstream parser and AST migration.

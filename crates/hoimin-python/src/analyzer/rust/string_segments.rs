@@ -1,5 +1,5 @@
 //! Empty the first nonempty top-level segment, never an interpolation field.
-use ruff_python_ast::{Expr, FStringPart};
+use ruff_python_ast::{Expr, FStringPartRef};
 use ruff_text_size::{Ranged, TextRange};
 
 pub(super) fn replacement(
@@ -19,10 +19,10 @@ pub(super) fn replacement(
             .iter()
             .take_while(|_| !cancelled())
             .find_map(|part| match part {
-                FStringPart::Literal(part) if !part.value.is_empty() => {
+                FStringPartRef::Literal(part) if !part.value.is_empty() => {
                     Some(empty_token(part.range(), "\"\"", source))
                 }
-                FStringPart::FString(part) => part
+                FStringPartRef::FString(part) => part
                     .elements
                     .literals()
                     .take_while(|_| !cancelled())
@@ -40,7 +40,7 @@ pub(super) fn replacement(
                             (literal.range(), String::new())
                         }
                     }),
-                FStringPart::Literal(_) => None,
+                FStringPartRef::Literal(_) => None,
             }),
         _ => None,
     }

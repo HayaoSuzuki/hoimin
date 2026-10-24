@@ -1,10 +1,12 @@
 [workspace]
 members = ["crates/hoimin-budget-math", "crates/hoimin-core", "crates/hoimin-cli", "crates/hoimin-python"]
-exclude = ["vendor/ruff_python_parser"]
+exclude = ["vendor/ruff_python_parser", "vendor/ruff_python_ast", "vendor/ruff_python_trivia", "vendor/ruff_source_file", "vendor/ruff_text_size", "vendor/ruff_unicode_names2", "vendor/ruff_unicode_names2_generator", "vendor/ruff_cache", "vendor/ruff_macros"]
 resolver = "3"
 
-[patch.crates-io]
-littrs-ruff-python-parser = { path = "vendor/ruff_python_parser" }
+[workspace.dependencies]
+ruff_python_parser = { path = "vendor/ruff_python_parser", features = ["stacker"] }
+ruff_python_ast = { path = "vendor/ruff_python_ast" }
+ruff_text_size = { path = "vendor/ruff_text_size" }
 
 [workspace.package]
 version = "0.14.0"

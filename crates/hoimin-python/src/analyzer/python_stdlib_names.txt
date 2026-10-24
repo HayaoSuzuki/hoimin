@@ -1,4 +1,4 @@
-# CPython 3.14 standard-library and frozen module roots, plus __main__.
+# CPython 3.14 and 3.15 standard-library and frozen module roots, plus __main__.
 # Conservatively reserve these names across interpreter builds/platforms.
 __future__
 __hello__
@@ -55,6 +55,7 @@ _locale
 _lsprof
 _lzma
 _markupbase
+_math_integer
 _md5
 _multibytecodec
 _multiprocessing
@@ -219,6 +220,7 @@ posix
 posixpath
 pprint
 profile
+profiling
 pstats
 pty
 pwd

@@ -78,12 +78,10 @@ def test_sbom_preserves_transitive_graph_and_binds_artifact(tmp_path: Path) -> N
         "hoimin-budget-math",
         "hoimin-core",
         "hoimin-python",
-        "littrs-ruff-python-parser",
+        "ruff_python_parser",
         "stacker",
     }
-    parser = next(
-        c for c in data["components"] if c["name"] == "littrs-ruff-python-parser"
-    )
+    parser = next(c for c in data["components"] if c["name"] == "ruff_python_parser")
 
     assert parser["pedigree"]["notes"]
     assert COMMIT in parser["purl"]
@@ -339,7 +337,7 @@ def test_python_repository_component_requires_one_matching_version(
             node for node in data["dependencies"] if node["ref"] != "hoimin-python"
         ]
         data["dependencies"][0]["dependsOn"].remove("hoimin-python")
-        data["dependencies"][0]["dependsOn"].append("littrs-ruff-python-parser")
+        data["dependencies"][0]["dependsOn"].append("ruff_python_parser")
     elif corruption == "duplicate":
         data["components"].append({**component, "bom-ref": "python-duplicate"})
         data["dependencies"].append({"ref": "python-duplicate", "dependsOn": []})
@@ -382,3 +380,35 @@ def test_budget_math_identity_is_required(tmp_path: Path, corruption: str) -> No
 
     with pytest.raises(ValueError, match="wrong hoimin-budget-math version"):
         sbom.validate(path, asset, "linux-x86_64", "standalone", "1.2.3", COMMIT)
+
+
+def test_sbom_identifies_vendored_upstream_ast(tmp_path: Path) -> None:
+    source_tree(tmp_path)
+    asset = tmp_path / "hoimin-v1.2.3-linux-x86_64.tar.gz"
+    asset.write_bytes(b"archive")
+    raw = capture_file(tmp_path, "x86_64-unknown-linux-gnu")
+    capture = json.loads(raw.read_text())
+    capture["bom"]["components"].append(
+        {
+            "type": "library",
+            "name": "ruff_python_ast",
+            "version": "0.0.19",
+            "bom-ref": "ast",
+            "purl": "pkg:cargo/ruff_python_ast@0.0.19",
+        }
+    )
+    capture["bom"]["dependencies"].append({"ref": "ast", "dependsOn": []})
+    next(d for d in capture["bom"]["dependencies"] if d["ref"] == "ruff_python_parser")[
+        "dependsOn"
+    ].append("ast")
+    raw.write_text(json.dumps(capture))
+    path = sbom.finalize(
+        tmp_path, raw, asset, "linux-x86_64", "standalone", "1.2.3", COMMIT
+    )
+    data = json.loads(path.read_text())
+    ast = next(c for c in data["components"] if c["name"] == "ruff_python_ast")
+    assert COMMIT in ast["purl"]
+    assert ast["purl"].endswith("#vendor/ruff_python_ast")
+    props = {p["name"]: p["value"] for p in ast["properties"]}
+    assert props["hoimin:upstream:commit"] == "30516b42ab972ffa2569e5efcfee81135da466d3"
+    assert props["hoimin:vendor:commit"] == COMMIT
