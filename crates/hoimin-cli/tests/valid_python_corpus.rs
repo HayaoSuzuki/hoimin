@@ -993,3 +993,8 @@ async fn iterator_stop_insert_causes_protocol_exhaustion_without_runtime_error()
 
 #[path = "support/generator_mutations.rs"]
 mod generator_mutation_cases;
+
+#[path = "support/effective_python.rs"]
+mod effective_python_cases;
+#[path = "support/mutation_observations.rs"]
+mod mutation_observations;

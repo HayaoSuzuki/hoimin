@@ -398,5 +398,30 @@
     "operator": "generator_empty",
     "status": "deferred",
     "reason": "Dedicated generator source/protocol/CPython execution, constructor evaluation, shadowing and public opt-out tests; outside the initial cross-producer corpus"
+  },
+  {
+    "operator": "none_truthiness",
+    "status": "deferred",
+    "reason": "Dedicated analyzer source/scope/prefix tests and CPython behavior observations with public opt-out selection; outside the initial cross-producer corpus"
+  },
+  {
+    "operator": "mutable_default_share",
+    "status": "deferred",
+    "reason": "Dedicated analyzer source/scope/prefix tests and CPython behavior observations with public opt-out selection; outside the initial cross-producer corpus"
+  },
+  {
+    "operator": "nonlocal_remove",
+    "status": "deferred",
+    "reason": "Dedicated analyzer source/scope/prefix tests and CPython behavior observations with public opt-out selection; outside the initial cross-producer corpus"
+  },
+  {
+    "operator": "yield_from_to_yield",
+    "status": "deferred",
+    "reason": "Dedicated analyzer source/scope/prefix tests and CPython behavior observations with public opt-out selection; outside the initial cross-producer corpus"
+  },
+  {
+    "operator": "mapping_setdefault_to_get",
+    "status": "deferred",
+    "reason": "Dedicated analyzer source/scope/prefix tests and CPython behavior observations with public opt-out selection; outside the initial cross-producer corpus"
   }
 ]

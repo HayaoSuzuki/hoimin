@@ -571,6 +571,9 @@ const HIGH_VALUE_CONTROL_OPERATORS: &[&str] = &[
     "generator_return_insert",
     "generator_skip_first",
     "generator_empty",
+    "none_truthiness",
+    "nonlocal_remove",
+    "yield_from_to_yield",
 ];
 const EXCEPTION_HANDLING_OPERATORS: &[&str] = &[
     "exception_hierarchy",
@@ -582,6 +585,8 @@ const EXCEPTION_HANDLING_OPERATORS: &[&str] = &[
     "exception_tuple_remove_member",
 ];
 const BEHAVIORAL_OPERATORS: &[&str] = &[
+    "mutable_default_share",
+    "mapping_setdefault_to_get",
     "list_comprehension_to_generator",
     "method_call_remove",
     "function_body_return_constant",
@@ -677,7 +682,7 @@ fn ranking_assigns_every_operator_to_its_fixed_category() {
         .into_iter()
         .filter_map(MutationOperator::from_name)
         .collect::<BTreeSet<_>>();
-    assert_eq!(tested.len(), 80);
+    assert_eq!(tested.len(), 85);
     assert_eq!(tested, canonical);
 
     for (operators, expected) in categories {

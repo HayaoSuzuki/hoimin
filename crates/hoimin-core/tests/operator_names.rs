@@ -191,6 +191,17 @@ const OPERATORS: &[(MutationOperator, &str)] = &[
     ),
     (MutationOperator::GeneratorSkipFirst, "generator_skip_first"),
     (MutationOperator::GeneratorEmpty, "generator_empty"),
+    (MutationOperator::NoneTruthiness, "none_truthiness"),
+    (
+        MutationOperator::MutableDefaultShare,
+        "mutable_default_share",
+    ),
+    (MutationOperator::NonlocalRemove, "nonlocal_remove"),
+    (MutationOperator::YieldFromToYield, "yield_from_to_yield"),
+    (
+        MutationOperator::MappingSetdefaultToGet,
+        "mapping_setdefault_to_get",
+    ),
 ];
 
 const FAMILIES: [&str; 8] = [

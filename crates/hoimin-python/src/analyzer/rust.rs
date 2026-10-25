@@ -31,6 +31,8 @@ pub(crate) mod exception_hierarchy;
 
 #[path = "rust/container_elements.rs"]
 mod container_elements;
+#[path = "rust/effective_python.rs"]
+mod effective_python;
 #[path = "rust/enum_members.rs"]
 mod enum_members;
 #[path = "rust/function_body.rs"]
@@ -4096,6 +4098,15 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         reason = "statement operator gates stop between builders on the first admission failure"
     )]
     fn collect_statement_mutations(&mut self, statement: &Stmt) {
+        effective_python::statement(
+            statement,
+            self.request.operators,
+            self.cancelled,
+            |range, replacement, operator| {
+                self.add_candidate(range, replacement, operator);
+                !self.check_cancelled()
+            },
+        );
         if self.candidates.failure.is_some() {
             return;
         }
@@ -4500,6 +4511,25 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
             }
             if self.candidates.failure.is_some() {
                 return;
+            }
+            if self.runtime_role == RuntimeRole::Value
+                && !self.in_pattern
+                && (!matches!(expression, Expr::Compare(_)) || self.expression_selected(expression))
+            {
+                effective_python::expression(
+                    expression,
+                    self.source,
+                    self.facts.tokens.expect("parser tokens are set"),
+                    self.request.operators,
+                    self.cancelled,
+                    |range, replacement, operator| {
+                        self.add_candidate(range, replacement, operator);
+                        !self.check_cancelled()
+                    },
+                );
+                if self.candidates.failure.is_some() {
+                    return;
+                }
             }
             let signed_literal = self.collect_integer_literal(expression);
             if self.candidates.failure.is_some() {

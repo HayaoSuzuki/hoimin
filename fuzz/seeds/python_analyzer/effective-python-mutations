@@ -1,0 +1,8 @@
+def outer(items=None):
+    if (None) is items: items=[]
+    def inner():
+        nonlocal items
+        items=[1]
+    yield from items
+state={}
+value=state.setdefault('key', [])

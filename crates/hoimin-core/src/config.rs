@@ -167,6 +167,11 @@ mutation_operators! {
     GeneratorReturnInsert => "generator_return_insert",
     GeneratorSkipFirst => "generator_skip_first",
     GeneratorEmpty => "generator_empty",
+    NoneTruthiness => "none_truthiness",
+    MutableDefaultShare => "mutable_default_share",
+    NonlocalRemove => "nonlocal_remove",
+    YieldFromToYield => "yield_from_to_yield",
+    MappingSetdefaultToGet => "mapping_setdefault_to_get",
 }
 
 // Family membership is an explicit selection policy, separate from the full
@@ -370,6 +375,11 @@ impl Default for MutationOperatorSelection {
                 MutationOperator::GeneratorReturnInsert,
                 MutationOperator::GeneratorSkipFirst,
                 MutationOperator::GeneratorEmpty,
+                MutationOperator::NoneTruthiness,
+                MutationOperator::MutableDefaultShare,
+                MutationOperator::NonlocalRemove,
+                MutationOperator::YieldFromToYield,
+                MutationOperator::MappingSetdefaultToGet,
             ]
             .into_iter()
             .collect(),

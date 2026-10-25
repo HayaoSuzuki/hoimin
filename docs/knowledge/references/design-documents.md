@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: effective-python-mutations-design
+  resource: ../../superpowers/specs/2026-10-25-effective-python-mutations-design.md
+  revision: 8c3ebc2db9cd7212006ea76c5ca0f0ca077ca977
+  working_tree: untracked
+  sha256: b4fb66116a777e50b2f44a234f208031b83d2a2882aceb9a6e1e2f8dfbace993
 - id: generator-mutations-design
   resource: ../../superpowers/specs/2026-10-25-generator-mutations-design.md
   revision: 0c1fbbb9bed0db13139111f5d924c3f09261c843
@@ -1872,3 +1877,15 @@ The design records the protocol-specific behavior and limits.[^iterator-stop-ins
 The design distinguishes missing values from type, timing and traversal changes.[^generator-mutations-design]
 
 [^generator-mutations-design]: [Generator behavior mutation design](../../superpowers/specs/2026-10-25-generator-mutations-design.md).
+
+
+## Missing values and shared state
+
+Five opt-out mutations distinguish missing values from empty values, expose
+shared parameter defaults and lost nonlocal updates, replace yield delegation,
+and remove setdefault insertion. Local patterns and token edits preserve scopes,
+comments and evaluation counts; syntactic method matching does not infer dict
+receiver types. Defaults: 66 operators; catalog: 85 IDs. Each remains independently selectable and
+excludable.[^effective-python-mutations-design]
+
+[^effective-python-mutations-design]: [Missing-value and shared-state mutation design](../../superpowers/specs/2026-10-25-effective-python-mutations-design.md).

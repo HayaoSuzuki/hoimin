@@ -330,7 +330,7 @@ fn exception_hierarchy_is_explicit_only() {
 }
 
 // Fixed current policy, independent of catalog and production default builders.
-const CURRENT_DEFAULT_NAMES: [&str; 61] = [
+const CURRENT_DEFAULT_NAMES: [&str; 66] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -392,6 +392,11 @@ const CURRENT_DEFAULT_NAMES: [&str; 61] = [
     "generator_return_insert",
     "generator_skip_first",
     "generator_empty",
+    "none_truthiness",
+    "mutable_default_share",
+    "nonlocal_remove",
+    "yield_from_to_yield",
+    "mapping_setdefault_to_get",
 ];
 
 #[test]
@@ -466,4 +471,24 @@ fn stored_explicit_selection_roundtrips_without_default_expansion() {
         ["binary_add_sub", "type_list_sequence", "method_call_remove"]
     );
     assert_eq!(serde_json::to_vec(&restored).unwrap(), json);
+}
+
+#[test]
+fn effective_python_mutations_are_default_and_individually_selectable() {
+    let defaults = MutationOperatorSelection::default();
+    for name in [
+        "none_truthiness",
+        "mutable_default_share",
+        "nonlocal_remove",
+        "yield_from_to_yield",
+        "mapping_setdefault_to_get",
+    ] {
+        assert!(defaults.names().iter().any(|item| item == name), "{name}");
+        assert_eq!(
+            MutationOperatorSelection::parse_selector(name)
+                .unwrap()
+                .len(),
+            1
+        );
+    }
 }

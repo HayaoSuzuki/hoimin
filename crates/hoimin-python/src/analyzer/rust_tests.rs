@@ -10389,3 +10389,6 @@ fn generator_mutation_operators_are_individually_opt_out() {
 
 #[path = "generator_mutation_tests.rs"]
 mod generator_mutation_tests;
+
+#[path = "effective_python_tests.rs"]
+mod effective_python_tests;
