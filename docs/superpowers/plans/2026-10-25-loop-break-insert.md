@@ -29,20 +29,20 @@ Files: core config/operator fixtures; python analyzer and new loop_break helper;
 CLI default_operator_selection integration fixture.
 Interface: `loop_break::replacement(statement: &Stmt, source: &str, tokens: &Tokens, cancelled: &F) -> Option<(TextRange, String)>`.
 
-- [ ] Add analyzer tests for the review focus and a failing default-selection test.
-- [ ] Run them and observe failure from the missing operator.
-- [ ] Register LoopBreakInsert and implement the helper/collector gate.
-- [ ] Run analyzer/core and default-selection tests; repair affected exact fixtures.
-- [ ] Review five times: semantics, syntax, scopes, resource limits, configuration.
+- [x] Add analyzer tests for the review focus and a failing default-selection test.
+- [x] Run them and observe failure from the missing operator.
+- [x] Register LoopBreakInsert and implement the helper/collector gate.
+- [x] Run analyzer/core and default-selection tests; repair affected exact fixtures.
+- [x] Review five times: semantics, syntax, scopes, resource limits, configuration.
 
 ## Task 2: Validation and delivery
 
 Files: usage, compatibility, generated CLI reference, knowledge analyzer concept,
 design catalog, maintenance evidence.
 
-- [ ] Demonstrate first-iteration termination and loop else behavior on 3.14/3.15.
-- [ ] Update user docs and OKF; regenerate CLI reference.
-- [ ] Run workspace tests, formatting, clippy, Python/documentation checks.
-- [ ] Perform five validation reviews and one fresh independent final review.
-- [ ] Fix findings with regression tests; finish five delivery reviews.
-- [ ] Commit, push the dedicated branch, create and attach the PR.
+- [x] Demonstrate first-iteration termination and loop else behavior on 3.14/3.15.
+- [x] Update user docs and OKF; regenerate CLI reference.
+- [x] Run workspace tests, formatting, clippy, Python/documentation checks.
+- [x] Perform five validation reviews and one fresh independent final review.
+- [x] Fix findings with regression tests; finish five delivery reviews.
+- [x] Commit, push the dedicated branch, create and attach the PR.
