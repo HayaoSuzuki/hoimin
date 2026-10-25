@@ -24,7 +24,7 @@ No dependency/parser/schema changes.
 
 1. Four new initial analyzer tests passed after missing-name RED.
 2. Core/analyzer suites passed; generic parameters/late global bindings checked.
-3.84 CLI-config,3opt-out/explicit/saved-plan and9valid-corpus tests passed.
+3. 84 CLI-config,3opt-out/explicit/saved-plan and9valid-corpus tests passed.
 4. Genuine sync/async iterator execution passed on CPython3.14.9 and3.15.1,
    initially LF/CRLF and then CR-only after the layout fixes.
 5. One fresh reviewer found a global-declaration syntax error and two layout
@@ -41,7 +41,8 @@ No dependency/parser/schema changes.
    context passed6iterator analyzer tests and84config/3selection tests.
 5. Final all-target/all-feature Clippy passed. The obsolete workspace run was
    intentionally interrupted to apply review fixes; its partial results are not
-   reported as a complete successful run. Corrected workspace run is pending.
+   reported as a complete successful run. Corrected workspace run passed: 3785 tests, 32 ignored,
+   zero failures across 194 result groups.
 
 ## Other checks and resource scope
 
@@ -52,3 +53,18 @@ limits are retained; fuzz seed added, no local Windows ASAN campaign.
 Build jobs2, incremental/debug artifacts disabled. Parent break worktree was
 cleaned with cargo clean (5.6GiB reclaimed) before this phase completed. Final
 workspace result, delivery reviews and cleanup are recorded at delivery.
+
+## Delivery self-reviews
+
+1. Checked default57/catalog76 counts, individual exclusions and saved selections.
+2. Checked final full workspace exit0, typed-scope regressions and Clippy results.
+3. Reviewed fresh independent findings against the repairs and exact source layouts.
+4. Checked generated CLI-reference example/freshness, Ruff, ty and docs/OKF inventory.
+5. Kept the primary checkout's local .gitignore modification outside this branch;
+   retained small evidence logs and reserved owned site/target cleanup for delivery.
+
+Generated CLI reference tests/freshness passed. Documentation tests21passed;
+source/link inventory has no missing or unreachable entries. Python tools were
+unchanged; the complete1,255-pass Python suite was run in the preceding break phase,
+not claimed as a fresh full run for this iterator change. Runtime test fixtures
+passed with CPython3.14.9 and3.15.1 across LF/CRLF/CR.
