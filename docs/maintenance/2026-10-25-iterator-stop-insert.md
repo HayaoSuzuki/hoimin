@@ -68,3 +68,7 @@ source/link inventory has no missing or unreachable entries. Python tools were
 unchanged; the complete1,255-pass Python suite was run in the preceding break phase,
 not claimed as a fresh full run for this iterator change. Runtime test fixtures
 passed with CPython3.14.9 and3.15.1 across LF/CRLF/CR.
+
+Delivery: [PR #1111](https://github.com/HayaoSuzuki/hoimin/pull/1111), based on
+`loop-break-insert`. Owned site output removed and cargo clean executed after all
+checks; small ignored evidence logs retained.

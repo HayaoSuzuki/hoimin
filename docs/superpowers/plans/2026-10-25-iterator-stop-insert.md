@@ -47,4 +47,4 @@ compatibility, CLI reference, OKF/spec catalog and maintenance evidence.
 - [x] Update docs/OKF, generated reference and a bounded fuzz seed.
 - [x] Run workspace, Clippy, Python/doc checks and five validation reviews.
 - [x] Obtain one fresh independent review; repair findings with regressions.
-- [ ] Complete five delivery reviews; create/attach a PR based on loop-break-insert.
+- [x] Complete five delivery reviews; create/attach a PR based on loop-break-insert.
