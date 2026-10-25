@@ -54,10 +54,25 @@ Scope: Windows, CPython 3.14.9 and 3.15.1, Rust 1.99.0; baseline
 - Ruff lint/format and ty: passed (ty required the documented fuzz dependency group).
 - Documentation site build: passed. OKF structure: 60 pages; reference inventory:
   no missing links/sources or unreachable pages.
-- Full workspace and final Clippy: pending at this checkpoint.
+- Full workspace: 3777 passed, 32 ignored, zero failures across 194 result groups. Final all-target/all-feature Clippy: passed.
+- Generated CLI reference: seven example tests and freshness check passed.
+- Additional fuzz-dependency corpus tests: 20 passed, 2 skipped.
+- Windows temporarily prevented relinking an executable still in use by the full
+  suite; retry after that executable exited passed. This was build contention,
+  not a source/test failure.
 
 ## Resource policy
 
 Build jobs limited to two; incremental compilation and Rust debug info disabled.
 Free physical memory and disk observed throughout; roughly 100 GiB disk remained
 at the validation checkpoint. Final cleanup and delivery evidence is added below.
+
+## Delivery self-reviews
+
+1. Compared the final registry/default counts and opt-out command to public docs.
+2. Checked the full workspace exit status and fresh post-style-fix runtime test.
+3. Checked the diff, generated reference, source catalogs and evidence scope.
+4. Confirmed the primary checkout's local .gitignore edit was not staged here.
+5. Retained the dedicated worktree for PR review; cleaned generated site output
+   only after validating its resolved path under this worktree. Build artifacts
+   are cleaned after PR creation, with small evidence logs retained.
