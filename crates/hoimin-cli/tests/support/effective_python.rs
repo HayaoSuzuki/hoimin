@@ -82,3 +82,32 @@ async fn effective_python_parenthesized_none_keeps_values_and_boolean_results() 
         .await;
     }
 }
+
+#[tokio::test]
+async fn effective_python_extra_boundary_copy_and_fifo_contracts() {
+    assert_change(
+        "import bisect\ndef boundary(xs, x): return bisect.bisect_left(xs, x)\n",
+        "bisect_boundary_swap",
+        "print(boundary([1,1,2], 1)); print(boundary([], 1)); print(boundary([1,2], 3))",
+        "0\n0\n2\n",
+        "2\n0\n2\n",
+    )
+    .await;
+    assert_change(
+        "from bisect import bisect_right as boundary\ndef index(xs, x): return boundary(xs, x)\n",
+        "bisect_boundary_swap",
+        "print(index([1,1,2], 1))",
+        "2\n",
+        "0\n",
+    )
+    .await;
+    assert_change("from copy import deepcopy as clone\nevents=[]\ndef original():\n    events.append('once')\n    return source\nsource=[[1]]\nresult=clone(original())\n", "deepcopy_to_copy", "result[0].append(2)\nprint(source); print(result); print(events)", "[[1]]\n[[1, 2]]\n['once']\n", "[[1, 2]]\n[[1, 2]]\n['once']\n").await;
+    assert_change(
+        "from collections import deque\nq=deque([1, 2])\nvalue=q.popleft()\n",
+        "deque_popleft_to_pop",
+        "print(value); print(list(q))",
+        "1\n[2]\n",
+        "2\n[1]\n",
+    )
+    .await;
+}

@@ -253,3 +253,120 @@ fn effective_python_selects_changed_tokens_on_continuation_lines() {
         assert_eq!(excluded.candidates.len(), 0);
     }
 }
+
+#[test]
+fn effective_python_extra_boundaries_copy_and_queue() {
+    for (op, source, expected) in [
+        (
+            "bisect_boundary_swap",
+            "import bisect\nx=bisect.bisect_left([1, 1], 1)\n",
+            "bisect_right",
+        ),
+        (
+            "bisect_boundary_swap",
+            "from bisect import bisect_right as boundary\nx=boundary([1, 1], 1)\n",
+            "__import__('bisect').bisect_left",
+        ),
+        (
+            "deepcopy_to_copy",
+            "import copy as c\nx=c.deepcopy(value)\n",
+            "copy",
+        ),
+        (
+            "deepcopy_to_copy",
+            "from copy import deepcopy as clone\nx=clone(value)\n",
+            "__import__('copy').copy",
+        ),
+        ("deque_popleft_to_pop", "x=q.popleft()\n", "pop"),
+        ("deque_popleft_to_pop", "x=self.q.popleft()\n", "pop"),
+    ] {
+        let out = analyze_selected(&[op], source);
+        assert_eq!(out.candidates.len(), 1, "{source}");
+        assert_eq!(out.candidates[0].replacement, expected);
+        apply(source, &out.candidates[0]);
+    }
+    for (op, source) in [
+        (
+            "bisect_boundary_swap",
+            "import bisect\nbisect=other\nx=bisect.bisect_left(xs, 1)\n",
+        ),
+        (
+            "bisect_boundary_swap",
+            "import bisect\ndef f(bisect): return bisect.bisect_left(xs, 1)\n",
+        ),
+        (
+            "bisect_boundary_swap",
+            "import bisect\nx=bisect.bisect(xs, 1)\n",
+        ),
+        ("deepcopy_to_copy", "import copy\nx=copy.deepcopy(xs, {})\n"),
+        (
+            "deepcopy_to_copy",
+            "import copy\nx=copy.deepcopy(xs, memo={})\n",
+        ),
+        ("deepcopy_to_copy", "import copy\nx=copy.deepcopy(*args)\n"),
+        (
+            "deepcopy_to_copy",
+            "from copy import deepcopy\n__import__=None\nx=deepcopy(xs)\n",
+        ),
+        ("deque_popleft_to_pop", "x=q.popleft(1)\n"),
+        ("deque_popleft_to_pop", "x=q.popleft(**kw)\n"),
+        ("deque_popleft_to_pop", "x=make().popleft()\n"),
+        ("deque_popleft_to_pop", "x=q.pop()\n"),
+    ] {
+        assert!(
+            analyze_selected(&[op], source).candidates.is_empty(),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn effective_python_extra_selection_prefix_and_layout() {
+    let ops = [
+        "bisect_boundary_swap",
+        "deepcopy_to_copy",
+        "deque_popleft_to_pop",
+    ];
+    let source = "import bisect\nimport copy\ndef f(xs, q):\n    a=bisect.\\\n        bisect_left(xs, 1)\n    b=copy.\\\n        deepcopy(xs)\n    c=q.\\\n        popleft()\n    return a, b, c\n";
+    let all = analyze_selected(&ops, source);
+    assert_eq!(all.candidates.len(), 3);
+    for cap in 0..=4 {
+        let out =
+            analyze_selected_with(&ops, Utf8Path::new("pkg/sample.py"), &[], &[], cap, source);
+        assert_eq!(out.candidates, all.candidates[..cap.min(3)]);
+        assert_eq!(out.truncated, cap < 3);
+    }
+    for (op, line) in ops.into_iter().zip([5, 7, 9]) {
+        for source in [
+            source.to_owned(),
+            source.replace('\n', "\r\n"),
+            source.replace('\n', "\r"),
+        ] {
+            let out = analyze_selected_with(
+                &[op],
+                Utf8Path::new("pkg/sample.py"),
+                &[LineRange {
+                    start: line,
+                    end: line,
+                }],
+                &["f".to_owned()],
+                10,
+                &source,
+            );
+            assert_eq!(out.candidates.len(), 1, "{source}");
+            apply(&source, &out.candidates[0]);
+        }
+    }
+    let operators = serde_json::from_value(serde_json::json!(ops)).unwrap();
+    let request = AnalyzeRequest {
+        path: Utf8Path::new("pkg/sample.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 10,
+        payload: super::super::payload::PayloadBudget::new(1),
+    };
+    assert!(analyze_source_cancellable(&request, source, || true).is_err());
+    assert!(analyze_source_cancellable(&request, source, || false).is_err());
+}

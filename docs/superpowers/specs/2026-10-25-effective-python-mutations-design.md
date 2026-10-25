@@ -29,7 +29,7 @@ Operators (all default-enabled and individually excludable):
   mapping/method operators), not a proof of builtin dict type. Custom same-name
   methods can be affected. Keep receiver/argument source and evaluation unchanged.
 
-Defaults become66; catalog85; public opt-out regression set23. Existing explicit
+With the expansion below, defaults become69; catalog88; public opt-out regression set26. Existing explicit
 and saved selections remain explicit. None/nonlocal/yield delegation rank as
 high-value control; shared default and mapping insertion as behavioral. Keep the
 existing ranking rule version and schema policy, as previous operator additions do.
@@ -63,3 +63,27 @@ not a claim to have read the full book prose. Source revision:
 - [Item33: nonlocal updates](https://github.com/bslatkin/effectivepython/blob/fa87298a0ba042fc07fabadb599e5c3f6becf2d7/example_code/item_033.py).
 - [Item45: yield delegation](https://github.com/bslatkin/effectivepython/blob/fa87298a0ba042fc07fabadb599e5c3f6becf2d7/example_code/item_045.py).
 - [Item27: dictionary initialization](https://github.com/bslatkin/effectivepython/blob/fa87298a0ba042fc07fabadb599e5c3f6becf2d7/example_code/item_027.py).
+
+## Additional boundary, copy and queue mutations
+
+The requested expansion adds `bisect_boundary_swap`, `deepcopy_to_copy`, and
+`deque_popleft_to_pop`, all enabled by default and individually excludable.
+There are now 69 default operators, 88 catalog entries and 26 opt-out fixture IDs.
+
+`bisect_boundary_swap` swaps only `bisect_left`/`bisect_right`, not `bisect` or
+insort variants. `deepcopy_to_copy` requires exactly one positional argument,
+no keywords and no starred arguments: copy does not accept deepcopy's memo.
+Both require the existing conservative CallableImports proof for top-level
+stdlib imports. Module attributes change only the member token; imported
+members use the existing guarded __import__ convention. Rebindings, escapes,
+shadowed imports and dynamic namespaces are excluded by the shared resolver.
+
+`deque_popleft_to_pop` changes zero-argument popleft calls on simple names or
+attribute receivers. This is a syntactic method mutation, including custom
+methods; it does not infer deque types. The reverse direction is excluded
+because pop is common on lists, sets and dictionaries.
+
+All three preserve receiver/argument evaluation count and order, comments,
+selection on changed tokens, source ranges and candidate budgets. Witnesses
+exercise duplicate boundaries, nested mutable state and a queue with two items
+on CPython 3.14 and 3.15. No third-party dependency or schema change.

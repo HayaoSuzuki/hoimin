@@ -2,14 +2,14 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add the five approved opt-out behavior mutations.
+**Goal:** Add eight opt-out behavior mutations, including the requested expansion.
 **Architecture:** Local AST builders and existing selection/admission machinery.
 **Tech Stack:** Rust, vendored Ruff AST, CPython3.14/3.15, uv.
 **Spec:** ../specs/2026-10-25-effective-python-mutations-design.md
 
 ## Global constraints
 
-Use five exact IDs/spec semantics;66 default/85 catalog/23opt-out regression IDs.
+Use eight exact IDs/spec semantics;69 default/88 catalog/26opt-out regression IDs.
 Preserve scopes/evaluation once, UTF8 ranges/LFCRLFCR, budgets/cancellation/order.
 No dependency/schema change; jobs/test threads2; each stage at least5self-reviews.
 
@@ -51,3 +51,23 @@ exception and stdout, LFCRLFCR and both Python versions.
 - [x] Full locked workspace suite, all-feature/target Clippy, formatting/reference.
 - [x] Five delivery reviews; commit/push/create/attach main-based PR.
 - [x] Remove owned build/site outputs and record cleanup; preserve primary .gitignore.
+
+## Expansion: boundaries, copying and FIFO
+
+Review focus: duplicate values at both bisect boundaries; imported alias and
+shadowing; deepcopy memo incompatibility; effectful arguments evaluated once;
+zero-argument queue calls and changed-token continuation-line selection.
+
+- [x] Add analyzer acceptance/exclusion and runtime witness tests; run RED.
+- [x] Register three IDs/defaults/ranking; use CallableImports in the collector
+  and local builders in rust/effective_python.rs; run GREEN.
+- [x] Update catalog, public opt-out fixture, fuzz seed, usage/reference and
+  compatibility documents, then verify source hashes and inventories.
+- [x] Perform five self-review passes for implementation and verification;
+  obtain one fresh whole-branch review and resolve findings.
+- [ ] Run final workspace checks, update PR1113 and clean owned build outputs.
+
+Design self-review passes (5): scope/overlap (three distinct behavior contracts),
+syntax (token changes and full imported-name replacement), provenance (reuse
+existing resolver), API shape (exclude deepcopy memo and queue arguments), and
+resources/validation (jobs2, both Python runtimes, one final full suite).

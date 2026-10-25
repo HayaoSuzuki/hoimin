@@ -6,3 +6,10 @@ def outer(items=None):
     yield from items
 state={}
 value=state.setdefault('key', [])
+import bisect
+import copy
+from collections import deque
+index=bisect.bisect_left([1,1], 1)
+cloned=copy.deepcopy([[1]])
+queue=deque([1,2])
+first=queue.popleft()

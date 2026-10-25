@@ -1,8 +1,10 @@
 //! Local mutations of missing values, state ownership, scope and delegation.
-use super::{function_entry, is_simple_receiver};
+use super::{
+    AnalysisCancelled, callable_imports::CallableImports, function_entry, is_simple_receiver,
+};
 use hoimin_core::{MutationOperator, MutationOperatorSelection};
 use ruff_python_ast::token::{TokenKind, Tokens};
-use ruff_python_ast::{CmpOp, Expr, ExprCompare, Stmt, StmtFunctionDef};
+use ruff_python_ast::{CmpOp, Expr, ExprCompare, ModModule, Stmt, StmtFunctionDef};
 use ruff_text_size::{Ranged, TextRange};
 
 /// A single identity comparison with exactly one None operand.
@@ -63,11 +65,24 @@ pub(super) fn expression<F: Fn() -> bool>(
                 }
             }
         }
-        Expr::Call(call) if operators.contains(MutationOperator::MappingSetdefaultToGet) => {
+        Expr::Call(call) => {
             let Expr::Attribute(attribute) = call.func.as_ref() else {
                 return;
             };
-            if attribute.attr.as_str() == "setdefault"
+            if operators.contains(MutationOperator::DequePopleftToPop)
+                && attribute.attr.as_str() == "popleft"
+                && is_simple_receiver(&attribute.value)
+                && call.arguments.args.is_empty()
+                && call.arguments.keywords.is_empty()
+            {
+                emit(
+                    attribute.attr.range(),
+                    "pop".to_owned(),
+                    MutationOperator::DequePopleftToPop,
+                );
+            }
+            if operators.contains(MutationOperator::MappingSetdefaultToGet)
+                && attribute.attr.as_str() == "setdefault"
                 && is_simple_receiver(&attribute.value)
                 && (1..=2).contains(&call.arguments.args.len())
                 && call.arguments.keywords.is_empty()
@@ -222,4 +237,62 @@ fn shared_default<F: Fn() -> bool>(
         }
     }
     None
+}
+
+/// Reuse the shared conservative import proof for standard-library callables.
+#[derive(Default)]
+pub(super) struct Imports {
+    imports: CallableImports,
+}
+impl Imports {
+    pub(super) fn build(
+        module: &ModModule,
+        operators: &MutationOperatorSelection,
+        cancelled: &impl Fn() -> bool,
+    ) -> Result<Self, AnalysisCancelled> {
+        if !operators.contains(MutationOperator::BisectBoundarySwap)
+            && !operators.contains(MutationOperator::DeepcopyToCopy)
+        {
+            return Ok(Self::default());
+        }
+        Ok(Self {
+            imports: CallableImports::build(module, cancelled, &["bisect", "copy"])?,
+        })
+    }
+    pub(super) fn replacement(
+        &self,
+        expression: &Expr,
+        operators: &MutationOperatorSelection,
+    ) -> Option<(TextRange, String, MutationOperator)> {
+        let Expr::Call(call) = expression else {
+            return None;
+        };
+        let resolved = self.imports.resolve(&call.func)?;
+        let (destination, operator) = match (resolved.module, resolved.member) {
+            ("bisect", "bisect_left") => ("bisect_right", MutationOperator::BisectBoundarySwap),
+            ("bisect", "bisect_right") => ("bisect_left", MutationOperator::BisectBoundarySwap),
+            ("copy", "deepcopy")
+                if call.arguments.args.len() == 1
+                    && call.arguments.keywords.is_empty()
+                    && !call.arguments.args[0].is_starred_expr() =>
+            {
+                ("copy", MutationOperator::DeepcopyToCopy)
+            }
+            _ => return None,
+        };
+        if !operators.contains(operator) {
+            return None;
+        }
+        if let Some(range) = resolved.member_range {
+            Some((range, destination.to_owned(), operator))
+        } else if self.imports.import_builtin_available() {
+            Some((
+                call.func.range(),
+                format!("__import__('{}').{destination}", resolved.module),
+                operator,
+            ))
+        } else {
+            None
+        }
+    }
 }

@@ -330,7 +330,7 @@ fn exception_hierarchy_is_explicit_only() {
 }
 
 // Fixed current policy, independent of catalog and production default builders.
-const CURRENT_DEFAULT_NAMES: [&str; 66] = [
+const CURRENT_DEFAULT_NAMES: [&str; 69] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -397,6 +397,9 @@ const CURRENT_DEFAULT_NAMES: [&str; 66] = [
     "nonlocal_remove",
     "yield_from_to_yield",
     "mapping_setdefault_to_get",
+    "bisect_boundary_swap",
+    "deepcopy_to_copy",
+    "deque_popleft_to_pop",
 ];
 
 #[test]
@@ -482,6 +485,9 @@ fn effective_python_mutations_are_default_and_individually_selectable() {
         "nonlocal_remove",
         "yield_from_to_yield",
         "mapping_setdefault_to_get",
+        "bisect_boundary_swap",
+        "deepcopy_to_copy",
+        "deque_popleft_to_pop",
     ] {
         assert!(defaults.names().iter().any(|item| item == name), "{name}");
         assert_eq!(

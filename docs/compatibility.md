@@ -21,13 +21,14 @@ validate the current implementation.
 
 ## Default missing-value and shared-state mutations
 
-Fresh runs select 66 operators from 85 catalog IDs. The five additions are
+Fresh runs select 69 operators from 88 catalog IDs. The eight additions are
 `none_truthiness`, `mutable_default_share`, `nonlocal_remove`,
-`yield_from_to_yield` and `mapping_setdefault_to_get`. Disable all five to recover
+`yield_from_to_yield`, `mapping_setdefault_to_get`, `bisect_boundary_swap`,
+`deepcopy_to_copy` and `deque_popleft_to_pop`. Disable all eight to recover
 the preceding 61-operator selection:
 
 ```text
---exclude-operators none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get
+--exclude-operators none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop
 ```
 
 Each is individually excludable. Explicit operator sets and saved plans keep

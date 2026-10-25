@@ -76,6 +76,7 @@ mod mapping_keys;
 mod operator_functions;
 #[path = "rust/stdlib_conversions.rs"]
 mod stdlib_conversions;
+use effective_python::Imports as BehaviorImports;
 #[cfg(test)]
 use fact_index::IndexLookupStats;
 use fact_index::{ContainmentIndex, NotOperandIndex, ScopeIndex, ScopeInterval};
@@ -2962,6 +2963,7 @@ struct AstCandidateCollector<'a, F> {
     enum_index: &'a enum_members::EnumIndex,
     optional_functions: optional_keywords::FunctionIndex,
     operator_imports: OperatorImports,
+    behavior_imports: BehaviorImports,
     conversion_imports: stdlib_conversions::ConversionImports,
     return_scope: ReturnScope,
     enclosing_body: EnclosingBody,
@@ -3042,6 +3044,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             } else {
                 stdlib_conversions::ConversionImports::default()
             },
+            behavior_imports: BehaviorImports::build(module, request.operators, cancelled)?,
             operator_imports: if request
                 .operators
                 .contains(MutationOperator::OperatorFunction)
@@ -4516,6 +4519,15 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                 && !self.in_pattern
                 && (!matches!(expression, Expr::Compare(_)) || self.expression_selected(expression))
             {
+                if let Some((range, replacement, operator)) = self
+                    .behavior_imports
+                    .replacement(expression, self.request.operators)
+                {
+                    self.add_candidate(range, replacement, operator);
+                    if self.check_cancelled() || self.candidates.failure.is_some() {
+                        return;
+                    }
+                }
                 effective_python::expression(
                     expression,
                     self.source,

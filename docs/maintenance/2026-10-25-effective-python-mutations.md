@@ -78,3 +78,45 @@ After verification, cargo clean removed 5,493 files / 5.7 GiB. The owned generat
 site was removed after checking its absolute path. Disk free after cleanup:
 116,716,896,256 bytes (about 108.7 GiB). Sources and small local evidence logs are
 retained in the dedicated worktree. Primary .gitignore SHA256 remains unchanged.
+
+
+## Boundary, copy and queue expansion
+
+PR1113 also includes three default-enabled, individually excludable operators:
+`bisect_boundary_swap`, `deepcopy_to_copy`, and `deque_popleft_to_pop`.
+The final policy is 69 defaults, 88 catalog IDs and 26 public opt-out regression
+IDs. The earlier delivery measurements above describe the first five operators.
+
+Design self-reviews (five): distinct contracts/overlap; syntax/token edits;
+stdlib provenance; argument compatibility; bounded resources and dual runtimes.
+Implementation self-reviews (five): ordered registration and individual
+exclusion; conservative alias resolution; API/argument effects; source/layout;
+cancellation/prefix/payload admission. The initial analyzer RED failed on the
+unregistered bisect ID; GREEN includes 10 focused analyzer tests. A new prefix
+test initially compared different fixture paths; fixing its path changed no
+production behavior.
+
+Validation self-reviews (five): duplicate-boundary witnesses; nested-copy
+independence with argument evaluation once; two-item FIFO order; continuation-
+line/LF/CRLF/CR selection with every candidate cap; public default opt-out and
+current documentation/count consistency. Both CPython3.14.9 and3.15.1 passed all
+seven effective-Python runtime test functions. Documentation/corpus checks:
+41 passed, 2 skipped; Ruff/ty and reference inventory passed.
+
+A fresh reviewer checked the entire expanded branch and reported no outstanding
+findings. The reviewer caught two historical exclusion commands missing the
+three added IDs; both commands and the historical exclusion count were repaired.
+Documentation diagnostic: 10/10 rows pass, no failed rows; the extension states
+exact eligibility, the syntactic queue limitation, and correct exclusion lists.
+Final expanded workspace: **3815 passed, 32 ignored, 0 failed**, 194 result
+groups. All-target/all-feature Clippy with warnings denied, formatter, seven CLI
+reference-generator tests, Ruff/ty, site build/reference inventory and final
+21 documentation tests passed. Selection-gate extraction resolved the collector
+line-limit lint; the reviewer confirmed semantic equivalence afterward.
+
+Delivery self-reviews (five): exact 69/88/26 selection policy; dual-runtime
+observable contracts; fresh reviewer acceptance and repaired exclusions; current
+main ancestry and preserved primary .gitignore; verified owned output paths
+before cleanup. Cargo clean removed 5383 files / 5.6GiB, and the generated site
+was deleted. Disk free afterward: 116003979264 bytes (about108GiB). Sources and
+small evidence logs remain in the dedicated worktree.

@@ -269,7 +269,10 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::ExceptionBaseBoundary
         | MutationOperator::ExceptionTupleAddPair
         | MutationOperator::ExceptionTupleRemoveMember => RankingReasonCode::ExceptionHandling,
-        MutationOperator::MutableDefaultShare
+        MutationOperator::BisectBoundarySwap
+        | MutationOperator::DeepcopyToCopy
+        | MutationOperator::DequePopleftToPop
+        | MutationOperator::MutableDefaultShare
         | MutationOperator::MappingSetdefaultToGet
         | MutationOperator::ListComprehensionToGenerator
         | MutationOperator::ContainerElementDelete

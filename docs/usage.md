@@ -670,10 +670,10 @@ the detailed capability and cleanup model.
 
 ## Mutation operators
 
-Without `--operators`, a run selects 66 default runtime operators. `--operators`
+Without `--operators`, a run selects 69 default runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
-individual IDs or selector families. Hoimin exposes 85 operator IDs in total:
-66 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
+individual IDs or selector families. Hoimin exposes 88 operator IDs in total:
+69 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
 `exception_hierarchy`, and six opt-in analyzers: `condition_constant`,
 `function_body_erase`, `enum_member_replace`, `condition_clause_delete`,
 `container_element_delete`, and `optional_keyword_delete`.
@@ -686,30 +686,31 @@ The defaults include `statement_delete`, `integer_literal_neighbor`,
 `async_iterator_stop_insert`, `list_comprehension_to_generator`,
 `generator_return_insert`, `generator_skip_first`, `generator_empty`,
 `none_truthiness`, `mutable_default_share`, `nonlocal_remove`,
-`yield_from_to_yield`, and `mapping_setdefault_to_get`.
+`yield_from_to_yield`, `mapping_setdefault_to_get`, `bisect_boundary_swap`,
+`deepcopy_to_copy`, and `deque_popleft_to_pop`.
 To disable any of these,
 use, for example, `--exclude-operators statement_delete,string_literal_empty`.
 To recover the previous 61-operator selection, use
-`--exclude-operators none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get`.
+`--exclude-operators none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop`.
 To recover the earlier 57-operator selection, use
-`--exclude-operators list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get`.
+`--exclude-operators list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop`.
 To recover the earlier 55-operator selection, use
-`--exclude-operators iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get`.
+`--exclude-operators iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop`.
 To recover the earlier 54-operator selection, use
-`--exclude-operators loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get`. To recover the earlier 53-operator
+`--exclude-operators loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop`. To recover the earlier 53-operator
 selection, use
-`--exclude-operators stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get`. To recover the earlier
+`--exclude-operators stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop`. To recover the earlier
 52-operator selection, use
-`--exclude-operators string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get`. To recover the earlier 50-operator selection, use:
+`--exclude-operators string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop`. To recover the earlier 50-operator selection, use:
 
 ```text
---exclude-operators method_call_remove,function_body_return_constant,string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get
+--exclude-operators method_call_remove,function_body_return_constant,string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop
 ```
 
-To recover the historical 43-operator selection, exclude all twenty-three:
+To recover the historical 43-operator selection, exclude all twenty-six:
 
 ```text
---exclude-operators statement_delete,integer_literal_neighbor,augmented_to_assignment,return_tuple_swap,string_literal_empty,while_condition_false,conversion_call_remove,method_call_remove,function_body_return_constant,string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get
+--exclude-operators statement_delete,integer_literal_neighbor,augmented_to_assignment,return_tuple_swap,string_literal_empty,while_condition_false,conversion_call_remove,method_call_remove,function_body_return_constant,string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop
 ```
 
 New default runs can generate more candidates and take longer. With a candidate
@@ -724,7 +725,7 @@ binding analysis. Their existing applicability guards are unchanged.
 | --- | --- | --- |
 | Existing expression/control flow | `compare_eq_ne`, `compare_order`, `membership`, `identity`, `boolean_and_or`, `binary_add_sub`, `augmented_add_sub`, `binary_mul_div`, `augmented_mul_div`, `binary_floor_mod`, `augmented_floor_mod`, `unary_sign`, `remove_not`, `boolean_literal`, `break_continue` | comparisons; membership and identity; binary `+`/`-`, `*`/`/`, and `//`/`%`; augmented `+=`/`-=`, `*=`/`/=`, and `//=`/`%=`; unary signs; boolean expressions and literals, including `True`/`False` match patterns; and control flow |
 | Generator behavior | `list_comprehension_to_generator`, `generator_return_insert`, `generator_skip_first`, `generator_empty` | Eager/lazy conversion, early return, first-item consumption and empty output; enabled by default |
-| Missing values and shared state | `none_truthiness`, `mutable_default_share`, `nonlocal_remove`, `yield_from_to_yield`, `mapping_setdefault_to_get` | Empty/missing distinctions, shared defaults, lost outer updates, delegation and dictionary insertion; enabled by default |
+| Missing values and shared state | `none_truthiness`, `mutable_default_share`, `nonlocal_remove`, `yield_from_to_yield`, `mapping_setdefault_to_get`, `bisect_boundary_swap`, `deepcopy_to_copy`, `deque_popleft_to_pop` | Empty/missing distinctions, shared defaults, lost outer updates, delegation, dictionary insertion, duplicate boundaries, nested copies and FIFO order; enabled by default |
 | Early iterator exhaustion | `iterator_stop_insert`, `async_iterator_stop_insert` | Insert a stop exception at iterator protocol method entry; enabled by default |
 | Premature loop exit | `loop_break_insert` | Appends `break` to eligible `for`, `async for`, and `while` bodies; enabled by default |
 | Collection calls and literals | `collection_any_all`, `collection_list_tuple`, `collection_set_frozenset`, `collection_append_insert` | `any(x)` ↔ `all(x)`; `list`/`tuple` calls and load-context literals outside exception-handler type positions (which Python requires to be an exception class or tuple of exception classes); `set` ↔ `frozenset` calls; `seq.append(x)` ↔ `seq.insert(0, x)` |
@@ -1787,7 +1788,7 @@ A surviving mutant is a reason to inspect a test's assertions, not proof of a bu
 
 ## Missing values, shared state and delegation
 
-These five operators are enabled by default. Select one with `--operators`, or
+These eight operators are enabled by default. Select one with `--operators`, or
 exclude any IDs with `--exclude-operators`:
 
 | Operator | Mutation | Assertions it exercises |
@@ -1797,6 +1798,9 @@ exclude any IDs with `--exclude-operators`:
 | `nonlocal_remove` | Replace a nonlocal declaration with pass | Check updates to enclosing state, including multi-name declarations |
 | `yield_from_to_yield` | Remove only the from token, yielding the operand itself instead of delegating | Check individual produced values, their shape and delegation behavior |
 | `mapping_setdefault_to_get` | Rename an eligible setdefault call to get | Check that missing-key defaults are stored, not just returned |
+| `bisect_boundary_swap` | Swap bisect_left and bisect_right | Check insertion boundaries when equal values repeat |
+| `deepcopy_to_copy` | Replace a one-argument deepcopy call with copy | Check that nested mutable objects remain independent |
+| `deque_popleft_to_pop` | Rename a zero-argument popleft call to pop | Check FIFO order using at least two items |
 
 None comparisons support either operand order and retain a bool result without
 introducing a bool function lookup. Chained comparisons, None/None comparisons,
@@ -1827,3 +1831,15 @@ Candidates use the changed token's line (default None, nonlocal, from or method
 name), or the comparison start for none_truthiness. Existing symbol/line selection,
 profiles, caps, payload budgets and cancellation apply. A surviving mutant needs
 inspection against the application's observable contract; it is not proof of a bug.
+
+
+The bisect and copy mutations require a stable top-level standard-library import,
+including aliases. They skip shadowed, rebound or escaped bindings according to
+the shared import resolver. Imported function aliases use a guarded __import__
+lookup; module attributes retain their receiver and change only the member.
+Deepcopy calls with memo arguments, keywords or starred arguments are excluded.
+Bisect's unsuffixed alias and insort functions are excluded.
+
+The queue mutation accepts simple name or attribute receivers, zero arguments
+and no keywords. Like setdefault matching, it is syntactic and can affect custom
+methods. It changes popleft to pop only; ordinary pop calls are unaffected.

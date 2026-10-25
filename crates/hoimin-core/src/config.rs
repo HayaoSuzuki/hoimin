@@ -172,6 +172,9 @@ mutation_operators! {
     NonlocalRemove => "nonlocal_remove",
     YieldFromToYield => "yield_from_to_yield",
     MappingSetdefaultToGet => "mapping_setdefault_to_get",
+    BisectBoundarySwap => "bisect_boundary_swap",
+    DeepcopyToCopy => "deepcopy_to_copy",
+    DequePopleftToPop => "deque_popleft_to_pop",
 }
 
 // Family membership is an explicit selection policy, separate from the full
@@ -380,6 +383,9 @@ impl Default for MutationOperatorSelection {
                 MutationOperator::NonlocalRemove,
                 MutationOperator::YieldFromToYield,
                 MutationOperator::MappingSetdefaultToGet,
+                MutationOperator::BisectBoundarySwap,
+                MutationOperator::DeepcopyToCopy,
+                MutationOperator::DequePopleftToPop,
             ]
             .into_iter()
             .collect(),

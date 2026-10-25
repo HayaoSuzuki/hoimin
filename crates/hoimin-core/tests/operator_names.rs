@@ -202,6 +202,9 @@ const OPERATORS: &[(MutationOperator, &str)] = &[
         MutationOperator::MappingSetdefaultToGet,
         "mapping_setdefault_to_get",
     ),
+    (MutationOperator::BisectBoundarySwap, "bisect_boundary_swap"),
+    (MutationOperator::DeepcopyToCopy, "deepcopy_to_copy"),
+    (MutationOperator::DequePopleftToPop, "deque_popleft_to_pop"),
 ];
 
 const FAMILIES: [&str; 8] = [
