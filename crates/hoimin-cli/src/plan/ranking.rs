@@ -243,6 +243,9 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
     let operator = MutationOperator::from_name(operator)?;
     Some(match operator {
         MutationOperator::WhileConditionFalse
+        | MutationOperator::GeneratorReturnInsert
+        | MutationOperator::GeneratorSkipFirst
+        | MutationOperator::GeneratorEmpty
         | MutationOperator::IteratorStopInsert
         | MutationOperator::AsyncIteratorStopInsert
         | MutationOperator::LoopBreakInsert
@@ -263,7 +266,8 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::ExceptionBaseBoundary
         | MutationOperator::ExceptionTupleAddPair
         | MutationOperator::ExceptionTupleRemoveMember => RankingReasonCode::ExceptionHandling,
-        MutationOperator::ContainerElementDelete
+        MutationOperator::ListComprehensionToGenerator
+        | MutationOperator::ContainerElementDelete
         | MutationOperator::FunctionBodyReturnConstant
         | MutationOperator::MethodCallRemove
         | MutationOperator::StdlibConversionCallRemove

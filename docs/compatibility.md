@@ -19,12 +19,29 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Default generator behavior mutations
+
+Fresh default runs select 61 operators (80 IDs in the complete catalog). The four
+new IDs are `list_comprehension_to_generator`, `generator_return_insert`,
+`generator_skip_first` and `generator_empty`. Exclude them together to recover the
+preceding 57-operator selection:
+
+```text
+--exclude-operators list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty
+```
+
+Fresh candidate counts, rankings and capped prefixes can change. Explicit sets
+and saved plans retain their recorded selections. Generator-return insertion
+retains original yield source; skip/empty wrappers preserve construction without
+fully draining an input. See [generator behavior](usage.md#generator-behavior).
+No schema, parser, dependency or supported-Python-range change is included.
+
 ## Default iterator stop insertion
 
-Fresh default runs select 57 operators. `iterator_stop_insert` and
+`iterator_stop_insert` and
 `async_iterator_stop_insert` add entry exhaustion candidates for eligible iterator
 methods. Use `--exclude-operators iterator_stop_insert,async_iterator_stop_insert`
-to recover the preceding 55-operator selection. Explicit selections and saved
+to disable these two operators. Explicit selections and saved
 plans retain their recorded operators and candidates. Counts, rankings and capped
 prefixes of fresh default plans can change. See
 [early iterator exhaustion](usage.md#early-iterator-exhaustion).

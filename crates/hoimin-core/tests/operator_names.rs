@@ -181,6 +181,16 @@ const OPERATORS: &[(MutationOperator, &str)] = &[
         MutationOperator::AsyncIteratorStopInsert,
         "async_iterator_stop_insert",
     ),
+    (
+        MutationOperator::ListComprehensionToGenerator,
+        "list_comprehension_to_generator",
+    ),
+    (
+        MutationOperator::GeneratorReturnInsert,
+        "generator_return_insert",
+    ),
+    (MutationOperator::GeneratorSkipFirst, "generator_skip_first"),
+    (MutationOperator::GeneratorEmpty, "generator_empty"),
 ];
 
 const FAMILIES: [&str; 8] = [

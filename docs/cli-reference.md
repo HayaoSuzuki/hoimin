@@ -634,8 +634,9 @@ Mutation operator IDs and selector families:
   condition_constant, container_element_delete, conversion_call_remove, enum_member_replace
   exception_bare_to_exception, exception_base_boundary, exception_exception_to_bare, exception_hierarchy
   exception_ops, exception_risky, exception_tuple_add_pair, exception_tuple_remove_member
-  exception_type_pair, function_body_erase, function_body_return_constant, identity
-  integer_literal_neighbor, iterator_stop_insert, loop_break_insert, membership
+  exception_type_pair, function_body_erase, function_body_return_constant, generator_empty
+  generator_return_insert, generator_skip_first, identity, integer_literal_neighbor
+  iterator_stop_insert, list_comprehension_to_generator, loop_break_insert, membership
   method_call_remove, operator_function, optional_keyword_delete, remove_not
   return_tuple_swap, statement_delete, stdlib_conversion_call_remove, string_literal_empty
   string_segment_empty, structure_append_extend, structure_index_neighbor, structure_mapping_get_subscript
@@ -968,8 +969,9 @@ Mutation operator IDs and selector families:
   condition_constant, container_element_delete, conversion_call_remove, enum_member_replace
   exception_bare_to_exception, exception_base_boundary, exception_exception_to_bare, exception_hierarchy
   exception_ops, exception_risky, exception_tuple_add_pair, exception_tuple_remove_member
-  exception_type_pair, function_body_erase, function_body_return_constant, identity
-  integer_literal_neighbor, iterator_stop_insert, loop_break_insert, membership
+  exception_type_pair, function_body_erase, function_body_return_constant, generator_empty
+  generator_return_insert, generator_skip_first, identity, integer_literal_neighbor
+  iterator_stop_insert, list_comprehension_to_generator, loop_break_insert, membership
   method_call_remove, operator_function, optional_keyword_delete, remove_not
   return_tuple_swap, statement_delete, stdlib_conversion_call_remove, string_literal_empty
   string_segment_empty, structure_append_extend, structure_index_neighbor, structure_mapping_get_subscript

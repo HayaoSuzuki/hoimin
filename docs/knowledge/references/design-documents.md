@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: generator-mutations-design
+  resource: ../../superpowers/specs/2026-10-25-generator-mutations-design.md
+  revision: 0c1fbbb9bed0db13139111f5d924c3f09261c843
+  working_tree: untracked
+  sha256: db1c130cc3553960129c4bc72b2f15c72d5f811c0ac4a8a0c42aec704c734287
 - id: iterator-stop-insert-design
   resource: ../../superpowers/specs/2026-10-25-iterator-stop-insert-design.md
   revision: 23837533e00a42445d7026147aa0452282e153c4
@@ -1857,3 +1862,13 @@ The design records the accepted tail insertion and opt-out policy.[^loop-break-i
 The design records the protocol-specific behavior and limits.[^iterator-stop-insert-design]
 
 [^iterator-stop-insert-design]: [Iterator stop insertion design](../../superpowers/specs/2026-10-25-iterator-stop-insert-design.md).
+
+## Generator behavior mutations
+
+| Design | Scope |
+| --- | --- |
+| [Generator behavior mutations](../../superpowers/specs/2026-10-25-generator-mutations-design.md) | Four opt-out operators, shared entry layout, scoped construction facts and bounded consumption |
+
+The design distinguishes missing values from type, timing and traversal changes.[^generator-mutations-design]
+
+[^generator-mutations-design]: [Generator behavior mutation design](../../superpowers/specs/2026-10-25-generator-mutations-design.md).

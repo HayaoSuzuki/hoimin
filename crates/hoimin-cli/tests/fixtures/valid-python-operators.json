@@ -378,5 +378,25 @@
     "operator": "async_iterator_stop_insert",
     "status": "deferred",
     "reason": "Dedicated protocol entry, generator/shadowing exclusions, public opt-out and CPython iterator exhaustion tests; outside the initial cross-producer corpus"
+  },
+  {
+    "operator": "list_comprehension_to_generator",
+    "status": "deferred",
+    "reason": "Dedicated generator source/protocol/CPython execution, constructor evaluation, shadowing and public opt-out tests; outside the initial cross-producer corpus"
+  },
+  {
+    "operator": "generator_return_insert",
+    "status": "deferred",
+    "reason": "Dedicated generator source/protocol/CPython execution, constructor evaluation, shadowing and public opt-out tests; outside the initial cross-producer corpus"
+  },
+  {
+    "operator": "generator_skip_first",
+    "status": "deferred",
+    "reason": "Dedicated generator source/protocol/CPython execution, constructor evaluation, shadowing and public opt-out tests; outside the initial cross-producer corpus"
+  },
+  {
+    "operator": "generator_empty",
+    "status": "deferred",
+    "reason": "Dedicated generator source/protocol/CPython execution, constructor evaluation, shadowing and public opt-out tests; outside the initial cross-producer corpus"
   }
 ]

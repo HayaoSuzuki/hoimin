@@ -10370,3 +10370,22 @@ fn loop_entry_insertion_preserves_cr_only_tail_indentation() {
         "for x in xs:\r    if flag:\r        work()\r    break\r"
     );
 }
+
+#[test]
+fn generator_mutation_operators_are_individually_opt_out() {
+    let mut operators = MutationOperatorSelection::default();
+    for name in [
+        "list_comprehension_to_generator",
+        "generator_return_insert",
+        "generator_skip_first",
+        "generator_empty",
+    ] {
+        let operator = MutationOperator::from_name(name).expect("generator mutation is registered");
+        assert!(operators.contains(operator));
+        operators.exclude(operator);
+        assert!(!operators.contains(operator));
+    }
+}
+
+#[path = "generator_mutation_tests.rs"]
+mod generator_mutation_tests;

@@ -5,6 +5,11 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: generator-mutations-design
+  resource: ../../superpowers/specs/2026-10-25-generator-mutations-design.md
+  revision: 0c1fbbb9bed0db13139111f5d924c3f09261c843
+  working_tree: untracked
+  sha256: db1c130cc3553960129c4bc72b2f15c72d5f811c0ac4a8a0c42aec704c734287
 - id: iterator-stop-insert-design
   resource: ../../superpowers/specs/2026-10-25-iterator-stop-insert-design.md
   revision: 23837533e00a42445d7026147aa0452282e153c4
@@ -1800,3 +1805,30 @@ static analysis does not prove arbitrary dynamic iterator dispatch.
 [^iterator-stop-insert-design]
 
 [^iterator-stop-insert-design]: [Iterator stop insertion design](../../superpowers/specs/2026-10-25-iterator-stop-insert-design.md).
+
+# Opt-out generator behavior mutations
+
+Four default-enabled IDs cover eager-to-lazy comprehension conversion, generator
+entry return, first-item consumption and empty output. Return retains original
+yield source and thus generator/async-generator kind. Skip-first/empty target
+explicit synchronous Generator expressions, preserve construction once and avoid
+full draining. Their effects and limits are documented in the
+[user guide](../../usage.md#generator-behavior).[^generator-mutations-design]
+
+Function-entry layout and own-scope inspection are shared with iterator-stop
+insertion. The inserted next call requires builtin proof at construction in the
+parent scope. Range-keyed construction sites remain separate from ordinary name
+occurrences: implicit generators can start at an existing name, and nested
+generators can share an end offset across different scopes. Existing end-offset
+loop-back uncertainty remains conservative if such sites coincide. Deferred or
+dynamic bindings can suppress a candidate rather than assume a builtin.
+[^generator-mutations-design]
+
+Async-frame inspection distinguishes code executed by this generator from nested
+generator bodies and construction-time evaluation of its leftmost iterable.
+Selection precedes large replacement copies; admission, profiles, cancellation
+and payload limits retain their existing roles. These transformations do not
+prove every mutant inequivalent or every surviving case a production defect.
+[^generator-mutations-design]
+
+[^generator-mutations-design]: [Generator behavior mutation design](../../superpowers/specs/2026-10-25-generator-mutations-design.md).
