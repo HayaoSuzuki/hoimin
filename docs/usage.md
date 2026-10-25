@@ -670,10 +670,10 @@ the detailed capability and cleanup model.
 
 ## Mutation operators
 
-Without `--operators`, a run selects 57 default runtime operators. `--operators`
+Without `--operators`, a run selects 61 default runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
-individual IDs or selector families. Hoimin exposes 76 operator IDs in total:
-57 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
+individual IDs or selector families. Hoimin exposes 80 operator IDs in total:
+61 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
 `exception_hierarchy`, and six opt-in analyzers: `condition_constant`,
 `function_body_erase`, `enum_member_replace`, `condition_clause_delete`,
 `container_element_delete`, and `optional_keyword_delete`.
@@ -683,25 +683,29 @@ The defaults include `statement_delete`, `integer_literal_neighbor`,
 `while_condition_false`, `conversion_call_remove`, `method_call_remove`,
 `function_body_return_constant`, `string_segment_empty`,
 `stdlib_conversion_call_remove`, `loop_break_insert`, `iterator_stop_insert`, and
-`async_iterator_stop_insert`. To disable any of these,
+`async_iterator_stop_insert`, `list_comprehension_to_generator`,
+`generator_return_insert`, `generator_skip_first`, and `generator_empty`.
+To disable any of these,
 use, for example, `--exclude-operators statement_delete,string_literal_empty`.
-To recover the previous 55-operator selection, use
-`--exclude-operators iterator_stop_insert,async_iterator_stop_insert`.
+To recover the previous 57-operator selection, use
+`--exclude-operators list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty`.
+To recover the earlier 55-operator selection, use
+`--exclude-operators iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty`.
 To recover the earlier 54-operator selection, use
-`--exclude-operators loop_break_insert,iterator_stop_insert,async_iterator_stop_insert`. To recover the earlier 53-operator
+`--exclude-operators loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty`. To recover the earlier 53-operator
 selection, use
-`--exclude-operators stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert`. To recover the earlier
+`--exclude-operators stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty`. To recover the earlier
 52-operator selection, use
-`--exclude-operators string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert`. To recover the earlier 50-operator selection, use:
+`--exclude-operators string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty`. To recover the earlier 50-operator selection, use:
 
 ```text
---exclude-operators method_call_remove,function_body_return_constant,string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert
+--exclude-operators method_call_remove,function_body_return_constant,string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty
 ```
 
-To recover the historical 43-operator selection, exclude all fourteen:
+To recover the historical 43-operator selection, exclude all eighteen:
 
 ```text
---exclude-operators statement_delete,integer_literal_neighbor,augmented_to_assignment,return_tuple_swap,string_literal_empty,while_condition_false,conversion_call_remove,method_call_remove,function_body_return_constant,string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert
+--exclude-operators statement_delete,integer_literal_neighbor,augmented_to_assignment,return_tuple_swap,string_literal_empty,while_condition_false,conversion_call_remove,method_call_remove,function_body_return_constant,string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty
 ```
 
 New default runs can generate more candidates and take longer. With a candidate
@@ -715,6 +719,7 @@ binding analysis. Their existing applicability guards are unchanged.
 | Group | Runtime IDs | Mutations |
 | --- | --- | --- |
 | Existing expression/control flow | `compare_eq_ne`, `compare_order`, `membership`, `identity`, `boolean_and_or`, `binary_add_sub`, `augmented_add_sub`, `binary_mul_div`, `augmented_mul_div`, `binary_floor_mod`, `augmented_floor_mod`, `unary_sign`, `remove_not`, `boolean_literal`, `break_continue` | comparisons; membership and identity; binary `+`/`-`, `*`/`/`, and `//`/`%`; augmented `+=`/`-=`, `*=`/`/=`, and `//=`/`%=`; unary signs; boolean expressions and literals, including `True`/`False` match patterns; and control flow |
+| Generator behavior | `list_comprehension_to_generator`, `generator_return_insert`, `generator_skip_first`, `generator_empty` | Eager/lazy conversion, early return, first-item consumption and empty output; enabled by default |
 | Early iterator exhaustion | `iterator_stop_insert`, `async_iterator_stop_insert` | Insert a stop exception at iterator protocol method entry; enabled by default |
 | Premature loop exit | `loop_break_insert` | Appends `break` to eligible `for`, `async for`, and `while` bodies; enabled by default |
 | Collection calls and literals | `collection_any_all`, `collection_list_tuple`, `collection_set_frozenset`, `collection_append_insert` | `any(x)` ↔ `all(x)`; `list`/`tuple` calls and load-context literals outside exception-handler type positions (which Python requires to be an exception class or tuple of exception classes); `set` ↔ `frozenset` calls; `seq.append(x)` ↔ `seq.insert(0, x)` |
@@ -1735,3 +1740,41 @@ builtin; shadowed or uncertain bindings suppress the candidate. Insertion happen
 before an existing statement, so its line and containing method identify the
 candidate for `--line` and `--symbol` selection. A surviving mutant identifies a
 test gap to inspect; it does not by itself establish a defect in the iterator.
+
+## Generator behavior
+
+These four operators are enabled by default and independently removable with
+`--exclude-operators`. Select an individual ID with `--operators`.
+
+| Operator | Change | What tests can detect |
+| --- | --- | --- |
+| `list_comprehension_to_generator` | `[f(x) for x in items]` becomes `(f(x) for x in items)` | One-shot iteration, truthiness and lazy evaluation; async comprehensions also change to generator expressions |
+| `generator_return_insert` | Inserts bare `return` after a docstring in a generator `def` or `async def` | Missing produced values; original `yield` source remains so the function retains its generator kind |
+| `generator_skip_first` | Consumes one item from a synchronous generator expression at construction and returns the same generator | Missing first values and earlier evaluation; empty dynamic inputs remain empty |
+| `generator_empty` | Constructs the original synchronous generator expression, then substitutes an empty generator | Tests accepting missing values despite successful iterable construction |
+
+For example, changing a list comprehension into a generator can make a second
+traversal empty. Testing `bool(generator)` does not establish whether it contains
+values. Assertions should check the values needed by the application.
+
+Skip-first and empty target explicit synchronous generator expressions, including
+implicit sole call arguments. They do not infer arbitrary variables' iterator
+types or consume asynchronous generators. A construction-time `await` in the
+leftmost iterable can still produce a synchronous generator; awaits executing
+inside its frame make it asynchronous. Syntactically known-empty list/tuple
+iterables are excluded from these two operators.
+
+Skip-first requires static proof that `next` refers to the builtin. Shadowed or
+uncertain bindings suppress it. Its single `next` call evaluates user code sooner
+and can raise that code's errors; normal hoimin execution budgets still apply.
+Empty preserves the original leftmost iterable evaluation and iterator acquisition
+once, without consuming its values. It models no remaining items, not the side
+effects of actually exhausting an entire stream. No full-drain mutation is used.
+
+Early return excludes non-generator functions and an existing first `return`.
+Nested function bodies do not make their enclosing function a generator; defaults
+evaluated in the enclosing scope can. Docstrings, original body source and
+LF/CRLF/CR spelling are retained. Expression mutations use their expression's
+start line; entry insertion uses the existing statement's line. Existing
+line/symbol selection, profiles, candidate caps and payload limits apply.
+A surviving mutant is a reason to inspect a test's assertions, not proof of a bug.

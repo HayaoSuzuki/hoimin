@@ -330,7 +330,7 @@ fn exception_hierarchy_is_explicit_only() {
 }
 
 // Fixed current policy, independent of catalog and production default builders.
-const CURRENT_DEFAULT_NAMES: [&str; 57] = [
+const CURRENT_DEFAULT_NAMES: [&str; 61] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -388,6 +388,10 @@ const CURRENT_DEFAULT_NAMES: [&str; 57] = [
     "loop_break_insert",
     "iterator_stop_insert",
     "async_iterator_stop_insert",
+    "list_comprehension_to_generator",
+    "generator_return_insert",
+    "generator_skip_first",
+    "generator_empty",
 ];
 
 #[test]

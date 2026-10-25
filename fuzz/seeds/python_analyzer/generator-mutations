@@ -1,0 +1,6 @@
+def values(items):
+    """Yield the expected values."""
+    yield [x for x in items]
+    yield (x for x in items)
+reused = [x for x in (1, 2)]
+scoped = tuple(x for next in (10, 20) for x in (y for y in reused))

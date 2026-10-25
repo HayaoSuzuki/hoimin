@@ -35,6 +35,10 @@ mod container_elements;
 mod enum_members;
 #[path = "rust/function_body.rs"]
 mod function_body;
+#[path = "rust/function_entry.rs"]
+mod function_entry;
+#[path = "rust/generator_mutations.rs"]
+mod generator_mutations;
 #[path = "rust/iterator_stop.rs"]
 mod iterator_stop;
 #[path = "rust/loop_break.rs"]
@@ -1221,6 +1225,7 @@ struct NameOccurrence {
 struct NameResolutionIndex {
     scopes: Vec<NameScope>,
     occurrences: HashMap<usize, NameOccurrence>,
+    generator_constructions: HashMap<TextRange, NameOccurrence>,
     back_edge_bindings: HashMap<usize, HashSet<String>>,
     unevaluated_annotations: HashSet<usize>,
     imported_names: HashSet<String>,
@@ -1309,9 +1314,28 @@ impl NameResolutionIndex {
     }
 
     fn resolution(&self, offset: usize, name: &str) -> NameResolution {
-        let Some(occurrence) = self.occurrences.get(&offset) else {
-            return NameResolution::Unknown;
-        };
+        self.occurrences
+            .get(&offset)
+            .map_or(NameResolution::Unknown, |site| {
+                self.resolution_at_site(offset, site, name)
+            })
+    }
+
+    fn generator_next_is_builtin(&self, range: TextRange) -> bool {
+        self.generator_constructions
+            .get(&range)
+            .is_some_and(|site| {
+                self.resolution_at_site(usize::from(range.end()), site, "next")
+                    == NameResolution::DefinitelyBuiltin
+            })
+    }
+
+    fn resolution_at_site(
+        &self,
+        offset: usize,
+        occurrence: &NameOccurrence,
+        name: &str,
+    ) -> NameResolution {
         if occurrence.temporarily_shadowed {
             return NameResolution::Shadowed;
         }
@@ -1612,7 +1636,7 @@ impl NameResolutionIndex {
 fn tracked_resolution_name(name: &str) -> bool {
     MUTABLE_BUILTINS.contains(&name)
         || EXCEPTION_NAMES.contains(&name)
-        || ITERATOR_STOP_NAMES.contains(&name)
+        || INSERTION_BUILTINS.contains(&name)
 }
 
 #[derive(Default)]
@@ -1663,6 +1687,7 @@ impl NameResolutionBuilder {
             index: NameResolutionIndex {
                 scopes: vec![NameScope::new(NameScopeKind::Module, None)],
                 occurrences: HashMap::new(),
+                generator_constructions: HashMap::new(),
                 back_edge_bindings: HashMap::new(),
                 unevaluated_annotations: HashSet::new(),
                 imported_names: HashSet::new(),
@@ -1981,7 +2006,7 @@ impl NameResolutionBuilder {
             for name in MUTABLE_BUILTINS
                 .iter()
                 .chain(EXCEPTION_NAMES)
-                .chain(ITERATOR_STOP_NAMES)
+                .chain(INSERTION_BUILTINS)
             {
                 self.record_loop_back_edge_binding(self.current, name);
             }
@@ -1990,7 +2015,7 @@ impl NameResolutionBuilder {
             for name in MUTABLE_BUILTINS
                 .iter()
                 .chain(EXCEPTION_NAMES)
-                .chain(ITERATOR_STOP_NAMES)
+                .chain(INSERTION_BUILTINS)
             {
                 scope.possible_bindings.insert((*name).to_owned());
                 if matches!(scope.kind, NameScopeKind::Module | NameScopeKind::Class) {
@@ -2018,7 +2043,7 @@ impl NameResolutionBuilder {
         for name in MUTABLE_BUILTINS
             .iter()
             .chain(EXCEPTION_NAMES)
-            .chain(ITERATOR_STOP_NAMES)
+            .chain(INSERTION_BUILTINS)
         {
             self.record_loop_back_edge_binding(scope_id, name);
         }
@@ -2027,7 +2052,7 @@ impl NameResolutionBuilder {
         for name in MUTABLE_BUILTINS
             .iter()
             .chain(EXCEPTION_NAMES)
-            .chain(ITERATOR_STOP_NAMES)
+            .chain(INSERTION_BUILTINS)
         {
             scope.possible_bindings.insert((*name).to_owned());
             if matches!(scope.kind, NameScopeKind::Module | NameScopeKind::Class) {
@@ -2057,20 +2082,33 @@ impl NameResolutionBuilder {
     }
 
     fn record_resolution_site(&mut self, offset: usize, temporarily_shadowed: bool) {
+        let site = self.resolution_site(offset, temporarily_shadowed);
+        self.index.occurrences.insert(offset, site);
+    }
+
+    fn record_generator_construction(&mut self, range: TextRange) {
+        let temporarily_shadowed =
+            self.temporary_shadowed.iter().rev().any(|(scope, names)| {
+                names.contains("next") && self.temporary_binding_visible(*scope)
+            });
+        let site = self.resolution_site(usize::from(range.end()), temporarily_shadowed);
+        // Nested generators can share an end offset while being constructed in
+        // different scopes. Keep their facts separate from ordinary name sites.
+        self.index.generator_constructions.insert(range, site);
+    }
+
+    fn resolution_site(&mut self, offset: usize, temporarily_shadowed: bool) -> NameOccurrence {
         let event = self.next_event();
-        self.index.occurrences.insert(
-            offset,
-            NameOccurrence {
-                scope: self.current,
-                event,
-                temporarily_shadowed,
-            },
-        );
         let scopes = &self.index.scopes;
         for context in &mut self.loop_back_edges {
             if Self::loop_scope_visible(scopes, self.current, context.scope) {
                 context.occurrences.push(offset);
             }
+        }
+        NameOccurrence {
+            scope: self.current,
+            event,
+            temporarily_shadowed,
         }
     }
 
@@ -2369,6 +2407,7 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
                 self.visit_comprehension_expression(&comprehension.generators, |this| {
                     this.visit_expr(&comprehension.elt);
                 });
+                self.record_generator_construction(comprehension.range());
                 return;
             }
             _ => {}
@@ -2564,6 +2603,10 @@ impl<'tokens> AstFacts<'tokens> {
         self.name_resolution
             .resolution(usize::from(range.start()), name)
             == NameResolution::DefinitelyBuiltin
+    }
+
+    fn generator_next_is_builtin(&self, range: TextRange) -> bool {
+        self.name_resolution.generator_next_is_builtin(range)
     }
 
     fn resolves_builtin_pair(&self, range: TextRange, source: &str, destination: &str) -> bool {
@@ -2830,7 +2873,7 @@ const MUTABLE_BUILTINS: &[&str] = &[
     "reversed",
 ];
 
-const ITERATOR_STOP_NAMES: &[&str] = &["StopIteration", "StopAsyncIteration"];
+const INSERTION_BUILTINS: &[&str] = &["StopIteration", "StopAsyncIteration", "next"];
 
 const EXCEPTION_NAMES: &[&str] = &[
     "ValueError",
@@ -3948,6 +3991,42 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         }
     }
 
+    fn collect_generator_return_insert(&mut self, statement: &Stmt) {
+        if !self
+            .request
+            .operators
+            .contains(MutationOperator::GeneratorReturnInsert)
+        {
+            return;
+        }
+        let Stmt::FunctionDef(definition) = statement else {
+            return;
+        };
+        if matches!(
+            function_entry::first_statement(definition),
+            Some(Stmt::Return(_))
+        ) {
+            return;
+        }
+        if let Some(facts) = function_entry::inspect(definition, None, self.cancelled)
+            && facts.has_yield
+            && let Some((range, replacement)) = function_entry::insert(
+                definition,
+                self.source,
+                self.facts.tokens.expect("parser tokens are set"),
+                "return",
+                self.cancelled,
+            )
+        {
+            self.add_candidate_in_scope(
+                range,
+                replacement,
+                MutationOperator::GeneratorReturnInsert,
+                definition.range(),
+            );
+        }
+    }
+
     fn collect_iterator_stop_insert(&mut self, statement: &Stmt) {
         let Stmt::FunctionDef(definition) = statement else {
             return;
@@ -4086,6 +4165,10 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             if self.candidates.failure.is_some() {
                 return;
             }
+        }
+        self.collect_generator_return_insert(statement);
+        if self.candidates.failure.is_some() {
+            return;
         }
         self.collect_iterator_stop_insert(statement);
         if self.candidates.failure.is_some() {
@@ -4364,6 +4447,32 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
             self.integer_suppressed |= target;
             if target {
                 self.runtime_role = RuntimeRole::AssignmentTarget;
+            }
+            if self.runtime_role == RuntimeRole::Value
+                && !self.in_pattern
+                && matches!(expression, Expr::ListComp(_) | Expr::Generator(_))
+                && self.expression_selected(expression)
+            {
+                let next_is_builtin = self
+                    .request
+                    .operators
+                    .contains(MutationOperator::GeneratorSkipFirst)
+                    && matches!(expression, Expr::Generator(_))
+                    && self.facts.generator_next_is_builtin(expression.range());
+                generator_mutations::emit(
+                    expression,
+                    self.source,
+                    self.request.operators,
+                    next_is_builtin,
+                    self.cancelled,
+                    |range, replacement, operator| {
+                        self.add_candidate(range, replacement, operator);
+                        !self.check_cancelled()
+                    },
+                );
+                if self.candidates.failure.is_some() {
+                    return;
+                }
             }
             if self
                 .request

@@ -163,6 +163,10 @@ mutation_operators! {
     LoopBreakInsert => "loop_break_insert",
     IteratorStopInsert => "iterator_stop_insert",
     AsyncIteratorStopInsert => "async_iterator_stop_insert",
+    ListComprehensionToGenerator => "list_comprehension_to_generator",
+    GeneratorReturnInsert => "generator_return_insert",
+    GeneratorSkipFirst => "generator_skip_first",
+    GeneratorEmpty => "generator_empty",
 }
 
 // Family membership is an explicit selection policy, separate from the full
@@ -362,6 +366,10 @@ impl Default for MutationOperatorSelection {
                 MutationOperator::LoopBreakInsert,
                 MutationOperator::IteratorStopInsert,
                 MutationOperator::AsyncIteratorStopInsert,
+                MutationOperator::ListComprehensionToGenerator,
+                MutationOperator::GeneratorReturnInsert,
+                MutationOperator::GeneratorSkipFirst,
+                MutationOperator::GeneratorEmpty,
             ]
             .into_iter()
             .collect(),
