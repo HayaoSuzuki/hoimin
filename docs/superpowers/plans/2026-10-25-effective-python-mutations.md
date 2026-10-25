@@ -33,7 +33,7 @@ String,MutationOperator and returns bool (continue admission).
 - [x] Register IDs/defaults and update enum exhaustive ranking,85-ID fixtures.
 - [x] Add positive/negative RED for all five behaviors and review focus inputs.
 - [x] Implement local builders/hooks; selection gates before copies.
-- [ ] Run core/python suite and five implementation reviews; commit task.
+- [x] Run core/python suite and five implementation reviews; commit task.
 
 ## Task2: Public behavior and delivery
 
@@ -49,5 +49,5 @@ exception and stdout, LFCRLFCR and both Python versions.
 - [x] Run targeted runtime/config/docs checks and five validation reviews.
 - [x] One fresh whole-branch review; fix substantive findings RED->GREEN.
 - [x] Full locked workspace suite, all-feature/target Clippy, formatting/reference.
-- [ ] Five delivery reviews; commit/push/create/attach main-based PR.
-- [ ] Remove owned build/site outputs and record cleanup; preserve primary .gitignore.
+- [x] Five delivery reviews; commit/push/create/attach main-based PR.
+- [x] Remove owned build/site outputs and record cleanup; preserve primary .gitignore.

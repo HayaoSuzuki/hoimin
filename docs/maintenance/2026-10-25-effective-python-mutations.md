@@ -71,3 +71,10 @@ current source provenance. Documentation build, references and CLI freshness pas
 3. Spec references and OKF hashes identify the actual reviewed source snapshot.
 4. The fresh reviewer rechecked the grouping repair and found no residual defect.
 5. The PR targets main directly; generated site/target cleanup follows verification.
+
+
+PR: https://github.com/HayaoSuzuki/hoimin/pull/1113 (base main).
+After verification, cargo clean removed 5,493 files / 5.7 GiB. The owned generated
+site was removed after checking its absolute path. Disk free after cleanup:
+116,716,896,256 bytes (about 108.7 GiB). Sources and small local evidence logs are
+retained in the dedicated worktree. Primary .gitignore SHA256 remains unchanged.
