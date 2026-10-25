@@ -1,0 +1,10 @@
+def collect(values):
+    result = []
+    for value in values:
+        for part in value:
+            result.append(part)  # 値
+    else:
+        result.append(None)
+    while result:
+        result.pop()
+    return result

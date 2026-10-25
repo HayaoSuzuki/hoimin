@@ -854,3 +854,92 @@ fn analyze(
 ) -> hoimin_python::AnalyzerOutput {
     hoimin_python::analyze_source_cancellable(request, source, || false).unwrap()
 }
+
+#[tokio::test]
+async fn loop_break_insert_compiles_and_changes_iteration_and_else_behavior() {
+    let operators = serde_json::from_value(serde_json::json!(["loop_break_insert"])).unwrap();
+    let fixtures = [
+        (
+            "def f():\n    result = []\n    for x in [1, 2, 3]:\n        result.append(x) # preserve\n    else:\n        result.append(9)\n    return result\n",
+            "[1, 2, 3, 9]\n",
+            "[1]\n",
+        ),
+        (
+            "def f():\n    x = 0\n    while x < 3:\n        x += 1\n    else:\n        x += 10\n    return x\n",
+            "13\n",
+            "1\n",
+        ),
+        (
+            "def f():\n    result = []\n    for x in [1, 2]: result.append(x); # keep\n    return result\n",
+            "[1, 2]\n",
+            "[1]\n",
+        ),
+        (
+            "def f():\n    result = []\n    for x in [1, 2]:\n        for y in [3, 4]:\n            result.append((x, y))\n    return result\n",
+            "[(1, 3), (1, 4), (2, 3), (2, 4)]\n",
+            "",
+        ),
+        (
+            "import asyncio\nasync def values():\n    yield 1\n    yield 2\nasync def f():\n    result = []\n    async for x in values():\n        result.append(x)\n    return result\n",
+            "[1, 2]\n",
+            "[1]\n",
+        ),
+    ];
+    for (fixture, baseline, expected) in fixtures {
+        for newline in ["\n", "\r\n"] {
+            let source = fixture.replace('\n', newline);
+            let output = analyze(
+                &hoimin_python::AnalyzeRequest {
+                    payload: hoimin_python::payload::PayloadBudget::default(),
+                    path: Utf8Path::new("subject.py"),
+                    lines: &[],
+                    symbols: &[],
+                    operators: &operators,
+                    profile: MutationProfile::Full,
+                    max_candidates: 10,
+                },
+                &source,
+            );
+            assert_eq!(output.diagnostics.len(), 0);
+            assert_eq!(
+                output.candidates.len(),
+                if expected.is_empty() { 2 } else { 1 }
+            );
+            let mut sources = vec![source.as_bytes().to_vec()];
+            for candidate in &output.candidates {
+                validate_candidate(source.as_bytes(), &descriptor(&source, candidate)).unwrap();
+                let mut mutant = source.as_bytes().to_vec();
+                let start = usize::try_from(candidate.span.start).unwrap();
+                let end = start + usize::try_from(candidate.span.length).unwrap();
+                mutant.splice(start..end, candidate.replacement.bytes());
+                sources.push(mutant);
+            }
+            let harness = if fixture.starts_with("import asyncio") {
+                "print(asyncio.run(f()))"
+            } else {
+                "print(f())"
+            };
+            let observations = python_observe(&sources, harness).await.unwrap();
+            assert_eq!(observations[0]["stdout"], baseline);
+            for observation in &observations {
+                assert_eq!(observation["compiled"], true, "{source}: {observation}");
+                assert!(
+                    observation["exception"].is_null(),
+                    "{source}: {observation}"
+                );
+            }
+            if expected.is_empty() {
+                let outputs: BTreeSet<_> = observations[1..]
+                    .iter()
+                    .map(|o| o["stdout"].as_str().unwrap())
+                    .collect();
+                assert_eq!(
+                    outputs,
+                    BTreeSet::from(["[(1, 3), (1, 4)]\n", "[(1, 3), (2, 3)]\n"])
+                );
+            } else {
+                assert_eq!(observations[1]["stdout"], expected);
+            }
+        }
+    }
+}

@@ -9984,3 +9984,186 @@ fn python315_lazy_enum_aliases_preserve_write_and_escape_hazards() {
         );
     }
 }
+
+#[test]
+fn loop_break_insert_appends_to_for_and_while_bodies() {
+    let operator = MutationOperator::from_name("loop_break_insert")
+        .expect("loop_break_insert is a registered opt-out operator");
+    for (source, expected) in [
+        (
+            "for x in values:\n    consume(x)\n",
+            "for x in values:\n    consume(x)\n    break\n",
+        ),
+        ("while ready(): work()\n", "while ready(): work(); break\n"),
+    ] {
+        let output = analyze_with_only_operator(source, operator);
+        assert_eq!(output.candidates.len(), 1, "{source}");
+        let candidate = &output.candidates[0];
+        let start = usize::try_from(candidate.span.start).unwrap();
+        let end = start + usize::try_from(candidate.span.length).unwrap();
+        let mutated = format!(
+            "{}{}{}",
+            &source[..start],
+            candidate.replacement,
+            &source[end..]
+        );
+        assert_eq!(mutated, expected);
+        assert!(parse_module(&mutated).is_ok(), "{mutated}");
+    }
+}
+
+#[test]
+fn loop_break_insert_preserves_layout_and_suite_boundaries() {
+    for (source, expected) in [
+        (
+            "for x in xs:\r\n\tconsume(\"値\")  # keep\r\nelse:\r\n\tdone()\r\n",
+            "for x in xs:\r\n\tconsume(\"値\")  # keep\r\n\tbreak\r\nelse:\r\n\tdone()\r\n",
+        ),
+        (
+            "for x in xs: a(); b(); # tail\n",
+            "for x in xs: a(); b(); break; # tail\n",
+        ),
+        (
+            "while ready():\n    if flag:\n        work() # tail",
+            "while ready():\n    if flag:\n        work() # tail\n    break",
+        ),
+        ("for x in xs:\n    値", "for x in xs:\n    値\n    break"),
+        (
+            "for x in xs: work(\n    x\n) # tail\n",
+            "for x in xs: work(\n    x\n); break # tail\n",
+        ),
+        (
+            "async def f(xs):\n    async for x in xs:\n        await consume(x)\n",
+            "async def f(xs):\n    async for x in xs:\n        await consume(x)\n        break\n",
+        ),
+    ] {
+        let output = analyze_selected(&["loop_break_insert"], source);
+        assert!(output.diagnostics.is_empty(), "{source}");
+        assert_eq!(output.candidates.len(), 1, "{source}");
+        let candidate = &output.candidates[0];
+        let start = usize::try_from(candidate.span.start).unwrap();
+        let end = start + usize::try_from(candidate.span.length).unwrap();
+        assert_eq!(&source[start..end], candidate.original);
+        assert!(end > start);
+        let mutated = format!(
+            "{}{}{}",
+            &source[..start],
+            candidate.replacement,
+            &source[end..]
+        );
+        assert_eq!(mutated, expected);
+        assert!(parse_module(&mutated).is_ok(), "{mutated}");
+    }
+}
+
+#[test]
+fn loop_break_insert_skips_unreachable_tails_but_visits_nested_loops() {
+    for exit in ["break", "continue", "return", "raise RuntimeError()"] {
+        let source = format!("def f(xs):\n    for x in xs:\n        {exit}\n        work()\n");
+        assert_eq!(
+            analyze_selected(&["loop_break_insert"], &source)
+                .candidates
+                .len(),
+            0
+        );
+    }
+    let source = "for x in xs:\n    for y in ys:\n        consume(x, y)\nelse:\n    for z in zs:\n        finish(z)\n";
+    let output = analyze_selected(&["loop_break_insert"], source);
+    assert_eq!(output.candidates.len(), 3);
+    let replacements: Vec<_> = output
+        .candidates
+        .iter()
+        .map(|c| c.replacement.as_str())
+        .collect();
+    assert!(replacements.contains(&"\n    break\n"));
+    assert!(replacements.contains(&"\n        break\n"));
+    for candidate in &output.candidates {
+        let start = usize::try_from(candidate.span.start).unwrap();
+        let end = start + usize::try_from(candidate.span.length).unwrap();
+        let mutated = format!(
+            "{}{}{}",
+            &source[..start],
+            candidate.replacement,
+            &source[end..]
+        );
+        assert!(parse_module(&mutated).is_ok(), "{mutated}");
+    }
+}
+
+#[test]
+fn loop_break_insert_respects_selection_prefix_cancellation_and_payload() {
+    let source = "def first(xs):\n    for x in xs:\n        consume(x)\ndef second(xs):\n    while ready():\n        work()\n";
+    let all = analyze_selected(&["loop_break_insert"], source);
+    assert_eq!(all.candidates.len(), 2);
+    let one = analyze_selected_with(
+        &["loop_break_insert"],
+        Utf8Path::new("pkg/sample.py"),
+        &[],
+        &[],
+        1,
+        source,
+    );
+    assert_eq!(one.candidates.len(), 1);
+    assert!(one.truncated);
+    assert_eq!(one.candidates[0].span, all.candidates[0].span);
+    let chosen = analyze_selected_with(
+        &["loop_break_insert"],
+        Utf8Path::new("pkg/sample.py"),
+        &[LineRange { start: 6, end: 6 }],
+        &["second".to_owned()],
+        10,
+        source,
+    );
+    assert_eq!(chosen.candidates.len(), 1);
+    assert_eq!(chosen.candidates[0].symbol.as_deref(), Some("second"));
+    let operators = serde_json::from_value(serde_json::json!(["loop_break_insert"])).unwrap();
+    let request = AnalyzeRequest {
+        payload: super::payload::PayloadBudget::new(1),
+        path: Utf8Path::new("pkg/sample.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 10,
+    };
+    assert!(analyze_source_cancellable(&request, source, || true).is_err());
+    assert!(analyze_source_cancellable(&request, source, || false).is_err());
+}
+
+#[test]
+fn loop_break_insert_does_not_enter_a_continued_logical_line() {
+    let source = "for x in xs:\n    consume(x) \\\n\n";
+    let output = analyze_selected(&["loop_break_insert"], source);
+    assert_eq!(output.candidates.len(), 1);
+    let c = &output.candidates[0];
+    let start = usize::try_from(c.span.start).unwrap();
+    let end = start + usize::try_from(c.span.length).unwrap();
+    let mutant = format!("{}{}{}", &source[..start], c.replacement, &source[end..]);
+    assert!(parse_module(&mutant).is_ok(), "{mutant}");
+}
+
+#[test]
+fn loop_break_insert_shared_anchor_has_stable_prefix_and_outer_scope() {
+    let source = "def outer(xs, ys):\n    for x in xs:\n        for y in ys:\n            work()\n";
+    let all = analyze_selected(&["loop_break_insert"], source);
+    assert_eq!(all.candidates.len(), 2);
+    assert_eq!(all.candidates[0].span, all.candidates[1].span);
+    let prefix = analyze_selected_with(
+        &["loop_break_insert"],
+        Utf8Path::new("pkg/sample.py"),
+        &[],
+        &[],
+        1,
+        source,
+    );
+    assert_eq!(prefix.candidates.len(), 1);
+    assert_eq!(
+        prefix.candidates[0].replacement,
+        all.candidates[0].replacement
+    );
+    assert!(prefix.truncated);
+    let source = "def outer(xs):\n    for x in xs:\n        def inner():\n            return x\n";
+    let output = analyze_selected(&["loop_break_insert"], source);
+    assert_eq!(output.candidates.len(), 1);
+    assert_eq!(output.candidates[0].symbol.as_deref(), Some("outer"));
+}

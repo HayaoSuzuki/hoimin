@@ -19,6 +19,16 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Default loop break insertion
+
+Fresh default runs select 55 operators, including `loop_break_insert`. It adds
+one candidate for each eligible `for`, `async for`, or `while` body. Candidate
+counts, ranking and prefixes retained under a cap can therefore change. Use
+`--exclude-operators loop_break_insert` to recover the previous 54-operator set.
+Explicit `--operators` sets and saved plans retain their recorded operators and
+candidates; loading a plan does not add this operator. Existing `break_continue`
+keeps its swap behavior. See [premature loop exit](usage.md#premature-loop-exit).
+
 ## Reduced CLI and logging features
 
 CLI help and errors use plain text. Automatic color and spelling suggestions for
