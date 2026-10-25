@@ -76,3 +76,8 @@ at the validation checkpoint. Final cleanup and delivery evidence is added below
 5. Retained the dedicated worktree for PR review; cleaned generated site output
    only after validating its resolved path under this worktree. Build artifacts
    are cleaned after PR creation, with small evidence logs retained.
+
+Delivery: [PR #1110](https://github.com/HayaoSuzuki/hoimin/pull/1110), branch
+`loop-break-insert`. `cargo clean` reclaimed5.6GiB (5,383 files); generated `site`
+was removed after the resolved-path check. Small verification logs remain in the
+ignored task directory; the worktree remains available for review.

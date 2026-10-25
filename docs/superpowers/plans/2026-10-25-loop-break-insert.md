@@ -45,4 +45,4 @@ design catalog, maintenance evidence.
 - [x] Run workspace tests, formatting, clippy, Python/documentation checks.
 - [x] Perform five validation reviews and one fresh independent final review.
 - [x] Fix findings with regression tests; finish five delivery reviews.
-- [ ] Commit, push the dedicated branch, create and attach the PR.
+- [x] Commit, push the dedicated branch, create and attach the PR.
