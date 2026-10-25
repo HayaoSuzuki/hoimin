@@ -65,5 +65,5 @@ reference; spec catalog/analyzer OKF; maintenance evidence and fuzz seed.
 - [x] Update docs/OKF/reference and run their checks.
 - [x] Run targeted tests and five validation reviews, then one fresh whole-branch
   review; fix defects RED→GREEN before the full workspace and Clippy checks.
-- [ ] Complete five delivery reviews, cleanup owned artifacts, commit/push and
+- [x] Complete five delivery reviews, cleanup owned artifacts, commit/push and
   create/attach the stacked PR. Preserve the primary checkout's local .gitignore.

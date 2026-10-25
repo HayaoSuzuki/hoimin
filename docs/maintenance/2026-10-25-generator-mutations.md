@@ -71,3 +71,9 @@ Full locked workspace suite passed: **3797 passed, 32 ignored,0failed**, across1
 5. Parent PRs1110/1111 have completed CI without failures; new PR will target1111's
    iterator-stop-insert branch. Cleanup is limited to this worktree's owned output.
 Local detailed logs are retained under `.superpowers/generator-mutations/`.
+
+
+PR: https://github.com/HayaoSuzuki/hoimin/pull/1112 (base iterator-stop-insert).
+After verification, cargo clean removed5383files/5.6GiB; the owned generated site
+was removed after absolute-path verification. Disk free after cleanup:117119225856
+bytes (about109.1GiB). Source, tests and local evidence logs are retained.
