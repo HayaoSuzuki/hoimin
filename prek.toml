@@ -32,5 +32,5 @@ pass_filenames = false
 id = "cargo-clippy-vendor"
 name = "cargo clippy (vendored parser)"
 language = "system"
-entry = "cargo clippy --locked -p littrs-ruff-python-parser --lib --no-deps -- -D warnings"
+entry = "cargo clippy --locked -p ruff_python_parser --lib --no-deps -- -D warnings"
 pass_filenames = false
