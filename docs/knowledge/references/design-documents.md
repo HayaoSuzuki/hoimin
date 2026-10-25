@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: loop-break-insert-design
+  resource: ../../superpowers/specs/2026-10-25-loop-break-insert-design.md
+  revision: 29e7df70048e1d0d086594b12166e13354653ee0
+  working_tree: untracked
+  sha256: 7fb58b872d8d4637bd9eaaebffd050b6f373ece4f89aa20034499ef190aa343f
 - id: perf-three-design
   resource: ../../superpowers/specs/2026-10-20-perf-three-design.md
   revision: f72134d76d28d87cd728305ed224f298df41af4a
@@ -1827,3 +1832,13 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | Python 3.14・3.15のfuzz入力生成 | [Design](../../superpowers/specs/2026-10-24-python-315-fuzz-design.md) [^python315-fuzz-design] |
 
 [^python315-fuzz-design]: [Python 3.14・3.15のfuzz入力生成](../../superpowers/specs/2026-10-24-python-315-fuzz-design.md).
+
+## Loop break insertion
+
+| Design | Scope |
+| --- | --- |
+| [Insert a break at the end of a loop body](../../superpowers/specs/2026-10-25-loop-break-insert-design.md) | Opt-out `loop_break_insert`, tail semantics, layout and resource boundaries |
+
+The design records the accepted tail insertion and opt-out policy.[^loop-break-insert-design]
+
+[^loop-break-insert-design]: [Loop break insertion design](../../superpowers/specs/2026-10-25-loop-break-insert-design.md).

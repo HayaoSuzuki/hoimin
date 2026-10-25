@@ -5,6 +5,11 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: loop-break-insert-design
+  resource: ../../superpowers/specs/2026-10-25-loop-break-insert-design.md
+  revision: 29e7df70048e1d0d086594b12166e13354653ee0
+  working_tree: untracked
+  sha256: 7fb58b872d8d4637bd9eaaebffd050b6f373ece4f89aa20034499ef190aa343f
 - id: issue-1086-tokens
   resource: ../../../crates/hoimin-python/src/analyzer/rust.rs
   revision: 11eb28d3ff43c441c3aabc78cd7fa6d7d0c72493
@@ -1750,3 +1755,23 @@ Ruff 0.17.2のparserは安全修正を含むvendorソースを使い、AST・周
 通常のeager importは既存の規則を維持する。[^python315-syntax]
 
 [^python315-syntax]: [Python 3.15構文と上流Ruffの取り込み](../../superpowers/specs/2026-10-24-python-315-syntax-design.md).
+
+# Opt-out loop break insertion
+
+`loop_break_insert` is enabled by default and independently removable with
+`--exclude-operators`. It appends a tail `break` to `for`, `async for`, and `while`
+bodies without a direct unconditional exit. It changes subsequent iteration and
+loop `else` execution when the tail is reached; conditional `continue` can bypass
+it. Each nested loop is a separate candidate. Explicit selections and saved plans
+retain their existing operator sets.[^loop-break-insert-design]
+
+The implementation uses a nonempty logical-newline or final-character source
+anchor instead of retaining another copy of the body. Inline suites use a
+semicolon. Logical newline tokens preserve comments and explicit continuations;
+source indentation and newline spelling are retained. The existing admission,
+selection, cancellation and retained-payload limits still apply. Scope metadata
+comes from the loop, even when its final statement defines a nested symbol.
+This does not prove all tail positions are reachable or all mutants inequivalent.
+[^loop-break-insert-design]
+
+[^loop-break-insert-design]: [Loop break insertion design](../../superpowers/specs/2026-10-25-loop-break-insert-design.md).

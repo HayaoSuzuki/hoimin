@@ -363,5 +363,10 @@
     "operator": "stdlib_conversion_call_remove",
     "status": "deferred",
     "reason": "Dedicated public CLI/CPython Decimal/Fraction type-sensitivity tests and bounded proptest cover import aliases, source spans, candidate prefixes and identity exclusions; outside initial cross-producer corpus"
+  },
+  {
+    "operator": "loop_break_insert",
+    "status": "deferred",
+    "reason": "Dedicated analyzer layout/selection/budget regressions, public opt-out/saved-plan tests and CPython execution cover loop termination; outside the initial cross-producer corpus"
   }
 ]

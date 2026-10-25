@@ -35,6 +35,8 @@ mod container_elements;
 mod enum_members;
 #[path = "rust/function_body.rs"]
 mod function_body;
+#[path = "rust/loop_break.rs"]
+mod loop_break;
 #[path = "rust/optional_keywords.rs"]
 mod optional_keywords;
 #[path = "rust/return_tuple.rs"]
@@ -3988,6 +3990,27 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 loop_stmt.test.range(),
                 "(False)".to_owned(),
                 MutationOperator::WhileConditionFalse,
+            );
+            if self.candidates.failure.is_some() {
+                return;
+            }
+        }
+        if self
+            .request
+            .operators
+            .contains(MutationOperator::LoopBreakInsert)
+            && let Some((range, replacement)) = loop_break::replacement(
+                statement,
+                self.source,
+                self.facts.tokens.expect("parser tokens are set"),
+                self.cancelled,
+            )
+        {
+            self.add_candidate_in_scope(
+                range,
+                replacement,
+                MutationOperator::LoopBreakInsert,
+                statement.range(),
             );
             if self.candidates.failure.is_some() {
                 return;

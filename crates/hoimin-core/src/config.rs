@@ -160,6 +160,7 @@ mutation_operators! {
     FunctionBodyReturnConstant => "function_body_return_constant",
     StringSegmentEmpty => "string_segment_empty",
     StdlibConversionCallRemove => "stdlib_conversion_call_remove",
+    LoopBreakInsert => "loop_break_insert",
 }
 
 // Family membership is an explicit selection policy, separate from the full
@@ -356,6 +357,7 @@ impl Default for MutationOperatorSelection {
                 MutationOperator::FunctionBodyReturnConstant,
                 MutationOperator::StringSegmentEmpty,
                 MutationOperator::StdlibConversionCallRemove,
+                MutationOperator::LoopBreakInsert,
             ]
             .into_iter()
             .collect(),
