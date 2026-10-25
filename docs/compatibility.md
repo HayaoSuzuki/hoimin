@@ -19,16 +19,29 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
-## Default generator behavior mutations
+## Default missing-value and shared-state mutations
 
-Fresh default runs select 61 operators (80 IDs in the complete catalog). The four
-new IDs are `list_comprehension_to_generator`, `generator_return_insert`,
-`generator_skip_first` and `generator_empty`. Exclude them together to recover the
-preceding 57-operator selection:
+Fresh runs select 72 operators from 91 catalog IDs. The eleven additions are
+`none_truthiness`, `mutable_default_share`, `nonlocal_remove`,
+`yield_from_to_yield`, `mapping_setdefault_to_get`, `bisect_boundary_swap`,
+`deepcopy_to_copy`, `deque_popleft_to_pop`, `gather_return_exceptions`,
+`itertools_take_drop_swap` and `fstring_conversion_swap`. Disable all eleven to recover
+the preceding 61-operator selection:
 
 ```text
---exclude-operators list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty
+--exclude-operators none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop,gather_return_exceptions,itertools_take_drop_swap,fstring_conversion_swap
 ```
+
+Each is individually excludable. Explicit operator sets and saved plans keep
+their selections. Fresh candidate counts/rankings/capped prefixes can change.
+See [eligibility and behavior](usage.md#missing-values-shared-state-and-delegation).
+No parser, dependency, schema or supported-Python-range change is included.
+
+## Default generator behavior mutations
+
+The generator operators are `list_comprehension_to_generator`,
+`generator_return_insert`, `generator_skip_first` and `generator_empty`.
+They can be excluded individually or together.
 
 Fresh candidate counts, rankings and capped prefixes can change. Explicit sets
 and saved plans retain their recorded selections. Generator-return insertion

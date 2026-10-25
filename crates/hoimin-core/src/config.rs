@@ -167,6 +167,17 @@ mutation_operators! {
     GeneratorReturnInsert => "generator_return_insert",
     GeneratorSkipFirst => "generator_skip_first",
     GeneratorEmpty => "generator_empty",
+    NoneTruthiness => "none_truthiness",
+    MutableDefaultShare => "mutable_default_share",
+    NonlocalRemove => "nonlocal_remove",
+    YieldFromToYield => "yield_from_to_yield",
+    MappingSetdefaultToGet => "mapping_setdefault_to_get",
+    BisectBoundarySwap => "bisect_boundary_swap",
+    DeepcopyToCopy => "deepcopy_to_copy",
+    DequePopleftToPop => "deque_popleft_to_pop",
+    GatherReturnExceptions => "gather_return_exceptions",
+    ItertoolsTakeDropSwap => "itertools_take_drop_swap",
+    FStringConversionSwap => "fstring_conversion_swap",
 }
 
 // Family membership is an explicit selection policy, separate from the full
@@ -370,6 +381,17 @@ impl Default for MutationOperatorSelection {
                 MutationOperator::GeneratorReturnInsert,
                 MutationOperator::GeneratorSkipFirst,
                 MutationOperator::GeneratorEmpty,
+                MutationOperator::NoneTruthiness,
+                MutationOperator::MutableDefaultShare,
+                MutationOperator::NonlocalRemove,
+                MutationOperator::YieldFromToYield,
+                MutationOperator::MappingSetdefaultToGet,
+                MutationOperator::BisectBoundarySwap,
+                MutationOperator::DeepcopyToCopy,
+                MutationOperator::DequePopleftToPop,
+                MutationOperator::GatherReturnExceptions,
+                MutationOperator::ItertoolsTakeDropSwap,
+                MutationOperator::FStringConversionSwap,
             ]
             .into_iter()
             .collect(),

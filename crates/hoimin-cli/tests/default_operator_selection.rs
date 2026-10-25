@@ -9,7 +9,7 @@ use std::path::Path;
 
 use hoimin_cli::plan::PlanManifest;
 
-const OPT_OUT_OPERATORS: [&str; 18] = [
+const OPT_OUT_OPERATORS: [&str; 29] = [
     "statement_delete",
     "integer_literal_neighbor",
     "augmented_to_assignment",
@@ -28,6 +28,17 @@ const OPT_OUT_OPERATORS: [&str; 18] = [
     "generator_return_insert",
     "generator_skip_first",
     "generator_empty",
+    "none_truthiness",
+    "mutable_default_share",
+    "nonlocal_remove",
+    "yield_from_to_yield",
+    "mapping_setdefault_to_get",
+    "bisect_boundary_swap",
+    "deepcopy_to_copy",
+    "deque_popleft_to_pop",
+    "gather_return_exceptions",
+    "itertools_take_drop_swap",
+    "fstring_conversion_swap",
 ];
 
 async fn cli(args: Vec<OsString>) -> serde_json::Value {
@@ -85,10 +96,19 @@ async fn current_default_candidates_are_individually_excludable() {
     let source = format!(
         "{source}\ndef produced(): yield 1\neager = [x for x in (1, 2)]\nlazy = (x for x in (1, 2))\n"
     );
+    let source = format!(
+        "{source}\ndef owned(values=None):\n    if values is None: values=[]\n    def inner():\n        nonlocal values\n        values=[1]\n    yield from values\nstate={{}}\nstate.setdefault('x', [])\n"
+    );
+    let source = format!(
+        "{source}\nimport bisect\nimport copy\nfrom collections import deque\nposition=bisect.bisect_left([1,1],1)\ncloned=copy.deepcopy([[1]])\nqueue=deque([1,2])\nfirst=queue.popleft()\n"
+    );
+    let source = format!(
+        "{source}\nimport asyncio\nimport itertools\nasync def grouped(task): return await asyncio.gather(task)\nprefix=itertools.takewhile(lambda x:x<3,(1,2,3))\nrepresentation=f'{{queue!r}}'\n"
+    );
     std::fs::write(root.path().join("subject.py"), &source).unwrap();
     let default = plan(root.path(), &[]).await;
     let manifest: PlanManifest = serde_json::from_value(default.clone()).unwrap();
-    assert_eq!(manifest.normalized_config.operators.names().len(), 61);
+    assert_eq!(manifest.normalized_config.operators.names().len(), 72);
     let candidates = default["candidates"].as_array().unwrap();
     for original in ["Decimal(x)", "Decimal.from_float(x)", "HTTPStatus(x)"] {
         assert!(

@@ -31,8 +31,12 @@ pub(crate) mod exception_hierarchy;
 
 #[path = "rust/container_elements.rs"]
 mod container_elements;
+#[path = "rust/effective_python.rs"]
+mod effective_python;
 #[path = "rust/enum_members.rs"]
 mod enum_members;
+#[path = "rust/formatted_conversions.rs"]
+mod formatted_conversions;
 #[path = "rust/function_body.rs"]
 mod function_body;
 #[path = "rust/function_entry.rs"]
@@ -74,6 +78,7 @@ mod mapping_keys;
 mod operator_functions;
 #[path = "rust/stdlib_conversions.rs"]
 mod stdlib_conversions;
+use effective_python::Imports as BehaviorImports;
 #[cfg(test)]
 use fact_index::IndexLookupStats;
 use fact_index::{ContainmentIndex, NotOperandIndex, ScopeIndex, ScopeInterval};
@@ -2960,6 +2965,7 @@ struct AstCandidateCollector<'a, F> {
     enum_index: &'a enum_members::EnumIndex,
     optional_functions: optional_keywords::FunctionIndex,
     operator_imports: OperatorImports,
+    behavior_imports: BehaviorImports,
     conversion_imports: stdlib_conversions::ConversionImports,
     return_scope: ReturnScope,
     enclosing_body: EnclosingBody,
@@ -3040,6 +3046,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             } else {
                 stdlib_conversions::ConversionImports::default()
             },
+            behavior_imports: BehaviorImports::build(module, request.operators, cancelled)?,
             operator_imports: if request
                 .operators
                 .contains(MutationOperator::OperatorFunction)
@@ -4096,6 +4103,15 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         reason = "statement operator gates stop between builders on the first admission failure"
     )]
     fn collect_statement_mutations(&mut self, statement: &Stmt) {
+        effective_python::statement(
+            statement,
+            self.request.operators,
+            self.cancelled,
+            |range, replacement, operator| {
+                self.add_candidate(range, replacement, operator);
+                !self.check_cancelled()
+            },
+        );
         if self.candidates.failure.is_some() {
             return;
         }
@@ -4500,6 +4516,36 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
             }
             if self.candidates.failure.is_some() {
                 return;
+            }
+            if self.runtime_role == RuntimeRole::Value
+                && !self.in_pattern
+                && (!matches!(expression, Expr::Compare(_)) || self.expression_selected(expression))
+            {
+                if let Some((range, replacement, operator)) = self.behavior_imports.replacement(
+                    expression,
+                    self.request.operators,
+                    self.facts.tokens.expect("parser tokens are set"),
+                    self.cancelled,
+                ) {
+                    self.add_candidate(range, replacement, operator);
+                    if self.check_cancelled() || self.candidates.failure.is_some() {
+                        return;
+                    }
+                }
+                effective_python::expression(
+                    expression,
+                    self.source,
+                    self.facts.tokens.expect("parser tokens are set"),
+                    self.request.operators,
+                    self.cancelled,
+                    |range, replacement, operator| {
+                        self.add_candidate(range, replacement, operator);
+                        !self.check_cancelled()
+                    },
+                );
+                if self.candidates.failure.is_some() {
+                    return;
+                }
             }
             let signed_literal = self.collect_integer_literal(expression);
             if self.candidates.failure.is_some() {

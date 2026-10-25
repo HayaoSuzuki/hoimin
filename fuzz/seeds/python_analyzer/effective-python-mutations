@@ -1,0 +1,20 @@
+def outer(items=None):
+    if (None) is items: items=[]
+    def inner():
+        nonlocal items
+        items=[1]
+    yield from items
+state={}
+value=state.setdefault('key', [])
+import bisect
+import copy
+from collections import deque
+index=bisect.bisect_left([1,1], 1)
+cloned=copy.deepcopy([[1]])
+queue=deque([1,2])
+first=queue.popleft()
+import asyncio
+import itertools
+async def grouped(task): return await asyncio.gather(task)
+prefix=itertools.takewhile(lambda x:x<3, [1,2,3,1])
+formatted=f'{value!r}'
