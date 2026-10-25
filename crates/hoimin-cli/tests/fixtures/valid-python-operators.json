@@ -368,5 +368,15 @@
     "operator": "loop_break_insert",
     "status": "deferred",
     "reason": "Dedicated analyzer layout/selection/budget regressions, public opt-out/saved-plan tests and CPython execution cover loop termination; outside the initial cross-producer corpus"
+  },
+  {
+    "operator": "iterator_stop_insert",
+    "status": "deferred",
+    "reason": "Dedicated protocol entry, generator/shadowing exclusions, public opt-out and CPython iterator exhaustion tests; outside the initial cross-producer corpus"
+  },
+  {
+    "operator": "async_iterator_stop_insert",
+    "status": "deferred",
+    "reason": "Dedicated protocol entry, generator/shadowing exclusions, public opt-out and CPython iterator exhaustion tests; outside the initial cross-producer corpus"
   }
 ]

@@ -176,6 +176,11 @@ const OPERATORS: &[(MutationOperator, &str)] = &[
         "stdlib_conversion_call_remove",
     ),
     (MutationOperator::LoopBreakInsert, "loop_break_insert"),
+    (MutationOperator::IteratorStopInsert, "iterator_stop_insert"),
+    (
+        MutationOperator::AsyncIteratorStopInsert,
+        "async_iterator_stop_insert",
+    ),
 ];
 
 const FAMILIES: [&str; 8] = [

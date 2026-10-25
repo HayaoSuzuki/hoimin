@@ -330,7 +330,7 @@ fn exception_hierarchy_is_explicit_only() {
 }
 
 // Fixed current policy, independent of catalog and production default builders.
-const CURRENT_DEFAULT_NAMES: [&str; 55] = [
+const CURRENT_DEFAULT_NAMES: [&str; 57] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -386,6 +386,8 @@ const CURRENT_DEFAULT_NAMES: [&str; 55] = [
     "string_segment_empty",
     "stdlib_conversion_call_remove",
     "loop_break_insert",
+    "iterator_stop_insert",
+    "async_iterator_stop_insert",
 ];
 
 #[test]

@@ -27,7 +27,7 @@ pub(super) fn replacement<F: Fn() -> bool>(
     let first = usize::from(body.first()?.start());
     let last = body.last()?;
     let end = usize::from(last.end());
-    let line_start = source[..first].rfind('\n').map_or(0, |i| i + 1);
+    let line_start = source[..first].rfind(['\r', '\n']).map_or(0, |i| i + 1);
     let indentation = &source[line_start..first];
     if !indentation
         .bytes()
@@ -61,13 +61,15 @@ pub(super) fn replacement<F: Fn() -> bool>(
             let (start, _) = source.char_indices().next_back()?;
             let newline = if line_start >= 2 && source.as_bytes()[line_start - 2] == b'\r' {
                 "\r\n"
+            } else if line_start > 0 && source.as_bytes()[line_start - 1] == b'\r' {
+                "\r"
             } else {
                 "\n"
             };
             (start, source.len(), newline)
         };
     let anchor = &source[start..anchor_end];
-    let text = if anchor.ends_with('\n') {
+    let text = if anchor.ends_with(['\r', '\n']) {
         format!("{anchor}{indentation}break{newline}")
     } else {
         format!("{anchor}{newline}{indentation}break")

@@ -19,12 +19,22 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Default iterator stop insertion
+
+Fresh default runs select 57 operators. `iterator_stop_insert` and
+`async_iterator_stop_insert` add entry exhaustion candidates for eligible iterator
+methods. Use `--exclude-operators iterator_stop_insert,async_iterator_stop_insert`
+to recover the preceding 55-operator selection. Explicit selections and saved
+plans retain their recorded operators and candidates. Counts, rankings and capped
+prefixes of fresh default plans can change. See
+[early iterator exhaustion](usage.md#early-iterator-exhaustion).
+
 ## Default loop break insertion
 
-Fresh default runs select 55 operators, including `loop_break_insert`. It adds
+`loop_break_insert` is enabled by default. It adds
 one candidate for each eligible `for`, `async for`, or `while` body. Candidate
 counts, ranking and prefixes retained under a cap can therefore change. Use
-`--exclude-operators loop_break_insert` to recover the previous 54-operator set.
+`--exclude-operators loop_break_insert` to disable this operator.
 Explicit `--operators` sets and saved plans retain their recorded operators and
 candidates; loading a plan does not add this operator. Existing `break_continue`
 keeps its swap behavior. See [premature loop exit](usage.md#premature-loop-exit).

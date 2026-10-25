@@ -66,7 +66,7 @@ fn native_mutation_config(
     }
 }
 
-const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 55] = [
+const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 57] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -122,6 +122,8 @@ const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 55] = [
     "string_segment_empty",
     "stdlib_conversion_call_remove",
     "loop_break_insert",
+    "iterator_stop_insert",
+    "async_iterator_stop_insert",
 ];
 
 #[test]
@@ -193,8 +195,8 @@ fn usage_documents_all_mutation_operator_ids_and_selector_families() {
         assert!(usage.contains(name), "usage reference is missing {name}");
     }
     for expected in [
-        "55 default runtime operators",
-        "74 operator IDs",
+        "57 default runtime operators",
+        "76 operator IDs",
         "collection_ops",
         "structure_ops",
         "bitwise_ops",

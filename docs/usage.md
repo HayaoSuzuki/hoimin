@@ -670,10 +670,10 @@ the detailed capability and cleanup model.
 
 ## Mutation operators
 
-Without `--operators`, a run selects 55 default runtime operators. `--operators`
+Without `--operators`, a run selects 57 default runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
-individual IDs or selector families. Hoimin exposes 74 operator IDs in total:
-55 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
+individual IDs or selector families. Hoimin exposes 76 operator IDs in total:
+57 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
 `exception_hierarchy`, and six opt-in analyzers: `condition_constant`,
 `function_body_erase`, `enum_member_replace`, `condition_clause_delete`,
 `container_element_delete`, and `optional_keyword_delete`.
@@ -682,23 +682,26 @@ The defaults include `statement_delete`, `integer_literal_neighbor`,
 `augmented_to_assignment`, `return_tuple_swap`, `string_literal_empty`,
 `while_condition_false`, `conversion_call_remove`, `method_call_remove`,
 `function_body_return_constant`, `string_segment_empty`,
-`stdlib_conversion_call_remove`, and `loop_break_insert`. To disable any of these,
+`stdlib_conversion_call_remove`, `loop_break_insert`, `iterator_stop_insert`, and
+`async_iterator_stop_insert`. To disable any of these,
 use, for example, `--exclude-operators statement_delete,string_literal_empty`.
-To recover the previous 54-operator selection, use
-`--exclude-operators loop_break_insert`. To recover the earlier 53-operator
+To recover the previous 55-operator selection, use
+`--exclude-operators iterator_stop_insert,async_iterator_stop_insert`.
+To recover the earlier 54-operator selection, use
+`--exclude-operators loop_break_insert,iterator_stop_insert,async_iterator_stop_insert`. To recover the earlier 53-operator
 selection, use
-`--exclude-operators stdlib_conversion_call_remove,loop_break_insert`. To recover the earlier
+`--exclude-operators stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert`. To recover the earlier
 52-operator selection, use
-`--exclude-operators string_segment_empty,stdlib_conversion_call_remove,loop_break_insert`. To recover the earlier 50-operator selection, use:
+`--exclude-operators string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert`. To recover the earlier 50-operator selection, use:
 
 ```text
---exclude-operators method_call_remove,function_body_return_constant,string_segment_empty,stdlib_conversion_call_remove,loop_break_insert
+--exclude-operators method_call_remove,function_body_return_constant,string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert
 ```
 
-To recover the historical 43-operator selection, exclude all twelve:
+To recover the historical 43-operator selection, exclude all fourteen:
 
 ```text
---exclude-operators statement_delete,integer_literal_neighbor,augmented_to_assignment,return_tuple_swap,string_literal_empty,while_condition_false,conversion_call_remove,method_call_remove,function_body_return_constant,string_segment_empty,stdlib_conversion_call_remove,loop_break_insert
+--exclude-operators statement_delete,integer_literal_neighbor,augmented_to_assignment,return_tuple_swap,string_literal_empty,while_condition_false,conversion_call_remove,method_call_remove,function_body_return_constant,string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert
 ```
 
 New default runs can generate more candidates and take longer. With a candidate
@@ -712,6 +715,7 @@ binding analysis. Their existing applicability guards are unchanged.
 | Group | Runtime IDs | Mutations |
 | --- | --- | --- |
 | Existing expression/control flow | `compare_eq_ne`, `compare_order`, `membership`, `identity`, `boolean_and_or`, `binary_add_sub`, `augmented_add_sub`, `binary_mul_div`, `augmented_mul_div`, `binary_floor_mod`, `augmented_floor_mod`, `unary_sign`, `remove_not`, `boolean_literal`, `break_continue` | comparisons; membership and identity; binary `+`/`-`, `*`/`/`, and `//`/`%`; augmented `+=`/`-=`, `*=`/`/=`, and `//=`/`%=`; unary signs; boolean expressions and literals, including `True`/`False` match patterns; and control flow |
+| Early iterator exhaustion | `iterator_stop_insert`, `async_iterator_stop_insert` | Insert a stop exception at iterator protocol method entry; enabled by default |
 | Premature loop exit | `loop_break_insert` | Appends `break` to eligible `for`, `async for`, and `while` bodies; enabled by default |
 | Collection calls and literals | `collection_any_all`, `collection_list_tuple`, `collection_set_frozenset`, `collection_append_insert` | `any(x)` ↔ `all(x)`; `list`/`tuple` calls and load-context literals outside exception-handler type positions (which Python requires to be an exception class or tuple of exception classes); `set` ↔ `frozenset` calls; `seq.append(x)` ↔ `seq.insert(0, x)` |
 | Same-contract methods | `collection_min_max`, `collection_set_add_discard`, `collection_set_remove_discard`, `collection_string_starts_ends`, `collection_string_split_rsplit` | `min(...)` ↔ `max(...)`; `add`/`discard`, `remove`/`discard`, `startswith`/`endswith`, and `split`/`rsplit` when `maxsplit` is supplied |
@@ -1707,3 +1711,27 @@ endings, including inline suites. It uses the final source anchor's line for
 line selection and the containing loop's enclosing symbol for symbol selection.
 An empty iterator or an initially false while condition never executes the new
 `break`. No `continue` insertion operator is provided.
+
+## Early iterator exhaustion
+
+`iterator_stop_insert` inserts `raise StopIteration()` at the entry of an
+undecorated synchronous class method named `__next__`. `async_iterator_stop_insert`
+inserts `raise StopAsyncIteration()` in an undecorated async `__anext__` method.
+Both preserve an initial docstring and the original body. A consumer receives no
+items from that method, which checks whether tests assert expected produced values.
+These mutations do not model dropping only a later item.
+
+Both operators are enabled by default. Disable either individually, or use
+`--exclude-operators iterator_stop_insert,async_iterator_stop_insert` to disable
+both. Select either by its ID with `--operators`.
+
+Generator and async-generator methods are excluded: a stop exception escaping a
+generator does not represent ordinary exhaustion. Nested generators do not exclude
+the enclosing method. Non-method functions, decorated methods, mismatched async
+forms, docstring-only bodies, methods declaring the inserted name global in their
+own scope, and methods already raising the same exception at
+entry are excluded. The inserted exception name must statically resolve to the
+builtin; shadowed or uncertain bindings suppress the candidate. Insertion happens
+before an existing statement, so its line and containing method identify the
+candidate for `--line` and `--symbol` selection. A surviving mutant identifies a
+test gap to inspect; it does not by itself establish a defect in the iterator.
