@@ -330,7 +330,7 @@ fn exception_hierarchy_is_explicit_only() {
 }
 
 // Fixed current policy, independent of catalog and production default builders.
-const CURRENT_DEFAULT_NAMES: [&str; 69] = [
+const CURRENT_DEFAULT_NAMES: [&str; 72] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -400,6 +400,9 @@ const CURRENT_DEFAULT_NAMES: [&str; 69] = [
     "bisect_boundary_swap",
     "deepcopy_to_copy",
     "deque_popleft_to_pop",
+    "gather_return_exceptions",
+    "itertools_take_drop_swap",
+    "fstring_conversion_swap",
 ];
 
 #[test]
@@ -488,6 +491,9 @@ fn effective_python_mutations_are_default_and_individually_selectable() {
         "bisect_boundary_swap",
         "deepcopy_to_copy",
         "deque_popleft_to_pop",
+        "gather_return_exceptions",
+        "itertools_take_drop_swap",
+        "fstring_conversion_swap",
     ] {
         assert!(defaults.names().iter().any(|item| item == name), "{name}");
         assert_eq!(

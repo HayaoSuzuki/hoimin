@@ -13,3 +13,8 @@ index=bisect.bisect_left([1,1], 1)
 cloned=copy.deepcopy([[1]])
 queue=deque([1,2])
 first=queue.popleft()
+import asyncio
+import itertools
+async def grouped(task): return await asyncio.gather(task)
+prefix=itertools.takewhile(lambda x:x<3, [1,2,3,1])
+formatted=f'{value!r}'

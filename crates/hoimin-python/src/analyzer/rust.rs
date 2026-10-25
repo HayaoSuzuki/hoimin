@@ -35,6 +35,8 @@ mod container_elements;
 mod effective_python;
 #[path = "rust/enum_members.rs"]
 mod enum_members;
+#[path = "rust/formatted_conversions.rs"]
+mod formatted_conversions;
 #[path = "rust/function_body.rs"]
 mod function_body;
 #[path = "rust/function_entry.rs"]
@@ -4519,10 +4521,12 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                 && !self.in_pattern
                 && (!matches!(expression, Expr::Compare(_)) || self.expression_selected(expression))
             {
-                if let Some((range, replacement, operator)) = self
-                    .behavior_imports
-                    .replacement(expression, self.request.operators)
-                {
+                if let Some((range, replacement, operator)) = self.behavior_imports.replacement(
+                    expression,
+                    self.request.operators,
+                    self.facts.tokens.expect("parser tokens are set"),
+                    self.cancelled,
+                ) {
                     self.add_candidate(range, replacement, operator);
                     if self.check_cancelled() || self.candidates.failure.is_some() {
                         return;

@@ -370,3 +370,168 @@ fn effective_python_extra_selection_prefix_and_layout() {
     assert!(analyze_source_cancellable(&request, source, || true).is_err());
     assert!(analyze_source_cancellable(&request, source, || false).is_err());
 }
+
+#[test]
+fn effective_python_gather_eligibility_and_layout() {
+    for source in [
+        "import asyncio\nx=asyncio.gather(task())\n",
+        "from asyncio import gather as collect\nx=collect(task(),)\n",
+        "import asyncio as a\nx=a.gather(\n task(), # keep\n)\n",
+        "import asyncio\nx=asyncio.gather((task()) # keep\n)\n",
+    ] {
+        let out = analyze_selected(&["gather_return_exceptions"], source);
+        assert_eq!(out.candidates.len(), 1, "{source}");
+        let mutant = apply(source, &out.candidates[0]);
+        assert!(mutant.contains("return_exceptions=True"));
+        assert_eq!(source.contains("# keep"), mutant.contains("# keep"));
+    }
+    for source in [
+        "import asyncio\nx=asyncio.gather()\n",
+        "import asyncio\nx: asyncio.gather(task())\n",
+        "import asyncio\nx=asyncio.gather(task(), return_exceptions=False)\n",
+        "import asyncio\nx=asyncio.gather(task(), return_exceptions=True)\n",
+        "import asyncio\nx=asyncio.gather(*tasks)\n",
+        "import asyncio\nx=asyncio.gather(task(), **kw)\n",
+        "import asyncio\nx=asyncio.gather(task for task in tasks)\n",
+        "import asyncio\nx=asyncio.gather((task for task in tasks))\n",
+        "import asyncio\nasyncio=other\nx=asyncio.gather(task())\n",
+        "import asyncio\ndef f(asyncio): return asyncio.gather(task())\n",
+    ] {
+        assert!(
+            analyze_selected(&["gather_return_exceptions"], source)
+                .candidates
+                .is_empty(),
+            "{source}"
+        );
+    }
+}
+#[test]
+fn effective_python_iterator_prefix_swap_uses_import_proof() {
+    for (source, expected) in [
+        (
+            "import itertools as it\nx=it.takewhile(pred, xs)\n",
+            "dropwhile",
+        ),
+        (
+            "from itertools import dropwhile as remaining\nx=remaining(pred, xs)\n",
+            "__import__('itertools').takewhile",
+        ),
+    ] {
+        let out = analyze_selected(&["itertools_take_drop_swap"], source);
+        assert_eq!(out.candidates.len(), 1);
+        assert_eq!(out.candidates[0].replacement, expected);
+        apply(source, &out.candidates[0]);
+    }
+    for source in [
+        "import itertools\nitertools=other\nx=itertools.takewhile(pred,xs)\n",
+        "import itertools\nx=itertools.filterfalse(pred,xs)\n",
+        "import itertools\nx: itertools.takewhile(pred,xs)\n",
+        "from itertools import takewhile\ndef f(takewhile): return takewhile(pred,xs)\n",
+    ] {
+        assert!(
+            analyze_selected(&["itertools_take_drop_swap"], source)
+                .candidates
+                .is_empty(),
+            "{source}"
+        );
+    }
+}
+#[test]
+fn effective_python_fstring_swaps_only_explicit_conversions() {
+    for (source, count) in [
+        ("x=f'{value!r}'\n", 1),
+        ("x=f'{value!s:>10}'\n", 1),
+        ("x=f'{value=!r}'\n", 1),
+        ("x=f'{value!r:{width!s}}'\n", 2),
+        ("x=f'{value!r}' f'{other!s}'\n", 2),
+        ("x=f\"{f'{value!r}'!s}\"\n", 2),
+        ("x=t\"{f'{value!r}'!s}\"\n", 1),
+        ("x=f'''{(value # !s keep\n)!r}'''\n", 1),
+        ("x=f'{value}'\n", 0),
+        ("x=f'{{value!r}}'\n", 0),
+        ("x: f'{value!r}'\n", 0),
+        ("x=f'{value=}'\n", 0),
+        ("x=f'{value!a}'\n", 0),
+        ("x=t'{value!r}'\n", 0),
+        ("x='literal !r'\n", 0),
+        ("x=f\"{'literal !r'}\"\n", 0),
+    ] {
+        let out = analyze_selected(&["fstring_conversion_swap"], source);
+        assert_eq!(out.candidates.len(), count, "{source}");
+        for candidate in &out.candidates {
+            assert!(matches!(
+                (candidate.original.as_str(), candidate.replacement.as_str()),
+                ("r", "s") | ("s", "r")
+            ));
+            apply(source, candidate);
+        }
+    }
+}
+
+#[test]
+fn effective_python_third_wave_selection_and_admission() {
+    let ops = [
+        "gather_return_exceptions",
+        "itertools_take_drop_swap",
+        "fstring_conversion_swap",
+    ];
+    let source = "import asyncio\nimport itertools\ndef f(task,xs,value):\n    a=asyncio.gather(\n        task,\n    )\n    b=itertools.\\\n        takewhile(lambda x:x<3,xs)\n    c=f'''{value\n        !r}'''\n    return a,b,c\n";
+    let all = analyze_selected(&ops, source);
+    assert_eq!(all.candidates.len(), 3);
+    for cap in 0..=4 {
+        let out =
+            analyze_selected_with(&ops, Utf8Path::new("pkg/sample.py"), &[], &[], cap, source);
+        assert_eq!(out.candidates, all.candidates[..cap.min(3)]);
+        assert_eq!(out.truncated, cap < 3);
+    }
+    for (op, line) in ops.into_iter().zip([6, 8, 10]) {
+        for source in [
+            source.to_owned(),
+            source.replace('\n', "\r\n"),
+            source.replace('\n', "\r"),
+        ] {
+            let out = analyze_selected_with(
+                &[op],
+                Utf8Path::new("pkg/sample.py"),
+                &[LineRange {
+                    start: line,
+                    end: line,
+                }],
+                &["f".to_owned()],
+                10,
+                &source,
+            );
+            assert_eq!(out.candidates.len(), 1, "{source}");
+            apply(&source, &out.candidates[0]);
+        }
+        let excluded = analyze_selected_with(
+            &[op],
+            Utf8Path::new("pkg/sample.py"),
+            &[LineRange { start: 3, end: 3 }],
+            &[],
+            10,
+            source,
+        );
+        assert_eq!(excluded.candidates.len(), 0);
+    }
+    let operators = serde_json::from_value(serde_json::json!(ops)).unwrap();
+    let request = AnalyzeRequest {
+        path: Utf8Path::new("pkg/sample.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 10,
+        payload: super::super::payload::PayloadBudget::new(1),
+    };
+    assert!(analyze_source_cancellable(&request, source, || true).is_err());
+    assert!(analyze_source_cancellable(&request, source, || false).is_err());
+    let source = "x=f\"{f'{value!r}'!s:{width!r}}\"\n";
+    let all = analyze_selected(&ops, source);
+    assert_eq!(all.candidates.len(), 3);
+    for cap in 0..=3 {
+        let out =
+            analyze_selected_with(&ops, Utf8Path::new("pkg/sample.py"), &[], &[], cap, source);
+        assert_eq!(out.candidates, all.candidates[..cap]);
+    }
+}

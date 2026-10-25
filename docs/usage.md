@@ -670,10 +670,10 @@ the detailed capability and cleanup model.
 
 ## Mutation operators
 
-Without `--operators`, a run selects 69 default runtime operators. `--operators`
+Without `--operators`, a run selects 72 default runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
-individual IDs or selector families. Hoimin exposes 88 operator IDs in total:
-69 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
+individual IDs or selector families. Hoimin exposes 91 operator IDs in total:
+72 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
 `exception_hierarchy`, and six opt-in analyzers: `condition_constant`,
 `function_body_erase`, `enum_member_replace`, `condition_clause_delete`,
 `container_element_delete`, and `optional_keyword_delete`.
@@ -687,30 +687,33 @@ The defaults include `statement_delete`, `integer_literal_neighbor`,
 `generator_return_insert`, `generator_skip_first`, `generator_empty`,
 `none_truthiness`, `mutable_default_share`, `nonlocal_remove`,
 `yield_from_to_yield`, `mapping_setdefault_to_get`, `bisect_boundary_swap`,
-`deepcopy_to_copy`, and `deque_popleft_to_pop`.
+`deepcopy_to_copy`, `deque_popleft_to_pop`, `gather_return_exceptions`,
+`itertools_take_drop_swap`, and `fstring_conversion_swap`.
 To disable any of these,
 use, for example, `--exclude-operators statement_delete,string_literal_empty`.
-To recover the previous 61-operator selection, use
-`--exclude-operators none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop`.
+To recover the preceding 69-operator selection, use
+`--exclude-operators gather_return_exceptions,itertools_take_drop_swap,fstring_conversion_swap`.
+To recover the earlier 61-operator selection, use
+`--exclude-operators none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop,gather_return_exceptions,itertools_take_drop_swap,fstring_conversion_swap`.
 To recover the earlier 57-operator selection, use
-`--exclude-operators list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop`.
+`--exclude-operators list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop,gather_return_exceptions,itertools_take_drop_swap,fstring_conversion_swap`.
 To recover the earlier 55-operator selection, use
-`--exclude-operators iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop`.
+`--exclude-operators iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop,gather_return_exceptions,itertools_take_drop_swap,fstring_conversion_swap`.
 To recover the earlier 54-operator selection, use
-`--exclude-operators loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop`. To recover the earlier 53-operator
+`--exclude-operators loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop,gather_return_exceptions,itertools_take_drop_swap,fstring_conversion_swap`. To recover the earlier 53-operator
 selection, use
-`--exclude-operators stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop`. To recover the earlier
+`--exclude-operators stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop,gather_return_exceptions,itertools_take_drop_swap,fstring_conversion_swap`. To recover the earlier
 52-operator selection, use
-`--exclude-operators string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop`. To recover the earlier 50-operator selection, use:
+`--exclude-operators string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop,gather_return_exceptions,itertools_take_drop_swap,fstring_conversion_swap`. To recover the earlier 50-operator selection, use:
 
 ```text
---exclude-operators method_call_remove,function_body_return_constant,string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop
+--exclude-operators method_call_remove,function_body_return_constant,string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop,gather_return_exceptions,itertools_take_drop_swap,fstring_conversion_swap
 ```
 
-To recover the historical 43-operator selection, exclude all twenty-six:
+To recover the historical 43-operator selection, exclude all twenty-nine:
 
 ```text
---exclude-operators statement_delete,integer_literal_neighbor,augmented_to_assignment,return_tuple_swap,string_literal_empty,while_condition_false,conversion_call_remove,method_call_remove,function_body_return_constant,string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop
+--exclude-operators statement_delete,integer_literal_neighbor,augmented_to_assignment,return_tuple_swap,string_literal_empty,while_condition_false,conversion_call_remove,method_call_remove,function_body_return_constant,string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop,gather_return_exceptions,itertools_take_drop_swap,fstring_conversion_swap
 ```
 
 New default runs can generate more candidates and take longer. With a candidate
@@ -725,7 +728,7 @@ binding analysis. Their existing applicability guards are unchanged.
 | --- | --- | --- |
 | Existing expression/control flow | `compare_eq_ne`, `compare_order`, `membership`, `identity`, `boolean_and_or`, `binary_add_sub`, `augmented_add_sub`, `binary_mul_div`, `augmented_mul_div`, `binary_floor_mod`, `augmented_floor_mod`, `unary_sign`, `remove_not`, `boolean_literal`, `break_continue` | comparisons; membership and identity; binary `+`/`-`, `*`/`/`, and `//`/`%`; augmented `+=`/`-=`, `*=`/`/=`, and `//=`/`%=`; unary signs; boolean expressions and literals, including `True`/`False` match patterns; and control flow |
 | Generator behavior | `list_comprehension_to_generator`, `generator_return_insert`, `generator_skip_first`, `generator_empty` | Eager/lazy conversion, early return, first-item consumption and empty output; enabled by default |
-| Missing values and shared state | `none_truthiness`, `mutable_default_share`, `nonlocal_remove`, `yield_from_to_yield`, `mapping_setdefault_to_get`, `bisect_boundary_swap`, `deepcopy_to_copy`, `deque_popleft_to_pop` | Empty/missing distinctions, shared defaults, lost outer updates, delegation, dictionary insertion, duplicate boundaries, nested copies and FIFO order; enabled by default |
+| Missing values and shared state | `none_truthiness`, `mutable_default_share`, `nonlocal_remove`, `yield_from_to_yield`, `mapping_setdefault_to_get`, `bisect_boundary_swap`, `deepcopy_to_copy`, `deque_popleft_to_pop`, `gather_return_exceptions`, `itertools_take_drop_swap`, `fstring_conversion_swap` | Empty/missing distinctions, shared defaults, lost outer updates, delegation, dictionary insertion, duplicate boundaries, nested copies, FIFO order, exception results, iterator prefixes and representations; enabled by default |
 | Early iterator exhaustion | `iterator_stop_insert`, `async_iterator_stop_insert` | Insert a stop exception at iterator protocol method entry; enabled by default |
 | Premature loop exit | `loop_break_insert` | Appends `break` to eligible `for`, `async for`, and `while` bodies; enabled by default |
 | Collection calls and literals | `collection_any_all`, `collection_list_tuple`, `collection_set_frozenset`, `collection_append_insert` | `any(x)` ↔ `all(x)`; `list`/`tuple` calls and load-context literals outside exception-handler type positions (which Python requires to be an exception class or tuple of exception classes); `set` ↔ `frozenset` calls; `seq.append(x)` ↔ `seq.insert(0, x)` |
@@ -1788,7 +1791,7 @@ A surviving mutant is a reason to inspect a test's assertions, not proof of a bu
 
 ## Missing values, shared state and delegation
 
-These eight operators are enabled by default. Select one with `--operators`, or
+These eleven operators are enabled by default. Select one with `--operators`, or
 exclude any IDs with `--exclude-operators`:
 
 | Operator | Mutation | Assertions it exercises |
@@ -1801,6 +1804,9 @@ exclude any IDs with `--exclude-operators`:
 | `bisect_boundary_swap` | Swap bisect_left and bisect_right | Check insertion boundaries when equal values repeat |
 | `deepcopy_to_copy` | Replace a one-argument deepcopy call with copy | Check that nested mutable objects remain independent |
 | `deque_popleft_to_pop` | Rename a zero-argument popleft call to pop | Check FIFO order using at least two items |
+| `gather_return_exceptions` | Add return_exceptions=True to an eligible asyncio.gather call | Check that failed tasks are propagated or inspected instead of treated as successful results |
+| `itertools_take_drop_swap` | Swap takewhile and dropwhile | Check selected values and iterator consumption at the predicate boundary |
+| `fstring_conversion_swap` | Swap explicit !r and !s in an f-string | Check display/debug representations, including nested format fields |
 
 None comparisons support either operand order and retain a bool result without
 introducing a bool function lookup. Chained comparisons, None/None comparisons,
@@ -1843,3 +1849,24 @@ Bisect's unsuffixed alias and insort functions are excluded.
 The queue mutation accepts simple name or attribute receivers, zero arguments
 and no keywords. Like setdefault matching, it is syntactic and can affect custom
 methods. It changes popleft to pop only; ordinary pop calls are unaffected.
+
+
+Gather matching requires a trusted asyncio import and at least one ordinary
+positional argument. Calls with keywords, starred arguments or generator
+expressions are excluded. Existing return_exceptions values are unchanged by
+this operator; boolean_literal already changes an explicit False to True.
+The edit replaces the closing parenthesis, so that token determines line
+selection. Comments, trailing commas and argument evaluation order are retained.
+Successful tasks keep their result values; failed tasks become exception objects
+in the returned list instead of propagating through gather.
+
+The iterator-prefix swap requires trusted itertools imports and supports
+module/function aliases under the same conservative resolver. It preserves the
+predicate and iterable expressions, while deliberately changing yielded values
+and how far the iterator is consumed.
+
+The formatting swap changes only an explicit r or s conversion letter in an
+f-string. It includes nested format fields and concatenated f-strings. It skips
+!a, omitted conversions, implicit debug repr and conversions in t-strings.
+Ordinary f-strings inside t-string expressions remain eligible. Expressions run
+once; debug text, format specs, comments and literal text are preserved.

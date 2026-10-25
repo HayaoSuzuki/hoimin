@@ -262,14 +262,17 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::RemoveNot
         | MutationOperator::BooleanLiteral
         | MutationOperator::BreakContinue => RankingReasonCode::HighValueControl,
-        MutationOperator::ExceptionTypePair
+        MutationOperator::GatherReturnExceptions
+        | MutationOperator::ExceptionTypePair
         | MutationOperator::ExceptionHierarchy
         | MutationOperator::ExceptionBareToException
         | MutationOperator::ExceptionExceptionToBare
         | MutationOperator::ExceptionBaseBoundary
         | MutationOperator::ExceptionTupleAddPair
         | MutationOperator::ExceptionTupleRemoveMember => RankingReasonCode::ExceptionHandling,
-        MutationOperator::BisectBoundarySwap
+        MutationOperator::ItertoolsTakeDropSwap
+        | MutationOperator::FStringConversionSwap
+        | MutationOperator::BisectBoundarySwap
         | MutationOperator::DeepcopyToCopy
         | MutationOperator::DequePopleftToPop
         | MutationOperator::MutableDefaultShare

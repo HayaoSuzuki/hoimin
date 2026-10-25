@@ -120,3 +120,44 @@ main ancestry and preserved primary .gitignore; verified owned output paths
 before cleanup. Cargo clean removed 5383 files / 5.6GiB, and the generated site
 was deleted. Disk free afterward: 116003979264 bytes (about108GiB). Sources and
 small evidence logs remain in the dedicated worktree.
+
+
+## Exception results, iterator prefixes and formatting expansion
+
+The user approved three further opt-out operators, excluding await removal:
+`gather_return_exceptions`, `itertools_take_drop_swap`, and
+`fstring_conversion_swap`. Final selection: 72 defaults, 91 catalog IDs, 29 public
+opt-out fixture IDs. Earlier measurements above describe the previous waves.
+
+Five design reviews: scope/boolean overlap; stdlib provenance; gather argument
+and comma syntax; explicit f-string conversion boundaries; bounded resources and
+deterministic dual-runtime evidence. Five implementation reviews: exact ordered
+registration; shared import resolution; gather evaluation/syntax; nested format
+traversal and t-string exclusion; candidate selection/cancellation/payload/prefix.
+The new analyzer tests were written before implementation and initially failed
+on the unregistered gather ID; 14 focused analyzer tests now pass with the broad
+core/Python suite. No await-removal operator is included.
+
+
+Five validation self-reviews: successful versus failed gather outcomes without
+race/timing assumptions; iterator values and consumption; formatting side effects
+and nested fields; exact public opt-out/explicit/saved selections; documentation
+counts, exclusion commands and source provenance. Both CPython3.14.9 and3.15.1
+passed all ten runtime functions. CLI configuration tests (84) and public opt-out
+tests (3) passed. Documentation/corpus checks: 41 passed, 2 skipped; final docs:
+21 passed. Ruff/ty, site/reference inventory and all-target/all-feature Clippy
+with warnings denied passed. The fresh whole-branch reviewer found no findings;
+post-review lint-only iteration/assertion changes were rechecked as equivalent.
+Documentation diagnostic: 10/10 rows pass, no failed rows; exact eligibility,
+changed closing-parenthesis selection, t-string limits and exclusion examples
+are documented. Final third-wave workspace: **3822 passed, 32 ignored, 0 failed**, across194
+result groups. Seven CLI-reference generator tests, formatting and refreshed
+Ruff/ty checks passed after the full suite.
+
+Five delivery reviews: 72/91/29 registration agrees with public fixtures;
+all historical exclusions recover their documented counts; source provenance
+matches the final spec; the current main is an ancestor and the primary
+.gitignore hash is preserved; cleanup paths resolve inside the owned worktree.
+Cargo clean removed5383 files /5.6GiB, and the owned generated site was deleted.
+Disk free afterward:115508019200 bytes (about107.6GiB). Small evidence logs and
+sources remain in the dedicated worktree.

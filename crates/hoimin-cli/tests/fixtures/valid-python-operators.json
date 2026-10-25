@@ -438,5 +438,20 @@
     "operator": "deque_popleft_to_pop",
     "status": "deferred",
     "reason": "Dedicated analyzer and CPython behavior tests with public opt-out coverage"
+  },
+  {
+    "operator": "gather_return_exceptions",
+    "status": "deferred",
+    "reason": "Dedicated analyzer and CPython behavior tests with public opt-out coverage"
+  },
+  {
+    "operator": "itertools_take_drop_swap",
+    "status": "deferred",
+    "reason": "Dedicated analyzer and CPython behavior tests with public opt-out coverage"
+  },
+  {
+    "operator": "fstring_conversion_swap",
+    "status": "deferred",
+    "reason": "Dedicated analyzer and CPython behavior tests with public opt-out coverage"
   }
 ]

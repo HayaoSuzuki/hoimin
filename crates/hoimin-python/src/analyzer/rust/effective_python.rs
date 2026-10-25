@@ -1,10 +1,11 @@
 //! Local mutations of missing values, state ownership, scope and delegation.
 use super::{
-    AnalysisCancelled, callable_imports::CallableImports, function_entry, is_simple_receiver,
+    AnalysisCancelled, callable_imports::CallableImports, formatted_conversions, function_entry,
+    is_simple_receiver,
 };
 use hoimin_core::{MutationOperator, MutationOperatorSelection};
 use ruff_python_ast::token::{TokenKind, Tokens};
-use ruff_python_ast::{CmpOp, Expr, ExprCompare, ModModule, Stmt, StmtFunctionDef};
+use ruff_python_ast::{CmpOp, Expr, ExprCall, ExprCompare, ModModule, Stmt, StmtFunctionDef};
 use ruff_text_size::{Ranged, TextRange};
 
 /// A single identity comparison with exactly one None operand.
@@ -64,6 +65,11 @@ pub(super) fn expression<F: Fn() -> bool>(
                     return;
                 }
             }
+        }
+        Expr::FString(value) if operators.contains(MutationOperator::FStringConversionSwap) => {
+            formatted_conversions::emit(value, tokens, cancelled, |range, replacement| {
+                emit(range, replacement, MutationOperator::FStringConversionSwap)
+            });
         }
         Expr::Call(call) => {
             let Expr::Attribute(attribute) = call.func.as_ref() else {
@@ -252,23 +258,40 @@ impl Imports {
     ) -> Result<Self, AnalysisCancelled> {
         if !operators.contains(MutationOperator::BisectBoundarySwap)
             && !operators.contains(MutationOperator::DeepcopyToCopy)
+            && !operators.contains(MutationOperator::GatherReturnExceptions)
+            && !operators.contains(MutationOperator::ItertoolsTakeDropSwap)
         {
             return Ok(Self::default());
         }
         Ok(Self {
-            imports: CallableImports::build(module, cancelled, &["bisect", "copy"])?,
+            imports: CallableImports::build(
+                module,
+                cancelled,
+                &["bisect", "copy", "asyncio", "itertools"],
+            )?,
         })
     }
     pub(super) fn replacement(
         &self,
         expression: &Expr,
         operators: &MutationOperatorSelection,
+        tokens: &Tokens,
+        cancelled: &impl Fn() -> bool,
     ) -> Option<(TextRange, String, MutationOperator)> {
         let Expr::Call(call) = expression else {
             return None;
         };
         let resolved = self.imports.resolve(&call.func)?;
+        if resolved.module == "asyncio"
+            && resolved.member == "gather"
+            && operators.contains(MutationOperator::GatherReturnExceptions)
+        {
+            return gather_replacement(call, tokens, cancelled)
+                .map(|(range, text)| (range, text, MutationOperator::GatherReturnExceptions));
+        }
         let (destination, operator) = match (resolved.module, resolved.member) {
+            ("itertools", "takewhile") => ("dropwhile", MutationOperator::ItertoolsTakeDropSwap),
+            ("itertools", "dropwhile") => ("takewhile", MutationOperator::ItertoolsTakeDropSwap),
             ("bisect", "bisect_left") => ("bisect_right", MutationOperator::BisectBoundarySwap),
             ("bisect", "bisect_right") => ("bisect_left", MutationOperator::BisectBoundarySwap),
             ("copy", "deepcopy")
@@ -295,4 +318,43 @@ impl Imports {
             None
         }
     }
+}
+
+fn gather_replacement(
+    call: &ExprCall,
+    tokens: &Tokens,
+    cancelled: &impl Fn() -> bool,
+) -> Option<(TextRange, String)> {
+    if call.arguments.args.is_empty()
+        || !call.arguments.keywords.is_empty()
+        || call
+            .arguments
+            .args
+            .iter()
+            .any(|arg| matches!(arg, Expr::Starred(_) | Expr::Generator(_)))
+    {
+        return None;
+    }
+    let mut significant = tokens.in_range(call.arguments.range()).iter().rev();
+    let closing = significant.next()?;
+    if closing.kind() != TokenKind::Rpar {
+        return None;
+    }
+    for token in significant {
+        if cancelled() {
+            return None;
+        }
+        if !token.kind().is_trivia() {
+            let separator = if token.kind() == TokenKind::Comma {
+                ""
+            } else {
+                ", "
+            };
+            return Some((
+                closing.range(),
+                format!("{separator}return_exceptions=True)"),
+            ));
+        }
+    }
+    None
 }

@@ -29,7 +29,7 @@ Operators (all default-enabled and individually excludable):
   mapping/method operators), not a proof of builtin dict type. Custom same-name
   methods can be affected. Keep receiver/argument source and evaluation unchanged.
 
-With the expansion below, defaults become69; catalog88; public opt-out regression set26. Existing explicit
+With the expansion below, defaults become72; catalog91; public opt-out regression set29. Existing explicit
 and saved selections remain explicit. None/nonlocal/yield delegation rank as
 high-value control; shared default and mapping insertion as behavioral. Keep the
 existing ranking rule version and schema policy, as previous operator additions do.
@@ -87,3 +87,34 @@ All three preserve receiver/argument evaluation count and order, comments,
 selection on changed tokens, source ranges and candidate budgets. Witnesses
 exercise duplicate boundaries, nested mutable state and a queue with two items
 on CPython 3.14 and 3.15. No third-party dependency or schema change.
+
+
+## Exception results, iterator prefixes and formatted conversions
+
+The user approved the remaining three proposals, explicitly excluding await
+removal. Add `gather_return_exceptions`, `itertools_take_drop_swap`, and
+`fstring_conversion_swap`, default-enabled and individually excludable. Final
+selection: 72 defaults, 91 catalog entries, 29 public opt-out regression IDs.
+
+Gather requires a trusted asyncio.gather import and at least one ordinary
+positional argument, no keywords, starred arguments or generator expressions.
+Insert return_exceptions=True at the closing parenthesis, preserving comments
+and any trailing comma. Existing return_exceptions settings remain untouched;
+False-to-True is already covered by boolean_literal. Test exception propagation
+versus an exception object in the result, success results, aliases and argument
+evaluation once; do not depend on timing or a race.
+
+Swap only trusted itertools.takewhile/dropwhile callables via the existing
+conservative import resolver; retain all original argument expressions. Exercise
+mixed input, empty input and iterator consumption at the predicate boundary.
+
+Swap explicit !r/!s conversion letters in f-strings, including nested format
+fields and implicit literal concatenation. Do not mutate !a, omitted conversions,
+implicit debug repr or t-string conversions. F-strings evaluated inside t-string
+expressions remain ordinary f-strings. Keep format specs, braces, debug text,
+comments and expression evaluation once. AST field ranges delimit each conversion
+so strings/comments containing !r cannot be mistaken for conversion syntax.
+
+Changed-token line/symbol selection, prefix limits, cancellation and payload
+admission apply to all three. Keep Python3.14/3.15 support and no dependency or
+schema changes. Use focused formatted_conversions.rs for formatting traversal.

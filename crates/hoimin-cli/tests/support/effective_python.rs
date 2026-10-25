@@ -111,3 +111,20 @@ async fn effective_python_extra_boundary_copy_and_fifo_contracts() {
     )
     .await;
 }
+
+#[tokio::test]
+async fn effective_python_gather_checks_failure_propagation_and_success() {
+    assert_change("import asyncio\nevents=[]\nasync def failure(): raise ValueError('bad')\ndef make():\n    events.append('made')\n    return failure()\nasync def check():\n    try:\n        result=await asyncio.gather(\n            make(), # keep\n        )\n    except ValueError:\n        print('raised')\n    else:\n        print([type(x).__name__ for x in result])\n    print(events)\n", "gather_return_exceptions", "asyncio.run(check())", "raised\n['made']\n", "['ValueError']\n['made']\n").await;
+    assert_change("import asyncio\nfrom asyncio import gather as collect\nasync def success(): return 7\nasync def check(): print(await collect(success()))\n", "gather_return_exceptions", "asyncio.run(check())", "[7]\n", "[7]\n").await;
+}
+#[tokio::test]
+async fn effective_python_iterator_prefix_checks_values_and_consumption() {
+    assert_change("import itertools\nevents=[]\ndef predicate(x):\n    events.append(x)\n    return x<3\nxs=iter([1,2,3,1])\nresult=itertools.takewhile(predicate,xs)\n", "itertools_take_drop_swap", "print(list(result)); print(list(xs)); print(events)", "[1, 2]\n[1]\n[1, 2, 3]\n", "[3, 1]\n[]\n[1, 2, 3]\n").await;
+    assert_change("from itertools import dropwhile as remaining\ndef select(xs): return list(remaining(lambda x:x<3,xs))\n", "itertools_take_drop_swap", "print(select([1,2,3,1])); print(select([]))", "[3, 1]\n[]\n", "[1, 2]\n[]\n").await;
+}
+#[tokio::test]
+async fn effective_python_fstring_checks_representation_and_effects_once() {
+    assert_change("events=[]\nclass Label:\n    def __repr__(self):\n        events.append('repr')\n        return 'debug'\n    def __str__(self):\n        events.append('str')\n        return 'display'\ndef make():\n    events.append('make')\n    return Label()\nresult=f'{make()!r:>8}'\n", "fstring_conversion_swap", "print(result); print(events)", "   debug\n['make', 'repr']\n", " display\n['make', 'str']\n").await;
+    assert_change("class Width:\n    def __str__(self): return '4'\n    def __repr__(self): return '6'\nwidth=Width()\nresult=f'{12:{width!s}}'\n", "fstring_conversion_swap", "print(repr(result))", "'  12'\n", "'    12'\n").await;
+    assert_change("class Label:\n    def __str__(self): return 'display'\n    def __repr__(self): return 'debug'\nvalue=Label()\nresult=f'{value=!s}'\n", "fstring_conversion_swap", "print(result)", "value=display\n", "value=debug\n").await;
+}

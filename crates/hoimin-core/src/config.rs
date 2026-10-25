@@ -175,6 +175,9 @@ mutation_operators! {
     BisectBoundarySwap => "bisect_boundary_swap",
     DeepcopyToCopy => "deepcopy_to_copy",
     DequePopleftToPop => "deque_popleft_to_pop",
+    GatherReturnExceptions => "gather_return_exceptions",
+    ItertoolsTakeDropSwap => "itertools_take_drop_swap",
+    FStringConversionSwap => "fstring_conversion_swap",
 }
 
 // Family membership is an explicit selection policy, separate from the full
@@ -386,6 +389,9 @@ impl Default for MutationOperatorSelection {
                 MutationOperator::BisectBoundarySwap,
                 MutationOperator::DeepcopyToCopy,
                 MutationOperator::DequePopleftToPop,
+                MutationOperator::GatherReturnExceptions,
+                MutationOperator::ItertoolsTakeDropSwap,
+                MutationOperator::FStringConversionSwap,
             ]
             .into_iter()
             .collect(),

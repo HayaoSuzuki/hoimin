@@ -2,14 +2,14 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add eight opt-out behavior mutations, including the requested expansion.
+**Goal:** Add eleven opt-out behavior mutations, including the requested expansions.
 **Architecture:** Local AST builders and existing selection/admission machinery.
 **Tech Stack:** Rust, vendored Ruff AST, CPython3.14/3.15, uv.
 **Spec:** ../specs/2026-10-25-effective-python-mutations-design.md
 
 ## Global constraints
 
-Use eight exact IDs/spec semantics;69 default/88 catalog/26opt-out regression IDs.
+Use eleven exact IDs/spec semantics;72 default/91 catalog/29opt-out regression IDs.
 Preserve scopes/evaluation once, UTF8 ranges/LFCRLFCR, budgets/cancellation/order.
 No dependency/schema change; jobs/test threads2; each stage at least5self-reviews.
 
@@ -71,3 +71,27 @@ Design self-review passes (5): scope/overlap (three distinct behavior contracts)
 syntax (token changes and full imported-name replacement), provenance (reuse
 existing resolver), API shape (exclude deepcopy memo and queue arguments), and
 resources/validation (jobs2, both Python runtimes, one final full suite).
+
+
+## Expansion: exception results, iterator prefixes and formatting
+
+Files: effective_python.rs (stdlib provenance/call edits),
+formatted_conversions.rs (explicit f-string conversion token edits), rust.rs
+(collector hookup), effective_python_tests.rs and support/effective_python.rs
+(analyzer/runtime contracts), registration/default/ranking/catalog fixtures and
+docs/fuzz seed. Continue inline in the existing worktree and PR1113.
+
+- [x] Add analyzer/runtime tests and observe RED before production edits.
+- [x] Register the three exact IDs and implement local builders; run GREEN.
+- [x] Update public individual opt-out tests to72/91/29; documentation/reference,
+  source hashes and fuzz seed; verify on both Python versions.
+- [x] Complete five self-review passes each stage and fresh whole-branch review.
+- [ ] Run final workspace, Clippy and documentation checks; push same PR and
+  clean owned build/site outputs, preserving primary .gitignore.
+
+Design self-reviews (five): scope (await excluded, no duplicate boolean change);
+provenance (existing resolver); syntax (trailing commas/comments/generator args);
+format boundaries (explicit flags only, nested specs and t-string exclusion);
+resources/evidence (jobs2, deterministic exception tests, both Python versions).
+Review focus is pinned by tests for import aliases/rebinding, comments and commas,
+implicit debug repr, nested f/t-string boundaries, and candidate-prefix admission.

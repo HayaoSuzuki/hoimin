@@ -205,6 +205,18 @@ const OPERATORS: &[(MutationOperator, &str)] = &[
     (MutationOperator::BisectBoundarySwap, "bisect_boundary_swap"),
     (MutationOperator::DeepcopyToCopy, "deepcopy_to_copy"),
     (MutationOperator::DequePopleftToPop, "deque_popleft_to_pop"),
+    (
+        MutationOperator::GatherReturnExceptions,
+        "gather_return_exceptions",
+    ),
+    (
+        MutationOperator::ItertoolsTakeDropSwap,
+        "itertools_take_drop_swap",
+    ),
+    (
+        MutationOperator::FStringConversionSwap,
+        "fstring_conversion_swap",
+    ),
 ];
 
 const FAMILIES: [&str; 8] = [
