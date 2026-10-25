@@ -65,7 +65,7 @@ zero-argument queue calls and changed-token continuation-line selection.
   compatibility documents, then verify source hashes and inventories.
 - [x] Perform five self-review passes for implementation and verification;
   obtain one fresh whole-branch review and resolve findings.
-- [ ] Run final workspace checks, update PR1113 and clean owned build outputs.
+- [x] Run final workspace checks, update PR1113 and clean owned build outputs.
 
 Design self-review passes (5): scope/overlap (three distinct behavior contracts),
 syntax (token changes and full imported-name replacement), provenance (reuse
