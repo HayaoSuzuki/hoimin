@@ -32,19 +32,19 @@ Interface: iterator_stop::entry(definition, source, exception, cancelled) return
 an optional anchored TextRange/replacement. Collector maintains lexical class
 context; NameResolutionBuilder records entry resolution sites in function scope.
 
-- [ ] Write failures for registration, exact insertion, yield and builtin exclusions.
-- [ ] Run the new tests RED before adding production behavior.
-- [ ] Implement registry, helper and name-resolution/collector gates.
-- [ ] Run core/analyzer tests and five implementation self-reviews.
+- [x] Write failures for registration, exact insertion, yield and builtin exclusions.
+- [x] Run the new tests RED before adding production behavior.
+- [x] Implement registry, helper and name-resolution/collector gates.
+- [x] Run core/analyzer tests and five implementation self-reviews.
 
 ## Task 2: Public behavior, documentation and delivery
 
 Files: dedicated CLI/CPython integration tests, default-selection fixture, usage,
 compatibility, CLI reference, OKF/spec catalog and maintenance evidence.
 
-- [ ] Execute genuine iterator/async iterator fixtures with both Python versions.
-- [ ] Verify default inclusion, opt-out, explicit selection and saved plans.
-- [ ] Update docs/OKF, generated reference and a bounded fuzz seed.
-- [ ] Run workspace, Clippy, Python/doc checks and five validation reviews.
-- [ ] Obtain one fresh independent review; repair findings with regressions.
-- [ ] Complete five delivery reviews; create/attach a PR based on loop-break-insert.
+- [x] Execute genuine iterator/async iterator fixtures with both Python versions.
+- [x] Verify default inclusion, opt-out, explicit selection and saved plans.
+- [x] Update docs/OKF, generated reference and a bounded fuzz seed.
+- [x] Run workspace, Clippy, Python/doc checks and five validation reviews.
+- [x] Obtain one fresh independent review; repair findings with regressions.
+- [x] Complete five delivery reviews; create/attach a PR based on loop-break-insert.
