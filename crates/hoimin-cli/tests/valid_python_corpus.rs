@@ -886,7 +886,7 @@ async fn loop_break_insert_compiles_and_changes_iteration_and_else_behavior() {
         ),
     ];
     for (fixture, baseline, expected) in fixtures {
-        for newline in ["\n", "\r\n"] {
+        for newline in ["\n", "\r\n", "\r"] {
             let source = fixture.replace('\n', newline);
             let output = analyze(
                 &hoimin_python::AnalyzeRequest {
@@ -939,6 +939,53 @@ async fn loop_break_insert_compiles_and_changes_iteration_and_else_behavior() {
                 );
             } else {
                 assert_eq!(observations[1]["stdout"], expected);
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn iterator_stop_insert_causes_protocol_exhaustion_without_runtime_error() {
+    let sync_source = "class Items:\n    def __init__(self): self.index = 0\n    def __iter__(self): return self\n    def __next__(self):\n        \"\"\"Read one item.\"\"\"\n        if self.index >= 2:\n            raise StopIteration\n        self.index += 1\n        return self.index\n";
+    let async_source = "import asyncio\nclass Items:\n    def __init__(self): self.index = 0\n    def __aiter__(self): return self\n    async def __anext__(self):\n        if self.index >= 2:\n            raise StopAsyncIteration\n        await asyncio.sleep(0)\n        self.index += 1\n        return self.index\nasync def collect():\n    return [value async for value in Items()]\n";
+    for (source, operator, harness) in [
+        (sync_source, "iterator_stop_insert", "print(list(Items()))"),
+        (
+            async_source,
+            "async_iterator_stop_insert",
+            "print(asyncio.run(collect()))",
+        ),
+    ] {
+        for newline in ["\n", "\r\n", "\r"] {
+            let source = source.replace('\n', newline);
+            let operators = serde_json::from_value(serde_json::json!([operator])).unwrap();
+            let output = analyze(
+                &hoimin_python::AnalyzeRequest {
+                    payload: hoimin_python::payload::PayloadBudget::default(),
+                    path: Utf8Path::new("subject.py"),
+                    lines: &[],
+                    symbols: &[],
+                    operators: &operators,
+                    profile: MutationProfile::Full,
+                    max_candidates: 10,
+                },
+                &source,
+            );
+            assert_eq!(output.candidates.len(), 1, "{source}");
+            let candidate = &output.candidates[0];
+            validate_candidate(source.as_bytes(), &descriptor(&source, candidate)).unwrap();
+            let mut mutant = source.as_bytes().to_vec();
+            let start = usize::try_from(candidate.span.start).unwrap();
+            let end = start + usize::try_from(candidate.span.length).unwrap();
+            mutant.splice(start..end, candidate.replacement.bytes());
+            let observations = python_observe(&[source.into_bytes(), mutant], harness)
+                .await
+                .unwrap();
+            assert_eq!(observations[0]["stdout"], "[1, 2]\n");
+            assert_eq!(observations[1]["stdout"], "[]\n");
+            for observation in observations {
+                assert_eq!(observation["compiled"], true);
+                assert_eq!(observation["exception"], serde_json::Value::Null);
             }
         }
     }

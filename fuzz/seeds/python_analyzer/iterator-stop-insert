@@ -1,0 +1,6 @@
+class Items:
+    def __next__(self):
+        """Read a value."""
+        return self.read()
+    async def __anext__(self):
+        return await self.read_async()

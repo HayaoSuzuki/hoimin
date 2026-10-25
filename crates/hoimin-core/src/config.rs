@@ -161,6 +161,8 @@ mutation_operators! {
     StringSegmentEmpty => "string_segment_empty",
     StdlibConversionCallRemove => "stdlib_conversion_call_remove",
     LoopBreakInsert => "loop_break_insert",
+    IteratorStopInsert => "iterator_stop_insert",
+    AsyncIteratorStopInsert => "async_iterator_stop_insert",
 }
 
 // Family membership is an explicit selection policy, separate from the full
@@ -358,6 +360,8 @@ impl Default for MutationOperatorSelection {
                 MutationOperator::StringSegmentEmpty,
                 MutationOperator::StdlibConversionCallRemove,
                 MutationOperator::LoopBreakInsert,
+                MutationOperator::IteratorStopInsert,
+                MutationOperator::AsyncIteratorStopInsert,
             ]
             .into_iter()
             .collect(),

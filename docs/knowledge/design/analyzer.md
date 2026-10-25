@@ -5,6 +5,11 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: iterator-stop-insert-design
+  resource: ../../superpowers/specs/2026-10-25-iterator-stop-insert-design.md
+  revision: 23837533e00a42445d7026147aa0452282e153c4
+  working_tree: untracked
+  sha256: 3af5c5c6ccfb8589695eee152a743ec0af74dc10d0a06c4552f9b0529cf85f3c
 - id: loop-break-insert-design
   resource: ../../superpowers/specs/2026-10-25-loop-break-insert-design.md
   revision: 29e7df70048e1d0d086594b12166e13354653ee0
@@ -1775,3 +1780,23 @@ This does not prove all tail positions are reachable or all mutants inequivalent
 [^loop-break-insert-design]
 
 [^loop-break-insert-design]: [Loop break insertion design](../../superpowers/specs/2026-10-25-loop-break-insert-design.md).
+
+# Opt-out iterator stop insertion
+
+`iterator_stop_insert` and `async_iterator_stop_insert` add one entry exhaustion
+candidate for eligible synchronous `__next__` and async `__anext__` class methods.
+They retain docstrings and original bodies, exclude decorated/generator methods,
+and require builtin exception-name resolution. This tests whether consumers assert
+that any expected values are produced, not whether only a later item is missing.
+Both are default-enabled and independently removable.[^iterator-stop-insert-design]
+
+Protocol-method entry sites are recorded in the function's resolution scope. The
+two stop names participate in shadowing, wildcard and dynamic-binding uncertainty;
+they are separate from the exception-pair operator catalog. Own-scope yield
+inspection ignores nested function/class bodies while visiting defaults evaluated
+in the enclosing scope. Existing candidate admission, prefixes, cancellation and
+payload limits apply. Runtime tests establish behavior on the tested interpreters;
+static analysis does not prove arbitrary dynamic iterator dispatch.
+[^iterator-stop-insert-design]
+
+[^iterator-stop-insert-design]: [Iterator stop insertion design](../../superpowers/specs/2026-10-25-iterator-stop-insert-design.md).

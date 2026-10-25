@@ -10167,3 +10167,206 @@ fn loop_break_insert_shared_anchor_has_stable_prefix_and_outer_scope() {
     assert_eq!(output.candidates.len(), 1);
     assert_eq!(output.candidates[0].symbol.as_deref(), Some("outer"));
 }
+
+#[test]
+fn iterator_stop_insert_preserves_docstring_and_original_body() {
+    let operator = MutationOperator::from_name("iterator_stop_insert")
+        .expect("iterator_stop_insert is registered by default");
+    let source = "class Items:\n    def __next__(self):\n        \"\"\"Read one item.\"\"\"\n        return self.read()\n";
+    let output = analyze_with_only_operator(source, operator);
+    assert_eq!(output.candidates.len(), 1);
+    let c = &output.candidates[0];
+    let start = usize::try_from(c.span.start).unwrap();
+    let end = start + usize::try_from(c.span.length).unwrap();
+    let mutant = format!("{}{}{}", &source[..start], c.replacement, &source[end..]);
+    assert_eq!(
+        mutant,
+        "class Items:\n    def __next__(self):\n        \"\"\"Read one item.\"\"\"\n        raise StopIteration()\n        return self.read()\n"
+    );
+    assert!(parse_module(&mutant).is_ok());
+}
+
+#[test]
+fn iterator_stop_insert_handles_async_inline_and_nested_scopes() {
+    for (source, expected) in [
+        (
+            "class It:\n    def __next__(self): return 1\n",
+            "class It:\n    def __next__(self): raise StopIteration(); return 1\n",
+        ),
+        (
+            "class It:\r\n\tasync def __anext__(self):\r\n\t\treturn await self.read()\r\n",
+            "class It:\r\n\tasync def __anext__(self):\r\n\t\traise StopAsyncIteration()\r\n\t\treturn await self.read()\r\n",
+        ),
+        (
+            "class It:\n    def __next__(self): \"doc\"; return 1 # tail\n",
+            "class It:\n    def __next__(self): \"doc\"; raise StopIteration(); return 1 # tail\n",
+        ),
+        (
+            "class It:\n    def __next__(self): \\\n        return 1\n",
+            "class It:\n    def __next__(self): \\\n        raise StopIteration(); return 1\n",
+        ),
+        (
+            "class It:\n    def __next__(self):\n        def gen():\n            yield 1\n        return next(gen())\n",
+            "class It:\n    def __next__(self):\n        raise StopIteration()\n        def gen():\n            yield 1\n        return next(gen())\n",
+        ),
+        (
+            "class It:\n    def __next__(self):\n        @decorate\n        def inner(): return 1\n        return inner()\n",
+            "class It:\n    def __next__(self):\n        raise StopIteration()\n        @decorate\n        def inner(): return 1\n        return inner()\n",
+        ),
+    ] {
+        let output = analyze_selected(
+            &["iterator_stop_insert", "async_iterator_stop_insert"],
+            source,
+        );
+        assert_eq!(
+            output.candidates.len(),
+            1,
+            "{source}: {:?}",
+            output.diagnostics
+        );
+        let c = &output.candidates[0];
+        let start = usize::try_from(c.span.start).unwrap();
+        let end = start + usize::try_from(c.span.length).unwrap();
+        let mutant = format!("{}{}{}", &source[..start], c.replacement, &source[end..]);
+        assert_eq!(mutant, expected);
+        assert!(parse_module(&mutant).is_ok(), "{mutant}");
+        assert!(c.symbol.as_deref().is_some_and(|s| s.starts_with("It.__")));
+    }
+}
+
+#[test]
+fn iterator_stop_insert_excludes_generators_shadowing_and_non_methods() {
+    for source in [
+        "def __next__(self): return 1\n",
+        "class It:\n    async def __next__(self): return 1\n",
+        "class It:\n    def __anext__(self): return 1\n",
+        "class It:\n    def __next__(self): yield 1\n",
+        "class It:\n    async def __anext__(self): yield 1\n",
+        "class It:\n    def __next__(self):\n        def f(x=(yield 1)): pass\n        return f()\n",
+        "class It:\n    @decorate\n    def __next__(self): return 1\n",
+        "class It:\n    def outer(self):\n        def __next__(self): return 1\n        return __next__\n",
+        "StopIteration = Custom\nclass It:\n    def __next__(self): return 1\n",
+        "class It:\n    def __next__(self): return 1\nStopIteration = Custom\n",
+        "class It[StopIteration]:\n    def __next__(self): return 1\n",
+        "class It:\n    def __next__[StopIteration](self): return 1\n",
+        "StopAsyncIteration = Custom\nclass It:\n    async def __anext__(self): return 1\n",
+        "class It:\n    def __next__(self, StopIteration): return 1\n",
+        "class It:\n    def __next__(self):\n        StopIteration = Custom\n        return 1\n",
+        "class It:\n    def __next__(self):\n        return 1\n        StopIteration = Custom\n",
+        "class It:\n    def __next__(self): raise StopIteration()\n",
+        "class It:\n    async def __anext__(self): raise StopAsyncIteration\n",
+        "from unknown import *\nclass It:\n    def __next__(self): return 1\n",
+        "exec(code)\nclass It:\n    def __next__(self): return 1\n",
+    ] {
+        let output = analyze_selected(
+            &["iterator_stop_insert", "async_iterator_stop_insert"],
+            source,
+        );
+        assert_eq!(output.candidates.len(), 0, "{source}");
+    }
+}
+
+#[test]
+fn iterator_stop_insert_respects_builtin_class_scope_and_prefix_budgets() {
+    let source = "class It:\n    StopIteration = Custom\n    def __next__(self): return 1\n    async def __anext__(self): return 2\n";
+    let selected = ["iterator_stop_insert", "async_iterator_stop_insert"];
+    let all = analyze_selected(&selected, source);
+    assert_eq!(all.candidates.len(), 2);
+    let prefix = analyze_selected_with(
+        &selected,
+        Utf8Path::new("pkg/sample.py"),
+        &[],
+        &[],
+        1,
+        source,
+    );
+    assert_eq!(prefix.candidates.len(), 1);
+    assert!(prefix.truncated);
+    assert_eq!(
+        prefix.candidates[0].replacement,
+        all.candidates[0].replacement
+    );
+    let filtered = analyze_selected_with(
+        &selected,
+        Utf8Path::new("pkg/sample.py"),
+        &[LineRange { start: 4, end: 4 }],
+        &["It.__anext__".to_owned()],
+        10,
+        source,
+    );
+    assert_eq!(filtered.candidates.len(), 1);
+    assert_eq!(
+        filtered.candidates[0].operator.as_str(),
+        "async_iterator_stop_insert"
+    );
+    let operators = serde_json::from_value(serde_json::json!(selected)).unwrap();
+    let request = AnalyzeRequest {
+        payload: super::payload::PayloadBudget::new(1),
+        path: Utf8Path::new("pkg/sample.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 10,
+    };
+    assert!(analyze_source_cancellable(&request, source, || true).is_err());
+    assert!(analyze_source_cancellable(&request, source, || false).is_err());
+}
+
+#[test]
+fn iterator_entry_insertion_excludes_global_declaration_conflicts() {
+    for source in [
+        "class It:\n    def __next__(self):\n        global StopIteration\n        return 1\n",
+        "class It:\n    async def __anext__(self):\n        global StopAsyncIteration\n        return 1\n",
+        "class It:\n    def __next__(self):\n        if flag:\n            global StopIteration\n        return 1\n",
+    ] {
+        assert_eq!(
+            analyze_selected(
+                &["iterator_stop_insert", "async_iterator_stop_insert"],
+                source
+            )
+            .candidates
+            .len(),
+            0,
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn iterator_entry_insertion_supports_semicolon_docstrings_and_cr_lines() {
+    for (source, expected) in [
+        (
+            "class It:\n    def __next__(self):\n        \"doc\"; return 1\n",
+            "class It:\n    def __next__(self):\n        \"doc\"; raise StopIteration(); return 1\n",
+        ),
+        (
+            "class It:\r    def __next__(self):\r        return 1\r",
+            "class It:\r    def __next__(self):\r        raise StopIteration()\r        return 1\r",
+        ),
+    ] {
+        let output = analyze_selected(&["iterator_stop_insert"], source);
+        assert_eq!(output.candidates.len(), 1, "{source}");
+        let c = &output.candidates[0];
+        let start = usize::try_from(c.span.start).unwrap();
+        let end = start + usize::try_from(c.span.length).unwrap();
+        let mutant = format!("{}{}{}", &source[..start], c.replacement, &source[end..]);
+        assert_eq!(mutant, expected);
+        assert!(parse_module(&mutant).is_ok());
+    }
+}
+
+#[test]
+fn loop_entry_insertion_preserves_cr_only_tail_indentation() {
+    let source = "for x in xs:\r    if flag:\r        work()\r";
+    let output = analyze_selected(&["loop_break_insert"], source);
+    assert_eq!(output.candidates.len(), 1);
+    let c = &output.candidates[0];
+    let start = usize::try_from(c.span.start).unwrap();
+    let end = start + usize::try_from(c.span.length).unwrap();
+    let mutant = format!("{}{}{}", &source[..start], c.replacement, &source[end..]);
+    assert_eq!(
+        mutant,
+        "for x in xs:\r    if flag:\r        work()\r    break\r"
+    );
+}

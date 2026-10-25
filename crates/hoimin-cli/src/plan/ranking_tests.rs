@@ -566,6 +566,8 @@ const HIGH_VALUE_CONTROL_OPERATORS: &[&str] = &[
     "boolean_literal",
     "break_continue",
     "loop_break_insert",
+    "iterator_stop_insert",
+    "async_iterator_stop_insert",
 ];
 const EXCEPTION_HANDLING_OPERATORS: &[&str] = &[
     "exception_hierarchy",
@@ -671,7 +673,7 @@ fn ranking_assigns_every_operator_to_its_fixed_category() {
         .into_iter()
         .filter_map(MutationOperator::from_name)
         .collect::<BTreeSet<_>>();
-    assert_eq!(tested.len(), 74);
+    assert_eq!(tested.len(), 76);
     assert_eq!(tested, canonical);
 
     for (operators, expected) in categories {

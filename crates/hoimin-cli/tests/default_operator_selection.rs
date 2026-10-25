@@ -9,7 +9,7 @@ use std::path::Path;
 
 use hoimin_cli::plan::PlanManifest;
 
-const OPT_OUT_OPERATORS: [&str; 12] = [
+const OPT_OUT_OPERATORS: [&str; 14] = [
     "statement_delete",
     "integer_literal_neighbor",
     "augmented_to_assignment",
@@ -22,6 +22,8 @@ const OPT_OUT_OPERATORS: [&str; 12] = [
     "string_segment_empty",
     "stdlib_conversion_call_remove",
     "loop_break_insert",
+    "iterator_stop_insert",
+    "async_iterator_stop_insert",
 ];
 
 async fn cli(args: Vec<OsString>) -> serde_json::Value {
@@ -73,10 +75,13 @@ async fn plan(root: &Path, selection: &[&str]) -> serde_json::Value {
 async fn current_default_candidates_are_individually_excludable() {
     let root = tempfile::tempdir().unwrap();
     let source = "from decimal import Decimal\nfrom http import HTTPStatus\ndef amount(x): return Decimal(x)\ndef factory(x): return Decimal.from_float(x)\ndef status(x): return HTTPStatus(x)\ndef f(x, y):\n    print('message')\n    x += 3\n    while x < y:\n        x += 1\n    z = int(x)\n    return x, y\ndef recent(text) -> str:\n    return text.strip()\ndef segment(x):\n    return f'prefix:{x}'\n";
-    std::fs::write(root.path().join("subject.py"), source).unwrap();
+    let source = format!(
+        "{source}\nclass Items:\n    def __next__(self): return 1\n    async def __anext__(self): return 2\n"
+    );
+    std::fs::write(root.path().join("subject.py"), &source).unwrap();
     let default = plan(root.path(), &[]).await;
     let manifest: PlanManifest = serde_json::from_value(default.clone()).unwrap();
-    assert_eq!(manifest.normalized_config.operators.names().len(), 55);
+    assert_eq!(manifest.normalized_config.operators.names().len(), 57);
     let candidates = default["candidates"].as_array().unwrap();
     for original in ["Decimal(x)", "Decimal.from_float(x)", "HTTPStatus(x)"] {
         assert!(

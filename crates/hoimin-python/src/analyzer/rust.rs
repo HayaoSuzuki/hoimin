@@ -35,6 +35,8 @@ mod container_elements;
 mod enum_members;
 #[path = "rust/function_body.rs"]
 mod function_body;
+#[path = "rust/iterator_stop.rs"]
+mod iterator_stop;
 #[path = "rust/loop_break.rs"]
 mod loop_break;
 #[path = "rust/optional_keywords.rs"]
@@ -1608,7 +1610,9 @@ impl NameResolutionIndex {
 }
 
 fn tracked_resolution_name(name: &str) -> bool {
-    MUTABLE_BUILTINS.contains(&name) || EXCEPTION_NAMES.contains(&name)
+    MUTABLE_BUILTINS.contains(&name)
+        || EXCEPTION_NAMES.contains(&name)
+        || ITERATOR_STOP_NAMES.contains(&name)
 }
 
 #[derive(Default)]
@@ -1974,12 +1978,20 @@ impl NameResolutionBuilder {
         );
         if local == "*" {
             let event = self.next_event();
-            for name in MUTABLE_BUILTINS.iter().chain(EXCEPTION_NAMES) {
+            for name in MUTABLE_BUILTINS
+                .iter()
+                .chain(EXCEPTION_NAMES)
+                .chain(ITERATOR_STOP_NAMES)
+            {
                 self.record_loop_back_edge_binding(self.current, name);
             }
             let scope = &mut self.index.scopes[self.current.0];
             scope.wildcard = true;
-            for name in MUTABLE_BUILTINS.iter().chain(EXCEPTION_NAMES) {
+            for name in MUTABLE_BUILTINS
+                .iter()
+                .chain(EXCEPTION_NAMES)
+                .chain(ITERATOR_STOP_NAMES)
+            {
                 scope.possible_bindings.insert((*name).to_owned());
                 if matches!(scope.kind, NameScopeKind::Module | NameScopeKind::Class) {
                     scope
@@ -2003,12 +2015,20 @@ impl NameResolutionBuilder {
 
     fn record_scope_wildcard(&mut self, scope_id: ScopeId) {
         let event = self.next_event();
-        for name in MUTABLE_BUILTINS.iter().chain(EXCEPTION_NAMES) {
+        for name in MUTABLE_BUILTINS
+            .iter()
+            .chain(EXCEPTION_NAMES)
+            .chain(ITERATOR_STOP_NAMES)
+        {
             self.record_loop_back_edge_binding(scope_id, name);
         }
         let scope = &mut self.index.scopes[scope_id.0];
         scope.wildcard = true;
-        for name in MUTABLE_BUILTINS.iter().chain(EXCEPTION_NAMES) {
+        for name in MUTABLE_BUILTINS
+            .iter()
+            .chain(EXCEPTION_NAMES)
+            .chain(ITERATOR_STOP_NAMES)
+        {
             scope.possible_bindings.insert((*name).to_owned());
             if matches!(scope.kind, NameScopeKind::Module | NameScopeKind::Class) {
                 scope
@@ -2129,7 +2149,12 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
                     for parameter in definition.parameters.as_ref() {
                         this.add_local(scope, parameter.name().as_str());
                     }
-                    this.in_scope(scope, |this| this.visit_body(&definition.body));
+                    this.in_scope(scope, |this| {
+                        if matches!(definition.name.as_str(), "__next__" | "__anext__") {
+                            this.record_resolution_site(usize::from(definition.start()), false);
+                        }
+                        this.visit_body(&definition.body);
+                    });
                 });
                 self.record_binding(definition.name.as_str());
                 return;
@@ -2805,6 +2830,8 @@ const MUTABLE_BUILTINS: &[&str] = &[
     "reversed",
 ];
 
+const ITERATOR_STOP_NAMES: &[&str] = &["StopIteration", "StopAsyncIteration"];
+
 const EXCEPTION_NAMES: &[&str] = &[
     "ValueError",
     "TypeError",
@@ -2878,6 +2905,13 @@ enum RuntimeRole {
     AssignmentTarget,
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum EnclosingBody {
+    Module,
+    Class,
+    Function,
+}
+
 struct AstCandidateCollector<'a, F> {
     string_exclusions: string_literals::Exclusions,
     enum_index: &'a enum_members::EnumIndex,
@@ -2885,6 +2919,7 @@ struct AstCandidateCollector<'a, F> {
     operator_imports: OperatorImports,
     conversion_imports: stdlib_conversions::ConversionImports,
     return_scope: ReturnScope,
+    enclosing_body: EnclosingBody,
     integer_suppressed: bool,
     runtime_role: RuntimeRole,
     in_pattern: bool,
@@ -2950,6 +2985,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             },
             enum_index: &enum_index,
             return_scope: ReturnScope::Excluded,
+            enclosing_body: EnclosingBody::Module,
             integer_suppressed: false,
             runtime_role: RuntimeRole::Value,
             in_pattern: false,
@@ -3912,6 +3948,35 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         }
     }
 
+    fn collect_iterator_stop_insert(&mut self, statement: &Stmt) {
+        let Stmt::FunctionDef(definition) = statement else {
+            return;
+        };
+        if self.enclosing_body != EnclosingBody::Class {
+            return;
+        }
+        let (operator, exception) = match (definition.name.as_str(), definition.is_async) {
+            ("__next__", false) => (MutationOperator::IteratorStopInsert, "StopIteration"),
+            ("__anext__", true) => (
+                MutationOperator::AsyncIteratorStopInsert,
+                "StopAsyncIteration",
+            ),
+            _ => return,
+        };
+        if self.request.operators.contains(operator)
+            && self.facts.resolves_builtin(definition.range(), exception)
+            && let Some((range, replacement)) = iterator_stop::entry(
+                definition,
+                self.source,
+                self.facts.tokens.expect("parser tokens are set"),
+                exception,
+                self.cancelled,
+            )
+        {
+            self.add_candidate_in_scope(range, replacement, operator, definition.range());
+        }
+    }
+
     fn collect_function_body_return_constant(&mut self, statement: &Stmt) {
         if self.candidates.failure.is_some() {
             return;
@@ -4021,6 +4086,10 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             if self.candidates.failure.is_some() {
                 return;
             }
+        }
+        self.collect_iterator_stop_insert(statement);
+        if self.candidates.failure.is_some() {
+            return;
         }
         self.collect_function_body_return_constant(statement);
         if self.candidates.failure.is_some() {
@@ -4196,6 +4265,12 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
             if self.check_cancelled() {
                 return;
             }
+            if matches!(statement, Stmt::ClassDef(_)) {
+                let previous = std::mem::replace(&mut self.enclosing_body, EnclosingBody::Class);
+                visitor::walk_stmt(self, statement);
+                self.enclosing_body = previous;
+                return;
+            }
             if let Stmt::FunctionDef(definition) = statement {
                 let allowed = self
                     .request
@@ -4208,7 +4283,10 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                     ReturnScope::Excluded
                 };
                 let previous = std::mem::replace(&mut self.return_scope, scope);
+                let previous_class =
+                    std::mem::replace(&mut self.enclosing_body, EnclosingBody::Function);
                 visitor::walk_stmt(self, statement);
+                self.enclosing_body = previous_class;
                 self.return_scope = previous;
                 return;
             }
