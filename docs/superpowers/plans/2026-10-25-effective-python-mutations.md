@@ -86,7 +86,7 @@ docs/fuzz seed. Continue inline in the existing worktree and PR1113.
 - [x] Update public individual opt-out tests to72/91/29; documentation/reference,
   source hashes and fuzz seed; verify on both Python versions.
 - [x] Complete five self-review passes each stage and fresh whole-branch review.
-- [ ] Run final workspace, Clippy and documentation checks; push same PR and
+- [x] Run final workspace, Clippy and documentation checks; push same PR and
   clean owned build/site outputs, preserving primary .gitignore.
 
 Design self-reviews (five): scope (await excluded, no duplicate boolean change);
