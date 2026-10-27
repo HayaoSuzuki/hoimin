@@ -84,6 +84,19 @@
       "minimumReleaseAge": "3 days"
     },
     {
+      "description": "Keep release runners on Ubuntu 22.04 to preserve the standalone binary glibc baseline; review OS upgrades manually",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchFileNames": [
+        ".github/workflows/release.yml"
+      ],
+      "matchPackageNames": [
+        "ubuntu"
+      ],
+      "allowedVersions": "/^22\\.04$/"
+    },
+    {
       "description": "Keep CI Python within the supported pyproject.toml range; review together when support changes",
       "matchManagers": [
         "github-actions"
