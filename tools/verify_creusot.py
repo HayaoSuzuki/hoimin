@@ -548,6 +548,8 @@ def verify(
                     "--",
                     "--lib",
                     "--locked",
+                    # The proof compiler has its own verified nightly pin.
+                    "--ignore-rust-version",
                     "--target",
                     target,
                 ],

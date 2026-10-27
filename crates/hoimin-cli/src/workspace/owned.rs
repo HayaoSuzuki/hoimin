@@ -2339,6 +2339,21 @@ mod tests {
             super::ClaimResult::Claimed
         );
         root.dir.remove_file(super::HEARTBEAT_FILE).unwrap();
+        // Model a concurrent fork retaining the open file description until exec.
+        #[cfg(unix)]
+        let _inherited_lease = root
+            .lease
+            .lock()
+            .unwrap()
+            .as_deref()
+            .unwrap()
+            .try_clone()
+            .unwrap();
+        // Establish an unlocked abandoned root even while the copy remains open.
+        {
+            let lease = root.lease.lock().unwrap();
+            std::fs::File::unlock(lease.as_deref().unwrap()).unwrap();
+        }
         drop(root);
 
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
