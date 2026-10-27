@@ -602,6 +602,11 @@ def test_runner_requires_three_fresh_target_results(
         assert [result["target"] for result in results] == list(verify_creusot.TARGETS)
         assert all(result["proved"] == {"files": 25, "goals": 59} for result in results)
     proves = [call for call in calls if "--only=prove" in call]
+    generations = [call for call in calls if "--only=coma" in call]
+    assert len(generations) == 3
+    assert all(
+        "--ignore-rust-version" in call[call.index("--") + 1 :] for call in generations
+    )
     assert len(proves) == 3
     assert all(
         "--no-cache" in call and "-j" in call and call[call.index("-j") + 1] == "2"

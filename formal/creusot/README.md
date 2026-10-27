@@ -53,7 +53,11 @@ receipts and relevant manifests together. Rebuild, rerun environment negative
 tests and all targets, then measure native cold and warm setup-inclusive CI.
 Review both lockfiles, licenses, proc-macro output and distribution inputs.
 Do not increase the accepted solver/job limits to hide a regression. Stable
-Rust 1.99.0 and the unrelated fuzz/random-order nightly remain separate pins.
+Rust and the unrelated fuzz/random-order nightly remain separate pins. The
+generation command passes `--ignore-rust-version` to Cargo because the stable
+workspace MSRV can exceed the pinned proof compiler's version. The environment
+preflight still verifies the proof compiler, and compilation and all target
+proofs must succeed with it.
 
 ## Accepted native cost and proof scope
 
@@ -299,7 +303,7 @@ cargo clean -p hoimin-budget-math --target "$target"
 # Remove only this job's generated output, retaining saved strategies elsewhere.
 rm -rf verif/hoimin_budget_math_rlib
 cargo creusot -p hoimin-budget-math --only=coma --span-mode absolute -j 2 \
-  -- --lib --locked --target "$target"
+  -- --lib --locked --ignore-rust-version --target "$target"
 python3 /recipe/tools/creusot_environment.py check \
   --manifest /recipe/formal/creusot/toolchain.json --project-root "$PWD"
 cargo creusot -p hoimin-budget-math --only=prove --no-cache -j 2 \
