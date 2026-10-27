@@ -537,7 +537,7 @@ def assert_github_release(workflow: str) -> None:
     for name, runner, target, platform in (
         ("windows-wheel", "windows-latest", "x86_64-pc-windows-msvc", "windows-x86_64"),
         ("linux-wheel", "ubuntu-22.04", "x86_64-unknown-linux-gnu", "linux-x86_64"),
-        ("macos-wheel", "macos-14", "aarch64-apple-darwin", "macos-aarch64"),
+        ("macos-wheel", "macos-26", "aarch64-apple-darwin", "macos-aarch64"),
     ):
         job = jobs[name]
         assert set(job) == {
