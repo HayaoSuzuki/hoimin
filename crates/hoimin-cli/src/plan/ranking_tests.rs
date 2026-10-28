@@ -591,6 +591,8 @@ const EXCEPTION_HANDLING_OPERATORS: &[&str] = &[
 ];
 const BEHAVIORAL_OPERATORS: &[&str] = &[
     "base_order_shuffle",
+    "override_method_delete",
+    "super_call_move",
     "dataclass_factory_share",
     "sort_key_swap",
     "encoding_errors_ignore",
@@ -699,7 +701,7 @@ fn ranking_assigns_every_operator_to_its_fixed_category() {
         .into_iter()
         .filter_map(MutationOperator::from_name)
         .collect::<BTreeSet<_>>();
-    assert_eq!(tested.len(), 102);
+    assert_eq!(tested.len(), 104);
     assert_eq!(tested, canonical);
 
     for (operators, expected) in categories {

@@ -508,5 +508,15 @@
     "operator": "base_order_shuffle",
     "status": "deferred",
     "reason": "Dedicated source-preserving permutation, default/opt-out, selector, cancellation and CPython saved-plan checks; not modeled by the initial Lean cross-producer corpus"
+  },
+  {
+    "operator": "override_method_delete",
+    "status": "deferred",
+    "reason": "Dedicated conservative inheritance, source preservation, default/opt-out and CPython saved-plan checks; not modeled by the initial Lean cross-producer corpus"
+  },
+  {
+    "operator": "super_call_move",
+    "status": "deferred",
+    "reason": "Dedicated conservative inheritance, source preservation, default/opt-out and CPython saved-plan checks; not modeled by the initial Lean cross-producer corpus"
   }
 ]

@@ -642,14 +642,14 @@ Mutation operator IDs and selector families:
   iterator_stop_insert, itertools_take_drop_swap, lambda_capture_late, list_comprehension_to_generator
   loop_break_insert, mapping_setdefault_to_get, membership, method_call_remove
   mutable_default_share, none_truthiness, nonlocal_remove, operator_function
-  optional_keyword_delete, remove_not, return_tuple_swap, sort_key_swap
-  statement_delete, stdlib_conversion_call_remove, string_literal_empty, string_segment_empty
-  structure_append_extend, structure_index_neighbor, structure_mapping_get_subscript, structure_ops
-  structure_slice_bound_move, structure_slice_bound_omit, structure_slice_neighbor, structure_sort_reverse
-  structure_sorted_reversed, type_collections, type_dict_mapping, type_iterable_iterator
-  type_iterables, type_list_sequence, type_nullable, type_nullable_add
-  type_nullable_remove, type_sequence_iterable, type_set_abstract_set, unary_sign
-  while_condition_false, yield_from_to_yield
+  optional_keyword_delete, override_method_delete, remove_not, return_tuple_swap
+  sort_key_swap, statement_delete, stdlib_conversion_call_remove, string_literal_empty
+  string_segment_empty, structure_append_extend, structure_index_neighbor, structure_mapping_get_subscript
+  structure_ops, structure_slice_bound_move, structure_slice_bound_omit, structure_slice_neighbor
+  structure_sort_reverse, structure_sorted_reversed, super_call_move, type_collections
+  type_dict_mapping, type_iterable_iterator, type_iterables, type_list_sequence
+  type_nullable, type_nullable_add, type_nullable_remove, type_sequence_iterable
+  type_set_abstract_set, unary_sign, while_condition_false, yield_from_to_yield
 ```
 
 Argument constraints:
@@ -983,14 +983,14 @@ Mutation operator IDs and selector families:
   iterator_stop_insert, itertools_take_drop_swap, lambda_capture_late, list_comprehension_to_generator
   loop_break_insert, mapping_setdefault_to_get, membership, method_call_remove
   mutable_default_share, none_truthiness, nonlocal_remove, operator_function
-  optional_keyword_delete, remove_not, return_tuple_swap, sort_key_swap
-  statement_delete, stdlib_conversion_call_remove, string_literal_empty, string_segment_empty
-  structure_append_extend, structure_index_neighbor, structure_mapping_get_subscript, structure_ops
-  structure_slice_bound_move, structure_slice_bound_omit, structure_slice_neighbor, structure_sort_reverse
-  structure_sorted_reversed, type_collections, type_dict_mapping, type_iterable_iterator
-  type_iterables, type_list_sequence, type_nullable, type_nullable_add
-  type_nullable_remove, type_sequence_iterable, type_set_abstract_set, unary_sign
-  while_condition_false, yield_from_to_yield
+  optional_keyword_delete, override_method_delete, remove_not, return_tuple_swap
+  sort_key_swap, statement_delete, stdlib_conversion_call_remove, string_literal_empty
+  string_segment_empty, structure_append_extend, structure_index_neighbor, structure_mapping_get_subscript
+  structure_ops, structure_slice_bound_move, structure_slice_bound_omit, structure_slice_neighbor
+  structure_sort_reverse, structure_sorted_reversed, super_call_move, type_collections
+  type_dict_mapping, type_iterable_iterator, type_iterables, type_list_sequence
+  type_nullable, type_nullable_add, type_nullable_remove, type_sequence_iterable
+  type_set_abstract_set, unary_sign, while_condition_false, yield_from_to_yield
 ```
 
 Argument constraints:

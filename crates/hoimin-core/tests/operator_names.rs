@@ -246,6 +246,11 @@ const OPERATORS: &[(MutationOperator, &str)] = &[
         "encoding_errors_ignore",
     ),
     (MutationOperator::BaseOrderShuffle, "base_order_shuffle"),
+    (
+        MutationOperator::OverrideMethodDelete,
+        "override_method_delete",
+    ),
+    (MutationOperator::SuperCallMove, "super_call_move"),
 ];
 
 const FAMILIES: [&str; 8] = [

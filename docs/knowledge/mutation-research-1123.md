@@ -1,10 +1,15 @@
 ---
 type: Decision
 title: Inheritance mutation research 1123
-description: Restricted override deletion and super-call movement recommendations;
+description: Restricted override deletion and super-call movement implementations;
   default base-order mutation and no duplicate delegation-deletion operator.
 status: draft
 sources:
+- id: inheritance-builder
+  resource: ../../crates/hoimin-python/src/analyzer/rust/inheritance.rs
+  revision: c933c1ff608e155846d32f8a5ce08f03f3e50c75
+  working_tree: untracked
+  sha256: b170f3a6786224837100c3e947b8d35c4e6efae381ea450285274ef8fa017d6f
 - id: base-order-builder
   resource: ../../crates/hoimin-python/src/analyzer/rust/base_order.rs
   revision: d80c1dbc1eeb97b43f503767cbb06bfd64ec5622
@@ -12,9 +17,9 @@ sources:
   sha256: fb339c331c5d50021cee252ba5ed343e02d58866b9f285d8258eb0d79b37d81f
 - id: implementation
   resource: ../superpowers/reports/issue-1123/implementation.md
-  revision: d80c1dbc1eeb97b43f503767cbb06bfd64ec5622
-  working_tree: untracked
-  sha256: c50be6851331aaa2952ec0020354cc65f3e9562963ae5657b3d13b4989249a07
+  revision: c933c1ff608e155846d32f8a5ce08f03f3e50c75
+  working_tree: modified
+  sha256: 810140eedcba9e808fa0dc007e8fc898d27a54d523673a62d414696b0570ab2f
 - id: base-order315
   resource: ../superpowers/reports/issue-1123/results-base-order-python315.json
   revision: 0033b008582b24bead8bdf28f8980275e96500a3
@@ -32,9 +37,9 @@ sources:
   sha256: 0e91fa3072e301d37a373a2858652dbfdcadf98a3cdec1f40ebfa590ea8ace24
 - id: report
   resource: ../superpowers/reports/issue-1123/README.md
-  revision: d80c1dbc1eeb97b43f503767cbb06bfd64ec5622
+  revision: c933c1ff608e155846d32f8a5ce08f03f3e50c75
   working_tree: modified
-  sha256: ddef891b6477dee5a7a7635b6e069db0790bd80f66359e5f68b779c713a5402c
+  sha256: 5dc9d8af964abbe2066ad4b015ec8449ee68c0cb08b1178c6251fb30468bba07
 - id: review
   resource: ../superpowers/reports/issue-1123/self-review.md
   revision: 0033b008582b24bead8bdf28f8980275e96500a3
@@ -69,12 +74,13 @@ sources:
 
 # Decision and evidence
 
-Issue 1123 recommends limited adoption of two future operators: remove an
+Issue 1123 recommends limited adoption of two operators: remove an
 ordinary overriding method to restore parent dispatch, and move a standalone
-same-method `super()` call within a straight-line method body. Those operators
-remain proposals. The product follow-up separately implements `base_order_shuffle`
-as a default runtime operator with individual opt-out, bringing the catalog to
-102 IDs / 83 defaults. It accepts distinct simple-name bases without runtime MRO
+same-method `super()` call within a straight-line method body. The product
+follow-up implements both and `base_order_shuffle`
+as default runtime operators with individual opt-out, bringing the catalog to
+104 IDs / 85 defaults. The base-order operator accepts distinct simple-name bases
+without runtime MRO
 validation; inspect execution failures before interpreting a kill as a missing
 assertion.[^report][^implementation][^base-order-builder]
 
@@ -106,16 +112,16 @@ calls are outside that overlap claim.[^collector][^guard]
 
 # Implementation boundary and recheck triggers
 
-The proposal starts with ordinary undecorated same-module single inheritance,
+The implementation starts with ordinary undecorated same-module single inheritance,
 proven ordered class bindings and builtin `super` identity, matching simple
 method signatures, no constructors/descriptors/async/generators or dynamic MRO.
-A shared bounded index should serve both operators. The research prototype is
+A shared index serves both operators.[^inheritance-builder] The research prototype is
 fixed-corpus and does not implement those guards. Source-preserving edits,
 encoded/newline cases, selector ranges, cancellation/payload limits and public
-plan/verify safety are prerequisites for implementation, not verified new
-product properties.[^report][^experiment]
+plan/verify safety are checked by the product implementation tests. The research
+receipts remain fixed historical evidence.[^report][^experiment][^implementation]
 
-Recheck when those restrictions change, production implementation is proposed,
+Recheck when those restrictions change,
 or actual usage shows different overlap/equivalence/error rates. Prototype
 wall times do not establish product latency or memory costs. No runtime target
 import for planning, new dependency, compatibility path or formal-proof claim
@@ -131,5 +137,7 @@ is proposed.[^review]
 [^base-order]: [Base-order research](../superpowers/reports/issue-1123/base-order.md).
 [^base-order314]: [Base-order CPython 3.14 results](../superpowers/reports/issue-1123/results-base-order-python314.json).
 [^base-order315]: [Base-order CPython 3.15 results](../superpowers/reports/issue-1123/results-base-order-python315.json).
-[^implementation]: [Base-order implementation](../superpowers/reports/issue-1123/implementation.md).
+[^implementation]: [Inheritance operator implementation](../superpowers/reports/issue-1123/implementation.md).
 [^base-order-builder]: [Source-preserving base-order builder](../../crates/hoimin-python/src/analyzer/rust/base_order.rs).
+
+[^inheritance-builder]: [Shared inheritance builder](../../crates/hoimin-python/src/analyzer/rust/inheritance.rs).

@@ -7,9 +7,9 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: issue-1123-implementation
   resource: ../../superpowers/reports/issue-1123/implementation.md
-  revision: d80c1dbc1eeb97b43f503767cbb06bfd64ec5622
-  working_tree: untracked
-  sha256: c50be6851331aaa2952ec0020354cc65f3e9562963ae5657b3d13b4989249a07
+  revision: c933c1ff608e155846d32f8a5ce08f03f3e50c75
+  working_tree: modified
+  sha256: 810140eedcba9e808fa0dc007e8fc898d27a54d523673a62d414696b0570ab2f
 - id: issue-1123-base-order
   resource: ../../superpowers/reports/issue-1123/base-order.md
   revision: 0033b008582b24bead8bdf28f8980275e96500a3
@@ -22,9 +22,9 @@ sources:
   sha256: 309528345f61c64aa4c5a8bb4983c3d3db5fd5faa06216063cdd4e4415bb33ee
 - id: issue-1123-report
   resource: ../../superpowers/reports/issue-1123/README.md
-  revision: d80c1dbc1eeb97b43f503767cbb06bfd64ec5622
+  revision: c933c1ff608e155846d32f8a5ce08f03f3e50c75
   working_tree: modified
-  sha256: ddef891b6477dee5a7a7635b6e069db0790bd80f66359e5f68b779c713a5402c
+  sha256: 5dc9d8af964abbe2066ad4b015ec8449ee68c0cb08b1178c6251fb30468bba07
 - id: issues-1125-1131-four-implementation
   resource: ../../superpowers/reports/issues-1125-1131/four-implementation.md
   revision: f3703cd875712b7a25bb37e5e2b19771eda8a52e

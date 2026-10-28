@@ -1,9 +1,9 @@
 # Inheritance mutation evaluation: issue 1123
 
-The [product follow-up](implementation.md) implements `base_order_shuffle` as a
-default runtime operator with individual opt-out. The catalog is now 102 IDs /
-83 defaults. The research counts and receipts below describe the earlier phase;
-override deletion and super-call movement remain proposals.
+The [product follow-up](implementation.md) implements `base_order_shuffle`,
+`override_method_delete` and `super_call_move` as default runtime operators with
+individual opt-out. The catalog has 104 IDs / 85 defaults. The research counts
+and receipts below describe the earlier phase and remain historical evidence.
 
 ## Decision
 

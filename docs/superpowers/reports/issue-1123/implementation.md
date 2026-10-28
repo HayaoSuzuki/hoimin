@@ -1,9 +1,10 @@
-# Base-order operator implementation
+# Inheritance operator implementation
 
 `base_order_shuffle` is a default runtime operator, independently removable with
 `--exclude-operators base_order_shuffle` and selectable with `--operators`.
-The catalog has 102 IDs and 83 default runtime IDs. The other two inheritance
-operators remain research proposals. Historical experiment receipts are unchanged.
+The catalog has 104 IDs and 85 default runtime IDs. `override_method_delete`
+and `super_call_move` are also default runtime operators with individual opt-out.
+Historical experiment receipts are unchanged.
 
 ## Source editing and repeatability
 
@@ -79,3 +80,62 @@ behavioral assertion. Review the failure and API contract before adding tests.
 - The generated CLI reference passes `generate_cli_reference -- --check`.
 
 These are local verification results; remote CI status is a separate result.
+
+## Override deletion and delegation movement
+
+The follow-up implements the two operators recommended by the original research.
+A shared index runs only when either ID is selected. It accepts ordinary top-level
+same-module single inheritance with an earlier root parent and matching simple
+instance-method signatures. It conservatively rejects ambiguous class identities,
+class escapes, method aliases/writes, descriptors and dynamic namespace changes.
+External monkey-patching remains outside the source model.
+
+Deletion replaces the complete child definition with `pass`. Movement permutes
+original statement fragments between their separator slots: first delegation
+moves last, otherwise it moves first. Comments stay in their original slots and
+the initial docstring remains fixed. Both use existing selection, candidate caps,
+payload accounting, cancellation, ranking and saved-plan execution.
+
+See [usage](../../../usage.md#mutation-operators) for eligibility and opt-out.
+The earlier verification results above describe the base-order implementation;
+the new operators' verification is recorded separately below.
+
+### Follow-up verification
+
+Five public CLI tests pass on CPython 3.14.9 and 3.15.1. They cover default-on
+selection, individual opt-out without removing the other ID, stable selected
+candidate identities, saved-plan weak survival and strong kills, equivalent
+behavior, runtime-failure controls, planning without importing the target, and
+Latin-1 plus LF/CRLF/lone-CR source restoration through actual verification.
+The existing default-selection tests (5) and CLI configuration tests (84) pass.
+Documentation/boundary/reference tests report 61 passed and 1 skipped. The
+corpus catalog contains 104 unique IDs; reference inventory covers 63 pages
+without missing local links/sources or unreachable pages.
+
+Independent review found class-evaluated bare method captures, named descriptor
+bindings and unsupported subclasses passing a tracked parent to an unknown
+metaclass. Pre-fix public plans reproduce one unsafe deletion candidate in each
+case. The follow-up excludes these visible hazards and adds regression coverage.
+Unrelated decorated methods are also excluded because their returned descriptors
+can run class-creation hooks. None of these exclusions proves absence of external
+monkey-patching. The reused name-resolution builder does not internally poll
+cancellation; surrounding index traversals and construction boundaries do.
+
+The final focused analyzer suite passes all 15 tests. It checks method/signature
+and binding exclusions, docstrings/comments/grouping/newlines, shared-index work,
+selection before replacement construction, retained prefixes, cancellation during
+indexing and after a replacement, and released payload leases. A 400-method
+fixture records exactly 400 method checks; disabled IDs do no index work.
+The analyzer crate's all-target Clippy check passes with warnings denied.
+
+Workspace formatting, all-target/all-feature Clippy with warnings denied, and
+the generated CLI reference consistency check pass. An overlapping earlier test
+run held a Windows executable open and caused LNK1104 during a rebuild; the old
+run was terminated and the final workspace check runs alone.
+
+The final single workspace run, after all review fixes, passes:
+`cargo test --locked --offline --workspace --all-features -- --test-threads=2`.
+The last summaries of 194 top-level binaries/doc-test sections report
+**3,898 passed, 0 failed, 32 ignored**, excluding nested fixture summaries.
+The final built public CLI suite also passes all five tests on CPython 3.15.1;
+the workspace run uses CPython 3.14.9. No Rust source changed after verification.
