@@ -5,11 +5,16 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issues-1125-1131-reconsideration
+  resource: ../../superpowers/reports/issues-1125-1131/reconsideration.md
+  revision: 39c5a8050163ac383482909a80e9d57e57014b8a
+  working_tree: untracked
+  sha256: 72d55175e39e1dc3aeb30e39651df4117b2d7b7657803560414dc49d3a348876
 - id: issues-1125-1131-report
   resource: ../../superpowers/reports/issues-1125-1131/README.md
-  revision: 42130ce3e82912c3fa4f7574b0a347d64401545e
-  working_tree: untracked
-  sha256: 49e49d60906d5d2a86b2c6c768aa425b6426962f566de2ce863afe71fada596b
+  revision: 39c5a8050163ac383482909a80e9d57e57014b8a
+  working_tree: modified
+  sha256: befc677b61bab6459aecd14d92f1fd757e54a55c1101a7c7f9250028ad80a856
 - id: issues-1125-1131-methodology
   resource: ../../superpowers/reports/issues-1125-1131/methodology.md
   revision: 42130ce3e82912c3fa4f7574b0a347d64401545e
@@ -17,9 +22,9 @@ sources:
   sha256: 7775372c77cf5b28835ae050135aebbb92ecdb9c7ae462fe49d669bb20233e39
 - id: issues-1125-1131-review
   resource: ../../superpowers/reports/issues-1125-1131/self-review.md
-  revision: 42130ce3e82912c3fa4f7574b0a347d64401545e
-  working_tree: untracked
-  sha256: 853f88c6972239bea82983c77a06718d3ce3ee58e1c41b05f59d905cf964015f
+  revision: 39c5a8050163ac383482909a80e9d57e57014b8a
+  working_tree: modified
+  sha256: 598a5a6a8d948546a6f0f411a3777ddaf7d730e49d23668d2cee02693e0c8b5a
 - id: issues-1121-1124-implementation
   resource: ../../superpowers/reports/issues-1121-1122-1124/implementation.md
   revision: 1efe26f5e193540649cba9473034843f26824723
@@ -1667,3 +1672,9 @@ sources:
 [^issues-1125-1131-report]: [Research decisions](../../superpowers/reports/issues-1125-1131/README.md).
 [^issues-1125-1131-methodology]: [Methodology](../../superpowers/reports/issues-1125-1131/methodology.md).
 [^issues-1125-1131-review]: [Self-review and verification](../../superpowers/reports/issues-1125-1131/self-review.md).
+
+## Issues 1126, 1127, 1128 and 1131 reconsideration
+
+- [Revised methods and feasibility evidence](../../superpowers/reports/issues-1125-1131/reconsideration.md) [^issues-1125-1131-reconsideration] — ordinary dataclass identity, sorting priority, callback overrides and encoding API scope; these issues remain open.
+
+[^issues-1125-1131-reconsideration]: [Reconsideration](../../superpowers/reports/issues-1125-1131/reconsideration.md).

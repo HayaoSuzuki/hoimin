@@ -115,3 +115,54 @@ The final commands/results and five review passes follow below.
 Remaining evidence limits are real-project efficacy and unexecuted platforms;
 no code-review finding or failing required check remains. Existing ignored
 manual benchmarks are not reported as executed or as new performance evidence.
+
+## Follow-up: maintainer-directed reconsideration
+
+The maintainer requested proceeding first with 1125/1129/1130 and reconsidering
+methods for 1126/1127/1128/1131. This supersedes the initial four deferral/closure
+conclusions. The three product implementations and their recorded validation
+are unchanged. No extra Rust operators are introduced by this follow-up.
+
+### Method review (five passes)
+
+1. Evidence classification: separated observed useful leads from implementation
+   uncertainty. Factory sharing and encoding loss both have positive leads;
+   existing-resolver limitations do not demonstrate low usefulness.
+2. Consistency: one sorting/deletion overlap is not universal redundancy.
+   Receiver type proof is not imposed uniquely on encoding methods while other
+   nominal method operators exist. Proposed trusted-codecs scope also handles
+   parameter values without type inference.
+3. Call interface: replaced the parameter-removal proposal with a private
+   getter/sentinel wrapper. Checked same-value positional overrides, keyword
+   None and mutable identity, with helper-name collision cases. Documented
+   allocation/default metadata costs instead of claiming exact signature identity.
+4. Static boundaries: specified ordinary dataclass class/import evidence without
+   relaxing shared resolve(); sorted builtin identity and limited key shape;
+   loop/scope restrictions for captures; explicit encoding errors policy.
+   These are design requirements, not claims of implemented name analysis.
+5. Probe scope: syntax-checked both sides, used fresh bounded Python processes,
+   required all original controls to pass and intended strong mutant assertions
+   to fail. Nine cases on 3.14.9 and 3.15.0b1 beta pass those expectations. No
+   new full incumbent comparison or real-project efficacy is claimed.
+
+### Delivery review (five passes)
+
+1. Scope: retain only the three already-tested product operators in PR 1134;
+   no Rust/default/dependency change for the four reconsidered proposals.
+2. Completion: remove automatic closure of 1126/1127/1128/1131 and replace the
+   report's all-seven-complete statement with the current maintainer direction.
+3. Documentation: link revised methods and raw feasibility evidence; keep original
+   measurement JSON and historical test counts unchanged.
+4. Provenance: add the new report to the audit catalog and sources to the draft
+   OKF concept; refresh hashes/revisions only for actually changed/new sources.
+5. Verification: run fixed probes on both recorded interpreters, isolated Ruff,
+   docs/boundary tests and OKF YAML/link/hash checks. No Cargo rebuild is needed
+   for documentation/research-script changes; prior product test evidence is
+   explicitly retained rather than reported as rerun.
+
+Follow-up verification completed: both interpreters agree on all nine fixed
+cases and their interface controls; isolated Ruff format/check pass. The 62
+Python docs/boundary tests pass. OKF references cover 62 pages with no missing
+or unreachable entries; 58 concept YAML headers and reserved files conform,
+and all 17 batch source hashes match after this record update. No product
+source or Cargo files changed in this follow-up.

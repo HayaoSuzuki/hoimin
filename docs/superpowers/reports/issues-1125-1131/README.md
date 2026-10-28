@@ -9,18 +9,20 @@ individual opt-out. No backward-compatibility implementation is added.
 | Issue | Decision | Reason and revisit trigger |
 | --- | --- | --- |
 | [1125](https://github.com/HayaoSuzuki/hoimin/issues/1125) | Limited adoption: `continue_remove` | Same-iteration fallthrough is distinct from stopping later iterations. Tail continues can be equivalent; no claim that all survivors are actionable. |
-| [1126](https://github.com/HayaoSuzuki/hoimin/issues/1126) | Defer product adoption | Clear isolation gap, but the existing trusted-import helper deliberately rejects class-namespace loads; supporting the normal dataclass-field site needs an explicit class identity contract. Revisit with real dataclass usage and a bounded proposal for decorators/metaclasses/class rebinding, rather than weaken the shared resolver. |
-| [1127](https://github.com/HayaoSuzuki/hoimin/issues/1127) | Do not add now | The same priority requirement kills both existing tuple-element deletions within the two-mutant budget. No additional useful requirement in this corpus; a real example where deletion survives would justify revisiting. |
-| [1128](https://github.com/HayaoSuzuki/hoimin/issues/1128) | Defer product adoption | The late-binding gap is real, but removing a parameter also breaks valid explicit-argument callers. The full-default prefix already exposes the multi-callback requirement. Revisit when a static zero-argument callback boundary or convincing extra coverage is available. |
+| [1126](https://github.com/HayaoSuzuki/hoimin/issues/1126) | Method under reconsideration; remains open | Useful isolation gap confirmed. Explore a guarded ordinary-class dataclass path with proven import identities; inability to reuse the current class-rejecting resolver is not a low-value verdict. |
+| [1127](https://github.com/HayaoSuzuki/hoimin/issues/1127) | Method under reconsideration; remains open | One tuple-deletion overlap does not establish redundancy. Evaluate a single two-read key swap on an identified sorted call and compare distinct sorting requirements and candidate cost. |
+| [1128](https://github.com/HayaoSuzuki/hoimin/issues/1128) | Method under reconsideration; remains open | Keep the callback parameter and explicit overrides; a private sentinel/getter wrapper makes only omitted capture reads late-bound. Fixed feasibility probes preserve positional/keyword calls. |
 | [1129](https://github.com/HayaoSuzuki/hoimin/issues/1129) | Limited adoption: `comparison_not_implemented` | Exposes reflected comparison delegation while retaining same-type behavior. Restrict to ordinary synchronous direct rich-comparison methods and proven builtin references. |
 | [1130](https://github.com/HayaoSuzuki/hoimin/issues/1130) | Limited adoption: `exception_cause_remove` | Isolates a public diagnostic-cause requirement; named explicit causes only, replaced with None. A private-chain control correctly survives. |
-| [1131](https://github.com/HayaoSuzuki/hoimin/issues/1131) | Defer product adoption | Both decoding and encoding policy changes expose the same losslessness requirement. Keyword spelling alone does not identify an encoding API on arbitrary receivers; literal-only receivers miss the representative parameter case. Revisit with concrete known-API syntax/identity evidence. |
+| [1131](https://github.com/HayaoSuzuki/hoimin/issues/1131) | Method under reconsideration; remains open | Losslessness leads are confirmed. Use trusted codecs calls or an explicitly nominal decode/encode method rule consistent with existing method operators; full receiver type inference is not a blanket prerequisite. |
 
-These decisions complete evaluation tasks, not a promise to implement every
-proposal. Deferral is not evidence that a technique is universally useless.
-The adopted names are defaults as requested by the maintainer; applicability is
-restricted, not hidden behind opt-in. All seven issues can be closed with these
-bounded decisions. Later implementation of deferred ideas requires new evidence.
+The maintainer subsequently directed that PR 1134 proceed first with 1125,
+1129 and 1130, while methods for the other four are reconsidered. Only those
+three are completed/auto-closed by this PR. The [revised methods and feasibility
+probes](reconsideration.md) supersede the initial four deferral conclusions;
+original measurements below remain unchanged. Implementation uncertainty and
+one overlapping fixture do not establish low usefulness. The adopted operators
+remain default-on with individual opt-out.
 
 ## Evidence and comparison
 
@@ -88,8 +90,10 @@ illustrate contract/domain-dependent survival.
   and can execute user code; no general purity inference is available. Existing
   `return_tuple_swap` does not cover this lambda, but container deletion already
   finds the requirement here. This overlap does not prove universal redundancy.
-- Capture removal needs the same-name outer loop binding, nested-scope and
-  comprehension rules and a zero-argument call contract. Defaults evaluated
+- The original parameter-removal prototype needs the same-name outer loop binding,
+  nested-scope/comprehension rules and a zero-argument call contract. The revised
+  private-sentinel/getter method preserves explicit overrides and does not need
+  that zero-argument-only restriction; see the reconsideration. Defaults evaluated
   early versus free variables resolved late is the intended difference; losing
   valid positional/keyword calls is an additional, potentially misleading change.
 - Comparison replacement checks builtin `NotImplemented`, excludes uncertain or
@@ -105,8 +109,9 @@ illustrate contract/domain-dependent survival.
 - Encoding-policy loss needs a recognized decode/encode API and an explicit
   losslessness contract. Do not mutate unrelated `errors` arguments or arbitrary
   string literals. Positional signature differences, aliasing and receiver type
-  uncertainty are unresolved product boundaries; arbitrary target imports to
-  infer them would violate static analysis.
+  uncertainty were initial implementation concerns. Trusted codecs calls or an
+  explicitly nominal method rule are reconsidered below, without target imports
+  or a universal receiver-type proof requirement.
 
 ## Implemented contract and verification
 
