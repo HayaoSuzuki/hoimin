@@ -1283,3 +1283,9 @@ async fn parenthesized_exception_removals_preserve_intended_catch_sets() {
         );
     }
 }
+
+#[path = "behavioral_research/contracts.rs"]
+mod behavioral_research_contracts;
+
+#[path = "behavioral_research/four_contracts.rs"]
+mod four_research_contracts;

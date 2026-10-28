@@ -19,10 +19,31 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Additional behavioral defaults (Issues 1126, 1127, 1128 and 1131)
+
+Fresh runs/plans add `dataclass_factory_share`, `sort_key_swap`,
+`lambda_capture_late` and `encoding_errors_ignore` (82 default runtime IDs,
+101 total IDs). Each supports individual opt-out with --exclude-operators.
+Existing selector families, saved schemas and ranking version are unchanged;
+new candidates can change counts and capped prefixes. These extend the three
+operators below in the same PR, rather than closing the other issues without
+implementation. See [current scope](usage.md#dataclass-ownership-sorting-keys-captures-and-encoding).
+
+## Behavioral research defaults (Issues 1125, 1129 and 1130)
+
+Fresh runs and plans now enable `continue_remove`, `comparison_not_implemented`
+and `exception_cause_remove` (then 78 default runtime IDs, 97 total IDs).
+Use `--exclude-operators` for individual exclusions. These do not expand existing
+selector families. Candidate counts and capped prefixes can change; explicit
+selections remain explicit. Create a new plan to inspect the new defaults.
+No saved schema, ranking rule version, dependency or Python support change is
+included. See [applicability](usage.md#loop-continuation-comparison-delegation-and-exception-causes)
+and the [seven-issue evaluation](superpowers/reports/issues-1125-1131/README.md).
+
 ## Slice-bound and division defaults (Issues 1121 and 1124)
 
 New runs and plans enable `binary_div_floor`, `structure_slice_bound_omit` and
-`structure_slice_bound_move` by default (75 default runtime IDs, 94 total IDs).
+`structure_slice_bound_move` by default (then 75 default runtime IDs, 94 total IDs).
 Use `--exclude-operators` to exclude individual IDs; `structure_ops` includes
 both slice operators. Candidate counts and capped prefixes can change.
 

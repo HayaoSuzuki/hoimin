@@ -1,0 +1,442 @@
+{
+  "python": "3.14.9 (main, Oct 21 2026, 17:47:42) [Clang 23.1.3 ]",
+  "platform": "macOS-15.7.7-arm64-arm-64bit-Mach-O",
+  "git_revision": "39c5a8050163ac383482909a80e9d57e57014b8a",
+  "scope": "fixed feasibility edits; not a product mutator or new incumbent comparison",
+  "cases": [
+    {
+      "issue": 1126,
+      "name": "plain_dataclass_list",
+      "original": "import dataclasses as dc\n@dc.dataclass\nclass Bag:\n    items: object = dc.field(default_factory=list)\n",
+      "mutant": "import dataclasses as dc\n@dc.dataclass\nclass Bag:\n    items: object = dc.field(default_factory=lambda shared=[]: shared)\n",
+      "checks": {
+        "weak": "assert len(Bag().items)==0",
+        "strong": "a,b=Bag(),Bag()\na.items.append(3)\nassert len(b.items)==0"
+      },
+      "results": {
+        "original": {
+          "weak": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.028807333001168445,
+            "stderr": ""
+          },
+          "strong": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.02405845798784867,
+            "stderr": ""
+          }
+        },
+        "mutant": {
+          "weak": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.02366645899019204,
+            "stderr": ""
+          },
+          "strong": {
+            "verdict": "assertion_failed",
+            "elapsed_seconds": 0.028903708996949717,
+            "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 8, in <module>\n    assert len(b.items)==0\n           ^^^^^^^^^^^^^^^\nAssertionError\n"
+          }
+        }
+      }
+    },
+    {
+      "issue": 1126,
+      "name": "plain_dataclass_dict",
+      "original": "import dataclasses as dc\n@dc.dataclass\nclass Bag:\n    items: object = dc.field(default_factory=dict)\n",
+      "mutant": "import dataclasses as dc\n@dc.dataclass\nclass Bag:\n    items: object = dc.field(default_factory=lambda shared={}: shared)\n",
+      "checks": {
+        "weak": "assert len(Bag().items)==0",
+        "strong": "a,b=Bag(),Bag()\na.items['x']=3\nassert len(b.items)==0"
+      },
+      "results": {
+        "original": {
+          "weak": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.023272749996976927,
+            "stderr": ""
+          },
+          "strong": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.022873833018820733,
+            "stderr": ""
+          }
+        },
+        "mutant": {
+          "weak": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.023040083004161716,
+            "stderr": ""
+          },
+          "strong": {
+            "verdict": "assertion_failed",
+            "elapsed_seconds": 0.026233875018078834,
+            "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 8, in <module>\n    assert len(b.items)==0\n           ^^^^^^^^^^^^^^^\nAssertionError\n"
+          }
+        }
+      }
+    },
+    {
+      "issue": 1126,
+      "name": "plain_dataclass_set",
+      "original": "import dataclasses as dc\n@dc.dataclass\nclass Bag:\n    items: object = dc.field(default_factory=set)\n",
+      "mutant": "import dataclasses as dc\n@dc.dataclass\nclass Bag:\n    items: object = dc.field(default_factory=lambda shared={*()}: shared)\n",
+      "checks": {
+        "weak": "assert len(Bag().items)==0",
+        "strong": "a,b=Bag(),Bag()\na.items.add(3)\nassert len(b.items)==0"
+      },
+      "results": {
+        "original": {
+          "weak": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.030896417010808364,
+            "stderr": ""
+          },
+          "strong": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.032820333988638595,
+            "stderr": ""
+          }
+        },
+        "mutant": {
+          "weak": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.021237041015410796,
+            "stderr": ""
+          },
+          "strong": {
+            "verdict": "assertion_failed",
+            "elapsed_seconds": 0.02760249999118969,
+            "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 8, in <module>\n    assert len(b.items)==0\n           ^^^^^^^^^^^^^^^\nAssertionError\n"
+          }
+        }
+      }
+    },
+    {
+      "issue": 1127,
+      "name": "sorted_two_read_keys",
+      "original": "def run(rows):\n    return sorted(rows,key=lambda row:(row[0], row[1]))\n",
+      "mutant": "def run(rows):\n    return sorted(rows,key=lambda row:(row[1], row[0]))\n",
+      "checks": {
+        "weak": "assert run([(2,2),(1,1)])==[(1,1),(2,2)]",
+        "strong": "assert run([(2,1),(1,9),(1,3)])==[(1,3),(1,9),(2,1)]",
+        "ties": "assert run([(1,3),(1,2),(1,1)])==[(1,1),(1,2),(1,3)]"
+      },
+      "results": {
+        "original": {
+          "weak": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.01402650002273731,
+            "stderr": ""
+          },
+          "strong": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.014941208006348461,
+            "stderr": ""
+          },
+          "ties": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.018333125015487894,
+            "stderr": ""
+          }
+        },
+        "mutant": {
+          "weak": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.014016291999723762,
+            "stderr": ""
+          },
+          "strong": {
+            "verdict": "assertion_failed",
+            "elapsed_seconds": 0.023420540994266048,
+            "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 4, in <module>\n    assert run([(2,1),(1,9),(1,3)])==[(1,3),(1,9),(2,1)]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError\n"
+          },
+          "ties": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.013691625004867092,
+            "stderr": ""
+          }
+        }
+      }
+    },
+    {
+      "issue": 1128,
+      "name": "call_interface_preserving_value",
+      "original": "def build(values):\n    callbacks=[]\n    for value in values:\n        callbacks.append(lambda value=value: value)\n    return callbacks\n",
+      "mutant": "def build(values):\n    callbacks=[]\n    for value in values:\n        callbacks.append((lambda _hoimin_get, _hoimin_missing: lambda value=_hoimin_missing: _hoimin_get() if value is _hoimin_missing else value)(lambda: value, []))\n    return callbacks\n",
+      "checks": {
+        "weak": "assert [f() for f in build([4])]==[4]",
+        "strong": "assert [f() for f in build([4,9])]==[4,9]",
+        "explicit_positional": "assert [f(4) for f in build([4,9])]==[4,4]",
+        "explicit_keyword_none": "assert [f(value=None) for f in build([4,9])]==[None,None]",
+        "explicit_mutable": "payload=[]\nassert all(f(payload) is payload for f in build([4,9]))"
+      },
+      "results": {
+        "original": {
+          "weak": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.013325167004950345,
+            "stderr": ""
+          },
+          "strong": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.013228083000285551,
+            "stderr": ""
+          },
+          "explicit_positional": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.01325524999992922,
+            "stderr": ""
+          },
+          "explicit_keyword_none": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.013579416001448408,
+            "stderr": ""
+          },
+          "explicit_mutable": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.013364082988118753,
+            "stderr": ""
+          }
+        },
+        "mutant": {
+          "weak": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.012971749994903803,
+            "stderr": ""
+          },
+          "strong": {
+            "verdict": "assertion_failed",
+            "elapsed_seconds": 0.0243233329965733,
+            "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 7, in <module>\n    assert [f() for f in build([4,9])]==[4,9]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError\n"
+          },
+          "explicit_positional": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.014023916010046378,
+            "stderr": ""
+          },
+          "explicit_keyword_none": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.013162084011128172,
+            "stderr": ""
+          },
+          "explicit_mutable": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.013473958999384195,
+            "stderr": ""
+          }
+        }
+      }
+    },
+    {
+      "issue": 1128,
+      "name": "call_interface_preserving__hoimin_get",
+      "original": "def build(values):\n    callbacks=[]\n    for _hoimin_get in values:\n        callbacks.append(lambda _hoimin_get=_hoimin_get: _hoimin_get)\n    return callbacks\n",
+      "mutant": "def build(values):\n    callbacks=[]\n    for _hoimin_get in values:\n        callbacks.append((lambda _hoimin_get_, _hoimin_missing: lambda _hoimin_get=_hoimin_missing: _hoimin_get_() if _hoimin_get is _hoimin_missing else _hoimin_get)(lambda: _hoimin_get, []))\n    return callbacks\n",
+      "checks": {
+        "weak": "assert [f() for f in build([4])]==[4]",
+        "strong": "assert [f() for f in build([4,9])]==[4,9]",
+        "explicit_positional": "assert [f(4) for f in build([4,9])]==[4,4]",
+        "explicit_keyword_none": "assert [f(_hoimin_get=None) for f in build([4,9])]==[None,None]",
+        "explicit_mutable": "payload=[]\nassert all(f(payload) is payload for f in build([4,9]))"
+      },
+      "results": {
+        "original": {
+          "weak": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.013239207997685298,
+            "stderr": ""
+          },
+          "strong": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.012789542000973597,
+            "stderr": ""
+          },
+          "explicit_positional": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.014087832998484373,
+            "stderr": ""
+          },
+          "explicit_keyword_none": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.01368404200184159,
+            "stderr": ""
+          },
+          "explicit_mutable": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.01492441599839367,
+            "stderr": ""
+          }
+        },
+        "mutant": {
+          "weak": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.01559191700653173,
+            "stderr": ""
+          },
+          "strong": {
+            "verdict": "assertion_failed",
+            "elapsed_seconds": 0.023085833992809057,
+            "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 7, in <module>\n    assert [f() for f in build([4,9])]==[4,9]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError\n"
+          },
+          "explicit_positional": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.013473874976625666,
+            "stderr": ""
+          },
+          "explicit_keyword_none": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.012715999997453764,
+            "stderr": ""
+          },
+          "explicit_mutable": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.012605124997207895,
+            "stderr": ""
+          }
+        }
+      }
+    },
+    {
+      "issue": 1128,
+      "name": "call_interface_preserving__hoimin_missing",
+      "original": "def build(values):\n    callbacks=[]\n    for _hoimin_missing in values:\n        callbacks.append(lambda _hoimin_missing=_hoimin_missing: _hoimin_missing)\n    return callbacks\n",
+      "mutant": "def build(values):\n    callbacks=[]\n    for _hoimin_missing in values:\n        callbacks.append((lambda _hoimin_get, _hoimin_missing_: lambda _hoimin_missing=_hoimin_missing_: _hoimin_get() if _hoimin_missing is _hoimin_missing_ else _hoimin_missing)(lambda: _hoimin_missing, []))\n    return callbacks\n",
+      "checks": {
+        "weak": "assert [f() for f in build([4])]==[4]",
+        "strong": "assert [f() for f in build([4,9])]==[4,9]",
+        "explicit_positional": "assert [f(4) for f in build([4,9])]==[4,4]",
+        "explicit_keyword_none": "assert [f(_hoimin_missing=None) for f in build([4,9])]==[None,None]",
+        "explicit_mutable": "payload=[]\nassert all(f(payload) is payload for f in build([4,9]))"
+      },
+      "results": {
+        "original": {
+          "weak": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.01277612498961389,
+            "stderr": ""
+          },
+          "strong": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.012340416986262426,
+            "stderr": ""
+          },
+          "explicit_positional": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.012770374974934384,
+            "stderr": ""
+          },
+          "explicit_keyword_none": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.013103374978527427,
+            "stderr": ""
+          },
+          "explicit_mutable": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.013385416998062283,
+            "stderr": ""
+          }
+        },
+        "mutant": {
+          "weak": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.013473125000018626,
+            "stderr": ""
+          },
+          "strong": {
+            "verdict": "assertion_failed",
+            "elapsed_seconds": 0.022494208998978138,
+            "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 7, in <module>\n    assert [f() for f in build([4,9])]==[4,9]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError\n"
+          },
+          "explicit_positional": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.013484666997101158,
+            "stderr": ""
+          },
+          "explicit_keyword_none": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.013219207990914583,
+            "stderr": ""
+          },
+          "explicit_mutable": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.013099375006277114,
+            "stderr": ""
+          }
+        }
+      }
+    },
+    {
+      "issue": 1131,
+      "name": "lossless_method",
+      "original": "import codecs\ndef run(data):\n    return data.decode('utf-8', errors='surrogateescape').encode('utf-8', errors='surrogateescape')\n",
+      "mutant": "import codecs\ndef run(data):\n    return data.decode('utf-8', errors='ignore').encode('utf-8', errors='surrogateescape')\n",
+      "checks": {
+        "weak": "assert run(b'abc')==b'abc'",
+        "strong": "assert run(b'a\\xffb')==b'a\\xffb'"
+      },
+      "results": {
+        "original": {
+          "weak": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.012560667004436255,
+            "stderr": ""
+          },
+          "strong": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.012254666013177484,
+            "stderr": ""
+          }
+        },
+        "mutant": {
+          "weak": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.012946334027219564,
+            "stderr": ""
+          },
+          "strong": {
+            "verdict": "assertion_failed",
+            "elapsed_seconds": 0.022177584003657103,
+            "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 5, in <module>\n    assert run(b'a\\xffb')==b'a\\xffb'\n           ^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError\n"
+          }
+        }
+      }
+    },
+    {
+      "issue": 1131,
+      "name": "lossless_codecs",
+      "original": "import codecs\ndef run(data):\n    return codecs.decode(data, 'utf-8', errors='surrogateescape').encode('utf-8', errors='surrogateescape')\n",
+      "mutant": "import codecs\ndef run(data):\n    return codecs.decode(data, 'utf-8', errors='ignore').encode('utf-8', errors='surrogateescape')\n",
+      "checks": {
+        "weak": "assert run(b'abc')==b'abc'",
+        "strong": "assert run(b'a\\xffb')==b'a\\xffb'"
+      },
+      "results": {
+        "original": {
+          "weak": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.014247124985558912,
+            "stderr": ""
+          },
+          "strong": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.0143014169880189,
+            "stderr": ""
+          }
+        },
+        "mutant": {
+          "weak": {
+            "verdict": "passed",
+            "elapsed_seconds": 0.013870541006326675,
+            "stderr": ""
+          },
+          "strong": {
+            "verdict": "assertion_failed",
+            "elapsed_seconds": 0.024116249987855554,
+            "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 5, in <module>\n    assert run(b'a\\xffb')==b'a\\xffb'\n           ^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError\n"
+          }
+        }
+      }
+    }
+  ]
+}

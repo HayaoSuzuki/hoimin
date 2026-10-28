@@ -554,6 +554,9 @@ fn ranking_compares_explicit_line_paths_with_windows_case_rules() {
 }
 
 const HIGH_VALUE_CONTROL_OPERATORS: &[&str] = &[
+    "lambda_capture_late",
+    "continue_remove",
+    "comparison_not_implemented",
     "condition_constant",
     "condition_clause_delete",
     "while_condition_false",
@@ -576,6 +579,7 @@ const HIGH_VALUE_CONTROL_OPERATORS: &[&str] = &[
     "yield_from_to_yield",
 ];
 const EXCEPTION_HANDLING_OPERATORS: &[&str] = &[
+    "exception_cause_remove",
     "gather_return_exceptions",
     "exception_hierarchy",
     "exception_type_pair",
@@ -586,6 +590,9 @@ const EXCEPTION_HANDLING_OPERATORS: &[&str] = &[
     "exception_tuple_remove_member",
 ];
 const BEHAVIORAL_OPERATORS: &[&str] = &[
+    "dataclass_factory_share",
+    "sort_key_swap",
+    "encoding_errors_ignore",
     "itertools_take_drop_swap",
     "fstring_conversion_swap",
     "mutable_default_share",
@@ -691,7 +698,7 @@ fn ranking_assigns_every_operator_to_its_fixed_category() {
         .into_iter()
         .filter_map(MutationOperator::from_name)
         .collect::<BTreeSet<_>>();
-    assert_eq!(tested.len(), 94);
+    assert_eq!(tested.len(), 101);
     assert_eq!(tested, canonical);
 
     for (operators, expected) in categories {

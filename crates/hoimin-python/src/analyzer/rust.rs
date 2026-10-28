@@ -31,10 +31,14 @@ pub(crate) mod exception_hierarchy;
 
 #[path = "rust/container_elements.rs"]
 mod container_elements;
+#[path = "rust/dataclass_factory.rs"]
+mod dataclass_factory;
 #[path = "rust/effective_python.rs"]
 mod effective_python;
 #[path = "rust/enum_members.rs"]
 mod enum_members;
+#[path = "rust/followup_calls.rs"]
+mod followup_calls;
 #[path = "rust/formatted_conversions.rs"]
 mod formatted_conversions;
 #[path = "rust/function_body.rs"]
@@ -45,6 +49,8 @@ mod function_entry;
 mod generator_mutations;
 #[path = "rust/iterator_stop.rs"]
 mod iterator_stop;
+#[path = "rust/lambda_capture.rs"]
+mod lambda_capture;
 #[path = "rust/loop_break.rs"]
 mod loop_break;
 #[path = "rust/optional_keywords.rs"]
@@ -1658,7 +1664,7 @@ impl NameResolutionIndex {
 fn tracked_resolution_name(name: &str) -> bool {
     MUTABLE_BUILTINS.contains(&name)
         || EXCEPTION_NAMES.contains(&name)
-        || INSERTION_BUILTINS.contains(&name)
+        || CONTROL_BUILTINS.contains(&name)
 }
 
 #[derive(Default)]
@@ -2028,7 +2034,7 @@ impl NameResolutionBuilder {
             for name in MUTABLE_BUILTINS
                 .iter()
                 .chain(EXCEPTION_NAMES)
-                .chain(INSERTION_BUILTINS)
+                .chain(CONTROL_BUILTINS)
             {
                 self.record_loop_back_edge_binding(self.current, name);
             }
@@ -2037,7 +2043,7 @@ impl NameResolutionBuilder {
             for name in MUTABLE_BUILTINS
                 .iter()
                 .chain(EXCEPTION_NAMES)
-                .chain(INSERTION_BUILTINS)
+                .chain(CONTROL_BUILTINS)
             {
                 scope.possible_bindings.insert((*name).to_owned());
                 if matches!(scope.kind, NameScopeKind::Module | NameScopeKind::Class) {
@@ -2065,7 +2071,7 @@ impl NameResolutionBuilder {
         for name in MUTABLE_BUILTINS
             .iter()
             .chain(EXCEPTION_NAMES)
-            .chain(INSERTION_BUILTINS)
+            .chain(CONTROL_BUILTINS)
         {
             self.record_loop_back_edge_binding(scope_id, name);
         }
@@ -2074,7 +2080,7 @@ impl NameResolutionBuilder {
         for name in MUTABLE_BUILTINS
             .iter()
             .chain(EXCEPTION_NAMES)
-            .chain(INSERTION_BUILTINS)
+            .chain(CONTROL_BUILTINS)
         {
             scope.possible_bindings.insert((*name).to_owned());
             if matches!(scope.kind, NameScopeKind::Module | NameScopeKind::Class) {
@@ -2895,7 +2901,12 @@ const MUTABLE_BUILTINS: &[&str] = &[
     "reversed",
 ];
 
-const INSERTION_BUILTINS: &[&str] = &["StopIteration", "StopAsyncIteration", "next"];
+const CONTROL_BUILTINS: &[&str] = &[
+    "StopIteration",
+    "StopAsyncIteration",
+    "next",
+    "NotImplemented",
+];
 
 const EXCEPTION_NAMES: &[&str] = &[
     "ValueError",
@@ -2965,6 +2976,12 @@ enum ReturnScope {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+enum ComparisonReturnScope {
+    Excluded,
+    RichComparisonMethod,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum RuntimeRole {
     Value,
     AssignmentTarget,
@@ -2977,15 +2994,32 @@ enum EnclosingBody {
     Function,
 }
 
+fn selected_source_start(
+    range: TextRange,
+    line_index: &LineIndex,
+    facts: &AstFacts<'_>,
+    selection: &CandidateSelection<'_>,
+) -> bool {
+    if selection.is_unrestricted() {
+        return true;
+    }
+    let start = usize::from(range.start());
+    let (line, _) = line_index.line_and_column(start);
+    selection.includes(line, facts.scope_at(start).as_deref())
+}
+
 struct AstCandidateCollector<'a, F> {
     string_exclusions: string_literals::Exclusions,
     enum_index: &'a enum_members::EnumIndex,
+    dataclass_factories: &'a dataclass_factory::DataclassFactories,
+    followup_calls: &'a followup_calls::Imports,
     optional_functions: optional_keywords::FunctionIndex,
     operator_imports: OperatorImports,
     behavior_imports: BehaviorImports,
     conversion_imports: stdlib_conversions::ConversionImports,
     return_scope: ReturnScope,
     enclosing_body: EnclosingBody,
+    comparison_scope: ComparisonReturnScope,
     integer_suppressed: bool,
     runtime_role: RuntimeRole,
     in_pattern: bool,
@@ -3004,7 +3038,8 @@ struct AstCandidateCollector<'a, F> {
 impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     #[expect(
         clippy::too_many_arguments,
-        reason = "shared selection is separate from request limits and source positions"
+        clippy::too_many_lines,
+        reason = "one collector setup owns shared indexes, selection and bounded producer admission"
     )]
     fn collect(
         module: &'a ModModule,
@@ -3024,6 +3059,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         } else {
             enum_members::EnumIndex::default()
         };
+        let dataclass_factories =
+            dataclass_factory::DataclassFactories::build(module, request.operators, cancelled)?;
+        let followup_calls = followup_calls::Imports::build(module, request.operators, cancelled)?;
         let mut collector = AstCandidateCollector {
             optional_functions: if request
                 .operators
@@ -3050,8 +3088,11 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 string_literals::Exclusions::default()
             },
             enum_index: &enum_index,
+            dataclass_factories: &dataclass_factories,
+            followup_calls: &followup_calls,
             return_scope: ReturnScope::Excluded,
             enclosing_body: EnclosingBody::Module,
+            comparison_scope: ComparisonReturnScope::Excluded,
             integer_suppressed: false,
             runtime_role: RuntimeRole::Value,
             in_pattern: false,
@@ -3083,6 +3124,33 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             exception_type_depth: 0,
             candidates: CandidatePrefix::new(request.max_candidates, request.payload.clone()),
         };
+        if request
+            .operators
+            .contains(MutationOperator::LambdaCaptureLate)
+        {
+            lambda_capture::emit(
+                module,
+                source,
+                cancelled,
+                |range| {
+                    if facts.contains_annotation_span(range) {
+                        return false;
+                    }
+                    selected_source_start(range, line_index, facts, selection)
+                },
+                |range, replacement| {
+                    collector.add_candidate(
+                        range,
+                        replacement,
+                        MutationOperator::LambdaCaptureLate,
+                    );
+                    !collector.check_cancelled()
+                },
+            )?;
+            if let Some(error) = collector.candidates.failure {
+                return Err(error);
+            }
+        }
         for statement in &module.body {
             collector.visit_stmt(statement);
             if let Some(error) = collector.candidates.failure {
@@ -3220,13 +3288,12 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
 
     // Match candidate admission at the expression start, without pruning child walks.
     fn expression_selected(&self, expression: &impl Ranged) -> bool {
-        if self.selection.is_unrestricted() {
-            return true;
-        }
-        let start = usize::from(expression.start());
-        let (line, _) = self.line_index.line_and_column(start);
-        let symbol = self.facts.scope_at(start);
-        self.selection.includes(line, symbol.as_deref())
+        selected_source_start(
+            expression.range(),
+            self.line_index,
+            self.facts,
+            self.selection,
+        )
     }
 
     fn collect_condition_clause_delete(&mut self, condition: &Expr) {
@@ -4194,11 +4261,78 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         }
     }
 
+    fn comparison_scope_for(
+        &self,
+        definition: &ruff_python_ast::StmtFunctionDef,
+    ) -> ComparisonReturnScope {
+        let eligible = self
+            .request
+            .operators
+            .contains(MutationOperator::ComparisonNotImplemented)
+            && self.enclosing_body == EnclosingBody::Class
+            && definition.decorator_list.is_empty()
+            && matches!(
+                definition.name.as_str(),
+                "__eq__" | "__ne__" | "__lt__" | "__le__" | "__gt__" | "__ge__"
+            )
+            && function_body::plain_synchronous(definition, self.cancelled);
+        if eligible {
+            ComparisonReturnScope::RichComparisonMethod
+        } else {
+            ComparisonReturnScope::Excluded
+        }
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "statement operator gates stop between builders on the first admission failure"
     )]
     fn collect_statement_mutations(&mut self, statement: &Stmt) {
+        if let Stmt::ClassDef(class) = statement {
+            let factories = self.dataclass_factories;
+            let facts = self.facts;
+            if factories
+                .emit_class(
+                    class,
+                    &facts.name_resolution,
+                    self.cancelled,
+                    |range, replacement, operator| {
+                        self.add_candidate(range, replacement, operator);
+                        !self.check_cancelled()
+                    },
+                )
+                .is_err()
+            {
+                self.cancelled_observed = true;
+                return;
+            }
+            if self.candidates.failure.is_some() {
+                return;
+            }
+        }
+        if self.comparison_scope == ComparisonReturnScope::RichComparisonMethod
+            && self
+                .request
+                .operators
+                .contains(MutationOperator::ComparisonNotImplemented)
+            && let Stmt::Return(value) = statement
+            && let Some(Expr::Name(name)) = value.value.as_deref()
+            && name.id.as_str() == "NotImplemented"
+            && self
+                .facts
+                .name_resolution
+                .resolution(usize::from(name.start()), "NotImplemented")
+                == NameResolution::DefinitelyBuiltin
+        {
+            self.add_candidate(
+                name.range(),
+                "False".to_owned(),
+                MutationOperator::ComparisonNotImplemented,
+            );
+            if self.candidates.failure.is_some() || self.check_cancelled() {
+                return;
+            }
+        }
         effective_python::statement(
             statement,
             self.request.operators,
@@ -4467,6 +4601,8 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                 return;
             }
             if let Stmt::FunctionDef(definition) = statement {
+                let comparison = self.comparison_scope_for(definition);
+                let previous_comparison = std::mem::replace(&mut self.comparison_scope, comparison);
                 let allowed = self
                     .request
                     .operators
@@ -4483,6 +4619,7 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                 visitor::walk_stmt(self, statement);
                 self.enclosing_body = previous_class;
                 self.return_scope = previous;
+                self.comparison_scope = previous_comparison;
                 return;
             }
             if self.return_scope == ReturnScope::PlainSynchronous
@@ -4624,6 +4761,30 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                     self.cancelled,
                 ) {
                     self.add_candidate(range, replacement, operator);
+                    if self.check_cancelled() || self.candidates.failure.is_some() {
+                        return;
+                    }
+                }
+                if let Expr::Call(call) = expression {
+                    let sorted_builtin = matches!(call.func.as_ref(), Expr::Name(name)
+                        if name.id.as_str() == "sorted" && self.facts.name_resolution.resolution(usize::from(name.start()), "sorted") == NameResolution::DefinitelyBuiltin);
+                    let calls = self.followup_calls;
+                    let facts = self.facts;
+                    let line_index = self.line_index;
+                    let selection = self.selection;
+                    calls.emit(
+                        call,
+                        self.source,
+                        self.facts.tokens.expect("parser tokens are set"),
+                        self.request.operators,
+                        sorted_builtin,
+                        self.cancelled,
+                        |range| selected_source_start(range, line_index, facts, selection),
+                        |range, replacement, operator| {
+                            self.add_candidate(range, replacement, operator);
+                            !self.check_cancelled()
+                        },
+                    );
                     if self.check_cancelled() || self.candidates.failure.is_some() {
                         return;
                     }

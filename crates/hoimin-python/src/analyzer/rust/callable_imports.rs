@@ -6,7 +6,9 @@
 //! patching or import-path shadowing. Clients own the allowed callable names.
 use super::{AnalysisCancelled, ContainmentIndex};
 use crate::visitor::{self, Visitor};
-use ruff_python_ast::{Comprehension, Expr, ExprContext, ModModule, Pattern, Stmt, TypeParam};
+use ruff_python_ast::{
+    Comprehension, Expr, ExprContext, ModModule, Pattern, Stmt, StmtClassDef, TypeParam,
+};
 use ruff_text_size::{Ranged, TextRange};
 use std::collections::{HashMap, HashSet};
 
@@ -155,6 +157,115 @@ impl CallableImports {
         })
     }
 
+    /// Establish a plain dataclass namespace before permitting any class load.
+    /// Keep this separate from `resolve`: bases/metaclasses, arbitrary suites and
+    /// class-local alias bindings must never inherit ordinary import trust.
+    pub(super) fn ordinary_dataclass_namespace(
+        &self,
+        class: &StmtClassDef,
+        cancelled: &impl Fn() -> bool,
+    ) -> Result<Option<OrdinaryDataclassNamespace>, AnalysisCancelled> {
+        if cancelled() {
+            return Err(AnalysisCancelled);
+        }
+        if class.type_params.is_some()
+            || class.arguments.as_ref().is_some_and(|arguments| {
+                !arguments.args.is_empty() || !arguments.keywords.is_empty()
+            })
+            || class.decorator_list.len() != 1
+        {
+            return Ok(None);
+        }
+        let decorator = &class.decorator_list[0].expression;
+        let callable = if let Expr::Call(call) = decorator {
+            if !call.arguments.args.is_empty() {
+                return Ok(None);
+            }
+            for keyword in &call.arguments.keywords {
+                if cancelled() {
+                    return Err(AnalysisCancelled);
+                }
+                if keyword.arg.is_none() {
+                    return Ok(None);
+                }
+            }
+            call.func.as_ref()
+        } else {
+            decorator
+        };
+        if !self.resolve(callable).is_some_and(|resolved| {
+            resolved.module == "dataclasses" && resolved.member == "dataclass"
+        }) {
+            return Ok(None);
+        }
+        let mut bindings = HashSet::new();
+        for statement in &class.body {
+            if cancelled() {
+                return Err(AnalysisCancelled);
+            }
+            match statement {
+                Stmt::AnnAssign(assignment) => {
+                    let Expr::Name(name) = assignment.target.as_ref() else {
+                        return Ok(None);
+                    };
+                    if name.id.starts_with("__") || !bindings.insert(name.id.to_string()) {
+                        return Ok(None);
+                    }
+                }
+                Stmt::Pass(_) => {}
+                Stmt::Expr(statement)
+                    if matches!(statement.value.as_ref(), Expr::StringLiteral(_)) => {}
+                _ => return Ok(None),
+            }
+        }
+        Ok(Some(OrdinaryDataclassNamespace {
+            range: class.range(),
+            bindings,
+        }))
+    }
+
+    pub(super) fn resolve_in_ordinary_dataclass<'a>(
+        &'a self,
+        expression: &'a Expr,
+        namespace: &OrdinaryDataclassNamespace,
+    ) -> Option<ResolvedCallable<'a>> {
+        if expression.start() < namespace.range.start() || expression.end() > namespace.range.end()
+        {
+            return None;
+        }
+        let (root, member, member_range) = match expression {
+            Expr::Name(name) if name.ctx == ExprContext::Load => (name, None, None),
+            Expr::Attribute(attribute) if attribute.ctx == ExprContext::Load => {
+                let Expr::Name(root) = attribute.value.as_ref() else {
+                    return None;
+                };
+                (
+                    root,
+                    Some(attribute.attr.as_str()),
+                    Some(attribute.attr.range()),
+                )
+            }
+            _ => return None,
+        };
+        if root.id.starts_with("__") || namespace.binds(root.id.as_str()) {
+            return None;
+        }
+        let binding = self.trusted.get(root.id.as_str())?;
+        if expression.start() < binding.import_range.end() {
+            return None;
+        }
+        let ((Some(member), None) | (None, Some(member))) = (binding.member.as_deref(), member)
+        else {
+            return None;
+        };
+        // This guarded path serves only dataclass field calls.
+        (binding.module == "dataclasses" && member == "field").then_some(ResolvedCallable {
+            module: binding.module,
+            member,
+            member_range,
+        })
+    }
+
     /// Recognize possible references for mutation/escape detection, not eligibility.
     /// Includes every recognized import, even rebound/local aliases and references
     /// before the import or in class scopes. A strict `resolve` failure must not
@@ -183,6 +294,18 @@ impl CallableImports {
 
     pub(super) fn import_builtin_available(&self) -> bool {
         self.import_builtin_available
+    }
+}
+
+/// Constructible only through the independently checked dataclass path above.
+pub(super) struct OrdinaryDataclassNamespace {
+    range: TextRange,
+    bindings: HashSet<String>,
+}
+
+impl OrdinaryDataclassNamespace {
+    pub(super) fn binds(&self, name: &str) -> bool {
+        self.bindings.contains(name)
     }
 }
 

@@ -9,7 +9,7 @@ use std::path::Path;
 
 use hoimin_cli::plan::PlanManifest;
 
-const OPT_OUT_OPERATORS: [&str; 32] = [
+const OPT_OUT_OPERATORS: [&str; 39] = [
     "statement_delete",
     "integer_literal_neighbor",
     "augmented_to_assignment",
@@ -42,6 +42,13 @@ const OPT_OUT_OPERATORS: [&str; 32] = [
     "binary_div_floor",
     "structure_slice_bound_omit",
     "structure_slice_bound_move",
+    "continue_remove",
+    "comparison_not_implemented",
+    "exception_cause_remove",
+    "dataclass_factory_share",
+    "sort_key_swap",
+    "lambda_capture_late",
+    "encoding_errors_ignore",
 ];
 
 async fn cli(args: Vec<OsString>) -> serde_json::Value {
@@ -109,10 +116,16 @@ async fn current_default_candidates_are_individually_excludable() {
     let source = format!(
         "{source}\ndef bounds(xs, a, b): return xs[a:b]\ndef prefix(xs, n): return xs[:n]\ndef divide(a, b): return a / b\n"
     );
+    let source = format!(
+        "{source}\nfor value in []:\n continue\nclass Delegating:\n def __eq__(self, other):\n  return NotImplemented\ndef fail(reason):\n raise LookupError('bad') from reason\n"
+    );
+    let source = format!(
+        "{source}\nfrom dataclasses import dataclass, field\n@dataclass\nclass Bag:\n items: list = field(default_factory=list)\ndef sorted_rows(rows): return sorted(rows,key=lambda row:(row[0],row[1]))\ndef callbacks(values):\n for value in values:\n  callback=lambda value=value: value\ndef decoded(data): return data.decode('utf-8',errors='surrogateescape')\n"
+    );
     std::fs::write(root.path().join("subject.py"), &source).unwrap();
     let default = plan(root.path(), &[]).await;
     let manifest: PlanManifest = serde_json::from_value(default.clone()).unwrap();
-    assert_eq!(manifest.normalized_config.operators.names().len(), 75);
+    assert_eq!(manifest.normalized_config.operators.names().len(), 82);
     let candidates = default["candidates"].as_array().unwrap();
     for original in ["Decimal(x)", "Decimal.from_float(x)", "HTTPStatus(x)"] {
         assert!(
@@ -183,46 +196,103 @@ async fn explicit_subset_exclusions_do_not_add_default_candidates() {
     assert_eq!(candidates[0]["replacement"], "!=");
 }
 
+type BehavioralCheckCase = (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    usize,
+);
+const ADOPTED_BEHAVIORAL_CASES: &[BehavioralCheckCase] = &[
+    (
+        "structure_slice_bound_omit",
+        "def cut(xs, a, b): return xs[a:b]\n",
+        "assert cut([], 1, 3) == []",
+        "assert cut([10, 20, 30, 40], 1, 3) == [20, 30]",
+        2,
+    ),
+    (
+        "structure_slice_bound_move",
+        "def cut(xs, n): return xs[:n]\n",
+        "assert cut([], 2) == []",
+        "assert cut([10, 20, 30, 40], 2) == [10, 20]",
+        1,
+    ),
+    (
+        "structure_slice_bound_move",
+        "def cut(xs, n): return xs[n:]\n",
+        "assert cut([], 2) == []",
+        "assert cut([10, 20, 30, 40], 2) == [30, 40]",
+        1,
+    ),
+    (
+        "binary_div_floor",
+        "def divide(a, b): return a / b\n",
+        "assert divide(12, 3) == 4",
+        "assert divide(7, 2) == 3.5\nassert divide(-7, 2) == -3.5",
+        1,
+    ),
+    (
+        "binary_div_floor",
+        "def divide(a, b): return a // b\n",
+        "assert divide(12, 3) == 4",
+        "assert divide(7, 2) == 3\nassert divide(-7, 2) == -4",
+        1,
+    ),
+    (
+        "continue_remove",
+        "def run(values):\n events=[]\n for value in values:\n  if value<0:\n   events.append((value,'rejected'))\n   continue\n  events.append((value,'accepted'))\n return events\n",
+        "assert (-2,'rejected') in run([-2,3])\nassert (3,'accepted') in run([-2,3])",
+        "assert run([-2,3])==[(-2,'rejected'),(3,'accepted')]",
+        1,
+    ),
+    (
+        "comparison_not_implemented",
+        "class Token:\n def __eq__(self,other):\n  if isinstance(other,Token): return True\n  return NotImplemented\nclass Compatible:\n def __eq__(self,other): return isinstance(other,Token)\n",
+        "assert Token()==Token()",
+        "assert Token()==Compatible()",
+        1,
+    ),
+    (
+        "exception_cause_remove",
+        "def run():\n try:\n  int('bad')\n except ValueError as source:\n  raise LookupError('invalid record') from source\n",
+        "try:\n run()\nexcept LookupError as e:\n assert str(e)=='invalid record'\nelse:\n assert False",
+        "try:\n run()\nexcept LookupError as e:\n assert isinstance(e.__cause__,ValueError)\nelse:\n assert False",
+        1,
+    ),
+    (
+        "dataclass_factory_share",
+        "from dataclasses import dataclass,field\n@dataclass\nclass Bag:\n items: list = field(default_factory=list)\n",
+        "assert Bag().items==[]",
+        "a,b=Bag(),Bag()\na.items.append(3)\nassert b.items==[]",
+        1,
+    ),
+    (
+        "sort_key_swap",
+        "def run(rows): return sorted(rows,key=lambda row:(row[0],row[1]))\n",
+        "assert run([(2,2),(1,1)])==[(1,1),(2,2)]",
+        "assert run([(2,1),(1,9),(1,3)])==[(1,3),(1,9),(2,1)]",
+        1,
+    ),
+    (
+        "lambda_capture_late",
+        "def run(values):\n callbacks=[]\n for value in values:\n  callbacks.append(lambda value=value: value)\n return [f() for f in callbacks]\n",
+        "assert run([4])==[4]",
+        "assert run([4,9])==[4,9]",
+        1,
+    ),
+    (
+        "encoding_errors_ignore",
+        "def run(data):\n text=data.decode('utf-8',errors='surrogateescape')\n return text.encode('utf-8',errors='surrogateescape')\n",
+        "assert run(b'abc')==b'abc'",
+        "assert run(b'a\\xffb')==b'a\\xffb'",
+        2,
+    ),
+];
+
 #[tokio::test]
-async fn slice_and_division_plans_verify_independent_behavioral_checks() {
-    let cases = [
-        (
-            "structure_slice_bound_omit",
-            "def cut(xs, a, b): return xs[a:b]\n",
-            "assert cut([], 1, 3) == []",
-            "assert cut([10, 20, 30, 40], 1, 3) == [20, 30]",
-            2,
-        ),
-        (
-            "structure_slice_bound_move",
-            "def cut(xs, n): return xs[:n]\n",
-            "assert cut([], 2) == []",
-            "assert cut([10, 20, 30, 40], 2) == [10, 20]",
-            1,
-        ),
-        (
-            "structure_slice_bound_move",
-            "def cut(xs, n): return xs[n:]\n",
-            "assert cut([], 2) == []",
-            "assert cut([10, 20, 30, 40], 2) == [30, 40]",
-            1,
-        ),
-        (
-            "binary_div_floor",
-            "def divide(a, b): return a / b\n",
-            "assert divide(12, 3) == 4",
-            "assert divide(7, 2) == 3.5\nassert divide(-7, 2) == -3.5",
-            1,
-        ),
-        (
-            "binary_div_floor",
-            "def divide(a, b): return a // b\n",
-            "assert divide(12, 3) == 4",
-            "assert divide(7, 2) == 3\nassert divide(-7, 2) == -4",
-            1,
-        ),
-    ];
-    for (operator, source, weak, strong, count) in cases {
+async fn adopted_research_plans_verify_independent_behavioral_checks() {
+    for &(operator, source, weak, strong, count) in ADOPTED_BEHAVIORAL_CASES {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("subject.py"), source).unwrap();
         for (check, killed, survived) in [(weak, 0, count), (strong, count, 0)] {
@@ -304,4 +374,32 @@ async fn saved_explicit_subset_prepares_and_verifies_without_expansion() {
         std::fs::read_to_string(root.path().join("subject.py")).unwrap(),
         source
     );
+}
+
+#[tokio::test]
+async fn multiline_call_plans_select_the_edit_line() {
+    for (operator, source, line) in [
+        (
+            "sort_key_swap",
+            "def run(rows):\n return sorted(\n  rows,\n  key=lambda row:(\n   row.a,\n   row.b,\n  ),\n )\n",
+            5,
+        ),
+        (
+            "encoding_errors_ignore",
+            "def run(data):\n return data.decode(\n  'utf-8',\n  errors='surrogateescape',\n )\n",
+            4,
+        ),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("subject.py"), source).unwrap();
+        let selector = format!("subject.py:{line}-{line}");
+        let manifest = plan(root.path(), &["--operators", operator, "--line", &selector]).await;
+        let candidates = manifest["candidates"].as_array().unwrap();
+        assert_eq!(candidates.len(), 1, "{operator}");
+        assert_eq!(candidates[0]["line"], line);
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("subject.py")).unwrap(),
+            source
+        );
+    }
 }

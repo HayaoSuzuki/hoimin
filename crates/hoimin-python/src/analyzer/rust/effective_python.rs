@@ -173,6 +173,24 @@ pub(super) fn statement<F: Fn() -> bool>(
         return;
     }
     match statement {
+        Stmt::Continue(value) if operators.contains(MutationOperator::ContinueRemove) => {
+            emit(
+                value.range(),
+                "pass".to_owned(),
+                MutationOperator::ContinueRemove,
+            );
+        }
+        Stmt::Raise(value) if operators.contains(MutationOperator::ExceptionCauseRemove) => {
+            // Start with an explicit named cause: no constructor/await/compound
+            // evaluation is removed, and `from None` stays excluded.
+            if let Some(Expr::Name(cause)) = value.cause.as_deref() {
+                emit(
+                    cause.range(),
+                    "None".to_owned(),
+                    MutationOperator::ExceptionCauseRemove,
+                );
+            }
+        }
         Stmt::Nonlocal(value) if operators.contains(MutationOperator::NonlocalRemove) => {
             emit(
                 value.range(),

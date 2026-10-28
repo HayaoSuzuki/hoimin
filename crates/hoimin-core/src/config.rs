@@ -181,6 +181,13 @@ mutation_operators! {
     BinaryDivFloor => "binary_div_floor",
     StructureSliceBoundOmit => "structure_slice_bound_omit",
     StructureSliceBoundMove => "structure_slice_bound_move",
+    ContinueRemove => "continue_remove",
+    ComparisonNotImplemented => "comparison_not_implemented",
+    ExceptionCauseRemove => "exception_cause_remove",
+    DataclassFactoryShare => "dataclass_factory_share",
+    SortKeySwap => "sort_key_swap",
+    LambdaCaptureLate => "lambda_capture_late",
+    EncodingErrorsIgnore => "encoding_errors_ignore",
 }
 
 // Family membership is an explicit selection policy, separate from the full
@@ -400,6 +407,13 @@ impl Default for MutationOperatorSelection {
                 MutationOperator::GatherReturnExceptions,
                 MutationOperator::ItertoolsTakeDropSwap,
                 MutationOperator::FStringConversionSwap,
+                MutationOperator::ContinueRemove,
+                MutationOperator::ComparisonNotImplemented,
+                MutationOperator::ExceptionCauseRemove,
+                MutationOperator::DataclassFactoryShare,
+                MutationOperator::SortKeySwap,
+                MutationOperator::LambdaCaptureLate,
+                MutationOperator::EncodingErrorsIgnore,
             ]
             .into_iter()
             .collect(),

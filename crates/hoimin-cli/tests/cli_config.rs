@@ -66,7 +66,7 @@ fn native_mutation_config(
     }
 }
 
-const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 75] = [
+const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 82] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -142,6 +142,13 @@ const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 75] = [
     "binary_div_floor",
     "structure_slice_bound_omit",
     "structure_slice_bound_move",
+    "continue_remove",
+    "comparison_not_implemented",
+    "exception_cause_remove",
+    "dataclass_factory_share",
+    "sort_key_swap",
+    "lambda_capture_late",
+    "encoding_errors_ignore",
 ];
 
 #[test]
@@ -216,8 +223,8 @@ fn usage_documents_all_mutation_operator_ids_and_selector_families() {
         assert!(usage.contains(name), "usage reference is missing {name}");
     }
     for expected in [
-        "75 default runtime operators",
-        "94 operator IDs",
+        "82 default runtime operators",
+        "101 operator IDs",
         "collection_ops",
         "structure_ops",
         "bitwise_ops",
