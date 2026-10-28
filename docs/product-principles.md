@@ -87,6 +87,12 @@ that merely repeat implementation details or add cost without protecting a
 meaningful behavior; preserve checks for incorrect verdicts, input validation,
 resource control, cleanup, and distribution failures.
 
+Newly adopted mutation operators normally belong to the default runtime set;
+agents can exclude them with `--exclude-operators`. Use opt-out as the default
+adoption policy, rather than requiring agents to discover and enable accepted
+operators individually. Research candidates still need an adoption decision;
+this policy does not enable unevaluated proposals automatically.
+
 User-facing CI result aggregation (#760) is outside this product scope.
 Sampling intervals (#765) remain deferred until concrete local demand exists.
 Static prechecks (#758) need a demonstrated benefit beyond the existing verification command. Higher

@@ -204,6 +204,82 @@ const JSON_RUN_HARNESS: &str = concat!(
 );
 
 #[tokio::test]
+async fn division_exchange_preserves_operand_order_and_numeric_result_types() {
+    for (operator, replacement, divisor, baseline, mutant) in [
+        (
+            "/",
+            "//",
+            "2",
+            "[-3.5,[\"left\",\"right\"],\"float\"]\n",
+            "[-4,[\"left\",\"right\"],\"int\"]\n",
+        ),
+        (
+            "//",
+            "/",
+            "2",
+            "[-4,[\"left\",\"right\"],\"int\"]\n",
+            "[-3.5,[\"left\",\"right\"],\"float\"]\n",
+        ),
+        (
+            "/",
+            "//",
+            "2.0",
+            "[-3.5,[\"left\",\"right\"],\"float\"]\n",
+            "[-4.0,[\"left\",\"right\"],\"float\"]\n",
+        ),
+    ] {
+        let source = format!(
+            "events = []\ndef operand(name, value):\n events.append(name)\n return value\ndef run():\n value = operand('left', -7) {operator} operand('right', {divisor})\n return [value, events, type(value).__name__]\n"
+        );
+        assert_contract(ContractCase {
+            name: "division order and type",
+            operator: "binary_div_floor",
+            original: operator,
+            replacement,
+            source: &source,
+            harness: JSON_RUN_HARNESS,
+            baseline_stdout: baseline,
+            mutant_stdout: mutant,
+        })
+        .await;
+    }
+}
+
+#[tokio::test]
+async fn division_exchange_dispatches_the_matching_overloaded_method() {
+    assert_contract(ContractCase {
+        name: "overloaded division", operator: "binary_div_floor", original: "/", replacement: "//",
+        source: "events = []\nclass Number:\n def __truediv__(self, other):\n  events.append('true')\n  return 3.5\n def __floordiv__(self, other):\n  events.append('floor')\n  return 3\ndef run():\n value = Number() / Number()\n return [value, events]\n",
+        harness: JSON_RUN_HARNESS,
+        baseline_stdout: "[3.5,[\"true\"]]\n", mutant_stdout: "[3,[\"floor\"]]\n",
+    }).await;
+}
+
+#[tokio::test]
+async fn division_exchange_keeps_zero_division_as_a_runtime_exception() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("subject.py");
+    let source = "def divide(a, b): return a / b\n";
+    fs::write(&path, source).unwrap();
+    let manifest = plan(root.path(), "binary_div_floor").await;
+    let candidate = &manifest["candidates"][0];
+    assert_eq!(manifest["candidates"].as_array().unwrap().len(), 1);
+    let start = usize::try_from(candidate["span"]["start"].as_u64().unwrap()).unwrap();
+    let length = usize::try_from(candidate["span"]["length"].as_u64().unwrap()).unwrap();
+    let mut changed = source.to_owned();
+    changed.replace_range(
+        start..start + length,
+        candidate["replacement"].as_str().unwrap(),
+    );
+    for text in [source, &changed] {
+        fs::write(&path, text).unwrap();
+        let output = run_python(root.path(), "import subject; subject.divide(7, 0)");
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("ZeroDivisionError"));
+    }
+}
+
+#[tokio::test]
 async fn structural_mapping_and_append_mutants_keep_grouped_calls() {
     let cases = [
         ContractCase {

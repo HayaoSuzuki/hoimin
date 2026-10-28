@@ -178,6 +178,9 @@ mutation_operators! {
     GatherReturnExceptions => "gather_return_exceptions",
     ItertoolsTakeDropSwap => "itertools_take_drop_swap",
     FStringConversionSwap => "fstring_conversion_swap",
+    BinaryDivFloor => "binary_div_floor",
+    StructureSliceBoundOmit => "structure_slice_bound_omit",
+    StructureSliceBoundMove => "structure_slice_bound_move",
 }
 
 // Family membership is an explicit selection policy, separate from the full
@@ -229,6 +232,8 @@ const SELECTOR_FAMILIES: &[(&str, &[MutationOperator])] = &[
             MutationOperator::StructureSortedReversed,
             MutationOperator::StructureIndexNeighbor,
             MutationOperator::StructureSliceNeighbor,
+            MutationOperator::StructureSliceBoundOmit,
+            MutationOperator::StructureSliceBoundMove,
         ],
     ),
     (
@@ -330,6 +335,7 @@ impl Default for MutationOperatorSelection {
                 MutationOperator::BinaryMulDiv,
                 MutationOperator::AugmentedMulDiv,
                 MutationOperator::BinaryFloorMod,
+                MutationOperator::BinaryDivFloor,
                 MutationOperator::AugmentedFloorMod,
                 MutationOperator::UnarySign,
                 MutationOperator::RemoveNot,
@@ -362,6 +368,8 @@ impl Default for MutationOperatorSelection {
                 MutationOperator::StructureSortedReversed,
                 MutationOperator::StructureIndexNeighbor,
                 MutationOperator::StructureSliceNeighbor,
+                MutationOperator::StructureSliceBoundOmit,
+                MutationOperator::StructureSliceBoundMove,
                 MutationOperator::ExceptionTypePair,
                 MutationOperator::StatementDelete,
                 MutationOperator::IntegerLiteralNeighbor,

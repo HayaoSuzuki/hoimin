@@ -217,6 +217,15 @@ const OPERATORS: &[(MutationOperator, &str)] = &[
         MutationOperator::FStringConversionSwap,
         "fstring_conversion_swap",
     ),
+    (MutationOperator::BinaryDivFloor, "binary_div_floor"),
+    (
+        MutationOperator::StructureSliceBoundOmit,
+        "structure_slice_bound_omit",
+    ),
+    (
+        MutationOperator::StructureSliceBoundMove,
+        "structure_slice_bound_move",
+    ),
 ];
 
 const FAMILIES: [&str; 8] = [

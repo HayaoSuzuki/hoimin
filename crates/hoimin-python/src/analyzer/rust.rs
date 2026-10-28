@@ -557,19 +557,36 @@ pub fn analyze_source_with_exceptions(
         } else {
             continue;
         };
-        let symbol = facts.scope_at(start);
-        if let Some(candidate) = make_candidate(
-            &selection,
-            request,
-            source,
-            &line_index,
-            start..span_end,
-            replacement,
-            operator,
-            symbol,
-        ) && retained_by_profile(&candidate, request.profile, &facts)
+        let division_exchange = match text {
+            "/" => Some("//"),
+            "//" => Some("/"),
+            _ => None,
+        }
+        .filter(|_| request.operators.contains(MutationOperator::BinaryDivFloor))
+        .map(|replacement| {
+            (
+                end,
+                replacement.to_owned(),
+                MutationOperator::BinaryDivFloor,
+            )
+        });
+        for (span_end, replacement, operator) in
+            std::iter::once((span_end, replacement, operator)).chain(division_exchange)
         {
-            token_candidates.push(candidate)?;
+            let symbol = facts.scope_at(start);
+            if let Some(candidate) = make_candidate(
+                &selection,
+                request,
+                source,
+                &line_index,
+                start..span_end,
+                replacement,
+                operator,
+                symbol,
+            ) && retained_by_profile(&candidate, request.profile, &facts)
+            {
+                token_candidates.push(candidate)?;
+            }
         }
     }
     if cancelled() {
@@ -3692,7 +3709,10 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             return;
         }
         match subscript.slice.as_ref() {
-            Expr::Slice(slice) => self.collect_slice_neighbors(slice),
+            Expr::Slice(slice) => {
+                self.collect_slice_neighbors(slice);
+                self.collect_slice_bounds(slice);
+            }
             expression => self.collect_index_neighbors(expression),
         }
         if self.candidates.failure.is_some() {
@@ -3756,6 +3776,82 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                     return;
                 }
             }
+        }
+    }
+
+    fn collect_slice_bounds(&mut self, slice: &ExprSlice) {
+        let omit = self
+            .request
+            .operators
+            .contains(MutationOperator::StructureSliceBoundOmit);
+        let movement = self
+            .request
+            .operators
+            .contains(MutationOperator::StructureSliceBoundMove);
+        if self.candidates.failure.is_some() || !(omit || movement) || slice.step.is_some() {
+            return;
+        }
+        let simple_bound = |bound: &Expr| match bound {
+            Expr::Name(_) => true,
+            Expr::NumberLiteral(number) => matches!(number.value, Number::Int(_)),
+            Expr::UnaryOp(unary) if unary.op == UnaryOp::USub => {
+                matches!(unary.operand.as_ref(), Expr::NumberLiteral(number) if matches!(number.value, Number::Int(_)))
+            }
+            _ => false,
+        };
+        if [slice.lower.as_deref(), slice.upper.as_deref()]
+            .into_iter()
+            .flatten()
+            .any(|bound| !simple_bound(bound))
+        {
+            return;
+        }
+        let bound_range = |bound: &Expr| {
+            ruff_python_ast::token::parenthesized_range(
+                bound.into(),
+                slice.into(),
+                self.facts.tokens.expect("parser tokens are set"),
+            )
+            .unwrap_or_else(|| bound.range())
+        };
+        match (slice.lower.as_deref(), slice.upper.as_deref()) {
+            (Some(lower), Some(upper)) if omit => {
+                let ranges = [bound_range(lower), bound_range(upper)];
+                for range in ranges {
+                    self.add_candidate(
+                        range,
+                        String::new(),
+                        MutationOperator::StructureSliceBoundOmit,
+                    );
+                }
+            }
+            (Some(_), None) | (None, Some(_)) if movement && self.expression_selected(slice) => {
+                let Some(colon) = self
+                    .facts
+                    .candidate_tokens_in_range(slice.range())
+                    .iter()
+                    .find(|token| token.kind() == TokenKind::Colon)
+                else {
+                    return;
+                };
+                // Move only the separator; rebuilding from the bound drops
+                // adjacent comments and newlines outside its AST range.
+                let text = source_text(self.source, slice.range()).expect("parsed slice range");
+                let split = usize::from(colon.range().start() - slice.range().start());
+                let (before, rest) = text.split_at(split);
+                let after = &rest[1..];
+                let replacement = if slice.lower.is_some() {
+                    format!(":{before}{after}")
+                } else {
+                    format!("{before}{after}:")
+                };
+                self.add_candidate(
+                    slice.range(),
+                    replacement,
+                    MutationOperator::StructureSliceBoundMove,
+                );
+            }
+            _ => {}
         }
     }
 

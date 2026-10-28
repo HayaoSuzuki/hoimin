@@ -670,10 +670,10 @@ the detailed capability and cleanup model.
 
 ## Mutation operators
 
-Without `--operators`, a run selects 72 default runtime operators. `--operators`
+Without `--operators`, a run selects 75 default runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
-individual IDs or selector families. Hoimin exposes 91 operator IDs in total:
-72 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
+individual IDs or selector families. Hoimin exposes 94 operator IDs in total:
+75 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
 `exception_hierarchy`, and six opt-in analyzers: `condition_constant`,
 `function_body_erase`, `enum_member_replace`, `condition_clause_delete`,
 `container_element_delete`, and `optional_keyword_delete`.
@@ -691,30 +691,9 @@ The defaults include `statement_delete`, `integer_literal_neighbor`,
 `itertools_take_drop_swap`, and `fstring_conversion_swap`.
 To disable any of these,
 use, for example, `--exclude-operators statement_delete,string_literal_empty`.
-To recover the preceding 69-operator selection, use
-`--exclude-operators gather_return_exceptions,itertools_take_drop_swap,fstring_conversion_swap`.
-To recover the earlier 61-operator selection, use
-`--exclude-operators none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop,gather_return_exceptions,itertools_take_drop_swap,fstring_conversion_swap`.
-To recover the earlier 57-operator selection, use
-`--exclude-operators list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop,gather_return_exceptions,itertools_take_drop_swap,fstring_conversion_swap`.
-To recover the earlier 55-operator selection, use
-`--exclude-operators iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop,gather_return_exceptions,itertools_take_drop_swap,fstring_conversion_swap`.
-To recover the earlier 54-operator selection, use
-`--exclude-operators loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop,gather_return_exceptions,itertools_take_drop_swap,fstring_conversion_swap`. To recover the earlier 53-operator
-selection, use
-`--exclude-operators stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop,gather_return_exceptions,itertools_take_drop_swap,fstring_conversion_swap`. To recover the earlier
-52-operator selection, use
-`--exclude-operators string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop,gather_return_exceptions,itertools_take_drop_swap,fstring_conversion_swap`. To recover the earlier 50-operator selection, use:
-
-```text
---exclude-operators method_call_remove,function_body_return_constant,string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop,gather_return_exceptions,itertools_take_drop_swap,fstring_conversion_swap
-```
-
-To recover the historical 43-operator selection, exclude all twenty-nine:
-
-```text
---exclude-operators statement_delete,integer_literal_neighbor,augmented_to_assignment,return_tuple_swap,string_literal_empty,while_condition_false,conversion_call_remove,method_call_remove,function_body_return_constant,string_segment_empty,stdlib_conversion_call_remove,loop_break_insert,iterator_stop_insert,async_iterator_stop_insert,list_comprehension_to_generator,generator_return_insert,generator_skip_first,generator_empty,none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop,gather_return_exceptions,itertools_take_drop_swap,fstring_conversion_swap
-```
+The defaults also include `binary_div_floor`, `structure_slice_bound_omit` and
+`structure_slice_bound_move`. To omit these from a new run or plan, use
+`--exclude-operators binary_div_floor,structure_slice_bound_omit,structure_slice_bound_move`.
 
 New default runs can generate more candidates and take longer. With a candidate
 cap, the retained prefix can also change. Explicit `--operators` selections and
@@ -726,7 +705,7 @@ binding analysis. Their existing applicability guards are unchanged.
 
 | Group | Runtime IDs | Mutations |
 | --- | --- | --- |
-| Existing expression/control flow | `compare_eq_ne`, `compare_order`, `membership`, `identity`, `boolean_and_or`, `binary_add_sub`, `augmented_add_sub`, `binary_mul_div`, `augmented_mul_div`, `binary_floor_mod`, `augmented_floor_mod`, `unary_sign`, `remove_not`, `boolean_literal`, `break_continue` | comparisons; membership and identity; binary `+`/`-`, `*`/`/`, and `//`/`%`; augmented `+=`/`-=`, `*=`/`/=`, and `//=`/`%=`; unary signs; boolean expressions and literals, including `True`/`False` match patterns; and control flow |
+| Existing expression/control flow | `compare_eq_ne`, `compare_order`, `membership`, `identity`, `boolean_and_or`, `binary_add_sub`, `augmented_add_sub`, `binary_mul_div`, `augmented_mul_div`, `binary_floor_mod`, `binary_div_floor`, `augmented_floor_mod`, `unary_sign`, `remove_not`, `boolean_literal`, `break_continue` | comparisons; membership and identity; binary `+`/`-`, `*`/`/`, `//`/`%`, and `/`/`//`; augmented `+=`/`-=`, `*=`/`/=`, and `//=`/`%=`; unary signs; boolean expressions and literals, including `True`/`False` match patterns; and control flow |
 | Generator behavior | `list_comprehension_to_generator`, `generator_return_insert`, `generator_skip_first`, `generator_empty` | Eager/lazy conversion, early return, first-item consumption and empty output; enabled by default |
 | Missing values and shared state | `none_truthiness`, `mutable_default_share`, `nonlocal_remove`, `yield_from_to_yield`, `mapping_setdefault_to_get`, `bisect_boundary_swap`, `deepcopy_to_copy`, `deque_popleft_to_pop`, `gather_return_exceptions`, `itertools_take_drop_swap`, `fstring_conversion_swap` | Empty/missing distinctions, shared defaults, lost outer updates, delegation, dictionary insertion, duplicate boundaries, nested copies, FIFO order, exception results, iterator prefixes and representations; enabled by default |
 | Early iterator exhaustion | `iterator_stop_insert`, `async_iterator_stop_insert` | Insert a stop exception at iterator protocol method entry; enabled by default |
@@ -738,7 +717,24 @@ binding analysis. Their existing applicability guards are unchanged.
 | Additional operator syntax | `binary_power`, `binary_matmul`, `augmented_power`, `augmented_matmul`, `bitwise_xor`, `bitwise_invert`, `augmented_bitwise_and_or`, `augmented_bitwise_xor`, `augmented_bitwise_shift` | `**` and `@` become `*`; `**=` and `@=` become `*=`; `^` becomes `&`; `~` becomes unary `+`; `&=`/`\|=` and `<<=`/`>>=` exchange; `^=` becomes `&=` |
 | Standard-library operator functions | `operator_function` | Mutates trusted Python 3.14 `operator` callable references across comparison, arithmetic, bitwise, unary, truth, identity, in-place, and sequence operations; also covers `contains`, `getitem`, `setitem`, `delitem`, and `call` |
 | Boundary operators | `structure_index_neighbor`, `structure_slice_neighbor` | adjacent plain-decimal index and slice-bound values, including unary-minus integers |
+| Slice ranges | `structure_slice_bound_omit`, `structure_slice_bound_move` | omit one of two explicit bounds, or move a single bound to the other side; enabled by default |
 | Exception types | `exception_type_pair` | curated pairs such as `ValueError` ↔ `TypeError` in simple `except`/`except*` clauses and supported `raise` expressions |
+
+Slice range operators apply only to one-dimensional load-context slices without
+an explicit step value. Bounds must be names or integer literals, including
+parenthesized and negative integers. They exclude call, attribute and compound
+bounds, annotations, and direct assignment/deletion targets. Omission deletes a
+complete bound, including its parentheses, and emits at most two candidates for
+`xs[a:b]`; movement emits one candidate for `xs[:n]` or `xs[n:]`. `xs[:]` has no
+candidate. Both belong to `structure_ops`; numeric-neighbor behavior is unchanged.
+
+`binary_div_floor` exchanges only binary `/` and `//`, preserving operand
+evaluation once each in left-to-right order. It changes rounding and can change
+the result type or dispatched overloaded method. Existing `*`/`/` and `//`/`%`
+mutations remain separate; `/=` and `//=` are not expanded. A runtime exception
+or a survivor alone does not establish a test defect. See the
+[research and implementation evidence](superpowers/reports/issues-1121-1122-1124/implementation.md)
+for measured scope and limitations.
 
 User-defined exceptions have a separate, explicit-only operator:
 

@@ -6,9 +6,9 @@ status: draft
 sources:
 - id: principles
   resource: ../product-principles.md
-  revision: 1d192acf04de8983697c76ba2e4344965bb359a3
+  revision: 1efe26f5e193540649cba9473034843f26824723
   working_tree: clean
-  sha256: a47cf69d7e61d2a04888be04ff1aa349b3915909cf6c7307ab855bf7aaa8c8ab
+  sha256: 1c51723e2f4209c87ba987efbe18bac739d898377086fcd059b724ccc836093e
 ---
 
 # Local test improvement by AI agents
@@ -35,6 +35,13 @@ steps. hoimin's own development and release checks remain required. Prioritize
 useful improvements and clear evidence over exhaustive runs or score
 maximization.[^principles]
 
+The 2026-10-28 clarification makes opt-out the normal policy for newly adopted
+mutation operators: include accepted operators in the default runtime set and
+allow `--exclude-operators`. Adoption still requires evaluation; an experimental
+proposal is not enabled merely because it exists. See the
+[slice/division implementation and selection evaluation](mutation-research-1121-1122-1124.md)
+for the bounded evidence and subsequent implementation scope.[^principles]
+
 Read [runtime contracts](design/runtime-lifecycle.md),
 [selection and saved plans](design/selection-plan-verify.md), and
 [review identity and result separation](design/survivor-review.md) for the existing
@@ -42,4 +49,4 @@ mechanisms. This decision adds no execution feature, new guarantee, or Issue-sta
 change. Recheck it when a proposal introduces score gates, automatic assessment
 effects, expanded resource consumption, or distributed execution.
 
-[^principles]: [Product principles](../product-principles.md), the maintainer's direction recorded on 2026-10-12 and clarified on 2026-10-23.
+[^principles]: [Product principles](../product-principles.md), the maintainer's direction recorded on 2026-10-12 and clarified on 2026-10-23 and 2026-10-28.
