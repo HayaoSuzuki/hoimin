@@ -23,6 +23,13 @@ mod slice_division_tests;
 #[path = "rust/behavioral_research_tests.rs"]
 mod behavioral_research_tests;
 
+#[path = "rust/dataclass_factory_tests.rs"]
+mod dataclass_factory_tests;
+#[path = "rust/followup_call_tests.rs"]
+mod followup_call_tests;
+#[path = "rust/lambda_capture_tests.rs"]
+mod lambda_capture_tests;
+
 const BINDING_FLOW_CORPUS: &str =
     include_str!("../../../../formal/HoiminOracle/corpus/binding-flow-joins.jsonl");
 

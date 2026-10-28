@@ -239,10 +239,15 @@ fn fixed_score(code: RankingReasonCode) -> u32 {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one exhaustive typed match retains compiler coverage of every operator category"
+)]
 fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
     let operator = MutationOperator::from_name(operator)?;
     Some(match operator {
-        MutationOperator::ContinueRemove
+        MutationOperator::LambdaCaptureLate
+        | MutationOperator::ContinueRemove
         | MutationOperator::ComparisonNotImplemented
         | MutationOperator::NoneTruthiness
         | MutationOperator::NonlocalRemove
@@ -273,7 +278,10 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::ExceptionBaseBoundary
         | MutationOperator::ExceptionTupleAddPair
         | MutationOperator::ExceptionTupleRemoveMember => RankingReasonCode::ExceptionHandling,
-        MutationOperator::ItertoolsTakeDropSwap
+        MutationOperator::DataclassFactoryShare
+        | MutationOperator::SortKeySwap
+        | MutationOperator::EncodingErrorsIgnore
+        | MutationOperator::ItertoolsTakeDropSwap
         | MutationOperator::FStringConversionSwap
         | MutationOperator::BisectBoundarySwap
         | MutationOperator::DeepcopyToCopy

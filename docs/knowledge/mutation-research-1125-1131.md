@@ -1,14 +1,39 @@
 ---
 type: Decision
 title: Behavioral mutation research 1125–1131
-description: Three restricted default operators and four revised methods awaiting implementation decisions.
+description: Seven default-on operators with guarded scopes and preserved research evidence.
 status: draft
 sources:
+- id: four-implementation
+  resource: ../superpowers/reports/issues-1125-1131/four-implementation.md
+  revision: f3703cd875712b7a25bb37e5e2b19771eda8a52e
+  working_tree: untracked
+  sha256: 8f211d76ee496e1b020f2610eed1b5e0459ead3eefa41a554694d42a6871dd50
+- id: four-review
+  resource: ../superpowers/reports/issues-1125-1131/four-implementation-review.md
+  revision: f3703cd875712b7a25bb37e5e2b19771eda8a52e
+  working_tree: untracked
+  sha256: c8e8609e2b9b5c4a20bfd7cc2d073a93c46cf123e06c11955a876c97478c34da
+- id: dataclass-builder
+  resource: ../../crates/hoimin-python/src/analyzer/rust/dataclass_factory.rs
+  revision: f3703cd875712b7a25bb37e5e2b19771eda8a52e
+  working_tree: untracked
+  sha256: 0ac901178cfe8928f6ee4c14fe7bdd18fee54bc9285481f7e998817011dd9ec4
+- id: call-builders
+  resource: ../../crates/hoimin-python/src/analyzer/rust/followup_calls.rs
+  revision: f3703cd875712b7a25bb37e5e2b19771eda8a52e
+  working_tree: untracked
+  sha256: e50da599c28c3c5ef10c98a842a6b75c7b27b89aabe2a1be5534bc6f9751d437
+- id: capture-builder
+  resource: ../../crates/hoimin-python/src/analyzer/rust/lambda_capture.rs
+  revision: f3703cd875712b7a25bb37e5e2b19771eda8a52e
+  working_tree: untracked
+  sha256: 552ed0400c8b9f475243014231409435af102e780392552ef856fee44d17f1f4
 - id: reconsideration
   resource: ../superpowers/reports/issues-1125-1131/reconsideration.md
-  revision: 39c5a8050163ac383482909a80e9d57e57014b8a
-  working_tree: untracked
-  sha256: 72d55175e39e1dc3aeb30e39651df4117b2d7b7657803560414dc49d3a348876
+  revision: f3703cd875712b7a25bb37e5e2b19771eda8a52e
+  working_tree: modified
+  sha256: 9621257e891cba513df3590835509dc622abdb7f24c5b3e17977ce3bbc890143
 - id: reconsideration-probe
   resource: ../superpowers/reports/issues-1125-1131/reconsideration_probe.py
   revision: 39c5a8050163ac383482909a80e9d57e57014b8a
@@ -26,9 +51,9 @@ sources:
   sha256: 373d64b8b38eaa42ed8020f6830859dc2dc8cceead2a89e073d71030534a9396
 - id: report
   resource: ../superpowers/reports/issues-1125-1131/README.md
-  revision: 39c5a8050163ac383482909a80e9d57e57014b8a
+  revision: f3703cd875712b7a25bb37e5e2b19771eda8a52e
   working_tree: modified
-  sha256: befc677b61bab6459aecd14d92f1fd757e54a55c1101a7c7f9250028ad80a856
+  sha256: 78f9c5d2beb9d3ab2cb2416f138b8810e1a651d00a89b8d639abb078bed26a0f
 - id: methodology
   resource: ../superpowers/reports/issues-1125-1131/methodology.md
   revision: 42130ce3e82912c3fa4f7574b0a347d64401545e
@@ -56,9 +81,9 @@ sources:
   sha256: 38c48ae2baee3ec5c65825142b6d02e65756543b34abf60a880894bdc386daa7
 - id: analyzer
   resource: ../../crates/hoimin-python/src/analyzer/rust.rs
-  revision: 42130ce3e82912c3fa4f7574b0a347d64401545e
+  revision: f3703cd875712b7a25bb37e5e2b19771eda8a52e
   working_tree: modified
-  sha256: e193ed318e77b6925fd67e76ba4d05f4f12be9936178bd319cdcbe20c1ef1ce4
+  sha256: 3850a59ed4546ae33722b5c1b17b40b585dd1267a9ed4f2c72f735d8a179df0b
 - id: statement-producers
   resource: ../../crates/hoimin-python/src/analyzer/rust/effective_python.rs
   revision: 42130ce3e82912c3fa4f7574b0a347d64401545e
@@ -66,16 +91,17 @@ sources:
   sha256: 38ed0a71d85413f991f5efcb17603f2aa8b9d7df10f8de797460651053d97664
 - id: catalog
   resource: ../../crates/hoimin-core/src/config.rs
-  revision: 42130ce3e82912c3fa4f7574b0a347d64401545e
+  revision: f3703cd875712b7a25bb37e5e2b19771eda8a52e
   working_tree: modified
-  sha256: 9ca42e15e417f8fce111894501c85eb03f09e439bdea514fff7ab4b5a25de17c
+  sha256: 4935baa6e7996ddea9d49e9f8d755a06fe1e19d9a3e1b990e9b3b2a0ffed9228
 ---
 
 # Decisions and current contract
 
-The evaluation adopts `continue_remove`, `comparison_not_implemented` and
-`exception_cause_remove` as default operators with individual opt-out. The catalog
-contains 97 IDs and 78 defaults; existing selector families, saved schemas and
+The implementation adopts `continue_remove`, `comparison_not_implemented`,
+`exception_cause_remove`, `dataclass_factory_share`, `sort_key_swap`,
+`lambda_capture_late` and `encoding_errors_ignore` as default operators with
+individual opt-out. The catalog contains 101 IDs and 82 defaults; existing selector families, saved schemas and
 runtime safety boundaries do not change.[^report][^catalog]
 
 Continue removal allows the remainder of the same iteration. Comparison
@@ -86,19 +112,19 @@ The shared admission, selection, payload and cancellation paths remain the
 owners of resource control; no separate state store or new dependency is
 added.[^analyzer][^statement-producers]
 
-The maintainer asked to proceed first with issues 1125, 1129 and 1130. Only
-those three are completed by PR 1134. Methods for 1126, 1127, 1128 and 1131 are
-under reconsideration; the initial proposal to close all seven is superseded.
-Implementation uncertainty and one overlapping example do not demonstrate low
-usefulness.[^report][^reconsideration]
+The maintainer subsequently authorized the remaining four implementations in
+the same PR1134; all seven are now implementation/completion targets. Earlier
+temporary deferral and open-status conclusions are superseded, without altering
+old measurements. Factory sharing has an independently guarded ordinary-class
+namespace; sorted swaps simple reads with proven builtin identity; callbacks
+use private getters/sentinels to preserve explicit overrides; encoding uses
+trusted codecs imports or a documented nominal method rule.[^four-implementation][^report]
 
-Proposed methods are guarded ordinary-class dataclass recognition, a two-read
-sorted key swap, private-sentinel/getter callbacks retaining explicit overrides,
-and trusted codecs calls or a documented nominal encoding-method rule. Nine
-fixed probes confirm original success and intended mutant assertion failure;
-explicit callback overrides still work. These probes do not implement Rust
-candidate generation or new incumbent comparisons. The four issues remain
-open.[^reconsideration][^reconsideration-probe][^reconsideration314][^reconsideration315]
+Class-body captures are excluded while method-local loops remain eligible.
+Multiline calls are selected at the actual edit-start line before replacement
+allocation. Both requirements were found by independent review and pinned by
+red/green analyzer tests and executable/public CLI regressions. No project
+imports, new dependencies, state store or legacy readers are added.[^four-review][^dataclass-builder][^call-builders][^capture-builder]
 
 # Evidence and limits
 
@@ -130,3 +156,9 @@ existing proofs remain.[^review][^report]
 [^reconsideration-probe]: [Source: reconsideration-probe](../superpowers/reports/issues-1125-1131/reconsideration_probe.py).
 [^reconsideration314]: [Source: reconsideration314](../superpowers/reports/issues-1125-1131/reconsideration-python314.json).
 [^reconsideration315]: [Source: reconsideration315](../superpowers/reports/issues-1125-1131/reconsideration-python315.json).
+
+[^four-implementation]: [Source: four-implementation](../superpowers/reports/issues-1125-1131/four-implementation.md).
+[^four-review]: [Source: four-review](../superpowers/reports/issues-1125-1131/four-implementation-review.md).
+[^dataclass-builder]: [Source: dataclass-builder](../../crates/hoimin-python/src/analyzer/rust/dataclass_factory.rs).
+[^call-builders]: [Source: call-builders](../../crates/hoimin-python/src/analyzer/rust/followup_calls.rs).
+[^capture-builder]: [Source: capture-builder](../../crates/hoimin-python/src/analyzer/rust/lambda_capture.rs).

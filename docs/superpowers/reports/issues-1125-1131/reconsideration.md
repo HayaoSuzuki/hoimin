@@ -1,5 +1,10 @@
 # Revised methods for issues 1126, 1127, 1128 and 1131
 
+Historical method review preceding implementation. The maintainer subsequently
+authorized all four additions in the same PR; see the
+[current implementation](four-implementation.md). Its implementation and completion
+status supersede the temporary open/undecided status below.
+
 ## Scope and correction
 
 The maintainer asked to proceed first with 1125, 1129 and 1130, and reconsider

@@ -235,6 +235,16 @@ const OPERATORS: &[(MutationOperator, &str)] = &[
         MutationOperator::ExceptionCauseRemove,
         "exception_cause_remove",
     ),
+    (
+        MutationOperator::DataclassFactoryShare,
+        "dataclass_factory_share",
+    ),
+    (MutationOperator::SortKeySwap, "sort_key_swap"),
+    (MutationOperator::LambdaCaptureLate, "lambda_capture_late"),
+    (
+        MutationOperator::EncodingErrorsIgnore,
+        "encoding_errors_ignore",
+    ),
 ];
 
 const FAMILIES: [&str; 8] = [

@@ -3,26 +3,26 @@
 ## Decisions
 
 The evaluation uses base main `42130ce3` on 2026-10-28. The same branch implements
-three restricted additions after the comparison, enabled by default with
+seven restricted additions after comparison and reconsideration, enabled by default with
 individual opt-out. No backward-compatibility implementation is added.
 
 | Issue | Decision | Reason and revisit trigger |
 | --- | --- | --- |
 | [1125](https://github.com/HayaoSuzuki/hoimin/issues/1125) | Limited adoption: `continue_remove` | Same-iteration fallthrough is distinct from stopping later iterations. Tail continues can be equivalent; no claim that all survivors are actionable. |
-| [1126](https://github.com/HayaoSuzuki/hoimin/issues/1126) | Method under reconsideration; remains open | Useful isolation gap confirmed. Explore a guarded ordinary-class dataclass path with proven import identities; inability to reuse the current class-rejecting resolver is not a low-value verdict. |
-| [1127](https://github.com/HayaoSuzuki/hoimin/issues/1127) | Method under reconsideration; remains open | One tuple-deletion overlap does not establish redundancy. Evaluate a single two-read key swap on an identified sorted call and compare distinct sorting requirements and candidate cost. |
-| [1128](https://github.com/HayaoSuzuki/hoimin/issues/1128) | Method under reconsideration; remains open | Keep the callback parameter and explicit overrides; a private sentinel/getter wrapper makes only omitted capture reads late-bound. Fixed feasibility probes preserve positional/keyword calls. |
+| [1126](https://github.com/HayaoSuzuki/hoimin/issues/1126) | Limited adoption: `dataclass_factory_share` | Ordinary top-level dataclass fields with known empty builtin factories and a guarded class namespace. |
+| [1127](https://github.com/HayaoSuzuki/hoimin/issues/1127) | Limited adoption: `sort_key_swap` | Proven builtin sorted with a two-read key lambda; grouping and evaluation counts retained, order intentionally exchanged. |
+| [1128](https://github.com/HayaoSuzuki/hoimin/issues/1128) | Limited adoption: `lambda_capture_late` | Private getter/sentinel wrapper preserves explicit callback arguments while omitted captures become late-bound. |
 | [1129](https://github.com/HayaoSuzuki/hoimin/issues/1129) | Limited adoption: `comparison_not_implemented` | Exposes reflected comparison delegation while retaining same-type behavior. Restrict to ordinary synchronous direct rich-comparison methods and proven builtin references. |
 | [1130](https://github.com/HayaoSuzuki/hoimin/issues/1130) | Limited adoption: `exception_cause_remove` | Isolates a public diagnostic-cause requirement; named explicit causes only, replaced with None. A private-chain control correctly survives. |
-| [1131](https://github.com/HayaoSuzuki/hoimin/issues/1131) | Method under reconsideration; remains open | Losslessness leads are confirmed. Use trusted codecs calls or an explicitly nominal decode/encode method rule consistent with existing method operators; full receiver type inference is not a blanket prerequisite. |
+| [1131](https://github.com/HayaoSuzuki/hoimin/issues/1131) | Limited adoption: `encoding_errors_ignore` | Trusted codecs aliases or nominal simple encode/decode methods with an explicit surrogateescape errors literal. |
 
-The maintainer subsequently directed that PR 1134 proceed first with 1125,
-1129 and 1130, while methods for the other four are reconsidered. Only those
-three are completed/auto-closed by this PR. The [revised methods and feasibility
-probes](reconsideration.md) supersede the initial four deferral conclusions;
-original measurements below remain unchanged. Implementation uncertainty and
-one overlapping fixture do not establish low usefulness. The adopted operators
-remain default-on with individual opt-out.
+The maintainer first requested proceeding with 1125/1129/1130, then authorized
+implementation of the other four and specified the same PR. PR 1134 now implements
+all seven with restricted applicability and individual default-on/opt-out control.
+The [four-operator implementation](four-implementation.md) supersedes the temporary
+open/undecided status in the [reconsideration](reconsideration.md). Original
+comparison measurements below are preserved as historical evidence, not rerun
+results for the expanded default set.
 
 ## Evidence and comparison
 
@@ -115,7 +115,7 @@ illustrate contract/domain-dependent survival.
 
 ## Implemented contract and verification
 
-The catalog now has 97 IDs, including 78 defaults. Three IDs are appended to
+The first three additions brought the catalog to 97 IDs and 78 defaults. Those IDs were appended to
 `MutationOperator`, independently selectable/excludable and assigned existing
 ranking categories. No selector family, schema, runtime manager, report or
 scheduler contract changes. No dependency is added. Continue and cause producers
@@ -132,6 +132,9 @@ See [review and validation](self-review.md) for actual final command results and
 remaining environment limits. Formal proofs are retained; these three producers
 are explicitly deferred from the original Lean cross-producer corpus, with
 separate executable coverage rather than a claim of new formal proof.
+
+The subsequent [four-operator implementation](four-implementation.md) brings the
+current catalog to 101 IDs and 82 defaults in the same PR.
 
 ## Reproduce
 

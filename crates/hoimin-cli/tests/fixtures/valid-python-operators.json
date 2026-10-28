@@ -483,5 +483,25 @@
     "operator": "exception_cause_remove",
     "status": "deferred",
     "reason": "Dedicated static eligibility, bounded admission, shadowing and public plan/verify behavioral checks; not modeled by the initial Lean cross-producer corpus"
+  },
+  {
+    "operator": "dataclass_factory_share",
+    "status": "deferred",
+    "reason": "Dedicated guarded identity, scope, source grouping, caps/selection/cancellation and public CPython behavior/opt-out checks; this producer is not modeled by the initial Lean cross-producer corpus"
+  },
+  {
+    "operator": "sort_key_swap",
+    "status": "deferred",
+    "reason": "Dedicated guarded identity, scope, source grouping, caps/selection/cancellation and public CPython behavior/opt-out checks; this producer is not modeled by the initial Lean cross-producer corpus"
+  },
+  {
+    "operator": "lambda_capture_late",
+    "status": "deferred",
+    "reason": "Dedicated guarded identity, scope, source grouping, caps/selection/cancellation and public CPython behavior/opt-out checks; this producer is not modeled by the initial Lean cross-producer corpus"
+  },
+  {
+    "operator": "encoding_errors_ignore",
+    "status": "deferred",
+    "reason": "Dedicated guarded identity, scope, source grouping, caps/selection/cancellation and public CPython behavior/opt-out checks; this producer is not modeled by the initial Lean cross-producer corpus"
   }
 ]

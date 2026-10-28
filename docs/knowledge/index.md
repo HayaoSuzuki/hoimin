@@ -11,7 +11,7 @@ before interpreting a historical result as a current guarantee.
 
 - [Production budget arithmetic proofs](creusot-budget-proofs.md) — same production bodies, proof maintenance and evidence boundaries.
 
-- [Behavioral mutation research 1125–1131](mutation-research-1125-1131.md) — restricted defaults, rejected alternatives and evidence limits.
+- [Behavioral mutation research 1125–1131](mutation-research-1125-1131.md) — seven restricted defaults, reconsidered methods and execution evidence.
 
 ## Start with your task
 

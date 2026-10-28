@@ -5,16 +5,26 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issues-1125-1131-four-implementation
+  resource: ../../superpowers/reports/issues-1125-1131/four-implementation.md
+  revision: f3703cd875712b7a25bb37e5e2b19771eda8a52e
+  working_tree: untracked
+  sha256: 8f211d76ee496e1b020f2610eed1b5e0459ead3eefa41a554694d42a6871dd50
+- id: issues-1125-1131-four-review
+  resource: ../../superpowers/reports/issues-1125-1131/four-implementation-review.md
+  revision: f3703cd875712b7a25bb37e5e2b19771eda8a52e
+  working_tree: untracked
+  sha256: c8e8609e2b9b5c4a20bfd7cc2d073a93c46cf123e06c11955a876c97478c34da
 - id: issues-1125-1131-reconsideration
   resource: ../../superpowers/reports/issues-1125-1131/reconsideration.md
-  revision: 39c5a8050163ac383482909a80e9d57e57014b8a
-  working_tree: untracked
-  sha256: 72d55175e39e1dc3aeb30e39651df4117b2d7b7657803560414dc49d3a348876
+  revision: f3703cd875712b7a25bb37e5e2b19771eda8a52e
+  working_tree: modified
+  sha256: 9621257e891cba513df3590835509dc622abdb7f24c5b3e17977ce3bbc890143
 - id: issues-1125-1131-report
   resource: ../../superpowers/reports/issues-1125-1131/README.md
-  revision: 39c5a8050163ac383482909a80e9d57e57014b8a
+  revision: f3703cd875712b7a25bb37e5e2b19771eda8a52e
   working_tree: modified
-  sha256: befc677b61bab6459aecd14d92f1fd757e54a55c1101a7c7f9250028ad80a856
+  sha256: 78f9c5d2beb9d3ab2cb2416f138b8810e1a651d00a89b8d639abb078bed26a0f
 - id: issues-1125-1131-methodology
   resource: ../../superpowers/reports/issues-1125-1131/methodology.md
   revision: 42130ce3e82912c3fa4f7574b0a347d64401545e
@@ -1675,6 +1685,16 @@ sources:
 
 ## Issues 1126, 1127, 1128 and 1131 reconsideration
 
-- [Revised methods and feasibility evidence](../../superpowers/reports/issues-1125-1131/reconsideration.md) [^issues-1125-1131-reconsideration] — ordinary dataclass identity, sorting priority, callback overrides and encoding API scope; these issues remain open.
+- [Revised methods and feasibility evidence](../../superpowers/reports/issues-1125-1131/reconsideration.md) [^issues-1125-1131-reconsideration] — ordinary dataclass identity, sorting priority, callback overrides and encoding API scope; historical method review, now superseded by implementation in the same PR.
 
 [^issues-1125-1131-reconsideration]: [Reconsideration](../../superpowers/reports/issues-1125-1131/reconsideration.md).
+
+## Issues 1126, 1127, 1128 and 1131 implementation
+
+| Document | Scope |
+| --- | --- |
+| [Implementation](../../superpowers/reports/issues-1125-1131/four-implementation.md) [^issues-1125-1131-four-implementation] | Four additional default-on operators implemented in PR1134, eligibility and resource ownership |
+| [Review](../../superpowers/reports/issues-1125-1131/four-implementation-review.md) [^issues-1125-1131-four-review] | Five passes per stage, independent review fixes and final command results |
+
+[^issues-1125-1131-four-implementation]: [Four-operator implementation](../../superpowers/reports/issues-1125-1131/four-implementation.md).
+[^issues-1125-1131-four-review]: [Four-operator review](../../superpowers/reports/issues-1125-1131/four-implementation-review.md).
