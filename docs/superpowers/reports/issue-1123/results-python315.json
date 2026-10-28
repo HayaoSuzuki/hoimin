@@ -1,0 +1,1909 @@
+{
+  "python": "3.15.0b1 (main, May 10 2026, 19:21:12) [Clang 22.1.3 ]",
+  "platform": "macOS-15.7.7-arm64-arm-64bit-Mach-O",
+  "source_revision": "312b72d3e06e44145bbac28e998c97a8ca4f587d",
+  "binary_sha256": "31c03efbcd0d06f238f4067482e52ef52759fa3dacb1552f47e73965fb50f5ba",
+  "runner_sha256": "18b29c9f91480ce98af4347838756c7c84d73573dd55811d883c14bd915c9414",
+  "helper_sha256": "ecc3ca9a616fdfbef887ff8a3af6b085b354ad1fd1d01e8d46d45b1ccafbdb83",
+  "nearest_operators": "statement_delete,function_body_erase,function_body_return_constant,method_call_remove",
+  "per_pool_limit": 64,
+  "comparisons": [
+    {
+      "name": "override_dispatch",
+      "proposed": {
+        "generation_seconds": 0.000385124993044883,
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "prototype:override_method_delete",
+              "start": 100,
+              "length": 61,
+              "original": "def run(self, providers):\n        return providers['child']()",
+              "replacement": "pass",
+              "line": 5,
+              "operator": "override_method_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.017509166995296255
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.017872540978714824
+            }
+          }
+        ]
+      },
+      "requirement": "The specialized dispatcher uses the child provider, including when providers differ.",
+      "source": "class Base:\n    def run(self, providers):\n        return providers['base']()\nclass Child(Base):\n    def run(self, providers):\n        return providers['child']()\n",
+      "weak": "assert Child().run({'base': lambda: 2, 'child': lambda: 2}) == 2",
+      "strong": "assert Child().run({'base': lambda: 2, 'child': lambda: 5}) == 5",
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.018180458981078118
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.016590874991379678
+        }
+      },
+      "exact_source_overlap": {
+        "nearest": false,
+        "defaults": false
+      },
+      "nearest": {
+        "generation_seconds": 0.015795208979398012,
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      },
+      "defaults": {
+        "generation_seconds": 0.010537458001635969,
+        "pool_count": 4,
+        "executed": 4,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_71464cb9e011d35ce0a397f699a80ddfa55680ea228d58dc22f4a7b70e2bea60",
+              "start": 57,
+              "length": 17,
+              "original": "providers['base']",
+              "replacement": "providers.get('base')",
+              "line": 3,
+              "operator": "structure_mapping_get_subscript"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01715245799277909
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01703408401226625
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_a7a7d86ac44bafaa2893ac65c9644ed5e9cfd8db5699e4fcdc1cc59503f7f01a",
+              "start": 67,
+              "length": 6,
+              "original": "'base'",
+              "replacement": "\"\"",
+              "line": 3,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016891042003408074
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.017030291026458144
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_4a6e5c3256e343db709af668cf0e9d8bd3f295babc732777fcb95d88151e8c80",
+              "start": 141,
+              "length": 18,
+              "original": "providers['child']",
+              "replacement": "providers.get('child')",
+              "line": 6,
+              "operator": "structure_mapping_get_subscript"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016595458990195766
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016396958992118016
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_be41e91a932b06c33ed12eb51384a911640b70fdf2ea5bf78675006f6fe8eb3b",
+              "start": 151,
+              "length": 7,
+              "original": "'child'",
+              "replacement": "\"\"",
+              "line": 6,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "error",
+              "exception": "KeyError",
+              "elapsed_seconds": 0.01623929201741703
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "KeyError",
+              "elapsed_seconds": 0.01657208299729973
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "override_equivalent",
+      "proposed": {
+        "generation_seconds": 0.00017775001469999552,
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "prototype:override_method_delete",
+              "start": 82,
+              "length": 42,
+              "original": "def run(self, value):\n        return value",
+              "replacement": "pass",
+              "line": 5,
+              "operator": "override_method_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01721362498938106
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01676150001003407
+            }
+          }
+        ]
+      },
+      "requirement": "Return the supplied object; both implementations satisfy this contract.",
+      "source": "class Base:\n    def run(self, value):\n        return value\nclass Child(Base):\n    def run(self, value):\n        return value\n",
+      "weak": "assert Child().run(2) == 2",
+      "strong": "value = object()\nassert Child().run(value) is value",
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.01637616698280908
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.016500833007739857
+        }
+      },
+      "exact_source_overlap": {
+        "nearest": false,
+        "defaults": false
+      },
+      "nearest": {
+        "generation_seconds": 0.009190665994537994,
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      },
+      "defaults": {
+        "generation_seconds": 0.010386291018221527,
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      }
+    },
+    {
+      "name": "constructor_interface_risk",
+      "proposed": {
+        "generation_seconds": 0.0001702499866951257,
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "prototype:override_method_delete",
+              "start": 85,
+              "length": 53,
+              "original": "def __init__(self, token):\n        self.token = token",
+              "replacement": "pass",
+              "line": 5,
+              "operator": "override_method_delete"
+            },
+            "weak": {
+              "verdict": "error",
+              "exception": "TypeError",
+              "elapsed_seconds": 0.01767270901473239
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "TypeError",
+              "elapsed_seconds": 0.01727700000628829
+            }
+          }
+        ]
+      },
+      "requirement": "Construction accepts a token; inherited construction has an incompatible signature.",
+      "source": "class Base:\n    def __init__(self):\n        self.token = None\nclass Child(Base):\n    def __init__(self, token):\n        self.token = token\n",
+      "weak": "Child('token')",
+      "strong": "assert Child('token').token == 'token'",
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.016750708018662408
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.016993541998090222
+        }
+      },
+      "exact_source_overlap": {
+        "nearest": false,
+        "defaults": false
+      },
+      "nearest": {
+        "generation_seconds": 0.010190999979386106,
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      },
+      "defaults": {
+        "generation_seconds": 0.010681042011128739,
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      }
+    },
+    {
+      "name": "super_order",
+      "proposed": {
+        "generation_seconds": 0.0003381670103408396,
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "prototype:super_call_move",
+              "start": 94,
+              "length": 113,
+              "original": "def run(self, events):\n        events.append('before')\n        super().run(events)\n        events.append('after')",
+              "replacement": "def run(self, events):\n        super().run(events)\n        events.append('before')\n        events.append('after')",
+              "line": 5,
+              "operator": "super_call_move"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.017537541018100455
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.017026250017806888
+            }
+          }
+        ]
+      },
+      "requirement": "All three events occur exactly once in before, parent, after order.",
+      "source": "class Base:\n    def run(self, events):\n        events.append('parent')\nclass Child(Base):\n    def run(self, events):\n        events.append('before')\n        super().run(events)\n        events.append('after')\n",
+      "weak": "events=[]\nChild().run(events)\nassert sorted(events)==['after','before','parent']",
+      "strong": "events=[]\nChild().run(events)\nassert events==['before','parent','after']",
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.016728834016248584
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.01690724998479709
+        }
+      },
+      "exact_source_overlap": {
+        "nearest": false,
+        "defaults": false
+      },
+      "nearest": {
+        "generation_seconds": 0.010630250006215647,
+        "pool_count": 6,
+        "executed": 6,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_1029ba1fb5b35feaa7452517b3139da063a75a2e23a3bd284a6229647b560522",
+              "start": 47,
+              "length": 23,
+              "original": "events.append('parent')",
+              "replacement": "pass",
+              "line": 3,
+              "operator": "function_body_erase"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.0169712079805322
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.017186666023917496
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_cf67378158075c815f245d87a8b205579d052f985f1ed86a7446ae9b739002d2",
+              "start": 47,
+              "length": 23,
+              "original": "events.append('parent')",
+              "replacement": "pass",
+              "line": 3,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.017139333009254187
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.017338959005428478
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_231b85de807cd9aeb138f8783139743c82283f5e2c6804e9825fb340e76a22f7",
+              "start": 125,
+              "length": 82,
+              "original": "events.append('before')\n        super().run(events)\n        events.append('after')",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "function_body_erase"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01700554200215265
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016636792017379776
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_8a5c22cc0f393c49a475a4ad9b6d83c468eb506bc3c60028d493448b35b1232d",
+              "start": 125,
+              "length": 23,
+              "original": "events.append('before')",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01613291699322872
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.015821042004972696
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_c27d6e547f6b5b4012c911688dc368be971ed7df37a8239487b555eb833bbf53",
+              "start": 157,
+              "length": 19,
+              "original": "super().run(events)",
+              "replacement": "pass",
+              "line": 7,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.015672082983655855
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.014771458983886987
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_a5737ab037ec1ac764943c40ccf7586b4e7ca6d90ac730d2acc5d08ce8723c93",
+              "start": 185,
+              "length": 22,
+              "original": "events.append('after')",
+              "replacement": "pass",
+              "line": 8,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01563533299486153
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01569645802373998
+            }
+          }
+        ]
+      },
+      "defaults": {
+        "generation_seconds": 0.010914749989751726,
+        "pool_count": 13,
+        "executed": 13,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_a741911104e5bbab03a9709e1de294a057d91c267c642eedc16033b74be7adbe",
+              "start": 47,
+              "length": 23,
+              "original": "events.append('parent')",
+              "replacement": "events.insert(0, 'parent')",
+              "line": 3,
+              "operator": "collection_append_insert"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.015566207992378622
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.015689207997638732
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_cf67378158075c815f245d87a8b205579d052f985f1ed86a7446ae9b739002d2",
+              "start": 47,
+              "length": 23,
+              "original": "events.append('parent')",
+              "replacement": "pass",
+              "line": 3,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.015528250019997358
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.0157087080006022
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_f1798c4946d5448291ecf6d7fa53fdbc2886a124642948c8951aab0ee0a45138",
+              "start": 47,
+              "length": 23,
+              "original": "events.append('parent')",
+              "replacement": "events.extend(['parent'])",
+              "line": 3,
+              "operator": "structure_append_extend"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016758999990997836
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016536459006601945
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_6541521bcb1d88279029b3bbc08636e41c58419baeb27ceb37060316ca8855fb",
+              "start": 61,
+              "length": 8,
+              "original": "'parent'",
+              "replacement": "\"\"",
+              "line": 3,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01615041701006703
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.015862667001783848
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_0b6cf218a965da2530296ca569e7d7a438e26991a382ffc128ae22b97cd95528",
+              "start": 125,
+              "length": 23,
+              "original": "events.append('before')",
+              "replacement": "events.insert(0, 'before')",
+              "line": 6,
+              "operator": "collection_append_insert"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01638937499956228
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016860042000189424
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_8a5c22cc0f393c49a475a4ad9b6d83c468eb506bc3c60028d493448b35b1232d",
+              "start": 125,
+              "length": 23,
+              "original": "events.append('before')",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01664066599914804
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01619254201068543
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_dfeae10f6a93e891ce78d36224197a2e590649de0628a511136a64b2f82d1a4c",
+              "start": 125,
+              "length": 23,
+              "original": "events.append('before')",
+              "replacement": "events.extend(['before'])",
+              "line": 6,
+              "operator": "structure_append_extend"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01637754202238284
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01656462502432987
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_affba105065f678696343fe55ac12f13af67d454dbf624faabf043437c5b86f8",
+              "start": 139,
+              "length": 8,
+              "original": "'before'",
+              "replacement": "\"\"",
+              "line": 6,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016982500004814938
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01739862500107847
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_c27d6e547f6b5b4012c911688dc368be971ed7df37a8239487b555eb833bbf53",
+              "start": 157,
+              "length": 19,
+              "original": "super().run(events)",
+              "replacement": "pass",
+              "line": 7,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.019578834006097168
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01707345899194479
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_5c8ec9d6f681a0f5817c0f1dca688b62f5abc9016fb4f158755331fcf7c16517",
+              "start": 185,
+              "length": 22,
+              "original": "events.append('after')",
+              "replacement": "events.insert(0, 'after')",
+              "line": 8,
+              "operator": "collection_append_insert"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016595124994637445
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016091792000224814
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_a5737ab037ec1ac764943c40ccf7586b4e7ca6d90ac730d2acc5d08ce8723c93",
+              "start": 185,
+              "length": 22,
+              "original": "events.append('after')",
+              "replacement": "pass",
+              "line": 8,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01649825001368299
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016756875003920868
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_6cfffb61ae0c3177c799c30127e35d72e26ccc9b906ccabfc0434c021a1ca35b",
+              "start": 185,
+              "length": 22,
+              "original": "events.append('after')",
+              "replacement": "events.extend(['after'])",
+              "line": 8,
+              "operator": "structure_append_extend"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016569084022194147
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.02015166697674431
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_f5c69c1c3c6c4af921e19e940aed182a7cde38cd75e8cf3292c3730727a63b45",
+              "start": 199,
+              "length": 7,
+              "original": "'after'",
+              "replacement": "\"\"",
+              "line": 8,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01658583400421776
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016520375007530674
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "super_order_callback",
+      "proposed": {
+        "generation_seconds": 0.0002344170061405748,
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "prototype:super_call_move",
+              "start": 83,
+              "length": 91,
+              "original": "def run(self, emit):\n        emit('before')\n        super().run(emit)\n        emit('after')",
+              "replacement": "def run(self, emit):\n        super().run(emit)\n        emit('before')\n        emit('after')",
+              "line": 5,
+              "operator": "super_call_move"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.017650334018981084
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.017129584011854604
+            }
+          }
+        ]
+      },
+      "requirement": "The supplied event sink receives before, parent, after exactly once in that order.",
+      "source": "class Base:\n    def run(self, emit):\n        emit('parent')\nclass Child(Base):\n    def run(self, emit):\n        emit('before')\n        super().run(emit)\n        emit('after')\n",
+      "weak": "events=[]\nChild().run(events.append)\nassert sorted(events)==['after','before','parent']",
+      "strong": "events=[]\nChild().run(events.append)\nassert events==['before','parent','after']",
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.01644016700447537
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.01561662502354011
+        }
+      },
+      "exact_source_overlap": {
+        "nearest": false,
+        "defaults": false
+      },
+      "nearest": {
+        "generation_seconds": 0.009672792017227039,
+        "pool_count": 6,
+        "executed": 6,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_aaf3384c167663e94e91ceb6a5d1679dbec9e87682be5f901a388de4dc89db0c",
+              "start": 45,
+              "length": 14,
+              "original": "emit('parent')",
+              "replacement": "pass",
+              "line": 3,
+              "operator": "function_body_erase"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01617149999947287
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016019082977436483
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_fe787040e57bdc22c840da5fa4aabd11409cc88531b2664a0491d5af1becd449",
+              "start": 45,
+              "length": 14,
+              "original": "emit('parent')",
+              "replacement": "pass",
+              "line": 3,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016026166995288804
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01604554199730046
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_df40a7ea90f6cb5f2bdf7f9176e7e71b808930d75d66a1cc5a66985f32acc611",
+              "start": 112,
+              "length": 62,
+              "original": "emit('before')\n        super().run(emit)\n        emit('after')",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "function_body_erase"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016612458013696596
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01656879100482911
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_280c3631c6082ba87b09ce7102b2a355e100b7072b9e8e815ca160208618bb95",
+              "start": 112,
+              "length": 14,
+              "original": "emit('before')",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.015936292009428144
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.015892458002781495
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_a6f67e1a2d8987c43012c2dff6168142e1fe913e6cb7b58315489b4548f4c22b",
+              "start": 135,
+              "length": 17,
+              "original": "super().run(emit)",
+              "replacement": "pass",
+              "line": 7,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016224666993366554
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01703025001916103
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_5b2f54ef965072439801acb8b0d41972df2b0df82010302e25e37e088362599c",
+              "start": 161,
+              "length": 13,
+              "original": "emit('after')",
+              "replacement": "pass",
+              "line": 8,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01730783301172778
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01769129201420583
+            }
+          }
+        ]
+      },
+      "defaults": {
+        "generation_seconds": 0.010413957992568612,
+        "pool_count": 7,
+        "executed": 7,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_fe787040e57bdc22c840da5fa4aabd11409cc88531b2664a0491d5af1becd449",
+              "start": 45,
+              "length": 14,
+              "original": "emit('parent')",
+              "replacement": "pass",
+              "line": 3,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.0163850839890074
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016645208990667015
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_56602884aac9ed1fc2a57f989c00bfa11fa944ffbcb04309f9493c270d62f00b",
+              "start": 50,
+              "length": 8,
+              "original": "'parent'",
+              "replacement": "\"\"",
+              "line": 3,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016810333996545523
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.017141332995379344
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_280c3631c6082ba87b09ce7102b2a355e100b7072b9e8e815ca160208618bb95",
+              "start": 112,
+              "length": 14,
+              "original": "emit('before')",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016598166985204443
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016170542017789558
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_c7a72225ea156cb8a31779736640ba5831285d225836bd19b7ed4975874f6a73",
+              "start": 117,
+              "length": 8,
+              "original": "'before'",
+              "replacement": "\"\"",
+              "line": 6,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01646429201355204
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01674104100675322
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_a6f67e1a2d8987c43012c2dff6168142e1fe913e6cb7b58315489b4548f4c22b",
+              "start": 135,
+              "length": 17,
+              "original": "super().run(emit)",
+              "replacement": "pass",
+              "line": 7,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016545499995118007
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01634337499854155
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_5b2f54ef965072439801acb8b0d41972df2b0df82010302e25e37e088362599c",
+              "start": 161,
+              "length": 13,
+              "original": "emit('after')",
+              "replacement": "pass",
+              "line": 8,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016741750005166978
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016892040992388502
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_ac301ac6301418284fdada1986319cfb7eb89637a3fe4e9760c0597b6d7debce",
+              "start": 166,
+              "length": 7,
+              "original": "'after'",
+              "replacement": "\"\"",
+              "line": 8,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.017091624991735443
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.017042583000147715
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "super_commuting_control",
+      "proposed": {
+        "generation_seconds": 0.00020658300491049886,
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "prototype:super_call_move",
+              "start": 91,
+              "length": 78,
+              "original": "def run(self, labels):\n        labels.add('child')\n        super().run(labels)",
+              "replacement": "def run(self, labels):\n        super().run(labels)\n        labels.add('child')",
+              "line": 5,
+              "operator": "super_call_move"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016338208981323987
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01740779200918041
+            }
+          }
+        ]
+      },
+      "requirement": "Both labels belong to the result set; relative insertion order is not promised.",
+      "source": "class Base:\n    def run(self, labels):\n        labels.add('parent')\nclass Child(Base):\n    def run(self, labels):\n        labels.add('child')\n        super().run(labels)\n",
+      "weak": "labels=set()\nChild().run(labels)\nassert 'parent' in labels",
+      "strong": "labels=set()\nChild().run(labels)\nassert labels=={'child','parent'}",
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.016615417000139132
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.017133874993305653
+        }
+      },
+      "exact_source_overlap": {
+        "nearest": false,
+        "defaults": false
+      },
+      "nearest": {
+        "generation_seconds": 0.010259708011290058,
+        "pool_count": 5,
+        "executed": 5,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_53979f2362ccd0e4bab847c4d6c32d7600b95a367d7f2a24ebb80b229c0b398f",
+              "start": 47,
+              "length": 20,
+              "original": "labels.add('parent')",
+              "replacement": "pass",
+              "line": 3,
+              "operator": "function_body_erase"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01701812501414679
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.017302541993558407
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_1862818fce6dfc667f0c6ddac7aecf5feef86db8734ec979f3c575e3d565fc12",
+              "start": 47,
+              "length": 20,
+              "original": "labels.add('parent')",
+              "replacement": "pass",
+              "line": 3,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016713582997908816
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016847082995809615
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_5b891fe146a4851f3e35768d0e4576ec8d1cf88b093200d0a52b29e0b7109333",
+              "start": 122,
+              "length": 47,
+              "original": "labels.add('child')\n        super().run(labels)",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "function_body_erase"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016394208010751754
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016232916997978464
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_36039881db0ca308b8a2fddc5ef9849a33fd7476d252eb913302b0949c2437e2",
+              "start": 122,
+              "length": 19,
+              "original": "labels.add('child')",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01573225000174716
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.015928209002595395
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_780c5d6dbcaf8b0e2de247e8a06ef05154340977a4fbbffb252939be1623d357",
+              "start": 150,
+              "length": 19,
+              "original": "super().run(labels)",
+              "replacement": "pass",
+              "line": 7,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016607166995527223
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01627479199669324
+            }
+          }
+        ]
+      },
+      "defaults": {
+        "generation_seconds": 0.00986916699912399,
+        "pool_count": 7,
+        "executed": 7,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_1862818fce6dfc667f0c6ddac7aecf5feef86db8734ec979f3c575e3d565fc12",
+              "start": 47,
+              "length": 20,
+              "original": "labels.add('parent')",
+              "replacement": "pass",
+              "line": 3,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01634879197808914
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01631566701689735
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_9d1d8fad6582b9981c117ce3087183cd67af00d9104264949368e46abf55aca7",
+              "start": 54,
+              "length": 3,
+              "original": "add",
+              "replacement": "discard",
+              "line": 3,
+              "operator": "collection_set_add_discard"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.0159986249927897
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016523416998097673
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_2ce7b85ed51458237d0ea698e00ed54a6e582736e77a3d9d134e662b90d32c3e",
+              "start": 58,
+              "length": 8,
+              "original": "'parent'",
+              "replacement": "\"\"",
+              "line": 3,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016241750010522082
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.015899457997875288
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_36039881db0ca308b8a2fddc5ef9849a33fd7476d252eb913302b0949c2437e2",
+              "start": 122,
+              "length": 19,
+              "original": "labels.add('child')",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016400666994741186
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016310167004121467
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_b54d81fdd9a456873754a459bb89c1e26fb069a4de4dfd31d62a03cf2e1ee2e3",
+              "start": 129,
+              "length": 3,
+              "original": "add",
+              "replacement": "discard",
+              "line": 6,
+              "operator": "collection_set_add_discard"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016398292005760595
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016053708997787908
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_9cf5843b9ce03529d971ae6fd501de09a52e022e99b49332a8ef56bee7ff47e6",
+              "start": 133,
+              "length": 7,
+              "original": "'child'",
+              "replacement": "\"\"",
+              "line": 6,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.017313457996351644
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016770417016232386
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_780c5d6dbcaf8b0e2de247e8a06ef05154340977a4fbbffb252939be1623d357",
+              "start": 150,
+              "length": 19,
+              "original": "super().run(labels)",
+              "replacement": "pass",
+              "line": 7,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016611291997833177
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016374291997635737
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "super_data_dependency_risk",
+      "proposed": {
+        "generation_seconds": 0.0001952500024344772,
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "prototype:super_call_move",
+              "start": 88,
+              "length": 84,
+              "original": "def run(self, events):\n        super().run(events)\n        events.append(self.ready)",
+              "replacement": "def run(self, events):\n        events.append(self.ready)\n        super().run(events)",
+              "line": 5,
+              "operator": "super_call_move"
+            },
+            "weak": {
+              "verdict": "error",
+              "exception": "AttributeError",
+              "elapsed_seconds": 0.016220958001213148
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "AttributeError",
+              "elapsed_seconds": 0.01591633298085071
+            }
+          }
+        ]
+      },
+      "requirement": "Parent initialization precedes consumption of its state; moving it can raise AttributeError.",
+      "source": "class Base:\n    def run(self, events):\n        self.ready = True\nclass Child(Base):\n    def run(self, events):\n        super().run(events)\n        events.append(self.ready)\n",
+      "weak": "Child().run([])",
+      "strong": "events=[]\nChild().run(events)\nassert events==[True]",
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.016816166986245662
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.01744900000630878
+        }
+      },
+      "exact_source_overlap": {
+        "nearest": false,
+        "defaults": false
+      },
+      "nearest": {
+        "generation_seconds": 0.009804750006878749,
+        "pool_count": 4,
+        "executed": 4,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_ced694783935b73234b0b84cd94dc3bf42c4cbaa19f70a4a8b8e1c8b9b63f238",
+              "start": 47,
+              "length": 17,
+              "original": "self.ready = True",
+              "replacement": "pass",
+              "line": 3,
+              "operator": "function_body_erase"
+            },
+            "weak": {
+              "verdict": "error",
+              "exception": "AttributeError",
+              "elapsed_seconds": 0.017159834009362385
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "AttributeError",
+              "elapsed_seconds": 0.01680612500058487
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_23999d3b58548fb9423b45b9bae3d23eed53ff24bc93990911829d083580adde",
+              "start": 119,
+              "length": 53,
+              "original": "super().run(events)\n        events.append(self.ready)",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "function_body_erase"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016376584011595696
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016659167013131082
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_41a2010167f14b97301ccebe8b72fc6654fe15e3af5a7cf04f8d4ef64a60fe88",
+              "start": 119,
+              "length": 19,
+              "original": "super().run(events)",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "error",
+              "exception": "AttributeError",
+              "elapsed_seconds": 0.016606457997113466
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "AttributeError",
+              "elapsed_seconds": 0.0201578339911066
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_5f5f27943d387e83880d839173594196c01d4665cdf18de8c160f0c053b90a13",
+              "start": 147,
+              "length": 25,
+              "original": "events.append(self.ready)",
+              "replacement": "pass",
+              "line": 7,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.022669708007015288
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.0163743750017602
+            }
+          }
+        ]
+      },
+      "defaults": {
+        "generation_seconds": 0.00969629199244082,
+        "pool_count": 5,
+        "executed": 5,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_cfb3d18cc986fb945eeee6cd1f63bcfc28c3fdc6cdf9696a6f860540b83afbf2",
+              "start": 60,
+              "length": 4,
+              "original": "True",
+              "replacement": "False",
+              "line": 3,
+              "operator": "boolean_literal"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01721449999604374
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01700358299422078
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_41a2010167f14b97301ccebe8b72fc6654fe15e3af5a7cf04f8d4ef64a60fe88",
+              "start": 119,
+              "length": 19,
+              "original": "super().run(events)",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "error",
+              "exception": "AttributeError",
+              "elapsed_seconds": 0.016649666999001056
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "AttributeError",
+              "elapsed_seconds": 0.016921000002184883
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_d100858f438e43315e60c21427fca189de1b678525efa516c76ee213a9de6280",
+              "start": 147,
+              "length": 25,
+              "original": "events.append(self.ready)",
+              "replacement": "events.insert(0, self.ready)",
+              "line": 7,
+              "operator": "collection_append_insert"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01712808301090263
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.0171292919840198
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_5f5f27943d387e83880d839173594196c01d4665cdf18de8c160f0c053b90a13",
+              "start": 147,
+              "length": 25,
+              "original": "events.append(self.ready)",
+              "replacement": "pass",
+              "line": 7,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016663416026858613
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016534082998987287
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_b52f2581cbcb553035760572a9084991cf0e1567c2fc5a6e04878a22e1f70d07",
+              "start": 147,
+              "length": 25,
+              "original": "events.append(self.ready)",
+              "replacement": "events.extend([self.ready])",
+              "line": 7,
+              "operator": "structure_append_extend"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016576082998653874
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016574458015384153
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "super_delete_overlap",
+      "proposed": {
+        "generation_seconds": 0.00016833300469443202,
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "prototype:super_call_delete",
+              "start": 125,
+              "length": 19,
+              "original": "super().run(events)",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "super_call_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01707495900336653
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.017124958016211167
+            }
+          }
+        ]
+      },
+      "requirement": "The parent delegation appends its event, even though the return value is None.",
+      "source": "class Base:\n    def run(self, events):\n        events.append('parent')\nclass Child(Base):\n    def run(self, events):\n        super().run(events)\n",
+      "weak": "assert Child().run([]) is None",
+      "strong": "events=[]\nChild().run(events)\nassert events==['parent']",
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.01651387501624413
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.016346625023288652
+        }
+      },
+      "exact_source_overlap": {
+        "nearest": true,
+        "defaults": true
+      },
+      "nearest": {
+        "generation_seconds": 0.009817332989769056,
+        "pool_count": 4,
+        "executed": 4,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_75babff0c924f665eea9df1a7a3fbb9e1c48d59dadb4c3aba980edf9519d0970",
+              "start": 47,
+              "length": 23,
+              "original": "events.append('parent')",
+              "replacement": "pass",
+              "line": 3,
+              "operator": "function_body_erase"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016079749999335036
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016689499985659495
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_74aacc71675928924ceea09ef68cd147a9190b5d312d122405c698b91901092b",
+              "start": 47,
+              "length": 23,
+              "original": "events.append('parent')",
+              "replacement": "pass",
+              "line": 3,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01622633301303722
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016712207987438887
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_f2085eb5e6b4467c935078d86191397202461ecd2820d5e2f778676b7178075a",
+              "start": 125,
+              "length": 19,
+              "original": "super().run(events)",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "function_body_erase"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.017202624992933124
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016746541019529104
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_56831b0a1365d12c8e1f8b525077052493764c4b9b2eaa73feb138be3a79a366",
+              "start": 125,
+              "length": 19,
+              "original": "super().run(events)",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016642458009300753
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01703904097666964
+            }
+          }
+        ]
+      },
+      "defaults": {
+        "generation_seconds": 0.00928487497731112,
+        "pool_count": 5,
+        "executed": 5,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_0ecd00d5e7d62fa9c165de061d614765563f54838566759988547e5d8c4ea823",
+              "start": 47,
+              "length": 23,
+              "original": "events.append('parent')",
+              "replacement": "events.insert(0, 'parent')",
+              "line": 3,
+              "operator": "collection_append_insert"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01684683299390599
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01763233300880529
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_74aacc71675928924ceea09ef68cd147a9190b5d312d122405c698b91901092b",
+              "start": 47,
+              "length": 23,
+              "original": "events.append('parent')",
+              "replacement": "pass",
+              "line": 3,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016679791995557025
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01721045802696608
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_4c7c02cca2e39c9f180c951c30f3b1b8e59fa6007565b8a732d8f909794fe88b",
+              "start": 47,
+              "length": 23,
+              "original": "events.append('parent')",
+              "replacement": "events.extend(['parent'])",
+              "line": 3,
+              "operator": "structure_append_extend"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.0172517089813482
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.017144834011560306
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_e2e0aa5f58feb8c247567db0abd2b40458bc1f6443a359106f6421a1bbb2d278",
+              "start": 61,
+              "length": 8,
+              "original": "'parent'",
+              "replacement": "\"\"",
+              "line": 3,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01707066598464735
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.017009584000334144
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_56831b0a1365d12c8e1f8b525077052493764c4b9b2eaa73feb138be3a79a366",
+              "start": 125,
+              "length": 19,
+              "original": "super().run(events)",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.019177500013029203
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01692300001741387
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "super_delete_no_observation",
+      "proposed": {
+        "generation_seconds": 0.00015645800158381462,
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "prototype:super_call_delete",
+              "start": 106,
+              "length": 19,
+              "original": "super().run(events)",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "super_call_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016825250000692904
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016597417008597404
+            }
+          }
+        ]
+      },
+      "requirement": "The API promises only None; parent delegation has no observable effect here.",
+      "source": "class Base:\n    def run(self, events):\n        pass\nclass Child(Base):\n    def run(self, events):\n        super().run(events)\n",
+      "weak": "assert Child().run([]) is None",
+      "strong": "events=[]\nassert Child().run(events) is None\nassert events==[]",
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.01653604197781533
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.01655233299243264
+        }
+      },
+      "exact_source_overlap": {
+        "nearest": true,
+        "defaults": true
+      },
+      "nearest": {
+        "generation_seconds": 0.009585791995050386,
+        "pool_count": 2,
+        "executed": 2,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_19778f3261d873695eea7897d04cf7bc4bed354428199124a2f5938b7db7f81d",
+              "start": 106,
+              "length": 19,
+              "original": "super().run(events)",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "function_body_erase"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.015571041993098333
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01599491701927036
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_df804fa810b76ad7e12dffe5988bf02acc0683bec0ae7b4c98ed8a6c4eda052f",
+              "start": 106,
+              "length": 19,
+              "original": "super().run(events)",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016280084004392847
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01667804198223166
+            }
+          }
+        ]
+      },
+      "defaults": {
+        "generation_seconds": 0.008562709001125768,
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_df804fa810b76ad7e12dffe5988bf02acc0683bec0ae7b4c98ed8a6c4eda052f",
+              "start": 106,
+              "length": 19,
+              "original": "super().run(events)",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016113332996610552
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016791417001513764
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "temporary_file_bytes_at_end": 3830,
+  "temporary_directory_removed": true,
+  "elapsed_seconds": 3.2095460839918815
+}
