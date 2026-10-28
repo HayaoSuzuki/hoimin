@@ -180,6 +180,8 @@ fn collection_structure_and_bitwise_selector_families_expand_exactly() {
             MutationOperator::StructureSortedReversed,
             MutationOperator::StructureIndexNeighbor,
             MutationOperator::StructureSliceNeighbor,
+            MutationOperator::StructureSliceBoundOmit,
+            MutationOperator::StructureSliceBoundMove,
         ]
     );
     assert_eq!(
@@ -330,7 +332,7 @@ fn exception_hierarchy_is_explicit_only() {
 }
 
 // Fixed current policy, independent of catalog and production default builders.
-const CURRENT_DEFAULT_NAMES: [&str; 72] = [
+const CURRENT_DEFAULT_NAMES: [&str; 75] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -403,6 +405,9 @@ const CURRENT_DEFAULT_NAMES: [&str; 72] = [
     "gather_return_exceptions",
     "itertools_take_drop_swap",
     "fstring_conversion_swap",
+    "binary_div_floor",
+    "structure_slice_bound_omit",
+    "structure_slice_bound_move",
 ];
 
 #[test]

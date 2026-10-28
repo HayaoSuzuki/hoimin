@@ -6,8 +6,8 @@ status: draft
 sources:
 - id: principles
   resource: ../product-principles.md
-  revision: 7c2a79168c8698f85cc90d7efd6bf16a183e08b3
-  working_tree: modified
+  revision: 1efe26f5e193540649cba9473034843f26824723
+  working_tree: clean
   sha256: 1c51723e2f4209c87ba987efbe18bac739d898377086fcd059b724ccc836093e
 ---
 
@@ -39,9 +39,8 @@ The 2026-10-28 clarification makes opt-out the normal policy for newly adopted
 mutation operators: include accepted operators in the default runtime set and
 allow `--exclude-operators`. Adoption still requires evaluation; an experimental
 proposal is not enabled merely because it exists. See the
-[slice, division and selection research](mutation-research-1121-1122-1124.md)
-for a scoped evaluation that distinguishes adoption recommendations from
-implemented behavior.[^principles]
+[slice/division implementation and selection evaluation](mutation-research-1121-1122-1124.md)
+for the bounded evidence and subsequent implementation scope.[^principles]
 
 Read [runtime contracts](design/runtime-lifecycle.md),
 [selection and saved plans](design/selection-plan-verify.md), and
@@ -50,4 +49,4 @@ mechanisms. This decision adds no execution feature, new guarantee, or Issue-sta
 change. Recheck it when a proposal introduces score gates, automatic assessment
 effects, expanded resource consumption, or distributed execution.
 
-[^principles]: [Product principles](../product-principles.md), the maintainer's direction recorded on 2026-10-12 and clarified on 2026-10-23.
+[^principles]: [Product principles](../product-principles.md), the maintainer's direction recorded on 2026-10-12 and clarified on 2026-10-23 and 2026-10-28.

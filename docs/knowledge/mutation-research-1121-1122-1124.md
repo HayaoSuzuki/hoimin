@@ -1,14 +1,34 @@
 ---
 type: Decision
-title: Slice, division and survivor-directed selection research
-description: Bounded comparisons, opt-out adoption policy and limits of survivor-triggered deferral.
+title: Slice/division operators and survivor-directed selection evaluation
+description: Default-on implementation, bounded comparison evidence and survivor-deferral limits.
 status: draft
 sources:
+- id: implementation
+  resource: ../superpowers/reports/issues-1121-1122-1124/implementation.md
+  revision: 1efe26f5e193540649cba9473034843f26824723
+  working_tree: untracked
+  sha256: e840bd8d5dec6883137dab7e31f29057357668205fc3e2af19119dd300727a65
+- id: implementation-review
+  resource: ../superpowers/reports/issues-1121-1122-1124/implementation-review.md
+  revision: 1efe26f5e193540649cba9473034843f26824723
+  working_tree: untracked
+  sha256: 59941239e675bfde876b851c42676c71f0c11a9be80f10819c908767727a5266
+- id: implementation-code
+  resource: ../../crates/hoimin-python/src/analyzer/rust.rs
+  revision: 1efe26f5e193540649cba9473034843f26824723
+  working_tree: modified
+  sha256: bd6d2cb47be1118a9d79146eb66a4ca2da4836c8b88793a70858c26a8295a333
+- id: operator-catalog
+  resource: ../../crates/hoimin-core/src/config.rs
+  revision: 1efe26f5e193540649cba9473034843f26824723
+  working_tree: modified
+  sha256: 94edd06b6fcf0466042a5491fb95102cac4ef51745e4a770bf9e4136faec4664
 - id: report
   resource: ../superpowers/reports/issues-1121-1122-1124/README.md
-  revision: 7c2a79168c8698f85cc90d7efd6bf16a183e08b3
-  working_tree: untracked
-  sha256: f281b031caa75045a23795c2dcf9df821b5a90f24c035a82fdf333df877f1dbd
+  revision: 1efe26f5e193540649cba9473034843f26824723
+  working_tree: modified
+  sha256: b52f23a7821511deeb1ff895d2db4b09379112e40043c30db7b8c6da78a58b02
 - id: experiment
   resource: ../superpowers/reports/issues-1121-1122-1124/experiment.py
   revision: 7c2a79168c8698f85cc90d7efd6bf16a183e08b3
@@ -28,12 +48,21 @@ sources:
 
 # Decisions and product policy
 
-The 2026-10-28 evaluation recommends narrowly scoped follow-ups for slice-bound
+The 2026-10-28 evaluation led to narrowly scoped implementations of slice-bound
 omission/movement (#1121) and true/floor division exchange (#1124). Following the
 maintainer's [product direction](product-direction.md), adopted operators should
 normally be enabled by default and removable with `--exclude-operators`.
-This research branch adds no production operator or default-set change; it
-records the evidence and minimum implementation/validation scope.[^report]
+The subsequent implementation adds `binary_div_floor`,
+`structure_slice_bound_omit` and `structure_slice_bound_move` to the default
+runtime set. Both slice IDs belong to `structure_ops`; each can be excluded
+individually. The current catalog contains 94 IDs and 75 defaults.[^implementation][^operator-catalog]
+
+Slices require load context, one dimension, no step value and simple name/integer
+bounds. Omission removes one complete grouped bound; movement preserves trivia
+and moves the colon. Division changes a binary operator token while preserving
+existing multiplication/modulo candidates. All reuse existing selection,
+cancellation, payload accounting and bounded admission. No scheduler or saved
+schema change accompanies these operators.[^implementation-code][^implementation]
 
 Variable-bound slices expose range requirements outside the current numeric
 neighbor pool. Literal slices overlap existing neighbors, and omission can
@@ -60,11 +89,16 @@ only selected IDs and does not verify the entire pool.[^experiment]
 The nine independent small examples ran on macOS arm64 with CPython 3.14.9 and
 3.15.0b1. These are limited empirical results, not real-project efficacy,
 universal equivalence, Linux/Windows results, hard macOS memory guarantees or a
-Ruff operator implementation. Future adoption must preserve static discovery,
-source ranges, cancellation, candidate caps and supported-Python syntax checks.
+Ruff operator implementation. The new implementation has separate
+Rust/CLI/CPython checks recorded with their actual host and interpreter scope;
+the old JSON observations are not rerun-product evidence.[^implementation-review]
 Revisit the selection decision only with evidence that its useful test
 improvements justify additional report/resume/concurrency contracts.[^report]
 
+[^implementation]: [Current operator implementation and scope](../superpowers/reports/issues-1121-1122-1124/implementation.md).
+[^implementation-review]: [Implementation self-review and validation](../superpowers/reports/issues-1121-1122-1124/implementation-review.md).
+[^implementation-code]: [Static candidate generation](../../crates/hoimin-python/src/analyzer/rust.rs).
+[^operator-catalog]: [Typed operator catalog, families and defaults](../../crates/hoimin-core/src/config.rs).
 [^report]: [Research report, decisions and minimum follow-up scope](../superpowers/reports/issues-1121-1122-1124/README.md).
 [^experiment]: [Disposable experiment adapter](../superpowers/reports/issues-1121-1122-1124/experiment.py).
 [^python314]: [Python 3.14.9 execution evidence](../superpowers/reports/issues-1121-1122-1124/results-python314.json).

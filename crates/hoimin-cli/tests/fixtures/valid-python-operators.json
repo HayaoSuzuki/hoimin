@@ -453,5 +453,20 @@
     "operator": "fstring_conversion_swap",
     "status": "deferred",
     "reason": "Dedicated analyzer and CPython behavior tests with public opt-out coverage"
+  },
+  {
+    "operator": "binary_div_floor",
+    "status": "deferred",
+    "reason": "Dedicated binary-token, UTF-8, bounded-admission and CPython operand/type/zero-division tests; not modeled by the initial Lean cross-producer corpus"
+  },
+  {
+    "operator": "structure_slice_bound_omit",
+    "status": "deferred",
+    "reason": "Dedicated grouped-bound, exclusion, cap/selection and public plan/verify tests; the initial Lean cross-producer corpus has no bound-omission producer"
+  },
+  {
+    "operator": "structure_slice_bound_move",
+    "status": "deferred",
+    "reason": "Dedicated separator-trivia, UTF-8, cap/selection and public plan/verify tests; the initial Lean cross-producer corpus has no bound-movement producer"
   }
 ]

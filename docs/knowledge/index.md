@@ -73,7 +73,7 @@ recorded revisions against the implementation you are changing:
 
 # Audits and verification scope
 
-- [Slice, division and survivor-directed selection research](mutation-research-1121-1122-1124.md) - Issues 1121/1122/1124, bounded comparisons, opt-out adoption recommendations and selection deferral limits.
+- [Slice/division operators and survivor-directed selection evaluation](mutation-research-1121-1122-1124.md) - Issues 1121/1122/1124, default-on implementation, bounded comparisons and selection deferral limits.
 
 Treat these as evidence at their recorded revisions, inputs and environments,
 not a claim that every current host or commit passed the same checks:

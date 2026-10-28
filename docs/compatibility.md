@@ -19,14 +19,26 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Slice-bound and division defaults (Issues 1121 and 1124)
+
+New runs and plans enable `binary_div_floor`, `structure_slice_bound_omit` and
+`structure_slice_bound_move` by default (75 default runtime IDs, 94 total IDs).
+Use `--exclude-operators` to exclude individual IDs; `structure_ops` includes
+both slice operators. Candidate counts and capped prefixes can change.
+
+Saved plans retain their concrete operator sets. Create a new plan to investigate
+these new default mutations; existing artifacts require no conversion or new
+session solely for this addition. Schemas, ranking rule version and version floor
+are unchanged. See the [current usage](usage.md#mutation-operators) for applicability.
+
 ## Default missing-value and shared-state mutations
 
-Fresh runs select 72 operators from 91 catalog IDs. The eleven additions are
+At that change, fresh runs selected 72 operators from 91 catalog IDs. The eleven additions were
 `none_truthiness`, `mutable_default_share`, `nonlocal_remove`,
 `yield_from_to_yield`, `mapping_setdefault_to_get`, `bisect_boundary_swap`,
 `deepcopy_to_copy`, `deque_popleft_to_pop`, `gather_return_exceptions`,
-`itertools_take_drop_swap` and `fstring_conversion_swap`. Disable all eleven to recover
-the preceding 61-operator selection:
+`itertools_take_drop_swap` and `fstring_conversion_swap`. The following exclusions described the preceding 61-operator selection at that
+revision; the newer slice/division defaults above are additional:
 
 ```text
 --exclude-operators none_truthiness,mutable_default_share,nonlocal_remove,yield_from_to_yield,mapping_setdefault_to_get,bisect_boundary_swap,deepcopy_to_copy,deque_popleft_to_pop,gather_return_exceptions,itertools_take_drop_swap,fstring_conversion_swap

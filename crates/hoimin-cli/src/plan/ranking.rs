@@ -305,7 +305,9 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::StructureSortReverse
         | MutationOperator::StructureSortedReversed
         | MutationOperator::StructureIndexNeighbor
-        | MutationOperator::StructureSliceNeighbor => RankingReasonCode::Behavioral,
+        | MutationOperator::StructureSliceNeighbor
+        | MutationOperator::StructureSliceBoundOmit
+        | MutationOperator::StructureSliceBoundMove => RankingReasonCode::Behavioral,
         MutationOperator::AugmentedToAssignment
         | MutationOperator::IntegerLiteralNeighbor
         | MutationOperator::BinaryAddSub
@@ -313,6 +315,7 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::BinaryMulDiv
         | MutationOperator::AugmentedMulDiv
         | MutationOperator::BinaryFloorMod
+        | MutationOperator::BinaryDivFloor
         | MutationOperator::AugmentedFloorMod
         | MutationOperator::UnarySign
         | MutationOperator::BitwiseAndOr

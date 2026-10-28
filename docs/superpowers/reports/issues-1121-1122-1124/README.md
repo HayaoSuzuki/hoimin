@@ -1,8 +1,11 @@
 # Slice, division and survivor-directed selection research
 
-## Decisions
+## Research decisions
 
 Research performed on 2026-10-28 against `7c2a7916` on macOS arm64.
+The subsequent [implementation](implementation.md) adds the accepted operators
+on the same branch after the maintainer requested implementation. The comparison
+tables below retain the original research revision and are not new measurements.
 This completes the bounded evaluations requested by
 [#1121](https://github.com/HayaoSuzuki/hoimin/issues/1121),
 [#1122](https://github.com/HayaoSuzuki/hoimin/issues/1122) and
@@ -15,8 +18,8 @@ This completes the bounded evaluations requested by
 | 1124 | Limited adoption as a follow-up candidate: one `/` / `//` exchange operator, enabled by default when implemented | Fraction checks expose gaps missed by existing arithmetic mutants; conversion/domain equivalence and unsupported overloads limit applicability |
 
 "Limited adoption" means the evidence warrants a minimal, restricted implementation
-follow-up. **This branch does not add product operators, selectors, defaults,
-saved formats or scheduler behavior.** No broad effectiveness claim follows from
+follow-up. The research-only commit `1efe26f5` added no product operators,
+selectors, defaults, saved formats or scheduler behavior. No broad effectiveness claim follows from
 these independently constructed examples. Per the maintainer's clarification,
 adopted operators should be enabled by default and removable using
 `--exclude-operators`; restrictions apply to syntax and semantics, not to an
@@ -42,6 +45,11 @@ The adapter runs only this fixed ASCII corpus; it is not a public CLI or an
 arbitrary-project test runner. The build verifies the current Rust source;
 candidate generation for proposed operators is an independent Python AST/token
 prototype, not a tested Ruff implementation.
+
+Use a binary built from the recorded research revision to reproduce its exact
+candidate pools. Replaying with the implementation revision changes the default
+full-profile control because the three new operators are now enabled. The
+recorded files are preserved, rather than overwritten with that different run.
 
 Every original passes both weak and strengthened checks. A useful lead requires
 a weak survivor and an assertion failure under a separately stated requirement.

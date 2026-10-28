@@ -9,7 +9,7 @@ use std::path::Path;
 
 use hoimin_cli::plan::PlanManifest;
 
-const OPT_OUT_OPERATORS: [&str; 29] = [
+const OPT_OUT_OPERATORS: [&str; 32] = [
     "statement_delete",
     "integer_literal_neighbor",
     "augmented_to_assignment",
@@ -39,6 +39,9 @@ const OPT_OUT_OPERATORS: [&str; 29] = [
     "gather_return_exceptions",
     "itertools_take_drop_swap",
     "fstring_conversion_swap",
+    "binary_div_floor",
+    "structure_slice_bound_omit",
+    "structure_slice_bound_move",
 ];
 
 async fn cli(args: Vec<OsString>) -> serde_json::Value {
@@ -54,6 +57,10 @@ async fn cli(args: Vec<OsString>) -> serde_json::Value {
 }
 
 async fn plan(root: &Path, selection: &[&str]) -> serde_json::Value {
+    plan_with_check(root, selection, "import subject").await
+}
+
+async fn plan_with_check(root: &Path, selection: &[&str], check: &str) -> serde_json::Value {
     let python = std::env::var_os("HOIMIN_OPERATOR_TEST_PYTHON").unwrap_or_else(|| {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../.venv")
@@ -76,13 +83,7 @@ async fn plan(root: &Path, selection: &[&str]) -> serde_json::Value {
         "--allow-best-effort-memory".into(),
     ];
     args.extend(selection.iter().map(OsString::from));
-    args.extend([
-        "--".into(),
-        python,
-        "-B".into(),
-        "-c".into(),
-        "import subject".into(),
-    ]);
+    args.extend(["--".into(), python, "-B".into(), "-c".into(), check.into()]);
     cli(args).await
 }
 
@@ -105,10 +106,13 @@ async fn current_default_candidates_are_individually_excludable() {
     let source = format!(
         "{source}\nimport asyncio\nimport itertools\nasync def grouped(task): return await asyncio.gather(task)\nprefix=itertools.takewhile(lambda x:x<3,(1,2,3))\nrepresentation=f'{{queue!r}}'\n"
     );
+    let source = format!(
+        "{source}\ndef bounds(xs, a, b): return xs[a:b]\ndef prefix(xs, n): return xs[:n]\ndef divide(a, b): return a / b\n"
+    );
     std::fs::write(root.path().join("subject.py"), &source).unwrap();
     let default = plan(root.path(), &[]).await;
     let manifest: PlanManifest = serde_json::from_value(default.clone()).unwrap();
-    assert_eq!(manifest.normalized_config.operators.names().len(), 72);
+    assert_eq!(manifest.normalized_config.operators.names().len(), 75);
     let candidates = default["candidates"].as_array().unwrap();
     for original in ["Decimal(x)", "Decimal.from_float(x)", "HTTPStatus(x)"] {
         assert!(
@@ -177,6 +181,83 @@ async fn explicit_subset_exclusions_do_not_add_default_candidates() {
     assert_eq!(candidates[0]["operator"], "compare_eq_ne");
     assert_eq!(candidates[0]["original"], "==");
     assert_eq!(candidates[0]["replacement"], "!=");
+}
+
+#[tokio::test]
+async fn slice_and_division_plans_verify_independent_behavioral_checks() {
+    let cases = [
+        (
+            "structure_slice_bound_omit",
+            "def cut(xs, a, b): return xs[a:b]\n",
+            "assert cut([], 1, 3) == []",
+            "assert cut([10, 20, 30, 40], 1, 3) == [20, 30]",
+            2,
+        ),
+        (
+            "structure_slice_bound_move",
+            "def cut(xs, n): return xs[:n]\n",
+            "assert cut([], 2) == []",
+            "assert cut([10, 20, 30, 40], 2) == [10, 20]",
+            1,
+        ),
+        (
+            "structure_slice_bound_move",
+            "def cut(xs, n): return xs[n:]\n",
+            "assert cut([], 2) == []",
+            "assert cut([10, 20, 30, 40], 2) == [30, 40]",
+            1,
+        ),
+        (
+            "binary_div_floor",
+            "def divide(a, b): return a / b\n",
+            "assert divide(12, 3) == 4",
+            "assert divide(7, 2) == 3.5\nassert divide(-7, 2) == -3.5",
+            1,
+        ),
+        (
+            "binary_div_floor",
+            "def divide(a, b): return a // b\n",
+            "assert divide(12, 3) == 4",
+            "assert divide(7, 2) == 3\nassert divide(-7, 2) == -4",
+            1,
+        ),
+    ];
+    for (operator, source, weak, strong, count) in cases {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("subject.py"), source).unwrap();
+        for (check, killed, survived) in [(weak, 0, count), (strong, count, 0)] {
+            let manifest = plan_with_check(
+                root.path(),
+                &["--operators", operator],
+                &format!("from subject import *\n{check}"),
+            )
+            .await;
+            assert_eq!(manifest["candidates"].as_array().unwrap().len(), count);
+            let path = root.path().join("plan.json");
+            std::fs::write(&path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+            let report = cli(vec![
+                "hoimin".into(),
+                "verify".into(),
+                path.into_os_string(),
+                "--top".into(),
+                "100".into(),
+            ])
+            .await;
+            assert_eq!(
+                report["baseline"]["termination"]["Exit"], 0,
+                "{operator}: {check}"
+            );
+            assert_eq!(report["summary"]["complete"], true);
+            assert_eq!(report["summary"]["counts"]["killed"], killed);
+            assert_eq!(report["summary"]["counts"]["survived"], survived);
+            assert_eq!(report["summary"]["counts"]["error"], 0);
+            assert_eq!(report["summary"]["counts"]["not_run"], 0);
+        }
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("subject.py")).unwrap(),
+            source
+        );
+    }
 }
 
 #[tokio::test]

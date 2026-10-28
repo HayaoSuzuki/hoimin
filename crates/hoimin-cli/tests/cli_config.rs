@@ -66,7 +66,7 @@ fn native_mutation_config(
     }
 }
 
-const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 72] = [
+const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 75] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -139,6 +139,9 @@ const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 72] = [
     "gather_return_exceptions",
     "itertools_take_drop_swap",
     "fstring_conversion_swap",
+    "binary_div_floor",
+    "structure_slice_bound_omit",
+    "structure_slice_bound_move",
 ];
 
 #[test]
@@ -203,6 +206,9 @@ fn usage_documents_all_mutation_operator_ids_and_selector_families() {
         "type_dict_mapping",
         "type_iterable_iterator",
         "type_sequence_iterable",
+        "binary_div_floor",
+        "structure_slice_bound_omit",
+        "structure_slice_bound_move",
         "type_nullable",
         "type_collections",
         "type_iterables",
@@ -210,8 +216,8 @@ fn usage_documents_all_mutation_operator_ids_and_selector_families() {
         assert!(usage.contains(name), "usage reference is missing {name}");
     }
     for expected in [
-        "72 default runtime operators",
-        "91 operator IDs",
+        "75 default runtime operators",
+        "94 operator IDs",
         "collection_ops",
         "structure_ops",
         "bitwise_ops",
@@ -1530,6 +1536,8 @@ fn collection_operator_flags_expand_families_and_preserve_runtime_default() {
                 "structure_sorted_reversed",
                 "structure_index_neighbor",
                 "structure_slice_neighbor",
+                "structure_slice_bound_omit",
+                "structure_slice_bound_move",
             ][..],
         ),
         (

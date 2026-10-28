@@ -17,6 +17,9 @@ use proptest::prelude::*;
 use ruff_python_parser::parse_module;
 use std::fmt::Write as _;
 
+#[path = "rust/slice_division_tests.rs"]
+mod slice_division_tests;
+
 const BINDING_FLOW_CORPUS: &str =
     include_str!("../../../../formal/HoiminOracle/corpus/binding-flow-joins.jsonl");
 
@@ -3840,7 +3843,7 @@ fn structure_candidates_skip_type_annotation_expressions() {
 }
 
 #[test]
-fn structure_excludes_unsupported_shapes_and_receivers() {
+fn existing_structure_families_exclude_unsupported_shapes_and_receivers() {
     let source = concat!(
         "items.append(*values)\n",
         "items.append(value=value)\n",
@@ -3873,13 +3876,22 @@ fn structure_excludes_unsupported_shapes_and_receivers() {
         "reversed(iterable=items)\n",
         "sorted(*items)\n",
     );
-    let output = analyze(source);
+    // A variable-bound slice remains unsupported by numeric neighbors and
+    // mapping-get replacement; the dedicated bound operators support it.
+    let output = analyze_selected(
+        &[
+            "structure_append_extend",
+            "structure_mapping_get_subscript",
+            "structure_sort_reverse",
+            "structure_sorted_reversed",
+            "structure_index_neighbor",
+            "structure_slice_neighbor",
+        ],
+        source,
+    );
 
     assert!(
-        output
-            .candidates
-            .iter()
-            .all(|candidate| !candidate.operator.as_str().starts_with("structure_")),
+        output.candidates.is_empty(),
         "unexpected structural candidates: {:#?}",
         output.candidates
     );

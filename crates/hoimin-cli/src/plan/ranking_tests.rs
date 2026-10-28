@@ -622,6 +622,8 @@ const BEHAVIORAL_OPERATORS: &[&str] = &[
     "structure_sorted_reversed",
     "structure_index_neighbor",
     "structure_slice_neighbor",
+    "structure_slice_bound_omit",
+    "structure_slice_bound_move",
 ];
 const ARITHMETIC_OPERATORS: &[&str] = &[
     "integer_literal_neighbor",
@@ -631,6 +633,7 @@ const ARITHMETIC_OPERATORS: &[&str] = &[
     "binary_mul_div",
     "augmented_mul_div",
     "binary_floor_mod",
+    "binary_div_floor",
     "augmented_floor_mod",
     "unary_sign",
     "bitwise_and_or",
@@ -688,7 +691,7 @@ fn ranking_assigns_every_operator_to_its_fixed_category() {
         .into_iter()
         .filter_map(MutationOperator::from_name)
         .collect::<BTreeSet<_>>();
-    assert_eq!(tested.len(), 91);
+    assert_eq!(tested.len(), 94);
     assert_eq!(tested, canonical);
 
     for (operators, expected) in categories {
