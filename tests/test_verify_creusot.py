@@ -10,9 +10,10 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 import pytest
 
@@ -20,6 +21,33 @@ from tools import verify_creusot
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = ROOT / "tests/fixtures/creusot" / "x86_64-unknown-linux-gnu/first"
+
+
+class InterruptingWaitLock:
+    """Inject SIGTERM at acquisition and expose a stranded lock without hanging."""
+
+    def __init__(self, lock: threading.Lock) -> None:
+        self.lock = lock
+        self.fired = False
+
+    def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:  # noqa: FBT001, FBT002 -- Match Lock.acquire.
+        if self.fired and self.lock.locked():
+            message = "SIGTERM escaped while the subprocess wait lock was held"
+            raise AssertionError(message)
+        acquired = self.lock.acquire(blocking, timeout)
+        if acquired and not self.fired:
+            self.fired = True
+            os.kill(os.getpid(), signal.SIGTERM)
+        return acquired
+
+    def release(self) -> None:
+        self.lock.release()
+
+    def __enter__(self) -> None:
+        self.acquire()
+
+    def __exit__(self, *_args: object) -> None:
+        self.release()
 
 
 def test_runner_source_parses_for_pinned_container_python() -> None:
@@ -482,6 +510,59 @@ def test_command_child_receives_sigterm(tmp_path: Path) -> None:
             process.kill()
             process.wait(timeout=10)
         cleanup_child(child_pid)
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="POSIX subprocess wait lock")
+def test_sigterm_during_wait_lock_acquisition_does_not_deadlock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_popen = subprocess.Popen
+    spawned: list[tuple[subprocess.Popen[bytes], threading.Lock]] = []
+
+    def start(  # noqa: PLR0913 -- Forward the real Popen call with typed arguments.
+        command: list[str],
+        *,
+        cwd: Path,
+        stdout: BinaryIO,
+        stderr: int,
+        start_new_session: bool,
+        env: dict[str, str],
+    ) -> subprocess.Popen[bytes]:
+        process = original_popen(
+            command,
+            cwd=cwd,
+            stdout=stdout,
+            stderr=stderr,
+            start_new_session=start_new_session,
+            env=env,
+        )
+        # The CPython wait implementation takes this lock before its try/finally.
+        lock = getattr(process, "_waitpid_lock")  # noqa: B009 -- POSIX implementation detail
+        assert isinstance(lock, threading.Lock)
+        spawned.append((process, lock))
+        monkeypatch.setattr(process, "_waitpid_lock", InterruptingWaitLock(lock))
+        return process
+
+    monkeypatch.setattr(verify_creusot.subprocess, "Popen", start)
+    try:
+        with pytest.raises(verify_creusot.ProofError, match="SIGTERM"):
+            verify_creusot.run_command(
+                [sys.executable, "-c", "import time; time.sleep(20)"],
+                cwd=tmp_path,
+                log_path=tmp_path / "wait-lock.log",
+                deadline=time.monotonic() + 5,
+            )
+        assert spawned
+        assert all(process.returncode is not None for process, _ in spawned)
+    finally:
+        for process, lock in spawned:
+            if lock.locked():
+                lock.release()
+            monkeypatch.setattr(process, "_waitpid_lock", lock)
+            if process.poll() is None:
+                verify_creusot.terminate_session(process.pid)
+                process.wait(timeout=5)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX SIGTERM is required")

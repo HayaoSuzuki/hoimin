@@ -17,6 +17,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from types import FrameType
 from typing import Any
@@ -380,6 +381,25 @@ def terminate_session(session_id: int) -> None:
             return
 
 
+def wait_for_command(
+    process: subprocess.Popen[bytes],
+    deadline: float,
+    stop_requested: Callable[[], bool],
+) -> int:
+    """Observe SIGTERM only outside Popen's internal wait-lock critical section."""
+    while True:
+        require(not stop_requested(), "proof runner interrupted by SIGTERM")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(process.args, 0)
+        try:
+            code = process.wait(timeout=min(remaining, 0.1))
+        except subprocess.TimeoutExpired:
+            continue
+        require(not stop_requested(), "proof runner interrupted by SIGTERM")
+        return code
+
+
 def run_command(
     command: list[str], *, cwd: Path, log_path: Path, deadline: float
 ) -> dict[str, Any]:
@@ -393,19 +413,14 @@ def run_command(
         ["/usr/bin/time", "-v", "-o", str(time_file), *command] if measured else command
     )
     stopping = False
-    launching = True
     pending_stop = False
 
     def request_stop(_signum: int, _frame: FrameType | None) -> None:
-        nonlocal stopping, pending_stop
+        nonlocal pending_stop
         if stopping:
             return
-        if launching:
-            pending_stop = True
-            return
-        stopping = True
-        detail = "proof runner interrupted by SIGTERM"
-        raise ProofError(detail)
+        # Raising here can strand Popen's wait lock during its acquisition.
+        pending_stop = True
 
     old_handler = signal.getsignal(signal.SIGTERM)
     process = None
@@ -424,9 +439,7 @@ def run_command(
                     "CARGO_TARGET_DIR": "/tmp/hoimin-issue999-target",  # noqa: S108 -- task-owned directory
                 },
             )
-            launching = False
-            require(not pending_stop, "proof runner interrupted by SIGTERM")
-            code = process.wait(timeout=remaining)
+            code = wait_for_command(process, deadline, lambda: pending_stop)
     except BaseException as error:
         stopping = True  # Repeated SIGTERM must not interrupt owned cleanup.
         if process is not None and process.returncode is None:
@@ -438,6 +451,7 @@ def run_command(
         raise
     finally:
         signal.signal(signal.SIGTERM, old_handler)
+    require(not pending_stop, "proof runner interrupted by SIGTERM")
     elapsed = time.monotonic() - before
     require(code == 0, f"command failed ({code}): {' '.join(command)}; see {log_path}")
     peak_rss = None
