@@ -1,0 +1,4142 @@
+{
+  "python": "3.15.0b1 (main, May 10 2026, 19:21:12) [Clang 22.1.3 ]",
+  "platform": "macOS-15.7.7-arm64-arm-64bit-Mach-O",
+  "binary_sha256": "779237a134d3cb4b1657d595fa52fea5748c6ae529fc96d819ae484afe0115b0",
+  "source_revision": "7c2a79168c8698f85cc90d7efd6bf16a183e08b3",
+  "controls": {
+    "excluded_slices": [
+      "step",
+      "multidimensional",
+      "call_bound",
+      "empty",
+      "store",
+      "delete",
+      "annotation"
+    ],
+    "non_survivor_statuses_do_not_suppress": true,
+    "division_evaluates_operands_once_left_to_right": true,
+    "division_result_types_differ": true,
+    "negative_fraction_checks_kill_each_exchange": true,
+    "negative_slice_bound_checked": true
+  },
+  "operator_comparisons": [
+    {
+      "name": "window",
+      "issue": 1121,
+      "requirement": "Return exactly the half-open requested window; exclude both outside regions.",
+      "source": "def cut(xs, a, b):\n    return xs[a:b]\n",
+      "weak_check": "assert cut([], 1, 3) == []",
+      "strong_check": "assert cut([10, 20, 30, 40], 1, 3) == [20, 30]",
+      "budget_per_family": 2,
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.015871458017500117
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.0164440420048777
+        }
+      },
+      "existing": {
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      },
+      "existing_full": {
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      },
+      "proposed": {
+        "pool_count": 2,
+        "executed": 2,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 33,
+              "length": 3,
+              "original": "a:b",
+              "replacement": ":b",
+              "line": 2,
+              "operator": "omit_lower"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016109249991131946
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01654037501430139
+            }
+          },
+          {
+            "candidate": {
+              "id": "probe-2",
+              "start": 33,
+              "length": 3,
+              "original": "a:b",
+              "replacement": "a:",
+              "line": 2,
+              "operator": "omit_upper"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01617304197861813
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01645395898958668
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "prefix",
+      "issue": 1121,
+      "requirement": "Return the first n records in order, not the remaining records.",
+      "source": "def cut(xs, n):\n    return xs[:n]\n",
+      "weak_check": "assert cut([], 2) == []",
+      "strong_check": "assert cut([10, 20, 30, 40], 2) == [10, 20]",
+      "budget_per_family": 2,
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.01611645900993608
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.015906040993286297
+        }
+      },
+      "existing": {
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      },
+      "existing_full": {
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      },
+      "proposed": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 30,
+              "length": 2,
+              "original": ":n",
+              "replacement": "n:",
+              "line": 2,
+              "operator": "move_bound"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01576783397467807
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01684966598986648
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "suffix",
+      "issue": 1121,
+      "requirement": "Skip the first n records and retain the remaining records.",
+      "source": "def cut(xs, n):\n    return xs[n:]\n",
+      "weak_check": "assert cut([], 2) == []",
+      "strong_check": "assert cut([10, 20, 30, 40], 2) == [30, 40]",
+      "budget_per_family": 2,
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.01736104197334498
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.016202333994442597
+        }
+      },
+      "existing": {
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      },
+      "existing_full": {
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      },
+      "proposed": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 30,
+              "length": 2,
+              "original": "n:",
+              "replacement": ":n",
+              "line": 2,
+              "operator": "move_bound"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.015033250005217269
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.014285124983871356
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "literal_window",
+      "issue": 1121,
+      "requirement": "Return the second and third records; existing numeric neighbors may suffice.",
+      "source": "def cut(xs):\n    return xs[1:3]\n",
+      "weak_check": "assert cut([]) == []",
+      "strong_check": "assert cut([10, 20, 30, 40]) == [20, 30]",
+      "budget_per_family": 2,
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.013821041997289285
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.013865375018212944
+        }
+      },
+      "existing": {
+        "pool_count": 4,
+        "executed": 2,
+        "unexecuted": 2,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_3820039e6171eefa120b7d2f0013da5926d73df47924ba7e67bcdeb332ac10c0",
+              "start": 27,
+              "length": 1,
+              "original": "1",
+              "replacement": "2",
+              "line": 2,
+              "operator": "structure_slice_neighbor"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.014352166006574407
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.014020750008057803
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_807d745faa9c424eecd9cbdad172eb46ff407d9008c96d2bef0abc2edaa6c579",
+              "start": 27,
+              "length": 1,
+              "original": "1",
+              "replacement": "0",
+              "line": 2,
+              "operator": "structure_slice_neighbor"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.014129374991171062
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.013623917009681463
+            }
+          }
+        ]
+      },
+      "existing_full": {
+        "pool_count": 4,
+        "executed": 2,
+        "unexecuted": 2,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_3820039e6171eefa120b7d2f0013da5926d73df47924ba7e67bcdeb332ac10c0",
+              "start": 27,
+              "length": 1,
+              "original": "1",
+              "replacement": "2",
+              "line": 2,
+              "operator": "structure_slice_neighbor"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01414870799635537
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.013551207986893132
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_807d745faa9c424eecd9cbdad172eb46ff407d9008c96d2bef0abc2edaa6c579",
+              "start": 27,
+              "length": 1,
+              "original": "1",
+              "replacement": "0",
+              "line": 2,
+              "operator": "structure_slice_neighbor"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01482199999736622
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.014920207991963252
+            }
+          }
+        ]
+      },
+      "proposed": {
+        "pool_count": 2,
+        "executed": 2,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 27,
+              "length": 3,
+              "original": "1:3",
+              "replacement": ":3",
+              "line": 2,
+              "operator": "omit_lower"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.014725125016411766
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.014856416994007304
+            }
+          },
+          {
+            "candidate": {
+              "id": "probe-2",
+              "start": 27,
+              "length": 3,
+              "original": "1:3",
+              "replacement": "1:",
+              "line": 2,
+              "operator": "omit_upper"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.015041040984215215
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.014365708018885925
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "clipped_full",
+      "issue": 1121,
+      "requirement": "For input lists of length at most 3, return every record (bounded domain).",
+      "source": "def cut(xs):\n    return xs[0:99]\n",
+      "weak_check": "assert cut([]) == []",
+      "strong_check": "assert cut([10, 20, 30]) == [10, 20, 30]",
+      "budget_per_family": 2,
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.014619458990637213
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.015249042015057057
+        }
+      },
+      "existing": {
+        "pool_count": 3,
+        "executed": 2,
+        "unexecuted": 1,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_20a470e1af5cbf2ffed2019db34cc8bd314382961e804a97acad1c3c747f6fd8",
+              "start": 27,
+              "length": 1,
+              "original": "0",
+              "replacement": "1",
+              "line": 2,
+              "operator": "structure_slice_neighbor"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01599250000435859
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016155582998180762
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_2cb0a7cfa137c9428acbafb00b45a75f76c3f50324f145cd193a5b165a992d8d",
+              "start": 29,
+              "length": 2,
+              "original": "99",
+              "replacement": "98",
+              "line": 2,
+              "operator": "structure_slice_neighbor"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01571408298332244
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01585595798678696
+            }
+          }
+        ]
+      },
+      "existing_full": {
+        "pool_count": 3,
+        "executed": 2,
+        "unexecuted": 1,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_20a470e1af5cbf2ffed2019db34cc8bd314382961e804a97acad1c3c747f6fd8",
+              "start": 27,
+              "length": 1,
+              "original": "0",
+              "replacement": "1",
+              "line": 2,
+              "operator": "structure_slice_neighbor"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01742874999763444
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.015858833998208866
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_2cb0a7cfa137c9428acbafb00b45a75f76c3f50324f145cd193a5b165a992d8d",
+              "start": 29,
+              "length": 2,
+              "original": "99",
+              "replacement": "98",
+              "line": 2,
+              "operator": "structure_slice_neighbor"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01610141701530665
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.015790582983754575
+            }
+          }
+        ]
+      },
+      "proposed": {
+        "pool_count": 2,
+        "executed": 2,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 27,
+              "length": 4,
+              "original": "0:99",
+              "replacement": ":99",
+              "line": 2,
+              "operator": "omit_lower"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016709957999410108
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01658895899890922
+            }
+          },
+          {
+            "candidate": {
+              "id": "probe-2",
+              "start": 27,
+              "length": 4,
+              "original": "0:99",
+              "replacement": "0:",
+              "line": 2,
+              "operator": "omit_upper"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.015786165982717648
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.015656417002901435
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "true_division",
+      "issue": 1124,
+      "requirement": "Return the signed real quotient, retaining fractional parts.",
+      "source": "def divide(a, b):\n    return a / b\n",
+      "weak_check": "assert divide(12, 3) == 4",
+      "strong_check": "assert divide(7, 2) == 3.5\nassert divide(-7, 2) == -3.5",
+      "budget_per_family": 2,
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.015750541992019862
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.01586333301384002
+        }
+      },
+      "existing": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_86821e20e001d77338a8eae81fee4879ef2fc00ad92f336a77bf9915b692c348",
+              "start": 31,
+              "length": 1,
+              "original": "/",
+              "replacement": "*",
+              "line": 2,
+              "operator": "binary_mul_div"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016238167008850724
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016485583008034155
+            }
+          }
+        ]
+      },
+      "existing_full": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_86821e20e001d77338a8eae81fee4879ef2fc00ad92f336a77bf9915b692c348",
+              "start": 31,
+              "length": 1,
+              "original": "/",
+              "replacement": "*",
+              "line": 2,
+              "operator": "binary_mul_div"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01663858297979459
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016106916998978704
+            }
+          }
+        ]
+      },
+      "proposed": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 31,
+              "length": 1,
+              "original": "/",
+              "replacement": "//",
+              "line": 2,
+              "operator": "exchange_division"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016167541005415842
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016605291981250048
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "floor_division",
+      "issue": 1124,
+      "requirement": "Count complete units by flooring toward negative infinity, not truncating.",
+      "source": "def divide(a, b):\n    return a // b\n",
+      "weak_check": "assert divide(12, 3) == 4",
+      "strong_check": "assert divide(7, 2) == 3\nassert divide(-7, 2) == -4",
+      "budget_per_family": 2,
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.016611874976661056
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.016947500000242144
+        }
+      },
+      "existing": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_94e8fe44f36507969f7df5a7805b3694f8187894859fabfab9d171fc265fbef6",
+              "start": 31,
+              "length": 2,
+              "original": "//",
+              "replacement": "%",
+              "line": 2,
+              "operator": "binary_floor_mod"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01738875001319684
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.017079749988624826
+            }
+          }
+        ]
+      },
+      "existing_full": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_94e8fe44f36507969f7df5a7805b3694f8187894859fabfab9d171fc265fbef6",
+              "start": 31,
+              "length": 2,
+              "original": "//",
+              "replacement": "%",
+              "line": 2,
+              "operator": "binary_floor_mod"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.017111082997871563
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016712957993149757
+            }
+          }
+        ]
+      },
+      "proposed": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 31,
+              "length": 2,
+              "original": "//",
+              "replacement": "/",
+              "line": 2,
+              "operator": "exchange_division"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01683208398753777
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01668612498906441
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "nonnegative_truncation",
+      "issue": 1124,
+      "requirement": "Inputs are nonnegative small integers and positive divisors; return complete units.",
+      "source": "def divide(a, b):\n    return int(a / b)\n",
+      "weak_check": "assert divide(12, 3) == 4",
+      "strong_check": "assert divide(7, 2) == 3\nassert divide(0, 2) == 0",
+      "budget_per_family": 2,
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.0166566249972675
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.016677832987625152
+        }
+      },
+      "existing": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_ed425a7154434872f814b3edf42a07506e43c898ab3ce23e48ce52b59a176882",
+              "start": 35,
+              "length": 1,
+              "original": "/",
+              "replacement": "*",
+              "line": 2,
+              "operator": "binary_mul_div"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01645870800712146
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.017812999984016642
+            }
+          }
+        ]
+      },
+      "existing_full": {
+        "pool_count": 2,
+        "executed": 2,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_d47b5e0311fb2b704f5bd435b49169eea6444a49f67a43a4ea755ec76b6afb80",
+              "start": 29,
+              "length": 10,
+              "original": "int(a / b)",
+              "replacement": "(a / b)",
+              "line": 2,
+              "operator": "conversion_call_remove"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.017335290991468355
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01694166599190794
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_ed425a7154434872f814b3edf42a07506e43c898ab3ce23e48ce52b59a176882",
+              "start": 35,
+              "length": 1,
+              "original": "/",
+              "replacement": "*",
+              "line": 2,
+              "operator": "binary_mul_div"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016969042015261948
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.017287958995439112
+            }
+          }
+        ]
+      },
+      "proposed": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 35,
+              "length": 1,
+              "original": "/",
+              "replacement": "//",
+              "line": 2,
+              "operator": "exchange_division"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016596959001617506
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.0160890830156859
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "overload_unsupported",
+      "issue": 1124,
+      "requirement": "The input protocol requires only __truediv__; __floordiv__ is not promised.",
+      "source": "class OnlyTrue:\n    def __truediv__(self, other):\n        return 2.5\ndef divide(a, b):\n    return a / b\n",
+      "weak_check": "assert divide(OnlyTrue(), 2) == 2.5",
+      "strong_check": "assert divide(OnlyTrue(), 3) == 2.5",
+      "budget_per_family": 2,
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.01584991702111438
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.01611933298408985
+        }
+      },
+      "existing": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_cc89e7909a95649c5e863ebdd069c515000500ea2b127d811d83fa4603129ab7",
+              "start": 100,
+              "length": 1,
+              "original": "/",
+              "replacement": "*",
+              "line": 5,
+              "operator": "binary_mul_div"
+            },
+            "weak": {
+              "verdict": "error",
+              "exception": "TypeError",
+              "elapsed_seconds": 0.01630195800680667
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "TypeError",
+              "elapsed_seconds": 0.01650504200370051
+            }
+          }
+        ]
+      },
+      "existing_full": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_cc89e7909a95649c5e863ebdd069c515000500ea2b127d811d83fa4603129ab7",
+              "start": 100,
+              "length": 1,
+              "original": "/",
+              "replacement": "*",
+              "line": 5,
+              "operator": "binary_mul_div"
+            },
+            "weak": {
+              "verdict": "error",
+              "exception": "TypeError",
+              "elapsed_seconds": 0.016232124995440245
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "TypeError",
+              "elapsed_seconds": 0.01625983399571851
+            }
+          }
+        ]
+      },
+      "proposed": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 100,
+              "length": 1,
+              "original": "/",
+              "replacement": "//",
+              "line": 5,
+              "operator": "exchange_division"
+            },
+            "weak": {
+              "verdict": "error",
+              "exception": "TypeError",
+              "elapsed_seconds": 0.016266999999061227
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "TypeError",
+              "elapsed_seconds": 0.01634112498140894
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "selection": {
+    "source": "def pair(n):\n    return (n + 1, n * 2)\n\ndef floor_units(n):\n    return n // 2\n\ndef offset_value(n):\n    return n + 10\n",
+    "weak_check": "assert pair(0)[1] == 0\nassert floor_units(4) == 2\nassert offset_value(0) == 10\n",
+    "requirements": {
+      "increment": "assert pair(3)[0] == 4",
+      "double": "assert pair(3)[1] == 6",
+      "negative_floor": "assert floor_units(-7) == -4",
+      "offset": "assert offset_value(3) == 13"
+    },
+    "pool_count": 12,
+    "ordered_candidates": [
+      {
+        "id": "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb",
+        "start": 27,
+        "length": 1,
+        "original": "+",
+        "replacement": "-",
+        "line": 2,
+        "operator": "binary_add_sub"
+      },
+      {
+        "id": "m1_8145abed6320e3f9019b75237aec3eee315dd7f047864acdaaa26d74a2a0e9c8",
+        "start": 73,
+        "length": 2,
+        "original": "//",
+        "replacement": "%",
+        "line": 5,
+        "operator": "binary_floor_mod"
+      },
+      {
+        "id": "m1_7ce208d20c09695a27aab051a3dcb14e1d160149cd7ac79ed02cdffa3c4fb0df",
+        "start": 113,
+        "length": 1,
+        "original": "+",
+        "replacement": "-",
+        "line": 8,
+        "operator": "binary_add_sub"
+      },
+      {
+        "id": "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b",
+        "start": 29,
+        "length": 1,
+        "original": "1",
+        "replacement": "(0)",
+        "line": 2,
+        "operator": "integer_literal_neighbor"
+      },
+      {
+        "id": "m1_c28f2f9bf3dfb5f70bb9f20c6c650d80bb9f9e2ce8e6cee36f5c6878b189256d",
+        "start": 76,
+        "length": 1,
+        "original": "2",
+        "replacement": "(1)",
+        "line": 5,
+        "operator": "integer_literal_neighbor"
+      },
+      {
+        "id": "m1_8962a0eab9774ef05dea49b1a4d95ce14d46af7f41229107f4d071f2f9e7fe07",
+        "start": 115,
+        "length": 2,
+        "original": "10",
+        "replacement": "(9)",
+        "line": 8,
+        "operator": "integer_literal_neighbor"
+      },
+      {
+        "id": "m1_679da703097a8786980aaf43941c4eb5c121725fdcfcba7501791151ec4bd4bb",
+        "start": 29,
+        "length": 1,
+        "original": "1",
+        "replacement": "(2)",
+        "line": 2,
+        "operator": "integer_literal_neighbor"
+      },
+      {
+        "id": "m1_c77fdae4e91ba09b7aeffdb2ddc232ce02aec028d83f34ba65d61e20b33e1069",
+        "start": 76,
+        "length": 1,
+        "original": "2",
+        "replacement": "(3)",
+        "line": 5,
+        "operator": "integer_literal_neighbor"
+      },
+      {
+        "id": "m1_f6f7e8d87419509bad9bbd7b951542c25d318a1f2172a5933755f5c4e3ff627c",
+        "start": 115,
+        "length": 2,
+        "original": "10",
+        "replacement": "(11)",
+        "line": 8,
+        "operator": "integer_literal_neighbor"
+      },
+      {
+        "id": "m1_59d5ecb61f00d9110c709327e8bbddd573ca976a13b1f57268b03a359ebf3686",
+        "start": 34,
+        "length": 1,
+        "original": "*",
+        "replacement": "/",
+        "line": 2,
+        "operator": "binary_mul_div"
+      },
+      {
+        "id": "m1_af9b962a1c239a36ae7f21f523dc190bc930b7887c462ced8a500c50c4cbd085",
+        "start": 36,
+        "length": 1,
+        "original": "2",
+        "replacement": "(3)",
+        "line": 2,
+        "operator": "integer_literal_neighbor"
+      },
+      {
+        "id": "m1_b3f00b2dc3e4e3061717c8e01ff7f1cda795d662226c02e9d695d68438580a27",
+        "start": 36,
+        "length": 1,
+        "original": "2",
+        "replacement": "(1)",
+        "line": 2,
+        "operator": "integer_literal_neighbor"
+      }
+    ],
+    "outcomes": {
+      "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb": {
+        "weak": "survived",
+        "requirements": [
+          "increment"
+        ]
+      },
+      "m1_8145abed6320e3f9019b75237aec3eee315dd7f047864acdaaa26d74a2a0e9c8": {
+        "weak": "assertion_failed",
+        "requirements": [
+          "negative_floor"
+        ]
+      },
+      "m1_7ce208d20c09695a27aab051a3dcb14e1d160149cd7ac79ed02cdffa3c4fb0df": {
+        "weak": "assertion_failed",
+        "requirements": [
+          "offset"
+        ]
+      },
+      "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b": {
+        "weak": "survived",
+        "requirements": [
+          "increment"
+        ]
+      },
+      "m1_c28f2f9bf3dfb5f70bb9f20c6c650d80bb9f9e2ce8e6cee36f5c6878b189256d": {
+        "weak": "assertion_failed",
+        "requirements": [
+          "negative_floor"
+        ]
+      },
+      "m1_8962a0eab9774ef05dea49b1a4d95ce14d46af7f41229107f4d071f2f9e7fe07": {
+        "weak": "assertion_failed",
+        "requirements": [
+          "offset"
+        ]
+      },
+      "m1_679da703097a8786980aaf43941c4eb5c121725fdcfcba7501791151ec4bd4bb": {
+        "weak": "survived",
+        "requirements": [
+          "increment"
+        ]
+      },
+      "m1_c77fdae4e91ba09b7aeffdb2ddc232ce02aec028d83f34ba65d61e20b33e1069": {
+        "weak": "assertion_failed",
+        "requirements": [
+          "negative_floor"
+        ]
+      },
+      "m1_f6f7e8d87419509bad9bbd7b951542c25d318a1f2172a5933755f5c4e3ff627c": {
+        "weak": "assertion_failed",
+        "requirements": [
+          "offset"
+        ]
+      },
+      "m1_59d5ecb61f00d9110c709327e8bbddd573ca976a13b1f57268b03a359ebf3686": {
+        "weak": "survived",
+        "requirements": [
+          "double"
+        ]
+      },
+      "m1_af9b962a1c239a36ae7f21f523dc190bc930b7887c462ced8a500c50c4cbd085": {
+        "weak": "survived",
+        "requirements": [
+          "double"
+        ]
+      },
+      "m1_b3f00b2dc3e4e3061717c8e01ff7f1cda795d662226c02e9d695d68438580a27": {
+        "weak": "survived",
+        "requirements": [
+          "double"
+        ]
+      }
+    },
+    "comparisons": {
+      "4": {
+        "line_diverse": {
+          "selected_ids": [
+            "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb",
+            "m1_8145abed6320e3f9019b75237aec3eee315dd7f047864acdaaa26d74a2a0e9c8",
+            "m1_7ce208d20c09695a27aab051a3dcb14e1d160149cd7ac79ed02cdffa3c4fb0df",
+            "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b"
+          ],
+          "deferred_ids": [],
+          "unexecuted_ids": [
+            "m1_c28f2f9bf3dfb5f70bb9f20c6c650d80bb9f9e2ce8e6cee36f5c6878b189256d",
+            "m1_8962a0eab9774ef05dea49b1a4d95ce14d46af7f41229107f4d071f2f9e7fe07",
+            "m1_679da703097a8786980aaf43941c4eb5c121725fdcfcba7501791151ec4bd4bb",
+            "m1_c77fdae4e91ba09b7aeffdb2ddc232ce02aec028d83f34ba65d61e20b33e1069",
+            "m1_f6f7e8d87419509bad9bbd7b951542c25d318a1f2172a5933755f5c4e3ff627c",
+            "m1_59d5ecb61f00d9110c709327e8bbddd573ca976a13b1f57268b03a359ebf3686",
+            "m1_af9b962a1c239a36ae7f21f523dc190bc930b7887c462ced8a500c50c4cbd085",
+            "m1_b3f00b2dc3e4e3061717c8e01ff7f1cda795d662226c02e9d695d68438580a27"
+          ],
+          "executed_count": 4,
+          "useful_requirements": [
+            "increment"
+          ],
+          "useful_survivors": [
+            "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb",
+            "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b"
+          ]
+        },
+        "stop_line": {
+          "selected_ids": [
+            "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb",
+            "m1_8145abed6320e3f9019b75237aec3eee315dd7f047864acdaaa26d74a2a0e9c8",
+            "m1_7ce208d20c09695a27aab051a3dcb14e1d160149cd7ac79ed02cdffa3c4fb0df",
+            "m1_c28f2f9bf3dfb5f70bb9f20c6c650d80bb9f9e2ce8e6cee36f5c6878b189256d"
+          ],
+          "deferred_ids": [
+            "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b"
+          ],
+          "unexecuted_ids": [
+            "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b",
+            "m1_8962a0eab9774ef05dea49b1a4d95ce14d46af7f41229107f4d071f2f9e7fe07",
+            "m1_679da703097a8786980aaf43941c4eb5c121725fdcfcba7501791151ec4bd4bb",
+            "m1_c77fdae4e91ba09b7aeffdb2ddc232ce02aec028d83f34ba65d61e20b33e1069",
+            "m1_f6f7e8d87419509bad9bbd7b951542c25d318a1f2172a5933755f5c4e3ff627c",
+            "m1_59d5ecb61f00d9110c709327e8bbddd573ca976a13b1f57268b03a359ebf3686",
+            "m1_af9b962a1c239a36ae7f21f523dc190bc930b7887c462ced8a500c50c4cbd085",
+            "m1_b3f00b2dc3e4e3061717c8e01ff7f1cda795d662226c02e9d695d68438580a27"
+          ],
+          "executed_count": 4,
+          "useful_requirements": [
+            "increment"
+          ],
+          "useful_survivors": [
+            "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb"
+          ]
+        },
+        "stop_span": {
+          "selected_ids": [
+            "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb",
+            "m1_8145abed6320e3f9019b75237aec3eee315dd7f047864acdaaa26d74a2a0e9c8",
+            "m1_7ce208d20c09695a27aab051a3dcb14e1d160149cd7ac79ed02cdffa3c4fb0df",
+            "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b"
+          ],
+          "deferred_ids": [],
+          "unexecuted_ids": [
+            "m1_c28f2f9bf3dfb5f70bb9f20c6c650d80bb9f9e2ce8e6cee36f5c6878b189256d",
+            "m1_8962a0eab9774ef05dea49b1a4d95ce14d46af7f41229107f4d071f2f9e7fe07",
+            "m1_679da703097a8786980aaf43941c4eb5c121725fdcfcba7501791151ec4bd4bb",
+            "m1_c77fdae4e91ba09b7aeffdb2ddc232ce02aec028d83f34ba65d61e20b33e1069",
+            "m1_f6f7e8d87419509bad9bbd7b951542c25d318a1f2172a5933755f5c4e3ff627c",
+            "m1_59d5ecb61f00d9110c709327e8bbddd573ca976a13b1f57268b03a359ebf3686",
+            "m1_af9b962a1c239a36ae7f21f523dc190bc930b7887c462ced8a500c50c4cbd085",
+            "m1_b3f00b2dc3e4e3061717c8e01ff7f1cda795d662226c02e9d695d68438580a27"
+          ],
+          "executed_count": 4,
+          "useful_requirements": [
+            "increment"
+          ],
+          "useful_survivors": [
+            "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb",
+            "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b"
+          ]
+        }
+      },
+      "8": {
+        "line_diverse": {
+          "selected_ids": [
+            "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb",
+            "m1_8145abed6320e3f9019b75237aec3eee315dd7f047864acdaaa26d74a2a0e9c8",
+            "m1_7ce208d20c09695a27aab051a3dcb14e1d160149cd7ac79ed02cdffa3c4fb0df",
+            "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b",
+            "m1_c28f2f9bf3dfb5f70bb9f20c6c650d80bb9f9e2ce8e6cee36f5c6878b189256d",
+            "m1_8962a0eab9774ef05dea49b1a4d95ce14d46af7f41229107f4d071f2f9e7fe07",
+            "m1_679da703097a8786980aaf43941c4eb5c121725fdcfcba7501791151ec4bd4bb",
+            "m1_c77fdae4e91ba09b7aeffdb2ddc232ce02aec028d83f34ba65d61e20b33e1069"
+          ],
+          "deferred_ids": [],
+          "unexecuted_ids": [
+            "m1_f6f7e8d87419509bad9bbd7b951542c25d318a1f2172a5933755f5c4e3ff627c",
+            "m1_59d5ecb61f00d9110c709327e8bbddd573ca976a13b1f57268b03a359ebf3686",
+            "m1_af9b962a1c239a36ae7f21f523dc190bc930b7887c462ced8a500c50c4cbd085",
+            "m1_b3f00b2dc3e4e3061717c8e01ff7f1cda795d662226c02e9d695d68438580a27"
+          ],
+          "executed_count": 8,
+          "useful_requirements": [
+            "increment"
+          ],
+          "useful_survivors": [
+            "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb",
+            "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b",
+            "m1_679da703097a8786980aaf43941c4eb5c121725fdcfcba7501791151ec4bd4bb"
+          ]
+        },
+        "stop_line": {
+          "selected_ids": [
+            "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb",
+            "m1_8145abed6320e3f9019b75237aec3eee315dd7f047864acdaaa26d74a2a0e9c8",
+            "m1_7ce208d20c09695a27aab051a3dcb14e1d160149cd7ac79ed02cdffa3c4fb0df",
+            "m1_c28f2f9bf3dfb5f70bb9f20c6c650d80bb9f9e2ce8e6cee36f5c6878b189256d",
+            "m1_8962a0eab9774ef05dea49b1a4d95ce14d46af7f41229107f4d071f2f9e7fe07",
+            "m1_c77fdae4e91ba09b7aeffdb2ddc232ce02aec028d83f34ba65d61e20b33e1069",
+            "m1_f6f7e8d87419509bad9bbd7b951542c25d318a1f2172a5933755f5c4e3ff627c"
+          ],
+          "deferred_ids": [
+            "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b",
+            "m1_679da703097a8786980aaf43941c4eb5c121725fdcfcba7501791151ec4bd4bb",
+            "m1_59d5ecb61f00d9110c709327e8bbddd573ca976a13b1f57268b03a359ebf3686",
+            "m1_af9b962a1c239a36ae7f21f523dc190bc930b7887c462ced8a500c50c4cbd085",
+            "m1_b3f00b2dc3e4e3061717c8e01ff7f1cda795d662226c02e9d695d68438580a27"
+          ],
+          "unexecuted_ids": [
+            "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b",
+            "m1_679da703097a8786980aaf43941c4eb5c121725fdcfcba7501791151ec4bd4bb",
+            "m1_59d5ecb61f00d9110c709327e8bbddd573ca976a13b1f57268b03a359ebf3686",
+            "m1_af9b962a1c239a36ae7f21f523dc190bc930b7887c462ced8a500c50c4cbd085",
+            "m1_b3f00b2dc3e4e3061717c8e01ff7f1cda795d662226c02e9d695d68438580a27"
+          ],
+          "executed_count": 7,
+          "useful_requirements": [
+            "increment"
+          ],
+          "useful_survivors": [
+            "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb"
+          ]
+        },
+        "stop_span": {
+          "selected_ids": [
+            "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb",
+            "m1_8145abed6320e3f9019b75237aec3eee315dd7f047864acdaaa26d74a2a0e9c8",
+            "m1_7ce208d20c09695a27aab051a3dcb14e1d160149cd7ac79ed02cdffa3c4fb0df",
+            "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b",
+            "m1_c28f2f9bf3dfb5f70bb9f20c6c650d80bb9f9e2ce8e6cee36f5c6878b189256d",
+            "m1_8962a0eab9774ef05dea49b1a4d95ce14d46af7f41229107f4d071f2f9e7fe07",
+            "m1_c77fdae4e91ba09b7aeffdb2ddc232ce02aec028d83f34ba65d61e20b33e1069",
+            "m1_f6f7e8d87419509bad9bbd7b951542c25d318a1f2172a5933755f5c4e3ff627c"
+          ],
+          "deferred_ids": [
+            "m1_679da703097a8786980aaf43941c4eb5c121725fdcfcba7501791151ec4bd4bb"
+          ],
+          "unexecuted_ids": [
+            "m1_679da703097a8786980aaf43941c4eb5c121725fdcfcba7501791151ec4bd4bb",
+            "m1_59d5ecb61f00d9110c709327e8bbddd573ca976a13b1f57268b03a359ebf3686",
+            "m1_af9b962a1c239a36ae7f21f523dc190bc930b7887c462ced8a500c50c4cbd085",
+            "m1_b3f00b2dc3e4e3061717c8e01ff7f1cda795d662226c02e9d695d68438580a27"
+          ],
+          "executed_count": 8,
+          "useful_requirements": [
+            "increment"
+          ],
+          "useful_survivors": [
+            "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb",
+            "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b"
+          ]
+        }
+      },
+      "12": {
+        "line_diverse": {
+          "selected_ids": [
+            "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb",
+            "m1_8145abed6320e3f9019b75237aec3eee315dd7f047864acdaaa26d74a2a0e9c8",
+            "m1_7ce208d20c09695a27aab051a3dcb14e1d160149cd7ac79ed02cdffa3c4fb0df",
+            "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b",
+            "m1_c28f2f9bf3dfb5f70bb9f20c6c650d80bb9f9e2ce8e6cee36f5c6878b189256d",
+            "m1_8962a0eab9774ef05dea49b1a4d95ce14d46af7f41229107f4d071f2f9e7fe07",
+            "m1_679da703097a8786980aaf43941c4eb5c121725fdcfcba7501791151ec4bd4bb",
+            "m1_c77fdae4e91ba09b7aeffdb2ddc232ce02aec028d83f34ba65d61e20b33e1069",
+            "m1_f6f7e8d87419509bad9bbd7b951542c25d318a1f2172a5933755f5c4e3ff627c",
+            "m1_59d5ecb61f00d9110c709327e8bbddd573ca976a13b1f57268b03a359ebf3686",
+            "m1_af9b962a1c239a36ae7f21f523dc190bc930b7887c462ced8a500c50c4cbd085",
+            "m1_b3f00b2dc3e4e3061717c8e01ff7f1cda795d662226c02e9d695d68438580a27"
+          ],
+          "deferred_ids": [],
+          "unexecuted_ids": [],
+          "executed_count": 12,
+          "useful_requirements": [
+            "double",
+            "increment"
+          ],
+          "useful_survivors": [
+            "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb",
+            "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b",
+            "m1_679da703097a8786980aaf43941c4eb5c121725fdcfcba7501791151ec4bd4bb",
+            "m1_59d5ecb61f00d9110c709327e8bbddd573ca976a13b1f57268b03a359ebf3686",
+            "m1_af9b962a1c239a36ae7f21f523dc190bc930b7887c462ced8a500c50c4cbd085",
+            "m1_b3f00b2dc3e4e3061717c8e01ff7f1cda795d662226c02e9d695d68438580a27"
+          ]
+        },
+        "stop_line": {
+          "selected_ids": [
+            "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb",
+            "m1_8145abed6320e3f9019b75237aec3eee315dd7f047864acdaaa26d74a2a0e9c8",
+            "m1_7ce208d20c09695a27aab051a3dcb14e1d160149cd7ac79ed02cdffa3c4fb0df",
+            "m1_c28f2f9bf3dfb5f70bb9f20c6c650d80bb9f9e2ce8e6cee36f5c6878b189256d",
+            "m1_8962a0eab9774ef05dea49b1a4d95ce14d46af7f41229107f4d071f2f9e7fe07",
+            "m1_c77fdae4e91ba09b7aeffdb2ddc232ce02aec028d83f34ba65d61e20b33e1069",
+            "m1_f6f7e8d87419509bad9bbd7b951542c25d318a1f2172a5933755f5c4e3ff627c"
+          ],
+          "deferred_ids": [
+            "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b",
+            "m1_679da703097a8786980aaf43941c4eb5c121725fdcfcba7501791151ec4bd4bb",
+            "m1_59d5ecb61f00d9110c709327e8bbddd573ca976a13b1f57268b03a359ebf3686",
+            "m1_af9b962a1c239a36ae7f21f523dc190bc930b7887c462ced8a500c50c4cbd085",
+            "m1_b3f00b2dc3e4e3061717c8e01ff7f1cda795d662226c02e9d695d68438580a27"
+          ],
+          "unexecuted_ids": [
+            "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b",
+            "m1_679da703097a8786980aaf43941c4eb5c121725fdcfcba7501791151ec4bd4bb",
+            "m1_59d5ecb61f00d9110c709327e8bbddd573ca976a13b1f57268b03a359ebf3686",
+            "m1_af9b962a1c239a36ae7f21f523dc190bc930b7887c462ced8a500c50c4cbd085",
+            "m1_b3f00b2dc3e4e3061717c8e01ff7f1cda795d662226c02e9d695d68438580a27"
+          ],
+          "executed_count": 7,
+          "useful_requirements": [
+            "increment"
+          ],
+          "useful_survivors": [
+            "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb"
+          ]
+        },
+        "stop_span": {
+          "selected_ids": [
+            "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb",
+            "m1_8145abed6320e3f9019b75237aec3eee315dd7f047864acdaaa26d74a2a0e9c8",
+            "m1_7ce208d20c09695a27aab051a3dcb14e1d160149cd7ac79ed02cdffa3c4fb0df",
+            "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b",
+            "m1_c28f2f9bf3dfb5f70bb9f20c6c650d80bb9f9e2ce8e6cee36f5c6878b189256d",
+            "m1_8962a0eab9774ef05dea49b1a4d95ce14d46af7f41229107f4d071f2f9e7fe07",
+            "m1_c77fdae4e91ba09b7aeffdb2ddc232ce02aec028d83f34ba65d61e20b33e1069",
+            "m1_f6f7e8d87419509bad9bbd7b951542c25d318a1f2172a5933755f5c4e3ff627c",
+            "m1_59d5ecb61f00d9110c709327e8bbddd573ca976a13b1f57268b03a359ebf3686",
+            "m1_af9b962a1c239a36ae7f21f523dc190bc930b7887c462ced8a500c50c4cbd085"
+          ],
+          "deferred_ids": [
+            "m1_679da703097a8786980aaf43941c4eb5c121725fdcfcba7501791151ec4bd4bb",
+            "m1_b3f00b2dc3e4e3061717c8e01ff7f1cda795d662226c02e9d695d68438580a27"
+          ],
+          "unexecuted_ids": [
+            "m1_679da703097a8786980aaf43941c4eb5c121725fdcfcba7501791151ec4bd4bb",
+            "m1_b3f00b2dc3e4e3061717c8e01ff7f1cda795d662226c02e9d695d68438580a27"
+          ],
+          "executed_count": 10,
+          "useful_requirements": [
+            "double",
+            "increment"
+          ],
+          "useful_survivors": [
+            "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb",
+            "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b",
+            "m1_59d5ecb61f00d9110c709327e8bbddd573ca976a13b1f57268b03a359ebf3686",
+            "m1_af9b962a1c239a36ae7f21f523dc190bc930b7887c462ced8a500c50c4cbd085"
+          ]
+        }
+      }
+    },
+    "cli_verify_runs_at_budget_12": {
+      "line_diverse": [
+        {
+          "elapsed_seconds": 0.3458128329948522,
+          "counts": {
+            "killed": 6,
+            "survived": 6,
+            "timeout": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "error": 0,
+            "not_run": 0,
+            "inconclusive": 0,
+            "score": 0.5
+          },
+          "disk": {
+            "configured_max_owned_bytes": 8589934592,
+            "configured_min_free_bytes": 10737418240,
+            "peak_owned_bytes": 19607,
+            "minimum_available_bytes": 176172797952,
+            "filesystems": [
+              {
+                "key": "16777234",
+                "start_available_bytes": 176172863488,
+                "minimum_available_bytes": 176172797952,
+                "end_available_bytes": 176172863488,
+                "available_bytes_change": 0
+              }
+            ],
+            "sample_count": 29,
+            "maximum_measurement_ms": 0,
+            "enforcement": [
+              {
+                "kind": "portable_guard"
+              }
+            ],
+            "stop": null,
+            "cleanup": [
+              {
+                "root_id": "execution",
+                "owner": "hoimin",
+                "status": "clean",
+                "examined_entries": 69,
+                "removed_entries": 25,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              },
+              {
+                "root_id": "delivery",
+                "owner": "hoimin",
+                "status": "cleanup_after_delivery",
+                "examined_entries": 0,
+                "removed_entries": 0,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              }
+            ],
+            "removed_logical_bytes": 19363,
+            "janitor": {
+              "inspected_roots": 13,
+              "reclaimed_roots": 0,
+              "absent_roots": 0,
+              "preserved_roots": 13,
+              "preserved_by_reason": {
+                "young": 13
+              },
+              "unresolved_roots": 0,
+              "unresolved_by_reason": {},
+              "examined_entries": 0,
+              "removed_entries": 0,
+              "scan": {
+                "directory_scan_complete": true,
+                "observed_matching_entries": 13,
+                "selected_roots": 13,
+                "uninspected_selected_roots": 0,
+                "selection_omitted_observed_entries": 0,
+                "selection_limited": false,
+                "cursor_deferred": false,
+                "stop_reason": null
+              },
+              "details": [
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-0912e1c0-0d51-4648-a663-e484bc25b948: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-3f2a91fc-33e9-4241-8975-239f7bc60f66: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-41ba639c-415e-4b82-a6f2-0ca249860825: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-4ab78e83-96aa-48b9-8500-4c6860160bc2: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5372ba6c-5173-4e89-aeb8-426c82351dfc: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5babebd7-9523-4a9f-96e6-b2766ac9c978: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-6b4acdcd-8d7c-49bd-b425-863f8a279ac5: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-77aea660-c589-4b68-b05b-5806a6b7b10f: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-956066e9-c7e0-43c2-b8db-115cc64979a1: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-a1650527-f1be-4ff4-b756-2521cf8e9d0c: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-b17801ed-669c-4b98-aae3-26b7d3d978ba: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-ce1b355d-0c5b-4aff-b9a0-e8a6adc5af53: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-e2627541-e798-4dc1-9710-f91a58ac6b29: stale threshold not reached"
+                }
+              ],
+              "detail_omissions": {
+                "normal_details": 0,
+                "issue_details": 0,
+                "truncated_details": 0
+              }
+            }
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb",
+              "status": "survived"
+            },
+            {
+              "id": "m1_8145abed6320e3f9019b75237aec3eee315dd7f047864acdaaa26d74a2a0e9c8",
+              "status": "killed"
+            },
+            {
+              "id": "m1_7ce208d20c09695a27aab051a3dcb14e1d160149cd7ac79ed02cdffa3c4fb0df",
+              "status": "killed"
+            },
+            {
+              "id": "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b",
+              "status": "survived"
+            },
+            {
+              "id": "m1_c28f2f9bf3dfb5f70bb9f20c6c650d80bb9f9e2ce8e6cee36f5c6878b189256d",
+              "status": "killed"
+            },
+            {
+              "id": "m1_8962a0eab9774ef05dea49b1a4d95ce14d46af7f41229107f4d071f2f9e7fe07",
+              "status": "killed"
+            },
+            {
+              "id": "m1_679da703097a8786980aaf43941c4eb5c121725fdcfcba7501791151ec4bd4bb",
+              "status": "survived"
+            },
+            {
+              "id": "m1_c77fdae4e91ba09b7aeffdb2ddc232ce02aec028d83f34ba65d61e20b33e1069",
+              "status": "killed"
+            },
+            {
+              "id": "m1_f6f7e8d87419509bad9bbd7b951542c25d318a1f2172a5933755f5c4e3ff627c",
+              "status": "killed"
+            },
+            {
+              "id": "m1_59d5ecb61f00d9110c709327e8bbddd573ca976a13b1f57268b03a359ebf3686",
+              "status": "survived"
+            },
+            {
+              "id": "m1_af9b962a1c239a36ae7f21f523dc190bc930b7887c462ced8a500c50c4cbd085",
+              "status": "survived"
+            },
+            {
+              "id": "m1_b3f00b2dc3e4e3061717c8e01ff7f1cda795d662226c02e9d695d68438580a27",
+              "status": "survived"
+            }
+          ]
+        }
+      ],
+      "stop_line": [
+        {
+          "elapsed_seconds": 0.08667933300603181,
+          "counts": {
+            "killed": 0,
+            "survived": 1,
+            "timeout": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "error": 0,
+            "not_run": 0,
+            "inconclusive": 0,
+            "score": 0.0
+          },
+          "disk": {
+            "configured_max_owned_bytes": 8589934592,
+            "configured_min_free_bytes": 10737418240,
+            "peak_owned_bytes": 17649,
+            "minimum_available_bytes": 176172822528,
+            "filesystems": [
+              {
+                "key": "16777234",
+                "start_available_bytes": 176172863488,
+                "minimum_available_bytes": 176172822528,
+                "end_available_bytes": 176172863488,
+                "available_bytes_change": 0
+              }
+            ],
+            "sample_count": 7,
+            "maximum_measurement_ms": 0,
+            "enforcement": [
+              {
+                "kind": "portable_guard"
+              }
+            ],
+            "stop": null,
+            "cleanup": [
+              {
+                "root_id": "execution",
+                "owner": "hoimin",
+                "status": "clean",
+                "examined_entries": 46,
+                "removed_entries": 14,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              },
+              {
+                "root_id": "delivery",
+                "owner": "hoimin",
+                "status": "cleanup_after_delivery",
+                "examined_entries": 0,
+                "removed_entries": 0,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              }
+            ],
+            "removed_logical_bytes": 17407,
+            "janitor": {
+              "inspected_roots": 13,
+              "reclaimed_roots": 0,
+              "absent_roots": 0,
+              "preserved_roots": 13,
+              "preserved_by_reason": {
+                "young": 13
+              },
+              "unresolved_roots": 0,
+              "unresolved_by_reason": {},
+              "examined_entries": 0,
+              "removed_entries": 0,
+              "scan": {
+                "directory_scan_complete": true,
+                "observed_matching_entries": 13,
+                "selected_roots": 13,
+                "uninspected_selected_roots": 0,
+                "selection_omitted_observed_entries": 0,
+                "selection_limited": false,
+                "cursor_deferred": false,
+                "stop_reason": null
+              },
+              "details": [
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-0912e1c0-0d51-4648-a663-e484bc25b948: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-3f2a91fc-33e9-4241-8975-239f7bc60f66: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-41ba639c-415e-4b82-a6f2-0ca249860825: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-4ab78e83-96aa-48b9-8500-4c6860160bc2: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5372ba6c-5173-4e89-aeb8-426c82351dfc: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5babebd7-9523-4a9f-96e6-b2766ac9c978: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-6b4acdcd-8d7c-49bd-b425-863f8a279ac5: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-77aea660-c589-4b68-b05b-5806a6b7b10f: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-956066e9-c7e0-43c2-b8db-115cc64979a1: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-a1650527-f1be-4ff4-b756-2521cf8e9d0c: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-b17801ed-669c-4b98-aae3-26b7d3d978ba: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-ce1b355d-0c5b-4aff-b9a0-e8a6adc5af53: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-e2627541-e798-4dc1-9710-f91a58ac6b29: stale threshold not reached"
+                }
+              ],
+              "detail_omissions": {
+                "normal_details": 0,
+                "issue_details": 0,
+                "truncated_details": 0
+              }
+            }
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb",
+              "status": "survived"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.1099400419916492,
+          "counts": {
+            "killed": 1,
+            "survived": 0,
+            "timeout": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "error": 0,
+            "not_run": 0,
+            "inconclusive": 0,
+            "score": 1.0
+          },
+          "disk": {
+            "configured_max_owned_bytes": 8589934592,
+            "configured_min_free_bytes": 10737418240,
+            "peak_owned_bytes": 17973,
+            "minimum_available_bytes": 176172818432,
+            "filesystems": [
+              {
+                "key": "16777234",
+                "start_available_bytes": 176172863488,
+                "minimum_available_bytes": 176172818432,
+                "end_available_bytes": 176172863488,
+                "available_bytes_change": 0
+              }
+            ],
+            "sample_count": 7,
+            "maximum_measurement_ms": 0,
+            "enforcement": [
+              {
+                "kind": "portable_guard"
+              }
+            ],
+            "stop": null,
+            "cleanup": [
+              {
+                "root_id": "execution",
+                "owner": "hoimin",
+                "status": "clean",
+                "examined_entries": 56,
+                "removed_entries": 14,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              },
+              {
+                "root_id": "delivery",
+                "owner": "hoimin",
+                "status": "cleanup_after_delivery",
+                "examined_entries": 0,
+                "removed_entries": 0,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              }
+            ],
+            "removed_logical_bytes": 17731,
+            "janitor": {
+              "inspected_roots": 13,
+              "reclaimed_roots": 0,
+              "absent_roots": 0,
+              "preserved_roots": 13,
+              "preserved_by_reason": {
+                "young": 13
+              },
+              "unresolved_roots": 0,
+              "unresolved_by_reason": {},
+              "examined_entries": 0,
+              "removed_entries": 0,
+              "scan": {
+                "directory_scan_complete": true,
+                "observed_matching_entries": 13,
+                "selected_roots": 13,
+                "uninspected_selected_roots": 0,
+                "selection_omitted_observed_entries": 0,
+                "selection_limited": false,
+                "cursor_deferred": false,
+                "stop_reason": null
+              },
+              "details": [
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-0912e1c0-0d51-4648-a663-e484bc25b948: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-3f2a91fc-33e9-4241-8975-239f7bc60f66: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-41ba639c-415e-4b82-a6f2-0ca249860825: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-4ab78e83-96aa-48b9-8500-4c6860160bc2: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5372ba6c-5173-4e89-aeb8-426c82351dfc: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5babebd7-9523-4a9f-96e6-b2766ac9c978: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-6b4acdcd-8d7c-49bd-b425-863f8a279ac5: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-77aea660-c589-4b68-b05b-5806a6b7b10f: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-956066e9-c7e0-43c2-b8db-115cc64979a1: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-a1650527-f1be-4ff4-b756-2521cf8e9d0c: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-b17801ed-669c-4b98-aae3-26b7d3d978ba: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-ce1b355d-0c5b-4aff-b9a0-e8a6adc5af53: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-e2627541-e798-4dc1-9710-f91a58ac6b29: stale threshold not reached"
+                }
+              ],
+              "detail_omissions": {
+                "normal_details": 0,
+                "issue_details": 0,
+                "truncated_details": 0
+              }
+            }
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_8145abed6320e3f9019b75237aec3eee315dd7f047864acdaaa26d74a2a0e9c8",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.11016887499135919,
+          "counts": {
+            "killed": 1,
+            "survived": 0,
+            "timeout": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "error": 0,
+            "not_run": 0,
+            "inconclusive": 0,
+            "score": 1.0
+          },
+          "disk": {
+            "configured_max_owned_bytes": 8589934592,
+            "configured_min_free_bytes": 10737418240,
+            "peak_owned_bytes": 17977,
+            "minimum_available_bytes": 176172818432,
+            "filesystems": [
+              {
+                "key": "16777234",
+                "start_available_bytes": 176172863488,
+                "minimum_available_bytes": 176172818432,
+                "end_available_bytes": 176172863488,
+                "available_bytes_change": 0
+              }
+            ],
+            "sample_count": 7,
+            "maximum_measurement_ms": 0,
+            "enforcement": [
+              {
+                "kind": "portable_guard"
+              }
+            ],
+            "stop": null,
+            "cleanup": [
+              {
+                "root_id": "execution",
+                "owner": "hoimin",
+                "status": "clean",
+                "examined_entries": 41,
+                "removed_entries": 14,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              },
+              {
+                "root_id": "delivery",
+                "owner": "hoimin",
+                "status": "cleanup_after_delivery",
+                "examined_entries": 0,
+                "removed_entries": 0,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              }
+            ],
+            "removed_logical_bytes": 17735,
+            "janitor": {
+              "inspected_roots": 13,
+              "reclaimed_roots": 0,
+              "absent_roots": 0,
+              "preserved_roots": 13,
+              "preserved_by_reason": {
+                "young": 13
+              },
+              "unresolved_roots": 0,
+              "unresolved_by_reason": {},
+              "examined_entries": 0,
+              "removed_entries": 0,
+              "scan": {
+                "directory_scan_complete": true,
+                "observed_matching_entries": 13,
+                "selected_roots": 13,
+                "uninspected_selected_roots": 0,
+                "selection_omitted_observed_entries": 0,
+                "selection_limited": false,
+                "cursor_deferred": false,
+                "stop_reason": null
+              },
+              "details": [
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-0912e1c0-0d51-4648-a663-e484bc25b948: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-3f2a91fc-33e9-4241-8975-239f7bc60f66: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-41ba639c-415e-4b82-a6f2-0ca249860825: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-4ab78e83-96aa-48b9-8500-4c6860160bc2: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5372ba6c-5173-4e89-aeb8-426c82351dfc: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5babebd7-9523-4a9f-96e6-b2766ac9c978: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-6b4acdcd-8d7c-49bd-b425-863f8a279ac5: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-77aea660-c589-4b68-b05b-5806a6b7b10f: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-956066e9-c7e0-43c2-b8db-115cc64979a1: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-a1650527-f1be-4ff4-b756-2521cf8e9d0c: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-b17801ed-669c-4b98-aae3-26b7d3d978ba: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-ce1b355d-0c5b-4aff-b9a0-e8a6adc5af53: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-e2627541-e798-4dc1-9710-f91a58ac6b29: stale threshold not reached"
+                }
+              ],
+              "detail_omissions": {
+                "normal_details": 0,
+                "issue_details": 0,
+                "truncated_details": 0
+              }
+            }
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_7ce208d20c09695a27aab051a3dcb14e1d160149cd7ac79ed02cdffa3c4fb0df",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.10472129099071026,
+          "counts": {
+            "killed": 1,
+            "survived": 0,
+            "timeout": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "error": 0,
+            "not_run": 0,
+            "inconclusive": 0,
+            "score": 1.0
+          },
+          "disk": {
+            "configured_max_owned_bytes": 8589934592,
+            "configured_min_free_bytes": 10737418240,
+            "peak_owned_bytes": 17975,
+            "minimum_available_bytes": 176172818432,
+            "filesystems": [
+              {
+                "key": "16777234",
+                "start_available_bytes": 176172863488,
+                "minimum_available_bytes": 176172818432,
+                "end_available_bytes": 176172863488,
+                "available_bytes_change": 0
+              }
+            ],
+            "sample_count": 7,
+            "maximum_measurement_ms": 0,
+            "enforcement": [
+              {
+                "kind": "portable_guard"
+              }
+            ],
+            "stop": null,
+            "cleanup": [
+              {
+                "root_id": "execution",
+                "owner": "hoimin",
+                "status": "clean",
+                "examined_entries": 26,
+                "removed_entries": 14,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              },
+              {
+                "root_id": "delivery",
+                "owner": "hoimin",
+                "status": "cleanup_after_delivery",
+                "examined_entries": 0,
+                "removed_entries": 0,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              }
+            ],
+            "removed_logical_bytes": 17731,
+            "janitor": {
+              "inspected_roots": 13,
+              "reclaimed_roots": 0,
+              "absent_roots": 0,
+              "preserved_roots": 13,
+              "preserved_by_reason": {
+                "young": 13
+              },
+              "unresolved_roots": 0,
+              "unresolved_by_reason": {},
+              "examined_entries": 0,
+              "removed_entries": 0,
+              "scan": {
+                "directory_scan_complete": true,
+                "observed_matching_entries": 13,
+                "selected_roots": 13,
+                "uninspected_selected_roots": 0,
+                "selection_omitted_observed_entries": 0,
+                "selection_limited": false,
+                "cursor_deferred": false,
+                "stop_reason": null
+              },
+              "details": [
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-0912e1c0-0d51-4648-a663-e484bc25b948: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-3f2a91fc-33e9-4241-8975-239f7bc60f66: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-41ba639c-415e-4b82-a6f2-0ca249860825: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-4ab78e83-96aa-48b9-8500-4c6860160bc2: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5372ba6c-5173-4e89-aeb8-426c82351dfc: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5babebd7-9523-4a9f-96e6-b2766ac9c978: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-6b4acdcd-8d7c-49bd-b425-863f8a279ac5: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-77aea660-c589-4b68-b05b-5806a6b7b10f: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-956066e9-c7e0-43c2-b8db-115cc64979a1: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-a1650527-f1be-4ff4-b756-2521cf8e9d0c: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-b17801ed-669c-4b98-aae3-26b7d3d978ba: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-ce1b355d-0c5b-4aff-b9a0-e8a6adc5af53: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-e2627541-e798-4dc1-9710-f91a58ac6b29: stale threshold not reached"
+                }
+              ],
+              "detail_omissions": {
+                "normal_details": 0,
+                "issue_details": 0,
+                "truncated_details": 0
+              }
+            }
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_c28f2f9bf3dfb5f70bb9f20c6c650d80bb9f9e2ce8e6cee36f5c6878b189256d",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.1068122080178,
+          "counts": {
+            "killed": 1,
+            "survived": 0,
+            "timeout": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "error": 0,
+            "not_run": 0,
+            "inconclusive": 0,
+            "score": 1.0
+          },
+          "disk": {
+            "configured_max_owned_bytes": 8589934592,
+            "configured_min_free_bytes": 10737418240,
+            "peak_owned_bytes": 17978,
+            "minimum_available_bytes": 176172814336,
+            "filesystems": [
+              {
+                "key": "16777234",
+                "start_available_bytes": 176172863488,
+                "minimum_available_bytes": 176172814336,
+                "end_available_bytes": 176172863488,
+                "available_bytes_change": 0
+              }
+            ],
+            "sample_count": 7,
+            "maximum_measurement_ms": 0,
+            "enforcement": [
+              {
+                "kind": "portable_guard"
+              }
+            ],
+            "stop": null,
+            "cleanup": [
+              {
+                "root_id": "execution",
+                "owner": "hoimin",
+                "status": "clean",
+                "examined_entries": 56,
+                "removed_entries": 14,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              },
+              {
+                "root_id": "delivery",
+                "owner": "hoimin",
+                "status": "cleanup_after_delivery",
+                "examined_entries": 0,
+                "removed_entries": 0,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              }
+            ],
+            "removed_logical_bytes": 17735,
+            "janitor": {
+              "inspected_roots": 13,
+              "reclaimed_roots": 0,
+              "absent_roots": 0,
+              "preserved_roots": 13,
+              "preserved_by_reason": {
+                "young": 13
+              },
+              "unresolved_roots": 0,
+              "unresolved_by_reason": {},
+              "examined_entries": 0,
+              "removed_entries": 0,
+              "scan": {
+                "directory_scan_complete": true,
+                "observed_matching_entries": 13,
+                "selected_roots": 13,
+                "uninspected_selected_roots": 0,
+                "selection_omitted_observed_entries": 0,
+                "selection_limited": false,
+                "cursor_deferred": false,
+                "stop_reason": null
+              },
+              "details": [
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-0912e1c0-0d51-4648-a663-e484bc25b948: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-3f2a91fc-33e9-4241-8975-239f7bc60f66: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-41ba639c-415e-4b82-a6f2-0ca249860825: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-4ab78e83-96aa-48b9-8500-4c6860160bc2: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5372ba6c-5173-4e89-aeb8-426c82351dfc: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5babebd7-9523-4a9f-96e6-b2766ac9c978: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-6b4acdcd-8d7c-49bd-b425-863f8a279ac5: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-77aea660-c589-4b68-b05b-5806a6b7b10f: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-956066e9-c7e0-43c2-b8db-115cc64979a1: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-a1650527-f1be-4ff4-b756-2521cf8e9d0c: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-b17801ed-669c-4b98-aae3-26b7d3d978ba: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-ce1b355d-0c5b-4aff-b9a0-e8a6adc5af53: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-e2627541-e798-4dc1-9710-f91a58ac6b29: stale threshold not reached"
+                }
+              ],
+              "detail_omissions": {
+                "normal_details": 0,
+                "issue_details": 0,
+                "truncated_details": 0
+              }
+            }
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_8962a0eab9774ef05dea49b1a4d95ce14d46af7f41229107f4d071f2f9e7fe07",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.10156354200444184,
+          "counts": {
+            "killed": 1,
+            "survived": 0,
+            "timeout": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "error": 0,
+            "not_run": 0,
+            "inconclusive": 0,
+            "score": 1.0
+          },
+          "disk": {
+            "configured_max_owned_bytes": 8589934592,
+            "configured_min_free_bytes": 10737418240,
+            "peak_owned_bytes": 17975,
+            "minimum_available_bytes": 176172818432,
+            "filesystems": [
+              {
+                "key": "16777234",
+                "start_available_bytes": 176172863488,
+                "minimum_available_bytes": 176172818432,
+                "end_available_bytes": 176172863488,
+                "available_bytes_change": 0
+              }
+            ],
+            "sample_count": 7,
+            "maximum_measurement_ms": 0,
+            "enforcement": [
+              {
+                "kind": "portable_guard"
+              }
+            ],
+            "stop": null,
+            "cleanup": [
+              {
+                "root_id": "execution",
+                "owner": "hoimin",
+                "status": "clean",
+                "examined_entries": 51,
+                "removed_entries": 14,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              },
+              {
+                "root_id": "delivery",
+                "owner": "hoimin",
+                "status": "cleanup_after_delivery",
+                "examined_entries": 0,
+                "removed_entries": 0,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              }
+            ],
+            "removed_logical_bytes": 17731,
+            "janitor": {
+              "inspected_roots": 13,
+              "reclaimed_roots": 0,
+              "absent_roots": 0,
+              "preserved_roots": 13,
+              "preserved_by_reason": {
+                "young": 13
+              },
+              "unresolved_roots": 0,
+              "unresolved_by_reason": {},
+              "examined_entries": 0,
+              "removed_entries": 0,
+              "scan": {
+                "directory_scan_complete": true,
+                "observed_matching_entries": 13,
+                "selected_roots": 13,
+                "uninspected_selected_roots": 0,
+                "selection_omitted_observed_entries": 0,
+                "selection_limited": false,
+                "cursor_deferred": false,
+                "stop_reason": null
+              },
+              "details": [
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-0912e1c0-0d51-4648-a663-e484bc25b948: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-3f2a91fc-33e9-4241-8975-239f7bc60f66: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-41ba639c-415e-4b82-a6f2-0ca249860825: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-4ab78e83-96aa-48b9-8500-4c6860160bc2: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5372ba6c-5173-4e89-aeb8-426c82351dfc: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5babebd7-9523-4a9f-96e6-b2766ac9c978: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-6b4acdcd-8d7c-49bd-b425-863f8a279ac5: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-77aea660-c589-4b68-b05b-5806a6b7b10f: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-956066e9-c7e0-43c2-b8db-115cc64979a1: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-a1650527-f1be-4ff4-b756-2521cf8e9d0c: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-b17801ed-669c-4b98-aae3-26b7d3d978ba: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-ce1b355d-0c5b-4aff-b9a0-e8a6adc5af53: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-e2627541-e798-4dc1-9710-f91a58ac6b29: stale threshold not reached"
+                }
+              ],
+              "detail_omissions": {
+                "normal_details": 0,
+                "issue_details": 0,
+                "truncated_details": 0
+              }
+            }
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_c77fdae4e91ba09b7aeffdb2ddc232ce02aec028d83f34ba65d61e20b33e1069",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.10019283398287371,
+          "counts": {
+            "killed": 1,
+            "survived": 0,
+            "timeout": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "error": 0,
+            "not_run": 0,
+            "inconclusive": 0,
+            "score": 1.0
+          },
+          "disk": {
+            "configured_max_owned_bytes": 8589934592,
+            "configured_min_free_bytes": 10737418240,
+            "peak_owned_bytes": 17979,
+            "minimum_available_bytes": 176172818432,
+            "filesystems": [
+              {
+                "key": "16777234",
+                "start_available_bytes": 176172863488,
+                "minimum_available_bytes": 176172818432,
+                "end_available_bytes": 176172863488,
+                "available_bytes_change": 0
+              }
+            ],
+            "sample_count": 7,
+            "maximum_measurement_ms": 0,
+            "enforcement": [
+              {
+                "kind": "portable_guard"
+              }
+            ],
+            "stop": null,
+            "cleanup": [
+              {
+                "root_id": "execution",
+                "owner": "hoimin",
+                "status": "clean",
+                "examined_entries": 56,
+                "removed_entries": 14,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              },
+              {
+                "root_id": "delivery",
+                "owner": "hoimin",
+                "status": "cleanup_after_delivery",
+                "examined_entries": 0,
+                "removed_entries": 0,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              }
+            ],
+            "removed_logical_bytes": 17735,
+            "janitor": {
+              "inspected_roots": 13,
+              "reclaimed_roots": 0,
+              "absent_roots": 0,
+              "preserved_roots": 13,
+              "preserved_by_reason": {
+                "young": 13
+              },
+              "unresolved_roots": 0,
+              "unresolved_by_reason": {},
+              "examined_entries": 0,
+              "removed_entries": 0,
+              "scan": {
+                "directory_scan_complete": true,
+                "observed_matching_entries": 13,
+                "selected_roots": 13,
+                "uninspected_selected_roots": 0,
+                "selection_omitted_observed_entries": 0,
+                "selection_limited": false,
+                "cursor_deferred": false,
+                "stop_reason": null
+              },
+              "details": [
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-0912e1c0-0d51-4648-a663-e484bc25b948: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-3f2a91fc-33e9-4241-8975-239f7bc60f66: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-41ba639c-415e-4b82-a6f2-0ca249860825: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-4ab78e83-96aa-48b9-8500-4c6860160bc2: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5372ba6c-5173-4e89-aeb8-426c82351dfc: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5babebd7-9523-4a9f-96e6-b2766ac9c978: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-6b4acdcd-8d7c-49bd-b425-863f8a279ac5: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-77aea660-c589-4b68-b05b-5806a6b7b10f: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-956066e9-c7e0-43c2-b8db-115cc64979a1: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-a1650527-f1be-4ff4-b756-2521cf8e9d0c: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-b17801ed-669c-4b98-aae3-26b7d3d978ba: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-ce1b355d-0c5b-4aff-b9a0-e8a6adc5af53: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-e2627541-e798-4dc1-9710-f91a58ac6b29: stale threshold not reached"
+                }
+              ],
+              "detail_omissions": {
+                "normal_details": 0,
+                "issue_details": 0,
+                "truncated_details": 0
+              }
+            }
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_f6f7e8d87419509bad9bbd7b951542c25d318a1f2172a5933755f5c4e3ff627c",
+              "status": "killed"
+            }
+          ]
+        }
+      ],
+      "stop_span": [
+        {
+          "elapsed_seconds": 0.09381887500057928,
+          "counts": {
+            "killed": 0,
+            "survived": 1,
+            "timeout": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "error": 0,
+            "not_run": 0,
+            "inconclusive": 0,
+            "score": 0.0
+          },
+          "disk": {
+            "configured_max_owned_bytes": 8589934592,
+            "configured_min_free_bytes": 10737418240,
+            "peak_owned_bytes": 17649,
+            "minimum_available_bytes": 176172822528,
+            "filesystems": [
+              {
+                "key": "16777234",
+                "start_available_bytes": 176172863488,
+                "minimum_available_bytes": 176172822528,
+                "end_available_bytes": 176172863488,
+                "available_bytes_change": 0
+              }
+            ],
+            "sample_count": 7,
+            "maximum_measurement_ms": 0,
+            "enforcement": [
+              {
+                "kind": "portable_guard"
+              }
+            ],
+            "stop": null,
+            "cleanup": [
+              {
+                "root_id": "execution",
+                "owner": "hoimin",
+                "status": "clean",
+                "examined_entries": 51,
+                "removed_entries": 14,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              },
+              {
+                "root_id": "delivery",
+                "owner": "hoimin",
+                "status": "cleanup_after_delivery",
+                "examined_entries": 0,
+                "removed_entries": 0,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              }
+            ],
+            "removed_logical_bytes": 17407,
+            "janitor": {
+              "inspected_roots": 13,
+              "reclaimed_roots": 0,
+              "absent_roots": 0,
+              "preserved_roots": 13,
+              "preserved_by_reason": {
+                "young": 13
+              },
+              "unresolved_roots": 0,
+              "unresolved_by_reason": {},
+              "examined_entries": 0,
+              "removed_entries": 0,
+              "scan": {
+                "directory_scan_complete": true,
+                "observed_matching_entries": 13,
+                "selected_roots": 13,
+                "uninspected_selected_roots": 0,
+                "selection_omitted_observed_entries": 0,
+                "selection_limited": false,
+                "cursor_deferred": false,
+                "stop_reason": null
+              },
+              "details": [
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-0912e1c0-0d51-4648-a663-e484bc25b948: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-3f2a91fc-33e9-4241-8975-239f7bc60f66: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-41ba639c-415e-4b82-a6f2-0ca249860825: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-4ab78e83-96aa-48b9-8500-4c6860160bc2: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5372ba6c-5173-4e89-aeb8-426c82351dfc: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5babebd7-9523-4a9f-96e6-b2766ac9c978: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-6b4acdcd-8d7c-49bd-b425-863f8a279ac5: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-77aea660-c589-4b68-b05b-5806a6b7b10f: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-956066e9-c7e0-43c2-b8db-115cc64979a1: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-a1650527-f1be-4ff4-b756-2521cf8e9d0c: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-b17801ed-669c-4b98-aae3-26b7d3d978ba: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-ce1b355d-0c5b-4aff-b9a0-e8a6adc5af53: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-e2627541-e798-4dc1-9710-f91a58ac6b29: stale threshold not reached"
+                }
+              ],
+              "detail_omissions": {
+                "normal_details": 0,
+                "issue_details": 0,
+                "truncated_details": 0
+              }
+            }
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_e9ceba53a5768cea7bdab86d9b6be83b316fd00d5f393f82443caad8e7a92ecb",
+              "status": "survived"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.10472291699261405,
+          "counts": {
+            "killed": 1,
+            "survived": 0,
+            "timeout": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "error": 0,
+            "not_run": 0,
+            "inconclusive": 0,
+            "score": 1.0
+          },
+          "disk": {
+            "configured_max_owned_bytes": 8589934592,
+            "configured_min_free_bytes": 10737418240,
+            "peak_owned_bytes": 17973,
+            "minimum_available_bytes": 176172818432,
+            "filesystems": [
+              {
+                "key": "16777234",
+                "start_available_bytes": 176172863488,
+                "minimum_available_bytes": 176172818432,
+                "end_available_bytes": 176172863488,
+                "available_bytes_change": 0
+              }
+            ],
+            "sample_count": 7,
+            "maximum_measurement_ms": 0,
+            "enforcement": [
+              {
+                "kind": "portable_guard"
+              }
+            ],
+            "stop": null,
+            "cleanup": [
+              {
+                "root_id": "execution",
+                "owner": "hoimin",
+                "status": "clean",
+                "examined_entries": 51,
+                "removed_entries": 14,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              },
+              {
+                "root_id": "delivery",
+                "owner": "hoimin",
+                "status": "cleanup_after_delivery",
+                "examined_entries": 0,
+                "removed_entries": 0,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              }
+            ],
+            "removed_logical_bytes": 17731,
+            "janitor": {
+              "inspected_roots": 13,
+              "reclaimed_roots": 0,
+              "absent_roots": 0,
+              "preserved_roots": 13,
+              "preserved_by_reason": {
+                "young": 13
+              },
+              "unresolved_roots": 0,
+              "unresolved_by_reason": {},
+              "examined_entries": 0,
+              "removed_entries": 0,
+              "scan": {
+                "directory_scan_complete": true,
+                "observed_matching_entries": 13,
+                "selected_roots": 13,
+                "uninspected_selected_roots": 0,
+                "selection_omitted_observed_entries": 0,
+                "selection_limited": false,
+                "cursor_deferred": false,
+                "stop_reason": null
+              },
+              "details": [
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-0912e1c0-0d51-4648-a663-e484bc25b948: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-3f2a91fc-33e9-4241-8975-239f7bc60f66: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-41ba639c-415e-4b82-a6f2-0ca249860825: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-4ab78e83-96aa-48b9-8500-4c6860160bc2: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5372ba6c-5173-4e89-aeb8-426c82351dfc: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5babebd7-9523-4a9f-96e6-b2766ac9c978: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-6b4acdcd-8d7c-49bd-b425-863f8a279ac5: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-77aea660-c589-4b68-b05b-5806a6b7b10f: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-956066e9-c7e0-43c2-b8db-115cc64979a1: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-a1650527-f1be-4ff4-b756-2521cf8e9d0c: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-b17801ed-669c-4b98-aae3-26b7d3d978ba: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-ce1b355d-0c5b-4aff-b9a0-e8a6adc5af53: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-e2627541-e798-4dc1-9710-f91a58ac6b29: stale threshold not reached"
+                }
+              ],
+              "detail_omissions": {
+                "normal_details": 0,
+                "issue_details": 0,
+                "truncated_details": 0
+              }
+            }
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_8145abed6320e3f9019b75237aec3eee315dd7f047864acdaaa26d74a2a0e9c8",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.10271841599023901,
+          "counts": {
+            "killed": 1,
+            "survived": 0,
+            "timeout": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "error": 0,
+            "not_run": 0,
+            "inconclusive": 0,
+            "score": 1.0
+          },
+          "disk": {
+            "configured_max_owned_bytes": 8589934592,
+            "configured_min_free_bytes": 10737418240,
+            "peak_owned_bytes": 17977,
+            "minimum_available_bytes": 176172818432,
+            "filesystems": [
+              {
+                "key": "16777234",
+                "start_available_bytes": 176172863488,
+                "minimum_available_bytes": 176172818432,
+                "end_available_bytes": 176172863488,
+                "available_bytes_change": 0
+              }
+            ],
+            "sample_count": 7,
+            "maximum_measurement_ms": 0,
+            "enforcement": [
+              {
+                "kind": "portable_guard"
+              }
+            ],
+            "stop": null,
+            "cleanup": [
+              {
+                "root_id": "execution",
+                "owner": "hoimin",
+                "status": "clean",
+                "examined_entries": 41,
+                "removed_entries": 14,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              },
+              {
+                "root_id": "delivery",
+                "owner": "hoimin",
+                "status": "cleanup_after_delivery",
+                "examined_entries": 0,
+                "removed_entries": 0,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              }
+            ],
+            "removed_logical_bytes": 17735,
+            "janitor": {
+              "inspected_roots": 13,
+              "reclaimed_roots": 0,
+              "absent_roots": 0,
+              "preserved_roots": 13,
+              "preserved_by_reason": {
+                "young": 13
+              },
+              "unresolved_roots": 0,
+              "unresolved_by_reason": {},
+              "examined_entries": 0,
+              "removed_entries": 0,
+              "scan": {
+                "directory_scan_complete": true,
+                "observed_matching_entries": 13,
+                "selected_roots": 13,
+                "uninspected_selected_roots": 0,
+                "selection_omitted_observed_entries": 0,
+                "selection_limited": false,
+                "cursor_deferred": false,
+                "stop_reason": null
+              },
+              "details": [
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-0912e1c0-0d51-4648-a663-e484bc25b948: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-3f2a91fc-33e9-4241-8975-239f7bc60f66: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-41ba639c-415e-4b82-a6f2-0ca249860825: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-4ab78e83-96aa-48b9-8500-4c6860160bc2: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5372ba6c-5173-4e89-aeb8-426c82351dfc: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5babebd7-9523-4a9f-96e6-b2766ac9c978: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-6b4acdcd-8d7c-49bd-b425-863f8a279ac5: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-77aea660-c589-4b68-b05b-5806a6b7b10f: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-956066e9-c7e0-43c2-b8db-115cc64979a1: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-a1650527-f1be-4ff4-b756-2521cf8e9d0c: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-b17801ed-669c-4b98-aae3-26b7d3d978ba: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-ce1b355d-0c5b-4aff-b9a0-e8a6adc5af53: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-e2627541-e798-4dc1-9710-f91a58ac6b29: stale threshold not reached"
+                }
+              ],
+              "detail_omissions": {
+                "normal_details": 0,
+                "issue_details": 0,
+                "truncated_details": 0
+              }
+            }
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_7ce208d20c09695a27aab051a3dcb14e1d160149cd7ac79ed02cdffa3c4fb0df",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.08698337501846254,
+          "counts": {
+            "killed": 0,
+            "survived": 1,
+            "timeout": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "error": 0,
+            "not_run": 0,
+            "inconclusive": 0,
+            "score": 0.0
+          },
+          "disk": {
+            "configured_max_owned_bytes": 8589934592,
+            "configured_min_free_bytes": 10737418240,
+            "peak_owned_bytes": 17651,
+            "minimum_available_bytes": 176172822528,
+            "filesystems": [
+              {
+                "key": "16777234",
+                "start_available_bytes": 176172863488,
+                "minimum_available_bytes": 176172822528,
+                "end_available_bytes": 176172863488,
+                "available_bytes_change": 0
+              }
+            ],
+            "sample_count": 7,
+            "maximum_measurement_ms": 0,
+            "enforcement": [
+              {
+                "kind": "portable_guard"
+              }
+            ],
+            "stop": null,
+            "cleanup": [
+              {
+                "root_id": "execution",
+                "owner": "hoimin",
+                "status": "clean",
+                "examined_entries": 51,
+                "removed_entries": 14,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              },
+              {
+                "root_id": "delivery",
+                "owner": "hoimin",
+                "status": "cleanup_after_delivery",
+                "examined_entries": 0,
+                "removed_entries": 0,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              }
+            ],
+            "removed_logical_bytes": 17407,
+            "janitor": {
+              "inspected_roots": 13,
+              "reclaimed_roots": 0,
+              "absent_roots": 0,
+              "preserved_roots": 13,
+              "preserved_by_reason": {
+                "young": 13
+              },
+              "unresolved_roots": 0,
+              "unresolved_by_reason": {},
+              "examined_entries": 0,
+              "removed_entries": 0,
+              "scan": {
+                "directory_scan_complete": true,
+                "observed_matching_entries": 13,
+                "selected_roots": 13,
+                "uninspected_selected_roots": 0,
+                "selection_omitted_observed_entries": 0,
+                "selection_limited": false,
+                "cursor_deferred": false,
+                "stop_reason": null
+              },
+              "details": [
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-0912e1c0-0d51-4648-a663-e484bc25b948: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-3f2a91fc-33e9-4241-8975-239f7bc60f66: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-41ba639c-415e-4b82-a6f2-0ca249860825: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-4ab78e83-96aa-48b9-8500-4c6860160bc2: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5372ba6c-5173-4e89-aeb8-426c82351dfc: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5babebd7-9523-4a9f-96e6-b2766ac9c978: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-6b4acdcd-8d7c-49bd-b425-863f8a279ac5: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-77aea660-c589-4b68-b05b-5806a6b7b10f: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-956066e9-c7e0-43c2-b8db-115cc64979a1: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-a1650527-f1be-4ff4-b756-2521cf8e9d0c: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-b17801ed-669c-4b98-aae3-26b7d3d978ba: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-ce1b355d-0c5b-4aff-b9a0-e8a6adc5af53: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-e2627541-e798-4dc1-9710-f91a58ac6b29: stale threshold not reached"
+                }
+              ],
+              "detail_omissions": {
+                "normal_details": 0,
+                "issue_details": 0,
+                "truncated_details": 0
+              }
+            }
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_51ce899a5e66e19c6a16e2471d55ca8a18f328eb2b3e49564d627a1d0e752e6b",
+              "status": "survived"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.10398741700919345,
+          "counts": {
+            "killed": 1,
+            "survived": 0,
+            "timeout": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "error": 0,
+            "not_run": 0,
+            "inconclusive": 0,
+            "score": 1.0
+          },
+          "disk": {
+            "configured_max_owned_bytes": 8589934592,
+            "configured_min_free_bytes": 10737418240,
+            "peak_owned_bytes": 17975,
+            "minimum_available_bytes": 176172818432,
+            "filesystems": [
+              {
+                "key": "16777234",
+                "start_available_bytes": 176172863488,
+                "minimum_available_bytes": 176172818432,
+                "end_available_bytes": 176172863488,
+                "available_bytes_change": 0
+              }
+            ],
+            "sample_count": 7,
+            "maximum_measurement_ms": 0,
+            "enforcement": [
+              {
+                "kind": "portable_guard"
+              }
+            ],
+            "stop": null,
+            "cleanup": [
+              {
+                "root_id": "execution",
+                "owner": "hoimin",
+                "status": "clean",
+                "examined_entries": 36,
+                "removed_entries": 14,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              },
+              {
+                "root_id": "delivery",
+                "owner": "hoimin",
+                "status": "cleanup_after_delivery",
+                "examined_entries": 0,
+                "removed_entries": 0,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              }
+            ],
+            "removed_logical_bytes": 17731,
+            "janitor": {
+              "inspected_roots": 13,
+              "reclaimed_roots": 0,
+              "absent_roots": 0,
+              "preserved_roots": 13,
+              "preserved_by_reason": {
+                "young": 13
+              },
+              "unresolved_roots": 0,
+              "unresolved_by_reason": {},
+              "examined_entries": 0,
+              "removed_entries": 0,
+              "scan": {
+                "directory_scan_complete": true,
+                "observed_matching_entries": 13,
+                "selected_roots": 13,
+                "uninspected_selected_roots": 0,
+                "selection_omitted_observed_entries": 0,
+                "selection_limited": false,
+                "cursor_deferred": false,
+                "stop_reason": null
+              },
+              "details": [
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-0912e1c0-0d51-4648-a663-e484bc25b948: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-3f2a91fc-33e9-4241-8975-239f7bc60f66: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-41ba639c-415e-4b82-a6f2-0ca249860825: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-4ab78e83-96aa-48b9-8500-4c6860160bc2: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5372ba6c-5173-4e89-aeb8-426c82351dfc: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5babebd7-9523-4a9f-96e6-b2766ac9c978: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-6b4acdcd-8d7c-49bd-b425-863f8a279ac5: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-77aea660-c589-4b68-b05b-5806a6b7b10f: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-956066e9-c7e0-43c2-b8db-115cc64979a1: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-a1650527-f1be-4ff4-b756-2521cf8e9d0c: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-b17801ed-669c-4b98-aae3-26b7d3d978ba: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-ce1b355d-0c5b-4aff-b9a0-e8a6adc5af53: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-e2627541-e798-4dc1-9710-f91a58ac6b29: stale threshold not reached"
+                }
+              ],
+              "detail_omissions": {
+                "normal_details": 0,
+                "issue_details": 0,
+                "truncated_details": 0
+              }
+            }
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_c28f2f9bf3dfb5f70bb9f20c6c650d80bb9f9e2ce8e6cee36f5c6878b189256d",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.10012962500331923,
+          "counts": {
+            "killed": 1,
+            "survived": 0,
+            "timeout": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "error": 0,
+            "not_run": 0,
+            "inconclusive": 0,
+            "score": 1.0
+          },
+          "disk": {
+            "configured_max_owned_bytes": 8589934592,
+            "configured_min_free_bytes": 10737418240,
+            "peak_owned_bytes": 17978,
+            "minimum_available_bytes": 176172806144,
+            "filesystems": [
+              {
+                "key": "16777234",
+                "start_available_bytes": 176172863488,
+                "minimum_available_bytes": 176172806144,
+                "end_available_bytes": 176172851200,
+                "available_bytes_change": -12288
+              }
+            ],
+            "sample_count": 7,
+            "maximum_measurement_ms": 0,
+            "enforcement": [
+              {
+                "kind": "portable_guard"
+              }
+            ],
+            "stop": null,
+            "cleanup": [
+              {
+                "root_id": "execution",
+                "owner": "hoimin",
+                "status": "clean",
+                "examined_entries": 56,
+                "removed_entries": 14,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              },
+              {
+                "root_id": "delivery",
+                "owner": "hoimin",
+                "status": "cleanup_after_delivery",
+                "examined_entries": 0,
+                "removed_entries": 0,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              }
+            ],
+            "removed_logical_bytes": 17735,
+            "janitor": {
+              "inspected_roots": 13,
+              "reclaimed_roots": 0,
+              "absent_roots": 0,
+              "preserved_roots": 13,
+              "preserved_by_reason": {
+                "young": 13
+              },
+              "unresolved_roots": 0,
+              "unresolved_by_reason": {},
+              "examined_entries": 0,
+              "removed_entries": 0,
+              "scan": {
+                "directory_scan_complete": true,
+                "observed_matching_entries": 13,
+                "selected_roots": 13,
+                "uninspected_selected_roots": 0,
+                "selection_omitted_observed_entries": 0,
+                "selection_limited": false,
+                "cursor_deferred": false,
+                "stop_reason": null
+              },
+              "details": [
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-0912e1c0-0d51-4648-a663-e484bc25b948: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-3f2a91fc-33e9-4241-8975-239f7bc60f66: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-41ba639c-415e-4b82-a6f2-0ca249860825: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-4ab78e83-96aa-48b9-8500-4c6860160bc2: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5372ba6c-5173-4e89-aeb8-426c82351dfc: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5babebd7-9523-4a9f-96e6-b2766ac9c978: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-6b4acdcd-8d7c-49bd-b425-863f8a279ac5: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-77aea660-c589-4b68-b05b-5806a6b7b10f: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-956066e9-c7e0-43c2-b8db-115cc64979a1: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-a1650527-f1be-4ff4-b756-2521cf8e9d0c: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-b17801ed-669c-4b98-aae3-26b7d3d978ba: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-ce1b355d-0c5b-4aff-b9a0-e8a6adc5af53: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-e2627541-e798-4dc1-9710-f91a58ac6b29: stale threshold not reached"
+                }
+              ],
+              "detail_omissions": {
+                "normal_details": 0,
+                "issue_details": 0,
+                "truncated_details": 0
+              }
+            }
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_8962a0eab9774ef05dea49b1a4d95ce14d46af7f41229107f4d071f2f9e7fe07",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.10753695797757246,
+          "counts": {
+            "killed": 1,
+            "survived": 0,
+            "timeout": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "error": 0,
+            "not_run": 0,
+            "inconclusive": 0,
+            "score": 1.0
+          },
+          "disk": {
+            "configured_max_owned_bytes": 8589934592,
+            "configured_min_free_bytes": 10737418240,
+            "peak_owned_bytes": 17975,
+            "minimum_available_bytes": 176172802048,
+            "filesystems": [
+              {
+                "key": "16777234",
+                "start_available_bytes": 176172851200,
+                "minimum_available_bytes": 176172802048,
+                "end_available_bytes": 176172851200,
+                "available_bytes_change": 0
+              }
+            ],
+            "sample_count": 7,
+            "maximum_measurement_ms": 0,
+            "enforcement": [
+              {
+                "kind": "portable_guard"
+              }
+            ],
+            "stop": null,
+            "cleanup": [
+              {
+                "root_id": "execution",
+                "owner": "hoimin",
+                "status": "clean",
+                "examined_entries": 41,
+                "removed_entries": 14,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              },
+              {
+                "root_id": "delivery",
+                "owner": "hoimin",
+                "status": "cleanup_after_delivery",
+                "examined_entries": 0,
+                "removed_entries": 0,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              }
+            ],
+            "removed_logical_bytes": 17731,
+            "janitor": {
+              "inspected_roots": 13,
+              "reclaimed_roots": 0,
+              "absent_roots": 0,
+              "preserved_roots": 13,
+              "preserved_by_reason": {
+                "young": 13
+              },
+              "unresolved_roots": 0,
+              "unresolved_by_reason": {},
+              "examined_entries": 0,
+              "removed_entries": 0,
+              "scan": {
+                "directory_scan_complete": true,
+                "observed_matching_entries": 13,
+                "selected_roots": 13,
+                "uninspected_selected_roots": 0,
+                "selection_omitted_observed_entries": 0,
+                "selection_limited": false,
+                "cursor_deferred": false,
+                "stop_reason": null
+              },
+              "details": [
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-0912e1c0-0d51-4648-a663-e484bc25b948: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-3f2a91fc-33e9-4241-8975-239f7bc60f66: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-41ba639c-415e-4b82-a6f2-0ca249860825: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-4ab78e83-96aa-48b9-8500-4c6860160bc2: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5372ba6c-5173-4e89-aeb8-426c82351dfc: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5babebd7-9523-4a9f-96e6-b2766ac9c978: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-6b4acdcd-8d7c-49bd-b425-863f8a279ac5: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-77aea660-c589-4b68-b05b-5806a6b7b10f: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-956066e9-c7e0-43c2-b8db-115cc64979a1: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-a1650527-f1be-4ff4-b756-2521cf8e9d0c: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-b17801ed-669c-4b98-aae3-26b7d3d978ba: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-ce1b355d-0c5b-4aff-b9a0-e8a6adc5af53: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-e2627541-e798-4dc1-9710-f91a58ac6b29: stale threshold not reached"
+                }
+              ],
+              "detail_omissions": {
+                "normal_details": 0,
+                "issue_details": 0,
+                "truncated_details": 0
+              }
+            }
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_c77fdae4e91ba09b7aeffdb2ddc232ce02aec028d83f34ba65d61e20b33e1069",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.09996408299775794,
+          "counts": {
+            "killed": 1,
+            "survived": 0,
+            "timeout": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "error": 0,
+            "not_run": 0,
+            "inconclusive": 0,
+            "score": 1.0
+          },
+          "disk": {
+            "configured_max_owned_bytes": 8589934592,
+            "configured_min_free_bytes": 10737418240,
+            "peak_owned_bytes": 17979,
+            "minimum_available_bytes": 176172806144,
+            "filesystems": [
+              {
+                "key": "16777234",
+                "start_available_bytes": 176172851200,
+                "minimum_available_bytes": 176172806144,
+                "end_available_bytes": 176172851200,
+                "available_bytes_change": 0
+              }
+            ],
+            "sample_count": 7,
+            "maximum_measurement_ms": 0,
+            "enforcement": [
+              {
+                "kind": "portable_guard"
+              }
+            ],
+            "stop": null,
+            "cleanup": [
+              {
+                "root_id": "execution",
+                "owner": "hoimin",
+                "status": "clean",
+                "examined_entries": 51,
+                "removed_entries": 14,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              },
+              {
+                "root_id": "delivery",
+                "owner": "hoimin",
+                "status": "cleanup_after_delivery",
+                "examined_entries": 0,
+                "removed_entries": 0,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              }
+            ],
+            "removed_logical_bytes": 17735,
+            "janitor": {
+              "inspected_roots": 13,
+              "reclaimed_roots": 0,
+              "absent_roots": 0,
+              "preserved_roots": 13,
+              "preserved_by_reason": {
+                "young": 13
+              },
+              "unresolved_roots": 0,
+              "unresolved_by_reason": {},
+              "examined_entries": 0,
+              "removed_entries": 0,
+              "scan": {
+                "directory_scan_complete": true,
+                "observed_matching_entries": 13,
+                "selected_roots": 13,
+                "uninspected_selected_roots": 0,
+                "selection_omitted_observed_entries": 0,
+                "selection_limited": false,
+                "cursor_deferred": false,
+                "stop_reason": null
+              },
+              "details": [
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-0912e1c0-0d51-4648-a663-e484bc25b948: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-3f2a91fc-33e9-4241-8975-239f7bc60f66: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-41ba639c-415e-4b82-a6f2-0ca249860825: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-4ab78e83-96aa-48b9-8500-4c6860160bc2: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5372ba6c-5173-4e89-aeb8-426c82351dfc: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5babebd7-9523-4a9f-96e6-b2766ac9c978: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-6b4acdcd-8d7c-49bd-b425-863f8a279ac5: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-77aea660-c589-4b68-b05b-5806a6b7b10f: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-956066e9-c7e0-43c2-b8db-115cc64979a1: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-a1650527-f1be-4ff4-b756-2521cf8e9d0c: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-b17801ed-669c-4b98-aae3-26b7d3d978ba: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-ce1b355d-0c5b-4aff-b9a0-e8a6adc5af53: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-e2627541-e798-4dc1-9710-f91a58ac6b29: stale threshold not reached"
+                }
+              ],
+              "detail_omissions": {
+                "normal_details": 0,
+                "issue_details": 0,
+                "truncated_details": 0
+              }
+            }
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_f6f7e8d87419509bad9bbd7b951542c25d318a1f2172a5933755f5c4e3ff627c",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.09294141602003947,
+          "counts": {
+            "killed": 0,
+            "survived": 1,
+            "timeout": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "error": 0,
+            "not_run": 0,
+            "inconclusive": 0,
+            "score": 0.0
+          },
+          "disk": {
+            "configured_max_owned_bytes": 8589934592,
+            "configured_min_free_bytes": 10737418240,
+            "peak_owned_bytes": 17649,
+            "minimum_available_bytes": 176172830720,
+            "filesystems": [
+              {
+                "key": "16777234",
+                "start_available_bytes": 176172875776,
+                "minimum_available_bytes": 176172830720,
+                "end_available_bytes": 176172871680,
+                "available_bytes_change": -4096
+              }
+            ],
+            "sample_count": 7,
+            "maximum_measurement_ms": 0,
+            "enforcement": [
+              {
+                "kind": "portable_guard"
+              }
+            ],
+            "stop": null,
+            "cleanup": [
+              {
+                "root_id": "execution",
+                "owner": "hoimin",
+                "status": "clean",
+                "examined_entries": 56,
+                "removed_entries": 14,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              },
+              {
+                "root_id": "delivery",
+                "owner": "hoimin",
+                "status": "cleanup_after_delivery",
+                "examined_entries": 0,
+                "removed_entries": 0,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              }
+            ],
+            "removed_logical_bytes": 17407,
+            "janitor": {
+              "inspected_roots": 13,
+              "reclaimed_roots": 0,
+              "absent_roots": 0,
+              "preserved_roots": 13,
+              "preserved_by_reason": {
+                "young": 13
+              },
+              "unresolved_roots": 0,
+              "unresolved_by_reason": {},
+              "examined_entries": 0,
+              "removed_entries": 0,
+              "scan": {
+                "directory_scan_complete": true,
+                "observed_matching_entries": 13,
+                "selected_roots": 13,
+                "uninspected_selected_roots": 0,
+                "selection_omitted_observed_entries": 0,
+                "selection_limited": false,
+                "cursor_deferred": false,
+                "stop_reason": null
+              },
+              "details": [
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-0912e1c0-0d51-4648-a663-e484bc25b948: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-3f2a91fc-33e9-4241-8975-239f7bc60f66: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-41ba639c-415e-4b82-a6f2-0ca249860825: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-4ab78e83-96aa-48b9-8500-4c6860160bc2: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5372ba6c-5173-4e89-aeb8-426c82351dfc: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5babebd7-9523-4a9f-96e6-b2766ac9c978: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-6b4acdcd-8d7c-49bd-b425-863f8a279ac5: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-77aea660-c589-4b68-b05b-5806a6b7b10f: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-956066e9-c7e0-43c2-b8db-115cc64979a1: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-a1650527-f1be-4ff4-b756-2521cf8e9d0c: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-b17801ed-669c-4b98-aae3-26b7d3d978ba: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-ce1b355d-0c5b-4aff-b9a0-e8a6adc5af53: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-e2627541-e798-4dc1-9710-f91a58ac6b29: stale threshold not reached"
+                }
+              ],
+              "detail_omissions": {
+                "normal_details": 0,
+                "issue_details": 0,
+                "truncated_details": 0
+              }
+            }
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_59d5ecb61f00d9110c709327e8bbddd573ca976a13b1f57268b03a359ebf3686",
+              "status": "survived"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.08669708401430398,
+          "counts": {
+            "killed": 0,
+            "survived": 1,
+            "timeout": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "error": 0,
+            "not_run": 0,
+            "inconclusive": 0,
+            "score": 0.0
+          },
+          "disk": {
+            "configured_max_owned_bytes": 8589934592,
+            "configured_min_free_bytes": 10737418240,
+            "peak_owned_bytes": 17651,
+            "minimum_available_bytes": 176172830720,
+            "filesystems": [
+              {
+                "key": "16777234",
+                "start_available_bytes": 176172875776,
+                "minimum_available_bytes": 176172830720,
+                "end_available_bytes": 176172871680,
+                "available_bytes_change": -4096
+              }
+            ],
+            "sample_count": 7,
+            "maximum_measurement_ms": 0,
+            "enforcement": [
+              {
+                "kind": "portable_guard"
+              }
+            ],
+            "stop": null,
+            "cleanup": [
+              {
+                "root_id": "execution",
+                "owner": "hoimin",
+                "status": "clean",
+                "examined_entries": 56,
+                "removed_entries": 14,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              },
+              {
+                "root_id": "delivery",
+                "owner": "hoimin",
+                "status": "cleanup_after_delivery",
+                "examined_entries": 0,
+                "removed_entries": 0,
+                "details": [],
+                "omitted_detail_count": 0,
+                "remaining_root": null
+              }
+            ],
+            "removed_logical_bytes": 17407,
+            "janitor": {
+              "inspected_roots": 13,
+              "reclaimed_roots": 0,
+              "absent_roots": 0,
+              "preserved_roots": 13,
+              "preserved_by_reason": {
+                "young": 13
+              },
+              "unresolved_roots": 0,
+              "unresolved_by_reason": {},
+              "examined_entries": 0,
+              "removed_entries": 0,
+              "scan": {
+                "directory_scan_complete": true,
+                "observed_matching_entries": 13,
+                "selected_roots": 13,
+                "uninspected_selected_roots": 0,
+                "selection_omitted_observed_entries": 0,
+                "selection_limited": false,
+                "cursor_deferred": false,
+                "stop_reason": null
+              },
+              "details": [
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-0912e1c0-0d51-4648-a663-e484bc25b948: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-3f2a91fc-33e9-4241-8975-239f7bc60f66: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-41ba639c-415e-4b82-a6f2-0ca249860825: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-4ab78e83-96aa-48b9-8500-4c6860160bc2: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5372ba6c-5173-4e89-aeb8-426c82351dfc: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-5babebd7-9523-4a9f-96e6-b2766ac9c978: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-6b4acdcd-8d7c-49bd-b425-863f8a279ac5: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-77aea660-c589-4b68-b05b-5806a6b7b10f: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-956066e9-c7e0-43c2-b8db-115cc64979a1: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-a1650527-f1be-4ff4-b756-2521cf8e9d0c: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-b17801ed-669c-4b98-aae3-26b7d3d978ba: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-ce1b355d-0c5b-4aff-b9a0-e8a6adc5af53: stale threshold not reached"
+                },
+                {
+                  "reason": "young",
+                  "message": "managed root is not yet reclaimable: /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-workspaces-v2/run-e2627541-e798-4dc1-9710-f91a58ac6b29: stale threshold not reached"
+                }
+              ],
+              "detail_omissions": {
+                "normal_details": 0,
+                "issue_details": 0,
+                "truncated_details": 0
+              }
+            }
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_af9b962a1c239a36ae7f21f523dc190bc930b7887c462ced8a500c50c4cbd085",
+              "status": "survived"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "elapsed_seconds": 4.740225666988408,
+  "temporary_file_bytes_at_end": 6597,
+  "temporary_directory_removed": true
+}

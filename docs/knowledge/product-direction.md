@@ -6,9 +6,9 @@ status: draft
 sources:
 - id: principles
   resource: ../product-principles.md
-  revision: 1d192acf04de8983697c76ba2e4344965bb359a3
-  working_tree: clean
-  sha256: a47cf69d7e61d2a04888be04ff1aa349b3915909cf6c7307ab855bf7aaa8c8ab
+  revision: 7c2a79168c8698f85cc90d7efd6bf16a183e08b3
+  working_tree: modified
+  sha256: 1c51723e2f4209c87ba987efbe18bac739d898377086fcd059b724ccc836093e
 ---
 
 # Local test improvement by AI agents
@@ -34,6 +34,14 @@ or regressions. Agents inspect statuses, scores and histories to select their ne
 steps. hoimin's own development and release checks remain required. Prioritize
 useful improvements and clear evidence over exhaustive runs or score
 maximization.[^principles]
+
+The 2026-10-28 clarification makes opt-out the normal policy for newly adopted
+mutation operators: include accepted operators in the default runtime set and
+allow `--exclude-operators`. Adoption still requires evaluation; an experimental
+proposal is not enabled merely because it exists. See the
+[slice, division and selection research](mutation-research-1121-1122-1124.md)
+for a scoped evaluation that distinguishes adoption recommendations from
+implemented behavior.[^principles]
 
 Read [runtime contracts](design/runtime-lifecycle.md),
 [selection and saved plans](design/selection-plan-verify.md), and

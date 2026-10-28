@@ -5,6 +5,21 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issues-1121-1122-1124-report
+  resource: ../../superpowers/reports/issues-1121-1122-1124/README.md
+  revision: 7c2a79168c8698f85cc90d7efd6bf16a183e08b3
+  working_tree: untracked
+  sha256: f281b031caa75045a23795c2dcf9df821b5a90f24c035a82fdf333df877f1dbd
+- id: issues-1121-1122-1124-methodology
+  resource: ../../superpowers/reports/issues-1121-1122-1124/methodology.md
+  revision: 7c2a79168c8698f85cc90d7efd6bf16a183e08b3
+  working_tree: untracked
+  sha256: 3b2dd841476afd5f9530b78eb88601a81217ee6d5ac63a947b078ad31a416fb4
+- id: issues-1121-1122-1124-review
+  resource: ../../superpowers/reports/issues-1121-1122-1124/self-review.md
+  revision: 7c2a79168c8698f85cc90d7efd6bf16a183e08b3
+  working_tree: untracked
+  sha256: 3e69f88a2957f6fc3e49feb9bd66c845512a9a1aad7ffcd67f715879579df2ac
 - id: issue-999-adoption
   resource: ../../superpowers/reports/2026-10-19-issue-999-creusot-adoption.md
   revision: fb89c55c1ab6b851302f36d0fef7fd9f7697655a
@@ -1598,3 +1613,15 @@ sources:
 
 
 - [Issue #999 production proofs, distribution and evidence](../../superpowers/reports/2026-10-19-issue-999-creusot-adoption.md) — shared implementation, three-target proofs and recorded acceptance.
+
+## Issues 1121, 1122 and 1124 research
+
+| Document | Scope |
+| --- | --- |
+| [Research results](../../superpowers/reports/issues-1121-1122-1124/README.md) [^issues-1121-1122-1124-report] | Slice/division adoption recommendations, survivor-deferral comparison and evidence limits |
+| [Methodology](../../superpowers/reports/issues-1121-1122-1124/methodology.md) [^issues-1121-1122-1124-methodology] | Fixed budgets, independent requirements, controls and resource limits |
+| [Self-review](../../superpowers/reports/issues-1121-1122-1124/self-review.md) [^issues-1121-1122-1124-review] | Five self-review passes per step, corrections and verification |
+
+[^issues-1121-1122-1124-report]: [Bounded research report](../../superpowers/reports/issues-1121-1122-1124/README.md).
+[^issues-1121-1122-1124-methodology]: [Research protocol](../../superpowers/reports/issues-1121-1122-1124/methodology.md).
+[^issues-1121-1122-1124-review]: [Self-review record](../../superpowers/reports/issues-1121-1122-1124/self-review.md).
