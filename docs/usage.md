@@ -670,10 +670,10 @@ the detailed capability and cleanup model.
 
 ## Mutation operators
 
-Without `--operators`, a run selects 75 default runtime operators. `--operators`
+Without `--operators`, a run selects 78 default runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
-individual IDs or selector families. Hoimin exposes 94 operator IDs in total:
-75 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
+individual IDs or selector families. Hoimin exposes 97 operator IDs in total:
+78 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
 `exception_hierarchy`, and six opt-in analyzers: `condition_constant`,
 `function_body_erase`, `enum_member_replace`, `condition_clause_delete`,
 `container_element_delete`, and `optional_keyword_delete`.
@@ -695,6 +695,10 @@ The defaults also include `binary_div_floor`, `structure_slice_bound_omit` and
 `structure_slice_bound_move`. To omit these from a new run or plan, use
 `--exclude-operators binary_div_floor,structure_slice_bound_omit,structure_slice_bound_move`.
 
+Defaults also include `continue_remove`, `comparison_not_implemented`
+and `exception_cause_remove`. Each is individually selectable or
+excludable; no selector family is expanded by these additions.
+
 New default runs can generate more candidates and take longer. With a candidate
 cap, the retained prefix can also change. Explicit `--operators` selections and
 saved plans keep their operator sets; saved plans are not expanded on reload.
@@ -705,6 +709,7 @@ binding analysis. Their existing applicability guards are unchanged.
 
 | Group | Runtime IDs | Mutations |
 | --- | --- | --- |
+| Continuation, comparison and causes | `continue_remove`, `comparison_not_implemented`, `exception_cause_remove` | Same-iteration continuation, reflected comparison and explicit diagnostic causes; enabled by default |
 | Existing expression/control flow | `compare_eq_ne`, `compare_order`, `membership`, `identity`, `boolean_and_or`, `binary_add_sub`, `augmented_add_sub`, `binary_mul_div`, `augmented_mul_div`, `binary_floor_mod`, `binary_div_floor`, `augmented_floor_mod`, `unary_sign`, `remove_not`, `boolean_literal`, `break_continue` | comparisons; membership and identity; binary `+`/`-`, `*`/`/`, `//`/`%`, and `/`/`//`; augmented `+=`/`-=`, `*=`/`/=`, and `//=`/`%=`; unary signs; boolean expressions and literals, including `True`/`False` match patterns; and control flow |
 | Generator behavior | `list_comprehension_to_generator`, `generator_return_insert`, `generator_skip_first`, `generator_empty` | Eager/lazy conversion, early return, first-item consumption and empty output; enabled by default |
 | Missing values and shared state | `none_truthiness`, `mutable_default_share`, `nonlocal_remove`, `yield_from_to_yield`, `mapping_setdefault_to_get`, `bisect_boundary_swap`, `deepcopy_to_copy`, `deque_popleft_to_pop`, `gather_return_exceptions`, `itertools_take_drop_swap`, `fstring_conversion_swap` | Empty/missing distinctions, shared defaults, lost outer updates, delegation, dictionary insertion, duplicate boundaries, nested copies, FIFO order, exception results, iterator prefixes and representations; enabled by default |
@@ -1866,3 +1871,31 @@ f-string. It includes nested format fields and concatenated f-strings. It skips
 !a, omitted conversions, implicit debug repr and conversions in t-strings.
 Ordinary f-strings inside t-string expressions remain eligible. Expressions run
 once; debug text, format specs, comments and literal text are preserved.
+
+## Loop continuation, comparison delegation and exception causes
+
+`continue_remove` replaces a `continue` statement with `pass`, allowing later
+statements in the same iteration to run. Unlike `break_continue`, it does not
+stop later iterations. It applies inside nested loops, `with`, `try`/`finally`
+and loop `else`; existing surrounding control flow remains intact. A tail
+`continue` can be equivalent, so survival alone is not a missing-test claim.
+
+`comparison_not_implemented` replaces an unshadowed builtin `NotImplemented`
+returned directly by an ordinary synchronous class rich-comparison method
+(`__eq__`, `__ne__`, `__lt__`, `__le__`, `__gt__`, `__ge__`) with `False`. This
+can prevent reflected comparison delegation. Decorated, asynchronous, generator,
+arithmetic and non-method functions are excluded, as are nested function
+returns and uncertain/shadowed builtin references. It does not claim to infer
+the runtime operand types or support arithmetic delegation.
+
+`exception_cause_remove` changes an explicit named cause in `raise E from cause`
+to `None`. It suppresses explicit chaining; Python retains implicit
+`__context__` and sets `__suppress_context__`. Bare raises, existing `from None`,
+constructor calls, attributes and compound cause expressions are excluded.
+Only APIs promising cause diagnostics justify strengthening a test for this
+survivor; error-type/message-only contracts need no new cause assertion.
+
+All three use the existing candidate budget, selection and cancellation paths.
+They add no target imports during analysis, dependencies or saved schema.
+See the [bounded research and decisions](superpowers/reports/issues-1125-1131/README.md)
+for rejected candidates and evidence limits.

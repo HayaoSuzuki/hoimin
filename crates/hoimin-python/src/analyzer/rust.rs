@@ -1658,7 +1658,7 @@ impl NameResolutionIndex {
 fn tracked_resolution_name(name: &str) -> bool {
     MUTABLE_BUILTINS.contains(&name)
         || EXCEPTION_NAMES.contains(&name)
-        || INSERTION_BUILTINS.contains(&name)
+        || CONTROL_BUILTINS.contains(&name)
 }
 
 #[derive(Default)]
@@ -2028,7 +2028,7 @@ impl NameResolutionBuilder {
             for name in MUTABLE_BUILTINS
                 .iter()
                 .chain(EXCEPTION_NAMES)
-                .chain(INSERTION_BUILTINS)
+                .chain(CONTROL_BUILTINS)
             {
                 self.record_loop_back_edge_binding(self.current, name);
             }
@@ -2037,7 +2037,7 @@ impl NameResolutionBuilder {
             for name in MUTABLE_BUILTINS
                 .iter()
                 .chain(EXCEPTION_NAMES)
-                .chain(INSERTION_BUILTINS)
+                .chain(CONTROL_BUILTINS)
             {
                 scope.possible_bindings.insert((*name).to_owned());
                 if matches!(scope.kind, NameScopeKind::Module | NameScopeKind::Class) {
@@ -2065,7 +2065,7 @@ impl NameResolutionBuilder {
         for name in MUTABLE_BUILTINS
             .iter()
             .chain(EXCEPTION_NAMES)
-            .chain(INSERTION_BUILTINS)
+            .chain(CONTROL_BUILTINS)
         {
             self.record_loop_back_edge_binding(scope_id, name);
         }
@@ -2074,7 +2074,7 @@ impl NameResolutionBuilder {
         for name in MUTABLE_BUILTINS
             .iter()
             .chain(EXCEPTION_NAMES)
-            .chain(INSERTION_BUILTINS)
+            .chain(CONTROL_BUILTINS)
         {
             scope.possible_bindings.insert((*name).to_owned());
             if matches!(scope.kind, NameScopeKind::Module | NameScopeKind::Class) {
@@ -2895,7 +2895,12 @@ const MUTABLE_BUILTINS: &[&str] = &[
     "reversed",
 ];
 
-const INSERTION_BUILTINS: &[&str] = &["StopIteration", "StopAsyncIteration", "next"];
+const CONTROL_BUILTINS: &[&str] = &[
+    "StopIteration",
+    "StopAsyncIteration",
+    "next",
+    "NotImplemented",
+];
 
 const EXCEPTION_NAMES: &[&str] = &[
     "ValueError",
@@ -2965,6 +2970,12 @@ enum ReturnScope {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+enum ComparisonReturnScope {
+    Excluded,
+    RichComparisonMethod,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum RuntimeRole {
     Value,
     AssignmentTarget,
@@ -2986,6 +2997,7 @@ struct AstCandidateCollector<'a, F> {
     conversion_imports: stdlib_conversions::ConversionImports,
     return_scope: ReturnScope,
     enclosing_body: EnclosingBody,
+    comparison_scope: ComparisonReturnScope,
     integer_suppressed: bool,
     runtime_role: RuntimeRole,
     in_pattern: bool,
@@ -3052,6 +3064,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             enum_index: &enum_index,
             return_scope: ReturnScope::Excluded,
             enclosing_body: EnclosingBody::Module,
+            comparison_scope: ComparisonReturnScope::Excluded,
             integer_suppressed: false,
             runtime_role: RuntimeRole::Value,
             in_pattern: false,
@@ -4194,11 +4207,56 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         }
     }
 
+    fn comparison_scope_for(
+        &self,
+        definition: &ruff_python_ast::StmtFunctionDef,
+    ) -> ComparisonReturnScope {
+        let eligible = self
+            .request
+            .operators
+            .contains(MutationOperator::ComparisonNotImplemented)
+            && self.enclosing_body == EnclosingBody::Class
+            && definition.decorator_list.is_empty()
+            && matches!(
+                definition.name.as_str(),
+                "__eq__" | "__ne__" | "__lt__" | "__le__" | "__gt__" | "__ge__"
+            )
+            && function_body::plain_synchronous(definition, self.cancelled);
+        if eligible {
+            ComparisonReturnScope::RichComparisonMethod
+        } else {
+            ComparisonReturnScope::Excluded
+        }
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "statement operator gates stop between builders on the first admission failure"
     )]
     fn collect_statement_mutations(&mut self, statement: &Stmt) {
+        if self.comparison_scope == ComparisonReturnScope::RichComparisonMethod
+            && self
+                .request
+                .operators
+                .contains(MutationOperator::ComparisonNotImplemented)
+            && let Stmt::Return(value) = statement
+            && let Some(Expr::Name(name)) = value.value.as_deref()
+            && name.id.as_str() == "NotImplemented"
+            && self
+                .facts
+                .name_resolution
+                .resolution(usize::from(name.start()), "NotImplemented")
+                == NameResolution::DefinitelyBuiltin
+        {
+            self.add_candidate(
+                name.range(),
+                "False".to_owned(),
+                MutationOperator::ComparisonNotImplemented,
+            );
+            if self.candidates.failure.is_some() || self.check_cancelled() {
+                return;
+            }
+        }
         effective_python::statement(
             statement,
             self.request.operators,
@@ -4467,6 +4525,8 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                 return;
             }
             if let Stmt::FunctionDef(definition) = statement {
+                let comparison = self.comparison_scope_for(definition);
+                let previous_comparison = std::mem::replace(&mut self.comparison_scope, comparison);
                 let allowed = self
                     .request
                     .operators
@@ -4483,6 +4543,7 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                 visitor::walk_stmt(self, statement);
                 self.enclosing_body = previous_class;
                 self.return_scope = previous;
+                self.comparison_scope = previous_comparison;
                 return;
             }
             if self.return_scope == ReturnScope::PlainSynchronous

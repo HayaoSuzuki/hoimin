@@ -1,0 +1,1609 @@
+{
+  "python": "3.15.0b1 (main, May 10 2026, 19:21:12) [Clang 22.1.3 ]",
+  "platform": "macOS-15.7.7-arm64-arm-64bit-Mach-O",
+  "source_revision": "42130ce3e82912c3fa4f7574b0a347d64401545e",
+  "binary_sha256": "cc3644831ee805f33f5bf4a965391145c16115aaebf36862139bb489c1139d39",
+  "operator_comparisons": [
+    {
+      "name": "continue_rejection",
+      "issue": 1125,
+      "requirement": "Rejected records must never be accepted; later valid records must still run.",
+      "source": "def run(values):\n    events = []\n    for value in values:\n        if value < 0:\n            events.append((value, 'rejected'))\n            continue\n        events.append((value, 'accepted'))\n    return events\n",
+      "weak_check": "assert (-2, 'rejected') in run([-2,3])\nassert (3, 'accepted') in run([-2,3])",
+      "strong_check": "assert run([-2,3]) == [(-2,'rejected'),(3,'accepted')]",
+      "budget_per_family": 2,
+      "generation_elapsed_seconds": {
+        "existing": 0.010137957986444235,
+        "existing_full": 0.010304791998350993,
+        "proposed": 0.00025962499785237014
+      },
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.01700970801175572
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.01651700001093559
+        }
+      },
+      "existing": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_9276024998b03c7e53840babc6a2ab7f52666174102a022ce7822a0769caf4f1",
+              "start": 139,
+              "length": 8,
+              "original": "continue",
+              "replacement": "break",
+              "line": 6,
+              "operator": "break_continue"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.0164580830023624
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016298499976983294
+            }
+          }
+        ]
+      },
+      "existing_full": {
+        "pool_count": 16,
+        "executed": 2,
+        "unexecuted": 14,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_9e59ae46e2983f574c2cb8374d526a3e215e852a9870c4ccd22c5045864265b6",
+              "start": 75,
+              "length": 1,
+              "original": "<",
+              "replacement": "<=",
+              "line": 4,
+              "operator": "compare_order"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016177832992980257
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01596774999052286
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_9276024998b03c7e53840babc6a2ab7f52666174102a022ce7822a0769caf4f1",
+              "start": 139,
+              "length": 8,
+              "original": "continue",
+              "replacement": "break",
+              "line": 6,
+              "operator": "break_continue"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01584375000675209
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016284707991871983
+            }
+          }
+        ]
+      },
+      "proposed": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 139,
+              "length": 8,
+              "original": "continue",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "continue_remove"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016017916990676895
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016261540993582457
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "continue_tail_equivalent",
+      "issue": 1125,
+      "requirement": "Retain all records; removing a tail continue has no effect.",
+      "source": "def run(values):\n    seen=[]\n    for value in values:\n        seen.append(value)\n        continue\n    return seen\n",
+      "weak_check": "assert run([])==[]",
+      "strong_check": "assert run([2,5])==[2,5]",
+      "budget_per_family": 2,
+      "generation_elapsed_seconds": {
+        "existing": 0.00998804098344408,
+        "existing_full": 0.008922000008169562,
+        "proposed": 0.00014166600885801017
+      },
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.018454125005519018
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.023747333005303517
+        }
+      },
+      "existing": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_ad031506e8b6c45fc79cca7acc964ded2f27d78e7171e034f1f700698dd69bcb",
+              "start": 89,
+              "length": 8,
+              "original": "continue",
+              "replacement": "break",
+              "line": 5,
+              "operator": "break_continue"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016940665984293446
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01857816698611714
+            }
+          }
+        ]
+      },
+      "existing_full": {
+        "pool_count": 5,
+        "executed": 2,
+        "unexecuted": 3,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_ad031506e8b6c45fc79cca7acc964ded2f27d78e7171e034f1f700698dd69bcb",
+              "start": 89,
+              "length": 8,
+              "original": "continue",
+              "replacement": "break",
+              "line": 5,
+              "operator": "break_continue"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016291541018290445
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016845125006511807
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_091cac2b1418ee43cd68bd87ed28ae64a82697e9e6384ed0d765d828274aa17e",
+              "start": 26,
+              "length": 2,
+              "original": "[]",
+              "replacement": "()",
+              "line": 2,
+              "operator": "collection_list_tuple"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016331833990989253
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "AttributeError",
+              "elapsed_seconds": 0.01591020802152343
+            }
+          }
+        ]
+      },
+      "proposed": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 89,
+              "length": 8,
+              "original": "continue",
+              "replacement": "pass",
+              "line": 5,
+              "operator": "continue_remove"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01624841699958779
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01644687500083819
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "factory_isolation",
+      "issue": 1126,
+      "requirement": "Each bag owns its entries; changes must not leak to another instance.",
+      "source": "from dataclasses import dataclass, field\n@dataclass\nclass Bag:\n    entries: list = field(default_factory=list)\n",
+      "weak_check": "assert Bag().entries == []",
+      "strong_check": "a,b=Bag(),Bag()\na.entries.append('added')\nassert b.entries == []",
+      "budget_per_family": 2,
+      "generation_elapsed_seconds": {
+        "existing": 0.009940458025084808,
+        "existing_full": 0.008884999988367781,
+        "proposed": 0.0001532500027678907
+      },
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.01736333401640877
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.017144042009022087
+        }
+      },
+      "existing": {
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      },
+      "existing_full": {
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      },
+      "proposed": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 105,
+              "length": 4,
+              "original": "list",
+              "replacement": "lambda shared=[]: shared",
+              "line": 4,
+              "operator": "dataclass_factory_share"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.017041082988725975
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.017564165988005698
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "factory_read_only_control",
+      "issue": 1126,
+      "requirement": "Read-only bags need empty entries; identity/independent mutation is not an API promise.",
+      "source": "from dataclasses import dataclass, field\n@dataclass\nclass Bag:\n    entries: list = field(default_factory=list)\n",
+      "weak_check": "assert Bag().entries == []",
+      "strong_check": "assert [Bag().entries for _ in range(3)] == [[],[],[]]",
+      "budget_per_family": 2,
+      "generation_elapsed_seconds": {
+        "existing": 0.010079500003485009,
+        "existing_full": 0.009243666019756347,
+        "proposed": 0.00013595799100585282
+      },
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.017142374999821186
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.017133957997430116
+        }
+      },
+      "existing": {
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      },
+      "existing_full": {
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      },
+      "proposed": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 105,
+              "length": 4,
+              "original": "list",
+              "replacement": "lambda shared=[]: shared",
+              "line": 4,
+              "operator": "dataclass_factory_share"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01700824999716133
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016947583993896842
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "sort_priority",
+      "issue": 1127,
+      "requirement": "Sort by first column, then second column for equal first values.",
+      "source": "def run(rows):\n    return sorted(rows, key=lambda r: (r[0], r[1]))\n",
+      "weak_check": "assert run([(2,2),(1,1)]) == [(1,1),(2,2)]",
+      "strong_check": "assert run([(2,1),(1,9),(1,3)]) == [(1,3),(1,9),(2,1)]",
+      "budget_per_family": 2,
+      "generation_elapsed_seconds": {
+        "existing": 0.010374250006861985,
+        "existing_full": 0.025948624999728054,
+        "proposed": 0.0003121249901596457
+      },
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.016279082978144288
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.016442041989648715
+        }
+      },
+      "existing": {
+        "pool_count": 2,
+        "executed": 2,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_6f9e1af32808d27340d419eb3d6bc540d2e75947feeb6fb1b236cb515f7da12c",
+              "start": 53,
+              "length": 12,
+              "original": "(r[0], r[1])",
+              "replacement": "((r[0]),)",
+              "line": 2,
+              "operator": "container_element_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016989833005936816
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01685283301048912
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_b5ef421ef55b5bcff7674dd70240cc24770fc0b19bf3efa2279a6f93bc1edd60",
+              "start": 53,
+              "length": 12,
+              "original": "(r[0], r[1])",
+              "replacement": "((r[1]),)",
+              "line": 2,
+              "operator": "container_element_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016753874981077388
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016866250021848828
+            }
+          }
+        ]
+      },
+      "existing_full": {
+        "pool_count": 6,
+        "executed": 2,
+        "unexecuted": 4,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_178366633a86bac5a1b2cfe0fb4f950c2b8abe3c874a7d0ba1239e82556581ce",
+              "start": 53,
+              "length": 12,
+              "original": "(r[0], r[1])",
+              "replacement": "[r[0], r[1]]",
+              "line": 2,
+              "operator": "collection_list_tuple"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01695862499764189
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.017647417000262067
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_f81ceb300b4758624c30883dd34e29511f8f005155fcd172ef9ef1993ebb8b16",
+              "start": 54,
+              "length": 4,
+              "original": "r[0]",
+              "replacement": "r.get(0)",
+              "line": 2,
+              "operator": "structure_mapping_get_subscript"
+            },
+            "weak": {
+              "verdict": "error",
+              "exception": "AttributeError",
+              "elapsed_seconds": 0.01696675000130199
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "AttributeError",
+              "elapsed_seconds": 0.016931624995777383
+            }
+          }
+        ]
+      },
+      "proposed": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 53,
+              "length": 12,
+              "original": "(r[0], r[1])",
+              "replacement": "(r[1], r[0])",
+              "line": 2,
+              "operator": "sort_key_swap"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.017144542012829334
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016385458991862833
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "sort_correlated_control",
+      "issue": 1127,
+      "requirement": "Allowed rows have equal column values; either key order is equivalent on this domain.",
+      "source": "def run(rows):\n    return sorted(rows, key=lambda r: (r[0], r[1]))\n",
+      "weak_check": "assert run([])==[]",
+      "strong_check": "assert run([(3,3),(1,1),(2,2)])==[(1,1),(2,2),(3,3)]",
+      "budget_per_family": 2,
+      "generation_elapsed_seconds": {
+        "existing": 0.010211458982666954,
+        "existing_full": 0.010159124998608604,
+        "proposed": 0.0001590000174473971
+      },
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.016546790982829407
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.016544541023904458
+        }
+      },
+      "existing": {
+        "pool_count": 2,
+        "executed": 2,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_6f9e1af32808d27340d419eb3d6bc540d2e75947feeb6fb1b236cb515f7da12c",
+              "start": 53,
+              "length": 12,
+              "original": "(r[0], r[1])",
+              "replacement": "((r[0]),)",
+              "line": 2,
+              "operator": "container_element_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01622708298964426
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01712012500502169
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_b5ef421ef55b5bcff7674dd70240cc24770fc0b19bf3efa2279a6f93bc1edd60",
+              "start": 53,
+              "length": 12,
+              "original": "(r[0], r[1])",
+              "replacement": "((r[1]),)",
+              "line": 2,
+              "operator": "container_element_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016330917016603053
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.017514790990389884
+            }
+          }
+        ]
+      },
+      "existing_full": {
+        "pool_count": 6,
+        "executed": 2,
+        "unexecuted": 4,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_178366633a86bac5a1b2cfe0fb4f950c2b8abe3c874a7d0ba1239e82556581ce",
+              "start": 53,
+              "length": 12,
+              "original": "(r[0], r[1])",
+              "replacement": "[r[0], r[1]]",
+              "line": 2,
+              "operator": "collection_list_tuple"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.017043290979927406
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.017894875025376678
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_f81ceb300b4758624c30883dd34e29511f8f005155fcd172ef9ef1993ebb8b16",
+              "start": 54,
+              "length": 4,
+              "original": "r[0]",
+              "replacement": "r.get(0)",
+              "line": 2,
+              "operator": "structure_mapping_get_subscript"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01673958299215883
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "AttributeError",
+              "elapsed_seconds": 0.018319000024348497
+            }
+          }
+        ]
+      },
+      "proposed": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 53,
+              "length": 12,
+              "original": "(r[0], r[1])",
+              "replacement": "(r[1], r[0])",
+              "line": 2,
+              "operator": "sort_key_swap"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01716975000454113
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.017685750004602596
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "lambda_capture",
+      "issue": 1128,
+      "requirement": "Callbacks retain the distinct value at construction, even after loop completion.",
+      "source": "def run(values):\n    callbacks=[]\n    for value in values:\n        callbacks.append(lambda value=value: value)\n    return [callback() for callback in callbacks]\n",
+      "weak_check": "assert run([4])==[4]",
+      "strong_check": "assert run([4,9])==[4,9]",
+      "budget_per_family": 2,
+      "generation_elapsed_seconds": {
+        "existing": 0.010244208999210969,
+        "existing_full": 0.010965041990857571,
+        "proposed": 0.00019050002447329462
+      },
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.017472625011578202
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.017248082993319258
+        }
+      },
+      "existing": {
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      },
+      "existing_full": {
+        "pool_count": 6,
+        "executed": 2,
+        "unexecuted": 4,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_392d9f615ded6085fbb2199e4995721ea9fa55f3b81e7b98e96bc37d34191858",
+              "start": 110,
+              "length": 1,
+              "original": "\n",
+              "replacement": "\n        break\n",
+              "line": 4,
+              "operator": "loop_break_insert"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.017968208994716406
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016861958021763712
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_158fc00e428bbad28c7d28f352e1eea8161ee04c4e0a619848461a2bd4d5abc5",
+              "start": 31,
+              "length": 2,
+              "original": "[]",
+              "replacement": "()",
+              "line": 2,
+              "operator": "collection_list_tuple"
+            },
+            "weak": {
+              "verdict": "error",
+              "exception": "AttributeError",
+              "elapsed_seconds": 0.018006250000325963
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "AttributeError",
+              "elapsed_seconds": 0.017424208985175937
+            }
+          }
+        ]
+      },
+      "proposed": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 84,
+              "length": 25,
+              "original": "lambda value=value: value",
+              "replacement": "lambda: value",
+              "line": 4,
+              "operator": "lambda_capture_remove"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.017552708013681695
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.017338625009870157
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "lambda_explicit_argument",
+      "issue": 1128,
+      "requirement": "Callbacks accept explicit overrides; dropping the parameter breaks this call interface.",
+      "source": "def run(values):\n    callbacks=[]\n    for value in values:\n        callbacks.append(lambda value=value: value)\n    return [callback(7) for callback in callbacks]\n",
+      "weak_check": "assert run([])==[]",
+      "strong_check": "assert run([4,9])==[7,7]",
+      "budget_per_family": 2,
+      "generation_elapsed_seconds": {
+        "existing": 0.011356041999533772,
+        "existing_full": 0.012245749996509403,
+        "proposed": 0.0002049169852398336
+      },
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.018394334008917212
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.018467208021320403
+        }
+      },
+      "existing": {
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      },
+      "existing_full": {
+        "pool_count": 8,
+        "executed": 2,
+        "unexecuted": 6,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_becd26e0f504d11c5561db46677ed33010f664368f8d9cc11783dd7283a83045",
+              "start": 110,
+              "length": 1,
+              "original": "\n",
+              "replacement": "\n        break\n",
+              "line": 4,
+              "operator": "loop_break_insert"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01862712498405017
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01801566599169746
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_c1ca7e9d6c08d2deb0f2c4acd7a685b5a53892bcb89ebf9bee54ad76ad418c6c",
+              "start": 31,
+              "length": 2,
+              "original": "[]",
+              "replacement": "()",
+              "line": 2,
+              "operator": "collection_list_tuple"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01834400001098402
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "AttributeError",
+              "elapsed_seconds": 0.0174293750023935
+            }
+          }
+        ]
+      },
+      "proposed": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 84,
+              "length": 25,
+              "original": "lambda value=value: value",
+              "replacement": "lambda: value",
+              "line": 4,
+              "operator": "lambda_capture_remove"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01806349999969825
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "TypeError",
+              "elapsed_seconds": 0.018405000009806827
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "comparison_delegation",
+      "issue": 1129,
+      "requirement": "Unsupported comparisons delegate to the compatible right operand.",
+      "source": "class Token:\n    def __eq__(self, other):\n        if isinstance(other, Token):\n            return True\n        return NotImplemented\nclass Compatible:\n    def __eq__(self, other):\n        return isinstance(other, Token)\n",
+      "weak_check": "assert Token()==Token()",
+      "strong_check": "assert Token()==Compatible()",
+      "budget_per_family": 2,
+      "generation_elapsed_seconds": {
+        "existing": 0.01014450000366196,
+        "existing_full": 0.010350084019592032,
+        "proposed": 0.00019020799663849175
+      },
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.018430166004691273
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.017393624992109835
+        }
+      },
+      "existing": {
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      },
+      "existing_full": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_9f88f245a3ea436c178671cec0b423985536d1da123743fbe84e86f28446fd75",
+              "start": 98,
+              "length": 4,
+              "original": "True",
+              "replacement": "False",
+              "line": 4,
+              "operator": "boolean_literal"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.017559750005602837
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.018715458980295807
+            }
+          }
+        ]
+      },
+      "proposed": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 118,
+              "length": 14,
+              "original": "NotImplemented",
+              "replacement": "False",
+              "line": 5,
+              "operator": "comparison_not_implemented"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01768237500800751
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01745350001147017
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "comparison_no_peer_control",
+      "issue": 1129,
+      "requirement": "Unrelated objects compare unequal; no peer supports this type.",
+      "source": "class Token:\n    def __eq__(self, other):\n        if isinstance(other, Token):\n            return True\n        return NotImplemented\n",
+      "weak_check": "assert Token()==Token()",
+      "strong_check": "assert (Token()==object()) is False",
+      "budget_per_family": 2,
+      "generation_elapsed_seconds": {
+        "existing": 0.010475292016053572,
+        "existing_full": 0.010637041996233165,
+        "proposed": 0.00015816697850823402
+      },
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.017841958004282787
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.016844375000800937
+        }
+      },
+      "existing": {
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      },
+      "existing_full": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_29f4dc74a0baea27c32c939cc5af924a32b88e29d8191caf8a073d90c4f7ef92",
+              "start": 98,
+              "length": 4,
+              "original": "True",
+              "replacement": "False",
+              "line": 4,
+              "operator": "boolean_literal"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.0165137909934856
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.017438209004467353
+            }
+          }
+        ]
+      },
+      "proposed": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 118,
+              "length": 14,
+              "original": "NotImplemented",
+              "replacement": "False",
+              "line": 5,
+              "operator": "comparison_not_implemented"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.017178208014229313
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.02093958400655538
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "cause_diagnostic",
+      "issue": 1130,
+      "requirement": "The public diagnostic API preserves the original parse failure as an explicit cause.",
+      "source": "def run():\n    try:\n        int('invalid')\n    except ValueError as source:\n        raise LookupError('invalid record') from source\n",
+      "weak_check": "try:\n    run()\nexcept LookupError as e:\n    assert str(e)=='invalid record'\nelse:\n    assert False",
+      "strong_check": "try:\n    run()\nexcept LookupError as e:\n    assert isinstance(e.__cause__,ValueError)\nelse:\n    assert False",
+      "budget_per_family": 2,
+      "generation_elapsed_seconds": {
+        "existing": 0.011310583999147639,
+        "existing_full": 0.013109833002090454,
+        "proposed": 0.000139000010676682
+      },
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.018217083008494228
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.01835233301972039
+        }
+      },
+      "existing": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_451c725d06d7c59133853c98ef8a420c8363ebe0b0fcdd62016a7554959d327a",
+              "start": 54,
+              "length": 10,
+              "original": "ValueError",
+              "replacement": "TypeError",
+              "line": 4,
+              "operator": "exception_type_pair"
+            },
+            "weak": {
+              "verdict": "error",
+              "exception": "ValueError",
+              "elapsed_seconds": 0.01629741699434817
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "ValueError",
+              "elapsed_seconds": 0.017482541006756946
+            }
+          }
+        ]
+      },
+      "existing_full": {
+        "pool_count": 5,
+        "executed": 2,
+        "unexecuted": 3,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_451c725d06d7c59133853c98ef8a420c8363ebe0b0fcdd62016a7554959d327a",
+              "start": 54,
+              "length": 10,
+              "original": "ValueError",
+              "replacement": "TypeError",
+              "line": 4,
+              "operator": "exception_type_pair"
+            },
+            "weak": {
+              "verdict": "error",
+              "exception": "ValueError",
+              "elapsed_seconds": 0.017513500002678484
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "ValueError",
+              "elapsed_seconds": 0.017351333983242512
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_24b8ede8e6b435f28fe624b239278ab4d1f11807d4414c167e107d9644a38432",
+              "start": 28,
+              "length": 14,
+              "original": "int('invalid')",
+              "replacement": "('invalid')",
+              "line": 3,
+              "operator": "conversion_call_remove"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01773962497827597
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01676312499330379
+            }
+          }
+        ]
+      },
+      "proposed": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 125,
+              "length": 6,
+              "original": "source",
+              "replacement": "None",
+              "line": 5,
+              "operator": "exception_cause_remove"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.017586041998583823
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.017050583992386237
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "cause_private_control",
+      "issue": 1130,
+      "requirement": "Only public error type and message are contractual; exception chaining is private.",
+      "source": "def run():\n    try:\n        int('invalid')\n    except ValueError as source:\n        raise LookupError('invalid record') from source\n",
+      "weak_check": "try:\n    run()\nexcept LookupError:\n    pass\nelse:\n    assert False",
+      "strong_check": "try:\n    run()\nexcept LookupError as e:\n    assert e.args==('invalid record',)\nelse:\n    assert False",
+      "budget_per_family": 2,
+      "generation_elapsed_seconds": {
+        "existing": 0.010864999989280477,
+        "existing_full": 0.01128470798721537,
+        "proposed": 0.00013237501843832433
+      },
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.018307042017113417
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.017046583001501858
+        }
+      },
+      "existing": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_451c725d06d7c59133853c98ef8a420c8363ebe0b0fcdd62016a7554959d327a",
+              "start": 54,
+              "length": 10,
+              "original": "ValueError",
+              "replacement": "TypeError",
+              "line": 4,
+              "operator": "exception_type_pair"
+            },
+            "weak": {
+              "verdict": "error",
+              "exception": "ValueError",
+              "elapsed_seconds": 0.017314124997938052
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "ValueError",
+              "elapsed_seconds": 0.018137917009880766
+            }
+          }
+        ]
+      },
+      "existing_full": {
+        "pool_count": 5,
+        "executed": 2,
+        "unexecuted": 3,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_451c725d06d7c59133853c98ef8a420c8363ebe0b0fcdd62016a7554959d327a",
+              "start": 54,
+              "length": 10,
+              "original": "ValueError",
+              "replacement": "TypeError",
+              "line": 4,
+              "operator": "exception_type_pair"
+            },
+            "weak": {
+              "verdict": "error",
+              "exception": "ValueError",
+              "elapsed_seconds": 0.016878875001566485
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "ValueError",
+              "elapsed_seconds": 0.01709495802060701
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_24b8ede8e6b435f28fe624b239278ab4d1f11807d4414c167e107d9644a38432",
+              "start": 28,
+              "length": 14,
+              "original": "int('invalid')",
+              "replacement": "('invalid')",
+              "line": 3,
+              "operator": "conversion_call_remove"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.01720729100634344
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.0167139999975916
+            }
+          }
+        ]
+      },
+      "proposed": {
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 125,
+              "length": 6,
+              "original": "source",
+              "replacement": "None",
+              "line": 5,
+              "operator": "exception_cause_remove"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016515000024810433
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016912416991544887
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "encoding_roundtrip",
+      "issue": 1131,
+      "requirement": "Arbitrary byte payloads round-trip without data loss, including undecodable bytes.",
+      "source": "def run(data):\n    return data.decode('utf-8', errors='surrogateescape').encode('utf-8', errors='surrogateescape')\n",
+      "weak_check": "assert run(b'abc')==b'abc'",
+      "strong_check": "assert run(b'a\\xffb')==b'a\\xffb'",
+      "budget_per_family": 2,
+      "generation_elapsed_seconds": {
+        "existing": 0.010573583014775068,
+        "existing_full": 0.010183499980485067,
+        "proposed": 0.00013425000361166894
+      },
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.01720304202171974
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.017593666998436674
+        }
+      },
+      "existing": {
+        "pool_count": 4,
+        "executed": 2,
+        "unexecuted": 2,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_4d6bf76c9850e4e9580f4c2472953d0a62877972f344cc6e67d26ffc223eafb2",
+              "start": 38,
+              "length": 7,
+              "original": "'utf-8'",
+              "replacement": "\"\"",
+              "line": 2,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "error",
+              "exception": "LookupError",
+              "elapsed_seconds": 0.0182360410108231
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "LookupError",
+              "elapsed_seconds": 0.016622374998405576
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_587239c8ac5520d00116d03b8ab5d6ab08f5b1225a279ad36afe5687b9433a75",
+              "start": 54,
+              "length": 17,
+              "original": "'surrogateescape'",
+              "replacement": "\"\"",
+              "line": 2,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01681887501035817
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "LookupError",
+              "elapsed_seconds": 0.016765458014560863
+            }
+          }
+        ]
+      },
+      "existing_full": {
+        "pool_count": 4,
+        "executed": 2,
+        "unexecuted": 2,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_4d6bf76c9850e4e9580f4c2472953d0a62877972f344cc6e67d26ffc223eafb2",
+              "start": 38,
+              "length": 7,
+              "original": "'utf-8'",
+              "replacement": "\"\"",
+              "line": 2,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "error",
+              "exception": "LookupError",
+              "elapsed_seconds": 0.016687124996678904
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "LookupError",
+              "elapsed_seconds": 0.01732929199351929
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_587239c8ac5520d00116d03b8ab5d6ab08f5b1225a279ad36afe5687b9433a75",
+              "start": 54,
+              "length": 17,
+              "original": "'surrogateescape'",
+              "replacement": "\"\"",
+              "line": 2,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01698412498808466
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "LookupError",
+              "elapsed_seconds": 0.01694033300736919
+            }
+          }
+        ]
+      },
+      "proposed": {
+        "pool_count": 2,
+        "executed": 2,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 96,
+              "length": 17,
+              "original": "'surrogateescape'",
+              "replacement": "'ignore'",
+              "line": 2,
+              "operator": "encoding_errors_ignore"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016979542007902637
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016474083007778972
+            }
+          },
+          {
+            "candidate": {
+              "id": "probe-2",
+              "start": 54,
+              "length": 17,
+              "original": "'surrogateescape'",
+              "replacement": "'ignore'",
+              "line": 2,
+              "operator": "encoding_errors_ignore"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01669962500454858
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.016601208975771442
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "encoding_ascii_control",
+      "issue": 1131,
+      "requirement": "Inputs are restricted to ASCII; the error policy has no observable effect.",
+      "source": "def run(data):\n    return data.decode('utf-8', errors='surrogateescape').encode('utf-8', errors='surrogateescape')\n",
+      "weak_check": "assert run(b'abc')==b'abc'",
+      "strong_check": "assert run(b'012 xyz')==b'012 xyz'",
+      "budget_per_family": 2,
+      "generation_elapsed_seconds": {
+        "existing": 0.02033045800635591,
+        "existing_full": 0.010340292006731033,
+        "proposed": 0.0001428340037818998
+      },
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.019121250021271408
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.01833404100034386
+        }
+      },
+      "existing": {
+        "pool_count": 4,
+        "executed": 2,
+        "unexecuted": 2,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_4d6bf76c9850e4e9580f4c2472953d0a62877972f344cc6e67d26ffc223eafb2",
+              "start": 38,
+              "length": 7,
+              "original": "'utf-8'",
+              "replacement": "\"\"",
+              "line": 2,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "error",
+              "exception": "LookupError",
+              "elapsed_seconds": 0.016684749978594482
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "LookupError",
+              "elapsed_seconds": 0.024119417008478194
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_587239c8ac5520d00116d03b8ab5d6ab08f5b1225a279ad36afe5687b9433a75",
+              "start": 54,
+              "length": 17,
+              "original": "'surrogateescape'",
+              "replacement": "\"\"",
+              "line": 2,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016438833001302555
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01645454199751839
+            }
+          }
+        ]
+      },
+      "existing_full": {
+        "pool_count": 4,
+        "executed": 2,
+        "unexecuted": 2,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_4d6bf76c9850e4e9580f4c2472953d0a62877972f344cc6e67d26ffc223eafb2",
+              "start": 38,
+              "length": 7,
+              "original": "'utf-8'",
+              "replacement": "\"\"",
+              "line": 2,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "error",
+              "exception": "LookupError",
+              "elapsed_seconds": 0.018740833009360358
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "LookupError",
+              "elapsed_seconds": 0.016801958001451567
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_587239c8ac5520d00116d03b8ab5d6ab08f5b1225a279ad36afe5687b9433a75",
+              "start": 54,
+              "length": 17,
+              "original": "'surrogateescape'",
+              "replacement": "\"\"",
+              "line": 2,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01700379201793112
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016306083009112626
+            }
+          }
+        ]
+      },
+      "proposed": {
+        "pool_count": 2,
+        "executed": 2,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "probe-1",
+              "start": 96,
+              "length": 17,
+              "original": "'surrogateescape'",
+              "replacement": "'ignore'",
+              "line": 2,
+              "operator": "encoding_errors_ignore"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01693904201965779
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.01672145799966529
+            }
+          },
+          {
+            "candidate": {
+              "id": "probe-2",
+              "start": 54,
+              "length": 17,
+              "original": "'surrogateescape'",
+              "replacement": "'ignore'",
+              "line": 2,
+              "operator": "encoding_errors_ignore"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.016804875020170584
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.017039625003235415
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "temporary_file_bytes_at_end": 4891,
+  "temporary_directory_removed": true,
+  "elapsed_seconds": 2.6050053749931976
+}

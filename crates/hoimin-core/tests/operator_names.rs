@@ -226,6 +226,15 @@ const OPERATORS: &[(MutationOperator, &str)] = &[
         MutationOperator::StructureSliceBoundMove,
         "structure_slice_bound_move",
     ),
+    (MutationOperator::ContinueRemove, "continue_remove"),
+    (
+        MutationOperator::ComparisonNotImplemented,
+        "comparison_not_implemented",
+    ),
+    (
+        MutationOperator::ExceptionCauseRemove,
+        "exception_cause_remove",
+    ),
 ];
 
 const FAMILIES: [&str; 8] = [

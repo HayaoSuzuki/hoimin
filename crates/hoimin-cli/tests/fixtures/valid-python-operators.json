@@ -468,5 +468,20 @@
     "operator": "structure_slice_bound_move",
     "status": "deferred",
     "reason": "Dedicated separator-trivia, UTF-8, cap/selection and public plan/verify tests; the initial Lean cross-producer corpus has no bound-movement producer"
+  },
+  {
+    "operator": "continue_remove",
+    "status": "deferred",
+    "reason": "Dedicated static eligibility, bounded admission, shadowing and public plan/verify behavioral checks; not modeled by the initial Lean cross-producer corpus"
+  },
+  {
+    "operator": "comparison_not_implemented",
+    "status": "deferred",
+    "reason": "Dedicated static eligibility, bounded admission, shadowing and public plan/verify behavioral checks; not modeled by the initial Lean cross-producer corpus"
+  },
+  {
+    "operator": "exception_cause_remove",
+    "status": "deferred",
+    "reason": "Dedicated static eligibility, bounded admission, shadowing and public plan/verify behavioral checks; not modeled by the initial Lean cross-producer corpus"
   }
 ]

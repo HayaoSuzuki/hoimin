@@ -9,7 +9,7 @@ use std::path::Path;
 
 use hoimin_cli::plan::PlanManifest;
 
-const OPT_OUT_OPERATORS: [&str; 32] = [
+const OPT_OUT_OPERATORS: [&str; 35] = [
     "statement_delete",
     "integer_literal_neighbor",
     "augmented_to_assignment",
@@ -42,6 +42,9 @@ const OPT_OUT_OPERATORS: [&str; 32] = [
     "binary_div_floor",
     "structure_slice_bound_omit",
     "structure_slice_bound_move",
+    "continue_remove",
+    "comparison_not_implemented",
+    "exception_cause_remove",
 ];
 
 async fn cli(args: Vec<OsString>) -> serde_json::Value {
@@ -109,10 +112,13 @@ async fn current_default_candidates_are_individually_excludable() {
     let source = format!(
         "{source}\ndef bounds(xs, a, b): return xs[a:b]\ndef prefix(xs, n): return xs[:n]\ndef divide(a, b): return a / b\n"
     );
+    let source = format!(
+        "{source}\nfor value in []:\n continue\nclass Delegating:\n def __eq__(self, other):\n  return NotImplemented\ndef fail(reason):\n raise LookupError('bad') from reason\n"
+    );
     std::fs::write(root.path().join("subject.py"), &source).unwrap();
     let default = plan(root.path(), &[]).await;
     let manifest: PlanManifest = serde_json::from_value(default.clone()).unwrap();
-    assert_eq!(manifest.normalized_config.operators.names().len(), 75);
+    assert_eq!(manifest.normalized_config.operators.names().len(), 78);
     let candidates = default["candidates"].as_array().unwrap();
     for original in ["Decimal(x)", "Decimal.from_float(x)", "HTTPStatus(x)"] {
         assert!(
@@ -184,7 +190,7 @@ async fn explicit_subset_exclusions_do_not_add_default_candidates() {
 }
 
 #[tokio::test]
-async fn slice_and_division_plans_verify_independent_behavioral_checks() {
+async fn adopted_research_plans_verify_independent_behavioral_checks() {
     let cases = [
         (
             "structure_slice_bound_omit",
@@ -219,6 +225,27 @@ async fn slice_and_division_plans_verify_independent_behavioral_checks() {
             "def divide(a, b): return a // b\n",
             "assert divide(12, 3) == 4",
             "assert divide(7, 2) == 3\nassert divide(-7, 2) == -4",
+            1,
+        ),
+        (
+            "continue_remove",
+            "def run(values):\n events=[]\n for value in values:\n  if value<0:\n   events.append((value,'rejected'))\n   continue\n  events.append((value,'accepted'))\n return events\n",
+            "assert (-2,'rejected') in run([-2,3])\nassert (3,'accepted') in run([-2,3])",
+            "assert run([-2,3])==[(-2,'rejected'),(3,'accepted')]",
+            1,
+        ),
+        (
+            "comparison_not_implemented",
+            "class Token:\n def __eq__(self,other):\n  if isinstance(other,Token): return True\n  return NotImplemented\nclass Compatible:\n def __eq__(self,other): return isinstance(other,Token)\n",
+            "assert Token()==Token()",
+            "assert Token()==Compatible()",
+            1,
+        ),
+        (
+            "exception_cause_remove",
+            "def run():\n try:\n  int('bad')\n except ValueError as source:\n  raise LookupError('invalid record') from source\n",
+            "try:\n run()\nexcept LookupError as e:\n assert str(e)=='invalid record'\nelse:\n assert False",
+            "try:\n run()\nexcept LookupError as e:\n assert isinstance(e.__cause__,ValueError)\nelse:\n assert False",
             1,
         ),
     ];

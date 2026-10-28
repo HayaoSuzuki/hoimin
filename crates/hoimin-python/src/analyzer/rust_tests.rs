@@ -20,6 +20,9 @@ use std::fmt::Write as _;
 #[path = "rust/slice_division_tests.rs"]
 mod slice_division_tests;
 
+#[path = "rust/behavioral_research_tests.rs"]
+mod behavioral_research_tests;
+
 const BINDING_FLOW_CORPUS: &str =
     include_str!("../../../../formal/HoiminOracle/corpus/binding-flow-joins.jsonl");
 

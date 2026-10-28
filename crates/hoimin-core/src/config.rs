@@ -181,6 +181,9 @@ mutation_operators! {
     BinaryDivFloor => "binary_div_floor",
     StructureSliceBoundOmit => "structure_slice_bound_omit",
     StructureSliceBoundMove => "structure_slice_bound_move",
+    ContinueRemove => "continue_remove",
+    ComparisonNotImplemented => "comparison_not_implemented",
+    ExceptionCauseRemove => "exception_cause_remove",
 }
 
 // Family membership is an explicit selection policy, separate from the full
@@ -400,6 +403,9 @@ impl Default for MutationOperatorSelection {
                 MutationOperator::GatherReturnExceptions,
                 MutationOperator::ItertoolsTakeDropSwap,
                 MutationOperator::FStringConversionSwap,
+                MutationOperator::ContinueRemove,
+                MutationOperator::ComparisonNotImplemented,
+                MutationOperator::ExceptionCauseRemove,
             ]
             .into_iter()
             .collect(),

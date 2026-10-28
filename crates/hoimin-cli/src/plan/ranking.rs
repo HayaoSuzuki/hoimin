@@ -242,7 +242,9 @@ fn fixed_score(code: RankingReasonCode) -> u32 {
 fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
     let operator = MutationOperator::from_name(operator)?;
     Some(match operator {
-        MutationOperator::NoneTruthiness
+        MutationOperator::ContinueRemove
+        | MutationOperator::ComparisonNotImplemented
+        | MutationOperator::NoneTruthiness
         | MutationOperator::NonlocalRemove
         | MutationOperator::YieldFromToYield
         | MutationOperator::WhileConditionFalse
@@ -262,7 +264,8 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::RemoveNot
         | MutationOperator::BooleanLiteral
         | MutationOperator::BreakContinue => RankingReasonCode::HighValueControl,
-        MutationOperator::GatherReturnExceptions
+        MutationOperator::ExceptionCauseRemove
+        | MutationOperator::GatherReturnExceptions
         | MutationOperator::ExceptionTypePair
         | MutationOperator::ExceptionHierarchy
         | MutationOperator::ExceptionBareToException

@@ -332,7 +332,7 @@ fn exception_hierarchy_is_explicit_only() {
 }
 
 // Fixed current policy, independent of catalog and production default builders.
-const CURRENT_DEFAULT_NAMES: [&str; 75] = [
+const CURRENT_DEFAULT_NAMES: [&str; 78] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -408,6 +408,9 @@ const CURRENT_DEFAULT_NAMES: [&str; 75] = [
     "binary_div_floor",
     "structure_slice_bound_omit",
     "structure_slice_bound_move",
+    "continue_remove",
+    "comparison_not_implemented",
+    "exception_cause_remove",
 ];
 
 #[test]
