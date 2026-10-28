@@ -25,7 +25,9 @@ pub(super) fn work() -> (usize, usize) {
 pub(super) fn record_replacement(operator: MutationOperator, replacement: &str) {
     assert!(matches!(
         operator,
-        MutationOperator::ContainerElementDelete | MutationOperator::ConditionClauseDelete
+        MutationOperator::ContainerElementDelete
+            | MutationOperator::ConditionClauseDelete
+            | MutationOperator::BaseOrderShuffle
     ));
     REPLACEMENT_WORK.set(ReplacementWork {
         builds: REPLACEMENT_WORK.get().builds + 1,

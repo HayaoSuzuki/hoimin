@@ -278,7 +278,8 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::ExceptionBaseBoundary
         | MutationOperator::ExceptionTupleAddPair
         | MutationOperator::ExceptionTupleRemoveMember => RankingReasonCode::ExceptionHandling,
-        MutationOperator::DataclassFactoryShare
+        MutationOperator::BaseOrderShuffle
+        | MutationOperator::DataclassFactoryShare
         | MutationOperator::SortKeySwap
         | MutationOperator::EncodingErrorsIgnore
         | MutationOperator::ItertoolsTakeDropSwap

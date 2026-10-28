@@ -29,6 +29,8 @@ use payload::{Charged, PayloadBudget, PayloadLease};
 #[path = "exception_hierarchy.rs"]
 pub(crate) mod exception_hierarchy;
 
+#[path = "rust/base_order.rs"]
+mod base_order;
 #[path = "rust/container_elements.rs"]
 mod container_elements;
 #[path = "rust/dataclass_factory.rs"]
@@ -4289,6 +4291,20 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     )]
     fn collect_statement_mutations(&mut self, statement: &Stmt) {
         if let Stmt::ClassDef(class) = statement {
+            if self
+                .request
+                .operators
+                .contains(MutationOperator::BaseOrderShuffle)
+                && let Some(range) = base_order::span(class)
+                && selected_source_start(range, self.line_index, self.facts, self.selection)
+                && let Some(replacement) =
+                    base_order::replacement(class, self.source, self.cancelled)
+            {
+                self.add_candidate(range, replacement, MutationOperator::BaseOrderShuffle);
+                if self.check_cancelled() {
+                    return;
+                }
+            }
             let factories = self.dataclass_factories;
             let facts = self.facts;
             if factories

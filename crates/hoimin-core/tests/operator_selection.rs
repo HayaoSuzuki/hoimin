@@ -332,7 +332,7 @@ fn exception_hierarchy_is_explicit_only() {
 }
 
 // Fixed current policy, independent of catalog and production default builders.
-const CURRENT_DEFAULT_NAMES: [&str; 82] = [
+const CURRENT_DEFAULT_NAMES: [&str; 83] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -415,6 +415,7 @@ const CURRENT_DEFAULT_NAMES: [&str; 82] = [
     "sort_key_swap",
     "lambda_capture_late",
     "encoding_errors_ignore",
+    "base_order_shuffle",
 ];
 
 #[test]

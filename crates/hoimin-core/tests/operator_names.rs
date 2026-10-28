@@ -245,6 +245,7 @@ const OPERATORS: &[(MutationOperator, &str)] = &[
         MutationOperator::EncodingErrorsIgnore,
         "encoding_errors_ignore",
     ),
+    (MutationOperator::BaseOrderShuffle, "base_order_shuffle"),
 ];
 
 const FAMILIES: [&str; 8] = [

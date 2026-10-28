@@ -2,9 +2,19 @@
 type: Decision
 title: Inheritance mutation research 1123
 description: Restricted override deletion and super-call movement recommendations;
-  additional base-order research and no duplicate delegation-deletion operator.
+  default base-order mutation and no duplicate delegation-deletion operator.
 status: draft
 sources:
+- id: base-order-builder
+  resource: ../../crates/hoimin-python/src/analyzer/rust/base_order.rs
+  revision: d80c1dbc1eeb97b43f503767cbb06bfd64ec5622
+  working_tree: untracked
+  sha256: fb339c331c5d50021cee252ba5ed343e02d58866b9f285d8258eb0d79b37d81f
+- id: implementation
+  resource: ../superpowers/reports/issue-1123/implementation.md
+  revision: d80c1dbc1eeb97b43f503767cbb06bfd64ec5622
+  working_tree: untracked
+  sha256: c50be6851331aaa2952ec0020354cc65f3e9562963ae5657b3d13b4989249a07
 - id: base-order315
   resource: ../superpowers/reports/issue-1123/results-base-order-python315.json
   revision: 0033b008582b24bead8bdf28f8980275e96500a3
@@ -22,9 +32,9 @@ sources:
   sha256: 0e91fa3072e301d37a373a2858652dbfdcadf98a3cdec1f40ebfa590ea8ace24
 - id: report
   resource: ../superpowers/reports/issue-1123/README.md
-  revision: 0033b008582b24bead8bdf28f8980275e96500a3
+  revision: d80c1dbc1eeb97b43f503767cbb06bfd64ec5622
   working_tree: modified
-  sha256: dad2c8b1d7c0c015b969eba9da23e71d7ce80096cfce81d6f85ff9f6cec89eeb
+  sha256: ddef891b6477dee5a7a7635b6e069db0790bd80f66359e5f68b779c713a5402c
 - id: review
   resource: ../superpowers/reports/issue-1123/self-review.md
   revision: 0033b008582b24bead8bdf28f8980275e96500a3
@@ -61,10 +71,12 @@ sources:
 
 Issue 1123 recommends limited adoption of two future operators: remove an
 ordinary overriding method to restore parent dispatch, and move a standalone
-same-method `super()` call within a straight-line method body. No new product
-operator is implemented by this research. The catalog remains 101 IDs / 82
-defaults. Accepted implementations should follow the existing default-on,
-individual opt-out policy.[^report]
+same-method `super()` call within a straight-line method body. Those operators
+remain proposals. The product follow-up separately implements `base_order_shuffle`
+as a default runtime operator with individual opt-out, bringing the catalog to
+102 IDs / 83 defaults. It accepts distinct simple-name bases without runtime MRO
+validation; inspect execution failures before interpreting a kill as a missing
+assertion.[^report][^implementation][^base-order-builder]
 
 Nine fixed examples compare all generated default candidates, four nearest
 related operators (including opt-in IDs), and one prototype per example.
@@ -119,3 +131,5 @@ is proposed.[^review]
 [^base-order]: [Base-order research](../superpowers/reports/issue-1123/base-order.md).
 [^base-order314]: [Base-order CPython 3.14 results](../superpowers/reports/issue-1123/results-base-order-python314.json).
 [^base-order315]: [Base-order CPython 3.15 results](../superpowers/reports/issue-1123/results-base-order-python315.json).
+[^implementation]: [Base-order implementation](../superpowers/reports/issue-1123/implementation.md).
+[^base-order-builder]: [Source-preserving base-order builder](../../crates/hoimin-python/src/analyzer/rust/base_order.rs).

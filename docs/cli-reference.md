@@ -624,32 +624,32 @@ Options:
 Mutation operator IDs and selector families:
   async_iterator_stop_insert, augmented_add_sub, augmented_bitwise_and_or, augmented_bitwise_shift
   augmented_bitwise_xor, augmented_floor_mod, augmented_matmul, augmented_mul_div
-  augmented_power, augmented_to_assignment, binary_add_sub, binary_div_floor
-  binary_floor_mod, binary_matmul, binary_mul_div, binary_power
-  bisect_boundary_swap, bitwise_and_or, bitwise_invert, bitwise_ops
-  bitwise_shift, bitwise_xor, boolean_and_or, boolean_literal
-  break_continue, collection_any_all, collection_append_insert, collection_list_tuple
-  collection_min_max, collection_ops, collection_set_add_discard, collection_set_frozenset
-  collection_set_remove_discard, collection_string_split_rsplit, collection_string_starts_ends, compare_eq_ne
-  compare_order, comparison_not_implemented, condition_clause_delete, condition_constant
-  container_element_delete, continue_remove, conversion_call_remove, dataclass_factory_share
-  deepcopy_to_copy, deque_popleft_to_pop, encoding_errors_ignore, enum_member_replace
-  exception_bare_to_exception, exception_base_boundary, exception_cause_remove, exception_exception_to_bare
-  exception_hierarchy, exception_ops, exception_risky, exception_tuple_add_pair
-  exception_tuple_remove_member, exception_type_pair, fstring_conversion_swap, function_body_erase
-  function_body_return_constant, gather_return_exceptions, generator_empty, generator_return_insert
-  generator_skip_first, identity, integer_literal_neighbor, iterator_stop_insert
-  itertools_take_drop_swap, lambda_capture_late, list_comprehension_to_generator, loop_break_insert
-  mapping_setdefault_to_get, membership, method_call_remove, mutable_default_share
-  none_truthiness, nonlocal_remove, operator_function, optional_keyword_delete
-  remove_not, return_tuple_swap, sort_key_swap, statement_delete
-  stdlib_conversion_call_remove, string_literal_empty, string_segment_empty, structure_append_extend
-  structure_index_neighbor, structure_mapping_get_subscript, structure_ops, structure_slice_bound_move
-  structure_slice_bound_omit, structure_slice_neighbor, structure_sort_reverse, structure_sorted_reversed
-  type_collections, type_dict_mapping, type_iterable_iterator, type_iterables
-  type_list_sequence, type_nullable, type_nullable_add, type_nullable_remove
-  type_sequence_iterable, type_set_abstract_set, unary_sign, while_condition_false
-  yield_from_to_yield
+  augmented_power, augmented_to_assignment, base_order_shuffle, binary_add_sub
+  binary_div_floor, binary_floor_mod, binary_matmul, binary_mul_div
+  binary_power, bisect_boundary_swap, bitwise_and_or, bitwise_invert
+  bitwise_ops, bitwise_shift, bitwise_xor, boolean_and_or
+  boolean_literal, break_continue, collection_any_all, collection_append_insert
+  collection_list_tuple, collection_min_max, collection_ops, collection_set_add_discard
+  collection_set_frozenset, collection_set_remove_discard, collection_string_split_rsplit, collection_string_starts_ends
+  compare_eq_ne, compare_order, comparison_not_implemented, condition_clause_delete
+  condition_constant, container_element_delete, continue_remove, conversion_call_remove
+  dataclass_factory_share, deepcopy_to_copy, deque_popleft_to_pop, encoding_errors_ignore
+  enum_member_replace, exception_bare_to_exception, exception_base_boundary, exception_cause_remove
+  exception_exception_to_bare, exception_hierarchy, exception_ops, exception_risky
+  exception_tuple_add_pair, exception_tuple_remove_member, exception_type_pair, fstring_conversion_swap
+  function_body_erase, function_body_return_constant, gather_return_exceptions, generator_empty
+  generator_return_insert, generator_skip_first, identity, integer_literal_neighbor
+  iterator_stop_insert, itertools_take_drop_swap, lambda_capture_late, list_comprehension_to_generator
+  loop_break_insert, mapping_setdefault_to_get, membership, method_call_remove
+  mutable_default_share, none_truthiness, nonlocal_remove, operator_function
+  optional_keyword_delete, remove_not, return_tuple_swap, sort_key_swap
+  statement_delete, stdlib_conversion_call_remove, string_literal_empty, string_segment_empty
+  structure_append_extend, structure_index_neighbor, structure_mapping_get_subscript, structure_ops
+  structure_slice_bound_move, structure_slice_bound_omit, structure_slice_neighbor, structure_sort_reverse
+  structure_sorted_reversed, type_collections, type_dict_mapping, type_iterable_iterator
+  type_iterables, type_list_sequence, type_nullable, type_nullable_add
+  type_nullable_remove, type_sequence_iterable, type_set_abstract_set, unary_sign
+  while_condition_false, yield_from_to_yield
 ```
 
 Argument constraints:
@@ -965,32 +965,32 @@ Options:
 Mutation operator IDs and selector families:
   async_iterator_stop_insert, augmented_add_sub, augmented_bitwise_and_or, augmented_bitwise_shift
   augmented_bitwise_xor, augmented_floor_mod, augmented_matmul, augmented_mul_div
-  augmented_power, augmented_to_assignment, binary_add_sub, binary_div_floor
-  binary_floor_mod, binary_matmul, binary_mul_div, binary_power
-  bisect_boundary_swap, bitwise_and_or, bitwise_invert, bitwise_ops
-  bitwise_shift, bitwise_xor, boolean_and_or, boolean_literal
-  break_continue, collection_any_all, collection_append_insert, collection_list_tuple
-  collection_min_max, collection_ops, collection_set_add_discard, collection_set_frozenset
-  collection_set_remove_discard, collection_string_split_rsplit, collection_string_starts_ends, compare_eq_ne
-  compare_order, comparison_not_implemented, condition_clause_delete, condition_constant
-  container_element_delete, continue_remove, conversion_call_remove, dataclass_factory_share
-  deepcopy_to_copy, deque_popleft_to_pop, encoding_errors_ignore, enum_member_replace
-  exception_bare_to_exception, exception_base_boundary, exception_cause_remove, exception_exception_to_bare
-  exception_hierarchy, exception_ops, exception_risky, exception_tuple_add_pair
-  exception_tuple_remove_member, exception_type_pair, fstring_conversion_swap, function_body_erase
-  function_body_return_constant, gather_return_exceptions, generator_empty, generator_return_insert
-  generator_skip_first, identity, integer_literal_neighbor, iterator_stop_insert
-  itertools_take_drop_swap, lambda_capture_late, list_comprehension_to_generator, loop_break_insert
-  mapping_setdefault_to_get, membership, method_call_remove, mutable_default_share
-  none_truthiness, nonlocal_remove, operator_function, optional_keyword_delete
-  remove_not, return_tuple_swap, sort_key_swap, statement_delete
-  stdlib_conversion_call_remove, string_literal_empty, string_segment_empty, structure_append_extend
-  structure_index_neighbor, structure_mapping_get_subscript, structure_ops, structure_slice_bound_move
-  structure_slice_bound_omit, structure_slice_neighbor, structure_sort_reverse, structure_sorted_reversed
-  type_collections, type_dict_mapping, type_iterable_iterator, type_iterables
-  type_list_sequence, type_nullable, type_nullable_add, type_nullable_remove
-  type_sequence_iterable, type_set_abstract_set, unary_sign, while_condition_false
-  yield_from_to_yield
+  augmented_power, augmented_to_assignment, base_order_shuffle, binary_add_sub
+  binary_div_floor, binary_floor_mod, binary_matmul, binary_mul_div
+  binary_power, bisect_boundary_swap, bitwise_and_or, bitwise_invert
+  bitwise_ops, bitwise_shift, bitwise_xor, boolean_and_or
+  boolean_literal, break_continue, collection_any_all, collection_append_insert
+  collection_list_tuple, collection_min_max, collection_ops, collection_set_add_discard
+  collection_set_frozenset, collection_set_remove_discard, collection_string_split_rsplit, collection_string_starts_ends
+  compare_eq_ne, compare_order, comparison_not_implemented, condition_clause_delete
+  condition_constant, container_element_delete, continue_remove, conversion_call_remove
+  dataclass_factory_share, deepcopy_to_copy, deque_popleft_to_pop, encoding_errors_ignore
+  enum_member_replace, exception_bare_to_exception, exception_base_boundary, exception_cause_remove
+  exception_exception_to_bare, exception_hierarchy, exception_ops, exception_risky
+  exception_tuple_add_pair, exception_tuple_remove_member, exception_type_pair, fstring_conversion_swap
+  function_body_erase, function_body_return_constant, gather_return_exceptions, generator_empty
+  generator_return_insert, generator_skip_first, identity, integer_literal_neighbor
+  iterator_stop_insert, itertools_take_drop_swap, lambda_capture_late, list_comprehension_to_generator
+  loop_break_insert, mapping_setdefault_to_get, membership, method_call_remove
+  mutable_default_share, none_truthiness, nonlocal_remove, operator_function
+  optional_keyword_delete, remove_not, return_tuple_swap, sort_key_swap
+  statement_delete, stdlib_conversion_call_remove, string_literal_empty, string_segment_empty
+  structure_append_extend, structure_index_neighbor, structure_mapping_get_subscript, structure_ops
+  structure_slice_bound_move, structure_slice_bound_omit, structure_slice_neighbor, structure_sort_reverse
+  structure_sorted_reversed, type_collections, type_dict_mapping, type_iterable_iterator
+  type_iterables, type_list_sequence, type_nullable, type_nullable_add
+  type_nullable_remove, type_sequence_iterable, type_set_abstract_set, unary_sign
+  while_condition_false, yield_from_to_yield
 ```
 
 Argument constraints:

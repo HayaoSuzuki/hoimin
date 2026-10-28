@@ -503,5 +503,10 @@
     "operator": "encoding_errors_ignore",
     "status": "deferred",
     "reason": "Dedicated guarded identity, scope, source grouping, caps/selection/cancellation and public CPython behavior/opt-out checks; this producer is not modeled by the initial Lean cross-producer corpus"
+  },
+  {
+    "operator": "base_order_shuffle",
+    "status": "deferred",
+    "reason": "Dedicated source-preserving permutation, default/opt-out, selector, cancellation and CPython saved-plan checks; not modeled by the initial Lean cross-producer corpus"
   }
 ]

@@ -1,5 +1,10 @@
 # Inheritance mutation evaluation: issue 1123
 
+The [product follow-up](implementation.md) implements `base_order_shuffle` as a
+default runtime operator with individual opt-out. The catalog is now 102 IDs /
+83 defaults. The research counts and receipts below describe the earlier phase;
+override deletion and super-call movement remain proposals.
+
 ## Decision
 
 Evaluate base main `312b72d3e06e44145bbac28e998c97a8ca4f587d` on 2026-10-28.
@@ -10,8 +15,8 @@ The [base-order follow-up](base-order.md) evaluates an additional
 `base_order_shuffle` prototype on six multiple-inheritance examples. It finds
 additional assertion gaps, equivalent controls and an inconsistent-MRO error;
 it does not extend the single-inheritance eligibility proposal below.
-This research PR records the decision and executable evidence; it does not add
-product operators or change the current 101-ID catalog / 82 defaults.
+The original research phase recorded the decision and executable evidence without
+changing its 101-ID catalog / 82 defaults.
 
 | Proposal | Decision | Evidence and qualification |
 | --- | --- | --- |

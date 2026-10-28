@@ -17,6 +17,9 @@ use proptest::prelude::*;
 use ruff_python_parser::parse_module;
 use std::fmt::Write as _;
 
+#[path = "rust/base_order_tests.rs"]
+mod base_order_tests;
+
 #[path = "rust/slice_division_tests.rs"]
 mod slice_division_tests;
 
