@@ -31,8 +31,8 @@
 - [x] 1. 教材の仕様、弱いテスト、解答例を用意する。初期テストと改善例の成功、行と分岐の100%、代表変異での検出差を検証する。
 - [x] 2. 12章、仕様、演習解答、用語、参考文献、コピー可能なプロンプトを執筆する。専用MkDocs設定と教材ZIPを用意する。
 - [x] 3. 単独ビルドとリンク、教材ダウンロード、実hoiminによる改善前後の検証を行う。検証結果を記録する。
-- [ ] 4. hoiminの作業ブランチをコミットし、個人サイトの作業ブランチに固定コミット取り込みとナビを追加する。個人サイト全体をビルドする。
-- [ ] 5. 独立レビューで事実、教材、導線、公開設定を点検し、必要な修正を行う。認証が利用できれば各リポジトリの作業ブランチをそれぞれのoriginにpushし、ドラフトPRを用意する。mainへのマージは行わない。
+- [x] 4. hoiminの作業ブランチをコミットし、個人サイトの作業ブランチに固定コミット取り込みとナビを追加する。個人サイト全体をビルドする。
+- [x] 5. 独立レビューと修正を行い、両方の作業ブランチをそれぞれのoriginにpushする。作成できるリポジトリにはドラフトPRを用意し、公開先の制約を記録する。mainへのマージは行わない。
 
 ## Execution record
 
@@ -43,3 +43,8 @@
 - Verification: hoimin0.14.0 same compare_order candidate survived before and killed after, both baselines pass.
 - Verification: standalone strict MkDocs build,770 local links/anchors,product documentation build,and16 existing documentation tests pass.
 - Review: independent read-only review found no critical/important issues. Fixed empty-order exception in the proposed property and platform-dependent ZIP metadata.
+
+- Publication validation: personal site full strict MkDocs build and ruff checks pass. Importer rejects a wrong repository and copies only tracked files; ignored-file probe reproduced before the fix and excluded after it.
+- Source PR: https://github.com/HayaoSuzuki/hoimin/pull/1132 (draft). Personal-site branch: docs/mutation-testing-book. PR creation refused because has_pull_requests=false; source and site main branches were not modified.
+- CI fix: new book workflow now names its job and sets concurrency; zizmor auditor reports no findings. The book CI and product documentation CI passed on the first revision.
+- Existing documentation tests:16 passed; workflow-tool tests:8 skipped locally because external lint tools are absent. Full remote CI remains authoritative.
