@@ -5,6 +5,7 @@ import ast
 import hashlib
 import json
 import platform
+import random
 import runpy
 import shutil
 import subprocess
@@ -130,7 +131,81 @@ EXAMPLES = (
 )
 
 
-def proposed(source: str, operator: str) -> list:
+BASE_ORDER_EXAMPLES = (
+    Example(
+        "base_order_dispatch",
+        "base_order_shuffle",
+        "The leftmost provider wins, including when provider values differ.",
+        "class A:\n    def run(self, providers):\n        return providers['a']()\n"
+        "class B:\n    def run(self, providers):\n        return providers['b']()\n"
+        "class Child(A, B):\n    pass\n",
+        "assert Child().run({'a': lambda: 2, 'b': lambda: 2}) == 2",
+        "assert Child().run({'a': lambda: 2, 'b': lambda: 5}) == 2",
+    ),
+    Example(
+        "base_order_super_callback",
+        "base_order_shuffle",
+        "The cooperative sink receives a, b exactly once in that order.",
+        "class Root:\n    def run(self, emit):\n        pass\n"
+        "class A(Root):\n    def run(self, emit):\n"
+        "        emit('a')\n        super().run(emit)\n"
+        "class B(Root):\n    def run(self, emit):\n"
+        "        emit('b')\n        super().run(emit)\n"
+        "class Child(A, B):\n    pass\n",
+        "events=[]\nChild().run(events.append)\nassert sorted(events)==['a','b']",
+        "events=[]\nChild().run(events.append)\nassert events==['a','b']",
+    ),
+    Example(
+        "base_order_three_super_callback",
+        "base_order_shuffle",
+        "Three cooperative callbacks occur exactly once in a, b, c order.",
+        "class Root:\n    def run(self, emit):\n        pass\n"
+        "class A(Root):\n    def run(self, emit):\n"
+        "        emit('a')\n        super().run(emit)\n"
+        "class B(Root):\n    def run(self, emit):\n"
+        "        emit('b')\n        super().run(emit)\n"
+        "class C(Root):\n    def run(self, emit):\n"
+        "        emit('c')\n        super().run(emit)\n"
+        "class Child(A, B, C):\n    pass\n",
+        "events=[]\nChild().run(events.append)\nassert sorted(events)==['a','b','c']",
+        "events=[]\nChild().run(events.append)\nassert events==['a','b','c']",
+    ),
+    Example(
+        "base_order_commuting_control",
+        "base_order_shuffle",
+        "Both labels are required; their insertion order is not contractual.",
+        "class Root:\n    def run(self, labels):\n        pass\n"
+        "class A(Root):\n    def run(self, labels):\n"
+        "        labels.add('a')\n        super().run(labels)\n"
+        "class B(Root):\n    def run(self, labels):\n"
+        "        labels.add('b')\n        super().run(labels)\n"
+        "class Child(A, B):\n    pass\n",
+        "labels=set()\nChild().run(labels)\nassert 'a' in labels",
+        "labels=set()\nChild().run(labels)\nassert labels=={'a','b'}",
+    ),
+    Example(
+        "base_order_explicit_call_control",
+        "base_order_shuffle",
+        "Explicit delegation promises a, b order independently of the base list.",
+        "class A:\n    def run(self, emit):\n        emit('a')\n"
+        "class B:\n    def run(self, emit):\n        emit('b')\n"
+        "class Child(A, B):\n    def run(self, emit):\n"
+        "        A.run(self, emit)\n        B.run(self, emit)\n",
+        "events=[]\nChild().run(events.append)\nassert sorted(events)==['a','b']",
+        "events=[]\nChild().run(events.append)\nassert events==['a','b']",
+    ),
+    Example(
+        "base_order_mro_risk",
+        "base_order_shuffle",
+        "Child(B, A) is constructible; reversing dependent bases invalidates C3 MRO.",
+        "class A:\n    pass\nclass B(A):\n    pass\nclass Child(B, A):\n    pass\n",
+        "Child()",
+        "assert isinstance(Child(), A)",
+    ),
+)
+
+
+def proposed(source: str, operator: str, seed: int = 0) -> list:
     """Only inspect the fixed, known Base/Child examples, never import the target.
 
     This is a semantic experiment, not an implementation of eligibility guards.
@@ -140,6 +215,32 @@ def proposed(source: str, operator: str) -> list:
     child = next(
         n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Child"
     )
+    if operator == "base_order_shuffle":
+        # This fixed-corpus probe handles distinct simple bases only. Keep the
+        # edit inside the base list, so class bodies and keywords are untouched.
+        assert len(child.bases) >= 2 and all(
+            isinstance(b, ast.Name) for b in child.bases
+        )
+        original = [base.id for base in child.bases]
+        assert len(set(original)) == len(original)
+        reordered = original.copy()
+        if len(reordered) > 2:
+            random.Random(seed).shuffle(reordered)
+        if reordered == original:
+            reordered[0], reordered[1] = reordered[1], reordered[0]
+        start = BOUNDS(source, child.bases[0])[0]
+        end = BOUNDS(source, child.bases[-1])[1]
+        candidate = Candidate(
+            "prototype:" + operator,
+            start,
+            end - start,
+            source[start:end],
+            ", ".join(reordered),
+            child.lineno,
+            operator,
+        )
+        compile(APPLY(source, candidate), "<inheritance-probe>", "exec")
+        return [candidate]
     method = next(n for n in child.body if isinstance(n, ast.FunctionDef))
     if operator == "override_method_delete":
         node = method
@@ -186,7 +287,7 @@ def proposed(source: str, operator: str) -> list:
     return [candidate]
 
 
-def compare(binary: Path, root: Path, example: Example) -> dict:
+def compare(binary: Path, root: Path, example: Example, seed: int = 0) -> dict:
     originals = {
         kind: CHECK(root, example.source, checks)
         for kind, checks in (("weak", example.weak), ("strong", example.strong))
@@ -202,7 +303,7 @@ def compare(binary: Path, root: Path, example: Example) -> dict:
             "candidates": pool,
         }
     started = time.perf_counter()
-    pool = proposed(example.source, example.proposed)
+    pool = proposed(example.source, example.proposed, seed)
     rows["proposed"] = {
         "generation_seconds": time.perf_counter() - started,
         "candidates": pool,
@@ -225,8 +326,22 @@ def compare(binary: Path, root: Path, example: Example) -> dict:
                 }
             )
     prototype = next(iter(mutant_sources["proposed"]))
+    base_order = {}
+    if example.proposed == "base_order_shuffle":
+        orders = []
+        for source in (example.source, prototype):
+            child = next(
+                n
+                for n in ast.parse(source).body
+                if isinstance(n, ast.ClassDef) and n.name == "Child"
+            )
+            orders.append([ast.unparse(base) for base in child.bases])
+        base_order = {
+            "base_order": {"seed": seed, "before": orders[0], "after": orders[1]}
+        }
     return {
         **asdict(example),
+        **base_order,
         "originals": originals,
         "exact_source_overlap": {
             name: prototype in mutant_sources[name] for name in ("nearest", "defaults")
@@ -239,6 +354,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--hoimin", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--seed", type=int, default=0, help="Seed for base-order shuffling"
+    )
+    parser.add_argument(
+        "--base-order-only",
+        action="store_true",
+        help="Run only the six base-order examples",
+    )
     args = parser.parse_args()
     binary = args.hoimin.resolve()
     started = time.perf_counter()
@@ -257,14 +380,22 @@ def main():
             "helper_sha256": hashlib.sha256(HELPER_PATH.read_bytes()).hexdigest(),
             "nearest_operators": NEAREST,
             "per_pool_limit": PER_POOL_LIMIT,
-            "comparisons": [compare(binary, root, e) for e in EXAMPLES],
+            "seed": args.seed,
+            "comparisons": [
+                compare(binary, root, e, args.seed)
+                for e in (
+                    BASE_ORDER_EXAMPLES
+                    if args.base_order_only
+                    else EXAMPLES + BASE_ORDER_EXAMPLES
+                )
+            ],
         }
         result["temporary_file_bytes_at_end"] = sum(
             p.stat().st_size for p in root.rglob("*") if p.is_file()
         )
     result["temporary_directory_removed"] = not root.exists()
     result["elapsed_seconds"] = time.perf_counter() - started
-    args.output.write_text(json.dumps(result, indent=2) + "\n")
+    args.output.write_text(json.dumps(result, indent=2) + "\n", newline="")
 
 
 if __name__ == "__main__":

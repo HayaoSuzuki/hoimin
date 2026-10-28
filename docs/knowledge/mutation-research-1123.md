@@ -2,24 +2,39 @@
 type: Decision
 title: Inheritance mutation research 1123
 description: Restricted override deletion and super-call movement recommendations;
-  no duplicate delegation-deletion operator.
+  additional base-order research and no duplicate delegation-deletion operator.
 status: draft
 sources:
+- id: base-order315
+  resource: ../superpowers/reports/issue-1123/results-base-order-python315.json
+  revision: 0033b008582b24bead8bdf28f8980275e96500a3
+  working_tree: untracked
+  sha256: 803692ec5fb5c458934fc25bccc9fc2d741b4a6ba13127999536c3a185674cd5
+- id: base-order314
+  resource: ../superpowers/reports/issue-1123/results-base-order-python314.json
+  revision: 0033b008582b24bead8bdf28f8980275e96500a3
+  working_tree: untracked
+  sha256: 3c314a7e9374926d6cd61d591c11d6ae14b35c097a03878f7bde2ce84d907717
+- id: base-order
+  resource: ../superpowers/reports/issue-1123/base-order.md
+  revision: 0033b008582b24bead8bdf28f8980275e96500a3
+  working_tree: untracked
+  sha256: 0e91fa3072e301d37a373a2858652dbfdcadf98a3cdec1f40ebfa590ea8ace24
 - id: report
   resource: ../superpowers/reports/issue-1123/README.md
-  revision: 312b72d3e06e44145bbac28e998c97a8ca4f587d
-  working_tree: untracked
-  sha256: 673e47887a0ed375cffd739d8a65660da84dc9e4fd34e87a693c6d345fff3794
+  revision: 0033b008582b24bead8bdf28f8980275e96500a3
+  working_tree: modified
+  sha256: dad2c8b1d7c0c015b969eba9da23e71d7ce80096cfce81d6f85ff9f6cec89eeb
 - id: review
   resource: ../superpowers/reports/issue-1123/self-review.md
-  revision: 312b72d3e06e44145bbac28e998c97a8ca4f587d
-  working_tree: untracked
-  sha256: 7963d79f02ac87e2c0d236e3d2d6195f34a2b32b726a355afcc4049c8b1c8d3a
+  revision: 0033b008582b24bead8bdf28f8980275e96500a3
+  working_tree: modified
+  sha256: 309528345f61c64aa4c5a8bb4983c3d3db5fd5faa06216063cdd4e4415bb33ee
 - id: experiment
   resource: ../superpowers/reports/issue-1123/experiment.py
-  revision: 312b72d3e06e44145bbac28e998c97a8ca4f587d
-  working_tree: untracked
-  sha256: 18b29c9f91480ce98af4347838756c7c84d73573dd55811d883c14bd915c9414
+  revision: 0033b008582b24bead8bdf28f8980275e96500a3
+  working_tree: modified
+  sha256: 66ec4381b6bdea968978c994ebd0f6a618e7453ab1a2ca1f70939d59d3e15e37
 - id: python314
   resource: ../superpowers/reports/issue-1123/results-python314.json
   revision: 312b72d3e06e44145bbac28e998c97a8ca4f587d
@@ -61,6 +76,17 @@ and commuting operations survive; constructor and initialization-dependency
 changes produce runtime errors that are not credited as assertion gaps.
 These observations do not estimate real-project prevalence.[^python314][^python315]
 
+Six additional multiple-inheritance examples evaluate `base_order_shuffle`:
+swap two bases, or seed a shuffle of three or more with a first-two swap if
+the shuffle preserves the original order. Both new interpreter receipts record
+three useful assertion gaps, two surviving controls and one MRO `TypeError`;
+all existing/prototype candidates are executed. Correct cooperative `super()`
+can still yield an order-sensitive kill, while explicit base calls can survive.
+This probes required dispatch behavior, not the correctness of `super()` use.
+The report identifies the available binary by hash and does not attest its
+build revision. The multiple-inheritance prototype does not extend the original
+single-inheritance adoption boundary.[^base-order][^base-order314][^base-order315]
+
 Standalone delegation deletion produces byte-identical mutants through default
 `statement_delete` in both deletion fixtures, so no SCD ID is recommended.
 Existing expression-removal guards remain authoritative; assigned/returned
@@ -90,3 +116,6 @@ is proposed.[^review]
 [^python315]: [Source: python315](../superpowers/reports/issue-1123/results-python315.json).
 [^collector]: [Source: collector](../../crates/hoimin-python/src/analyzer/rust.rs).
 [^guard]: [Source: guard](../../crates/hoimin-python/src/analyzer/rust/deletion.rs).
+[^base-order]: [Base-order research](../superpowers/reports/issue-1123/base-order.md).
+[^base-order314]: [Base-order CPython 3.14 results](../superpowers/reports/issue-1123/results-base-order-python314.json).
+[^base-order315]: [Base-order CPython 3.15 results](../superpowers/reports/issue-1123/results-base-order-python315.json).

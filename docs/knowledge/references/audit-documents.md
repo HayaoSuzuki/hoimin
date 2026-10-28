@@ -5,16 +5,21 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1123-base-order
+  resource: ../../superpowers/reports/issue-1123/base-order.md
+  revision: 0033b008582b24bead8bdf28f8980275e96500a3
+  working_tree: untracked
+  sha256: 0e91fa3072e301d37a373a2858652dbfdcadf98a3cdec1f40ebfa590ea8ace24
 - id: issue-1123-review
   resource: ../../superpowers/reports/issue-1123/self-review.md
-  revision: 312b72d3e06e44145bbac28e998c97a8ca4f587d
-  working_tree: untracked
-  sha256: 7963d79f02ac87e2c0d236e3d2d6195f34a2b32b726a355afcc4049c8b1c8d3a
+  revision: 0033b008582b24bead8bdf28f8980275e96500a3
+  working_tree: modified
+  sha256: 309528345f61c64aa4c5a8bb4983c3d3db5fd5faa06216063cdd4e4415bb33ee
 - id: issue-1123-report
   resource: ../../superpowers/reports/issue-1123/README.md
-  revision: 312b72d3e06e44145bbac28e998c97a8ca4f587d
-  working_tree: untracked
-  sha256: 673e47887a0ed375cffd739d8a65660da84dc9e4fd34e87a693c6d345fff3794
+  revision: 0033b008582b24bead8bdf28f8980275e96500a3
+  working_tree: modified
+  sha256: dad2c8b1d7c0c015b969eba9da23e71d7ce80096cfce81d6f85ff9f6cec89eeb
 - id: issues-1125-1131-four-implementation
   resource: ../../superpowers/reports/issues-1125-1131/four-implementation.md
   revision: f3703cd875712b7a25bb37e5e2b19771eda8a52e
@@ -1714,6 +1719,8 @@ sources:
 
 - [Research decision and reproduction](../../superpowers/reports/issue-1123/README.md) [^issue-1123-report] — limited adoption proposal for override deletion and delegation movement; exact deletion overlap and fixed-corpus evidence.
 - [Review and verification](../../superpowers/reports/issue-1123/self-review.md) [^issue-1123-review] — five self-review passes per stage, interpreter checks and evidence limits.
+- [Base-order follow-up](../../superpowers/reports/issue-1123/base-order.md) [^issue-1123-base-order] — six multiple-inheritance examples, seeded permutations, surviving controls and MRO errors.
 
 [^issue-1123-report]: [Inheritance research](../../superpowers/reports/issue-1123/README.md).
 [^issue-1123-review]: [Review record](../../superpowers/reports/issue-1123/self-review.md).
+[^issue-1123-base-order]: [Base-order follow-up](../../superpowers/reports/issue-1123/base-order.md).

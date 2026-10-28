@@ -81,3 +81,54 @@ body reports their results. CI completion is a separate claim.
 
 The research adds no production implementation, so no workspace-wide Rust test
 campaign or new formal proof is claimed. Existing commit hooks still apply.
+
+## Base-order follow-up, 2026-10-29
+
+The approved design adds a seeded fixed-corpus base-order probe, not a product
+operator. Two bases swap; three or more shuffle once, with a first-two swap
+when the result is unchanged. This is bounded and replayable, without a uniform
+sampling claim. The original adoption restrictions remain single-inheritance.
+
+Verification performed for this extension:
+
+- Observed 15 new tests fail before implementation because the seeded probe and
+  six fixtures were absent; all passed after implementation.
+- Reproduced the helper's Windows LF-to-CRLF conversion with a failing byte
+  preservation test. Changed only the two `subject.py` writes to `newline=""`.
+  The focused suite then passed: **16 passed**. These include 32 seeds each for
+  three through eight bases, same-seed replay, identity fallback, target-import
+  avoidance and all six original/mutant fixture classifications.
+- CPython 3.14.9 and 3.15.1 on Windows: six examples each, **12 original checks
+  and 134 mutant checks each**, identical descriptors/verdicts and no unexecuted
+  candidates. Receipt runner/helper hashes match the saved source bytes. Both
+  temporary directories were removed. Separate result files preserve the original
+  CPython 3.14/3.15-beta receipts unchanged.
+- Default runner path on CPython 3.14.9: **15 examples and 290 mutant checks**,
+  zero unexecuted candidates, temporary directory removed. Descriptors/verdicts
+  for the original nine examples agree with the historical receipt. This replay
+  was saved locally under ignored `.superpowers/`, not over historical evidence.
+- `python -m pytest -q -p no:randomly`: **1258 passed, 50 skipped** in 351.17 s.
+  The focused research tests live outside the default testpaths and were run
+  separately. No Rust workspace suite was run because product code is unchanged.
+- Ruff isolated lint and format checks passed for both modified research scripts
+  and the new test module. The report describes the measured CLI as hoimin 0.14.0
+  by binary hash; its build revision was not independently attested. Runner Git
+  revision is not presented as binary provenance.
+- Final related tests: **77 passed, 1 skipped**. Safe-YAML validation covered 60
+  headers, and the knowledge inventory covered 63 pages without missing links,
+  sources or unreachable pages. All ten changed/new source hashes were checked.
+  Referenced experiment/report files and the new JSON outputs use LF so recorded
+  hashes agree with Git's canonical bytes across checkouts.
+- A fresh read-only reviewer reported **no actionable findings** after checking
+  the implementation, focused tests, both receipts and report. The reviewer
+  independently reproduced all 146 recorded original/mutant verdicts and exception
+  types in fresh namespaces, checked SHA-256 and cross-interpreter agreement,
+  confirmed the two-line helper fix and unchanged historical receipts, and
+  checked the limits of the claims about `super()`.
+
+The three positive examples demonstrate missing assertions about provider or
+callback order. Correct cooperative `super()` use can still produce kills;
+explicit base calls can survive. The invalid-MRO `TypeError` is counted as an
+error, not useful evidence of a missing assertion. Rotation and reversal could
+also probe order dependence; the approved seeded shuffle handles more orders
+without enumerating permutations.

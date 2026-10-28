@@ -1,0 +1,1628 @@
+{
+  "python": "3.15.1 (main, Oct 21 2026, 17:51:31) [MSC v.1951 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "source_revision": "0033b008582b24bead8bdf28f8980275e96500a3",
+  "binary_sha256": "75fe9fd88ee5f1dc59c931daaaf049064074f28f196bce7df51aafdd5ef3d4fc",
+  "runner_sha256": "66ec4381b6bdea968978c994ebd0f6a618e7453ab1a2ca1f70939d59d3e15e37",
+  "helper_sha256": "7e821703ca967a1e9c1c451ea19b782ea8e7e58df8b09144b3c319adc966953a",
+  "nearest_operators": "statement_delete,function_body_erase,function_body_return_constant,method_call_remove",
+  "per_pool_limit": 64,
+  "seed": 0,
+  "comparisons": [
+    {
+      "name": "base_order_dispatch",
+      "proposed": {
+        "generation_seconds": 0.00035830005072057247,
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "prototype:base_order_shuffle",
+              "start": 154,
+              "length": 4,
+              "original": "A, B",
+              "replacement": "B, A",
+              "line": 7,
+              "operator": "base_order_shuffle"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.10140469996258616
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.0950889999512583
+            }
+          }
+        ]
+      },
+      "requirement": "The leftmost provider wins, including when provider values differ.",
+      "source": "class A:\n    def run(self, providers):\n        return providers['a']()\nclass B:\n    def run(self, providers):\n        return providers['b']()\nclass Child(A, B):\n    pass\n",
+      "weak": "assert Child().run({'a': lambda: 2, 'b': lambda: 2}) == 2",
+      "strong": "assert Child().run({'a': lambda: 2, 'b': lambda: 5}) == 2",
+      "base_order": {
+        "seed": 0,
+        "before": [
+          "A",
+          "B"
+        ],
+        "after": [
+          "B",
+          "A"
+        ]
+      },
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.10366130014881492
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.10216389992274344
+        }
+      },
+      "exact_source_overlap": {
+        "nearest": false,
+        "defaults": false
+      },
+      "nearest": {
+        "generation_seconds": 0.03783669997937977,
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      },
+      "defaults": {
+        "generation_seconds": 0.03937269980087876,
+        "pool_count": 4,
+        "executed": 4,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_506df36db818d172ff4ae767cb0ea022f69c16081845f68181781d9ccad7c694",
+              "start": 54,
+              "length": 14,
+              "original": "providers['a']",
+              "replacement": "providers.get('a')",
+              "line": 3,
+              "operator": "structure_mapping_get_subscript"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.10572730004787445
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.09359259996563196
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_f72ff8b849807ab77afc85ae7970c01039de1f934585de34ae19d1ac16fa6d26",
+              "start": 64,
+              "length": 3,
+              "original": "'a'",
+              "replacement": "\"\"",
+              "line": 3,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "error",
+              "exception": "KeyError",
+              "elapsed_seconds": 0.09861550014466047
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "KeyError",
+              "elapsed_seconds": 0.09589850017800927
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_2ff59bcf39794ba53d0f1b2db559a5241213d0df073d8606890fd9c93bc935be",
+              "start": 125,
+              "length": 14,
+              "original": "providers['b']",
+              "replacement": "providers.get('b')",
+              "line": 6,
+              "operator": "structure_mapping_get_subscript"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.09900069981813431
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.0939652998931706
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_738f38ffc7457a8f2215a99cc641ce7e71a7c4f63da6a4d609dcd307eb5dbaf7",
+              "start": 135,
+              "length": 3,
+              "original": "'b'",
+              "replacement": "\"\"",
+              "line": 6,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.10057509993202984
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.09246110008098185
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "base_order_super_callback",
+      "proposed": {
+        "generation_seconds": 0.00041779992170631886,
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "prototype:base_order_shuffle",
+              "start": 230,
+              "length": 4,
+              "original": "A, B",
+              "replacement": "B, A",
+              "line": 12,
+              "operator": "base_order_shuffle"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.09954059985466301
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09889649995602667
+            }
+          }
+        ]
+      },
+      "requirement": "The cooperative sink receives a, b exactly once in that order.",
+      "source": "class Root:\n    def run(self, emit):\n        pass\nclass A(Root):\n    def run(self, emit):\n        emit('a')\n        super().run(emit)\nclass B(Root):\n    def run(self, emit):\n        emit('b')\n        super().run(emit)\nclass Child(A, B):\n    pass\n",
+      "weak": "events=[]\nChild().run(events.append)\nassert sorted(events)==['a','b']",
+      "strong": "events=[]\nChild().run(events.append)\nassert events==['a','b']",
+      "base_order": {
+        "seed": 0,
+        "before": [
+          "A",
+          "B"
+        ],
+        "after": [
+          "B",
+          "A"
+        ]
+      },
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.11990240006707609
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.10578330000862479
+        }
+      },
+      "exact_source_overlap": {
+        "nearest": false,
+        "defaults": false
+      },
+      "nearest": {
+        "generation_seconds": 0.0352356000803411,
+        "pool_count": 6,
+        "executed": 6,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_2b155390bf368ca40d6cd0e850c1ca0ccefd2a26a4e6d95098e11fb326863c11",
+              "start": 98,
+              "length": 35,
+              "original": "emit('a')\n        super().run(emit)",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "function_body_erase"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09532840014435351
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09557230002246797
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_8ec2f7d55e1bf8c1db354ba9ab01fd28735c22fd97acedfb7904e5e868bf0c9d",
+              "start": 98,
+              "length": 9,
+              "original": "emit('a')",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09798020008020103
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09985870006494224
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_eca59f8cbb5f07a917cd4e9743029642b46d372a4487643253026921a4c98d83",
+              "start": 116,
+              "length": 17,
+              "original": "super().run(emit)",
+              "replacement": "pass",
+              "line": 7,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10145220020785928
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10428810003213584
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_a695cd8ef6cf2f38280eefd959e1dafd296cf640194766774703dc2cf42a73e7",
+              "start": 182,
+              "length": 35,
+              "original": "emit('b')\n        super().run(emit)",
+              "replacement": "pass",
+              "line": 10,
+              "operator": "function_body_erase"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09517320012673736
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09566410002298653
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_4b83a542c66151d25ac092c6aafa2ea3ce843245c05f37502baf72052c419813",
+              "start": 182,
+              "length": 9,
+              "original": "emit('b')",
+              "replacement": "pass",
+              "line": 10,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.11067080008797348
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09449889999814332
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_784fa5cfa8482a7977ce50ba194feee5d0e80c239c071a216fa537f73ec92a25",
+              "start": 200,
+              "length": 17,
+              "original": "super().run(emit)",
+              "replacement": "pass",
+              "line": 11,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.09649519994854927
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.10210560006089509
+            }
+          }
+        ]
+      },
+      "defaults": {
+        "generation_seconds": 0.03598830010741949,
+        "pool_count": 6,
+        "executed": 6,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_8ec2f7d55e1bf8c1db354ba9ab01fd28735c22fd97acedfb7904e5e868bf0c9d",
+              "start": 98,
+              "length": 9,
+              "original": "emit('a')",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09917069994844496
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10325050004757941
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_876b4b68de49908aeec4816e36704025db508f1b18238d124dfbf7c0d6d6e193",
+              "start": 103,
+              "length": 3,
+              "original": "'a'",
+              "replacement": "\"\"",
+              "line": 6,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10061730002053082
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10348320007324219
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_eca59f8cbb5f07a917cd4e9743029642b46d372a4487643253026921a4c98d83",
+              "start": 116,
+              "length": 17,
+              "original": "super().run(emit)",
+              "replacement": "pass",
+              "line": 7,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10432569985277951
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09811079991050065
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_4b83a542c66151d25ac092c6aafa2ea3ce843245c05f37502baf72052c419813",
+              "start": 182,
+              "length": 9,
+              "original": "emit('b')",
+              "replacement": "pass",
+              "line": 10,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09703770000487566
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10006209998391569
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_d210b2fa5fd61b1821433ca8d6f3cc5d0d1d1728944b82e988b1a9464d0b5635",
+              "start": 187,
+              "length": 3,
+              "original": "'b'",
+              "replacement": "\"\"",
+              "line": 10,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09322619996964931
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09736799984239042
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_784fa5cfa8482a7977ce50ba194feee5d0e80c239c071a216fa537f73ec92a25",
+              "start": 200,
+              "length": 17,
+              "original": "super().run(emit)",
+              "replacement": "pass",
+              "line": 11,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.0987589000724256
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.10095170000568032
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "base_order_three_super_callback",
+      "proposed": {
+        "generation_seconds": 0.0011167998891323805,
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "prototype:base_order_shuffle",
+              "start": 314,
+              "length": 7,
+              "original": "A, B, C",
+              "replacement": "A, C, B",
+              "line": 16,
+              "operator": "base_order_shuffle"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.10236939997412264
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09888619999401271
+            }
+          }
+        ]
+      },
+      "requirement": "Three cooperative callbacks occur exactly once in a, b, c order.",
+      "source": "class Root:\n    def run(self, emit):\n        pass\nclass A(Root):\n    def run(self, emit):\n        emit('a')\n        super().run(emit)\nclass B(Root):\n    def run(self, emit):\n        emit('b')\n        super().run(emit)\nclass C(Root):\n    def run(self, emit):\n        emit('c')\n        super().run(emit)\nclass Child(A, B, C):\n    pass\n",
+      "weak": "events=[]\nChild().run(events.append)\nassert sorted(events)==['a','b','c']",
+      "strong": "events=[]\nChild().run(events.append)\nassert events==['a','b','c']",
+      "base_order": {
+        "seed": 0,
+        "before": [
+          "A",
+          "B",
+          "C"
+        ],
+        "after": [
+          "A",
+          "C",
+          "B"
+        ]
+      },
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.10959480004385114
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.10089040012098849
+        }
+      },
+      "exact_source_overlap": {
+        "nearest": false,
+        "defaults": false
+      },
+      "nearest": {
+        "generation_seconds": 0.03585190000012517,
+        "pool_count": 9,
+        "executed": 9,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_3f94aa894d15074a7958dcf9d405ac2ef30f5a256d1032de763a8a63a6cc8ecf",
+              "start": 98,
+              "length": 35,
+              "original": "emit('a')\n        super().run(emit)",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "function_body_erase"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09797700005583465
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09432079992257059
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_2cd188236838675152bb5dd459e4c13fbaafceeb42a911493719474c5aede05a",
+              "start": 98,
+              "length": 9,
+              "original": "emit('a')",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10596800013445318
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09803340001963079
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_5cd4b848c25bff66be37abd9c2c15461d920562628c59227d3abf86180bb293f",
+              "start": 116,
+              "length": 17,
+              "original": "super().run(emit)",
+              "replacement": "pass",
+              "line": 7,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09359650011174381
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09811569983139634
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_ce3c1ecf9c506a534b660645874b41b44d6c8387d372b9a363b26a1b7644ea8f",
+              "start": 182,
+              "length": 35,
+              "original": "emit('b')\n        super().run(emit)",
+              "replacement": "pass",
+              "line": 10,
+              "operator": "function_body_erase"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.0986359000671655
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09926380007527769
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_6e489eff345e41235d26f1ce749691e5ad94ecd4102b49f42e9036ef346bca96",
+              "start": 182,
+              "length": 9,
+              "original": "emit('b')",
+              "replacement": "pass",
+              "line": 10,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09964810009114444
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09498639986850321
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_ef051e87adab3478ce2a6e00221b8562d9451cea854ba1e55ae6dd22fd99ef55",
+              "start": 200,
+              "length": 17,
+              "original": "super().run(emit)",
+              "replacement": "pass",
+              "line": 11,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09674049983732402
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09839340019971132
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_2d48a8ca28daa491fce67c3151be43affdb7090b35217c7aacda4f7c0aa4613c",
+              "start": 266,
+              "length": 35,
+              "original": "emit('c')\n        super().run(emit)",
+              "replacement": "pass",
+              "line": 14,
+              "operator": "function_body_erase"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.0974195001181215
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10029560001567006
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_ccd64ff9b18ff45de5d3f81e6d32838352f8deaeeb6da91000ce4b27d03a0e18",
+              "start": 266,
+              "length": 9,
+              "original": "emit('c')",
+              "replacement": "pass",
+              "line": 14,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10337139992043376
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10213620006106794
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_92a37aa782b20452f11b7fb4e6ca9a996419b1a34cfd206f5277edef04c0ed2d",
+              "start": 284,
+              "length": 17,
+              "original": "super().run(emit)",
+              "replacement": "pass",
+              "line": 15,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.0959032999817282
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.0994104000274092
+            }
+          }
+        ]
+      },
+      "defaults": {
+        "generation_seconds": 0.03768160007894039,
+        "pool_count": 9,
+        "executed": 9,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_2cd188236838675152bb5dd459e4c13fbaafceeb42a911493719474c5aede05a",
+              "start": 98,
+              "length": 9,
+              "original": "emit('a')",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09302049991674721
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.1020257999189198
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_c1c1de07c03867ad3340fd5d1a8be88965f5d07ce30aa14ea008c8f528b87d2f",
+              "start": 103,
+              "length": 3,
+              "original": "'a'",
+              "replacement": "\"\"",
+              "line": 6,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09780340013094246
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10027349996380508
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_5cd4b848c25bff66be37abd9c2c15461d920562628c59227d3abf86180bb293f",
+              "start": 116,
+              "length": 17,
+              "original": "super().run(emit)",
+              "replacement": "pass",
+              "line": 7,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09536910010501742
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09963299985975027
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_6e489eff345e41235d26f1ce749691e5ad94ecd4102b49f42e9036ef346bca96",
+              "start": 182,
+              "length": 9,
+              "original": "emit('b')",
+              "replacement": "pass",
+              "line": 10,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.0944825999904424
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09791050013154745
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_2d76f23f4d05adc2620242d6f5e1c2be56e6455dc8d80bfb89e309632be529ca",
+              "start": 187,
+              "length": 3,
+              "original": "'b'",
+              "replacement": "\"\"",
+              "line": 10,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09848579997196794
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09679679991677403
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_ef051e87adab3478ce2a6e00221b8562d9451cea854ba1e55ae6dd22fd99ef55",
+              "start": 200,
+              "length": 17,
+              "original": "super().run(emit)",
+              "replacement": "pass",
+              "line": 11,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09466310008428991
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09697840013541281
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_ccd64ff9b18ff45de5d3f81e6d32838352f8deaeeb6da91000ce4b27d03a0e18",
+              "start": 266,
+              "length": 9,
+              "original": "emit('c')",
+              "replacement": "pass",
+              "line": 14,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09898690017871559
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.1002460999879986
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_ae31f7355fc2e7296e8590966ef4c52767fe19a9bd432b8eb0187f21990551f0",
+              "start": 271,
+              "length": 3,
+              "original": "'c'",
+              "replacement": "\"\"",
+              "line": 14,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09918299992568791
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10014349990524352
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_92a37aa782b20452f11b7fb4e6ca9a996419b1a34cfd206f5277edef04c0ed2d",
+              "start": 284,
+              "length": 17,
+              "original": "super().run(emit)",
+              "replacement": "pass",
+              "line": 15,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.09679979993961751
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.09589580004103482
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "base_order_commuting_control",
+      "proposed": {
+        "generation_seconds": 0.00044439989142119884,
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "prototype:base_order_shuffle",
+              "start": 252,
+              "length": 4,
+              "original": "A, B",
+              "replacement": "B, A",
+              "line": 12,
+              "operator": "base_order_shuffle"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.09964250004850328
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.10278630000539124
+            }
+          }
+        ]
+      },
+      "requirement": "Both labels are required; their insertion order is not contractual.",
+      "source": "class Root:\n    def run(self, labels):\n        pass\nclass A(Root):\n    def run(self, labels):\n        labels.add('a')\n        super().run(labels)\nclass B(Root):\n    def run(self, labels):\n        labels.add('b')\n        super().run(labels)\nclass Child(A, B):\n    pass\n",
+      "weak": "labels=set()\nChild().run(labels)\nassert 'a' in labels",
+      "strong": "labels=set()\nChild().run(labels)\nassert labels=={'a','b'}",
+      "base_order": {
+        "seed": 0,
+        "before": [
+          "A",
+          "B"
+        ],
+        "after": [
+          "B",
+          "A"
+        ]
+      },
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.10513650020584464
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.1079732000362128
+        }
+      },
+      "exact_source_overlap": {
+        "nearest": false,
+        "defaults": false
+      },
+      "nearest": {
+        "generation_seconds": 0.03429859993048012,
+        "pool_count": 6,
+        "executed": 6,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_b3935892ede691140aaf6b4159ac12f0f83da49a5784b90c9c2e40b39c6827e3",
+              "start": 102,
+              "length": 43,
+              "original": "labels.add('a')\n        super().run(labels)",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "function_body_erase"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10233030002564192
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09454589989036322
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_02fc07cb1ef81d7cdec6f0b20cd43e261b6248e96c565e514094b242ab09eab6",
+              "start": 102,
+              "length": 15,
+              "original": "labels.add('a')",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09423050004988909
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09443479985930026
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_6a10b436ffbe4d5ef5999ade6c6d2facd8924d19cca7fcb620c441acd5300fd1",
+              "start": 126,
+              "length": 19,
+              "original": "super().run(labels)",
+              "replacement": "pass",
+              "line": 7,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.10656660003587604
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09942470001988113
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_f526cd7c5175fd42dab0d8ab97cf9885bcaaf2d8a403bd4ad66ced48b8f820ea",
+              "start": 196,
+              "length": 43,
+              "original": "labels.add('b')\n        super().run(labels)",
+              "replacement": "pass",
+              "line": 10,
+              "operator": "function_body_erase"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.10134520009160042
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09155119978822768
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_528ad23c1a294620b54ad7c06d82c4fb65fdaeb8298ee1ca0105a43bb17127e3",
+              "start": 196,
+              "length": 15,
+              "original": "labels.add('b')",
+              "replacement": "pass",
+              "line": 10,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.10803699982352555
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09926019981503487
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_91ee83d163465be83627301d90f4538a4abc445db9a8d5e762442db562b5c437",
+              "start": 220,
+              "length": 19,
+              "original": "super().run(labels)",
+              "replacement": "pass",
+              "line": 11,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.10866519995033741
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.10125990002416074
+            }
+          }
+        ]
+      },
+      "defaults": {
+        "generation_seconds": 0.03708969987928867,
+        "pool_count": 8,
+        "executed": 8,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_02fc07cb1ef81d7cdec6f0b20cd43e261b6248e96c565e514094b242ab09eab6",
+              "start": 102,
+              "length": 15,
+              "original": "labels.add('a')",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09713410004042089
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09826009999960661
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_aa0123d900590d07936eb7562675773681e595f94859b07d7a9a727df440dd1b",
+              "start": 109,
+              "length": 3,
+              "original": "add",
+              "replacement": "discard",
+              "line": 6,
+              "operator": "collection_set_add_discard"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.0980427002068609
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09702649991959333
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_cc788421df7e7a466f5d247db458d31d82ba1a7eddeeb0b3a626725a0293968f",
+              "start": 113,
+              "length": 3,
+              "original": "'a'",
+              "replacement": "\"\"",
+              "line": 6,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.11315509979613125
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.11292759981006384
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_6a10b436ffbe4d5ef5999ade6c6d2facd8924d19cca7fcb620c441acd5300fd1",
+              "start": 126,
+              "length": 19,
+              "original": "super().run(labels)",
+              "replacement": "pass",
+              "line": 7,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.11444119992665946
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.11208370001986623
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_528ad23c1a294620b54ad7c06d82c4fb65fdaeb8298ee1ca0105a43bb17127e3",
+              "start": 196,
+              "length": 15,
+              "original": "labels.add('b')",
+              "replacement": "pass",
+              "line": 10,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.11359150009229779
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.11095290002413094
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_d920768002bad7f78435be421da44e0afb43571f7500c8800dc45175a1822293",
+              "start": 203,
+              "length": 3,
+              "original": "add",
+              "replacement": "discard",
+              "line": 10,
+              "operator": "collection_set_add_discard"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.10208089998923242
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.0970656001009047
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_b570541a60c7b403cf8f8e90672f94a3d5c3663cf8404e67a10e696051238c79",
+              "start": 207,
+              "length": 3,
+              "original": "'b'",
+              "replacement": "\"\"",
+              "line": 10,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.09513609996065497
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10190350003540516
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_91ee83d163465be83627301d90f4538a4abc445db9a8d5e762442db562b5c437",
+              "start": 220,
+              "length": 19,
+              "original": "super().run(labels)",
+              "replacement": "pass",
+              "line": 11,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.09795890003442764
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.09900819999165833
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "base_order_explicit_call_control",
+      "proposed": {
+        "generation_seconds": 0.0004863000940531492,
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "prototype:base_order_shuffle",
+              "start": 116,
+              "length": 4,
+              "original": "A, B",
+              "replacement": "B, A",
+              "line": 7,
+              "operator": "base_order_shuffle"
+            },
+            "weak": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.11162679991684854
+            },
+            "strong": {
+              "verdict": "passed",
+              "elapsed_seconds": 0.10909030004404485
+            }
+          }
+        ]
+      },
+      "requirement": "Explicit delegation promises a, b order independently of the base list.",
+      "source": "class A:\n    def run(self, emit):\n        emit('a')\nclass B:\n    def run(self, emit):\n        emit('b')\nclass Child(A, B):\n    def run(self, emit):\n        A.run(self, emit)\n        B.run(self, emit)\n",
+      "weak": "events=[]\nChild().run(events.append)\nassert sorted(events)==['a','b']",
+      "strong": "events=[]\nChild().run(events.append)\nassert events==['a','b']",
+      "base_order": {
+        "seed": 0,
+        "before": [
+          "A",
+          "B"
+        ],
+        "after": [
+          "B",
+          "A"
+        ]
+      },
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.09611150017008185
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.10483159986324608
+        }
+      },
+      "exact_source_overlap": {
+        "nearest": false,
+        "defaults": false
+      },
+      "nearest": {
+        "generation_seconds": 0.03577589988708496,
+        "pool_count": 7,
+        "executed": 7,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_711214d6ac3f200b32d7acf235d86eb4bdc10fa3af5b21fd3188735010e12e30",
+              "start": 42,
+              "length": 9,
+              "original": "emit('a')",
+              "replacement": "pass",
+              "line": 3,
+              "operator": "function_body_erase"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.1055184998549521
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09748460003174841
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_6ed8e1b2b83098840a135c84cbd851c555727040bc2f71a1e1bef75a90250884",
+              "start": 42,
+              "length": 9,
+              "original": "emit('a')",
+              "replacement": "pass",
+              "line": 3,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.099990300135687
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10223300009965897
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_bfcf7bf39a4707e4a924426fd3b77acda2a3821d0b10aa83268d9615cbd287cf",
+              "start": 94,
+              "length": 9,
+              "original": "emit('b')",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "function_body_erase"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09806969994679093
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.1002042000181973
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_da97086180ca65e4d2e82a6da1d1ed1d769a7ca007aa4ef1c9cf72712756969a",
+              "start": 94,
+              "length": 9,
+              "original": "emit('b')",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09642099984921515
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09660729998722672
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_1c6749695ca3fd7dbecd68941fd2ed17a87a6c805d585d8389bfdf8e9970e611",
+              "start": 156,
+              "length": 43,
+              "original": "A.run(self, emit)\n        B.run(self, emit)",
+              "replacement": "pass",
+              "line": 9,
+              "operator": "function_body_erase"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10037999995984137
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09179320000112057
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_2820fef3d2f909cb033d32ef838789aaec5cc5c2d04995cca54c85c76d798ef6",
+              "start": 156,
+              "length": 17,
+              "original": "A.run(self, emit)",
+              "replacement": "pass",
+              "line": 9,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10336840013042092
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09700799989514053
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_9312e0b221a1b3ea1fc760dc9bfcbdb75a2af30e7f2d19b02007116c95e6f46e",
+              "start": 182,
+              "length": 17,
+              "original": "B.run(self, emit)",
+              "replacement": "pass",
+              "line": 10,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09708680002950132
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09823650005273521
+            }
+          }
+        ]
+      },
+      "defaults": {
+        "generation_seconds": 0.039216200122609735,
+        "pool_count": 6,
+        "executed": 6,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "m1_6ed8e1b2b83098840a135c84cbd851c555727040bc2f71a1e1bef75a90250884",
+              "start": 42,
+              "length": 9,
+              "original": "emit('a')",
+              "replacement": "pass",
+              "line": 3,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09525900008156896
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09558500000275671
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_72f86e69b721f58eca9308d2423e837918a862d35f1701e6cb85047aa10adfcb",
+              "start": 47,
+              "length": 3,
+              "original": "'a'",
+              "replacement": "\"\"",
+              "line": 3,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09803349990397692
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09455899987369776
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_da97086180ca65e4d2e82a6da1d1ed1d769a7ca007aa4ef1c9cf72712756969a",
+              "start": 94,
+              "length": 9,
+              "original": "emit('b')",
+              "replacement": "pass",
+              "line": 6,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10324579989537597
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10620709997601807
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_d133c546ae4e56103c9011063591511f1eaea861e97e65d82edc018bc81e4b5e",
+              "start": 99,
+              "length": 3,
+              "original": "'b'",
+              "replacement": "\"\"",
+              "line": 6,
+              "operator": "string_literal_empty"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10129630006849766
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09922570013441145
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_2820fef3d2f909cb033d32ef838789aaec5cc5c2d04995cca54c85c76d798ef6",
+              "start": 156,
+              "length": 17,
+              "original": "A.run(self, emit)",
+              "replacement": "pass",
+              "line": 9,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09851859998889267
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.09903039992786944
+            }
+          },
+          {
+            "candidate": {
+              "id": "m1_9312e0b221a1b3ea1fc760dc9bfcbdb75a2af30e7f2d19b02007116c95e6f46e",
+              "start": 182,
+              "length": 17,
+              "original": "B.run(self, emit)",
+              "replacement": "pass",
+              "line": 10,
+              "operator": "statement_delete"
+            },
+            "weak": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10047010006383061
+            },
+            "strong": {
+              "verdict": "assertion_failed",
+              "elapsed_seconds": 0.10602900013327599
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "base_order_mro_risk",
+      "proposed": {
+        "generation_seconds": 0.0002911998890340328,
+        "pool_count": 1,
+        "executed": 1,
+        "unexecuted": 0,
+        "results": [
+          {
+            "candidate": {
+              "id": "prototype:base_order_shuffle",
+              "start": 51,
+              "length": 4,
+              "original": "B, A",
+              "replacement": "A, B",
+              "line": 5,
+              "operator": "base_order_shuffle"
+            },
+            "weak": {
+              "verdict": "error",
+              "exception": "TypeError",
+              "elapsed_seconds": 0.09418289992026985
+            },
+            "strong": {
+              "verdict": "error",
+              "exception": "TypeError",
+              "elapsed_seconds": 0.09676479990594089
+            }
+          }
+        ]
+      },
+      "requirement": "Child(B, A) is constructible; reversing dependent bases invalidates C3 MRO.",
+      "source": "class A:\n    pass\nclass B(A):\n    pass\nclass Child(B, A):\n    pass\n",
+      "weak": "Child()",
+      "strong": "assert isinstance(Child(), A)",
+      "base_order": {
+        "seed": 0,
+        "before": [
+          "B",
+          "A"
+        ],
+        "after": [
+          "A",
+          "B"
+        ]
+      },
+      "originals": {
+        "weak": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.1201303000561893
+        },
+        "strong": {
+          "verdict": "passed",
+          "elapsed_seconds": 0.11421539983712137
+        }
+      },
+      "exact_source_overlap": {
+        "nearest": false,
+        "defaults": false
+      },
+      "nearest": {
+        "generation_seconds": 0.03833250002935529,
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      },
+      "defaults": {
+        "generation_seconds": 0.035681999986991286,
+        "pool_count": 0,
+        "executed": 0,
+        "unexecuted": 0,
+        "results": []
+      }
+    }
+  ],
+  "temporary_file_bytes_at_end": 3136,
+  "temporary_directory_removed": true,
+  "elapsed_seconds": 15.458826899994165
+}

@@ -6,6 +6,10 @@ Evaluate base main `312b72d3e06e44145bbac28e998c97a8ca4f587d` on 2026-10-28.
 Recommend **limited adoption of two operators**, `override_method_delete` and
 `super_call_move`, under the static restrictions below. Do not add a separate
 `super_call_delete`: ordinary standalone delegation deletion already exists.
+The [base-order follow-up](base-order.md) evaluates an additional
+`base_order_shuffle` prototype on six multiple-inheritance examples. It finds
+additional assertion gaps, equivalent controls and an inconsistent-MRO error;
+it does not extend the single-inheritance eligibility proposal below.
 This research PR records the decision and executable evidence; it does not add
 product operators or change the current 101-ID catalog / 82 defaults.
 
@@ -23,10 +27,13 @@ changes or to maximize mutation scores is introduced.
 
 ## Reproducible comparison
 
-[experiment.py](experiment.py) inspects nine independently written ASCII
+[experiment.py](experiment.py) originally inspected nine independently written ASCII
 examples without importing them to generate candidates. The tiny AST prototype
 only knows these fixtures; it is **not** an implementation of the proposed
 eligibility guards. It deliberately includes two risk counterexamples.
+The saved original receipts and the table below cover those nine examples.
+The extended runner includes all fifteen by default; `--base-order-only`
+selects the six follow-up examples and `--seed` controls their permutations.
 
 For each fixture, require the original to pass both weak and stronger checks.
 Generate (1) the nearest related pool using `statement_delete`,
