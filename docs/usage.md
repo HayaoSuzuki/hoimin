@@ -670,10 +670,10 @@ the detailed capability and cleanup model.
 
 ## Mutation operators
 
-Without `--operators`, a run selects 82 default runtime operators. `--operators`
+Without `--operators`, a run selects 85 default runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
-individual IDs or selector families. Hoimin exposes 101 operator IDs in total:
-82 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
+individual IDs or selector families. Hoimin exposes 104 operator IDs in total:
+85 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
 `exception_hierarchy`, and six opt-in analyzers: `condition_constant`,
 `function_body_erase`, `enum_member_replace`, `condition_clause_delete`,
 `container_element_delete`, and `optional_keyword_delete`.
@@ -700,7 +700,8 @@ and `exception_cause_remove`. Each is individually selectable or
 excludable; no selector family is expanded by these additions.
 
 Defaults also include `dataclass_factory_share`, `sort_key_swap`,
-`lambda_capture_late` and `encoding_errors_ignore`. Each can be selected or
+`lambda_capture_late`, `encoding_errors_ignore`, `base_order_shuffle`,
+`override_method_delete` and `super_call_move`. Each can be selected or
 excluded individually, without expanding any existing selector family.
 
 New default runs can generate more candidates and take longer. With a candidate
@@ -717,6 +718,8 @@ binding analysis. Their existing applicability guards are unchanged.
 | Continuation, comparison and causes | `continue_remove`, `comparison_not_implemented`, `exception_cause_remove` | Same-iteration continuation, reflected comparison and explicit diagnostic causes; enabled by default |
 | Existing expression/control flow | `compare_eq_ne`, `compare_order`, `membership`, `identity`, `boolean_and_or`, `binary_add_sub`, `augmented_add_sub`, `binary_mul_div`, `augmented_mul_div`, `binary_floor_mod`, `binary_div_floor`, `augmented_floor_mod`, `unary_sign`, `remove_not`, `boolean_literal`, `break_continue` | comparisons; membership and identity; binary `+`/`-`, `*`/`/`, `//`/`%`, and `/`/`//`; augmented `+=`/`-=`, `*=`/`/=`, and `//=`/`%=`; unary signs; boolean expressions and literals, including `True`/`False` match patterns; and control flow |
 | Generator behavior | `list_comprehension_to_generator`, `generator_return_insert`, `generator_skip_first`, `generator_empty` | Eager/lazy conversion, early return, first-item consumption and empty output; enabled by default |
+| Single inheritance | `override_method_delete`, `super_call_move` | Remove an ordinary overriding method or move its standalone same-method delegation; enabled by default |
+| Multiple inheritance | `base_order_shuffle` | Change the order of distinct simple-name direct bases; enabled by default, with stable source-derived permutations |
 | Missing values and shared state | `none_truthiness`, `mutable_default_share`, `nonlocal_remove`, `yield_from_to_yield`, `mapping_setdefault_to_get`, `bisect_boundary_swap`, `deepcopy_to_copy`, `deque_popleft_to_pop`, `gather_return_exceptions`, `itertools_take_drop_swap`, `fstring_conversion_swap` | Empty/missing distinctions, shared defaults, lost outer updates, delegation, dictionary insertion, duplicate boundaries, nested copies, FIFO order, exception results, iterator prefixes and representations; enabled by default |
 | Early iterator exhaustion | `iterator_stop_insert`, `async_iterator_stop_insert` | Insert a stop exception at iterator protocol method entry; enabled by default |
 | Premature loop exit | `loop_break_insert` | Appends `break` to eligible `for`, `async for`, and `while` bodies; enabled by default |
@@ -1456,6 +1459,62 @@ comments, parentheses and trailing commas are preserved. Keyword-adjacent bare t
 are parenthesized when needed for lexical separation. Identical source atoms or
 normalized names are skipped. Names may have different runtime types; this operator
 does not promise type preservation or identify all equivalent swaps. It is enabled by default.
+
+`override_method_delete` and `super_call_move` are enabled by default. Disable
+both with `--exclude-operators override_method_delete,super_call_move`, or pass
+one ID to select or exclude it individually. Neither belongs to a selector family.
+
+`override_method_delete` replaces an overriding method definition with `pass`,
+so dispatch uses the parent's implementation. It can expose tests that omit the
+child's specialized behavior. `super_call_move` moves a standalone
+`super().same_method(...)` call from first to last executable statement, or from
+another position to first. It can expose missing assertions about the order of
+parent and child effects. A kill does not by itself establish whether `super()`
+is used correctly; assess the required behavior.
+
+Both recognize ordinary top-level single inheritance within one source module,
+with the parent declared earlier and without explicit bases. Class and method
+bindings must remain unambiguous. Decorators, class keywords, generic classes,
+class escapes, dynamic namespace operations, method aliases/writes and lookup
+hooks are excluded. Class attributes must use literal values; named values can
+be descriptors with class-creation hooks. Decorated methods elsewhere in the
+class and method references in class-evaluated headers are also excluded.
+Methods must be synchronous instance methods with matching
+parameter names/kinds, no defaults or annotations, and no variadics, nested
+definitions, suspension, special names or private mangled names. Imported,
+conditional, nested and multiple inheritance are outside these two operators.
+The checks cannot detect monkey-patching performed by external modules.
+
+Movement additionally requires builtin zero-argument `super`, a single delegation
+to the current method, and at least two straight-line expression statements.
+Walrus assignments, starred arguments and control-flow statements are excluded.
+The initial docstring stays fixed; edits that create a docstring are excluded.
+Statement fragments move between the original separator slots, so comments stay
+in their slots and whitespace, grouping and newline styles are retained.
+
+`base_order_shuffle` is enabled by default. Disable it with
+`--exclude-operators base_order_shuffle`, or select it alone with
+`--operators base_order_shuffle`. It swaps two direct bases, for example
+`class Child(A, B)` becomes `class Child(B, A)`. With three or more bases it
+generates one deterministic shuffle from the original base-list source; an
+unchanged shuffle falls back to swapping the first two bases. The order always
+changes, with every base retained once. Repeated plans and selectors produce
+the same candidate; there is no separate seed option or uniform-sampling promise.
+
+Eligible classes have at least two distinct simple-name bases and no decorators,
+type parameters or class keywords. Imported names and nested classes are supported.
+Calls, attributes, subscripts, starred bases, duplicate normalized identifiers,
+explicit metaclasses and other class keywords are excluded. Only the name slots
+change, preserving surrounding commas, comments, parentheses, trailing commas,
+class bodies and newline style. Line selection uses the first base name's line;
+symbol selection uses the containing class. Generation does not import targets.
+
+The mutation probes assertions about provider selection and cooperative call
+order, not correct `super()` usage. It does not resolve runtime base identities,
+MRO, implicit metaclasses or subclass hooks. Reordering dependent bases can raise
+`TypeError`; normal test-process classification applies, so a kill can include
+an execution error rather than an assertion gap. Inspect the failure before
+adding a test, and do not require an order the API does not promise.
 
 `--operators string_literal_empty` replaces each nonempty, single-token runtime str
 literal with `""`, including raw/u/triple-quoted strings. Decoded empty values,

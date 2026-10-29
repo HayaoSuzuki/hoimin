@@ -29,6 +29,8 @@ use payload::{Charged, PayloadBudget, PayloadLease};
 #[path = "exception_hierarchy.rs"]
 pub(crate) mod exception_hierarchy;
 
+#[path = "rust/base_order.rs"]
+mod base_order;
 #[path = "rust/container_elements.rs"]
 mod container_elements;
 #[path = "rust/dataclass_factory.rs"]
@@ -47,6 +49,8 @@ mod function_body;
 mod function_entry;
 #[path = "rust/generator_mutations.rs"]
 mod generator_mutations;
+#[path = "rust/inheritance.rs"]
+mod inheritance;
 #[path = "rust/iterator_stop.rs"]
 mod iterator_stop;
 #[path = "rust/lambda_capture.rs"]
@@ -3009,6 +3013,7 @@ fn selected_source_start(
 }
 
 struct AstCandidateCollector<'a, F> {
+    inheritance: inheritance::Index,
     string_exclusions: string_literals::Exclusions,
     enum_index: &'a enum_members::EnumIndex,
     dataclass_factories: &'a dataclass_factory::DataclassFactories,
@@ -3063,6 +3068,17 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             dataclass_factory::DataclassFactories::build(module, request.operators, cancelled)?;
         let followup_calls = followup_calls::Imports::build(module, request.operators, cancelled)?;
         let mut collector = AstCandidateCollector {
+            inheritance: if [
+                MutationOperator::OverrideMethodDelete,
+                MutationOperator::SuperCallMove,
+            ]
+            .into_iter()
+            .any(|op| request.operators.contains(op))
+            {
+                inheritance::Index::build(module, cancelled)?
+            } else {
+                inheritance::Index::default()
+            },
             optional_functions: if request
                 .operators
                 .contains(MutationOperator::OptionalKeywordDelete)
@@ -4288,7 +4304,62 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         reason = "statement operator gates stop between builders on the first admission failure"
     )]
     fn collect_statement_mutations(&mut self, statement: &Stmt) {
+        if let Stmt::FunctionDef(method) = statement
+            && self.inheritance.contains(method)
+        {
+            let range = method.range();
+            if self
+                .request
+                .operators
+                .contains(MutationOperator::OverrideMethodDelete)
+                && selected_source_start(range, self.line_index, self.facts, self.selection)
+            {
+                self.add_candidate(
+                    range,
+                    "pass".to_owned(),
+                    MutationOperator::OverrideMethodDelete,
+                );
+            }
+            if self.candidates.failure.is_some() || self.check_cancelled() {
+                return;
+            }
+            if self
+                .request
+                .operators
+                .contains(MutationOperator::SuperCallMove)
+                && let Some((range, first, delegation)) =
+                    self.inheritance.move_span(method, self.cancelled)
+                && selected_source_start(range, self.line_index, self.facts, self.selection)
+                && let Some(replacement) = inheritance::move_replacement(
+                    method,
+                    range,
+                    first,
+                    delegation,
+                    self.source,
+                    self.cancelled,
+                )
+            {
+                self.add_candidate(range, replacement, MutationOperator::SuperCallMove);
+            }
+            if self.candidates.failure.is_some() || self.check_cancelled() {
+                return;
+            }
+        }
         if let Stmt::ClassDef(class) = statement {
+            if self
+                .request
+                .operators
+                .contains(MutationOperator::BaseOrderShuffle)
+                && let Some(range) = base_order::span(class)
+                && selected_source_start(range, self.line_index, self.facts, self.selection)
+                && let Some(replacement) =
+                    base_order::replacement(class, self.source, self.cancelled)
+            {
+                self.add_candidate(range, replacement, MutationOperator::BaseOrderShuffle);
+                if self.check_cancelled() {
+                    return;
+                }
+            }
             let factories = self.dataclass_factories;
             let facts = self.facts;
             if factories

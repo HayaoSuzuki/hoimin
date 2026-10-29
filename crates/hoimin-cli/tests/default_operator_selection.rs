@@ -9,7 +9,7 @@ use std::path::Path;
 
 use hoimin_cli::plan::PlanManifest;
 
-const OPT_OUT_OPERATORS: [&str; 39] = [
+const OPT_OUT_OPERATORS: [&str; 42] = [
     "statement_delete",
     "integer_literal_neighbor",
     "augmented_to_assignment",
@@ -49,6 +49,9 @@ const OPT_OUT_OPERATORS: [&str; 39] = [
     "sort_key_swap",
     "lambda_capture_late",
     "encoding_errors_ignore",
+    "base_order_shuffle",
+    "override_method_delete",
+    "super_call_move",
 ];
 
 async fn cli(args: Vec<OsString>) -> serde_json::Value {
@@ -122,10 +125,15 @@ async fn current_default_candidates_are_individually_excludable() {
     let source = format!(
         "{source}\nfrom dataclasses import dataclass, field\n@dataclass\nclass Bag:\n items: list = field(default_factory=list)\ndef sorted_rows(rows): return sorted(rows,key=lambda row:(row[0],row[1]))\ndef callbacks(values):\n for value in values:\n  callback=lambda value=value: value\ndef decoded(data): return data.decode('utf-8',errors='surrogateescape')\n"
     );
+    let source =
+        format!("{source}\nclass Left: pass\nclass Right: pass\nclass Joined(Left, Right): pass\n");
+    let source = format!(
+        "{source}\nclass Parent:\n def run(self, emit): emit(1)\nclass Child(Parent):\n def run(self, emit): super().run(emit); emit(2)\n"
+    );
     std::fs::write(root.path().join("subject.py"), &source).unwrap();
     let default = plan(root.path(), &[]).await;
     let manifest: PlanManifest = serde_json::from_value(default.clone()).unwrap();
-    assert_eq!(manifest.normalized_config.operators.names().len(), 82);
+    assert_eq!(manifest.normalized_config.operators.names().len(), 85);
     let candidates = default["candidates"].as_array().unwrap();
     for original in ["Decimal(x)", "Decimal.from_float(x)", "HTTPStatus(x)"] {
         assert!(

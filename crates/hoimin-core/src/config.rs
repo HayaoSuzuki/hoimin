@@ -188,6 +188,9 @@ mutation_operators! {
     SortKeySwap => "sort_key_swap",
     LambdaCaptureLate => "lambda_capture_late",
     EncodingErrorsIgnore => "encoding_errors_ignore",
+    BaseOrderShuffle => "base_order_shuffle",
+    OverrideMethodDelete => "override_method_delete",
+    SuperCallMove => "super_call_move",
 }
 
 // Family membership is an explicit selection policy, separate from the full
@@ -414,6 +417,9 @@ impl Default for MutationOperatorSelection {
                 MutationOperator::SortKeySwap,
                 MutationOperator::LambdaCaptureLate,
                 MutationOperator::EncodingErrorsIgnore,
+                MutationOperator::BaseOrderShuffle,
+                MutationOperator::OverrideMethodDelete,
+                MutationOperator::SuperCallMove,
             ]
             .into_iter()
             .collect(),

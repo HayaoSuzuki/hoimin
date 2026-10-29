@@ -272,7 +272,7 @@ def invoke(
 
 
 def check(root: Path, source: str, assertions: str) -> dict:
-    (root / "subject.py").write_text(source)
+    (root / "subject.py").write_text(source, newline="")
     code = (
         "import json\ntry:\n    from subject import *\n"
         f"    exec({assertions!r})\n"
@@ -287,7 +287,7 @@ def check(root: Path, source: str, assertions: str) -> dict:
 
 
 def plan(binary: Path, root: Path, source: str, operators: str | None) -> dict:
-    (root / "subject.py").write_text(source)
+    (root / "subject.py").write_text(source, newline="")
     command = [
         str(binary),
         "plan",

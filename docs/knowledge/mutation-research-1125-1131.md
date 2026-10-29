@@ -66,9 +66,9 @@ sources:
   sha256: 598a5a6a8d948546a6f0f411a3777ddaf7d730e49d23668d2cee02693e0c8b5a
 - id: experiment
   resource: ../superpowers/reports/issues-1125-1131/experiment.py
-  revision: 42130ce3e82912c3fa4f7574b0a347d64401545e
-  working_tree: untracked
-  sha256: ecc3ca9a616fdfbef887ff8a3af6b085b354ad1fd1d01e8d46d45b1ccafbdb83
+  revision: 0033b008582b24bead8bdf28f8980275e96500a3
+  working_tree: modified
+  sha256: 7e821703ca967a1e9c1c451ea19b782ea8e7e58df8b09144b3c319adc966953a
 - id: python314
   resource: ../superpowers/reports/issues-1125-1131/results-python314.json
   revision: 42130ce3e82912c3fa4f7574b0a347d64401545e

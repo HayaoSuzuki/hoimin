@@ -5,6 +5,26 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1123-implementation
+  resource: ../../superpowers/reports/issue-1123/implementation.md
+  revision: c933c1ff608e155846d32f8a5ce08f03f3e50c75
+  working_tree: modified
+  sha256: 810140eedcba9e808fa0dc007e8fc898d27a54d523673a62d414696b0570ab2f
+- id: issue-1123-base-order
+  resource: ../../superpowers/reports/issue-1123/base-order.md
+  revision: 0033b008582b24bead8bdf28f8980275e96500a3
+  working_tree: untracked
+  sha256: 0e91fa3072e301d37a373a2858652dbfdcadf98a3cdec1f40ebfa590ea8ace24
+- id: issue-1123-review
+  resource: ../../superpowers/reports/issue-1123/self-review.md
+  revision: 0033b008582b24bead8bdf28f8980275e96500a3
+  working_tree: modified
+  sha256: 309528345f61c64aa4c5a8bb4983c3d3db5fd5faa06216063cdd4e4415bb33ee
+- id: issue-1123-report
+  resource: ../../superpowers/reports/issue-1123/README.md
+  revision: c933c1ff608e155846d32f8a5ce08f03f3e50c75
+  working_tree: modified
+  sha256: 5dc9d8af964abbe2066ad4b015ec8449ee68c0cb08b1178c6251fb30468bba07
 - id: issues-1125-1131-four-implementation
   resource: ../../superpowers/reports/issues-1125-1131/four-implementation.md
   revision: f3703cd875712b7a25bb37e5e2b19771eda8a52e
@@ -1698,3 +1718,16 @@ sources:
 
 [^issues-1125-1131-four-implementation]: [Four-operator implementation](../../superpowers/reports/issues-1125-1131/four-implementation.md).
 [^issues-1125-1131-four-review]: [Four-operator review](../../superpowers/reports/issues-1125-1131/four-implementation-review.md).
+
+
+## Issue 1123 inheritance research
+
+- [Research decision and reproduction](../../superpowers/reports/issue-1123/README.md) [^issue-1123-report] — limited adoption proposal for override deletion and delegation movement; exact deletion overlap and fixed-corpus evidence.
+- [Review and verification](../../superpowers/reports/issue-1123/self-review.md) [^issue-1123-review] — five self-review passes per stage, interpreter checks and evidence limits.
+- [Base-order follow-up](../../superpowers/reports/issue-1123/base-order.md) [^issue-1123-base-order] — six multiple-inheritance examples, seeded permutations, surviving controls and MRO errors.
+- [Base-order implementation](../../superpowers/reports/issue-1123/implementation.md) [^issue-1123-implementation] — default runtime operator, stable source edits, opt-out and verification.
+
+[^issue-1123-report]: [Inheritance research](../../superpowers/reports/issue-1123/README.md).
+[^issue-1123-review]: [Review record](../../superpowers/reports/issue-1123/self-review.md).
+[^issue-1123-base-order]: [Base-order follow-up](../../superpowers/reports/issue-1123/base-order.md).
+[^issue-1123-implementation]: [Base-order implementation](../../superpowers/reports/issue-1123/implementation.md).
