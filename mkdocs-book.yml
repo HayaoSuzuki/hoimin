@@ -1,0 +1,53 @@
+site_name: ミューテーションテストによるテスト改善
+site_description: Pythonとhoiminで学ぶ理論と実践
+site_url: https://hayaosuzuki.github.io/mutation-testing/
+repo_url: https://github.com/HayaoSuzuki/hoimin
+edit_uri: edit/main/docs/book/
+docs_dir: docs/book
+exclude_docs: |
+  examples/
+theme:
+  name: material
+  language: ja
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - content.code.copy
+  palette:
+    primary: indigo
+plugins:
+  - search:
+      lang: ja
+markdown_extensions:
+  - admonition
+  - footnotes
+  - tables
+  - pymdownx.superfences
+  - pymdownx.details
+  - toc:
+      permalink: true
+validation:
+  links:
+    not_found: warn
+    anchors: warn
+nav:
+  - はじめに: index.md
+  - 第Ⅰ部 テストの検出力:
+      - 1 高いカバレッジと見逃されるバグ: 01-coverage.md
+      - 2 入力と期待結果: 02-oracles.md
+      - 3 ミューテーションテストの原理: 03-mutation.md
+  - 第Ⅱ部 判断のための理論:
+      - 4 変異の検出条件: 04-detection.md
+      - 5 生存理由と等価性: 05-survivors.md
+      - 6 スコアと調査範囲: 06-scores.md
+  - 第Ⅲ部 hoiminによる実践:
+      - 7 実習環境の準備: 07-setup.md
+      - 8 カバレッジ100%の料金計算: 08-workshop.md
+      - 9 AIエージェントへの調査依頼: 09-investigation.md
+      - 10 テスト改善と再検証: 10-improvement.md
+      - 11 調査結果の評価: 11-review.md
+      - 12 既存プロジェクトへの適用: 12-projects.md
+  - 実習仕様: specification.md
+  - 演習の解答例: answers.md
+  - コピー用プロンプト: prompts.md
+  - 用語と参考文献: references.md

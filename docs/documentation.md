@@ -4,6 +4,10 @@ The documentation site is <https://hayaosuzuki.github.io/hoimin/>. It represents
 main, with the source commit shown on each page, rather than a specific release.
 The site is published through GitHub Pages by the Documentation workflow.
 
+The [Japanese mutation-testing textbook](book/index.md) is a separate MkDocs
+content set. Its canonical sources stay under `docs/book/`; the personal site
+imports a pinned revision for publication. See the [textbook editing guide](book-authoring.md).
+
 Current user and maintainer guides, navigation, and theme controls use English.
 Historical design, audit, and investigation records retain their original language.
 The site uses the same Material theme, indigo palettes, light/dark toggle, and

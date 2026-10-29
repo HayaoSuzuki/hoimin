@@ -1,0 +1,46 @@
+name: Japanese mutation-testing book
+
+on:
+  pull_request:
+    paths:
+      - docs/book/**
+      - mkdocs-book.yml
+      - tools/build_mutation_book_assets.py
+      - tools/check_mutation_book.py
+      - .github/workflows/book.yml
+  push:
+    branches: [main]
+    paths:
+      - docs/book/**
+      - mkdocs-book.yml
+      - tools/build_mutation_book_assets.py
+      - tools/check_mutation_book.py
+      - .github/workflows/book.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: book-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  book:
+    name: Build Japanese textbook
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - name: Check downloadable workshop and test improvements
+        run: >-
+          uv run --python 3.14 --no-project
+          --with-requirements docs/book/examples/shipping/requirements.txt
+          python -m tools.check_mutation_book
+      - name: Build textbook
+        run: >-
+          uv run --python 3.14 --no-project --with mkdocs-material==9.7.7
+          python -m mkdocs build --strict -f mkdocs-book.yml -d site/book-preview

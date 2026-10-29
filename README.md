@@ -10,6 +10,7 @@ hoimin targets local work and provides no mutation-score or regression CI gate.
 A completed run exits successfully even when mutants survive; inspect the JSONL events to choose the next test improvement.
 See the [product principles](docs/product-principles.md).
 See also the [documentation](https://hayaosuzuki.github.io/hoimin/) for installation, the agent workflow, resource limits, and command references.
+For a Japanese textbook with theory and a hands-on workshop, see [ミューテーションテストによるテスト改善](docs/book/index.md).
 
 ## Install
 
