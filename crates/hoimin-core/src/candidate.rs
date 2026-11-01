@@ -718,53 +718,62 @@ fn canonical_identity_path(path: &str) -> String {
 mod tests {
     use super::{CandidateValidationError, PythonSourceIndex, source_line_starts};
 
-    #[test]
-    fn decoding_classification_is_independent_of_diagnostic_labels() {
-        for (source, label, default_utf8) in [
-            (
-                b"x\xff".as_slice(),
-                "renamed default UTF-8 diagnostic",
-                true,
-            ),
-            (
-                b"# coding: utf-8\nx\xff".as_slice(),
-                "utf-8 (default)",
-                false,
-            ),
-        ] {
-            let mut context = super::CandidateValidationContext::new(source).unwrap();
-            match context.decoded.as_mut().unwrap_err() {
-                super::SourceEncodingError::ImplicitUtf8 { encoding, .. }
-                | super::SourceEncodingError::Encoding { encoding, .. } => {
-                    *encoding = label.to_owned();
-                }
-            }
-            let candidate = super::CandidateDescriptor {
-                schema_version: super::CANDIDATE_SCHEMA_VERSION,
-                path: "source.py".into(),
-                span: crate::ByteSpan {
-                    start: u64::try_from(source.iter().position(|byte| *byte == b'x').unwrap())
-                        .unwrap(),
-                    length: 1,
-                },
-                original: "x".into(),
-                replacement: "y".into(),
-                operator: "replace".into(),
-                line: if default_utf8 { 1 } else { 2 },
-                column: 0,
-                symbol: None,
-                file_hash: blake3::hash(source).to_hex().to_string(),
-            };
-            let result = super::validate_candidate_with_context(&context, &candidate);
-            if default_utf8 {
-                assert_eq!(result, Err(CandidateValidationError::InvalidUtf8));
-            } else {
-                assert!(
-                    matches!(result, Err(CandidateValidationError::InvalidEncoding(_))),
-                    "{result:?}"
-                );
+    fn diagnostic_label_fixture<'a>(
+        source: &'a [u8],
+        label: &str,
+        line: u32,
+    ) -> (
+        super::CandidateValidationContext<'a>,
+        super::CandidateDescriptor,
+    ) {
+        let mut context = super::CandidateValidationContext::new(source).unwrap();
+        match context.decoded.as_mut().unwrap_err() {
+            super::SourceEncodingError::ImplicitUtf8 { encoding, .. }
+            | super::SourceEncodingError::Encoding { encoding, .. } => {
+                *encoding = label.to_owned();
             }
         }
+        let candidate = super::CandidateDescriptor {
+            schema_version: super::CANDIDATE_SCHEMA_VERSION,
+            path: "source.py".into(),
+            span: crate::ByteSpan {
+                start: u64::try_from(source.iter().position(|byte| *byte == b'x').unwrap())
+                    .unwrap(),
+                length: 1,
+            },
+            original: "x".into(),
+            replacement: "y".into(),
+            operator: "replace".into(),
+            line,
+            column: 0,
+            symbol: None,
+            file_hash: blake3::hash(source).to_hex().to_string(),
+        };
+
+        (context, candidate)
+    }
+
+    #[test]
+    fn implicit_utf8_classification_ignores_a_renamed_diagnostic() {
+        let (context, candidate) =
+            diagnostic_label_fixture(b"x\xff", "renamed default UTF-8 diagnostic", 1);
+
+        let result = super::validate_candidate_with_context(&context, &candidate);
+
+        assert_eq!(result, Err(CandidateValidationError::InvalidUtf8));
+    }
+
+    #[test]
+    fn explicit_utf8_classification_ignores_a_default_looking_diagnostic() {
+        let (context, candidate) =
+            diagnostic_label_fixture(b"# coding: utf-8\nx\xff", "utf-8 (default)", 2);
+
+        let result = super::validate_candidate_with_context(&context, &candidate);
+
+        assert!(
+            matches!(result, Err(CandidateValidationError::InvalidEncoding(_))),
+            "{result:?}"
+        );
     }
 
     #[test]
@@ -784,21 +793,22 @@ mod tests {
         assert_eq!(index.lookup_stats.unicode_comparisons.get(), 0);
     }
 
-    #[test]
-    fn indexed_lookup_work_scales_with_queries_times_log_lines() {
-        for line_count in [1_024_usize, 2_048, 4_096] {
-            let source = "x\n".repeat(line_count);
-            let index = PythonSourceIndex::new(&source).unwrap();
-            for offset in (0..source.len()).step_by(2) {
-                assert!(index.line_and_column(offset).is_some());
-            }
-
-            let queries = index.lookup_stats.queries.get();
-            let comparison_limit = queries * (line_count.ilog2() as usize + 2);
-            assert_eq!(queries, line_count);
-            assert!(index.lookup_stats.line_comparisons.get() <= comparison_limit);
-            assert_eq!(index.lookup_stats.unicode_comparisons.get(), 0);
+    #[rstest::rstest]
+    #[case::value_1_024_usize(1_024_usize)]
+    #[case::value_2_048(2_048)]
+    #[case::value_4_096(4_096)]
+    fn indexed_lookup_work_scales_with_queries_times_log_lines(#[case] line_count: usize) {
+        let source = "x\n".repeat(line_count);
+        let index = PythonSourceIndex::new(&source).unwrap();
+        for offset in (0..source.len()).step_by(2) {
+            assert!(index.line_and_column(offset).is_some());
         }
+
+        let queries = index.lookup_stats.queries.get();
+        let comparison_limit = queries * (line_count.ilog2() as usize + 2);
+        assert_eq!(queries, line_count);
+        assert!(index.lookup_stats.line_comparisons.get() <= comparison_limit);
+        assert_eq!(index.lookup_stats.unicode_comparisons.get(), 0);
     }
 
     #[test]
@@ -818,6 +828,7 @@ mod tests {
     #[test]
     fn line_index_accepts_the_largest_representable_offset() {
         let max = usize::try_from(u32::MAX).unwrap();
+
         assert_eq!(
             source_line_starts(max, [max].into_iter()).unwrap(),
             [0, u32::MAX]
@@ -831,6 +842,7 @@ mod tests {
         let newline_ends = std::iter::from_fn(|| -> Option<usize> {
             panic!("oversized sources must be rejected before scanning")
         });
+
         assert_eq!(
             source_line_starts(too_large, newline_ends),
             Err(CandidateValidationError::SourceTooLarge)
@@ -841,6 +853,7 @@ mod tests {
     #[test]
     fn oversized_source_without_newlines_is_rejected() {
         let too_large = usize::try_from(u32::MAX).unwrap() + 1;
+
         assert_eq!(
             source_line_starts(too_large, std::iter::empty()),
             Err(CandidateValidationError::SourceTooLarge)

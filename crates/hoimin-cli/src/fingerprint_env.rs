@@ -103,6 +103,7 @@ mod tests {
             None
         })
         .unwrap();
+
         assert_eq!(seen, ["A", "Z"]);
         assert_eq!(snapshot.names(), seen);
         assert!(EnvironmentRequest::new(&["BAD\0NAME".into()]).is_err());
@@ -115,6 +116,7 @@ mod tests {
         let names = EnvironmentRequest::new(&["FLAG".into()]).unwrap();
         let first = capture_with(&names, |_| Some(OsString::from_vec(vec![0x80]))).unwrap();
         let second = capture_with(&names, |_| Some(OsString::from_vec(vec![0x81]))).unwrap();
+
         assert_ne!(first, second);
     }
 
@@ -125,6 +127,7 @@ mod tests {
         let names = EnvironmentRequest::new(&["FLAG".into()]).unwrap();
         let first = capture_with(&names, |_| Some(OsString::from_wide(&[0xd800]))).unwrap();
         let second = capture_with(&names, |_| Some(OsString::from_wide(&[0xd801]))).unwrap();
+
         assert_ne!(first, second);
     }
 }

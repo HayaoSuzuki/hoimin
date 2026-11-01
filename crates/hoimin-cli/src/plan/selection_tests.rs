@@ -103,8 +103,14 @@ fn diverse_keeps_round_robin_progress_until_count_is_reached() {
     assert_eq!(selected, ["A1", "B1", "A2", "B2", "A3"]);
 }
 
-#[test]
-fn diverse_keeps_selecting_the_dense_file_after_singleton_files_exhaust() {
+#[rstest::rstest]
+#[case::a1_1(4, vec!["A1", "B1", "C1", "D1"])]
+#[case::a1_2(5, vec!["A1", "B1", "C1", "D1", "D2"])]
+#[case::a1_3(20, vec!["A1", "B1", "C1", "D1", "D2", "D3", "D4"])]
+fn diverse_keeps_selecting_the_dense_file_after_singleton_files_exhaust(
+    #[case] count: usize,
+    #[case] expected: Vec<&str>,
+) {
     let candidates = vec![
         candidate("A1", "src/a.py", 1, 100),
         candidate("B1", "src/b.py", 2, 100),
@@ -115,15 +121,9 @@ fn diverse_keeps_selecting_the_dense_file_after_singleton_files_exhaust() {
         candidate("D4", "src/d.py", 7, 100),
     ];
 
-    for (count, expected) in [
-        (4, vec!["A1", "B1", "C1", "D1"]),
-        (5, vec!["A1", "B1", "C1", "D1", "D2"]),
-        (20, vec!["A1", "B1", "C1", "D1", "D2", "D3", "D4"]),
-    ] {
-        let selected = select_ids(&candidates, count, TopSelectionPolicy::Diverse);
+    let selected = select_ids(&candidates, count, TopSelectionPolicy::Diverse);
 
-        assert_eq!(selected, expected, "count={count}");
-    }
+    assert_eq!(selected, expected, "count={count}");
 }
 
 #[test]
@@ -159,8 +159,18 @@ fn diverse_is_deterministic_and_selects_each_retained_candidate_once() {
     );
 }
 
-#[test]
-fn fixed_batch_diverse_slices_the_global_order_across_files_and_tiers() {
+#[rstest::rstest]
+#[case::a1_1(0, 2, vec!["A1", "B1"])]
+#[case::a2_2(2, 2, vec!["A2", "B2"])]
+#[case::a3_3(4, 2, vec!["A3", "C1"])]
+#[case::c1_4(5, usize::MAX, vec!["C1"])]
+#[case::input_6_1_vec_5(6, 1, vec![])]
+#[case::usize_max_usize_max_vec_6(usize::MAX, usize::MAX, vec![])]
+fn fixed_batch_diverse_slices_the_global_order_across_files_and_tiers(
+    #[case] offset: usize,
+    #[case] count: usize,
+    #[case] expected: Vec<&str>,
+) {
     let candidates = vec![
         candidate("A1", "a.py", 1, 100),
         candidate("A2", "a.py", 2, 100),
@@ -177,21 +187,13 @@ fn fixed_batch_diverse_slices_the_global_order_across_files_and_tiers() {
             offset,
         )
     };
-    for (offset, count, expected) in [
-        (0, 2, vec!["A1", "B1"]),
-        (2, 2, vec!["A2", "B2"]),
-        (4, 2, vec!["A3", "C1"]),
-        (5, usize::MAX, vec!["C1"]),
-        (6, 1, vec![]),
-        (usize::MAX, usize::MAX, vec![]),
-    ] {
-        let selected = select(offset, count);
 
-        assert_eq!(selected, expected, "offset={offset} count={count}");
-    }
+    let selected = select(offset, count);
+
+    assert_eq!(selected, expected, "offset={offset} count={count}");
 }
 
-fn assert_policy_page(offset: usize, count: NonZeroUsize) {
+fn assert_policy_page(offset: usize, count: NonZeroUsize, diverse: bool) {
     let candidates = vec![
         candidate("A1", "a.py", 1, 100),
         candidate("A2", "a.py", 2, 100),
@@ -200,7 +202,7 @@ fn assert_policy_page(offset: usize, count: NonZeroUsize) {
         candidate("B2", "b.py", 5, 70),
         candidate("B3", "b.py", 6, 70),
     ];
-    for (policy, order) in [
+    let (policy, order) = [
         (
             TopSelectionPolicy::Strict,
             ["A1", "A2", "B1", "A3", "B2", "B3"],
@@ -209,41 +211,63 @@ fn assert_policy_page(offset: usize, count: NonZeroUsize) {
             TopSelectionPolicy::Diverse,
             ["A1", "B1", "A2", "A3", "B2", "B3"],
         ),
-    ] {
-        let expected = order
-            .iter()
-            .skip(offset)
-            .take(count.get())
-            .copied()
-            .collect::<Vec<_>>();
+    ][usize::from(diverse)];
+    let expected = order
+        .iter()
+        .skip(offset)
+        .take(count.get())
+        .copied()
+        .collect::<Vec<_>>();
 
-        let actual =
-            super::selection::select_top_candidate_ids_at(&candidates, count, policy, offset);
+    let actual = super::selection::select_top_candidate_ids_at(&candidates, count, policy, offset);
 
-        let selected = super::selection::select_top_candidate_ids_at(
-            &[],
-            NonZeroUsize::new(usize::MAX).unwrap(),
-            policy,
-            0,
-        );
-
-        assert_eq!(actual, expected, "{policy:?} offset={offset} count={count}");
-        assert_eq!(
-            actual.capacity(),
-            actual.len(),
-            "{policy:?} offset={offset} count={count}"
-        );
-        assert_eq!(selected, Vec::<String>::new());
-    }
+    assert_eq!(actual, expected, "{policy:?} offset={offset} count={count}");
+    assert_eq!(
+        actual.capacity(),
+        actual.len(),
+        "{policy:?} offset={offset} count={count}"
+    );
 }
 
-#[test]
-fn pages_preserve_policy_order_at_tier_and_integer_boundaries() {
-    for offset in [0, 1, 2, 3, 5, 6, 7, usize::MAX] {
-        for count in [1, 2, 4, usize::MAX] {
-            assert_policy_page(offset, NonZeroUsize::new(count).unwrap());
-        }
-    }
+#[rstest::rstest]
+#[case::input_0_1_input_1_1(0, 1)]
+#[case::input_0_1_input_2_2(0, 2)]
+#[case::input_0_1_input_4_3(0, 4)]
+#[case::input_0_1_usize_max_4(0, usize::MAX)]
+#[case::input_1_2_input_1_1(1, 1)]
+#[case::input_1_2_input_2_2(1, 2)]
+#[case::input_1_2_input_4_3(1, 4)]
+#[case::input_1_2_usize_max_4(1, usize::MAX)]
+#[case::input_2_3_input_1_1(2, 1)]
+#[case::input_2_3_input_2_2(2, 2)]
+#[case::input_2_3_input_4_3(2, 4)]
+#[case::input_2_3_usize_max_4(2, usize::MAX)]
+#[case::input_3_4_input_1_1(3, 1)]
+#[case::input_3_4_input_2_2(3, 2)]
+#[case::input_3_4_input_4_3(3, 4)]
+#[case::input_3_4_usize_max_4(3, usize::MAX)]
+#[case::input_5_5_input_1_1(5, 1)]
+#[case::input_5_5_input_2_2(5, 2)]
+#[case::input_5_5_input_4_3(5, 4)]
+#[case::input_5_5_usize_max_4(5, usize::MAX)]
+#[case::input_6_6_input_1_1(6, 1)]
+#[case::input_6_6_input_2_2(6, 2)]
+#[case::input_6_6_input_4_3(6, 4)]
+#[case::input_6_6_usize_max_4(6, usize::MAX)]
+#[case::input_7_7_input_1_1(7, 1)]
+#[case::input_7_7_input_2_2(7, 2)]
+#[case::input_7_7_input_4_3(7, 4)]
+#[case::input_7_7_usize_max_4(7, usize::MAX)]
+#[case::usize_max_8_input_1_1(usize::MAX, 1)]
+#[case::usize_max_8_input_2_2(usize::MAX, 2)]
+#[case::usize_max_8_input_4_3(usize::MAX, 4)]
+#[case::usize_max_8_usize_max_4(usize::MAX, usize::MAX)]
+fn pages_preserve_policy_order_at_tier_and_integer_boundaries(
+    #[case] offset: usize,
+    #[case] count: usize,
+    #[values(false, true)] diverse: bool,
+) {
+    assert_policy_page(offset, NonZeroUsize::new(count).unwrap(), diverse);
 }
 
 proptest! {
@@ -251,13 +275,13 @@ proptest! {
     fn pages_preserve_policy_order_for_arbitrary_offsets_and_counts(
         offset in prop_oneof![0_usize..12, any::<usize>()],
         count in prop_oneof![1_usize..16, 1_usize..=usize::MAX],
+        diverse in any::<bool>(),
     ) {
-        assert_policy_page(offset, NonZeroUsize::new(count).unwrap());
+        assert_policy_page(offset, NonZeroUsize::new(count).unwrap(), diverse);
     }
 }
 
-#[test]
-fn line_diverse_cycles_dense_start_lines_without_suppressing_candidates() {
+fn dense_line_candidates() -> Vec<RankedPlanCandidate> {
     let mut candidates = (1..=10)
         .map(|rank| {
             let mut value = candidate(&format!("dense-{rank}"), "a.py", rank, 100);
@@ -273,40 +297,86 @@ fn line_diverse_cycles_dense_start_lines_without_suppressing_candidates() {
     let mut other_file = candidate("other-file", "b.py", 12, 100);
     other_file.candidate.line = 2;
     candidates.extend([same_file, other_file]);
+    candidates
+}
+
+#[test]
+fn line_diverse_cycles_dense_start_lines_without_suppressing_candidates() {
+    let candidates = dense_line_candidates();
     let policy = TopSelectionPolicy::LineDiverse;
 
-    let selected = select_ids(&candidates, 3, policy);
     let full = select_ids(&candidates, usize::MAX, policy);
     let repeated = select_ids(&candidates, usize::MAX, policy);
-    let empty = select_ids(&[], usize::MAX, policy);
 
-    assert_eq!(selected, ["dense-1", "next-line", "other-file"]);
     assert_eq!(full.len(), 12);
     assert_eq!(full.iter().collect::<BTreeSet<_>>().len(), 12);
+    assert_eq!(&full[..3], ["dense-1", "next-line", "other-file"]);
     assert_eq!(
         &full[3..],
         (2..=10).map(|n| format!("dense-{n}")).collect::<Vec<_>>()
     );
     assert_eq!(repeated, full);
-    assert_eq!(empty, Vec::<String>::new());
-    for offset in 0..=13 {
-        for count in [1, 3, 20, usize::MAX] {
-            let expected = full
-                .iter()
-                .skip(offset)
-                .take(count)
-                .cloned()
-                .collect::<Vec<_>>();
+}
 
-            let actual = super::selection::select_top_candidate_ids_at(
-                &candidates,
-                NonZeroUsize::new(count).unwrap(),
-                policy,
-                offset,
-            );
+#[test]
+fn line_diverse_top_three_represent_distinct_start_lines() {
+    let candidates = dense_line_candidates();
 
-            assert_eq!(actual, expected, "offset={offset} count={count}");
-        }
+    let selected = select_ids(&candidates, 3, TopSelectionPolicy::LineDiverse);
+
+    assert_eq!(selected, ["dense-1", "next-line", "other-file"]);
+}
+
+#[rstest::rstest]
+fn empty_policy_selection_returns_no_ids(
+    #[values(
+        TopSelectionPolicy::Strict,
+        TopSelectionPolicy::Diverse,
+        TopSelectionPolicy::LineDiverse
+    )]
+    policy: TopSelectionPolicy,
+) {
+    let count = NonZeroUsize::new(usize::MAX).unwrap();
+
+    let selected = super::selection::select_top_candidate_ids_at(&[], count, policy, 0);
+
+    assert_eq!(selected, Vec::<String>::new());
+}
+
+fn assert_line_diverse_page(offset: usize, count: usize) {
+    let candidates = dense_line_candidates();
+    let full = select_ids(&candidates, usize::MAX, TopSelectionPolicy::LineDiverse);
+    let expected = full
+        .iter()
+        .skip(offset)
+        .take(count)
+        .cloned()
+        .collect::<Vec<_>>();
+
+    let actual = super::selection::select_top_candidate_ids_at(
+        &candidates,
+        NonZeroUsize::new(count).unwrap(),
+        TopSelectionPolicy::LineDiverse,
+        offset,
+    );
+
+    assert_eq!(actual, expected);
+}
+
+#[rstest::rstest]
+fn line_diverse_pages_preserve_global_order(
+    #[values(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13)] offset: usize,
+    #[values(1, 3, 20, usize::MAX)] count: usize,
+) {
+    assert_line_diverse_page(offset, count);
+}
+
+proptest! {
+    #[test]
+    fn line_diverse_pages_preserve_order_for_generated_offsets_and_counts(
+        offset in prop_oneof![0usize..32, any::<usize>()], count in 1usize..=usize::MAX,
+    ) {
+        assert_line_diverse_page(offset, count);
     }
 }
 

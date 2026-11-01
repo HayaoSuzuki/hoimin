@@ -11,6 +11,7 @@ fn disk_filesystem_report_rejects_missing_and_unknown_wire_fields() {
         "key":"workspace",
         "minimum_available_bytes":10
     }"#;
+
     assert!(serde_json::from_str::<DiskFilesystemReport>(missing).is_err());
 
     let unknown = r#"{
@@ -50,6 +51,7 @@ fn disk_filesystem_report_round_trips_through_json() {
     });
 
     let encoded = serde_json::to_vec(&event).unwrap();
+
     let decoded: OutputEvent = serde_json::from_slice(&encoded).unwrap();
 
     assert_eq!(decoded, event);
@@ -87,7 +89,9 @@ fn disk_filesystem_delta_preserves_the_full_u64_difference() {
     });
 
     let encoded = serde_json::to_vec(&event).unwrap();
+
     let decoded: OutputEvent = serde_json::from_slice(&encoded).unwrap();
+
     assert_eq!(decoded, event);
 }
 
@@ -221,6 +225,7 @@ fn disk_summary_serializes_primary_stop_and_cleanup_independently() {
     };
 
     let value = serde_json::to_value(summary).unwrap();
+
     assert_eq!(value["stop"]["code"], "workspace.size.exceeded");
     assert_eq!(value["cleanup"][0]["status"], "failed");
     assert_eq!(value["removed_logical_bytes"], serde_json::Value::Null);
@@ -232,6 +237,7 @@ fn run_started_versions_serialize_only_os_and_hoimin() {
         os: "windows".into(),
         hoimin: "0.1.0".into(),
     };
+
     assert_eq!(
         serde_json::to_value(versions).unwrap(),
         json!({"os":"windows","hoimin":"0.1.0"})
@@ -294,9 +300,11 @@ fn score_uses_only_killed_and_survived() {
     assert_eq!(summary.process_limit, 1);
 }
 
-#[test]
-fn completed_runs_with_survivors_keep_their_scores_and_succeed() {
-    for (statuses, score, killed, survived) in [
+#[rstest::rstest]
+#[case::vec_mutationstatus_survived_mutationstatus_survived_1(0)]
+#[case::vec_mutationstatus_killed_mutationstatus_survived_2(1)]
+fn completed_runs_with_survivors_keep_their_scores_and_succeed(#[case] scenario_index: usize) {
+    let (statuses, score, killed, survived) = [
         (
             vec![MutationStatus::Survived, MutationStatus::Survived],
             0.0,
@@ -309,19 +317,24 @@ fn completed_runs_with_survivors_keep_their_scores_and_succeed() {
             1,
             1,
         ),
-    ] {
-        let summary = summarize(&statuses);
-        assert_eq!(summary.score, Some(score));
-        assert_eq!(summary.killed, killed);
-        assert_eq!(summary.survived, survived);
-        assert_eq!(exit_code_for(ExitPolicy::from_summary(&summary)), 0);
-    }
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
+
+    let summary = summarize(&statuses);
+
+    assert_eq!(summary.score, Some(score));
+    assert_eq!(summary.killed, killed);
+    assert_eq!(summary.survived, survived);
+    assert_eq!(exit_code_for(ExitPolicy::from_summary(&summary)), 0);
 }
 
 #[test]
 fn process_limit_and_survivor_produce_an_incomplete_exit() {
     let summary = summarize(&[MutationStatus::Survived, MutationStatus::ProcessLimit]);
     let policy = ExitPolicy::from_summary(&summary);
+
     assert!(policy.incomplete);
     assert_eq!(exit_code_for(policy), 4);
 }
@@ -329,6 +342,7 @@ fn process_limit_and_survivor_produce_an_incomplete_exit() {
 #[test]
 fn error_results_take_infrastructure_exit_precedence() {
     let error_only = summarize(&[MutationStatus::Error]);
+
     assert_eq!(exit_code_for(ExitPolicy::from_summary(&error_only)), 2);
 
     let error_and_survivor = summarize(&[MutationStatus::Error, MutationStatus::Survived]);
@@ -365,6 +379,7 @@ fn incomplete_and_interrupted_runs_preserve_their_exit_codes() {
 #[test]
 fn complete_exit_policy_has_stable_precedence() {
     let mut policy = ExitPolicy::default();
+
     assert_eq!(exit_code_for(policy), 0);
     policy.incomplete = true;
     assert_eq!(exit_code_for(policy), 4);
@@ -387,6 +402,7 @@ fn invalid_sequence_is_a_typed_runtime_error() {
             test_resource_control(),
         )))
         .unwrap();
+
     assert_eq!(
         sequence.observe(&OutputEvent::Diagnostic(hoimin_core::Diagnostic::new(
             "run-1", 10, "warning", "x", "y",
@@ -402,6 +418,7 @@ fn invalid_sequence_is_a_typed_runtime_error() {
 #[test]
 fn sequence_requires_run_start_and_rejects_cross_run_events() {
     let mut sequence = ReportSequence::new();
+
     assert_eq!(
         sequence.observe(&OutputEvent::Diagnostic(hoimin_core::Diagnostic::new(
             "run-1", 1, "warning", "x", "y",
@@ -446,6 +463,7 @@ fn a_mutant_finish_must_follow_its_matching_start() {
         )))
         .unwrap();
     let finished = finished_event(2, candidate("m1", 7));
+
     assert_eq!(
         sequence.observe(&finished),
         Err(hoimin_core::ReportSequenceError::MutantNotStarted {
@@ -819,6 +837,7 @@ fn all_event_variants_have_the_exact_public_kind() {
                 .to_owned()
         })
         .collect::<Vec<_>>();
+
     assert_eq!(
         kinds,
         [

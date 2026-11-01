@@ -99,80 +99,68 @@ async fn bounded(mut command: tokio::process::Command) -> Output {
         .unwrap()
 }
 
+#[rstest::rstest]
+#[case::same_environment("private-plan-environment-marker-628-unique", 0, true, &[])]
+#[case::changed_environment("different", 2, false, &["plan.fingerprint_env.changed"])]
 #[tokio::test]
-async fn plan_tracks_environment_without_plaintext_and_verify_checks_before_baseline() {
+async fn plan_tracks_environment_without_plaintext_and_verify_checks_before_baseline(
+    #[case] environment: &str,
+    #[case] exit_code: i32,
+    #[case] marker_exists: bool,
+    #[case] expected_errors: &[&str],
+) {
     let secret = "private-plan-environment-marker-628-unique";
-    for (environment, exit_code, marker_exists, expected_errors) in [
-        (secret, 0, true, [].as_slice()),
-        (
-            "different",
-            2,
-            false,
-            ["plan.fingerprint_env.changed"].as_slice(),
-        ),
-    ] {
-        let fixture = Fixture::new();
-        let manifest = fixture.plan(true, OsStr::new(secret)).await;
-        assert_eq!(manifest["schema_version"], 10);
-        assert_eq!(
-            manifest["normalized_config"]["environment"]["names"],
-            json!([FLAG])
-        );
-        assert!(!manifest.to_string().contains(secret));
-        let output = fixture.verify(&manifest, OsStr::new(environment)).await;
-        assert!(!String::from_utf8_lossy(&output.stdout).contains(secret));
-        assert!(!String::from_utf8_lossy(&output.stderr).contains(secret));
-        assert_eq!(
-            output.status.code(),
-            Some(exit_code),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert_eq!(fixture.marker.exists(), marker_exists);
-        assert_eq!(output.stdout.is_empty(), !expected_errors.is_empty());
-        for expected_error in expected_errors {
-            assert!(String::from_utf8_lossy(&output.stderr).contains(expected_error));
-        }
+
+    let fixture = Fixture::new();
+    let manifest = fixture.plan(true, OsStr::new(secret)).await;
+    assert_eq!(manifest["schema_version"], 10);
+    assert_eq!(
+        manifest["normalized_config"]["environment"]["names"],
+        json!([FLAG])
+    );
+    assert!(!manifest.to_string().contains(secret));
+    let output = fixture.verify(&manifest, OsStr::new(environment)).await;
+    assert!(!String::from_utf8_lossy(&output.stdout).contains(secret));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains(secret));
+    assert_eq!(
+        output.status.code(),
+        Some(exit_code),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fixture.marker.exists(), marker_exists);
+    assert_eq!(output.stdout.is_empty(), !expected_errors.is_empty());
+    for expected_error in expected_errors {
+        assert!(String::from_utf8_lossy(&output.stderr).contains(expected_error));
     }
 }
 
+#[rstest::rstest]
+#[case::digest_null("/normalized_config/environment/digest", Value::Null)]
+#[case::digest_empty("/normalized_config/environment/digest", json!(""))]
+#[case::digest_nonhex("/normalized_config/environment/digest", json!("g".repeat(64)))]
+#[case::digest_uppercase("/normalized_config/environment/digest", json!("A".repeat(64)))]
+#[case::digest_number("/normalized_config/environment/digest", json!(42))]
+#[case::names_empty("/normalized_config/environment/names", json!([]))]
+#[case::names_duplicate("/normalized_config/environment/names", json!([FLAG,FLAG]))]
+#[case::names_unsorted("/normalized_config/environment/names", json!(["Z","A"]))]
+#[case::names_invalid("/normalized_config/environment/names", json!(["NAME=VALUE"]))]
+#[case::schema_four("/schema_version", json!(4))]
+#[case::schema_five("/schema_version", json!(5))]
 #[tokio::test]
-async fn verify_rejects_inconsistent_environment_metadata_and_old_plan_schema() {
+async fn verify_rejects_inconsistent_environment_metadata_and_old_plan_schema(
+    #[case] pointer: &str,
+    #[case] replacement: Value,
+) {
     let fixture = Fixture::new();
-    let manifest = fixture.plan(true, OsStr::new("value")).await;
-    let mut cases = Vec::new();
-    for hash in [
-        Value::Null,
-        json!(""),
-        json!("g".repeat(64)),
-        json!("A".repeat(64)),
-        json!(42),
-    ] {
-        let mut changed = manifest.clone();
-        changed["normalized_config"]["environment"]["digest"] = hash;
-        cases.push(changed);
-    }
-    for names in [
-        json!([]),
-        json!([FLAG, FLAG]),
-        json!(["Z", "A"]),
-        json!(["NAME=VALUE"]),
-    ] {
-        let mut changed = manifest.clone();
-        changed["normalized_config"]["environment"]["names"] = names;
-        cases.push(changed);
-    }
-    for version in [4, 5] {
-        let mut old = manifest.clone();
-        old["schema_version"] = json!(version);
-        cases.push(old);
-    }
-    for changed in cases {
-        let output = fixture.verify(&changed, OsStr::new("value")).await;
-        assert_eq!(output.status.code(), Some(2));
-        assert_eq!(output.stdout, Vec::<u8>::new());
-        assert!(!fixture.marker.exists());
-    }
+    let mut manifest = fixture.plan(true, OsStr::new("value")).await;
+    *manifest.pointer_mut(pointer).unwrap() = replacement;
+
+    let output = fixture.verify(&manifest, OsStr::new("value")).await;
+
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stdout, Vec::<u8>::new());
+    assert!(!fixture.marker.exists());
 }
 
 #[tokio::test]

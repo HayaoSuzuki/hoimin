@@ -109,57 +109,64 @@ impl Fixture {
     }
 }
 
-#[test]
-fn increasing_budget_reuses_stable_prefix_and_keeps_cumulative_accounting() {
-    for (killed, verdict) in [(true, "killed"), (false, "survived")] {
-        let fixture = Fixture::new(killed);
-        let (initial, metrics) = fixture.run(1, false, "session.sqlite");
-        assert_eq!(metrics["executed"], 1);
-        let (same, metrics) = fixture.run(1, true, "session.sqlite");
-        assert_eq!(same["run"]["run_id"], initial["run"]["run_id"]);
-        assert_eq!(metrics["executed"], 0);
-        let (increased, metrics) = fixture.run(2, true, "session.sqlite");
-        assert_eq!(increased["run"]["run_id"], initial["run"]["run_id"]);
-        assert_eq!(metrics["executed"], 1);
-        assert_eq!(increased["summary"]["complete"], false);
-        assert_eq!(mutation_outcome::status(&increased["mutants"][0]), verdict);
-        assert!(mutation_outcome::termination(&increased["mutants"][0]).is_null());
-        assert_eq!(mutation_outcome::status(&increased["mutants"][1]), verdict);
-        assert!(!mutation_outcome::termination(&increased["mutants"][1]).is_null());
+#[rstest::rstest]
+#[case::killed_1(true, "killed")]
+#[case::survived_2(false, "survived")]
+fn increasing_budget_reuses_stable_prefix_and_keeps_cumulative_accounting(
+    #[case] killed: bool,
+    #[case] verdict: &str,
+) {
+    let fixture = Fixture::new(killed);
+
+    let (initial, metrics) = fixture.run(1, false, "session.sqlite");
+
+    assert_eq!(metrics["executed"], 1);
+    let (same, metrics) = fixture.run(1, true, "session.sqlite");
+    assert_eq!(same["run"]["run_id"], initial["run"]["run_id"]);
+    assert_eq!(metrics["executed"], 0);
+    let (increased, metrics) = fixture.run(2, true, "session.sqlite");
+    assert_eq!(increased["run"]["run_id"], initial["run"]["run_id"]);
+    assert_eq!(metrics["executed"], 1);
+    assert_eq!(increased["summary"]["complete"], false);
+    assert_eq!(mutation_outcome::status(&increased["mutants"][0]), verdict);
+    assert!(mutation_outcome::termination(&increased["mutants"][0]).is_null());
+    assert_eq!(mutation_outcome::status(&increased["mutants"][1]), verdict);
+    assert!(!mutation_outcome::termination(&increased["mutants"][1]).is_null());
+    assert_eq!(
+        mutation_outcome::status(&increased["mutants"][2]),
+        "not_run"
+    );
+    let (fresh, fresh_metrics) = fixture.run(2, false, "fresh.sqlite");
+    assert_eq!(fresh_metrics["executed"], 2);
+    for index in 0..3 {
         assert_eq!(
-            mutation_outcome::status(&increased["mutants"][2]),
-            "not_run"
+            mutation_outcome::status(&fresh["mutants"][index]),
+            mutation_outcome::status(&increased["mutants"][index])
         );
-        let (fresh, fresh_metrics) = fixture.run(2, false, "fresh.sqlite");
-        assert_eq!(fresh_metrics["executed"], 2);
-        for index in 0..3 {
-            assert_eq!(
-                mutation_outcome::status(&fresh["mutants"][index]),
-                mutation_outcome::status(&increased["mutants"][index])
-            );
-            assert_eq!(
-                fresh["mutants"][index]["candidate"],
-                increased["mutants"][index]["candidate"]
-            );
-        }
-        let (decreased, metrics) = fixture.run(1, true, "session.sqlite");
-        assert_ne!(decreased["run"]["run_id"], initial["run"]["run_id"]);
-        assert_eq!(metrics["executed"], 1);
+        assert_eq!(
+            fresh["mutants"][index]["candidate"],
+            increased["mutants"][index]["candidate"]
+        );
     }
+    let (decreased, metrics) = fixture.run(1, true, "session.sqlite");
+    assert_ne!(decreased["run"]["run_id"], initial["run"]["run_id"]);
+    assert_eq!(metrics["executed"], 1);
 }
 
-#[test]
-fn increased_budget_can_complete_then_completed_run_remains_ineligible() {
-    for killed in [true, false] {
-        let fixture = Fixture::new(killed);
-        let (initial, _) = fixture.run(1, false, "session.sqlite");
-        let (completed, metrics) = fixture.run(3, true, "session.sqlite");
-        assert_eq!(completed["run"]["run_id"], initial["run"]["run_id"]);
-        assert_eq!(completed["summary"]["complete"], true);
-        assert_eq!(metrics["executed"], 2);
-        assert!(mutation_outcome::termination(&completed["mutants"][0]).is_null());
-        let (increased, metrics) = fixture.run(4, true, "session.sqlite");
-        assert_ne!(increased["run"]["run_id"], initial["run"]["run_id"]);
-        assert_eq!(metrics["executed"], 3);
-    }
+#[rstest::rstest]
+#[case::true_1(true)]
+#[case::false_2(false)]
+fn increased_budget_can_complete_then_completed_run_remains_ineligible(#[case] killed: bool) {
+    let fixture = Fixture::new(killed);
+    let (initial, _) = fixture.run(1, false, "session.sqlite");
+
+    let (completed, metrics) = fixture.run(3, true, "session.sqlite");
+
+    assert_eq!(completed["run"]["run_id"], initial["run"]["run_id"]);
+    assert_eq!(completed["summary"]["complete"], true);
+    assert_eq!(metrics["executed"], 2);
+    assert!(mutation_outcome::termination(&completed["mutants"][0]).is_null());
+    let (increased, metrics) = fixture.run(4, true, "session.sqlite");
+    assert_ne!(increased["run"]["run_id"], initial["run"]["run_id"]);
+    assert_eq!(metrics["executed"], 3);
 }

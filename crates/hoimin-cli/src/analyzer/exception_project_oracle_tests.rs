@@ -53,6 +53,7 @@ fn lean_exception_hierarchy_snapshot_correspondence() {
         .into_iter()
         .filter(|case| case.kind == "snapshot")
         .collect();
+
     assert!(!cases.is_empty(), "no snapshot cases selected");
     let expected_count = cases.len();
     let mut mismatches = Vec::new();
@@ -85,6 +86,7 @@ fn lean_exception_hierarchy_snapshot_correspondence() {
         let pairs = cached
             .map(|index| {
                 let operators = serde_json::from_str("[\"exception_hierarchy\"]").unwrap();
+
                 let output = hoimin_python::analyze_source_with_exceptions(
                     &hoimin_python::AnalyzeRequest {
                         payload: hoimin_python::payload::PayloadBudget::default(),
@@ -125,6 +127,7 @@ fn lean_exception_hierarchy_snapshot_correspondence() {
             "{}",
             case.id
         );
+
         let actual = Observation {
             pairs,
             error: None,
@@ -135,6 +138,7 @@ fn lean_exception_hierarchy_snapshot_correspondence() {
         corpus::compare(&case, actual, &mut mismatches);
         checked += 1;
     }
+
     assert_eq!(checked, expected_count);
     assert!(
         mismatches.is_empty(),

@@ -367,8 +367,10 @@ fn lean_workspace_internal_oracle_exposes_task_ownership() {
         .filter(|case| selected.as_ref().is_none_or(|id| id == &case.id))
     {
         matched = true;
+
         let actual = replay(&case)
             .unwrap_or_else(|error| panic!("{} infrastructure-error: {error}", case.id));
+
         assert_eq!(actual, case.expected, "{} internal mismatch", case.id);
     }
     assert!(

@@ -30,27 +30,33 @@ fn grant(ledger: &mut BudgetLedger, preflight: u64, bytes: u64) -> WorkspaceCopy
     .unwrap()
 }
 
-#[test]
-fn accepted_requests_bind_once_including_zero_allowance() {
-    for bytes in [0, 1, 64] {
-        let mut ledger = ledger();
-        let grant = grant(&mut ledger, 7, bytes);
-        let first = grant.create_worker(EffectId(10), 0).unwrap();
-        let second = grant.create_worker(EffectId(11), 1).unwrap();
-        let mut state = PlanState::default();
+#[rstest::rstest]
+#[case::input_0_1(0)]
+#[case::input_1_2(1)]
+#[case::input_64_3(64)]
+fn accepted_requests_bind_once_including_zero_allowance(#[case] bytes: u64) {
+    let mut ledger = ledger();
+    let grant = grant(&mut ledger, 7, bytes);
+    let first = grant.create_worker(EffectId(10), 0).unwrap();
+    let second = grant.create_worker(EffectId(11), 1).unwrap();
+    let mut state = PlanState::default();
 
-        let first_result = state.accept_grant(&first, EffectId(7), 2, bytes * 4);
-        let second_result = state.accept_grant(&second, EffectId(7), 2, bytes * 4);
+    let first_result = state.accept_grant(&first, EffectId(7), 2, bytes * 4);
+    let second_result = state.accept_grant(&second, EffectId(7), 2, bytes * 4);
 
-        assert_eq!(first_result, Ok(true));
-        assert_eq!(second_result, Ok(false));
-        assert_eq!(state.reservation, Some(grant.reservation_id()));
-        assert_eq!(state.workers, BTreeSet::from([0, 1]));
-    }
+    assert_eq!(first_result, Ok(true));
+    assert_eq!(second_result, Ok(false));
+    assert_eq!(state.reservation, Some(grant.reservation_id()));
+    assert_eq!(state.workers, BTreeSet::from([0, 1]));
 }
 
-#[test]
-fn rejection_precedence_preserves_the_bound_reservation_and_slots() {
+#[rstest::rstest]
+#[case::wrong_preflight_create_worker_effectid_20_3_unwrap_1(0)]
+#[case::wrong_allowance_create_worker_effectid_21_3_unwrap_2(1)]
+#[case::wrong_allowance_create_worker_effectid_22_0_unwrap_3(2)]
+#[case::foreign_create_worker_effectid_23_0_unwrap_4(3)]
+#[case::bound_create_worker_effectid_24_0_unwrap_5(4)]
+fn rejection_precedence_preserves_the_bound_reservation_and_slots(#[case] scenario_index: usize) {
     let mut ledger = ledger();
     let bound = grant(&mut ledger, 7, 2);
     let wrong_preflight = grant(&mut ledger, 8, 3);
@@ -90,19 +96,21 @@ fn rejection_precedence_preserves_the_bound_reservation_and_slots() {
             WorkspaceError::WorkerAlreadyExists { worker: 0 },
         ),
     ];
-    for (request, expected) in cases {
-        let mut state = PlanState::default();
-        let initial = bound.create_worker(EffectId(10), 0).unwrap();
-        assert_eq!(state.accept_grant(&initial, EffectId(7), 2, 8), Ok(true));
-        let reservation = state.reservation;
-        let workers = state.workers.clone();
 
-        let result = state.accept_grant(&request, EffectId(7), 2, 8);
+    let (request, expected) = cases.into_iter().nth(scenario_index).unwrap();
 
-        assert_eq!(result, Err(expected));
-        assert_eq!(state.reservation, reservation);
-        assert_eq!(state.workers, workers);
-    }
+    let mut state = PlanState::default();
+    let initial = bound.create_worker(EffectId(10), 0).unwrap();
+
+    assert_eq!(state.accept_grant(&initial, EffectId(7), 2, 8), Ok(true));
+    let reservation = state.reservation;
+    let workers = state.workers.clone();
+
+    let result = state.accept_grant(&request, EffectId(7), 2, 8);
+
+    assert_eq!(result, Err(expected));
+    assert_eq!(state.reservation, reservation);
+    assert_eq!(state.workers, workers);
 }
 
 // A log of accepted raw inputs supplies expectations without consulting PlanState.

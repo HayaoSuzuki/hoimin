@@ -120,6 +120,7 @@ def test_shellcheck_does_not_suppress_actionlint_default_exclusions(
     )
 
     # SC2154 is excluded by actionlint's built-in integration, but not our runner.
+
     check_shells_result = workflow_lint.check_shells([path], executable)
 
     assert check_shells_result == 1

@@ -41,23 +41,52 @@ mod tests {
     #[test]
     fn rejects_low_words_before_remainder() {
         let mut words = [0, 1, 5, 16].into_iter(); // 2^64 mod 10 = 6
-        assert_eq!(draw_below(10, || words.next().unwrap()), 6);
-        assert!(words.next().is_none());
-        assert_eq!(draw_below(u64::MAX, || u64::MAX), 0);
-        assert_eq!(draw_below(1, || 0), 0);
+
+        let result = draw_below(10, || words.next().unwrap());
+        let exhausted = words.next().is_none();
+
+        assert_eq!(result, 6);
+        assert!(exhausted);
+    }
+
+    #[rstest::rstest]
+    #[case::maximum_bound(u64::MAX, u64::MAX, 0)]
+    #[case::unit_bound(1, 0, 0)]
+    fn bounded_draw_handles_integer_boundaries(
+        #[case] bound: u64,
+        #[case] word: u64,
+        #[case] expected: u64,
+    ) {
+        let result = draw_below(bound, || word);
+
+        assert_eq!(result, expected);
     }
 
     proptest! {
         #[test]
+        fn accepted_words_reduce_to_the_remainder_for_any_positive_bound(
+            bound in 1u64..=u64::MAX, word in any::<u64>(),
+        ) {
+            prop_assume!(word >= bound.wrapping_neg() % bound);
+
+            let result = draw_below(bound, || word);
+
+            prop_assert_eq!(result, word % bound);
+            prop_assert!(result < bound);
+        }
+
+        #[test]
         fn ordered_sample_is_a_unique_bounded_reproducible_prefix(
             population in 0usize..512, count in 0usize..1024, seed in any::<u64>(),
         ) {
+            let full = sample_indices(population, population, seed);
+
             let actual = sample_indices(population, count, seed);
+
             prop_assert_eq!(actual.len(), count.min(population));
             let unique: std::collections::BTreeSet<_> = actual.iter().copied().collect();
             prop_assert_eq!(unique.len(), actual.len());
             prop_assert!(actual.iter().all(|&id| id < population));
-            let full = sample_indices(population, population, seed);
             prop_assert_eq!(&actual, &full[..actual.len()]);
         }
     }

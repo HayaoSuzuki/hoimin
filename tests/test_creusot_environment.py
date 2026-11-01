@@ -150,6 +150,7 @@ def test_installation_only_check_does_not_need_a_project(environment: Path) -> N
 @POSIX_SHELL
 def test_accepts_matching_executables_and_configuration(environment: Path) -> None:
     result = check(environment)
+
     assert result.returncode == 0, result.stderr
 
 
@@ -192,6 +193,7 @@ def test_rejects_missing_selected_project_configuration(environment: Path) -> No
 def test_rejects_missing_required_executable(environment: Path, name: str) -> None:
     (environment.parent / name).unlink()
     result = check(environment)
+
     assert result.returncode != 0
     assert name in result.stderr
 
@@ -208,6 +210,7 @@ def test_rejects_wrong_version_even_with_matching_binary_hash(
     receipt["files"][str(tool)] = hashlib.sha256(tool.read_bytes()).hexdigest()
     receipt_path.write_text(json.dumps(receipt))
     result = check(environment)
+
     assert result.returncode != 0
     assert "version" in result.stderr
 
@@ -216,6 +219,7 @@ def test_rejects_changed_content_printing_correct_version(environment: Path) -> 
     tool = environment.parent / "z3"
     tool.write_text(tool.read_text() + "# different executable\n")
     result = check(environment)
+
     assert result.returncode != 0
     assert "hash" in result.stderr
 
@@ -223,6 +227,7 @@ def test_rejects_changed_content_printing_correct_version(environment: Path) -> 
 def test_rejects_wrong_configuration(environment: Path) -> None:
     (environment.parent / "why3.conf").write_text("[main]\nrunning_provers_max = 4\n")
     result = check(environment)
+
     assert result.returncode != 0
     assert "why3.conf" in result.stderr
 
@@ -234,6 +239,7 @@ def test_rejects_malformed_manifest(tmp_path: Path, content: str) -> None:
     manifest = tmp_path / "toolchain.json"
     manifest.write_text(content)
     result = check(manifest)
+
     assert result.returncode != 0
     assert "manifest" in result.stderr
 
@@ -241,6 +247,7 @@ def test_rejects_malformed_manifest(tmp_path: Path, content: str) -> None:
 def test_rejects_missing_build_receipt(environment: Path) -> None:
     (environment.parent / "receipt.json").unlink()
     result = check(environment)
+
     assert result.returncode != 0
     assert "receipt" in result.stderr
 

@@ -20,6 +20,7 @@ fn enabled_ensure_evaluates_condition_without_evaluating_success_context() {
             7
         }
     );
+
     assert_eq!(evaluations.get(), 1);
 }
 
@@ -38,6 +39,7 @@ fn disabled_ensure_does_not_evaluate_condition_or_context() {
             7
         }
     );
+
     assert_eq!(evaluations.get(), 0);
 }
 
@@ -62,6 +64,7 @@ fn disabled_contract_does_not_evaluate_condition_or_context() {
             1
         }
     );
+
     assert!(!evaluated.get());
 }
 

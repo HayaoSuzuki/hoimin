@@ -569,7 +569,6 @@ def test_run_returns_a_successful_completed_process(mocker: MockerFixture) -> No
 
     actual = run(argv, cwd=Path("work"), env={"PYTHONNOUSERSITE": "1"})
 
-    assert actual is completed
     mocked_run.assert_called_once_with(
         argv,
         cwd=Path("work"),
@@ -581,6 +580,8 @@ def test_run_returns_a_successful_completed_process(mocker: MockerFixture) -> No
         timeout=COMMAND_TIMEOUT_SECONDS,
         check=False,
     )
+
+    assert actual is completed
 
 
 def test_run_reports_command_output_for_a_failure(mocker: MockerFixture) -> None:
@@ -632,26 +633,20 @@ def executed_smoke_outcome(termination: object, output_state: str) -> dict[str, 
 
 @given(exit_code=st.integers(min_value=-(2**31), max_value=2**31 - 1))
 def test_mutation_result_accepts_complete_executed_exits(exit_code: int) -> None:
-    # Arrange
     outcome = executed_smoke_outcome({"Exit": exit_code}, "complete")
     output = mutation_jsonl_output([{"outcome": outcome}])
 
-    # Act
     actual = assert_mutation_result(output)
 
-    # Assert
     assert actual is None
 
 
-@given(status=st.sampled_from(["killed", "survived"]))
+@pytest.mark.parametrize("status", ["killed", "survived"])
 def test_mutation_result_accepts_conclusive_reused_outcomes(status: str) -> None:
-    # Arrange
     output = mutation_jsonl_output([{"outcome": {"reused": {"status": status}}}])
 
-    # Act
     actual = assert_mutation_result(output)
 
-    # Assert
     assert actual is None
 
 
@@ -664,11 +659,9 @@ def test_mutation_result_accepts_conclusive_reused_outcomes(status: str) -> None
     )
 )
 def test_mutation_result_rejects_close_timeout_outcomes(termination: object) -> None:
-    # Arrange
     outcome = executed_smoke_outcome(termination, "close_timed_out")
     output = mutation_jsonl_output([{"outcome": outcome}])
 
-    # Act / Assert
     with pytest.raises(
         AssertionError, match="mutation run had no killed or survived mutant"
     ):
@@ -679,11 +672,9 @@ def test_mutation_result_rejects_close_timeout_outcomes(termination: object) -> 
     "termination", ["Timeout", "OutOfMemory", "ProcessLimit", "Cancelled"]
 )
 def test_mutation_result_rejects_complete_non_exit_outcomes(termination: str) -> None:
-    # Arrange
     outcome = executed_smoke_outcome(termination, "complete")
     output = mutation_jsonl_output([{"outcome": outcome}])
 
-    # Act / Assert
     with pytest.raises(
         AssertionError, match="mutation run had no killed or survived mutant"
     ):
@@ -691,10 +682,8 @@ def test_mutation_result_rejects_complete_non_exit_outcomes(termination: str) ->
 
 
 def test_mutation_result_rejects_not_run() -> None:
-    # Arrange
     output = mutation_jsonl_output([{"outcome": "not_run"}])
 
-    # Act / Assert
     with pytest.raises(
         AssertionError, match="mutation run had no killed or survived mutant"
     ):
@@ -702,19 +691,15 @@ def test_mutation_result_rejects_not_run() -> None:
 
 
 def test_mutation_result_rejects_flat_legacy_status() -> None:
-    # Arrange
     output = mutation_jsonl_output([{"status": "killed"}])
 
-    # Act / Assert
     with pytest.raises(KeyError, match="outcome"):
         assert_mutation_result(output)
 
 
 def test_mutation_result_rejects_an_empty_mutant_list() -> None:
-    # Arrange
     output = mutation_jsonl_output([])
 
-    # Act / Assert
     with pytest.raises(AssertionError, match="mutation run produced no mutants"):
         assert_mutation_result(output)
 
@@ -732,7 +717,10 @@ def test_mutation_result_accepts_default_jsonl_output() -> None:
     output = mutation_jsonl_output(
         [{"outcome": executed_smoke_outcome({"Exit": 1}, "complete")}]
     )
-    assert assert_mutation_result(output) is None
+
+    observed_result = assert_mutation_result(output)
+
+    assert observed_result is None
 
 
 def test_exercise_cli_uses_default_jsonl_output(
@@ -766,18 +754,7 @@ def test_mutation_result_rejects_invalid_jsonl_completion(boundary: str) -> None
             [{"outcome": executed_smoke_outcome({"Exit": 1}, "complete")}]
         ).splitlines()
     ]
-    if boundary == "start":
-        events.pop(0)
-    elif boundary == "finish":
-        events.pop()
-    elif boundary == "incomplete":
-        events[-1]["complete"] = False
-    elif boundary == "failure":
-        events[-1]["exit_code"] = 4
-    elif boundary == "aggregate":
-        events = [{"mutants": [events[1]]}]
-    else:
-        events = []
+    events = damaged_completion(events, boundary)
     output = "\n".join(json.dumps(event) for event in events)
     with pytest.raises(AssertionError):
         assert_mutation_result(output)
@@ -795,6 +772,7 @@ def test_distribution_supports_only_python_314_and_315(
             encoding="utf-8"
         )
     )["project"]
+
     assert (version in SpecifierSet(project["requires-python"])) is supported
     assert "Programming Language :: Python :: 3.15" in project["classifiers"]
 
@@ -813,7 +791,9 @@ def test_distribution_smoke_uses_the_running_python(
         wheel_smoke, "run", return_value=subprocess.CompletedProcess([], 0, "", "")
     )
 
-    assert main() == 0
+    observed_result = main()
+
+    assert observed_result == 0
     assert calls.call_args_list[0].args[0] == [
         "uvx",
         "--python",
@@ -823,3 +803,21 @@ def test_distribution_smoke_uses_the_running_python(
         "hoimin",
         "--help",
     ]
+
+
+def damaged_completion(
+    events: list[dict[str, object]], boundary: str
+) -> list[dict[str, object]]:
+    if boundary == "start":
+        events.pop(0)
+    elif boundary == "finish":
+        events.pop()
+    elif boundary == "incomplete":
+        events[-1]["complete"] = False
+    elif boundary == "failure":
+        events[-1]["exit_code"] = 4
+    elif boundary == "aggregate":
+        events = [{"mutants": [events[1]]}]
+    else:
+        events = []
+    return events

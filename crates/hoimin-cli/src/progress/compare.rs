@@ -425,22 +425,40 @@ mod detail_tests {
         }
     }
 
+    #[rstest::rstest]
+    #[case::timeout_1(0)]
+    #[case::error_2(1)]
+    #[case::notrun_3(2)]
+    #[case::outofmemory_4(3)]
+    #[case::processlimit_5(4)]
+    fn detail_exclusions_follow_real_ambiguous_and_inconclusive_comparison_paths_scenario_1(
+        #[case] scenario_index: usize,
+    ) {
+        use MutationStatus::{Error, NotRun, OutOfMemory, ProcessLimit, Survived, Timeout};
+
+        let status = [Timeout, Error, NotRun, OutOfMemory, ProcessLimit]
+            .into_iter()
+            .nth(scenario_index)
+            .unwrap();
+
+        let before = report(&[("a", "body", Survived)]);
+        let after = report(&[("a", "body", status)]);
+        let (comparison, changes) = compare_usable_reports(
+            &before,
+            &after,
+            candidate_set_eligibility(&before, &after),
+            Some(100),
+        );
+
+        assert_eq!(comparison.inconclusive, 1);
+        assert_eq!(changes.transitions.len(), 0);
+        assert_eq!(changes.unidentified, 0);
+    }
+
     #[test]
     fn detail_exclusions_follow_real_ambiguous_and_inconclusive_comparison_paths() {
-        use MutationStatus::{Error, Killed, NotRun, OutOfMemory, ProcessLimit, Survived, Timeout};
-        for status in [Timeout, Error, NotRun, OutOfMemory, ProcessLimit] {
-            let before = report(&[("a", "body", Survived)]);
-            let after = report(&[("a", "body", status)]);
-            let (comparison, changes) = compare_usable_reports(
-                &before,
-                &after,
-                candidate_set_eligibility(&before, &after),
-                Some(100),
-            );
-            assert_eq!(comparison.inconclusive, 1);
-            assert_eq!(changes.transitions.len(), 0);
-            assert_eq!(changes.unidentified, 0);
-        }
+        use MutationStatus::{Killed, Survived};
+
         // Content fallback is ambiguous, including the otherwise identical ID.
         let before = report(&[("a", "body", Killed), ("b", "body", Killed)]);
         let after = report(&[("a", "body", Survived)]);
@@ -503,8 +521,10 @@ mod detail_tests {
                 candidate_set_eligibility(&previous, &current),
                 Some(1),
             );
+
             let actual = serde_json::to_value(changes).unwrap();
             let expected = &case["expected"]["details"];
+
             assert_eq!(actual["omitted"], expected["omitted"], "{}", case["id"]);
             assert_eq!(
                 actual["unidentified"], expected["unidentified"],

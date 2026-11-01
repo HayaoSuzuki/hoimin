@@ -148,18 +148,19 @@ fn command(root: &Path, case: &Case, mode: &str) -> Vec<OsString> {
 }
 
 #[test]
-fn prepared_namespace_corpus_rejects_schema_drift_and_missing_cases() {
+fn prepared_namespace_corpus_rejects_schema_drift_and_missing_cases_accepts_complete_corpus() {
     assert_eq!(parse_cases(CORPUS).unwrap().len(), 39);
-    for bad in [
-        CORPUS.replacen("\"schema\":1", "\"schema\":2", 1),
-        CORPUS.replacen("module-false-false", "unknown-case", 1),
-        CORPUS.replacen("\"mode\":\"strict\"", "\"mode\":\"model-only\"", 1),
-        CORPUS.replacen("\"schema\":1", "\"extra\":true,\"schema\":1", 1),
-        CORPUS.lines().skip(1).collect::<Vec<_>>().join("\n"),
-        format!("{CORPUS}{}\n", CORPUS.lines().next().unwrap()),
-    ] {
-        assert!(parse_cases(&bad).is_err());
-    }
+}
+
+#[rstest::rstest]
+#[case::input_1(CORPUS.replacen("\"schema\":1", "\"schema\":2", 1))]
+#[case::module_false_false_2(CORPUS.replacen("module-false-false", "unknown-case", 1))]
+#[case::input_3(CORPUS.replacen("\"mode\":\"strict\"", "\"mode\":\"model-only\"", 1))]
+#[case::input_4(CORPUS.replacen("\"schema\":1", "\"extra\":true,\"schema\":1", 1))]
+#[case::input_5(CORPUS.lines().skip(1).collect::<Vec<_>>().join("\n"))]
+#[case::corpus_6(format!("{CORPUS}{}\n", CORPUS.lines().next().unwrap()))]
+fn prepared_namespace_corpus_rejects_schema_drift_and_missing_cases(#[case] bad: String) {
+    assert!(parse_cases(&bad).is_err());
 }
 
 #[tokio::test(flavor = "current_thread")]

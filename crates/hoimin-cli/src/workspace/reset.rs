@@ -271,6 +271,7 @@ mod tests {
         let fixture_bytes = (PADDING_BYTES + b"original\n".len()) as u64;
         let metrics = current_reset_io_metrics();
         #[cfg(not(feature = "contracts"))]
+
         assert_eq!(
             metrics,
             ResetIoMetrics {
@@ -346,6 +347,7 @@ mod tests {
             .unwrap()
             .set_times(fs::FileTimes::new().set_modified(modified))
             .unwrap();
+
         assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), modified);
         reset_io_metrics();
 
@@ -426,6 +428,7 @@ mod tests {
         let thread_hook = Arc::clone(&hook);
         let operation = thread::spawn(move || {
             let _guard = install_workspace_race_hook(thread_hook);
+
             let result =
                 worker
                     .root
@@ -476,6 +479,7 @@ mod tests {
         worker.reset().unwrap();
 
         let restored = worker.root().join("swap/target.py");
+
         assert_eq!(fs::read(&restored).unwrap(), b"original\n");
         assert_eq!(permission_fingerprint(&restored), snapshot_permissions);
     }

@@ -44,12 +44,14 @@ mod tests {
     use super::GitPathScope;
     use hoimin_core::TargetSlice;
 
-    #[test]
-    fn absent_scope_stays_strict_while_empty_scope_admits_no_path() {
+    #[rstest::rstest]
+    #[case::good_py("good.py")]
+    #[case::r_bad_ame_py(r"bad\name.py")]
+    #[case::data_txt("data.txt")]
+    fn absent_scope_stays_strict_while_empty_scope_admits_no_path(#[case] name: &str) {
         assert!(GitPathScope::default().resolve(r"bad\name.py").is_err());
-        for name in ["good.py", r"bad\name.py", "data.txt"] {
-            assert_eq!(GitPathScope::new(Some(&[])).resolve(name).unwrap(), None);
-        }
+
+        assert_eq!(GitPathScope::new(Some(&[])).resolve(name).unwrap(), None);
     }
 
     #[test]
@@ -60,6 +62,7 @@ mod tests {
             symbols: Vec::new(),
         }];
         let scope = GitPathScope::new(Some(&targets));
+
         assert_eq!(
             scope.resolve("selected/app.py").unwrap(),
             Some(targets[0].path.clone())

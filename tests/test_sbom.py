@@ -58,7 +58,6 @@ def test_release_without_sboms_is_rejected(tmp_path: Path) -> None:
 
 
 def test_sbom_preserves_transitive_graph_and_binds_artifact(tmp_path: Path) -> None:
-
     source_tree(tmp_path)
     asset = tmp_path / "hoimin-v1.2.3-linux-x86_64.tar.gz"
     asset.write_bytes(b"archive")
@@ -69,9 +68,13 @@ def test_sbom_preserves_transitive_graph_and_binds_artifact(tmp_path: Path) -> N
     )
     data = json.loads(path.read_text())
 
-    assert path.name == "hoimin-v1.2.3-linux-x86_64-standalone.cdx.json"
+    sbom.validate(path, asset, "linux-x86_64", "standalone", "1.2.3", COMMIT)
+
     props = {p["name"]: p["value"] for p in data["metadata"]["properties"]}
 
+    parser = next(c for c in data["components"] if c["name"] == "ruff_python_parser")
+
+    assert path.name == "hoimin-v1.2.3-linux-x86_64-standalone.cdx.json"
     assert props["hoimin:artifact:sha256"] == hashlib.sha256(b"archive").hexdigest()
     assert props["hoimin:commit"] == COMMIT
     assert {c["name"] for c in data["components"]} == {
@@ -81,12 +84,8 @@ def test_sbom_preserves_transitive_graph_and_binds_artifact(tmp_path: Path) -> N
         "ruff_python_parser",
         "stacker",
     }
-    parser = next(c for c in data["components"] if c["name"] == "ruff_python_parser")
-
     assert parser["pedigree"]["notes"]
     assert COMMIT in parser["purl"]
-
-    sbom.validate(path, asset, "linux-x86_64", "standalone", "1.2.3", COMMIT)
 
 
 @pytest.mark.parametrize(
@@ -292,22 +291,27 @@ def test_capture_rejects_and_restores_changed_lock(
     assert (tmp_path / "Cargo.lock").read_bytes() == before
 
 
-@pytest.mark.parametrize("changed_lock", [False, True])
-def test_capture_removes_workspace_sidecars(
-    tmp_path: Path,
-    cargo_capture: Callable[[Path, bytes], None],
-    *,
-    changed_lock: bool,
+def test_successful_capture_removes_workspace_sidecars(
+    tmp_path: Path, cargo_capture: Callable[[Path, bytes], None]
 ) -> None:
     source_tree(tmp_path)
     before = (tmp_path / "Cargo.lock").read_bytes()
-    cargo_capture(tmp_path, b"changed" if changed_lock else before)
+    cargo_capture(tmp_path, before)
     output = tmp_path / "result.json"
 
-    if changed_lock:
-        with pytest.raises(ValueError, match=r"changed Cargo\.lock"):
-            capture_sbom.capture(tmp_path, "x86_64-unknown-linux-gnu", output)
-    else:
+    capture_sbom.capture(tmp_path, "x86_64-unknown-linux-gnu", output)
+
+    assert not list(tmp_path.glob("crates/*/hoimin-release-sbom.json"))
+
+
+def test_failed_capture_removes_workspace_sidecars(
+    tmp_path: Path, cargo_capture: Callable[[Path, bytes], None]
+) -> None:
+    source_tree(tmp_path)
+    cargo_capture(tmp_path, b"changed")
+    output = tmp_path / "result.json"
+
+    with pytest.raises(ValueError, match=r"changed Cargo\.lock"):
         capture_sbom.capture(tmp_path, "x86_64-unknown-linux-gnu", output)
 
     assert not list(tmp_path.glob("crates/*/hoimin-release-sbom.json"))
@@ -320,6 +324,7 @@ def test_python_repository_component_requires_one_matching_version(
     source_tree(tmp_path)
     asset = tmp_path / "archive.tar.gz"
     asset.write_bytes(b"archive")
+
     path = sbom.finalize(
         tmp_path,
         capture_file(tmp_path, "x86_64-unknown-linux-gnu"),
@@ -331,19 +336,7 @@ def test_python_repository_component_requires_one_matching_version(
     )
     data = json.loads(path.read_text())
     component = next(c for c in data["components"] if c["name"] == "hoimin-python")
-    if corruption == "missing":
-        data["components"].remove(component)
-        data["dependencies"] = [
-            node for node in data["dependencies"] if node["ref"] != "hoimin-python"
-        ]
-        data["dependencies"][0]["dependsOn"].remove("hoimin-python")
-        data["dependencies"][0]["dependsOn"].append("ruff_python_parser")
-    elif corruption == "duplicate":
-        data["components"].append({**component, "bom-ref": "python-duplicate"})
-        data["dependencies"].append({"ref": "python-duplicate", "dependsOn": []})
-        data["dependencies"][0]["dependsOn"].append("python-duplicate")
-    else:
-        component["version"] = "9.9.9"
+    damage_python_component(data, component, corruption)
     path.write_text(json.dumps(data))
 
     with pytest.raises(ValueError, match="wrong hoimin-python version"):
@@ -355,6 +348,7 @@ def test_budget_math_identity_is_required(tmp_path: Path, corruption: str) -> No
     source_tree(tmp_path)
     asset = tmp_path / "hoimin-v1.2.3-linux-x86_64.tar.gz"
     asset.write_bytes(b"archive")
+
     path = sbom.finalize(
         tmp_path,
         capture_file(tmp_path, "x86_64-unknown-linux-gnu"),
@@ -366,16 +360,7 @@ def test_budget_math_identity_is_required(tmp_path: Path, corruption: str) -> No
     )
     data = json.loads(path.read_text())
     component = next(c for c in data["components"] if c["name"] == "hoimin-budget-math")
-    if corruption == "missing":
-        data["components"].remove(component)
-        data["dependencies"] = [
-            node for node in data["dependencies"] if node["ref"] != "hoimin-budget-math"
-        ]
-        for node in data["dependencies"]:
-            if "hoimin-budget-math" in node["dependsOn"]:
-                node["dependsOn"].remove("hoimin-budget-math")
-    else:
-        component["version"] = "9.9.9"
+    damage_budget_math_component(data, component, corruption)
     path.write_text(json.dumps(data))
 
     with pytest.raises(ValueError, match="wrong hoimin-budget-math version"):
@@ -417,9 +402,44 @@ def test_sbom_preserves_registry_ruff_identity(tmp_path: Path, crate_name: str) 
     ].append("ast")
     expected = capture["bom"]["components"][-1].copy()
     raw.write_text(json.dumps(capture))
+
     path = sbom.finalize(
         tmp_path, raw, asset, "linux-x86_64", "standalone", "1.2.3", COMMIT
     )
     data = json.loads(path.read_text())
     component = next(c for c in data["components"] if c["name"] == crate_name)
+
     assert component == expected
+
+
+def damage_python_component(
+    data: dict[str, Any], component: dict[str, Any], corruption: str
+) -> None:
+    if corruption == "missing":
+        data["components"].remove(component)
+        data["dependencies"] = [
+            node for node in data["dependencies"] if node["ref"] != "hoimin-python"
+        ]
+        data["dependencies"][0]["dependsOn"].remove("hoimin-python")
+        data["dependencies"][0]["dependsOn"].append("ruff_python_parser")
+    elif corruption == "duplicate":
+        data["components"].append({**component, "bom-ref": "python-duplicate"})
+        data["dependencies"].append({"ref": "python-duplicate", "dependsOn": []})
+        data["dependencies"][0]["dependsOn"].append("python-duplicate")
+    else:
+        component["version"] = "9.9.9"
+
+
+def damage_budget_math_component(
+    data: dict[str, Any], component: dict[str, Any], corruption: str
+) -> None:
+    if corruption == "missing":
+        data["components"].remove(component)
+        data["dependencies"] = [
+            node for node in data["dependencies"] if node["ref"] != "hoimin-budget-math"
+        ]
+        for node in data["dependencies"]:
+            if "hoimin-budget-math" in node["dependsOn"]:
+                node["dependsOn"].remove("hoimin-budget-math")
+    else:
+        component["version"] = "9.9.9"

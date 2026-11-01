@@ -42,6 +42,7 @@ def test_registry_rejects_duplicate_shapes() -> None:
 def test_registry_rejects_invalid_sizes() -> None:
     registry = shapes.load_registry(ROOT / "docs/performance/shapes.json")
     value = [2, 2, 4]
+
     assert isinstance(value, list)
     assert all(isinstance(item, int) for item in value)
     registry["shapes"][0]["sizes"] = value
@@ -54,6 +55,7 @@ def test_registry_rejects_invalid_sizes() -> None:
 def test_registry_rejects_invalid_metric_or_status(field: str) -> None:
     registry = shapes.load_registry(ROOT / "docs/performance/shapes.json")
     value = {"metric": "memory", "status": "passing"}[field]
+
     assert isinstance(value, str)
     registry["shapes"][0].update({field: value})
 
@@ -491,6 +493,7 @@ def test_partial_verify_has_explicit_incomplete_contract() -> None:
         "expected_candidates": 2,
         "truncated": True,
     }
+
     observed = shapes.ExecutionOutput(
         [{}, {}], {"kind": "run_finished", "complete": False, "exit_code": 4}
     )
@@ -513,6 +516,7 @@ def test_partial_verify_rejects_inconsistent_completion(
         "expected_candidates": 2,
         "truncated": truncated,
     }
+
     observed = shapes.ExecutionOutput(
         [{}, {}], {"kind": "run_finished", "complete": complete, "exit_code": 4}
     )
@@ -679,6 +683,8 @@ def test_execution_reader_collects_finished_events_and_final_summary(
         {"kind": "run_finished", "complete": True, "exit_code": 0},
     ]
     source.write_text("\n".join(json.dumps(event) for event in events))
+
     result = shapes.load_execution_output(source)
+
     assert result.mutants == [events[2]]
     assert result.summary == events[3]

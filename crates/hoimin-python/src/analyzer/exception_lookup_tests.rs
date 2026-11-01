@@ -7,55 +7,60 @@ thread_local! {
     pub(super) static RELATED_VISITS: Cell<usize> = const { Cell::new(0) };
 }
 
-#[test]
-fn private_alias_scan_is_independent_of_class_count() {
-    for aliases in [1, 32, 128] {
-        for classes in [0, 1, 8, 32] {
-            let mut source = String::from("from errors import Base\n");
-            for i in 0..aliases {
-                writeln!(source, "from errors import Child as a{i}").unwrap();
-            }
-            // A private spelling exercises the cached subset; public aliases are
-            // still usable in methods and function-local exclusion is restored.
-            source.push_str("from errors import Child as __hidden\n");
-            for i in 0..classes {
-                writeln!(source, "class C{i}:\n def f(self):\n  raise a0()").unwrap();
-            }
-            let sources = vec![
-                (
-                    "errors.py".into(),
-                    "class Base(Exception): pass\nclass Child(Base): pass\n".into(),
-                ),
-                ("service.py".into(), source.clone()),
-            ];
-            let index = ExceptionIndex::from_sources(&sources, &[".".into()], &|| false).unwrap();
-            let parsed = ruff_python_parser::parse_module(&source).unwrap();
-            PRIVATE_ALIAS_VISITS.set(0);
-            let mut candidates = Vec::new();
-            index
-                .collect(
-                    Utf8Path::new("service.py"),
-                    parsed.syntax(),
-                    1000,
-                    &|| false,
-                    |_, replacement| {
-                        candidates.push(replacement);
-                        Ok(())
-                    },
-                )
-                .unwrap();
-            let visible_aliases: usize = index.visible[Utf8Path::new("service.py")]
-                .values()
-                .map(Vec::len)
-                .sum();
-            assert!(
-                PRIVATE_ALIAS_VISITS.get() <= visible_aliases,
-                "classes={classes}, aliases={aliases}, visits={}",
-                PRIVATE_ALIAS_VISITS.get()
-            );
-            assert_eq!(candidates, vec!["Base"; classes]);
-        }
+#[rstest::rstest]
+#[case::value_1(1)]
+#[case::value_32(32)]
+#[case::value_128(128)]
+fn private_alias_scan_is_independent_of_class_count(
+    #[case] aliases: usize,
+    #[values(0, 1, 2, 3)] scenario_index: usize,
+) {
+    let classes = [0, 1, 8, 32].into_iter().nth(scenario_index).unwrap();
+
+    let mut source = String::from("from errors import Base\n");
+    for i in 0..aliases {
+        writeln!(source, "from errors import Child as a{i}").unwrap();
     }
+    // A private spelling exercises the cached subset; public aliases are
+    // still usable in methods and function-local exclusion is restored.
+    source.push_str("from errors import Child as __hidden\n");
+    for i in 0..classes {
+        writeln!(source, "class C{i}:\n def f(self):\n  raise a0()").unwrap();
+    }
+    let sources = vec![
+        (
+            "errors.py".into(),
+            "class Base(Exception): pass\nclass Child(Base): pass\n".into(),
+        ),
+        ("service.py".into(), source.clone()),
+    ];
+    let index = ExceptionIndex::from_sources(&sources, &[".".into()], &|| false).unwrap();
+    let parsed = ruff_python_parser::parse_module(&source).unwrap();
+    PRIVATE_ALIAS_VISITS.set(0);
+    let mut candidates = Vec::new();
+    index
+        .collect(
+            Utf8Path::new("service.py"),
+            parsed.syntax(),
+            1000,
+            &|| false,
+            |_, replacement| {
+                candidates.push(replacement);
+                Ok(())
+            },
+        )
+        .unwrap();
+    let visible_aliases: usize = index.visible[Utf8Path::new("service.py")]
+        .values()
+        .map(Vec::len)
+        .sum();
+
+    assert!(
+        PRIVATE_ALIAS_VISITS.get() <= visible_aliases,
+        "classes={classes}, aliases={aliases}, visits={}",
+        PRIVATE_ALIAS_VISITS.get()
+    );
+    assert_eq!(candidates, vec!["Base"; classes]);
 }
 
 impl ExceptionIndex {
@@ -139,40 +144,45 @@ impl ExceptionIndex {
     }
 }
 
-#[test]
-fn related_lookup_work_is_bounded_by_visible_classes() {
-    for siblings in [8, 64, 256] {
-        let mut definitions = String::from("class Base(Exception): pass\n");
-        for i in 0..siblings {
-            writeln!(definitions, "class C{i}(Base): pass").unwrap();
-        }
-        let sources = vec![
-            ("errors.py".into(), definitions),
-            ("service.py".into(), "from errors import C0, C1\n".into()),
-        ];
-        let index = ExceptionIndex::from_sources(&sources, &[".".into()], &|| false).unwrap();
-        for sites in [1, 8, 32] {
-            RELATED_VISITS.set(0);
-            for _ in 0..sites {
-                assert_eq!(
-                    index.replacements(
-                        Utf8Path::new("service.py"),
-                        "C0",
-                        usize::MAX,
-                        ExceptionSite::Raise,
-                        &BTreeSet::new(),
-                        (10, &|| false)
-                    ),
-                    SiteOutcome::Candidates(vec!["C1"])
-                );
-            }
-            assert!(
-                RELATED_VISITS.get() <= 2 * sites,
-                "siblings={siblings}, sites={sites}, visits={}",
-                RELATED_VISITS.get()
-            );
-        }
+#[rstest::rstest]
+#[case::value_8(8)]
+#[case::value_64(64)]
+#[case::value_256(256)]
+fn related_lookup_work_is_bounded_by_visible_classes(
+    #[case] siblings: usize,
+    #[values(0, 1, 2)] scenario_index: usize,
+) {
+    let mut definitions = String::from("class Base(Exception): pass\n");
+    for i in 0..siblings {
+        writeln!(definitions, "class C{i}(Base): pass").unwrap();
     }
+    let sources = vec![
+        ("errors.py".into(), definitions),
+        ("service.py".into(), "from errors import C0, C1\n".into()),
+    ];
+    let index = ExceptionIndex::from_sources(&sources, &[".".into()], &|| false).unwrap();
+
+    let sites = [1, 8, 32].into_iter().nth(scenario_index).unwrap();
+
+    RELATED_VISITS.set(0);
+    for _ in 0..sites {
+        assert_eq!(
+            index.replacements(
+                Utf8Path::new("service.py"),
+                "C0",
+                usize::MAX,
+                ExceptionSite::Raise,
+                &BTreeSet::new(),
+                (10, &|| false)
+            ),
+            SiteOutcome::Candidates(vec!["C1"])
+        );
+    }
+    assert!(
+        RELATED_VISITS.get() <= 2 * sites,
+        "siblings={siblings}, sites={sites}, visits={}",
+        RELATED_VISITS.get()
+    );
 }
 
 #[test]
@@ -212,6 +222,7 @@ fn related_lookup_matches_exhaustive_outcomes() {
                                     &excluded,
                                     (limit, &|| false),
                                 );
+
                                 assert_eq!(
                                     actual, expected,
                                     "{path} {name} raised={raised} before={before} limit={limit}"
@@ -236,90 +247,84 @@ fn child_summary_does_not_invent_a_constructible_sibling_on_duplicate_insert() {
     group.insert(id.clone(), true);
     group.insert(id, true);
     group.insert(("errors.py".into(), "Blocked".into()), false);
+
     assert!(!group.has_constructible_sibling(&source));
     group.insert(("errors.py".into(), "Allowed".into()), true);
     assert!(group.has_constructible_sibling(&source));
 }
 
-#[test]
-fn hierarchy_site_eligibility_preserves_distinct_empty_reasons() {
+#[rstest::rstest]
+#[case::sparse_py(
+    "sparse.py",
+    "Lonely",
+    true,
+    SiteOutcome::Ineligible(IneligibleReason::NoRelatedClass)
+)]
+#[case::sparse_py_2(
+    "sparse.py",
+    "Lonely",
+    false,
+    SiteOutcome::Ineligible(IneligibleReason::NoRelatedClass)
+)]
+#[case::sparse_py_3(
+    "sparse.py",
+    "Root",
+    true,
+    SiteOutcome::Ineligible(IneligibleReason::ConstructorPolicy)
+)]
+#[case::sparse_py_4(
+    "sparse.py",
+    "Root",
+    false,
+    SiteOutcome::Ineligible(IneligibleReason::NoVisibleDestination)
+)]
+#[case::sparse_py_5(
+    "sparse.py",
+    "Child",
+    true,
+    SiteOutcome::Ineligible(IneligibleReason::NoVisibleDestination)
+)]
+#[case::visible_py(
+    "visible.py",
+    "Root",
+    true,
+    SiteOutcome::Ineligible(IneligibleReason::ConstructorPolicy)
+)]
+#[case::visible_py_7("visible.py", "Root", false, SiteOutcome::Candidates(vec!["Blocked"]))]
+#[case::visible_py_8(
+    "visible.py",
+    "Blocked",
+    true,
+    SiteOutcome::Ineligible(IneligibleReason::ConstructorPolicy)
+)]
+#[case::visible_py_9("visible.py", "Blocked", false, SiteOutcome::Candidates(vec!["Root"]))]
+fn hierarchy_site_eligibility_preserves_distinct_empty_reasons(
+    #[case] path: &str,
+    #[case] name: &str,
+    #[case] raised: bool,
+    #[case] expected: SiteOutcome,
+) {
     let sources = vec![
         ("errors.py".into(), "class Lonely(Exception): pass\nclass Root(Exception): pass\nclass Blocked(Root):\n def __init__(self, required): pass\nclass Parent(Exception): pass\nclass Child(Parent): pass\n".into()),
         ("sparse.py".into(), "from errors import Lonely, Root, Child\n".into()),
         ("visible.py".into(), "from errors import Root, Blocked\n".into()),
     ];
     let index = ExceptionIndex::from_sources(&sources, &[".".into()], &|| false).unwrap();
-    for (path, name, raised, expected) in [
-        (
-            "sparse.py",
-            "Lonely",
-            true,
-            SiteOutcome::Ineligible(IneligibleReason::NoRelatedClass),
+
+    assert_eq!(
+        index.replacements(
+            Utf8Path::new(path),
+            name,
+            usize::MAX,
+            if raised {
+                ExceptionSite::Raise
+            } else {
+                ExceptionSite::Handler
+            },
+            &BTreeSet::new(),
+            (10, &|| false)
         ),
-        (
-            "sparse.py",
-            "Lonely",
-            false,
-            SiteOutcome::Ineligible(IneligibleReason::NoRelatedClass),
-        ),
-        (
-            "sparse.py",
-            "Root",
-            true,
-            SiteOutcome::Ineligible(IneligibleReason::ConstructorPolicy),
-        ),
-        (
-            "sparse.py",
-            "Root",
-            false,
-            SiteOutcome::Ineligible(IneligibleReason::NoVisibleDestination),
-        ),
-        (
-            "sparse.py",
-            "Child",
-            true,
-            SiteOutcome::Ineligible(IneligibleReason::NoVisibleDestination),
-        ),
-        (
-            "visible.py",
-            "Root",
-            true,
-            SiteOutcome::Ineligible(IneligibleReason::ConstructorPolicy),
-        ),
-        (
-            "visible.py",
-            "Root",
-            false,
-            SiteOutcome::Candidates(vec!["Blocked"]),
-        ),
-        (
-            "visible.py",
-            "Blocked",
-            true,
-            SiteOutcome::Ineligible(IneligibleReason::ConstructorPolicy),
-        ),
-        (
-            "visible.py",
-            "Blocked",
-            false,
-            SiteOutcome::Candidates(vec!["Root"]),
-        ),
-    ] {
-        assert_eq!(
-            index.replacements(
-                Utf8Path::new(path),
-                name,
-                usize::MAX,
-                if raised {
-                    ExceptionSite::Raise
-                } else {
-                    ExceptionSite::Handler
-                },
-                &BTreeSet::new(),
-                (10, &|| false)
-            ),
-            expected,
-            "{path} {name} raised={raised}"
-        );
-    }
+        expected,
+        "{path} {name} raised={raised}"
+    );
 }

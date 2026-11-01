@@ -54,182 +54,216 @@ fn assert_python_valid(label: &str, path: &Path) {
     );
 }
 
+type DepthOperation = (&'static str, fn(&Output));
+
+fn assert_failed_plan_output(output: &Output) {
+    assert_eq!(
+        output.stdout,
+        Vec::<u8>::new(),
+        "failed analysis emitted a plan"
+    );
+}
+
+fn assert_failed_run_output(output: &Output) {
+    let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["summary"]["complete"], false);
+    assert!(
+        !report["baseline"].is_null(),
+        "run still executes its baseline first"
+    );
+}
+
 fn assert_plan_and_run_depth_rejection(
     label: &str,
     source: &str,
     validate_fixture: fn(&str, &Path),
+    operation: DepthOperation,
 ) {
-    type OperationCase = (&'static str, &'static [&'static str], fn(&Output));
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("calc.py");
     std::fs::write(&path, source).unwrap();
     validate_fixture(label, &path);
-    let operations: [OperationCase; 2] = [
-        ("plan", &[], |output| {
-            assert!(output.stdout.is_empty(), "failed analysis emitted a plan");
-        }),
-        ("run", &[], |output| {
-            let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
-            assert_eq!(report["summary"]["complete"], false);
-            assert!(
-                !report["baseline"].is_null(),
-                "run still executes its baseline first"
-            );
-        }),
-    ];
-    for (operation, format_args, assert_output) in operations {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_hoimin"));
-        command
-            .args([operation, "--root"])
-            .arg(root.path())
-            .args([
-                "--file",
-                "calc.py",
-                "--operators",
-                "binary_add_sub",
-                "--max-candidates",
-                "1",
-                "--min-free-space",
-                "1B",
-                "--allow-best-effort-memory",
-            ])
-            .env_remove("RUST_MIN_STACK");
-        command.args(format_args);
-        command.arg("--").arg(python()).args(["-c", "pass"]);
-        let output = bounded_output(&mut command);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(
-            output.status.code().is_some_and(|code| code != 0),
-            "{operation}/{label}: {output:?}"
-        );
-        assert!(
-            stderr.contains("calc.py")
-                && stderr.contains("analysis depth")
-                && stderr.contains("128"),
-            "{operation}/{label}: {stderr}"
-        );
-        assert_eq!(
-            std::fs::read_to_string(root.path().join("calc.py")).unwrap(),
-            source
-        );
-        assert_output(&output);
-    }
+    let (operation, assert_output) = operation;
+    let mut command = Command::new(env!("CARGO_BIN_EXE_hoimin"));
+    command
+        .args([operation, "--root"])
+        .arg(root.path())
+        .args([
+            "--file",
+            "calc.py",
+            "--operators",
+            "binary_add_sub",
+            "--max-candidates",
+            "1",
+            "--min-free-space",
+            "1B",
+            "--allow-best-effort-memory",
+        ])
+        .env_remove("RUST_MIN_STACK");
+
+    command.arg("--").arg(python()).args(["-c", "pass"]);
+    let output = bounded_output(&mut command);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.code().is_some_and(|code| code != 0),
+        "{operation}/{label}: {output:?}"
+    );
+    assert!(
+        stderr.contains("calc.py") && stderr.contains("analysis depth") && stderr.contains("128"),
+        "{operation}/{label}: {stderr}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.path().join("calc.py")).unwrap(),
+        source
+    );
+    assert_output(&output);
 }
 
-#[test]
-fn plan_and_run_reject_deep_ast_with_path_and_cause() {
-    for terms in [2_000, 20_000, 25_000] {
-        assert_plan_and_run_depth_rejection(
-            &format!("addition-{terms}"),
-            &format!("value = {}\n", vec!["1"; terms].join("+")),
-            // These existing parser/disposal cases exceed some CPython builds' limits.
-            |_, _| {},
-        );
-    }
+#[rstest::rstest]
+#[case::input_2_000_1(2_000)]
+#[case::input_20_000_2(20_000)]
+#[case::input_25_000_3(25_000)]
+fn plan_and_run_reject_deep_ast_with_path_and_cause(
+    #[case] terms: usize,
+    #[values(("plan", assert_failed_plan_output as fn(&Output)), ("run", assert_failed_run_output as fn(&Output)))]
+    operation: DepthOperation,
+) {
+    assert_plan_and_run_depth_rejection(
+        &format!("addition-{terms}"),
+        &format!("value = {}\n", vec!["1"; terms].join("+")),
+        // These existing parser/disposal cases exceed some CPython builds' limits.
+        |_, _| {},
+        operation,
+    );
 }
 
-#[test]
-fn unary_parser_recursion_reaches_controlled_depth_rejection() {
+#[rstest::rstest]
+fn unary_parser_recursion_reaches_controlled_depth_rejection(
+    #[values(("plan", assert_failed_plan_output as fn(&Output)), ("run", assert_failed_run_output as fn(&Output)))]
+    operation: DepthOperation,
+) {
     assert_plan_and_run_depth_rejection(
         "unary",
         &format!("value = {}1\n", "-".repeat(1_000)),
         assert_python_valid,
+        operation,
     );
 }
 
-#[test]
-fn power_parser_recursion_reaches_controlled_depth_rejection() {
+#[rstest::rstest]
+fn power_parser_recursion_reaches_controlled_depth_rejection(
+    #[values(("plan", assert_failed_plan_output as fn(&Output)), ("run", assert_failed_run_output as fn(&Output)))]
+    operation: DepthOperation,
+) {
     assert_plan_and_run_depth_rejection(
         "power",
         &format!("value = {}\n", vec!["1"; 2_000].join("**")),
         assert_python_valid,
+        operation,
     );
 }
 
-#[test]
-fn lambda_parser_recursion_reaches_controlled_depth_rejection() {
+#[rstest::rstest]
+fn lambda_parser_recursion_reaches_controlled_depth_rejection(
+    #[values(("plan", assert_failed_plan_output as fn(&Output)), ("run", assert_failed_run_output as fn(&Output)))]
+    operation: DepthOperation,
+) {
     assert_plan_and_run_depth_rejection(
         "lambda",
         &format!("value = {}1\n", "lambda: ".repeat(2_000)),
         assert_python_valid,
+        operation,
     );
 }
 
-#[test]
-fn conditional_parser_recursion_reaches_controlled_depth_rejection() {
+#[rstest::rstest]
+fn conditional_parser_recursion_reaches_controlled_depth_rejection(
+    #[values(("plan", assert_failed_plan_output as fn(&Output)), ("run", assert_failed_run_output as fn(&Output)))]
+    operation: DepthOperation,
+) {
     assert_plan_and_run_depth_rejection(
         "conditional",
         &format!("value = {}1\n", "1 if x else ".repeat(2_000)),
         assert_python_valid,
+        operation,
     );
 }
 
-#[test]
-fn speculative_with_expression_reclaims_the_discarded_parse() {
+#[rstest::rstest]
+fn speculative_with_expression_reclaims_the_discarded_parse(
+    #[values(("plan", assert_failed_plan_output as fn(&Output)), ("run", assert_failed_run_output as fn(&Output)))]
+    operation: DepthOperation,
+) {
     // Parser/disposal ownership fixture, without a cross-platform CPython limit claim.
     let deep = vec!["1"; 25_000].join("+");
     assert_plan_and_run_depth_rejection(
         "speculative-with",
         &format!("with ({deep}) as context:\n    pass\n"),
         |_, _| {},
+        operation,
     );
 }
 
-#[test]
-fn speculative_match_call_reclaims_the_discarded_subject() {
+#[rstest::rstest]
+fn speculative_match_call_reclaims_the_discarded_subject(
+    #[values(("plan", assert_failed_plan_output as fn(&Output)), ("run", assert_failed_run_output as fn(&Output)))]
+    operation: DepthOperation,
+) {
     // `match` is a soft keyword here; speculative statement parsing must rewind.
     let deep = vec!["1"; 25_000].join("+");
     assert_plan_and_run_depth_rejection(
         "speculative-match",
         &format!("match({deep})\n"),
         |_, _| {},
+        operation,
     );
 }
 
+#[rstest::rstest]
+#[case::trailing_operator(|deep: &str| { let _ = deep; format!("value = {deep}+\n") })]
+#[case::broken_second_statement(|deep: &str| { let _ = deep; format!("value = {deep}\nbroken =\n") })]
+#[case::deep_unary(|deep: &str| { let _ = deep; format!("value = {}1\nbroken =\n", "-".repeat(1_000)) })]
+#[case::invalid_assignment(|deep: &str| { let _ = deep; format!("{}x = 1\n", "-".repeat(10_000)) })]
+#[case::keyword_pattern(|deep: &str| { let _ = deep; format!("match x:\n case C(a{}=other): pass\n", ".b".repeat(25_000)) })]
+#[case::as_pattern(|deep: &str| { let _ = deep; format!("match x:\n case (a{} as y)(): pass\n", ".b".repeat(25_000)) })]
 #[test]
-fn invalid_deep_partial_trees_keep_invalid_syntax_behavior() {
+fn invalid_deep_partial_trees_keep_invalid_syntax_behavior(
+    #[case] make_source: fn(&str) -> String,
+) {
     let deep = vec!["1"; 25_000].join("+");
-    for source in [
-        format!("value = {deep}+\n"),
-        format!("value = {deep}\nbroken =\n"),
-        format!("value = {}1\nbroken =\n", "-".repeat(1_000)),
-        format!("{}x = 1\n", "-".repeat(10_000)),
-        format!("match x:\n case C(a{}=other): pass\n", ".b".repeat(25_000)),
-        format!("match x:\n case (a{} as y)(): pass\n", ".b".repeat(25_000)),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("calc.py"), source).unwrap();
-        let mut command = Command::new(env!("CARGO_BIN_EXE_hoimin"));
-        command
-            .args(["plan", "--root"])
-            .arg(root.path())
-            .args([
-                "--file",
-                "calc.py",
-                "--min-free-space",
-                "1B",
-                "--allow-best-effort-memory",
-                "--",
-            ])
-            .arg(python())
-            .args(["-c", "pass"])
-            .env_remove("RUST_MIN_STACK");
-        let output = bounded_output(&mut command);
-        assert!(
-            output.status.code().is_some_and(|code| code != 0),
-            "{output:?}"
-        );
-        assert!(output.stdout.is_empty(), "invalid syntax emitted a plan");
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(
-            stderr.contains("calc.py") && stderr.contains("syntax"),
-            "{stderr}"
-        );
-        assert!(
-            !stderr.contains("analysis depth"),
-            "invalid syntax semantics changed: {stderr}"
-        );
-    }
+    let source = make_source(&deep);
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("calc.py"), source).unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_hoimin"));
+    command
+        .args(["plan", "--root"])
+        .arg(root.path())
+        .args([
+            "--file",
+            "calc.py",
+            "--min-free-space",
+            "1B",
+            "--allow-best-effort-memory",
+            "--",
+        ])
+        .arg(python())
+        .args(["-c", "pass"])
+        .env_remove("RUST_MIN_STACK");
+    let output = bounded_output(&mut command);
+    assert!(
+        output.status.code().is_some_and(|code| code != 0),
+        "{output:?}"
+    );
+    assert!(output.stdout.is_empty(), "invalid syntax emitted a plan");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("calc.py") && stderr.contains("syntax"),
+        "{stderr}"
+    );
+    assert!(
+        !stderr.contains("analysis depth"),
+        "invalid syntax semantics changed: {stderr}"
+    );
 }
 
 fn parser_fixture(case: &str) -> (String, bool) {
@@ -317,28 +351,27 @@ fn parser_stack_child_cases(variable: &str) -> Vec<String> {
     std::env::var(variable).into_iter().collect()
 }
 
-#[test]
-fn parser_and_recovery_survive_small_stack() {
+#[rstest::rstest]
+#[case::assignment_context_1("assignment-context")]
+#[case::assignment_target_2("assignment-target")]
+#[case::delete_target_3("delete-target")]
+#[case::discard_keyword_pattern_4("discard-keyword-pattern")]
+#[case::discard_as_pattern_5("discard-as-pattern")]
+#[case::convert_pattern_6("convert-pattern")]
+#[case::format_spec_7("format-spec")]
+#[case::suite_8("suite")]
+#[case::async_recovery_9("async-recovery")]
+#[case::mixed_10("mixed")]
+#[case::old_decorator_11("old-decorator")]
+fn parser_and_recovery_survive_small_stack(#[case] case: &str) {
     const CASE_ENV: &str = "HOIMIN_TEST_PARSER_STACK_CASE";
-    for case in [
-        "assignment-context",
-        "assignment-target",
-        "delete-target",
-        "discard-keyword-pattern",
-        "discard-as-pattern",
-        "convert-pattern",
-        "format-spec",
-        "suite",
-        "async-recovery",
-        "mixed",
-        "old-decorator",
-    ] {
-        let output = bounded_output(
-            Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "parser_small_stack_child_fixture", "--nocapture"])
-                .env(CASE_ENV, case)
-                .env_remove("RUST_MIN_STACK"),
-        );
-        assert!(output.status.success(), "{case}: {output:?}");
-    }
+
+    let output = bounded_output(
+        Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "parser_small_stack_child_fixture", "--nocapture"])
+            .env(CASE_ENV, case)
+            .env_remove("RUST_MIN_STACK"),
+    );
+
+    assert!(output.status.success(), "{case}: {output:?}");
 }

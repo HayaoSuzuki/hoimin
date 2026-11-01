@@ -300,49 +300,41 @@ async fn plan_serializes_fingerprint_inputs_only_in_normalized_config() {
     assert_eq!(records[0]["path"], "config.toml");
 }
 
+#[rstest::rstest]
+#[case::collection_ops_1("collection_ops", "def selected(items):\n    return any(items)\n")]
+#[case::structure_ops_2(
+    "structure_ops",
+    "def selected(items, value):\n    items.append(value)\n"
+)]
+#[case::bitwise_ops_3("bitwise_ops", "def selected(left, right):\n    return left | right\n")]
+#[case::exception_ops_4(
+    "exception_ops",
+    "def selected(message):\n    raise ValueError(message)\n"
+)]
 #[tokio::test]
-async fn plans_for_new_operator_families_pass_verify() {
-    for (selector, source) in [
-        (
-            "collection_ops",
-            "def selected(items):\n    return any(items)\n",
-        ),
-        (
-            "structure_ops",
-            "def selected(items, value):\n    items.append(value)\n",
-        ),
-        (
-            "bitwise_ops",
-            "def selected(left, right):\n    return left | right\n",
-        ),
-        (
-            "exception_ops",
-            "def selected(message):\n    raise ValueError(message)\n",
-        ),
-    ] {
-        let project = Project::new_with_source(source);
-        let (path, manifest, marker) = write_plan_manifest(
-            &project,
-            &["--file", "src/calc.py", "--operators", selector],
-        )
-        .await;
-        let candidate_id = manifest
-            .candidates
-            .first()
-            .unwrap_or_else(|| panic!("{selector} did not produce a candidate"))
-            .id
-            .clone();
+async fn plans_for_new_operator_families_pass_verify(#[case] selector: &str, #[case] source: &str) {
+    let project = Project::new_with_source(source);
+    let (path, manifest, marker) = write_plan_manifest(
+        &project,
+        &["--file", "src/calc.py", "--operators", selector],
+    )
+    .await;
+    let candidate_id = manifest
+        .candidates
+        .first()
+        .unwrap_or_else(|| panic!("{selector} did not produce a candidate"))
+        .id
+        .clone();
 
-        let verified = prepare_verify(&path, std::slice::from_ref(&candidate_id))
-            .await
-            .unwrap_or_else(|error| panic!("{selector} plan failed verification: {error}"));
+    let verified = prepare_verify(&path, std::slice::from_ref(&candidate_id))
+        .await
+        .unwrap_or_else(|error| panic!("{selector} plan failed verification: {error}"));
 
-        assert_eq!(
-            verified.selection().candidate_ids(),
-            Some(&BTreeSet::from([candidate_id]))
-        );
-        assert!(!marker.exists());
-    }
+    assert_eq!(
+        verified.selection().candidate_ids(),
+        Some(&BTreeSet::from([candidate_id]))
+    );
+    assert!(!marker.exists());
 }
 
 #[tokio::test]
@@ -470,100 +462,92 @@ async fn explicit_class_symbol_ranks_and_verifies_its_method_before_an_unrelated
     );
 }
 
+#[rstest::rstest]
+#[case::leading_bom_py_1("leading_bom.py", "\u{feff}enabled = True\n", 1, 10, 13)]
+#[case::plain_py_2("plain.py", "enabled = True\n", 1, 10, 10)]
+#[case::bom_comment_py_3("bom_comment.py", "\u{feff}# heading\nenabled = True\n", 2, 10, 23)]
+#[case::multibyte_py_4("multibyte.py", "\u{feff}日本 = \"x\"; enabled = True\n", 1, 20, 27)]
+#[case::interior_bom_py_5(
+    "interior_bom.py",
+    "marker = \"\u{feff}\"; enabled = True\n",
+    1,
+    24,
+    26
+)]
 #[tokio::test]
-async fn public_plans_preserve_bom_sources_and_python_columns() {
-    for (name, source, expected_line, expected_column, expected_start) in [
-        ("leading_bom.py", "\u{feff}enabled = True\n", 1, 10, 13),
-        ("plain.py", "enabled = True\n", 1, 10, 10),
-        (
-            "bom_comment.py",
-            "\u{feff}# heading\nenabled = True\n",
-            2,
-            10,
-            23,
-        ),
-        (
-            "multibyte.py",
-            "\u{feff}日本 = \"x\"; enabled = True\n",
-            1,
-            20,
-            27,
-        ),
-        (
-            "interior_bom.py",
-            "marker = \"\u{feff}\"; enabled = True\n",
-            1,
-            24,
-            26,
-        ),
-    ] {
-        let project = Project::new_with_sources(&[(name, source)]);
-        let original = source.as_bytes();
-        let marker = project.path.join("test-command-ran");
-        let module = name.strip_suffix(".py").unwrap();
-        let test_command = format!("from {module} import enabled; assert enabled is True");
-        let options = [
-            "--file",
-            &format!("src/{name}"),
-            "--operators",
-            "boolean_literal",
-        ];
-        let mut args = plan_args(&project, options.iter().copied(), &marker);
-        insert_test_min_free_space(&mut args);
-        *args.last_mut().unwrap() = OsString::from(&test_command);
-        let mut run_args = args.clone();
-        run_args[1] = OsString::from("run");
-        let ParsedCommand::Plan(plan) = parse_from(args).unwrap() else {
-            panic!("expected plan arguments");
-        };
+async fn public_plans_preserve_bom_sources_and_python_columns(
+    #[case] name: &str,
+    #[case] source: &str,
+    #[case] expected_line: u32,
+    #[case] expected_column: u32,
+    #[case] expected_start: u64,
+) {
+    let project = Project::new_with_sources(&[(name, source)]);
+    let original = source.as_bytes();
+    let marker = project.path.join("test-command-ran");
+    let module = name.strip_suffix(".py").unwrap();
+    let test_command = format!("from {module} import enabled; assert enabled is True");
+    let options = [
+        "--file",
+        &format!("src/{name}"),
+        "--operators",
+        "boolean_literal",
+    ];
+    let mut args = plan_args(&project, options.iter().copied(), &marker);
+    insert_test_min_free_space(&mut args);
+    *args.last_mut().unwrap() = OsString::from(&test_command);
+    let mut run_args = args.clone();
+    run_args[1] = OsString::from("run");
+    let ParsedCommand::Plan(plan) = parse_from(args).unwrap() else {
+        panic!("expected plan arguments");
+    };
 
-        let (config, discovery) = plan.into_configs().unwrap();
+    let (config, discovery) = plan.into_configs().unwrap();
 
-        let output = create(config, discovery).await.unwrap();
-        let candidate = output
-            .manifest
-            .candidates
-            .iter()
-            .find(|candidate| candidate.candidate.original == "True")
-            .unwrap_or_else(|| panic!("missing boolean candidate for {name}"));
+    let output = create(config, discovery).await.unwrap();
+    let candidate = output
+        .manifest
+        .candidates
+        .iter()
+        .find(|candidate| candidate.candidate.original == "True")
+        .unwrap_or_else(|| panic!("missing boolean candidate for {name}"));
 
-        assert_eq!(candidate.candidate.line, expected_line, "{name}");
-        assert_eq!(candidate.candidate.column, expected_column, "{name}");
-        assert_eq!(candidate.candidate.span.start, expected_start, "{name}");
-        assert_eq!(candidate.candidate.span.length, 4, "{name}");
-        assert_eq!(
-            candidate.candidate.file_hash,
-            blake3::hash(original).to_hex().to_string(),
-            "{name}",
-        );
-        let planned_id = candidate.id.clone();
-        let planned_candidate = serde_json::to_value(&candidate.candidate).unwrap();
-        let path = project.path.join("plan.json");
-        write_json(&path, &serde_json::to_value(&output.manifest).unwrap());
-        let plan_bytes = std::fs::read(&path).unwrap();
-        let verify_args = vec![
-            OsString::from("hoimin"),
-            OsString::from("verify"),
-            path.as_os_str().to_owned(),
-            OsString::from("--candidate"),
-            OsString::from(&planned_id),
-        ];
-        for (mode, execution_args) in [("verify", verify_args), ("run", run_args)] {
-            assert_planned_boolean_is_killed(
-                name,
-                mode,
-                execution_args,
-                planned_id.as_str(),
-                &planned_candidate,
-            )
-            .await;
-        }
-        assert_eq!(std::fs::read(&path).unwrap(), plan_bytes, "{name}");
-        assert_eq!(
-            std::fs::read(project.path.join("src").join(name)).unwrap(),
-            original
-        );
+    assert_eq!(candidate.candidate.line, expected_line, "{name}");
+    assert_eq!(candidate.candidate.column, expected_column, "{name}");
+    assert_eq!(candidate.candidate.span.start, expected_start, "{name}");
+    assert_eq!(candidate.candidate.span.length, 4, "{name}");
+    assert_eq!(
+        candidate.candidate.file_hash,
+        blake3::hash(original).to_hex().to_string(),
+        "{name}",
+    );
+    let planned_id = candidate.id.clone();
+    let planned_candidate = serde_json::to_value(&candidate.candidate).unwrap();
+    let path = project.path.join("plan.json");
+    write_json(&path, &serde_json::to_value(&output.manifest).unwrap());
+    let plan_bytes = std::fs::read(&path).unwrap();
+    let verify_args = vec![
+        OsString::from("hoimin"),
+        OsString::from("verify"),
+        path.as_os_str().to_owned(),
+        OsString::from("--candidate"),
+        OsString::from(&planned_id),
+    ];
+    for (mode, execution_args) in [("verify", verify_args), ("run", run_args)] {
+        assert_planned_boolean_is_killed(
+            name,
+            mode,
+            execution_args,
+            planned_id.as_str(),
+            &planned_candidate,
+        )
+        .await;
     }
+    assert_eq!(std::fs::read(&path).unwrap(), plan_bytes, "{name}");
+    assert_eq!(
+        std::fs::read(project.path.join("src").join(name)).unwrap(),
+        original
+    );
 }
 
 async fn assert_planned_boolean_is_killed(
@@ -641,40 +625,41 @@ async fn cli_verify_rejects_a_bom_counted_column_before_baseline() {
     );
 }
 
+#[rstest::rstest]
+#[case::file_1(vec!["--file", "src/calc.py", "--profile", "focused"])]
+#[case::file_2(vec!["--file", "src/calc.py", "--operators", "binary_add_sub"])]
+#[case::line_3(vec!["--line", "src/calc.py:2"])]
+#[case::symbol_4(vec!["--symbol", "calc:only_add"])]
 #[tokio::test]
-async fn plan_candidates_match_shared_discovery_for_normalized_selectors() {
+async fn plan_candidates_match_shared_discovery_for_normalized_selectors(
+    #[case] options: Vec<&str>,
+) {
     let project = Project::new();
-    for options in [
-        vec!["--file", "src/calc.py", "--profile", "focused"],
-        vec!["--file", "src/calc.py", "--operators", "binary_add_sub"],
-        vec!["--line", "src/calc.py:2"],
-        vec!["--symbol", "calc:only_add"],
-    ] {
-        let marker = project.path.join("test-command-ran");
-        let args = plan_args(&project, options.iter().copied(), &marker);
-        let mut expected = discover_for_plan_args(args.clone()).await;
-        let stdout = CollectingWriter::default();
-        let stderr = CollectingWriter::default();
 
-        let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    let marker = project.path.join("test-command-ran");
+    let args = plan_args(&project, options.iter().copied(), &marker);
+    let mut expected = discover_for_plan_args(args.clone()).await;
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-        assert_eq!(
-            code,
-            0,
-            "stderr={}",
-            String::from_utf8_lossy(&stderr.snapshot())
-        );
-        let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
-        let mut actual: Vec<MutationCandidate> = manifest
-            .candidates
-            .into_iter()
-            .map(|ranked| ranked.candidate)
-            .collect();
-        actual.sort_by(|left, right| left.id.cmp(&right.id));
-        expected.sort_by(|left, right| left.id.cmp(&right.id));
-        assert_eq!(actual, expected, "options={options:?}");
-        assert!(!marker.exists());
-    }
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+
+    assert_eq!(
+        code,
+        0,
+        "stderr={}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    let mut actual: Vec<MutationCandidate> = manifest
+        .candidates
+        .into_iter()
+        .map(|ranked| ranked.candidate)
+        .collect();
+    actual.sort_by(|left, right| left.id.cmp(&right.id));
+    expected.sort_by(|left, right| left.id.cmp(&right.id));
+    assert_eq!(actual, expected, "options={options:?}");
+    assert!(!marker.exists());
 }
 
 #[tokio::test]
@@ -965,38 +950,37 @@ async fn plan_newline_output_failure_preserves_complete_json_and_returns_two() {
     assert!(!marker.exists());
 }
 
-#[tokio::test]
-async fn plan_preparation_failures_return_two_without_a_manifest() {
-    let project = Project::new();
-    for (case, options) in [
-        (
-            "unmatched fingerprint include",
-            vec![
+#[rstest::rstest]
+#[case::unmatched_fingerprint_include_1("unmatched fingerprint include", vec![
                 "--file",
                 "src/calc.py",
                 "--fingerprint-include",
                 "missing.toml",
-            ],
-        ),
-        ("unresolved target", vec!["--file", "src/missing.py"]),
-    ] {
-        let marker = project.path.join(format!("test-command-ran-{case}"));
-        let args = plan_args(&project, options, &marker);
-        let stdout = CollectingWriter::default();
-        let stderr = CollectingWriter::default();
+            ])]
+#[case::unresolved_target_2("unresolved target", vec!["--file", "src/missing.py"])]
+#[tokio::test]
+async fn plan_preparation_failures_return_two_without_a_manifest(
+    #[case] case: &str,
+    #[case] options: Vec<&str>,
+) {
+    let project = Project::new();
 
-        let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    let marker = project.path.join(format!("test-command-ran-{case}"));
+    let args = plan_args(&project, options, &marker);
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-        assert_eq!(
-            code,
-            2,
-            "case={case}, stderr={}",
-            String::from_utf8_lossy(&stderr.snapshot())
-        );
-        assert!(stdout.is_empty(), "case={case}");
-        assert!(!stderr.is_empty(), "case={case}");
-        assert!(!marker.exists(), "case={case}");
-    }
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+
+    assert_eq!(
+        code,
+        2,
+        "case={case}, stderr={}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    assert!(stdout.is_empty(), "case={case}");
+    assert!(!stderr.is_empty(), "case={case}");
+    assert!(!marker.exists(), "case={case}");
 }
 
 #[tokio::test]
@@ -1122,90 +1106,6 @@ async fn verify_reports_source_change_before_ranking_for_changed_symbol_plan() {
 }
 
 type ManifestMutation = fn(&mut serde_json::Value);
-type InvalidManifestCase = (&'static str, ManifestMutation, &'static str);
-
-fn invalid_normalized_config_cases() -> Vec<InvalidManifestCase> {
-    let cases: Vec<InvalidManifestCase> = vec![
-        (
-            "empty argv",
-            |value| {
-                value["normalized_config"]["test_argv"] = serde_json::json!([]);
-            },
-            "at least one test argv element is required",
-        ),
-        (
-            "zero total timeout",
-            |value| {
-                value["normalized_config"]["limits"]["total_timeout"] =
-                    serde_json::json!({"secs": 0, "nanos": 0});
-            },
-            "invalid zero or overflowing limit: duration",
-        ),
-        (
-            "missing selector",
-            |value| {
-                let selection = &mut value["normalized_config"]["selection"];
-                selection["sources"] = serde_json::json!([]);
-                selection["files"] = serde_json::json!([]);
-                selection["lines"] = serde_json::json!([]);
-                selection["symbols"] = serde_json::json!([]);
-                selection["changed"] = serde_json::json!(null);
-            },
-            "at least one target selector is required",
-        ),
-        (
-            "changed without source",
-            |value| {
-                let selection = &mut value["normalized_config"]["selection"];
-                selection["sources"] = serde_json::json!([]);
-                selection["changed"] = serde_json::json!({"context":0,"diff_base":null});
-            },
-            "--changed requires --source",
-        ),
-        (
-            "symbol without source",
-            |value| {
-                let selection = &mut value["normalized_config"]["selection"];
-                selection["sources"] = serde_json::json!([]);
-                selection["files"] = serde_json::json!([]);
-                selection["symbols"] = serde_json::json!([{
-                    "module": "calc",
-                    "qualname": "only_add",
-                }]);
-            },
-            "--symbol requires --source",
-        ),
-        (
-            "jobs exceed maximum",
-            |value| {
-                value["normalized_config"]["limits"]["jobs"] = serde_json::json!(MAX_JOBS + 1);
-            },
-            "--jobs 257 exceeds the supported maximum 256",
-        ),
-        (
-            "overflowing baseline timeout",
-            |value| {
-                value["normalized_config"]["limits"]["baseline_timeout"] =
-                    serde_json::json!({"secs": u64::MAX, "nanos": 0});
-            },
-            "invalid zero or overflowing limit: --baseline-timeout",
-        ),
-    ];
-    #[cfg(target_pointer_width = "64")]
-    let cases = {
-        let mut cases = cases;
-        cases.push((
-            "processes exceed u32",
-            |value| {
-                value["normalized_config"]["limits"]["max_processes"] =
-                    serde_json::json!(u64::from(u32::MAX) + 1);
-            },
-            "invalid zero or overflowing limit: --max-processes",
-        ));
-        cases
-    };
-    cases
-}
 
 #[tokio::test]
 async fn verify_preserves_independent_worker_and_process_limits_without_running_tests() {
@@ -1224,95 +1124,149 @@ async fn verify_preserves_independent_worker_and_process_limits_without_running_
     assert!(!baseline_marker.exists());
 }
 
+#[rstest::rstest]
+#[case::empty_argv_1(
+            "empty argv",
+            |value: &mut serde_json::Value| {
+                value["normalized_config"]["test_argv"] = serde_json::json!([]);
+            },
+            "at least one test argv element is required",
+        )]
+#[case::zero_total_timeout_2(
+            "zero total timeout",
+            |value: &mut serde_json::Value| {
+                value["normalized_config"]["limits"]["total_timeout"] =
+                    serde_json::json!({"secs": 0, "nanos": 0});
+            },
+            "invalid zero or overflowing limit: duration",
+        )]
+#[case::missing_selector_3(
+            "missing selector",
+            |value: &mut serde_json::Value| {
+                let selection = &mut value["normalized_config"]["selection"];
+                selection["sources"] = serde_json::json!([]);
+                selection["files"] = serde_json::json!([]);
+                selection["lines"] = serde_json::json!([]);
+                selection["symbols"] = serde_json::json!([]);
+                selection["changed"] = serde_json::json!(null);
+            },
+            "at least one target selector is required",
+        )]
+#[case::changed_without_source_4(
+            "changed without source",
+            |value: &mut serde_json::Value| {
+                let selection = &mut value["normalized_config"]["selection"];
+                selection["sources"] = serde_json::json!([]);
+                selection["changed"] = serde_json::json!({"context":0,"diff_base":null});
+            },
+            "--changed requires --source",
+        )]
+#[case::symbol_without_source_5(
+            "symbol without source",
+            |value: &mut serde_json::Value| {
+                let selection = &mut value["normalized_config"]["selection"];
+                selection["sources"] = serde_json::json!([]);
+                selection["files"] = serde_json::json!([]);
+                selection["symbols"] = serde_json::json!([{
+                    "module": "calc",
+                    "qualname": "only_add",
+                }]);
+            },
+            "--symbol requires --source",
+        )]
+#[case::jobs_exceed_maximum_6(
+            "jobs exceed maximum",
+            |value: &mut serde_json::Value| {
+                value["normalized_config"]["limits"]["jobs"] = serde_json::json!(MAX_JOBS + 1);
+            },
+            "--jobs 257 exceeds the supported maximum 256",
+        )]
+#[case::overflowing_baseline_timeout_7(
+            "overflowing baseline timeout",
+            |value: &mut serde_json::Value| {
+                value["normalized_config"]["limits"]["baseline_timeout"] =
+                    serde_json::json!({"secs": u64::MAX, "nanos": 0});
+            },
+            "invalid zero or overflowing limit: --baseline-timeout",
+        )]
+#[cfg_attr(target_pointer_width = "64", case::processes_exceed_u32("processes exceed u32", |value: &mut serde_json::Value| { value["normalized_config"]["limits"]["max_processes"] = serde_json::json!(u64::from(u32::MAX) + 1); }, "invalid zero or overflowing limit: --max-processes"))]
 #[tokio::test]
-async fn verify_rejects_invalid_normalized_config_before_project_work() {
-    for (name, mutate, expected_message) in invalid_normalized_config_cases() {
-        let project = Project::new();
-        let (path, manifest, baseline_marker) = write_plan_manifest(&project, &[]).await;
-        let requested = vec![manifest.candidates[0].id.clone()];
-        let mut value = serde_json::to_value(manifest).unwrap();
-        mutate(&mut value);
-        let actual_message = match serde_json::from_value::<PlanManifest>(value.clone()) {
-            Ok(tampered) => tampered
-                .normalized_config
-                .validate()
-                .unwrap_err()
-                .to_string(),
-            Err(error) => {
-                assert_eq!(
-                    name, "zero total timeout",
-                    "unexpected serde rejection: {error}"
-                );
-                error.to_string()
-            }
-        };
-        assert_eq!(actual_message, expected_message, "{name}");
-        write_json(&path, &value);
+async fn verify_rejects_invalid_normalized_config_before_project_work(
+    #[case] name: &str,
+    #[case] mutate: ManifestMutation,
+    #[case] expected_message: &str,
+) {
+    let project = Project::new();
+    let (path, manifest, baseline_marker) = write_plan_manifest(&project, &[]).await;
+    let requested = vec![manifest.candidates[0].id.clone()];
+    let mut value = serde_json::to_value(manifest).unwrap();
+    mutate(&mut value);
+    write_json(&path, &value);
 
-        std::fs::remove_file(project.path.join("src/calc.py")).unwrap();
-        let error = prepare_verify(&path, &requested).await.unwrap_err();
+    std::fs::remove_file(project.path.join("src/calc.py")).unwrap();
+    let error = prepare_verify(&path, &requested).await.unwrap_err();
 
-        let diagnostic = error.to_string();
-        let expected = format!("plan.manifest.invalid: {expected_message}");
-        // Typed JSON decoding may append the location of the invalid value.
-        assert!(
-            diagnostic == expected || diagnostic.starts_with(&format!("{expected} at line ")),
-            "{name}: {diagnostic}"
-        );
-        assert!(!baseline_marker.exists(), "{name}");
-    }
+    let diagnostic = error.to_string();
+    let expected = format!("plan.manifest.invalid: {expected_message}");
+    // Typed JSON decoding may append the location of the invalid value.
+    assert!(
+        diagnostic == expected || diagnostic.starts_with(&format!("{expected} at line ")),
+        "{name}: {diagnostic}"
+    );
+    assert!(!baseline_marker.exists(), "{name}");
 }
 
-#[tokio::test]
-async fn verify_rejects_obsolete_selection_representation_before_project_work() {
-    let cases: &[InvalidManifestCase] = &[
-        (
+#[rstest::rstest]
+#[case::disabled_boolean_1(
             "disabled boolean",
-            |value| value["normalized_config"]["selection"]["changed"] = serde_json::json!(false),
+            |value: &mut serde_json::Value| value["normalized_config"]["selection"]["changed"] = serde_json::json!(false),
             "invalid type: boolean",
-        ),
-        (
+        )]
+#[case::enabled_boolean_2(
             "enabled boolean",
-            |value| value["normalized_config"]["selection"]["changed"] = serde_json::json!(true),
+            |value: &mut serde_json::Value| value["normalized_config"]["selection"]["changed"] = serde_json::json!(true),
             "invalid type: boolean",
-        ),
-        (
+        )]
+#[case::sibling_context_3(
             "sibling context",
-            |value| {
+            |value: &mut serde_json::Value| {
                 value["normalized_config"]["selection"]["changed_context"] = serde_json::json!(0);
             },
             "unknown field `changed_context`",
-        ),
-        (
+        )]
+#[case::sibling_base_4(
             "sibling base",
-            |value| {
+            |value: &mut serde_json::Value| {
                 value["normalized_config"]["selection"]["diff_base"] = serde_json::json!("HEAD");
             },
             "unknown field `diff_base`",
-        ),
-    ];
-    for (name, mutate, fragment) in cases {
-        // Arrange: make project work fail if decoding does not reject first.
-        let project = Project::new();
-        let (path, manifest, baseline_marker) = write_plan_manifest(&project, &[]).await;
-        let requested = vec![manifest.candidates[0].id.clone()];
-        let mut value = serde_json::to_value(manifest).unwrap();
-        mutate(&mut value);
-        write_json(&path, &value);
-        std::fs::remove_file(project.path.join("src/calc.py")).unwrap();
+        )]
+#[tokio::test]
+async fn verify_rejects_obsolete_selection_representation_before_project_work(
+    #[case] name: &str,
+    #[case] mutate: ManifestMutation,
+    #[case] fragment: &str,
+) {
+    // Arrange: make project work fail if decoding does not reject first.
+    let project = Project::new();
+    let (path, manifest, baseline_marker) = write_plan_manifest(&project, &[]).await;
+    let requested = vec![manifest.candidates[0].id.clone()];
+    let mut value = serde_json::to_value(manifest).unwrap();
+    mutate(&mut value);
+    write_json(&path, &value);
+    std::fs::remove_file(project.path.join("src/calc.py")).unwrap();
 
-        // Act.
-        let error = prepare_verify(&path, &requested).await.unwrap_err();
+    // Act.
+    let error = prepare_verify(&path, &requested).await.unwrap_err();
 
-        // Assert.
-        let diagnostic = error.to_string();
-        assert!(
-            diagnostic.starts_with("plan.manifest.invalid:"),
-            "{name}: {diagnostic}"
-        );
-        assert!(diagnostic.contains(fragment), "{name}: {diagnostic}");
-        assert!(!baseline_marker.exists(), "{name}");
-    }
+    // Assert.
+    let diagnostic = error.to_string();
+    assert!(
+        diagnostic.starts_with("plan.manifest.invalid:"),
+        "{name}: {diagnostic}"
+    );
+    assert!(diagnostic.contains(fragment), "{name}: {diagnostic}");
+    assert!(!baseline_marker.exists(), "{name}");
 }
 
 #[tokio::test]
@@ -1535,47 +1489,48 @@ async fn verify_exact_file_ignores_nested_names_but_rejects_root_change() {
     assert!(!marker.exists());
 }
 
+#[rstest::rstest]
+#[case::missing_import_roots("import_roots", None)]
+#[case::null_import_roots("import_roots", Some(serde_json::Value::Null))]
+#[case::missing_fingerprint_files("fingerprint_files", None)]
+#[case::null_fingerprint_files("fingerprint_files", Some(serde_json::Value::Null))]
 #[tokio::test]
-async fn verify_rejects_absent_required_arrays_before_baseline() {
-    for field in ["import_roots", "fingerprint_files"] {
-        for replacement in [None, Some(serde_json::Value::Null)] {
-            // Arrange
-            let project = Project::new();
-            let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
-            let requested = manifest.candidates[0].id.clone();
-            let mut value = serde_json::to_value(manifest).unwrap();
-            value["normalized_config"]
-                .as_object_mut()
-                .unwrap()
-                .remove(field);
-            if let Some(replacement) = replacement {
-                value["normalized_config"][field] = replacement;
-            }
-            write_json(&path, &value);
-            let stdout = CollectingWriter::default();
-            let stderr = CollectingWriter::default();
-
-            // Act
-            let code = hoimin_cli::run_with_writers(
-                [
-                    "hoimin",
-                    "verify",
-                    path.to_str().unwrap(),
-                    "--candidate",
-                    &requested,
-                ],
-                stdout.clone(),
-                stderr.clone(),
-            )
-            .await;
-
-            // Assert
-            assert_eq!(code, 2, "accepted absent {field}");
-            assert!(stdout.is_empty(), "invalid plan emitted execution events");
-            assert!(String::from_utf8_lossy(&stderr.snapshot()).contains("plan.manifest.invalid"));
-            assert!(!marker.exists(), "invalid plan launched the test command");
-        }
+async fn verify_rejects_absent_required_arrays_before_baseline(
+    #[case] field: &str,
+    #[case] replacement: Option<serde_json::Value>,
+) {
+    let project = Project::new();
+    let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+    let requested = manifest.candidates[0].id.clone();
+    let mut value = serde_json::to_value(manifest).unwrap();
+    value["normalized_config"]
+        .as_object_mut()
+        .unwrap()
+        .remove(field);
+    if let Some(replacement) = replacement {
+        value["normalized_config"][field] = replacement;
     }
+    write_json(&path, &value);
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+
+    let code = hoimin_cli::run_with_writers(
+        [
+            "hoimin",
+            "verify",
+            path.to_str().unwrap(),
+            "--candidate",
+            &requested,
+        ],
+        stdout.clone(),
+        stderr.clone(),
+    )
+    .await;
+
+    assert_eq!(code, 2, "accepted absent {field}");
+    assert!(stdout.is_empty(), "invalid plan emitted execution events");
+    assert!(String::from_utf8_lossy(&stderr.snapshot()).contains("plan.manifest.invalid"));
+    assert!(!marker.exists(), "invalid plan launched the test command");
 }
 
 #[tokio::test]
@@ -1634,39 +1589,50 @@ async fn verify_rejects_a_tampered_requested_symbol_after_scoped_rediscovery() {
     assert!(!marker.exists());
 }
 
+#[rstest::rstest]
+#[case::schema_version_1("/schema_version", serde_json::json!(1), &[])]
+#[case::ranking_rule_version_2(
+            "/ranking_rule_version",
+            serde_json::json!(1),
+            &["unsupported ranking rule version 1"],
+        )]
+#[case::kind_3("/kind", serde_json::json!("report"), &[])]
+#[case::sources_0_path_4("/sources/0/path", serde_json::json!("../outside.py"), &[])]
+#[case::sources_0_path_5("/sources/0/path", serde_json::json!("/outside.py"), &[])]
 #[tokio::test]
-async fn verify_rejects_malformed_headers_and_source_paths() {
+async fn verify_rejects_malformed_headers_and_source_paths(
+    #[case] pointer: &str,
+    #[case] replacement: serde_json::Value,
+    #[case] expected_messages: &[&str],
+) {
     let project = Project::new();
     let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
     let requested = vec![manifest.candidates[0].id.clone()];
     let original = serde_json::to_value(manifest).unwrap();
 
-    std::fs::write(&path, b"{").unwrap();
+    let mut value = original.clone();
+    *value.pointer_mut(pointer).unwrap() = replacement;
+    write_json(&path, &value);
+
     let error = prepare_verify(&path, &requested).await.unwrap_err();
+    for message in expected_messages {
+        assert!(error.to_string().contains(message), "{error}");
+    }
     assert_error_code(error, "plan.manifest.invalid");
 
-    let cases: [(&str, serde_json::Value, &[&str]); 5] = [
-        ("/schema_version", serde_json::json!(1), &[]),
-        (
-            "/ranking_rule_version",
-            serde_json::json!(1),
-            &["unsupported ranking rule version 1"],
-        ),
-        ("/kind", serde_json::json!("report"), &[]),
-        ("/sources/0/path", serde_json::json!("../outside.py"), &[]),
-        ("/sources/0/path", serde_json::json!("/outside.py"), &[]),
-    ];
-    for (pointer, replacement, expected_messages) in cases {
-        let mut value = original.clone();
-        *value.pointer_mut(pointer).unwrap() = replacement;
-        write_json(&path, &value);
+    assert!(!marker.exists());
+}
 
-        let error = prepare_verify(&path, &requested).await.unwrap_err();
-        for message in expected_messages {
-            assert!(error.to_string().contains(message), "{error}");
-        }
-        assert_error_code(error, "plan.manifest.invalid");
-    }
+#[tokio::test]
+async fn verify_rejects_malformed_json_before_baseline() {
+    let project = Project::new();
+    let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+    let requested = vec![manifest.candidates[0].id.clone()];
+    std::fs::write(&path, b"{").unwrap();
+
+    let error = prepare_verify(&path, &requested).await.unwrap_err();
+
+    assert_error_code(error, "plan.manifest.invalid");
     assert!(!marker.exists());
 }
 
@@ -1690,7 +1656,7 @@ async fn verify_rejects_a_ranking_version_three_plan_before_baseline_with_regene
 }
 
 #[tokio::test]
-async fn verify_rejects_duplicate_manifest_candidates_and_missing_requested_ids() {
+async fn verify_rejects_duplicate_manifest_candidates() {
     let project = Project::new();
     let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
     let mut duplicate = serde_json::to_value(&manifest).unwrap();
@@ -1706,6 +1672,13 @@ async fn verify_rejects_duplicate_manifest_candidates_and_missing_requested_ids(
         .unwrap_err();
     assert_error_code(error, "plan.manifest.invalid");
 
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_rejects_missing_requested_ids() {
+    let project = Project::new();
+    let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
     write_json(&path, &serde_json::to_value(manifest).unwrap());
     let error = prepare_verify(
         &path,
@@ -1718,12 +1691,11 @@ async fn verify_rejects_duplicate_manifest_candidates_and_missing_requested_ids(
 }
 
 #[tokio::test]
-async fn verify_deduplicates_requested_ids_and_rejects_max_mutants_overflow() {
+async fn verify_deduplicates_requested_ids() {
     let project = Project::new();
     let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
     assert!(manifest.candidates.len() >= 2);
     let first = manifest.candidates[0].id.clone();
-    let second = manifest.candidates[1].id.clone();
 
     let verified = prepare_verify(&path, &[first.clone(), first.clone()])
         .await
@@ -1736,6 +1708,17 @@ async fn verify_deduplicates_requested_ids_and_rejects_max_mutants_overflow() {
         verified.config().session,
         hoimin_core::SessionMode::Disabled
     );
+
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_rejects_explicit_selection_exceeding_max_mutants() {
+    let project = Project::new();
+    let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+    assert!(manifest.candidates.len() >= 2);
+    let first = manifest.candidates[0].id.clone();
+    let second = manifest.candidates[1].id.clone();
 
     let mut overflow = serde_json::to_value(manifest).unwrap();
     overflow["normalized_config"]["limits"]["max_mutants"] = serde_json::json!(1);
@@ -2119,8 +2102,15 @@ async fn verify_top_diverse_does_not_cross_score_tiers() {
     assert!(!marker.exists());
 }
 
+#[rstest::rstest]
+#[case::diverse(Some("diverse"),"file_round_robin_v1",[0,2,4,1,3,5])]
+#[case::default_strict(None,"strict",[0,1,2,3,4,5])]
 #[tokio::test]
-async fn verify_top_real_cli_reports_diverse_order_and_preserves_strict_rank_prefix() {
+async fn verify_top_real_cli_reports_policy_order_and_preserves_manifest(
+    #[case] policy: Option<&str>,
+    #[case] expected_policy: &str,
+    #[case] positions: [usize; 6],
+) {
     let project = Project::new_with_sources(&[
         (
             "a.py",
@@ -2158,35 +2148,21 @@ async fn verify_top_real_cli_reports_diverse_order_and_preserves_strict_rank_pre
             .iter()
             .all(|candidate| candidate.score > manifest.candidates[5].score)
     );
-    let diverse_ids = vec![
-        ranked_ids[0].clone(),
-        ranked_ids[2].clone(),
-        ranked_ids[4].clone(),
-        ranked_ids[1].clone(),
-        ranked_ids[3].clone(),
-        ranked_ids[5].clone(),
-    ];
+
     let plan_before = std::fs::read(&path).unwrap();
 
-    for (policy, expected_policy, expected_ids) in [
-        (
-            Some("diverse"),
-            "file_round_robin_v1",
-            diverse_ids.as_slice(),
-        ),
-        (None, "strict", ranked_ids.as_slice()),
-    ] {
-        assert_real_cli_top_selection(
-            &path,
-            &manifest,
-            &plan_before,
-            &ranked_ids,
-            policy,
-            expected_policy,
-            expected_ids,
-        )
-        .await;
-    }
+    let expected_ids = positions.map(|position| ranked_ids[position].clone());
+
+    assert_real_cli_top_selection(
+        &path,
+        &manifest,
+        &plan_before,
+        &ranked_ids,
+        policy,
+        expected_policy,
+        &expected_ids,
+    )
+    .await;
 }
 
 async fn assert_real_cli_top_selection(
@@ -2363,43 +2339,36 @@ async fn verify_runs_only_requested_candidates() {
     );
 }
 
+#[rstest::rstest]
+#[case::strict_zero(TopSelectionPolicy::Strict, 0, "--top requires at least one candidate; the plan has no retained candidates".to_owned())]
+#[case::strict_one(TopSelectionPolicy::Strict, 1, "--offset 1 is outside the 0 retained candidates".to_owned())]
+#[case::strict_maximum(TopSelectionPolicy::Strict, usize::MAX, format!("--offset {} is outside the 0 retained candidates",usize::MAX))]
+#[case::diverse_zero(TopSelectionPolicy::Diverse, 0, "--top requires at least one candidate; the plan has no retained candidates".to_owned())]
+#[case::diverse_one(TopSelectionPolicy::Diverse, 1, "--offset 1 is outside the 0 retained candidates".to_owned())]
+#[case::diverse_maximum(TopSelectionPolicy::Diverse, usize::MAX, format!("--offset {} is outside the 0 retained candidates",usize::MAX))]
+#[case::line_diverse_zero(TopSelectionPolicy::LineDiverse, 0, "--top requires at least one candidate; the plan has no retained candidates".to_owned())]
+#[case::line_diverse_one(TopSelectionPolicy::LineDiverse, 1, "--offset 1 is outside the 0 retained candidates".to_owned())]
+#[case::line_diverse_maximum(TopSelectionPolicy::LineDiverse, usize::MAX, format!("--offset {} is outside the 0 retained candidates",usize::MAX))]
 #[tokio::test]
-async fn verify_top_empty_plan_preserves_offset_error_precedence() {
+async fn verify_top_empty_plan_preserves_offset_error_precedence(
+    #[case] policy: TopSelectionPolicy,
+    #[case] offset: usize,
+    #[case] expected: String,
+) {
     let project = Project::new_with_source("# No mutation candidates.\n");
     let (path, _, _) = write_plan_manifest(&project, &[]).await;
-    for policy in [
-        TopSelectionPolicy::Strict,
-        TopSelectionPolicy::Diverse,
-        TopSelectionPolicy::LineDiverse,
-    ] {
-        for (offset, expected) in [
-            (
-                0,
-                "--top requires at least one candidate; the plan has no retained candidates",
-            ),
-            (1, "--offset 1 is outside the 0 retained candidates"),
-            (
-                usize::MAX,
-                if usize::BITS == 64 {
-                    "--offset 18446744073709551615 is outside the 0 retained candidates"
-                } else {
-                    "--offset 4294967295 is outside the 0 retained candidates"
-                },
-            ),
-        ] {
-            let selection = VerifySelection::Top {
-                count: std::num::NonZeroUsize::new(1).unwrap(),
-                policy,
-                offset,
-            };
 
-            let error = prepare_verify_selection(&path, &selection)
-                .await
-                .unwrap_err();
+    let selection = VerifySelection::Top {
+        count: std::num::NonZeroUsize::new(1).unwrap(),
+        policy,
+        offset,
+    };
 
-            assert!(error.to_string().contains(expected), "{policy:?}: {error}");
-        }
-    }
+    let error = prepare_verify_selection(&path, &selection)
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().contains(&expected), "{policy:?}: {error}");
 }
 
 #[tokio::test]
@@ -3010,104 +2979,112 @@ async fn plan_rejects_an_explicit_uncopyable_file_before_baseline() {
     assert!(!marker.exists());
 }
 
+#[rstest::rstest]
+#[case::input_1("\r", "")]
+#[case::input_2("\r\n", "\r\n")]
+#[case::input_3("\n", "\n")]
+#[case::input_4("\r", "\r\n")]
 #[tokio::test]
-async fn python_physical_lines_match_plan_run_and_verify_selection() {
-    for (newline, ending) in [("\r", ""), ("\r\n", "\r\n"), ("\n", "\n"), ("\r", "\r\n")] {
-        let source = format!("def f():{newline}    return 1 + 2{ending}");
-        let project = Project::new_with_source(&source);
-        let coordinator = tempfile::tempdir().unwrap();
-        let marker = coordinator.path().join("test-command-ran");
-        let mut args = plan_args(
-            &project,
-            ["--line", "src/calc.py:2-2", "--operators", "binary_add_sub"],
-            &marker,
-        );
-        *args.last_mut().unwrap() = OsString::from(format!(
-            "from pathlib import Path; Path({:?}).write_text('executed'); from src.calc import f; assert f() == 3",
-            marker.to_string_lossy()
-        ));
-        insert_test_min_free_space(&mut args);
-        let stdout = CollectingWriter::default();
-        let stderr = CollectingWriter::default();
-        assert_eq!(
-            hoimin_cli::run_with_writers(args.clone(), stdout.clone(), stderr.clone()).await,
-            0,
-            "{}",
-            String::from_utf8_lossy(&stderr.snapshot())
-        );
-        let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
-        assert_eq!(manifest.candidates.len(), 1, "{source:?}");
-        let candidate = &manifest.candidates[0];
-        assert_eq!((candidate.line, candidate.column), (2, 13));
-        assert_eq!(
-            usize::try_from(candidate.span.start).unwrap(),
-            source.find('+').unwrap()
-        );
-        assert_eq!(
-            candidate.file_hash,
-            blake3::hash(source.as_bytes()).to_hex().to_string()
-        );
-        let path = coordinator.path().join("plan.json");
-        std::fs::write(&path, stdout.snapshot()).unwrap();
-        let verify_args = vec![
-            "hoimin".into(),
-            "verify".into(),
-            path.clone().into_os_string(),
-            "--top".into(),
-            "1".into(),
-        ];
-        args[1] = "run".into();
-        for command in [verify_args.clone(), args] {
-            stdout.clear();
-            stderr.clear();
-            let code = hoimin_cli::run_with_writers(command, stdout.clone(), stderr.clone()).await;
-            assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
-            let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
-            assert_eq!(report["summary"]["complete"], true);
-            // pins: issue #455 — lone CR previously produced an empty successful run.
-            assert_eq!(report["summary"]["counts"]["killed"], 1);
-            assert_eq!(report["mutants"].as_array().unwrap().len(), 1);
-            assert!(marker.exists());
-            std::fs::remove_file(&marker).unwrap();
-        }
+async fn python_physical_lines_match_plan_run_and_verify_selection(
+    #[case] newline: &str,
+    #[case] ending: &str,
+) {
+    let source = format!("def f():{newline}    return 1 + 2{ending}");
+    let project = Project::new_with_source(&source);
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("test-command-ran");
+    let mut args = plan_args(
+        &project,
+        ["--line", "src/calc.py:2-2", "--operators", "binary_add_sub"],
+        &marker,
+    );
+    *args.last_mut().unwrap() = OsString::from(format!(
+        "from pathlib import Path; Path({:?}).write_text('executed'); from src.calc import f; assert f() == 3",
+        marker.to_string_lossy()
+    ));
+    insert_test_min_free_space(&mut args);
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-        assert_eq!(
-            std::fs::read(project.path.join("src/calc.py")).unwrap(),
-            source.as_bytes()
-        );
+    assert_eq!(
+        hoimin_cli::run_with_writers(args.clone(), stdout.clone(), stderr.clone()).await,
+        0,
+        "{}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    assert_eq!(manifest.candidates.len(), 1, "{source:?}");
+    let candidate = &manifest.candidates[0];
+    assert_eq!((candidate.line, candidate.column), (2, 13));
+    assert_eq!(
+        usize::try_from(candidate.span.start).unwrap(),
+        source.find('+').unwrap()
+    );
+    assert_eq!(
+        candidate.file_hash,
+        blake3::hash(source.as_bytes()).to_hex().to_string()
+    );
+    let path = coordinator.path().join("plan.json");
+    std::fs::write(&path, stdout.snapshot()).unwrap();
+    let verify_args = vec![
+        "hoimin".into(),
+        "verify".into(),
+        path.clone().into_os_string(),
+        "--top".into(),
+        "1".into(),
+    ];
+    args[1] = "run".into();
+    for command in [verify_args.clone(), args] {
+        stdout.clear();
+        stderr.clear();
+        let code = hoimin_cli::run_with_writers(command, stdout.clone(), stderr.clone()).await;
+        assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+        let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
+        assert_eq!(report["summary"]["complete"], true);
+        // pins: issue #455 — lone CR previously produced an empty successful run.
+        assert_eq!(report["summary"]["counts"]["killed"], 1);
+        assert_eq!(report["mutants"].as_array().unwrap().len(), 1);
+        assert!(marker.exists());
+        std::fs::remove_file(&marker).unwrap();
     }
+
+    assert_eq!(
+        std::fs::read(project.path.join("src/calc.py")).unwrap(),
+        source.as_bytes()
+    );
 }
 
+#[rstest::rstest]
+#[case::input_1("")]
+#[case::input_2("\r\n")]
 #[tokio::test]
-async fn verify_rejects_stale_lone_cr_coordinates_before_baseline() {
-    for ending in ["", "\r\n"] {
-        let source = format!("def f():\r    return 1 + 2{ending}");
-        let project = Project::new_with_source(&source);
-        let (path, mut manifest, marker) = write_plan_manifest(
-            &project,
-            &["--line", "src/calc.py:2-2", "--operators", "binary_add_sub"],
-        )
-        .await;
-        manifest.candidates[0].candidate.line = 1;
-        manifest.candidates[0].candidate.column = 22;
-        write_json(&path, &serde_json::to_value(&manifest).unwrap());
-        let stdout = CollectingWriter::default();
-        let stderr = CollectingWriter::default();
+async fn verify_rejects_stale_lone_cr_coordinates_before_baseline(#[case] ending: &str) {
+    let source = format!("def f():\r    return 1 + 2{ending}");
+    let project = Project::new_with_source(&source);
+    let (path, mut manifest, marker) = write_plan_manifest(
+        &project,
+        &["--line", "src/calc.py:2-2", "--operators", "binary_add_sub"],
+    )
+    .await;
+    manifest.candidates[0].candidate.line = 1;
+    manifest.candidates[0].candidate.column = 22;
+    write_json(&path, &serde_json::to_value(&manifest).unwrap());
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-        let code = hoimin_cli::run_with_writers(
-            ["hoimin", "verify", path.to_str().unwrap(), "--top", "1"],
-            stdout.clone(),
-            stderr.clone(),
-        )
-        .await;
+    let code = hoimin_cli::run_with_writers(
+        ["hoimin", "verify", path.to_str().unwrap(), "--top", "1"],
+        stdout.clone(),
+        stderr.clone(),
+    )
+    .await;
 
-        assert_eq!(code, 2);
-        assert!(!marker.exists(), "stale CR plan must fail before baseline");
-        assert_eq!(
-            std::fs::read(project.path.join("src/calc.py")).unwrap(),
-            source.as_bytes()
-        );
-    }
+    assert_eq!(code, 2);
+    assert!(!marker.exists(), "stale CR plan must fail before baseline");
+    assert_eq!(
+        std::fs::read(project.path.join("src/calc.py")).unwrap(),
+        source.as_bytes()
+    );
 }
 
 #[tokio::test]
@@ -3253,8 +3230,13 @@ async fn oversized_candidate_record_limits_agree_for_plan_verify_and_direct_run(
     }
 }
 
+#[rstest::rstest]
+#[case::strict("strict")]
+#[case::diverse("diverse")]
 #[tokio::test]
-async fn fixed_batch_partition_covers_120_candidates_without_overriding_limits() {
+async fn fixed_batch_partition_covers_120_candidates_without_overriding_limits(
+    #[case] policy: &str,
+) {
     use std::fmt::Write as _;
     let mut source = String::new();
     for index in 0..120 {
@@ -3265,40 +3247,40 @@ async fn fixed_batch_partition_covers_120_candidates_without_overriding_limits()
         write_plan_manifest(&project, &["--operators", "binary_add_sub"]).await;
     assert_eq!(manifest.candidates.len(), 120);
     let expected: BTreeSet<_> = manifest.candidates.iter().map(|c| c.id.clone()).collect();
-    for policy in ["strict", "diverse"] {
-        let mut batches = Vec::new();
-        for (count, offset) in [("100", "0"), ("20", "100"), ("20", "100")] {
-            let ParsedCommand::Verify(args) = parse_from([
-                "hoimin",
-                "verify",
-                path.to_str().unwrap(),
-                "--top",
-                count,
-                "--offset",
-                offset,
-                "--selection-policy",
-                policy,
-            ])
-            .unwrap() else {
-                panic!("verify args");
-            };
-            let verified = prepare_verify_selection(&args.manifest, &args.selection)
-                .await
-                .unwrap();
-            assert_eq!(verified.config().limits, manifest.normalized_config.limits);
-            let ids = verified.selection().ordered_ids().unwrap().to_vec();
-            assert_eq!(ids.len(), count.parse::<usize>().unwrap());
-            batches.push(ids);
-        }
-        assert_eq!(batches[1], batches[2]);
-        let first: BTreeSet<_> = batches[0].iter().cloned().collect();
-        let second: BTreeSet<_> = batches[1].iter().cloned().collect();
-        assert!(first.is_disjoint(&second));
-        assert_eq!(
-            first.union(&second).cloned().collect::<BTreeSet<_>>(),
-            expected
-        );
+
+    let mut batches = Vec::new();
+    for (count, offset) in [("100", "0"), ("20", "100"), ("20", "100")] {
+        let ParsedCommand::Verify(args) = parse_from([
+            "hoimin",
+            "verify",
+            path.to_str().unwrap(),
+            "--top",
+            count,
+            "--offset",
+            offset,
+            "--selection-policy",
+            policy,
+        ])
+        .unwrap() else {
+            panic!("verify args");
+        };
+        let verified = prepare_verify_selection(&args.manifest, &args.selection)
+            .await
+            .unwrap();
+        assert_eq!(verified.config().limits, manifest.normalized_config.limits);
+        let ids = verified.selection().ordered_ids().unwrap().to_vec();
+        assert_eq!(ids.len(), count.parse::<usize>().unwrap());
+        batches.push(ids);
     }
+    assert_eq!(batches[1], batches[2]);
+    let first: BTreeSet<_> = batches[0].iter().cloned().collect();
+    let second: BTreeSet<_> = batches[1].iter().cloned().collect();
+    assert!(first.is_disjoint(&second));
+    assert_eq!(
+        first.union(&second).cloned().collect::<BTreeSet<_>>(),
+        expected
+    );
+
     assert!(!marker.exists());
     assert_eq!(
         serde_json::from_slice::<serde_json::Value>(&std::fs::read(path).unwrap()).unwrap(),
@@ -3307,7 +3289,7 @@ async fn fixed_batch_partition_covers_120_candidates_without_overriding_limits()
 }
 
 #[tokio::test]
-async fn fixed_batch_bounds_preserve_truncation_and_reject_invalid_ranges() {
+async fn fixed_batch_suffix_preserves_truncation_and_limits() {
     let project = Project::new_with_source("x = 1 + 2 + 3 + 4\n");
     let (path, manifest, marker) = write_plan_manifest(
         &project,
@@ -3354,20 +3336,51 @@ async fn fixed_batch_bounds_preserve_truncation_and_reject_invalid_ranges() {
         1
     );
     assert_eq!(suffix.config().limits, manifest.normalized_config.limits);
-    for offset in [2, 3, usize::MAX] {
-        let error = prepare_verify_selection(&path, &selection(1, offset))
-            .await
-            .unwrap_err();
-        assert!(error.to_string().contains("--offset"), "{error}");
-    }
-    let error = prepare_verify_selection(&path, &selection(2, 0))
+    assert!(!marker.exists());
+}
+
+#[rstest::rstest]
+#[case::first_unretained_offset(1, 2, "--offset")]
+#[case::past_retained_offset(1, 3, "--offset")]
+#[case::maximum_offset(1, usize::MAX, "--offset")]
+#[case::requested_count_exceeds_mutant_limit(2, 0, "exceeds max_mutants 1")]
+#[tokio::test]
+async fn fixed_batch_rejects_invalid_ranges(
+    #[case] count: usize,
+    #[case] offset: usize,
+    #[case] fragment: &str,
+) {
+    let project = Project::new_with_source("x = 1 + 2 + 3 + 4\n");
+    let (path, manifest, marker) = write_plan_manifest(
+        &project,
+        &[
+            "--operators",
+            "binary_add_sub",
+            "--max-candidates",
+            "2",
+            "--max-mutants",
+            "1",
+        ],
+    )
+    .await;
+    assert!(manifest.truncated);
+    let selection = |count, offset| VerifySelection::Top {
+        count: std::num::NonZeroUsize::new(count).unwrap(),
+        policy: TopSelectionPolicy::Strict,
+        offset,
+    };
+
+    let error = prepare_verify_selection(&path, &selection(count, offset))
         .await
         .unwrap_err();
-    assert!(error.to_string().contains("exceeds max_mutants 1"));
+
+    assert!(error.to_string().contains(fragment), "{error}");
     assert!(!marker.exists());
-    for args in [
-        vec!["hoimin", "verify", "plan.json", "--offset", "1"],
-        vec![
+}
+
+#[rstest::rstest]
+#[case::hoimin_1(vec!["hoimin", "verify", "plan.json", "--offset", "1"])]
+#[case::hoimin_2(vec![
             "hoimin",
             "verify",
             "plan.json",
@@ -3375,8 +3388,8 @@ async fn fixed_batch_bounds_preserve_truncation_and_reject_invalid_ranges() {
             "ID",
             "--offset",
             "1",
-        ],
-        vec![
+        ])]
+#[case::hoimin_3(vec![
             "hoimin",
             "verify",
             "plan.json",
@@ -3384,8 +3397,8 @@ async fn fixed_batch_bounds_preserve_truncation_and_reject_invalid_ranges() {
             "0",
             "--offset",
             "1",
-        ],
-        vec![
+        ])]
+#[case::hoimin_4(vec![
             "hoimin",
             "verify",
             "plan.json",
@@ -3393,10 +3406,11 @@ async fn fixed_batch_bounds_preserve_truncation_and_reject_invalid_ranges() {
             "1",
             "--offset",
             "-1",
-        ],
-    ] {
-        assert!(parse_from(args).is_err());
-    }
+        ])]
+fn fixed_batch_cli_rejects_missing_top_or_invalid_range_values(#[case] argv: Vec<&str>) {
+    let result = parse_from(argv);
+
+    assert!(result.is_err());
 }
 
 #[tokio::test]
@@ -3475,8 +3489,14 @@ async fn fixed_batch_real_cli_reports_disjoint_ids_and_repeated_progress() {
     assert_eq!(comparison["comparisons"][0]["common"], 1);
 }
 
+#[rstest::rstest]
+#[case::strict(metrics_all_top_selection)]
+#[case::diverse(metrics_diverse_selection)]
+#[case::candidate_ids(metrics_all_candidate_selection)]
 #[tokio::test]
-async fn verify_metrics_exports_existing_sidecar_for_each_selection() {
+async fn verify_metrics_exports_existing_sidecar_for_each_selection(
+    #[case] make_selection: fn(&PlanManifest) -> Vec<&str>,
+) {
     let project = Project::new_with_source("def total():\n    return 1 + 2 + 3\n");
     let coordinator = tempfile::tempdir().unwrap();
     let (path, manifest) = write_plan_manifest_with_marker(
@@ -3493,97 +3513,90 @@ async fn verify_metrics_exports_existing_sidecar_for_each_selection() {
     )
     .await;
     assert_eq!(manifest.candidates.len(), 2);
-    for selection in [
-        vec!["--top", "2"],
-        vec!["--top", "2", "--selection-policy", "diverse"],
-        vec![
-            "--candidate",
-            manifest.candidates[0].candidate.id.as_str(),
-            "--candidate",
-            manifest.candidates[1].candidate.id.as_str(),
-        ],
-    ] {
-        let directory = tempfile::tempdir().unwrap();
-        let metrics_path = directory.path().join("metrics.json");
-        let mut args = vec![
-            OsString::from("hoimin"),
-            OsString::from("verify"),
-            path.as_os_str().to_owned(),
-        ];
-        args.extend(selection.iter().map(OsString::from));
-        args.extend([
-            OsString::from("--metrics"),
-            metrics_path.as_os_str().to_owned(),
-        ]);
-        let stdout = CollectingWriter::default();
-        let stderr = CollectingWriter::default();
-        let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
-        assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
-        let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
-        let metrics: hoimin_core::RunMetrics =
-            serde_json::from_slice(&std::fs::read(&metrics_path).unwrap()).unwrap();
-        metrics.validate().unwrap();
-        assert_eq!(metrics.discovered, 2);
-        assert_eq!(metrics.executed, 2);
-        assert_eq!(metrics.run_id, report["run"]["run_id"]);
-        let expected: BTreeSet<_> = manifest
-            .candidates
-            .iter()
-            .map(|c| c.candidate.id.as_str())
-            .collect();
-        let actual: BTreeSet<_> = report["mutants"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|m| m["candidate"]["id"].as_str().unwrap())
-            .collect();
-        assert_eq!(actual, expected);
-    }
+
+    let selection = make_selection(&manifest);
+
+    let directory = tempfile::tempdir().unwrap();
+    let metrics_path = directory.path().join("metrics.json");
+    let mut args = vec![
+        OsString::from("hoimin"),
+        OsString::from("verify"),
+        path.as_os_str().to_owned(),
+    ];
+    args.extend(selection.iter().map(OsString::from));
+    args.extend([
+        OsString::from("--metrics"),
+        metrics_path.as_os_str().to_owned(),
+    ]);
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+    let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
+    let metrics: hoimin_core::RunMetrics =
+        serde_json::from_slice(&std::fs::read(&metrics_path).unwrap()).unwrap();
+    metrics.validate().unwrap();
+    assert_eq!(metrics.discovered, 2);
+    assert_eq!(metrics.executed, 2);
+    assert_eq!(metrics.run_id, report["run"]["run_id"]);
+    let expected: BTreeSet<_> = manifest
+        .candidates
+        .iter()
+        .map(|c| c.candidate.id.as_str())
+        .collect();
+    let actual: BTreeSet<_> = report["mutants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["candidate"]["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(actual, expected);
 }
 
+#[rstest::rstest]
+#[case::missing_parent(|coordinator: &Path, _: &Path| coordinator.join("missing/metrics.json"), 0, "metrics.write")]
+#[case::source_collision(|_: &Path, source: &Path| source.to_owned(), 2, "metrics.destination")]
 #[tokio::test]
-async fn verify_metrics_preserves_write_warning_and_source_collision_contracts() {
+async fn verify_metrics_preserves_write_warning_and_source_collision_contracts(
+    #[case] make_destination: fn(&Path, &Path) -> PathBuf,
+    #[case] expected_exit: i32,
+    #[case] diagnostic: &str,
+) {
     let project = Project::new();
     let coordinator = tempfile::tempdir().unwrap();
     let marker = coordinator.path().join("marker");
     let (path, _) = write_plan_manifest_with_marker(&project, &[], &marker).await;
     let source = project.path.join("src/calc.py");
     let original = std::fs::read(&source).unwrap();
-    for (destination, expected_exit, diagnostic) in [
-        (
-            coordinator.path().join("missing/metrics.json"),
-            0,
-            "metrics.write",
-        ),
-        (source.clone(), 2, "metrics.destination"),
-    ] {
-        remove_optional_marker(&marker);
-        let args = [
-            OsString::from("hoimin"),
-            OsString::from("verify"),
-            path.as_os_str().to_owned(),
-            OsString::from("--top"),
-            OsString::from("1"),
-            OsString::from("--metrics"),
-            destination.into_os_string(),
-        ];
-        let stdout = CollectingWriter::default();
-        let stderr = CollectingWriter::default();
-        let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
-        assert_eq!(
-            exit,
-            expected_exit,
-            "{}",
-            String::from_utf8_lossy(&stderr.snapshot())
-        );
-        assert!(
-            String::from_utf8_lossy(&stderr.snapshot()).contains(diagnostic),
-            "{}",
-            String::from_utf8_lossy(&stderr.snapshot())
-        );
-        assert_eq!(marker.exists(), expected_exit == 0);
-        assert_eq!(std::fs::read(&source).unwrap(), original);
-    }
+
+    let destination = make_destination(coordinator.path(), &source);
+
+    remove_optional_marker(&marker);
+    let args = [
+        OsString::from("hoimin"),
+        OsString::from("verify"),
+        path.as_os_str().to_owned(),
+        OsString::from("--top"),
+        OsString::from("1"),
+        OsString::from("--metrics"),
+        destination.into_os_string(),
+    ];
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    assert_eq!(
+        exit,
+        expected_exit,
+        "{}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    assert!(
+        String::from_utf8_lossy(&stderr.snapshot()).contains(diagnostic),
+        "{}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    assert_eq!(marker.exists(), expected_exit == 0);
+    assert_eq!(std::fs::read(&source).unwrap(), original);
 }
 
 #[tokio::test]
@@ -3836,86 +3849,88 @@ async fn verify_metrics_exports_total_timeout_with_jsonl_output() {
 }
 
 #[cfg(unix)]
-#[tokio::test]
-async fn preparation_errors_precede_the_analyzer_deadline_without_baseline() {
-    use std::os::unix::fs::PermissionsExt;
-    type Prepare = fn(&Project, &mut PlanManifest);
-    let cases: [(&str, &str, Prepare); 4] = [
-        ("manifest", "plan.manifest", |_, manifest| {
+#[rstest::rstest]
+#[case::manifest_1("manifest", "plan.manifest", |_: &Project, manifest: &mut PlanManifest| {
             manifest.schema_version = 0;
-        }),
-        ("source", "plan.source.changed", |project, _| {
+        })]
+#[case::source_2("source", "plan.source.changed", |project: &Project, _: &mut PlanManifest| {
             std::fs::write(project.path.join("src/calc.py"), "changed = 1 + 2\n").unwrap();
-        }),
-        (
+        })]
+#[case::fingerprint_3(
             "fingerprint",
             "plan.fingerprint_input.changed",
-            |project, _| {
+            |project: &Project, _: &mut PlanManifest| {
                 std::fs::write(project.path.join("config.toml"), "changed = true\n").unwrap();
             },
-        ),
-        ("copy", "plan.workspace", |project, _| {
+        )]
+#[case::copy_4("copy", "plan.workspace", |project: &Project, _: &mut PlanManifest| {
             let unreadable = project.path.join("unreadable.txt");
             std::fs::write(&unreadable, "unselected").unwrap();
-            std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o0)).unwrap();
+            std::fs::set_permissions(&unreadable, <std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o0)).unwrap();
             assert!(
                 std::fs::read(&unreadable).is_err(),
                 "BOUNDARY_INFRASTRUCTURE: fixture requires an unprivileged reader"
             );
-        }),
-    ];
-    for (stage, expected, prepare) in cases {
-        let project = Project::new();
-        let (path, mut manifest, marker) =
-            write_plan_manifest(&project, &["--fingerprint-include", "config.toml"]).await;
-        let requested = manifest.candidates[0].id.clone();
-        let ParsedCommand::Plan(plan) = parse_from(plan_args(
-            &project,
-            ["--file", "src/calc.py", "--analyzer-timeout", "1ns"],
-            &marker,
-        ))
-        .unwrap() else {
-            panic!("plan args")
-        };
-        manifest.normalized_config.discovery = plan.into_configs().unwrap().1;
-        prepare(&project, &mut manifest);
-        write_json(&path, &serde_json::to_value(manifest).unwrap());
-        let error = prepare_verify(&path, &[requested]).await.unwrap_err();
-        let message = error.to_string();
-
-        assert!(message.contains(expected), "{stage}: {message}");
-        assert!(
-            !message.contains("analyzer.timeout"),
-            "preparation is outside analyzer rediscovery deadline"
-        );
-        assert!(!marker.exists());
-    }
-}
+        })]
 #[tokio::test]
-async fn symbol_definition_missing_is_rejected_before_baseline() {
-    for command in ["plan", "run"] {
-        let project = Project::new();
-        let marker = project.path.join("baseline-marker");
-        let mut args = plan_args(
-            &project,
-            ["--symbol", "calc:only_add", "--symbol", "calc:missing"],
-            &marker,
-        );
-        args[1] = command.into();
-        insert_test_min_free_space(&mut args);
-        let stdout = CollectingWriter::default();
-        let stderr = CollectingWriter::default();
-        let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
-        // pins: issue #476
-        assert_eq!(
-            code,
-            2,
-            "{command}: {}",
-            String::from_utf8_lossy(&stderr.snapshot())
-        );
-        assert!(String::from_utf8_lossy(&stderr.snapshot()).contains("calc:missing"));
-        assert!(!marker.exists(), "{command} ran baseline");
-    }
+async fn preparation_errors_precede_the_analyzer_deadline_without_baseline(
+    #[case] stage: &str,
+    #[case] expected: &str,
+    #[case] prepare: fn(&Project, &mut PlanManifest),
+) {
+    let project = Project::new();
+    let (path, mut manifest, marker) =
+        write_plan_manifest(&project, &["--fingerprint-include", "config.toml"]).await;
+    let requested = manifest.candidates[0].id.clone();
+    let ParsedCommand::Plan(plan) = parse_from(plan_args(
+        &project,
+        ["--file", "src/calc.py", "--analyzer-timeout", "1ns"],
+        &marker,
+    ))
+    .unwrap() else {
+        panic!("plan args")
+    };
+    manifest.normalized_config.discovery = plan.into_configs().unwrap().1;
+    prepare(&project, &mut manifest);
+    write_json(&path, &serde_json::to_value(manifest).unwrap());
+    let error = prepare_verify(&path, &[requested]).await.unwrap_err();
+    let message = error.to_string();
+
+    assert!(message.contains(expected), "{stage}: {message}");
+    assert!(
+        !message.contains("analyzer.timeout"),
+        "preparation is outside analyzer rediscovery deadline"
+    );
+    assert!(!marker.exists());
+}
+#[rstest::rstest]
+#[case::plan_1("plan")]
+#[case::run_2("run")]
+#[tokio::test]
+async fn symbol_definition_missing_is_rejected_before_baseline(#[case] command: &str) {
+    let project = Project::new();
+    let marker = project.path.join("baseline-marker");
+    let mut args = plan_args(
+        &project,
+        ["--symbol", "calc:only_add", "--symbol", "calc:missing"],
+        &marker,
+    );
+    args[1] = command.into();
+    insert_test_min_free_space(&mut args);
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    // pins: issue #476
+
+    assert_eq!(
+        code,
+        2,
+        "{command}: {}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    assert!(String::from_utf8_lossy(&stderr.snapshot()).contains("calc:missing"));
+    assert!(!marker.exists(), "{command} ran baseline");
 }
 
 #[tokio::test]
@@ -3975,64 +3990,71 @@ async fn symbol_definition_verify_checks_unrequested_symbol_files() {
     assert!(!marker.exists());
 }
 
+#[rstest::rstest]
+#[case::box_1("Box")]
+#[case::box_method_2("Box.method")]
+#[case::box_inner_3("Box.Inner")]
+#[case::outer_4("outer")]
+#[case::outer_inner_5("outer.inner")]
 #[tokio::test]
-async fn symbol_definition_existing_empty_scopes_are_valid() {
+async fn symbol_definition_existing_empty_scopes_are_valid(#[case] name: &str) {
     let project = Project::new_with_source(
         "class Box:\n    def method(self):\n        pass\n    class Inner:\n        pass\nasync def outer():\n    def inner():\n        pass\n",
     );
     let marker = project.path.join("baseline-marker");
-    for name in ["Box", "Box.method", "Box.Inner", "outer", "outer.inner"] {
-        let selector = format!("calc:{name}");
-        let args = plan_args(
-            &project,
-            [
-                "--symbol",
-                &selector,
-                "--operators",
-                "boolean_literal",
-                "--line",
-                "src/calc.py:1",
-            ],
-            &marker,
-        );
-        let stdout = CollectingWriter::default();
-        let stderr = CollectingWriter::default();
-        assert_eq!(
-            hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await,
-            0,
-            "{name}: {}",
-            String::from_utf8_lossy(&stderr.snapshot())
-        );
-        let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
-        assert_eq!(manifest.candidates, Vec::new());
-        assert!(manifest.diagnostics.is_empty());
-    }
+
+    let selector = format!("calc:{name}");
+    let args = plan_args(
+        &project,
+        [
+            "--symbol",
+            &selector,
+            "--operators",
+            "boolean_literal",
+            "--line",
+            "src/calc.py:1",
+        ],
+        &marker,
+    );
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+
+    assert_eq!(
+        hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await,
+        0,
+        "{name}: {}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    assert_eq!(manifest.candidates, Vec::new());
+    assert!(manifest.diagnostics.is_empty());
 }
 
+#[rstest::rstest]
+#[case::dirty(|_: &Project| {})]
+#[case::clean(|project: &Project| { run_git(&project.path, &["checkout", "--", "src/calc.py"]); })]
 #[tokio::test]
-async fn symbol_definition_existing_unchanged_scope_is_valid() {
+async fn symbol_definition_existing_unchanged_scope_is_valid(#[case] prepare: fn(&Project)) {
     let (project, _) = Project::new_changed_git();
     let marker = project.path.join("baseline-marker");
-    let dirty = Project::new_changed_git().0;
-    run_git(&project.path, &["checkout", "--", "src/calc.py"]);
-    for project in [dirty, project] {
-        let args = plan_args(
-            &project,
-            ["--symbol", "calc:untouched", "--changed"],
-            &marker,
-        );
-        let stdout = CollectingWriter::default();
-        let stderr = CollectingWriter::default();
-        assert_eq!(
-            hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await,
-            0,
-            "{}",
-            String::from_utf8_lossy(&stderr.snapshot())
-        );
-        let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
-        assert_eq!(manifest.candidates, Vec::new());
-        assert!(manifest.diagnostics.is_empty());
-    }
+    prepare(&project);
+
+    let args = plan_args(
+        &project,
+        ["--symbol", "calc:untouched", "--changed"],
+        &marker,
+    );
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    assert_eq!(
+        hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await,
+        0,
+        "{}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    assert_eq!(manifest.candidates, Vec::new());
+    assert!(manifest.diagnostics.is_empty());
 }
 
 #[tokio::test]
@@ -4063,24 +4085,31 @@ async fn symbol_definition_package_init_is_valid() {
     );
 }
 
+#[rstest::rstest]
+#[case::calc_alias_1("calc:alias")]
+#[case::calc_box_2("calc:Box")]
+#[case::calc_boxother_missing_3("calc:BoxOther.missing")]
 #[tokio::test]
-async fn symbol_definition_requires_exact_definition_not_assignment_or_prefix() {
+async fn symbol_definition_requires_exact_definition_not_assignment_or_prefix(
+    #[case] selector: &str,
+) {
     let project = Project::new_with_source(
         "alias = True\nclass BoxOther:\n    def method(self):\n        pass\n",
     );
     let marker = project.path.join("baseline-marker");
-    for selector in ["calc:alias", "calc:Box", "calc:BoxOther.missing"] {
-        let args = plan_args(
-            &project,
-            ["--symbol", selector, "--max-candidates", "1"],
-            &marker,
-        );
-        let stdout = CollectingWriter::default();
-        let stderr = CollectingWriter::default();
-        let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
-        assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr.snapshot()));
-        assert!(String::from_utf8_lossy(&stderr.snapshot()).contains(selector));
-    }
+
+    let args = plan_args(
+        &project,
+        ["--symbol", selector, "--max-candidates", "1"],
+        &marker,
+    );
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+
+    assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+    assert!(String::from_utf8_lossy(&stderr.snapshot()).contains(selector));
 }
 
 #[tokio::test]
@@ -4127,8 +4156,11 @@ async fn preview_cli(path: &Path, args: &[&str], temporary: &Path) -> std::proce
     .unwrap()
 }
 
+#[rstest::rstest]
+#[case::one_candidate(1)]
+#[case::seven_candidates(7)]
 #[tokio::test]
-async fn verify_ranking_large_bodies_preserves_public_preview_and_checks_unselected_entries() {
+async fn verify_ranking_large_bodies_preserves_public_preview(#[case] count: usize) {
     let payload = "x".repeat(4096);
     let mut source = String::new();
     for index in 0..64 {
@@ -4150,25 +4182,50 @@ async fn verify_ranking_large_bodies_preserves_public_preview_and_checks_unselec
     assert_eq!(manifest.candidates.len(), 64);
     let path = project.path.join("plan.json");
     std::fs::write(&path, stdout.snapshot()).unwrap();
-    for count in [1, 7] {
-        let output = preview_cli(
-            &path,
-            &["--top", &count.to_string(), "--dry-run"],
-            temporary.path(),
-        )
-        .await;
-        assert!(output.status.success(), "{output:?}");
-        let preview: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        let rows = preview["candidates"].as_array().unwrap();
-        assert_eq!(rows.len(), count);
-        for (row, candidate) in rows.iter().zip(&manifest.candidates) {
-            assert_eq!(row["id"], candidate.id);
-            assert_eq!(row["rank"], candidate.rank);
-            assert_eq!(row["original"], candidate.original);
-            assert_eq!(row["replacement"], candidate.replacement);
-        }
-        assert!(!marker.exists());
+
+    let output = preview_cli(
+        &path,
+        &["--top", &count.to_string(), "--dry-run"],
+        temporary.path(),
+    )
+    .await;
+    assert!(output.status.success(), "{output:?}");
+    let preview: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let rows = preview["candidates"].as_array().unwrap();
+    assert_eq!(rows.len(), count);
+    for (row, candidate) in rows.iter().zip(&manifest.candidates) {
+        assert_eq!(row["id"], candidate.id);
+        assert_eq!(row["rank"], candidate.rank);
+        assert_eq!(row["original"], candidate.original);
+        assert_eq!(row["replacement"], candidate.replacement);
     }
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_ranking_large_bodies_checks_unselected_entries() {
+    let payload = "x".repeat(4096);
+    let mut source = String::new();
+    for index in 0..64 {
+        writeln!(source, "record_{index} = ['{payload}']").unwrap();
+    }
+    let project = Project::new_with_source(&source);
+    let temporary = tempfile::tempdir().unwrap();
+    let marker = temporary.path().join("test-command-ran");
+    let mut args = plan_args(&project, ["--operators", "collection_list_tuple"], &marker);
+    insert_test_min_free_space(&mut args);
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    assert_eq!(
+        hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await,
+        0,
+        "{stderr:?}"
+    );
+    let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    assert_eq!(manifest.candidates.len(), 64);
+    let path = project.path.join("plan.json");
+    std::fs::write(&path, stdout.snapshot()).unwrap();
+
     let mut tampered = serde_json::to_value(&manifest).unwrap();
     tampered["candidates"][63]["score"] = serde_json::json!(70);
     tampered["candidates"][63]["ranking_reasons"] =
@@ -4196,50 +4253,58 @@ async fn stale_cli_diagnostic(path: &Path, temporary: &Path, marker: &Path) -> S
     String::from_utf8(normal.stderr).unwrap()
 }
 
-#[tokio::test]
-async fn verify_stale_details_report_all_six_changes_before_tests_in_both_modes() {
-    type Edit = fn(&Path);
-    let edits: [(&str, &str, Edit); 3] = [
-        ("modified", "b", |path| {
+#[rstest::rstest]
+#[case::src_1_modified_1("src", "py", "source", "target source", "modified", "b", |path: &Path| {
             std::fs::write(path, "value = 9 + 10\n").unwrap();
-        }),
-        ("added", "c", |path| {
+        })]
+#[case::src_1_added_2("src", "py", "source", "target source", "added", "c", |path: &Path| {
             std::fs::write(path, "value = 9 + 10\n").unwrap();
-        }),
-        ("removed", "b", |path| {
+        })]
+#[case::src_1_removed_3("src", "py", "source", "target source", "removed", "b", |path: &Path| {
             std::fs::remove_file(path).unwrap();
-        }),
-    ];
-    for (directory, extension, code, records) in [
-        ("src", "py", "source", "target source"),
-        ("config", "toml", "fingerprint_input", "fingerprint input"),
-    ] {
-        for (change, name, edit) in edits {
-            let project =
-                Project::new_with_sources(&[("a.py", "x = 1 + 2\n"), ("b.py", "x = 3 + 4\n")]);
-            std::fs::create_dir(project.path.join("config")).unwrap();
-            std::fs::write(project.path.join("config/a.toml"), "value = 1\n").unwrap();
-            std::fs::write(project.path.join("config/b.toml"), "value = 2\n").unwrap();
-            let temporary = tempfile::tempdir().unwrap();
-            let marker = temporary.path().join("marker");
-            let (path, _) = write_plan_manifest_with_marker(
-                &project,
-                &["--fingerprint-include", "config/*.toml"],
-                &marker,
-            )
-            .await;
-            let relative = format!("{directory}/{name}.{extension}");
-            edit(&project.path.join(&relative));
+        })]
+#[case::config_2_modified_1("config", "toml", "fingerprint_input", "fingerprint input", "modified", "b", |path: &Path| {
+            std::fs::write(path, "value = 9 + 10\n").unwrap();
+        })]
+#[case::config_2_added_2("config", "toml", "fingerprint_input", "fingerprint input", "added", "c", |path: &Path| {
+            std::fs::write(path, "value = 9 + 10\n").unwrap();
+        })]
+#[case::config_2_removed_3("config", "toml", "fingerprint_input", "fingerprint input", "removed", "b", |path: &Path| {
+            std::fs::remove_file(path).unwrap();
+        })]
+#[tokio::test]
+async fn verify_stale_details_report_all_six_changes_before_tests_in_both_modes(
+    #[case] directory: &str,
+    #[case] extension: &str,
+    #[case] code: &str,
+    #[case] records: &str,
+    #[case] change: &str,
+    #[case] name: &str,
+    #[case] edit: fn(&Path),
+) {
+    let project = Project::new_with_sources(&[("a.py", "x = 1 + 2\n"), ("b.py", "x = 3 + 4\n")]);
+    std::fs::create_dir(project.path.join("config")).unwrap();
+    std::fs::write(project.path.join("config/a.toml"), "value = 1\n").unwrap();
+    std::fs::write(project.path.join("config/b.toml"), "value = 2\n").unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let marker = temporary.path().join("marker");
+    let (path, _) = write_plan_manifest_with_marker(
+        &project,
+        &["--fingerprint-include", "config/*.toml"],
+        &marker,
+    )
+    .await;
+    let relative = format!("{directory}/{name}.{extension}");
+    edit(&project.path.join(&relative));
 
-            let diagnostic = stale_cli_diagnostic(&path, temporary.path(), &marker).await;
-            assert_eq!(
-                diagnostic,
-                format!(
-                    "plan.{code}.changed: planned {records} records do not match the current workspace: {change} \"{relative}\"\n"
-                )
-            );
-        }
-    }
+    let diagnostic = stale_cli_diagnostic(&path, temporary.path(), &marker).await;
+
+    assert_eq!(
+        diagnostic,
+        format!(
+            "plan.{code}.changed: planned {records} records do not match the current workspace: {change} \"{relative}\"\n"
+        )
+    );
 }
 
 async fn stale_resolution_diagnostic(options: &[&str], edit: fn(&Project)) -> String {
@@ -4330,95 +4395,91 @@ fn preview_ids(value: &serde_json::Value) -> Vec<&str> {
         .collect()
 }
 
-type PreviewPolicyCase = (
-    &'static str,
-    &'static str,
-    &'static str,
-    &'static str,
-    Vec<usize>,
-);
-
-fn preview_policy_cases() -> [PreviewPolicyCase; 7] {
-    [
-        ("strict", "strict", "0", "6", vec![0, 1, 2, 3, 4, 5]),
-        (
-            "diverse",
-            "file_round_robin_v1",
-            "0",
-            "6",
-            vec![0, 2, 4, 1, 3, 5],
-        ),
-        ("diverse", "file_round_robin_v1", "2", "3", vec![4, 1, 3]),
-        (
-            "line-diverse",
-            "line_round_robin_v1",
-            "0",
-            "6",
-            vec![0, 2, 4, 1, 3, 5],
-        ),
-        (
-            "line-diverse",
-            "line_round_robin_v1",
-            "2",
-            "3",
-            vec![4, 1, 3],
-        ),
-        ("strict", "strict", "4", "99", vec![4, 5]),
-        ("diverse", "file_round_robin_v1", "4", "99", vec![3, 5]),
-    ]
-}
-
+#[rstest::rstest]
+#[case::strict_1("strict", [0, 1])]
+#[case::diverse_2("diverse", [0, 2])]
+#[case::line_diverse_3("line-diverse", [0, 2])]
 #[tokio::test]
-async fn verify_preview_omitted_and_zero_offsets_select_the_same_policy_prefix() {
+async fn verify_preview_omitted_and_zero_offsets_select_the_same_policy_prefix(
+    #[case] policy: &str,
+    #[case] positions: [usize; 2],
+) {
     let project = Project::new_with_sources(&[
         ("a.py", "a = 1 == 2; b = 3 == 4\n"),
         ("b.py", "a = 1 == 2\n"),
     ]);
     let (path, manifest, _) =
         write_plan_manifest(&project, &["--operators", "compare_eq_ne"]).await;
-    for (policy, positions) in [
-        ("strict", [0, 1]),
-        ("diverse", [0, 2]),
-        ("line-diverse", [0, 2]),
-    ] {
-        let mut args = vec![
-            "hoimin",
-            "verify",
-            path.to_str().unwrap(),
-            "--top",
-            "2",
-            "--selection-policy",
-            policy,
-        ];
-        let ParsedCommand::Verify(omitted) = parse_from(args.clone()).unwrap() else {
-            panic!("expected verify");
-        };
-        args.extend(["--offset", "0"]);
-        let ParsedCommand::Verify(explicit) = parse_from(args).unwrap() else {
-            panic!("expected verify");
-        };
 
-        let omitted = prepare_verify_preview_selection(&path, &omitted.selection)
-            .await
-            .unwrap();
-        let explicit = prepare_verify_preview_selection(&path, &explicit.selection)
-            .await
-            .unwrap();
+    let mut args = vec![
+        "hoimin",
+        "verify",
+        path.to_str().unwrap(),
+        "--top",
+        "2",
+        "--selection-policy",
+        policy,
+    ];
+    let ParsedCommand::Verify(omitted) = parse_from(args.clone()).unwrap() else {
+        panic!("expected verify");
+    };
+    args.extend(["--offset", "0"]);
+    let ParsedCommand::Verify(explicit) = parse_from(args).unwrap() else {
+        panic!("expected verify");
+    };
 
-        assert_eq!(omitted, explicit, "{policy}");
-        let preview = serde_json::to_value(&omitted).unwrap();
-        assert_eq!(preview["offset"], 0, "{policy}");
-        assert_eq!(
-            preview_ids(&preview),
-            positions.map(|position| manifest.candidates[position].id.as_str()),
-            "{policy}",
-        );
-    }
+    let omitted = prepare_verify_preview_selection(&path, &omitted.selection)
+        .await
+        .unwrap();
+
+    let explicit = prepare_verify_preview_selection(&path, &explicit.selection)
+        .await
+        .unwrap();
+
+    assert_eq!(omitted, explicit, "{policy}");
+    let preview = serde_json::to_value(&omitted).unwrap();
+    assert_eq!(preview["offset"], 0, "{policy}");
+    assert_eq!(
+        preview_ids(&preview),
+        positions.map(|position| manifest.candidates[position].id.as_str()),
+        "{policy}",
+    );
 }
 
+#[rstest::rstest]
+#[case::strict_1("strict", "strict", "0", "6", vec![0, 1, 2, 3, 4, 5])]
+#[case::diverse_2(
+            "diverse",
+            "file_round_robin_v1",
+            "0",
+            "6",
+            vec![0, 2, 4, 1, 3, 5],
+        )]
+#[case::diverse_3("diverse", "file_round_robin_v1", "2", "3", vec![4, 1, 3])]
+#[case::line_diverse_4(
+            "line-diverse",
+            "line_round_robin_v1",
+            "0",
+            "6",
+            vec![0, 2, 4, 1, 3, 5],
+        )]
+#[case::line_diverse_5(
+            "line-diverse",
+            "line_round_robin_v1",
+            "2",
+            "3",
+            vec![4, 1, 3],
+        )]
+#[case::strict_6("strict", "strict", "4", "99", vec![4, 5])]
+#[case::diverse_7("diverse", "file_round_robin_v1", "4", "99", vec![3, 5])]
 #[tokio::test]
-async fn verify_preview_public_cli_preserves_policy_range_and_execution_order_without_side_effects()
-{
+async fn verify_preview_public_cli_preserves_policy_range_and_execution_order_without_side_effects(
+    #[case] policy: &str,
+    #[case] expected_policy: &str,
+    #[case] offset: &str,
+    #[case] top: &str,
+    #[case] positions: Vec<usize>,
+) {
     let project = Project::new_with_sources(&[
         ("a.py", "a = 1 == 2; b = 3 == 4\n"),
         ("b.py", "a = 1 == 2; b = 3 == 4\n"),
@@ -4437,78 +4498,77 @@ async fn verify_preview_public_cli_preserves_policy_range_and_execution_order_wi
                 && candidate.score > manifest.candidates[5].score)
     );
     let before = std::fs::read(&path).unwrap();
-    for (policy, expected_policy, offset, top, positions) in preview_policy_cases() {
-        let temporary = tempfile::tempdir().unwrap();
-        let args = [
-            "--top",
-            top,
-            "--offset",
-            offset,
-            "--selection-policy",
-            policy,
-        ];
-        let mut dry_args = args.to_vec();
-        dry_args.push("--dry-run");
-        let output = preview_cli(&path, &dry_args, temporary.path()).await;
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+
+    let temporary = tempfile::tempdir().unwrap();
+    let args = [
+        "--top",
+        top,
+        "--offset",
+        offset,
+        "--selection-policy",
+        policy,
+    ];
+    let mut dry_args = args.to_vec();
+    dry_args.push("--dry-run");
+    let output = preview_cli(&path, &dry_args, temporary.path()).await;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        std::str::from_utf8(&output.stdout).unwrap().lines().count(),
+        1
+    );
+    assert!(output.stdout.ends_with(b"\n"));
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["kind"], "verify_preview");
+    assert_eq!(value["schema_version"], 2);
+    assert_eq!(value["plan_schema_version"], 10);
+    assert_eq!(value["ranking_rule_version"], 4);
+    assert_eq!(value["offset"], offset.parse::<usize>().unwrap());
+    assert_eq!(value["retained_candidates"], 6);
+    assert_eq!(
+        value["verification_selection"],
+        serde_json::json!({
+            "mode": "top", "policy": expected_policy,
+            "requested": top.parse::<usize>().unwrap(), "selected": positions.len(),
+            "scope": "retained_candidates", "plan_truncated": false,
+        })
+    );
+    let expected = positions
+        .iter()
+        .map(|&p| manifest.candidates[p].id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(preview_ids(&value), expected);
+    for (index, &position) in positions.iter().enumerate() {
+        let row = &value["candidates"][index];
+        assert_eq!(row["selection_order"], index + 1);
+        assert_eq!(row["rank"], manifest.candidates[position].rank);
+        assert_eq!(row["path"], manifest.candidates[position].path.as_str());
+        assert_eq!(row["line"], manifest.candidates[position].line);
         assert_eq!(
-            std::str::from_utf8(&output.stdout).unwrap().lines().count(),
-            1
+            row,
+            &preview_candidate_value(&manifest.candidates[position], index + 1)
         );
-        assert!(output.stdout.ends_with(b"\n"));
-        let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(value["kind"], "verify_preview");
-        assert_eq!(value["schema_version"], 2);
-        assert_eq!(value["plan_schema_version"], 10);
-        assert_eq!(value["ranking_rule_version"], 4);
-        assert_eq!(value["offset"], offset.parse::<usize>().unwrap());
-        assert_eq!(value["retained_candidates"], 6);
-        assert_eq!(
-            value["verification_selection"],
-            serde_json::json!({
-                "mode": "top", "policy": expected_policy,
-                "requested": top.parse::<usize>().unwrap(), "selected": positions.len(),
-                "scope": "retained_candidates", "plan_truncated": false,
-            })
-        );
-        let expected = positions
-            .iter()
-            .map(|&p| manifest.candidates[p].id.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(preview_ids(&value), expected);
-        for (index, &position) in positions.iter().enumerate() {
-            let row = &value["candidates"][index];
-            assert_eq!(row["selection_order"], index + 1);
-            assert_eq!(row["rank"], manifest.candidates[position].rank);
-            assert_eq!(row["path"], manifest.candidates[position].path.as_str());
-            assert_eq!(row["line"], manifest.candidates[position].line);
-            assert_eq!(
-                row,
-                &preview_candidate_value(&manifest.candidates[position], index + 1)
-            );
-        }
-        assert!(!marker.exists());
-        assert!(!project.path.join("session.sqlite3").exists());
-        assert_eq!(std::fs::read_dir(temporary.path()).unwrap().count(), 0);
-        assert_eq!(std::fs::read(&path).unwrap(), before);
-        let run = preview_cli(&path, &args, temporary.path()).await;
-        assert_eq!(
-            run.status.code(),
-            Some(0),
-            "{}",
-            String::from_utf8_lossy(&run.stderr)
-        );
-        assert_eq!(preview_started_ids(&run.stdout), expected);
-        assert!(
-            marker.exists(),
-            "normal verify must exercise the marker negative control"
-        );
-        std::fs::remove_file(&marker).unwrap();
     }
+    assert!(!marker.exists());
+    assert!(!project.path.join("session.sqlite3").exists());
+    assert_eq!(std::fs::read_dir(temporary.path()).unwrap().count(), 0);
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    let run = preview_cli(&path, &args, temporary.path()).await;
+    assert_eq!(
+        run.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(preview_started_ids(&run.stdout), expected);
+    assert!(
+        marker.exists(),
+        "normal verify must exercise the marker negative control"
+    );
+    std::fs::remove_file(&marker).unwrap();
 }
 
 #[tokio::test]
@@ -4713,40 +4773,42 @@ async fn invalid_preview_fixture(invalid: &str) -> (Project, PathBuf, PathBuf, V
     (project, path, marker, args)
 }
 
+#[rstest::rstest]
+#[case::empty_1("empty")]
+#[case::empty_diverse_2("empty_diverse")]
+#[case::malformed_3("malformed")]
+#[case::missing_4("missing")]
+#[case::schema_5("schema")]
+#[case::rank_6("rank")]
+#[case::descriptor_7("descriptor")]
+#[case::source_8("source")]
+#[case::fingerprint_9("fingerprint")]
+#[case::offset_10("offset")]
+#[case::limit_11("limit")]
+#[case::unknown_12("unknown")]
 #[tokio::test]
-async fn verify_preview_invalid_inputs_match_normal_validation_before_runtime() {
-    for invalid in [
-        "empty",
-        "empty_diverse",
-        "malformed",
-        "missing",
-        "schema",
-        "rank",
-        "descriptor",
-        "source",
-        "fingerprint",
-        "offset",
-        "limit",
-        "unknown",
-    ] {
-        let (project, path, marker, mut args) = invalid_preview_fixture(invalid).await;
-        let temporary = tempfile::tempdir().unwrap();
-        let normal = preview_cli(&path, &args, temporary.path()).await;
-        args.push("--dry-run");
-        let preview = preview_cli(&path, &args, temporary.path()).await;
-        assert_eq!(
-            normal.status.code(),
-            Some(2),
-            "{invalid}: {}",
-            String::from_utf8_lossy(&normal.stderr)
-        );
-        assert_eq!(preview.status.code(), Some(2), "{invalid}");
-        assert_eq!(preview.stderr, normal.stderr, "{invalid}");
-        assert!(preview.stdout.is_empty(), "{invalid}");
-        assert!(!marker.exists(), "{invalid}");
-        assert!(!project.path.join("session.sqlite3").exists());
-        assert_eq!(std::fs::read_dir(temporary.path()).unwrap().count(), 0);
-    }
+async fn verify_preview_invalid_inputs_match_normal_validation_before_runtime(
+    #[case] invalid: &str,
+) {
+    let (project, path, marker, mut args) = invalid_preview_fixture(invalid).await;
+    let temporary = tempfile::tempdir().unwrap();
+    let normal = preview_cli(&path, &args, temporary.path()).await;
+    args.push("--dry-run");
+
+    let preview = preview_cli(&path, &args, temporary.path()).await;
+
+    assert_eq!(
+        normal.status.code(),
+        Some(2),
+        "{invalid}: {}",
+        String::from_utf8_lossy(&normal.stderr)
+    );
+    assert_eq!(preview.status.code(), Some(2), "{invalid}");
+    assert_eq!(preview.stderr, normal.stderr, "{invalid}");
+    assert!(preview.stdout.is_empty(), "{invalid}");
+    assert!(!marker.exists(), "{invalid}");
+    assert!(!project.path.join("session.sqlite3").exists());
+    assert_eq!(std::fs::read_dir(temporary.path()).unwrap().count(), 0);
 }
 
 #[tokio::test]
@@ -4781,169 +4843,192 @@ async fn verify_preview_output_failure_returns_error_without_execution() {
     assert!(!marker.exists());
 }
 
+#[rstest::rstest]
+#[case::def_add_left_right_return_left_right_1_input_1_1(
+    "def add(left, right):\n    return (\n        left +\n        right\n    )\n",
+    "def add(left, right):\n    return (\n        left +\n        abs(right)\n    )\n",
+    3,
+    "1"
+)]
+#[case::def_add_left_right_return_left_right_1_input_1073741823_2(
+    "def add(left, right):\n    return (\n        left +\n        right\n    )\n",
+    "def add(left, right):\n    return (\n        left +\n        abs(right)\n    )\n",
+    3,
+    "1073741823"
+)]
+#[case::def_add_left_right_assert_right_0_return_left_right_2_input_1_1(
+    "def add(left, right):\n    assert right >= 0\n    return left + right\n",
+    "def add(left, right):\n    return left + right\n",
+    2,
+    "1"
+)]
+#[case::def_add_left_right_assert_right_0_return_left_right_2_input_1073741823_2(
+    "def add(left, right):\n    assert right >= 0\n    return left + right\n",
+    "def add(left, right):\n    return left + right\n",
+    2,
+    "1073741823"
+)]
 #[tokio::test]
-async fn changed_context_discovers_neighbor_operators_and_survives_verify() {
-    for (before, after, expected_line) in [
-        (
-            "def add(left, right):\n    return (\n        left +\n        right\n    )\n",
-            "def add(left, right):\n    return (\n        left +\n        abs(right)\n    )\n",
-            3,
-        ),
-        (
-            "def add(left, right):\n    assert right >= 0\n    return left + right\n",
-            "def add(left, right):\n    return left + right\n",
-            2,
-        ),
-    ] {
-        let sibling = "\ndef other(left, right):\n    return left + right\n";
-        let project = Project::new_with_source(&format!("{before}{sibling}"));
-        run_git(&project.path, &["init", "--quiet"]);
-        run_git(&project.path, &["add", "."]);
-        run_git(
-            &project.path,
-            &[
-                "-c",
-                "user.name=Fixture",
-                "-c",
-                "user.email=fixture@example.invalid",
-                "commit",
-                "--quiet",
-                "-m",
-                "base",
-            ],
-        );
-        std::fs::write(
-            project.path.join("src/calc.py"),
-            format!("{after}{sibling}"),
-        )
+async fn changed_context_discovers_neighbor_operators_and_survives_verify(
+    #[case] before: &str,
+    #[case] after: &str,
+    #[case] expected_line: u32,
+    #[case] context: &str,
+) {
+    let sibling = "\ndef other(left, right):\n    return left + right\n";
+    let project = Project::new_with_source(&format!("{before}{sibling}"));
+    run_git(&project.path, &["init", "--quiet"]);
+    run_git(&project.path, &["add", "."]);
+    run_git(
+        &project.path,
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "base",
+        ],
+    );
+    std::fs::write(
+        project.path.join("src/calc.py"),
+        format!("{after}{sibling}"),
+    )
+    .unwrap();
+
+    let marker = project.path.join("test-command-ran");
+    let args = plan_args(
+        &project,
+        [
+            "--changed",
+            "--changed-context",
+            context,
+            "--symbol",
+            "calc:add",
+            "--operators",
+            "binary_add_sub",
+            "--diff-base",
+            "HEAD",
+        ],
+        &marker,
+    );
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+
+    assert_eq!(
+        hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await,
+        0,
+        "{}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    assert_eq!(manifest.candidates.len(), usize::from(context != "0"));
+
+    let candidate = &manifest.candidates[0];
+    assert_eq!(candidate.line, expected_line);
+    let value = serde_json::to_value(candidate).unwrap();
+    assert!(
+        value["ranking_reasons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|reason| reason["code"] == "changed_line" && reason["score"] == 200)
+    );
+    let plan_path = project.path.join("saved-plan.json");
+    std::fs::write(&plan_path, stdout.snapshot()).unwrap();
+    let verified = prepare_verify(&plan_path, std::slice::from_ref(&candidate.id))
+        .await
         .unwrap();
-        for context in ["1", "1073741823"] {
-            let marker = project.path.join("test-command-ran");
-            let args = plan_args(
-                &project,
-                [
-                    "--changed",
-                    "--changed-context",
-                    context,
-                    "--symbol",
-                    "calc:add",
-                    "--operators",
-                    "binary_add_sub",
-                    "--diff-base",
-                    "HEAD",
-                ],
-                &marker,
-            );
-            let stdout = CollectingWriter::default();
-            let stderr = CollectingWriter::default();
-            assert_eq!(
-                hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await,
-                0,
-                "{}",
-                String::from_utf8_lossy(&stderr.snapshot())
-            );
-            let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
-            assert_eq!(manifest.candidates.len(), usize::from(context != "0"));
+    assert_eq!(
+        verified
+            .config()
+            .selection
+            .changed
+            .as_ref()
+            .unwrap()
+            .context(),
+        context.parse::<u32>().unwrap()
+    );
+    assert_eq!(verified.config().selection.symbols.len(), 1);
 
-            let candidate = &manifest.candidates[0];
-            assert_eq!(candidate.line, expected_line);
-            let value = serde_json::to_value(candidate).unwrap();
-            assert!(
-                value["ranking_reasons"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|reason| reason["code"] == "changed_line" && reason["score"] == 200)
-            );
-            let plan_path = project.path.join("saved-plan.json");
-            std::fs::write(&plan_path, stdout.snapshot()).unwrap();
-            let verified = prepare_verify(&plan_path, std::slice::from_ref(&candidate.id))
-                .await
-                .unwrap();
-            assert_eq!(
-                verified
-                    .config()
-                    .selection
-                    .changed
-                    .as_ref()
-                    .unwrap()
-                    .context(),
-                context.parse::<u32>().unwrap()
-            );
-            assert_eq!(verified.config().selection.symbols.len(), 1);
-
-            assert!(!marker.exists());
-        }
-    }
+    assert!(!marker.exists());
 }
 
+#[rstest::rstest]
+#[case::def_add_left_right_return_left_right_1_input_0_1(
+    "def add(left, right):\n    return (\n        left +\n        right\n    )\n",
+    "def add(left, right):\n    return (\n        left +\n        abs(right)\n    )\n",
+    3,
+    "0"
+)]
+#[case::def_add_left_right_assert_right_0_return_left_right_2_input_0_1(
+    "def add(left, right):\n    assert right >= 0\n    return left + right\n",
+    "def add(left, right):\n    return left + right\n",
+    2,
+    "0"
+)]
 #[tokio::test]
-async fn zero_changed_context_excludes_neighbor_operators() {
-    for (before, after, _expected_line) in [
-        (
-            "def add(left, right):\n    return (\n        left +\n        right\n    )\n",
-            "def add(left, right):\n    return (\n        left +\n        abs(right)\n    )\n",
-            3,
-        ),
-        (
-            "def add(left, right):\n    assert right >= 0\n    return left + right\n",
-            "def add(left, right):\n    return left + right\n",
-            2,
-        ),
-    ] {
-        let sibling = "\ndef other(left, right):\n    return left + right\n";
-        let project = Project::new_with_source(&format!("{before}{sibling}"));
-        run_git(&project.path, &["init", "--quiet"]);
-        run_git(&project.path, &["add", "."]);
-        run_git(
-            &project.path,
-            &[
-                "-c",
-                "user.name=Fixture",
-                "-c",
-                "user.email=fixture@example.invalid",
-                "commit",
-                "--quiet",
-                "-m",
-                "base",
-            ],
-        );
-        std::fs::write(
-            project.path.join("src/calc.py"),
-            format!("{after}{sibling}"),
-        )
-        .unwrap();
-        for context in ["0"] {
-            let marker = project.path.join("test-command-ran");
-            let args = plan_args(
-                &project,
-                [
-                    "--changed",
-                    "--changed-context",
-                    context,
-                    "--symbol",
-                    "calc:add",
-                    "--operators",
-                    "binary_add_sub",
-                    "--diff-base",
-                    "HEAD",
-                ],
-                &marker,
-            );
-            let stdout = CollectingWriter::default();
-            let stderr = CollectingWriter::default();
-            assert_eq!(
-                hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await,
-                0,
-                "{}",
-                String::from_utf8_lossy(&stderr.snapshot())
-            );
-            let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
-            assert_eq!(manifest.candidates.len(), usize::from(context != "0"));
+async fn zero_changed_context_excludes_neighbor_operators(
+    #[case] before: &str,
+    #[case] after: &str,
+    #[case] expected_line: usize,
+    #[case] context: &str,
+) {
+    let _ = expected_line;
+    let sibling = "\ndef other(left, right):\n    return left + right\n";
+    let project = Project::new_with_source(&format!("{before}{sibling}"));
+    run_git(&project.path, &["init", "--quiet"]);
+    run_git(&project.path, &["add", "."]);
+    run_git(
+        &project.path,
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "base",
+        ],
+    );
+    std::fs::write(
+        project.path.join("src/calc.py"),
+        format!("{after}{sibling}"),
+    )
+    .unwrap();
 
-            assert!(!marker.exists());
-        }
-    }
+    let marker = project.path.join("test-command-ran");
+    let args = plan_args(
+        &project,
+        [
+            "--changed",
+            "--changed-context",
+            context,
+            "--symbol",
+            "calc:add",
+            "--operators",
+            "binary_add_sub",
+            "--diff-base",
+            "HEAD",
+        ],
+        &marker,
+    );
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+
+    assert_eq!(
+        hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await,
+        0,
+        "{}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    assert_eq!(manifest.candidates.len(), usize::from(context != "0"));
+
+    assert!(!marker.exists());
 }
 
 async fn metrics_manifest_fixture(
@@ -4966,144 +5051,155 @@ async fn metrics_manifest_fixture(
     (path, output.manifest)
 }
 
+#[rstest::rstest]
+#[case::false_1_top(false, metrics_top_selection)]
+#[case::false_1_candidate(false, metrics_candidate_selection)]
+#[case::true_2_top(true, metrics_top_selection)]
+#[case::true_2_candidate(true, metrics_candidate_selection)]
 #[tokio::test]
-async fn verify_metrics_manifest_collisions_reject_before_baseline_in_public_cli() {
-    for baseline_fails in [false, true] {
-        let project = Project::new();
-        let coordinator = tempfile::tempdir().unwrap();
-        let marker = coordinator.path().join("marker");
-        let (path, manifest) = metrics_manifest_fixture(&project, &marker, baseline_fails).await;
-        let original = std::fs::read(&path).unwrap();
-        std::fs::create_dir(project.path.join("child")).unwrap();
-        let cases = metrics_manifest_aliases(&project, &path, &coordinator);
-        for selection in [
-            ["--top", "1"],
-            ["--candidate", manifest.candidates[0].candidate.id.as_str()],
-        ] {
-            for (input, destination) in &cases {
-                let output = std::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
-                    .current_dir(&project.path)
-                    .arg("verify")
-                    .arg(input)
-                    .args(selection)
-                    .arg("--metrics")
-                    .arg(destination)
-                    .output()
-                    .unwrap();
-                assert_eq!(
-                    output.status.code(),
-                    Some(2),
-                    "input={input:?}, destination={destination:?}, selection={selection:?}, failing={baseline_fails}: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
-                assert!(
-                    String::from_utf8_lossy(&output.stderr)
-                        .contains("metrics.destination.collision")
-                );
-                assert_eq!(std::fs::read(&path).unwrap(), original);
-                assert!(
-                    !marker.exists(),
-                    "baseline executed before collision rejection"
-                );
-            }
-        }
+async fn verify_metrics_manifest_collisions_reject_before_baseline_in_public_cli(
+    #[case] baseline_fails: bool,
+    #[case] make_selection: fn(&PlanManifest) -> [&str; 2],
+) {
+    let project = Project::new();
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("marker");
+
+    let (path, manifest) = metrics_manifest_fixture(&project, &marker, baseline_fails).await;
+    let original = std::fs::read(&path).unwrap();
+    std::fs::create_dir(project.path.join("child")).unwrap();
+    let cases = metrics_manifest_aliases(&project, &path, &coordinator);
+
+    let selection = make_selection(&manifest);
+
+    for (input, destination) in &cases {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+            .current_dir(&project.path)
+            .arg("verify")
+            .arg(input)
+            .args(selection)
+            .arg("--metrics")
+            .arg(destination)
+            .output()
+            .unwrap();
+
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "input={input:?}, destination={destination:?}, selection={selection:?}, failing={baseline_fails}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stderr).contains("metrics.destination.collision"));
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        assert!(
+            !marker.exists(),
+            "baseline executed before collision rejection"
+        );
     }
 }
 
+#[rstest::rstest]
+#[case::top(metrics_top_selection)]
+#[case::candidate(metrics_candidate_selection)]
 #[tokio::test]
-async fn verify_metrics_manifest_collision_is_also_rejected_with_owned_writers() {
+async fn verify_metrics_manifest_collision_is_also_rejected_with_owned_writers(
+    #[case] make_selection: fn(&PlanManifest) -> [&str; 2],
+) {
     let project = Project::new();
     let coordinator = tempfile::tempdir().unwrap();
     let marker = coordinator.path().join("marker");
     let (path, manifest) = metrics_manifest_fixture(&project, &marker, false).await;
     let original = std::fs::read(&path).unwrap();
-    for selection in [
-        ["--top", "1"],
-        ["--candidate", manifest.candidates[0].candidate.id.as_str()],
-    ] {
-        let stdout = CollectingWriter::default();
-        let stderr = CollectingWriter::default();
-        let exit = hoimin_cli::run_with_writers(
-            [
-                "hoimin",
-                "verify",
-                path.to_str().unwrap(),
-                selection[0],
-                selection[1],
-                "--metrics",
-                path.to_str().unwrap(),
-            ],
-            stdout.clone(),
-            stderr.clone(),
-        )
-        .await;
-        assert_eq!(exit, 2, "{}", String::from_utf8_lossy(&stderr.snapshot()));
-        assert!(
-            String::from_utf8_lossy(&stderr.snapshot()).contains("metrics.destination.collision")
-        );
-        assert_eq!(std::fs::read(&path).unwrap(), original);
-        assert!(!marker.exists());
-    }
+
+    let selection = make_selection(&manifest);
+
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let exit = hoimin_cli::run_with_writers(
+        [
+            "hoimin",
+            "verify",
+            path.to_str().unwrap(),
+            selection[0],
+            selection[1],
+            "--metrics",
+            path.to_str().unwrap(),
+        ],
+        stdout.clone(),
+        stderr.clone(),
+    )
+    .await;
+    assert_eq!(exit, 2, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+    assert!(String::from_utf8_lossy(&stderr.snapshot()).contains("metrics.destination.collision"));
+    assert_eq!(std::fs::read(&path).unwrap(), original);
+    assert!(!marker.exists());
 }
 
+#[rstest::rstest]
+#[case::false_0_1_top(false, 0, metrics_top_selection)]
+#[case::false_0_1_candidate(false, 0, metrics_candidate_selection)]
+#[case::true_3_2_top(true, 3, metrics_top_selection)]
+#[case::true_3_2_candidate(true, 3, metrics_candidate_selection)]
 #[tokio::test]
-async fn verify_metrics_manifest_distinct_entries_remain_replaceable() {
-    for (baseline_fails, expected_exit) in [(false, 0), (true, 3)] {
-        let project = Project::new();
-        let coordinator = tempfile::tempdir().unwrap();
-        let marker = coordinator.path().join("marker");
-        let (path, manifest) = metrics_manifest_fixture(&project, &marker, baseline_fails).await;
-        let original = std::fs::read(&path).unwrap();
-        for selection in [
-            ["--top", "1"],
-            ["--candidate", manifest.candidates[0].candidate.id.as_str()],
-        ] {
-            let outputs = tempfile::tempdir().unwrap();
-            let new = outputs.path().join("new.json");
-            let existing = outputs.path().join("existing.json");
-            std::fs::write(&existing, "old metrics").unwrap();
-            let hardlink = outputs.path().join("hardlink.json");
-            std::fs::hard_link(&path, &hardlink).unwrap();
-            let destinations = vec![new, existing, hardlink];
-            #[cfg(unix)]
-            let destinations = {
-                let mut destinations = destinations;
-                let symlink = outputs.path().join("symlink.json");
-                std::os::unix::fs::symlink(&path, &symlink).unwrap();
-                destinations.push(symlink);
-                destinations
-            };
-            for destination in destinations {
-                remove_optional_marker(&marker);
-                let output = std::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
-                    .current_dir(outputs.path())
-                    .arg("verify")
-                    .arg(&path)
-                    .args(selection)
-                    .arg("--metrics")
-                    .arg(&destination)
-                    .output()
-                    .unwrap();
-                assert_eq!(
-                    output.status.code(),
-                    Some(expected_exit),
-                    "{}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
-                assert!(marker.exists());
-                assert_eq!(std::fs::read(&path).unwrap(), original);
-                assert!(
-                    !std::fs::symlink_metadata(&destination)
-                        .unwrap()
-                        .file_type()
-                        .is_symlink()
-                );
-                let metrics: hoimin_core::RunMetrics =
-                    serde_json::from_slice(&std::fs::read(destination).unwrap()).unwrap();
-                metrics.validate().unwrap();
-                assert_eq!(metrics.executed, u64::from(!baseline_fails));
-            }
-        }
+async fn verify_metrics_manifest_distinct_entries_remain_replaceable(
+    #[case] baseline_fails: bool,
+    #[case] expected_exit: i32,
+    #[case] make_selection: fn(&PlanManifest) -> [&str; 2],
+) {
+    let project = Project::new();
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("marker");
+
+    let (path, manifest) = metrics_manifest_fixture(&project, &marker, baseline_fails).await;
+    let original = std::fs::read(&path).unwrap();
+
+    let selection = make_selection(&manifest);
+
+    let outputs = tempfile::tempdir().unwrap();
+    let new = outputs.path().join("new.json");
+    let existing = outputs.path().join("existing.json");
+    std::fs::write(&existing, "old metrics").unwrap();
+    let hardlink = outputs.path().join("hardlink.json");
+    std::fs::hard_link(&path, &hardlink).unwrap();
+    let destinations = vec![new, existing, hardlink];
+    #[cfg(unix)]
+    let destinations = {
+        let mut destinations = destinations;
+        let symlink = outputs.path().join("symlink.json");
+        std::os::unix::fs::symlink(&path, &symlink).unwrap();
+        destinations.push(symlink);
+        destinations
+    };
+    for destination in destinations {
+        remove_optional_marker(&marker);
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+            .current_dir(outputs.path())
+            .arg("verify")
+            .arg(&path)
+            .args(selection)
+            .arg("--metrics")
+            .arg(&destination)
+            .output()
+            .unwrap();
+
+        assert_eq!(
+            output.status.code(),
+            Some(expected_exit),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(marker.exists());
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        assert!(
+            !std::fs::symlink_metadata(&destination)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        let metrics: hoimin_core::RunMetrics =
+            serde_json::from_slice(&std::fs::read(destination).unwrap()).unwrap();
+        metrics.validate().unwrap();
+        assert_eq!(metrics.executed, u64::from(!baseline_fails));
     }
 }
 
@@ -5168,8 +5264,24 @@ fn assert_json_preview_rows(
     }
 }
 
+#[rstest::rstest]
+#[case::all_ranked(
+    |_: &PlanManifest| vec!["--top".to_owned(),"3".to_owned()],
+    |manifest: &PlanManifest| (0..manifest.candidates.len()).collect()
+)]
+#[case::diverse_offset(
+    |_: &PlanManifest| ["--top","2","--offset","1","--selection-policy","diverse"].map(str::to_owned).to_vec(),
+    |manifest: &PlanManifest| (1..manifest.candidates.len()).collect()
+)]
+#[case::explicit_discovery_order(
+    same_line_explicit_selection,
+    |manifest: &PlanManifest| [17,21,31].map(|column|manifest.candidates.iter().position(|candidate|candidate.column==column).unwrap()).to_vec()
+)]
 #[tokio::test]
-async fn verify_preview_details_distinguish_same_line_mutations() {
+async fn verify_preview_details_distinguish_same_line_mutations(
+    #[case] make_selection: fn(&PlanManifest) -> Vec<String>,
+    #[case] expected_positions: fn(&PlanManifest) -> Vec<usize>,
+) {
     let project =
         Project::new_with_source("def acceptable(value):\n    return value > 0 and value < 10\n");
     let coordinator = tempfile::tempdir().unwrap();
@@ -5206,55 +5318,54 @@ async fn verify_preview_details_distinguish_same_line_mutations() {
         "../../../docs/json-schema/verify-preview.schema.json"
     ))
     .unwrap();
-    for (selection, expected) in [
-        (
-            vec!["--top", "3"],
-            manifest.candidates.iter().collect::<Vec<_>>(),
-        ),
-        (
-            vec![
-                "--top",
-                "2",
-                "--offset",
-                "1",
-                "--selection-policy",
-                "diverse",
-            ],
-            manifest.candidates[1..].iter().collect(),
-        ),
-        (
-            vec![
-                "--candidate",
-                right.id.as_str(),
-                "--candidate",
-                boolean.id.as_str(),
-                "--candidate",
-                left.id.as_str(),
-                "--candidate",
-                left.id.as_str(),
-            ],
-            vec![left, boolean, right],
-        ),
-    ] {
-        {
-            let verify_output = assert_json_preview_rows;
-            let temporary = tempfile::tempdir().unwrap();
-            let mut args = selection.clone();
-            args.extend(["--dry-run"]);
-            let output = preview_cli(&path, &args, temporary.path()).await;
-            assert!(
-                output.status.success(),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            let text = String::from_utf8(output.stdout).unwrap();
-            verify_output(&text, &expected, &schema);
-            assert!(!marker.exists());
-            assert!(!project.path.join("session.sqlite3").exists());
-            assert_eq!(std::fs::read_dir(temporary.path()).unwrap().count(), 0);
-            assert_eq!(std::fs::read(&path).unwrap(), before);
-        }
+
+    let selection = make_selection(&manifest);
+    let expected = expected_positions(&manifest)
+        .into_iter()
+        .map(|position| &manifest.candidates[position])
+        .collect::<Vec<_>>();
+
+    {
+        let verify_output = assert_json_preview_rows;
+        let temporary = tempfile::tempdir().unwrap();
+        let mut args = selection.clone();
+        args.push("--dry-run".to_owned());
+        let args_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+        let output = preview_cli(&path, &args_refs, temporary.path()).await;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let text = String::from_utf8(output.stdout).unwrap();
+        verify_output(&text, &expected, &schema);
+        assert!(!marker.exists());
+        assert!(!project.path.join("session.sqlite3").exists());
+        assert_eq!(std::fs::read_dir(temporary.path()).unwrap().count(), 0);
+        assert_eq!(std::fs::read(&path).unwrap(), before);
     }
+}
+
+fn same_line_explicit_selection(manifest: &PlanManifest) -> Vec<String> {
+    let id = |column| {
+        manifest
+            .candidates
+            .iter()
+            .find(|candidate| candidate.column == column)
+            .unwrap()
+            .id
+            .clone()
+    };
+    vec![
+        "--candidate".to_owned(),
+        id(31),
+        "--candidate".to_owned(),
+        id(21),
+        "--candidate".to_owned(),
+        id(17),
+        "--candidate".to_owned(),
+        id(17),
+    ]
 }
 
 #[tokio::test]
@@ -5455,68 +5566,72 @@ async fn discovery_timeout_changes_saved_plan_without_changing_execution_identit
     assert!(!marker.exists());
 }
 
+#[rstest::rstest]
+#[case::input_1_1("1")]
+#[case::input_2_2("2")]
 #[tokio::test]
-async fn baseline_restoration_matches_full_run_and_single_candidate_verification() {
-    for jobs in ["1", "2"] {
-        // Arrange.
-        let project = tempfile::tempdir().unwrap();
-        let source = "one = True\ntwo = False\n";
-        std::fs::write(project.path().join("target.py"), source).unwrap();
-        let (args, manifest, plan_path) = baseline_contamination_plan(project.path(), jobs).await;
-        let selected = &manifest.candidates[1].candidate.id;
-        // Act.
-        let run_out = CollectingWriter::default();
-        let run_err = CollectingWriter::default();
+async fn baseline_restoration_matches_full_run_and_single_candidate_verification(
+    #[case] jobs: &str,
+) {
+    // Arrange.
+    let project = tempfile::tempdir().unwrap();
+    let source = "one = True\ntwo = False\n";
+    std::fs::write(project.path().join("target.py"), source).unwrap();
+
+    let (args, manifest, plan_path) = baseline_contamination_plan(project.path(), jobs).await;
+    let selected = &manifest.candidates[1].candidate.id;
+    // Act.
+    let run_out = CollectingWriter::default();
+    let run_err = CollectingWriter::default();
+
+    assert_eq!(
+        hoimin_cli::run_with_writers(args, run_out.clone(), run_err.clone()).await,
+        0,
+        "{}",
+        String::from_utf8_lossy(&run_err.snapshot())
+    );
+    let full: serde_json::Value = jsonl_report::from_slice(&run_out.snapshot()).unwrap();
+    for selection in [["--candidate", selected.as_str()], ["--top", "1"]] {
+        let verify_out = CollectingWriter::default();
+        let verify_err = CollectingWriter::default();
+        let args = [
+            OsString::from("hoimin"),
+            "verify".into(),
+            plan_path.clone().into(),
+            selection[0].into(),
+            selection[1].into(),
+        ];
         assert_eq!(
-            hoimin_cli::run_with_writers(args, run_out.clone(), run_err.clone()).await,
+            hoimin_cli::run_with_writers(args, verify_out.clone(), verify_err.clone()).await,
             0,
             "{}",
-            String::from_utf8_lossy(&run_err.snapshot())
+            String::from_utf8_lossy(&verify_err.snapshot())
         );
-        let full: serde_json::Value = jsonl_report::from_slice(&run_out.snapshot()).unwrap();
-        for selection in [["--candidate", selected.as_str()], ["--top", "1"]] {
-            let verify_out = CollectingWriter::default();
-            let verify_err = CollectingWriter::default();
-            let args = [
-                OsString::from("hoimin"),
-                "verify".into(),
-                plan_path.clone().into(),
-                selection[0].into(),
-                selection[1].into(),
-            ];
-            assert_eq!(
-                hoimin_cli::run_with_writers(args, verify_out.clone(), verify_err.clone()).await,
-                0,
-                "{}",
-                String::from_utf8_lossy(&verify_err.snapshot())
-            );
-            let single: serde_json::Value =
-                jsonl_report::from_slice(&verify_out.snapshot()).unwrap();
-            // Assert.
-            let mutant = &single["mutants"][0];
-            assert!(mutant["candidate"]["id"].is_string());
-            if selection[0] == "--candidate" {
-                assert_eq!(mutant["candidate"]["id"], selected.as_str());
-            }
-            let matching = full["mutants"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|row| row["candidate"]["id"] == mutant["candidate"]["id"])
-                .unwrap();
-            assert_eq!(mutation_outcome::status(mutant), "survived");
-            assert_eq!(
-                mutation_outcome::status(mutant),
-                mutation_outcome::status(matching)
-            );
-            assert_eq!(single["summary"]["complete"], true);
+        let single: serde_json::Value = jsonl_report::from_slice(&verify_out.snapshot()).unwrap();
+        // Assert.
+        let mutant = &single["mutants"][0];
+        assert!(mutant["candidate"]["id"].is_string());
+        if selection[0] == "--candidate" {
+            assert_eq!(mutant["candidate"]["id"], selected.as_str());
         }
+        let matching = full["mutants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["candidate"]["id"] == mutant["candidate"]["id"])
+            .unwrap();
+        assert_eq!(mutation_outcome::status(mutant), "survived");
         assert_eq!(
-            std::fs::read_to_string(project.path().join("target.py")).unwrap(),
-            source
+            mutation_outcome::status(mutant),
+            mutation_outcome::status(matching)
         );
-        assert!(!project.path().join("generated-state.txt").exists());
+        assert_eq!(single["summary"]["complete"], true);
     }
+    assert_eq!(
+        std::fs::read_to_string(project.path().join("target.py")).unwrap(),
+        source
+    );
+    assert!(!project.path().join("generated-state.txt").exists());
 }
 
 async fn baseline_contamination_plan(
@@ -5787,4 +5902,25 @@ mod hostile_executable_names {
     hostile_executable_case!(tab, "hoimin\t");
     hostile_executable_case!(mixed, "hoimin\x1b[31m\r\n\t");
     hostile_executable_case!(unicode_alias, "別名🦀");
+}
+
+fn metrics_top_selection(_: &PlanManifest) -> [&str; 2] {
+    ["--top", "1"]
+}
+fn metrics_candidate_selection(manifest: &PlanManifest) -> [&str; 2] {
+    ["--candidate", manifest.candidates[0].candidate.id.as_str()]
+}
+fn metrics_all_top_selection(_: &PlanManifest) -> Vec<&str> {
+    vec!["--top", "2"]
+}
+fn metrics_diverse_selection(_: &PlanManifest) -> Vec<&str> {
+    vec!["--top", "2", "--selection-policy", "diverse"]
+}
+fn metrics_all_candidate_selection(manifest: &PlanManifest) -> Vec<&str> {
+    vec![
+        "--candidate",
+        manifest.candidates[0].candidate.id.as_str(),
+        "--candidate",
+        manifest.candidates[1].candidate.id.as_str(),
+    ]
 }

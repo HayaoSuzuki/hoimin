@@ -384,7 +384,7 @@ disordered_stop_case!(
 
 #[test]
 fn unordered_stop_uses_sequence_and_preserves_equal_key_order() {
-    // Arrange: existing stopped c and worker b share sequence two, after worker a.
+    // existing stopped c and worker b share sequence two, after worker a.
     let mut state = ready_state(vec!["unused".into()], Vec::new(), 2);
     state.selection = RunSelection::all();
     state.flags.scheduling.candidate_exhausted = true;
@@ -398,11 +398,10 @@ fn unordered_stop_uses_sequence_and_preserves_equal_key_order() {
         .workers
         .insert(1, WorkerState::Ready(candidate("a".into(), 1)));
 
-    // Act.
     let (state, effects) = transition(state, RunEvent::CancellationRequested).unwrap();
     let outputs = drain_outputs(state, effects, &[]);
 
-    // Assert: stable sequence fallback keeps c ahead of b at equal keys.
+    // stable sequence fallback keeps c ahead of b at equal keys.
     let started: Vec<_> = outputs
         .iter()
         .filter_map(|event| match event {
@@ -410,5 +409,6 @@ fn unordered_stop_uses_sequence_and_preserves_equal_key_order() {
             _ => None,
         })
         .collect();
+
     assert_eq!(started, ["a", "c", "b"]);
 }

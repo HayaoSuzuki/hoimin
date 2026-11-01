@@ -636,33 +636,36 @@ mod tests {
         }
     }
 
-    #[test]
-    fn rejected_push_preserves_accepted_count_and_file_contents() {
-        for (capacity, sequence) in [(1, 2), (2, 1), (2, 3)] {
-            // Arrange: a valid prefix followed by a full-store or invalid-sequence request.
-            let mut store = CandidateStore::new(capacity).unwrap();
-            let mut candidate = candidate_with_payload_len(512);
-            store.push(&candidate).unwrap();
-            candidate.sequence = sequence;
-            let before = std::fs::read(store.file.path()).unwrap();
+    #[rstest::rstest]
+    #[case::input_1_2_1(1, 2)]
+    #[case::input_2_1_2(2, 1)]
+    #[case::input_2_3_3(2, 3)]
+    fn rejected_push_preserves_accepted_count_and_file_contents(
+        #[case] capacity: u64,
+        #[case] sequence: u64,
+    ) {
+        // a valid prefix followed by a full-store or invalid-sequence request.
+        let mut store = CandidateStore::new(capacity).unwrap();
+        let mut candidate = candidate_with_payload_len(512);
+        store.push(&candidate).unwrap();
+        candidate.sequence = sequence;
+        let before = std::fs::read(store.file.path()).unwrap();
 
-            // Act.
-            let result = store.push(&candidate);
+        let result = store.push(&candidate);
 
-            // Assert: rejected input neither accepts a record nor changes the stored prefix.
-            if capacity == 1 {
-                assert!(matches!(
-                    result,
-                    Err(StoreError::LimitExceeded { limit: 1 })
-                ));
-            } else {
-                assert!(
-                    matches!(result, Err(StoreError::InvalidSequence { expected: 2, actual }) if actual == sequence)
-                );
-            }
-            assert_eq!(store.count(), 1);
-            assert_eq!(std::fs::read(store.file.path()).unwrap(), before);
+        // rejected input neither accepts a record nor changes the stored prefix.
+        if capacity == 1 {
+            assert!(matches!(
+                result,
+                Err(StoreError::LimitExceeded { limit: 1 })
+            ));
+        } else {
+            assert!(
+                matches!(result, Err(StoreError::InvalidSequence { expected: 2, actual }) if actual == sequence)
+            );
         }
+        assert_eq!(store.count(), 1);
+        assert_eq!(std::fs::read(store.file.path()).unwrap(), before);
     }
 
     #[test]
@@ -715,22 +718,33 @@ mod tests {
         ));
     }
 
+    #[rstest::rstest]
+    #[case::max_spool_record_bytes_2_1(0)]
+    #[case::max_spool_record_bytes_1_2(1)]
+    fn serialized_payload_boundaries_include_the_newline_exactly_once_scenario_1(
+        #[case] scenario_index: usize,
+    ) {
+        let payload_length = [MAX_SPOOL_RECORD_BYTES - 2, MAX_SPOOL_RECORD_BYTES - 1]
+            .into_iter()
+            .nth(scenario_index)
+            .unwrap();
+
+        let candidate = candidate_with_payload_len(payload_length);
+
+        assert_eq!(serialized_len(&candidate), payload_length);
+        let mut store = CandidateStore::new(1).unwrap();
+
+        store.push(&candidate).unwrap();
+        let spool = FinishedSpool(store.finish().unwrap());
+
+        assert_eq!(
+            std::fs::metadata(&spool.0.token).unwrap().len(),
+            payload_length + 1
+        );
+    }
+
     #[test]
     fn serialized_payload_boundaries_include_the_newline_exactly_once() {
-        for payload_length in [MAX_SPOOL_RECORD_BYTES - 2, MAX_SPOOL_RECORD_BYTES - 1] {
-            let candidate = candidate_with_payload_len(payload_length);
-            assert_eq!(serialized_len(&candidate), payload_length);
-            let mut store = CandidateStore::new(1).unwrap();
-
-            store.push(&candidate).unwrap();
-            let spool = FinishedSpool(store.finish().unwrap());
-
-            assert_eq!(
-                std::fs::metadata(&spool.0.token).unwrap().len(),
-                payload_length + 1
-            );
-        }
-
         let exact_limit = candidate_with_payload_len(MAX_SPOOL_RECORD_BYTES);
         assert_eq!(serialized_len(&exact_limit), MAX_SPOOL_RECORD_BYTES);
         let mut store = CandidateStore::new(1).unwrap();
@@ -778,9 +792,14 @@ mod tests {
         assert!(!path.exists());
     }
 
-    #[test]
-    fn shared_record_size_matches_encoded_escaped_unicode_boundaries() {
-        for (payload_length, expected_size) in [
+    #[rstest::rstest]
+    #[case::max_spool_record_bytes_2_1(0)]
+    #[case::max_spool_record_bytes_1_2(1)]
+    #[case::max_spool_record_bytes_3(2)]
+    fn shared_record_size_matches_encoded_escaped_unicode_boundaries(
+        #[case] scenario_index: usize,
+    ) {
+        let (payload_length, expected_size) = [
             (
                 MAX_SPOOL_RECORD_BYTES - 2,
                 Ok(usize::try_from(MAX_SPOOL_RECORD_BYTES - 1).unwrap()),
@@ -790,24 +809,29 @@ mod tests {
                 Ok(usize::try_from(MAX_SPOOL_RECORD_BYTES).unwrap()),
             ),
             (MAX_SPOOL_RECORD_BYTES, Err(MAX_SPOOL_RECORD_BYTES)),
-        ] {
-            let mut candidate = candidate_with_payload_len(payload_length);
-            candidate.original = "\n\t\"\\雪🧪".to_owned();
-            let padding = usize::try_from(payload_length - serialized_len(&candidate)).unwrap();
-            candidate.original.push_str(&"a".repeat(padding));
-            let mut encoded = serde_json::to_vec(&candidate).unwrap();
-            encoded.push(b'\n');
-            assert_eq!(u64::try_from(encoded.len()).unwrap(), payload_length + 1);
-            let result = CandidateStore::record_size(&candidate);
-            let actual_size = result.map_err(|error| {
-                let StoreError::RecordTooLarge { limit } = error else {
-                    panic!("record-size failure lost its typed limit: {error}")
-                };
-                limit
-            });
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
 
-            assert_eq!(actual_size, expected_size);
-        }
+        let mut candidate = candidate_with_payload_len(payload_length);
+        candidate.original = "\n\t\"\\雪🧪".to_owned();
+        let padding = usize::try_from(payload_length - serialized_len(&candidate)).unwrap();
+        candidate.original.push_str(&"a".repeat(padding));
+        let mut encoded = serde_json::to_vec(&candidate).unwrap();
+        encoded.push(b'\n');
+
+        assert_eq!(u64::try_from(encoded.len()).unwrap(), payload_length + 1);
+
+        let result = CandidateStore::record_size(&candidate);
+        let actual_size = result.map_err(|error| {
+            let StoreError::RecordTooLarge { limit } = error else {
+                panic!("record-size failure lost its typed limit: {error}")
+            };
+            limit
+        });
+
+        assert_eq!(actual_size, expected_size);
     }
 
     fn candidate_with_payload_len(target: u64) -> MutationCandidate {

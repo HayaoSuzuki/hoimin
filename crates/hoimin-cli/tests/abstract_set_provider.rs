@@ -64,106 +64,180 @@ fn evaluate(source: &str, expected: &str) {
     );
 }
 
+#[rstest::rstest]
+#[case::import_collections_abc_1(
+    "import collections.abc",
+    "collections.abc.Set",
+    "collections.abc.Set[int]"
+)]
+#[case::import_collections_abc_as_abc_2(
+    "import collections.abc as abc",
+    "abc.Set",
+    "collections.abc.Set[int]"
+)]
+#[case::from_collections_abc_import_set_3(
+    "from collections.abc import Set",
+    "Set",
+    "collections.abc.Set[int]"
+)]
+#[case::from_collections_abc_import_set_as_aset_4(
+    "from collections.abc import Set as ASet",
+    "ASet",
+    "collections.abc.Set[int]"
+)]
+#[case::import_typing_5("import typing", "typing.AbstractSet", "typing.AbstractSet[int]")]
+#[case::import_typing_as_t_6("import typing as t", "t.AbstractSet", "typing.AbstractSet[int]")]
+#[case::from_typing_import_abstractset_7(
+    "from typing import AbstractSet",
+    "AbstractSet",
+    "typing.AbstractSet[int]"
+)]
+#[case::from_typing_import_abstractset_as_aset_8(
+    "from typing import AbstractSet as ASet",
+    "ASet",
+    "typing.AbstractSet[int]"
+)]
+#[case::import_typing_as_t_import_collections_abc_as_abc_9(
+    "import typing as t\nimport collections.abc as abc",
+    "abc.Set",
+    "collections.abc.Set[int]"
+)]
+#[case::from_typing_import_abstractset_as_zset_from_collections_10(
+    "from typing import AbstractSet as ZSet\nfrom collections.abc import Set as ASet",
+    "ASet",
+    "collections.abc.Set[int]"
+)]
 #[tokio::test]
-async fn provider_set_pairs_generate_evaluable_annotations() {
-    for (imports, abstract_name, runtime_type) in [
-        (
-            "import collections.abc",
-            "collections.abc.Set",
-            "collections.abc.Set[int]",
-        ),
-        (
-            "import collections.abc as abc",
-            "abc.Set",
-            "collections.abc.Set[int]",
-        ),
-        (
-            "from collections.abc import Set",
-            "Set",
-            "collections.abc.Set[int]",
-        ),
-        (
-            "from collections.abc import Set as ASet",
-            "ASet",
-            "collections.abc.Set[int]",
-        ),
-        (
-            "import typing",
-            "typing.AbstractSet",
-            "typing.AbstractSet[int]",
-        ),
-        (
-            "import typing as t",
-            "t.AbstractSet",
-            "typing.AbstractSet[int]",
-        ),
-        (
-            "from typing import AbstractSet",
-            "AbstractSet",
-            "typing.AbstractSet[int]",
-        ),
-        (
-            "from typing import AbstractSet as ASet",
-            "ASet",
-            "typing.AbstractSet[int]",
-        ),
-        (
-            "import typing as t\nimport collections.abc as abc",
-            "abc.Set",
-            "collections.abc.Set[int]",
-        ),
-        (
-            "from typing import AbstractSet as ZSet\nfrom collections.abc import Set as ASet",
-            "ASet",
-            "collections.abc.Set[int]",
-        ),
-    ] {
-        for (original, replacement, original_type, replacement_type) in [
-            (
-                "set[int]".to_owned(),
-                format!("{abstract_name}[int]"),
-                "set[int]",
-                runtime_type,
-            ),
-            (
-                format!("{abstract_name}[int]"),
-                "set[int]".to_owned(),
-                runtime_type,
-                "set[int]",
-            ),
-        ] {
-            let source = format!("{imports}\ndef f(x: {original}): pass\n");
-            let plan: PlanManifest =
-                serde_json::from_value(invoke(&source, "plan", "type_set_abstract_set").await)
-                    .unwrap();
-            assert_eq!(plan.candidates.len(), 1, "{source}");
-            let candidate = &plan.candidates[0];
-            assert_eq!(candidate.original, original);
-            assert_eq!(candidate.replacement, replacement);
-            let start = usize::try_from(candidate.span.start).unwrap();
-            let end = start + usize::try_from(candidate.span.length).unwrap();
-            assert_eq!(&source[start..end], original);
-            let mutated = format!("{}{}{}", &source[..start], replacement, &source[end..]);
-            evaluate(&source, original_type);
-            evaluate(&mutated, replacement_type);
-        }
-    }
+async fn provider_set_pairs_generate_evaluable_annotations_from_builtin(
+    #[case] imports: &str,
+    #[case] abstract_name: &str,
+    #[case] runtime_type: &str,
+) {
+    let (original, replacement, original_type, replacement_type) = (
+        "set[int]".to_owned(),
+        format!("{abstract_name}[int]"),
+        "set[int]",
+        runtime_type,
+    );
+
+    let source = format!("{imports}\ndef f(x: {original}): pass\n");
+
+    let plan: PlanManifest =
+        serde_json::from_value(invoke(&source, "plan", "type_set_abstract_set").await).unwrap();
+
+    assert_eq!(plan.candidates.len(), 1, "{source}");
+    let candidate = &plan.candidates[0];
+    assert_eq!(candidate.original, original);
+    assert_eq!(candidate.replacement, replacement);
+    let start = usize::try_from(candidate.span.start).unwrap();
+    let end = start + usize::try_from(candidate.span.length).unwrap();
+    assert_eq!(&source[start..end], original);
+    let mutated = format!("{}{}{}", &source[..start], replacement, &source[end..]);
+    evaluate(&source, original_type);
+    evaluate(&mutated, replacement_type);
+}
+
+#[rstest::rstest]
+#[case::import_collections_abc_1(
+    "import collections.abc",
+    "collections.abc.Set",
+    "collections.abc.Set[int]"
+)]
+#[case::import_collections_abc_as_abc_2(
+    "import collections.abc as abc",
+    "abc.Set",
+    "collections.abc.Set[int]"
+)]
+#[case::from_collections_abc_import_set_3(
+    "from collections.abc import Set",
+    "Set",
+    "collections.abc.Set[int]"
+)]
+#[case::from_collections_abc_import_set_as_aset_4(
+    "from collections.abc import Set as ASet",
+    "ASet",
+    "collections.abc.Set[int]"
+)]
+#[case::import_typing_5("import typing", "typing.AbstractSet", "typing.AbstractSet[int]")]
+#[case::import_typing_as_t_6("import typing as t", "t.AbstractSet", "typing.AbstractSet[int]")]
+#[case::from_typing_import_abstractset_7(
+    "from typing import AbstractSet",
+    "AbstractSet",
+    "typing.AbstractSet[int]"
+)]
+#[case::from_typing_import_abstractset_as_aset_8(
+    "from typing import AbstractSet as ASet",
+    "ASet",
+    "typing.AbstractSet[int]"
+)]
+#[case::import_typing_as_t_import_collections_abc_as_abc_9(
+    "import typing as t\nimport collections.abc as abc",
+    "abc.Set",
+    "collections.abc.Set[int]"
+)]
+#[case::from_typing_import_abstractset_as_zset_from_collections_10(
+    "from typing import AbstractSet as ZSet\nfrom collections.abc import Set as ASet",
+    "ASet",
+    "collections.abc.Set[int]"
+)]
+#[tokio::test]
+async fn provider_set_pairs_generate_evaluable_annotations_to_builtin(
+    #[case] imports: &str,
+    #[case] abstract_name: &str,
+    #[case] runtime_type: &str,
+) {
+    let (original, replacement, original_type, replacement_type) = (
+        format!("{abstract_name}[int]"),
+        "set[int]".to_owned(),
+        runtime_type,
+        "set[int]",
+    );
+
+    let source = format!("{imports}\ndef f(x: {original}): pass\n");
+
+    let plan: PlanManifest =
+        serde_json::from_value(invoke(&source, "plan", "type_set_abstract_set").await).unwrap();
+
+    assert_eq!(plan.candidates.len(), 1, "{source}");
+    let candidate = &plan.candidates[0];
+    assert_eq!(candidate.original, original);
+    assert_eq!(candidate.replacement, replacement);
+    let start = usize::try_from(candidate.span.start).unwrap();
+    let end = start + usize::try_from(candidate.span.length).unwrap();
+    assert_eq!(&source[start..end], original);
+    let mutated = format!("{}{}{}", &source[..start], replacement, &source[end..]);
+    evaluate(&source, original_type);
+    evaluate(&mutated, replacement_type);
+}
+
+#[rstest::rstest]
+#[case::from_typing_import_set_def_f_x_set_int_pass_1(
+    "from typing import Set\ndef f(x: set[int]): pass\n"
+)]
+#[case::from_typing_import_set_def_f_x_set_int_pass_2(
+    "from typing import Set\ndef f(x: Set[int]): pass\n"
+)]
+#[case::import_collections_abc_as_abc_def_f_x_abc_abstractset_i_3(
+    "import collections.abc as abc\ndef f(x: abc.AbstractSet[int]): pass\n"
+)]
+#[case::from_collections_abc_import_set_set_list_def_f_x_set_in_4(
+    "from collections.abc import Set\nSet = list\ndef f(x: Set[int]): pass\n"
+)]
+#[case::import_collections_abc_as_abc_abc_object_def_f_x_set_in_5(
+    "import collections.abc as abc\nabc = object()\ndef f(x: set[int]): pass\n"
+)]
+#[case::from_collections_abc_import_set_set_list_def_f_x_set_in_6(
+    "from collections.abc import Set\nset = list\ndef f(x: Set[int]): pass\n"
+)]
+#[tokio::test]
+async fn provider_set_guards_reject_unproven_providers(#[case] source: &str) {
+    let plan: PlanManifest =
+        serde_json::from_value(invoke(source, "plan", "type_set_abstract_set").await).unwrap();
+    assert!(plan.candidates.is_empty(), "{source}");
 }
 
 #[tokio::test]
-async fn provider_set_guards_and_nullable_recognition() {
-    for source in [
-        "from typing import Set\ndef f(x: set[int]): pass\n",
-        "from typing import Set\ndef f(x: Set[int]): pass\n",
-        "import collections.abc as abc\ndef f(x: abc.AbstractSet[int]): pass\n",
-        "from collections.abc import Set\nSet = list\ndef f(x: Set[int]): pass\n",
-        "import collections.abc as abc\nabc = object()\ndef f(x: set[int]): pass\n",
-        "from collections.abc import Set\nset = list\ndef f(x: Set[int]): pass\n",
-    ] {
-        let plan: PlanManifest =
-            serde_json::from_value(invoke(source, "plan", "type_set_abstract_set").await).unwrap();
-        assert!(plan.candidates.is_empty(), "{source}");
-    }
+async fn provider_set_is_recognized_as_nullable() {
     let source = "import collections.abc as abc\ndef f(x: abc.Set[int]): pass\n";
     let plan: PlanManifest =
         serde_json::from_value(invoke(source, "plan", "type_nullable_add").await).unwrap();

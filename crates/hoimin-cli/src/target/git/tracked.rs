@@ -184,64 +184,80 @@ mod tests {
         ))
     }
 
-    #[test]
-    fn inventory_preserves_global_rename_membership_and_strict_framing() {
-        let scope = scope(&["selected.py"]);
+    #[rstest::rstest]
+    #[case::unselected_rename(b"M\0selected.py\0R099\0old.py\0other.py\0".as_slice(), DiffPlan::Scoped(vec![vec!["selected.py".into()]]))]
+    #[case::unselected_literal_backslash(b"M\0literal\\bad.py\0".as_slice(), DiffPlan::Scoped(vec![]))]
+    #[case::legacy_0(b"R099\0old.py\0selected.py\0".as_slice(), DiffPlan::Legacy)]
+    #[case::legacy_1(b"C100\0old.py\0selected.py\0", DiffPlan::Legacy)]
+    #[case::legacy_2(b"U\0selected.py\0", DiffPlan::Legacy)]
+    fn inventory_preserves_global_rename_membership(
+        #[case] output: &[u8],
+        #[case] expected: DiffPlan,
+    ) {
+        let selected = scope(&["selected.py"]);
+
+        let actual = inventory_plan(output, &selected).unwrap();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[rstest::rstest]
+    #[case::missing_terminator(b"M\0selected.py".as_slice())]
+    #[case::incomplete_rename(b"R099\0old.py\0")]
+    #[case::oversized_similarity(b"R101\0old.py\0selected.py\0")]
+    #[case::missing_similarity(b"R\0old.py\0selected.py\0")]
+    #[case::unknown_status(b"Q\0other.py\0")]
+    #[case::empty_path(b"M\0\0")]
+    #[case::non_utf8_path(b"M\0bad\xff.py\0")]
+    fn inventory_rejects_malformed_frames(#[case] output: &[u8]) {
+        let selected = scope(&["selected.py"]);
+
+        let result = inventory_plan(output, &selected);
+
+        assert!(result.is_err());
+    }
+
+    #[rstest::rstest]
+    #[case::count_bound(300, 0)]
+    #[case::byte_bound(40, 500)]
+    fn pathspec_batches_preserve_original_boundaries(#[case] count: usize, #[case] padding: usize) {
+        let names = (0..count)
+            .map(|index| format!("{index:03}{}.py", "x".repeat(padding)))
+            .collect::<BTreeSet<_>>();
+
+        let grouped = batches(names.clone());
+
+        assert!(grouped.len() > 1);
+        assert!(grouped.iter().all(|batch| !batch.is_empty()
+            && batch.len() <= 128
+            && batch.iter().map(String::len).sum::<usize>() <= 8192));
         assert_eq!(
-            inventory_plan(b"M\0selected.py\0R099\0old.py\0other.py\0", &scope).unwrap(),
-            DiffPlan::Scoped(vec![vec!["selected.py".into()]])
-        );
-        for output in [
-            b"R099\0old.py\0selected.py\0".as_slice(),
-            b"C100\0old.py\0selected.py\0",
-            b"U\0selected.py\0",
-        ] {
-            assert_eq!(inventory_plan(output, &scope).unwrap(), DiffPlan::Legacy);
-        }
-        for output in [
-            b"M\0selected.py".as_slice(),
-            b"R099\0old.py\0",
-            b"R101\0old.py\0selected.py\0",
-            b"R\0old.py\0selected.py\0",
-            b"Q\0other.py\0",
-            b"M\0\0",
-            b"M\0bad\xff.py\0",
-        ] {
-            assert!(inventory_plan(output, &scope).is_err(), "{output:?}");
-        }
-        assert_eq!(
-            inventory_plan(b"M\0literal\\bad.py\0", &scope).unwrap(),
-            DiffPlan::Scoped(vec![])
+            grouped.into_iter().flatten().collect::<BTreeSet<_>>(),
+            names
         );
     }
 
-    #[test]
-    fn pathspec_batches_bound_count_and_total_bytes_without_dropping_paths() {
-        for names in [
-            (0..300)
-                .map(|index| format!("{index:03}.py"))
-                .collect::<BTreeSet<_>>(),
-            (0..40)
-                .map(|index| format!("{index:03}{}.py", "x".repeat(500)))
-                .collect(),
-        ] {
+    proptest::proptest! {
+        #[test]
+        fn generated_pathspec_batches_bound_count_and_bytes_without_dropping_paths(count in 0usize..512, padding in 0usize..512) {
+            let names = (0..count).map(|index| format!("{index:03}{}.py", "x".repeat(padding))).collect::<BTreeSet<_>>();
+
             let grouped = batches(names.clone());
-            assert!(grouped.len() > 1);
-            for batch in &grouped {
-                assert!(!batch.is_empty(), "tracked batch must not be empty");
-                assert!(batch.len() <= 128);
-                assert!(batch.iter().map(String::len).sum::<usize>() <= 8192);
-            }
-            assert_eq!(
-                grouped.into_iter().flatten().collect::<BTreeSet<_>>(),
-                names
-            );
+
+            proptest::prop_assert!(grouped.iter().all(|batch| !batch.is_empty() && batch.len() <= 128 && batch.iter().map(String::len).sum::<usize>() <= 8192));
+            proptest::prop_assert_eq!(grouped.into_iter().flatten().collect::<BTreeSet<_>>(), names);
         }
+    }
+
+    #[test]
+    fn oversized_pathspec_uses_legacy_inventory() {
         let long = "x".repeat(MAX_PATH_BYTES + 1);
+
         let output = format!("M\0{long}\0");
-        assert_eq!(
-            inventory_plan(output.as_bytes(), &scope(&[&long])).unwrap(),
-            DiffPlan::Legacy
-        );
+        let selected = scope(&[&long]);
+
+        let actual = inventory_plan(output.as_bytes(), &selected).unwrap();
+
+        assert_eq!(actual, DiffPlan::Legacy);
     }
 }

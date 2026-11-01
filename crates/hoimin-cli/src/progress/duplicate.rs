@@ -134,6 +134,7 @@ mod tests {
         std::fs::write(&first, b"same").unwrap();
         std::fs::write(&second, b"same").unwrap();
         append_after_readers_prepared(vec![first.clone(), second.clone()]);
+
         assert_eq!(
             identical_regular_files(&first, &second).unwrap_err().kind(),
             io::ErrorKind::InvalidData
@@ -149,6 +150,7 @@ mod tests {
         std::fs::write(&second, b"same").unwrap();
         let fingerprint = blake3::hash(b"same");
         let mut tracker = DuplicateInputs::default();
+
         assert!(tracker.observe(&first, fingerprint, &[]).is_none());
         let inputs = [input(first.clone())];
         append_after_readers_prepared(vec![first, second.clone()]);
@@ -168,6 +170,7 @@ mod tests {
                 std::fs::write(path, b"").unwrap();
             }
         });
+
         assert_eq!(
             identical_regular_files(&first, &second).unwrap_err().kind(),
             io::ErrorKind::UnexpectedEof
@@ -181,6 +184,7 @@ mod tests {
         let second = fixture.path().join("second");
         std::fs::write(&first, b"same").unwrap();
         std::fs::hard_link(&first, &second).unwrap();
+
         assert!(identical_regular_files(&first, &second).unwrap());
         append_after_readers_prepared(vec![first.clone()]);
         assert_eq!(
@@ -215,6 +219,7 @@ mod tests {
             let rejected = open_regular_file(&worker_path).unwrap().is_none();
             sender.send(rejected).unwrap();
         });
+
         let result = receiver.recv_timeout(Duration::from_secs(1));
         // Release a broken blocking opener before failing, leaving no stuck
         // thread or FIFO behind in the test process.
@@ -227,6 +232,7 @@ mod tests {
                 .unwrap()
         });
         worker.join().unwrap();
+
         assert_eq!(
             result,
             Ok(true),
@@ -246,6 +252,7 @@ mod tests {
         let forced_collision = blake3::hash(b"forced collision");
         let mut tracker = DuplicateInputs::default();
         let mut inputs = Vec::new();
+
         assert!(tracker.observe(&first, forced_collision, &inputs).is_none());
         inputs.push(input(first));
         assert!(
@@ -267,6 +274,7 @@ mod tests {
         let bytes = vec![b'x'; 32 * 1024 + 1];
         std::fs::write(&first, &bytes).unwrap();
         std::fs::write(&other, &bytes).unwrap();
+
         assert!(identical_regular_files(&first, &other).unwrap());
         let mut different = bytes.clone();
         *different.last_mut().unwrap() = b'y';
@@ -286,6 +294,7 @@ mod tests {
         std::fs::write(&second, b"same").unwrap();
         let fingerprint = blake3::hash(b"same");
         let mut tracker = DuplicateInputs::default();
+
         assert!(tracker.observe(&first, fingerprint, &[]).is_none());
         std::fs::remove_file(&first).unwrap();
         assert!(

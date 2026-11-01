@@ -1011,8 +1011,7 @@ def test_every_workflow_uses_known_actions_with_full_commit_pins(path: Path) -> 
     ]
 
     assert actions
-    for action in actions:
-        assert action in allowed
+    assert set(actions) <= allowed
 
 
 def test_scheduled_fuzz_runs_daily_with_selectable_per_target_time() -> None:
@@ -1274,9 +1273,8 @@ def test_quality_checks_use_frozen_dev_tools_without_editing_sources(
         "uv run --frozen --no-sync ruff check --no-fix .",
         "uv run --frozen --no-sync ty check",
     ]
-    for command in checks:
-        assert command in commands
-        assert commands.index(sync) < commands.index(command)
+    assert set(checks) <= set(commands)
+    assert all(commands.index(sync) < commands.index(command) for command in checks)
 
     assert commands.index(checks[-1]) == commands.index(checks[-2]) + 1
     wheel_commands = [
@@ -1344,31 +1342,38 @@ def test_rust_jobs_install_only_their_classified_toolchain() -> None:
     assert sorted(
         re.findall(r"(?m)\b(?:cargo|rustc|rustdoc) \+([^\s]+)", workflow)
     ) == sorted(["nightly-2026-10-08", "nightly-2026-10-08"])
-    for job_name in REPOSITORY_RUST_JOBS:
-        job = job_block(workflow, job_name)
-        steps = job_steps(workflow_jobs(decoded)[job_name])
-        install_indexes = [
-            index
-            for index, step in enumerate(steps)
-            if step.get("run") == "rustup toolchain install"
-        ]
-        rust_command_indexes = [
-            index
-            for index, step in enumerate(steps)
-            if re.search(
-                r"(?m)^(?:cargo|rustc|rustdoc|uvx maturin)\b",
-                string(step.get("run", "")),
-            )
-        ]
-
-        assert len(install_indexes) == 1, job_name
-        assert rust_command_indexes, job_name
-        assert install_indexes[0] < min(rust_command_indexes), job_name
-        assert re.search(r"(?:cargo|rustc|rustdoc) \+[^\s]+", job) is None, job_name
-
     shuffle = job_block(workflow, "rust-shuffle")
 
     assert "cargo +nightly-2026-10-08 test" in shuffle
+
+
+@pytest.mark.parametrize("job_name", sorted(REPOSITORY_RUST_JOBS))
+def test_rust_job_installs_toolchain_before_its_first_rust_command(
+    job_name: str,
+) -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    decoded = workflow_document(workflow)
+    job = job_block(workflow, job_name)
+    steps = job_steps(workflow_jobs(decoded)[job_name])
+
+    install_indexes = [
+        index
+        for index, step in enumerate(steps)
+        if step.get("run") == "rustup toolchain install"
+    ]
+    rust_command_indexes = [
+        index
+        for index, step in enumerate(steps)
+        if re.search(
+            r"(?m)^(?:cargo|rustc|rustdoc|uvx maturin)\b",
+            string(step.get("run", "")),
+        )
+    ]
+
+    assert len(install_indexes) == 1
+    assert rust_command_indexes
+    assert install_indexes[0] < min(rust_command_indexes)
+    assert re.search(r"(?:cargo|rustc|rustdoc) \+[^\s]+", job) is None
 
 
 # Lean Audit Workflow contracts.
@@ -1506,43 +1511,76 @@ def test_job_uses_pinned_tools_repository_toolchain_and_cache() -> None:
 def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None:
     workflow = workflow_document(CI_WORKFLOW.read_text(encoding="utf-8"))
     step = named_step(workflow_jobs(workflow)["lean-audit"], "Run bounded Lean audit")
+    sources = lean_module_sources()
+    module_count = len(sources)
+    imports = {
+        module: re.findall(
+            r"(?m)^import ([A-Za-z0-9_.]+)$", source.read_text(encoding="utf-8")
+        )
+        for module, source in sources.items()
+    }
+    lakefile = mapping(tomllib.loads(LEAN_LAKEFILE.read_text(encoding="utf-8")))
+    executable_names = [
+        string(mapping(item)["name"]) for item in sequence(lakefile["lean_exe"])
+    ]
+    expected_prefix = [
+        "tools/lean_resource_guard.py",
+        "--timeout-seconds",
+        "30",
+        "--rss-limit-mib",
+        "2048",
+        "--sample-ms",
+        "250",
+        "--stats",
+    ]
+    expected_remaining = [
+        ["lake", "build", "HoiminOracle"],
+        [
+            "lake",
+            "env",
+            "lean",
+            "-j1",
+            "-DElab.async=false",
+            "--run",
+            "ResourceCleanupAuditMain.lean",
+            "4",
+        ],
+        [
+            "lake",
+            "env",
+            "lean",
+            "-j1",
+            "-DElab.async=false",
+            "DefaultOperatorSelection.lean",
+        ],
+    ]
+    for executable, corpus in LEAN_CORPUS_BY_EXECUTABLE.items():
+        expected_remaining.append(["lake", "exe", executable, "--", "--check", corpus])
+        expected_remaining.extend(
+            ["lake", "exe", selected, "--", "--sensitivity"]
+            for selected in (executable,)
+            if selected in LEAN_SENSITIVITY_EXECUTABLES
+        )
+    corpus_paths = {
+        path.relative_to(LEAN_ORACLE).as_posix()
+        for path in (LEAN_ORACLE / "corpus").glob("*.jsonl")
+    }
+
+    completed, calls = lean_gate_invocations(tmp_path, string(step["run"]))
+    arguments = [call["argv"] for call in calls]
+    stats_paths = [args[8] for args in arguments]
+    guarded_commands = [args[10:] for args in arguments]
+    module_commands = guarded_commands[:module_count]
+    modules = [command[2][1:-2] for command in module_commands]
+    positions = {module: index for index, module in enumerate(modules)}
 
     assert step["working-directory"] == "formal/HoiminOracle"
     assert step["shell"] == "bash"
-    completed, calls = lean_gate_invocations(tmp_path, string(step["run"]))
-
     assert completed.returncode == 0, completed.stderr
-
-    guarded_commands: list[list[str]] = []
-    stats_paths: list[str] = []
-    for call in calls:
-        arguments = call["argv"]
-
-        assert arguments[0] == "tools/lean_resource_guard.py"
-        assert arguments[1:7] == [
-            "--timeout-seconds",
-            "30",
-            "--rss-limit-mib",
-            "2048",
-            "--sample-ms",
-            "250",
-        ]
-        assert arguments[7] == "--stats"
-        stats_paths.append(arguments[8])
-
-        assert arguments[9] == "--"
-        guarded_commands.append(arguments[10:])
-
+    assert all(args[:8] == expected_prefix and args[9] == "--" for args in arguments)
     assert len(stats_paths) == len(set(stats_paths))
     assert all("/runner/lean-audit/" in path for path in stats_paths)
-
-    sources = lean_module_sources()
-    module_count = len(sources)
-
     assert sources
-    module_commands = guarded_commands[:module_count]
-    modules = [command[2][1:-2] for command in module_commands]
-
     assert all(
         command[:2] == ["lake", "build"]
         and command[2].startswith("+")
@@ -1551,58 +1589,14 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
     )
     assert set(modules) == set(sources)
     assert len(modules) == len(set(modules))
-    positions = {module: index for index, module in enumerate(modules)}
-    for module, source in sources.items():
-        imports = re.findall(
-            r"(?m)^import ([A-Za-z0-9_.]+)$",
-            source.read_text(encoding="utf-8"),
-        )
-        for dependency in set(imports).intersection(positions):
-            assert positions[dependency] < positions[module], (
-                f"{dependency} must be built before {module}"
-            )
-
-    remaining = guarded_commands[module_count:]
-
-    assert remaining.pop(0) == ["lake", "build", "HoiminOracle"]
-    assert remaining.pop(0) == [
-        "lake",
-        "env",
-        "lean",
-        "-j1",
-        "-DElab.async=false",
-        "--run",
-        "ResourceCleanupAuditMain.lean",
-        "4",
-    ]
-    assert remaining.pop(0) == [
-        "lake",
-        "env",
-        "lean",
-        "-j1",
-        "-DElab.async=false",
-        "DefaultOperatorSelection.lean",
-    ]
-    lakefile = mapping(tomllib.loads(LEAN_LAKEFILE.read_text(encoding="utf-8")))
-    executable_names = [
-        string(mapping(item)["name"]) for item in sequence(lakefile["lean_exe"])
-    ]
-
+    assert all(
+        positions[dependency] < positions[module]
+        for module, dependencies in imports.items()
+        for dependency in set(dependencies).intersection(positions)
+    ), "dependencies must be built before their importers"
     assert executable_names == list(LEAN_CORPUS_BY_EXECUTABLE)
-    expected_gates: list[list[str]] = []
-    for executable, corpus in LEAN_CORPUS_BY_EXECUTABLE.items():
-        expected_gates.append(["lake", "exe", executable, "--", "--check", corpus])
-        expected_gates.extend(
-            ["lake", "exe", selected, "--", "--sensitivity"]
-            for selected in (executable,)
-            if selected in LEAN_SENSITIVITY_EXECUTABLES
-        )
-
-    assert remaining == expected_gates
-    assert set(LEAN_CORPUS_BY_EXECUTABLE.values()) == {
-        path.relative_to(LEAN_ORACLE).as_posix()
-        for path in (LEAN_ORACLE / "corpus").glob("*.jsonl")
-    }
+    assert guarded_commands[module_count:] == expected_remaining
+    assert set(LEAN_CORPUS_BY_EXECUTABLE.values()) == corpus_paths
 
 
 def test_bounded_audit_stops_after_the_first_failed_gate(tmp_path: Path) -> None:
@@ -1660,14 +1654,6 @@ def test_automatic_ci_hosted_matrices_are_linux_only() -> None:
     assert "windows-latest" not in workflow
     assert "macos-14" not in workflow
     assert all(isinstance(job["runs-on"], (str, list)) for job in jobs.values())
-    for job_name in AUTOMATIC_LINUX_MATRIX_JOBS:
-        matrix = mapping(jobs[job_name]["strategy"])["matrix"]
-
-        expected_matrix = {"os": ["ubuntu-latest"]}
-        if job_name == "rust":
-            expected_matrix["python"] = ["3.14", "3.15"]
-        assert matrix == expected_matrix, job_name
-
     matrix_runner_jobs = {
         job_name
         for job_name, job in jobs.items()
@@ -1677,29 +1663,47 @@ def test_automatic_ci_hosted_matrices_are_linux_only() -> None:
     assert matrix_runner_jobs == AUTOMATIC_LINUX_MATRIX_JOBS
 
 
+@pytest.mark.parametrize(
+    ("job_name", "expected_matrix"),
+    [
+        ("quality", {"os": ["ubuntu-latest"]}),
+        ("rust", {"os": ["ubuntu-latest"], "python": ["3.14", "3.15"]}),
+        ("core-dependency-purity", {"os": ["ubuntu-latest"]}),
+        ("wheel-smoke", {"os": ["ubuntu-latest"]}),
+    ],
+    ids=["quality", "rust", "core-dependency-purity", "wheel-smoke"],
+)
+def test_automatic_ci_job_has_linux_matrix(
+    job_name: str, expected_matrix: dict[str, list[str]]
+) -> None:
+    jobs = workflow_jobs(workflow_document(CI_WORKFLOW.read_text(encoding="utf-8")))
+
+    matrix = mapping(jobs[job_name]["strategy"])["matrix"]
+
+    assert matrix == expected_matrix
+
+
 def test_automatic_ci_label_runners_require_linux() -> None:
     jobs = workflow_jobs(workflow_document(CI_WORKFLOW.read_text(encoding="utf-8")))
-    runners = {
-        name: runner
-        for name, job in jobs.items()
-        if isinstance(runner := job["runs-on"], list)
-    }
 
-    for job_name, runner in runners.items():
-        assert "linux" in runner, job_name
-        assert not {"windows", "macos"}.intersection(runner), job_name
+    runners = [
+        job["runs-on"] for job in jobs.values() if isinstance(job["runs-on"], list)
+    ]
+
+    assert all("linux" in runner for runner in runners)
+    assert all(not {"windows", "macos"}.intersection(runner) for runner in runners)
 
 
 def test_automatic_ci_literal_runners_use_ubuntu() -> None:
     jobs = workflow_jobs(workflow_document(CI_WORKFLOW.read_text(encoding="utf-8")))
-    runners = {
-        name: runner
-        for name, job in jobs.items()
-        if isinstance(runner := job["runs-on"], str) and runner != "${{ matrix.os }}"
-    }
 
-    for job_name, runner in runners.items():
-        assert runner == "ubuntu-latest", job_name
+    runners = [
+        runner
+        for job in jobs.values()
+        if isinstance(runner := job["runs-on"], str) and runner != "${{ matrix.os }}"
+    ]
+
+    assert all(runner == "ubuntu-latest" for runner in runners)
 
 
 def test_non_linux_ci_has_only_a_manual_trigger() -> None:
@@ -1712,91 +1716,138 @@ def test_non_linux_ci_has_only_a_manual_trigger() -> None:
     assert decoded["permissions"] == {"contents": "read"}
 
 
-def test_manual_non_linux_jobs_are_complete_and_independent() -> None:
-    automatic = workflow_document(CI_WORKFLOW.read_text(encoding="utf-8"))
+def test_manual_non_linux_jobs_are_complete() -> None:
     workflow = NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8")
-    manual = workflow_document(workflow)
-    jobs = workflow_jobs(manual)
+
+    jobs = workflow_jobs(workflow_document(workflow))
 
     assert set(jobs) == set(MANUAL_NON_LINUX_JOB_NAMES) | {
         "windows-resource-scope",
         "windows-metrics-destinations",
     }
     assert "ubuntu-latest" not in workflow
-    for job_name, job in jobs.items():
-        assert "if" not in job, job_name
-    for job_name, expected_name in MANUAL_NON_LINUX_JOB_NAMES.items():
-        job = jobs[job_name]
+    assert all("if" not in job for job in jobs.values())
 
-        assert job["name"] == expected_name, job_name
-        assert "needs" not in job, job_name
-        assert "outputs" not in job, job_name
-        automatic_steps = [
-            {
-                key: value
-                for key, value in step.items()
-                if key != "if" or value != "needs.changes.outputs.rust == 'true'"
-            }
-            for step in job_steps(workflow_jobs(automatic)[job_name])
-        ]
 
-        # The Windows harness variant is checked per platform below. Compare the
-        # broader macOS suite with automatic CI, apart from native checks.
-        manual_steps = [
-            {
-                key: value
-                for key, value in step.items()
-                if key != "if" or value != "runner.os != 'Windows'"
-            }
-            for step in job_steps(job)
-            if step.get("name")
-            not in {
-                "Show native Windows disk-name acceptance",
-                "Test Windows workspace with two harness threads",
-            }
-            and not (
-                job_name == "rust"
-                and step.get("name")
-                in {
-                    "Test completed review-store publication",
-                    "Test session database admission",
-                }
-            )
-        ]
-        assert manual_steps == automatic_steps, job_name
-        if job_name == "rust":
-            steps = job_steps(job)
-            for name, test_filter in [
-                ("Test completed review-store publication", "review::store_tests"),
-                ("Test session database admission", "session::schema::tests"),
-            ]:
-                native = [step for step in steps if step.get("name") == name]
-                assert native == [
-                    {
-                        "name": name,
-                        "env": {"CARGO_BUILD_JOBS": "2"},
-                        "run": "cargo test --locked -p hoimin-cli --lib "
-                        f"{test_filter} -- --test-threads=2",
-                    }
-                ]
-                assert steps.index(native[0]) < next(
-                    index
-                    for index, step in enumerate(steps)
-                    if isinstance(command := step.get("run"), str)
-                    and command.startswith("cargo test --workspace")
-                )
+@pytest.mark.parametrize(
+    ("job_name", "expected_name"),
+    list(MANUAL_NON_LINUX_JOB_NAMES.items()),
+    ids=list(MANUAL_NON_LINUX_JOB_NAMES),
+)
+def test_manual_non_linux_job_is_independent(job_name: str, expected_name: str) -> None:
+    jobs = workflow_jobs(
+        workflow_document(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))
+    )
 
-    for job_name, expected_os in MANUAL_NON_LINUX_MATRIX_JOBS.items():
-        job = jobs[job_name]
+    job = jobs[job_name]
 
-        expected_matrix = {"os": expected_os}
-        if job_name == "rust":
-            expected_matrix["python"] = ["3.14", "3.15"]
-        assert mapping(job["strategy"]) == {
-            "fail-fast": False,
-            "matrix": expected_matrix,
-        }, job_name
-        assert job["runs-on"] == "${{ matrix.os }}", job_name
+    assert job["name"] == expected_name
+    assert "needs" not in job
+    assert "outputs" not in job
+
+
+@pytest.mark.parametrize("job_name", list(MANUAL_NON_LINUX_JOB_NAMES))
+def test_manual_non_linux_job_preserves_automatic_steps(job_name: str) -> None:
+    automatic = workflow_jobs(
+        workflow_document(CI_WORKFLOW.read_text(encoding="utf-8"))
+    )
+    manual = workflow_jobs(
+        workflow_document(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))
+    )
+    native_steps = {
+        "rust": {
+            "Test completed review-store publication",
+            "Test session database admission",
+        },
+    }
+    automatic_steps = [
+        {
+            key: value
+            for key, value in step.items()
+            if key != "if" or value != "needs.changes.outputs.rust == 'true'"
+        }
+        for step in job_steps(automatic[job_name])
+    ]
+
+    manual_steps = [
+        {
+            key: value
+            for key, value in step.items()
+            if key != "if" or value != "runner.os != 'Windows'"
+        }
+        for step in job_steps(manual[job_name])
+        if step.get("name")
+        not in {
+            "Show native Windows disk-name acceptance",
+            "Test Windows workspace with two harness threads",
+        }
+        | native_steps.get(job_name, set())
+    ]
+
+    assert manual_steps == automatic_steps
+
+
+@pytest.mark.parametrize(
+    ("name", "test_filter"),
+    [
+        ("Test completed review-store publication", "review::store_tests"),
+        ("Test session database admission", "session::schema::tests"),
+    ],
+    ids=["review-store", "session-admission"],
+)
+def test_manual_rust_native_check_runs_before_workspace_suite(
+    name: str, test_filter: str
+) -> None:
+    jobs = workflow_jobs(
+        workflow_document(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))
+    )
+    steps = job_steps(jobs["rust"])
+
+    native = [step for step in steps if step.get("name") == name]
+    workspace_index = next(
+        index
+        for index, step in enumerate(steps)
+        if isinstance(command := step.get("run"), str)
+        and command.startswith("cargo test --workspace")
+    )
+
+    assert native == [
+        {
+            "name": name,
+            "env": {"CARGO_BUILD_JOBS": "2"},
+            "run": "cargo test --locked -p hoimin-cli --lib "
+            f"{test_filter} -- --test-threads=2",
+        }
+    ]
+    assert steps.index(native[0]) < workspace_index
+
+
+@pytest.mark.parametrize(
+    ("job_name", "expected_matrix"),
+    [
+        ("quality", {"os": ["windows-latest", "macos-14"]}),
+        ("rust", {"os": ["windows-latest", "macos-14"], "python": ["3.14", "3.15"]}),
+        ("wheel-smoke", {"os": ["windows-latest", "macos-14"]}),
+    ],
+    ids=["quality", "rust", "wheel-smoke"],
+)
+def test_manual_non_linux_job_has_platform_matrix(
+    job_name: str, expected_matrix: dict[str, list[str]]
+) -> None:
+    jobs = workflow_jobs(
+        workflow_document(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))
+    )
+
+    job = jobs[job_name]
+
+    assert mapping(job["strategy"]) == {"fail-fast": False, "matrix": expected_matrix}
+    assert job["runs-on"] == "${{ matrix.os }}"
+
+
+def test_manual_dependency_purity_runs_on_windows_without_matrix() -> None:
+    jobs = workflow_jobs(
+        workflow_document(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))
+    )
 
     purity = jobs["core-dependency-purity"]
 
@@ -2152,7 +2203,17 @@ def test_delegated_cgroup_job_remains_main_only_opted_in_and_fail_closed() -> No
 
 
 # Release Workflow contracts.
-@pytest.mark.parametrize("version", ["1.99.0", "2.0.1"])
+@given(
+    version=st.tuples(
+        st.integers(min_value=0, max_value=999),
+        st.integers(min_value=0, max_value=999),
+        st.integers(min_value=0, max_value=999),
+    ).map(lambda parts: ".".join(str(part) for part in parts))
+)
+@example(version="1.99.0")
+@example(version="2.0.1")
+@example(version="0.0.0")
+@settings(deadline=None)
 def test_accepts_updated_matching_maturin_pins(version: str) -> None:
     workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
     updated, count = re.subn(
@@ -2564,9 +2625,10 @@ def test_non_linux_workspace_suite_runs_once_with_controlled_windows_concurrency
     assert selected == [expected_command]
 
 
-def test_python_syntax_matrix_pins_uv_interpreter() -> None:
-    for name in ("ci.yml", "non-linux-ci.yml"):
-        workflow = yaml.safe_load(
-            (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
-        )
-        assert workflow["jobs"]["rust"]["env"]["UV_PYTHON"] == "${{ matrix.python }}"
+@pytest.mark.parametrize("name", ["ci.yml", "non-linux-ci.yml"])
+def test_python_syntax_matrix_pins_uv_interpreter(name: str) -> None:
+    path = ROOT / ".github/workflows" / name
+
+    workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    assert workflow["jobs"]["rust"]["env"]["UV_PYTHON"] == "${{ matrix.python }}"

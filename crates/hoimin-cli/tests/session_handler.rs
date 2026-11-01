@@ -78,28 +78,32 @@ fn all_optional_session_rows(schema_version: i64) -> GoldenSessionRows {
     }
 }
 
-#[test]
-fn golden_session_schema_eras_reject_old_without_semantic_loss() {
+#[rstest::rstest]
+#[case::schema_one(1)]
+#[case::schema_two(2)]
+#[case::schema_three(3)]
+#[case::schema_four(4)]
+fn golden_session_schema_eras_reject_old_without_semantic_loss(#[case] version: i64) {
     let root = repo_root().join("crates/hoimin-cli/tests/golden/sessions");
-    for version in 1..=4 {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("session.sqlite3");
-        std::fs::copy(root.join(format!("schema-v{version}.sqlite3")), &path).unwrap();
-        let before = Connection::open(&path).unwrap();
-        assert_golden_session_rows(&before, version);
-        let original_schema = schema_sql(&before);
-        let original_rows = logical_rows(&before);
-        drop(before);
-        let Err(error) = SessionHandler::open(&path) else {
-            panic!("old session schema {version} was accepted");
-        };
-        assert!(error.to_string().contains("unsupported"));
-        assert!(error.to_string().contains("new session"));
-        let after = Connection::open(&path).unwrap();
-        assert_eq!(user_version(&after), version);
-        assert_eq!(schema_sql(&after), original_schema);
-        assert_eq!(logical_rows(&after), original_rows);
-    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("session.sqlite3");
+    std::fs::copy(root.join(format!("schema-v{version}.sqlite3")), &path).unwrap();
+    let before = Connection::open(&path).unwrap();
+    assert_golden_session_rows(&before, version);
+    let original_schema = schema_sql(&before);
+    let original_rows = logical_rows(&before);
+    drop(before);
+    let Err(error) = SessionHandler::open(&path) else {
+        panic!("old session schema {version} was accepted");
+    };
+
+    assert!(error.to_string().contains("unsupported"));
+    assert!(error.to_string().contains("new session"));
+    let after = Connection::open(&path).unwrap();
+    assert_eq!(user_version(&after), version);
+    assert_eq!(schema_sql(&after), original_schema);
+    assert_eq!(logical_rows(&after), original_rows);
 }
 
 #[test]
@@ -167,6 +171,7 @@ fn schema_five_storage_matches_regeneration_across_fingerprint_versions() {
 
     let checked = Connection::open(checked_copy).unwrap();
     let regenerated = Connection::open(regenerated_path).unwrap();
+
     assert_eq!(user_version(&checked), 5);
     assert_eq!(user_version(&regenerated), 5);
     assert_eq!(schema_sql(&checked), schema_sql(&regenerated));
@@ -440,22 +445,31 @@ struct OperationTask {
     thread: thread::JoinHandle<()>,
 }
 
+#[rstest::rstest]
+#[case::write_lock_begin(0)]
+#[case::write_lock_persist(1)]
+#[case::write_lock_lookup(2)]
+#[case::write_lock_finish(3)]
+#[case::write_lock_load(4)]
+#[case::read_lock_begin(5)]
+#[case::read_lock_persist(6)]
+#[case::read_lock_lookup(7)]
+#[case::read_lock_finish(8)]
+#[case::read_lock_load(9)]
+fn session_operations_complete_under_contention_matrix(#[case] index: usize) {
+    let cell = CELLS[index];
+
+    let result = run_contention_cell(index, cell);
+
+    assert!(result.is_ok(), "{cell:?}: {}", result.unwrap_err());
+}
+
 #[test]
-fn session_operations_complete_under_contention_matrix() {
-    let mut visited = HashSet::new();
+fn contention_matrix_declares_every_cell_once() {
+    let unique: HashSet<_> = CELLS.into_iter().collect();
 
-    for (index, cell) in CELLS.into_iter().enumerate() {
-        visited.insert(cell);
-        let result = run_contention_cell(index, cell);
-        assert!(result.is_ok(), "{cell:?}: {}", result.unwrap_err());
-    }
-
-    assert_eq!(visited.len(), CELLS.len(), "not every matrix cell ran");
-    assert_eq!(
-        visited,
-        CELLS.into_iter().collect(),
-        "visited matrix cells differ from CELLS"
-    );
+    assert_eq!(CELLS.len(), 10);
+    assert_eq!(unique.len(), CELLS.len());
 }
 
 fn run_contention_cell(
@@ -950,49 +964,47 @@ fn timeout_can_be_replaced_then_resumed_and_completed_end_to_end() {
     assert_eq!(failed.failure.code(), "session.persist.owner");
 }
 
-#[test]
-fn persists_every_typed_process_termination_shape() {
+#[rstest::rstest]
+#[case::exit(0, ProcessTermination::Exit(-7))]
+#[case::timeout(1, ProcessTermination::Timeout)]
+#[case::memory(2, ProcessTermination::OutOfMemory)]
+#[case::processes(3, ProcessTermination::ProcessLimit)]
+#[case::cancelled(4, ProcessTermination::Cancelled)]
+fn persists_every_typed_process_termination_shape(
+    #[case] index: usize,
+    #[case] termination: ProcessTermination,
+) {
     // Arrange
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("sessions.sqlite3");
     let mut handler = SessionHandler::open(&path).unwrap();
     handler.begin(begin_request(1, "run-1")).unwrap();
-    for (index, termination) in [
-        ProcessTermination::Exit(-7),
-        ProcessTermination::Timeout,
-        ProcessTermination::OutOfMemory,
-        ProcessTermination::ProcessLimit,
-        ProcessTermination::Cancelled,
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let mutant_id = format!("m{index}");
-        let mut request = persist_request(index as u64 + 2, "run-1", &mutant_id);
-        request.result.outcome = hoimin_core::MutationOutcome::Executed {
-            termination,
-            output_state: hoimin_core::ProcessOutputState::Complete,
-            output: OutputSpoolRef {
-                token: "spool".into(),
-                retained: 3,
-                observed: 8,
-            },
-            elapsed: Duration::from_millis(5),
-        };
-        // Act
-        handler.persist(&request).unwrap();
-        let encoded: String = Connection::open(&path)
-            .unwrap()
-            .query_row(
-                "SELECT outcome_json FROM results WHERE run_id='run-1' AND mutant_id=?1",
-                [&mutant_id],
-                |row| row.get(0),
-            )
-            .unwrap();
-        let stored: hoimin_core::MutationOutcome = serde_json::from_str(&encoded).unwrap();
-        // Assert
-        assert_eq!(stored, request.result.outcome);
-    }
+
+    let mutant_id = format!("m{index}");
+    let mut request = persist_request(index as u64 + 2, "run-1", &mutant_id);
+    request.result.outcome = hoimin_core::MutationOutcome::Executed {
+        termination,
+        output_state: hoimin_core::ProcessOutputState::Complete,
+        output: OutputSpoolRef {
+            token: "spool".into(),
+            retained: 3,
+            observed: 8,
+        },
+        elapsed: Duration::from_millis(5),
+    };
+    // Act
+    handler.persist(&request).unwrap();
+    let encoded: String = Connection::open(&path)
+        .unwrap()
+        .query_row(
+            "SELECT outcome_json FROM results WHERE run_id='run-1' AND mutant_id=?1",
+            [&mutant_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let stored: hoimin_core::MutationOutcome = serde_json::from_str(&encoded).unwrap();
+    // Assert
+    assert_eq!(stored, request.result.outcome);
 }
 
 #[test]
@@ -1734,49 +1746,64 @@ fn invalid_outcome_failure() -> EffectFailure {
     }
 }
 
-#[test]
-fn lookup_rejects_malformed_stored_outcomes() {
-    for encoded in malformed_outcome_rows() {
-        // Arrange
-        let (_directory, mut handler, _observer) = corrupted_outcome_fixture(encoded);
-        // Act
-        let failed = handler
-            .lookup(&lookup_request(7, "run-1", "m1"))
-            .unwrap_err();
-        // Assert
-        assert_eq!(failed.failure, invalid_outcome_failure(), "{encoded}");
-    }
+#[rstest::rstest]
+#[case::garbage(0)]
+#[case::legacy_status(1)]
+#[case::incomplete_execution(2)]
+#[case::invalid_reuse_status(3)]
+#[case::extraneous_reuse_output(4)]
+fn lookup_rejects_malformed_stored_outcomes(#[case] index: usize) {
+    let encoded = malformed_outcome_rows()[index];
+
+    // Arrange
+    let (_directory, mut handler, _observer) = corrupted_outcome_fixture(encoded);
+    // Act
+    let failed = handler
+        .lookup(&lookup_request(7, "run-1", "m1"))
+        .unwrap_err();
+    // Assert
+    assert_eq!(failed.failure, invalid_outcome_failure(), "{encoded}");
 }
 
-#[test]
-fn replacement_rejects_malformed_stored_outcomes() {
-    for encoded in malformed_outcome_rows() {
-        // Arrange
-        let (_directory, mut handler, _observer) = corrupted_outcome_fixture(encoded);
-        // Act
-        let failed = handler
-            .persist(&persist_request(8, "run-1", "m1"))
-            .unwrap_err();
-        // Assert
-        assert_eq!(failed.failure, invalid_outcome_failure(), "{encoded}");
-    }
+#[rstest::rstest]
+#[case::garbage(0)]
+#[case::legacy_status(1)]
+#[case::incomplete_execution(2)]
+#[case::invalid_reuse_status(3)]
+#[case::extraneous_reuse_output(4)]
+fn replacement_rejects_malformed_stored_outcomes(#[case] index: usize) {
+    let encoded = malformed_outcome_rows()[index];
+
+    // Arrange
+    let (_directory, mut handler, _observer) = corrupted_outcome_fixture(encoded);
+    // Act
+    let failed = handler
+        .persist(&persist_request(8, "run-1", "m1"))
+        .unwrap_err();
+    // Assert
+    assert_eq!(failed.failure, invalid_outcome_failure(), "{encoded}");
 }
 
-#[test]
-fn rejected_replacement_preserves_malformed_outcome_rows() {
-    for encoded in malformed_outcome_rows() {
-        // Arrange
-        let (_directory, mut handler, observer) = corrupted_outcome_fixture(encoded);
-        // Act
-        handler
-            .persist(&persist_request(8, "run-1", "m1"))
-            .unwrap_err();
-        let retained: String = observer
-            .query_row("SELECT outcome_json FROM results", [], |row| row.get(0))
-            .unwrap();
-        // Assert
-        assert_eq!(retained, encoded);
-    }
+#[rstest::rstest]
+#[case::garbage(0)]
+#[case::legacy_status(1)]
+#[case::incomplete_execution(2)]
+#[case::invalid_reuse_status(3)]
+#[case::extraneous_reuse_output(4)]
+fn rejected_replacement_preserves_malformed_outcome_rows(#[case] index: usize) {
+    let encoded = malformed_outcome_rows()[index];
+
+    // Arrange
+    let (_directory, mut handler, observer) = corrupted_outcome_fixture(encoded);
+    // Act
+    handler
+        .persist(&persist_request(8, "run-1", "m1"))
+        .unwrap_err();
+    let retained: String = observer
+        .query_row("SELECT outcome_json FROM results", [], |row| row.get(0))
+        .unwrap();
+    // Assert
+    assert_eq!(retained, encoded);
 }
 
 #[test]
@@ -1793,6 +1820,7 @@ fn lookup_rejects_corrupt_outcome_candidate_mismatch_and_completed_runs() {
     let failed = handler
         .lookup(&lookup_request(7, "run-1", "m1"))
         .unwrap_err();
+
     assert_eq!(failed.id, EffectId(7));
     assert_eq!(failed.failure.code(), "session.corrupt");
 
@@ -1852,6 +1880,7 @@ fn rejects_unknown_future_schema_and_releases_temporary_database_on_drop() {
     let connection = Connection::open(&path).unwrap();
     connection.pragma_update(None, "user_version", 99).unwrap();
     drop(connection);
+
     assert!(SessionHandler::open(&path).is_err());
 
     let cleanup = tempfile::tempdir().unwrap();
@@ -1983,37 +2012,50 @@ fn create_nullable_corrupt_database(path: &std::path::Path) {
     .unwrap();
 }
 
-#[test]
-fn session_artifacts_resolve_without_creating_the_database() {
+#[rstest::rstest]
+#[case::sqlite("session.sqlite3")]
+#[case::brackets("active[1].db")]
+#[case::negation("!active.db")]
+fn session_artifacts_resolve_without_creating_the_database(#[case] name: &str) {
     use hoimin_cli::session::SessionArtifacts;
     let directory = tempfile::tempdir().unwrap();
-    for name in ["session.sqlite3", "active[1].db", "!active.db"] {
-        let path = directory.path().join(name);
-        let artifacts = SessionArtifacts::resolve(&path).unwrap();
-        assert!(!path.exists());
-        let canonical_parent = std::fs::canonicalize(directory.path()).unwrap();
-        assert_eq!(artifacts.database(), canonical_parent.join(name));
-        assert_eq!(
-            artifacts.files(),
-            [
-                canonical_parent.join(name),
-                canonical_parent.join(format!("{name}-wal")),
-                canonical_parent.join(format!("{name}-shm")),
-                canonical_parent.join(format!("{name}-journal"))
-            ]
-        );
-        assert_eq!(
-            artifacts.lock_directory(),
-            canonical_parent.join(format!(".{name}.hoimin-locks"))
-        );
-        drop(SessionHandler::open(&path).unwrap());
-        assert_eq!(
-            SessionArtifacts::resolve(&path).unwrap().database(),
-            artifacts.database()
-        );
-    }
-    assert!(SessionArtifacts::resolve(directory.path()).is_err());
-    assert!(SessionArtifacts::resolve(directory.path().join("missing/db")).is_err());
+    let path = directory.path().join(name);
+    let canonical_parent = std::fs::canonicalize(directory.path()).unwrap();
+
+    let artifacts = SessionArtifacts::resolve(&path).unwrap();
+    let existed_before_open = path.exists();
+    drop(SessionHandler::open(&path).unwrap());
+    let reopened = SessionArtifacts::resolve(&path).unwrap();
+
+    assert!(!existed_before_open);
+    assert_eq!(artifacts.database(), canonical_parent.join(name));
+    assert_eq!(
+        artifacts.files(),
+        [
+            canonical_parent.join(name),
+            canonical_parent.join(format!("{name}-wal")),
+            canonical_parent.join(format!("{name}-shm")),
+            canonical_parent.join(format!("{name}-journal"))
+        ]
+    );
+    assert_eq!(
+        artifacts.lock_directory(),
+        canonical_parent.join(format!(".{name}.hoimin-locks"))
+    );
+    assert_eq!(reopened.database(), artifacts.database());
+}
+
+#[rstest::rstest]
+#[case::directory("")]
+#[case::missing_parent("missing/db")]
+fn session_artifacts_reject_invalid_destinations_without_creating_parents(#[case] relative: &str) {
+    use hoimin_cli::session::SessionArtifacts;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join(relative);
+
+    let result = SessionArtifacts::resolve(path);
+
+    assert!(result.is_err());
     assert!(!directory.path().join("missing").exists());
 }
 
@@ -2029,6 +2071,7 @@ fn session_artifacts_resolve_aliases_and_reject_dangling_leaf_without_side_effec
     symlink(&parent, &alias).unwrap();
     let path = parent.join("active*?[1].db");
     let artifacts = SessionArtifacts::resolve(alias.join("active*?[1].db")).unwrap();
+
     assert!(!path.exists());
     drop(SessionHandler::open(&path).unwrap());
     let leaf_alias = directory.path().join("leaf.db");
@@ -2053,6 +2096,7 @@ fn session_lock_trees_do_not_create_artifacts_and_deduplicate_existing_directory
     let database = root.join("session.db");
     let locks = root.join(".session.db.hoimin-locks");
     let artifacts = SessionArtifacts::resolve(&database).unwrap();
+
     assert_eq!(artifacts.lock_trees().unwrap(), vec![locks.clone()]);
     assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0);
     std::fs::create_dir(&locks).unwrap();
@@ -2072,10 +2116,12 @@ fn session_lock_trees_retain_alias_and_actual_identity_without_creating_missing_
     let directory = tempfile::tempdir().unwrap();
     let root = std::fs::canonicalize(directory.path()).unwrap();
     let database = root.join("session.db");
+
     let actual = root.join("actual");
     let alias = root.join(".session.db.hoimin-locks");
     std::os::unix::fs::symlink(&actual, &alias).unwrap();
     let artifacts = SessionArtifacts::resolve(&database).unwrap();
+
     assert_eq!(artifacts.lock_trees().unwrap(), vec![alias.clone()]);
     assert!(!actual.exists());
     std::fs::create_dir(&actual).unwrap();
@@ -2096,9 +2142,12 @@ fn session_lock_trees_propagate_existing_alias_resolution_failure() {
     let alias = directory.path().join(".session.db.hoimin-locks");
     std::os::unix::fs::symlink(&alias, &alias).unwrap();
     let native_error = std::fs::canonicalize(&alias).unwrap_err();
+
     assert_ne!(native_error.kind(), std::io::ErrorKind::NotFound);
     let artifacts = SessionArtifacts::resolve(directory.path().join("session.db")).unwrap();
+
     let error = artifacts.lock_trees().unwrap_err();
+
     assert_eq!(error.raw_os_error(), native_error.raw_os_error());
     assert!(!directory.path().join("session.db").exists());
 }
@@ -2119,6 +2168,7 @@ fn resume_budget_is_monotone_and_selects_latest_eligible_incomplete_run() {
         max_mutants: std::num::NonZeroUsize::new(budget).unwrap(),
     };
     let initial = handler.load(&load(2)).unwrap();
+
     assert_eq!(resumed_run(initial).run_id, "older");
     assert!(matches!(
         handler.load(&load(1)).unwrap().outcome,
@@ -2170,66 +2220,74 @@ fn persisted_budget_preserves_unsigned_range() {
     assert_eq!(budget, (usize::MAX as u64).to_be_bytes());
 }
 
-#[test]
-fn new_session_rejects_null_budgets_even_when_checks_are_disabled() {
-    for ignore_checks in [false, true] {
-        for statement in [
-            "UPDATE runs SET max_mutants=NULL",
-            "INSERT INTO runs(run_id,fingerprint,max_mutants) SELECT 'invalid',fingerprint,NULL FROM runs",
-            "INSERT INTO runs(run_id,fingerprint) SELECT 'invalid',fingerprint FROM runs",
-        ] {
-            // Arrange
-            let directory = tempfile::tempdir().unwrap();
-            let path = directory.path().join("required-budget.sqlite");
-            let mut handler = SessionHandler::open(&path).unwrap();
-            handler.begin(begin_request(1, "budget")).unwrap();
-            let observer = Connection::open(&path).unwrap();
-            observer
-                .pragma_update(None, "ignore_check_constraints", ignore_checks)
-                .unwrap();
-            // Act
-            let result = observer.execute(statement, []);
-            // Assert
-            let rusqlite::Error::SqliteFailure(error, _) = result.unwrap_err() else {
-                panic!("expected SQLite constraint violation");
-            };
-            assert_eq!(
-                error.extended_code,
-                rusqlite::ffi::SQLITE_CONSTRAINT_NOTNULL,
-                "ignore_checks={ignore_checks}, statement={statement}"
-            );
-        }
-    }
+#[rstest::rstest]
+#[case::false_1_update_runs_set_max_mutants_null_1(false, "UPDATE runs SET max_mutants=NULL")]
+#[case::false_1_insert_into_runs_run_id_fingerprint_max_mutants_select_2(
+    false,
+    "INSERT INTO runs(run_id,fingerprint,max_mutants) SELECT 'invalid',fingerprint,NULL FROM runs"
+)]
+#[case::false_1_insert_into_runs_run_id_fingerprint_select_invalid_fing_3(
+    false,
+    "INSERT INTO runs(run_id,fingerprint) SELECT 'invalid',fingerprint FROM runs"
+)]
+#[case::true_2_update_runs_set_max_mutants_null_1(true, "UPDATE runs SET max_mutants=NULL")]
+#[case::true_2_insert_into_runs_run_id_fingerprint_max_mutants_select_2(
+    true,
+    "INSERT INTO runs(run_id,fingerprint,max_mutants) SELECT 'invalid',fingerprint,NULL FROM runs"
+)]
+#[case::true_2_insert_into_runs_run_id_fingerprint_select_invalid_fing_3(
+    true,
+    "INSERT INTO runs(run_id,fingerprint) SELECT 'invalid',fingerprint FROM runs"
+)]
+fn new_session_rejects_null_budgets_even_when_checks_are_disabled(
+    #[case] ignore_checks: bool,
+    #[case] statement: &str,
+) {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("required-budget.sqlite");
+    let mut handler = SessionHandler::open(&path).unwrap();
+    handler.begin(begin_request(1, "budget")).unwrap();
+    let observer = Connection::open(&path).unwrap();
+    observer
+        .pragma_update(None, "ignore_check_constraints", ignore_checks)
+        .unwrap();
+
+    let result = observer.execute(statement, []);
+    let rusqlite::Error::SqliteFailure(error, _) = result.unwrap_err() else {
+        panic!("expected SQLite constraint violation");
+    };
+
+    assert_eq!(
+        error.extended_code,
+        rusqlite::ffi::SQLITE_CONSTRAINT_NOTNULL,
+        "ignore_checks={ignore_checks}, statement={statement}"
+    );
 }
 
-#[test]
-fn new_session_rejects_malformed_non_null_budget_storage() {
-    for malformed in [
-        Value::Blob(vec![0; 8]),
-        Value::Blob(vec![255; 7]),
-        Value::Blob(vec![255; 9]),
-        Value::Integer(1),
-        Value::Text("100".into()),
-        Value::Real(1.5),
-    ] {
-        // Arrange
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("constrained-budget.sqlite");
-        let mut handler = SessionHandler::open(&path).unwrap();
-        handler.begin(begin_request(1, "budget")).unwrap();
-        let observer = Connection::open(&path).unwrap();
-        // Act
-        let result = observer.execute("UPDATE runs SET max_mutants=?1", [&malformed]);
-        // Assert
-        let rusqlite::Error::SqliteFailure(error, _) = result.unwrap_err() else {
-            panic!("expected SQLite constraint violation");
-        };
-        assert_eq!(
-            error.extended_code,
-            rusqlite::ffi::SQLITE_CONSTRAINT_CHECK,
-            "malformed={malformed:?}"
-        );
-    }
+#[rstest::rstest]
+#[case::value_blob_vec_0_8_1(Value::Blob(vec![0; 8]))]
+#[case::value_blob_vec_255_7_2(Value::Blob(vec![255; 7]))]
+#[case::value_blob_vec_255_9_3(Value::Blob(vec![255; 9]))]
+#[case::value_integer_1_4(Value::Integer(1))]
+#[case::input_100_5(Value::Text("100".into()))]
+#[case::value_real_1_5_6(Value::Real(1.5))]
+fn new_session_rejects_malformed_non_null_budget_storage(#[case] malformed: Value) {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("constrained-budget.sqlite");
+    let mut handler = SessionHandler::open(&path).unwrap();
+    handler.begin(begin_request(1, "budget")).unwrap();
+    let observer = Connection::open(&path).unwrap();
+
+    let result = observer.execute("UPDATE runs SET max_mutants=?1", [&malformed]);
+    let rusqlite::Error::SqliteFailure(error, _) = result.unwrap_err() else {
+        panic!("expected SQLite constraint violation");
+    };
+
+    assert_eq!(
+        error.extended_code,
+        rusqlite::ffi::SQLITE_CONSTRAINT_CHECK,
+        "malformed={malformed:?}"
+    );
 }
 
 fn copy_nullable_budget_golden() -> (tempfile::TempDir, PathBuf) {
@@ -2263,6 +2321,7 @@ fn budget_load_request(budget: usize) -> LoadSession {
 #[test]
 fn previous_nullable_schema_is_rejected_at_admission() {
     let (_directory, path, _observer) = previous_schema_with_null_budget();
+
     assert!(matches!(
         SessionHandler::open(&path),
         Err(hoimin_cli::session::SessionError::Schema(
@@ -2276,6 +2335,7 @@ fn previous_nullable_schema_rejection_preserves_stored_data() {
     let (_directory, path, observer) = previous_schema_with_null_budget();
     let before = logical_rows(&observer);
     let bytes_before = std::fs::read(&path).unwrap();
+
     assert!(SessionHandler::open(&path).is_err());
     assert_eq!(logical_rows(&observer), before);
     assert!(
@@ -2326,44 +2386,42 @@ proptest::proptest! {
     }
 }
 
-#[test]
-fn corrupt_persisted_budget_is_rejected_without_repair() {
-    for malformed in [
-        Value::Blob(vec![]),
-        Value::Blob(vec![0]),
-        Value::Blob(vec![0; 8]),
-        Value::Blob(vec![0; 9]),
-        Value::Blob(vec![255]),
-        Value::Blob(vec![255; 9]),
-        Value::Integer(1),
-        Value::Text("100".into()),
-        Value::Real(1.5),
-    ] {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("corrupt-budget.sqlite");
-        let mut handler = SessionHandler::open(&path).unwrap();
-        handler.begin(begin_request(1, "corrupt-budget")).unwrap();
-        let connection = Connection::open(&path).unwrap();
-        connection
-            .execute_batch("PRAGMA ignore_check_constraints=ON")
-            .unwrap();
-        connection
-            .execute("UPDATE runs SET max_mutants=?1", [&malformed])
-            .unwrap();
-        let request = LoadSession {
-            id: EffectId(2),
-            fingerprint: RunFingerprint::from_bytes([1; 32]),
-            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
-        };
-        assert_eq!(
-            handler.load(&request).unwrap_err().failure.code(),
-            "session.corrupt"
-        );
-        let after: Value = connection
-            .query_row("SELECT max_mutants FROM runs", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(after, malformed);
-    }
+#[rstest::rstest]
+#[case::value_blob_vec_1(Value::Blob(vec![]))]
+#[case::value_blob_vec_0_2(Value::Blob(vec![0]))]
+#[case::value_blob_vec_0_8_3(Value::Blob(vec![0; 8]))]
+#[case::value_blob_vec_0_9_4(Value::Blob(vec![0; 9]))]
+#[case::value_blob_vec_255_5(Value::Blob(vec![255]))]
+#[case::value_blob_vec_255_9_6(Value::Blob(vec![255; 9]))]
+#[case::value_integer_1_7(Value::Integer(1))]
+#[case::input_100_8(Value::Text("100".into()))]
+#[case::value_real_1_5_9(Value::Real(1.5))]
+fn corrupt_persisted_budget_is_rejected_without_repair(#[case] malformed: Value) {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("corrupt-budget.sqlite");
+    let mut handler = SessionHandler::open(&path).unwrap();
+    handler.begin(begin_request(1, "corrupt-budget")).unwrap();
+    let connection = Connection::open(&path).unwrap();
+    connection
+        .execute_batch("PRAGMA ignore_check_constraints=ON")
+        .unwrap();
+    connection
+        .execute("UPDATE runs SET max_mutants=?1", [&malformed])
+        .unwrap();
+    let request = LoadSession {
+        id: EffectId(2),
+        fingerprint: RunFingerprint::from_bytes([1; 32]),
+        max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
+    };
+
+    assert_eq!(
+        handler.load(&request).unwrap_err().failure.code(),
+        "session.corrupt"
+    );
+    let after: Value = connection
+        .query_row("SELECT max_mutants FROM runs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(after, malformed);
 }
 
 #[test]
@@ -2387,6 +2445,7 @@ fn lean_resume_budget_cases_match_persistent_selection_and_reuse() {
         .lines()
         .map(|line| serde_json::from_str::<Case>(line).unwrap())
         .collect::<Vec<_>>();
+
     assert_eq!(cases.len(), 108);
     let mut ids = HashSet::new();
     for case in cases {
@@ -2553,13 +2612,14 @@ fn frozen_schema_12_fingerprint() -> RunFingerprint {
 
 #[test]
 fn baseline_restoration_rejects_and_preserves_schema_12_conclusive_history() {
-    // Arrange: genuine pre-change identity, conclusive result, incomplete finished run.
+    // genuine pre-change identity, conclusive result, incomplete finished run.
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("sessions.sqlite3");
     let mut handler = SessionHandler::open(&path).unwrap();
     let mut begin = begin_request(1, "contaminated");
     begin.fingerprint = frozen_schema_12_fingerprint();
     handler.begin(begin).unwrap();
+
     let mut result = persist_request(2, "contaminated", "false-killed");
     result.result.outcome = hoimin_core::MutationOutcome::Executed {
         termination: ProcessTermination::Exit(1),
@@ -2583,7 +2643,7 @@ fn baseline_restoration_rejects_and_preserves_schema_12_conclusive_history() {
         .execute("UPDATE fingerprints SET schema_version=12", [])
         .unwrap();
     let before = logical_rows(&connection);
-    // Act.
+
     let failed = handler
         .load(&LoadSession {
             id: EffectId(4),
@@ -2591,7 +2651,7 @@ fn baseline_restoration_rejects_and_preserves_schema_12_conclusive_history() {
             max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
         })
         .unwrap_err();
-    // Assert.
+
     assert_eq!(failed.failure.code(), "session.resume.incompatible");
     assert_eq!(user_version(&connection), 5);
     assert_eq!(logical_rows(&connection), before);

@@ -8,47 +8,47 @@ use collecting_writer::CollectingWriter;
 
 use hoimin_cli::cli::{ParsedCommand, parse_from};
 
-#[test]
-fn sample_cli_accepts_explicit_count_and_full_width_seed() {
-    for seed in ["0", "42", "18446744073709551615"] {
-        let parsed = parse_from([
-            "hoimin",
-            "verify",
-            "plan.json",
-            "--sample",
-            "3",
-            "--seed",
-            seed,
-        ]);
-        assert!(matches!(parsed, Ok(ParsedCommand::Verify(_))), "{parsed:?}");
-    }
+#[rstest::rstest]
+#[case::input_0_1("0")]
+#[case::input_42_2("42")]
+#[case::input_18446744073709551615_3("18446744073709551615")]
+fn sample_cli_accepts_explicit_count_and_full_width_seed(#[case] seed: &str) {
+    let parsed = parse_from([
+        "hoimin",
+        "verify",
+        "plan.json",
+        "--sample",
+        "3",
+        "--seed",
+        seed,
+    ]);
+
+    assert!(matches!(parsed, Ok(ParsedCommand::Verify(_))), "{parsed:?}");
 }
 
-#[test]
-fn sample_cli_rejects_missing_or_conflicting_selection_parameters() {
-    for options in [
-        vec!["--sample", "3"],
-        vec!["--seed", "42"],
-        vec!["--sample", "0", "--seed", "42"],
-        vec!["--sample", "3", "--seed", "-1"],
-        vec!["--sample", "3", "--seed", "18446744073709551616"],
-        vec!["--sample", "3", "--seed", "42", "--top", "1"],
-        vec!["--sample", "3", "--seed", "42", "--candidate", "id"],
-        vec!["--sample", "3", "--seed", "42", "--offset", "0"],
-        vec![
+#[rstest::rstest]
+#[case::sample_1(vec!["--sample", "3"])]
+#[case::seed_2(vec!["--seed", "42"])]
+#[case::sample_3(vec!["--sample", "0", "--seed", "42"])]
+#[case::sample_4(vec!["--sample", "3", "--seed", "-1"])]
+#[case::sample_5(vec!["--sample", "3", "--seed", "18446744073709551616"])]
+#[case::sample_6(vec!["--sample", "3", "--seed", "42", "--top", "1"])]
+#[case::sample_7(vec!["--sample", "3", "--seed", "42", "--candidate", "id"])]
+#[case::sample_8(vec!["--sample", "3", "--seed", "42", "--offset", "0"])]
+#[case::sample_9(vec![
             "--sample",
             "3",
             "--seed",
             "42",
             "--selection-policy",
             "strict",
-        ],
-        vec!["--top", "3", "--seed", "42"],
-    ] {
-        let mut args = vec!["hoimin", "verify", "plan.json"];
-        args.extend(options);
-        assert!(parse_from(args.clone()).is_err(), "{args:?}");
-    }
+        ])]
+#[case::top_10(vec!["--top", "3", "--seed", "42"])]
+fn sample_cli_rejects_missing_or_conflicting_selection_parameters(#[case] options: Vec<&str>) {
+    let mut args = vec!["hoimin", "verify", "plan.json"];
+    args.extend(options);
+
+    assert!(parse_from(args.clone()).is_err(), "{args:?}");
 }
 
 use std::ffi::OsString;
@@ -227,10 +227,16 @@ async fn sample_execution_matches_preview_and_preserves_sample_scope() {
     assert_eq!(progress["comparisons"][0]["common"], 3);
 }
 
+#[rstest::rstest]
+#[case::budget(0)]
+#[case::truncated(1)]
+#[case::empty(2)]
+#[case::duplicate(3)]
+#[case::rank(4)]
 #[tokio::test]
-async fn sample_rejects_truncation_empty_budget_and_tampering_before_tests() {
+async fn sample_rejects_invalid_selection_or_manifest_before_tests(#[case] scenario_index: usize) {
     type Tamper = fn(&mut serde_json::Value);
-    let (dir, path, plan) = fixture_with_budget(2).await;
+    let (_dir, path, plan) = fixture_with_budget(2).await;
     let cases: [(&str, usize, &str, Tamper); 5] = [
         ("budget", 3, "max_mutants", |_| {}),
         ("truncated", 1, "truncated", |plan| {
@@ -246,15 +252,23 @@ async fn sample_rejects_truncation_empty_budget_and_tampering_before_tests() {
             plan["candidates"][0]["rank"] = 999.into();
         }),
     ];
-    for (change, count, message, tamper) in cases {
-        let mut modified = plan.clone();
-        tamper(&mut modified);
-        std::fs::write(&path, serde_json::to_vec(&modified).unwrap()).unwrap();
-        let (code, output, err) = cli(verify_args(&path, count, 0)).await;
-        assert_eq!(code, 2, "{change}: {err}");
-        assert!(output.is_null());
-        assert!(err.contains(message), "{change}: {err}");
-    }
+
+    let (change, count, message, tamper) = cases[scenario_index];
+
+    let mut modified = plan.clone();
+    tamper(&mut modified);
+    std::fs::write(&path, serde_json::to_vec(&modified).unwrap()).unwrap();
+    let (code, output, err) = cli(verify_args(&path, count, 0)).await;
+
+    assert_eq!(code, 2, "{change}: {err}");
+    assert!(output.is_null());
+    assert!(err.contains(message), "{change}: {err}");
+}
+
+#[tokio::test]
+async fn sample_rejects_changed_source_before_tests() {
+    let (dir, path, plan) = fixture_with_budget(2).await;
+
     std::fs::write(&path, serde_json::to_vec(&plan).unwrap()).unwrap();
     std::fs::write(dir.path().join("project/a.py"), "changed = 1\n").unwrap();
     let (code, _, err) = cli(verify_args(&path, 1, 0)).await;

@@ -207,34 +207,29 @@ async fn review_output_failure_is_not_duplicate_write() {
     );
 }
 
+#[rstest::rstest]
+#[case::timeout_1("/normalized_config/limits/mutant_timeout", serde_json::json!("Auto"))]
+#[case::timeout_2("/normalized_config/limits/mutant_timeout", serde_json::json!({"Fixed": {"secs": 7, "nanos": 0}}))]
+#[case::argv_3("/normalized_config/test_argv", serde_json::json!([{"Unix": [112, 121]}]))]
+#[case::argv_4("/normalized_config/test_argv", serde_json::json!([{"Windows": [112, 121]}]))]
+#[case::operator_5("/normalized_config/operators", serde_json::json!(["type_mapping"]))]
 #[tokio::test]
-async fn review_rejects_old_enum_names_before_project_work() {
-    for (field, old) in [
-        ("timeout", serde_json::json!("Auto")),
-        (
-            "timeout",
-            serde_json::json!({"Fixed": {"secs": 7, "nanos": 0}}),
-        ),
-        ("argv", serde_json::json!([{"Unix": [112, 121]}])),
-        ("argv", serde_json::json!([{"Windows": [112, 121]}])),
-        ("operator", serde_json::json!(["type_mapping"])),
-    ] {
-        let (dir, args) = fixture().await;
-        let mut plan: Value = serde_json::from_slice(&std::fs::read(&args[3]).unwrap()).unwrap();
-        match field {
-            "timeout" => plan["normalized_config"]["limits"]["mutant_timeout"] = old,
-            "argv" => plan["normalized_config"]["test_argv"] = old,
-            _ => plan["normalized_config"]["operators"] = old,
-        }
-        std::fs::write(&args[3], serde_json::to_vec(&plan).unwrap()).unwrap();
-        std::fs::remove_file(dir.path().join("sample.py")).unwrap();
-        let (code, out, err) = run(args).await;
-        assert_eq!(code, 2, "{field}");
-        assert!(out.is_empty(), "{field}");
-        let error = String::from_utf8(err).unwrap();
-        assert!(error.contains("unknown variant"), "{field}: {error}");
-        assert!(!dir.path().join("reviews.sqlite3").exists());
-    }
+async fn review_rejects_old_enum_names_before_project_work(
+    #[case] pointer: &str,
+    #[case] old: Value,
+) {
+    let (dir, args) = fixture().await;
+    let mut plan: Value = serde_json::from_slice(&std::fs::read(&args[3]).unwrap()).unwrap();
+    *plan.pointer_mut(pointer).unwrap() = old;
+
+    std::fs::write(&args[3], serde_json::to_vec(&plan).unwrap()).unwrap();
+    std::fs::remove_file(dir.path().join("sample.py")).unwrap();
+    let (code, out, err) = run(args).await;
+    assert_eq!(code, 2, "{pointer}");
+    assert!(out.is_empty(), "{pointer}");
+    let error = String::from_utf8(err).unwrap();
+    assert!(error.contains("unknown variant"), "{pointer}: {error}");
+    assert!(!dir.path().join("reviews.sqlite3").exists());
 }
 
 #[tokio::test]

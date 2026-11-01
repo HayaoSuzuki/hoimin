@@ -93,93 +93,107 @@ async fn plan(root: &Path, operators: &str, test: &str) -> serde_json::Value {
     document
 }
 
+#[rstest::rstest]
+#[case::if_a_and_b_pass_1("if a and b: pass\n", 2)]
+#[case::if_a_or_b_or_c_pass_2("if a or b or c: pass\n", 3)]
+#[case::if_a_and_b_or_c_pass_3("if a and (b or c): pass\n", 2)]
+#[case::if_a_and_a_pass_4("if a and a: pass\n", 1)]
+#[case::if_a_pass_elif_b_and_c_pass_5("if a: pass\nelif b and c: pass\n", 2)]
+#[case::input_1_if_a_and_comment_b_and_c_pass_6(
+    "é = 1\r\nif (a and # comment\r\n b and c): pass\r\n",
+    3
+)]
+#[case::if_x_and_lambda_false_pass_7("if('x')and(lambda: False): pass\n", 2)]
 #[tokio::test]
-async fn clauses_preserve_nested_structure_and_compile() {
-    for (source, count) in [
-        ("if a and b: pass\n", 2),
-        ("if a or b or c: pass\n", 3),
-        ("if a and (b or c): pass\n", 2),
-        ("if a and a: pass\n", 1),
-        ("if a: pass\nelif b and c: pass\n", 2),
-        ("é = 1\r\nif (a and # comment\r\n b and c): pass\r\n", 3),
-        ("if('x')and(lambda: False): pass\n", 2),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("subject.py"), source).unwrap();
-        let doc = plan(root.path(), "condition_clause_delete", "pass").await;
-        let candidates = doc["candidates"].as_array().unwrap();
-        assert_eq!(candidates.len(), count, "{source}");
-        for c in candidates {
-            let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
-            let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
-            let mut mutant = source.to_owned();
-            mutant.replace_range(start..end, c["replacement"].as_str().unwrap());
-            compile(&mutant).await;
-        }
-        assert_eq!(
-            doc["candidates"],
-            plan(root.path(), "condition_clause_delete", "pass").await["candidates"]
-        );
+async fn clauses_preserve_nested_structure_and_compile(#[case] source: &str, #[case] count: usize) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), source).unwrap();
+
+    let doc = plan(root.path(), "condition_clause_delete", "pass").await;
+    let candidates = doc["candidates"].as_array().unwrap();
+
+    assert_eq!(candidates.len(), count, "{source}");
+    for c in candidates {
+        let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
+        let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
+        let mut mutant = source.to_owned();
+        mutant.replace_range(start..end, c["replacement"].as_str().unwrap());
+        compile(&mutant).await;
     }
+    assert_eq!(
+        doc["candidates"],
+        plan(root.path(), "condition_clause_delete", "pass").await["candidates"]
+    );
 }
 
+#[rstest::rstest]
+#[case::while_a_and_b_break_assert_a_and_b_x_a_and_b_y_1_if_a_a_1(
+    "while a and b: break\nassert a and b\nx = a and b\ny = 1 if a and b else 0\n"
+)]
+#[case::if_a_b_c_pass_2("if a < b < c: pass\n")]
+#[case::if_a_and_b_f_pass_3("if a and (b := f()): pass\n")]
+#[case::async_def_f_if_a_and_await_g_pass_4("async def f():\n    if a and await g(): pass\n")]
+#[case::def_f_if_a_and_yield_1_pass_5("def f():\n    if a and (yield 1): pass\n")]
+#[case::def_f_if_a_and_yield_from_g_pass_6("def f():\n    if a and (yield from g()): pass\n")]
 #[tokio::test]
-async fn clauses_exclude_other_contexts_and_binding_changes() {
-    for source in [
-        "while a and b: break\nassert a and b\nx = a and b\ny = 1 if a and b else 0\n",
-        "if a < b < c: pass\n",
-        "if a and (b := f()): pass\n",
-        "async def f():\n    if a and await g(): pass\n",
-        "def f():\n    if a and (yield 1): pass\n",
-        "def f():\n    if a and (yield from g()): pass\n",
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("subject.py"), source).unwrap();
-        assert!(
-            plan(root.path(), "condition_clause_delete", "pass").await["candidates"]
-                .as_array()
-                .unwrap()
-                .is_empty(),
-            "{source}"
-        );
-    }
+async fn clauses_exclude_other_contexts_and_binding_changes(#[case] source: &str) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), source).unwrap();
+
+    assert!(
+        plan(root.path(), "condition_clause_delete", "pass").await["candidates"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "{source}"
+    );
 }
 
+#[rstest::rstest]
+#[case::from_subject_import_allowed_assert_not_allowed_true_fal_1(
+    "from subject import allowed; assert not allowed(True, False)",
+    1,
+    1
+)]
+#[case::from_subject_import_allowed_assert_not_allowed_true_fal_2(
+    "from subject import allowed; assert not allowed(True, False); assert not allowed(False, True)",
+    2,
+    0
+)]
 #[tokio::test]
-async fn clauses_saved_plan_checks_both_negative_cases() {
-    for (test, killed, survived) in [
-        (
-            "from subject import allowed; assert not allowed(True, False)",
-            1,
-            1,
-        ),
-        (
-            "from subject import allowed; assert not allowed(True, False); assert not allowed(False, True)",
-            2,
-            0,
-        ),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("subject.py"), "def allowed(authenticated, permitted):\n    if authenticated and permitted: return True\n    return False\n").unwrap();
-        let doc = plan(root.path(), "condition_clause_delete", test).await;
-        let manifest = root.path().join("plan.json");
-        std::fs::write(&manifest, serde_json::to_vec(&doc).unwrap()).unwrap();
-        let (_, report) = cli(vec![
-            "hoimin".into(),
-            "verify".into(),
-            manifest.into_os_string(),
-            "--top".into(),
-            "2".into(),
-        ])
-        .await;
-        assert_eq!(report["baseline"]["termination"]["Exit"], 0);
-        assert_eq!(report["summary"]["counts"]["killed"], killed);
-        assert_eq!(report["summary"]["counts"]["survived"], survived);
-    }
+async fn clauses_saved_plan_checks_both_negative_cases(
+    #[case] test: &str,
+    #[case] killed: usize,
+    #[case] survived: usize,
+) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), "def allowed(authenticated, permitted):\n    if authenticated and permitted: return True\n    return False\n").unwrap();
+    let doc = plan(root.path(), "condition_clause_delete", test).await;
+    let manifest = root.path().join("plan.json");
+    std::fs::write(&manifest, serde_json::to_vec(&doc).unwrap()).unwrap();
+
+    let (_, report) = cli(vec![
+        "hoimin".into(),
+        "verify".into(),
+        manifest.into_os_string(),
+        "--top".into(),
+        "2".into(),
+    ])
+    .await;
+
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+    assert_eq!(report["summary"]["counts"]["killed"], killed);
+    assert_eq!(report["summary"]["counts"]["survived"], survived);
 }
 
+#[rstest::rstest]
+#[case::retain_first_call(true, "assert calls == [1]\n")]
+#[case::retain_second_call(false, "assert calls == [2]\n")]
 #[tokio::test]
-async fn clauses_keep_operator_origin_and_short_circuit() {
+async fn clauses_keep_operator_origin_and_short_circuit(
+    #[case] contains_first_call: bool,
+    #[case] assertion: &str,
+) {
     let root = tempfile::tempdir().unwrap();
     let source = "calls=[]\ndef check(n, result):\n    calls.append(n)\n    return result\nif check(1,False) and (check(2,True) or check(3,True)): pass\n";
     std::fs::write(root.path().join("subject.py"), source).unwrap();
@@ -191,36 +205,32 @@ async fn clauses_keep_operator_origin_and_short_circuit() {
     .await;
     let candidates = doc["candidates"].as_array().unwrap();
     assert_eq!(candidates.len(), 4);
-    for (contains_first_call, assertion) in [
-        (true, "assert calls == [1]\n"),
-        (false, "assert calls == [2]\n"),
-    ] {
-        let c = candidates
-            .iter()
-            .filter(|candidate| candidate["operator"] == "condition_clause_delete")
-            .find(|candidate| {
-                candidate["replacement"]
-                    .as_str()
-                    .unwrap()
-                    .contains("check(1")
-                    == contains_first_call
-            })
-            .unwrap();
-        let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
-        let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
-        let replacement = c["replacement"].as_str().unwrap();
-        let mut mutant = source.to_owned();
-        mutant.replace_range(start..end, replacement);
-        mutant.push_str(assertion);
-        let output = tokio::process::Command::new(python())
-            .args(["-c", &mutant])
-            .output()
-            .await
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
+
+    let c = candidates
+        .iter()
+        .filter(|candidate| candidate["operator"] == "condition_clause_delete")
+        .find(|candidate| {
+            candidate["replacement"]
+                .as_str()
+                .unwrap()
+                .contains("check(1")
+                == contains_first_call
+        })
+        .unwrap();
+    let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
+    let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
+    let replacement = c["replacement"].as_str().unwrap();
+    let mut mutant = source.to_owned();
+    mutant.replace_range(start..end, replacement);
+    mutant.push_str(assertion);
+    let output = tokio::process::Command::new(python())
+        .args(["-c", &mutant])
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

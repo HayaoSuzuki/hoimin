@@ -695,31 +695,36 @@ fn corpus_rejects_unknown_fields_duplicate_ids_and_ambiguous_markers() {
     );
 }
 
-#[test]
-fn corpus_rejects_unknown_enums_and_crossed_field_groups() {
+#[rstest::rstest]
+#[case::mode_1(
+    "mode",
+    "speculative",
+    "handler_type_before_target has unknown mode speculative"
+)]
+#[case::family_2(
+    "family",
+    "finally",
+    "handler_type_before_target has unknown family finally"
+)]
+#[case::observation_kind_3(
+    "observation_kind",
+    "report",
+    "handler_type_before_target has unknown observation kind report"
+)]
+fn corpus_rejects_unknown_enums_and_crossed_field_groups(
+    #[case] field: &str,
+    #[case] value: &str,
+    #[case] expected: &str,
+) {
     let first = CORPUS.lines().next().expect("first corpus row");
-    for (field, value, expected) in [
-        (
-            "mode",
-            "speculative",
-            "handler_type_before_target has unknown mode speculative",
-        ),
-        (
-            "family",
-            "finally",
-            "handler_type_before_target has unknown family finally",
-        ),
-        (
-            "observation_kind",
-            "report",
-            "handler_type_before_target has unknown observation kind report",
-        ),
-    ] {
-        let mut invalid: serde_json::Value = serde_json::from_str(first).unwrap();
-        invalid[field] = serde_json::json!(value);
-        assert_eq!(parse_corpus(&format!("{invalid}\n")).unwrap_err(), expected);
-    }
 
+    let mut invalid: serde_json::Value = serde_json::from_str(first).unwrap();
+    invalid[field] = serde_json::json!(value);
+    assert_eq!(parse_corpus(&format!("{invalid}\n")).unwrap_err(), expected);
+}
+
+#[test]
+fn corpus_rejects_crossed_field_groups() {
     let strict = CORPUS
         .lines()
         .find(|line| line.contains("handler_body_after_target_public"))
@@ -766,29 +771,29 @@ fn command_and_manifest_failures_are_infrastructure_errors() {
     );
 }
 
-#[test]
-fn abnormal_process_outcomes_are_infrastructure_errors() {
-    for (termination, expected) in [
-        (ProcessTermination::Exit(125), "exit=125"),
-        (
+#[rstest::rstest]
+#[case::exit_125_1(ProcessTermination::Exit(125), "exit=125")]
+#[case::signal_2(
             ProcessTermination::Signal {
                 signal: 6,
                 core_dumped: true,
             },
             "signal=",
-        ),
-        (ProcessTermination::Abnormal, "abnormal termination"),
-    ] {
-        let error = decode_captured_plan(
-            "process-case",
-            &termination,
-            b"",
-            b"resource.rss_limit or panic-abort",
-        )
-        .unwrap_err();
-        assert!(error.starts_with("infrastructure-error: process-case"));
-        assert!(error.contains(expected));
-    }
+        )]
+#[case::abnormal_termination_3(ProcessTermination::Abnormal, "abnormal termination")]
+fn abnormal_process_outcomes_are_infrastructure_errors(
+    #[case] termination: ProcessTermination,
+    #[case] expected: &str,
+) {
+    let error = decode_captured_plan(
+        "process-case",
+        &termination,
+        b"",
+        b"resource.rss_limit or panic-abort",
+    )
+    .unwrap_err();
+    assert!(error.starts_with("infrastructure-error: process-case"));
+    assert!(error.contains(expected));
 }
 
 #[tokio::test(flavor = "current_thread")]

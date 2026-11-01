@@ -132,8 +132,15 @@ async fn negative_neighbor_plan_candidates_compile_with_cpython_314() {
     );
 }
 
+#[rstest::rstest]
+#[case::unary_sign_1("unary_sign", vec!["+"], 0)]
+#[case::structure_index_neighbor_2("structure_index_neighbor", vec!["-2", "0"], 1)]
 #[tokio::test]
-async fn verify_negative_neighbor_detects_tail_boundary_missed_by_sign_flip() {
+async fn verify_negative_neighbor_detects_tail_boundary_missed_by_sign_flip(
+    #[case] operator: &str,
+    #[case] expected_replacements: Vec<&str>,
+    #[case] killed: usize,
+) {
     let root = tempfile::tempdir().unwrap();
     let source = "def tail(x):\n    return x[-1]\n";
     compile(source).await;
@@ -142,49 +149,46 @@ async fn verify_negative_neighbor_detects_tail_boundary_missed_by_sign_flip() {
     // This deliberately weak boundary test cannot distinguish first/second/last,
     // but does distinguish the penultimate item from the last item.
     let test = "from subject import tail; assert tail([7, 7, 9, 7]) == 7";
-    for (operator, expected_replacements, killed) in [
-        ("unary_sign", vec!["+"], 0),
-        ("structure_index_neighbor", vec!["-2", "0"], 1),
-    ] {
-        let document = plan(root.path(), operator, test).await;
-        let candidates = document["candidates"].as_array().unwrap();
-        let mut replacements: Vec<_> = candidates
-            .iter()
-            .map(|c| c["replacement"].as_str().unwrap())
-            .collect();
-        replacements.sort_unstable();
-        assert_eq!(replacements, expected_replacements);
-        let manifest = root.path().join("plan.json");
-        std::fs::write(&manifest, serde_json::to_vec(&document).unwrap()).unwrap();
-        let (code, report) = cli(vec![
-            "hoimin".into(),
-            "verify".into(),
-            manifest.into_os_string(),
-            "--top".into(),
-            candidates.len().to_string().into(),
-        ])
-        .await;
-        assert_eq!(
-            code, 0,
-            "a completed run with a surviving mutant should succeed"
-        );
-        assert_eq!(report["baseline"]["termination"]["Exit"], 0);
-        assert_eq!(report["summary"]["counts"]["killed"], killed);
-        assert_eq!(report["summary"]["counts"]["survived"], 1);
-        assert_eq!(
-            report["mutants"].as_array().unwrap().len(),
-            candidates.len()
-        );
-        let killed_mutants: Vec<_> = report["mutants"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|mutant| mutation_outcome::status(mutant) == "killed")
-            .collect();
-        assert_eq!(killed_mutants.len(), killed);
-        for mutant in killed_mutants {
-            assert_eq!(mutant["candidate"]["replacement"], "-2");
-        }
-        assert_eq!(std::fs::read_to_string(&subject).unwrap(), source);
+
+    let document = plan(root.path(), operator, test).await;
+    let candidates = document["candidates"].as_array().unwrap();
+    let mut replacements: Vec<_> = candidates
+        .iter()
+        .map(|c| c["replacement"].as_str().unwrap())
+        .collect();
+    replacements.sort_unstable();
+
+    assert_eq!(replacements, expected_replacements);
+    let manifest = root.path().join("plan.json");
+    std::fs::write(&manifest, serde_json::to_vec(&document).unwrap()).unwrap();
+    let (code, report) = cli(vec![
+        "hoimin".into(),
+        "verify".into(),
+        manifest.into_os_string(),
+        "--top".into(),
+        candidates.len().to_string().into(),
+    ])
+    .await;
+    assert_eq!(
+        code, 0,
+        "a completed run with a surviving mutant should succeed"
+    );
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+    assert_eq!(report["summary"]["counts"]["killed"], killed);
+    assert_eq!(report["summary"]["counts"]["survived"], 1);
+    assert_eq!(
+        report["mutants"].as_array().unwrap().len(),
+        candidates.len()
+    );
+    let killed_mutants: Vec<_> = report["mutants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|mutant| mutation_outcome::status(mutant) == "killed")
+        .collect();
+    assert_eq!(killed_mutants.len(), killed);
+    for mutant in killed_mutants {
+        assert_eq!(mutant["candidate"]["replacement"], "-2");
     }
+    assert_eq!(std::fs::read_to_string(&subject).unwrap(), source);
 }

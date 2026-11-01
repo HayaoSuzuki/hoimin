@@ -154,15 +154,25 @@ fn session_command(
     command
 }
 
-#[test]
-fn issue_1094_session_companion_hardlinks_preserve_sources_before_baseline() {
-    for suffix in ["-journal", "-wal", "-shm"] {
-        for current in [false, true] {
-            for inside in [false, true] {
-                assert_source_preserved(inside, Some(suffix), current);
-            }
-        }
-    }
+#[rstest::rstest]
+#[case::journal_1_false_1_false_1("-journal", false, false)]
+#[case::journal_1_false_1_true_2("-journal", false, true)]
+#[case::journal_1_true_2_false_1("-journal", true, false)]
+#[case::journal_1_true_2_true_2("-journal", true, true)]
+#[case::wal_2_false_1_false_1("-wal", false, false)]
+#[case::wal_2_false_1_true_2("-wal", false, true)]
+#[case::wal_2_true_2_false_1("-wal", true, false)]
+#[case::wal_2_true_2_true_2("-wal", true, true)]
+#[case::shm_3_false_1_false_1("-shm", false, false)]
+#[case::shm_3_false_1_true_2("-shm", false, true)]
+#[case::shm_3_true_2_false_1("-shm", true, false)]
+#[case::shm_3_true_2_true_2("-shm", true, true)]
+fn issue_1094_session_companion_hardlinks_preserve_sources_before_baseline(
+    #[case] suffix: &str,
+    #[case] current: bool,
+    #[case] inside: bool,
+) {
+    assert_source_preserved(inside, Some(suffix), current);
 }
 
 #[test]
@@ -208,45 +218,51 @@ fn issue_1094_ordinary_session_creation_and_resume_still_run_baseline() {
 }
 
 #[cfg(unix)]
+#[rstest::rstest]
+#[case::journal_1_false_1("-journal", false)]
+#[case::journal_1_true_2("-journal", true)]
+#[case::wal_2_false_1("-wal", false)]
+#[case::wal_2_true_2("-wal", true)]
+#[case::shm_3_false_1("-shm", false)]
+#[case::shm_3_true_2("-shm", true)]
 #[tokio::test]
-async fn issue_1094_nonregular_companions_are_rejected_without_blocking_or_creating_database() {
-    for suffix in ["-journal", "-wal", "-shm"] {
-        for fifo in [false, true] {
-            let fixture = tempfile::tempdir().unwrap();
-            let project = fixture.path().join("project");
-            let temporary = fixture.path().join("tmp");
-            std::fs::create_dir(&project).unwrap();
-            std::fs::create_dir(&temporary).unwrap();
-            std::fs::write(project.join("calc.py"), b"x = 1 + 2\n").unwrap();
-            let session = fixture.path().join("session.sqlite3");
-            let companion = companion_path(&session, suffix);
-            if fifo {
-                assert!(
-                    Command::new("mkfifo")
-                        .arg(&companion)
-                        .status()
-                        .unwrap()
-                        .success()
-                );
-            } else {
-                std::fs::create_dir(&companion).unwrap();
-            }
-            let marker = fixture.path().join("baseline-started");
-            let mut command = tokio::process::Command::from(session_command(
-                &project, &session, &temporary, &marker, false,
-            ));
-            command.kill_on_drop(true);
-            let output = tokio::time::timeout(std::time::Duration::from_secs(5), command.output())
-                .await
-                .expect("nonregular companion blocked session admission")
-                .unwrap();
-            assert_eq!(output.status.code(), Some(2), "{output:?}");
-            assert!(
-                !session.exists(),
-                "SQLite created the database before refusing a nonregular companion"
-            );
-            assert!(!marker.exists());
-            assert!(companion.exists());
-        }
+async fn issue_1094_nonregular_companions_are_rejected_without_blocking_or_creating_database(
+    #[case] suffix: &str,
+    #[case] fifo: bool,
+) {
+    let fixture = tempfile::tempdir().unwrap();
+    let project = fixture.path().join("project");
+    let temporary = fixture.path().join("tmp");
+    std::fs::create_dir(&project).unwrap();
+    std::fs::create_dir(&temporary).unwrap();
+    std::fs::write(project.join("calc.py"), b"x = 1 + 2\n").unwrap();
+    let session = fixture.path().join("session.sqlite3");
+    let companion = companion_path(&session, suffix);
+    if fifo {
+        assert!(
+            Command::new("mkfifo")
+                .arg(&companion)
+                .status()
+                .unwrap()
+                .success()
+        );
+    } else {
+        std::fs::create_dir(&companion).unwrap();
     }
+    let marker = fixture.path().join("baseline-started");
+    let mut command = tokio::process::Command::from(session_command(
+        &project, &session, &temporary, &marker, false,
+    ));
+    command.kill_on_drop(true);
+    let output = tokio::time::timeout(std::time::Duration::from_secs(5), command.output())
+        .await
+        .expect("nonregular companion blocked session admission")
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert!(
+        !session.exists(),
+        "SQLite created the database before refusing a nonregular companion"
+    );
+    assert!(!marker.exists());
+    assert!(companion.exists());
 }

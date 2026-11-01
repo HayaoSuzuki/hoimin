@@ -610,23 +610,21 @@ fn corpus_with_first_case_changed(change: impl FnOnce(&mut serde_json::Value)) -
     lines.join("\n")
 }
 
-#[test]
-fn corpus_rejects_unknown_schema_mode_scenario_event_and_state() {
-    for (field, value) in [
-        ("schema", serde_json::json!(2)),
-        ("mode", serde_json::json!("future")),
-        ("scenario", serde_json::json!("future")),
-    ] {
-        let input = corpus_with_first_case_changed(|case| case[field] = value);
-        assert!(parse_corpus(&input).is_err(), "accepted invalid {field}");
-    }
-    let event =
-        corpus_with_first_case_changed(|case| case["schedule"][0] = serde_json::json!("future"));
-    assert!(parse_corpus(&event).is_err());
-    let state = corpus_with_first_case_changed(|case| {
-        case["expected"]["process"] = serde_json::json!("future");
-    });
-    assert!(parse_corpus(&state).is_err());
+#[rstest::rstest]
+#[case::schema("/schema",serde_json::json!(2))]
+#[case::mode("/mode",serde_json::json!("future"))]
+#[case::scenario("/scenario",serde_json::json!("future"))]
+#[case::event("/schedule/0",serde_json::json!("future"))]
+#[case::state("/expected/process",serde_json::json!("future"))]
+fn corpus_rejects_unknown_schema_mode_scenario_event_and_state(
+    #[case] pointer: &str,
+    #[case] value: serde_json::Value,
+) {
+    let input = corpus_with_first_case_changed(|case| *case.pointer_mut(pointer).unwrap() = value);
+
+    let result = parse_corpus(&input);
+
+    assert!(result.is_err(), "accepted invalid {pointer}");
 }
 
 #[test]

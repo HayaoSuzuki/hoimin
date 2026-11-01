@@ -948,6 +948,7 @@ mod tests {
             expected_identity,
             &|| Ok(()),
         );
+
         assert!(
             blocked.is_err(),
             "Windows renamed a directory while a shared descendant handle was live"
@@ -1033,6 +1034,7 @@ mod tests {
             &|| Ok(()),
         )
         .unwrap();
+
         assert_eq!(file_identity_io(&inspection).unwrap(), expected_identity);
         assert!(parent.symlink_metadata("source").is_err());
         assert!(parent.symlink_metadata("destination").unwrap().is_dir());

@@ -152,10 +152,14 @@ mod tests {
         std::fs::write(root.join("a.py"), deep).unwrap();
         std::fs::write(root.join("z.py"), b"# coding: ascii\n# \xff\n").unwrap();
         let project = ExceptionProject::new(root);
+
         let error = project.load(&|| false).err().unwrap();
+
         assert!(error.starts_with("z.py:"), "{error}");
         std::fs::write(root.join("z.py"), "").unwrap();
+
         let error = project.load(&|| false).err().unwrap();
+
         assert!(error.contains("analysis depth"), "{error}");
         std::fs::write(root.join("a.py"), "class Root(Exception): pass\n").unwrap();
         let first = project.load(&|| false).unwrap();
@@ -177,12 +181,16 @@ mod tests {
             blake3::hash(invalid).to_hex().to_string(),
         );
         project.prepared_inputs = Some(Arc::new(inputs));
+
         let error = project.load(&|| false).err().unwrap();
+
         assert!(error.starts_with("source.py:"), "{error}");
         std::fs::write(root.join("source.py"), "").unwrap();
         Arc::make_mut(project.prepared_inputs.as_mut().unwrap())
             .insert("source.py".into(), blake3::hash(b"").to_hex().to_string());
+
         let error = project.load(&|| false).err().unwrap();
+
         assert!(error.contains("prepared input limit"), "{error}");
     }
     #[test]
@@ -195,6 +203,7 @@ mod tests {
             .unwrap();
         let root = Utf8PathBuf::from_path_buf(dir.path().into()).unwrap();
         let project = ExceptionProject::new(&root);
+
         assert!(
             project
                 .load(&|| false)
@@ -213,6 +222,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = Utf8PathBuf::from_path_buf(dir.path().into()).unwrap();
         let project = ExceptionProject::new(&root);
+
         assert!(project.files(&|| true).is_err());
         for i in 0..=MAX_FILES {
             std::fs::write(dir.path().join(format!("{i}.py")), "").unwrap();
@@ -245,11 +255,13 @@ mod tests {
             "class Root(Exception): pass\nclass Child(ValueError): pass\n",
         )
         .unwrap();
+
         let result = project.load(&|| false);
         // Restoring A makes a later workspace recheck pass, but cannot make an
         // index built from B correspond to the prepared input fingerprint.
         std::fs::write(&path, original).unwrap();
         crate::fingerprint_inputs::recheck_config(&config, &config.selection.root).unwrap();
+
         assert!(
             result.is_err(),
             "index accepted bytes outside its prepared fingerprint"
@@ -291,6 +303,7 @@ mod tests {
         let config = crate::shell::prepare_run_config(config).unwrap();
         let project = ExceptionProject::from_config(&config).unwrap();
         std::fs::remove_file(&path).unwrap();
+
         let result = project.load(&|| false);
         std::fs::write(&path, original).unwrap();
         crate::fingerprint_inputs::recheck_config(&config, &config.selection.root).unwrap();

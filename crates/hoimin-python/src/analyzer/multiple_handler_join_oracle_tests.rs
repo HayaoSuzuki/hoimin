@@ -271,6 +271,48 @@ fn multiple_handler_corpus_is_closed_and_valid() {
     );
 }
 
+#[rstest::rstest]
+#[case::schema_1(0)]
+#[case::mode_2(1)]
+#[case::observation_kind_3(2)]
+fn multiple_handler_corpus_rejects_inexact_and_crossed_rows_scenario_1(
+    #[case] scenario_index: usize,
+) {
+    let first = CORPUS.lines().next().expect("first corpus row");
+    let mut unknown: serde_json::Value = serde_json::from_str(first).unwrap();
+    unknown["unexpected"] = serde_json::json!(true);
+    assert!(
+        parse_corpus(&format!("{unknown}\n"))
+            .unwrap_err()
+            .contains("unknown field")
+    );
+    assert_eq!(
+        parse_corpus(&format!("{first}\n{first}\n")).unwrap_err(),
+        "duplicate case id two_handlers_disagree_fallthrough"
+    );
+
+    let (field, value, expected) = [
+        ("schema", serde_json::json!(2), "unsupported schema"),
+        ("mode", serde_json::json!("report"), "unknown mode"),
+        (
+            "observation_kind",
+            serde_json::json!("handler_exit"),
+            "unknown variant",
+        ),
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
+
+    let mut invalid: serde_json::Value = serde_json::from_str(first).unwrap();
+    invalid[field] = value;
+    assert!(
+        parse_corpus(&format!("{invalid}\n"))
+            .unwrap_err()
+            .contains(expected)
+    );
+}
+
 #[test]
 fn multiple_handler_corpus_rejects_inexact_and_crossed_rows() {
     let first = CORPUS.lines().next().expect("first corpus row");
@@ -285,23 +327,7 @@ fn multiple_handler_corpus_rejects_inexact_and_crossed_rows() {
         parse_corpus(&format!("{first}\n{first}\n")).unwrap_err(),
         "duplicate case id two_handlers_disagree_fallthrough"
     );
-    for (field, value, expected) in [
-        ("schema", serde_json::json!(2), "unsupported schema"),
-        ("mode", serde_json::json!("report"), "unknown mode"),
-        (
-            "observation_kind",
-            serde_json::json!("handler_exit"),
-            "unknown variant",
-        ),
-    ] {
-        let mut invalid: serde_json::Value = serde_json::from_str(first).unwrap();
-        invalid[field] = value;
-        assert!(
-            parse_corpus(&format!("{invalid}\n"))
-                .unwrap_err()
-                .contains(expected)
-        );
-    }
+
     let mut crossed: serde_json::Value = serde_json::from_str(first).unwrap();
     crossed["family"] = serde_json::json!("unhandled-remainder");
     assert!(
@@ -343,44 +369,45 @@ fn internal_rows_match_complete_production_observations() {
     }
 }
 
-#[test]
-fn internal_fixtures_detect_multiple_handler_routing_mutations() {
+#[rstest::rstest]
+#[case::two_handlers_disagree_fallthrough(
+    "two_handlers_disagree_fallthrough",
+    BindingFlowTestMutation::KeepFirstHandlerOnly
+)]
+#[case::three_handlers_preserve_mapping(
+    "three_handlers_preserve_mapping",
+    BindingFlowTestMutation::KeepLastHandlerOnly
+)]
+#[case::different_handler_break_continue(
+    "different_handler_break_continue",
+    BindingFlowTestMutation::FlattenHandlerAbruptToFallthrough
+)]
+#[case::unhandled_remainder_terminates(
+    "unhandled_remainder_terminates",
+    BindingFlowTestMutation::DropBodyTerminates
+)]
+#[case::per_handler_cleanup_categories(
+    "per_handler_cleanup_categories",
+    BindingFlowTestMutation::OmitHandlerFallthroughCleanup
+)]
+#[case::per_handler_cleanup_categories_6(
+    "per_handler_cleanup_categories",
+    BindingFlowTestMutation::OmitHandlerTerminateCleanup
+)]
+fn internal_fixtures_detect_multiple_handler_routing_mutations_scenario_1(
+    #[case] id: &str,
+    #[case] mutation: BindingFlowTestMutation,
+) {
     let cases = parse_corpus(CORPUS).expect("valid Lean multiple-handler corpus");
     let case = |id: &str| cases.iter().find(|item| item.id == id).unwrap();
-    for (id, mutation) in [
-        (
-            "two_handlers_disagree_fallthrough",
-            BindingFlowTestMutation::KeepFirstHandlerOnly,
-        ),
-        (
-            "three_handlers_preserve_mapping",
-            BindingFlowTestMutation::KeepLastHandlerOnly,
-        ),
-        (
-            "different_handler_break_continue",
-            BindingFlowTestMutation::FlattenHandlerAbruptToFallthrough,
-        ),
-        (
-            "unhandled_remainder_terminates",
-            BindingFlowTestMutation::DropBodyTerminates,
-        ),
-        (
-            "per_handler_cleanup_categories",
-            BindingFlowTestMutation::OmitHandlerFallthroughCleanup,
-        ),
-        (
-            "per_handler_cleanup_categories",
-            BindingFlowTestMutation::OmitHandlerTerminateCleanup,
-        ),
-    ] {
-        let item = case(id);
-        let mutated =
-            binding_flow_try_exit_snapshot_with_mutation(&item.source, &item.marker, mutation)
-                .expect("mutation premise must remain observable");
-        assert_ne!(
-            mutated,
-            expected_snapshot(item),
-            "{id} must detect {mutation:?}"
-        );
-    }
+
+    let item = case(id);
+    let mutated =
+        binding_flow_try_exit_snapshot_with_mutation(&item.source, &item.marker, mutation)
+            .expect("mutation premise must remain observable");
+    assert_ne!(
+        mutated,
+        expected_snapshot(item),
+        "{id} must detect {mutation:?}"
+    );
 }

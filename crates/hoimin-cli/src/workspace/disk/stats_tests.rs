@@ -79,8 +79,15 @@ impl Samples {
     }
 }
 
-#[test]
-fn historical_minimum_preserves_unmeasured_zero_and_missing_filesystems() {
+#[rstest::rstest]
+#[case::vec_1(0)]
+#[case::vec_btreemap_from_1_0_2(1)]
+#[case::vec_btreemap_from_1_100_2_50_btreemap_from_1_90_3(2)]
+#[case::vec_btreemap_from_2_50_btreemap_from_1_90_btreemap_from_2_80_4(3)]
+#[case::vec_btreemap_from_2_50_btreemap_from_1_90_btreemap_from_2_30_5(4)]
+fn historical_minimum_preserves_unmeasured_zero_and_missing_filesystems(
+    #[case] scenario_index: usize,
+) {
     let cases = [
         (vec![], None),
         (vec![BTreeMap::from([(1, 0)])], Some(0)),
@@ -108,16 +115,18 @@ fn historical_minimum_preserves_unmeasured_zero_and_missing_filesystems() {
             Some(30),
         ),
     ];
-    for (history, expected) in cases {
-        let samples = Samples::new();
 
-        for capacities in history {
-            samples.accept(capacities, 1);
-        }
-        let actual = samples.snapshot().minimum_available_bytes();
+    let (history, expected) = cases.into_iter().nth(scenario_index).unwrap();
 
-        assert_eq!(actual, expected);
+    let samples = Samples::new();
+
+    for capacities in history {
+        samples.accept(capacities, 1);
     }
+
+    let actual = samples.snapshot().minimum_available_bytes();
+
+    assert_eq!(actual, expected);
 }
 
 proptest! {
@@ -131,37 +140,44 @@ proptest! {
         for capacities in history {
             samples.accept(capacities, 1);
         }
+
         let actual = samples.snapshot().minimum_available_bytes();
 
         prop_assert_eq!(actual, expected);
     }
 }
 
-#[test]
-fn rejected_samples_preserve_all_successful_statistics() {
-    for initial in [vec![], vec![BTreeMap::from([(1, 900), (2, 700)])]] {
-        for (refresh_fails, reading_fails, capacities) in [
-            (true, false, BTreeMap::from([(1, 0)])),
-            (false, true, BTreeMap::from([(1, 0)])),
-            (false, false, BTreeMap::new()),
-        ] {
-            let samples = Samples::new();
-            for capacities in initial.clone() {
-                samples.accept(capacities, 1);
-            }
-            let rejected = if reading_fails {
-                Err(io::Error::other("measurement failed"))
-            } else {
-                Ok(reading(capacities, 99))
-            };
-            let before = samples.snapshot();
+#[rstest::rstest]
+#[case::vec_1(vec![])]
+#[case::vec_btreemap_from_1_900_2_700_2(vec![BTreeMap::from([(1, 900), (2, 700)])])]
+fn rejected_samples_preserve_all_successful_statistics(
+    #[case] initial: Vec<BTreeMap<u64, u64>>,
+    #[values(0, 1, 2)] scenario_index: usize,
+) {
+    let (refresh_fails, reading_fails, capacities) = [
+        (true, false, BTreeMap::from([(1, 0)])),
+        (false, true, BTreeMap::from([(1, 0)])),
+        (false, false, BTreeMap::new()),
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
 
-            samples.sample(rejected, refresh_fails);
-            let after = samples.snapshot();
-
-            assert_eq!(after, before);
-        }
+    let samples = Samples::new();
+    for capacities in initial.clone() {
+        samples.accept(capacities, 1);
     }
+    let rejected = if reading_fails {
+        Err(io::Error::other("measurement failed"))
+    } else {
+        Ok(reading(capacities, 99))
+    };
+    let before = samples.snapshot();
+
+    samples.sample(rejected, refresh_fails);
+    let after = samples.snapshot();
+
+    assert_eq!(after, before);
 }
 
 #[test]

@@ -151,32 +151,28 @@ impl Project {
     }
 }
 
-#[test]
-fn file_and_line_import_copied_regular_package_from_explicit_root() {
-    for (selector, source) in [
-        (
-            ["--file", "src/pkg/calc.py"],
-            "def add(a, b):\n    return a + b\n",
-        ),
-        (
-            ["--line", "src/pkg/calc.py:2"],
-            "def add(a, b):\n    return a + b\n\ndef unused(a, b):\n    return a + b\n",
-        ),
-    ] {
-        let mut project = Project::new();
-        project.source = source;
-        fs::write(project.root.join("src/pkg/calc.py"), project.source).unwrap();
-        let output = project.execute("run", &selector, &["--import-root", "src"], false);
-        let report = project.assert_killed(&output);
-        assert_eq!(
-            report["run"]["normalized_config"]["import_roots"],
-            json!(["src"])
-        );
-        assert_eq!(
-            report["run"]["normalized_config"]["selection"]["sources"],
-            json!([])
-        );
-    }
+#[rstest::rstest]
+#[case::file_1(["--file", "src/pkg/calc.py"], "def add(a, b):\n    return a + b\n")]
+#[case::line_2(["--line", "src/pkg/calc.py:2"], "def add(a, b):\n    return a + b\n\ndef unused(a, b):\n    return a + b\n")]
+fn file_and_line_import_copied_regular_package_from_explicit_root(
+    #[case] selector: [&str; 2],
+    #[case] source: &'static str,
+) {
+    let mut project = Project::new();
+    project.source = source;
+    fs::write(project.root.join("src/pkg/calc.py"), project.source).unwrap();
+
+    let output = project.execute("run", &selector, &["--import-root", "src"], false);
+    let report = project.assert_killed(&output);
+
+    assert_eq!(
+        report["run"]["normalized_config"]["import_roots"],
+        json!(["src"])
+    );
+    assert_eq!(
+        report["run"]["normalized_config"]["selection"]["sources"],
+        json!([])
+    );
 }
 
 #[test]
@@ -188,12 +184,14 @@ fn inherited_pythonpath_workaround_still_imports_worker_package() {
 #[test]
 fn serialized_plan_verify_inherits_import_roots_and_preserves_plan() {
     let project = Project::new();
+
     let output = project.execute(
         "plan",
         &["--file", "src/pkg/calc.py"],
         &["--import-root", "./src", "--import-root", "src/"],
         false,
     );
+
     assert!(output.status.success(), "{output:?}");
     assert!(!project.log.exists());
     let plan: Value = jsonl_report::from_slice(&output.stdout).unwrap();
@@ -211,42 +209,46 @@ fn serialized_plan_verify_inherits_import_roots_and_preserves_plan() {
     assert_eq!(fs::read(path).unwrap(), output.stdout);
 }
 
-#[test]
-fn unavailable_copied_import_roots_fail_before_baseline() {
-    for (root, options) in [
-        ("missing", vec![]),
-        ("imports", vec!["--exclude", "imports"]),
-        ("check.py", vec![]),
-    ] {
-        let project = Project::new();
-        fs::create_dir(project.root.join("imports")).unwrap();
-        fs::write(project.root.join("imports/helper.py"), "value = 1\n").unwrap();
-        let mut flags = vec!["--import-root", root];
-        flags.extend(options);
-        let output = project.execute("run", &["--file", "src/pkg/calc.py"], &flags, false);
-        assert!(!output.status.success(), "{output:?}");
-        let combined = format!(
-            "{}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(
-            combined.contains("unavailable in the copied worker"),
-            "{combined}"
-        );
-        assert!(!project.log.exists(), "baseline command ran");
-    }
+#[rstest::rstest]
+#[case::missing_1("missing", vec![])]
+#[case::imports_2("imports", vec!["--exclude", "imports"])]
+#[case::check_py_3("check.py", vec![])]
+fn unavailable_copied_import_roots_fail_before_baseline(
+    #[case] root: &str,
+    #[case] options: Vec<&str>,
+) {
+    let project = Project::new();
+    fs::create_dir(project.root.join("imports")).unwrap();
+    fs::write(project.root.join("imports/helper.py"), "value = 1\n").unwrap();
+    let mut flags = vec!["--import-root", root];
+    flags.extend(options);
+
+    let output = project.execute("run", &["--file", "src/pkg/calc.py"], &flags, false);
+
+    assert!(!output.status.success(), "{output:?}");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        combined.contains("unavailable in the copied worker"),
+        "{combined}"
+    );
+    assert!(!project.log.exists(), "baseline command ran");
 }
 
 #[test]
-fn old_or_forged_plans_fail_before_baseline() {
+fn old_plans_fail_before_baseline() {
     let project = Project::new();
+
     let output = project.execute(
         "plan",
         &["--file", "src/pkg/calc.py"],
         &["--import-root", "src"],
         false,
     );
+
     assert!(output.status.success(), "{output:?}");
     let plan: Value = jsonl_report::from_slice(&output.stdout).unwrap();
     let path = project.temp.path().join("invalid-plan.json");
@@ -262,19 +264,35 @@ fn old_or_forged_plans_fail_before_baseline() {
     // Obsolete shapes fail typed decoding without special version-error precedence.
     assert!(String::from_utf8_lossy(&rejected.stderr).contains("plan.manifest.invalid"));
     assert!(!project.log.exists());
-    for roots in [
-        json!(["../outside"]),
-        json!(["/absolute"]),
-        json!(["src", "src"]),
-        json!(["./src"]),
-    ] {
-        let mut forged = plan.clone();
-        forged["normalized_config"]["import_roots"] = roots;
-        fs::write(&path, serde_json::to_vec(&forged).unwrap()).unwrap();
-        let rejected = Project::verify(&path);
-        assert!(!rejected.status.success(), "{rejected:?}");
-        assert!(!project.log.exists());
-    }
+}
+
+#[rstest::rstest]
+#[case::parent(json!(["../outside"]))]
+#[case::absolute(json!(["/absolute"]))]
+#[case::duplicate(json!(["src", "src"]))]
+#[case::noncanonical(json!(["./src"]))]
+fn forged_import_roots_fail_before_baseline(#[case] roots: Value) {
+    let project = Project::new();
+
+    let output = project.execute(
+        "plan",
+        &["--file", "src/pkg/calc.py"],
+        &["--import-root", "src"],
+        false,
+    );
+
+    assert!(output.status.success(), "{output:?}");
+    let plan: Value = jsonl_report::from_slice(&output.stdout).unwrap();
+    let path = project.temp.path().join("invalid-plan.json");
+
+    let mut forged = plan;
+    forged["normalized_config"]["import_roots"] = roots;
+    fs::write(&path, serde_json::to_vec(&forged).unwrap()).unwrap();
+
+    let rejected = Project::verify(&path);
+
+    assert!(!rejected.status.success(), "{rejected:?}");
+    assert!(!project.log.exists());
 }
 
 #[test]
@@ -282,6 +300,7 @@ fn empty_selected_import_root_survives_children_only_exclusion() {
     let project = Project::new();
     fs::create_dir(project.root.join("imports")).unwrap();
     fs::write(project.root.join("imports/helper.py"), "value = 1\n").unwrap();
+
     let output = project.execute(
         "run",
         &["--file", "src/pkg/calc.py"],
@@ -289,6 +308,7 @@ fn empty_selected_import_root_survives_children_only_exclusion() {
         false,
     );
     let report: Value = jsonl_report::from_slice(&output.stdout).unwrap();
+
     assert_eq!(report["baseline"]["termination"]["Exit"], 0, "{output:?}");
     assert!(project.log.exists());
 }

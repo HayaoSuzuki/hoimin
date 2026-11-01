@@ -259,10 +259,12 @@ mod tests {
         ledger.next_id = Some(u64::MAX);
 
         let last = ledger.reserve(BudgetKind::Copy, 1).unwrap();
+
         assert_eq!(last, ReservationId(u64::MAX));
         assert_eq!(ledger.reserved(BudgetKind::Copy), 1);
 
         let error = ledger.reserve(BudgetKind::Copy, 1).unwrap_err();
+
         assert_eq!(error, ReserveError::ReservationIdsExhausted);
         assert_eq!(ledger.reserved(BudgetKind::Copy), 1);
         assert_eq!(ledger.reservation(last).unwrap().amount, 1);
@@ -334,6 +336,7 @@ mod tests {
         };
 
         let error = reserve_workspace_copy(&mut ledger, &preflight).unwrap_err();
+
         assert!(matches!(
             error,
             WorkspaceBudgetError::Reserve(ReserveError::LimitReached(_))

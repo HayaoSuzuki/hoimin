@@ -133,7 +133,9 @@ def test_failed_tag_push_cannot_claim_success(repository: Path) -> None:
 
     assert result.returncode != 0
     assert not result.stdout.strip()
-    assert not git(repository, "ls-remote", "--tags", "origin")
+    observed_result = git(repository, "ls-remote", "--tags", "origin")
+
+    assert not observed_result
 
 
 @pytest.fixture
@@ -177,10 +179,9 @@ def test_tag_collision_retries_without_replacing_other_commit(
 
     tag = automation.reserve_tag(repository, second)
 
-    assert tag == "v0.1.1"
-
     tags = automation.remote_tags(repository)
 
+    assert tag == "v0.1.1"
     assert tags == {"v0.1.0": first, "v0.1.1": second}
 
 
@@ -193,15 +194,14 @@ def test_delayed_older_commit_is_skipped_without_creating_a_tag(
 
     tag = automation.reserve_tag(repository, newer)
 
-    assert tag == "v0.1.0"
     result = release(repository, "tag", "--commit", older)
-
-    assert result.returncode == 0, result.stderr
-    assert not result.stdout.strip()
-    assert "Skipping release" in result.stderr
 
     tags = automation.remote_tags(repository)
 
+    assert tag == "v0.1.0"
+    assert result.returncode == 0, result.stderr
+    assert not result.stdout.strip()
+    assert "Skipping release" in result.stderr
     assert tags == {"v0.1.0": newer}
 
 
@@ -220,10 +220,9 @@ def test_newer_commit_winning_tag_race_prevents_older_retry(
 
     tag = automation.reserve_tag(repository, older)
 
-    assert tag is None
-
     tags = automation.remote_tags(repository)
 
+    assert tag is None
     assert tags == {"v0.1.0": newer}
 
 
@@ -292,16 +291,15 @@ def test_different_version_floors_share_atomic_reservation(
         checkouts[race.reserving_role], commits[race.reserving_role]
     )
 
-    assert tag == race.expected_tag
     tags = automation.remote_tags(repository)
-    assert tags == {tag: commits[role] for tag, role in race.expected_roles.items()}
 
-    assert (
-        git(
-            repository, "ls-remote", "origin", "refs/heads/hoimin-release-state"
-        ).split()[0]
-        == newer
+    assert tag == race.expected_tag
+    assert tags == {tag: commits[role] for tag, role in race.expected_roles.items()}
+    observed_result = git(
+        repository, "ls-remote", "origin", "refs/heads/hoimin-release-state"
     )
+
+    assert observed_result.split()[0] == newer
 
 
 def test_rejected_state_update_does_not_leave_a_version_tag(repository: Path) -> None:
@@ -315,10 +313,9 @@ def test_rejected_state_update_does_not_leave_a_version_tag(repository: Path) ->
         repository, "tag", "--commit", git(repository, "rev-parse", "HEAD")
     )
 
-    assert result.returncode != 0
-
     release_state = automation.remote_release_state(repository)
 
+    assert result.returncode != 0
     assert release_state == ({}, "")
 
 
@@ -329,16 +326,15 @@ def test_divergent_history_cannot_get_newer_stable_tag(repository: Path) -> None
 
     tag = automation.reserve_tag(repository, released)
 
-    assert tag == "v0.1.0"
     git(repository, "checkout", "-b", "divergent", base)
     git(repository, "commit", "--allow-empty", "-m", "different history")
 
     next_tag = automation.reserve_tag(repository, git(repository, "rev-parse", "HEAD"))
 
-    assert next_tag is None
-
     tags = automation.remote_tags(repository)
 
+    assert tag == "v0.1.0"
+    assert next_tag is None
     assert tags == {"v0.1.0": released}
 
 
@@ -362,14 +358,12 @@ def test_tag_ancestry_fetches_new_remote_objects(
 
     tag = automation.reserve_tag(other, newer)
 
-    assert tag == "v0.1.0"
-
     next_tag = automation.reserve_tag(repository, older)
-
-    assert next_tag is None
 
     tags = automation.remote_tags(repository)
 
+    assert tag == "v0.1.0"
+    assert next_tag is None
     assert tags == {"v0.1.0": newer}
 
 
@@ -378,7 +372,6 @@ def test_ancestry_errors_are_not_reported_as_successful_skips(
 ) -> None:
     tag = automation.reserve_tag(repository, git(repository, "rev-parse", "HEAD"))
 
-    assert tag == "v0.1.0"
     git(repository, "commit", "--allow-empty", "-m", "next")
     original_git = automation.git
 
@@ -397,6 +390,8 @@ def test_ancestry_errors_are_not_reported_as_successful_skips(
     with pytest.raises(subprocess.CalledProcessError):
         automation.reserve_tag(repository, git(repository, "rev-parse", "HEAD"))
 
+    assert tag == "v0.1.0"
+
 
 def test_shallow_checkout_is_deepened_before_ancestry_check(
     repository: Path, tmp_path: Path
@@ -405,7 +400,6 @@ def test_shallow_checkout_is_deepened_before_ancestry_check(
 
     tag = automation.reserve_tag(repository, first)
 
-    assert tag == "v0.1.0"
     git(repository, "commit", "--allow-empty", "-m", "newer")
     newer = git(repository, "rev-parse", "HEAD")
     git(repository, "push", "origin", "main")
@@ -421,12 +415,16 @@ def test_shallow_checkout_is_deepened_before_ancestry_check(
         str(shallow),
     )
 
-    assert git(shallow, "rev-parse", "--is-shallow-repository") == "true"
+    shallow_before = git(shallow, "rev-parse", "--is-shallow-repository")
 
     next_tag = automation.reserve_tag(shallow, newer)
 
+    shallow_after = git(shallow, "rev-parse", "--is-shallow-repository")
+
+    assert tag == "v0.1.0"
     assert next_tag == "v0.1.1"
-    assert git(shallow, "rev-parse", "--is-shallow-repository") == "false"
+    assert shallow_before == "true"
+    assert shallow_after == "false"
 
 
 @pytest.fixture
@@ -501,10 +499,11 @@ def test_skipped_reservation_prevents_preparation(
 
     result = command("bash", "-e", "-o", "pipefail", "-c", reserve_script, cwd=tmp_path)
 
-    assert result.returncode == 0, result.stderr
     reserved_tag = dict(
         line.split("=", 1) for line in reserve_output.read_text().splitlines()
     )["tag"]
+
+    assert result.returncode == 0, result.stderr
     assert reserved_tag == ""
     assert (
         "needs.reserve.outputs.tag != ''" in prepare_workflow["jobs"]["prepare"]["if"]
@@ -527,19 +526,20 @@ def test_release_preparation_uses_reserved_tag(
         "bash", "-e", "-o", "pipefail", "-c", reserve_script, cwd=tmp_path
     )
 
-    assert reserved.returncode == 0, reserved.stderr
     reserved_tag = dict(
         line.split("=", 1) for line in reserve_output.read_text().splitlines()
     )["tag"]
-    assert reserved_tag == "v1.2.3"
     monkeypatch.setenv("RESERVED_TAG", reserved_tag)
     output = tmp_path / "output"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
 
     result = command("bash", "-e", "-o", "pipefail", "-c", prepare_script, cwd=tmp_path)
 
-    assert result.returncode == 0, result.stderr
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+
+    assert reserved.returncode == 0, reserved.stderr
+    assert reserved_tag == "v1.2.3"
+    assert result.returncode == 0, result.stderr
     assert values["publish"] == "true"
     assert values["commit"] == "a" * 40
     assert values["tag"] == "v1.2.3"
@@ -558,8 +558,9 @@ def test_preview_preparation_uses_run_version(
 
     result = command("bash", "-e", "-o", "pipefail", "-c", prepare_script, cwd=tmp_path)
 
-    assert result.returncode == 0, result.stderr
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+
+    assert result.returncode == 0, result.stderr
     assert values["publish"] == "false"
     assert values["commit"] == "a" * 40
     assert values["tag"] == "v0.1.0-dev.123"
@@ -585,10 +586,9 @@ def test_tag_push_with_lost_response_is_recovered(
 
     tag = automation.reserve_tag(repository, commit)
 
-    assert tag == "v0.1.0"
-
     tags = automation.remote_tags(repository)
 
+    assert tag == "v0.1.0"
     assert tags == {"v0.1.0": commit}
 
 
@@ -599,50 +599,52 @@ def test_workspace_version_can_raise_release_floor(
     git(repository, "tag", "v0.1.19")
     git(repository, "push", "origin", "--tags")
 
-    assert release(repository, "set-version", version).returncode == 0
+    version_result = release(repository, "set-version", version)
     git(repository, "commit", "-am", "raise release floor")
     commit = git(repository, "rev-parse", "HEAD")
 
-    assert (
-        release(repository, "tag", "--commit", commit).stdout.strip() == f"v{version}"
-    )
+    tag_result = release(repository, "tag", "--commit", commit)
+
+    assert version_result.returncode == 0
+    assert tag_result.stdout.strip() == f"v{version}"
 
 
 @pytest.mark.parametrize("version", ["1.2.3", "1.2.3-dev.123"])
 def test_version_updates_manifests_and_both_lockfiles(
     repository: Path, version: str
 ) -> None:
+    lockfiles = {
+        "Cargo.lock": (
+            {"hoimin-budget-math", "hoimin-core", "hoimin-cli", "hoimin-python"},
+            version,
+        ),
+        "uv.lock": ({"hoimin"}, version.replace("-dev.", ".dev")),
+    }
+    original_packages = {
+        name: tomllib.loads((ROOT / name).read_text(encoding="utf-8"))["package"]
+        for name in lockfiles
+    }
+    updates = {
+        name: {package: {"version": expected_version} for package in packages}
+        for name, (packages, expected_version) in lockfiles.items()
+    }
+    expected_packages = {
+        name: [package | updates[name].get(package["name"], {}) for package in packages]
+        for name, packages in original_packages.items()
+    }
+
     result = release(repository, "set-version", version)
+
     documents = {
         name: tomllib.loads((repository / name).read_text(encoding="utf-8"))
         for name in VERSION_FILES
     }
-
     assert result.returncode == 0, result.stderr
     assert documents["Cargo.toml"]["workspace"]["package"]["version"] == version
     assert documents["pyproject.toml"]["project"]["version"] == version.replace(
         "-dev.", ".dev"
     )
-    for name, packages, expected_version in (
-        (
-            "Cargo.lock",
-            {"hoimin-budget-math", "hoimin-core", "hoimin-cli", "hoimin-python"},
-            version,
-        ),
-        ("uv.lock", {"hoimin"}, version.replace("-dev.", ".dev")),
-    ):
-        original = tomllib.loads((ROOT / name).read_text(encoding="utf-8"))["package"]
-        paired = list(zip(original, documents[name]["package"], strict=True))
-        for before, after in [
-            (before, after) for before, after in paired if before["name"] in packages
-        ]:
-            assert after == {**before, "version": expected_version}
-        for before, after in [
-            (before, after)
-            for before, after in paired
-            if before["name"] not in packages
-        ]:
-            assert after == before
+    assert {name: documents[name]["package"] for name in lockfiles} == expected_packages
 
 
 @pytest.mark.parametrize("version", ["v1.2.3", "01.2.3", "1.2", "1.2.3\n", "1.2.3;id"])
@@ -697,39 +699,52 @@ def package_inputs(
 
 
 def test_zip_archive_contains_executable_readme_and_licenses(tmp_path: Path) -> None:
+    prefix = "hoimin-v1.2.3-windows-x86_64"
+
     binary, notices, result = package_inputs(tmp_path, "windows-x86_64", "hoimin.exe")
 
-    assert result.returncode == 0, result.stderr
     (archive,) = (tmp_path / "dist").iterdir()
-    prefix = "hoimin-v1.2.3-windows-x86_64"
-    assert archive.name == prefix + ".zip"
     with zipfile.ZipFile(archive) as zipped:
-        assert set(zipped.namelist()) == {binary.name, "README.md", *notices}
-        assert zipped.read(binary.name) == binary.read_bytes()
-        for name, content in notices.items():
-            assert zipped.read(name) == content
+        members = set(zipped.namelist())
+        executable_bytes = zipped.read(binary.name)
+        notice_bytes = {name: zipped.read(name) for name in notices}
+
+    assert result.returncode == 0, result.stderr
+    assert archive.name == prefix + ".zip"
+    assert members == {binary.name, "README.md", *notices}
+    assert executable_bytes == binary.read_bytes()
+    assert notice_bytes == notices
 
 
 @pytest.mark.parametrize("platform", ["linux-x86_64", "macos-aarch64"])
 def test_tar_archive_contains_executable_readme_and_licenses(
     tmp_path: Path, platform: str
 ) -> None:
+    prefix = f"hoimin-v1.2.3-{platform}"
+
     binary, notices, result = package_inputs(tmp_path, platform, "hoimin")
 
-    assert result.returncode == 0, result.stderr
     (archive,) = (tmp_path / "dist").iterdir()
-    prefix = f"hoimin-v1.2.3-{platform}"
-    assert archive.name == prefix + ".tar.gz"
     with tarfile.open(archive) as packed:
-        assert set(packed.getnames()) == {binary.name, "README.md", *notices}
-        assert packed.getmember(binary.name).mode & 0o111
+        members = set(packed.getnames())
+        executable_mode = packed.getmember(binary.name).mode
         contents = packed.extractfile(binary.name)
         assert contents is not None
-        assert contents.read() == binary.read_bytes()
-        for name, content in notices.items():
-            notice = packed.extractfile(name)
-            assert notice is not None
-            assert notice.read() == content
+        executable_bytes = contents.read()
+        extracted_notices = {name: packed.extractfile(name) for name in notices}
+        notice_bytes = {
+            name: notice.read()
+            for name, notice in extracted_notices.items()
+            if notice is not None
+        }
+
+    assert result.returncode == 0, result.stderr
+    assert archive.name == prefix + ".tar.gz"
+    assert members == {binary.name, "README.md", *notices}
+    assert executable_mode & 0o111
+    assert executable_bytes == binary.read_bytes()
+    assert all(notice is not None for notice in extracted_notices.values())
+    assert notice_bytes == notices
 
 
 def release_assets(directory: Path) -> list[Path]:
@@ -814,12 +829,13 @@ def test_verifying_checksums_never_repairs_downloaded_bytes(
         "a" * 40,
     )
 
-    assert release(tmp_path, *arguments).returncode == 0
+    initial_result = release(tmp_path, *arguments)
     sums = tmp_path / "SHA256SUMS"
     damage_checksums(sums)
     before = {path.name: path.read_bytes() for path in tmp_path.iterdir()}
     result = release(tmp_path, *arguments, "--verify")
 
+    assert initial_result.returncode == 0
     assert (result.returncode == 0) == succeeds, result.stderr
     assert diagnostic in result.stderr
 
@@ -855,19 +871,18 @@ def test_incomplete_or_mixed_assets_cannot_be_published(
     assets = release_assets(tmp_path)
     damage_assets(assets)
 
-    assert (
-        release(
-            tmp_path,
-            "checksums",
-            "--directory",
-            str(tmp_path),
-            "--version",
-            "1.2.3",
-            "--commit",
-            "a" * 40,
-        ).returncode
-        != 0
+    observed_result = release(
+        tmp_path,
+        "checksums",
+        "--directory",
+        str(tmp_path),
+        "--version",
+        "1.2.3",
+        "--commit",
+        "a" * 40,
     )
+
+    assert observed_result.returncode != 0
     assert not (tmp_path / "SHA256SUMS").exists()
 
 
@@ -1015,15 +1030,19 @@ def test_publication_uses_server_version_selection_in_both_finish_orders(
         for step in workflow["jobs"]["publish"]["steps"]
         if step.get("name") == "Publish complete release"
     )
+    results = []
     for tag in order:
         monkeypatch.setenv("TAG", tag)
         result = command(
             "bash", "-e", "-o", "pipefail", "-c", step["run"], cwd=tmp_path
         )
 
-        assert result.returncode == 0, result.stderr
+        results.append(result)
     state = json.loads((tmp_path / "server.json").read_text())
 
+    assert [result.returncode for result in results] == [0, 0], [
+        result.stderr for result in results
+    ]
     assert state["published"] == list(order)
     assert state["latest"] == "v1.2.4"
 

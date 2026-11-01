@@ -1300,6 +1300,7 @@ mod tests {
     #[test]
     fn shutdown_close_timeout_does_not_erase_completed_reap_proof() {
         let output = tempfile::tempdir().unwrap();
+
         let output = camino::Utf8PathBuf::from_path_buf(output.path().to_owned()).unwrap();
         let handler = ProcessHandler::new(
             ResourceBackend::Portable(PortableBackend::for_tests()),
@@ -1354,6 +1355,7 @@ mod tests {
         let active = AtomicUsize::new(0);
         let failed = AtomicBool::new(false);
         drop(CompletionGuard::enter(&active, &failed));
+
         assert_eq!(active.load(Ordering::Acquire), 0);
         assert!(failed.load(Ordering::Acquire));
 
@@ -1807,6 +1809,7 @@ mod tests {
         });
         started_rx.recv().unwrap();
         std::thread::sleep(Duration::from_millis(20));
+
         assert!(!cancellation.is_cancelled());
 
         drop(spawn);
@@ -1827,6 +1830,7 @@ mod tests {
         });
         started_rx.recv().unwrap();
         std::thread::sleep(Duration::from_millis(20));
+
         assert!(!request.is_cancelled());
 
         drop(spawn);
@@ -2012,10 +2016,9 @@ mod tests {
 
     #[test]
     fn probe_output_close_timeout_remains_fatal() {
-        // Arrange.
         let cleanup = EffectFailed::other(EffectId(42), "process.output.close.timeout", "cleanup");
         let context = execution_context("probe");
-        // Act.
+
         let error = combine_process_and_output(
             Ok(ProcessTermination::Exit(0)),
             Err(cleanup.clone()),
@@ -2023,7 +2026,7 @@ mod tests {
             output_ref(),
         )
         .unwrap_err();
-        // Assert.
+
         assert_eq!(error, cleanup);
     }
 
@@ -2047,6 +2050,7 @@ mod tests {
         let cleanup = std::io::Error::new(std::io::ErrorKind::TimedOut, "cleanup timed out");
 
         let attach = ResourceError::MissingProcessId;
+
         let error = attach_failure(EffectId(43), &attach, Some(&cleanup));
 
         assert_eq!(error.id, EffectId(43));

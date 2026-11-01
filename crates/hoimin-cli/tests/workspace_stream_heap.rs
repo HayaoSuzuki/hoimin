@@ -75,31 +75,23 @@ fn observe(bytes: usize) -> [usize; 4] {
     [preflight, create, unchanged, changed]
 }
 
-#[test]
-fn workspace_content_buffers_do_not_scale_with_file_bytes() {
+static ALLOCATION_WINDOW: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[rstest::rstest]
+#[case::small(1)]
+#[case::medium(8)]
+#[case::large(32)]
+fn workspace_content_buffers_do_not_scale_with_file_bytes(#[case] mib: usize) {
+    let _window = ALLOCATION_WINDOW.lock().unwrap();
     observe(1);
-    let mut observations = Vec::new();
-    for mib in [1, 8, 32] {
-        for repeat in 0..3 {
-            let started = Instant::now();
-            let peaks = observe(mib * 1024 * 1024);
-            eprintln!(
-                "mib={mib} repeat={repeat} stage_peaks={peaks:?} elapsed_ms={}",
-                started.elapsed().as_millis()
-            );
-            observations.push(peaks);
-        }
-    }
-    let control = tempfile::tempdir().unwrap();
-    let path = control.path().join("control.bin");
-    write_fixture(&path, 1024 * 1024);
-    let (eager, eager_peak) = measure(|| fs::read(path).unwrap());
-    assert_eq!(eager.len(), 1024 * 1024);
-    assert!(
-        eager_peak > PEAK_LIMIT,
-        "the eager-read control must fail the bound"
-    );
-    for peaks in observations {
+    for repeat in 0..3 {
+        let started = Instant::now();
+        let peaks = observe(mib * 1024 * 1024);
+        eprintln!(
+            "mib={mib} repeat={repeat} stage_peaks={peaks:?} elapsed_ms={}",
+            started.elapsed().as_millis()
+        );
+
         for (stage, peak) in peaks.into_iter().enumerate() {
             assert!(
                 peak <= PEAK_LIMIT,
@@ -107,4 +99,19 @@ fn workspace_content_buffers_do_not_scale_with_file_bytes() {
             );
         }
     }
+}
+
+#[test]
+fn eager_source_control_exceeds_the_streaming_heap_bound() {
+    let _window = ALLOCATION_WINDOW.lock().unwrap();
+    let control = tempfile::tempdir().unwrap();
+    let path = control.path().join("control.bin");
+    write_fixture(&path, 1024 * 1024);
+    let (eager, eager_peak) = measure(|| fs::read(path).unwrap());
+
+    assert_eq!(eager.len(), 1024 * 1024);
+    assert!(
+        eager_peak > PEAK_LIMIT,
+        "the eager-read control must fail the bound"
+    );
 }

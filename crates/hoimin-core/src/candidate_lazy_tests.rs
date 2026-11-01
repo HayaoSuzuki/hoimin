@@ -24,6 +24,7 @@ fn unused_context_does_not_materialize_locations() {
     VALIDATION_INDEX_BUILDS.with(|builds| builds.set(0));
     let context = CandidateValidationContext::new(source.as_bytes()).unwrap();
     std::hint::black_box(&context);
+
     assert_eq!(VALIDATION_INDEX_BUILDS.with(Cell::get), 0);
 }
 
@@ -35,6 +36,7 @@ fn repeated_validation_reuses_one_materialization() {
     VALIDATION_INDEX_BUILDS.with(|builds| builds.set(0));
     let first = validate_candidate_with_context(&context, &candidate).unwrap();
     let second = validate_candidate_with_context(&context, &candidate).unwrap();
+
     assert_eq!(first, second);
     assert_eq!(VALIDATION_INDEX_BUILDS.with(Cell::get), 1);
 }
@@ -161,6 +163,7 @@ fn length_check_accepts_the_largest_raw_or_decoded_source() {
 #[test]
 fn length_check_rejects_decoded_expansion_beyond_the_raw_limit() {
     let raw_length = u32::MAX as usize / 2 + 1;
+
     assert_eq!(check_source_length(raw_length), Ok(()));
     assert_eq!(
         check_source_length(raw_length * 2),

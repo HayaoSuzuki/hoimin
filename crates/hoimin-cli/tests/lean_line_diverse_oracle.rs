@@ -82,31 +82,36 @@ fn parse(input: &str) -> Result<Vec<Case>, String> {
 }
 
 #[test]
-fn corpus_requires_the_complete_strict_matrix_and_rejects_invalid_rows() {
+fn corpus_accepts_the_complete_strict_matrix() {
     assert_eq!(parse(CORPUS).unwrap().len(), 93);
-    assert!(parse("").is_err());
-    assert!(parse(&CORPUS.lines().skip(1).collect::<Vec<_>>().join("\n")).is_err());
-    assert!(parse(&format!("{CORPUS}{}\n", CORPUS.lines().next().unwrap())).is_err());
-    for (field, value) in [
-        ("schema", serde_json::json!(2)),
-        ("mode", serde_json::json!("model-only")),
-        ("policy", serde_json::json!("unknown")),
-        ("full_order", serde_json::json!(["a1"])),
-        ("expected_ids", serde_json::json!(["unknown"])),
-        ("exit", serde_json::json!(7)),
-    ] {
-        let mut rows = CORPUS
-            .lines()
-            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
-            .collect::<Vec<_>>();
-        rows[0][field] = value;
-        let invalid = rows
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(parse(&invalid).is_err(), "accepted invalid {field}");
-    }
+}
+
+#[rstest::rstest]
+#[case::empty(String::new())]
+#[case::missing_row(CORPUS.lines().skip(1).collect::<Vec<_>>().join("\n"))]
+#[case::duplicate_row(format!("{CORPUS}{}\n",CORPUS.lines().next().unwrap()))]
+#[case::schema_1(invalid_corpus_field("schema", serde_json::json!(2)))]
+#[case::mode_2(invalid_corpus_field("mode", serde_json::json!("model-only")))]
+#[case::policy_3(invalid_corpus_field("policy", serde_json::json!("unknown")))]
+#[case::full_order_4(invalid_corpus_field("full_order", serde_json::json!(["a1"])))]
+#[case::expected_ids_5(invalid_corpus_field("expected_ids", serde_json::json!(["unknown"])))]
+#[case::exit_6(invalid_corpus_field("exit", serde_json::json!(7)))]
+fn corpus_rejects_invalid_rows(#[case] invalid: String) {
+    let result = parse(&invalid);
+
+    assert!(result.is_err(), "accepted invalid corpus");
+}
+
+fn invalid_corpus_field(field: &str, value: serde_json::Value) -> String {
+    let mut rows = CORPUS
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    rows[0][field] = value;
+    rows.iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 async fn cli(args: Vec<String>) -> (i32, String, String) {

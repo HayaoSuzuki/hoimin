@@ -1836,6 +1836,7 @@ mod checked_parse_tests {
                     ),
                 ];
                 let index = ExceptionIndex::from_sources(&sources, &[], &|| false).unwrap();
+
                 assert!(!index.modules.contains_key(&invalid_path));
                 assert!(index.modules.contains_key(&valid_path));
                 assert!(index.source_matches(&invalid_path, &sources[0].1));

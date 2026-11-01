@@ -115,16 +115,19 @@ mod tests {
                 for terms in [2, 126, 127, 25_000] {
                     let valid = format!("value = {}\n", expression(terms));
                     let invalid = format!("{valid}def broken(:\n");
+
                     assert_eq!(
                         super::super::definition_names(&invalid).unwrap_err(),
                         "invalid Python syntax; cannot validate symbol definitions"
                     );
                     let calls = std::cell::Cell::new(0);
+
                     let output = analyze_source_cancellable(&request, &invalid, || {
                         calls.set(calls.get() + 1);
                         calls.get() > 1
                     })
                     .unwrap();
+
                     assert_eq!(
                         calls.get(),
                         1,
@@ -180,27 +183,35 @@ mod tests {
             .unwrap();
     }
 
-    #[test]
-    fn hierarchy_cancels_at_first_depth_node_after_module_precheck() {
+    #[rstest::rstest]
+    #[case::value_1_to_owned_1(0)]
+    #[case::format_value_expression_25_000_2(1)]
+    fn hierarchy_cancels_at_first_depth_node_after_module_precheck(#[case] scenario_index: usize) {
         let path = Utf8Path::new("calc.py").to_owned();
         // With no roots, mapping does not poll. The module precheck is call
         // one, and depth's module node must remain call two.
-        for source in [
+
+        let source = [
             "value = 1\n".to_owned(),
             format!("value = {}\n", expression(25_000)),
-        ] {
-            let calls = std::cell::Cell::new(0);
-            let result = super::super::exception_hierarchy::ExceptionIndex::from_sources(
-                &[(path.clone(), source)],
-                &[],
-                &|| {
-                    calls.set(calls.get() + 1);
-                    calls.get() == 2
-                },
-            );
-            assert!(matches!(result, Err(AnalysisError::Cancelled)));
-            assert_eq!(calls.get(), 2);
-        }
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+        let calls = std::cell::Cell::new(0);
+
+        let result = super::super::exception_hierarchy::ExceptionIndex::from_sources(
+            &[(path.clone(), source)],
+            &[],
+            &|| {
+                calls.set(calls.get() + 1);
+                calls.get() == 2
+            },
+        );
+
+        assert!(matches!(result, Err(AnalysisError::Cancelled)));
+        assert_eq!(calls.get(), 2);
     }
 
     #[test]
@@ -220,7 +231,9 @@ mod tests {
                 };
                 // Module (1), assignment (2), 125 binary nodes, numeric leaf (128).
                 let accepted = format!("value = {}\n", expression(126));
+
                 let result = analyze_source_cancellable(&request, &accepted, || false).unwrap();
+
                 assert_eq!(result.candidates.len(), 1);
                 assert!(result.truncated);
                 assert_eq!(
@@ -233,7 +246,9 @@ mod tests {
                     Err(AnalysisError::DepthExceeded { limit: 128 })
                 ));
                 let flat = "value = 1 + 2\n".repeat(2_000);
+
                 let result = analyze_source_cancellable(&request, &flat, || false).unwrap();
+
                 assert_eq!(result.candidates.len(), 1);
             })
             .unwrap()
@@ -241,8 +256,18 @@ mod tests {
             .unwrap();
     }
 
-    #[test]
-    fn depth_covers_annotations_type_parameters_strings_patterns_and_statements() {
+    #[rstest::rstest]
+    #[case::format_value_deep_1(0)]
+    #[case::format_def_f_t_deep_return_1_2_2(1)]
+    #[case::format_def_f_t_deep_return_1_2_3(2)]
+    #[case::format_value_f_deep_4(3)]
+    #[case::format_value_t_deep_5(4)]
+    #[case::format_value_f_x_deep_6(5)]
+    #[case::format_match_value_case_1_pass_c_repeat_130_repeat_130_7(6)]
+    #[case::statements_8(7)]
+    fn depth_covers_annotations_type_parameters_strings_patterns_and_statements(
+        #[case] scenario_index: usize,
+    ) {
         let deep = expression(130);
         let mut statements = String::new();
         for indent in 0..130 {
@@ -265,20 +290,24 @@ mod tests {
             ),
             statements,
         ];
-        for source in sources {
-            let parsed = ruff_python_parser::parse_unchecked_source(
-                &source,
-                ruff_python_ast::PySourceType::Python,
-            );
-            assert!(
-                parsed.has_valid_syntax(),
-                "fixture: {}",
-                &source[..source.len().min(100)]
-            );
-            let result = check(parsed.syntax(), &|| false);
-            dispose(parsed.into_syntax());
-            assert_eq!(result, Err(AnalysisError::DepthExceeded { limit: 128 }));
-        }
+
+        let source = sources.into_iter().nth(scenario_index).unwrap();
+
+        let parsed = ruff_python_parser::parse_unchecked_source(
+            &source,
+            ruff_python_ast::PySourceType::Python,
+        );
+
+        assert!(
+            parsed.has_valid_syntax(),
+            "fixture: {}",
+            &source[..source.len().min(100)]
+        );
+
+        let result = check(parsed.syntax(), &|| false);
+        dispose(parsed.into_syntax());
+
+        assert_eq!(result, Err(AnalysisError::DepthExceeded { limit: 128 }));
     }
 
     #[test]
@@ -300,6 +329,7 @@ match value:
         value = f"{x:{width}}" + t"{x:{width}}"
 "#;
         let parsed = ruff_python_parser::parse_module(source).unwrap();
+
         assert_eq!(check(parsed.syntax(), &|| false), Ok(()));
         dispose(parsed.into_syntax());
         let operators = MutationOperatorSelection::default();
@@ -342,7 +372,9 @@ match value:
                     "list[".repeat(125),
                     "]".repeat(125)
                 );
+
                 let result = analyze_source_cancellable(&request, &source, || false).unwrap();
+
                 assert!(
                     result
                         .candidates
@@ -419,8 +451,11 @@ match value:
             .unwrap();
     }
 
-    #[test]
-    fn cancellation_before_and_after_parse_retains_distinct_reason() {
+    #[rstest::rstest]
+    #[case::value_0(0)]
+    #[case::value_1(1)]
+    #[case::value_20(20)]
+    fn cancellation_before_and_after_parse_retains_distinct_reason(#[case] cancel_on: usize) {
         let source = format!("value = {}\n", expression(25_000));
         let operators = MutationOperatorSelection::default();
         let request = AnalyzeRequest {
@@ -432,14 +467,15 @@ match value:
             profile: MutationProfile::Full,
             max_candidates: 1,
         };
-        for cancel_on in [0, 1, 20] {
-            let calls = std::cell::Cell::new(0);
-            let result = analyze_source_cancellable(&request, &source, || {
-                let call = calls.get();
-                calls.set(call + 1);
-                call >= cancel_on
-            });
-            assert!(matches!(result, Err(AnalysisError::Cancelled)));
-        }
+
+        let calls = std::cell::Cell::new(0);
+
+        let result = analyze_source_cancellable(&request, &source, || {
+            let call = calls.get();
+            calls.set(call + 1);
+            call >= cancel_on
+        });
+
+        assert!(matches!(result, Err(AnalysisError::Cancelled)));
     }
 }

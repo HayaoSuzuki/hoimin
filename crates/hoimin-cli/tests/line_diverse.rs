@@ -105,14 +105,6 @@ async fn line_diverse_public_cli_orders_then_pages_equal_score_lines() {
     let selected = output["candidates"].as_array().unwrap();
     let ranked = plan["candidates"].as_array().unwrap();
     let expected = [0, 3, 4, 1, 2, 5, 7, 6];
-    assert_eq!(
-        selected.iter().map(|c| &c["id"]).collect::<Vec<_>>(),
-        expected.map(|i| &ranked[i]["id"])
-    );
-    assert_eq!(
-        output["verification_selection"]["policy"],
-        "line_round_robin_v1"
-    );
     let mut pages = Vec::new();
     for offset in [0, 3, 6] {
         let page = preview(&path, offset, 3).await;
@@ -124,6 +116,14 @@ async fn line_diverse_public_cli_orders_then_pages_equal_score_lines() {
                 .map(|c| c["id"].clone()),
         );
     }
+    assert_eq!(
+        selected.iter().map(|c| &c["id"]).collect::<Vec<_>>(),
+        expected.map(|i| &ranked[i]["id"])
+    );
+    assert_eq!(
+        output["verification_selection"]["policy"],
+        "line_round_robin_v1"
+    );
     assert_eq!(
         pages,
         selected.iter().map(|c| c["id"].clone()).collect::<Vec<_>>()
@@ -191,35 +191,36 @@ async fn line_diverse_execution_matches_preview_order_and_preserves_report_scope
     assert_eq!(progress["comparisons"][0]["removed"], 0);
 }
 
-#[tokio::test]
-async fn line_diverse_requires_top_and_preserves_mutant_budget() {
-    let (_directory, path, plan) = fixture_with_budget(2).await;
-    for options in [
-        vec!["--selection-policy", "line-diverse", "--dry-run"],
-        vec![
+#[rstest::rstest]
+#[case::missing_top(|plan: &serde_json::Value| { let _ = plan; vec!["--selection-policy", "line-diverse", "--dry-run"].into_iter().map(OsString::from).collect() })]
+#[case::explicit_candidate(|plan: &serde_json::Value| { let _ = plan; vec![
             "--selection-policy",
             "line-diverse",
             "--candidate",
             plan["candidates"][0]["id"].as_str().unwrap(),
             "--dry-run",
-        ],
-        vec![
+        ].into_iter().map(OsString::from).collect() })]
+#[case::exceeds_budget(|plan: &serde_json::Value| { let _ = plan; vec![
             "--selection-policy",
             "line-diverse",
             "--top",
             "3",
             "--dry-run",
-        ],
-    ] {
-        let mut args = vec![
-            "hoimin".into(),
-            "verify".into(),
-            path.as_os_str().to_owned(),
-        ];
-        args.extend(options.into_iter().map(OsString::from));
-        let (code, output, err) = cli(args).await;
-        assert_eq!(code, 2, "{err}");
-        assert!(output.is_null());
-        assert_ne!(err, "");
-    }
+        ].into_iter().map(OsString::from).collect() })]
+#[tokio::test]
+async fn line_diverse_requires_top_and_preserves_mutant_budget(
+    #[case] options: fn(&serde_json::Value) -> Vec<OsString>,
+) {
+    let (_directory, path, plan) = fixture_with_budget(2).await;
+    let options = options(&plan);
+    let mut args = vec![
+        "hoimin".into(),
+        "verify".into(),
+        path.as_os_str().to_owned(),
+    ];
+    args.extend(options);
+    let (code, output, err) = cli(args).await;
+    assert_eq!(code, 2, "{err}");
+    assert!(output.is_null());
+    assert_ne!(err, "");
 }

@@ -225,6 +225,7 @@ fn candidate_span_corpus_rejects_unknown_crossed_and_ignored_fields() {
         .collect::<Vec<_>>();
     let mut unknown = rows.clone();
     unknown[0]["future"] = serde_json::json!(true);
+
     assert!(std::panic::catch_unwind(|| parse_corpus(&render_rows(unknown))).is_err());
     let mut crossed = rows.clone();
     crossed[0]["mode"] = serde_json::json!("model-only");
@@ -262,7 +263,9 @@ fn owned_validator_matches_all_representable_lean_rows() {
         .filter(|case| case.scenario != "harness" && case.mode != "model-only")
     {
         let descriptor = descriptor(case).expect("Rust-representable descriptor");
+
         let result = validate_candidate(&case.source, &descriptor);
+
         assert_eq!(result.is_ok(), case.expected_valid, "{}", case.id);
         let errors = [
             ("file_hash", CandidateValidationError::FileHashMismatch),
@@ -289,7 +292,9 @@ fn serde_spool_machine_and_session_preserve_the_lean_identity_projection() {
         .unwrap();
     let candidate = mutation_candidate(&case).unwrap();
     let encoded = serde_json::to_vec(&candidate).unwrap();
+
     let decoded: MutationCandidate = serde_json::from_slice(&encoded).unwrap();
+
     assert_eq!(decoded, candidate);
 
     let directory = tempfile::tempdir().unwrap();
@@ -385,8 +390,15 @@ fn serde_spool_machine_and_session_preserve_the_lean_identity_projection() {
     assert_eq!(loaded.result.unwrap().mutant_id, candidate.id);
 }
 
-#[test]
-fn production_stable_id_is_sensitive_to_every_identity_field_only() {
+#[rstest::rstest]
+#[case::schema(0)]
+#[case::hash(1)]
+#[case::path(2)]
+#[case::span_start(3)]
+#[case::span_length(4)]
+#[case::operator(5)]
+#[case::replacement(6)]
+fn production_stable_id_is_sensitive_to_every_identity_field_only(#[case] index: usize) {
     let case = parse_corpus(CORPUS)
         .into_iter()
         .find(|case| case.id == "ascii_public")
@@ -430,13 +442,27 @@ fn production_stable_id_is_sensitive_to_every_identity_field_only() {
             ..identity.clone()
         },
     ];
-    for variant in variants {
-        assert_ne!(stable_mutant_id(&variant), baseline);
-    }
+
+    let variant = &variants[index];
+
+    assert_ne!(stable_mutant_id(variant), baseline);
+}
+
+#[test]
+fn excluded_metadata_does_not_change_stable_id() {
+    let case = parse_corpus(CORPUS)
+        .into_iter()
+        .find(|case| case.id == "ascii_public")
+        .unwrap();
+    let descriptor = descriptor(&case).unwrap();
+    let identity = CandidateIdentity::from(&descriptor);
+    let baseline = stable_mutant_id(&identity);
+
     let mut metadata = descriptor;
     metadata.line += 1;
     metadata.column += 1;
     metadata.symbol = Some("other".to_owned());
+
     assert_eq!(
         stable_mutant_id(&CandidateIdentity::from(&metadata)),
         baseline
@@ -630,7 +656,9 @@ fn workspace_matches_apply_reject_unchanged_and_reset_rows() {
     let mut worker = create_worker(&project);
     for case in &represented {
         let candidate = mutation_candidate(case).unwrap();
+
         let result = worker.apply_mutation(&candidate);
+
         assert_eq!(result.is_ok(), case.expected_valid, "{}", case.id);
         let after = worker.read(&candidate.path).unwrap();
         assert_eq!(after, case.expected_bytes, "{}", case.id);

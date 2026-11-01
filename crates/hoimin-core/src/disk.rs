@@ -586,6 +586,7 @@ mod tests {
     #[test]
     fn direct_dispatch_rejects_either_independent_stop_gate() {
         let mut lifecycle = DiskLifecycle::new([]).unwrap();
+
         assert!(apply_disk_lifecycle_event(
             &mut lifecycle,
             DiskLifecycleEvent::MeasurementFailed {

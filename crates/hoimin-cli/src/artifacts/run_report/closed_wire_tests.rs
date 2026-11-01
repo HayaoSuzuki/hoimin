@@ -133,14 +133,14 @@ macro_rules! stream_event_case {
 
             #[test]
             fn duplicate_payload_is_rejected() {
-                // Arrange.
                 let mut events = stream();
                 events[$index] = events[$index].replacen('{', "{\"sequence\":999,", 1);
                 let wire = events.join("\n");
-                // Act.
+
                 let result = read_buffered_report(Path::new("report.jsonl"), wire.as_bytes());
-                // Assert.
+
                 let error = result.unwrap_err();
+
                 assert!(
                     error.to_string().contains("duplicate field `sequence`"),
                     "{error}"
@@ -149,16 +149,16 @@ macro_rules! stream_event_case {
 
             #[test]
             fn duplicate_kind_is_rejected() {
-                // Arrange.
                 let mut events = stream();
                 let value: serde_json::Value = serde_json::from_str(&events[$index]).unwrap();
                 events[$index] =
                     events[$index].replacen('{', &format!("{{\"kind\":{},", value["kind"]), 1);
                 let wire = events.join("\n");
-                // Act.
+
                 let result = read_buffered_report(Path::new("report.jsonl"), wire.as_bytes());
-                // Assert.
+
                 let error = result.unwrap_err();
+
                 assert!(
                     error.to_string().contains("duplicate field `kind`"),
                     "{error}"
@@ -175,25 +175,33 @@ stream_event_case!(stream_mutant_finish, 3);
 stream_event_case!(stream_diagnostic, 4);
 stream_event_case!(stream_summary, 5);
 
-#[test]
-fn run_kind_requires_a_string_for_progress_and_review() {
-    for kind in [
+#[rstest::rstest]
+#[case::serde_json_json_run_started_null_1(0)]
+#[case::serde_json_json_run_started_2(1)]
+#[case::serde_json_value_null_3(2)]
+#[case::serde_json_json_42_4(3)]
+fn run_kind_requires_a_string_for_progress_and_review(#[case] scenario_index: usize) {
+    let kind = [
         serde_json::json!({"run_started": null}),
         serde_json::json!(["run_started"]),
         serde_json::Value::Null,
         serde_json::json!(42),
-    ] {
-        let mut value = document();
-        value["run"]["kind"] = kind;
-        let jsonl = wire(&value);
-        let path = Path::new("report");
-        assert!(matches!(
-            read_buffered_report(path, jsonl.as_bytes()),
-            Err(ReportReadError::Parse { .. })
-        ));
-        assert!(matches!(
-            read_typed_jsonl(path, jsonl.as_bytes()),
-            Err(ReportReadError::Parse { .. })
-        ));
-    }
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
+
+    let mut value = document();
+    value["run"]["kind"] = kind;
+    let jsonl = wire(&value);
+    let path = Path::new("report");
+
+    assert!(matches!(
+        read_buffered_report(path, jsonl.as_bytes()),
+        Err(ReportReadError::Parse { .. })
+    ));
+    assert!(matches!(
+        read_typed_jsonl(path, jsonl.as_bytes()),
+        Err(ReportReadError::Parse { .. })
+    ));
 }

@@ -105,6 +105,7 @@ mod tests {
         assert!(ensure_direct_child_capacity(MAX_MANAGED_CHILDREN - 1).is_ok());
 
         let error = ensure_direct_child_capacity(MAX_MANAGED_CHILDREN).unwrap_err();
+
         assert!(matches!(
             error,
             super::WorkspaceError::OwnedWorkspaceLimit { planned, limit }
@@ -112,24 +113,45 @@ mod tests {
         ));
     }
 
-    proptest::proptest! {
-        #[test]
-        fn only_deferred_contention_is_retryable_independently_of_diagnostics(detail in ".{0,4096}") {
-            for (disposition, expected) in [
+    macro_rules! only_deferred_contention_is_retryable_independently_of_diagnostics_case {
+    ($name:ident, $index:expr) => {
+        proptest::proptest! {
+
+            #[test]
+            fn $name(detail in ".{0,4096}") {
+
+        let (disposition, expected) = [
                 (super::CleanupDisposition::Clean, false),
                 (super::CleanupDisposition::Failed, false),
                 (super::CleanupDisposition::Deferred(None), false),
                 (super::CleanupDisposition::Deferred(Some(super::CleanupRetryReason::CoordinatorContention)), true),
-            ] {
-                let mut record = super::CleanupRecord { disposition, evidence: super::CleanupEvidence::default() };
-                record.evidence.push_detail(detail.clone());
+            ].into_iter().nth($index).unwrap();
 
-                let retryable = record.retryable_contention();
+            let mut record = super::CleanupRecord { disposition, evidence: super::CleanupEvidence::default() };
+            record.evidence.push_detail(detail.clone());
 
-                proptest::prop_assert_eq!(retryable, expected);
+            let retryable = record.retryable_contention();
+
+            proptest::prop_assert_eq!(retryable, expected);
+
             }
         }
-    }
+    };
+}
+
+    only_deferred_contention_is_retryable_independently_of_diagnostics_case!(
+        only_deferred_contention_is_retryable_independently_of_diagnostics_clean,
+        0
+    );
+    only_deferred_contention_is_retryable_independently_of_diagnostics_case!(
+        only_deferred_contention_is_retryable_independently_of_diagnostics_failed,
+        1
+    );
+    only_deferred_contention_is_retryable_independently_of_diagnostics_case!(only_deferred_contention_is_retryable_independently_of_diagnostics_deferred_without_contention, 2);
+    only_deferred_contention_is_retryable_independently_of_diagnostics_case!(
+        only_deferred_contention_is_retryable_independently_of_diagnostics_coordinator_contention,
+        3
+    );
 
     #[cfg(target_os = "linux")]
     #[test]
@@ -148,6 +170,7 @@ mod tests {
             )
             .unwrap(),
         );
+
         assert!(matches!(
             file.try_lock(),
             Err(std::fs::TryLockError::Error(_))
@@ -309,6 +332,7 @@ mod tests {
         let crossed = std::cell::Cell::new(false);
 
         let mut scan = hoimin_core::JanitorScan::default();
+
         let error = super::select_reclaim_candidates_locked_with_hooks(
             &coordinator,
             &mut scan,
@@ -378,6 +402,7 @@ mod tests {
         root.mark_cleanup_ready().unwrap();
 
         let marker = super::read_cleanup_ready_marker(&root.dir).expect("complete marker");
+
         assert_eq!(marker.run_id, root.run_id);
         assert_eq!(marker.owner, root.owner);
     }
@@ -412,66 +437,82 @@ mod tests {
         }
     }
 
-    #[test]
-    fn every_root_constructor_failure_rolls_back_or_is_immediately_reclaimable() {
-        for selected in [
+    #[rstest::rstest]
+    #[case::super_publishboundary_stagingcreated_1(0)]
+    #[case::super_publishboundary_stagingopened_2(1)]
+    #[case::super_publishboundary_renamedactive_3(2)]
+    #[case::super_publishboundary_activeopened_4(3)]
+    #[case::super_publishboundary_coordinatoropened_5(4)]
+    #[case::super_publishboundary_coordinatorcloned_6(5)]
+    fn every_root_constructor_failure_rolls_back_or_is_immediately_reclaimable(
+        #[case] scenario_index: usize,
+    ) {
+        let selected = [
             super::PublishBoundary::StagingCreated,
             super::PublishBoundary::StagingOpened,
             super::PublishBoundary::RenamedActive,
             super::PublishBoundary::ActiveOpened,
             super::PublishBoundary::CoordinatorOpened,
             super::PublishBoundary::CoordinatorCloned,
-        ] {
-            let parent = tempfile::tempdir().unwrap();
-            let parent = Utf8Path::from_path(parent.path()).unwrap();
-            let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
 
-            let result = ManagedRunRoot::create_with_publish_hook(
-                &coordinator,
-                OwnerKind::PublicExecution,
-                &|observed| inject_publish_failure(selected, observed),
-            );
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
 
-            assert!(result.is_err(), "boundary {selected:?} did not fail");
-            let _ = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
-            let residual = std::fs::read_dir(parent.join(MANAGED_DIR))
-                .unwrap()
-                .map(|entry| entry.unwrap().file_name())
-                .filter(|name| name != COORDINATOR_FILE)
-                .collect::<Vec<_>>();
-            assert!(
-                residual.is_empty(),
-                "boundary {selected:?} left managed roots: {residual:?}"
-            );
-        }
+        let result = ManagedRunRoot::create_with_publish_hook(
+            &coordinator,
+            OwnerKind::PublicExecution,
+            &|observed| inject_publish_failure(selected, observed),
+        );
+
+        assert!(result.is_err(), "boundary {selected:?} did not fail");
+        let _ = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
+        let residual = std::fs::read_dir(parent.join(MANAGED_DIR))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .filter(|name| name != COORDINATOR_FILE)
+            .collect::<Vec<_>>();
+        assert!(
+            residual.is_empty(),
+            "boundary {selected:?} left managed roots: {residual:?}"
+        );
     }
 
-    #[test]
-    fn every_child_constructor_failure_removes_the_new_directory() {
-        for selected in [
+    #[rstest::rstest]
+    #[case::super_childcreationboundary_created_1(0)]
+    #[case::super_childcreationboundary_opened_2(1)]
+    fn every_child_constructor_failure_removes_the_new_directory(#[case] scenario_index: usize) {
+        let selected = [
             super::ChildCreationBoundary::Created,
             super::ChildCreationBoundary::Opened,
-        ] {
-            let parent = tempfile::tempdir().unwrap();
-            let parent = Utf8Path::from_path(parent.path()).unwrap();
-            let coordinator = ManagedRootCoordinator::open(parent).unwrap();
-            let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
 
-            let result = root.create_child_with_hook("worker-", &|observed| {
-                inject_child_failure(selected, observed)
-            });
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
 
-            assert!(result.is_err(), "boundary {selected:?} did not fail");
-            let residual = std::fs::read_dir(root.path())
-                .unwrap()
-                .map(|entry| entry.unwrap().file_name())
-                .filter(|name| name.to_string_lossy().starts_with("worker-"))
-                .collect::<Vec<_>>();
-            assert!(
-                residual.is_empty(),
-                "boundary {selected:?} left managed children: {residual:?}"
-            );
-        }
+        let result = root.create_child_with_hook("worker-", &|observed| {
+            inject_child_failure(selected, observed)
+        });
+
+        assert!(result.is_err(), "boundary {selected:?} did not fail");
+        let residual = std::fs::read_dir(root.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .filter(|name| name.to_string_lossy().starts_with("worker-"))
+            .collect::<Vec<_>>();
+        assert!(
+            residual.is_empty(),
+            "boundary {selected:?} left managed children: {residual:?}"
+        );
     }
 
     #[cfg(unix)]
@@ -502,6 +543,7 @@ mod tests {
                 let replacement = super::metadata_identity(
                     &coordinator.dir.symlink_metadata(&staging_name).unwrap(),
                 );
+
                 assert_ne!(replacement, original);
                 replacement_identity.set(Some(replacement));
                 Err(std::io::Error::other("injected staging identity failure"))
@@ -546,6 +588,7 @@ mod tests {
                 create_test_owned_directory_entry(&root.dir, &child_name)?;
                 let replacement =
                     super::metadata_identity(&root.dir.symlink_metadata(&child_name).unwrap());
+
                 assert_ne!(replacement, original);
                 replacement_identity.set(Some(replacement));
                 Err(std::io::Error::other("injected child identity failure"))
@@ -573,12 +616,14 @@ mod tests {
     fn round_five_explicit_rollback_runs_once_with_deadline_remainder_and_keeps_error_order() {
         let base = std::time::Instant::now();
         let cleanup_calls = std::cell::Cell::new(0_u32);
+
         let error = super::error_after_new_directory_rollback_with(
             std::io::Error::other("primary construction failure"),
             base + std::time::Duration::from_secs(10),
             || base + std::time::Duration::from_secs(4),
             |remaining| {
                 cleanup_calls.set(cleanup_calls.get() + 1);
+
                 assert_eq!(remaining, std::time::Duration::from_secs(6));
                 Err(std::io::Error::other("bounded rollback failure"))
             },
@@ -684,6 +729,7 @@ mod tests {
         let working_identity = super::directory_identity(child.dir.as_ref().unwrap()).unwrap();
         let namespace_identity =
             super::metadata_identity(&root.dir.symlink_metadata(child_name).unwrap());
+
         assert_eq!(working_identity, namespace_identity);
         std::fs::write(child.path().join("payload"), b"payload").unwrap();
 
@@ -717,6 +763,7 @@ mod tests {
             )
         };
         let lease_metadata = lease_reader.metadata().unwrap();
+
         assert!(lease_metadata.is_file());
         assert_eq!(lease_metadata.len(), retained_lease_len);
         assert_eq!(
@@ -813,6 +860,7 @@ mod tests {
                 super::directory_identity(rename_handle.as_ref().unwrap()).unwrap(),
             )
         });
+
         assert_eq!(
             identities.as_ref().map(|(opened, _)| opened),
             identities.as_ref().map(|(_, retained)| retained),
@@ -909,8 +957,10 @@ mod tests {
         assert!(!published.exists());
     }
 
-    #[test]
-    fn coordinator_uses_full_blake3_digests_in_fixed_slots() {
+    #[rstest::rstest]
+    #[case::value_1(1)]
+    #[case::value_513(513)]
+    fn coordinator_uses_full_blake3_digests_in_fixed_slots(#[case] start: usize) {
         let parent = tempfile::tempdir().unwrap();
         let parent = Utf8Path::from_path(parent.path()).unwrap();
         let _coordinator = ManagedRootCoordinator::open(parent).unwrap();
@@ -918,15 +968,14 @@ mod tests {
 
         assert_eq!(bytes.len(), 1_025);
         assert_eq!(bytes[0], 0);
-        for start in [1, 513] {
-            let slot = &bytes[start..start + 512];
-            assert_eq!(&slot[0..8], b"HMCUR001");
-            assert_eq!(u32::from_le_bytes(slot[8..12].try_into().unwrap()), 2);
-            assert_eq!(u64::from_le_bytes(slot[12..20].try_into().unwrap()), 0);
-            assert_eq!(u16::from_le_bytes(slot[20..22].try_into().unwrap()), 0);
-            assert!(slot[22..480].iter().all(|byte| *byte == 0));
-            assert_eq!(&slot[480..512], blake3::hash(&slot[..480]).as_bytes());
-        }
+
+        let slot = &bytes[start..start + 512];
+        assert_eq!(&slot[0..8], b"HMCUR001");
+        assert_eq!(u32::from_le_bytes(slot[8..12].try_into().unwrap()), 2);
+        assert_eq!(u64::from_le_bytes(slot[12..20].try_into().unwrap()), 0);
+        assert_eq!(u16::from_le_bytes(slot[20..22].try_into().unwrap()), 0);
+        assert!(slot[22..480].iter().all(|byte| *byte == 0));
+        assert_eq!(&slot[480..512], blake3::hash(&slot[..480]).as_bytes());
     }
 
     #[test]
@@ -939,6 +988,7 @@ mod tests {
         std::fs::write(old.join("retained-source.py"), b"value = True\n").unwrap();
 
         let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+
         assert_ne!(coordinator.path, old);
         assert_eq!(
             std::fs::read(old.join(COORDINATOR_FILE)).unwrap(),
@@ -982,6 +1032,7 @@ mod tests {
         let file =
             super::create_owned_file(&parent_dir, "owned-file", super::OwnedFileAccess::ReadWrite)
                 .unwrap();
+
         assert_eq!(
             super::create_owned_directory(&parent_dir, "owned-directory")
                 .unwrap_err()
@@ -1064,6 +1115,7 @@ mod tests {
                 parent.rename(name, parent, "parked-created-directory")?;
                 create_test_owned_directory_entry(parent, name)?;
                 let replacement = super::metadata_identity(&parent.symlink_metadata(name).unwrap());
+
                 assert_ne!(replacement, original);
                 replacement_identity.set(Some(replacement));
                 Err(std::io::Error::other("injected directory metadata failure"))
@@ -1169,6 +1221,7 @@ mod tests {
         create_test_owned_directory_entry(&parent_dir, name).unwrap();
         let replacement_identity =
             super::metadata_identity(&parent_dir.symlink_metadata(name).unwrap());
+
         assert_ne!(replacement_identity, original_identity);
 
         let error = super::rollback_new_owned_directory(
@@ -1312,6 +1365,7 @@ mod tests {
         for handle in handles {
             handle.join().unwrap().unwrap();
         }
+
         assert_eq!(
             std::fs::metadata(path.join(MANAGED_DIR).join(COORDINATOR_FILE))
                 .unwrap()
@@ -1487,6 +1541,7 @@ mod tests {
         super::persist_coordinator_cursor(&coordinator.file, &path, slot, &state, first_cursor)
             .unwrap();
         let (slot, state) = super::read_coordinator_state(&coordinator.file, &path).unwrap();
+
         assert_eq!(
             (slot, state.generation, state.cursor.as_str()),
             (1, 1, first_cursor)
@@ -1602,6 +1657,7 @@ mod tests {
             &mut capabilities,
         )
         .unwrap();
+
         assert!(capabilities.lease_guard.is_none());
         assert_eq!(
             root.dir
@@ -1709,48 +1765,52 @@ mod tests {
     }
 
     #[cfg(windows)]
-    #[test]
-    fn successful_root_delete_consumes_authority_despite_postcheck_failure() {
+    #[rstest::rstest]
+    #[case::invalid_0name_1("invalid\0name")]
+    #[case::survivor_2("survivor")]
+    fn successful_root_delete_consumes_authority_despite_postcheck_failure(
+        #[case] postcheck_name: &str,
+    ) {
         // The pin deletes the original root; these names affect only the final lookup.
-        for postcheck_name in ["invalid\0name", "survivor"] {
-            let parent = tempfile::tempdir().unwrap();
-            let coordinator =
-                ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap()).unwrap();
-            let mut capabilities = pinned_cleanup_directory(&coordinator.dir, "deleted");
-            let identity =
-                super::metadata_identity(&coordinator.dir.symlink_metadata("deleted").unwrap());
-            create_test_owned_directory_entry(&coordinator.dir, "survivor").unwrap();
-            std::fs::write(coordinator.path.join("survivor/sentinel"), b"untouched").unwrap();
 
-            let result = super::remove_cleanup_root_checked(
-                &coordinator.dir,
-                std::ffi::OsStr::new(postcheck_name),
-                Utf8Path::new("deleted"),
-                identity,
-                std::time::Instant::now(),
-                std::time::Duration::from_secs(5),
-                &mut capabilities,
-            );
+        let parent = tempfile::tempdir().unwrap();
+        let coordinator =
+            ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap()).unwrap();
+        let mut capabilities = pinned_cleanup_directory(&coordinator.dir, "deleted");
+        let identity =
+            super::metadata_identity(&coordinator.dir.symlink_metadata("deleted").unwrap());
+        create_test_owned_directory_entry(&coordinator.dir, "survivor").unwrap();
+        std::fs::write(coordinator.path.join("survivor/sentinel"), b"untouched").unwrap();
 
-            let error = result.unwrap_err();
-            assert_ne!(error.kind(), std::io::ErrorKind::NotFound);
-            assert!(matches!(
-                capabilities.root_authority,
-                super::RootCleanupAuthority::Consumed
-            ));
-            assert_eq!(
-                coordinator
-                    .dir
-                    .symlink_metadata("deleted")
-                    .unwrap_err()
-                    .kind(),
-                std::io::ErrorKind::NotFound
-            );
-            assert_eq!(
-                std::fs::read(coordinator.path.join("survivor/sentinel")).unwrap(),
-                b"untouched"
-            );
-        }
+        let result = super::remove_cleanup_root_checked(
+            &coordinator.dir,
+            std::ffi::OsStr::new(postcheck_name),
+            Utf8Path::new("deleted"),
+            identity,
+            std::time::Instant::now(),
+            std::time::Duration::from_secs(5),
+            &mut capabilities,
+        );
+
+        let error = result.unwrap_err();
+
+        assert_ne!(error.kind(), std::io::ErrorKind::NotFound);
+        assert!(matches!(
+            capabilities.root_authority,
+            super::RootCleanupAuthority::Consumed
+        ));
+        assert_eq!(
+            coordinator
+                .dir
+                .symlink_metadata("deleted")
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::NotFound
+        );
+        assert_eq!(
+            std::fs::read(coordinator.path.join("survivor/sentinel")).unwrap(),
+            b"untouched"
+        );
     }
 
     #[cfg(windows)]
@@ -1877,6 +1937,7 @@ mod tests {
         let coordinator = ManagedRootCoordinator::open(parent).unwrap();
         let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
         let first = root.cleanup(std::time::Duration::from_secs(5));
+
         assert_eq!(
             first.disposition.report_status(),
             hoimin_core::DiskCleanupStatus::Clean,
@@ -2001,6 +2062,7 @@ mod tests {
         let held = super::CoordinatorLockGuard::acquire(&coordinator).unwrap();
         let mut cleanup = root.cleanup(std::time::Duration::from_secs(5));
         cleanup.evidence.details = vec!["translated diagnostic without lock wording".to_owned()];
+
         assert!(cleanup.retryable_contention());
         drop(held);
         let live_root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
@@ -2145,6 +2207,7 @@ mod tests {
         std::fs::write(root.path().join("second"), b"2").unwrap();
         let active = format!("{}{}", super::ACTIVE_PREFIX, root.run_id);
         let deleting = format!("{}{}", super::DELETING_PREFIX, root.run_id);
+
         assert_eq!(
             root.claim_with_handle_handoff(&coordinator.dir, &active, &deleting, &|| Ok(()),)
                 .unwrap(),
@@ -2181,6 +2244,7 @@ mod tests {
         let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
         let active = format!("{}{}", super::ACTIVE_PREFIX, root.run_id);
         let deleting = format!("{}{}", super::DELETING_PREFIX, root.run_id);
+
         assert_eq!(
             root.claim_with_handle_handoff(&coordinator.dir, &active, &deleting, &|| Ok(()),)
                 .unwrap(),
@@ -2254,6 +2318,7 @@ mod tests {
             std::time::Duration::from_secs(1),
         )
         .unwrap();
+
         assert!(root.dir.symlink_metadata(super::LEASE_FILE).is_ok());
         drop(root);
 
@@ -2271,6 +2336,7 @@ mod tests {
         let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
         let active = format!("{}{}", super::ACTIVE_PREFIX, root.run_id);
         let deleting = format!("{}{}", super::DELETING_PREFIX, root.run_id);
+
         assert_eq!(
             root.claim_with_handle_handoff(&coordinator.dir, &active, &deleting, &|| Ok(()),)
                 .unwrap(),
@@ -2293,6 +2359,7 @@ mod tests {
         let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
         let active = format!("{}{}", super::ACTIVE_PREFIX, root.run_id);
         let deleting = format!("{}{}", super::DELETING_PREFIX, root.run_id);
+
         assert_eq!(
             root.claim_with_handle_handoff(&coordinator.dir, &active, &deleting, &|| Ok(()),)
                 .unwrap(),
@@ -2333,6 +2400,7 @@ mod tests {
         root.mark_cleanup_ready().unwrap();
         let active = format!("{}{}", super::ACTIVE_PREFIX, root.run_id);
         let deleting = format!("{}{}", super::DELETING_PREFIX, root.run_id);
+
         assert_eq!(
             root.claim_with_handle_handoff(&coordinator.dir, &active, &deleting, &|| Ok(()),)
                 .unwrap(),
@@ -2426,6 +2494,7 @@ mod tests {
         let parked_name = format!("{}{}", super::STAGING_PREFIX, original.run_id);
         let deleting_name = format!("{}{}", super::DELETING_PREFIX, original.run_id);
         let replacement_name = replacement.path().file_name().unwrap().to_owned();
+
         assert_eq!(
             original
                 .claim_with_handle_handoff(&coordinator.dir, &original_name, &parked_name, &|| Ok(
@@ -2715,6 +2784,7 @@ mod tests {
         root.mark_cleanup_ready().unwrap();
         let active = format!("{}{}", super::ACTIVE_PREFIX, root.run_id);
         let deleting = format!("{}{}", super::DELETING_PREFIX, root.run_id);
+
         assert_eq!(
             root.claim_with_handle_handoff(&coordinator.dir, &active, &deleting, &|| Ok(()),)
                 .unwrap(),

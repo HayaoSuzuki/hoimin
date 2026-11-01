@@ -27,6 +27,7 @@ impl WorkerNativePath {
 fn component_observer_records_real_iteration() {
     let path = WorkerNativePath::from(PathBuf::from("a/b/c"));
     super::tests::SORT_COMPONENT_VISITS.set(0);
+
     assert_eq!(path.components().count(), 3);
     assert_eq!(super::tests::SORT_COMPONENT_VISITS.get(), 3);
 }

@@ -843,48 +843,45 @@ fn corpus_rejects_duplicate_case_ids() {
     );
 }
 
-#[test]
-fn corpus_rejects_unknown_modes_scenarios_events_and_observations() {
-    for (from, to, occurrences, expected) in [
-        (
-            "\"mode\":\"strict\"",
-            "\"mode\":\"future\"",
-            1,
-            "unknown mode future",
-        ),
-        (
-            "\"scenario\":\"pending_resolve\"",
-            "\"scenario\":\"future\"",
-            1,
-            "unknown scenario future",
-        ),
-        (
-            "\"complete_unknown\"",
-            "\"future_event\"",
-            usize::MAX,
-            "unknown event future_event",
-        ),
-        (
-            "\"phase\":\"running\"",
-            "\"phase\":\"future\"",
-            1,
-            "unknown phase future",
-        ),
-        (
-            "\"emitted\":[]",
-            "\"emitted\":[\"future\"]",
-            1,
-            "unknown emitted effect future",
-        ),
-    ] {
-        let invalid = corpus_text().replacen(from, to, occurrences);
+#[rstest::rstest]
+#[case::mode_strict("\"mode\":\"strict\"", "\"mode\":\"future\"", 1, "unknown mode future")]
+#[case::scenario_pending_resolve(
+    "\"scenario\":\"pending_resolve\"",
+    "\"scenario\":\"future\"",
+    1,
+    "unknown scenario future"
+)]
+#[case::complete_unknown(
+    "\"complete_unknown\"",
+    "\"future_event\"",
+    usize::MAX,
+    "unknown event future_event"
+)]
+#[case::phase_running(
+    "\"phase\":\"running\"",
+    "\"phase\":\"future\"",
+    1,
+    "unknown phase future"
+)]
+#[case::emitted(
+    "\"emitted\":[]",
+    "\"emitted\":[\"future\"]",
+    1,
+    "unknown emitted effect future"
+)]
+fn corpus_rejects_unknown_modes_scenarios_events_and_observations_scenario_1(
+    #[case] from: &str,
+    #[case] to: &str,
+    #[case] occurrences: usize,
+    #[case] expected: &str,
+) {
+    let invalid = corpus_text().replacen(from, to, occurrences);
 
-        let error = parse_corpus(&invalid).unwrap_err();
-        assert!(
-            error.contains(expected),
-            "expected {expected:?}, got {error:?}"
-        );
-    }
+    let error = parse_corpus(&invalid).unwrap_err();
+    assert!(
+        error.contains(expected),
+        "expected {expected:?}, got {error:?}"
+    );
 }
 
 #[test]

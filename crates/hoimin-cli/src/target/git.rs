@@ -613,6 +613,7 @@ mod tests {
         let mut changed = BTreeMap::new();
         let mut excluded = BTreeSet::new();
         parse_diff(diff, &mut changed, &mut excluded, &scope).unwrap();
+
         assert_eq!(
             changed,
             BTreeMap::from([(
@@ -623,29 +624,36 @@ mod tests {
         assert!(excluded.is_empty());
     }
 
-    #[test]
-    fn scoped_binary_renames_filter_each_name_independently() {
+    #[rstest::rstest]
+    #[case::b_data_bad_old_py_selected_good_py_as_slice(b"-\t-\t\0data/bad\\old.py\0selected/good.py\0".as_slice())]
+    #[case::b_selected_good_py_data_bad_ew_py_as_slice(b"-\t-\t\0selected/good.py\0data/bad\\new.py\0".as_slice())]
+    fn scoped_binary_renames_filter_each_name_independently(#[case] record: &[u8]) {
         let scope = GitPathScope::new(Some(&[hoimin_core::TargetSlice {
             path: "selected/good.py".into(),
             lines: Vec::new(),
             symbols: Vec::new(),
         }]));
-        for record in [
-            b"-\t-\t\0data/bad\\old.py\0selected/good.py\0".as_slice(),
-            b"-\t-\t\0selected/good.py\0data/bad\\new.py\0".as_slice(),
-        ] {
-            let mut excluded = BTreeSet::new();
-            parse_binary_numstat(record, &mut excluded, &scope).unwrap();
-            assert_eq!(excluded, BTreeSet::from(["selected/good.py".into()]));
-        }
+
+        let mut excluded = BTreeSet::new();
+        parse_binary_numstat(record, &mut excluded, &scope).unwrap();
+
+        assert_eq!(excluded, BTreeSet::from(["selected/good.py".into()]));
+    }
+
+    #[rstest::rstest]
+    #[case::r_b_bad_400_py(r#""b/bad\400.py""#)]
+    #[case::r_b_bad_377_py(r#""b/bad\377.py""#)]
+    #[case::r_b_bad_q_py(r#""b/bad\q.py""#)]
+    fn empty_scope_does_not_hide_structural_or_encoding_errors_scenario_1(#[case] path: &str) {
+        let scope = GitPathScope::new(Some(&[]));
+
+        assert!(super::parse_patch_path(path, &scope).is_err());
     }
 
     #[test]
     fn empty_scope_does_not_hide_structural_or_encoding_errors() {
         let scope = GitPathScope::new(Some(&[]));
-        for path in [r#""b/bad\400.py""#, r#""b/bad\377.py""#, r#""b/bad\q.py""#] {
-            assert!(super::parse_patch_path(path, &scope).is_err());
-        }
+
         assert!(parse_binary_numstat(b"-\t-\t\0old.py\0", &mut BTreeSet::new(), &scope).is_err());
         assert!(parse_binary_numstat(b"-\t-\tbad\xff.py\0", &mut BTreeSet::new(), &scope).is_err());
     }
@@ -788,13 +796,13 @@ mod tests {
         );
     }
 
-    #[test]
-    fn quoted_path_rejects_out_of_range_octal_escapes() {
-        for path in [r#""a/\400.py""#, r#""a/\777.py""#] {
-            let error = decode_git_quoted(path).unwrap_err();
+    #[rstest::rstest]
+    #[case::input_1(r#""a/\400.py""#)]
+    #[case::input_2(r#""a/\777.py""#)]
+    fn quoted_path_rejects_out_of_range_octal_escapes(#[case] path: &str) {
+        let error = decode_git_quoted(path).unwrap_err();
 
-            assert!(error.to_string().contains("invalid octal Git path escape"));
-        }
+        assert!(error.to_string().contains("invalid octal Git path escape"));
     }
 
     #[test]

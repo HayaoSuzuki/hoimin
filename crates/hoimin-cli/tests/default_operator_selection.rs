@@ -9,51 +9,6 @@ use std::path::Path;
 
 use hoimin_cli::plan::PlanManifest;
 
-const OPT_OUT_OPERATORS: [&str; 42] = [
-    "statement_delete",
-    "integer_literal_neighbor",
-    "augmented_to_assignment",
-    "return_tuple_swap",
-    "string_literal_empty",
-    "while_condition_false",
-    "conversion_call_remove",
-    "method_call_remove",
-    "function_body_return_constant",
-    "string_segment_empty",
-    "stdlib_conversion_call_remove",
-    "loop_break_insert",
-    "iterator_stop_insert",
-    "async_iterator_stop_insert",
-    "list_comprehension_to_generator",
-    "generator_return_insert",
-    "generator_skip_first",
-    "generator_empty",
-    "none_truthiness",
-    "mutable_default_share",
-    "nonlocal_remove",
-    "yield_from_to_yield",
-    "mapping_setdefault_to_get",
-    "bisect_boundary_swap",
-    "deepcopy_to_copy",
-    "deque_popleft_to_pop",
-    "gather_return_exceptions",
-    "itertools_take_drop_swap",
-    "fstring_conversion_swap",
-    "binary_div_floor",
-    "structure_slice_bound_omit",
-    "structure_slice_bound_move",
-    "continue_remove",
-    "comparison_not_implemented",
-    "exception_cause_remove",
-    "dataclass_factory_share",
-    "sort_key_swap",
-    "lambda_capture_late",
-    "encoding_errors_ignore",
-    "base_order_shuffle",
-    "override_method_delete",
-    "super_call_move",
-];
-
 async fn cli(args: Vec<OsString>) -> serde_json::Value {
     let stdout = CollectingWriter::default();
     let stderr = CollectingWriter::default();
@@ -95,6 +50,130 @@ async fn plan_with_check(root: &Path, selection: &[&str], check: &str) -> serde_
     args.extend(selection.iter().map(OsString::from));
     args.extend(["--".into(), python, "-B".into(), "-c".into(), check.into()]);
     cli(args).await
+}
+
+#[rstest::rstest]
+#[case::statement_delete("statement_delete")]
+#[case::integer_literal_neighbor("integer_literal_neighbor")]
+#[case::augmented_to_assignment("augmented_to_assignment")]
+#[case::return_tuple_swap("return_tuple_swap")]
+#[case::string_literal_empty("string_literal_empty")]
+#[case::while_condition_false("while_condition_false")]
+#[case::conversion_call_remove("conversion_call_remove")]
+#[case::method_call_remove("method_call_remove")]
+#[case::function_body_return_constant("function_body_return_constant")]
+#[case::string_segment_empty("string_segment_empty")]
+#[case::stdlib_conversion_call_remove("stdlib_conversion_call_remove")]
+#[case::loop_break_insert("loop_break_insert")]
+#[case::iterator_stop_insert("iterator_stop_insert")]
+#[case::async_iterator_stop_insert("async_iterator_stop_insert")]
+#[case::list_comprehension_to_generator("list_comprehension_to_generator")]
+#[case::generator_return_insert("generator_return_insert")]
+#[case::generator_skip_first("generator_skip_first")]
+#[case::generator_empty("generator_empty")]
+#[case::none_truthiness("none_truthiness")]
+#[case::mutable_default_share("mutable_default_share")]
+#[case::nonlocal_remove("nonlocal_remove")]
+#[case::yield_from_to_yield("yield_from_to_yield")]
+#[case::mapping_setdefault_to_get("mapping_setdefault_to_get")]
+#[case::bisect_boundary_swap("bisect_boundary_swap")]
+#[case::deepcopy_to_copy("deepcopy_to_copy")]
+#[case::deque_popleft_to_pop("deque_popleft_to_pop")]
+#[case::gather_return_exceptions("gather_return_exceptions")]
+#[case::itertools_take_drop_swap("itertools_take_drop_swap")]
+#[case::fstring_conversion_swap("fstring_conversion_swap")]
+#[case::binary_div_floor("binary_div_floor")]
+#[case::structure_slice_bound_omit("structure_slice_bound_omit")]
+#[case::structure_slice_bound_move("structure_slice_bound_move")]
+#[case::continue_remove("continue_remove")]
+#[case::comparison_not_implemented("comparison_not_implemented")]
+#[case::exception_cause_remove("exception_cause_remove")]
+#[case::dataclass_factory_share("dataclass_factory_share")]
+#[case::sort_key_swap("sort_key_swap")]
+#[case::lambda_capture_late("lambda_capture_late")]
+#[case::encoding_errors_ignore("encoding_errors_ignore")]
+#[case::base_order_shuffle("base_order_shuffle")]
+#[case::override_method_delete("override_method_delete")]
+#[case::super_call_move("super_call_move")]
+#[tokio::test]
+async fn current_default_candidates_are_individually_excludable_case(#[case] operator: &str) {
+    let root = tempfile::tempdir().unwrap();
+    let source = "from decimal import Decimal\nfrom http import HTTPStatus\ndef amount(x): return Decimal(x)\ndef factory(x): return Decimal.from_float(x)\ndef status(x): return HTTPStatus(x)\ndef f(x, y):\n    print('message')\n    x += 3\n    while x < y:\n        x += 1\n    z = int(x)\n    return x, y\ndef recent(text) -> str:\n    return text.strip()\ndef segment(x):\n    return f'prefix:{x}'\n";
+    let source = format!(
+        "{source}\nclass Items:\n    def __next__(self): return 1\n    async def __anext__(self): return 2\n"
+    );
+    let source = format!(
+        "{source}\ndef produced(): yield 1\neager = [x for x in (1, 2)]\nlazy = (x for x in (1, 2))\n"
+    );
+    let source = format!(
+        "{source}\ndef owned(values=None):\n    if values is None: values=[]\n    def inner():\n        nonlocal values\n        values=[1]\n    yield from values\nstate={{}}\nstate.setdefault('x', [])\n"
+    );
+    let source = format!(
+        "{source}\nimport bisect\nimport copy\nfrom collections import deque\nposition=bisect.bisect_left([1,1],1)\ncloned=copy.deepcopy([[1]])\nqueue=deque([1,2])\nfirst=queue.popleft()\n"
+    );
+    let source = format!(
+        "{source}\nimport asyncio\nimport itertools\nasync def grouped(task): return await asyncio.gather(task)\nprefix=itertools.takewhile(lambda x:x<3,(1,2,3))\nrepresentation=f'{{queue!r}}'\n"
+    );
+    let source = format!(
+        "{source}\ndef bounds(xs, a, b): return xs[a:b]\ndef prefix(xs, n): return xs[:n]\ndef divide(a, b): return a / b\n"
+    );
+    let source = format!(
+        "{source}\nfor value in []:\n continue\nclass Delegating:\n def __eq__(self, other):\n  return NotImplemented\ndef fail(reason):\n raise LookupError('bad') from reason\n"
+    );
+    let source = format!(
+        "{source}\nfrom dataclasses import dataclass, field\n@dataclass\nclass Bag:\n items: list = field(default_factory=list)\ndef sorted_rows(rows): return sorted(rows,key=lambda row:(row[0],row[1]))\ndef callbacks(values):\n for value in values:\n  callback=lambda value=value: value\ndef decoded(data): return data.decode('utf-8',errors='surrogateescape')\n"
+    );
+    let source =
+        format!("{source}\nclass Left: pass\nclass Right: pass\nclass Joined(Left, Right): pass\n");
+    let source = format!(
+        "{source}\nclass Parent:\n def run(self, emit): emit(1)\nclass Child(Parent):\n def run(self, emit): super().run(emit); emit(2)\n"
+    );
+    std::fs::write(root.path().join("subject.py"), &source).unwrap();
+    let default = plan(root.path(), &[]).await;
+    let manifest: PlanManifest = serde_json::from_value(default.clone()).unwrap();
+
+    assert_eq!(manifest.normalized_config.operators.names().len(), 85);
+    let candidates = default["candidates"].as_array().unwrap();
+    for original in ["Decimal(x)", "Decimal.from_float(x)", "HTTPStatus(x)"] {
+        assert!(
+            candidates
+                .iter()
+                .any(|c| c["operator"] == "stdlib_conversion_call_remove"
+                    && c["original"] == original)
+        );
+    }
+
+    assert!(
+        candidates.iter().any(|c| c["operator"] == operator),
+        "missing {operator}"
+    );
+    let excluded = plan(root.path(), &["--exclude-operators", operator]).await;
+    let expected: Vec<_> = candidates
+        .iter()
+        .filter(|c| c["operator"] != operator)
+        .cloned()
+        .collect();
+    // Ranks and discovery sequences are renumbered after exclusion; the
+    // ordered candidate identities and descriptors must remain the same.
+    let descriptors = |rows: &[serde_json::Value]| {
+        rows.iter()
+            .cloned()
+            .map(|mut c| {
+                c.as_object_mut().unwrap().remove("rank");
+                c.as_object_mut().unwrap().remove("sequence");
+                c
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        descriptors(excluded["candidates"].as_array().unwrap()),
+        descriptors(&expected)
+    );
+
+    assert_eq!(
+        std::fs::read_to_string(root.path().join("subject.py")).unwrap(),
+        source
+    );
 }
 
 #[tokio::test]
@@ -143,34 +222,7 @@ async fn current_default_candidates_are_individually_excludable() {
                     && c["original"] == original)
         );
     }
-    for operator in OPT_OUT_OPERATORS {
-        assert!(
-            candidates.iter().any(|c| c["operator"] == operator),
-            "missing {operator}"
-        );
-        let excluded = plan(root.path(), &["--exclude-operators", operator]).await;
-        let expected: Vec<_> = candidates
-            .iter()
-            .filter(|c| c["operator"] != operator)
-            .cloned()
-            .collect();
-        // Ranks and discovery sequences are renumbered after exclusion; the
-        // ordered candidate identities and descriptors must remain the same.
-        let descriptors = |rows: &[serde_json::Value]| {
-            rows.iter()
-                .cloned()
-                .map(|mut c| {
-                    c.as_object_mut().unwrap().remove("rank");
-                    c.as_object_mut().unwrap().remove("sequence");
-                    c
-                })
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(
-            descriptors(excluded["candidates"].as_array().unwrap()),
-            descriptors(&expected)
-        );
-    }
+
     assert_eq!(
         std::fs::read_to_string(root.path().join("subject.py")).unwrap(),
         source
@@ -384,30 +436,34 @@ async fn saved_explicit_subset_prepares_and_verifies_without_expansion() {
     );
 }
 
+#[rstest::rstest]
+#[case::sort_key_swap_1(
+    "sort_key_swap",
+    "def run(rows):\n return sorted(\n  rows,\n  key=lambda row:(\n   row.a,\n   row.b,\n  ),\n )\n",
+    5
+)]
+#[case::encoding_errors_ignore_2(
+    "encoding_errors_ignore",
+    "def run(data):\n return data.decode(\n  'utf-8',\n  errors='surrogateescape',\n )\n",
+    4
+)]
 #[tokio::test]
-async fn multiline_call_plans_select_the_edit_line() {
-    for (operator, source, line) in [
-        (
-            "sort_key_swap",
-            "def run(rows):\n return sorted(\n  rows,\n  key=lambda row:(\n   row.a,\n   row.b,\n  ),\n )\n",
-            5,
-        ),
-        (
-            "encoding_errors_ignore",
-            "def run(data):\n return data.decode(\n  'utf-8',\n  errors='surrogateescape',\n )\n",
-            4,
-        ),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("subject.py"), source).unwrap();
-        let selector = format!("subject.py:{line}-{line}");
-        let manifest = plan(root.path(), &["--operators", operator, "--line", &selector]).await;
-        let candidates = manifest["candidates"].as_array().unwrap();
-        assert_eq!(candidates.len(), 1, "{operator}");
-        assert_eq!(candidates[0]["line"], line);
-        assert_eq!(
-            std::fs::read_to_string(root.path().join("subject.py")).unwrap(),
-            source
-        );
-    }
+async fn multiline_call_plans_select_the_edit_line(
+    #[case] operator: &str,
+    #[case] source: &str,
+    #[case] line: usize,
+) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), source).unwrap();
+    let selector = format!("subject.py:{line}-{line}");
+
+    let manifest = plan(root.path(), &["--operators", operator, "--line", &selector]).await;
+    let candidates = manifest["candidates"].as_array().unwrap();
+
+    assert_eq!(candidates.len(), 1, "{operator}");
+    assert_eq!(candidates[0]["line"], line);
+    assert_eq!(
+        std::fs::read_to_string(root.path().join("subject.py")).unwrap(),
+        source
+    );
 }

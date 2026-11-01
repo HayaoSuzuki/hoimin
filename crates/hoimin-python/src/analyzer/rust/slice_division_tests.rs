@@ -11,7 +11,9 @@ fn division_exchange_preserves_utf8_comments_and_binary_only_scope() {
         "type Ratio = left / right\ntext = 'left / right'\n",
         "value = operator.truediv(left, right)\nvalue /= right\n",
     );
+
     let output = analyze_selected(&["binary_div_floor"], source);
+
     assert_eq!(output.candidates.len(), 2);
     for candidate in &output.candidates {
         assert_eq!((&*candidate.original, &*candidate.replacement), ("/", "//"));
@@ -22,6 +24,7 @@ fn division_exchange_preserves_utf8_comments_and_binary_only_scope() {
 #[test]
 fn division_exchange_uses_bounded_admission_and_cancellation() {
     let source = "first = a / b\nsecond = a // b\n";
+
     let output = analyze_selected_with(
         &["binary_div_floor"],
         Utf8Path::new("a.py"),
@@ -30,6 +33,7 @@ fn division_exchange_uses_bounded_admission_and_cancellation() {
         1,
         source,
     );
+
     assert_eq!(output.candidates.len(), 1);
     assert!(output.truncated);
     let operators = serde_json::from_value(serde_json::json!([
@@ -53,6 +57,7 @@ fn division_exchange_uses_bounded_admission_and_cancellation() {
 #[test]
 fn division_exchange_is_default_and_preserves_existing_arithmetic() {
     let source = "true_value = a / b\nfloor_value = a // b\na /= b\na //= b\nannotation: a / b\n";
+
     let output = analyze(source);
     let exchanges: Vec<_> = output
         .candidates
@@ -87,6 +92,7 @@ fn division_exchange_is_default_and_preserves_existing_arithmetic() {
 #[test]
 fn slice_bound_operators_are_default_with_a_bounded_candidate_set() {
     let source = "window = xs[a:b]\nprefix = xs[:n]\nsuffix = xs[n:]\nwhole = xs[:]\n";
+
     let output = analyze(source);
     let omit: Vec<_> = output
         .candidates
@@ -114,16 +120,20 @@ fn slice_bounds_keep_parentheses_comments_and_utf8_syntax_balanced() {
         "suffix = xs[(-2):]\n",
         "numbers = xs[0:1_000]\n",
     );
+
     let output = analyze_selected(
         &["structure_slice_bound_omit", "structure_slice_bound_move"],
         source,
     );
+
     assert_eq!(output.candidates.len(), 6);
+
     let actual: Vec<_> = output
         .candidates
         .iter()
         .map(|c| (c.original.as_str(), c.replacement.as_str()))
         .collect();
+
     assert_eq!(
         actual,
         vec![
@@ -146,7 +156,9 @@ fn slice_bounds_keep_parentheses_comments_and_utf8_syntax_balanced() {
 #[test]
 fn slice_movement_preserves_comments_adjacent_to_the_separator() {
     let source = "prefix = xs[: # keep prefix\n n]\nsuffix = xs[n # keep suffix\n :]\n";
+
     let output = analyze_selected(&["structure_slice_bound_move"], source);
+
     assert_eq!(
         output
             .candidates
@@ -167,10 +179,12 @@ fn slice_bounds_exclude_unsupported_contexts_and_side_effecting_bounds() {
         "xs[a+1:b]\nxs[1.0:2]\nxs[a:b] = values\ndel xs[a:b]\n",
         "annotation: xs[a:b]\ntype Alias = xs[a:b]\nxs[:]\n",
     );
+
     let output = analyze_selected(
         &["structure_slice_bound_omit", "structure_slice_bound_move"],
         source,
     );
+
     assert!(output.candidates.is_empty(), "{:#?}", output.candidates);
 }
 
@@ -186,11 +200,13 @@ fn slice_bound_admission_preserves_caps_and_exact_target_selection() {
         1,
         source,
     );
+
     assert_eq!(capped.candidates.len(), 1);
     assert!(capped.truncated);
     assert_eq!(capped.candidates[0].original, "a");
     let lines = [LineRange { start: 4, end: 4 }];
     let symbols = ["second".to_owned()];
+
     let output = analyze_selected_with(
         &selected,
         Utf8Path::new("pkg/example.py"),
@@ -199,6 +215,7 @@ fn slice_bound_admission_preserves_caps_and_exact_target_selection() {
         1,
         source,
     );
+
     assert_eq!(output.candidates.len(), 1);
     assert!(!output.truncated);
     assert_eq!(output.candidates[0].replacement, "n:");

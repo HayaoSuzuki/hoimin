@@ -37,151 +37,203 @@ const TEST_MIN_FREE_SPACE: &str = "1B";
 
 #[test]
 fn progress_rejects_removed_ci_gate() {
+    let args = [
+        "hoimin",
+        "progress",
+        "--fail-on-regression",
+        "before.json",
+        "after.json",
+    ];
+
+    let result = hoimin_cli::cli::parse_from(args);
+
+    assert!(result.is_err());
+}
+
+#[rstest::rstest]
+#[case::schema_2_original(2, "original")]
+#[case::schema_2_current(2, "current")]
+#[case::schema_3_original(3, "original")]
+#[case::schema_3_current(3, "current")]
+#[case::schema_4_original(4, "original")]
+#[case::schema_4_current(4, "current")]
+#[case::schema_5_original(5, "original")]
+#[case::schema_5_current(5, "current")]
+#[case::schema_6_original(6, "original")]
+#[case::schema_6_current(6, "current")]
+#[case::schema_7_original(7, "original")]
+#[case::schema_7_current(7, "current")]
+#[case::schema_8_original(8, "original")]
+#[case::schema_8_current(8, "current")]
+#[case::schema_9_original(9, "original")]
+#[case::schema_9_current(9, "current")]
+fn input_rejects_historical_report_goldens(#[case] version: u32, #[case] era: &str) {
+    let path = repo_root()
+        .join("crates/hoimin-cli/tests/golden/events")
+        .join(format!("schema-v{version}-{era}.jsonl"));
+
+    let result = read_report(&path);
+
     assert!(
-        hoimin_cli::cli::parse_from([
-            "hoimin",
-            "progress",
-            "--fail-on-regression",
-            "before.json",
-            "after.json",
-        ])
-        .is_err()
+        result.is_err(),
+        "historical input must be rejected: {path:?}: {result:?}"
     );
 }
 
-#[test]
-fn input_rejects_historical_report_goldens() {
-    let root = repo_root().join("crates/hoimin-cli/tests/golden");
-    {
-        for version in [2, 3, 4, 5, 6, 7, 8, 9] {
-            for era in ["original", "current"] {
-                let path = root
-                    .join("events")
-                    .join(format!("schema-v{version}-{era}.jsonl"));
-                let result = read_report(&path);
-                assert!(
-                    result.is_err(),
-                    "historical input must be rejected: {path:?}: {result:?}"
-                );
-            }
-        }
-    }
-}
-
-#[test]
-fn input_rejects_every_noncurrent_schema_in_jsonl() {
+#[rstest::rstest]
+#[case::schema_0_document(0, write_json)]
+#[case::schema_0_events(0, write_explicit_jsonl)]
+#[case::schema_1_document(1, write_json)]
+#[case::schema_1_events(1, write_explicit_jsonl)]
+#[case::schema_2_document(2, write_json)]
+#[case::schema_2_events(2, write_explicit_jsonl)]
+#[case::schema_3_document(3, write_json)]
+#[case::schema_3_events(3, write_explicit_jsonl)]
+#[case::schema_4_document(4, write_json)]
+#[case::schema_4_events(4, write_explicit_jsonl)]
+#[case::schema_5_document(5, write_json)]
+#[case::schema_5_events(5, write_explicit_jsonl)]
+#[case::schema_6_document(6, write_json)]
+#[case::schema_6_events(6, write_explicit_jsonl)]
+#[case::schema_7_document(7, write_json)]
+#[case::schema_7_events(7, write_explicit_jsonl)]
+#[case::schema_8_document(8, write_json)]
+#[case::schema_8_events(8, write_explicit_jsonl)]
+#[case::schema_9_document(9, write_json)]
+#[case::schema_9_events(9, write_explicit_jsonl)]
+#[case::schema_future_document(REPORT_SCHEMA_VERSION + 1, write_json)]
+#[case::schema_future_events(REPORT_SCHEMA_VERSION + 1, write_explicit_jsonl)]
+fn input_rejects_every_noncurrent_schema_in_jsonl(
+    #[case] version: u32,
+    #[case] writer: ReportWriter,
+) {
     let fixture = tempfile::tempdir().unwrap();
-    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, REPORT_SCHEMA_VERSION + 1] {
-        let mut document = valid_report();
-        document["schema_version"] = json!(version);
-        for key in ["run", "baseline", "summary"] {
-            document[key]["schema_version"] = json!(version);
-        }
-        for mutant in document["mutants"].as_array_mut().unwrap() {
-            mutant["schema_version"] = json!(version);
-        }
-        let path = write_json(&fixture, "old.json", &document);
-        assert!(
-            matches!(read_report(&path), Err(ReportReadError::UnsupportedSchema { found, .. }) if found == version),
-            "JSON schema {version}"
-        );
-        let mut events = jsonl_events(&document);
-        for event in &mut events {
-            event["schema_version"] = json!(version);
-        }
-        let path = fixture.path().join("old.jsonl");
-        std::fs::write(
-            &path,
-            events
-                .iter()
-                .map(Value::to_string)
-                .collect::<Vec<_>>()
-                .join("\n"),
-        )
-        .unwrap();
-        assert!(
-            matches!(read_report(&path), Err(ReportReadError::UnsupportedSchema { found, .. }) if found == version),
-            "JSONL schema {version}"
-        );
+    let mut document = valid_report();
+    document["schema_version"] = json!(version);
+    for key in ["run", "baseline", "summary"] {
+        document[key]["schema_version"] = json!(version);
     }
+    for mutant in document["mutants"].as_array_mut().unwrap() {
+        mutant["schema_version"] = json!(version);
+    }
+    let path = writer(&fixture, "old.json", &document);
+
+    let result = read_report(&path);
+
+    assert!(
+        matches!(result, Err(ReportReadError::UnsupportedSchema { found, .. }) if found == version),
+        "schema {version}: {result:?}"
+    );
 }
 
-#[test]
-fn input_dispatch_preserves_reordered_jsonl_headers() {
+#[rstest::rstest]
+#[case::rotation_0(0)]
+#[case::rotation_1(1)]
+#[case::rotation_2(2)]
+#[case::rotation_3(3)]
+#[case::rotation_4(4)]
+#[case::rotation_5(5)]
+#[case::rotation_6(6)]
+fn input_dispatch_preserves_reordered_jsonl_headers(#[case] rotation: usize) {
     let fixture = tempfile::tempdir().unwrap();
     let mut document = valid_report();
     document["run"]["normalized_config"] = json!({"schema_version": 2, "kind": "not-an-event"});
     let events = jsonl_events(&document);
     let mut keys = events[0].as_object().unwrap().keys().collect::<Vec<_>>();
-    for _ in 0..keys.len() {
-        let header = keys
-            .iter()
-            .map(|key| format!("\"{key}\":{}", events[0][*key]))
-            .collect::<Vec<_>>()
-            .join(",");
-        let rest = events
-            .iter()
-            .skip(1)
-            .map(Value::to_string)
-            .collect::<Vec<_>>()
-            .join("\n");
-        let path = fixture.path().join("reordered.jsonl");
-        std::fs::write(&path, format!("{{{header}}}\n{rest}\n")).unwrap();
-        let InputReport::Usable(actual) = read_report(&path).unwrap() else {
-            panic!("usable JSONL")
-        };
-        assert_eq!(actual.mutants.len(), 1);
-        assert_eq!(
-            actual.mutants[0].candidate.id,
-            valid_report()["mutants"][0]["candidate"]["id"]
-                .as_str()
-                .unwrap()
-        );
-        keys.rotate_left(1);
-    }
-}
-
-#[test]
-fn input_dispatch_never_accepts_a_valid_prefix_with_an_invalid_suffix() {
-    let fixture = tempfile::tempdir().unwrap();
-    let document = valid_report();
-    let fields = ["schema_version", "run", "baseline", "mutants", "summary"]
+    keys.rotate_left(rotation);
+    let header = keys
         .iter()
-        .map(|key| format!("\"{key}\":{}", document[key]))
+        .map(|key| format!("\"{key}\":{}", events[0][*key]))
         .collect::<Vec<_>>()
         .join(",");
-    for bytes in [
-        format!("{{{fields},\"schema_version\":3}}"),
-        format!("{{{fields},\"run\":{}}}", document["run"]),
-        format!("{{{fields},\"unexpected\":true}}"),
-        format!("{{{fields},\"kind\":\"run_started\"}}"),
-        format!("{{{fields}}} {{}}"),
-        format!("{{{fields}"),
-    ] {
-        let path = fixture.path().join("invalid.json");
-        std::fs::write(&path, bytes).unwrap();
-        assert!(read_report(&path).is_err());
-    }
-    let events = jsonl_events(&document);
-    let header = events[0].to_string();
-    let prefix = header.strip_suffix('}').unwrap();
     let rest = events
         .iter()
         .skip(1)
         .map(Value::to_string)
         .collect::<Vec<_>>()
         .join("\n");
-    for invalid_header in [
-        format!("{prefix},\"schema_version\":3}}"),
-        format!("{prefix},\"kind\":\"run_started\"}}"),
-        format!("{prefix},\"run_id\":\"run-1\"}}"),
-        format!("{prefix},\"unexpected\":true}}"),
-        format!("{header} {{}}"),
-        prefix.to_owned(),
-    ] {
-        let path = fixture.path().join("invalid.jsonl");
-        std::fs::write(&path, format!("{invalid_header}\n{rest}\n")).unwrap();
-        assert!(read_report(&path).is_err());
+    let path = fixture.path().join("reordered.jsonl");
+    std::fs::write(&path, format!("{{{header}}}\n{rest}\n")).unwrap();
+    let InputReport::Usable(actual) = read_report(&path).unwrap() else {
+        panic!("usable JSONL")
+    };
+    assert_eq!(actual.mutants.len(), 1);
+    assert_eq!(
+        actual.mutants[0].candidate.id,
+        valid_report()["mutants"][0]["candidate"]["id"]
+            .as_str()
+            .unwrap()
+    );
+}
+
+#[rstest::rstest]
+#[case::duplicate_document_schema("document", "schema")]
+#[case::duplicate_document_run("document", "run")]
+#[case::unknown_document_field("document", "unknown")]
+#[case::document_event_kind("document", "kind")]
+#[case::document_trailing_object("document", "trailing")]
+#[case::truncated_document("document", "truncated")]
+#[case::duplicate_header_schema("header", "schema")]
+#[case::duplicate_header_kind("header", "kind")]
+#[case::duplicate_header_run("header", "run")]
+#[case::unknown_header_field("header", "unknown")]
+#[case::header_trailing_object("header", "trailing")]
+#[case::truncated_header("header", "truncated")]
+fn input_dispatch_never_accepts_a_valid_prefix_with_an_invalid_suffix(
+    #[case] format: &str,
+    #[case] defect: &str,
+) {
+    let fixture = tempfile::tempdir().unwrap();
+    let bytes = invalid_report_prefix(format, defect);
+    let path = fixture.path().join("invalid.report");
+    std::fs::write(&path, bytes).unwrap();
+
+    let result = read_report(&path);
+
+    assert!(result.is_err());
+}
+
+fn invalid_report_prefix(format: &str, defect: &str) -> String {
+    let document = valid_report();
+    match format {
+        "document" => {
+            let fields = ["schema_version", "run", "baseline", "mutants", "summary"]
+                .iter()
+                .map(|key| format!("\"{key}\":{}", document[key]))
+                .collect::<Vec<_>>()
+                .join(",");
+            match defect {
+                "schema" => format!("{{{fields},\"schema_version\":3}}"),
+                "run" => format!("{{{fields},\"run\":{}}}", document["run"]),
+                "unknown" => format!("{{{fields},\"unexpected\":true}}"),
+                "kind" => format!("{{{fields},\"kind\":\"run_started\"}}"),
+                "trailing" => format!("{{{fields}}} {{}}"),
+                "truncated" => format!("{{{fields}"),
+                _ => unreachable!(),
+            }
+        }
+        "header" => {
+            let events = jsonl_events(&document);
+            let header = events[0].to_string();
+            let prefix = header.strip_suffix('}').unwrap();
+            let rest = events
+                .iter()
+                .skip(1)
+                .map(Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n");
+            let invalid_header = match defect {
+                "schema" => format!("{prefix},\"schema_version\":3}}"),
+                "kind" => format!("{prefix},\"kind\":\"run_started\"}}"),
+                "run" => format!("{prefix},\"run_id\":\"run-1\"}}"),
+                "unknown" => format!("{prefix},\"unexpected\":true}}"),
+                "trailing" => format!("{header} {{}}"),
+                "truncated" => prefix.to_owned(),
+                _ => unreachable!(),
+            };
+            format!("{invalid_header}\n{rest}\n")
+        }
+        _ => unreachable!(),
     }
 }
 
@@ -437,8 +489,14 @@ async fn timed_out_pipe_reader_is_aborted_and_joined() {
     );
 }
 
-#[test]
-fn timeout_diagnostic_retains_cleanup_and_both_reader_failures() {
+#[rstest::rstest]
+#[case::fixture_timed_out_1("fixture timed out")]
+#[case::cleanup_status_unreaped_2("cleanup status=unreaped")]
+#[case::signal_failed_3("signal failed")]
+#[case::reap_failed_4("reap failed")]
+#[case::stdout_join_failed_5("stdout join failed")]
+#[case::stderr_join_failed_6("stderr join failed")]
+fn timeout_diagnostic_retains_cleanup_and_both_reader_failures(#[case] expected: &str) {
     let cleanup = CleanupOutcome {
         status: None,
         diagnostics: vec!["signal failed".to_owned(), "reap failed".to_owned()],
@@ -451,16 +509,7 @@ fn timeout_diagnostic_retains_cleanup_and_both_reader_failures() {
         Err("stderr join failed".to_owned()),
     );
 
-    for expected in [
-        "fixture timed out",
-        "cleanup status=unreaped",
-        "signal failed",
-        "reap failed",
-        "stdout join failed",
-        "stderr join failed",
-    ] {
-        assert!(diagnostic.contains(expected), "{diagnostic}");
-    }
+    assert!(diagnostic.contains(expected), "{diagnostic}");
 }
 
 #[test]
@@ -495,55 +544,52 @@ fn input_accepts_an_additive_future_verification_selection_field() {
     assert!(matches!(result, Ok(InputReport::Usable(_))), "{result:?}");
 }
 
-#[test]
-fn input_rejects_non_object_non_null_normalized_configs() {
+#[rstest::rstest]
+#[case::array_document(json!([]), write_json)]
+#[case::array_events(json!([]), write_explicit_jsonl)]
+#[case::string_document(json!("config"), write_json)]
+#[case::string_events(json!("config"), write_explicit_jsonl)]
+#[case::number_document(json!(2), write_json)]
+#[case::number_events(json!(2), write_explicit_jsonl)]
+#[case::boolean_document(json!(true), write_json)]
+#[case::boolean_events(json!(true), write_explicit_jsonl)]
+fn input_rejects_non_object_non_null_normalized_configs(
+    #[case] value: Value,
+    #[case] writer: ReportWriter,
+) {
     let fixture = tempfile::tempdir().unwrap();
-    for (name, value) in [
-        ("array", json!([])),
-        ("string", json!("config")),
-        ("number", json!(2)),
-        ("boolean", json!(true)),
-    ] {
-        // Arrange
-        let mut document = valid_report();
-        document["run"]["normalized_config"] = value;
-        let reports = [
-            write_json(&fixture, &format!("{name}.json"), &document),
-            write_jsonl(&fixture, &jsonl_events(&document)),
-        ];
+    let mut document = valid_report();
+    document["run"]["normalized_config"] = value;
+    let report = writer(&fixture, "invalid-config.json", &document);
 
-        for report in reports {
-            // Act
-            let result = read_report(&report);
+    let result = read_report(&report);
 
-            // Assert
-            assert!(result.is_err(), "accepted {name} in {}", report.display());
-        }
-    }
+    assert!(
+        result.is_err(),
+        "accepted invalid config in {}",
+        report.display()
+    );
 }
 
-#[test]
-fn input_rejects_a_missing_normalized_config() {
+#[rstest::rstest]
+#[case::document(write_json)]
+#[case::events(write_explicit_jsonl)]
+fn input_rejects_a_missing_normalized_config(#[case] writer: ReportWriter) {
     let fixture = tempfile::tempdir().unwrap();
     let mut document = valid_report();
     document["run"]
         .as_object_mut()
         .unwrap()
         .remove("normalized_config");
-    let reports = [
-        write_json(&fixture, "missing-config.json", &document),
-        write_jsonl(&fixture, &jsonl_events(&document)),
-    ];
+    let report = writer(&fixture, "missing-config.json", &document);
 
-    for report in reports {
-        let result = read_report(&report);
+    let result = read_report(&report);
 
-        assert!(
-            result.is_err(),
-            "accepted missing config in {}",
-            report.display()
-        );
-    }
+    assert!(
+        result.is_err(),
+        "accepted missing config in {}",
+        report.display()
+    );
 }
 
 #[test]
@@ -558,46 +604,62 @@ fn input_accepts_a_complete_baseline_success_report() {
     assert_eq!(usable.mutants.len(), 1);
 }
 
-#[test]
-fn input_rejects_repeated_stable_mutant_identities() {
+#[rstest::rstest]
+#[case::duplicate("duplicate", 1, |mutant_id| hoimin_core::ReportSequenceError::DuplicateMutantIdentity { mutant_id, mutant_sequence: 1 })]
+#[case::mismatched_sequence("mismatch", 2, |mutant_id| hoimin_core::ReportSequenceError::MutantIdentitySequenceMismatch { mutant_id, expected_sequence: 1, received_sequence: 2 })]
+fn input_rejects_repeated_stable_mutant_identities(
+    #[case] name: &str,
+    #[case] candidate_sequence: usize,
+    #[case] expected_error: fn(String) -> hoimin_core::ReportSequenceError,
+) {
     let fixture = tempfile::tempdir().unwrap();
-    for (name, candidate_sequence) in [("duplicate", 1), ("mismatch", 2)] {
-        let mut document = valid_report();
-        let mut duplicate = document["mutants"][0].clone();
-        duplicate["sequence"] = json!(4);
-        duplicate["candidate"]["sequence"] = json!(candidate_sequence);
-        document["mutants"].as_array_mut().unwrap().push(duplicate);
-        document["summary"]["sequence"] = json!(5);
-        document["summary"]["counts"]["killed"] = json!(2);
 
-        let report = write_json(&fixture, &format!("{name}.json"), &document);
-        let error = read_report(&report).unwrap_err();
-        let ReportReadError::InvalidResult { source, .. } = error else {
-            panic!("expected lifecycle error: {error}")
-        };
-        let mutant_id = document["mutants"][0]["candidate"]["id"]
-            .as_str()
-            .unwrap()
-            .to_owned();
-        let expected = if candidate_sequence == 1 {
-            hoimin_core::ReportSequenceError::DuplicateMutantIdentity {
-                mutant_id,
-                mutant_sequence: 1,
-            }
-        } else {
-            hoimin_core::ReportSequenceError::MutantIdentitySequenceMismatch {
-                mutant_id,
-                expected_sequence: 1,
-                received_sequence: 2,
-            }
-        };
-        assert_eq!(source, expected);
-    }
+    let mut document = valid_report();
+    let mut duplicate = document["mutants"][0].clone();
+    duplicate["sequence"] = json!(4);
+    duplicate["candidate"]["sequence"] = json!(candidate_sequence);
+    document["mutants"].as_array_mut().unwrap().push(duplicate);
+    document["summary"]["sequence"] = json!(5);
+    document["summary"]["counts"]["killed"] = json!(2);
+
+    let report = write_json(&fixture, &format!("{name}.json"), &document);
+    let mutant_id = document["mutants"][0]["candidate"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let expected = expected_error(mutant_id);
+
+    let error = read_report(&report).unwrap_err();
+    let ReportReadError::InvalidResult { source, .. } = error else {
+        panic!("expected lifecycle error: {error}")
+    };
+
+    assert_eq!(source, expected);
 }
 
-#[test]
-fn input_rejects_every_summary_mutant_consistency_mismatch() {
+#[rstest::rstest]
+#[case::status("status")]
+#[case::missing("missing")]
+#[case::extra("extra")]
+#[case::inconclusive("inconclusive")]
+#[case::score("score")]
+fn input_rejects_every_summary_mutant_consistency_mismatch(#[case] name: &str) {
     let fixture = tempfile::tempdir().unwrap();
+    let document = inconsistent_summary(name);
+    let report = write_json(&fixture, &format!("{name}.json"), &document);
+
+    let error = read_report(&report).unwrap_err();
+
+    assert!(matches!(
+        error,
+        ReportReadError::InvalidStructure {
+            message: "summary counts must match mutant events",
+            ..
+        }
+    ));
+}
+
+fn inconsistent_summary(name: &str) -> Value {
     let mut cases = Vec::new();
 
     let mut status = valid_report();
@@ -627,17 +689,11 @@ fn input_rejects_every_summary_mutant_consistency_mismatch() {
     score["summary"]["counts"]["score"] = json!(0.5);
     cases.push(("score", score));
 
-    for (name, document) in cases {
-        let report = write_json(&fixture, &format!("{name}.json"), &document);
-        let error = read_report(&report).unwrap_err();
-        assert!(matches!(
-            error,
-            ReportReadError::InvalidStructure {
-                message: "summary counts must match mutant events",
-                ..
-            }
-        ));
-    }
+    cases
+        .into_iter()
+        .find(|(selected, _)| *selected == name)
+        .unwrap()
+        .1
 }
 
 #[test]
@@ -839,15 +895,17 @@ fn compare_three_adjacent_stalls_are_saturated() {
     assert_eq!(result.latest, ProgressState::Saturated);
 }
 
-#[test]
-fn compare_improvement_and_regression_break_the_stall_chain() {
-    let improvement = compare_reports(&[survived(), killed()], nz(3));
-    assert_eq!(improvement.consecutive_stalls, 0);
-    assert_eq!(improvement.latest, ProgressState::Improving);
+#[rstest::rstest]
+#[case::improvement(vec![survived(), killed()], ProgressState::Improving)]
+#[case::regression(vec![killed(), killed(), survived()], ProgressState::Regressing)]
+fn compare_improvement_and_regression_break_the_stall_chain(
+    #[case] reports: Vec<InputReport>,
+    #[case] expected: ProgressState,
+) {
+    let result = compare_reports(&reports, nz(3));
 
-    let regression = compare_reports(&[killed(), killed(), survived()], nz(3));
-    assert_eq!(regression.consecutive_stalls, 0);
-    assert_eq!(regression.latest, ProgressState::Regressing);
+    assert_eq!(result.consecutive_stalls, 0);
+    assert_eq!(result.latest, expected);
 }
 
 #[test]
@@ -935,39 +993,28 @@ fn matching_candidate_ids_pair_mutants_with_the_same_content_key() {
     assert_eq!(result.latest, ProgressState::Regressing);
 }
 
-#[test]
-fn content_fallback_compares_every_identity_field_by_value() {
-    // Removing a field from the content key would incorrectly pair one of these.
-    type Change = fn(&mut MutantFinished, &mut MutantFinished);
-    let changes: [(&str, Change); 6] = [
-        ("path", |_, after| after.candidate.path = "other.py".into()),
-        ("original", |_, after| after.candidate.original.push('x')),
-        ("replacement", |_, after| {
-            after.candidate.replacement.push('x');
-        }),
-        ("operator", |_, after| after.candidate.operator.push('x')),
-        ("symbol", |_, after| {
-            after.candidate.symbol = Some("other".to_owned());
-        }),
-        ("empty_symbol", |before, after| {
-            before.candidate.symbol = None;
-            after.candidate.symbol = Some(String::new());
-        }),
-    ];
-    for (field, change) in changes {
-        let mut before = mutant_with_id("before", "same", MutationStatus::Survived);
-        let mut after = mutant_with_id("after", "same", MutationStatus::Killed);
-        change(&mut before, &mut after);
+#[rstest::rstest]
+#[case::path(|_: &mut MutantFinished, after: &mut MutantFinished| after.candidate.path = "other.py".into())]
+#[case::original(|_: &mut MutantFinished, after: &mut MutantFinished| after.candidate.original.push('x'))]
+#[case::replacement(|_: &mut MutantFinished, after: &mut MutantFinished| after.candidate.replacement.push('x'))]
+#[case::operator(|_: &mut MutantFinished, after: &mut MutantFinished| after.candidate.operator.push('x'))]
+#[case::symbol(|_: &mut MutantFinished, after: &mut MutantFinished| after.candidate.symbol = Some("other".to_owned()))]
+#[case::empty_symbol(|before: &mut MutantFinished, after: &mut MutantFinished| { before.candidate.symbol = None; after.candidate.symbol = Some(String::new()); })]
+fn content_fallback_compares_every_identity_field_by_value(
+    #[case] change: fn(&mut MutantFinished, &mut MutantFinished),
+) {
+    let mut before = mutant_with_id("before", "same", MutationStatus::Survived);
+    let mut after = mutant_with_id("after", "same", MutationStatus::Killed);
+    change(&mut before, &mut after);
 
-        let comparison = compare_pair(&[before], &[after]);
-        assert_eq!(comparison.common, 0, "{field}");
-        assert_eq!(comparison.added, 1, "{field}");
-        assert_eq!(comparison.removed, 1, "{field}");
-        assert_eq!(comparison.improvements, 0, "{field}");
-        assert_eq!(comparison.previous_score, None, "{field}");
-        assert_eq!(comparison.current_score, None, "{field}");
-        assert_eq!(comparison.state, ProgressState::Indeterminate, "{field}");
-    }
+    let comparison = compare_pair(&[before], &[after]);
+    assert_eq!(comparison.common, 0);
+    assert_eq!(comparison.added, 1);
+    assert_eq!(comparison.removed, 1);
+    assert_eq!(comparison.improvements, 0);
+    assert_eq!(comparison.previous_score, None);
+    assert_eq!(comparison.current_score, None);
+    assert_eq!(comparison.state, ProgressState::Indeterminate);
 }
 
 #[test]
@@ -1152,31 +1199,31 @@ fn compare_excludes_duplicate_keys_from_the_common_set() {
     assert_eq!(result.latest, ProgressState::Indeterminate);
 }
 
-#[test]
-fn compare_excludes_each_inconclusive_status_from_judgments_and_scores() {
-    for status in [
-        MutationStatus::Timeout,
-        MutationStatus::OutOfMemory,
-        MutationStatus::ProcessLimit,
-        MutationStatus::Error,
-        MutationStatus::NotRun,
-    ] {
-        let result = compare_reports(
-            &[
-                usable(vec![mutant("common", MutationStatus::Survived)]),
-                usable(vec![mutant("common", status)]),
-            ],
-            nz(3),
-        );
+#[rstest::rstest]
+#[case::mutationstatus_timeout_1(MutationStatus::Timeout)]
+#[case::mutationstatus_outofmemory_2(MutationStatus::OutOfMemory)]
+#[case::mutationstatus_processlimit_3(MutationStatus::ProcessLimit)]
+#[case::mutationstatus_error_4(MutationStatus::Error)]
+#[case::mutationstatus_notrun_5(MutationStatus::NotRun)]
+fn compare_excludes_each_inconclusive_status_from_judgments_and_scores(
+    #[case] status: MutationStatus,
+) {
+    let result = compare_reports(
+        &[
+            usable(vec![mutant("common", MutationStatus::Survived)]),
+            usable(vec![mutant("common", status)]),
+        ],
+        nz(3),
+    );
 
-        let comparison = &result.comparisons[0];
-        assert_eq!(comparison.common, 1, "{status:?}");
-        assert_eq!(comparison.inconclusive, 1, "{status:?}");
-        assert_eq!(comparison.previous_score, None, "{status:?}");
-        assert_eq!(comparison.current_score, None, "{status:?}");
-        assert_eq!(result.consecutive_stalls, 0, "{status:?}");
-        assert_eq!(result.latest, ProgressState::Indeterminate, "{status:?}");
-    }
+    let comparison = &result.comparisons[0];
+
+    assert_eq!(comparison.common, 1, "{status:?}");
+    assert_eq!(comparison.inconclusive, 1, "{status:?}");
+    assert_eq!(comparison.previous_score, None, "{status:?}");
+    assert_eq!(comparison.current_score, None, "{status:?}");
+    assert_eq!(result.consecutive_stalls, 0, "{status:?}");
+    assert_eq!(result.latest, ProgressState::Indeterminate, "{status:?}");
 }
 
 #[test]
@@ -1341,31 +1388,56 @@ fn assert_duplicate_warnings(stderr: Vec<u8>, original: &Path, reports: &[PathBu
     assert!(warnings.contains(reason));
 }
 
+#[rstest::rstest]
+#[case::same_path(false, "same path")]
+#[case::identical_bytes(true, "identical bytes")]
 #[tokio::test]
-async fn duplicate_input_paths_and_copies_preserve_json_saturation() {
-    {
-        for (copied, reason) in [(false, "same path"), (true, "identical bytes")] {
-            let fixture = tempfile::tempdir().unwrap();
-            let (original, reports) = duplicate_input_paths(&fixture, copied);
+async fn duplicate_input_paths_and_copies_preserve_json_saturation(
+    #[case] copied: bool,
+    #[case] reason: &str,
+) {
+    let fixture = tempfile::tempdir().unwrap();
+    let (original, reports) = duplicate_input_paths(&fixture, copied);
 
-            let (exit, stdout, stderr) = run_progress(&reports).await;
+    let (exit, stdout, stderr) = run_progress(&reports).await;
 
-            assert_eq!(exit, 0);
-            assert_duplicate_warnings(stderr, &original, &reports, reason);
-            let output: Value = serde_json::from_slice(&stdout).unwrap();
-            assert_eq!(output["latest"]["state"], "saturated");
-            assert_eq!(output["consecutive_stalls"], 3);
-            assert_eq!(output["inputs"].as_array().unwrap().len(), 4);
-            assert_eq!(output["comparisons"].as_array().unwrap().len(), 3);
-        }
-    }
+    assert_eq!(exit, 0);
+    assert_duplicate_warnings(stderr, &original, &reports, reason);
+    let output: Value = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(output["latest"]["state"], "saturated");
+    assert_eq!(output["consecutive_stalls"], 3);
+    assert_eq!(output["inputs"].as_array().unwrap().len(), 4);
+    assert_eq!(output["comparisons"].as_array().unwrap().len(), 3);
 }
 
+#[rstest::rstest]
+#[case::independent_run("independent", "stalled")]
+#[case::resumed_execution("resumed", "stalled")]
+#[case::incomplete_execution("incomplete", "indeterminate")]
+#[case::changed_result("changed-result", "regressing")]
 #[tokio::test]
-async fn duplicate_input_detection_distinguishes_independent_and_resumed_reports() {
+async fn duplicate_input_detection_distinguishes_independent_and_resumed_reports(
+    #[case] name: &str,
+    #[case] expected_state: &str,
+) {
     let fixture = tempfile::tempdir().unwrap();
     let original = valid_report();
     let first = write_json(&fixture, "first.json", &original);
+    let report = independent_history_report(name, &original);
+    let next = write_json(&fixture, &format!("{name}.json"), &report);
+
+    let (exit, stdout, stderr) = run_progress(&[first, next]).await;
+
+    let output: Value = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(
+        !String::from_utf8_lossy(&stderr).contains("repeats input"),
+        "{name}"
+    );
+    assert_eq!(output["latest"]["state"], expected_state);
+}
+
+fn independent_history_report(name: &str, original: &Value) -> Value {
     let mut independent = original.clone();
     for field in ["run", "baseline", "summary"] {
         independent[field]["run_id"] = json!("independent-run");
@@ -1385,35 +1457,37 @@ async fn duplicate_input_detection_distinguishes_independent_and_resumed_reports
     changed_result["summary"]["counts"]["survived"] = json!(1);
     changed_result["summary"]["counts"]["score"] = json!(0.0);
     changed_result["summary"]["exit_code"] = json!(0);
-    for (name, report, expected_state) in [
-        ("independent", independent, "stalled"),
-        ("resumed", resumed, "stalled"),
-        ("incomplete", incomplete, "indeterminate"),
-        ("changed-result", changed_result, "regressing"),
-    ] {
-        let next = write_json(&fixture, &format!("{name}.json"), &report);
-        let (exit, stdout, stderr) = run_progress(&[first.clone(), next]).await;
-        assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr));
-        assert!(
-            !String::from_utf8_lossy(&stderr).contains("repeats input"),
-            "{name}"
-        );
-        let output: Value = serde_json::from_slice(&stdout).unwrap();
-        assert_eq!(output["latest"]["state"], expected_state);
-    }
-    // Equivalent whitespace encodings are outside byte-only detection.
+    [
+        ("independent", independent),
+        ("resumed", resumed),
+        ("incomplete", incomplete),
+        ("changed-result", changed_result),
+    ]
+    .into_iter()
+    .find(|(selected, _)| *selected == name)
+    .unwrap()
+    .1
+}
+
+#[tokio::test]
+async fn duplicate_detection_ignores_equivalent_line_ending_encodings() {
+    let fixture = tempfile::tempdir().unwrap();
+    let original = valid_report();
+    let first = write_json(&fixture, "first.json", &original);
     let jsonl = write_jsonl(&fixture, &jsonl_events(&original));
     let wire = std::fs::read_to_string(&jsonl)
         .unwrap()
         .replace('\n', "\r\n");
     std::fs::write(&jsonl, wire).unwrap();
+
     let (exit, _, stderr) = run_progress(&[first, jsonl]).await;
+
     assert_eq!(exit, 0);
     assert_eq!(stderr, Vec::<u8>::new());
 }
 
 #[tokio::test]
-async fn duplicate_input_warnings_preserve_barriers_and_deferred_errors() {
+async fn duplicate_input_warnings_preserve_unusable_barriers() {
     let fixture = tempfile::tempdir().unwrap();
     let first = write_json(&fixture, "first.json", &valid_report());
     let mut incomplete = valid_report();
@@ -1437,7 +1511,24 @@ async fn duplicate_input_warnings_preserve_barriers_and_deferred_errors() {
     let warnings = String::from_utf8(stderr).unwrap();
     assert!(warnings.lines().next().unwrap().contains("incomplete run"));
     assert_eq!(warnings.matches("repeats input").count(), 4);
+}
 
+#[tokio::test]
+async fn duplicate_input_warnings_wait_for_all_input_validation() {
+    let fixture = tempfile::tempdir().unwrap();
+    let first = write_json(&fixture, "first.json", &valid_report());
+    let mut incomplete = valid_report();
+    incomplete["summary"]["complete"] = json!(false);
+    incomplete["summary"]["exit_code"] = json!(4);
+    let barrier = write_json(&fixture, "incomplete.json", &incomplete);
+    let reports = vec![
+        first.clone(),
+        first.clone(),
+        barrier.clone(),
+        barrier,
+        first.clone(),
+        first,
+    ];
     let invalid = fixture.path().join("invalid.json");
     std::fs::write(&invalid, "{").unwrap();
     let mut reports = reports;
@@ -2878,156 +2969,124 @@ fn instance_has_type(instance: &Value, kind: &str) -> bool {
     }
 }
 
-macro_rules! inconsistent_identity_test {
-    ($name:ident, $pointer:literal, $value:expr) => {
-        #[tokio::test]
-        async fn $name() {
-            // Arrange: use a published real candidate, retaining its ID after tampering.
-            let fixture = tempfile::tempdir().unwrap();
-            let candidates: Value =
-                serde_json::from_str(include_str!("fixtures/method-replacements/candidates.json"))
-                    .unwrap();
-            let mut document = valid_report();
-            document["mutants"][0]["candidate"] = candidates[0].clone();
-            *document["mutants"][0]["candidate"]
-                .pointer_mut($pointer)
-                .unwrap() = $value;
-            let path = write_jsonl(&fixture, &jsonl_events(&document));
-            // Act
-            let (code, stdout, stderr) = run_progress(&[path.clone(), path.clone()]).await;
-            // Assert: reject before either regression or saturation can be rendered.
-            assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr));
-            assert_eq!(stdout, Vec::<u8>::new());
-            let stderr = String::from_utf8(stderr).unwrap();
-            assert!(stderr.contains(path.to_str().unwrap()));
-            assert!(stderr.contains("candidate identity conflict"), "{stderr}");
-        }
-    };
-}
-inconsistent_identity_test!(
-    identity_jsonl_replacement,
-    "/replacement",
-    json!("obj.extend([(item)])")
-);
-inconsistent_identity_test!(identity_jsonl_operator, "/operator", json!("other"));
-inconsistent_identity_test!(identity_jsonl_path, "/path", json!("other.py"));
-inconsistent_identity_test!(identity_jsonl_hash, "/file_hash", json!("different"));
-inconsistent_identity_test!(identity_jsonl_span_start, "/span/start", json!(33));
-inconsistent_identity_test!(identity_jsonl_span_length, "/span/length", json!(19));
+#[rstest::rstest]
+#[case::identity_jsonl_replacement("/replacement", json!("obj.extend([(item)])"))]
+#[case::identity_jsonl_operator("/operator", json!("other"))]
+#[case::identity_jsonl_path("/path", json!("other.py"))]
+#[case::identity_jsonl_hash("/file_hash", json!("different"))]
+#[case::identity_jsonl_span_start("/span/start", json!(33))]
+#[case::identity_jsonl_span_length("/span/length", json!(19))]
+#[tokio::test]
+async fn inconsistent_candidate_identity_is_rejected(#[case] pointer: &str, #[case] value: Value) {
+    // use a published real candidate, retaining its ID after tampering.
+    let fixture = tempfile::tempdir().unwrap();
+    let candidates: Value =
+        serde_json::from_str(include_str!("fixtures/method-replacements/candidates.json")).unwrap();
+    let mut document = valid_report();
+    document["mutants"][0]["candidate"] = candidates[0].clone();
+    *document["mutants"][0]["candidate"]
+        .pointer_mut(pointer)
+        .unwrap() = value;
+    let path = write_jsonl(&fixture, &jsonl_events(&document));
 
-macro_rules! identity_display_test {
-    ($name:ident, $field:literal, $value:expr) => {
-        #[tokio::test]
-        async fn $name() {
-            // Arrange: display metadata changes while the stable mutation stays fixed.
-            let fixture = tempfile::tempdir().unwrap();
-            let mut after = detail_report(&[("a", MutationStatus::Killed)]);
-            after["mutants"][0]["candidate"][$field] = $value;
-            let before = write_json(
-                &fixture,
-                "before.json",
-                &detail_report(&[("a", MutationStatus::Killed)]),
-            );
-            let after = write_jsonl(&fixture, &jsonl_events(&after));
-            // Act
-            let (code, stdout, stderr) = run_progress(&[before, after]).await;
-            // Assert
-            assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
-            let value: Value = serde_json::from_slice(&stdout).unwrap();
-            assert_eq!(value["latest"]["state"], "stalled");
-        }
-    };
+    let (code, stdout, stderr) = run_progress(&[path.clone(), path.clone()]).await;
+    // reject before either regression or saturation can be rendered.
+    assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr));
+    assert_eq!(stdout, Vec::<u8>::new());
+    let stderr = String::from_utf8(stderr).unwrap();
+    assert!(stderr.contains(path.to_str().unwrap()));
+    assert!(stderr.contains("candidate identity conflict"), "{stderr}");
 }
-identity_display_test!(identity_jsonl_accepts_line, "line", json!(99));
-identity_display_test!(identity_jsonl_accepts_column, "column", json!(99));
-identity_display_test!(identity_jsonl_accepts_symbol, "symbol", json!("different"));
-identity_display_test!(
-    identity_jsonl_accepts_original,
-    "original",
-    json!("different")
-);
-identity_display_test!(identity_jsonl_accepts_sequence, "sequence", json!(99));
 
-macro_rules! stolen_identity_test {
-    ($name:ident) => {
-        #[tokio::test]
-        async fn $name() {
-            // Arrange: separate real mutations from the same append call, killed -> survived.
-            let fixture = tempfile::tempdir().unwrap();
-            let candidates: Value =
-                serde_json::from_str(include_str!("fixtures/method-replacements/candidates.json"))
-                    .unwrap();
-            let mut before = detail_report(&[("a", MutationStatus::Killed)]);
-            before["mutants"][0]["candidate"] = candidates[0].clone();
-            let mut after = detail_report(&[("a", MutationStatus::Survived)]);
-            after["mutants"][0]["candidate"] = candidates[1].clone();
-            after["mutants"][0]["candidate"]["id"] = candidates[0]["id"].clone();
-            let before = write_json(&fixture, "before.json", &before);
-            let after = write_jsonl(&fixture, &jsonl_events(&after));
-            // Act
-            let (code, stdout, stderr) = progress_output(&[before, after.clone()], true).await;
-            // Assert
-            assert_eq!(code, 2);
-            assert_eq!(stdout, Vec::<u8>::new());
-            let diagnostic = String::from_utf8(stderr).unwrap();
-            assert!(diagnostic.contains(after.to_str().unwrap()));
-            assert!(diagnostic.contains("candidate identity conflict"));
-        }
-    };
-}
-stolen_identity_test!(identity_jsonl_rejects_stolen_id_before_regression);
+#[rstest::rstest]
+#[case::identity_jsonl_accepts_line("line", json!(99))]
+#[case::identity_jsonl_accepts_column("column", json!(99))]
+#[case::identity_jsonl_accepts_symbol("symbol", json!("different"))]
+#[case::identity_jsonl_accepts_original("original", json!("different"))]
+#[case::identity_jsonl_accepts_sequence("sequence", json!(99))]
+#[tokio::test]
+async fn display_metadata_preserves_candidate_identity(#[case] field: &str, #[case] value: Value) {
+    // display metadata changes while the stable mutation stays fixed.
+    let fixture = tempfile::tempdir().unwrap();
+    let mut after = detail_report(&[("a", MutationStatus::Killed)]);
+    after["mutants"][0]["candidate"][field] = value;
+    let before = write_json(
+        &fixture,
+        "before.json",
+        &detail_report(&[("a", MutationStatus::Killed)]),
+    );
+    let after = write_jsonl(&fixture, &jsonl_events(&after));
 
-macro_rules! identity_status_test {
-    ($name:ident) => {
-        #[tokio::test]
-        async fn $name() {
-            // Arrange: a legitimate same-ID status transition remains a regression.
-            let fixture = tempfile::tempdir().unwrap();
-            let before = write_json(
-                &fixture,
-                "before.json",
-                &detail_report(&[("a", MutationStatus::Killed)]),
-            );
-            let after = detail_report(&[("a", MutationStatus::Survived)]);
-            let after = write_jsonl(&fixture, &jsonl_events(&after));
-            // Act
-            let (code, stdout, stderr) = progress_output(&[before, after], true).await;
-            // Assert
-            assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
-            let result: Value = serde_json::from_slice(&stdout).unwrap();
-            assert_eq!(result["latest"]["state"], "regressing");
-            assert_eq!(result["comparisons"][0]["regressions"], 1);
-        }
-    };
-}
-identity_status_test!(identity_jsonl_accepts_status_change);
+    let (code, stdout, stderr) = run_progress(&[before, after]).await;
 
-macro_rules! identity_order_test {
-    ($name:ident) => {
-        #[tokio::test]
-        async fn $name() {
-            // Arrange: two independently discovered orders of the same genuine identities.
-            let fixture = tempfile::tempdir().unwrap();
-            let before =
-                detail_report(&[("a", MutationStatus::Killed), ("b", MutationStatus::Killed)]);
-            let after = detail_report(&[
-                ("b", MutationStatus::Survived),
-                ("a", MutationStatus::Survived),
-            ]);
-            let before = write_json(&fixture, "before.json", &before);
-            let after = write_jsonl(&fixture, &jsonl_events(&after));
-            // Act
-            let (code, stdout, stderr) = progress_output(&[before, after], true).await;
-            // Assert
-            assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
-            let result: Value = serde_json::from_slice(&stdout).unwrap();
-            assert_eq!(result["details"]["eligibility"], "matching");
-            assert_eq!(result["comparisons"][0]["common"], 2);
-            assert_eq!(result["comparisons"][0]["regressions"], 2);
-        }
-    };
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    let value: Value = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(value["latest"]["state"], "stalled");
 }
-identity_order_test!(identity_jsonl_accepts_independent_discovery_order);
+
+#[tokio::test]
+async fn identity_jsonl_rejects_stolen_id_before_regression() {
+    // separate real mutations from the same append call, killed -> survived.
+    let fixture = tempfile::tempdir().unwrap();
+    let candidates: Value =
+        serde_json::from_str(include_str!("fixtures/method-replacements/candidates.json")).unwrap();
+    let mut before = detail_report(&[("a", MutationStatus::Killed)]);
+    before["mutants"][0]["candidate"] = candidates[0].clone();
+    let mut after = detail_report(&[("a", MutationStatus::Survived)]);
+    after["mutants"][0]["candidate"] = candidates[1].clone();
+    after["mutants"][0]["candidate"]["id"] = candidates[0]["id"].clone();
+    let before = write_json(&fixture, "before.json", &before);
+    let after = write_jsonl(&fixture, &jsonl_events(&after));
+
+    let (code, stdout, stderr) = progress_output(&[before, after.clone()], true).await;
+
+    assert_eq!(code, 2);
+    assert_eq!(stdout, Vec::<u8>::new());
+    let diagnostic = String::from_utf8(stderr).unwrap();
+    assert!(diagnostic.contains(after.to_str().unwrap()));
+    assert!(diagnostic.contains("candidate identity conflict"));
+}
+
+#[tokio::test]
+async fn identity_jsonl_accepts_status_change() {
+    // a legitimate same-ID status transition remains a regression.
+    let fixture = tempfile::tempdir().unwrap();
+    let before = write_json(
+        &fixture,
+        "before.json",
+        &detail_report(&[("a", MutationStatus::Killed)]),
+    );
+    let after = detail_report(&[("a", MutationStatus::Survived)]);
+    let after = write_jsonl(&fixture, &jsonl_events(&after));
+
+    let (code, stdout, stderr) = progress_output(&[before, after], true).await;
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    let result: Value = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(result["latest"]["state"], "regressing");
+    assert_eq!(result["comparisons"][0]["regressions"], 1);
+}
+
+#[tokio::test]
+async fn identity_jsonl_accepts_independent_discovery_order() {
+    // two independently discovered orders of the same genuine identities.
+    let fixture = tempfile::tempdir().unwrap();
+    let before = detail_report(&[("a", MutationStatus::Killed), ("b", MutationStatus::Killed)]);
+    let after = detail_report(&[
+        ("b", MutationStatus::Survived),
+        ("a", MutationStatus::Survived),
+    ]);
+    let before = write_json(&fixture, "before.json", &before);
+    let after = write_jsonl(&fixture, &jsonl_events(&after));
+
+    let (code, stdout, stderr) = progress_output(&[before, after], true).await;
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    let result: Value = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(result["details"]["eligibility"], "matching");
+    assert_eq!(result["comparisons"][0]["common"], 2);
+    assert_eq!(result["comparisons"][0]["regressions"], 2);
+}
 
 fn valid_report() -> Value {
     let mut document = json!({
@@ -3121,38 +3180,32 @@ fn result_report(close_timeout: bool) -> Value {
     document
 }
 
-macro_rules! missing_execution_field_test {
-    ($name:ident, $field:literal) => {
-        #[test]
-        fn $name() {
-            // Arrange
-            let fixture = tempfile::tempdir().unwrap();
-            let mut document = result_report(true);
-            document["mutants"][0]["outcome"]["executed"]
-                .as_object_mut()
-                .unwrap()
-                .remove($field);
-            let path = write_json(&fixture, "missing-field.json", &document);
-            // Act
-            let result = read_report(&path);
-            // Assert
-            assert!(matches!(result, Err(ReportReadError::Parse { .. })));
-        }
-    };
+#[rstest::rstest]
+#[case::input_requires_executed_termination("termination")]
+#[case::input_requires_executed_output_state("output_state")]
+#[case::input_requires_executed_output("output")]
+#[case::input_requires_executed_elapsed("elapsed")]
+fn input_requires_each_executed_outcome_field(#[case] field: &str) {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut document = result_report(true);
+    document["mutants"][0]["outcome"]["executed"]
+        .as_object_mut()
+        .unwrap()
+        .remove(field);
+    let path = write_json(&fixture, "missing-field.json", &document);
+
+    let result = read_report(&path);
+
+    assert!(matches!(result, Err(ReportReadError::Parse { .. })));
 }
-missing_execution_field_test!(input_requires_executed_termination, "termination");
-missing_execution_field_test!(input_requires_executed_output_state, "output_state");
-missing_execution_field_test!(input_requires_executed_output, "output");
-missing_execution_field_test!(input_requires_executed_elapsed, "elapsed");
 
 #[test]
 fn input_preserves_output_error_override() {
-    // Arrange
     let fixture = tempfile::tempdir().unwrap();
     let path = write_json(&fixture, "output-error.json", &result_report(true));
-    // Act
+
     let result = read_report(&path);
-    // Assert
+
     assert!(matches!(
         result,
         Ok(InputReport::Unusable {
@@ -3164,14 +3217,13 @@ fn input_preserves_output_error_override() {
 
 #[test]
 fn input_accepts_reused_conclusive_outcome() {
-    // Arrange
     let fixture = tempfile::tempdir().unwrap();
     let mut document = result_report(false);
     document["mutants"][0]["outcome"] = json!({"reused":{"status":"killed"}});
     let path = write_json(&fixture, "reused.json", &document);
-    // Act
+
     let result = read_report(&path);
-    // Assert
+
     assert!(matches!(result, Ok(InputReport::Usable(_))));
 }
 
@@ -3196,170 +3248,126 @@ fn jsonl_events(document: &Value) -> Vec<Value> {
     events
 }
 
-macro_rules! disk_public_wire_case {
-    ($name:ident, $defect:literal, $exit:literal, $error:literal) => {
-        #[tokio::test]
-        async fn $name() {
-            // Arrange: the current golden has explicit-null janitor and valid event ordering.
-            let fixture = tempfile::tempdir().unwrap();
-            let source = repo_root()
-                .join({ "crates/hoimin-cli/tests/golden/events/schema-v10-current.jsonl" });
-            let source = std::fs::read_to_string(source).unwrap();
-            let mut values: Vec<Value> = {
-                source
-                    .lines()
-                    .map(|line| serde_json::from_str(line).unwrap())
-                    .collect()
-            };
-            let disk = {
-                &mut values
-                    .iter_mut()
-                    .find(|event| event["kind"] == "run_finished")
-                    .unwrap()["disk"]
-            };
-            assert_eq!(disk.get("janitor"), Some(&Value::Null));
-            match $defect {
-                "retired" => disk["stale_roots_reclaimed"] = json!(999),
-                "missing" => {
-                    disk.as_object_mut().unwrap().remove("janitor");
-                }
-                "current" => {}
-                _ => unreachable!(),
-            }
-            let path = write_jsonl(&fixture, &values);
+#[rstest::rstest]
+#[case::retired_member("retired", "unknown field `stale_roots_reclaimed`")]
+#[case::missing_janitor("missing", "missing field `janitor`")]
+#[tokio::test]
+async fn public_jsonl_disk_rejects_invalid_fields(
+    #[case] defect: &str,
+    #[case] expected_error: &str,
+) {
+    let fixture = tempfile::tempdir().unwrap();
+    let path = disk_wire_fixture(&fixture, defect);
 
-            // Act: each generated case invokes the actual public reader independently.
-            let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
-                .arg("progress")
-                .arg(&path)
-                .arg(&path)
-                .output()
-                .await
-                .unwrap();
+    let output = public_progress_output(&path).await;
 
-            // Assert.
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            assert_eq!(output.status.code(), Some($exit), "{stderr}");
-            if $exit == 0 {
-                let result: Value = serde_json::from_slice(&output.stdout).unwrap();
-                assert!(
-                    result["inputs"]
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .all(|input| input["usable"] == true)
-                );
-            } else {
-                assert!(stderr.contains($error), "{stderr}");
-                assert!(output.stdout.is_empty());
-            }
-        }
-    };
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(2), "{stderr}");
+    assert!(stderr.contains(expected_error), "{stderr}");
+    assert_eq!(output.stdout, Vec::<u8>::new());
 }
-disk_public_wire_case!(
-    public_jsonl_disk_rejects_retired_member,
-    "retired",
-    2,
-    "unknown field `stale_roots_reclaimed`"
-);
-disk_public_wire_case!(public_jsonl_disk_accepts_current_null, "current", 0, "");
-disk_public_wire_case!(
-    public_jsonl_disk_requires_janitor,
-    "missing",
-    2,
-    "missing field `janitor`"
-);
 
-macro_rules! status_public_rejection_case {
-    ($name:ident) => {
-        #[tokio::test]
-        async fn $name() {
-            // Arrange: valid identities, janitor and summary isolate the status projection.
-            let fixture = tempfile::tempdir().unwrap();
-            let mut document = valid_report();
-            document["mutants"][0]["status"] = json!("killed");
-            let valid = write_jsonl(&fixture, &jsonl_events(&document));
-            assert!(matches!(read_report(&valid), Ok(InputReport::Usable(_))));
-            document["mutants"][0]["status"] = json!("survived");
-            let path = write_jsonl(&fixture, &jsonl_events(&document));
-            // Act: exercise the real executable, including public error mapping.
-            let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
-                .arg("progress")
-                .arg(&path)
-                .arg(&path)
-                .output()
-                .await
-                .unwrap();
-            // Assert.
-            assert_eq!(output.status.code(), Some(2));
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            assert!(
-                stderr.contains("status survived does not match outcome status killed"),
-                "{stderr}"
-            );
-        }
-    };
-}
-status_public_rejection_case!(public_jsonl_rejects_contradictory_status);
+#[tokio::test]
+async fn public_jsonl_disk_accepts_current_null() {
+    let fixture = tempfile::tempdir().unwrap();
+    let path = disk_wire_fixture(&fixture, "current");
 
-macro_rules! status_reader_rejection_case {
-    ($name:ident, $defect:literal, $expected:literal) => {
-        #[test]
-        fn $name() {
-            // Arrange: raw edits preserve duplicate-key evidence at the public file boundary.
-            let fixture = tempfile::tempdir().unwrap();
-            let document = valid_report();
-            let path = write_jsonl(&fixture, &jsonl_events(&document));
-            assert!(matches!(read_report(&path), Ok(InputReport::Usable(_))));
-            let wire = std::fs::read_to_string(&path).unwrap();
-            let mut parsed = document.clone();
-            parsed["mutants"][0]
-                .as_object_mut()
-                .unwrap()
-                .remove("status");
-            let changed = if $defect == "missing" {
-                {
-                    jsonl_events(&parsed)
-                        .iter()
-                        .map(Value::to_string)
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                }
-            } else {
-                // Both serializers use this compact field representation in event payloads.
-                let compact = wire;
-                let replacement = match $defect {
-                    "equal" => "\"status\":\"killed\",\"status\":\"killed\"",
-                    "conflicting" => "\"status\":\"killed\",\"status\":\"survived\"",
-                    "unknown" => "\"status\":\"future_status\"",
-                    _ => unreachable!(),
-                };
-                compact.replacen("\"status\":\"killed\"", replacement, 1)
-            };
-            std::fs::write(&path, changed).unwrap();
-            // Act.
-            let error = read_report(&path).unwrap_err();
-            // Assert.
-            assert!(error.to_string().contains($expected), "{error}");
-        }
-    };
+    let output = public_progress_output(&path).await;
+
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(
+        result["inputs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|input| input["usable"] == true)
+    );
 }
-status_reader_rejection_case!(jsonl_requires_status, "missing", "missing field `status`");
-status_reader_rejection_case!(
-    jsonl_rejects_equal_status_keys,
-    "equal",
-    "duplicate field `status`"
-);
-status_reader_rejection_case!(
-    jsonl_rejects_conflicting_status_keys,
-    "conflicting",
-    "duplicate field `status`"
-);
-status_reader_rejection_case!(
-    jsonl_rejects_unknown_status,
-    "unknown",
-    "unknown variant `future_status`"
-);
+
+async fn public_progress_output(path: &Path) -> Output {
+    tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .arg("progress")
+        .arg(path)
+        .arg(path)
+        .output()
+        .await
+        .unwrap()
+}
+
+fn disk_wire_fixture(fixture: &tempfile::TempDir, defect: &str) -> PathBuf {
+    let source = repo_root().join("crates/hoimin-cli/tests/golden/events/schema-v10-current.jsonl");
+    let source = std::fs::read_to_string(source).unwrap();
+    let mut values: Vec<Value> = {
+        source
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
+    };
+    let disk = {
+        &mut values
+            .iter_mut()
+            .find(|event| event["kind"] == "run_finished")
+            .unwrap()["disk"]
+    };
+    assert_eq!(disk.get("janitor"), Some(&Value::Null));
+    match defect {
+        "retired" => disk["stale_roots_reclaimed"] = json!(999),
+        "missing" => {
+            disk.as_object_mut().unwrap().remove("janitor");
+        }
+        "current" => {}
+        _ => unreachable!(),
+    }
+    write_jsonl(fixture, &values)
+}
+
+#[tokio::test]
+async fn public_jsonl_rejects_contradictory_status() {
+    // valid identities, janitor and summary isolate the status projection.
+    let fixture = tempfile::tempdir().unwrap();
+    let mut document = valid_report();
+    document["mutants"][0]["status"] = json!("killed");
+    let valid = write_jsonl(&fixture, &jsonl_events(&document));
+    assert!(matches!(read_report(&valid), Ok(InputReport::Usable(_))));
+    document["mutants"][0]["status"] = json!("survived");
+    let path = write_jsonl(&fixture, &jsonl_events(&document));
+    // exercise the real executable, including public error mapping.
+    let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .arg("progress")
+        .arg(&path)
+        .arg(&path)
+        .output()
+        .await
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("status survived does not match outcome status killed"),
+        "{stderr}"
+    );
+}
+
+#[rstest::rstest]
+#[case::jsonl_requires_status("missing", "missing field `status`")]
+#[case::jsonl_rejects_equal_status_keys("equal", "duplicate field `status`")]
+#[case::jsonl_rejects_conflicting_status_keys("conflicting", "duplicate field `status`")]
+#[case::jsonl_rejects_unknown_status("unknown", "unknown variant `future_status`")]
+fn jsonl_rejects_invalid_status_fields(#[case] defect: &str, #[case] expected: &str) {
+    // raw edits preserve duplicate-key evidence at the public file boundary.
+    let fixture = tempfile::tempdir().unwrap();
+    let document = valid_report();
+    let path = write_jsonl(&fixture, &jsonl_events(&document));
+    assert!(matches!(read_report(&path), Ok(InputReport::Usable(_))));
+    let wire = std::fs::read_to_string(&path).unwrap();
+    let changed = changed_status_wire(&document, wire, defect);
+    std::fs::write(&path, changed).unwrap();
+
+    let error = read_report(&path).unwrap_err();
+
+    assert!(error.to_string().contains(expected), "{error}");
+}
 
 fn write_jsonl(fixture: &tempfile::TempDir, events: &[Value]) -> PathBuf {
     let path = fixture.path().join("events.report");
@@ -3379,18 +3387,18 @@ async fn jsonl_and_document_inputs_have_identical_progress() {
     let document = valid_report();
     let json = write_json(&fixture, "document.report", &document);
     let jsonl = write_jsonl(&fixture, &jsonl_events(&document));
-    let InputReport::Usable(actual) = read_report(&jsonl).unwrap() else {
+    let InputReport::Usable(parsed_stream) = read_report(&jsonl).unwrap() else {
         panic!("completed JSONL must be usable");
     };
-    assert_eq!(actual.mutants.len(), 1);
+    let (expected_code, expected, _) = run_progress(&[json.clone(), json.clone()]).await;
+    let (actual_code, actual, errors) = run_progress(&[json, jsonl]).await;
+    assert_eq!(parsed_stream.mutants.len(), 1);
     assert_eq!(
-        actual.mutants[0].candidate.id,
+        parsed_stream.mutants[0].candidate.id,
         valid_report()["mutants"][0]["candidate"]["id"]
             .as_str()
             .unwrap()
     );
-    let (expected_code, expected, _) = run_progress(&[json.clone(), json.clone()]).await;
-    let (actual_code, actual, errors) = run_progress(&[json, jsonl]).await;
     assert_eq!(actual_code, expected_code, "{errors:?}");
     let expected: Value = serde_json::from_slice(&expected).unwrap();
     let actual: Value = serde_json::from_slice(&actual).unwrap();
@@ -3442,37 +3450,42 @@ fn corrupt_lifecycle_events(defect: &str) -> Vec<Value> {
     events
 }
 
-#[test]
-fn jsonl_rejects_corrupt_lifecycles_and_results() {
+#[rstest::rstest]
+#[case::missing_end("missing_end")]
+#[case::duplicate_run("duplicate_run")]
+#[case::after_end("after_end")]
+#[case::duplicate_baseline("duplicate_baseline")]
+#[case::late_baseline("late_baseline")]
+#[case::missing_start("missing_start")]
+#[case::active_at_end("active_at_end")]
+#[case::duplicate_mutant("duplicate_mutant")]
+#[case::wrong_run("wrong_run")]
+#[case::sequence("sequence")]
+#[case::schema("schema")]
+#[case::unknown_kind("unknown_kind")]
+#[case::counts("counts")]
+#[case::result("result")]
+fn jsonl_rejects_corrupt_lifecycles_and_results(#[case] defect: &str) {
     let fixture = tempfile::tempdir().unwrap();
-    for defect in [
-        "missing_end",
-        "duplicate_run",
-        "after_end",
-        "duplicate_baseline",
-        "late_baseline",
-        "missing_start",
-        "active_at_end",
-        "duplicate_mutant",
-        "wrong_run",
-        "sequence",
-        "schema",
-        "unknown_kind",
-        "counts",
-        "result",
-    ] {
-        let events = corrupt_lifecycle_events(defect);
-        let path = write_jsonl(&fixture, &events);
-        assert!(read_report(&path).is_err(), "accepted {defect}");
-    }
+    let events = corrupt_lifecycle_events(defect);
+    let path = write_jsonl(&fixture, &events);
+
+    let result = read_report(&path);
+
+    assert!(result.is_err(), "accepted {defect}");
+}
+
+#[test]
+fn jsonl_rejects_a_truncated_event_after_a_valid_stream() {
+    let fixture = tempfile::tempdir().unwrap();
     let path = write_jsonl(&fixture, &jsonl_events(&valid_report()));
     let mut text = std::fs::read_to_string(&path).unwrap();
     text.push_str("{\"kind\":");
     std::fs::write(&path, text).unwrap();
-    assert!(matches!(
-        read_report(&path),
-        Err(ReportReadError::Parse { .. })
-    ));
+
+    let result = read_report(&path);
+
+    assert!(matches!(result, Err(ReportReadError::Parse { .. })));
 }
 
 fn opaque_config_document(reason: Option<UnusableReason>) -> Value {
@@ -3509,73 +3522,145 @@ fn report_unusable_reason(report: &InputReport) -> Option<UnusableReason> {
     }
 }
 
-#[test]
-fn jsonl_preserves_opaque_config_layout_and_unusable_reasons() {
+#[rstest::rstest]
+#[case::none_1(None)]
+#[case::some_unusablereason_missingbaseline_2(Some(UnusableReason::MissingBaseline))]
+#[case::some_unusablereason_baselinefailed_3(Some(UnusableReason::BaselineFailed))]
+#[case::some_unusablereason_incomplete_4(Some(UnusableReason::Incomplete))]
+fn jsonl_preserves_opaque_config_layout_and_unusable_reasons(
+    #[case] reason: Option<UnusableReason>,
+) {
     let fixture = tempfile::tempdir().unwrap();
-    for reason in [
-        None,
-        Some(UnusableReason::MissingBaseline),
-        Some(UnusableReason::BaselineFailed),
-        Some(UnusableReason::Incomplete),
-    ] {
-        let document = opaque_config_document(reason);
-        let events = jsonl_events(&document);
-        let path = write_jsonl(&fixture, &events);
-        let text = std::fs::read_to_string(&path).unwrap();
-        std::fs::write(
-            &path,
-            format!("\r\n {}", text.trim_end().replace('\n', "\r\n\r\n")),
-        )
-        .unwrap();
-        let actual = read_report(&path).unwrap();
-        let json_path = write_json(&fixture, "same.json", &document);
-        let expected = read_report(&json_path).unwrap();
-        assert_eq!(report_unusable_reason(&actual), reason);
-        assert_eq!(report_unusable_reason(&expected), reason);
-    }
+
+    let document = opaque_config_document(reason);
+    let events = jsonl_events(&document);
+    let path = write_jsonl(&fixture, &events);
+    let text = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(
+        &path,
+        format!("\r\n {}", text.trim_end().replace('\n', "\r\n\r\n")),
+    )
+    .unwrap();
+    let actual = read_report(&path).unwrap();
+    let json_path = write_json(&fixture, "same.json", &document);
+    let expected = read_report(&json_path).unwrap();
+
+    assert_eq!(report_unusable_reason(&actual), reason);
+    assert_eq!(report_unusable_reason(&expected), reason);
 }
 
-#[test]
-fn raw_opaque_config_preserves_jsonl_classification() {
+#[rstest::rstest]
+#[case::usable_null_document(None, "null", write_json)]
+#[case::usable_null_events(None, "null", write_explicit_jsonl)]
+#[case::usable_future_document(None, r#"{"future_config":[1,2]}"#, write_json)]
+#[case::usable_future_events(None, r#"{"future_config":[1,2]}"#, write_explicit_jsonl)]
+#[case::usable_duplicate_keys_document(
+    None,
+    r#"{"root":"/not/a/real/hoimin/project","import_roots":null,"import_roots":[]}"#,
+    write_json
+)]
+#[case::usable_duplicate_keys_events(
+    None,
+    r#"{"root":"/not/a/real/hoimin/project","import_roots":null,"import_roots":[]}"#,
+    write_explicit_jsonl
+)]
+#[case::missing_baseline_null_document(Some(UnusableReason::MissingBaseline), "null", write_json)]
+#[case::missing_baseline_null_events(
+    Some(UnusableReason::MissingBaseline),
+    "null",
+    write_explicit_jsonl
+)]
+#[case::missing_baseline_future_document(
+    Some(UnusableReason::MissingBaseline),
+    r#"{"future_config":[1,2]}"#,
+    write_json
+)]
+#[case::missing_baseline_future_events(
+    Some(UnusableReason::MissingBaseline),
+    r#"{"future_config":[1,2]}"#,
+    write_explicit_jsonl
+)]
+#[case::missing_baseline_duplicate_keys_document(
+    Some(UnusableReason::MissingBaseline),
+    r#"{"root":"/not/a/real/hoimin/project","import_roots":null,"import_roots":[]}"#,
+    write_json
+)]
+#[case::missing_baseline_duplicate_keys_events(
+    Some(UnusableReason::MissingBaseline),
+    r#"{"root":"/not/a/real/hoimin/project","import_roots":null,"import_roots":[]}"#,
+    write_explicit_jsonl
+)]
+#[case::failed_baseline_null_document(Some(UnusableReason::BaselineFailed), "null", write_json)]
+#[case::failed_baseline_null_events(
+    Some(UnusableReason::BaselineFailed),
+    "null",
+    write_explicit_jsonl
+)]
+#[case::failed_baseline_future_document(
+    Some(UnusableReason::BaselineFailed),
+    r#"{"future_config":[1,2]}"#,
+    write_json
+)]
+#[case::failed_baseline_future_events(
+    Some(UnusableReason::BaselineFailed),
+    r#"{"future_config":[1,2]}"#,
+    write_explicit_jsonl
+)]
+#[case::failed_baseline_duplicate_keys_document(
+    Some(UnusableReason::BaselineFailed),
+    r#"{"root":"/not/a/real/hoimin/project","import_roots":null,"import_roots":[]}"#,
+    write_json
+)]
+#[case::failed_baseline_duplicate_keys_events(
+    Some(UnusableReason::BaselineFailed),
+    r#"{"root":"/not/a/real/hoimin/project","import_roots":null,"import_roots":[]}"#,
+    write_explicit_jsonl
+)]
+#[case::incomplete_null_document(Some(UnusableReason::Incomplete), "null", write_json)]
+#[case::incomplete_null_events(Some(UnusableReason::Incomplete), "null", write_explicit_jsonl)]
+#[case::incomplete_future_document(
+    Some(UnusableReason::Incomplete),
+    r#"{"future_config":[1,2]}"#,
+    write_json
+)]
+#[case::incomplete_future_events(
+    Some(UnusableReason::Incomplete),
+    r#"{"future_config":[1,2]}"#,
+    write_explicit_jsonl
+)]
+#[case::incomplete_duplicate_keys_document(
+    Some(UnusableReason::Incomplete),
+    r#"{"root":"/not/a/real/hoimin/project","import_roots":null,"import_roots":[]}"#,
+    write_json
+)]
+#[case::incomplete_duplicate_keys_events(
+    Some(UnusableReason::Incomplete),
+    r#"{"root":"/not/a/real/hoimin/project","import_roots":null,"import_roots":[]}"#,
+    write_explicit_jsonl
+)]
+fn raw_opaque_config_preserves_jsonl_classification(
+    #[case] reason: Option<UnusableReason>,
+    #[case] config: &str,
+    #[case] writer: ReportWriter,
+) {
     let fixture = tempfile::tempdir().unwrap();
-    for reason in [
-        None,
-        Some(UnusableReason::MissingBaseline),
-        Some(UnusableReason::BaselineFailed),
-        Some(UnusableReason::Incomplete),
-    ] {
-        for config in [
-            "null",
-            r#"{"future_config":[1,2]}"#,
-            r#"{"root":"/not/a/real/hoimin/project","import_roots":null,"import_roots":[]}"#,
-        ] {
-            // Arrange: preserve raw duplicate keys after both formats are serialized.
-            let mut document = opaque_config_document(reason);
-            document["run"]["normalized_config"] = Value::Null;
-            let reports = [
-                write_json(&fixture, "opaque.json", &document),
-                write_jsonl(&fixture, &jsonl_events(&document)),
-            ];
-            for report in reports {
-                let original = std::fs::read_to_string(&report).unwrap();
-                let field = r#""normalized_config":null"#;
-                assert_eq!(original.matches(field).count(), 1);
-                let raw = original.replacen(field, &format!(r#""normalized_config":{config}"#), 1);
-                std::fs::write(&report, raw).unwrap();
+    let mut document = opaque_config_document(reason);
+    document["run"]["normalized_config"] = Value::Null;
+    let report = writer(&fixture, "opaque.json", &document);
+    let original = std::fs::read_to_string(&report).unwrap();
+    let field = r#""normalized_config":null"#;
+    assert_eq!(original.matches(field).count(), 1);
+    let raw = original.replacen(field, &format!(r#""normalized_config":{config}"#), 1);
+    std::fs::write(&report, raw).unwrap();
 
-                // Act
-                let result = read_report(&report).unwrap();
+    let result = read_report(&report).unwrap();
 
-                // Assert
-                assert_eq!(
-                    report_unusable_reason(&result),
-                    reason,
-                    "{config} in {}",
-                    report.display()
-                );
-            }
-        }
-    }
+    assert_eq!(
+        report_unusable_reason(&result),
+        reason,
+        "{config} in {}",
+        report.display()
+    );
 }
 
 #[tokio::test]
@@ -3636,37 +3721,54 @@ async fn jsonl_invalid_input_has_no_partial_progress_output() {
 }
 
 #[test]
-fn jsonl_checks_discarded_diagnostics_and_rejects_legacy_streams() {
+fn jsonl_rejects_a_legacy_stream_header() {
     let fixture = tempfile::tempdir().unwrap();
     let mut events = jsonl_events(&valid_report());
     events[0]["schema_version"] = json!(2);
     let path = write_jsonl(&fixture, &events);
+
+    let result = read_report(&path);
+
     assert!(matches!(
-        read_report(&path),
+        result,
         Err(ReportReadError::UnsupportedSchema { found: 2, .. })
     ));
-    for (defect, field, replacement, accepted) in [
-        ("none", "schema_version", json!(REPORT_SCHEMA_VERSION), true),
-        ("schema", "schema_version", json!(2), false),
-        ("run_id", "run_id", json!("another-run"), false),
-        ("sequence", "sequence", json!(4), false),
-    ] {
-        let mut events = jsonl_events(&valid_report());
-        let mut diagnostic = json!({
-            "kind": "diagnostic", "schema_version": REPORT_SCHEMA_VERSION,
-            "sequence": 5, "run_id": "run-1", "level": "info", "code": "test", "message": "test"
-        });
-        diagnostic[field] = replacement;
-        events[4]["sequence"] = json!(6);
-        events.insert(4, diagnostic);
-        let path = write_jsonl(&fixture, &events);
-        assert_eq!(read_report(&path).is_ok(), accepted, "{defect}");
-    }
+}
+
+#[rstest::rstest]
+#[case::valid_diagnostic("schema_version", json!(REPORT_SCHEMA_VERSION), true)]
+#[case::old_schema("schema_version", json!(2), false)]
+#[case::wrong_run("run_id", json!("another-run"), false)]
+#[case::repeated_sequence("sequence", json!(4), false)]
+fn jsonl_validates_discarded_diagnostics(
+    #[case] field: &str,
+    #[case] replacement: Value,
+    #[case] accepted: bool,
+) {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut events = jsonl_events(&valid_report());
+    let mut diagnostic = json!({"kind": "diagnostic", "schema_version": REPORT_SCHEMA_VERSION, "sequence": 5, "run_id": "run-1", "level": "info", "code": "test", "message": "test"});
+    diagnostic[field] = replacement;
+    events[4]["sequence"] = json!(6);
+    events.insert(4, diagnostic);
+    let path = write_jsonl(&fixture, &events);
+
+    let result = read_report(&path);
+
+    assert_eq!(result.is_ok(), accepted);
+}
+
+#[test]
+fn jsonl_rejects_non_json_control_whitespace() {
+    let fixture = tempfile::tempdir().unwrap();
     let path = write_jsonl(&fixture, &jsonl_events(&valid_report()));
     let text = std::fs::read(&path).unwrap();
     std::fs::write(&path, [b"\x0b\n".as_slice(), &text].concat()).unwrap();
+
+    let result = read_report(&path);
+
     assert!(
-        read_report(&path).is_err(),
+        result.is_err(),
         "non-JSON control whitespace must not be skipped"
     );
 }
@@ -3695,8 +3797,40 @@ async fn jsonl_real_failed_baseline_is_unusable() {
 }
 
 #[test]
-fn jsonl_not_run_requires_start_and_preceding_baseline() {
+fn jsonl_accepts_not_run_with_start_and_preceding_baseline() {
     let fixture = tempfile::tempdir().unwrap();
+    let path = write_jsonl(&fixture, &not_run_events());
+
+    let result = read_report(&path).unwrap();
+
+    assert!(matches!(
+        result,
+        InputReport::Unusable {
+            reason: UnusableReason::Incomplete,
+            ..
+        }
+    ));
+}
+
+#[rstest::rstest]
+#[case::missing_start(false)]
+#[case::before_baseline(true)]
+fn jsonl_not_run_requires_start_and_preceding_baseline(#[case] reorder_baseline: bool) {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut events = not_run_events();
+    events.remove(2);
+    reorder_not_run_baseline(&mut events, reorder_baseline);
+    let path = write_jsonl(&fixture, &events);
+
+    let result = read_report(&path);
+
+    assert!(
+        result.is_err(),
+        "not_run does not exempt lifecycle ordering"
+    );
+}
+
+fn not_run_events() -> Vec<Value> {
     let mut document = valid_report();
     document["mutants"][0]["outcome"] = json!("not_run");
     document["mutants"][0]["status"] = json!("not_run");
@@ -3704,30 +3838,16 @@ fn jsonl_not_run_requires_start_and_preceding_baseline() {
         serde_json::to_value(hoimin_core::summarize(&[MutationStatus::NotRun])).unwrap();
     document["summary"]["complete"] = json!(false);
     document["summary"]["exit_code"] = json!(4);
-    let mut events = jsonl_events(&document);
-    let path = write_jsonl(&fixture, &events);
-    assert!(matches!(
-        read_report(&path).unwrap(),
-        InputReport::Unusable {
-            reason: UnusableReason::Incomplete,
-            ..
+    jsonl_events(&document)
+}
+
+fn reorder_not_run_baseline(events: &mut [Value], reordered: bool) {
+    if reordered {
+        events.swap(1, 2);
+        for (index, event) in events.iter_mut().enumerate() {
+            event["sequence"] = json!(index + 1);
         }
-    ));
-    events.remove(2);
-    let path = write_jsonl(&fixture, &events);
-    assert!(
-        read_report(&path).is_err(),
-        "not_run does not exempt lifecycle starts"
-    );
-    events.swap(1, 2);
-    for (index, event) in events.iter_mut().enumerate() {
-        event["sequence"] = json!(index + 1);
     }
-    let path = write_jsonl(&fixture, &events);
-    assert!(
-        read_report(&path).is_err(),
-        "not_run before baseline is invalid"
-    );
 }
 
 async fn progress_details(reports: &[PathBuf], limit: usize) -> Value {
@@ -3782,242 +3902,179 @@ fn detail_report(statuses: &[(&str, MutationStatus)]) -> Value {
     report
 }
 
-macro_rules! progress_json_contract_case {
-    ($name:ident, $scenario:literal, $limit:expr, $state:literal, $exit:literal) => {
-        #[tokio::test]
-        async fn $name() {
-            // Arrange: literal scenarios cover the final pair and independent stalled runs.
-            let fixture = tempfile::tempdir().unwrap();
-            let before = detail_report(&[("a", MutationStatus::Killed)]);
-            let mut after = detail_report(&[("a", MutationStatus::Survived)]);
-            match $scenario {
-                "unavailable" => {
-                    after["summary"]["complete"] = json!(false);
-                    after["summary"]["exit_code"] = json!(4);
-                }
-                "different" => {
-                    after["mutants"][0]["candidate"]["file_hash"] = json!("different");
-                    candidate_identity::assign_id(&mut after["mutants"][0]["candidate"]);
-                }
-                "stalled" | "saturated" => after = before.clone(),
-                "regressing" => {}
-                _ => unreachable!(),
-            }
-            let mut documents = vec![before, after];
-            if $scenario == "saturated" {
-                documents.extend([documents[0].clone(), documents[0].clone()]);
-            }
-            let reports = documents
-                .into_iter()
-                .enumerate()
-                .map(|(index, mut document)| {
-                    for field in ["run", "baseline", "summary"] {
-                        document[field]["run_id"] = json!(format!("independent-{index}"));
-                    }
-                    for mutant in document["mutants"].as_array_mut().unwrap() {
-                        mutant["run_id"] = json!(format!("independent-{index}"));
-                    }
-                    write_json(&fixture, &format!("input-{index}.json"), &document)
-                })
-                .collect::<Vec<_>>();
-            let limit: Option<usize> = $limit;
-            let mut args = progress_args(&reports, limit.is_some());
-            if let Some(limit) = limit {
-                args.extend(["--details-limit".to_owned(), limit.to_string()]);
-            }
-            let stdout = CollectingWriter::default();
-            let stderr = CollectingWriter::default();
-            let schema =
-                read_schema(&repo_root().join("docs/json-schema/progress-result.schema.json"));
+#[rstest::rstest]
+#[case::regressing("regressing", "regressing")]
+#[case::unavailable("unavailable", "indeterminate")]
+#[case::different("different", "indeterminate")]
+#[tokio::test]
+async fn progress_json_contract_without_details(
+    #[case] scenario: &str,
+    #[case] expected_state: &str,
+) {
+    let fixture = tempfile::tempdir().unwrap();
+    let reports = independent_contract_history(&fixture, scenario);
+    let schema = read_schema(&repo_root().join("docs/json-schema/progress-result.schema.json"));
 
-            // Act: changing presentation must preserve the exit status and aggregate decisions.
-            let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
-            let actual: Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
-            let (plain_code, plain, plain_stderr) = progress_output(&reports, false).await;
-            let plain: Value = serde_json::from_slice(&plain).unwrap();
+    let (code, output, stderr) = progress_output(&reports, false).await;
 
-            // Assert: one version and required details distinguish the request from availability.
-            assert_eq!(actual["schema_version"], 3);
-            assert_schema_valid(&schema, &actual);
-            assert_eq!(code, $exit);
-            assert_eq!(plain_code, code);
-            assert_eq!(plain_stderr, stderr.snapshot());
-            assert_eq!(actual["latest"]["state"], $state);
-            for field in [
-                "inputs",
-                "comparisons",
-                "latest",
-                "patience",
-                "consecutive_stalls",
-            ] {
-                assert_eq!(actual[field], plain[field], "{field}");
-            }
-            if let Some(limit) = limit {
-                let details = &actual["details"];
-                assert!(details.is_object());
-                assert_eq!(details["limit"], limit);
-                assert_eq!(details["available"], $scenario != "unavailable");
-                if $scenario == "unavailable" {
-                    assert!(details["eligibility"].is_null());
-                }
-                if limit == 0 {
-                    assert_eq!(details["transitions"], json!([]));
-                }
-                if $scenario == "regressing" {
-                    assert_eq!(actual["comparisons"][0]["regressions"], 1);
-                    assert_eq!(details["omitted"], usize::from(limit == 0));
-                    assert_eq!(
-                        details["transitions"].as_array().unwrap().len(),
-                        usize::from(limit > 0)
-                    );
-                }
-            } else {
-                assert_eq!(actual.get("details"), Some(&Value::Null));
-            }
-        }
-    };
+    let (plain_code, plain, plain_stderr) = progress_output(&reports, false).await;
+
+    let actual: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(code, 0, "{stderr:?}");
+    assert_eq!(actual["schema_version"], 3);
+    assert_schema_valid(&schema, &actual);
+    assert_eq!(actual["latest"]["state"], expected_state);
+    assert_eq!(actual.get("details"), Some(&Value::Null));
+    let plain: Value = serde_json::from_slice(&plain).unwrap();
+    assert_eq!(plain_code, code);
+    assert_eq!(plain_stderr, stderr);
+    for field in [
+        "inputs",
+        "comparisons",
+        "latest",
+        "patience",
+        "consecutive_stalls",
+    ] {
+        assert_eq!(actual[field], plain[field], "{field}");
+    }
 }
 
-progress_json_contract_case!(
-    progress_json_contract_default,
-    "regressing",
-    None,
-    "regressing",
-    0
-);
-progress_json_contract_case!(
-    progress_json_contract_zero,
-    "regressing",
-    Some(0),
-    "regressing",
-    0
-);
-progress_json_contract_case!(
-    progress_json_contract_one,
-    "regressing",
-    Some(1),
-    "regressing",
-    0
-);
-progress_json_contract_case!(
-    progress_json_contract_full,
-    "regressing",
-    Some(100),
-    "regressing",
-    0
-);
-progress_json_contract_case!(
-    progress_json_contract_unavailable_default,
-    "unavailable",
-    None,
-    "indeterminate",
-    0
-);
-progress_json_contract_case!(
-    progress_json_contract_unavailable_zero,
-    "unavailable",
-    Some(0),
-    "indeterminate",
-    0
-);
-progress_json_contract_case!(
-    progress_json_contract_unavailable_full,
-    "unavailable",
-    Some(100),
-    "indeterminate",
-    0
-);
-progress_json_contract_case!(
-    progress_json_contract_different_default,
-    "different",
-    None,
-    "indeterminate",
-    0
-);
-progress_json_contract_case!(
-    progress_json_contract_different_zero,
-    "different",
-    Some(0),
-    "indeterminate",
-    0
-);
-progress_json_contract_case!(
-    progress_json_contract_different_full,
-    "different",
-    Some(100),
-    "indeterminate",
-    0
-);
-progress_json_contract_case!(
-    progress_json_contract_stalled_zero,
-    "stalled",
-    Some(0),
-    "stalled",
-    0
-);
-progress_json_contract_case!(
-    progress_json_contract_saturated_zero,
-    "saturated",
-    Some(0),
-    "saturated",
-    0
-);
-progress_json_contract_case!(
-    progress_json_contract_saturated_full,
-    "saturated",
-    Some(100),
-    "saturated",
-    0
-);
+#[rstest::rstest]
+#[case::regressing_limit_0("regressing", 0, "regressing", true)]
+#[case::regressing_limit_1("regressing", 1, "regressing", true)]
+#[case::regressing_limit_100("regressing", 100, "regressing", true)]
+#[case::unavailable_limit_0("unavailable", 0, "indeterminate", false)]
+#[case::unavailable_limit_100("unavailable", 100, "indeterminate", false)]
+#[case::different_limit_0("different", 0, "indeterminate", true)]
+#[case::different_limit_100("different", 100, "indeterminate", true)]
+#[case::stalled_limit_0("stalled", 0, "stalled", true)]
+#[case::saturated_limit_0("saturated", 0, "saturated", true)]
+#[case::saturated_limit_100("saturated", 100, "saturated", true)]
+#[tokio::test]
+async fn progress_json_details_preserve_aggregate_decisions(
+    #[case] scenario: &str,
+    #[case] limit: usize,
+    #[case] expected_state: &str,
+    #[case] available: bool,
+) {
+    let fixture = tempfile::tempdir().unwrap();
+    let reports = independent_contract_history(&fixture, scenario);
+    let schema = read_schema(&repo_root().join("docs/json-schema/progress-result.schema.json"));
 
-macro_rules! progress_duplicate_identity_case {
-    ($name:ident, $limit:expr) => {
-        #[tokio::test]
-        async fn $name() {
-            // Arrange: the report reader rejects one ID assigned to multiple sequences.
-            let fixture = tempfile::tempdir().unwrap();
-            let before = write_json(
-                &fixture,
-                "before.json",
-                &detail_report(&[("a", MutationStatus::Killed)]),
-            );
-            let after = write_json(
-                &fixture,
-                "after.json",
-                &detail_report(&[
-                    ("a", MutationStatus::Survived),
-                    ("a", MutationStatus::Survived),
-                ]),
-            );
-            let limit: Option<usize> = $limit;
-            let mut args = progress_args(&[before, after], limit.is_some());
-            if let Some(limit) = limit {
-                args.extend(["--details-limit".to_owned(), limit.to_string()]);
-            }
-            let stdout = CollectingWriter::default();
-            let stderr = CollectingWriter::default();
+    let (code, actual, stderr) = progress_with_limit(&reports, limit).await;
+    let (plain_code, plain, plain_stderr) = progress_output(&reports, false).await;
 
-            // Act
-            let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
-
-            // Assert: presentation cannot bypass the current input contract.
-            assert_eq!(code, 2);
-            assert!(stdout.snapshot().is_empty());
-            assert!(
-                String::from_utf8_lossy(&stderr.snapshot())
-                    .contains("identity maps to sequence 1, received 2")
-            );
-        }
-    };
+    let plain: Value = serde_json::from_slice(&plain).unwrap();
+    assert_eq!(actual["schema_version"], 3);
+    assert_schema_valid(&schema, &actual);
+    assert_eq!(code, 0);
+    assert_eq!(plain_code, code);
+    assert_eq!(plain_stderr, stderr);
+    assert_eq!(actual["latest"]["state"], expected_state);
+    for field in [
+        "inputs",
+        "comparisons",
+        "latest",
+        "patience",
+        "consecutive_stalls",
+    ] {
+        assert_eq!(actual[field], plain[field], "{field}");
+    }
+    assert!(actual["details"].is_object());
+    assert_eq!(actual["details"]["limit"], limit);
+    assert_eq!(actual["details"]["available"], available);
 }
 
-progress_duplicate_identity_case!(progress_duplicate_identity_default, None);
-progress_duplicate_identity_case!(progress_duplicate_identity_zero, Some(0));
-progress_duplicate_identity_case!(progress_duplicate_identity_full, Some(100));
+#[rstest::rstest]
+#[case::zero(0)]
+#[case::full(100)]
+#[tokio::test]
+async fn unavailable_details_have_no_eligibility(#[case] limit: usize) {
+    let fixture = tempfile::tempdir().unwrap();
+    let reports = independent_contract_history(&fixture, "unavailable");
+
+    let (_, actual, _) = progress_with_limit(&reports, limit).await;
+
+    assert!(actual["details"]["eligibility"].is_null());
+}
+
+#[rstest::rstest]
+#[case::regressing("regressing")]
+#[case::unavailable("unavailable")]
+#[case::different("different")]
+#[case::stalled("stalled")]
+#[case::saturated("saturated")]
+#[tokio::test]
+async fn zero_details_limit_omits_transitions(#[case] scenario: &str) {
+    let fixture = tempfile::tempdir().unwrap();
+    let reports = independent_contract_history(&fixture, scenario);
+
+    let (_, actual, _) = progress_with_limit(&reports, 0).await;
+
+    assert_eq!(actual["details"]["transitions"], json!([]));
+}
+
+#[rstest::rstest]
+#[case::zero(0, 1, 0)]
+#[case::one(1, 0, 1)]
+#[case::full(100, 0, 1)]
+#[tokio::test]
+async fn regression_details_counts_match_the_limit(
+    #[case] limit: usize,
+    #[case] omitted: usize,
+    #[case] displayed: usize,
+) {
+    let fixture = tempfile::tempdir().unwrap();
+    let reports = independent_contract_history(&fixture, "regressing");
+
+    let (_, actual, _) = progress_with_limit(&reports, limit).await;
+
+    assert_eq!(actual["comparisons"][0]["regressions"], 1);
+    assert_eq!(actual["details"]["omitted"], omitted);
+    assert_eq!(
+        actual["details"]["transitions"].as_array().unwrap().len(),
+        displayed
+    );
+}
+
+#[rstest::rstest]
+#[case::progress_duplicate_identity_default(None)]
+#[case::progress_duplicate_identity_zero(Some(0))]
+#[case::progress_duplicate_identity_full(Some(100))]
+#[tokio::test]
+async fn progress_rejects_duplicate_identity_for_every_details_limit(#[case] limit: Option<usize>) {
+    // the report reader rejects one ID assigned to multiple sequences.
+    let fixture = tempfile::tempdir().unwrap();
+    let before = write_json(
+        &fixture,
+        "before.json",
+        &detail_report(&[("a", MutationStatus::Killed)]),
+    );
+    let after = write_json(
+        &fixture,
+        "after.json",
+        &detail_report(&[
+            ("a", MutationStatus::Survived),
+            ("a", MutationStatus::Survived),
+        ]),
+    );
+    let args = progress_limit_args(&[before, after], limit);
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+
+    // presentation cannot bypass the current input contract.
+    assert_eq!(code, 2);
+    assert_eq!(stdout.snapshot(), Vec::<u8>::new());
+    assert!(
+        String::from_utf8_lossy(&stderr.snapshot())
+            .contains("identity maps to sequence 1, received 2")
+    );
+}
 
 #[tokio::test]
 async fn progress_json_matches_current_golden() {
-    // Arrange
     let fixture = tempfile::tempdir().unwrap();
     let before = write_json(
         &fixture,
@@ -4033,7 +4090,6 @@ async fn progress_json_matches_current_golden() {
         &repo_root().join("crates/hoimin-cli/tests/golden/progress/schema-v3-current.json"),
     );
 
-    // Act
     let (code, stdout, _) = run_progress(&[before, after]).await;
     let mut actual: Value = serde_json::from_slice(&stdout).unwrap();
     for input in actual["inputs"].as_array_mut().unwrap() {
@@ -4046,7 +4102,6 @@ async fn progress_json_matches_current_golden() {
         );
     }
 
-    // Assert
     assert_eq!(code, 0);
     assert_eq!(actual, expected);
 }
@@ -4066,9 +4121,11 @@ async fn details_identify_both_directions() {
     );
     let reports = [before, after];
     let (code, original, stderr) = run_progress(&reports).await;
-    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    let reverse = progress_details(&[reports[1].clone(), reports[0].clone()], 100).await;
     let original: Value = serde_json::from_slice(&original).unwrap();
     let detailed = progress_details(&reports, 100).await;
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
     for field in [
         "inputs",
         "comparisons",
@@ -4091,7 +4148,7 @@ async fn details_identify_both_directions() {
         "column":0, "previous_path":"src/example.py", "previous_line":1, "previous_column":0,
         "operator":"integer_literal", "classification":"regression", "previous_status":"killed", "current_status":"survived"})
     );
-    let reverse = progress_details(&[reports[1].clone(), reports[0].clone()], 100).await;
+
     assert_eq!(
         reverse["details"]["transitions"][0]["classification"],
         "improvement"
@@ -4106,8 +4163,13 @@ async fn details_identify_both_directions() {
     );
 }
 
+#[rstest::rstest]
+#[case::input_0_1(0)]
+#[case::input_1_2(1)]
+#[case::input_2_3(2)]
+#[case::input_100_4(100)]
 #[tokio::test]
-async fn details_cap_and_order_do_not_change_aggregate_counts() {
+async fn details_cap_and_order_do_not_change_aggregate_counts(#[case] limit: usize) {
     let fixture = tempfile::tempdir().unwrap();
     let before = write_json(
         &fixture,
@@ -4127,24 +4189,42 @@ async fn details_cap_and_order_do_not_change_aggregate_counts() {
             ("2", MutationStatus::Survived),
         ]),
     );
-    for limit in [0, 1, 2, 100] {
-        let detailed = progress_details(&[before.clone(), after.clone()], limit).await;
-        assert_eq!(detailed["comparisons"][0]["improvements"], 1);
-        assert_eq!(detailed["comparisons"][0]["regressions"], 2);
-        let entries = detailed["details"]["transitions"].as_array().unwrap();
-        let ids: Vec<_> = entries
-            .iter()
-            .map(|entry| entry["id"].as_str().unwrap())
-            .collect();
-        let mut expected = [detail_id("10"), detail_id("2"), detail_id("a")];
-        expected.sort();
-        assert_eq!(ids, expected[..limit.min(3)]);
-        assert_eq!(detailed["details"]["omitted"], 3 - limit.min(3));
-    }
+
+    let detailed = progress_details(&[before.clone(), after.clone()], limit).await;
+
+    let entries = detailed["details"]["transitions"].as_array().unwrap();
+    let ids: Vec<_> = entries
+        .iter()
+        .map(|entry| entry["id"].as_str().unwrap())
+        .collect();
+    let mut expected = [detail_id("10"), detail_id("2"), detail_id("a")];
+    expected.sort();
+    assert_eq!(detailed["comparisons"][0]["improvements"], 1);
+    assert_eq!(detailed["comparisons"][0]["regressions"], 2);
+    assert_eq!(ids, expected[..limit.min(3)]);
+    assert_eq!(detailed["details"]["omitted"], 3 - limit.min(3));
 }
 
 #[tokio::test]
-async fn details_do_not_identify_content_only_matches_or_stale_pairs() {
+async fn details_do_not_identify_content_only_matches() {
+    let fixture = tempfile::tempdir().unwrap();
+    let before_doc = detail_report(&[("a", MutationStatus::Killed)]);
+    let mut after_doc = detail_report(&[("a", MutationStatus::Survived)]);
+    after_doc["mutants"][0]["candidate"]["file_hash"] = json!("different");
+    candidate_identity::assign_id(&mut after_doc["mutants"][0]["candidate"]);
+    let before = write_json(&fixture, "before.json", &before_doc);
+    let after = write_json(&fixture, "after.json", &after_doc);
+    let detailed = progress_details(&[before, after], 100).await;
+
+    assert_eq!(detailed["latest"]["state"], "indeterminate");
+    assert_eq!(detailed["comparisons"][0]["regressions"], 1);
+    assert_eq!(detailed["details"]["eligibility"], "different");
+    assert_eq!(detailed["details"]["unidentified"], 1);
+    assert_eq!(detailed["details"]["transitions"], json!([]));
+}
+
+#[tokio::test]
+async fn details_mark_a_trailing_unusable_pair_unavailable() {
     let fixture = tempfile::tempdir().unwrap();
     let before_doc = detail_report(&[("a", MutationStatus::Killed)]);
     let mut after_doc = detail_report(&[("a", MutationStatus::Survived)]);
@@ -4156,19 +4236,32 @@ async fn details_do_not_identify_content_only_matches_or_stale_pairs() {
     unusable["summary"]["complete"] = json!(false);
     unusable["summary"]["exit_code"] = json!(4);
     let gap = write_json(&fixture, "gap.json", &unusable);
-    let detailed = progress_details(&[before.clone(), after.clone()], 100).await;
-    assert_eq!(detailed["latest"]["state"], "indeterminate");
-    assert_eq!(detailed["comparisons"][0]["regressions"], 1);
-    assert_eq!(detailed["details"]["eligibility"], "different");
-    assert_eq!(detailed["details"]["unidentified"], 1);
-    assert_eq!(detailed["details"]["transitions"], json!([]));
-    let trailing = progress_details(&[before.clone(), after.clone(), gap.clone()], 100).await;
+
+    let trailing = progress_details(&[before, after, gap], 100).await;
+
     assert_eq!(trailing["details"]["previous_input"], 1);
     assert_eq!(trailing["details"]["current_input"], 2);
     assert_eq!(trailing["details"]["available"], false);
     assert!(trailing["details"]["eligibility"].is_null());
     assert_eq!(trailing["details"]["transitions"], json!([]));
+}
+
+#[tokio::test]
+async fn details_select_the_latest_pair_after_an_unusable_gap() {
+    let fixture = tempfile::tempdir().unwrap();
+    let before_doc = detail_report(&[("a", MutationStatus::Killed)]);
+    let mut after_doc = detail_report(&[("a", MutationStatus::Survived)]);
+    after_doc["mutants"][0]["candidate"]["file_hash"] = json!("different");
+    candidate_identity::assign_id(&mut after_doc["mutants"][0]["candidate"]);
+    let before = write_json(&fixture, "before.json", &before_doc);
+    let after = write_json(&fixture, "after.json", &after_doc);
+    let mut unusable = before_doc.clone();
+    unusable["summary"]["complete"] = json!(false);
+    unusable["summary"]["exit_code"] = json!(4);
+    let gap = write_json(&fixture, "gap.json", &unusable);
+
     let middle = progress_details(&[before.clone(), gap, before, after], 100).await;
+
     assert_eq!(middle["details"]["previous_input"], 2);
     assert_eq!(middle["details"]["current_input"], 3);
 }
@@ -4176,36 +4269,10 @@ async fn details_do_not_identify_content_only_matches_or_stale_pairs() {
 #[tokio::test]
 async fn details_schema_jsonl_and_quoted_locations_are_consistent() {
     let fixture = tempfile::tempdir().unwrap();
-    let mut before_doc = detail_report(&[("a", MutationStatus::Killed)]);
-    let mut after_doc = detail_report(&[("a", MutationStatus::Survived)]);
-    before_doc["mutants"][0]["candidate"]["line"] = json!(9);
-    for doc in [&mut before_doc, &mut after_doc] {
-        doc["mutants"][0]["candidate"]["path"] = json!("src/a\n\"b.py");
-        candidate_identity::assign_id(&mut doc["mutants"][0]["candidate"]);
-    }
+    let (before_doc, after_doc) = quoted_location_documents();
     let before = write_json(&fixture, "before.json", &before_doc);
     let after = write_json(&fixture, "after.json", &after_doc);
-    let actual = progress_details(&[before.clone(), after.clone()], 100).await;
     let schema = read_schema(&repo_root().join("docs/json-schema/progress-result.schema.json"));
-    assert_schema_valid(&schema, &actual);
-    for pointer in ["/details", "/details/transitions/0"] {
-        let mut invalid = actual.clone();
-        invalid
-            .pointer_mut(pointer)
-            .unwrap()
-            .as_object_mut()
-            .unwrap()
-            .insert("unknown".to_owned(), json!(true));
-        assert_schema_invalid(&schema, &invalid);
-    }
-    let mut invalid = actual.clone();
-    invalid["details"]["transitions"][0]["current_status"] = json!("timeout");
-    assert_schema_invalid(&schema, &invalid);
-    let transition = &actual["details"]["transitions"][0];
-    assert_eq!(transition["path"], "src/a\n\"b.py");
-    assert_eq!(transition["previous_path"], "src/a\n\"b.py");
-    assert_eq!(transition["previous_line"], 9);
-    assert_eq!(transition["previous_column"], 0);
     let mut paths = Vec::new();
     for (name, doc) in [("before.jsonl", before_doc), ("after.jsonl", after_doc)] {
         let path = fixture.path().join(name);
@@ -4217,33 +4284,68 @@ async fn details_schema_jsonl_and_quoted_locations_are_consistent() {
         std::fs::write(&path, text).unwrap();
         paths.push(path);
     }
+
+    let actual = progress_details(&[before, after], 100).await;
     let jsonl = progress_details(&paths, 100).await;
+
+    let transition = &actual["details"]["transitions"][0];
+    assert_schema_valid(&schema, &actual);
+    assert_eq!(transition["path"], "src/a\n\"b.py");
+    assert_eq!(transition["previous_path"], "src/a\n\"b.py");
+    assert_eq!(transition["previous_line"], 9);
+    assert_eq!(transition["previous_column"], 0);
     assert_eq!(actual["details"], jsonl["details"]);
 }
 
+#[rstest::rstest]
+#[case::unknown_details_field(|document: &mut Value| { document["details"]["unknown"] = json!(true); })]
+#[case::unknown_transition_field(|document: &mut Value| { document["details"]["transitions"][0]["unknown"] = json!(true); })]
+#[case::inconclusive_transition_status(|document: &mut Value| { document["details"]["transitions"][0]["current_status"] = json!("timeout"); })]
 #[tokio::test]
-async fn details_limit_requires_opt_in_and_nonnegative_integer() {
-    for options in [
-        vec!["--details-limit", "1"],
-        vec!["--details", "--details-limit", "-1"],
-        vec!["--details", "--details-limit", "no"],
-    ] {
-        let mut args = vec!["hoimin", "progress"];
-        args.extend(options);
-        args.extend(["before.json", "after.json"]);
-        let out = CollectingWriter::default();
-        let err = CollectingWriter::default();
-        assert_eq!(
-            hoimin_cli::run_with_writers(args, out.clone(), err.clone()).await,
-            2
-        );
-        assert_eq!(out.snapshot(), Vec::<u8>::new());
-        assert!(!err.is_empty());
+async fn details_schema_rejects_invalid_fields(#[case] damage: fn(&mut Value)) {
+    let fixture = tempfile::tempdir().unwrap();
+    let (before_doc, after_doc) = quoted_location_documents();
+    let before = write_json(&fixture, "before.json", &before_doc);
+    let after = write_json(&fixture, "after.json", &after_doc);
+    let schema = read_schema(&repo_root().join("docs/json-schema/progress-result.schema.json"));
+    let mut invalid = progress_details(&[before, after], 100).await;
+    damage(&mut invalid);
+
+    assert_schema_invalid(&schema, &invalid);
+}
+
+fn quoted_location_documents() -> (Value, Value) {
+    let mut before = detail_report(&[("a", MutationStatus::Killed)]);
+    let mut after = detail_report(&[("a", MutationStatus::Survived)]);
+    before["mutants"][0]["candidate"]["line"] = json!(9);
+    for document in [&mut before, &mut after] {
+        document["mutants"][0]["candidate"]["path"] = json!("src/a\n\"b.py");
+        candidate_identity::assign_id(&mut document["mutants"][0]["candidate"]);
     }
+    (before, after)
+}
+
+#[rstest::rstest]
+#[case::details_limit_1(vec!["--details-limit", "1"])]
+#[case::details_2(vec!["--details", "--details-limit", "-1"])]
+#[case::details_3(vec!["--details", "--details-limit", "no"])]
+#[tokio::test]
+async fn details_limit_requires_opt_in_and_nonnegative_integer(#[case] options: Vec<&str>) {
+    let mut args = vec!["hoimin", "progress"];
+    args.extend(options);
+    args.extend(["before.json", "after.json"]);
+    let out = CollectingWriter::default();
+    let err = CollectingWriter::default();
+
+    let code = hoimin_cli::run_with_writers(args, out.clone(), err.clone()).await;
+
+    assert_eq!(code, 2);
+    assert_eq!(out.snapshot(), Vec::<u8>::new());
+    assert!(!err.is_empty());
 }
 
 #[tokio::test]
-async fn details_default_cap_and_partial_sets_are_explicit() {
+async fn details_default_cap_is_explicit() {
     let fixture = tempfile::tempdir().unwrap();
     let ids: Vec<_> = (0..101).map(|i| format!("id-{i:03}")).collect();
     let before_entries: Vec<_> = ids
@@ -4281,6 +4383,21 @@ async fn details_default_cap_and_partial_sets_are_explicit() {
     let mut expected_ids: Vec<_> = ids.iter().map(|id| detail_id(id)).collect();
     expected_ids.sort();
     assert_eq!(value["details"]["transitions"][99]["id"], expected_ids[99]);
+}
+
+#[tokio::test]
+async fn details_partial_sets_are_explicit() {
+    let fixture = tempfile::tempdir().unwrap();
+    let ids: Vec<_> = (0..101).map(|i| format!("id-{i:03}")).collect();
+    let before_entries: Vec<_> = ids
+        .iter()
+        .map(|id| (id.as_str(), MutationStatus::Killed))
+        .collect();
+    let after_entries: Vec<_> = ids
+        .iter()
+        .map(|id| (id.as_str(), MutationStatus::Survived))
+        .collect();
+    let before = write_json(&fixture, "before.json", &detail_report(&before_entries));
     let after = write_json(
         &fixture,
         "partial.json",
@@ -4313,53 +4430,72 @@ async fn progress_output(reports: &[PathBuf], details: bool) -> (i32, Vec<u8>, V
     (status, out.snapshot(), err.snapshot())
 }
 
+#[rstest::rstest]
+#[case::regressing_plain("regressing", false, "regressing")]
+#[case::regressing_details("regressing", true, "regressing")]
+#[case::improving_plain("improving", false, "improving")]
+#[case::improving_details("improving", true, "improving")]
+#[case::stalled_plain("stalled", false, "stalled")]
+#[case::stalled_details("stalled", true, "stalled")]
+#[case::saturated_plain("saturated", false, "saturated")]
+#[case::saturated_details("saturated", true, "saturated")]
+#[case::different_plain("different", false, "indeterminate")]
+#[case::different_details("different", true, "indeterminate")]
+#[case::recovered_improvement_plain("recovered_improvement", false, "improving")]
+#[case::recovered_improvement_details("recovered_improvement", true, "improving")]
+#[case::trailing_gap_plain("trailing_gap", false, "indeterminate")]
+#[case::trailing_gap_details("trailing_gap", true, "indeterminate")]
+#[case::leading_gap_plain("leading_gap", false, "regressing")]
+#[case::leading_gap_details("leading_gap", true, "regressing")]
 #[tokio::test]
-async fn completed_progress_succeeds_for_every_comparison_state() {
+async fn completed_progress_succeeds_for_every_comparison_state(
+    #[case] name: &str,
+    #[case] details: bool,
+    #[case] state: &str,
+) {
     let fixture = tempfile::tempdir().unwrap();
+    let reports = completion_history(&fixture, name);
+
+    let (status, out, err) = progress_output(&reports, details).await;
+
+    assert_eq!(
+        status,
+        0,
+        "{state} details={details}: {}",
+        String::from_utf8_lossy(&err)
+    );
+    assert_json_regression_state(&out, state);
+}
+
+fn completion_history(fixture: &tempfile::TempDir, name: &str) -> Vec<PathBuf> {
     let killed = write_json(
-        &fixture,
+        fixture,
         "killed.json",
         &detail_report(&[("a", MutationStatus::Killed)]),
     );
     let survived = write_json(
-        &fixture,
+        fixture,
         "survived.json",
         &detail_report(&[("a", MutationStatus::Survived)]),
     );
     let mut gap_doc = detail_report(&[("a", MutationStatus::Killed)]);
     gap_doc["summary"]["complete"] = json!(false);
     gap_doc["summary"]["exit_code"] = json!(4);
-    let gap = write_json(&fixture, "gap.json", &gap_doc);
+    let gap = write_json(fixture, "gap.json", &gap_doc);
     let mut different_doc = detail_report(&[("a", MutationStatus::Survived)]);
     different_doc["mutants"][0]["candidate"]["file_hash"] = json!("different");
     candidate_identity::assign_id(&mut different_doc["mutants"][0]["candidate"]);
-    let different = write_json(&fixture, "different.json", &different_doc);
-    for (reports, state) in [
-        (vec![killed.clone(), survived.clone()], "regressing"),
-        (vec![survived.clone(), killed.clone()], "improving"),
-        (vec![killed.clone(), killed.clone()], "stalled"),
-        (vec![killed.clone(); 4], "saturated"),
-        (vec![killed.clone(), different], "indeterminate"),
-        (
-            vec![killed.clone(), survived.clone(), killed.clone()],
-            "improving",
-        ),
-        (
-            vec![killed.clone(), survived.clone(), gap.clone()],
-            "indeterminate",
-        ),
-        (vec![gap, killed.clone(), survived.clone()], "regressing"),
-    ] {
-        for details in [false, true] {
-            let (status, out, err) = progress_output(&reports, details).await;
-            assert_eq!(
-                status,
-                0,
-                "{state} details={details}: {}",
-                String::from_utf8_lossy(&err)
-            );
-            assert_json_regression_state(&out, state);
-        }
+    let different = write_json(fixture, "different.json", &different_doc);
+    match name {
+        "regressing" => vec![killed, survived],
+        "improving" => vec![survived, killed],
+        "stalled" => vec![killed.clone(), killed],
+        "saturated" => vec![killed; 4],
+        "different" => vec![killed, different],
+        "recovered_improvement" => vec![killed.clone(), survived, killed],
+        "trailing_gap" => vec![killed, survived, gap],
+        "leading_gap" => vec![gap, killed, survived],
+        _ => unreachable!(),
     }
 }
 
@@ -4409,7 +4545,7 @@ impl std::io::Write for ProgressFailingWriter {
 }
 
 #[tokio::test]
-async fn progress_reports_stdout_and_stderr_failures() {
+async fn progress_reports_stdout_failure() {
     let fixture = tempfile::tempdir().unwrap();
     let killed = write_json(
         &fixture,
@@ -4434,6 +4570,21 @@ async fn progress_reports_stdout_and_stderr_failures() {
             .unwrap()
             .contains("progress fixture write failure")
     );
+}
+
+#[tokio::test]
+async fn progress_reports_stderr_failure() {
+    let fixture = tempfile::tempdir().unwrap();
+    let killed = write_json(
+        &fixture,
+        "killed.json",
+        &detail_report(&[("a", MutationStatus::Killed)]),
+    );
+    let survived = write_json(
+        &fixture,
+        "survived.json",
+        &detail_report(&[("a", MutationStatus::Survived)]),
+    );
     let out = CollectingWriter::default();
     let status = hoimin_cli::run_with_writers(
         progress_args(&[killed.clone(), killed.clone(), survived.clone()], true),
@@ -4446,51 +4597,75 @@ async fn progress_reports_stdout_and_stderr_failures() {
 }
 
 #[test]
-fn progress_rejects_aggregate_and_mixed_schema_jsonl_reports() {
-    let fixture = tempfile::tempdir().unwrap();
-    let (version, mixed_version) = (REPORT_SCHEMA_VERSION, 3);
+fn progress_rejects_aggregate_report_documents() {
     let source = repo_root().join(format!(
-        "crates/hoimin-cli/tests/golden/reports/schema-v{version}-current.json"
+        "crates/hoimin-cli/tests/golden/reports/schema-v{REPORT_SCHEMA_VERSION}-current.json"
     ));
-    assert!(read_report(&source).is_err());
-    let mut value: Value = serde_json::from_slice(&std::fs::read(source).unwrap()).unwrap();
-    value["baseline"]["schema_version"] = json!(mixed_version);
-    assert!(read_report(&write_json(&fixture, "mixed.json", &value)).is_err());
-    let source = repo_root().join(format!(
-        "crates/hoimin-cli/tests/golden/events/schema-v{version}-current.jsonl"
-    ));
-    assert!(matches!(read_report(&source), Ok(InputReport::Usable(_))));
-    let text = std::fs::read_to_string(source).unwrap();
-    let mut lines = text
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .collect::<Vec<_>>();
-    for index in [1, 4] {
-        lines[index]["schema_version"] = json!(mixed_version);
-        let path = fixture.path().join("mixed.jsonl");
-        std::fs::write(
-            &path,
-            lines
-                .iter()
-                .map(|v| v.to_string() + "\n")
-                .collect::<String>(),
-        )
-        .unwrap();
-        assert!(read_report(&path).is_err());
-        lines[index]["schema_version"] = json!(version);
-    }
+
+    let result = read_report(&source);
+
+    assert!(result.is_err());
 }
 
 #[test]
-fn progress_resume_metadata_rejects_null_in_jsonl() {
+fn progress_accepts_current_golden_event_stream() {
+    let source = repo_root().join(format!(
+        "crates/hoimin-cli/tests/golden/events/schema-v{REPORT_SCHEMA_VERSION}-current.jsonl"
+    ));
+
+    let result = read_report(&source);
+
+    assert!(matches!(result, Ok(InputReport::Usable(_))));
+}
+
+#[test]
+fn progress_rejects_mixed_baseline_schema_through_document_writer() {
+    let fixture = tempfile::tempdir().unwrap();
+    let source = repo_root().join(format!(
+        "crates/hoimin-cli/tests/golden/reports/schema-v{REPORT_SCHEMA_VERSION}-current.json"
+    ));
+    let mut value: Value = serde_json::from_slice(&std::fs::read(source).unwrap()).unwrap();
+    value["baseline"]["schema_version"] = json!(3);
+    let path = write_json(&fixture, "mixed.json", &value);
+
+    let result = read_report(&path);
+
+    assert!(result.is_err());
+}
+
+#[rstest::rstest]
+#[case::baseline_event(1)]
+#[case::summary_event(4)]
+fn progress_rejects_mixed_schema_jsonl_events(#[case] index: usize) {
+    let fixture = tempfile::tempdir().unwrap();
+    let source = repo_root().join(format!(
+        "crates/hoimin-cli/tests/golden/events/schema-v{REPORT_SCHEMA_VERSION}-current.jsonl"
+    ));
+    let mut events = std::fs::read_to_string(source)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    events[index]["schema_version"] = json!(3);
+    let path = write_jsonl(&fixture, &events);
+
+    let result = read_report(&path);
+
+    assert!(result.is_err());
+}
+
+#[rstest::rstest]
+#[case::document(write_json)]
+#[case::events(write_explicit_jsonl)]
+fn progress_resume_metadata_rejects_null_in_jsonl(#[case] writer: ReportWriter) {
     let fixture = tempfile::tempdir().unwrap();
     let mut document = valid_report();
     document["run"]["resume"] = Value::Null;
-    let json = write_json(&fixture, "null.json", &document);
-    let jsonl = write_jsonl(&fixture, &jsonl_events(&document));
+    let report = writer(&fixture, "null.json", &document);
 
-    assert!(read_report(&json).is_err());
-    assert!(read_report(&jsonl).is_err());
+    let result = read_report(&report);
+
+    assert!(result.is_err());
 }
 
 fn assert_json_regression_state(bytes: &[u8], state: &str) {
@@ -4523,4 +4698,119 @@ async fn progress_diagnostics_escape_external_report_paths() {
         !text.chars().any(|c| c.is_control() && c != '\n'),
         "{text:?}"
     );
+}
+
+type ReportWriter = fn(&tempfile::TempDir, &str, &Value) -> PathBuf;
+
+fn write_explicit_jsonl(fixture: &tempfile::TempDir, _name: &str, document: &Value) -> PathBuf {
+    write_jsonl(fixture, &jsonl_events(document))
+}
+
+fn changed_status_wire(document: &Value, wire: String, defect: &str) -> String {
+    let mut parsed = document.clone();
+    parsed["mutants"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("status");
+    if defect == "missing" {
+        {
+            jsonl_events(&parsed)
+                .iter()
+                .map(Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+    } else {
+        // Both serializers use this compact field representation in event payloads.
+        let compact = wire;
+        let replacement = match defect {
+            "equal" => "\"status\":\"killed\",\"status\":\"killed\"",
+            "conflicting" => "\"status\":\"killed\",\"status\":\"survived\"",
+            "unknown" => "\"status\":\"future_status\"",
+            _ => unreachable!(),
+        };
+        compact.replacen("\"status\":\"killed\"", replacement, 1)
+    }
+}
+
+fn independent_contract_history(fixture: &tempfile::TempDir, scenario: &str) -> Vec<PathBuf> {
+    // literal scenarios cover the final pair and independent stalled runs.
+    let before = detail_report(&[("a", MutationStatus::Killed)]);
+    let mut after = detail_report(&[("a", MutationStatus::Survived)]);
+    match scenario {
+        "unavailable" => {
+            after["summary"]["complete"] = json!(false);
+            after["summary"]["exit_code"] = json!(4);
+        }
+        "different" => {
+            after["mutants"][0]["candidate"]["file_hash"] = json!("different");
+            candidate_identity::assign_id(&mut after["mutants"][0]["candidate"]);
+        }
+        "stalled" | "saturated" => after = before.clone(),
+        "regressing" => {}
+        _ => unreachable!(),
+    }
+    let mut documents = vec![before, after];
+    if scenario == "saturated" {
+        documents.extend([documents[0].clone(), documents[0].clone()]);
+    }
+    documents
+        .into_iter()
+        .enumerate()
+        .map(|(index, mut document)| {
+            for field in ["run", "baseline", "summary"] {
+                document[field]["run_id"] = json!(format!("independent-{index}"));
+            }
+            for mutant in document["mutants"].as_array_mut().unwrap() {
+                mutant["run_id"] = json!(format!("independent-{index}"));
+            }
+            write_json(fixture, &format!("input-{index}.json"), &document)
+        })
+        .collect::<Vec<_>>()
+}
+
+fn progress_limit_args(reports: &[PathBuf], limit: Option<usize>) -> Vec<String> {
+    let mut args = progress_args(reports, limit.is_some());
+    if let Some(limit) = limit {
+        args.extend(["--details-limit".to_owned(), limit.to_string()]);
+    }
+    args
+}
+
+async fn progress_with_limit(reports: &[PathBuf], limit: usize) -> (i32, Value, Vec<u8>) {
+    let out = CollectingWriter::default();
+    let err = CollectingWriter::default();
+    let code = hoimin_cli::run_with_writers(
+        progress_limit_args(reports, Some(limit)),
+        out.clone(),
+        err.clone(),
+    )
+    .await;
+    let document = serde_json::from_slice(&out.snapshot()).unwrap();
+    (code, document, err.snapshot())
+}
+
+proptest! {
+    #[test]
+    fn input_dispatch_accepts_arbitrary_header_field_permutations(priorities in any::<[u64; 7]>()) {
+        let fixture = tempfile::tempdir().unwrap();
+        let mut document = valid_report();
+        document["run"]["normalized_config"] = json!({"schema_version": 2, "kind": "not-an-event"});
+        let events = jsonl_events(&document);
+        let keys = events[0].as_object().unwrap().keys().collect::<Vec<_>>();
+        prop_assert_eq!(keys.len(), priorities.len());
+        let mut order = (0..keys.len()).collect::<Vec<_>>();
+        order.sort_by_key(|index| priorities[*index]);
+        let header = order.into_iter().map(|index| {
+            let key = keys[index];
+            format!("\"{key}\":{}", events[0][key])
+        }).collect::<Vec<_>>().join(",");
+        let rest = events.iter().skip(1).map(Value::to_string).collect::<Vec<_>>().join("\n");
+        let path = fixture.path().join("permuted.jsonl");
+        std::fs::write(&path, format!("{{{header}}}\n{rest}\n")).unwrap();
+
+        let actual = read_report(&path);
+
+        prop_assert!(matches!(actual, Ok(InputReport::Usable(_))));
+    }
 }

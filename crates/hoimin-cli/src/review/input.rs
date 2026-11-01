@@ -335,6 +335,7 @@ mod descriptor_allocation_tests {
         let context = CandidateValidationContext::new(&source).unwrap();
         let candidate = &mut candidates[0];
         candidate.id = "invalid assigned identity".into();
+
         assert!(
             validate_source_state(&context, candidate)
                 .unwrap_err()
@@ -355,36 +356,32 @@ mod descriptor_allocation_tests {
         );
     }
 
-    #[test]
-    fn issue_1089_source_validation_does_not_copy_descriptor_payloads() {
-        let mut observations = Vec::new();
-        for count in [16, 64] {
-            for payload in [4 * 1024, 16 * 1024, 64 * 1024] {
-                let (source, candidates) = issue_1089_candidates(count, payload);
-                let context = CandidateValidationContext::new(&source).unwrap();
-                // Source decoding/index creation is independent work, outside the comparison window.
-                assert_eq!(
-                    validate_source_state(&context, &candidates[0]).unwrap(),
-                    SourceState::Fresh
-                );
-                let ((), measurement) = measure(|| {
-                    for candidate in &candidates {
-                        assert_eq!(
-                            validate_source_state(&context, candidate).unwrap(),
-                            SourceState::Fresh
-                        );
-                    }
-                });
-                eprintln!(
-                    "issue_1089 source count={count} payload={payload} peak={}",
-                    measurement.peak_rust_bytes
-                );
-                observations.push((count, payload, measurement.peak_rust_bytes));
-            }
-        }
+    #[rstest::rstest]
+    #[case::sixteen_candidates(16)]
+    #[case::sixty_four_candidates(64)]
+    fn issue_1089_source_validation_does_not_copy_descriptor_payloads(
+        #[case] count: usize,
+        #[values(4 * 1024, 16 * 1024, 64 * 1024)] payload: usize,
+    ) {
+        let (source, candidates) = issue_1089_candidates(count, payload);
+        let context = CandidateValidationContext::new(&source).unwrap();
+        // Keep decoding/index creation outside the measured validation operation.
+        assert_eq!(
+            validate_source_state(&context, &candidates[0]).unwrap(),
+            SourceState::Fresh
+        );
+
+        let (all_fresh, measurement) = measure(|| {
+            candidates.iter().all(|candidate| {
+                validate_source_state(&context, candidate).unwrap() == SourceState::Fresh
+            })
+        });
+
+        assert!(all_fresh);
         assert!(
-            observations.iter().all(|(_, _, peak)| *peak < 4096),
-            "source validation copied payloads: {observations:?}"
+            measurement.peak_rust_bytes < 4096,
+            "count={count} payload={payload} peak={}",
+            measurement.peak_rust_bytes
         );
     }
 }

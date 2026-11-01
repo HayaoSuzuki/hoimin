@@ -98,48 +98,50 @@ fn metrics_reject_busy_time_above_run_elapsed_time() {
     );
 }
 
-#[test]
-fn metrics_reject_combined_worker_time_above_run_elapsed_time() {
-    for (elapsed_ms, busy_ms, queue_wait_ms) in [
-        (10, 6, 5),
-        (10, 10, 10),
-        (u64::MAX, u64::MAX, 1),
-        (u64::MAX, u64::MAX, u64::MAX),
-    ] {
-        let mut metrics = RunMetrics::empty("run-1");
-        metrics.elapsed_ms = elapsed_ms;
-        metrics.workers = vec![WorkerMetric {
-            busy_ms,
-            queue_wait_ms,
-            ..WorkerMetric::new(7)
-        }];
+#[rstest::rstest]
+#[case::value_10(10, 6, 5)]
+#[case::value_10_2(10, 10, 10)]
+#[case::u64_max(u64::MAX, u64::MAX, 1)]
+#[case::u64_max_4(u64::MAX, u64::MAX, u64::MAX)]
+fn metrics_reject_combined_worker_time_above_run_elapsed_time(
+    #[case] elapsed_ms: u64,
+    #[case] busy_ms: u64,
+    #[case] queue_wait_ms: u64,
+) {
+    let mut metrics = RunMetrics::empty("run-1");
+    metrics.elapsed_ms = elapsed_ms;
+    metrics.workers = vec![WorkerMetric {
+        busy_ms,
+        queue_wait_ms,
+        ..WorkerMetric::new(7)
+    }];
 
-        assert_eq!(
-            validation_message(&metrics),
-            "worker 7 combined busy and queue wait time exceeds run elapsed time"
-        );
-    }
+    assert_eq!(
+        validation_message(&metrics),
+        "worker 7 combined busy and queue wait time exceeds run elapsed time"
+    );
 }
 
-#[test]
-fn metrics_accept_combined_worker_time_at_the_run_boundary() {
-    for (elapsed_ms, busy_ms, queue_wait_ms) in [
-        (0, 0, 0),
-        (10, 6, 4),
-        (10, 0, 10),
-        (10, 10, 0),
-        (u64::MAX, u64::MAX - 1, 1),
-    ] {
-        let mut metrics = RunMetrics::empty("run-1");
-        metrics.elapsed_ms = elapsed_ms;
-        metrics.workers = vec![WorkerMetric {
-            busy_ms,
-            queue_wait_ms,
-            ..WorkerMetric::new(7)
-        }];
+#[rstest::rstest]
+#[case::value_0(0, 0, 0)]
+#[case::value_10(10, 6, 4)]
+#[case::value_10_3(10, 0, 10)]
+#[case::value_10_4(10, 10, 0)]
+#[case::u64_max(u64::MAX, u64::MAX - 1, 1)]
+fn metrics_accept_combined_worker_time_at_the_run_boundary(
+    #[case] elapsed_ms: u64,
+    #[case] busy_ms: u64,
+    #[case] queue_wait_ms: u64,
+) {
+    let mut metrics = RunMetrics::empty("run-1");
+    metrics.elapsed_ms = elapsed_ms;
+    metrics.workers = vec![WorkerMetric {
+        busy_ms,
+        queue_wait_ms,
+        ..WorkerMetric::new(7)
+    }];
 
-        assert_eq!(metrics.validate(), Ok(()));
-    }
+    assert_eq!(metrics.validate(), Ok(()));
 }
 
 #[test]
@@ -162,56 +164,39 @@ fn metrics_allow_parallel_workers_to_share_the_same_run_interval() {
     assert_eq!(metrics.validate(), Ok(()));
 }
 
-#[test]
-fn metrics_validate_version_identity_names_and_duration_bounds() {
-    let mut metrics = RunMetrics::empty("run-1");
-    metrics.schema_version = 2;
-    assert_eq!(
-        validation_message(&metrics),
-        "unsupported metrics schema version 2"
-    );
+#[rstest::rstest]
+#[case::unsupported_version(RunMetrics { schema_version: 2, ..RunMetrics::empty("run-1") }, "unsupported metrics schema version 2")]
+#[case::empty_identity(RunMetrics::empty(""), "run ID must not be empty")]
+#[case::duplicate_stages(RunMetrics { elapsed_ms: 10, stages: vec![StageMetric { name: "analysis".into(), elapsed_ms: 5 }, StageMetric { name: "analysis".into(), elapsed_ms: 6 }], ..RunMetrics::empty("run-1") }, "duplicate stage metric analysis")]
+#[case::stage_exceeds_elapsed(RunMetrics { elapsed_ms: 10, stages: vec![StageMetric { name: "analysis".into(), elapsed_ms: 11 }], ..RunMetrics::empty("run-1") }, "stage analysis elapsed time exceeds run elapsed time")]
+#[case::queue_exceeds_elapsed(RunMetrics { elapsed_ms: 10, workers: vec![WorkerMetric { queue_wait_ms: 11, ..WorkerMetric::new(0) }], ..RunMetrics::empty("run-1") }, "worker 0 queue wait time exceeds run elapsed time")]
+fn metrics_validate_version_identity_names_and_duration_bounds(
+    #[case] metrics: RunMetrics,
+    #[case] expected: &str,
+) {
+    let message = validation_message(&metrics);
 
-    metrics.schema_version = METRICS_SCHEMA_VERSION;
-    metrics.run_id.clear();
-    assert_eq!(validation_message(&metrics), "run ID must not be empty");
+    assert_eq!(message, expected);
+}
 
-    metrics.run_id = "run-1".into();
-    metrics.elapsed_ms = 10;
-    metrics.stages = vec![
-        StageMetric {
-            name: "analysis".into(),
-            elapsed_ms: 5,
-        },
-        StageMetric {
-            name: "analysis".into(),
-            elapsed_ms: 6,
-        },
-    ];
-    assert_eq!(
-        validation_message(&metrics),
-        "duplicate stage metric analysis"
-    );
+proptest::proptest! {
+    #[test]
+    fn worker_interval_validation_matches_widened_arithmetic(
+        elapsed_ms in proptest::prelude::any::<u64>(),
+        busy_ms in proptest::prelude::any::<u64>(),
+        queue_wait_ms in proptest::prelude::any::<u64>(),
+    ) {
+        let metrics = RunMetrics {
+            elapsed_ms,
+            workers: vec![WorkerMetric { busy_ms, queue_wait_ms, ..WorkerMetric::new(0) }],
+            ..RunMetrics::empty("run-1")
+        };
+        let expected = u128::from(busy_ms) + u128::from(queue_wait_ms) <= u128::from(elapsed_ms);
 
-    metrics.stages = vec![StageMetric {
-        name: "analysis".into(),
-        elapsed_ms: 11,
-    }];
-    assert_eq!(
-        validation_message(&metrics),
-        "stage analysis elapsed time exceeds run elapsed time"
-    );
+        let result = metrics.validate();
 
-    metrics.stages.clear();
-    metrics.workers = vec![WorkerMetric {
-        worker: 0,
-        busy_ms: 0,
-        queue_wait_ms: 11,
-        processes: 0,
-    }];
-    assert_eq!(
-        validation_message(&metrics),
-        "worker 0 queue wait time exceeds run elapsed time"
-    );
+        proptest::prop_assert_eq!(result.is_ok(), expected);
+    }
 }
 
 #[test]
@@ -229,25 +214,28 @@ fn metrics_reject_executing_more_candidates_than_were_discovered() {
     );
 }
 
-#[test]
-fn metrics_reject_worker_process_counts_below_or_above_executed() {
-    for (processes, executed) in [(1, 2), (3, 2)] {
-        let mut metrics = RunMetrics::empty("run-1");
-        metrics.discovered = 3;
-        metrics.executed = executed;
-        metrics.workers = vec![WorkerMetric {
-            processes,
-            ..WorkerMetric::new(0)
-        }];
+#[rstest::rstest]
+#[case::value_1(1, 2)]
+#[case::value_3(3, 2)]
+fn metrics_reject_worker_process_counts_below_or_above_executed(
+    #[case] processes: u64,
+    #[case] executed: u64,
+) {
+    let mut metrics = RunMetrics::empty("run-1");
+    metrics.discovered = 3;
+    metrics.executed = executed;
+    metrics.workers = vec![WorkerMetric {
+        processes,
+        ..WorkerMetric::new(0)
+    }];
 
-        assert_eq!(
-            metrics.validate(),
-            Err(MetricsValidationError::WorkerProcessMismatch {
-                worker_processes: processes,
-                executed,
-            })
-        );
-    }
+    assert_eq!(
+        metrics.validate(),
+        Err(MetricsValidationError::WorkerProcessMismatch {
+            worker_processes: processes,
+            executed,
+        })
+    );
 }
 
 #[test]

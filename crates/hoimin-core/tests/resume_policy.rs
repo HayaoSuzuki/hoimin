@@ -68,6 +68,7 @@ fn copy_policy_changes_resume_compatibility() {
     let empty = make(&[], &[]);
     let included = make(&["strict.flag"], &[]);
     let excluded = make(&[], &["strict.flag"]);
+
     assert_ne!(
         empty, included,
         "include addition/removal must invalidate reuse"
@@ -93,29 +94,36 @@ fn copy_policy_changes_resume_compatibility() {
     assert_ne!(make(&["a"], &["b"]), make(&["a", "b"], &[]));
 }
 
+#[rstest::rstest]
+#[case::mutationstatus_killed(MutationStatus::Killed, ReusedMutationStatus::Killed)]
+#[case::mutationstatus_survived(MutationStatus::Survived, ReusedMutationStatus::Survived)]
+fn resume_decides_one_stored_result_without_collecting_the_run_table_1(
+    #[case] status: MutationStatus,
+    #[case] reused: ReusedMutationStatus,
+) {
+    assert_eq!(
+        resume_policy(Some(&stored("m", status))),
+        ResumeDecision::Reuse(reused)
+    );
+}
+
+#[rstest::rstest]
+#[case::mutationstatus_timeout(MutationStatus::Timeout)]
+#[case::mutationstatus_outofmemory(MutationStatus::OutOfMemory)]
+#[case::mutationstatus_processlimit(MutationStatus::ProcessLimit)]
+#[case::mutationstatus_error(MutationStatus::Error)]
+#[case::mutationstatus_notrun(MutationStatus::NotRun)]
+fn resume_decides_one_stored_result_without_collecting_the_run_table_2(
+    #[case] status: MutationStatus,
+) {
+    assert_eq!(
+        resume_policy(Some(&stored("m", status))),
+        ResumeDecision::Rerun
+    );
+}
+
 #[test]
 fn resume_decides_one_stored_result_without_collecting_the_run() {
-    for (status, reused) in [
-        (MutationStatus::Killed, ReusedMutationStatus::Killed),
-        (MutationStatus::Survived, ReusedMutationStatus::Survived),
-    ] {
-        assert_eq!(
-            resume_policy(Some(&stored("m", status))),
-            ResumeDecision::Reuse(reused)
-        );
-    }
-    for status in [
-        MutationStatus::Timeout,
-        MutationStatus::OutOfMemory,
-        MutationStatus::ProcessLimit,
-        MutationStatus::Error,
-        MutationStatus::NotRun,
-    ] {
-        assert_eq!(
-            resume_policy(Some(&stored("m", status))),
-            ResumeDecision::Rerun
-        );
-    }
     assert_eq!(resume_policy(None), ResumeDecision::Rerun);
 }
 
@@ -125,6 +133,7 @@ fn fingerprint_is_canonical_for_set_like_fields() {
     reordered.sources.reverse();
     reordered.targets.reverse();
     reordered.operators.reverse();
+
     assert_eq!(fingerprint(&fixture_input()), fingerprint(&reordered));
 }
 
@@ -133,6 +142,7 @@ fn fingerprint_inputs_are_canonical_and_compatibility_relevant() {
     let original = fixture_input();
     let mut reordered = original.clone();
     reordered.fingerprint_inputs.reverse();
+
     assert_eq!(fingerprint(&original), fingerprint(&reordered));
 
     let mut changed_hash = original.clone();
@@ -445,34 +455,27 @@ fn duplicate_source_and_target_entries_are_semantically_idempotent() {
     assert_eq!(fingerprint(&original), fingerprint(&duplicated));
 }
 
-#[test]
-fn every_compatibility_field_changes_the_fingerprint() {
+#[rstest::rstest]
+#[case::source_hash(|value: &mut FingerprintInput| value.sources[0].hash[0] ^= 1)]
+#[case::target(|value: &mut FingerprintInput| value.targets[0].lines[0].end += 1)]
+#[case::operator(|value: &mut FingerprintInput| value.operators.push("comparison".to_owned()))]
+#[case::argv(|value: &mut FingerprintInput| value.test_argv.push(CommandArg::Unix(vec![0, 255])))]
+fn every_compatibility_field_changes_the_fingerprint(#[case] edit: fn(&mut FingerprintInput)) {
     let original = fixture_input();
     let expected = fingerprint(&original);
-    let mut variants = Vec::new();
+    let mut changed = original.clone();
+    edit(&mut changed);
 
-    let mut value = original.clone();
-    value.sources[0].hash[0] ^= 1;
-    variants.push(("source hash", value));
-    let mut value = original.clone();
-    value.targets[0].lines[0].end += 1;
-    variants.push(("target", value));
-    let mut value = original.clone();
-    value.operators.push("comparison".to_owned());
-    variants.push(("operator", value));
-    let mut value = original.clone();
-    value.test_argv.push(CommandArg::Unix(vec![0, 255]));
-    variants.push(("argv", value));
+    let actual = fingerprint(&changed);
 
-    for (name, value) in variants {
-        assert_ne!(expected, fingerprint(&value), "unchanged field: {name}");
-    }
+    assert_ne!(actual, expected);
 }
 
 #[test]
 fn fingerprint_changes_when_resource_mode_changes() {
     let mut changed = fixture_input();
     changed.resource_mode = ResourceMode::BestEffort;
+
     assert_ne!(fingerprint(&fixture_input()), fingerprint(&changed));
 }
 
@@ -492,6 +495,7 @@ fn fingerprint_changes_when_type_operator_selection_changes() {
         operators: vec!["type_nullable_remove".to_owned()],
         ..fixture_input()
     };
+
     assert_ne!(fingerprint(&fixture_input()), fingerprint(&changed));
 }
 
@@ -517,11 +521,21 @@ fn output_retention_does_not_change_resume_compatibility() {
     assert_eq!(fingerprint(&original), fingerprint(&changed));
 }
 
-#[test]
-fn every_verdict_or_safety_limit_changes_the_fingerprint() {
+#[rstest::rstest]
+#[case::max_candidates_1(0)]
+#[case::baseline_timeout_2(1)]
+#[case::mutant_timeout_3(2)]
+#[case::total_timeout_4(3)]
+#[case::max_memory_5(4)]
+#[case::max_copy_size_6(5)]
+#[case::max_workspace_size_7(6)]
+#[case::min_free_space_8(7)]
+#[case::max_processes_9(8)]
+fn every_verdict_or_safety_limit_changes_the_fingerprint(#[case] scenario_index: usize) {
     let original = fixture_input();
     let expected = fingerprint(&original);
-    for (name, mutate) in [
+
+    let (name, mutate) = [
         (
             "max_candidates",
             mutate_max_candidates as fn(&mut RawRunLimits),
@@ -534,13 +548,17 @@ fn every_verdict_or_safety_limit_changes_the_fingerprint() {
         ("max_workspace_size", mutate_max_workspace_size),
         ("min_free_space", mutate_min_free_space),
         ("max_processes", mutate_max_processes),
-    ] {
-        let mut raw = fixture_raw_limits();
-        mutate(&mut raw);
-        let mut value = original.clone();
-        value.limits = (&raw).try_into().unwrap();
-        assert_ne!(expected, fingerprint(&value), "unchanged limit: {name}");
-    }
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
+
+    let mut raw = fixture_raw_limits();
+    mutate(&mut raw);
+    let mut value = original.clone();
+    value.limits = (&raw).try_into().unwrap();
+
+    assert_ne!(expected, fingerprint(&value), "unchanged limit: {name}");
 }
 
 #[test]
@@ -551,6 +569,7 @@ fn command_arguments_preserve_native_units_exactly() {
     windows.test_argv = vec![CommandArg::Windows(vec![0x61, 0, 0xff])];
     let mut windows_other = windows.clone();
     windows_other.test_argv = vec![CommandArg::Windows(vec![0x61, 0, 0x100])];
+
     assert_ne!(fingerprint(&unix), fingerprint(&windows));
     assert_ne!(fingerprint(&windows), fingerprint(&windows_other));
 }
@@ -961,6 +980,7 @@ fn configured_source_root_order_changes_fingerprint() {
     };
     let ab = make(&["a", "b"]);
     let ba = make(&["b", "a"]);
+
     assert_ne!(fingerprint(&ab), fingerprint(&ba));
     assert_eq!(fingerprint(&ab), fingerprint(&make(&["a", "b"])));
     assert_ne!(
@@ -986,6 +1006,7 @@ fn equivalent_normalized_import_roots_have_the_same_fingerprint() {
         .unwrap();
         FingerprintInput::from_config(&config, vec![], vec![], ResourceMode::Hard)
     };
+
     assert_eq!(
         fingerprint(&make(&["./src", "src/", "vendor/../vendor", "."])),
         fingerprint(&make(&["src", "vendor", "."]))
@@ -1000,6 +1021,7 @@ fn mutant_budget_is_checked_separately_from_fingerprint_compatibility() {
     mutate_max_mutants(&mut raw);
     let mut changed = original.clone();
     changed.limits = (&raw).try_into().unwrap();
+
     assert_eq!(fingerprint(&original), fingerprint(&changed));
 }
 
@@ -1034,6 +1056,7 @@ fn captured_snapshot_names_and_digest_both_change_compatibility() {
     input.environment =
         hoimin_core::EnvironmentSnapshot::captured(vec!["FLAG".into()], "a".repeat(64)).unwrap();
     let captured = fingerprint(&input);
+
     assert_ne!(untracked, captured);
     input.environment =
         hoimin_core::EnvironmentSnapshot::captured(vec!["FLAG".into()], "b".repeat(64)).unwrap();

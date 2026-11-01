@@ -91,54 +91,60 @@ fn candidates() -> Vec<RankedPlanCandidate> {
         .collect()
 }
 
-#[test]
-fn offset_selection_does_not_clone_or_retain_the_discarded_prefix() {
+static ALLOCATION_WINDOW: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[rstest::rstest]
+#[case::strict(TopSelectionPolicy::Strict, [0, 512, 1023])]
+#[case::diverse(TopSelectionPolicy::Diverse, [0, 64, 1023])]
+#[case::line_diverse(TopSelectionPolicy::LineDiverse, [0, 512, 1023])]
+fn offset_selection_does_not_clone_or_retain_the_discarded_prefix(
+    #[case] policy: TopSelectionPolicy,
+    #[case] expected_indices: [usize; 3],
+) {
     const MAX_PEAK: usize = 512 * 1024;
+    let _window = ALLOCATION_WINDOW.lock().unwrap();
     let candidates = candidates();
     let one = NonZeroUsize::new(1).unwrap();
-    for (policy, expected_indices) in [
-        (TopSelectionPolicy::Strict, [0, 512, 1023]),
-        (TopSelectionPolicy::Diverse, [0, 64, 1023]),
-        (TopSelectionPolicy::LineDiverse, [0, 512, 1023]),
-    ] {
-        let mut first_page_calls = None;
-        for (offset, expected_index) in [0, 512, 1023].into_iter().zip(expected_indices) {
-            // Eight equally sized files: round robin row is offset / 8 and
-            // column is offset % 8. These positions are independent of selection.
-            begin();
-            let selected = selection::select_top_candidate_ids_at(&candidates, one, policy, offset);
-            let (peak, calls) = finish();
-            eprintln!(
-                "{policy:?} offset={offset} peak={peak} calls={calls} capacity={}",
-                selected.capacity()
-            );
-            assert_eq!(selected, [candidates[expected_index].id.clone()]);
-            // Every page builds the same one score tier; discarding borrowed
-            // IDs adds no allocator calls even when clones would be freed early.
-            let expected_calls = *first_page_calls.get_or_insert(calls);
-            assert!(peak < MAX_PEAK, "{policy:?} offset={offset}: peak={peak}");
-            assert_eq!(selected.capacity(), 1);
-            assert_eq!(calls, expected_calls, "{policy:?} offset={offset}");
-        }
-        // Sensitivity: the old owned-prefix algorithm must exceed the same
-        // bound even if someone later shrinks its returned vector.
+
+    let mut first_page_calls = None;
+    for (offset, expected_index) in [0, 512, 1023].into_iter().zip(expected_indices) {
+        // Eight equally sized files: round robin row is offset / 8 and
+        // column is offset % 8. These positions are independent of selection.
         begin();
-        let prefix = selection::select_top_candidate_ids(
-            &candidates,
-            NonZeroUsize::new(candidates.len()).unwrap(),
-            policy,
+        let selected = selection::select_top_candidate_ids_at(&candidates, one, policy, offset);
+        let (peak, calls) = finish();
+        eprintln!(
+            "{policy:?} offset={offset} peak={peak} calls={calls} capacity={}",
+            selected.capacity()
         );
-        let mut broken = prefix.into_iter().skip(1023).collect::<Vec<_>>();
-        broken.shrink_to_fit();
-        let (broken_peak, broken_calls) = finish();
-        eprintln!("{policy:?} eager_prefix_peak={broken_peak}");
-        assert_eq!(broken.len(), 1);
-        assert!(broken_calls > first_page_calls.unwrap());
-        assert!(
-            broken_peak > MAX_PEAK,
-            "insensitive allocator guard: {broken_peak}"
-        );
+
+        assert_eq!(selected, [candidates[expected_index].id.clone()]);
+        // Every page builds the same one score tier; discarding borrowed
+        // IDs adds no allocator calls even when clones would be freed early.
+        let expected_calls = *first_page_calls.get_or_insert(calls);
+        assert!(peak < MAX_PEAK, "{policy:?} offset={offset}: peak={peak}");
+        assert_eq!(selected.capacity(), 1);
+        assert_eq!(calls, expected_calls, "{policy:?} offset={offset}");
     }
+    // Sensitivity: the old owned-prefix algorithm must exceed the same
+    // bound even if someone later shrinks its returned vector.
+    begin();
+    let prefix = selection::select_top_candidate_ids(
+        &candidates,
+        NonZeroUsize::new(candidates.len()).unwrap(),
+        policy,
+    );
+    let mut broken = prefix.into_iter().skip(1023).collect::<Vec<_>>();
+    broken.shrink_to_fit();
+    let (broken_peak, broken_calls) = finish();
+    eprintln!("{policy:?} eager_prefix_peak={broken_peak}");
+    assert_eq!(broken.len(), 1);
+    assert!(broken_calls > first_page_calls.unwrap());
+    assert!(
+        broken_peak > MAX_PEAK,
+        "insensitive allocator guard: {broken_peak}"
+    );
+
     // A clone-then-skip stream frees each discarded ID immediately: low peak
     // alone misses it, while allocation counts must reject it.
     begin();

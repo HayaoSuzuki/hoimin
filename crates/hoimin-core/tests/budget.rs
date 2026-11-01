@@ -15,9 +15,11 @@ fn budgets(copy: u64) -> RunBudgets {
 fn reservations_share_one_run_wide_allowance() {
     let mut ledger = BudgetLedger::new(budgets(10));
     let first = ledger.reserve(BudgetKind::Copy, 6).unwrap();
+
     assert_eq!(ledger.reserved(BudgetKind::Copy), 6);
 
     let error = ledger.reserve(BudgetKind::Copy, 5).unwrap_err();
+
     assert_eq!(
         error,
         ReserveError::LimitReached(hoimin_core::LimitReached {
@@ -36,6 +38,7 @@ fn reservations_share_one_run_wide_allowance() {
 fn aggregate_worker_copy_is_reserved_as_one_amount() {
     let mut ledger = BudgetLedger::new(budgets(12));
     let reservation = ledger.reserve(BudgetKind::Copy, 3 * 4).unwrap();
+
     assert_eq!(ledger.reservation(reservation).unwrap().amount, 12);
     assert!(ledger.reserve(BudgetKind::Copy, 1).is_err());
 }
@@ -60,6 +63,7 @@ fn budget_kinds_have_independent_run_wide_limits() {
     ledger.reserve(BudgetKind::Copy, 10).unwrap();
     ledger.reserve(BudgetKind::Memory, 1_024).unwrap();
     ledger.reserve(BudgetKind::Processes, 4).unwrap();
+
     assert!(ledger.invariant());
 }
 
@@ -210,6 +214,7 @@ fn grant_can_release_a_reserved_preflight_even_before_any_worker_is_created() {
     .unwrap();
 
     let cleanup = grant.cleanup(EffectId(61));
+
     assert_eq!(cleanup.reservations, vec![grant.reservation_id()]);
     let completed = CleanupFinished {
         id: cleanup.id,

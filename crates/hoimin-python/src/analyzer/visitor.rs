@@ -49,76 +49,106 @@ mod tests {
         }
     }
 
-    #[test]
-    fn elif_conditions_and_nested_suites_visit_each_name_once_in_order() {
-        for clauses in 0..=4 {
-            for nots in 0..=3 {
-                for nested in [false, true] {
-                    let mut source = format!("if {}condition0:\n    body0\n", "not ".repeat(nots));
-                    let mut expected_names = vec!["condition0".to_owned(), "body0".to_owned()];
-                    for clause in 1..=clauses {
-                        writeln!(
-                            source,
-                            "elif {}condition{clause}:\n    body{clause}",
-                            "not ".repeat(nots)
-                        )
-                        .unwrap();
-                        expected_names
-                            .extend([format!("condition{clause}"), format!("body{clause}")]);
-                    }
-                    if nested {
-                        source.push_str("else:\n    while looping:\n        if inner:\n            first\n        elif not other:\n            second\n        else:\n            last\n");
-                        expected_names.extend(
-                            ["looping", "inner", "first", "other", "second", "last"]
-                                .map(str::to_owned),
-                        );
-                    }
-                    let expected: Vec<_> = expected_names
-                        .into_iter()
-                        .map(|name| {
-                            let start = source.find(&name).unwrap();
-                            (name, start)
-                        })
-                        .collect();
-                    let parsed = ruff_python_parser::parse_module(&source).unwrap();
-                    let mut actual = Names::default();
+    fn elif_fixture(clauses: usize, nots: usize, nested: bool) -> (String, Vec<(String, usize)>) {
+        let mut source = format!("if {}condition0:\n    body0\n", "not ".repeat(nots));
+        let mut expected_names = vec!["condition0".to_owned(), "body0".to_owned()];
+        for clause in 1..=clauses {
+            writeln!(
+                source,
+                "elif {}condition{clause}:\n    body{clause}",
+                "not ".repeat(nots)
+            )
+            .unwrap();
+            expected_names.extend([format!("condition{clause}"), format!("body{clause}")]);
+        }
+        if nested {
+            source.push_str("else:\n    while looping:\n        if inner:\n            first\n        elif not other:\n            second\n        else:\n            last\n");
+            expected_names.extend(
+                ["looping", "inner", "first", "other", "second", "last"].map(str::to_owned),
+            );
+        }
+        let expected: Vec<_> = expected_names
+            .into_iter()
+            .map(|name| {
+                let start = source.find(&name).unwrap();
+                (name, start)
+            })
+            .collect();
+        (source, expected)
+    }
 
-                    actual.visit_body(&parsed.syntax().body);
+    #[rstest::rstest]
+    #[case::empty_plain(0, 0, false)]
+    #[case::empty_nested(0, 0, true)]
+    #[case::empty_negated(0, 3, false)]
+    #[case::empty_negated_nested(0, 3, true)]
+    #[case::four_plain(4, 0, false)]
+    #[case::four_nested(4, 0, true)]
+    #[case::four_negated(4, 3, false)]
+    #[case::four_negated_nested(4, 3, true)]
+    fn elif_visitor_preserves_original_boundary_cases(
+        #[case] clauses: usize,
+        #[case] nots: usize,
+        #[case] nested: bool,
+    ) {
+        let (source, expected) = elif_fixture(clauses, nots, nested);
+        let parsed = ruff_python_parser::parse_module(&source).unwrap();
 
-                    assert_eq!(actual.0, expected, "{source}");
-                }
-            }
+        let mut actual = Names::default();
+
+        actual.visit_body(&parsed.syntax().body);
+
+        assert_eq!(actual.0, expected, "{source}");
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn elif_conditions_and_nested_suites_visit_each_name_once_in_order(
+            clauses in 0usize..=32,
+            nots in 0usize..=16,
+            nested in proptest::bool::ANY,
+        ) {
+            let (source, expected) = elif_fixture(clauses, nots, nested);
+            let parsed = ruff_python_parser::parse_module(&source).unwrap();
+
+            let mut actual = Names::default();
+
+            actual.visit_body(&parsed.syntax().body);
+
+            proptest::prop_assert_eq!(actual.0, expected, "{}", source);
         }
     }
 
-    #[test]
-    fn elif_inside_delegated_statement_kinds_visits_each_name_once() {
+    #[rstest::rstest]
+    #[case::function("def function():\n", "", vec![])]
+    #[case::class("class Class:\n", "", vec![])]
+    #[case::while_loop("while looping:\n", "", vec!["looping"])]
+    #[case::for_loop("for item in iterable:\n", "", vec!["iterable", "item"])]
+    #[case::with_statement("with manager:\n", "", vec!["manager"])]
+    #[case::try_finally("try:\n", "finally:\n    pass\n", vec![])]
+    fn elif_inside_delegated_statement_kinds_visits_each_name_once(
+        #[case] prefix: &str,
+        #[case] suffix: &str,
+        #[case] headers: Vec<&str>,
+    ) {
         let suite = "if first:\n    body\nelif not second:\n    other\nelse:\n    last\n";
         let mut indented = String::new();
         for line in suite.lines() {
             writeln!(indented, "    {line}").unwrap();
         }
-        for (prefix, suffix, headers) in [
-            ("def function():\n", "", vec![]),
-            ("class Class:\n", "", vec![]),
-            ("while looping:\n", "", vec!["looping"]),
-            ("for item in iterable:\n", "", vec!["iterable", "item"]),
-            ("with manager:\n", "", vec!["manager"]),
-            ("try:\n", "finally:\n    pass\n", vec![]),
-        ] {
-            let source = format!("{prefix}{indented}{suffix}");
-            let expected: Vec<_> = headers
-                .into_iter()
-                .chain(["first", "body", "second", "other", "last"])
-                .map(|name| (name.to_owned(), source.find(name).unwrap()))
-                .collect();
-            let parsed = ruff_python_parser::parse_module(&source).unwrap();
-            let mut actual = Names::default();
+        let source = format!("{prefix}{indented}{suffix}");
+        let expected: Vec<_> = headers
+            .into_iter()
+            .chain(["first", "body", "second", "other", "last"])
+            .map(|name| (name.to_owned(), source.find(name).unwrap()))
+            .collect();
+        let parsed = ruff_python_parser::parse_module(&source).unwrap();
 
-            actual.visit_body(&parsed.syntax().body);
+        let mut actual = Names::default();
 
-            assert_eq!(actual.0, expected, "{source}");
-        }
+        actual.visit_body(&parsed.syntax().body);
+
+        assert_eq!(actual.0, expected, "{source}");
     }
 
     #[test]
@@ -139,6 +169,7 @@ mod tests {
             .map(|name| (name.to_owned(), source.find(name).unwrap()))
             .into();
         let parsed = ruff_python_parser::parse_module(source).unwrap();
+
         let mut actual = SourceNames(Vec::new());
 
         actual.visit_body(&parsed.syntax().body);

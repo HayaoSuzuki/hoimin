@@ -636,58 +636,69 @@ mod tests {
 
     // Removing the prepared membership index must exceed this bound: these
     // inputs vary distinct roots, not duplicate spellings of the same root.
-    #[test]
-    fn source_membership_work_does_not_multiply_roots_by_files() {
-        for roots in [32, 128, 512] {
-            for files in [32, 128, 512] {
-                let selection = Selection {
-                    root: "/project".into(),
-                    sources: (0..roots).map(|i| format!("src{i:04}").into()).collect(),
-                    ..Selection::default()
-                };
-                let discovered = (0..files)
-                    .map(|i| DiscoveredFile::python(format!("src{:04}/file{i:04}.py", i % roots)))
-                    .collect::<Vec<_>>();
-                SOURCE_MEMBERSHIP_PROBES.with(|count| count.set(0));
-                let targets = resolve_explicit(&selection, &discovered).unwrap();
-                assert_eq!(targets.len(), files);
-                let probes = SOURCE_MEMBERSHIP_PROBES.with(std::cell::Cell::get);
-                assert!(
-                    probes <= 3 * files,
-                    "roots={roots} files={files} probes={probes}"
-                );
-            }
-        }
+    #[rstest::rstest]
+    #[case::value_32(32)]
+    #[case::value_128(128)]
+    #[case::value_512(512)]
+    fn source_membership_work_does_not_multiply_roots_by_files(
+        #[case] roots: usize,
+        #[values(0, 1, 2)] scenario_index: usize,
+    ) {
+        let files = [32, 128, 512].into_iter().nth(scenario_index).unwrap();
+
+        let selection = Selection {
+            root: "/project".into(),
+            sources: (0..roots).map(|i| format!("src{i:04}").into()).collect(),
+            ..Selection::default()
+        };
+        let discovered = (0..files)
+            .map(|i| DiscoveredFile::python(format!("src{:04}/file{i:04}.py", i % roots)))
+            .collect::<Vec<_>>();
+        SOURCE_MEMBERSHIP_PROBES.with(|count| count.set(0));
+        let targets = resolve_explicit(&selection, &discovered).unwrap();
+
+        assert_eq!(targets.len(), files);
+        let probes = SOURCE_MEMBERSHIP_PROBES.with(std::cell::Cell::get);
+        assert!(
+            probes <= 3 * files,
+            "roots={roots} files={files} probes={probes}"
+        );
     }
 
-    #[test]
-    fn source_membership_keys_and_probes_follow_path_depth_not_root_count() {
-        for roots in [32, 128, 512] {
-            let roots: Vec<_> = (0..roots)
-                .map(|i| Utf8PathBuf::from(format!("src{i:04}")))
-                .collect();
-            for depth in [1, 8, 32] {
-                PATH_KEY_DERIVATIONS.with(|count| count.set(0));
-                SOURCE_MEMBERSHIP_PROBES.with(|count| count.set(0));
-                let scope = SourceScope::new(&roots);
-                for i in 0..32 {
-                    let path = Utf8PathBuf::from(format!(
-                        "src{:04}/{}a.py",
-                        i % roots.len(),
-                        "nested/".repeat(depth)
-                    ));
-                    assert!(scope.contains(&path));
-                }
-                assert_eq!(
-                    PATH_KEY_DERIVATIONS.with(std::cell::Cell::get),
-                    roots.len() + 32
-                );
-                assert_eq!(
-                    SOURCE_MEMBERSHIP_PROBES.with(std::cell::Cell::get),
-                    32 * (depth + 2)
-                );
-            }
+    #[rstest::rstest]
+    #[case::value_32(32)]
+    #[case::value_128(128)]
+    #[case::value_512(512)]
+    fn source_membership_keys_and_probes_follow_path_depth_not_root_count(
+        #[case] roots: usize,
+        #[values(0, 1, 2)] scenario_index: usize,
+    ) {
+        let roots: Vec<_> = (0..roots)
+            .map(|i| Utf8PathBuf::from(format!("src{i:04}")))
+            .collect();
+
+        let depth = [1, 8, 32].into_iter().nth(scenario_index).unwrap();
+
+        PATH_KEY_DERIVATIONS.with(|count| count.set(0));
+        SOURCE_MEMBERSHIP_PROBES.with(|count| count.set(0));
+        let scope = SourceScope::new(&roots);
+        for i in 0..32 {
+            let path = Utf8PathBuf::from(format!(
+                "src{:04}/{}a.py",
+                i % roots.len(),
+                "nested/".repeat(depth)
+            ));
+
+            assert!(scope.contains(&path));
         }
+        assert_eq!(
+            PATH_KEY_DERIVATIONS.with(std::cell::Cell::get),
+            roots.len() + 32
+        );
+        assert_eq!(
+            SOURCE_MEMBERSHIP_PROBES.with(std::cell::Cell::get),
+            32 * (depth + 2)
+        );
     }
 
     // Reference keeps the old linear policy independently of the prepared index.
@@ -706,8 +717,16 @@ mod tests {
         })
     }
 
-    #[test]
-    fn prepared_source_membership_matches_linear_reference() {
+    #[rstest::rstest]
+    #[case::vec(vec![])]
+    #[case::vec_2(vec![""])]
+    #[case::vec_src(vec!["src"])]
+    #[case::vec_src_src2(vec!["src", "src2"])]
+    #[case::vec_src_nested_src_src(vec!["src/nested", "src", "src"])]
+    fn prepared_source_membership_matches_linear_reference(
+        #[case] roots: Vec<&str>,
+        #[values(0, 1, 2, 3, 4, 5, 6)] scenario_index: usize,
+    ) {
         let paths = [
             "",
             "src",
@@ -717,62 +736,117 @@ mod tests {
             "SRC/a.py",
             "other.py",
         ];
-        for roots in [
-            vec![],
-            vec![""],
-            vec!["src"],
-            vec!["src", "src2"],
-            vec!["src/nested", "src", "src"],
-        ] {
-            let roots: Vec<_> = roots.into_iter().map(Utf8PathBuf::from).collect();
-            let scope = SourceScope::new(&roots);
-            for path in paths {
-                assert_eq!(
-                    scope.contains(Utf8Path::new(path)),
-                    linear_source_contains(Utf8Path::new(path), &roots),
-                    "roots={roots:?}, path={path}"
-                );
-            }
-        }
+
+        let roots: Vec<_> = roots.into_iter().map(Utf8PathBuf::from).collect();
+        let scope = SourceScope::new(&roots);
+
+        let path = paths.into_iter().nth(scenario_index).unwrap();
+
+        assert_eq!(
+            scope.contains(Utf8Path::new(path)),
+            linear_source_contains(Utf8Path::new(path), &roots),
+            "roots={roots:?}, path={path}"
+        );
     }
 
-    #[test]
+    #[rstest::rstest]
+    #[case::value_1_1(0)]
+    #[case::value_32_2(1)]
+    #[case::value_128_3(2)]
+    #[case::value_512_4(3)]
     #[ignore = "release performance evidence"]
-    fn measure_source_membership_scaling() {
-        for (roots, files) in [(1, 16), (32, 512), (128, 512), (512, 512)] {
-            let sources: Vec<_> = (0..roots)
-                .map(|i| Utf8PathBuf::from(format!("src{i:04}")))
-                .collect();
-            let paths: Vec<_> = (0..files)
-                .map(|i| Utf8PathBuf::from(format!("src{:04}/file{i:04}.py", i % roots)))
-                .collect();
-            let start = Instant::now();
-            for _ in 0..100 {
-                for path in &paths {
-                    assert!(black_box(linear_source_contains(
-                        black_box(path),
-                        black_box(&sources)
-                    )));
-                }
+    fn measure_source_membership_scaling(#[case] scenario_index: usize) {
+        let (roots, files) = [(1, 16), (32, 512), (128, 512), (512, 512)]
+            .into_iter()
+            .nth(scenario_index)
+            .unwrap();
+
+        let sources: Vec<_> = (0..roots)
+            .map(|i| Utf8PathBuf::from(format!("src{i:04}")))
+            .collect();
+        let paths: Vec<_> = (0..files)
+            .map(|i| Utf8PathBuf::from(format!("src{:04}/file{i:04}.py", i % roots)))
+            .collect();
+        let start = Instant::now();
+        for _ in 0..100 {
+            for path in &paths {
+                assert!(black_box(linear_source_contains(
+                    black_box(path),
+                    black_box(&sources)
+                )));
             }
-            let linear = start.elapsed();
-            let start = Instant::now();
-            let mut capacity = 0;
-            for _ in 0..100 {
-                let scope = SourceScope::new(black_box(&sources));
-                if let SourceScope::Roots(set) = &scope {
-                    capacity = set.capacity();
-                }
-                for path in &paths {
-                    assert!(black_box(scope.contains(black_box(path))));
-                }
-            }
-            eprintln!(
-                "roots={roots} files={files} repeats=100 linear_us={} prepared_including_build_us={} retained_key_capacity={capacity}",
-                linear.as_micros(),
-                start.elapsed().as_micros()
-            );
         }
+        let linear = start.elapsed();
+        let start = Instant::now();
+        let mut capacity = 0;
+        for _ in 0..100 {
+            let scope = SourceScope::new(black_box(&sources));
+            if let SourceScope::Roots(set) = &scope {
+                capacity = set.capacity();
+            }
+            for path in &paths {
+                assert!(black_box(scope.contains(black_box(path))));
+            }
+        }
+        eprintln!(
+            "roots={roots} files={files} repeats=100 linear_us={} prepared_including_build_us={} retained_key_capacity={capacity}",
+            linear.as_micros(),
+            start.elapsed().as_micros()
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::vec(vec![], vec![])]
+    #[case::vec_2(vec!["."], vec!["src/a.py", "src/nested/b.py", "src2/c.py"])]
+    #[case::vec_src(vec!["src"], vec!["src/a.py", "src/nested/b.py"])]
+    #[case::vec_src_nested_src(vec!["src/nested", "src"], vec!["src/a.py", "src/nested/b.py"])]
+    fn source_membership_preserves_absent_root_and_component_boundaries_scenario_1(
+        #[case] sources: Vec<&str>,
+        #[case] expected: Vec<&str>,
+    ) {
+        let inventory = [
+            DiscoveredFile::python("src/a.py"),
+            DiscoveredFile::python("src/nested/b.py"),
+            DiscoveredFile::python("src2/c.py"),
+        ];
+
+        let selection = Selection {
+            root: "/project".into(),
+            sources: sources.into_iter().map(Utf8PathBuf::from).collect(),
+            ..Selection::default()
+        };
+        let targets = resolve_explicit(&selection, &inventory).unwrap();
+
+        assert_eq!(
+            targets.iter().map(|t| t.path.as_str()).collect::<Vec<_>>(),
+            expected
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::vec(vec![])]
+    #[case::vec_2(vec!["."])]
+    fn source_membership_preserves_absent_root_and_component_boundaries_scenario_2(
+        #[case] sources: Vec<&str>,
+    ) {
+        let inventory = [
+            DiscoveredFile::python("src/a.py"),
+            DiscoveredFile::python("src/nested/b.py"),
+            DiscoveredFile::python("src2/c.py"),
+        ];
+
+        let selection = Selection {
+            root: "/project".into(),
+            sources: sources.into_iter().map(Utf8PathBuf::from).collect(),
+            files: vec!["src2/c.py".into()],
+            ..Selection::default()
+        };
+        assert!(
+            resolve_explicit(&selection, &inventory)
+                .unwrap()
+                .iter()
+                .any(|t| t.path == "src2/c.py")
+        );
     }
 
     #[test]
@@ -782,40 +856,7 @@ mod tests {
             DiscoveredFile::python("src/nested/b.py"),
             DiscoveredFile::python("src2/c.py"),
         ];
-        for (sources, expected) in [
-            (vec![], vec![]),
-            (vec!["."], vec!["src/a.py", "src/nested/b.py", "src2/c.py"]),
-            (vec!["src"], vec!["src/a.py", "src/nested/b.py"]),
-            (
-                vec!["src/nested", "src"],
-                vec!["src/a.py", "src/nested/b.py"],
-            ),
-        ] {
-            let selection = Selection {
-                root: "/project".into(),
-                sources: sources.into_iter().map(Utf8PathBuf::from).collect(),
-                ..Selection::default()
-            };
-            let targets = resolve_explicit(&selection, &inventory).unwrap();
-            assert_eq!(
-                targets.iter().map(|t| t.path.as_str()).collect::<Vec<_>>(),
-                expected
-            );
-        }
-        for sources in [vec![], vec!["."]] {
-            let selection = Selection {
-                root: "/project".into(),
-                sources: sources.into_iter().map(Utf8PathBuf::from).collect(),
-                files: vec!["src2/c.py".into()],
-                ..Selection::default()
-            };
-            assert!(
-                resolve_explicit(&selection, &inventory)
-                    .unwrap()
-                    .iter()
-                    .any(|t| t.path == "src2/c.py")
-            );
-        }
+
         let restricted = Selection {
             root: "/project".into(),
             sources: vec!["src".into(), "other".into()],
@@ -896,6 +937,7 @@ mod tests {
         };
 
         PATH_KEY_DERIVATIONS.with(|checks| checks.set(0));
+
         let error = resolve_explicit(&selection, &discovered).unwrap_err();
         let key_derivations = PATH_KEY_DERIVATIONS.with(std::cell::Cell::get);
 
@@ -1066,52 +1108,66 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest::rstest]
+    #[case::value_2_000_1(0)]
+    #[case::value_4_000_2(1)]
+    #[case::value_8_000_3(2)]
     #[ignore = "release performance evidence"]
-    fn measure_explicit_file_lookup_scaling() {
-        for count in [2_000, 4_000, 8_000] {
-            let discovered = (0..count)
-                .map(|index| DiscoveredFile::python(format!("src/file{index:05}.py")))
-                .collect::<Vec<_>>();
-            let selection = Selection {
-                root: "/project".into(),
-                files: discovered.iter().map(|file| file.path.clone()).collect(),
-                ..Selection::default()
-            };
-            let mut samples = Vec::new();
-            for _ in 0..5 {
-                let started = Instant::now();
-                let targets = black_box(resolve_explicit(
-                    black_box(&selection),
-                    black_box(&discovered),
-                ))
-                .unwrap();
-                assert_eq!(targets.len(), count);
-                samples.push(started.elapsed());
-            }
-            samples.sort_unstable();
-            println!("files={count} selectors={count} median={:?}", samples[2]);
+    fn measure_explicit_file_lookup_scaling(#[case] scenario_index: usize) {
+        let count = [2_000, 4_000, 8_000]
+            .into_iter()
+            .nth(scenario_index)
+            .unwrap();
+
+        let discovered = (0..count)
+            .map(|index| DiscoveredFile::python(format!("src/file{index:05}.py")))
+            .collect::<Vec<_>>();
+        let selection = Selection {
+            root: "/project".into(),
+            files: discovered.iter().map(|file| file.path.clone()).collect(),
+            ..Selection::default()
+        };
+        let mut samples = Vec::new();
+        for _ in 0..5 {
+            let started = Instant::now();
+            let targets = black_box(resolve_explicit(
+                black_box(&selection),
+                black_box(&discovered),
+            ))
+            .unwrap();
+
+            assert_eq!(targets.len(), count);
+            samples.push(started.elapsed());
         }
+        samples.sort_unstable();
+        println!("files={count} selectors={count} median={:?}", samples[2]);
     }
 
-    #[test]
+    #[rstest::rstest]
+    #[case::value_2_000_1(0)]
+    #[case::value_4_000_2(1)]
+    #[case::value_8_000_3(2)]
     #[ignore = "release performance evidence"]
-    fn measure_explicit_range_scaling() {
-        for count in [2_000, 4_000, 8_000] {
-            let selection = sparse_selection(count);
-            let mut samples = Vec::new();
-            for _ in 0..5 {
-                let started = Instant::now();
-                let targets = black_box(resolve_explicit(
-                    black_box(&selection),
-                    black_box(&[DiscoveredFile::python("calc.py")]),
-                ))
-                .unwrap();
-                assert_eq!(targets[0].lines.len(), count as usize);
-                samples.push(started.elapsed());
-            }
-            samples.sort_unstable();
-            println!("sparse_ranges={count} median={:?}", samples[2]);
+    fn measure_explicit_range_scaling(#[case] scenario_index: usize) {
+        let count = [2_000, 4_000, 8_000]
+            .into_iter()
+            .nth(scenario_index)
+            .unwrap();
+
+        let selection = sparse_selection(count);
+        let mut samples = Vec::new();
+        for _ in 0..5 {
+            let started = Instant::now();
+            let targets = black_box(resolve_explicit(
+                black_box(&selection),
+                black_box(&[DiscoveredFile::python("calc.py")]),
+            ))
+            .unwrap();
+
+            assert_eq!(targets[0].lines.len(), count as usize);
+            samples.push(started.elapsed());
         }
+        samples.sort_unstable();
+        println!("sparse_ranges={count} median={:?}", samples[2]);
     }
 }

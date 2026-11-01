@@ -93,68 +93,56 @@ fn outside_source() -> TargetError {
 mod tests {
     use super::*;
 
-    fn small_byte_sources() -> impl Iterator<Item = Vec<u8>> {
-        (0..=5).flat_map(|length| {
-            (0..4usize.pow(length)).map(move |mut word| {
-                (0..length)
-                    .map(|_| {
-                        let byte = [b'x', b'\r', b'\n', 0xe9][word % 4];
-                        word /= 4;
-                        byte
-                    })
-                    .collect()
-            })
-        })
+    #[rstest::rstest]
+    #[case::empty(b"".as_slice(), 0)]
+    #[case::ascii(b"x".as_slice(), 1)]
+    #[case::carriage_return(b"\r".as_slice(), 1)]
+    #[case::line_feed(b"\n".as_slice(), 1)]
+    #[case::crlf(b"\r\n".as_slice(), 1)]
+    #[case::latin1(b"\xe9".as_slice(), 1)]
+    #[case::maximum_original_length(b"x\r\nx\n".as_slice(), 2)]
+    fn physical_line_count_preserves_byte_boundaries(#[case] source: &[u8], #[case] expected: u32) {
+        let actual = physical_line_count(source).unwrap();
+
+        assert_eq!(actual, expected);
     }
 
-    #[test]
-    fn every_small_byte_source_count_matches_independent_line_start_index() {
-        for source in small_byte_sources() {
+    proptest::proptest! {
+        #[test]
+        fn generated_byte_source_counts_match_independent_line_start_indexes(
+            source in proptest::collection::vec(proptest::sample::select(vec![b'x', b'\r', b'\n', 0xe9]), 0..128),
+        ) {
             let python = hoimin_core::python_line_starts(&source).unwrap();
-            let expected = source.len().checked_sub(1).map_or(0, |last| {
-                python.partition_point(|start| *start as usize <= last)
-            });
+            let expected = source.len().checked_sub(1).map_or(0, |last| python.partition_point(|start| *start as usize <= last));
 
             let actual = physical_line_count(&source).unwrap() as usize;
 
-            assert_eq!(actual, expected, "{source:?}");
+            proptest::prop_assert_eq!(actual, expected);
         }
-    }
 
-    #[test]
-    fn every_small_byte_source_translation_matches_independent_line_start_indexes() {
-        for source in small_byte_sources() {
+        #[test]
+        fn generated_git_intervals_translate_to_independent_python_line_indexes(
+            source in proptest::collection::vec(proptest::sample::select(vec![b'x', b'\r', b'\n', 0xe9]), 1..128),
+            first_query in proptest::prelude::any::<usize>(),
+            last_query in proptest::prelude::any::<usize>(),
+        ) {
             let python = hoimin_core::python_line_starts(&source).unwrap();
-            let git = source
-                .split_inclusive(|byte| *byte == b'\n')
-                .scan(0usize, |offset, bytes| {
-                    let start = *offset;
-                    *offset += bytes.len();
-                    Some(start..*offset)
-                })
-                .collect::<Vec<_>>();
-            for first in 0..git.len() {
-                for last in first..git.len() {
-                    let expected = LineRange {
-                        start: u32::try_from(
-                            python.partition_point(|start| *start as usize <= git[first].start),
-                        )
-                        .unwrap(),
-                        end: u32::try_from(
-                            python.partition_point(|start| (*start as usize) < git[last].end),
-                        )
-                        .unwrap(),
-                    };
-                    let range = LineRange {
-                        start: u32::try_from(first + 1).unwrap(),
-                        end: u32::try_from(last + 1).unwrap(),
-                    };
+            let git = source.split_inclusive(|byte| *byte == b'\n').scan(0usize, |offset, bytes| {
+                let start = *offset;
+                *offset += bytes.len();
+                Some(start..*offset)
+            }).collect::<Vec<_>>();
+            let first = first_query % git.len();
+            let last = first + last_query % (git.len() - first);
+            let expected = LineRange {
+                start: u32::try_from(python.partition_point(|start| *start as usize <= git[first].start)).unwrap(),
+                end: u32::try_from(python.partition_point(|start| (*start as usize) < git[last].end)).unwrap(),
+            };
+            let range = LineRange { start: u32::try_from(first + 1).unwrap(), end: u32::try_from(last + 1).unwrap() };
 
-                    let actual = translate(&source, &[range]).unwrap();
+            let actual = translate(&source, &[range]).unwrap();
 
-                    assert_eq!(actual, [expected], "{source:?}");
-                }
-            }
+            proptest::prop_assert_eq!(actual, [expected]);
         }
     }
 
@@ -177,29 +165,38 @@ mod tests {
         );
     }
 
-    #[test]
-    fn invalid_or_out_of_bounds_git_ranges_are_rejected() {
-        for (source, range) in [
+    #[rstest::rstest]
+    #[case::b_as_slice_1(0)]
+    #[case::b_a_2(1)]
+    #[case::b_a_3(2)]
+    #[case::b_a_4(3)]
+    #[case::b_a_5(4)]
+    #[case::b_a_6(5)]
+    fn invalid_or_out_of_bounds_git_ranges_are_rejected(#[case] scenario_index: usize) {
+        let (source, range) = [
             (b"".as_slice(), LineRange { start: 1, end: 1 }),
             (b"a\n", LineRange { start: 2, end: 2 }),
             (b"a\n", LineRange { start: 1, end: 2 }),
             (b"a\r", LineRange { start: 1, end: 2 }),
             (b"a", LineRange { start: 0, end: 1 }),
             (b"a", LineRange { start: 2, end: 1 }),
-        ] {
-            let actual = translate(source, &[range]);
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
 
-            assert!(actual.is_err(), "{source:?}: {range:?}");
-        }
+        let actual = translate(source, &[range]);
+
+        assert!(actual.is_err(), "{source:?}: {range:?}");
     }
 
-    #[test]
-    fn empty_ranges_select_no_rows() {
-        for source in [b"".as_slice(), b"a\r\nb\rc\n"] {
-            let actual = translate(source, &[]).unwrap();
+    #[rstest::rstest]
+    #[case::b_as_slice(b"".as_slice())]
+    #[case::b_a_b_c(b"a\r\nb\rc\n")]
+    fn empty_ranges_select_no_rows(#[case] source: &[u8]) {
+        let actual = translate(source, &[]).unwrap();
 
-            assert_eq!(actual, Vec::<LineRange>::new());
-        }
+        assert_eq!(actual, Vec::<LineRange>::new());
     }
 
     #[test]

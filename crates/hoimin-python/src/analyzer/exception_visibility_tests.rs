@@ -64,19 +64,19 @@ macro_rules! member_work_case {
 
             #[test]
             fn unrelated_members_do_not_trigger_alias_resolution() {
-                // Arrange: retaining two classes rules out an empty-class shortcut.
+                // retaining two classes rules out an empty-class shortcut.
                 // Filtering after spelling construction/resolution breaks this bound.
                 let sources = alias_sources($ordinary, $aliases, 2);
                 MEMBER_SCANS.with(|count| count.set(0));
                 MEMBER_RESOLUTIONS.with(|count| count.set(0));
 
-                // Act.
                 let index =
                     ExceptionIndex::from_sources(&sources, &[".".into()], &|| false).unwrap();
                 let resolutions = MEMBER_RESOLUTIONS.with(Cell::get);
 
-                // Assert: required alias × class output remains fully represented.
+                // required alias × class output remains fully represented.
                 let service = &index.visible[Utf8Path::new("service.py")];
+
                 assert_eq!(service.values().map(Vec::len).sum::<usize>(), 2 * $aliases);
                 assert!(MEMBER_SCANS.with(Cell::get) <= $ordinary + 2);
                 eprintln!(
@@ -209,7 +209,7 @@ proptest! {
 
 #[test]
 fn qualified_reexports_stay_ineligible_while_direct_imports_remain_visible() {
-    // Arrange: caching all locally resolvable names would wrongly admit f.Child.
+    // caching all locally resolvable names would wrongly admit f.Child.
     let sources = [
         ("errors.py".into(), "class Child(Exception): pass\n".into()),
         ("facade.py".into(), "from errors import Child\n".into()),
@@ -219,12 +219,11 @@ fn qualified_reexports_stay_ineligible_while_direct_imports_remain_visible() {
         ),
     ];
 
-    // Act.
     let index = ExceptionIndex::from_sources(&sources, &[".".into()], &|| false).unwrap();
 
-    // Assert.
     let spellings = &index.visible[Utf8Path::new("service.py")]
         [&(Utf8PathBuf::from("errors.py"), "Child".into())];
+
     assert_eq!(
         spellings
             .iter()
@@ -284,57 +283,57 @@ fn alias_output_rejects_excess_summary_entries() {
     assert!(matches!(result, Err(AnalysisError::HierarchyLimit)));
 }
 
-#[test]
-fn external_import_visibility_work_tracks_imports_not_project_mappings() {
-    // A whole-project scan for every external import must exceed this bound.
-    for (form, ceilings) in [
-        ("module", vec![1024, 2048, 4096, 8192]),
-        ("member", vec![0, 0, 0, 0]),
-    ] {
-        let mut measured = Vec::new();
-        for size in [32, 64, 128, 256] {
-            // Arrange: a real hierarchy prevents an empty-class shortcut.
-            let mut sources = vec![(
-                Utf8PathBuf::from("target.py"),
-                "class Root(Exception): pass\nclass Child(Root): pass\ndef target():\n    raise Child()\n".to_owned(),
-            )];
-            let imports = (0..32)
-                .map(|alias| match form {
-                    "module" => format!("import os as ext{alias}\n"),
-                    _ => format!("from os import sep as ext{alias}\n"),
-                })
-                .collect::<String>();
-            sources.extend(
-                (0..size)
-                    .map(|file| (Utf8PathBuf::from(format!("m{file:04}.py")), imports.clone())),
-            );
-            MODULE_VISITS.with(|visits| visits.set(0));
+#[rstest::rstest]
+#[case::module_32("module", 32, 1024)]
+#[case::module_64("module", 64, 2048)]
+#[case::module_128("module", 128, 4096)]
+#[case::module_256("module", 256, 8192)]
+#[case::member_32("member", 32, 0)]
+#[case::member_64("member", 64, 0)]
+#[case::member_128("member", 128, 0)]
+#[case::member_256("member", 256, 0)]
+fn external_import_visibility_work_tracks_imports_not_project_mappings(
+    #[case] form: &str,
+    #[case] size: usize,
+    #[case] ceiling: usize,
+) {
+    // Arrange: a real hierarchy prevents an empty-class shortcut.
+    let mut sources = vec![(
+        Utf8PathBuf::from("target.py"),
+        "class Root(Exception): pass\nclass Child(Root): pass\ndef target():\n    raise Child()\n"
+            .to_owned(),
+    )];
+    let imports = (0..32)
+        .map(|alias| match form {
+            "module" => format!("import os as ext{alias}\n"),
+            _ => format!("from os import sep as ext{alias}\n"),
+        })
+        .collect::<String>();
+    sources.extend(
+        (0..size).map(|file| (Utf8PathBuf::from(format!("m{file:04}.py")), imports.clone())),
+    );
+    MODULE_VISITS.with(|visits| visits.set(0));
 
-            // Act: use the normal source-to-index construction path.
-            let index = ExceptionIndex::from_sources(&sources, &[".".into()], &|| false).unwrap();
-            measured.push(MODULE_VISITS.with(Cell::get));
+    // Act: use the normal source-to-index construction path.
+    let index = ExceptionIndex::from_sources(&sources, &[".".into()], &|| false).unwrap();
+    let visits = MODULE_VISITS.with(Cell::get);
 
-            // Assert: unrelated imports retain the target's visible classes.
-            let visible = &index.visible[Utf8Path::new("target.py")];
-            assert_eq!(visible.len(), 2);
-            assert_eq!(
-                visible[&(Utf8PathBuf::from("target.py"), "Root".to_owned())][0].0,
-                "Root"
-            );
-        }
-        eprintln!("{form} visibility module visits at N=32/64/128/256: {measured:?}");
-        for (visits, ceiling) in measured.into_iter().zip(ceilings) {
-            assert!(
-                visits <= ceiling,
-                "{form}: {visits} visits exceed {ceiling}"
-            );
-        }
-    }
+    // Assert: unrelated imports retain the target's visible classes.
+    let visible = &index.visible[Utf8Path::new("target.py")];
+    assert_eq!(visible.len(), 2);
+    assert_eq!(
+        visible[&(Utf8PathBuf::from("target.py"), "Root".to_owned())][0].0,
+        "Root"
+    );
+    assert!(
+        visits <= ceiling,
+        "{form}: {visits} visits exceed {ceiling}"
+    );
 }
 
 #[test]
 fn loaded_descendant_classes_keep_package_and_exact_alias_spellings_in_order() {
-    // Arrange: `zz` loads the child, while `p` exposes that loaded descendant.
+    // `zz` loads the child, while `p` exposes that loaded descendant.
     let sources = [
         ("pkg/__init__.py".into(), "class Root(Exception): pass\n".into()),
         (
@@ -347,7 +346,6 @@ fn loaded_descendant_classes_keep_package_and_exact_alias_spellings_in_order() {
         ),
     ];
 
-    // Act.
     let index = ExceptionIndex::from_sources(&sources, &[".".into()], &|| false).unwrap();
     let service = Utf8Path::new("service.py");
     let parsed = depth::parse_checked(&sources[2].1, &|| false).unwrap();
@@ -359,8 +357,9 @@ fn loaded_descendant_classes_keep_package_and_exact_alias_spellings_in_order() {
         })
         .unwrap();
 
-    // Assert: lexical spelling order still picks the package descendant.
+    // lexical spelling order still picks the package descendant.
     let aliases = &index.visible[service][&(Utf8PathBuf::from("pkg/errors.py"), "Child".into())];
+
     assert_eq!(
         aliases
             .iter()

@@ -162,20 +162,28 @@ mod tests {
     use ruff_python_ast::Stmt;
     use ruff_python_parser::parse_module;
 
-    #[test]
-    fn impossible_complex_real_overflow_is_not_a_literal_identity() {
-        for digits in [
+    #[rstest::rstest]
+    #[case::value_9_repeat_400_1(0)]
+    #[case::format_0x1_0_repeat_256_2(1)]
+    #[case::format_0o1_0_repeat_342_3(2)]
+    #[case::format_0b1_0_repeat_1024_4(3)]
+    fn impossible_complex_real_overflow_is_not_a_literal_identity(#[case] scenario_index: usize) {
+        let digits = [
             "9".repeat(400),
             format!("0x1{}", "0".repeat(256)),
             format!("0o1{}", "0".repeat(342)),
             format!("0b1{}", "0".repeat(1024)),
-        ] {
-            let source = format!("{digits}+1j");
-            let parsed = parse_module(&source).unwrap();
-            let Stmt::Expr(statement) = &parsed.syntax().body[0] else {
-                panic!("expression")
-            };
-            assert!(complex(&statement.value).is_none());
-        }
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+        let source = format!("{digits}+1j");
+        let parsed = parse_module(&source).unwrap();
+        let Stmt::Expr(statement) = &parsed.syntax().body[0] else {
+            panic!("expression")
+        };
+
+        assert!(complex(&statement.value).is_none());
     }
 }

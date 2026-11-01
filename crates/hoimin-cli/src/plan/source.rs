@@ -93,85 +93,120 @@ mod tests {
         }
     }
 
-    #[test]
-    fn fingerprint_rejects_changes_after_read_budget() {
-        for shrink in [false, true] {
-            for exact in [false, true] {
-                let dir = tempfile::tempdir().unwrap();
-                let root = Utf8Path::from_path(dir.path()).unwrap();
-                let path = root.join("input.py");
-                std::fs::write(&path, b"x = 1\n").unwrap();
-                let _hook =
-                    install_workspace_race_hook(Arc::new(ChangeAfterBudget { path, shrink }));
-                let (patterns, files) = if exact {
-                    (vec![], vec!["input.py".to_owned()])
-                } else {
-                    (vec!["*.py".to_owned()], vec![])
-                };
-                let error =
-                    crate::fingerprint_inputs::resolve(root, &patterns, &files).unwrap_err();
-                assert!(
-                    error
-                        .to_string()
-                        .contains(if shrink { "file shrank" } else { "file grew" }),
-                    "{error}"
-                );
-            }
-        }
+    #[rstest::rstest]
+    #[case::false_1_false_1(false, false, "file grew")]
+    #[case::false_1_true_2(false, true, "file grew")]
+    #[case::true_2_false_1(true, false, "file shrank")]
+    #[case::true_2_true_2(true, true, "file shrank")]
+    fn fingerprint_rejects_changes_after_read_budget(
+        #[case] shrink: bool,
+        #[case] exact: bool,
+        #[case] expected: &str,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(dir.path()).unwrap();
+        let path = root.join("input.py");
+        std::fs::write(&path, b"x = 1\n").unwrap();
+        let _hook = install_workspace_race_hook(Arc::new(ChangeAfterBudget { path, shrink }));
+        let (patterns, files) = if exact {
+            (vec![], vec!["input.py".to_owned()])
+        } else {
+            (vec!["*.py".to_owned()], vec![])
+        };
+
+        let error = crate::fingerprint_inputs::resolve(root, &patterns, &files).unwrap_err();
+
+        assert!(error.to_string().contains(expected), "{error}");
     }
 
+    #[rstest::rstest]
+    #[case::value_0_1(0)]
+    #[case::value_1_2(1)]
+    #[case::value_128_1024_3(2)]
     #[tokio::test]
-    async fn stable_sources_preserve_bytes_and_hash_without_a_fixed_cap() {
+    async fn stable_sources_preserve_bytes_and_hash_without_a_fixed_cap(
+        #[case] scenario_index: usize,
+    ) {
         let dir = tempfile::tempdir().unwrap();
         let root = Utf8Path::from_path(dir.path()).unwrap();
         let mut reader = SourceReader::new(root);
-        for length in [0, 1, 128 * 1024] {
-            let bytes: Vec<_> = (0..length)
-                .map(|i| u8::try_from(i % 251).unwrap())
-                .collect();
-            std::fs::write(root.join("input.py"), &bytes).unwrap();
-            assert_eq!(reader.read(Utf8Path::new("input.py")).await.unwrap(), bytes);
-            assert_eq!(
-                reader.hash(Utf8Path::new("input.py")).await.unwrap(),
-                blake3::hash(&bytes)
-            );
-        }
+
+        let length = [0, 1, 128 * 1024].into_iter().nth(scenario_index).unwrap();
+
+        let bytes: Vec<_> = (0..length)
+            .map(|i| u8::try_from(i % 251).unwrap())
+            .collect();
+        std::fs::write(root.join("input.py"), &bytes).unwrap();
+        assert_eq!(reader.read(Utf8Path::new("input.py")).await.unwrap(), bytes);
+        assert_eq!(
+            reader.hash(Utf8Path::new("input.py")).await.unwrap(),
+            blake3::hash(&bytes)
+        );
     }
 
     // Both plan source operations must reject a changed file. Skipping the
     // finite reader would accept the appended hash/bytes or an empty prefix.
-    #[test]
-    fn plan_source_rejects_changes_after_read_budget() {
-        for shrink in [false, true] {
-            for hash in [false, true] {
-                let dir = tempfile::tempdir().unwrap();
-                let root = Utf8Path::from_path(dir.path()).unwrap();
-                let path = root.join("input.py");
-                std::fs::write(&path, b"x = 1\n").unwrap();
-                let hook = Arc::new(ChangeAfterBudget { path, shrink });
-                let runtime = tokio::runtime::Builder::new_current_thread()
-                    .max_blocking_threads(1)
-                    .on_thread_start(move || {
-                        // The runtime owns the blocking thread and its thread-local
-                        // hook; both end when this test's runtime is dropped.
-                        std::mem::forget(install_workspace_race_hook(hook.clone()));
-                    })
-                    .build()
-                    .unwrap();
-                let result = runtime.block_on(async {
-                    let mut reader = SourceReader::new(root);
-                    if hash {
-                        reader.hash(Utf8Path::new("input.py")).await.map(|_| ())
-                    } else {
-                        reader.read(Utf8Path::new("input.py")).await.map(|_| ())
-                    }
-                });
-                let error = result.unwrap_err();
-                assert!(
-                    error.contains(if shrink { "file shrank" } else { "file grew" }),
-                    "hash={hash}: {error}"
-                );
-            }
-        }
+    #[rstest::rstest]
+    #[case::growth(false, "file grew")]
+    #[case::shrink(true, "file shrank")]
+    fn plan_source_read_rejects_changes_after_read_budget(
+        #[case] shrink: bool,
+        #[case] expected: &str,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(dir.path()).unwrap();
+        let path = root.join("input.py");
+        std::fs::write(&path, b"x = 1\n").unwrap();
+        let hook = Arc::new(ChangeAfterBudget { path, shrink });
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .max_blocking_threads(1)
+            .on_thread_start(move || {
+                // The runtime owns the blocking thread and its thread-local
+                // hook; both end when this test's runtime is dropped.
+                std::mem::forget(install_workspace_race_hook(hook.clone()));
+            })
+            .build()
+            .unwrap();
+
+        let result = runtime.block_on(async {
+            let mut reader = SourceReader::new(root);
+            reader.read(Utf8Path::new("input.py")).await
+        });
+
+        let error = result.unwrap_err();
+
+        assert!(error.contains(expected), "{error}");
+    }
+
+    #[rstest::rstest]
+    #[case::growth(false, "file grew")]
+    #[case::shrink(true, "file shrank")]
+    fn plan_source_hash_rejects_changes_after_read_budget(
+        #[case] shrink: bool,
+        #[case] expected: &str,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(dir.path()).unwrap();
+        let path = root.join("input.py");
+        std::fs::write(&path, b"x = 1\n").unwrap();
+        let hook = Arc::new(ChangeAfterBudget { path, shrink });
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .max_blocking_threads(1)
+            .on_thread_start(move || {
+                // The runtime owns the blocking thread and its thread-local
+                // hook; both end when this test's runtime is dropped.
+                std::mem::forget(install_workspace_race_hook(hook.clone()));
+            })
+            .build()
+            .unwrap();
+
+        let result = runtime.block_on(async {
+            let mut reader = SourceReader::new(root);
+            reader.hash(Utf8Path::new("input.py")).await
+        });
+
+        let error = result.unwrap_err();
+
+        assert!(error.contains(expected), "{error}");
     }
 }

@@ -480,6 +480,7 @@ mod tests {
     #[test]
     fn aggregate_json_reports_are_rejected() {
         let bytes = serde_json::to_vec(&super::test_support::current_report_view()).unwrap();
+
         assert!(super::read_buffered_report(std::path::Path::new("legacy.json"), &bytes).is_err());
         assert!(super::read_typed_jsonl(std::path::Path::new("legacy.json"), &bytes).is_err());
     }
@@ -527,6 +528,7 @@ mod tests {
         let error = read_typed_jsonl(Path::new("review-input.json"), b"{")
             .expect_err("malformed report must fail");
         let diagnostic = error.to_string();
+
         assert!(
             diagnostic.contains("report review-input.json"),
             "{diagnostic}"
@@ -542,7 +544,9 @@ mod tests {
             serde_json::json!(project.path());
         document["summary"]["complete"] = serde_json::json!(false);
         document["summary"]["exit_code"] = serde_json::json!(4);
+
         let result = read_typed_jsonl(Path::new("review-input.json"), &jsonl_bytes(&document));
+
         assert!(
             result.is_ok(),
             "structurally valid incomplete report must decode"
@@ -579,8 +583,10 @@ mod tests {
         String::from_utf8(jsonl_bytes(&current_report_view())).unwrap()
     }
 
-    #[test]
-    fn review_accepts_current_schema_first_and_last() {
+    #[rstest::rstest]
+    #[case::schema_first(0)]
+    #[case::schema_last(1)]
+    fn review_accepts_current_schema_first_and_last(#[case] schema_position: usize) {
         let project = tempfile::tempdir().unwrap();
         let mut document = current_report_view();
         document["run"]["normalized_config"]["selection"]["root"] =
@@ -601,24 +607,28 @@ mod tests {
             .map(|event| serde_json::to_string(event).unwrap())
             .collect::<Vec<_>>()
             .join("\n");
-        for first in [
+
+        let first = [
             format!(r#"{{"schema_version":{schema},{}"#, &payload[1..]),
             format!(
                 r#"{},"schema_version":{schema}}}"#,
                 &payload[..payload.len() - 1]
             ),
-        ] {
-            let wire = format!("{first}\n{rest}");
-            let report = read_typed_jsonl(Path::new("report.json"), wire.as_bytes())
-                .unwrap_or_else(|error| panic!("{error}"));
+        ]
+        .into_iter()
+        .nth(schema_position)
+        .unwrap();
 
-            assert_eq!(
-                report.normalized_config.selection.root.as_std_path(),
-                project.path()
-            );
-            assert_eq!(report.run_id, "schema-v10-current");
-            assert_eq!(report.mutants.len(), 1);
-        }
+        let wire = format!("{first}\n{rest}");
+        let report = read_typed_jsonl(Path::new("report.json"), wire.as_bytes())
+            .unwrap_or_else(|error| panic!("{error}"));
+
+        assert_eq!(
+            report.normalized_config.selection.root.as_std_path(),
+            project.path()
+        );
+        assert_eq!(report.run_id, "schema-v10-current");
+        assert_eq!(report.mutants.len(), 1);
     }
 
     #[test]
@@ -703,94 +713,67 @@ mod tests {
         assert!(result.is_ok(), "decoder must not resolve project roots");
     }
 
-    #[test]
-    fn review_preserves_required_and_known_config_fields() {
-        for (original, replacement) in [
-            (r#""import_roots":[],"#, ""),
-            (r#""import_roots":[]"#, r#""import_roots":null"#),
-            (r#""fingerprint_files":[],"#, ""),
-            (r#""fingerprint_files":[]"#, r#""fingerprint_files":null"#),
-            (
-                r#""import_roots":[]"#,
-                r#""import_roots":[],"future_config":true"#,
-            ),
-            (r#""jobs":1"#, r#""jobs":0"#),
-        ] {
-            // Arrange
-            let original_json = current_report_jsonl();
-            assert_eq!(original_json.matches(original).count(), 1);
-            let raw = original_json.replacen(original, replacement, 1);
+    #[rstest::rstest]
+    #[case::input_1(r#""import_roots":[],"#, "")]
+    #[case::input_2(r#""import_roots":[]"#, r#""import_roots":null"#)]
+    #[case::input_3(r#""fingerprint_files":[],"#, "")]
+    #[case::input_4(r#""fingerprint_files":[]"#, r#""fingerprint_files":null"#)]
+    #[case::input_5(r#""import_roots":[]"#, r#""import_roots":[],"future_config":true"#)]
+    #[case::input_6(r#""jobs":1"#, r#""jobs":0"#)]
+    fn review_preserves_required_and_known_config_fields(
+        #[case] original: &str,
+        #[case] replacement: &str,
+    ) {
+        let original_json = current_report_jsonl();
 
-            // Act
-            let result = read_typed_jsonl(Path::new("report.json"), raw.as_bytes());
+        assert_eq!(original_json.matches(original).count(), 1);
+        let raw = original_json.replacen(original, replacement, 1);
 
-            // Assert
-            assert!(
-                matches!(result, Err(ReportReadError::Parse { .. })),
-                "accepted {replacement}"
-            );
-        }
+        let result = read_typed_jsonl(Path::new("report.json"), raw.as_bytes());
+
+        assert!(
+            matches!(result, Err(ReportReadError::Parse { .. })),
+            "accepted {replacement}"
+        );
     }
 
-    #[test]
-    fn review_rejects_raw_duplicate_config_fields() {
-        for (original, duplicate) in [
-            (
-                r#""import_roots":[]"#,
-                r#""import_roots":[],"import_roots":[]"#,
-            ),
-            (
-                r#""import_roots":[]"#,
-                r#""import_roots":[],"import_roots":["src"]"#,
-            ),
-            (
-                r#""import_roots":[]"#,
-                r#""import_roots":["src"],"import_roots":[]"#,
-            ),
-            (
-                r#""import_roots":[]"#,
-                r#""import_roots":null,"import_roots":[]"#,
-            ),
-            (
-                r#""import_roots":[]"#,
-                r#""import_roots":[],"import_roots":null"#,
-            ),
-            (
-                r#""fingerprint_files":[]"#,
-                r#""fingerprint_files":[],"fingerprint_files":[]"#,
-            ),
-            (
-                r#""allow_best_effort_memory":false"#,
-                r#""allow_best_effort_memory":true,"allow_best_effort_memory":false"#,
-            ),
-            (r#""jobs":1"#, r#""jobs":1,"jobs":1"#),
-            (r#""jobs":1"#, r#""jobs":1,"jobs":2"#),
-            (r#""jobs":1"#, r#""jobs":2,"jobs":1"#),
-            (r#""secs":60}"#, r#""secs":60,"secs":61}"#),
-            (
-                r#""metrics":"metrics.json""#,
-                r#""metrics":null,"metrics":null"#,
-            ),
-            (
-                r#""path":"session.sqlite3""#,
-                r#""path":"other.sqlite3","path":"session.sqlite3""#,
-            ),
-            (r#""mode":"resume""#, r#""mode":"resume","mode":"resume""#),
-        ] {
-            // Arrange: insert duplicates after serialization so no Value map can erase them.
-            let original_json = current_report_jsonl();
-            assert_eq!(original_json.matches(original).count(), 1);
-            let raw = original_json.replacen(original, duplicate, 1);
+    #[rstest::rstest]
+    #[case::input_1(r#""import_roots":[]"#, r#""import_roots":[],"import_roots":[]"#)]
+    #[case::input_2(r#""import_roots":[]"#, r#""import_roots":[],"import_roots":["src"]"#)]
+    #[case::input_3(r#""import_roots":[]"#, r#""import_roots":["src"],"import_roots":[]"#)]
+    #[case::input_4(r#""import_roots":[]"#, r#""import_roots":null,"import_roots":[]"#)]
+    #[case::input_5(r#""import_roots":[]"#, r#""import_roots":[],"import_roots":null"#)]
+    #[case::input_6(
+        r#""fingerprint_files":[]"#,
+        r#""fingerprint_files":[],"fingerprint_files":[]"#
+    )]
+    #[case::input_7(
+        r#""allow_best_effort_memory":false"#,
+        r#""allow_best_effort_memory":true,"allow_best_effort_memory":false"#
+    )]
+    #[case::input_8(r#""jobs":1"#, r#""jobs":1,"jobs":1"#)]
+    #[case::input_9(r#""jobs":1"#, r#""jobs":1,"jobs":2"#)]
+    #[case::input_10(r#""jobs":1"#, r#""jobs":2,"jobs":1"#)]
+    #[case::input_11(r#""secs":60}"#, r#""secs":60,"secs":61}"#)]
+    #[case::input_12(r#""metrics":"metrics.json""#, r#""metrics":null,"metrics":null"#)]
+    #[case::input_13(
+        r#""path":"session.sqlite3""#,
+        r#""path":"other.sqlite3","path":"session.sqlite3""#
+    )]
+    #[case::input_14(r#""mode":"resume""#, r#""mode":"resume","mode":"resume""#)]
+    fn review_rejects_raw_duplicate_config_fields(#[case] original: &str, #[case] duplicate: &str) {
+        // Arrange: insert duplicates after serialization so no Value map can erase them.
+        let original_json = current_report_jsonl();
 
-            // Act
-            let result = read_typed_jsonl(Path::new("report.json"), raw.as_bytes());
+        assert_eq!(original_json.matches(original).count(), 1);
+        let raw = original_json.replacen(original, duplicate, 1);
 
-            // Assert
-            assert!(
-                matches!(result, Err(ReportReadError::Parse { .. })),
-                "accepted {duplicate}"
-            );
-        }
+        let result = read_typed_jsonl(Path::new("report.json"), raw.as_bytes());
+
+        assert!(
+            matches!(result, Err(ReportReadError::Parse { .. })),
+            "accepted {duplicate}"
+        );
     }
 
     proptest::proptest! {
@@ -801,7 +784,7 @@ mod tests {
             escaped_first in proptest::bool::ANY,
             whitespace in "[ \\t\\r]{0,8}",
         ) {
-            // Arrange: both values are valid in isolation; escaped names denote the same key.
+            // both values are valid in isolation; escaped names denote the same key.
             let (first_key, second_key) = if escaped_first {
                 (r#""\u006aobs""#, r#""jobs""#)
             } else {
@@ -811,69 +794,97 @@ mod tests {
             let original = current_report_jsonl().replace(r#""max_processes":64"#, r#""max_processes":256"#);
             let raw = original.replacen(r#""jobs":1"#, &duplicate, 1);
 
-            // Act
+
             let result = read_typed_jsonl(Path::new("report.json"), raw.as_bytes());
 
-            // Assert
+
             let error = result.map(|_| ()).expect_err("duplicate jobs must be rejected");
+
             proptest::prop_assert!(error.to_string().contains("duplicate field `jobs`"));
         }
     }
 
-    #[test]
-    fn fingerprint_covers_complete_jsonl_reads_including_whitespace() {
+    #[rstest::rstest]
+    #[case::current_report_jsonl_1(0)]
+    #[case::include_str_tests_golden_events_schema_v10_current_jsonl_to_owned_2(1)]
+    fn fingerprint_covers_complete_jsonl_reads_including_whitespace(#[case] scenario_index: usize) {
         let directory = tempfile::tempdir().unwrap();
-        for input in [
+
+        let input = [
             current_report_jsonl(),
             include_str!("../../tests/golden/events/schema-v10-current.jsonl").to_owned(),
-        ] {
-            // More than one BufReader buffer, including a final blank line.
-            let bytes = format!("\n{}{}\n", input.trim_end(), " ".repeat(32 * 1024));
-            let path = directory.path().join("report");
-            std::fs::write(&path, &bytes).unwrap();
-            let (_, fingerprint) = read_report_with_fingerprint(&path).unwrap();
-            assert_eq!(fingerprint, blake3::hash(bytes.as_bytes()));
-        }
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+        // More than one BufReader buffer, including a final blank line.
+        let bytes = format!("\n{}{}\n", input.trim_end(), " ".repeat(32 * 1024));
+        let path = directory.path().join("report");
+        std::fs::write(&path, &bytes).unwrap();
+        let (_, fingerprint) = read_report_with_fingerprint(&path).unwrap();
+
+        assert_eq!(fingerprint, blake3::hash(bytes.as_bytes()));
     }
 
-    #[test]
-    fn progress_rejects_appends_instead_of_accepting_a_valid_prefix() {
+    #[rstest::rstest]
+    #[case::current_report_jsonl_1(0)]
+    #[case::include_str_tests_golden_events_schema_v10_current_jsonl_to_owned_2(1)]
+    fn progress_rejects_appends_instead_of_accepting_a_valid_prefix(#[case] scenario_index: usize) {
         use std::io::Write;
         let directory = tempfile::tempdir().unwrap();
-        for input in [
+
+        let input = [
             current_report_jsonl(),
             include_str!("../../tests/golden/events/schema-v10-current.jsonl").to_owned(),
-        ] {
-            let path = directory.path().join("report");
-            std::fs::write(&path, &input).unwrap();
-            let reader = report_reader(&path).unwrap();
-            let mut appended = std::fs::OpenOptions::new()
-                .append(true)
-                .open(&path)
-                .unwrap();
-            appended.write_all(&vec![b' '; 32 * 1024]).unwrap();
-            let error =
-                read_stream::<ReportConfigProjection>(&path, BufReader::new(reader)).unwrap_err();
-            assert!(
-                error.to_string().contains("grew while being read"),
-                "{error}"
-            );
-        }
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+        let path = directory.path().join("report");
+        std::fs::write(&path, &input).unwrap();
+        let reader = report_reader(&path).unwrap();
+        let mut appended = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        appended.write_all(&vec![b' '; 32 * 1024]).unwrap();
+
+        let error =
+            read_stream::<ReportConfigProjection>(&path, BufReader::new(reader)).unwrap_err();
+
+        assert!(
+            error.to_string().contains("grew while being read"),
+            "{error}"
+        );
     }
 
-    #[test]
-    fn jsonl_streaming_keeps_physical_line_boundaries() {
+    #[rstest::rstest]
+    #[case::format_first_second_rest_1(0)]
+    #[case::format_second_rest_first_1_first_1_2(1)]
+    fn jsonl_streaming_keeps_physical_line_boundaries_scenario_1(#[case] scenario_index: usize) {
         let events = include_str!("../../tests/golden/events/schema-v10-current.jsonl");
         let mut lines = events.lines();
         let first = lines.next().unwrap();
         let second = lines.next().unwrap();
         let rest = lines.collect::<Vec<_>>().join("\n");
-        for malformed in [
+
+        let malformed = [
             format!("{first} {second}\n{rest}"),
             format!("{}\n{}\n{second}\n{rest}", &first[..1], &first[1..]),
-        ] {
-            assert!(read_buffered_report(Path::new("report"), malformed.as_bytes()).is_err());
-        }
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+        assert!(read_buffered_report(Path::new("report"), malformed.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn jsonl_streaming_keeps_physical_line_boundaries() {
+        let events = include_str!("../../tests/golden/events/schema-v10-current.jsonl");
+
         let valid = format!("\n  \n\t{events}\n  \t");
         assert!(read_buffered_report(Path::new("report"), valid.as_bytes()).is_ok());
     }

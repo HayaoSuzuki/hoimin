@@ -1,27 +1,29 @@
 use super::{ContractCase, JSON_RUN_HARNESS, assert_contract};
 
+#[rstest::rstest]
+#[case::list_1("list", "a.items.append(3)", "lambda shared=[]: shared")]
+#[case::dict_2("dict", "a.items['x']=3", "lambda shared={}: shared")]
+#[case::set_3("set", "a.items.add(3)", "lambda shared={*()}: shared")]
 #[tokio::test]
-async fn dataclass_factory_sharing_changes_only_cross_instance_ownership() {
-    for (factory, update, replacement) in [
-        ("list", "a.items.append(3)", "lambda shared=[]: shared"),
-        ("dict", "a.items['x']=3", "lambda shared={}: shared"),
-        ("set", "a.items.add(3)", "lambda shared={*()}: shared"),
-    ] {
-        let source = format!(
-            "from dataclasses import dataclass,field\n@dataclass\nclass Bag:\n items: object = field(default_factory={factory}, init=False, repr=False, compare=False)\ndef run():\n a,b=Bag(),Bag()\n {update}\n return [len(a.items),len(b.items),a.items is b.items]\n"
-        );
-        assert_contract(ContractCase {
-            name: factory,
-            operator: "dataclass_factory_share",
-            original: factory,
-            replacement,
-            source: &source,
-            harness: JSON_RUN_HARNESS,
-            baseline_stdout: "[1,0,false]\n",
-            mutant_stdout: "[1,1,true]\n",
-        })
-        .await;
-    }
+async fn dataclass_factory_sharing_changes_only_cross_instance_ownership(
+    #[case] factory: &str,
+    #[case] update: &str,
+    #[case] replacement: &str,
+) {
+    let source = format!(
+        "from dataclasses import dataclass,field\n@dataclass\nclass Bag:\n items: object = field(default_factory={factory}, init=False, repr=False, compare=False)\ndef run():\n a,b=Bag(),Bag()\n {update}\n return [len(a.items),len(b.items),a.items is b.items]\n"
+    );
+    assert_contract(ContractCase {
+        name: factory,
+        operator: "dataclass_factory_share",
+        original: factory,
+        replacement,
+        source: &source,
+        harness: JSON_RUN_HARNESS,
+        baseline_stdout: "[1,0,false]\n",
+        mutant_stdout: "[1,1,true]\n",
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -40,72 +42,77 @@ async fn sort_key_swap_preserves_read_counts_and_changes_priority_and_order() {
     }).await;
 }
 
+#[rstest::rstest]
+#[case::value_1("value")]
+#[case::hoimin_get_2("_hoimin_get")]
+#[case::hoimin_missing_3("_hoimin_missing")]
 #[tokio::test]
-async fn late_capture_keeps_explicit_arguments_and_helper_names_private() {
-    for name in ["value", "_hoimin_get", "_hoimin_missing"] {
-        let mut getter = "_hoimin_get".to_owned();
-        if getter == name {
-            getter.push('_');
-        }
-        let mut missing = "_hoimin_missing".to_owned();
-        if missing == name {
-            missing.push('_');
-        }
-        let original = format!("lambda {name}={name}: {name}");
-        let replacement = format!(
-            "(lambda {getter}, {missing}: lambda {name}={missing}: ({getter}() if {name} is {missing} else {name}))(lambda: {name}, [])"
-        );
-        let source = format!(
-            "def build(values):\n callbacks=[]\n for {name} in values:\n  callbacks.append({original})\n return callbacks\ndef run():\n callbacks=build([4,9])\n marker=[]\n return [[f() for f in callbacks],[f(4) for f in callbacks],[f({name}=None) for f in callbacks],all(f(marker) is marker for f in callbacks)]\n"
-        );
-        assert_contract(ContractCase {
-            name,
-            operator: "lambda_capture_late",
-            original: &original,
-            replacement: &replacement,
-            source: &source,
-            harness: JSON_RUN_HARNESS,
-            baseline_stdout: "[[4,9],[4,4],[null,null],true]\n",
-            mutant_stdout: "[[9,9],[4,4],[null,null],true]\n",
-        })
-        .await;
+async fn late_capture_keeps_explicit_arguments_and_helper_names_private(#[case] name: &str) {
+    let mut getter = "_hoimin_get".to_owned();
+    if getter == name {
+        getter.push('_');
     }
+    let mut missing = "_hoimin_missing".to_owned();
+    if missing == name {
+        missing.push('_');
+    }
+    let original = format!("lambda {name}={name}: {name}");
+    let replacement = format!(
+        "(lambda {getter}, {missing}: lambda {name}={missing}: ({getter}() if {name} is {missing} else {name}))(lambda: {name}, [])"
+    );
+    let source = format!(
+        "def build(values):\n callbacks=[]\n for {name} in values:\n  callbacks.append({original})\n return callbacks\ndef run():\n callbacks=build([4,9])\n marker=[]\n return [[f() for f in callbacks],[f(4) for f in callbacks],[f({name}=None) for f in callbacks],all(f(marker) is marker for f in callbacks)]\n"
+    );
+    assert_contract(ContractCase {
+        name,
+        operator: "lambda_capture_late",
+        original: &original,
+        replacement: &replacement,
+        source: &source,
+        harness: JSON_RUN_HARNESS,
+        baseline_stdout: "[[4,9],[4,4],[null,null],true]\n",
+        mutant_stdout: "[[9,9],[4,4],[null,null],true]\n",
+    })
+    .await;
 }
 
+#[rstest::rstest]
+#[case::def_run_data_b_a_xffb_return_data_decode_utf_8_errors_s_1(
+    "def run():\n data=b'a\\xffb'\n return data.decode('utf-8', errors='surrogateescape')\n",
+    "'surrogateescape'",
+    "\"a\\udcffb\"\n",
+    "\"ab\"\n"
+)]
+#[case::def_run_text_a_udcffb_return_list_text_encode_utf_8_err_2(
+    "def run():\n text='a\\udcffb'\n return list(text.encode('utf-8', errors='surrogateescape'))\n",
+    "'surrogateescape'",
+    "[97,255,98]\n",
+    "[97,98]\n"
+)]
+#[case::from_codecs_import_decode_as_dec_def_run_return_dec_b_a_3(
+    "from codecs import decode as dec\ndef run():\n return dec(b'a\\xffb','utf-8',errors='surrogateescape')\n",
+    "'surrogateescape'",
+    "\"a\\udcffb\"\n",
+    "\"ab\"\n"
+)]
 #[tokio::test]
-async fn encoding_policy_loss_changes_data_without_runtime_errors() {
-    for (source, original, baseline, mutant) in [
-        (
-            "def run():\n data=b'a\\xffb'\n return data.decode('utf-8', errors='surrogateescape')\n",
-            "'surrogateescape'",
-            "\"a\\udcffb\"\n",
-            "\"ab\"\n",
-        ),
-        (
-            "def run():\n text='a\\udcffb'\n return list(text.encode('utf-8', errors='surrogateescape'))\n",
-            "'surrogateescape'",
-            "[97,255,98]\n",
-            "[97,98]\n",
-        ),
-        (
-            "from codecs import decode as dec\ndef run():\n return dec(b'a\\xffb','utf-8',errors='surrogateescape')\n",
-            "'surrogateescape'",
-            "\"a\\udcffb\"\n",
-            "\"ab\"\n",
-        ),
-    ] {
-        assert_contract(ContractCase {
-            name: "encoding policy",
-            operator: "encoding_errors_ignore",
-            original,
-            replacement: "'ignore'",
-            source,
-            harness: JSON_RUN_HARNESS,
-            baseline_stdout: baseline,
-            mutant_stdout: mutant,
-        })
-        .await;
-    }
+async fn encoding_policy_loss_changes_data_without_runtime_errors(
+    #[case] source: &str,
+    #[case] original: &str,
+    #[case] baseline: &str,
+    #[case] mutant: &str,
+) {
+    assert_contract(ContractCase {
+        name: "encoding policy",
+        operator: "encoding_errors_ignore",
+        original,
+        replacement: "'ignore'",
+        source,
+        harness: JSON_RUN_HARNESS,
+        baseline_stdout: baseline,
+        mutant_stdout: mutant,
+    })
+    .await;
 }
 
 #[tokio::test]

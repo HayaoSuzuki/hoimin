@@ -44,63 +44,70 @@ fn baseline_success_requires_owned_restoration_before_dispatch() {
     )));
 }
 
-#[test]
-fn baseline_output_ack_does_not_restart_followup_work() {
-    for (termination, expected_phase) in [
-        (ProcessTermination::Exit(0), RunPhase::BaselineRestoration),
-        (ProcessTermination::Exit(1), RunPhase::Finalize),
-    ] {
-        let (state, effects) = waiting_for_baseline();
-        let baseline_id = effect_id(find_effect(&effects, |effect| {
-            matches!(effect, RunEffect::RunBaseline(_))
-        }));
-        let (state, effects) = transition(
-            state,
-            RunEvent::BaselineFinished(process_finished(baseline_id, termination)),
-        )
-        .unwrap();
-        let id = effect_id(find_effect(&effects, |effect| {
-            matches!(effect, RunEffect::EmitOutput(_))
-        }));
+#[rstest::rstest]
+#[case::processtermination_exit_0(ProcessTermination::Exit(0), RunPhase::BaselineRestoration)]
+#[case::processtermination_exit_1(ProcessTermination::Exit(1), RunPhase::Finalize)]
+fn baseline_output_ack_does_not_restart_followup_work(
+    #[case] termination: ProcessTermination,
+    #[case] expected_phase: RunPhase,
+) {
+    let (state, effects) = waiting_for_baseline();
+    let baseline_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::RunBaseline(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::BaselineFinished(process_finished(baseline_id, termination)),
+    )
+    .unwrap();
+    let id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::EmitOutput(_))
+    }));
 
-        let (state, effects) =
-            transition(state, RunEvent::OutputEmitted(OutputEmitted { id })).unwrap();
+    let (state, effects) =
+        transition(state, RunEvent::OutputEmitted(OutputEmitted { id })).unwrap();
 
-        assert_eq!(effects, Vec::new());
-        assert_eq!(state.phase(), expected_phase);
-    }
+    assert_eq!(effects, Vec::new());
+    assert_eq!(state.phase(), expected_phase);
 }
 
-#[test]
-fn stop_while_run_start_is_pending_waits_for_replacement_ack() {
-    for (stop, _) in stop_cases() {
-        let (state, effects) = waiting_for_preflight_with(fixture_config());
-        let old_id = effects[0].id();
+#[rstest::rstest]
+#[case::deadline_1(0)]
+#[case::cancelled_2(1)]
+#[case::disk_3(2)]
+fn stop_while_run_start_is_pending_waits_for_replacement_ack(#[case] scenario_index: usize) {
+    let (stop, _) = stop_cases().into_iter().nth(scenario_index).unwrap();
 
-        let (state, effects) = transition(state, stop).unwrap();
-        let replacement_id = effects[0].id();
-        let late = transition(
-            state.clone(),
-            RunEvent::OutputEmitted(OutputEmitted { id: old_id }),
-        );
-        let (state, following) = transition(
-            state,
-            RunEvent::OutputEmitted(OutputEmitted { id: replacement_id }),
-        )
-        .unwrap();
+    let (state, effects) = waiting_for_preflight_with(fixture_config());
+    let old_id = effects[0].id();
 
-        assert!(
-            matches!(&effects[..], [RunEffect::EmitOutput(output)] if matches!(output.event, OutputEvent::RunStarted(_)))
-        );
-        assert!(matches!(late, Err(MachineError::RetiredEffect(id)) if id == old_id));
-        assert_eq!(state.phase(), RunPhase::Finalize);
-        assert!(matches!(&following[..], [RunEffect::VerifyOriginals(_)]));
-    }
+    let (state, effects) = transition(state, stop).unwrap();
+    let replacement_id = effects[0].id();
+    let late = transition(
+        state.clone(),
+        RunEvent::OutputEmitted(OutputEmitted { id: old_id }),
+    );
+    let (state, following) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: replacement_id }),
+    )
+    .unwrap();
+
+    assert!(
+        matches!(&effects[..], [RunEffect::EmitOutput(output)] if matches!(output.event, OutputEvent::RunStarted(_)))
+    );
+    assert!(matches!(late, Err(MachineError::RetiredEffect(id)) if id == old_id));
+    assert_eq!(state.phase(), RunPhase::Finalize);
+    assert!(matches!(&following[..], [RunEffect::VerifyOriginals(_)]));
 }
 
-#[test]
-fn failed_diagnostic_continues_to_cleanup_without_another_diagnostic() {
-    for failure in [
+#[rstest::rstest]
+#[case::effectfailure_other_code_diagnostic_failed_into_message_fixture_i_1(0)]
+#[case::effectfailure_reportio_operation_write_into_message_fixture_into_2(1)]
+fn failed_diagnostic_continues_to_cleanup_without_another_diagnostic(
+    #[case] scenario_index: usize,
+) {
+    let failure = [
         EffectFailure::Other {
             code: "diagnostic.failed".into(),
             message: "fixture".into(),
@@ -109,28 +116,31 @@ fn failed_diagnostic_continues_to_cleanup_without_another_diagnostic() {
             operation: "write".into(),
             message: "fixture".into(),
         },
-    ] {
-        let (state, effects) = waiting_for_analysis();
-        let analysis_id = effect_id(find_effect(&effects, |effect| {
-            matches!(effect, RunEffect::AnalyzeFile(_))
-        }));
-        let (state, effects) = transition(
-            state,
-            RunEvent::EffectFailed(EffectFailed::other(
-                analysis_id,
-                "analyzer.failed",
-                "fixture",
-            )),
-        )
-        .unwrap();
-        let id = effects[0].id();
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
 
-        let (state, effects) =
-            transition(state, RunEvent::EffectFailed(EffectFailed { id, failure })).unwrap();
+    let (state, effects) = waiting_for_analysis();
+    let analysis_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::AnalyzeFile(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::EffectFailed(EffectFailed::other(
+            analysis_id,
+            "analyzer.failed",
+            "fixture",
+        )),
+    )
+    .unwrap();
+    let id = effects[0].id();
 
-        assert_eq!(state.phase(), RunPhase::Cleaning);
-        assert!(matches!(&effects[..], [RunEffect::Cleanup(_)]));
-    }
+    let (state, effects) =
+        transition(state, RunEvent::EffectFailed(EffectFailed { id, failure })).unwrap();
+
+    assert_eq!(state.phase(), RunPhase::Cleaning);
+    assert!(matches!(&effects[..], [RunEffect::Cleanup(_)]));
 }
 
 proptest! {
@@ -278,6 +288,7 @@ fn baseline_success_requests_restoration_without_performing_io() {
         RunEvent::BaselineFinished(process_finished(baseline_id, ProcessTermination::Exit(0))),
     )
     .unwrap();
+
     assert_eq!(next.phase(), RunPhase::BaselineRestoration);
     assert!(
         effects
@@ -302,6 +313,7 @@ fn top_verification_observes_budget_after_baseline_restoration() {
     baseline.elapsed = Duration::from_secs(17);
 
     let (state, effects) = transition(state, RunEvent::BaselineFinished(baseline)).unwrap();
+
     assert_eq!(state.phase(), RunPhase::BaselineRestoration);
     assert!(
         !effects
@@ -405,6 +417,7 @@ fn top_budget_shortfall_warns_before_requesting_analysis() {
     let OutputEvent::Diagnostic(diagnostic) = &output.event else {
         panic!("shortfall output must be diagnostic")
     };
+
     assert_eq!(diagnostic.code, "budget.projected_shortfall");
     for expected in [
         "selected=30",
@@ -515,6 +528,7 @@ fn run_started_emits_normalized_focused_profile() {
     let OutputEvent::RunStarted(run_started) = &output.event else {
         unreachable!()
     };
+
     assert_eq!(
         run_started.normalized_config.as_ref().unwrap().profile,
         MutationProfile::Focused
@@ -663,6 +677,7 @@ fn pending_effects_reject_unknown_duplicate_and_wrong_completion_kind() {
         RunEvent::OutputEmitted(OutputEmitted { id: EffectId(999) }),
     )
     .unwrap_err();
+
     assert_eq!(unknown.code(), "machine.effect.unknown");
 
     let wrong = transition(
@@ -699,6 +714,7 @@ fn retired_late_completion_is_distinct_from_a_true_duplicate() {
     };
     let (state, effects) = transition(state, RunEvent::CandidateLoaded(completed.clone())).unwrap();
     let duplicate = transition(state.clone(), RunEvent::CandidateLoaded(completed)).unwrap_err();
+
     assert_eq!(duplicate.code(), "machine.effect.duplicate");
 
     let apply_id = effect_id(find_effect(&effects, |effect| {
@@ -738,8 +754,18 @@ fn disk_stop(available_bytes: u64) -> RunEvent {
     })
 }
 
-#[test]
-fn stop_causes_preserve_exit_policy_at_each_work_boundary() {
+#[rstest::rstest]
+#[case::before_preflight_1(0)]
+#[case::creating_workers_2(1)]
+#[case::baseline_3(2)]
+#[case::baseline_restoration_4(3)]
+#[case::running_mutant_5(4)]
+#[case::persisting_result_6(5)]
+#[case::delivering_result_7(6)]
+fn stop_causes_preserve_exit_policy_at_each_work_boundary(
+    #[case] scenario_index: usize,
+    #[values(0, 1, 2)] nested_scenario_index: usize,
+) {
     type PendingBoundary = fn(&RunEffect) -> bool;
     let boundaries: [(&str, PendingBoundary); 7] = [
         ("before preflight", |effect| {
@@ -765,33 +791,34 @@ fn stop_causes_preserve_exit_policy_at_each_work_boundary() {
             RunEffect::EmitOutput(output) if matches!(output.event, OutputEvent::MutantFinished(_)))
         }),
     ];
-    for (boundary, pending) in boundaries {
-        for (stop, expected_exit) in stop_cases() {
-            // Arrange: use real transitions to reach each acknowledgement boundary.
-            let mut harness = ScheduleHarness::new(3, 2, ScheduleFilter::All, true, vec![0]);
-            harness.complete_until(pending);
-            let applied_before_stop = harness.apply_mutation_count;
 
-            // Act: drain all remaining completions after the stop.
-            harness.stop(stop);
-            let finished = harness.finish(&[]);
+    let (boundary, pending) = boundaries.into_iter().nth(scenario_index).unwrap();
 
-            // Assert: cause-specific policy survives the common shutdown routing.
-            assert_eq!(finished.state.exit_code(), expected_exit, "{boundary}");
-            assert_eq!(
-                finished.apply_mutation_count, applied_before_stop,
-                "{boundary}"
-            );
-        }
-    }
+    let (stop, expected_exit) = stop_cases().into_iter().nth(nested_scenario_index).unwrap();
+
+    // Arrange: use real transitions to reach each acknowledgement boundary.
+    let mut harness = ScheduleHarness::new(3, 2, ScheduleFilter::All, true, vec![0]);
+    harness.complete_until(pending);
+    let applied_before_stop = harness.apply_mutation_count;
+
+    // Act: drain all remaining completions after the stop.
+    harness.stop(stop);
+    let finished = harness.finish(&[]);
+
+    // Assert: cause-specific policy survives the common shutdown routing.
+    assert_eq!(finished.state.exit_code(), expected_exit, "{boundary}");
+    assert_eq!(
+        finished.apply_mutation_count, applied_before_stop,
+        "{boundary}"
+    );
 }
 
 #[test]
 fn repeated_disk_stop_preserves_the_first_observation() {
-    // Arrange.
     let (state, _) = waiting_for_baseline();
     let (state, _) = transition(state, disk_stop(1024)).unwrap();
     let first = state.disk_summary().stop.clone();
+
     assert_eq!(
         first
             .as_ref()
@@ -800,29 +827,29 @@ fn repeated_disk_stop_preserves_the_first_observation() {
         Some(1024)
     );
 
-    // Act.
     let (stopped, _) = transition(state, disk_stop(512)).unwrap();
 
-    // Assert: the second stop does not replace the original evidence.
+    // the second stop does not replace the original evidence.
     assert_eq!(stopped.disk_summary().stop, first);
 }
 
-#[test]
-fn deadline_and_cancellation_stop_scheduling_new_mutants() {
-    for (event, exit_code) in [
-        (RunEvent::DeadlineReached, 4),
-        (RunEvent::CancellationRequested, 130),
-    ] {
-        let (state, _) = waiting_for_baseline();
-        let (next, effects) = transition(state, event).unwrap();
-        assert_eq!(next.phase(), RunPhase::Finalize);
-        assert_eq!(next.exit_code(), exit_code);
-        assert!(
-            !effects
-                .iter()
-                .any(|effect| matches!(effect, RunEffect::RunMutant(_)))
-        );
-    }
+#[rstest::rstest]
+#[case::runevent_deadlinereached(RunEvent::DeadlineReached, 4)]
+#[case::runevent_cancellationrequested(RunEvent::CancellationRequested, 130)]
+fn deadline_and_cancellation_stop_scheduling_new_mutants(
+    #[case] event: RunEvent,
+    #[case] exit_code: i32,
+) {
+    let (state, _) = waiting_for_baseline();
+    let (next, effects) = transition(state, event).unwrap();
+
+    assert_eq!(next.phase(), RunPhase::Finalize);
+    assert_eq!(next.exit_code(), exit_code);
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::RunMutant(_)))
+    );
 }
 
 #[test]
@@ -923,159 +950,178 @@ fn lean_oracle_regression_cleanup_is_emitted_once() {
     assert!(!state.is_effect_retired(cleanup_id));
 }
 
-#[test]
-fn stop_signals_do_not_retire_normal_cleanup_or_change_success() {
-    for (stop, _) in stop_cases() {
-        let (state, cleanup) = waiting_for_successful_cleanup();
-        assert_eq!(state.phase(), RunPhase::Cleaning);
-        assert_eq!(state.exit_code(), 0);
+#[rstest::rstest]
+#[case::deadline_1(0)]
+#[case::cancelled_2(1)]
+#[case::disk_3(2)]
+fn stop_signals_do_not_retire_normal_cleanup_or_change_success(#[case] scenario_index: usize) {
+    let (stop, _) = stop_cases().into_iter().nth(scenario_index).unwrap();
 
-        let (state, effects) = transition(state, stop).unwrap();
+    let (state, cleanup) = waiting_for_successful_cleanup();
 
-        assert_eq!(effects, Vec::new());
-        assert_eq!(state.phase(), RunPhase::Cleaning);
-        assert_eq!(state.exit_code(), 0);
-        assert!(state.is_effect_pending(cleanup.id));
-        assert!(!state.is_effect_retired(cleanup.id));
+    assert_eq!(state.phase(), RunPhase::Cleaning);
+    assert_eq!(state.exit_code(), 0);
 
-        let (state, effects) = transition(
-            state,
-            RunEvent::CleanupFinished(CleanupFinished {
-                id: cleanup.id,
-                released_reservations: cleanup.reservations,
-            }),
+    let (state, effects) = transition(state, stop).unwrap();
+
+    assert_eq!(effects, Vec::new());
+    assert_eq!(state.phase(), RunPhase::Cleaning);
+    assert_eq!(state.exit_code(), 0);
+    assert!(state.is_effect_pending(cleanup.id));
+    assert!(!state.is_effect_retired(cleanup.id));
+
+    let (state, effects) = transition(
+        state,
+        RunEvent::CleanupFinished(CleanupFinished {
+            id: cleanup.id,
+            released_reservations: cleanup.reservations,
+        }),
+    )
+    .unwrap();
+    assert_eq!(state.phase(), RunPhase::Finalize);
+    assert!(effects.iter().any(|effect| {
+        matches!(
+            effect,
+            RunEffect::EmitOutput(value)
+                if matches!(
+                    &value.event,
+                    OutputEvent::RunFinished(summary)
+                        if summary.exit_code == 0 && summary.complete
+                )
         )
-        .unwrap();
-        assert_eq!(state.phase(), RunPhase::Finalize);
-        assert!(effects.iter().any(|effect| {
-            matches!(
-                effect,
-                RunEffect::EmitOutput(value)
-                    if matches!(
-                        &value.event,
-                        OutputEvent::RunFinished(summary)
-                            if summary.exit_code == 0 && summary.complete
-                    )
-            )
-        }));
-    }
+    }));
 }
 
-#[test]
-fn stop_signals_do_not_reopen_a_pending_final_report() {
-    for (stop, _) in stop_cases() {
-        let (state, effects) = waiting_for_final_report();
-        let finished_id = effect_id(find_effect(&effects, |effect| {
-            matches!(
-                effect,
-                RunEffect::EmitOutput(value)
-                    if matches!(&value.event, OutputEvent::RunFinished(_))
-            )
-        }));
-        let original_exit = state.exit_code();
+#[rstest::rstest]
+#[case::deadline_1(0)]
+#[case::cancelled_2(1)]
+#[case::disk_3(2)]
+fn stop_signals_do_not_reopen_a_pending_final_report(#[case] scenario_index: usize) {
+    let (stop, _) = stop_cases().into_iter().nth(scenario_index).unwrap();
 
-        let (state, effects) = transition(state, stop).unwrap();
-
-        assert_eq!(effects, Vec::new());
-        assert_eq!(state.phase(), RunPhase::Finalize);
-        assert_eq!(state.exit_code(), original_exit);
-        assert!(!state.is_effect_retired(finished_id));
-
-        let (state, effects) = transition(
-            state,
-            RunEvent::OutputEmitted(OutputEmitted { id: finished_id }),
-        )
-        .unwrap();
-        assert_eq!(effects, Vec::new());
-        assert_eq!(state.phase(), RunPhase::Finished);
-        assert_eq!(state.exit_code(), original_exit);
-    }
-}
-
-#[test]
-fn stop_signals_do_not_reopen_a_finished_run() {
-    for (stop, _) in stop_cases() {
-        let (state, effects) = waiting_for_final_report();
-        let finished_id = effect_id(find_effect(&effects, |effect| {
-            matches!(
-                effect,
-                RunEffect::EmitOutput(value)
-                    if matches!(&value.event, OutputEvent::RunFinished(_))
-            )
-        }));
-        let (state, effects) = transition(
-            state,
-            RunEvent::OutputEmitted(OutputEmitted { id: finished_id }),
-        )
-        .unwrap();
-        assert_eq!(effects, Vec::new());
-        assert_eq!(state.phase(), RunPhase::Finished);
-        let original_exit = state.exit_code();
-
-        let (state, effects) = transition(state, stop).unwrap();
-
-        assert_eq!(effects, Vec::new());
-        assert_eq!(state.phase(), RunPhase::Finished);
-        assert_eq!(state.exit_code(), original_exit);
-    }
-}
-
-#[test]
-fn deadline_before_preflight_still_emits_a_complete_report_before_cleanup() {
-    for (case, config) in [
-        ("disabled", fixture_config()),
-        ("fresh", fixture_session_config(false)),
-        ("resume", fixture_session_config(true)),
-    ] {
-        // Arrange: stop before preflight can supply fingerprint evidence.
-        let (state, mut all_effects) = transition(
-            RunState::new("run-1", config, test_resource_control()),
-            RunEvent::StartRequested(StartRequested),
-        )
-        .unwrap();
-        // Act: request the deadline stop and acknowledge the reporting and cleanup effects.
-        let (state, effects) = transition(state, RunEvent::DeadlineReached).unwrap();
-        all_effects.extend(effects.clone());
-        let started_id = effect_id(find_effect(
-            &effects,
-            |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::RunStarted(_))),
-        ));
-        let (state, effects) = transition(
-            state,
-            RunEvent::OutputEmitted(OutputEmitted { id: started_id }),
-        )
-        .unwrap();
-        all_effects.extend(effects.clone());
-        let cleanup = find_effect(&effects, |effect| matches!(effect, RunEffect::Cleanup(_)));
-        let RunEffect::Cleanup(cleanup) = cleanup else {
-            unreachable!()
-        };
-        let (state, effects) = transition(
-            state,
-            RunEvent::CleanupFinished(CleanupFinished {
-                id: cleanup.id,
-                released_reservations: cleanup.reservations.clone(),
-            }),
-        )
-        .unwrap();
-
-        all_effects.extend(effects.clone());
-
-        // Assert: the complete stop report never begins or loads a session.
-        assert_eq!(state.exit_code(), 4, "{case}");
-        assert!(effects.iter().any(|effect| matches!(
+    let (state, effects) = waiting_for_final_report();
+    let finished_id = effect_id(find_effect(&effects, |effect| {
+        matches!(
             effect,
             RunEffect::EmitOutput(value)
                 if matches!(&value.event, OutputEvent::RunFinished(_))
-        )));
-        assert!(
-            !all_effects.iter().any(|effect| matches!(
-                effect,
-                RunEffect::CreateWorker(_) | RunEffect::BeginSession(_) | RunEffect::LoadSession(_)
-            )),
-            "{case}"
-        );
-    }
+        )
+    }));
+    let original_exit = state.exit_code();
+
+    let (state, effects) = transition(state, stop).unwrap();
+
+    assert_eq!(effects, Vec::new());
+    assert_eq!(state.phase(), RunPhase::Finalize);
+    assert_eq!(state.exit_code(), original_exit);
+    assert!(!state.is_effect_retired(finished_id));
+
+    let (state, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: finished_id }),
+    )
+    .unwrap();
+    assert_eq!(effects, Vec::new());
+    assert_eq!(state.phase(), RunPhase::Finished);
+    assert_eq!(state.exit_code(), original_exit);
+}
+
+#[rstest::rstest]
+#[case::deadline_1(0)]
+#[case::cancelled_2(1)]
+#[case::disk_3(2)]
+fn stop_signals_do_not_reopen_a_finished_run(#[case] scenario_index: usize) {
+    let (stop, _) = stop_cases().into_iter().nth(scenario_index).unwrap();
+
+    let (state, effects) = waiting_for_final_report();
+    let finished_id = effect_id(find_effect(&effects, |effect| {
+        matches!(
+            effect,
+            RunEffect::EmitOutput(value)
+                if matches!(&value.event, OutputEvent::RunFinished(_))
+        )
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: finished_id }),
+    )
+    .unwrap();
+
+    assert_eq!(effects, Vec::new());
+    assert_eq!(state.phase(), RunPhase::Finished);
+    let original_exit = state.exit_code();
+
+    let (state, effects) = transition(state, stop).unwrap();
+
+    assert_eq!(effects, Vec::new());
+    assert_eq!(state.phase(), RunPhase::Finished);
+    assert_eq!(state.exit_code(), original_exit);
+}
+
+#[rstest::rstest]
+#[case::disabled_1(0)]
+#[case::fresh_2(1)]
+#[case::resume_3(2)]
+fn deadline_before_preflight_still_emits_a_complete_report_before_cleanup(
+    #[case] scenario_index: usize,
+) {
+    let (case, config) = [
+        ("disabled", fixture_config()),
+        ("fresh", fixture_session_config(false)),
+        ("resume", fixture_session_config(true)),
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
+
+    // Arrange: stop before preflight can supply fingerprint evidence.
+    let (state, mut all_effects) = transition(
+        RunState::new("run-1", config, test_resource_control()),
+        RunEvent::StartRequested(StartRequested),
+    )
+    .unwrap();
+    // Act: request the deadline stop and acknowledge the reporting and cleanup effects.
+    let (state, effects) = transition(state, RunEvent::DeadlineReached).unwrap();
+    all_effects.extend(effects.clone());
+    let started_id = effect_id(find_effect(
+        &effects,
+        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::RunStarted(_))),
+    ));
+    let (state, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: started_id }),
+    )
+    .unwrap();
+    all_effects.extend(effects.clone());
+    let cleanup = find_effect(&effects, |effect| matches!(effect, RunEffect::Cleanup(_)));
+    let RunEffect::Cleanup(cleanup) = cleanup else {
+        unreachable!()
+    };
+    let (state, effects) = transition(
+        state,
+        RunEvent::CleanupFinished(CleanupFinished {
+            id: cleanup.id,
+            released_reservations: cleanup.reservations.clone(),
+        }),
+    )
+    .unwrap();
+
+    all_effects.extend(effects.clone());
+
+    // Assert: the complete stop report never begins or loads a session.
+    assert_eq!(state.exit_code(), 4, "{case}");
+    assert!(effects.iter().any(|effect| matches!(
+        effect,
+        RunEffect::EmitOutput(value)
+            if matches!(&value.event, OutputEvent::RunFinished(_))
+    )));
+    assert!(
+        !all_effects.iter().any(|effect| matches!(
+            effect,
+            RunEffect::CreateWorker(_) | RunEffect::BeginSession(_) | RunEffect::LoadSession(_)
+        )),
+        "{case}"
+    );
 }
 
 #[test]
@@ -1117,6 +1163,7 @@ fn cancellation_flushes_active_and_remaining_candidates_as_not_run() {
         let read = find_effect(&effects, |effect| {
             matches!(effect, RunEffect::ReadCandidate(_))
         });
+
         assert!(matches!(
             read,
             RunEffect::ReadCandidate(ReadCandidate {
@@ -1169,6 +1216,7 @@ fn cancellation_flushes_active_and_remaining_candidates_as_not_run() {
 #[test]
 fn one_active_candidate_is_applied_classified_and_reported() {
     let (state, effects) = waiting_for_candidate();
+
     assert!(matches!(
         find_effect(&effects, |effect| matches!(
             effect,
@@ -1579,6 +1627,7 @@ fn explicit_candidate_filter_rejects_missing_after_partial_match() {
     )
     .unwrap();
     let (state, effects) = complete_killed_candidate(state, &effects, &first.id);
+
     assert_eq!(state.summary().killed, 1);
     assert_eq!(state.summary().not_run, 0);
     let eof_id = effect_id(find_effect(&effects, |effect| {
@@ -1634,6 +1683,7 @@ fn ordered_candidate_filter_defers_and_preserves_requested_order() {
             }),
         )
         .unwrap();
+
         assert!(!effects.iter().any(|effect| {
             matches!(
                 effect,
@@ -1987,7 +2037,7 @@ fn ordered_candidate_filter_stably_deduplicates_requested_ids() {
 
 #[test]
 fn ordered_duplicate_discovery_dispatches_once_with_the_indexed_body() {
-    // Arrange: the last occurrence has a different body and sequence for the selected ID.
+    // the last occurrence has a different body and sequence for the selected ID.
     let first = fixture_candidate(1);
     let mut latest = first.clone();
     latest.sequence = 3;
@@ -2015,6 +2065,7 @@ fn ordered_duplicate_discovery_dispatches_once_with_the_indexed_body() {
         }) else {
             unreachable!()
         };
+
         assert_eq!(read.target, CandidateReadTarget::Next);
         (state, effects) = transition(
             state,
@@ -2043,10 +2094,10 @@ fn ordered_duplicate_discovery_dispatches_once_with_the_indexed_body() {
     )
     .unwrap();
 
-    // Act: I/O returns the last indexed occurrence after the complete discovery scan.
+    // I/O returns the last indexed occurrence after the complete discovery scan.
     let (state, effects) = complete_indexed_candidate(state, &effects, &latest);
 
-    // Assert: core uses the fetched body once instead of a body retained during discovery.
+    // core uses the fetched body once instead of a body retained during discovery.
     let RunEffect::ApplyMutation(apply) = &effects[0] else {
         panic!("expected the selected indexed body to be applied")
     };
@@ -2096,12 +2147,34 @@ fn complete_indexed_candidate(
     .unwrap()
 }
 
-#[test]
-#[allow(
-    clippy::too_many_lines,
-    reason = "the completion-order matrix is intentionally kept in one test"
-)]
-fn four_jobs_fill_four_independent_worker_chains_in_every_completion_order() {
+#[rstest::rstest]
+#[case::workers_0_1_2_3([0, 1, 2, 3])]
+#[case::workers_0_1_3_2([0, 1, 3, 2])]
+#[case::workers_0_2_1_3([0, 2, 1, 3])]
+#[case::workers_0_2_3_1([0, 2, 3, 1])]
+#[case::workers_0_3_1_2([0, 3, 1, 2])]
+#[case::workers_0_3_2_1([0, 3, 2, 1])]
+#[case::workers_1_0_2_3([1, 0, 2, 3])]
+#[case::workers_1_0_3_2([1, 0, 3, 2])]
+#[case::workers_1_2_0_3([1, 2, 0, 3])]
+#[case::workers_1_2_3_0([1, 2, 3, 0])]
+#[case::workers_1_3_0_2([1, 3, 0, 2])]
+#[case::workers_1_3_2_0([1, 3, 2, 0])]
+#[case::workers_2_0_1_3([2, 0, 1, 3])]
+#[case::workers_2_0_3_1([2, 0, 3, 1])]
+#[case::workers_2_1_0_3([2, 1, 0, 3])]
+#[case::workers_2_1_3_0([2, 1, 3, 0])]
+#[case::workers_2_3_0_1([2, 3, 0, 1])]
+#[case::workers_2_3_1_0([2, 3, 1, 0])]
+#[case::workers_3_0_1_2([3, 0, 1, 2])]
+#[case::workers_3_0_2_1([3, 0, 2, 1])]
+#[case::workers_3_1_0_2([3, 1, 0, 2])]
+#[case::workers_3_1_2_0([3, 1, 2, 0])]
+#[case::workers_3_2_0_1([3, 2, 0, 1])]
+#[case::workers_3_2_1_0([3, 2, 1, 0])]
+fn four_jobs_fill_four_independent_worker_chains_in_every_completion_order(
+    #[case] order: [u32; 4],
+) {
     let mut raw = fixture_raw_config();
     raw.limits.jobs = 4;
     raw.limits.max_processes = 1;
@@ -2166,6 +2239,7 @@ fn four_jobs_fill_four_independent_worker_chains_in_every_completion_order() {
         let RunEffect::RunMutant(process) = process else {
             unreachable!()
         };
+
         assert_eq!(process.context.worker, worker);
         assert_eq!(process.limits.max_processes, 1);
         running_workers.insert(worker);
@@ -2182,51 +2256,40 @@ fn four_jobs_fill_four_independent_worker_chains_in_every_completion_order() {
         ("m3".to_owned(), MutationStatus::Killed),
         ("m4".to_owned(), MutationStatus::Killed),
     ];
-    let mut tested_orders = 0;
-    let completion_orders = (0..4)
-        .flat_map(|first| {
-            (0..4).flat_map(move |second| {
-                (0..4)
-                    .flat_map(move |third| (0..4).map(move |fourth| [first, second, third, fourth]))
-            })
-        })
-        .filter(|order| order.iter().copied().collect::<BTreeSet<_>>().len() == 4);
-    for order in completion_orders {
-        tested_orders += 1;
-        let mut state = base_state.clone();
-        let mut completion_sequences = Vec::new();
-        let mut finished_candidates = Vec::new();
-        for worker in order {
-            let mut finished = process_finished(running_ids[&worker], ProcessTermination::Exit(1));
-            finished.worker = Some(worker);
-            let (next, produced) = transition(state, RunEvent::MutantFinished(finished)).unwrap();
-            state = next;
-            let output = find_effect(
-                &produced,
-                |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::MutantFinished(_))),
-            );
-            let RunEffect::EmitOutput(output) = output else {
-                unreachable!()
-            };
-            let OutputEvent::MutantFinished(finished) = &output.event else {
-                unreachable!()
-            };
-            assert_eq!(finished.candidate.sequence, u64::from(worker) + 1);
-            assert_eq!(finished.candidate.id, format!("m{}", worker + 1));
-            completion_sequences.push(finished.sequence);
-            finished_candidates.push((finished.candidate.id.clone(), finished.outcome.status()));
-        }
-        assert!(
-            completion_sequences
-                .windows(2)
-                .all(|pair| pair[0] < pair[1]),
-            "non-monotonic output sequence for completion order {order:?}"
+    let mut state = base_state;
+    let mut completion_sequences = Vec::new();
+    let mut finished_candidates = Vec::new();
+    for worker in order {
+        let mut finished = process_finished(running_ids[&worker], ProcessTermination::Exit(1));
+        finished.worker = Some(worker);
+        let (next, produced) = transition(state, RunEvent::MutantFinished(finished)).unwrap();
+        state = next;
+
+        let output = find_effect(
+            &produced,
+            |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::MutantFinished(_))),
         );
-        finished_candidates.sort_by(|left, right| left.0.cmp(&right.0));
-        assert_eq!(finished_candidates, expected_candidates);
-        assert_eq!(state.summary().killed, 4);
+        let RunEffect::EmitOutput(output) = output else {
+            unreachable!()
+        };
+        let OutputEvent::MutantFinished(finished) = &output.event else {
+            unreachable!()
+        };
+
+        assert_eq!(finished.candidate.sequence, u64::from(worker) + 1);
+        assert_eq!(finished.candidate.id, format!("m{}", worker + 1));
+        completion_sequences.push(finished.sequence);
+        finished_candidates.push((finished.candidate.id.clone(), finished.outcome.status()));
     }
-    assert_eq!(tested_orders, 24);
+    assert!(
+        completion_sequences
+            .windows(2)
+            .all(|pair| pair[0] < pair[1]),
+        "non-monotonic output sequence for completion order {order:?}"
+    );
+    finished_candidates.sort_by(|left, right| left.0.cmp(&right.0));
+    assert_eq!(finished_candidates, expected_candidates);
+    assert_eq!(state.summary().killed, 4);
 }
 
 #[test]
@@ -2313,6 +2376,7 @@ fn cleanup_failure_terminates_without_reemitting_cleanup() {
     let OutputEvent::RunFinished(summary) = &report.event else {
         unreachable!()
     };
+
     assert_eq!(summary.exit_code, 2);
     assert!(!summary.complete);
     assert_eq!(state.phase(), RunPhase::Finalize);
@@ -2324,8 +2388,13 @@ fn cleanup_failure_terminates_without_reemitting_cleanup() {
     );
 }
 
-#[test]
-fn cleanup_rejects_mismatched_reservations_without_consuming_the_pending_effect() {
+#[rstest::rstest]
+#[case::vec_new_1(0)]
+#[case::vec_reservation_reservation_2(1)]
+#[case::vec_reservation_reservationid_reservation_0_100_3(2)]
+fn cleanup_rejects_mismatched_reservations_without_consuming_the_pending_effect(
+    #[case] scenario_index: usize,
+) {
     let (state, cleanup) = waiting_for_cleanup();
     let expected = cleanup.reservations.clone();
     let reservation = expected[0];
@@ -2335,42 +2404,43 @@ fn cleanup_rejects_mismatched_reservations_without_consuming_the_pending_effect(
         vec![reservation, ReservationId(reservation.0 + 100)],
     ];
 
-    for received in mismatches {
-        let error = transition(
-            state.clone(),
-            RunEvent::CleanupFinished(CleanupFinished {
-                id: cleanup.id,
-                released_reservations: received.clone(),
-            }),
-        )
-        .unwrap_err();
-        assert_eq!(error.code(), "machine.cleanup.reservation_mismatch");
-        assert!(matches!(
-            error,
-            MachineError::CleanupReservationMismatch {
-                id,
-                expected: ref actual_expected,
-                received: ref actual_received,
-            } if id == cleanup.id
-                && actual_expected == &expected
-                && actual_received == &received
-        ));
+    let received = mismatches.into_iter().nth(scenario_index).unwrap();
 
-        let (retried, effects) = transition(
-            state.clone(),
-            RunEvent::CleanupFinished(CleanupFinished {
-                id: cleanup.id,
-                released_reservations: expected.clone(),
-            }),
-        )
-        .unwrap();
-        assert_ne!(retried.phase(), RunPhase::Cleaning);
-        assert!(
-            !effects
-                .iter()
-                .any(|effect| matches!(effect, RunEffect::Cleanup(_)))
-        );
-    }
+    let error = transition(
+        state.clone(),
+        RunEvent::CleanupFinished(CleanupFinished {
+            id: cleanup.id,
+            released_reservations: received.clone(),
+        }),
+    )
+    .unwrap_err();
+
+    assert_eq!(error.code(), "machine.cleanup.reservation_mismatch");
+    assert!(matches!(
+        error,
+        MachineError::CleanupReservationMismatch {
+            id,
+            expected: ref actual_expected,
+            received: ref actual_received,
+        } if id == cleanup.id
+            && actual_expected == &expected
+            && actual_received == &received
+    ));
+
+    let (retried, effects) = transition(
+        state.clone(),
+        RunEvent::CleanupFinished(CleanupFinished {
+            id: cleanup.id,
+            released_reservations: expected.clone(),
+        }),
+    )
+    .unwrap();
+    assert_ne!(retried.phase(), RunPhase::Cleaning);
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::Cleanup(_)))
+    );
 }
 
 #[test]
@@ -2639,8 +2709,15 @@ proptest! {
             if begin.fingerprint == expected));
     }
 
-    #[test]
-    fn resume_fresh_fallback_preserves_preflight_fingerprint(bytes in any::<[u8; 32]>()) {
+
+}
+
+macro_rules! resume_fresh_fallback_preserves_preflight_fingerprint_case {
+    ($name:ident, $index:expr) => {
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(64))]
+            #[test]
+            fn $name(bytes in any::<[u8; 32]>()) {
         use hoimin_core::ResumeFreshReason;
         let reasons = [
             ("no prior run", ResumeFreshReason::NoPriorRun),
@@ -2650,48 +2727,77 @@ proptest! {
             ("no incomplete run", ResumeFreshReason::NoIncompleteRun),
             ("candidate changed", ResumeFreshReason::CandidateChanged),
         ];
-        for (case, reason) in reasons {
-            // Arrange: preflight evidence must survive both session requests.
-            let (state, mut preflight) = pending_preflight_with(fixture_session_config(true));
-            let expected = RunFingerprint::from_bytes(bytes);
-            preflight.fingerprint = Some(expected);
 
-            // Act: load the saved session, then fall back to a fresh run.
-            let (state, load_effects) =
-                transition(state, RunEvent::PreflightCompleted(preflight)).unwrap();
-            let load_id = effect_id(find_effect(&load_effects, |effect| {
-                matches!(effect, RunEffect::LoadSession(_))
-            }));
-            let (_, begin_effects) = transition(state, RunEvent::SessionLoaded(SessionLoaded {
-                id: load_id,
-                outcome: SessionLoadOutcome::Fresh(reason),
-            })).unwrap();
+        let (case, reason) = reasons.into_iter().nth($index).unwrap();
 
-            // Assert: both requests carry the same original preflight evidence.
-            prop_assert!(matches!(&load_effects[..], [RunEffect::LoadSession(load)]
-                if load.fingerprint == expected), "load: {case}");
-            prop_assert!(matches!(&begin_effects[..], [RunEffect::BeginSession(begin)]
-                if begin.fingerprint == expected), "begin: {case}");
+        // Arrange: preflight evidence must survive both session requests.
+        let (state, mut preflight) = pending_preflight_with(fixture_session_config(true));
+        let expected = RunFingerprint::from_bytes(bytes);
+        preflight.fingerprint = Some(expected);
+
+        // Act: load the saved session, then fall back to a fresh run.
+        let (state, load_effects) =
+            transition(state, RunEvent::PreflightCompleted(preflight)).unwrap();
+        let load_id = effect_id(find_effect(&load_effects, |effect| {
+            matches!(effect, RunEffect::LoadSession(_))
+        }));
+        let (_, begin_effects) = transition(state, RunEvent::SessionLoaded(SessionLoaded {
+            id: load_id,
+            outcome: SessionLoadOutcome::Fresh(reason),
+        })).unwrap();
+
+        // Assert: both requests carry the same original preflight evidence.
+        prop_assert!(matches!(&load_effects[..], [RunEffect::LoadSession(load)]
+            if load.fingerprint == expected), "load: {case}");
+        prop_assert!(matches!(&begin_effects[..], [RunEffect::BeginSession(begin)]
+            if begin.fingerprint == expected), "begin: {case}");
+
+            }
         }
-    }
+    };
 }
 
-#[test]
-fn enabled_session_requires_preflight_fingerprint() {
-    for (case, resume) in [("fresh", false), ("resume", true)] {
-        // Arrange: enabled sessions receive no preflight fingerprint.
-        let (state, mut preflight) = pending_preflight_with(fixture_session_config(resume));
-        preflight.fingerprint = None;
+resume_fresh_fallback_preserves_preflight_fingerprint_case!(
+    resume_fresh_fallback_preserves_preflight_fingerprint_no_prior_run,
+    0
+);
+resume_fresh_fallback_preserves_preflight_fingerprint_case!(
+    resume_fresh_fallback_preserves_preflight_fingerprint_matching_complete,
+    1
+);
+resume_fresh_fallback_preserves_preflight_fingerprint_case!(
+    resume_fresh_fallback_preserves_preflight_fingerprint_budget_decreased,
+    2
+);
+resume_fresh_fallback_preserves_preflight_fingerprint_case!(
+    resume_fresh_fallback_preserves_preflight_fingerprint_fingerprint_mismatch,
+    3
+);
+resume_fresh_fallback_preserves_preflight_fingerprint_case!(
+    resume_fresh_fallback_preserves_preflight_fingerprint_no_incomplete_run,
+    4
+);
+resume_fresh_fallback_preserves_preflight_fingerprint_case!(
+    resume_fresh_fallback_preserves_preflight_fingerprint_candidate_changed,
+    5
+);
 
-        // Act: finish preflight without required session evidence.
-        let result = transition(state, RunEvent::PreflightCompleted(preflight));
+#[rstest::rstest]
+#[case::fresh("fresh", false)]
+#[case::resume("resume", true)]
+fn enabled_session_requires_preflight_fingerprint(#[case] case: &str, #[case] resume: bool) {
+    // Arrange: enabled sessions receive no preflight fingerprint.
+    let (state, mut preflight) = pending_preflight_with(fixture_session_config(resume));
+    preflight.fingerprint = None;
 
-        // Assert: neither mode silently starts or loads an unidentified run.
-        assert!(
-            matches!(result, Err(MachineError::MissingFingerprint)),
-            "{case}"
-        );
-    }
+    // Act: finish preflight without required session evidence.
+    let result = transition(state, RunEvent::PreflightCompleted(preflight));
+
+    // Assert: neither mode silently starts or loads an unidentified run.
+    assert!(
+        matches!(result, Err(MachineError::MissingFingerprint)),
+        "{case}"
+    );
 }
 
 #[test]
@@ -2722,108 +2828,130 @@ fn disabled_session_progresses_without_preflight_fingerprint() {
     );
 }
 
+fn waiting_for_session_load() -> (RunState, EffectId) {
+    let mut raw = fixture_raw_config();
+    raw.session = Some(hoimin_core::SessionConfig {
+        path: "session.sqlite3".into(),
+    });
+    raw.resume = true;
+    let config = RunConfig::try_from(raw)
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+        .unwrap();
+    let (state, effects) = waiting_for_preflight_with(config);
+    let id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::LoadSession(_))
+    }));
+    (state, id)
+}
+
 #[test]
-fn session_load_outcomes_preserve_reasons_ids_and_completion_validation() {
-    use hoimin_core::{ResumeFreshReason, ResumeOutcome};
-    let fresh_reasons = [
-        ResumeFreshReason::NoPriorRun,
-        ResumeFreshReason::MatchingRunComplete,
-        ResumeFreshReason::BudgetDecreased,
-        ResumeFreshReason::FingerprintMismatch,
-        ResumeFreshReason::NoIncompleteRun,
-        ResumeFreshReason::CandidateChanged,
-    ];
-    let outcomes = fresh_reasons
-        .into_iter()
-        .map(SessionLoadOutcome::Fresh)
-        .chain([SessionLoadOutcome::Resumed(SessionResumeRef {
+fn session_load_rejects_unknown_effect_ids() {
+    let (state, _) = waiting_for_session_load();
+    let completion = SessionLoaded {
+        id: EffectId(999),
+        outcome: SessionLoadOutcome::Fresh(hoimin_core::ResumeFreshReason::NoPriorRun),
+    };
+
+    let error = transition(state, RunEvent::SessionLoaded(completion)).unwrap_err();
+
+    assert_eq!(error.code(), "machine.effect.unknown");
+}
+
+#[test]
+fn session_load_rejects_wrong_completion_kinds() {
+    let (state, id) = waiting_for_session_load();
+
+    let error = transition(state, RunEvent::OutputEmitted(OutputEmitted { id })).unwrap_err();
+
+    assert_eq!(error.code(), "machine.effect.wrong_completion");
+}
+
+#[rstest::rstest]
+#[case::no_prior_run(hoimin_core::ResumeFreshReason::NoPriorRun)]
+#[case::matching_run_complete(hoimin_core::ResumeFreshReason::MatchingRunComplete)]
+#[case::budget_decreased(hoimin_core::ResumeFreshReason::BudgetDecreased)]
+#[case::fingerprint_mismatch(hoimin_core::ResumeFreshReason::FingerprintMismatch)]
+#[case::no_incomplete_run(hoimin_core::ResumeFreshReason::NoIncompleteRun)]
+#[case::candidate_changed(hoimin_core::ResumeFreshReason::CandidateChanged)]
+fn fresh_session_load_preserves_reason_and_completion_identity(
+    #[case] reason: hoimin_core::ResumeFreshReason,
+) {
+    let (state, id) = waiting_for_session_load();
+    let completion = SessionLoaded {
+        id,
+        outcome: SessionLoadOutcome::Fresh(reason),
+    };
+
+    let (state, effects) = transition(state, RunEvent::SessionLoaded(completion.clone())).unwrap();
+    let duplicate = transition(state.clone(), RunEvent::SessionLoaded(completion)).unwrap_err();
+    let RunEffect::BeginSession(begin) = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::BeginSession(_))
+    }) else {
+        panic!("expected fresh session request")
+    };
+    let (state, started_effects) = transition(
+        state.clone(),
+        RunEvent::SessionStarted(SessionStarted {
+            id: begin.id,
+            run_id: begin.run_id.clone(),
+        }),
+    )
+    .unwrap();
+    let RunEffect::EmitOutput(output) = find_effect(&started_effects, |effect| {
+        matches!(effect, RunEffect::EmitOutput(_))
+    }) else {
+        panic!("expected run started output")
+    };
+    let OutputEvent::RunStarted(started) = &output.event else {
+        panic!("expected run started header")
+    };
+
+    assert_eq!(duplicate.code(), "machine.effect.duplicate");
+    assert_eq!(state.run_id(), "run-1");
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::EmitOutput(_)))
+    );
+    assert_eq!(begin.run_id, "run-1");
+    assert_eq!(started.run_id, state.run_id());
+    assert_eq!(
+        started.resume,
+        Some(hoimin_core::ResumeOutcome::Fresh { reason })
+    );
+}
+
+#[test]
+fn resumed_session_load_preserves_run_id_and_completion_identity() {
+    let (state, id) = waiting_for_session_load();
+    let completion = SessionLoaded {
+        id,
+        outcome: SessionLoadOutcome::Resumed(SessionResumeRef {
             run_id: "saved-run".into(),
-        })]);
-    for outcome in outcomes {
-        let mut raw = fixture_raw_config();
-        raw.session = Some(hoimin_core::SessionConfig {
-            path: "session.sqlite3".into(),
-        });
-        raw.resume = true;
-        let config = RunConfig::try_from(raw)
-            .unwrap()
-            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
-            .unwrap();
-        let (state, effects) = waiting_for_preflight_with(config);
-        let id = effect_id(find_effect(&effects, |effect| {
-            matches!(effect, RunEffect::LoadSession(_))
-        }));
-        let completion = SessionLoaded {
-            id,
-            outcome: outcome.clone(),
-        };
-        let mut unknown = completion.clone();
-        unknown.id = EffectId(999);
-        assert_eq!(
-            transition(state.clone(), RunEvent::SessionLoaded(unknown))
-                .unwrap_err()
-                .code(),
-            "machine.effect.unknown"
-        );
-        assert_eq!(
-            transition(state.clone(), RunEvent::OutputEmitted(OutputEmitted { id }))
-                .unwrap_err()
-                .code(),
-            "machine.effect.wrong_completion"
-        );
-        let (state, effects) =
-            transition(state, RunEvent::SessionLoaded(completion.clone())).unwrap();
-        assert_eq!(
-            transition(state.clone(), RunEvent::SessionLoaded(completion))
-                .unwrap_err()
-                .code(),
-            "machine.effect.duplicate"
-        );
-        let (state, effects, expected) = match outcome {
-            SessionLoadOutcome::Fresh(reason) => {
-                assert_eq!(state.run_id(), "run-1");
-                assert!(
-                    !effects
-                        .iter()
-                        .any(|effect| matches!(effect, RunEffect::EmitOutput(_)))
-                );
-                let RunEffect::BeginSession(begin) = find_effect(&effects, |effect| {
-                    matches!(effect, RunEffect::BeginSession(_))
-                }) else {
-                    unreachable!()
-                };
-                assert_eq!(begin.run_id, "run-1");
-                let (state, effects) = transition(
-                    state,
-                    RunEvent::SessionStarted(SessionStarted {
-                        id: begin.id,
-                        run_id: begin.run_id.clone(),
-                    }),
-                )
-                .unwrap();
-                (state, effects, ResumeOutcome::Fresh { reason })
-            }
-            SessionLoadOutcome::Resumed(reference) => {
-                assert_eq!(state.run_id(), reference.run_id);
-                assert!(
-                    !effects
-                        .iter()
-                        .any(|effect| matches!(effect, RunEffect::BeginSession(_)))
-                );
-                (state, effects, ResumeOutcome::Resumed)
-            }
-        };
-        let RunEffect::EmitOutput(output) = find_effect(&effects, |effect| {
-            matches!(effect, RunEffect::EmitOutput(_))
-        }) else {
-            unreachable!()
-        };
-        let OutputEvent::RunStarted(started) = &output.event else {
-            unreachable!()
-        };
-        assert_eq!(started.run_id, state.run_id());
-        assert_eq!(started.resume, Some(expected));
-    }
+        }),
+    };
+
+    let (state, effects) = transition(state, RunEvent::SessionLoaded(completion.clone())).unwrap();
+    let duplicate = transition(state.clone(), RunEvent::SessionLoaded(completion)).unwrap_err();
+    let RunEffect::EmitOutput(output) = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::EmitOutput(_))
+    }) else {
+        panic!("expected run started output")
+    };
+    let OutputEvent::RunStarted(started) = &output.event else {
+        panic!("expected run started header")
+    };
+
+    assert_eq!(duplicate.code(), "machine.effect.duplicate");
+    assert_eq!(state.run_id(), "saved-run");
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::BeginSession(_)))
+    );
+    assert_eq!(started.run_id, state.run_id());
+    assert_eq!(started.resume, Some(hoimin_core::ResumeOutcome::Resumed));
 }
 
 #[test]
@@ -3073,7 +3201,9 @@ fn output_close_timeout_becomes_an_error_and_the_worker_continues() {
     }) else {
         unreachable!()
     };
+
     let result = &persist.result;
+
     assert_eq!(result.candidate, candidate);
     assert_eq!(result.outcome.status(), MutationStatus::Error);
     assert!(matches!(
@@ -3168,6 +3298,7 @@ fn cancellation_during_mutant_execution_still_reports_not_run() {
         RunEvent::MutantFinished(process_finished(run_id, ProcessTermination::Exit(1))),
     )
     .unwrap_err();
+
     assert_eq!(late, MachineError::RetiredEffect(run_id));
     let RunEffect::EmitOutput(finished) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::EmitOutput(value)
@@ -3500,6 +3631,7 @@ fn timeout_marks_the_session_and_final_report_incomplete() {
     let OutputEvent::RunFinished(summary) = &output.event else {
         unreachable!()
     };
+
     assert!(!summary.complete);
     assert_eq!(summary.exit_code, 4);
     assert_eq!(summary.counts.timeout, 1);
@@ -3576,139 +3708,141 @@ fn resumed_determinate_result_is_reused_without_mutant_execution() {
 }
 
 // These cases catch premature accounting, lost reuse status during drain, and replayed ACKs.
-#[test]
-fn synthetic_summary_is_committed_once_by_finished_ack() {
-    for (status, expected) in [
-        (MutationStatus::Killed, (1, 0, 0)),
-        (MutationStatus::Survived, (0, 1, 0)),
-        (MutationStatus::NotRun, (0, 0, 1)),
-    ] {
-        let (state, effects) = waiting_for_synthetic_started(status);
-        assert_eq!(state.summary(), &MutationSummary::default());
+#[rstest::rstest]
+#[case::mutationstatus_killed(MutationStatus::Killed, (1, 0, 0))]
+#[case::mutationstatus_survived(MutationStatus::Survived, (0, 1, 0))]
+#[case::mutationstatus_notrun(MutationStatus::NotRun, (0, 0, 1))]
+fn synthetic_summary_is_committed_once_by_finished_ack(
+    #[case] status: MutationStatus,
+    #[case] expected: (u64, u64, u64),
+) {
+    let (state, effects) = waiting_for_synthetic_started(status);
 
-        let (state, effects) = complete_mutant_started(state, &effects);
-        let finished = synthetic_finished(&effects);
-        assert_eq!(finished.outcome.status(), status);
-        assert_eq!(finished.outcome.elapsed(), Duration::ZERO);
-        assert!(finished.outcome.output().is_none());
-        assert_eq!(state.summary(), &MutationSummary::default());
-        let id = effects[0].id();
-        let (state, _) = transition(state, RunEvent::OutputEmitted(OutputEmitted { id })).unwrap();
+    assert_eq!(state.summary(), &MutationSummary::default());
 
-        assert_eq!(
-            (
-                state.summary().killed,
-                state.summary().survived,
-                state.summary().not_run
-            ),
-            expected
-        );
-        assert_eq!(
-            transition(state, RunEvent::OutputEmitted(OutputEmitted { id })).unwrap_err(),
-            MachineError::DuplicateEffect(id)
-        );
-    }
+    let (state, effects) = complete_mutant_started(state, &effects);
+    let finished = synthetic_finished(&effects);
+    assert_eq!(finished.outcome.status(), status);
+    assert_eq!(finished.outcome.elapsed(), Duration::ZERO);
+    assert!(finished.outcome.output().is_none());
+    assert_eq!(state.summary(), &MutationSummary::default());
+    let id = effects[0].id();
+    let (state, _) = transition(state, RunEvent::OutputEmitted(OutputEmitted { id })).unwrap();
+
+    assert_eq!(
+        (
+            state.summary().killed,
+            state.summary().survived,
+            state.summary().not_run
+        ),
+        expected
+    );
+    assert_eq!(
+        transition(state, RunEvent::OutputEmitted(OutputEmitted { id })).unwrap_err(),
+        MachineError::DuplicateEffect(id)
+    );
 }
 
-#[test]
-fn stopped_reuse_keeps_its_outcome_until_replacement_finished_ack() {
-    for status in [MutationStatus::Killed, MutationStatus::Survived] {
-        for finish_pending in [false, true] {
-            let (mut state, mut effects) = waiting_for_synthetic_started(status);
-            if finish_pending {
-                (state, effects) = complete_mutant_started(state, &effects);
-            }
-            let retired_id = effects[0].id();
+#[rstest::rstest]
+#[case::mutationstatus_killed(MutationStatus::Killed)]
+#[case::mutationstatus_survived(MutationStatus::Survived)]
+fn stopped_reuse_keeps_its_outcome_until_replacement_finished_ack(
+    #[case] status: MutationStatus,
+    #[values(0, 1)] scenario_index: usize,
+) {
+    let finish_pending = [false, true].into_iter().nth(scenario_index).unwrap();
 
-            let (state, effects) = transition(state, RunEvent::CancellationRequested).unwrap();
-            assert_eq!(state.summary(), &MutationSummary::default());
-            assert_eq!(
-                transition(
-                    state.clone(),
-                    RunEvent::OutputEmitted(OutputEmitted { id: retired_id })
-                )
-                .unwrap_err(),
-                MachineError::RetiredEffect(retired_id)
-            );
-            let (state, effects) = if finish_pending {
-                (state, effects)
-            } else {
-                complete_mutant_started(state, &effects)
-            };
-            assert_eq!(synthetic_finished(&effects).outcome.status(), status);
-            let (state, _) = transition(
-                state,
-                RunEvent::OutputEmitted(OutputEmitted {
-                    id: effects[0].id(),
-                }),
-            )
-            .unwrap();
-
-            assert_eq!(
-                state.summary().killed,
-                u64::from(status == MutationStatus::Killed)
-            );
-            assert_eq!(
-                state.summary().survived,
-                u64::from(status == MutationStatus::Survived)
-            );
-            assert_eq!(state.summary().not_run, 0);
-        }
+    let (mut state, mut effects) = waiting_for_synthetic_started(status);
+    if finish_pending {
+        (state, effects) = complete_mutant_started(state, &effects);
     }
+    let retired_id = effects[0].id();
+
+    let (state, effects) = transition(state, RunEvent::CancellationRequested).unwrap();
+
+    assert_eq!(state.summary(), &MutationSummary::default());
+    assert_eq!(
+        transition(
+            state.clone(),
+            RunEvent::OutputEmitted(OutputEmitted { id: retired_id })
+        )
+        .unwrap_err(),
+        MachineError::RetiredEffect(retired_id)
+    );
+    let (state, effects) = if finish_pending {
+        (state, effects)
+    } else {
+        complete_mutant_started(state, &effects)
+    };
+    assert_eq!(synthetic_finished(&effects).outcome.status(), status);
+    let (state, _) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted {
+            id: effects[0].id(),
+        }),
+    )
+    .unwrap();
+
+    assert_eq!(
+        state.summary().killed,
+        u64::from(status == MutationStatus::Killed)
+    );
+    assert_eq!(
+        state.summary().survived,
+        u64::from(status == MutationStatus::Survived)
+    );
+    assert_eq!(state.summary().not_run, 0);
 }
 
-#[test]
-fn synthetic_output_retry_keeps_outcome_uncommitted_until_finished_ack() {
-    for status in [
-        MutationStatus::Killed,
-        MutationStatus::Survived,
-        MutationStatus::NotRun,
-    ] {
-        for finish_pending in [false, true] {
-            let (mut state, mut effects) = waiting_for_synthetic_started(status);
-            if finish_pending {
-                (state, effects) = complete_mutant_started(state, &effects);
-            }
-            let failed_id = effects[0].id();
+#[rstest::rstest]
+#[case::mutationstatus_killed(MutationStatus::Killed)]
+#[case::mutationstatus_survived(MutationStatus::Survived)]
+#[case::mutationstatus_notrun(MutationStatus::NotRun)]
+fn synthetic_output_retry_keeps_outcome_uncommitted_until_finished_ack(
+    #[case] status: MutationStatus,
+    #[values(0, 1)] scenario_index: usize,
+) {
+    let finish_pending = [false, true].into_iter().nth(scenario_index).unwrap();
 
-            let (state, effects) = transition(
-                state,
-                RunEvent::EffectFailed(EffectFailed::other(
-                    failed_id,
-                    "synthetic.retry",
-                    "fixture",
-                )),
-            )
-            .unwrap();
-            assert_eq!(state.summary(), &MutationSummary::default());
-            let (state, effects) = if finish_pending {
-                (state, effects)
-            } else {
-                complete_mutant_started(state, &effects)
-            };
-            assert_eq!(synthetic_finished(&effects).outcome.status(), status);
-            let (state, _) = transition(
-                state,
-                RunEvent::OutputEmitted(OutputEmitted {
-                    id: effects[0].id(),
-                }),
-            )
-            .unwrap();
-
-            assert_eq!(
-                state.summary().killed,
-                u64::from(status == MutationStatus::Killed)
-            );
-            assert_eq!(
-                state.summary().survived,
-                u64::from(status == MutationStatus::Survived)
-            );
-            assert_eq!(
-                state.summary().not_run,
-                u64::from(status == MutationStatus::NotRun)
-            );
-        }
+    let (mut state, mut effects) = waiting_for_synthetic_started(status);
+    if finish_pending {
+        (state, effects) = complete_mutant_started(state, &effects);
     }
+    let failed_id = effects[0].id();
+
+    let (state, effects) = transition(
+        state,
+        RunEvent::EffectFailed(EffectFailed::other(failed_id, "synthetic.retry", "fixture")),
+    )
+    .unwrap();
+
+    assert_eq!(state.summary(), &MutationSummary::default());
+    let (state, effects) = if finish_pending {
+        (state, effects)
+    } else {
+        complete_mutant_started(state, &effects)
+    };
+    assert_eq!(synthetic_finished(&effects).outcome.status(), status);
+    let (state, _) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted {
+            id: effects[0].id(),
+        }),
+    )
+    .unwrap();
+
+    assert_eq!(
+        state.summary().killed,
+        u64::from(status == MutationStatus::Killed)
+    );
+    assert_eq!(
+        state.summary().survived,
+        u64::from(status == MutationStatus::Survived)
+    );
+    assert_eq!(
+        state.summary().not_run,
+        u64::from(status == MutationStatus::NotRun)
+    );
 }
 
 fn synthetic_finished(effects: &[RunEffect]) -> &hoimin_core::MutantFinished {
@@ -3839,6 +3973,7 @@ fn session_completion_for_another_mutant_is_rejected() {
     let lookup_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::LookupStoredResult(_))
     }));
+
     let error = transition(
         state,
         RunEvent::StoredResultLoaded(StoredResultLoaded {
@@ -3958,6 +4093,7 @@ fn mutant_process_is_only_scheduled_after_started_output_succeeds() {
     let output_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::EmitOutput(_))
     }));
+
     assert!(
         !effects
             .iter()
@@ -4107,6 +4243,7 @@ fn multiple_target_files_are_analyzed_in_order_before_candidate_replay() {
     }) else {
         unreachable!()
     };
+
     assert_eq!(first.target.path, camino::Utf8PathBuf::from("src/a.py"));
     assert!(!first.final_target);
     let (state, effects) = transition(
@@ -4224,6 +4361,7 @@ fn filtered_analysis_advances_across_nonfinal_targets_before_receiving_a_spool()
     }) else {
         unreachable!()
     };
+
     assert!(!first.final_target);
 
     let (next, effects) = transition(
@@ -4244,59 +4382,63 @@ fn filtered_analysis_advances_across_nonfinal_targets_before_receiving_a_spool()
     )));
 }
 
-#[test]
-fn every_process_termination_is_classified_by_the_machine() {
-    for (termination, expected) in [
-        (ProcessTermination::Exit(0), MutationStatus::Survived),
-        (ProcessTermination::Exit(1), MutationStatus::Killed),
-        (ProcessTermination::Timeout, MutationStatus::Timeout),
-        (ProcessTermination::OutOfMemory, MutationStatus::OutOfMemory),
-        (
-            ProcessTermination::ProcessLimit,
-            MutationStatus::ProcessLimit,
-        ),
-        (ProcessTermination::Cancelled, MutationStatus::NotRun),
-    ] {
-        let (state, effects) = waiting_for_candidate();
-        let read_id = effect_id(find_effect(&effects, |effect| {
-            matches!(effect, RunEffect::ReadCandidate(_))
-        }));
-        let (state, effects) = transition(
-            state,
-            RunEvent::CandidateLoaded(CandidateLoaded {
-                id: read_id,
-                worker: 0,
-                candidate: Some(fixture_candidate(1)),
-            }),
-        )
-        .unwrap();
-        let apply_id = effect_id(find_effect(&effects, |effect| {
-            matches!(effect, RunEffect::ApplyMutation(_))
-        }));
-        let (state, effects) = transition(
-            state,
-            RunEvent::MutationApplied(MutationApplied {
-                id: apply_id,
-                worker: 0,
-            }),
-        )
-        .unwrap();
-        let (state, effects) = complete_mutant_started(state, &effects);
-        let mutant_id = effect_id(find_effect(&effects, |effect| {
-            matches!(effect, RunEffect::RunMutant(_))
-        }));
-        let (_, effects) = transition(
-            state,
-            RunEvent::MutantFinished(process_finished(mutant_id, termination)),
-        )
-        .unwrap();
-        assert!(effects.iter().any(|effect| matches!(
-            effect,
-            RunEffect::EmitOutput(value)
-                if matches!(&value.event, OutputEvent::MutantFinished(value)
-                    if value.outcome.status() == expected)
-        )));
-    }
+#[rstest::rstest]
+#[case::processtermination_exit_0(ProcessTermination::Exit(0), MutationStatus::Survived)]
+#[case::processtermination_exit_1(ProcessTermination::Exit(1), MutationStatus::Killed)]
+#[case::processtermination_timeout(ProcessTermination::Timeout, MutationStatus::Timeout)]
+#[case::processtermination_outofmemory(
+    ProcessTermination::OutOfMemory,
+    MutationStatus::OutOfMemory
+)]
+#[case::processtermination_processlimit(
+    ProcessTermination::ProcessLimit,
+    MutationStatus::ProcessLimit
+)]
+#[case::processtermination_cancelled(ProcessTermination::Cancelled, MutationStatus::NotRun)]
+fn every_process_termination_is_classified_by_the_machine(
+    #[case] termination: ProcessTermination,
+    #[case] expected: MutationStatus,
+) {
+    let (state, effects) = waiting_for_candidate();
+    let read_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read_id,
+            worker: 0,
+            candidate: Some(fixture_candidate(1)),
+        }),
+    )
+    .unwrap();
+    let apply_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ApplyMutation(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::MutationApplied(MutationApplied {
+            id: apply_id,
+            worker: 0,
+        }),
+    )
+    .unwrap();
+    let (state, effects) = complete_mutant_started(state, &effects);
+    let mutant_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::RunMutant(_))
+    }));
+    let (_, effects) = transition(
+        state,
+        RunEvent::MutantFinished(process_finished(mutant_id, termination)),
+    )
+    .unwrap();
+
+    assert!(effects.iter().any(|effect| matches!(
+        effect,
+        RunEffect::EmitOutput(value)
+            if matches!(&value.event, OutputEvent::MutantFinished(value)
+                if value.outcome.status() == expected)
+    )));
 }
 
 #[test]
@@ -4503,6 +4645,7 @@ fn completion_ledger_stays_bounded_across_ten_thousand_mutants() {
         )
         .unwrap();
         state = next;
+
         assert!(state.completion_ledger_entries() <= state.pending_count());
         read_id = effect_id(find_effect(&effects, |effect| {
             matches!(effect, RunEffect::ReadCandidate(_))
@@ -5131,6 +5274,7 @@ fn schedule_action_strategy() -> impl Strategy<Value = ScheduleAction> {
 fn deadline_during_pending_session_finish_does_not_reemit_cleanup_or_run_finished() {
     let mut harness = ScheduleHarness::new(0, 2, ScheduleFilter::All, true, vec![0]);
     harness.complete_until(|effect| matches!(effect, RunEffect::FinishSession(_)));
+
     assert_eq!(
         harness
             .effect_trace
@@ -5181,7 +5325,7 @@ proptest! {
     fn worker_creation_barrier_waits_for_every_completion_order(
         priorities in prop::collection::vec(any::<u8>(), 1..6),
     ) {
-        // Arrange: each generated priority determines a real worker completion order.
+        // each generated priority determines a real worker completion order.
         let mut raw = fixture_raw_config();
         raw.limits.jobs = priorities.len();
         let config = RunConfig::try_from(raw).unwrap()
@@ -5192,6 +5336,7 @@ proptest! {
             RunEffect::CreateWorker(value) => Some((value.id(), value.worker(), value.reservation_id())),
             _ => None,
         }).collect();
+
         prop_assert_eq!(creates.len(), priorities.len());
         let mut order: Vec<_> = (0..priorities.len()).collect();
         order.sort_by_key(|index| priorities[*index]);
@@ -5271,6 +5416,7 @@ proptest! {
             vec![completion_class],
         );
         harness.complete_until_with_limit(|effect| matches!(effect, RunEffect::PersistResult(_)), 32);
+
         assert!(harness.pending.iter().any(|effect| matches!(effect, RunEffect::PersistResult(_))));
         // pins: issue #113
         harness.finish(&[ScheduleAction::Cancel]);
@@ -5326,30 +5472,35 @@ fn reported_candidate_ids(harness: &ScheduleHarness) -> Vec<String> {
         .collect()
 }
 
-#[test]
-fn ordered_collection_stop_reports_discovered_boundary_prefix() {
-    for (discovered, expected) in [(0, vec![]), (1, vec!["m1"]), (3, vec!["m3", "m2", "m1"])] {
-        let (harness, _) = ordered_collection_with_pending_read(3, discovered, 3);
+#[rstest::rstest]
+#[case::value_0(0, vec![])]
+#[case::value_1(1, vec!["m1"])]
+#[case::value_3(3, vec!["m3", "m2", "m1"])]
+fn ordered_collection_stop_reports_discovered_boundary_prefix(
+    #[case] discovered: usize,
+    #[case] expected: Vec<&str>,
+) {
+    let (harness, _) = ordered_collection_with_pending_read(3, discovered, 3);
 
-        let finished = harness.finish(&[ScheduleAction::Cancel]);
+    let finished = harness.finish(&[ScheduleAction::Cancel]);
 
-        assert_eq!(reported_candidate_ids(&finished), expected);
-        assert_eq!(finished.state.summary().not_run, discovered as u64);
-        assert_eq!(finished.apply_mutation_count, 0);
-    }
+    assert_eq!(reported_candidate_ids(&finished), expected);
+    assert_eq!(finished.state.summary().not_run, discovered as u64);
+    assert_eq!(finished.apply_mutation_count, 0);
 }
 
 #[test]
 fn ordered_discovery_failure_after_all_selected_ids_prevents_dispatch() {
-    // Arrange: every selected ID was found, but the next spool read has not completed.
+    // every selected ID was found, but the next spool read has not completed.
     let (mut harness, _) = ordered_collection_with_pending_read(3, 3, 2);
+
     assert_eq!(harness.apply_mutation_count, 0);
 
-    // Act: represent a corrupt trailing record through the real effect-failure boundary.
+    // represent a corrupt trailing record through the real effect-failure boundary.
     harness.fail_where(|effect| matches!(effect, RunEffect::ReadCandidate(_)));
     let finished = harness.finish(&[]);
 
-    // Assert: validation never committed dispatch; accepted IDs are reported in request order.
+    // validation never committed dispatch; accepted IDs are reported in request order.
     assert_eq!(finished.apply_mutation_count, 0);
     assert_eq!(reported_candidate_ids(&finished), ["m3", "m2", "m1"]);
     assert_eq!(finished.state.summary().not_run, 3);
@@ -5580,6 +5731,7 @@ proptest! {
         let stop = stop_cases()[stop_index].0.clone();
 
         harness.stop(stop);
+
         let result = transition(harness.state, late_completion);
 
         prop_assert_eq!(result.unwrap_err(), MachineError::RetiredEffect(read_id));
@@ -6500,84 +6652,91 @@ fn resource_policy_scenarios() -> [ResourcePolicyScenario; 4] {
 }
 
 // Supplied-policy transition tests: these do not claim native OS enforcement.
-#[test]
-fn selected_resource_policy_reaches_headers_and_synthetic_transitions_for_every_selection() {
-    for mode in [ResourceMode::Hard, ResourceMode::BestEffort] {
-        for filter in [
-            ScheduleFilter::All,
-            ScheduleFilter::Explicit,
-            ScheduleFilter::Ordered,
-        ] {
-            for (scenario, apply_scenario, expected_synthetic, synthetic_status) in
-                resource_policy_scenarios()
-            {
-                let policy = hoimin_core::ResourceControl {
-                    mode,
-                    mechanism: format!("supplied_{mode:?}"),
-                };
-                let mut harness = ScheduleHarness::new_with_resource_control(
-                    2,
-                    1,
-                    filter,
-                    true,
-                    vec![0],
-                    None,
-                    policy.clone(),
-                );
-                harness.complete_until(|effect| matches!(effect, RunEffect::LookupStoredResult(_)));
-                apply_scenario(&mut harness);
-                let harness = harness.finish(&[]);
-                let headers: Vec<_> = harness
-                    .output_events
-                    .iter()
-                    .filter_map(|(_, event)| match event {
-                        OutputEvent::RunStarted(value) => Some(value),
-                        _ => None,
-                    })
-                    .collect();
-                assert_eq!(headers.len(), 1);
-                assert_eq!(headers[0].resource_control, policy);
-                let mutants: Vec<_> = harness
-                    .output_events
-                    .iter()
-                    .filter_map(|(_, event)| match event {
-                        OutputEvent::MutantFinished(value) => Some(value),
-                        _ => None,
-                    })
-                    .collect();
-                assert_eq!(mutants.len(), 2, "{scenario}");
-                assert_eq!(
-                    mutants
-                        .iter()
-                        .filter(|v| !matches!(
-                            v.outcome,
-                            hoimin_core::MutationOutcome::Executed { .. }
-                        ))
-                        .count(),
-                    expected_synthetic
-                );
-                for mutant in mutants.iter().filter(|mutant| {
-                    !matches!(
-                        mutant.outcome,
-                        hoimin_core::MutationOutcome::Executed { .. }
-                    )
-                }) {
-                    assert_eq!(mutant.resource_mode, mode, "{scenario}");
-                    assert_eq!(mutant.outcome.elapsed().as_millis(), 0);
-                    assert!(mutant.outcome.output().is_none());
-                    assert_eq!(mutant.outcome.status(), synthetic_status);
-                }
-                for mutant in mutants.iter().filter(|mutant| {
-                    matches!(
-                        mutant.outcome,
-                        hoimin_core::MutationOutcome::Executed { .. }
-                    )
-                }) {
-                    // The harness supplies Hard process observations, even for a BestEffort header.
-                    assert_eq!(mutant.resource_mode, ResourceMode::Hard);
-                }
-            }
-        }
+#[rstest::rstest]
+#[case::resourcemode_hard(ResourceMode::Hard)]
+#[case::resourcemode_besteffort(ResourceMode::BestEffort)]
+fn selected_resource_policy_reaches_headers_and_synthetic_transitions_for_every_selection(
+    #[case] mode: ResourceMode,
+    #[values(0, 1, 2)] scenario_index: usize,
+    #[values(0, 1, 2, 3)] nested_scenario_index: usize,
+) {
+    let filter = [
+        ScheduleFilter::All,
+        ScheduleFilter::Explicit,
+        ScheduleFilter::Ordered,
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
+
+    let (scenario, apply_scenario, expected_synthetic, synthetic_status) =
+        resource_policy_scenarios()
+            .into_iter()
+            .nth(nested_scenario_index)
+            .unwrap();
+
+    let policy = hoimin_core::ResourceControl {
+        mode,
+        mechanism: format!("supplied_{mode:?}"),
+    };
+    let mut harness = ScheduleHarness::new_with_resource_control(
+        2,
+        1,
+        filter,
+        true,
+        vec![0],
+        None,
+        policy.clone(),
+    );
+    harness.complete_until(|effect| matches!(effect, RunEffect::LookupStoredResult(_)));
+    apply_scenario(&mut harness);
+    let harness = harness.finish(&[]);
+    let headers: Vec<_> = harness
+        .output_events
+        .iter()
+        .filter_map(|(_, event)| match event {
+            OutputEvent::RunStarted(value) => Some(value),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(headers.len(), 1);
+    assert_eq!(headers[0].resource_control, policy);
+    let mutants: Vec<_> = harness
+        .output_events
+        .iter()
+        .filter_map(|(_, event)| match event {
+            OutputEvent::MutantFinished(value) => Some(value),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(mutants.len(), 2, "{scenario}");
+    assert_eq!(
+        mutants
+            .iter()
+            .filter(|v| !matches!(v.outcome, hoimin_core::MutationOutcome::Executed { .. }))
+            .count(),
+        expected_synthetic
+    );
+    for mutant in mutants.iter().filter(|mutant| {
+        !matches!(
+            mutant.outcome,
+            hoimin_core::MutationOutcome::Executed { .. }
+        )
+    }) {
+        assert_eq!(mutant.resource_mode, mode, "{scenario}");
+        assert_eq!(mutant.outcome.elapsed().as_millis(), 0);
+        assert!(mutant.outcome.output().is_none());
+        assert_eq!(mutant.outcome.status(), synthetic_status);
+    }
+    for mutant in mutants.iter().filter(|mutant| {
+        matches!(
+            mutant.outcome,
+            hoimin_core::MutationOutcome::Executed { .. }
+        )
+    }) {
+        // The harness supplies Hard process observations, even for a BestEffort header.
+        assert_eq!(mutant.resource_mode, ResourceMode::Hard);
     }
 }
 
@@ -6687,34 +6846,37 @@ fn waiting_for_baseline_restoration_with_jobs(jobs: usize) -> (RunState, Vec<Run
     .unwrap()
 }
 
-#[test]
-fn baseline_restoration_stops_retire_reset_without_dispatch() {
-    for jobs in [1, 3] {
-        for (stop, exit) in stop_cases() {
-            // Arrange.
-            let (state, pending) = waiting_for_baseline_restoration_with_jobs(jobs);
-            let reset_id = find_effect(&pending, |effect| {
-                matches!(effect, RunEffect::ResetWorker(_))
-            })
-            .id();
-            // Act.
-            let (state, effects) = transition(state, stop).unwrap();
-            let late = transition(
-                state.clone(),
-                RunEvent::WorkerReset(WorkerReset {
-                    id: reset_id,
-                    worker: 0,
-                }),
-            );
-            // Assert.
-            assert_eq!(state.exit_code(), exit);
-            assert!(matches!(
-                effects.as_slice(),
-                [RunEffect::VerifyOriginals(_)]
-            ));
-            assert!(matches!(late, Err(MachineError::RetiredEffect(id)) if id == reset_id));
-        }
-    }
+#[rstest::rstest]
+#[case::value_1(1)]
+#[case::value_3(3)]
+fn baseline_restoration_stops_retire_reset_without_dispatch(
+    #[case] jobs: usize,
+    #[values(0, 1, 2)] scenario_index: usize,
+) {
+    let (stop, exit) = stop_cases().into_iter().nth(scenario_index).unwrap();
+
+    // Arrange.
+    let (state, pending) = waiting_for_baseline_restoration_with_jobs(jobs);
+    let reset_id = find_effect(&pending, |effect| {
+        matches!(effect, RunEffect::ResetWorker(_))
+    })
+    .id();
+    // Act.
+    let (state, effects) = transition(state, stop).unwrap();
+    let late = transition(
+        state.clone(),
+        RunEvent::WorkerReset(WorkerReset {
+            id: reset_id,
+            worker: 0,
+        }),
+    );
+    // Assert.
+    assert_eq!(state.exit_code(), exit);
+    assert!(matches!(
+        effects.as_slice(),
+        [RunEffect::VerifyOriginals(_)]
+    ));
+    assert!(matches!(late, Err(MachineError::RetiredEffect(id)) if id == reset_id));
 }
 
 #[test]
@@ -6781,40 +6943,40 @@ fn baseline_restoration_wrong_completion_cannot_release_barrier() {
     );
 }
 
-#[test]
-fn baseline_restoration_failure_retires_sibling_completion() {
-    for fail_reset in [true, false] {
-        // Arrange.
-        let (state, pending) = waiting_for_baseline_restoration_with_jobs(1);
-        let reset_id = find_effect(&pending, |effect| {
-            matches!(effect, RunEffect::ResetWorker(_))
+#[rstest::rstest]
+#[case::enabled(true)]
+#[case::disabled(false)]
+fn baseline_restoration_failure_retires_sibling_completion(#[case] fail_reset: bool) {
+    // Arrange.
+    let (state, pending) = waiting_for_baseline_restoration_with_jobs(1);
+    let reset_id = find_effect(&pending, |effect| {
+        matches!(effect, RunEffect::ResetWorker(_))
+    })
+    .id();
+    let output_id = find_effect(&pending, |effect| {
+        matches!(effect, RunEffect::EmitOutput(_))
+    })
+    .id();
+    let failed_id = if fail_reset { reset_id } else { output_id };
+    // Act.
+    let (state, effects) = transition(
+        state,
+        RunEvent::EffectFailed(EffectFailed::other(failed_id, "fixture.failed", "fixture")),
+    )
+    .unwrap();
+    let sibling = if fail_reset {
+        RunEvent::OutputEmitted(OutputEmitted { id: output_id })
+    } else {
+        RunEvent::WorkerReset(WorkerReset {
+            id: reset_id,
+            worker: 0,
         })
-        .id();
-        let output_id = find_effect(&pending, |effect| {
-            matches!(effect, RunEffect::EmitOutput(_))
-        })
-        .id();
-        let failed_id = if fail_reset { reset_id } else { output_id };
-        // Act.
-        let (state, effects) = transition(
-            state,
-            RunEvent::EffectFailed(EffectFailed::other(failed_id, "fixture.failed", "fixture")),
-        )
-        .unwrap();
-        let sibling = if fail_reset {
-            RunEvent::OutputEmitted(OutputEmitted { id: output_id })
-        } else {
-            RunEvent::WorkerReset(WorkerReset {
-                id: reset_id,
-                worker: 0,
-            })
-        };
-        let late = transition(state.clone(), sibling);
-        // Assert.
-        assert_eq!(state.exit_code(), 2);
-        assert!(matches!(effects.as_slice(), [RunEffect::EmitOutput(_)]));
-        assert!(matches!(late, Err(MachineError::RetiredEffect(_))));
-    }
+    };
+    let late = transition(state.clone(), sibling);
+    // Assert.
+    assert_eq!(state.exit_code(), 2);
+    assert!(matches!(effects.as_slice(), [RunEffect::EmitOutput(_)]));
+    assert!(matches!(late, Err(MachineError::RetiredEffect(_))));
 }
 
 proptest! {
@@ -6825,13 +6987,14 @@ proptest! {
         output_first in any::<bool>(),
         stop_indices in prop::collection::vec(0usize..3, 1..8),
     ) {
-        // Arrange.
+
         let (mut state, pending) = waiting_for_baseline_restoration_with_jobs(jobs);
         let reset_id = find_effect(&pending, |effect| matches!(effect, RunEffect::ResetWorker(_))).id();
         let output_id = find_effect(&pending, |effect| matches!(effect, RunEffect::EmitOutput(_))).id();
-        // Act.
+
         if output_first {
             let (next, effects) = transition(state, RunEvent::OutputEmitted(OutputEmitted { id: output_id })).unwrap();
+
             prop_assert!(effects.is_empty());
             state = next;
         }
@@ -6842,7 +7005,7 @@ proptest! {
             emitted.extend(effects);
         }
         let late = transition(state, RunEvent::WorkerReset(WorkerReset { id: reset_id, worker: 0 }));
-        // Assert.
+
         prop_assert!(matches!(late, Err(MachineError::RetiredEffect(id)) if id == reset_id));
         prop_assert!(!emitted.iter().any(|effect| matches!(effect, RunEffect::AnalyzeFile(_) | RunEffect::ObserveRemainingBudget(_) | RunEffect::ApplyMutation(_) | RunEffect::RunMutant(_))));
     }
@@ -6850,10 +7013,10 @@ proptest! {
 
 #[test]
 fn baseline_restoration_precedes_empty_analysis_finalization() {
-    // Arrange.
     let (state, pending) = waiting_for_baseline_restoration_with_jobs(2);
+
     assert_eq!(state.phase(), RunPhase::BaselineRestoration);
-    // Act.
+
     let (state, analysis) = complete_baseline_restoration(state, &pending);
     let id = find_effect(&analysis, |effect| {
         matches!(effect, RunEffect::AnalyzeFile(_))
@@ -6869,7 +7032,7 @@ fn baseline_restoration_precedes_empty_analysis_finalization() {
         }),
     )
     .unwrap();
-    // Assert.
+
     assert_eq!(state.phase(), RunPhase::Finalize);
     assert!(matches!(
         effects.as_slice(),
@@ -6961,14 +7124,13 @@ completed_selection_provenance!(
 
 #[test]
 fn explicit_streaming_ignores_a_repeated_discovered_id() {
-    // Arrange: the same spool ID appears after both unique selected candidates.
+    // the same spool ID appears after both unique selected candidates.
     let mut harness = ScheduleHarness::new(2, 1, ScheduleFilter::Explicit, false, vec![0]);
     harness.candidates.push(harness.candidates[0].clone());
 
-    // Act.
     let harness = harness.finish(&[]);
 
-    // Assert: matched history prevents duplicate execution and duplicate counts.
+    // matched history prevents duplicate execution and duplicate counts.
     let ids: Vec<_> = harness
         .output_events
         .iter()
@@ -6977,6 +7139,7 @@ fn explicit_streaming_ignores_a_repeated_discovered_id() {
             _ => None,
         })
         .collect();
+
     assert_eq!(ids, ["m1", "m2"]);
     assert_eq!(harness.state.summary().killed, 2);
 }

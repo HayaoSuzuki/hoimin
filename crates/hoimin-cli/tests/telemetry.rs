@@ -38,11 +38,11 @@ fn redirected_plan_stays_machine_readable_without_logging() {
     assert!(output.stderr.is_empty(), "{output:?}");
 }
 
-#[test]
-fn debug_logs_are_opt_in_json_records_on_stderr() {
-    for filter in ["debug", "hoimin_cli=debug"] {
-        assert_debug_plan_logs(filter);
-    }
+#[rstest::rstest]
+#[case::debug_1("debug")]
+#[case::hoimin_cli_debug_2("hoimin_cli=debug")]
+fn debug_logs_are_opt_in_json_records_on_stderr(#[case] filter: &str) {
+    assert_debug_plan_logs(filter);
 }
 
 fn assert_debug_plan_logs(filter: &str) {
@@ -94,14 +94,17 @@ fn removed_span_filters_do_not_enable_diagnostics() {
     assert!(output.stderr.is_empty(), "{output:?}");
 }
 
-#[test]
-fn disabled_or_invalid_filter_does_not_change_command_result() {
-    for filter in ["", "off", "hoimin_cli=warn", "hoimin_cli=invalid-level"] {
-        let output = plan(Some(filter));
-        assert!(output.status.success(), "{filter}: {output:?}");
-        jsonl_report::from_slice::<serde_json::Value>(&output.stdout).unwrap();
-        assert!(output.stderr.is_empty(), "{filter}: {output:?}");
-    }
+#[rstest::rstest]
+#[case::input_1("")]
+#[case::off_2("off")]
+#[case::hoimin_cli_warn_3("hoimin_cli=warn")]
+#[case::hoimin_cli_invalid_level_4("hoimin_cli=invalid-level")]
+fn disabled_or_invalid_filter_does_not_change_command_result(#[case] filter: &str) {
+    let output = plan(Some(filter));
+
+    assert!(output.status.success(), "{filter}: {output:?}");
+    jsonl_report::from_slice::<serde_json::Value>(&output.stdout).unwrap();
+    assert!(output.stderr.is_empty(), "{filter}: {output:?}");
 }
 
 async fn logged_session_run(

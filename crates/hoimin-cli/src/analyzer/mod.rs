@@ -1047,6 +1047,7 @@ mod tests {
 
         let mut stale_original = analyzer_candidate();
         stale_original.original = ">=".into();
+
         let error = mutation_candidate(
             EffectId(0),
             &context,
@@ -1054,6 +1055,7 @@ mod tests {
             1,
         )
         .unwrap_err();
+
         assert_eq!(error.failure.code(), "analyzer.candidate");
         assert_eq!(
             error.failure.message(),
@@ -1062,6 +1064,7 @@ mod tests {
 
         let mut stale_location = analyzer_candidate();
         stale_location.column = 5;
+
         let error = mutation_candidate(
             EffectId(0),
             &context,
@@ -1069,6 +1072,7 @@ mod tests {
             1,
         )
         .unwrap_err();
+
         assert_eq!(error.failure.code(), "analyzer.candidate");
         assert_eq!(
             error.failure.message(),
@@ -1314,6 +1318,7 @@ mod tests {
                 .send(())
                 .expect("occupied blocking worker still waits for release");
             blocker.await.expect("blocking worker must not panic");
+
             assert!(
                 !expired_while_queued,
                 "controlled deadline expired before the blocking worker entered"
@@ -1325,11 +1330,13 @@ mod tests {
             .await
             .expect("controlled discovery must enter after the blocking worker is released")
             .expect("controlled discovery ended before entry");
+
             let error = tokio::time::timeout(Duration::from_millis(200), operation)
                 .await
                 .expect("entry-armed deadline must expire without awaiting release")
                 .unwrap()
                 .unwrap_err();
+
             assert_eq!(error.failure.code(), "analyzer.timeout");
             release_tx
                 .send(())
@@ -1337,8 +1344,12 @@ mod tests {
         });
     }
 
-    #[test]
-    fn maps_every_analyzer_diagnostic_to_a_stable_run_diagnostic() {
+    #[rstest::rstest]
+    #[case::analyzerdiagnostic_code_analyzerdiagnosticcode_unsupportedenumdef_1(0)]
+    #[case::analyzerdiagnostic_code_analyzerdiagnosticcode_unsupportedexcepti_2(1)]
+    #[case::analyzerdiagnostic_code_analyzerdiagnosticcode_invalidsyntax_path_3(2)]
+    #[case::analyzerdiagnostic_code_analyzerdiagnosticcode_candidatelimitexce_4(3)]
+    fn maps_every_analyzer_diagnostic_to_a_stable_run_diagnostic(#[case] scenario_index: usize) {
         let cases = [
             (
                 AnalyzerDiagnostic {
@@ -1386,16 +1397,21 @@ mod tests {
             ),
         ];
 
-        for (diagnostic, expected_code, expected_message) in cases {
-            let mapped = map_analyzer_diagnostic(diagnostic);
+        let (diagnostic, expected_code, expected_message) =
+            cases.into_iter().nth(scenario_index).unwrap();
 
-            assert_eq!(mapped.code, expected_code);
-            assert_eq!(mapped.message, expected_message);
-        }
+        let mapped = map_analyzer_diagnostic(diagnostic);
+
+        assert_eq!(mapped.code, expected_code);
+        assert_eq!(mapped.message, expected_message);
     }
 
-    #[test]
-    fn analyzer_diagnostic_preserves_custom_message_with_or_without_location() {
+    #[rstest::rstest]
+    #[case::none_1(0)]
+    #[case::some_src_calc_py_into_2(1)]
+    fn analyzer_diagnostic_preserves_custom_message_with_or_without_location(
+        #[case] scenario_index: usize,
+    ) {
         let cases = [
             (None, None, None, "custom explanation"),
             (
@@ -1405,19 +1421,20 @@ mod tests {
                 "src/calc.py:7:12: custom explanation",
             ),
         ];
-        for (path, line, column, expected_message) in cases {
-            let diagnostic = AnalyzerDiagnostic {
-                code: AnalyzerDiagnosticCode::InvalidSyntax,
-                path,
-                line,
-                column,
-                message: Some("custom explanation".to_owned()),
-            };
 
-            let mapped = map_analyzer_diagnostic(diagnostic);
+        let (path, line, column, expected_message) = cases.into_iter().nth(scenario_index).unwrap();
 
-            assert_eq!(mapped.message, expected_message);
-        }
+        let diagnostic = AnalyzerDiagnostic {
+            code: AnalyzerDiagnosticCode::InvalidSyntax,
+            path,
+            line,
+            column,
+            message: Some("custom explanation".to_owned()),
+        };
+
+        let mapped = map_analyzer_diagnostic(diagnostic);
+
+        assert_eq!(mapped.message, expected_message);
     }
 
     #[tokio::test]
@@ -1625,6 +1642,7 @@ mod exception_fingerprint_tests {
         ])
         .unwrap();
         let prepared = crate::shell::prepare_run_config(config.clone()).unwrap();
+
         assert_eq!(prepared.fingerprint_inputs.len(), 2);
         std::fs::write(
             dir.path().join("new_errors.py"),

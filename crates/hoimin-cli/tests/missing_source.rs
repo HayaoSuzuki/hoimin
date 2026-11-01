@@ -122,51 +122,59 @@ fn assert_missing(output: &Output, path: &str) {
     );
 }
 
+#[rstest::rstest]
+#[case::run_1_source_1("run", vec!["--source", "srrc"])]
+#[case::run_1_source_2("run", vec!["--source", "src", "--source", "srrc"])]
+#[case::run_1_source_3("run", vec!["--source", "srrc", "--changed"])]
+#[case::plan_2_source_1("plan", vec!["--source", "srrc"])]
+#[case::plan_2_source_2("plan", vec!["--source", "src", "--source", "srrc"])]
+#[case::plan_2_source_3("plan", vec!["--source", "srrc", "--changed"])]
 #[tokio::test]
-async fn missing_sources_are_rejected_before_baseline_even_when_mixed_or_changed_clean() {
-    for command in ["run", "plan"] {
-        for selectors in [
-            vec!["--source", "srrc"],
-            vec!["--source", "src", "--source", "srrc"],
-            vec!["--source", "srrc", "--changed"],
-        ] {
-            let project = Project::new();
-            let output = project.select(command, &selectors).await;
-            assert_missing(&output, "srrc");
-            assert!(!project.evidence.path().join("baseline").exists());
-        }
-    }
+async fn missing_sources_are_rejected_before_baseline_even_when_mixed_or_changed_clean(
+    #[case] command: &str,
+    #[case] selectors: Vec<&str>,
+) {
+    let project = Project::new();
+
+    let output = project.select(command, &selectors).await;
+    assert_missing(&output, "srrc");
+
+    assert!(!project.evidence.path().join("baseline").exists());
 }
 
+#[rstest::rstest]
+#[case::run_1_source_1("run", "mutants", true, vec!["--source", "empty"])]
+#[case::run_1_source_2("run", "mutants", true, vec!["--source", "src", "--changed"])]
+#[case::run_1_source_3("run", "mutants", true, vec!["--source", "src", "--exclude", "src"])]
+#[case::plan_2_source_1("plan", "candidates", false, vec!["--source", "empty"])]
+#[case::plan_2_source_2("plan", "candidates", false, vec!["--source", "src", "--changed"])]
+#[case::plan_2_source_3("plan", "candidates", false, vec!["--source", "src", "--exclude", "src"])]
 #[tokio::test]
-async fn legitimate_empty_sources_still_succeed() {
-    for (command, result_field, baseline_exists) in
-        [("run", "mutants", true), ("plan", "candidates", false)]
-    {
-        for selectors in [
-            vec!["--source", "empty"],
-            vec!["--source", "src", "--changed"],
-            vec!["--source", "src", "--exclude", "src"],
-        ] {
-            let project = Project::new();
-            let output = project.select(command, &selectors).await;
-            assert!(
-                output.status.success(),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            let value: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
-            assert!(
-                value[result_field].as_array().unwrap().is_empty(),
-                "unexpected {result_field}: {}",
-                value[result_field]
-            );
-            assert_eq!(
-                project.evidence.path().join("baseline").exists(),
-                baseline_exists
-            );
-        }
-    }
+async fn legitimate_empty_sources_still_succeed(
+    #[case] command: &str,
+    #[case] result_field: &str,
+    #[case] baseline_exists: bool,
+    #[case] selectors: Vec<&str>,
+) {
+    let project = Project::new();
+
+    let output = project.select(command, &selectors).await;
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
+    assert!(
+        value[result_field].as_array().unwrap().is_empty(),
+        "unexpected {result_field}: {}",
+        value[result_field]
+    );
+    assert_eq!(
+        project.evidence.path().join("baseline").exists(),
+        baseline_exists
+    );
 }
 
 #[tokio::test]

@@ -6,7 +6,7 @@ use hoimin_core::{
     ByteSpan, CandidateDescriptor, MutationCandidate, TargetSlice, validate_candidate,
 };
 
-use super::{PlanError, ValidationStats, validate_requested_descriptors};
+use super::{PlanError, RecordMismatch, ValidationStats, validate_requested_descriptors};
 
 fn fingerprint_records(entries: &[(&str, &str)]) -> Vec<hoimin_core::FingerprintInputFile> {
     entries
@@ -18,82 +18,107 @@ fn fingerprint_records(entries: &[(&str, &str)]) -> Vec<hoimin_core::Fingerprint
         .collect()
 }
 
-#[test]
-fn stale_record_details_classify_sort_and_escape_both_record_kinds() {
-    let expected = fingerprint_records(&[
+#[rstest::rstest]
+#[case::source(
+    RecordMismatch::Source,
+    "plan.source.changed: planned target source records"
+)]
+#[case::fingerprint(
+    RecordMismatch::FingerprintInput,
+    "plan.fingerprint_input.changed: planned fingerprint input records"
+)]
+fn stale_record_details_classify_sort_and_escape_both_record_kinds(
+    #[case] kind: RecordMismatch,
+    #[case] prefix: &str,
+    #[values(false, true)] reverse: bool,
+) {
+    let mut expected = fingerprint_records(&[
         ("z.py", "old"),
         ("same.py", "same"),
         ("a.py", "old"),
         ("controls\n\r\t\"\\\u{1b}.py", "old"),
     ]);
     let current = fingerprint_records(&[("m.py", "new"), ("same.py", "same"), ("a.py", "new")]);
-    for (kind, prefix) in [
-        (
-            super::RecordMismatch::Source,
-            "plan.source.changed: planned target source records",
-        ),
-        (
-            super::RecordMismatch::FingerprintInput,
-            "plan.fingerprint_input.changed: planned fingerprint input records",
-        ),
-    ] {
-        let error = super::ensure_exact_records(&expected, &current, kind)
-            .unwrap_err()
-            .to_string();
-        assert_eq!(
-            error,
-            format!(
-                "{prefix} do not match the current workspace: modified \"a.py\"; removed \"controls\\n\\r\\t\\\"\\\\\\u{{1b}}.py\"; added \"m.py\"; removed \"z.py\""
-            )
-        );
-        assert_eq!(error.lines().count(), 1);
-        let mut reordered = expected.clone();
-        reordered.reverse();
-        assert_eq!(
-            super::ensure_exact_records(&reordered, &current, kind)
-                .unwrap_err()
-                .to_string(),
-            error
-        );
-        assert!(super::ensure_exact_records(&expected, &reordered, kind).is_ok());
-        assert!(super::ensure_exact_records(&[], &[], kind).is_ok());
-    }
+    let reversed = expected.iter().rev().cloned().collect::<Vec<_>>();
+    expected = [expected, reversed]
+        .into_iter()
+        .nth(usize::from(reverse))
+        .unwrap();
+
+    let error = super::ensure_exact_records(&expected, &current, kind)
+        .unwrap_err()
+        .to_string();
+    assert_eq!(
+        error,
+        format!(
+            "{prefix} do not match the current workspace: modified \"a.py\"; removed \"controls\\n\\r\\t\\\"\\\\\\u{{1b}}.py\"; added \"m.py\"; removed \"z.py\""
+        )
+    );
+    assert_eq!(error.lines().count(), 1);
 }
 
-#[test]
-fn stale_record_details_bound_display_and_count_omitted_paths() {
-    for (count, omitted) in [
-        (1, ""),
-        (10, ""),
-        (11, "; 1 additional paths omitted"),
-        (13, "; 3 additional paths omitted"),
-    ] {
-        let current: Vec<_> = (0..count)
-            .rev()
-            .map(|index| hoimin_core::FingerprintInputFile {
-                path: format!("src/{index:02}.py").into(),
-                hash: "current".into(),
-            })
-            .collect();
-        for (saved, live, label) in [
-            (&[][..], current.as_slice(), "added"),
-            (current.as_slice(), &[][..], "removed"),
-        ] {
-            let error = super::ensure_exact_records(saved, live, super::RecordMismatch::Source)
-                .unwrap_err()
-                .to_string();
-            let displayed = (0..count.min(10))
-                .map(|index| format!("{label} \"src/{index:02}.py\""))
-                .collect::<Vec<_>>()
-                .join("; ");
-            assert_eq!(
-                error,
-                format!(
-                    "plan.source.changed: planned target source records do not match the current workspace: {displayed}{omitted}"
-                )
-            );
-        }
-    }
+#[rstest::rstest]
+fn matching_stale_records_ignore_order(
+    #[values(RecordMismatch::Source, RecordMismatch::FingerprintInput)] kind: RecordMismatch,
+) {
+    let expected = fingerprint_records(&[
+        ("z.py", "old"),
+        ("same.py", "same"),
+        ("a.py", "old"),
+        ("controls\n\r\t\"\\\u{1b}.py", "old"),
+    ]);
+    let reordered = expected.iter().rev().cloned().collect::<Vec<_>>();
+
+    let actual = super::ensure_exact_records(&expected, &reordered, kind);
+
+    assert!(actual.is_ok());
+}
+
+#[rstest::rstest]
+fn empty_stale_records_match(
+    #[values(RecordMismatch::Source, RecordMismatch::FingerprintInput)] kind: RecordMismatch,
+) {
+    let expected = [];
+    let current = [];
+
+    let actual = super::ensure_exact_records(&expected, &current, kind);
+
+    assert!(actual.is_ok());
+}
+
+#[rstest::rstest]
+#[case::input_1(1, "")]
+#[case::input_2(10, "")]
+#[case::input_1_additional_paths_omitted_3(11, "; 1 additional paths omitted")]
+#[case::input_3_additional_paths_omitted_4(13, "; 3 additional paths omitted")]
+fn stale_record_details_bound_display_and_count_omitted_paths(
+    #[case] count: usize,
+    #[case] omitted: &str,
+    #[values("added", "removed")] label: &str,
+) {
+    let current: Vec<_> = (0..count)
+        .rev()
+        .map(|index| hoimin_core::FingerprintInputFile {
+            path: format!("src/{index:02}.py").into(),
+            hash: "current".into(),
+        })
+        .collect();
+    let (saved, live) = [(&[][..], current.as_slice()), (current.as_slice(), &[][..])]
+        [usize::from(label == "removed")];
+    let error = super::ensure_exact_records(saved, live, RecordMismatch::Source)
+        .unwrap_err()
+        .to_string();
+    let displayed = (0..count.min(10))
+        .map(|index| format!("{label} \"src/{index:02}.py\""))
+        .collect::<Vec<_>>()
+        .join("; ");
+
+    assert_eq!(
+        error,
+        format!(
+            "plan.source.changed: planned target source records do not match the current workspace: {displayed}{omitted}"
+        )
+    );
 }
 
 fn candidates(path: &str, count: usize, bytes: usize) -> (Vec<u8>, Vec<MutationCandidate>) {
@@ -159,94 +184,92 @@ async fn check(
     .await
 }
 
-#[tokio::test]
-async fn descriptor_validation_cost_tracks_files_and_bytes_not_candidates() {
-    for file_count in [1, 2, 4] {
-        for count in [1, 2, 4] {
-            let project = super::tests::Project::new();
-            let mut all = Vec::new();
-            for f in 0..file_count {
-                let path = format!("src/file{f}.py");
-                let (source, mut records) = candidates(&path, count, 4096);
-                std::fs::write(project.root.join(&path), source).unwrap();
-                all.append(&mut records);
-            }
-            let mut stats = ValidationStats::default();
-            let paths = check(&project, &all, &mut stats).await.unwrap();
-            assert_eq!(paths.len(), file_count);
-            assert_eq!(stats.contexts, file_count);
-            assert_eq!(stats.source_bytes, file_count * 4096);
+proptest::proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(32))]
+
+    #[test]
+    fn descriptor_validation_cost_tracks_generated_files_bytes_and_candidates(
+        file_count in 1usize..8,
+        count in 1usize..32,
+        bytes in 512usize..8192,
+    ) {
+        let project = super::tests::Project::new();
+        let mut all = Vec::new();
+        for file in 0..file_count {
+            let path = format!("src/file{file}.py");
+            let (source, mut records) = candidates(&path, count, bytes);
+            std::fs::write(project.root.join(&path), source).unwrap();
+            all.append(&mut records);
         }
+        let mut stats = ValidationStats::default();
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+
+        let paths = runtime.block_on(check(&project, &all, &mut stats)).unwrap();
+
+        proptest::prop_assert_eq!(paths.len(), file_count);
+        proptest::prop_assert_eq!(stats.contexts, file_count);
+        proptest::prop_assert_eq!(stats.source_bytes, file_count * bytes);
     }
 }
 
-#[tokio::test]
-async fn descriptor_validation_preserves_each_validation_and_stable_identity() {
-    let project = super::tests::Project::new();
-    let (source, original) = candidates("src/calc.py", 1, 0);
-    std::fs::write(project.root.join("src/calc.py"), &source).unwrap();
-    let original_candidate = original[0].clone();
-    for (candidate, message) in [
-        (
-            MutationCandidate {
+#[rstest::rstest]
+#[case::hash(|original_candidate: MutationCandidate| MutationCandidate {
                 file_hash: "0".repeat(64),
                 ..original_candidate.clone()
-            },
-            "candidate file hash does not match the source",
-        ),
-        (
-            MutationCandidate {
+            }, "candidate file hash does not match the source")]
+#[case::span(|original_candidate: MutationCandidate| MutationCandidate {
                 span: ByteSpan {
                     start: 100,
                     ..original_candidate.span
                 },
                 ..original_candidate.clone()
-            },
-            "candidate span is outside the source",
-        ),
-        (
-            MutationCandidate {
+            }, "candidate span is outside the source")]
+#[case::original(|original_candidate: MutationCandidate| MutationCandidate {
                 original: "?".into(),
                 ..original_candidate.clone()
-            },
-            "candidate original text does not match the source span",
-        ),
-        (
-            MutationCandidate {
+            }, "candidate original text does not match the source span")]
+#[case::line(|original_candidate: MutationCandidate| MutationCandidate {
                 line: 2,
                 ..original_candidate.clone()
-            },
-            "candidate line or column does not match its byte span",
-        ),
-        (
-            MutationCandidate {
+            }, "candidate line or column does not match its byte span")]
+#[case::column(|original_candidate: MutationCandidate| MutationCandidate {
                 column: 7,
                 ..original_candidate.clone()
-            },
-            "candidate line or column does not match its byte span",
-        ),
-        (
-            MutationCandidate {
+            }, "candidate line or column does not match its byte span")]
+#[case::operator(|original_candidate: MutationCandidate| MutationCandidate {
                 operator: String::new(),
                 ..original_candidate
-            },
-            "candidate operator is empty or replacement is unchanged",
-        ),
-    ] {
-        assert_eq!(
-            validate_candidate(&source, &CandidateDescriptor::from(&candidate))
-                .unwrap_err()
-                .to_string(),
-            message
-        );
-        let error = check(&project, &[candidate], &mut ValidationStats::default())
-            .await
-            .unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            format!("plan.candidate.invalid: {message}")
-        );
-    }
+            }, "candidate operator is empty or replacement is unchanged")]
+#[tokio::test]
+async fn descriptor_validation_preserves_each_validation_and_stable_identity(
+    #[case] mutate: fn(MutationCandidate) -> MutationCandidate,
+    #[case] message: &str,
+) {
+    let project = super::tests::Project::new();
+    let (source, original) = candidates("src/calc.py", 1, 0);
+    std::fs::write(project.root.join("src/calc.py"), &source).unwrap();
+    let original_candidate = original[0].clone();
+    let candidate = mutate(original_candidate);
+
+    let raw_error = validate_candidate(&source, &CandidateDescriptor::from(&candidate))
+        .unwrap_err()
+        .to_string();
+    let error = check(&project, &[candidate], &mut ValidationStats::default())
+        .await
+        .unwrap_err();
+
+    assert_eq!(raw_error, message);
+    assert_eq!(
+        error.to_string(),
+        format!("plan.candidate.invalid: {message}")
+    );
+}
+
+#[tokio::test]
+async fn descriptor_validation_rejects_stable_identity_mismatch() {
+    let project = super::tests::Project::new();
+    let (source, original) = candidates("src/calc.py", 1, 0);
+    std::fs::write(project.root.join("src/calc.py"), &source).unwrap();
     let mut candidate = original[0].clone();
     candidate.id = format!("m1_{}", "0".repeat(64));
     let error = check(
@@ -263,6 +286,15 @@ async fn descriptor_validation_preserves_each_validation_and_stable_identity() {
             candidate.id
         )
     );
+}
+
+#[tokio::test]
+async fn descriptor_validation_rejects_invalid_utf8_before_stable_identity() {
+    let project = super::tests::Project::new();
+    let (source, original) = candidates("src/calc.py", 1, 0);
+    std::fs::write(project.root.join("src/calc.py"), &source).unwrap();
+    let mut candidate = original[0].clone();
+    candidate.id = format!("m1_{}", "0".repeat(64));
     let mut invalid = source;
     invalid.push(255);
     candidate.file_hash = blake3::hash(&invalid).to_hex().to_string();
@@ -307,25 +339,37 @@ async fn descriptor_validation_reports_errors_in_requested_id_order() {
 }
 
 #[tokio::test]
-async fn descriptor_validation_empty_unknown_and_unselected_do_not_read_sources() {
+async fn empty_descriptor_selection_does_not_read_sources() {
     let project = super::tests::Project::new();
     let config = project
         .config()
         .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap();
     let mut stats = ValidationStats::default();
-    assert!(
-        validate_requested_descriptors(
-            &BTreeMap::new(),
-            &BTreeSet::new(),
-            &config,
-            &[],
-            Some(&mut stats)
-        )
-        .await
-        .unwrap()
-        .is_empty()
-    );
+
+    let actual = validate_requested_descriptors(
+        &BTreeMap::new(),
+        &BTreeSet::new(),
+        &config,
+        &[],
+        Some(&mut stats),
+    )
+    .await
+    .unwrap();
+
+    assert!(actual.is_empty());
+    assert_eq!((stats.contexts, stats.source_bytes), (0, 0));
+}
+
+#[tokio::test]
+async fn unknown_descriptor_selection_does_not_read_sources() {
+    let project = super::tests::Project::new();
+    let config = project
+        .config()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+        .unwrap();
+    let mut stats = ValidationStats::default();
+
     let error = validate_requested_descriptors(
         &BTreeMap::new(),
         &BTreeSet::from(["missing".into()]),
@@ -335,22 +379,35 @@ async fn descriptor_validation_empty_unknown_and_unselected_do_not_read_sources(
     )
     .await
     .unwrap_err();
+
     assert_eq!(
         error.to_string(),
         "plan.candidate.invalid: candidate id is not in the plan: missing"
     );
+    assert_eq!((stats.contexts, stats.source_bytes), (0, 0));
+}
+
+#[tokio::test]
+async fn unselected_descriptor_does_not_read_sources() {
+    let project = super::tests::Project::new();
+    let config = project
+        .config()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+        .unwrap();
+    let mut stats = ValidationStats::default();
     let (_, records) = candidates("src/absent.py", 1, 0);
     let map = records.iter().map(|c| (c.id.as_str(), c)).collect();
     let ids = records.iter().map(|c| c.id.clone()).collect();
+
     let error = validate_requested_descriptors(&map, &ids, &config, &[], Some(&mut stats))
         .await
         .unwrap_err();
+
     assert_eq!(
         error.to_string(),
         "plan.candidate.invalid: candidate target is not selected: src/absent.py"
     );
-    assert_eq!(stats.contexts, 0);
-    assert_eq!(stats.source_bytes, 0);
+    assert_eq!((stats.contexts, stats.source_bytes), (0, 0));
 }
 
 #[tokio::test]
@@ -393,95 +450,114 @@ async fn benchmark_requested_descriptor_preprocessing() {
     }
 }
 
+#[rstest::rstest]
+#[case::input_1_1_input_1_1(1, 1)]
+#[case::input_1_1_input_8_2(1, 8)]
+#[case::input_1_1_input_64_3(1, 64)]
+#[case::input_4_2_input_1_1(4, 1)]
+#[case::input_4_2_input_8_2(4, 8)]
+#[case::input_4_2_input_64_3(4, 64)]
+#[case::input_16_3_input_1_1(16, 1)]
+#[case::input_16_3_input_8_2(16, 8)]
+#[case::input_16_3_input_64_3(16, 64)]
 #[tokio::test]
-async fn target_membership_cost_does_not_multiply_candidates_and_targets() {
-    for count in [1, 4, 16] {
-        for target_count in [1, 8, 64] {
-            let project = super::tests::Project::new();
-            let (source, records) = candidates("src/z.py", count, 0);
-            std::fs::write(project.root.join("src/z.py"), source).unwrap();
-            let map = records.iter().map(|c| (c.id.as_str(), c)).collect();
-            let ids = records.iter().map(|c| c.id.clone()).collect();
-            let mut targets: Vec<_> = (1..target_count)
-                .map(|i| TargetSlice {
-                    path: format!("src/m{i}.py").into(),
-                    lines: vec![],
-                    symbols: vec![],
-                })
-                .collect();
-            targets.push(TargetSlice {
-                path: "src/z.py".into(),
-                lines: vec![],
-                symbols: vec![],
-            });
-            let mut stats = ValidationStats::default();
-            let paths = validate_requested_descriptors(
-                &map,
-                &ids,
-                &project
-                    .config()
-                    .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
-                    .unwrap(),
-                &targets,
-                Some(&mut stats),
-            )
-            .await
-            .unwrap();
-            assert_eq!(paths, BTreeSet::from([Utf8PathBuf::from("src/z.py")]));
-            // pins: issue #600 — the former scan visited C × F targets.
-            assert_eq!(
-                stats.target_path_visits, target_count,
-                "C={count}, F={target_count}"
-            );
-            assert_eq!(stats.membership_queries, count);
-            assert_eq!(stats.contexts, 1);
-        }
-    }
+async fn target_membership_cost_does_not_multiply_candidates_and_targets(
+    #[case] count: usize,
+    #[case] target_count: usize,
+) {
+    let project = super::tests::Project::new();
+    let (source, records) = candidates("src/z.py", count, 0);
+    std::fs::write(project.root.join("src/z.py"), source).unwrap();
+    let map = records.iter().map(|c| (c.id.as_str(), c)).collect();
+    let ids = records.iter().map(|c| c.id.clone()).collect();
+    let mut targets: Vec<_> = (1..target_count)
+        .map(|i| TargetSlice {
+            path: format!("src/m{i}.py").into(),
+            lines: vec![],
+            symbols: vec![],
+        })
+        .collect();
+    targets.push(TargetSlice {
+        path: "src/z.py".into(),
+        lines: vec![],
+        symbols: vec![],
+    });
+    let mut stats = ValidationStats::default();
+
+    let paths = validate_requested_descriptors(
+        &map,
+        &ids,
+        &project
+            .config()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap(),
+        &targets,
+        Some(&mut stats),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(paths, BTreeSet::from([Utf8PathBuf::from("src/z.py")]));
+    // pins: issue #600 — the former scan visited C × F targets.
+    assert_eq!(
+        stats.target_path_visits, target_count,
+        "C={count}, F={target_count}"
+    );
+    assert_eq!(stats.membership_queries, count);
+    assert_eq!(stats.contexts, 1);
 }
 
+#[rstest::rstest]
+#[case::spelling_1("src/calc.py", Ok(BTreeSet::from([Utf8PathBuf::from("src/calc.py")])), 1)]
+#[case::spelling_2("src//calc.py", Ok(BTreeSet::from([Utf8PathBuf::from("src/calc.py")])), 1)]
+#[case::spelling_3("src/./calc.py", Ok(BTreeSet::from([Utf8PathBuf::from("src/calc.py")])), 1)]
+#[case::spelling_4("src/calc.py/", Ok(BTreeSet::from([Utf8PathBuf::from("src/calc.py")])), 1)]
+#[case::spelling_5("src/Calc.py", Err("plan.candidate.invalid: candidate target is not selected: src/calc.py".to_owned()), 0)]
+#[case::spelling_6("./src/calc.py", Err("plan.candidate.invalid: candidate target is not selected: src/calc.py".to_owned()), 0)]
+#[case::spelling_7("src/other/../calc.py", Err("plan.candidate.invalid: candidate target is not selected: src/calc.py".to_owned()), 0)]
 #[tokio::test]
-async fn target_membership_preserves_path_component_equality() {
+async fn target_membership_preserves_path_component_equality(
+    #[case] spelling: &str,
+    #[case] expected: Result<BTreeSet<Utf8PathBuf>, String>,
+    #[case] expected_contexts: usize,
+) {
     let project = super::tests::Project::new();
     let (source, records) = candidates("src/calc.py", 1, 0);
     std::fs::write(project.root.join("src/calc.py"), source).unwrap();
     let map = records.iter().map(|c| (c.id.as_str(), c)).collect();
     let ids = records.iter().map(|c| c.id.clone()).collect();
-    let selected = Ok(BTreeSet::from([Utf8PathBuf::from("src/calc.py")]));
-    let unselected =
-        Err("plan.candidate.invalid: candidate target is not selected: src/calc.py".to_owned());
-    for (spelling, expected, expected_contexts) in [
-        ("src/calc.py", selected.clone(), 1),
-        ("src//calc.py", selected.clone(), 1),
-        ("src/./calc.py", selected.clone(), 1),
-        ("src/calc.py/", selected, 1),
-        ("src/Calc.py", unselected.clone(), 0),
-        ("./src/calc.py", unselected.clone(), 0),
-        ("src/other/../calc.py", unselected, 0),
-    ] {
-        let targets = [TargetSlice {
-            path: spelling.into(),
-            lines: vec![],
-            symbols: vec![],
-        }];
-        let mut stats = ValidationStats::default();
-        let result = validate_requested_descriptors(
-            &map,
-            &ids,
-            &project
-                .config()
-                .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
-                .unwrap(),
-            &targets,
-            Some(&mut stats),
-        )
-        .await;
-        assert_eq!(
-            result.map_err(|error| error.to_string()),
-            expected,
-            "{spelling}"
-        );
-        assert_eq!(stats.contexts, expected_contexts, "{spelling}");
-    }
+    let targets = [TargetSlice {
+        path: spelling.into(),
+        lines: vec![],
+        symbols: vec![],
+    }];
+    let mut stats = ValidationStats::default();
+    let result = validate_requested_descriptors(
+        &map,
+        &ids,
+        &project
+            .config()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap(),
+        &targets,
+        Some(&mut stats),
+    )
+    .await;
+    assert_eq!(
+        result.map_err(|error| error.to_string()),
+        expected,
+        "{spelling}"
+    );
+    assert_eq!(stats.contexts, expected_contexts, "{spelling}");
+}
+
+#[tokio::test]
+async fn duplicate_normalized_targets_share_one_validation_context() {
+    let project = super::tests::Project::new();
+    let (source, records) = candidates("src/calc.py", 1, 0);
+    std::fs::write(project.root.join("src/calc.py"), source).unwrap();
+    let map = records.iter().map(|c| (c.id.as_str(), c)).collect();
+    let ids = records.iter().map(|c| c.id.clone()).collect();
     let targets = ["src/calc.py", "src/./calc.py", "src//calc.py"].map(|path| TargetSlice {
         path: path.into(),
         lines: vec![],
@@ -604,114 +680,111 @@ fn membership_failure_message(
     }
 }
 
+#[rstest::rstest]
 #[tokio::test]
-async fn target_membership_preserves_mixed_error_precedence() {
-    for first in MEMBERSHIP_FAILURES {
-        for second in MEMBERSHIP_FAILURES {
-            let project = super::tests::Project::new();
-            let mut records = Vec::new();
-            let mut targets = Vec::new();
-            membership_failure_records(
-                &project,
-                "a",
-                "src/a.py",
-                first,
-                &mut records,
-                &mut targets,
-            );
-            membership_failure_records(
-                &project,
-                "b",
-                "src/b.py",
-                second,
-                &mut records,
-                &mut targets,
-            );
-            let map = records.iter().map(|c| (c.id.as_str(), c)).collect();
-            let ids = BTreeSet::from(["a".into(), "b".into()]);
-            let expected = membership_failure_message(&project, "a", "src/a.py", first);
-            let mut stats = ValidationStats::default();
+async fn target_membership_preserves_mixed_error_precedence(
+    #[values(MEMBERSHIP_FAILURES[0], MEMBERSHIP_FAILURES[1], MEMBERSHIP_FAILURES[2], MEMBERSHIP_FAILURES[3], MEMBERSHIP_FAILURES[4])]
+    second: MembershipFailure,
+    #[values(MEMBERSHIP_FAILURES[0], MEMBERSHIP_FAILURES[1], MEMBERSHIP_FAILURES[2], MEMBERSHIP_FAILURES[3], MEMBERSHIP_FAILURES[4])]
+    first: MembershipFailure,
+) {
+    let project = super::tests::Project::new();
+    let mut records = Vec::new();
+    let mut targets = Vec::new();
+    membership_failure_records(&project, "a", "src/a.py", first, &mut records, &mut targets);
+    membership_failure_records(
+        &project,
+        "b",
+        "src/b.py",
+        second,
+        &mut records,
+        &mut targets,
+    );
+    let map = records.iter().map(|c| (c.id.as_str(), c)).collect();
+    let ids = BTreeSet::from(["a".into(), "b".into()]);
+    let expected = membership_failure_message(&project, "a", "src/a.py", first);
+    let mut stats = ValidationStats::default();
 
-            let error = validate_requested_descriptors(
-                &map,
-                &ids,
-                &project
-                    .config()
-                    .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
-                    .unwrap(),
-                &targets,
-                Some(&mut stats),
-            )
-            .await
-            .unwrap_err()
-            .to_string();
+    let error = validate_requested_descriptors(
+        &map,
+        &ids,
+        &project
+            .config()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap(),
+        &targets,
+        Some(&mut stats),
+    )
+    .await
+    .unwrap_err()
+    .to_string();
 
-            assert_eq!(error, expected, "{first:?}/{second:?}");
-            assert_eq!(stats.contexts, first.contexts, "{first:?}/{second:?}");
-        }
-    }
+    assert_eq!(error, expected, "{first:?}/{second:?}");
+    assert_eq!(stats.contexts, first.contexts, "{first:?}/{second:?}");
 }
 
+#[rstest::rstest]
+#[case::input_1("?")]
+#[case::input_2("+")]
 #[tokio::test]
-async fn target_membership_preserves_errors_between_cached_file_results() {
-    for later_original in ["?", "+"] {
-        for middle_failure in MEMBERSHIP_FAILURES {
-            let project = super::tests::Project::new();
-            let (source, mut records) = candidates("src/a.py", 2, 0);
-            std::fs::write(project.root.join("src/a.py"), source).unwrap();
-            let first_id = records[0].id.clone();
-            let middle_id = format!("{first_id}a");
-            let later_id = format!("{first_id}z");
-            records[1].id = later_id.clone();
-            records[1].original = later_original.into();
-            let mut targets = vec![TargetSlice {
-                path: "src/a.py".into(),
-                lines: vec![],
-                symbols: vec![],
-            }];
-            membership_failure_records(
-                &project,
-                &middle_id,
-                "src/b.py",
-                middle_failure,
-                &mut records,
-                &mut targets,
-            );
-            for candidate in records
-                .iter_mut()
-                .filter(|candidate| candidate.id == middle_id && middle_failure.original == "?")
-            {
-                candidate.original = "+".into();
-                candidate.span.start = 100;
-            }
-            let map = records.iter().map(|c| (c.id.as_str(), c)).collect();
-            let ids = BTreeSet::from([first_id, middle_id.clone(), later_id]);
-            let expected =
-                membership_failure_message(&project, &middle_id, "src/b.py", middle_failure)
-                    .replace(
-                        "candidate original text does not match the source span",
-                        "candidate span is outside the source",
-                    );
-            let mut stats = ValidationStats::default();
-
-            let error = validate_requested_descriptors(
-                &map,
-                &ids,
-                &project
-                    .config()
-                    .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
-                    .unwrap(),
-                &targets,
-                Some(&mut stats),
-            )
-            .await
-            .unwrap_err()
-            .to_string();
-
-            assert_eq!(error, expected, "{middle_failure:?}/{later_original}");
-            assert_eq!(stats.contexts, 1 + middle_failure.contexts);
-        }
+async fn target_membership_preserves_errors_between_cached_file_results(
+    #[case] later_original: &str,
+    #[values(MEMBERSHIP_FAILURES[0], MEMBERSHIP_FAILURES[1], MEMBERSHIP_FAILURES[2], MEMBERSHIP_FAILURES[3], MEMBERSHIP_FAILURES[4])]
+    middle_failure: MembershipFailure,
+) {
+    let project = super::tests::Project::new();
+    let (source, mut records) = candidates("src/a.py", 2, 0);
+    std::fs::write(project.root.join("src/a.py"), source).unwrap();
+    let first_id = records[0].id.clone();
+    let middle_id = format!("{first_id}a");
+    let later_id = format!("{first_id}z");
+    records[1].id = later_id.clone();
+    records[1].original = later_original.into();
+    let mut targets = vec![TargetSlice {
+        path: "src/a.py".into(),
+        lines: vec![],
+        symbols: vec![],
+    }];
+    membership_failure_records(
+        &project,
+        &middle_id,
+        "src/b.py",
+        middle_failure,
+        &mut records,
+        &mut targets,
+    );
+    for candidate in records
+        .iter_mut()
+        .filter(|candidate| candidate.id == middle_id && middle_failure.original == "?")
+    {
+        candidate.original = "+".into();
+        candidate.span.start = 100;
     }
+    let map = records.iter().map(|c| (c.id.as_str(), c)).collect();
+    let ids = BTreeSet::from([first_id, middle_id.clone(), later_id]);
+    let expected = membership_failure_message(&project, &middle_id, "src/b.py", middle_failure)
+        .replace(
+            "candidate original text does not match the source span",
+            "candidate span is outside the source",
+        );
+    let mut stats = ValidationStats::default();
+
+    let error = validate_requested_descriptors(
+        &map,
+        &ids,
+        &project
+            .config()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap(),
+        &targets,
+        Some(&mut stats),
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+
+    assert_eq!(error, expected, "{middle_failure:?}/{later_original}");
+    assert_eq!(stats.contexts, 1 + middle_failure.contexts);
 }
 
 // A separate process gives a regressed blocking FIFO open a bounded watchdog.
@@ -1016,145 +1089,163 @@ fn issue_1081_selection(
     }
 }
 
+#[rstest::rstest]
+#[case::input_0_1_input_1_4096_1(0, 1, 4096)]
+#[case::input_0_1_input_4_16384_2(0, 4, 16384)]
+#[case::input_0_1_input_16_65536_3(0, 16, 65536)]
+#[case::input_1_2_input_1_4096_1(1, 1, 4096)]
+#[case::input_1_2_input_4_16384_2(1, 4, 16384)]
+#[case::input_1_2_input_16_65536_3(1, 16, 65536)]
 #[tokio::test]
-async fn issue_1081_prepare_and_preview_do_not_read_or_hash_unrelated_assets() {
-    for fingerprint_count in [0, 1] {
-        for (asset_count, asset_bytes) in [(1, 4096), (4, 16384), (16, 65536)] {
-            let (_project, manifest, artifact) =
-                issue_1081_asset_plan(fingerprint_count, asset_count, asset_bytes).await;
-            let (ids, selection) = issue_1081_selection(&manifest, asset_count == 4);
-            crate::workspace::reset_source_content_metrics();
-            let prepared = super::prepare_verify_selection(artifact.path(), &selection)
-                .await
-                .unwrap();
-            let metrics = crate::workspace::source_content_metrics();
-            assert_eq!(
-                (metrics.read_bytes, metrics.hash_bytes),
-                (0, 0),
-                "prepare F={fingerprint_count}, assets={asset_count}x{asset_bytes}: {metrics:?}"
-            );
-            assert_eq!(
-                prepared.selection.candidate_ids().unwrap(),
-                &ids.iter().cloned().collect::<BTreeSet<_>>()
-            );
-            let expected_preview_ids = if asset_count == 4 {
-                assert_eq!(prepared.selection.ordered_ids().unwrap(), ids);
-                ids.clone()
-            } else {
-                assert!(prepared.selection.ordered_ids().is_none());
-                let mut selected: Vec<_> = manifest
-                    .candidates
-                    .iter()
-                    .filter(|candidate| ids.contains(&candidate.id))
-                    .collect();
-                selected.sort_by_key(|candidate| candidate.sequence);
-                selected
-                    .into_iter()
-                    .map(|candidate| candidate.id.clone())
-                    .collect()
-            };
-            assert_eq!(
-                prepared.fingerprint_copy_inputs,
-                if fingerprint_count == 0 {
-                    BTreeSet::new()
-                } else {
-                    BTreeSet::from(["input.txt".into()])
-                }
-            );
-            crate::workspace::reset_source_content_metrics();
-            let preview = super::prepare_verify_preview_selection(artifact.path(), &selection)
-                .await
-                .unwrap();
-            let metrics = crate::workspace::source_content_metrics();
-            assert_eq!(
-                (metrics.read_bytes, metrics.hash_bytes),
-                (0, 0),
-                "preview F={fingerprint_count}, assets={asset_count}x{asset_bytes}: {metrics:?}"
-            );
-            let mut rendered = Vec::new();
-            preview.write(&mut rendered).unwrap();
-            let rendered: serde_json::Value = serde_json::from_slice(&rendered).unwrap();
-            assert_eq!(
-                rendered["candidates"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|candidate| candidate["id"].as_str().unwrap())
-                    .collect::<Vec<_>>(),
-                expected_preview_ids
-                    .iter()
-                    .map(String::as_str)
-                    .collect::<Vec<_>>()
-            );
-        }
-    }
-}
+async fn issue_1081_prepare_does_not_read_or_hash_unrelated_assets(
+    #[case] fingerprint_count: usize,
+    #[case] asset_count: usize,
+    #[case] asset_bytes: usize,
+) {
+    let (_project, manifest, artifact) =
+        issue_1081_asset_plan(fingerprint_count, asset_count, asset_bytes).await;
+    let (ids, selection) = issue_1081_selection(&manifest, asset_count == 4);
+    let expected_ordered = [None, Some(ids.clone())]
+        .into_iter()
+        .nth(usize::from(asset_count == 4))
+        .unwrap();
+    let expected_fingerprints = std::iter::once("input.txt".into())
+        .take(fingerprint_count)
+        .collect::<BTreeSet<_>>();
+    crate::workspace::reset_source_content_metrics();
 
-#[tokio::test]
-async fn issue_1081_membership_matches_content_manifest_selection() {
-    for (includes, excludes) in [
-        (vec![], vec![]),
-        (vec!["ignored/**"], vec![]),
-        (vec!["ignored/**"], vec!["**/excluded.txt"]),
-    ] {
-        let project = super::tests::Project::new();
-        std::fs::create_dir_all(project.root.join("ignored/nested")).unwrap();
-        std::fs::write(project.root.join(".gitignore"), "ignored/\n").unwrap();
-        for path in [
-            "plain.txt",
-            "ignored/nested/kept.txt",
-            "ignored/nested/excluded.txt",
-        ] {
-            std::fs::write(project.root.join(path), path).unwrap();
-        }
-        #[cfg(unix)]
-        {
-            std::os::unix::fs::symlink("plain.txt", project.root.join("link.txt")).unwrap();
-            // Non-regular entries must not be admitted or opened as files.
-            let listener =
-                std::os::unix::net::UnixListener::bind(project.root.join("socket")).unwrap();
-            drop(listener);
-        }
-        let mut data = project.config().into_data();
-        data.selection.includes = includes.iter().map(|value| (*value).into()).collect();
-        data.selection.excludes = excludes.iter().map(|value| (*value).into()).collect();
-        data.fingerprint_files = vec![
-            "plain.txt".into(),
-            "ignored/nested/kept.txt".into(),
-            "ignored/nested/excluded.txt".into(),
-        ];
-        let options = crate::workspace::CopyOptions {
-            includes: data.selection.includes.clone(),
-            excludes: data.selection.excludes.clone(),
-            literal_exclusions: vec![],
-        };
-        let legacy = crate::workspace::build_validation_manifest(&project.root, &options).unwrap();
-        let output = super::create(
-            hoimin_core::RunConfig::try_from(data).unwrap(),
-            hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
-        )
+    let prepared = super::prepare_verify_selection(artifact.path(), &selection)
         .await
         .unwrap();
-        let expected: BTreeSet<_> = output
-            .manifest
-            .normalized_config
-            .fingerprint_inputs
-            .iter()
-            .filter(|record| legacy.entry(&record.path).is_some())
-            .map(|record| record.path.clone())
-            .collect();
-        let artifact = tempfile::NamedTempFile::new().unwrap();
-        std::fs::write(
-            artifact.path(),
-            serde_json::to_vec(&output.manifest).unwrap(),
-        )
+    let metrics = crate::workspace::source_content_metrics();
+
+    assert_eq!((metrics.read_bytes, metrics.hash_bytes), (0, 0));
+    assert_eq!(
+        prepared.selection.candidate_ids().unwrap(),
+        &ids.iter().cloned().collect::<BTreeSet<_>>()
+    );
+    assert_eq!(
+        prepared.selection.ordered_ids(),
+        expected_ordered.as_deref()
+    );
+    assert_eq!(prepared.fingerprint_copy_inputs, expected_fingerprints);
+}
+
+#[rstest::rstest]
+#[case::input_0_1_input_1_4096_1(0, 1, 4096)]
+#[case::input_0_1_input_4_16384_2(0, 4, 16384)]
+#[case::input_0_1_input_16_65536_3(0, 16, 65536)]
+#[case::input_1_2_input_1_4096_1(1, 1, 4096)]
+#[case::input_1_2_input_4_16384_2(1, 4, 16384)]
+#[case::input_1_2_input_16_65536_3(1, 16, 65536)]
+#[tokio::test]
+async fn issue_1081_preview_does_not_read_or_hash_unrelated_assets(
+    #[case] fingerprint_count: usize,
+    #[case] asset_count: usize,
+    #[case] asset_bytes: usize,
+) {
+    let (_project, manifest, artifact) =
+        issue_1081_asset_plan(fingerprint_count, asset_count, asset_bytes).await;
+    let (ids, selection) = issue_1081_selection(&manifest, asset_count == 4);
+    let mut selected = manifest
+        .candidates
+        .iter()
+        .filter(|candidate| ids.contains(&candidate.id))
+        .collect::<Vec<_>>();
+    selected.sort_by_key(|candidate| candidate.sequence);
+    let expected_preview_ids = selected
+        .iter()
+        .map(|candidate| candidate.id.as_str())
+        .collect::<Vec<_>>();
+    crate::workspace::reset_source_content_metrics();
+
+    let preview = super::prepare_verify_preview_selection(artifact.path(), &selection)
+        .await
         .unwrap();
-        let prepared =
-            super::prepare_verify(artifact.path(), &[output.manifest.candidates[0].id.clone()])
-                .await
-                .unwrap();
-        assert_eq!(prepared.fingerprint_copy_inputs, expected);
+    let metrics = crate::workspace::source_content_metrics();
+    let mut rendered = Vec::new();
+    preview.write(&mut rendered).unwrap();
+    let rendered: serde_json::Value = serde_json::from_slice(&rendered).unwrap();
+
+    assert_eq!((metrics.read_bytes, metrics.hash_bytes), (0, 0));
+    assert_eq!(
+        rendered["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|candidate| candidate["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        expected_preview_ids
+    );
+}
+
+#[rstest::rstest]
+#[case::vec_vec_1(vec![], vec![])]
+#[case::ignored_2(vec!["ignored/**"], vec![])]
+#[case::ignored_3(vec!["ignored/**"], vec!["**/excluded.txt"])]
+#[tokio::test]
+async fn issue_1081_membership_matches_content_manifest_selection(
+    #[case] includes: Vec<&str>,
+    #[case] excludes: Vec<&str>,
+) {
+    let project = super::tests::Project::new();
+    std::fs::create_dir_all(project.root.join("ignored/nested")).unwrap();
+    std::fs::write(project.root.join(".gitignore"), "ignored/\n").unwrap();
+    for path in [
+        "plain.txt",
+        "ignored/nested/kept.txt",
+        "ignored/nested/excluded.txt",
+    ] {
+        std::fs::write(project.root.join(path), path).unwrap();
     }
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink("plain.txt", project.root.join("link.txt")).unwrap();
+        // Non-regular entries must not be admitted or opened as files.
+        let listener = std::os::unix::net::UnixListener::bind(project.root.join("socket")).unwrap();
+        drop(listener);
+    }
+    let mut data = project.config().into_data();
+    data.selection.includes = includes.iter().map(|value| (*value).into()).collect();
+    data.selection.excludes = excludes.iter().map(|value| (*value).into()).collect();
+    data.fingerprint_files = vec![
+        "plain.txt".into(),
+        "ignored/nested/kept.txt".into(),
+        "ignored/nested/excluded.txt".into(),
+    ];
+    let options = crate::workspace::CopyOptions {
+        includes: data.selection.includes.clone(),
+        excludes: data.selection.excludes.clone(),
+        literal_exclusions: vec![],
+    };
+    let legacy = crate::workspace::build_validation_manifest(&project.root, &options).unwrap();
+    let output = super::create(
+        hoimin_core::RunConfig::try_from(data).unwrap(),
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    )
+    .await
+    .unwrap();
+    let expected: BTreeSet<_> = output
+        .manifest
+        .normalized_config
+        .fingerprint_inputs
+        .iter()
+        .filter(|record| legacy.entry(&record.path).is_some())
+        .map(|record| record.path.clone())
+        .collect();
+    let artifact = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(
+        artifact.path(),
+        serde_json::to_vec(&output.manifest).unwrap(),
+    )
+    .unwrap();
+
+    let prepared =
+        super::prepare_verify(artifact.path(), &[output.manifest.candidates[0].id.clone()])
+            .await
+            .unwrap();
+
+    assert_eq!(prepared.fingerprint_copy_inputs, expected);
 }
 
 #[cfg(unix)]

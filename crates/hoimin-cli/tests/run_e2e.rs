@@ -197,25 +197,23 @@ fn cli_entrypoint_future_keeps_large_run_state_out_of_line() {
     );
 }
 
+#[rstest::rstest]
+#[case::help(["hoimin", "--help"], "Usage:")]
+#[case::version(["hoimin", "--version"], env!("CARGO_PKG_VERSION"))]
 #[tokio::test]
-async fn successful_clap_displays_use_stdout() {
-    for (args, expected) in [
-        (["hoimin", "--help"], "Usage:"),
-        (["hoimin", "--version"], env!("CARGO_PKG_VERSION")),
-    ] {
-        let stdout = CollectingWriter::default();
-        let stderr = CollectingWriter::default();
+async fn successful_clap_displays_use_stdout(#[case] args: [&str; 2], #[case] expected: &str) {
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-        let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
-        assert_eq!(exit, 0, "args: {args:?}");
-        assert!(stderr.is_empty(), "args: {args:?}: {stderr:?}");
-        let stdout = String::from_utf8(stdout.snapshot()).unwrap();
-        assert!(
-            stdout.contains(expected),
-            "args: {args:?}, missing {expected:?} from:\n{stdout}"
-        );
-    }
+    assert_eq!(exit, 0, "args: {args:?}");
+    assert!(stderr.is_empty(), "args: {args:?}: {stderr:?}");
+    let stdout = String::from_utf8(stdout.snapshot()).unwrap();
+    assert!(
+        stdout.contains(expected),
+        "args: {args:?}, missing {expected:?} from:\n{stdout}"
+    );
 }
 
 #[tokio::test]
@@ -257,54 +255,55 @@ async fn invalid_clap_arguments_remain_on_stderr() {
     );
 }
 
+#[rstest::rstest]
+#[case::total("--total-timeout")]
+#[case::mutant("--mutant-timeout")]
 #[tokio::test]
-async fn oversized_runtime_timeouts_are_rejected_before_project_execution() {
+async fn oversized_runtime_timeouts_are_rejected_before_project_execution(#[case] flag: &str) {
     assert!(
         tokio::time::Instant::now()
             .checked_add(hoimin_core::MAX_TIMEOUT)
             .is_some()
     );
 
-    for flag in ["--total-timeout", "--mutant-timeout"] {
-        let directory = tempfile::tempdir().unwrap();
-        let marker = directory.path().join("test-command-ran");
-        let command = format!(
-            "from pathlib import Path; Path({:?}).write_text('ran')",
-            marker.to_string_lossy()
-        );
-        let root = fixture_root();
-        let python = python_executable();
-        let args = vec![
-            OsString::from("hoimin"),
-            OsString::from("run"),
-            OsString::from("--min-free-space"),
-            OsString::from(TEST_MIN_FREE_SPACE),
-            OsString::from("--root"),
-            root.as_os_str().to_owned(),
-            OsString::from("--file"),
-            OsString::from("src/calc.py"),
-            OsString::from(flag),
-            OsString::from("18446744073709551615s"),
-            OsString::from("--allow-best-effort-memory"),
-            OsString::from("--"),
-            python.as_os_str().to_owned(),
-            OsString::from("-c"),
-            OsString::from(command),
-        ];
-        let stdout = CollectingWriter::default();
-        let stderr = CollectingWriter::default();
+    let directory = tempfile::tempdir().unwrap();
+    let marker = directory.path().join("test-command-ran");
+    let command = format!(
+        "from pathlib import Path; Path({:?}).write_text('ran')",
+        marker.to_string_lossy()
+    );
+    let root = fixture_root();
+    let python = python_executable();
+    let args = vec![
+        OsString::from("hoimin"),
+        OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
+        OsString::from("--root"),
+        root.as_os_str().to_owned(),
+        OsString::from("--file"),
+        OsString::from("src/calc.py"),
+        OsString::from(flag),
+        OsString::from("18446744073709551615s"),
+        OsString::from("--allow-best-effort-memory"),
+        OsString::from("--"),
+        python.as_os_str().to_owned(),
+        OsString::from("-c"),
+        OsString::from(command),
+    ];
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-        let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
-        assert_eq!(exit, 2, "flag={flag}");
-        assert!(stdout.is_empty(), "flag={flag}");
-        let stderr = String::from_utf8(stderr.snapshot()).unwrap();
-        assert_eq!(
-            stderr,
-            format!("invalid zero or overflowing limit: {flag}\n")
-        );
-        assert!(!marker.exists(), "{flag} reached the test command");
-    }
+    assert_eq!(exit, 2, "flag={flag}");
+    assert!(stdout.is_empty(), "flag={flag}");
+    let stderr = String::from_utf8(stderr.snapshot()).unwrap();
+    assert_eq!(
+        stderr,
+        format!("invalid zero or overflowing limit: {flag}\n")
+    );
+    assert!(!marker.exists(), "{flag} reached the test command");
 }
 
 #[tokio::test]
@@ -483,147 +482,195 @@ async fn collection_default_run_reports_canonical_ids_with_stable_spans() {
     }
 }
 
+#[rstest::rstest]
+#[case::boolean_and_or_weak(
+    "boolean_and_or",
+    "def probe(left, right):\n    return left and right()\n",
+    "assert probe(False, lambda: False) is False",
+    "survived",
+    1
+)]
+#[case::boolean_and_or_strong(
+    "boolean_and_or",
+    "def probe(left, right):\n    return left and right()\n",
+    "calls = []\ndef right():\n    calls.append('called')\n    return False\nassert probe(False, right) is False\nassert calls == []",
+    "killed",
+    1
+)]
+#[case::collection_any_all_weak(
+    "collection_any_all",
+    "def probe(items):\n    return any(items)\n",
+    "assert probe([True, True]) is True",
+    "survived",
+    1
+)]
+#[case::collection_any_all_strong(
+    "collection_any_all",
+    "def probe(items):\n    return any(items)\n",
+    "items = iter([True, True])\nassert probe(items) is True\nassert list(items) == [True]",
+    "killed",
+    1
+)]
+#[case::structure_mapping_get_subscript_weak(
+    "structure_mapping_get_subscript",
+    "def probe(mapping, key):\n    return mapping.get(key)\n",
+    "assert probe({'present': 42}, 'present') == 42",
+    "survived",
+    1
+)]
+#[case::structure_mapping_get_subscript_strong(
+    "structure_mapping_get_subscript",
+    "def probe(mapping, key):\n    return mapping.get(key)\n",
+    "class Missing(dict):\n    def __missing__(self, key):\n        return 42\nassert probe(Missing(), 'absent') is None",
+    "killed",
+    1
+)]
+#[case::structure_append_extend_weak(
+    "structure_append_extend",
+    "def probe(items, value):\n    items.append(value)\n",
+    "items = []\nprobe(items, 7)\nassert items == [7]",
+    "survived",
+    1
+)]
+#[case::structure_append_extend_strong(
+    "structure_append_extend",
+    "def probe(items, value):\n    items.append(value)\n",
+    "class Logged(list):\n    def append(self, value):\n        super().append(('append', value))\n    def extend(self, values):\n        super().extend(('extend', value) for value in values)\nitems = Logged()\nprobe(items, 7)\nassert items == [('append', 7)]",
+    "killed",
+    1
+)]
+#[case::structure_sorted_reversed_weak(
+    "structure_sorted_reversed",
+    "def probe(items):\n    return sorted(items)\n",
+    "assert list(probe([2, 1])) == [1, 2]",
+    "survived",
+    1
+)]
+#[case::structure_sorted_reversed_strong(
+    "structure_sorted_reversed",
+    "def probe(items):\n    return sorted(items)\n",
+    "assert list(probe([2, 3, 1])) == [1, 2, 3]",
+    "killed",
+    1
+)]
+#[case::structure_index_neighbor_weak(
+    "structure_index_neighbor",
+    "def probe(items):\n    return items[1]\n",
+    "assert probe([7, 7, 7]) == 7",
+    "survived",
+    2
+)]
+#[case::structure_index_neighbor_strong(
+    "structure_index_neighbor",
+    "def probe(items):\n    return items[1]\n",
+    "assert probe([10, 20, 30]) == 20",
+    "killed",
+    2
+)]
+#[case::structure_slice_neighbor_weak(
+    "structure_slice_neighbor",
+    "def probe(items):\n    return items[:1]\n",
+    "assert probe([]) == []",
+    "survived",
+    2
+)]
+#[case::structure_slice_neighbor_strong(
+    "structure_slice_neighbor",
+    "def probe(items):\n    return items[:1]\n",
+    "assert probe([10, 20, 30]) == [10]",
+    "killed",
+    2
+)]
 #[tokio::test]
-async fn protocol_contracts_distinguish_generated_mutants_in_external_tests() {
-    // Each weak command passes both versions. The stronger command observes a
-    // contract that the actual Rust-generated replacement breaks. Test doubles
-    // live only in the external command, outside the selected mutation source.
-    let cases = [
-        (
-            "boolean_and_or",
-            "def probe(left, right):\n    return left and right()\n",
-            "assert probe(False, lambda: False) is False",
-            "calls = []\ndef right():\n    calls.append('called')\n    return False\nassert probe(False, right) is False\nassert calls == []",
-            1,
-        ),
-        (
-            "collection_any_all",
-            "def probe(items):\n    return any(items)\n",
-            "assert probe([True, True]) is True",
-            "items = iter([True, True])\nassert probe(items) is True\nassert list(items) == [True]",
-            1,
-        ),
-        (
-            "structure_mapping_get_subscript",
-            "def probe(mapping, key):\n    return mapping.get(key)\n",
-            "assert probe({'present': 42}, 'present') == 42",
-            "class Missing(dict):\n    def __missing__(self, key):\n        return 42\nassert probe(Missing(), 'absent') is None",
-            1,
-        ),
-        (
-            "structure_append_extend",
-            "def probe(items, value):\n    items.append(value)\n",
-            "items = []\nprobe(items, 7)\nassert items == [7]",
-            "class Logged(list):\n    def append(self, value):\n        super().append(('append', value))\n    def extend(self, values):\n        super().extend(('extend', value) for value in values)\nitems = Logged()\nprobe(items, 7)\nassert items == [('append', 7)]",
-            1,
-        ),
-        (
-            "structure_sorted_reversed",
-            "def probe(items):\n    return sorted(items)\n",
-            "assert list(probe([2, 1])) == [1, 2]",
-            "assert list(probe([2, 3, 1])) == [1, 2, 3]",
-            1,
-        ),
-        (
-            "structure_index_neighbor",
-            "def probe(items):\n    return items[1]\n",
-            "assert probe([7, 7, 7]) == 7",
-            "assert probe([10, 20, 30]) == 20",
-            2,
-        ),
-        (
-            "structure_slice_neighbor",
-            "def probe(items):\n    return items[:1]\n",
-            "assert probe([]) == []",
-            "assert probe([10, 20, 30]) == [10]",
-            2,
-        ),
-    ];
+async fn protocol_contracts_distinguish_generated_mutants_in_external_tests(
+    #[case] operator: &str,
+    #[case] source: &str,
+    #[case] command: &str,
+    #[case] status: &str,
+    #[case] count: usize,
+) {
+    let project = tempfile::tempdir().unwrap();
+    std::fs::create_dir(project.path().join("src")).unwrap();
+    std::fs::write(project.path().join("src/__init__.py"), "").unwrap();
+    let source_path = project.path().join("src/calc.py");
+    std::fs::write(&source_path, source).unwrap();
 
-    for (operator, source, weak, strong, count) in cases {
-        let project = tempfile::tempdir().unwrap();
-        std::fs::create_dir(project.path().join("src")).unwrap();
-        std::fs::write(project.path().join("src/__init__.py"), "").unwrap();
-        let source_path = project.path().join("src/calc.py");
-        std::fs::write(&source_path, source).unwrap();
-
-        for (command, status, exit_code) in [(weak, "survived", 0), (strong, "killed", 0)] {
-            let command = format!("from src.calc import probe\n{command}\n");
-            let run =
-                run_project_options(project.path(), 1, &command, &["--operators", operator]).await;
-            assert_eq!(
-                run.exit_code, exit_code,
-                "{operator}: {} {}",
-                run.stderr, run.stdout
-            );
-            assert_eq!(
-                run.document["summary"]["complete"], true,
-                "{operator}: {}",
-                run.stderr
-            );
-            assert_eq!(
-                run.statuses,
-                vec![status; count],
-                "{operator}: {}",
-                run.stdout
-            );
-            for mutant in run.document["mutants"].as_array().unwrap() {
-                assert_eq!(mutant["candidate"]["operator"], operator);
-            }
-            assert_eq!(std::fs::read_to_string(&source_path).unwrap(), source);
-        }
+    let command = format!("from src.calc import probe\n{command}\n");
+    let run = run_project_options(project.path(), 1, &command, &["--operators", operator]).await;
+    assert_eq!(
+        run.exit_code, 0,
+        "{operator}: {} {}",
+        run.stderr, run.stdout
+    );
+    assert_eq!(
+        run.document["summary"]["complete"], true,
+        "{operator}: {}",
+        run.stderr
+    );
+    assert_eq!(
+        run.statuses,
+        vec![status; count],
+        "{operator}: {}",
+        run.stdout
+    );
+    for mutant in run.document["mutants"].as_array().unwrap() {
+        assert_eq!(mutant["candidate"]["operator"], operator);
     }
+    assert_eq!(std::fs::read_to_string(&source_path).unwrap(), source);
 }
 
+#[rstest::rstest]
+#[case::def_f_tuple_items_return_list_items_1(
+    "def f[tuple](items):\n    return list(items)\n",
+    "from src.calc import f; assert f((1, 2)) == [1, 2]"
+)]
+#[case::class_c_tuple_result_list_range_1_3_2(
+    "class C[tuple]:\n    result = list(range(1, 3))\n",
+    "from src.calc import C; assert C.result == [1, 2]"
+)]
+#[case::class_c_tuple_global_tuple_def_method_self_return_list_3(
+    "class C[tuple]:\n    global tuple\n    def method(self):\n        return list(range(1, 3))\n",
+    "from src.calc import C; assert C().method() == [1, 2]"
+)]
 #[tokio::test]
-async fn generic_type_parameter_destinations_cannot_create_false_kills() {
-    for (source, command) in [
-        (
-            "def f[tuple](items):\n    return list(items)\n",
-            "from src.calc import f; assert f((1, 2)) == [1, 2]",
-        ),
-        (
-            "class C[tuple]:\n    result = list(range(1, 3))\n",
-            "from src.calc import C; assert C.result == [1, 2]",
-        ),
-        (
-            "class C[tuple]:\n    global tuple\n    def method(self):\n        return list(range(1, 3))\n",
-            "from src.calc import C; assert C().method() == [1, 2]",
-        ),
-    ] {
-        let project = tempfile::tempdir().unwrap();
-        std::fs::create_dir(project.path().join("src")).unwrap();
-        let path = project.path().join("src/calc.py");
-        std::fs::write(&path, source).unwrap();
-        // Keep literal collections in the command, outside analyzed source:
-        // tuple literals have legitimate independent list/tuple mutations.
-        let run = run_project_options(
-            project.path(),
-            1,
-            command,
-            &[
-                "--operators",
-                "collection_list_tuple",
-                "--baseline-timeout",
-                "5s",
-                "--total-timeout",
-                "15s",
-                "--max-mutants",
-                "1",
-            ],
-        )
-        .await;
-        assert_eq!(run.exit_code, 0, "{}", run.stderr);
-        assert_eq!(run.document["baseline"]["termination"]["Exit"], 0);
-        assert_eq!(run.document["summary"]["complete"], true);
-        assert_eq!(run.document["summary"]["counts"]["killed"], 0);
-        assert!(
-            run.document["mutants"].as_array().unwrap().is_empty(),
-            "unexpected mutants: {}",
-            run.document["mutants"]
-        );
-        assert_eq!(std::fs::read_to_string(path).unwrap(), source);
-    }
+async fn generic_type_parameter_destinations_cannot_create_false_kills(
+    #[case] source: &str,
+    #[case] command: &str,
+) {
+    let project = tempfile::tempdir().unwrap();
+    std::fs::create_dir(project.path().join("src")).unwrap();
+    let path = project.path().join("src/calc.py");
+    std::fs::write(&path, source).unwrap();
+    // Keep literal collections in the command, outside analyzed source:
+    // tuple literals have legitimate independent list/tuple mutations.
+
+    let run = run_project_options(
+        project.path(),
+        1,
+        command,
+        &[
+            "--operators",
+            "collection_list_tuple",
+            "--baseline-timeout",
+            "5s",
+            "--total-timeout",
+            "15s",
+            "--max-mutants",
+            "1",
+        ],
+    )
+    .await;
+
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    assert_eq!(run.document["baseline"]["termination"]["Exit"], 0);
+    assert_eq!(run.document["summary"]["complete"], true);
+    assert_eq!(run.document["summary"]["counts"]["killed"], 0);
+    assert!(
+        run.document["mutants"].as_array().unwrap().is_empty(),
+        "unexpected mutants: {}",
+        run.document["mutants"]
+    );
+    assert_eq!(std::fs::read_to_string(path).unwrap(), source);
 }
 
 #[tokio::test]
@@ -1785,116 +1832,111 @@ async fn concurrent_real_cli_runs_refuse_live_session_ownership() {
     assert_live_session_database_integrity(&session);
 }
 
+#[rstest::rstest]
+#[case::add_exclusion(&[][..],
+            &[][..],
+            &["--exclude", "strict.flag"][..],
+            "killed",
+            "survived",
+            false)]
+#[case::remove_exclusion(&[][..],
+            &["--exclude", "strict.flag"][..],
+            &[][..],
+            "survived",
+            "killed",
+            false)]
+#[case::restrict_include(&b"strict.flag\n"[..],
+            &["--include", "src/**", "--include", "strict.flag"][..],
+            &["--include", "src/**"][..],
+            "killed",
+            "survived",
+            false)]
+#[case::restore_include(&b"strict.flag\n"[..],
+            &["--include", "src/**"][..],
+            &["--include", "src/**", "--include", "strict.flag"][..],
+            "survived",
+            "killed",
+            false)]
+#[case::unchanged_default(&[][..], &[][..], &[][..], "killed", "killed", true)]
+#[case::unchanged_exclusion(&[][..],
+            &["--exclude", "strict.flag"][..],
+            &["--exclude", "strict.flag"][..],
+            "survived",
+            "survived",
+            true)]
 #[tokio::test]
-async fn copy_policy_changes_do_not_reuse_old_verdicts() {
+async fn copy_policy_changes_do_not_reuse_old_verdicts(
+    #[case] ignore_contents: &[u8],
+    #[case] before_options: &[&'static str],
+    #[case] after_options: &[&'static str],
+    #[case] before_status: &str,
+    #[case] after_status: &str,
+    #[case] reused: bool,
+) {
     let _parallel_test_guard = parallel_project_test_guard().await;
-    for (ignore_contents, before_options, after_options, before_status, after_status, reused) in [
-        (
-            &[][..],
-            &[][..],
-            &["--exclude", "strict.flag"][..],
-            "killed",
-            "survived",
-            false,
-        ),
-        (
-            &[][..],
-            &["--exclude", "strict.flag"][..],
-            &[][..],
-            "survived",
-            "killed",
-            false,
-        ),
-        (
-            &b"strict.flag\n"[..],
-            &["--include", "src/**", "--include", "strict.flag"][..],
-            &["--include", "src/**"][..],
-            "killed",
-            "survived",
-            false,
-        ),
-        (
-            &b"strict.flag\n"[..],
-            &["--include", "src/**"][..],
-            &["--include", "src/**", "--include", "strict.flag"][..],
-            "survived",
-            "killed",
-            false,
-        ),
-        (&[][..], &[][..], &[][..], "killed", "killed", true),
-        (
-            &[][..],
-            &["--exclude", "strict.flag"][..],
-            &["--exclude", "strict.flag"][..],
-            "survived",
-            "survived",
-            true,
-        ),
-    ] {
-        let project = tempfile::tempdir().unwrap();
-        let sessions = tempfile::tempdir().unwrap();
-        let database = sessions.path().join("saved.sqlite3");
-        write_parallel_project(project.path());
-        std::fs::write(project.path().join("strict.flag"), "strict\n").unwrap();
-        for contents in std::iter::once(ignore_contents).filter(|contents| !contents.is_empty()) {
-            std::fs::write(project.path().join(".ignore"), contents).unwrap();
-        }
-        let options = |additional: &[&'static str]| {
-            let mut options = vec!["--jobs", "1", "--fingerprint-file", "strict.flag"];
-            options.extend_from_slice(additional);
-            options
-        };
-        let command = "from pathlib import Path; from src.calc import total; assert not Path('strict.flag').exists() or total(1, 2, 3, 4, 5) == 15";
-        let first = run_project_with_session_options(
-            project.path(),
-            &database,
-            false,
-            1,
-            command,
-            &options(before_options),
-        )
-        .await;
-        let resumed = run_project_with_session_options(
-            project.path(),
-            &database,
-            true,
-            1,
-            command,
-            &options(after_options),
-        )
-        .await;
-        let fresh = run_project_with_session_options(
-            project.path(),
-            &sessions.path().join("fresh.sqlite3"),
-            false,
-            1,
-            command,
-            &options(after_options),
-        )
-        .await;
-        for run in [&first, &resumed, &fresh] {
-            assert_eq!(run.exit_code, 4, "{}", run.stderr);
-            assert_eq!(
-                run.document["baseline"]["termination"],
-                serde_json::json!({"Exit": 0})
-            );
-        }
-        assert_eq!(first.statuses[0], before_status);
-        assert_eq!(fresh.statuses[0], after_status);
-        assert_eq!(resumed.statuses, fresh.statuses);
+    let project = tempfile::tempdir().unwrap();
+    let sessions = tempfile::tempdir().unwrap();
+    let database = sessions.path().join("saved.sqlite3");
+    write_parallel_project(project.path());
+    std::fs::write(project.path().join("strict.flag"), "strict\n").unwrap();
+    for contents in std::iter::once(ignore_contents).filter(|contents| !contents.is_empty()) {
+        std::fs::write(project.path().join(".ignore"), contents).unwrap();
+    }
+    let options = |additional: &[&'static str]| {
+        let mut options = vec!["--jobs", "1", "--fingerprint-file", "strict.flag"];
+        options.extend_from_slice(additional);
+        options
+    };
+    let command = "from pathlib import Path; from src.calc import total; assert not Path('strict.flag').exists() or total(1, 2, 3, 4, 5) == 15";
+    let first = run_project_with_session_options(
+        project.path(),
+        &database,
+        false,
+        1,
+        command,
+        &options(before_options),
+    )
+    .await;
+    let resumed = run_project_with_session_options(
+        project.path(),
+        &database,
+        true,
+        1,
+        command,
+        &options(after_options),
+    )
+    .await;
+    let fresh = run_project_with_session_options(
+        project.path(),
+        &sessions.path().join("fresh.sqlite3"),
+        false,
+        1,
+        command,
+        &options(after_options),
+    )
+    .await;
+    for run in [&first, &resumed, &fresh] {
+        assert_eq!(run.exit_code, 4, "{}", run.stderr);
         assert_eq!(
-            first.document["mutants"][0]["candidate"]["id"],
-            resumed.document["mutants"][0]["candidate"]["id"]
-        );
-        assert_eq!(
-            first.document["run"]["run_id"] == resumed.document["run"]["run_id"],
-            reused
-        );
-        assert_eq!(
-            mutation_outcome::termination(&resumed.document["mutants"][0]).is_null(),
-            reused
+            run.document["baseline"]["termination"],
+            serde_json::json!({"Exit": 0})
         );
     }
+    assert_eq!(first.statuses[0], before_status);
+    assert_eq!(fresh.statuses[0], after_status);
+    assert_eq!(resumed.statuses, fresh.statuses);
+    assert_eq!(
+        first.document["mutants"][0]["candidate"]["id"],
+        resumed.document["mutants"][0]["candidate"]["id"]
+    );
+    assert_eq!(
+        first.document["run"]["run_id"] == resumed.document["run"]["run_id"],
+        reused
+    );
+    assert_eq!(
+        mutation_outcome::termination(&resumed.document["mutants"][0]).is_null(),
+        reused
+    );
 }
 
 #[tokio::test]
@@ -4438,73 +4480,78 @@ fn active_session_database(
     database
 }
 
+#[rstest::rstest]
+#[case::false_1_false_1_false_1(false, false, false)]
+#[case::false_1_false_1_true_2(false, false, true)]
+#[case::false_1_true_2_false_1(false, true, false)]
+#[case::false_1_true_2_true_2(false, true, true)]
+#[case::true_2_false_1_false_1(true, false, false)]
+#[case::true_2_false_1_true_2(true, false, true)]
+#[case::true_2_true_2_false_1(true, true, false)]
+#[case::true_2_true_2_true_2(true, true, true)]
 #[tokio::test]
-async fn active_session_artifacts_allow_real_cli_in_root() {
-    for inside in [false, true] {
-        for relative in [false, true] {
-            for existing in [false, true] {
-                let directory = tempfile::tempdir().unwrap();
-                let project = directory.path().join("project");
-                std::fs::create_dir(&project).unwrap();
-                write_parallel_project(&project);
-                std::fs::write(project.join("fixture.db"), b"ordinary fixture").unwrap();
-                let database =
-                    active_session_database(directory.path(), &project, inside, existing);
-                let session_paths = [
-                    database.as_path(),
-                    database.strip_prefix(directory.path()).unwrap(),
-                ];
-                let session = session_paths[usize::from(relative)];
-                let command = "from pathlib import Path; assert Path('fixture.db').read_bytes() == b'ordinary fixture'; assert not Path('session.sqlite3').exists(); from src.calc import total; assert total(1,2,3,4,5) == 15";
-                let mut reports = Vec::new();
-                for resume in [false, true] {
-                    let mut args = real_cli_session_args(&project, session, resume, command);
-                    let jobs = args.iter().position(|arg| arg == "--jobs").unwrap();
-                    args[jobs + 1] = "2".into();
-                    let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
-                        .current_dir(directory.path())
-                        .args(args)
-                        .kill_on_drop(true)
-                        .output()
-                        .await
-                        .unwrap();
-                    assert_eq!(
-                        output.status.code(),
-                        Some(4),
-                        "inside={inside} relative={relative} existing={existing} resume={resume} stdout={} stderr={}",
-                        String::from_utf8_lossy(&output.stdout),
-                        String::from_utf8_lossy(&output.stderr)
-                    );
-                    let report: serde_json::Value =
-                        jsonl_report::from_slice(&output.stdout).unwrap();
-                    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
-                    let mutants = report["mutants"].as_array().unwrap();
-                    let killed = mutants
-                        .iter()
-                        .find(|mutant| mutation_outcome::status(mutant) == "killed")
-                        .expect("an actual mutant must be killed");
-                    assert_eq!(report["summary"]["complete"], false);
-                    reports.push((
-                        report["run"]["run_id"].clone(),
-                        killed["candidate"]["id"].clone(),
-                        mutants.clone(),
-                    ));
-                }
-                let [(first_run, killed_id, _), (resumed_run, _, resumed_mutants)] =
-                    reports.as_slice()
-                else {
-                    panic!("fresh and resumed reports");
-                };
-                assert_eq!(resumed_run, first_run);
-                let reused = resumed_mutants
-                    .iter()
-                    .find(|mutant| &mutant["candidate"]["id"] == killed_id)
-                    .unwrap();
-                assert_eq!(mutation_outcome::status(reused), "killed");
-                assert!(mutation_outcome::termination(reused).is_null());
-            }
-        }
+async fn active_session_artifacts_allow_real_cli_in_root(
+    #[case] inside: bool,
+    #[case] relative: bool,
+    #[case] existing: bool,
+) {
+    let directory = tempfile::tempdir().unwrap();
+    let project = directory.path().join("project");
+    std::fs::create_dir(&project).unwrap();
+    write_parallel_project(&project);
+    std::fs::write(project.join("fixture.db"), b"ordinary fixture").unwrap();
+    let database = active_session_database(directory.path(), &project, inside, existing);
+    let session_paths = [
+        database.as_path(),
+        database.strip_prefix(directory.path()).unwrap(),
+    ];
+    let session = session_paths[usize::from(relative)];
+    let command = "from pathlib import Path; assert Path('fixture.db').read_bytes() == b'ordinary fixture'; assert not Path('session.sqlite3').exists(); from src.calc import total; assert total(1,2,3,4,5) == 15";
+    let mut reports = Vec::new();
+    for resume in [false, true] {
+        let mut args = real_cli_session_args(&project, session, resume, command);
+        let jobs = args.iter().position(|arg| arg == "--jobs").unwrap();
+        args[jobs + 1] = "2".into();
+
+        let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+            .current_dir(directory.path())
+            .args(args)
+            .kill_on_drop(true)
+            .output()
+            .await
+            .unwrap();
+
+        assert_eq!(
+            output.status.code(),
+            Some(4),
+            "inside={inside} relative={relative} existing={existing} resume={resume} stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+        let mutants = report["mutants"].as_array().unwrap();
+        let killed = mutants
+            .iter()
+            .find(|mutant| mutation_outcome::status(mutant) == "killed")
+            .expect("an actual mutant must be killed");
+        assert_eq!(report["summary"]["complete"], false);
+        reports.push((
+            report["run"]["run_id"].clone(),
+            killed["candidate"]["id"].clone(),
+            mutants.clone(),
+        ));
     }
+    let [(first_run, killed_id, _), (resumed_run, _, resumed_mutants)] = reports.as_slice() else {
+        panic!("fresh and resumed reports");
+    };
+    assert_eq!(resumed_run, first_run);
+    let reused = resumed_mutants
+        .iter()
+        .find(|mutant| &mutant["candidate"]["id"] == killed_id)
+        .unwrap();
+    assert_eq!(mutation_outcome::status(reused), "killed");
+    assert!(mutation_outcome::termination(reused).is_null());
 }
 
 #[cfg(unix)]
@@ -4515,6 +4562,7 @@ fn active_database_alias(
     existing: bool,
 ) -> std::path::PathBuf {
     if existing {
+        drop(hoimin_cli::session::SessionHandler::open(database).unwrap());
         let leaf = directory.join("leaf.db");
         std::os::unix::fs::symlink(database, &leaf).unwrap();
         leaf
@@ -4524,8 +4572,11 @@ fn active_database_alias(
 }
 
 #[cfg(unix)]
+#[rstest::rstest]
+#[case::false_1(false)]
+#[case::true_2(true)]
 #[tokio::test]
-async fn active_session_artifacts_follow_root_parent_and_database_aliases() {
+async fn active_session_artifacts_follow_root_parent_and_database_aliases(#[case] existing: bool) {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().join("project");
     std::fs::create_dir(&root).unwrap();
@@ -4533,30 +4584,31 @@ async fn active_session_artifacts_follow_root_parent_and_database_aliases() {
     let alias = directory.path().join("alias");
     std::os::unix::fs::symlink(&root, &alias).unwrap();
     let database = root.join("active*?[1].db");
-    for existing in [false, true] {
-        let session = active_database_alias(directory.path(), &alias, &database, existing);
-        let args = real_cli_session_args(
-            &alias,
-            &session,
-            false,
-            "from pathlib import Path; assert not list(Path('.').glob('*.db*')); from src.calc import total; assert total(1,2,3,4,5) == 15",
-        );
-        let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
-            .args(args)
-            .kill_on_drop(true)
-            .output()
-            .await
-            .unwrap();
-        assert_eq!(
-            output.status.code(),
-            Some(4),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
-        assert_eq!(report["baseline"]["termination"]["Exit"], 0);
-        assert_eq!(mutation_outcome::status(&report["mutants"][0]), "killed");
-    }
+
+    let session = active_database_alias(directory.path(), &alias, &database, existing);
+    let args = real_cli_session_args(
+        &alias,
+        &session,
+        false,
+        "from pathlib import Path; assert not list(Path('.').glob('*.db*')); from src.calc import total; assert total(1,2,3,4,5) == 15",
+    );
+
+    let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .args(args)
+        .kill_on_drop(true)
+        .output()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        output.status.code(),
+        Some(4),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+    assert_eq!(mutation_outcome::status(&report["mutants"][0]), "killed");
 }
 
 fn configure_session_lock_alias(project: &Path, enabled: bool) {
@@ -4570,39 +4622,45 @@ fn configure_session_lock_alias(project: &Path, enabled: bool) {
     let _ = (project, enabled);
 }
 
+#[rstest::rstest]
+#[case::fixture_db_1_false_1("fixture.db", false)]
+#[case::fixture_db_1_true_2("fixture.db", true)]
+#[case::src_calc_py_2_false_1("src/calc.py", false)]
+#[case::src_calc_py_2_true_2("src/calc.py", true)]
 #[tokio::test]
-async fn active_session_artifacts_do_not_exempt_original_source_or_fixture_edits() {
-    for path in ["fixture.db", "src/calc.py"] {
-        for alias in [false, true] {
-            let project = tempfile::tempdir().unwrap();
-            write_parallel_project(project.path());
-            std::fs::write(project.path().join("fixture.db"), b"original fixture").unwrap();
-            let session = project.path().join("session.db");
-            configure_session_lock_alias(project.path(), alias);
-            let original = project.path().join(path);
-            let command = format!(
-                "from pathlib import Path; Path({:?}).write_text('changed')",
-                original.to_str().unwrap()
-            );
-            let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
-                .args(real_cli_session_args(
-                    project.path(),
-                    &session,
-                    false,
-                    &command,
-                ))
-                .kill_on_drop(true)
-                .output()
-                .await
-                .unwrap();
-            assert_eq!(output.status.code(), Some(2));
-            assert!(
-                String::from_utf8_lossy(&output.stderr).contains("workspace.original.changed"),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-        }
-    }
+async fn active_session_artifacts_do_not_exempt_original_source_or_fixture_edits(
+    #[case] path: &str,
+    #[case] alias: bool,
+) {
+    let project = tempfile::tempdir().unwrap();
+    write_parallel_project(project.path());
+    std::fs::write(project.path().join("fixture.db"), b"original fixture").unwrap();
+    let session = project.path().join("session.db");
+    configure_session_lock_alias(project.path(), alias);
+    let original = project.path().join(path);
+    let command = format!(
+        "from pathlib import Path; Path({:?}).write_text('changed')",
+        original.to_str().unwrap()
+    );
+
+    let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .args(real_cli_session_args(
+            project.path(),
+            &session,
+            false,
+            &command,
+        ))
+        .kill_on_drop(true)
+        .output()
+        .await
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("workspace.original.changed"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[tokio::test]
@@ -4772,11 +4830,12 @@ async fn active_session_aliased_lock_tree_is_excluded_parallel() {
 }
 
 #[cfg(any(unix, windows))]
+#[rstest::rstest]
+#[case::outside_alias_1("outside-alias")]
+#[case::outside_target_2("outside-target")]
 #[tokio::test]
-async fn active_session_lock_tree_aliases_across_root_boundary() {
-    for mode in ["outside-alias", "outside-target"] {
-        assert_active_session_aliased_lock_tree_is_excluded("1", mode).await;
-    }
+async fn active_session_lock_tree_aliases_across_root_boundary(#[case] mode: &str) {
+    assert_active_session_aliased_lock_tree_is_excluded("1", mode).await;
 }
 
 #[cfg(any(unix, windows))]
@@ -4842,39 +4901,42 @@ async fn active_session_lock_tree_alias_supports_natural_resume() {
 }
 
 #[cfg(unix)]
+#[rstest::rstest]
+#[case::input_1(".", "workspace.path.invalid")]
+#[case::session_db_hoimin_locks_2(".session.db.hoimin-locks", "session.path")]
 #[tokio::test]
-async fn active_session_lock_tree_invalid_aliases_fail_before_baseline() {
-    for (target_name, code) in [
-        (".", "workspace.path.invalid"),
-        (".session.db.hoimin-locks", "session.path"),
-    ] {
-        let directory = tempfile::tempdir().unwrap();
-        let root = directory.path();
-        write_parallel_project(root);
-        let source = std::fs::read(root.join("src/calc.py")).unwrap();
-        let alias = root.join(".session.db.hoimin-locks");
-        session_directory_alias(&root.join(target_name), &alias);
-        let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
-        command
-            .args(real_cli_session_args(
-                root,
-                &root.join("session.db"),
-                false,
-                "raise AssertionError('baseline must not run')",
-            ))
-            .kill_on_drop(true);
-        let output = tokio::time::timeout(Duration::from_secs(30), command.output())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(output.status.code(), Some(2));
-        let diagnostics = String::from_utf8_lossy(&output.stderr);
-        assert!(diagnostics.contains(code), "{diagnostics}");
-        let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
-        assert!(report["baseline"].is_null());
-        assert!(!root.join("session.db").exists());
-        assert_eq!(std::fs::read(root.join("src/calc.py")).unwrap(), source);
-    }
+async fn active_session_lock_tree_invalid_aliases_fail_before_baseline(
+    #[case] target_name: &str,
+    #[case] code: &str,
+) {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    write_parallel_project(root);
+    let source = std::fs::read(root.join("src/calc.py")).unwrap();
+    let alias = root.join(".session.db.hoimin-locks");
+    session_directory_alias(&root.join(target_name), &alias);
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
+    command
+        .args(real_cli_session_args(
+            root,
+            &root.join("session.db"),
+            false,
+            "raise AssertionError('baseline must not run')",
+        ))
+        .kill_on_drop(true);
+
+    let output = tokio::time::timeout(Duration::from_secs(30), command.output())
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    let diagnostics = String::from_utf8_lossy(&output.stderr);
+    assert!(diagnostics.contains(code), "{diagnostics}");
+    let report: serde_json::Value = jsonl_report::from_slice(&output.stdout).unwrap();
+    assert!(report["baseline"].is_null());
+    assert!(!root.join("session.db").exists());
+    assert_eq!(std::fs::read(root.join("src/calc.py")).unwrap(), source);
 }
 
 #[cfg(unix)]
@@ -4929,93 +4991,102 @@ async fn stalled_baseline_log_consumer_respects_total_timeout_and_grace() {
     );
 }
 
+#[rstest::rstest]
+#[case::input_1_1(1)]
+#[case::input_2_2(2)]
 #[tokio::test]
-async fn baseline_restoration_removes_generated_state_before_each_mutant() {
-    for jobs in [1, 2] {
-        // Arrange.
-        let project = tempfile::tempdir().unwrap();
-        std::fs::create_dir(project.path().join("src")).unwrap();
-        std::fs::write(
-            project.path().join("src/calc.py"),
-            "one = True\ntwo = False\n",
-        )
-        .unwrap();
-        // Act.
-        let run = run_project_options(project.path(), jobs,
+async fn baseline_restoration_removes_generated_state_before_each_mutant(#[case] jobs: usize) {
+    // Arrange.
+    let project = tempfile::tempdir().unwrap();
+    std::fs::create_dir(project.path().join("src")).unwrap();
+    std::fs::write(
+        project.path().join("src/calc.py"),
+        "one = True\ntwo = False\n",
+    )
+    .unwrap();
+    // Act.
+
+    let run = run_project_options(project.path(), jobs,
             "from pathlib import Path; p=Path('generated-state.txt'); clean=not p.exists(); p.write_text('dirty'); raise SystemExit(0 if clean else 1)",
             &["--operators", "boolean_literal"]).await;
-        // Assert.
-        assert_eq!(
-            run.statuses,
-            ["survived", "survived"],
-            "jobs={jobs}: {}",
-            run.stderr
-        );
-        assert_eq!(run.document["summary"]["complete"], true);
-        assert!(!project.path().join("generated-state.txt").exists());
-    }
+    // Assert.
+
+    assert_eq!(
+        run.statuses,
+        ["survived", "survived"],
+        "jobs={jobs}: {}",
+        run.stderr
+    );
+    assert_eq!(run.document["summary"]["complete"], true);
+    assert!(!project.path().join("generated-state.txt").exists());
 }
 
+#[rstest::rstest]
+#[case::input_1_1(1)]
+#[case::input_2_2(2)]
 #[tokio::test]
-async fn baseline_restoration_restores_existing_state_before_each_mutant() {
-    for jobs in [1, 2] {
-        // Arrange.
-        let project = tempfile::tempdir().unwrap();
-        std::fs::create_dir(project.path().join("src")).unwrap();
-        std::fs::write(
-            project.path().join("src/calc.py"),
-            "one = True\ntwo = False\n",
-        )
-        .unwrap();
-        std::fs::write(project.path().join("state.txt"), "clean").unwrap();
-        // Act.
-        let run = run_project_options(project.path(), jobs,
+async fn baseline_restoration_restores_existing_state_before_each_mutant(#[case] jobs: usize) {
+    // Arrange.
+    let project = tempfile::tempdir().unwrap();
+    std::fs::create_dir(project.path().join("src")).unwrap();
+    std::fs::write(
+        project.path().join("src/calc.py"),
+        "one = True\ntwo = False\n",
+    )
+    .unwrap();
+    std::fs::write(project.path().join("state.txt"), "clean").unwrap();
+    // Act.
+
+    let run = run_project_options(project.path(), jobs,
             "from pathlib import Path; p=Path('state.txt'); clean=p.read_text()=='clean'; p.write_text('dirty'); raise SystemExit(0 if clean else 1)",
             &["--operators", "boolean_literal"]).await;
-        // Assert.
-        assert_eq!(
-            run.statuses,
-            ["survived", "survived"],
-            "jobs={jobs}: {}",
-            run.stderr
-        );
-        assert_eq!(run.document["summary"]["complete"], true);
-        assert_eq!(
-            std::fs::read_to_string(project.path().join("state.txt")).unwrap(),
-            "clean"
-        );
-    }
+    // Assert.
+
+    assert_eq!(
+        run.statuses,
+        ["survived", "survived"],
+        "jobs={jobs}: {}",
+        run.stderr
+    );
+    assert_eq!(run.document["summary"]["complete"], true);
+    assert_eq!(
+        std::fs::read_to_string(project.path().join("state.txt")).unwrap(),
+        "clean"
+    );
 }
 
+#[rstest::rstest]
+#[case::input_1_1(1)]
+#[case::input_2_2(2)]
 #[tokio::test]
-async fn baseline_restoration_restores_selected_source_before_mutation() {
-    for jobs in [1, 2] {
-        // Arrange.
-        let project = tempfile::tempdir().unwrap();
-        std::fs::create_dir(project.path().join("src")).unwrap();
-        let source = "one = True\ntwo = False\n";
-        std::fs::write(project.path().join("src/calc.py"), source).unwrap();
-        // Act.
-        let run = run_project_options(
-            project.path(),
-            jobs,
-            "from pathlib import Path; Path('src/calc.py').write_text('changed by test')",
-            &["--operators", "boolean_literal"],
-        )
-        .await;
-        // Assert.
-        assert_eq!(
-            run.statuses,
-            ["survived", "survived"],
-            "jobs={jobs}: {}",
-            run.stderr
-        );
-        assert_eq!(run.document["summary"]["complete"], true);
-        assert_eq!(
-            std::fs::read_to_string(project.path().join("src/calc.py")).unwrap(),
-            source
-        );
-    }
+async fn baseline_restoration_restores_selected_source_before_mutation(#[case] jobs: usize) {
+    // Arrange.
+    let project = tempfile::tempdir().unwrap();
+    std::fs::create_dir(project.path().join("src")).unwrap();
+    let source = "one = True\ntwo = False\n";
+    std::fs::write(project.path().join("src/calc.py"), source).unwrap();
+    // Act.
+
+    let run = run_project_options(
+        project.path(),
+        jobs,
+        "from pathlib import Path; Path('src/calc.py').write_text('changed by test')",
+        &["--operators", "boolean_literal"],
+    )
+    .await;
+    // Assert.
+
+    assert_eq!(
+        run.statuses,
+        ["survived", "survived"],
+        "jobs={jobs}: {}",
+        run.stderr
+    );
+    assert_eq!(run.document["summary"]["complete"], true);
+    assert_eq!(
+        std::fs::read_to_string(project.path().join("src/calc.py")).unwrap(),
+        source
+    );
 }
 
 #[cfg(unix)]

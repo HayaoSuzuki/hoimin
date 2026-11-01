@@ -47,69 +47,72 @@ impl Drop for PausedWriter {
         self.dropped.store(true, Ordering::Release);
     }
 }
-
+#[rstest::rstest]
+#[case::false_1(false)]
+#[case::true_2(true)]
 #[tokio::test(flavor = "current_thread")]
-async fn owned_public_entry_bounds_stalled_write_and_flush_without_dropping_writer() {
-    for pause_flush in [false, true] {
-        let project = tempfile::tempdir().unwrap();
-        std::fs::write(project.path().join("target.py"), "pass\n").unwrap();
-        let python = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(if cfg!(windows) {
-            "../../.venv/Scripts/python.exe"
-        } else {
-            "../../.venv/bin/python"
-        });
-        assert!(
-            python.is_file(),
-            "missing controlled Python: {}",
-            python.display()
-        );
-        let args = vec![
-            "hoimin".into(),
-            "run".into(),
-            "--root".into(),
-            project.path().as_os_str().to_owned(),
-            "--file".into(),
-            "target.py".into(),
-            "--allow-best-effort-memory".into(),
-            "--min-free-space".into(),
-            "1B".into(),
-            "--total-timeout".into(),
-            "1s".into(),
-            "--".into(),
-            python.into_os_string(),
-            "-c".into(),
-            "pass".into(),
-        ];
-        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel::<()>();
-        let (release_tx, release_rx) = mpsc::channel();
-        let dropped = Arc::new(AtomicBool::new(false));
-        let writer = PausedWriter {
-            entered: Some(entered_tx),
-            release: release_rx,
-            pause_flush,
-            dropped: Arc::clone(&dropped),
-        };
-        let mut run = Box::pin(hoimin_cli::run_with_writers(args, writer, io::sink()));
-        tokio::select! {
-            result = &mut run => panic!("run returned before writer entered: {result}; pause_flush={pause_flush}"),
-            entered = entered_rx => entered.expect("writer pause was entered"),
-        }
-        let result = tokio::time::timeout(Duration::from_secs(4), &mut run).await;
-        let retained = !dropped.load(Ordering::Acquire);
-        release_tx.send(()).unwrap();
-        assert_eq!(
-            result.expect("stalled writer exceeded total timeout plus grace"),
-            2
-        );
-        assert!(retained, "in-flight writer ownership was dropped");
-        tokio::time::timeout(Duration::from_secs(2), async {
-            while !dropped.load(Ordering::Acquire) {
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .expect("released writer was not eventually dropped");
+async fn owned_public_entry_bounds_stalled_write_and_flush_without_dropping_writer(
+    #[case] pause_flush: bool,
+) {
+    let project = tempfile::tempdir().unwrap();
+    std::fs::write(project.path().join("target.py"), "pass\n").unwrap();
+    let python = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(if cfg!(windows) {
+        "../../.venv/Scripts/python.exe"
+    } else {
+        "../../.venv/bin/python"
+    });
+
+    assert!(
+        python.is_file(),
+        "missing controlled Python: {}",
+        python.display()
+    );
+    let args = vec![
+        "hoimin".into(),
+        "run".into(),
+        "--root".into(),
+        project.path().as_os_str().to_owned(),
+        "--file".into(),
+        "target.py".into(),
+        "--allow-best-effort-memory".into(),
+        "--min-free-space".into(),
+        "1B".into(),
+        "--total-timeout".into(),
+        "1s".into(),
+        "--".into(),
+        python.into_os_string(),
+        "-c".into(),
+        "pass".into(),
+    ];
+    let (entered_tx, entered_rx) = tokio::sync::oneshot::channel::<()>();
+    let (release_tx, release_rx) = mpsc::channel();
+    let dropped = Arc::new(AtomicBool::new(false));
+    let writer = PausedWriter {
+        entered: Some(entered_tx),
+        release: release_rx,
+        pause_flush,
+        dropped: Arc::clone(&dropped),
+    };
+    let mut run = Box::pin(hoimin_cli::run_with_writers(args, writer, io::sink()));
+    tokio::select! {
+        result = &mut run => panic!("run returned before writer entered: {result}; pause_flush={pause_flush}"),
+        entered = entered_rx => entered.expect("writer pause was entered"),
     }
+    let result = tokio::time::timeout(Duration::from_secs(4), &mut run).await;
+    let retained = !dropped.load(Ordering::Acquire);
+    release_tx.send(()).unwrap();
+    assert_eq!(
+        result.expect("stalled writer exceeded total timeout plus grace"),
+        2
+    );
+    assert!(retained, "in-flight writer ownership was dropped");
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while !dropped.load(Ordering::Acquire) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("released writer was not eventually dropped");
 }
 
 #[tokio::test]

@@ -56,9 +56,9 @@ def test_lean_release_gate_accepts_and_replays_valid_assets(
 
     release.checksums(tmp_path, "1.2.3", COMMIT)
 
-    assert len(sums.read_text().splitlines()) == 12
     before = sums.read_bytes()
 
     release.checksums(tmp_path, "1.2.3", COMMIT)
 
+    assert len(sums.read_text().splitlines()) == 12
     assert sums.read_bytes() == before

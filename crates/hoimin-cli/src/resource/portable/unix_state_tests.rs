@@ -201,65 +201,79 @@ fn successful_signal_requires_later_absence_evidence() {
     assert_eq!(os.calls(), [(41, libc::SIGKILL), (41, 0)]);
 }
 
-#[test]
-fn probe_errno_boundaries_preserve_retry_identity() {
-    for (errno, expected) in [
+#[rstest::rstest]
+#[case::none_1(0)]
+#[case::some_libc_eperm_2(1)]
+#[case::some_libc_esrch_3(2)]
+#[case::some_libc_eio_4(3)]
+fn probe_errno_boundaries_preserve_retry_identity(#[case] scenario_index: usize) {
+    let (errno, expected) = [
         (None, Ok(false)),
         (Some(libc::EPERM), Ok(false)),
         (Some(libc::ESRCH), Ok(true)),
         (Some(libc::EIO), Err(())),
-    ] {
-        // Arrange
-        let os = OsGuard::install();
-        os.probe_errno(errno);
-        let mut supervisor = supervisor();
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
 
-        // Act
-        let actual = supervisor
-            .refresh_tree_quiescence_after_root_reap()
-            .map_err(|_| ());
-        os.probe_errno(Some(libc::ESRCH));
-        let retry = supervisor
-            .refresh_tree_quiescence_after_root_reap()
-            .unwrap();
-        drop(supervisor);
+    // Arrange
+    let os = OsGuard::install();
+    os.probe_errno(errno);
+    let mut supervisor = supervisor();
 
-        // Assert: only ESRCH proves absence; other outcomes retain the probe target.
-        assert_eq!(actual, expected, "errno={errno:?}");
-        assert!(retry);
-        let expected_calls = if errno == Some(libc::ESRCH) {
-            vec![(41, 0)]
-        } else {
-            vec![(41, 0), (41, 0)]
-        };
-        assert_eq!(os.calls(), expected_calls, "errno={errno:?}");
-    }
+    // Act
+    let actual = supervisor
+        .refresh_tree_quiescence_after_root_reap()
+        .map_err(|_| ());
+    os.probe_errno(Some(libc::ESRCH));
+    let retry = supervisor
+        .refresh_tree_quiescence_after_root_reap()
+        .unwrap();
+    drop(supervisor);
+
+    // Assert: only ESRCH proves absence; other outcomes retain the probe target.
+    assert_eq!(actual, expected, "errno={errno:?}");
+    assert!(retry);
+    let expected_calls = if errno == Some(libc::ESRCH) {
+        vec![(41, 0)]
+    } else {
+        vec![(41, 0), (41, 0)]
+    };
+    assert_eq!(os.calls(), expected_calls, "errno={errno:?}");
 }
 
-#[test]
-fn signal_errno_boundaries_preserve_retry_behavior() {
-    for (errno, expected, calls) in [
+#[rstest::rstest]
+#[case::none_1(0)]
+#[case::some_libc_esrch_2(1)]
+#[case::some_libc_eperm_3(2)]
+#[case::some_libc_eio_4(3)]
+fn signal_errno_boundaries_preserve_retry_behavior(#[case] scenario_index: usize) {
+    let (errno, expected, calls) = [
         (None, Ok(false), 1),
         (Some(libc::ESRCH), Ok(false), 1),
         (Some(libc::EPERM), Err(()), 2),
         (Some(libc::EIO), Err(()), 2),
-    ] {
-        // Arrange
-        let os = OsGuard::install();
-        os.signal_errno(errno);
-        let mut supervisor = supervisor();
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
 
-        // Act
-        let actual = supervisor.terminate(true).map_err(|_| ());
-        os.signal_errno(None);
-        let retry = supervisor.terminate(true).unwrap();
-        drop(supervisor);
+    // Arrange
+    let os = OsGuard::install();
+    os.signal_errno(errno);
+    let mut supervisor = supervisor();
 
-        // Assert: ESRCH is successful termination, while other errors allow retry.
-        assert_eq!(actual, expected, "errno={errno:?}");
-        assert!(!retry);
-        assert_eq!(os.calls(), vec![(41, libc::SIGKILL); calls]);
-    }
+    // Act
+    let actual = supervisor.terminate(true).map_err(|_| ());
+    os.signal_errno(None);
+    let retry = supervisor.terminate(true).unwrap();
+    drop(supervisor);
+
+    // Assert: ESRCH is successful termination, while other errors allow retry.
+    assert_eq!(actual, expected, "errno={errno:?}");
+    assert!(!retry);
+    assert_eq!(os.calls(), vec![(41, libc::SIGKILL); calls]);
 }
 
 proptest! {
@@ -267,7 +281,7 @@ proptest! {
     fn operation_history_preserves_signal_authority(
         operations in prop::collection::vec((0u8..4, 0u8..3), 0..80)
     ) {
-        // Arrange: the oracle records independent lifecycle facts, not enum variants.
+        // the oracle records independent lifecycle facts, not enum variants.
         let os = OsGuard::install();
         let mut supervisor = supervisor();
         let mut reap_observed = false;
@@ -308,9 +322,11 @@ proptest! {
                     Ok(quiescent)
                 }
             };
+
             let actual = if refresh {
                 supervisor.refresh_tree_quiescence_after_root_reap()
             } else { supervisor.terminate(live) }.map_err(|_| ());
+
             prop_assert_eq!(actual, expected);
             prop_assert_eq!(os.calls(), expected_calls.clone());
         }

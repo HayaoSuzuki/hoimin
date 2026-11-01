@@ -1648,6 +1648,7 @@ mod task_tests {
         let still_readonly = wrapper.metadata().unwrap().permissions().readonly();
         std::fs::set_permissions(path, original_permissions).unwrap();
         restored.unwrap();
+
         assert!(!still_readonly);
 
         let renamed = parent.path().join("renamed");
@@ -1802,6 +1803,7 @@ mod task_tests {
                 candidate: candidate.clone(),
             })
             .unwrap();
+
         assert!(handler.worker(0).is_none());
 
         let event = handler.accept_task_completion(apply.execute()).unwrap();
@@ -1854,70 +1856,70 @@ mod task_tests {
         deepest
     }
 
-    #[test]
-    fn cleanup_retains_failed_slots_and_prioritizes_active_errors() {
-        for effect in [false, true] {
-            let project = tempfile::tempdir().unwrap();
-            std::fs::write(project.path().join("a.py"), b"original\n").unwrap();
-            let mut handler = WorkspaceHandler::new(
-                Utf8Path::from_path(project.path()).unwrap().to_owned(),
-                Vec::new(),
-                2,
-                CopyOptions::default(),
-            );
-            let completed = handler
-                .handle_preflight(Preflight { id: EffectId(70) })
-                .unwrap();
-            let mut ledger = BudgetLedger::new(RunBudgets {
-                memory: 1,
-                copy: completed.aggregate_logical_bytes,
-                processes: 1,
-            });
-            let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
-            for worker in [0, 1] {
-                handler
-                    .handle_create_worker(
-                        grant
-                            .create_worker(EffectId(71 + u64::from(worker)), worker)
-                            .unwrap(),
-                    )
-                    .unwrap();
-            }
-            let active_root = handler.worker(1).unwrap().root().to_owned();
-            let pending = handler.take_active(0).unwrap();
-            let pending_root = pending.root().to_owned();
+    #[rstest::rstest]
+    #[case::false_1(false)]
+    #[case::true_2(true)]
+    fn cleanup_retains_failed_slots_and_prioritizes_active_errors(#[case] effect: bool) {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("a.py"), b"original\n").unwrap();
+        let mut handler = WorkspaceHandler::new(
+            Utf8Path::from_path(project.path()).unwrap().to_owned(),
+            Vec::new(),
+            2,
+            CopyOptions::default(),
+        );
+        let completed = handler
+            .handle_preflight(Preflight { id: EffectId(70) })
+            .unwrap();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: completed.aggregate_logical_bytes,
+            processes: 1,
+        });
+        let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+        for worker in [0, 1] {
             handler
-                .workers
-                .insert(0, WorkerSlot::PendingCleanup(pending));
-            let pending_deepest = create_overdeep_tree(&pending_root);
-            let active_deepest = create_overdeep_tree(&active_root);
-
-            let message = if effect {
-                handler
-                    .handle_cleanup(grant.cleanup(EffectId(73)))
-                    .unwrap_err()
-                    .failure
-                    .message()
-            } else {
-                handler.close().unwrap_err().to_string()
-            };
-
-            assert!(message.contains(active_root.as_str()), "{message}");
-            assert!(!message.contains(pending_root.as_str()), "{message}");
-            assert_eq!(handler.worker_count(), 1);
-            assert_eq!(handler.pending_cleanup_count(), 1);
-            assert_eq!(handler.materialized_worker_slots(), 2);
-            assert_eq!(handler.observed_copy_bytes(), 18);
-            std::fs::remove_dir(pending_deepest).unwrap();
-            std::fs::remove_dir(active_deepest).unwrap();
-            handler.handle_cleanup(grant.cleanup(EffectId(74))).unwrap();
-            assert_eq!(handler.worker_count(), 0);
-            assert_eq!(handler.pending_cleanup_count(), 0);
-            assert_eq!(handler.materialized_worker_slots(), 0);
-            assert_eq!(handler.observed_copy_bytes(), 0);
-            assert!(!active_root.exists());
-            assert!(!pending_root.exists());
+                .handle_create_worker(
+                    grant
+                        .create_worker(EffectId(71 + u64::from(worker)), worker)
+                        .unwrap(),
+                )
+                .unwrap();
         }
+        let active_root = handler.worker(1).unwrap().root().to_owned();
+        let pending = handler.take_active(0).unwrap();
+        let pending_root = pending.root().to_owned();
+        handler
+            .workers
+            .insert(0, WorkerSlot::PendingCleanup(pending));
+        let pending_deepest = create_overdeep_tree(&pending_root);
+        let active_deepest = create_overdeep_tree(&active_root);
+
+        let message = if effect {
+            handler
+                .handle_cleanup(grant.cleanup(EffectId(73)))
+                .unwrap_err()
+                .failure
+                .message()
+        } else {
+            handler.close().unwrap_err().to_string()
+        };
+
+        assert!(message.contains(active_root.as_str()), "{message}");
+        assert!(!message.contains(pending_root.as_str()), "{message}");
+        assert_eq!(handler.worker_count(), 1);
+        assert_eq!(handler.pending_cleanup_count(), 1);
+        assert_eq!(handler.materialized_worker_slots(), 2);
+        assert_eq!(handler.observed_copy_bytes(), 18);
+        std::fs::remove_dir(pending_deepest).unwrap();
+        std::fs::remove_dir(active_deepest).unwrap();
+        handler.handle_cleanup(grant.cleanup(EffectId(74))).unwrap();
+        assert_eq!(handler.worker_count(), 0);
+        assert_eq!(handler.pending_cleanup_count(), 0);
+        assert_eq!(handler.materialized_worker_slots(), 0);
+        assert_eq!(handler.observed_copy_bytes(), 0);
+        assert!(!active_root.exists());
+        assert!(!pending_root.exists());
     }
 
     #[test]
@@ -1932,6 +1934,7 @@ mod task_tests {
             })
             .unwrap();
         let completion = task.execute();
+
         assert_eq!(handler.worker_count(), 0);
         assert_eq!(handler.pending_cleanup_count(), 0);
         let RunEvent::EffectFailed(failed) = handler.accept_task_completion(completion).unwrap()
@@ -1960,91 +1963,91 @@ mod task_tests {
         handler.close().unwrap();
     }
 
-    #[test]
-    fn failed_reset_releases_ownership_after_successful_discard_in_both_paths() {
-        for owned in [false, true] {
-            let (_project, mut handler, retry) = prepared_handler();
-            let workspace = handler.worker(0).unwrap();
-            let old_root = workspace.root().to_owned();
-            let snapshot_file = workspace.snapshot.root.join("pkg/a.py");
-            std::fs::remove_file(&snapshot_file).unwrap();
-            let request = ResetWorker {
-                id: EffectId(60),
-                worker: 0,
-            };
+    #[rstest::rstest]
+    #[case::false_1(false)]
+    #[case::true_2(true)]
+    fn failed_reset_releases_ownership_after_successful_discard_in_both_paths(#[case] owned: bool) {
+        let (_project, mut handler, retry) = prepared_handler();
+        let workspace = handler.worker(0).unwrap();
+        let old_root = workspace.root().to_owned();
+        let snapshot_file = workspace.snapshot.root.join("pkg/a.py");
+        std::fs::remove_file(&snapshot_file).unwrap();
+        let request = ResetWorker {
+            id: EffectId(60),
+            worker: 0,
+        };
 
-            let failed = if owned {
-                let completion = handler.prepare_reset_task(request).unwrap().execute();
-                let RunEvent::EffectFailed(failed) =
-                    handler.accept_task_completion(completion).unwrap()
-                else {
-                    panic!("missing snapshot must fail reset");
-                };
-                failed
-            } else {
-                handler.handle_reset_worker(request).unwrap_err()
+        let failed = if owned {
+            let completion = handler.prepare_reset_task(request).unwrap().execute();
+            let RunEvent::EffectFailed(failed) =
+                handler.accept_task_completion(completion).unwrap()
+            else {
+                panic!("missing snapshot must fail reset");
             };
+            failed
+        } else {
+            handler.handle_reset_worker(request).unwrap_err()
+        };
 
-            assert_eq!(failed.failure.code(), "workspace.restore");
-            assert_eq!(handler.worker_count(), 0);
-            assert_eq!(handler.pending_cleanup_count(), 0);
-            assert_eq!(handler.materialized_worker_slots(), 0);
-            assert_eq!(handler.observed_copy_bytes(), 0);
-            assert!(!old_root.exists());
-            std::fs::write(snapshot_file, b"original\n").unwrap();
-            handler.handle_create_worker(retry).unwrap();
-            assert_eq!(handler.worker_count(), 1);
-            handler.close().unwrap();
-        }
+        assert_eq!(failed.failure.code(), "workspace.restore");
+        assert_eq!(handler.worker_count(), 0);
+        assert_eq!(handler.pending_cleanup_count(), 0);
+        assert_eq!(handler.materialized_worker_slots(), 0);
+        assert_eq!(handler.observed_copy_bytes(), 0);
+        assert!(!old_root.exists());
+        std::fs::write(snapshot_file, b"original\n").unwrap();
+        handler.handle_create_worker(retry).unwrap();
+        assert_eq!(handler.worker_count(), 1);
+        handler.close().unwrap();
     }
 
-    #[test]
-    fn janitor_transfer_retains_active_and_pending_managed_directories() {
-        for pending in [false, true] {
-            let project = tempfile::tempdir().unwrap();
-            std::fs::write(project.path().join("a.py"), b"original\n").unwrap();
-            let managed_parent = tempfile::tempdir().unwrap();
-            let coordinator = super::ManagedRootCoordinator::open(
-                Utf8Path::from_path(managed_parent.path()).unwrap(),
-            )
-            .unwrap();
-            let managed_root = std::sync::Arc::new(
-                super::ManagedRunRoot::create(&coordinator, super::OwnerKind::PublicExecution)
-                    .unwrap(),
-            );
-            let mut handler = WorkspaceHandler::new(
-                Utf8Path::from_path(project.path()).unwrap().to_owned(),
-                Vec::new(),
-                1,
-                CopyOptions::default(),
-            )
-            .with_managed_root(managed_root);
-            if pending {
-                handler = handler.with_import_roots(vec!["missing".into()]);
-            }
-            let completed = handler
-                .handle_preflight(Preflight { id: EffectId(61) })
-                .unwrap();
-            let mut ledger = BudgetLedger::new(RunBudgets {
-                memory: 1,
-                copy: completed.aggregate_logical_bytes,
-                processes: 1,
-            });
-            let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
-            let created =
-                handler.handle_create_worker(grant.create_worker(EffectId(62), 0).unwrap());
-            assert_eq!(created.is_err(), pending);
-            let root = if pending {
-                pending_workspace(&handler, 0).root().to_owned()
-            } else {
-                handler.worker(0).unwrap().root().to_owned()
-            };
+    #[rstest::rstest]
+    #[case::false_1(false)]
+    #[case::true_2(true)]
+    fn janitor_transfer_retains_active_and_pending_managed_directories(#[case] pending: bool) {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("a.py"), b"original\n").unwrap();
+        let managed_parent = tempfile::tempdir().unwrap();
+        let coordinator = super::ManagedRootCoordinator::open(
+            Utf8Path::from_path(managed_parent.path()).unwrap(),
+        )
+        .unwrap();
 
-            handler.retain_workers_for_janitor();
-            drop(handler);
-
-            assert_eq!(std::fs::read(root.join("a.py")).unwrap(), b"original\n");
+        let managed_root = std::sync::Arc::new(
+            super::ManagedRunRoot::create(&coordinator, super::OwnerKind::PublicExecution).unwrap(),
+        );
+        let mut handler = WorkspaceHandler::new(
+            Utf8Path::from_path(project.path()).unwrap().to_owned(),
+            Vec::new(),
+            1,
+            CopyOptions::default(),
+        )
+        .with_managed_root(managed_root);
+        if pending {
+            handler = handler.with_import_roots(vec!["missing".into()]);
         }
+        let completed = handler
+            .handle_preflight(Preflight { id: EffectId(61) })
+            .unwrap();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: completed.aggregate_logical_bytes,
+            processes: 1,
+        });
+        let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+        let created = handler.handle_create_worker(grant.create_worker(EffectId(62), 0).unwrap());
+
+        assert_eq!(created.is_err(), pending);
+        let root = if pending {
+            pending_workspace(&handler, 0).root().to_owned()
+        } else {
+            handler.worker(0).unwrap().root().to_owned()
+        };
+
+        handler.retain_workers_for_janitor();
+        drop(handler);
+
+        assert_eq!(std::fs::read(root.join("a.py")).unwrap(), b"original\n");
     }
 
     #[cfg(windows)]
@@ -2065,6 +2068,7 @@ mod task_tests {
                 worker: 0,
             })
             .unwrap();
+
         assert_eq!(handler.worker_count(), 0);
         let completion = task.execute();
         assert_eq!(handler.pending_cleanup_count(), 0);
@@ -2097,65 +2101,66 @@ mod task_tests {
         handler.close().unwrap();
     }
 
-    #[test]
-    fn foreign_create_grant_preserves_pending_workspace_in_both_paths() {
-        for owned in [false, true] {
-            let (_project, mut handler, retry) = prepared_handler();
-            let (_foreign_project, mut foreign, _foreign_retry) = prepared_handler();
-            foreign.close().unwrap();
-            let completed = foreign
-                .handle_preflight(Preflight { id: EffectId(999) })
-                .unwrap();
-            let mut foreign_ledger = BudgetLedger::new(RunBudgets {
-                memory: 1,
-                copy: 9,
-                processes: 1,
-            });
-            let foreign_grant = reserve_workspace_copy(&mut foreign_ledger, &completed).unwrap();
-            let foreign_request = foreign_grant.create_worker(EffectId(998), 0).unwrap();
-            let pending = handler.take_active(0).unwrap();
-            let old_root = pending.root().to_owned();
-            handler
-                .workers
-                .insert(0, WorkerSlot::PendingCleanup(pending));
-            let failed = if owned {
-                let task = handler.prepare_create_task(foreign_request).unwrap();
-                assert_eq!(handler.pending_cleanup_count(), 0);
-                let completion = task.execute();
-                assert!(old_root.join("pkg/a.py").is_file());
-                let RunEvent::EffectFailed(failed) =
-                    handler.accept_task_completion(completion).unwrap()
-                else {
-                    panic!("foreign grant must fail");
-                };
-                failed
-            } else {
-                handler.handle_create_worker(foreign_request).unwrap_err()
-            };
-            assert_eq!(failed.failure.code(), "workspace.preflight.mismatch");
-            assert_eq!(handler.worker_count(), 0);
-            assert_eq!(handler.pending_cleanup_count(), 1);
-            assert_eq!(
-                std::fs::read(old_root.join("pkg/a.py")).unwrap(),
-                b"original\n"
-            );
-            assert_eq!(handler.observed_copy_bytes(), 9);
-            assert_eq!(handler.materialized_worker_slots(), 1);
-            if owned {
-                let task = handler.prepare_create_task(retry).unwrap();
-                assert!(matches!(
-                    handler.accept_task_completion(task.execute()).unwrap(),
-                    RunEvent::WorkerCreated(_)
-                ));
-            } else {
-                handler.handle_create_worker(retry).unwrap();
-            }
-            assert!(!old_root.exists());
-            assert_eq!(handler.worker_count(), 1);
+    #[rstest::rstest]
+    #[case::false_1(false)]
+    #[case::true_2(true)]
+    fn foreign_create_grant_preserves_pending_workspace_in_both_paths(#[case] owned: bool) {
+        let (_project, mut handler, retry) = prepared_handler();
+        let (_foreign_project, mut foreign, _foreign_retry) = prepared_handler();
+        foreign.close().unwrap();
+        let completed = foreign
+            .handle_preflight(Preflight { id: EffectId(999) })
+            .unwrap();
+        let mut foreign_ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: 9,
+            processes: 1,
+        });
+        let foreign_grant = reserve_workspace_copy(&mut foreign_ledger, &completed).unwrap();
+        let foreign_request = foreign_grant.create_worker(EffectId(998), 0).unwrap();
+        let pending = handler.take_active(0).unwrap();
+        let old_root = pending.root().to_owned();
+        handler
+            .workers
+            .insert(0, WorkerSlot::PendingCleanup(pending));
+        let failed = if owned {
+            let task = handler.prepare_create_task(foreign_request).unwrap();
+
             assert_eq!(handler.pending_cleanup_count(), 0);
-            foreign.close().unwrap();
-            handler.close().unwrap();
+            let completion = task.execute();
+            assert!(old_root.join("pkg/a.py").is_file());
+            let RunEvent::EffectFailed(failed) =
+                handler.accept_task_completion(completion).unwrap()
+            else {
+                panic!("foreign grant must fail");
+            };
+            failed
+        } else {
+            handler.handle_create_worker(foreign_request).unwrap_err()
+        };
+        assert_eq!(failed.failure.code(), "workspace.preflight.mismatch");
+        assert_eq!(handler.worker_count(), 0);
+        assert_eq!(handler.pending_cleanup_count(), 1);
+        assert_eq!(
+            std::fs::read(old_root.join("pkg/a.py")).unwrap(),
+            b"original\n"
+        );
+        assert_eq!(handler.observed_copy_bytes(), 9);
+        assert_eq!(handler.materialized_worker_slots(), 1);
+        if owned {
+            let task = handler.prepare_create_task(retry).unwrap();
+            assert!(matches!(
+                handler.accept_task_completion(task.execute()).unwrap(),
+                RunEvent::WorkerCreated(_)
+            ));
+        } else {
+            handler.handle_create_worker(retry).unwrap();
         }
+        assert!(!old_root.exists());
+        assert_eq!(handler.worker_count(), 1);
+        assert_eq!(handler.pending_cleanup_count(), 0);
+        foreign.close().unwrap();
+        handler.close().unwrap();
     }
 
     fn apply_request(
@@ -2175,130 +2180,135 @@ mod task_tests {
         }
     }
 
-    #[test]
-    fn apply_uses_request_candidate_in_both_paths() {
-        for owned in [false, true] {
-            let (project, mut handler, _retry) = prepared_handler();
-            let worker_root = handler.worker(0).unwrap().root().to_owned();
-            let request = ApplyMutation {
-                id: EffectId(31),
-                worker: 0,
-                candidate: candidate(&handler),
-            };
+    #[rstest::rstest]
+    #[case::false_1(false)]
+    #[case::true_2(true)]
+    fn apply_uses_request_candidate_in_both_paths(#[case] owned: bool) {
+        let (project, mut handler, _retry) = prepared_handler();
+        let worker_root = handler.worker(0).unwrap().root().to_owned();
+        let request = ApplyMutation {
+            id: EffectId(31),
+            worker: 0,
+            candidate: candidate(&handler),
+        };
 
-            let applied = apply_request(&mut handler, request, owned).unwrap();
+        let applied = apply_request(&mut handler, request, owned).unwrap();
 
-            assert_eq!(applied.id, EffectId(31));
-            assert_eq!(applied.worker, 0);
-            assert_eq!(
-                std::fs::read(worker_root.join("pkg/a.py")).unwrap(),
-                b"mutated!\n"
-            );
-            assert_eq!(
-                std::fs::read(project.path().join("pkg/a.py")).unwrap(),
-                b"original\n"
-            );
-            assert_eq!(handler.worker(0).unwrap().root(), worker_root);
-            assert_eq!(handler.worker_count(), 1);
-            assert_eq!(handler.pending_cleanup_count(), 0);
-            handler.close().unwrap();
-        }
+        assert_eq!(applied.id, EffectId(31));
+        assert_eq!(applied.worker, 0);
+        assert_eq!(
+            std::fs::read(worker_root.join("pkg/a.py")).unwrap(),
+            b"mutated!\n"
+        );
+        assert_eq!(
+            std::fs::read(project.path().join("pkg/a.py")).unwrap(),
+            b"original\n"
+        );
+        assert_eq!(handler.worker(0).unwrap().root(), worker_root);
+        assert_eq!(handler.worker_count(), 1);
+        assert_eq!(handler.pending_cleanup_count(), 0);
+        handler.close().unwrap();
     }
 
-    #[test]
-    fn apply_rejects_invalid_request_candidate_and_retains_worker_in_both_paths() {
-        for owned in [false, true] {
-            let (project, mut handler, _retry) = prepared_handler();
-            let worker_root = handler.worker(0).unwrap().root().to_owned();
-            let mut invalid = candidate(&handler);
-            invalid.original = "invalid!".into();
-            let request = ApplyMutation {
-                id: EffectId(32),
-                worker: 0,
-                candidate: invalid,
-            };
+    #[rstest::rstest]
+    #[case::false_1(false)]
+    #[case::true_2(true)]
+    fn apply_rejects_invalid_request_candidate_and_retains_worker_in_both_paths(
+        #[case] owned: bool,
+    ) {
+        let (project, mut handler, _retry) = prepared_handler();
+        let worker_root = handler.worker(0).unwrap().root().to_owned();
+        let mut invalid = candidate(&handler);
+        invalid.original = "invalid!".into();
+        let request = ApplyMutation {
+            id: EffectId(32),
+            worker: 0,
+            candidate: invalid,
+        };
 
-            let failed = apply_request(&mut handler, request, owned).unwrap_err();
+        let failed = apply_request(&mut handler, request, owned).unwrap_err();
 
-            assert_eq!(failed.id, EffectId(32));
-            assert!(matches!(
-                failed.failure,
-                hoimin_core::EffectFailure::InvalidMutation { code, path, .. }
-                    if code == "workspace.mutation.invalid" && path == "pkg/a.py"
-            ));
-            assert_eq!(
-                std::fs::read(worker_root.join("pkg/a.py")).unwrap(),
-                b"original\n"
-            );
-            assert_eq!(
-                std::fs::read(project.path().join("pkg/a.py")).unwrap(),
-                b"original\n"
-            );
-            assert_eq!(handler.worker(0).unwrap().root(), worker_root);
-            assert_eq!(handler.worker_count(), 1);
-            assert_eq!(handler.pending_cleanup_count(), 0);
-            handler.close().unwrap();
-        }
+        assert_eq!(failed.id, EffectId(32));
+        assert!(matches!(
+            failed.failure,
+            hoimin_core::EffectFailure::InvalidMutation { code, path, .. }
+                if code == "workspace.mutation.invalid" && path == "pkg/a.py"
+        ));
+        assert_eq!(
+            std::fs::read(worker_root.join("pkg/a.py")).unwrap(),
+            b"original\n"
+        );
+        assert_eq!(
+            std::fs::read(project.path().join("pkg/a.py")).unwrap(),
+            b"original\n"
+        );
+        assert_eq!(handler.worker(0).unwrap().root(), worker_root);
+        assert_eq!(handler.worker_count(), 1);
+        assert_eq!(handler.pending_cleanup_count(), 0);
+        handler.close().unwrap();
     }
 
     // Rejecting a completion must preserve the first owner regardless of either classification.
-    #[test]
-    fn duplicate_workspace_task_completion_preserves_the_registered_worker() {
-        for (registered_pending, returned_pending) in
-            [(false, false), (true, true), (true, false), (false, true)]
-        {
-            let (_project, mut handler, _retry) = prepared_handler();
-            let candidate = candidate(&handler);
-            let task = handler
-                .prepare_apply_task(ApplyMutation {
-                    id: EffectId(3),
-                    worker: 0,
-                    candidate,
-                })
-                .unwrap();
-            let mut completion = task.execute();
-            if returned_pending {
-                let WorkspaceOwnership::Active(worker, workspace) = completion.ownership else {
-                    panic!("apply must return active ownership");
-                };
-                completion.ownership = WorkspaceOwnership::PendingCleanup(worker, workspace);
-            }
-            let (_other_project, mut other, _other_retry) = prepared_handler();
-            let registered = other.take_active(0).unwrap();
-            let registered_root = registered.root().to_owned();
-            if registered_pending {
-                handler
-                    .workers
-                    .insert(0, WorkerSlot::PendingCleanup(registered));
-            } else {
-                handler.workers.insert(0, WorkerSlot::Active(registered));
-            }
-
-            let result = handler.accept_task_completion(completion);
-
-            assert!(
-                result.is_err(),
-                "duplicate must fail: registered_pending={registered_pending}, returned_pending={returned_pending}"
-            );
-            assert_eq!(result.unwrap_err().failure.code(), "shell.blocking_io");
-            assert_eq!(handler.worker_count(), usize::from(!registered_pending));
-            assert_eq!(
-                handler.pending_cleanup_count(),
-                usize::from(registered_pending)
-            );
-            let registered = if registered_pending {
-                pending_workspace(&handler, 0)
-            } else {
-                handler.worker(0).unwrap()
+    #[rstest::rstest]
+    #[case::false_false_1(false, false)]
+    #[case::true_true_2(true, true)]
+    #[case::true_false_3(true, false)]
+    #[case::false_true_4(false, true)]
+    fn duplicate_workspace_task_completion_preserves_the_registered_worker(
+        #[case] registered_pending: bool,
+        #[case] returned_pending: bool,
+    ) {
+        let (_project, mut handler, _retry) = prepared_handler();
+        let candidate = candidate(&handler);
+        let task = handler
+            .prepare_apply_task(ApplyMutation {
+                id: EffectId(3),
+                worker: 0,
+                candidate,
+            })
+            .unwrap();
+        let mut completion = task.execute();
+        if returned_pending {
+            let WorkspaceOwnership::Active(worker, workspace) = completion.ownership else {
+                panic!("apply must return active ownership");
             };
-            assert_eq!(registered.root(), registered_root);
-            assert_eq!(
-                std::fs::read(registered_root.join("pkg/a.py")).unwrap(),
-                b"original\n"
-            );
-            handler.close().unwrap();
-            assert!(!registered_root.exists());
+            completion.ownership = WorkspaceOwnership::PendingCleanup(worker, workspace);
         }
+        let (_other_project, mut other, _other_retry) = prepared_handler();
+        let registered = other.take_active(0).unwrap();
+        let registered_root = registered.root().to_owned();
+        if registered_pending {
+            handler
+                .workers
+                .insert(0, WorkerSlot::PendingCleanup(registered));
+        } else {
+            handler.workers.insert(0, WorkerSlot::Active(registered));
+        }
+
+        let result = handler.accept_task_completion(completion);
+
+        assert!(
+            result.is_err(),
+            "duplicate must fail: registered_pending={registered_pending}, returned_pending={returned_pending}"
+        );
+        assert_eq!(result.unwrap_err().failure.code(), "shell.blocking_io");
+        assert_eq!(handler.worker_count(), usize::from(!registered_pending));
+        assert_eq!(
+            handler.pending_cleanup_count(),
+            usize::from(registered_pending)
+        );
+        let registered = if registered_pending {
+            pending_workspace(&handler, 0)
+        } else {
+            handler.worker(0).unwrap()
+        };
+        assert_eq!(registered.root(), registered_root);
+        assert_eq!(
+            std::fs::read(registered_root.join("pkg/a.py")).unwrap(),
+            b"original\n"
+        );
+        handler.close().unwrap();
+        assert!(!registered_root.exists());
     }
 
     // A pending worker must never be consumed by active-only operations, even across retries.
@@ -2320,23 +2330,31 @@ mod task_tests {
                     1 => { prop_assert!(handler.worker_mut(0).is_none()); }
                     2 => { prop_assert!(handler.command_environment(0, &std::collections::BTreeMap::new()).is_err()); }
                     3 => {
+
                         let result = handler.prepare_apply_task(ApplyMutation {
                             id: EffectId(40), worker: 0, candidate: candidate.clone(),
                         });
+
                         prop_assert!(result.is_err());
                     }
                     4 => {
+
                         let result = handler.prepare_reset_task(ResetWorker { id: EffectId(41), worker: 0 });
+
                         prop_assert!(result.is_err());
                     }
                     5 => {
+
                         let result = handler.handle_reset_worker(ResetWorker { id: EffectId(42), worker: 0 });
+
                         prop_assert!(result.is_err());
                     }
                     _ => {
+
                         let result = handler.handle_apply_mutation(ApplyMutation {
                             id: EffectId(43), worker: 0, candidate: candidate.clone(),
                         });
+
                         prop_assert!(result.is_err());
                     }
                 }
@@ -2351,30 +2369,30 @@ mod task_tests {
         }
     }
 
-    #[test]
-    fn verify_completions_do_not_transfer_worker_ownership() {
-        for changed in [false, true] {
-            let (project, mut handler, _retry) = prepared_handler();
-            let root = handler.worker(0).unwrap().root().to_owned();
-            if changed {
-                std::fs::write(project.path().join("pkg/a.py"), b"changed!\n").unwrap();
-            }
-            let task = handler
-                .prepare_verify_task(hoimin_core::VerifyOriginals {
-                    id: EffectId(50),
-                    checkpoint: hoimin_core::IntegrityCheckpoint::PostMaterialization,
-                })
-                .unwrap();
-
-            let event = handler.accept_task_completion(task.execute()).unwrap();
-
-            assert_eq!(matches!(event, RunEvent::EffectFailed(_)), changed);
-            assert_eq!(handler.worker(0).unwrap().root(), root);
-            assert_eq!(handler.worker_count(), 1);
-            assert_eq!(handler.pending_cleanup_count(), 0);
-            assert_eq!(handler.materialized_worker_slots(), 1);
-            handler.close().unwrap();
+    #[rstest::rstest]
+    #[case::false_1(false)]
+    #[case::true_2(true)]
+    fn verify_completions_do_not_transfer_worker_ownership(#[case] changed: bool) {
+        let (project, mut handler, _retry) = prepared_handler();
+        let root = handler.worker(0).unwrap().root().to_owned();
+        if changed {
+            std::fs::write(project.path().join("pkg/a.py"), b"changed!\n").unwrap();
         }
+        let task = handler
+            .prepare_verify_task(hoimin_core::VerifyOriginals {
+                id: EffectId(50),
+                checkpoint: hoimin_core::IntegrityCheckpoint::PostMaterialization,
+            })
+            .unwrap();
+
+        let event = handler.accept_task_completion(task.execute()).unwrap();
+
+        assert_eq!(matches!(event, RunEvent::EffectFailed(_)), changed);
+        assert_eq!(handler.worker(0).unwrap().root(), root);
+        assert_eq!(handler.worker_count(), 1);
+        assert_eq!(handler.pending_cleanup_count(), 0);
+        assert_eq!(handler.materialized_worker_slots(), 1);
+        handler.close().unwrap();
     }
 
     #[test]
@@ -2452,6 +2470,7 @@ mod task_tests {
         release.wait();
         drop_thread.join().unwrap();
         let cleanup = managed_root.cleanup(std::time::Duration::from_secs(5));
+
         assert_eq!(
             cleanup.disposition.report_status(),
             hoimin_core::DiskCleanupStatus::Clean,

@@ -12,6 +12,7 @@ REVISION = "a" * 40
 
 def test_site_renders_code_inside_numbered_steps() -> None:
     root = Path(__file__).resolve().parents[1]
+
     config = docs_site.load_config(config_file=str(root / "mkdocs.yml"))
     source = (
         "1. Create the source file:\n\n"

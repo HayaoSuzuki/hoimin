@@ -48,6 +48,7 @@ libc = ">=0.2, <1"
 rustix = { version = "1.1", features = ["fs"] }
 
 [dev-dependencies]
+rstest.workspace = true
 # Keep Ruff types aligned with the parser's pinned upstream revision.
 ruff_python_ast = { workspace = true }
 hoimin-python = { path = "../hoimin-python", features = ["test-support"] }

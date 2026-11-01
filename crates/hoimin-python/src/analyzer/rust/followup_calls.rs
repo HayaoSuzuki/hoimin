@@ -350,23 +350,21 @@ mod tests {
     use super::Imports;
     use hoimin_core::MutationOperatorSelection;
 
-    #[test]
-    fn codec_identity_scan_requires_a_codec_import() {
-        for (source, expected) in [
-            ("data.decode(errors='surrogateescape')\n", false),
-            ("import unrelated\n", false),
-            ("import codecs as c\n", true),
-            ("from codecs import decode as dec\n", true),
-            ("def f():\n    import codecs as c\n", true),
-        ] {
-            let parsed = ruff_python_parser::parse_module(source).unwrap();
-            let imports = Imports::build(
-                parsed.syntax(),
-                &MutationOperatorSelection::default(),
-                &|| false,
-            )
-            .unwrap();
-            assert_eq!(imports.codecs.is_some(), expected, "{source}");
-        }
+    #[rstest::rstest]
+    #[case::data_decode_errors_surrogateescape("data.decode(errors='surrogateescape')\n", false)]
+    #[case::import_unrelated("import unrelated\n", false)]
+    #[case::import_codecs_as_c("import codecs as c\n", true)]
+    #[case::from_codecs_import_decode_as_dec("from codecs import decode as dec\n", true)]
+    #[case::def_f_import_codecs_as_c("def f():\n    import codecs as c\n", true)]
+    fn codec_identity_scan_requires_a_codec_import(#[case] source: &str, #[case] expected: bool) {
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let imports = Imports::build(
+            parsed.syntax(),
+            &MutationOperatorSelection::default(),
+            &|| false,
+        )
+        .unwrap();
+
+        assert_eq!(imports.codecs.is_some(), expected, "{source}");
     }
 }

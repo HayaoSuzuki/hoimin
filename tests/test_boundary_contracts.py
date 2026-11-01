@@ -137,9 +137,9 @@ def test_nested_mismatch_cannot_be_laundered_by_outer_success() -> None:
 def test_missing_strict_results_are_reported_as_unexecuted(tmp_path: Path) -> None:
     exit_code = main(["report", "--output", str(tmp_path)])
 
-    assert exit_code == 0
     rows = json.loads((tmp_path / "report.json").read_text())["rows"]
 
+    assert exit_code == 0
     assert rows
     assert all(row["status"] == "unexecuted" for row in rows)
 
@@ -300,6 +300,7 @@ def test_timeout_kills_process_group_and_reports_infrastructure_error(
 
     row = execute(case, tmp_path)
     spawn.assert_called_once()
+
     assert hasattr(signal, "SIGKILL")
     kill.assert_called_once_with(123, signal.SIGKILL)
 
@@ -317,9 +318,10 @@ def test_execution_without_process_group_support_is_unexecuted(
 
     row = execute(case, tmp_path)
 
+    spawn.assert_not_called()
+
     assert row["status"] == "unexecuted"
     assert row["reason"] == "native platform unavailable"
-    spawn.assert_not_called()
 
 
 @pytest.mark.parametrize("value", [None, [], {}, {"status": 1}])

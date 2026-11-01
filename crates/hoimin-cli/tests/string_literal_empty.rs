@@ -96,50 +96,52 @@ async fn plan(root: &Path, operators: &str, test: &str) -> serde_json::Value {
     document
 }
 
+#[rstest::rstest]
+#[case::ready_1("'ready'")]
+#[case::input_2("\"ready\"")]
+#[case::r_3("r'\\n'")]
+#[case::u_4("u'é前'")]
+#[case::line1_line2_5("'''line1\nline2'''")]
+#[case::u2603_6("'\\u2603'")]
+#[case::ud800_7("'\\ud800'")]
 #[tokio::test]
-async fn string_empty_changes_complete_nonempty_literal_tokens() {
-    for literal in [
-        "'ready'",
-        "\"ready\"",
-        "r'\\n'",
-        "u'é前'",
-        "'''line1\nline2'''",
-        "'\\u2603'",
-        "'\\ud800'",
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        let source = format!("é='outside'\ndef f():\n    return {literal}\n");
-        std::fs::write(root.path().join("subject.py"), &source).unwrap();
-        let doc = plan(root.path(), "string_literal_empty", "pass").await;
-        let cs = doc["candidates"].as_array().unwrap();
-        assert_eq!(cs.len(), 2, "{doc}");
-        let c = cs.iter().find(|c| c["symbol"] == "f").unwrap();
-        assert_eq!(c["original"], literal);
-        assert_eq!(c["replacement"], "\"\"");
-        let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
-        let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
-        let mut mutant = source.clone();
-        mutant.replace_range(start..end, "\"\"");
-        compile(&mutant).await;
-        let output = tokio::process::Command::new(python())
-            .args([
-                "-c",
-                "import sys;ns={};exec(sys.argv[1],ns);assert ns['f']()==''",
-                &mutant,
-            ])
-            .output()
-            .await
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert_eq!(
-            doc["candidates"],
-            plan(root.path(), "string_literal_empty", "pass").await["candidates"]
-        );
-    }
+async fn string_empty_changes_complete_nonempty_literal_tokens(#[case] literal: &str) {
+    let root = tempfile::tempdir().unwrap();
+    let source = format!("é='outside'\ndef f():\n    return {literal}\n");
+    std::fs::write(root.path().join("subject.py"), &source).unwrap();
+
+    let doc = plan(root.path(), "string_literal_empty", "pass").await;
+    let cs = doc["candidates"].as_array().unwrap();
+
+    assert_eq!(cs.len(), 2, "{doc}");
+    let c = cs.iter().find(|c| c["symbol"] == "f").unwrap();
+    assert_eq!(c["original"], literal);
+    assert_eq!(c["replacement"], "\"\"");
+    let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
+    let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
+    let mut mutant = source.clone();
+    mutant.replace_range(start..end, "\"\"");
+    compile(&mutant).await;
+
+    let output = tokio::process::Command::new(python())
+        .args([
+            "-c",
+            "import sys;ns={};exec(sys.argv[1],ns);assert ns['f']()==''",
+            &mutant,
+        ])
+        .output()
+        .await
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        doc["candidates"],
+        plan(root.path(), "string_literal_empty", "pass").await["candidates"]
+    );
 }
 
 #[tokio::test]
@@ -192,41 +194,49 @@ async fn string_empty_distinguishes_runtime_roles() {
     }
 }
 
+#[rstest::rstest]
+#[case::from_subject_import_state_assert_isinstance_state_str_1(
+    "from subject import state;assert isinstance(state(),str)",
+    0,
+    1
+)]
+#[case::from_subject_import_state_assert_state_ready_2(
+    "from subject import state;assert state()=='ready'",
+    1,
+    0
+)]
 #[tokio::test]
-async fn string_empty_saved_plan_requires_content_observation() {
-    for (test, killed, survived) in [
-        (
-            "from subject import state;assert isinstance(state(),str)",
-            0,
-            1,
-        ),
-        ("from subject import state;assert state()=='ready'", 1, 0),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(
-            root.path().join("subject.py"),
-            "def state():\n    return 'ready'\n",
-        )
-        .unwrap();
-        let doc = plan(root.path(), "string_literal_empty", test).await;
-        let manifest = root.path().join("plan.json");
-        std::fs::write(&manifest, serde_json::to_vec(&doc).unwrap()).unwrap();
-        let (_, report) = cli(vec![
-            "hoimin".into(),
-            "verify".into(),
-            manifest.into_os_string(),
-            "--top".into(),
-            "1".into(),
-        ])
-        .await;
-        assert_eq!(report["baseline"]["termination"]["Exit"], 0);
-        assert_eq!(report["summary"]["counts"]["killed"], killed);
-        assert_eq!(report["summary"]["counts"]["survived"], survived);
-    }
+async fn string_empty_saved_plan_requires_content_observation(
+    #[case] test: &str,
+    #[case] killed: usize,
+    #[case] survived: usize,
+) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("subject.py"),
+        "def state():\n    return 'ready'\n",
+    )
+    .unwrap();
+    let doc = plan(root.path(), "string_literal_empty", test).await;
+    let manifest = root.path().join("plan.json");
+    std::fs::write(&manifest, serde_json::to_vec(&doc).unwrap()).unwrap();
+
+    let (_, report) = cli(vec![
+        "hoimin".into(),
+        "verify".into(),
+        manifest.into_os_string(),
+        "--top".into(),
+        "1".into(),
+    ])
+    .await;
+
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+    assert_eq!(report["summary"]["counts"]["killed"], killed);
+    assert_eq!(report["summary"]["counts"]["survived"], survived);
 }
 
 #[tokio::test]
-async fn string_empty_uses_decoded_value_and_exact_encoded_occurrence() {
+async fn escaped_newline_has_an_empty_decoded_string_value() {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("subject.py"), "x='\\\n'\n").unwrap();
     assert_eq!(
@@ -235,33 +245,54 @@ async fn string_empty_uses_decoded_value_and_exact_encoded_occurrence() {
             .unwrap(),
         &Vec::<serde_json::Value>::new()
     );
-    for newline in ["\n", "\r\n", "\r"] {
-        for encoding in encoded_source::ENCODINGS {
-            let root = tempfile::tempdir().unwrap();
-            let encoding_name = encoding.name;
-            let text = format!(
-                "# coding: {}{newline}# é{newline}first='same'; second='same'{newline}",
-                encoding.cookie
-            );
-            let bytes = encoding.source(&text);
-            std::fs::write(root.path().join("subject.py"), &bytes).unwrap();
-            let doc = plan(root.path(), "string_literal_empty", "pass").await;
-            let cs = doc["candidates"].as_array().unwrap();
-            assert_eq!(cs.len(), 2, "{encoding_name} {newline:?}");
-            assert_ne!(cs[0]["span"]["start"], cs[1]["span"]["start"]);
-            for c in cs {
-                let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
-                let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
-                assert_eq!(&bytes[start..end], b"'same'");
-                let mut mutant = bytes.clone();
-                mutant.splice(start..end, b"\"\"".iter().copied());
-                let output=tokio::process::Command::new(python()).args(["-c","import json,sys;ns={};exec(compile(bytes(json.loads(sys.argv[1])),'<encoded>','exec'),ns);assert sorted([ns['first'],ns['second']])==['','same']",&serde_json::to_string(&mutant).unwrap()]).output().await.unwrap();
-                assert!(
-                    output.status.success(),
-                    "{}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
-            }
-        }
-    }
+}
+
+#[rstest::rstest]
+#[case::utf8_lf("\n", &encoded_source::ENCODINGS[0])]
+#[case::utf8_crlf("\r\n", &encoded_source::ENCODINGS[0])]
+#[case::utf8_cr("\r", &encoded_source::ENCODINGS[0])]
+#[case::bom_lf("\n", &encoded_source::ENCODINGS[1])]
+#[case::bom_crlf("\r\n", &encoded_source::ENCODINGS[1])]
+#[case::bom_cr("\r", &encoded_source::ENCODINGS[1])]
+#[case::latin1_lf("\n", &encoded_source::ENCODINGS[2])]
+#[case::latin1_crlf("\r\n", &encoded_source::ENCODINGS[2])]
+#[case::latin1_cr("\r", &encoded_source::ENCODINGS[2])]
+#[tokio::test]
+async fn string_empty_uses_decoded_value_and_exact_encoded_occurrence(
+    #[case] newline: &str,
+    #[case] encoding: &encoded_source::SourceEncoding,
+    #[values(0usize, 1usize)] occurrence: usize,
+) {
+    let root = tempfile::tempdir().unwrap();
+    let encoding_name = encoding.name;
+    let text = format!(
+        "# coding: {}{newline}# é{newline}first='same'; second='same'{newline}",
+        encoding.cookie
+    );
+    let bytes = encoding.source(&text);
+    std::fs::write(root.path().join("subject.py"), &bytes).unwrap();
+
+    let doc = plan(root.path(), "string_literal_empty", "pass").await;
+    let candidates = doc["candidates"].as_array().unwrap();
+
+    assert_eq!(candidates.len(), 2, "{encoding_name} {newline:?}");
+    let candidate = &candidates[occurrence];
+    let start = usize::try_from(candidate["span"]["start"].as_u64().unwrap()).unwrap();
+    let end = start + usize::try_from(candidate["span"]["length"].as_u64().unwrap()).unwrap();
+    let mut mutant = bytes.clone();
+    mutant.splice(start..end, b"\"\"".iter().copied());
+    let encoded_mutant = serde_json::to_string(&mutant).unwrap();
+
+    let output = tokio::process::Command::new(python()).args(["-c", "import json,sys;ns={};exec(compile(bytes(json.loads(sys.argv[1])),'<encoded>','exec'),ns);assert sorted([ns['first'],ns['second']])==['','same']", &encoded_mutant]).output().await.unwrap();
+
+    assert_ne!(
+        candidates[0]["span"]["start"],
+        candidates[1]["span"]["start"]
+    );
+    assert_eq!(&bytes[start..end], b"'same'");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

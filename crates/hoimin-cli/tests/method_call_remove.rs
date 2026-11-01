@@ -139,27 +139,32 @@ async fn execute(source: &str) {
     );
 }
 
+#[rstest::rstest]
+#[case::left_right_strip_1("(left + right).strip()", "(left + right)")]
+#[case::left_if_condition_else_right_strip_2(
+    "(left if condition else right).strip()",
+    "(left if condition else right)"
+)]
+#[case::factory_strip_3("factory().strip()", "(factory())")]
+#[case::a_strip_4("'a'.strip()", "('a')")]
+#[case::text_comment_strip_5("(\n    text # comment\n).strip(\n)", "(text)")]
 #[tokio::test]
-async fn method_removal_preserves_precedence_chains_and_receiver_effects() {
-    for (expression, expected) in [
-        ("(left + right).strip()", "(left + right)"),
-        (
-            "(left if condition else right).strip()",
-            "(left if condition else right)",
-        ),
-        ("factory().strip()", "(factory())"),
-        ("'a'.strip()", "('a')"),
-        ("(\n    text # comment\n).strip(\n)", "(text)"),
-    ] {
-        let source = format!("é = 1\r\nvalue = 2 * {expression}\r\n");
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("subject.py"), &source).unwrap();
-        let doc = plan(root.path(), "method_call_remove", "pass").await;
-        let candidates = doc["candidates"].as_array().unwrap();
-        assert_eq!(candidates.len(), 1, "{expression}");
-        assert_eq!(candidates[0]["replacement"], expected);
-        compile(&mutated(&source, &candidates[0])).await;
-    }
+async fn method_removal_preserves_precedence_chains_and_receiver_effects(
+    #[case] expression: &str,
+    #[case] expected: &str,
+) {
+    let source = format!("é = 1\r\nvalue = 2 * {expression}\r\n");
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), &source).unwrap();
+    let doc = plan(root.path(), "method_call_remove", "pass").await;
+    let candidates = doc["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 1, "{expression}");
+    assert_eq!(candidates[0]["replacement"], expected);
+    compile(&mutated(&source, &candidates[0])).await;
+}
+
+#[tokio::test]
+async fn method_removal_preserves_receiver_effects() {
     let source = "events=[]\nclass Box:\n    def __getattribute__(self, name):\n        if name == 'clean': events.append('lookup')\n        return object.__getattribute__(self, name)\n    def clean(self):\n        events.append('call')\n        return self\ndef make():\n    events.append('receiver')\n    return Box()\nvalue=make().clean()\n";
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("subject.py"), source).unwrap();
@@ -174,6 +179,11 @@ async fn method_removal_preserves_precedence_chains_and_receiver_effects() {
         mutated(source, &doc["candidates"][0])
     ))
     .await;
+}
+
+#[tokio::test]
+async fn method_removal_preserves_chained_calls() {
+    let root = tempfile::tempdir().unwrap();
     let source = "value = text.strip().lower()\n";
     std::fs::write(root.path().join("subject.py"), source).unwrap();
     let doc = plan(root.path(), "method_call_remove", "pass").await;
@@ -200,95 +210,127 @@ async fn method_removal_preserves_precedence_chains_and_receiver_effects() {
     }
 }
 
+#[rstest::rstest]
+#[case::value_text_strip_x_value_text_clean_flag_true_value_tex_1(
+    "value = text.strip('x')\nvalue = text.clean(flag=True)\nvalue = text.clean(*args)\nvalue = text.clean(**kw)\n"
+)]
+#[case::value_text_factory_clean_value_x_for_x_in_values_clean_2(
+    "value = (text := factory()).clean()\nvalue = (x for x in values).clean()\n"
+)]
+#[case::async_def_f_return_await_factory_clean_3(
+    "async def f(): return (await factory()).clean()\n"
+)]
+#[case::def_f_return_yield_factory_clean_4("def f(): return (yield factory()).clean()\n")]
+#[case::def_f_return_yield_from_factory_clean_5("def f(): return (yield from factory()).clean()\n")]
+#[case::from_typing_import_typealias_a_typealias_text_clean_x_t_6(
+    "from typing import TypeAlias\nA: TypeAlias = text.clean()\nx: text.clean()\ntype B = text.clean()\nitems[text.clean()] = 1\ntext.clean().attr = 1\n"
+)]
 #[tokio::test]
-async fn method_removal_excludes_arguments_bindings_suspension_and_type_positions() {
-    for source in [
-        "value = text.strip('x')\nvalue = text.clean(flag=True)\nvalue = text.clean(*args)\nvalue = text.clean(**kw)\n",
-        "value = (text := factory()).clean()\nvalue = (x for x in values).clean()\n",
-        "async def f(): return (await factory()).clean()\n",
-        "def f(): return (yield factory()).clean()\n",
-        "def f(): return (yield from factory()).clean()\n",
-        "from typing import TypeAlias\nA: TypeAlias = text.clean()\nx: text.clean()\ntype B = text.clean()\nitems[text.clean()] = 1\ntext.clean().attr = 1\n",
-    ] {
-        compile(source).await;
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("subject.py"), source).unwrap();
-        assert!(
-            plan(root.path(), "method_call_remove", "pass").await["candidates"]
-                .as_array()
-                .unwrap()
-                .is_empty(),
-            "{source}"
-        );
-    }
+async fn method_removal_excludes_arguments_bindings_suspension_and_type_positions(
+    #[case] source: &str,
+) {
+    compile(source).await;
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), source).unwrap();
+
+    assert!(
+        plan(root.path(), "method_call_remove", "pass").await["candidates"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "{source}"
+    );
 }
 
+#[rstest::rstest]
+#[case::from_subject_import_clean_assert_isinstance_clean_x_str_1(
+    "from subject import clean; assert isinstance(clean(' x '), str)",
+    0
+)]
+#[case::from_subject_import_clean_assert_clean_x_x_2(
+    "from subject import clean; assert clean(' x ') == 'x'",
+    1
+)]
 #[tokio::test]
-async fn method_removal_saved_plan_distinguishes_missing_result_assertions() {
+async fn method_removal_saved_plan_distinguishes_missing_result_assertions(
+    #[case] test: &str,
+    #[case] killed: usize,
+) {
     let source = "def clean(text): return text.strip()\n";
-    let mut ids = Vec::new();
-    for (test, killed) in [
-        (
-            "from subject import clean; assert isinstance(clean(' x '), str)",
-            0,
-        ),
-        ("from subject import clean; assert clean(' x ') == 'x'", 1),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("subject.py"), source).unwrap();
-        let doc = plan(root.path(), "method_call_remove", test).await;
-        ids.push(doc["candidates"][0]["id"].clone());
-        let manifest = root.path().join("plan.json");
-        std::fs::write(&manifest, serde_json::to_vec(&doc).unwrap()).unwrap();
-        let mut args = vec![
-            "hoimin".into(),
-            "verify".into(),
-            manifest.into_os_string(),
-            "--top".into(),
-            "1".into(),
-        ];
-        args.push("--dry-run".into());
-        let (_, preview) = cli(args.clone()).await;
-        assert_eq!(preview["candidates"][0]["id"], doc["candidates"][0]["id"]);
-        args.pop();
-        let (_, report) = cli(args).await;
-        assert_eq!(report["baseline"]["termination"]["Exit"], 0);
-        assert_eq!(report["summary"]["counts"]["killed"], killed);
-        assert_eq!(report["summary"]["counts"]["survived"], 1 - killed);
-        assert_eq!(report["summary"]["complete"], true);
-        assert_eq!(
-            std::fs::read_to_string(root.path().join("subject.py")).unwrap(),
-            source
-        );
-    }
-    assert_eq!(ids[0], ids[1]);
+
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), source).unwrap();
+    let doc = plan(root.path(), "method_call_remove", test).await;
+
+    let manifest = root.path().join("plan.json");
+    std::fs::write(&manifest, serde_json::to_vec(&doc).unwrap()).unwrap();
+    let mut args = vec![
+        "hoimin".into(),
+        "verify".into(),
+        manifest.into_os_string(),
+        "--top".into(),
+        "1".into(),
+    ];
+    args.push("--dry-run".into());
+    let (_, preview) = cli(args.clone()).await;
+    assert_eq!(preview["candidates"][0]["id"], doc["candidates"][0]["id"]);
+    args.pop();
+    let (_, report) = cli(args).await;
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+    assert_eq!(report["summary"]["counts"]["killed"], killed);
+    assert_eq!(report["summary"]["counts"]["survived"], 1 - killed);
+    assert_eq!(report["summary"]["complete"], true);
+    assert_eq!(
+        std::fs::read_to_string(root.path().join("subject.py")).unwrap(),
+        source
+    );
 }
 
 #[tokio::test]
-async fn method_removal_preserves_encoded_source_and_outer_bytes() {
-    for source in [
-        b"\xef\xbb\xbf# coding: utf-8\r\ntext = ' x '\r\nvalue = text.strip()\r\n".as_slice(),
-        b"# coding: latin-1\r\nname = '\xe9'\r\ntext = ' x '\r\nvalue = text.strip()\r\n"
-            .as_slice(),
-        b"text = ' x '\rvalue = text.strip()\r".as_slice(),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("subject.py"), source).unwrap();
-        let doc = plan(root.path(), "method_call_remove", "pass").await;
-        let candidates = doc["candidates"].as_array().unwrap();
-        assert_eq!(candidates.len(), 1);
-        let c = &candidates[0];
-        let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
-        let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
-        assert_eq!(&source[start..end], b"text.strip()");
-        let mut output = source.to_vec();
-        output.splice(start..end, c["replacement"].as_str().unwrap().bytes());
-        let path = root.path().join("mutant.py");
-        std::fs::write(&path, output).unwrap();
-        let status = tokio::process::Command::new(python()).args(["-B", "-c", "import pathlib,sys; exec(compile(pathlib.Path(sys.argv[1]).read_bytes(), '<mutant>', 'exec')); assert value == ' x '"])
+async fn method_removal_candidate_identity_is_independent_of_assertion_strength() {
+    let weak = "from subject import clean; assert isinstance(clean(' x '), str)";
+    let strong = "from subject import clean; assert clean(' x ') == 'x'";
+
+    let weak_id = method_removal_id(weak).await;
+    let strong_id = method_removal_id(strong).await;
+
+    assert_eq!(weak_id, strong_id);
+}
+
+async fn method_removal_id(test: &str) -> serde_json::Value {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("subject.py"),
+        "def clean(text): return text.strip()\n",
+    )
+    .unwrap();
+    let doc = plan(root.path(), "method_call_remove", test).await;
+    doc["candidates"][0]["id"].clone()
+}
+
+#[rstest::rstest]
+#[case::xef_xbb_xbf_coding_utf_8_text_x_value_text_strip_1(b"\xef\xbb\xbf# coding: utf-8\r\ntext = ' x '\r\nvalue = text.strip()\r\n".as_slice())]
+#[case::coding_latin_1_name_xe9_text_x_value_text_strip_2(b"# coding: latin-1\r\nname = '\xe9'\r\ntext = ' x '\r\nvalue = text.strip()\r\n"
+            .as_slice())]
+#[case::text_x_value_text_strip_3(b"text = ' x '\rvalue = text.strip()\r".as_slice())]
+#[tokio::test]
+async fn method_removal_preserves_encoded_source_and_outer_bytes(#[case] source: &[u8]) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), source).unwrap();
+    let doc = plan(root.path(), "method_call_remove", "pass").await;
+    let candidates = doc["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 1);
+    let c = &candidates[0];
+    let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
+    let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
+    assert_eq!(&source[start..end], b"text.strip()");
+    let mut output = source.to_vec();
+    output.splice(start..end, c["replacement"].as_str().unwrap().bytes());
+    let path = root.path().join("mutant.py");
+    std::fs::write(&path, output).unwrap();
+    let status = tokio::process::Command::new(python()).args(["-B", "-c", "import pathlib,sys; exec(compile(pathlib.Path(sys.argv[1]).read_bytes(), '<mutant>', 'exec')); assert value == ' x '"])
             .arg(path).status().await.unwrap();
-        assert!(status.success());
-    }
+    assert!(status.success());
 }
 
 #[derive(serde::Deserialize)]

@@ -170,25 +170,25 @@ async fn assert_contract(case: ContractCase<'_>) {
 
     let manifest = plan(directory.path(), case.operator).await;
     let candidates = manifest["candidates"].as_array().unwrap();
-    assert_eq!(candidates.len(), 1, "{}: {manifest}", case.name);
-    let candidate = &candidates[0];
-    assert_eq!(candidate["path"], "subject.py", "{}", case.name);
-    assert_eq!(candidate["operator"], case.operator, "{}", case.name);
-    assert_eq!(candidate["original"], case.original, "{}", case.name);
+    let candidate = candidates
+        .first()
+        .expect("contract must produce a candidate");
     let replacement = candidate["replacement"].as_str().unwrap();
-
     let start = usize::try_from(candidate["span"]["start"].as_u64().unwrap()).unwrap();
     let length = usize::try_from(candidate["span"]["length"].as_u64().unwrap()).unwrap();
     let end = start.checked_add(length).unwrap();
-    assert_eq!(&case.source[start..end], case.original, "{}", case.name);
-
     let baseline = run_python(directory.path(), case.harness);
-    assert_python_output(case.name, "baseline", &baseline, case.baseline_stdout);
-
     let mut mutated = case.source.to_owned();
     mutated.replace_range(start..end, replacement);
     fs::write(&path, mutated).unwrap();
     let mutant = run_python(directory.path(), case.harness);
+
+    assert_eq!(candidates.len(), 1, "{}: {manifest}", case.name);
+    assert_eq!(candidate["path"], "subject.py", "{}", case.name);
+    assert_eq!(candidate["operator"], case.operator, "{}", case.name);
+    assert_eq!(candidate["original"], case.original, "{}", case.name);
+    assert_eq!(&case.source[start..end], case.original, "{}", case.name);
+    assert_python_output(case.name, "baseline", &baseline, case.baseline_stdout);
     assert_python_output(case.name, "mutant", &mutant, case.mutant_stdout);
     assert_ne!(
         baseline.stdout, mutant.stdout,
@@ -203,46 +203,50 @@ const JSON_RUN_HARNESS: &str = concat!(
     "print(json.dumps(subject.run(), separators=(',', ':')))\n",
 );
 
+#[rstest::rstest]
+#[case::input_1(
+    "/",
+    "//",
+    "2",
+    "[-3.5,[\"left\",\"right\"],\"float\"]\n",
+    "[-4,[\"left\",\"right\"],\"int\"]\n"
+)]
+#[case::input_2(
+    "//",
+    "/",
+    "2",
+    "[-4,[\"left\",\"right\"],\"int\"]\n",
+    "[-3.5,[\"left\",\"right\"],\"float\"]\n"
+)]
+#[case::input_3(
+    "/",
+    "//",
+    "2.0",
+    "[-3.5,[\"left\",\"right\"],\"float\"]\n",
+    "[-4.0,[\"left\",\"right\"],\"float\"]\n"
+)]
 #[tokio::test]
-async fn division_exchange_preserves_operand_order_and_numeric_result_types() {
-    for (operator, replacement, divisor, baseline, mutant) in [
-        (
-            "/",
-            "//",
-            "2",
-            "[-3.5,[\"left\",\"right\"],\"float\"]\n",
-            "[-4,[\"left\",\"right\"],\"int\"]\n",
-        ),
-        (
-            "//",
-            "/",
-            "2",
-            "[-4,[\"left\",\"right\"],\"int\"]\n",
-            "[-3.5,[\"left\",\"right\"],\"float\"]\n",
-        ),
-        (
-            "/",
-            "//",
-            "2.0",
-            "[-3.5,[\"left\",\"right\"],\"float\"]\n",
-            "[-4.0,[\"left\",\"right\"],\"float\"]\n",
-        ),
-    ] {
-        let source = format!(
-            "events = []\ndef operand(name, value):\n events.append(name)\n return value\ndef run():\n value = operand('left', -7) {operator} operand('right', {divisor})\n return [value, events, type(value).__name__]\n"
-        );
-        assert_contract(ContractCase {
-            name: "division order and type",
-            operator: "binary_div_floor",
-            original: operator,
-            replacement,
-            source: &source,
-            harness: JSON_RUN_HARNESS,
-            baseline_stdout: baseline,
-            mutant_stdout: mutant,
-        })
-        .await;
-    }
+async fn division_exchange_preserves_operand_order_and_numeric_result_types(
+    #[case] operator: &str,
+    #[case] replacement: &str,
+    #[case] divisor: &str,
+    #[case] baseline: &str,
+    #[case] mutant: &str,
+) {
+    let source = format!(
+        "events = []\ndef operand(name, value):\n events.append(name)\n return value\ndef run():\n value = operand('left', -7) {operator} operand('right', {divisor})\n return [value, events, type(value).__name__]\n"
+    );
+    assert_contract(ContractCase {
+        name: "division order and type",
+        operator: "binary_div_floor",
+        original: operator,
+        replacement,
+        source: &source,
+        harness: JSON_RUN_HARNESS,
+        baseline_stdout: baseline,
+        mutant_stdout: mutant,
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -279,10 +283,8 @@ async fn division_exchange_keeps_zero_division_as_a_runtime_exception() {
     }
 }
 
-#[tokio::test]
-async fn structural_mapping_and_append_mutants_keep_grouped_calls() {
-    let cases = [
-        ContractCase {
+#[rstest::rstest]
+#[case::grouped_mapping_get(ContractCase {
             name: "grouped mapping get",
             operator: "structure_mapping_get_subscript",
             original: "(holder\n        .mapping).get(key())",
@@ -310,8 +312,8 @@ def run():
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[[\"get\",\"x\"],[\"key\",[\"get\",\"x\"]]]\n",
             mutant_stdout: "[[\"item\",\"x\"],[\"key\",[\"item\",\"x\"]]]\n",
-        },
-        ContractCase {
+        })]
+#[case::grouped_append(ContractCase {
             name: "grouped append",
             operator: "structure_append_extend",
             original: "(items\n        .append)(value())",
@@ -335,18 +337,16 @@ def run():
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[\"value\",[\"append\",\"x\"]]\n",
             mutant_stdout: "[\"value\",[\"extend\",[\"x\"]]]\n",
-        },
-    ];
-
-    for case in cases {
-        assert_contract(case).await;
-    }
+        })]
+#[tokio::test]
+async fn structural_mapping_and_append_mutants_keep_grouped_calls(
+    #[case] case: ContractCase<'static>,
+) {
+    assert_contract(case).await;
 }
 
-#[tokio::test]
-async fn collection_mutants_keep_parenthesized_argument_evaluation() {
-    let cases = [
-        ContractCase {
+#[rstest::rstest]
+#[case::parenthesized_append_argument(ContractCase {
             name: "parenthesized append argument",
             operator: "collection_append_insert",
             original: "items.append((value()))",
@@ -369,8 +369,8 @@ def run():
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[\"value\",[\"append\",\"x\"]]\n",
             mutant_stdout: "[\"value\",[\"insert\",0,\"x\"]]\n",
-        },
-        ContractCase {
+        })]
+#[case::parenthesized_insert_arguments(ContractCase {
             name: "parenthesized insert arguments",
             operator: "collection_append_insert",
             original: "items.insert((0), ((value())))",
@@ -393,12 +393,12 @@ def run():
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[\"value\",[\"insert\",0,\"x\"]]\n",
             mutant_stdout: "[\"value\",[\"append\",\"x\"]]\n",
-        },
-    ];
-
-    for case in cases {
-        assert_contract(case).await;
-    }
+        })]
+#[tokio::test]
+async fn collection_mutants_keep_parenthesized_argument_evaluation(
+    #[case] case: ContractCase<'static>,
+) {
+    assert_contract(case).await;
 }
 
 #[tokio::test]
@@ -496,10 +496,8 @@ macro_rules! augmented_source {
     };
 }
 
-#[tokio::test]
-async fn syntax_mutants_change_results_and_special_method_dispatch() {
-    let cases = [
-        ContractCase {
+#[rstest::rstest]
+#[case::binary_power(ContractCase {
             name: "binary power",
             operator: "binary_power",
             original: "**",
@@ -516,8 +514,8 @@ def run():
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[8,[2,3]]\n",
             mutant_stdout: "[6,[2,3]]\n",
-        },
-        ContractCase {
+        })]
+#[case::binary_matrix_multiplication(ContractCase {
             name: "binary matrix multiplication",
             operator: "binary_matmul",
             original: "@",
@@ -541,8 +539,8 @@ def run():
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[11,[\"left\",\"right\",\"__matmul__\"]]\n",
             mutant_stdout: "[7,[\"left\",\"right\",\"__mul__\"]]\n",
-        },
-        ContractCase {
+        })]
+#[case::binary_bitwise_xor(ContractCase {
             name: "binary bitwise xor",
             operator: "bitwise_xor",
             original: "^",
@@ -566,8 +564,8 @@ def run():
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[12,[\"left\",\"right\",\"__xor__\"]]\n",
             mutant_stdout: "[4,[\"left\",\"right\",\"__and__\"]]\n",
-        },
-        ContractCase {
+        })]
+#[case::bitwise_invert(ContractCase {
             name: "bitwise invert",
             operator: "bitwise_invert",
             original: "~",
@@ -590,18 +588,16 @@ def run():
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[9,[\"value\",\"__invert__\"]]\n",
             mutant_stdout: "[3,[\"value\",\"__pos__\"]]\n",
-        },
-    ];
-
-    for case in cases {
-        assert_contract(case).await;
-    }
+        })]
+#[tokio::test]
+async fn syntax_mutants_change_results_and_special_method_dispatch(
+    #[case] case: ContractCase<'static>,
+) {
+    assert_contract(case).await;
 }
 
-#[tokio::test]
-async fn augmented_syntax_mutants_change_in_place_protocol_dispatch() {
-    let cases = [
-        ContractCase {
+#[rstest::rstest]
+#[case::augmented_power(ContractCase {
             name: "augmented power",
             operator: "augmented_power",
             original: "**=",
@@ -610,8 +606,8 @@ async fn augmented_syntax_mutants_change_in_place_protocol_dispatch() {
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[8,[\"left\",\"right\",\"__ipow__\"]]\n",
             mutant_stdout: "[6,[\"left\",\"right\",\"__imul__\"]]\n",
-        },
-        ContractCase {
+        })]
+#[case::augmented_matrix_multiplication(ContractCase {
             name: "augmented matrix multiplication",
             operator: "augmented_matmul",
             original: "@=",
@@ -620,8 +616,8 @@ async fn augmented_syntax_mutants_change_in_place_protocol_dispatch() {
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[13,[\"left\",\"right\",\"__imatmul__\"]]\n",
             mutant_stdout: "[6,[\"left\",\"right\",\"__imul__\"]]\n",
-        },
-        ContractCase {
+        })]
+#[case::augmented_bitwise_and_or(ContractCase {
             name: "augmented bitwise and/or",
             operator: "augmented_bitwise_and_or",
             original: "&=",
@@ -630,8 +626,8 @@ async fn augmented_syntax_mutants_change_in_place_protocol_dispatch() {
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[1,[\"left\",\"right\",\"__iand__\"]]\n",
             mutant_stdout: "[5,[\"left\",\"right\",\"__ior__\"]]\n",
-        },
-        ContractCase {
+        })]
+#[case::augmented_bitwise_xor(ContractCase {
             name: "augmented bitwise xor",
             operator: "augmented_bitwise_xor",
             original: "^=",
@@ -640,8 +636,8 @@ async fn augmented_syntax_mutants_change_in_place_protocol_dispatch() {
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[12,[\"left\",\"right\",\"__ixor__\"]]\n",
             mutant_stdout: "[4,[\"left\",\"right\",\"__iand__\"]]\n",
-        },
-        ContractCase {
+        })]
+#[case::augmented_bitwise_shift(ContractCase {
             name: "augmented bitwise shift",
             operator: "augmented_bitwise_shift",
             original: "<<=",
@@ -650,18 +646,16 @@ async fn augmented_syntax_mutants_change_in_place_protocol_dispatch() {
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[16,[\"left\",\"right\",\"__ilshift__\"]]\n",
             mutant_stdout: "[2,[\"left\",\"right\",\"__irshift__\"]]\n",
-        },
-    ];
-
-    for case in cases {
-        assert_contract(case).await;
-    }
+        })]
+#[tokio::test]
+async fn augmented_syntax_mutants_change_in_place_protocol_dispatch(
+    #[case] case: ContractCase<'static>,
+) {
+    assert_contract(case).await;
 }
 
-#[tokio::test]
-async fn operator_function_arithmetic_and_matrix_protocol_replacements_execute() {
-    let cases = [
-        ContractCase {
+#[rstest::rstest]
+#[case::operator_pow(ContractCase {
             name: "operator.pow",
             operator: "operator_function",
             original: "pow",
@@ -679,8 +673,8 @@ def run():
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[8,[2,3]]\n",
             mutant_stdout: "[6,[2,3]]\n",
-        },
-        ContractCase {
+        })]
+#[case::operator_matmul(ContractCase {
             name: "operator.matmul",
             operator: "operator_function",
             original: "matmul",
@@ -705,12 +699,12 @@ def run():
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[11,[\"left\",\"right\",\"__matmul__\"]]\n",
             mutant_stdout: "[7,[\"left\",\"right\",\"__mul__\"]]\n",
-        },
-    ];
-
-    for case in cases {
-        assert_contract(case).await;
-    }
+        })]
+#[tokio::test]
+async fn operator_function_arithmetic_and_matrix_protocol_replacements_execute(
+    #[case] case: ContractCase<'static>,
+) {
+    assert_contract(case).await;
 }
 
 #[tokio::test]
@@ -738,10 +732,8 @@ class Subject(metaclass=Meta):
     .await;
 }
 
-#[tokio::test]
-async fn operator_function_bitwise_unary_and_inplace_replacements_execute() {
-    let cases = [
-        ContractCase {
+#[rstest::rstest]
+#[case::operator_xor(ContractCase {
             name: "operator.xor",
             operator: "operator_function",
             original: "xor",
@@ -765,8 +757,8 @@ def run():
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[12,[\"value\",\"value\",\"__xor__\"]]\n",
             mutant_stdout: "[4,[\"value\",\"value\",\"__and__\"]]\n",
-        },
-        ContractCase {
+        })]
+#[case::operator_invert(ContractCase {
             name: "operator.invert",
             operator: "operator_function",
             original: "invert",
@@ -790,8 +782,8 @@ def run():
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[9,[\"value\",\"__invert__\"]]\n",
             mutant_stdout: "[3,[\"value\",\"__pos__\"]]\n",
-        },
-        ContractCase {
+        })]
+#[case::operator_ipow(ContractCase {
             name: "operator.ipow",
             operator: "operator_function",
             original: "ipow",
@@ -815,18 +807,16 @@ def run():
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[8,[\"value\",\"value\",\"__ipow__\"]]\n",
             mutant_stdout: "[6,[\"value\",\"value\",\"__imul__\"]]\n",
-        },
-    ];
-
-    for case in cases {
-        assert_contract(case).await;
-    }
+        })]
+#[tokio::test]
+async fn operator_function_bitwise_unary_and_inplace_replacements_execute(
+    #[case] case: ContractCase<'static>,
+) {
+    assert_contract(case).await;
 }
 
-#[tokio::test]
-async fn contains_and_setitem_mutants_keep_argument_order_and_remove_effects() {
-    let cases = [
-        ContractCase {
+#[rstest::rstest]
+#[case::contains_higher_order_reference(ContractCase {
             name: "contains higher-order reference",
             operator: "operator_function",
             original: "op.contains",
@@ -849,8 +839,8 @@ async fn contains_and_setitem_mutants_keep_argument_order_and_remove_effects() {
             ),
             baseline_stdout: "[true,[[\"needle\"],\"needle\"],\"TypeError\"]\n",
             mutant_stdout: "[false,[[\"needle\"],\"needle\"],\"TypeError\"]\n",
-        },
-        ContractCase {
+        })]
+#[case::from_import_setitem_reference(ContractCase {
             name: "from-import setitem reference",
             operator: "operator_function",
             original: "update",
@@ -875,18 +865,16 @@ async fn contains_and_setitem_mutants_keep_argument_order_and_remove_effects() {
             ),
             baseline_stdout: "[{\"key\":\"value\"},[\"target\",\"key\",\"value\"],\"TypeError\"]\n",
             mutant_stdout: "[{},[\"target\",\"key\",\"value\"],\"TypeError\"]\n",
-        },
-    ];
-
-    for case in cases {
-        assert_contract(case).await;
-    }
+        })]
+#[tokio::test]
+async fn contains_and_setitem_mutants_keep_argument_order_and_remove_effects(
+    #[case] case: ContractCase<'static>,
+) {
+    assert_contract(case).await;
 }
 
-#[tokio::test]
-async fn delitem_and_call_mutants_keep_argument_order_and_remove_effects() {
-    let cases = [
-        ContractCase {
+#[rstest::rstest]
+#[case::dunder_delitem_reference(ContractCase {
             name: "dunder delitem reference",
             operator: "operator_function",
             original: "op.__delitem__",
@@ -911,8 +899,8 @@ async fn delitem_and_call_mutants_keep_argument_order_and_remove_effects() {
             ),
             baseline_stdout: "[{},[\"target\",\"key\"],\"TypeError\"]\n",
             mutant_stdout: "[{\"key\":\"value\"},[\"target\",\"key\"],\"TypeError\"]\n",
-        },
-        ContractCase {
+        })]
+#[case::from_import_call_reference(ContractCase {
             name: "from-import call reference",
             operator: "operator_function",
             original: "invoke",
@@ -939,18 +927,16 @@ async fn delitem_and_call_mutants_keep_argument_order_and_remove_effects() {
             ),
             baseline_stdout: "[9,[\"target\",4,5,\"called\"],\"TypeError\"]\n",
             mutant_stdout: "[null,[\"target\",4,5],\"TypeError\"]\n",
-        },
-    ];
-
-    for case in cases {
-        assert_contract(case).await;
-    }
+        })]
+#[tokio::test]
+async fn delitem_and_call_mutants_keep_argument_order_and_remove_effects(
+    #[case] case: ContractCase<'static>,
+) {
+    assert_contract(case).await;
 }
 
-#[tokio::test]
-async fn from_import_dunder_and_higher_order_function_replacements_execute() {
-    let cases = [
-        ContractCase {
+#[rstest::rstest]
+#[case::from_import_function_pair(ContractCase {
             name: "from-import function pair",
             operator: "operator_function",
             original: "plus",
@@ -959,8 +945,8 @@ async fn from_import_dunder_and_higher_order_function_replacements_execute() {
             harness: "import subject; print(subject.action(8, 3))\n",
             baseline_stdout: "11\n",
             mutant_stdout: "5\n",
-        },
-        ContractCase {
+        })]
+#[case::documented_dunder_pair(ContractCase {
             name: "documented dunder pair",
             operator: "operator_function",
             original: "__add__",
@@ -969,8 +955,8 @@ async fn from_import_dunder_and_higher_order_function_replacements_execute() {
             harness: "import subject; print(subject.action(8, 3))\n",
             baseline_stdout: "11\n",
             mutant_stdout: "5\n",
-        },
-        ContractCase {
+        })]
+#[case::map_higher_order_reference(ContractCase {
             name: "map higher-order reference",
             operator: "operator_function",
             original: "add",
@@ -983,18 +969,16 @@ async fn from_import_dunder_and_higher_order_function_replacements_execute() {
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[11,22]\n",
             mutant_stdout: "[9,18]\n",
-        },
-    ];
-
-    for case in cases {
-        assert_contract(case).await;
-    }
+        })]
+#[tokio::test]
+async fn from_import_dunder_and_higher_order_function_replacements_execute(
+    #[case] case: ContractCase<'static>,
+) {
+    assert_contract(case).await;
 }
 
-#[tokio::test]
-async fn nullable_annotation_removal_preserves_type_members_at_annotation_sites() {
-    let cases = [
-        ContractCase {
+#[rstest::rstest]
+#[case::variable_optional_grouped_union(ContractCase {
             name: "variable Optional grouped union",
             operator: "type_nullable_remove",
             original: "Optional[(int\n | str)]",
@@ -1003,8 +987,8 @@ async fn nullable_annotation_removal_preserves_type_members_at_annotation_sites(
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[\"NoneType\",\"int\",\"str\"]\n",
             mutant_stdout: "[\"int\",\"str\"]\n",
-        },
-        ContractCase {
+        })]
+#[case::parameter_optional_grouped_union(ContractCase {
             name: "parameter Optional grouped union",
             operator: "type_nullable_remove",
             original: "Optional[(int\n | str)]",
@@ -1013,8 +997,8 @@ async fn nullable_annotation_removal_preserves_type_members_at_annotation_sites(
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[\"NoneType\",\"int\",\"str\"]\n",
             mutant_stdout: "[\"int\",\"str\"]\n",
-        },
-        ContractCase {
+        })]
+#[case::return_optional_grouped_union(ContractCase {
             name: "return Optional grouped union",
             operator: "type_nullable_remove",
             original: "Optional[(int\n | str)]",
@@ -1023,18 +1007,16 @@ async fn nullable_annotation_removal_preserves_type_members_at_annotation_sites(
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[\"NoneType\",\"int\",\"str\"]\n",
             mutant_stdout: "[\"int\",\"str\"]\n",
-        },
-    ];
-
-    for case in cases {
-        assert_contract(case).await;
-    }
+        })]
+#[tokio::test]
+async fn nullable_annotation_removal_preserves_type_members_at_annotation_sites(
+    #[case] case: ContractCase<'static>,
+) {
+    assert_contract(case).await;
 }
 
-#[tokio::test]
-async fn nullable_optional_removal_preserves_source_layout() {
-    let cases = [
-        ContractCase {
+#[rstest::rstest]
+#[case::optional_unparenthesized_multiline_union(ContractCase {
             name: "Optional unparenthesized multiline union",
             operator: "type_nullable_remove",
             original: "Optional[int\n | str]",
@@ -1043,8 +1025,8 @@ async fn nullable_optional_removal_preserves_source_layout() {
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[\"NoneType\",\"int\",\"str\"]\n",
             mutant_stdout: "[\"int\",\"str\"]\n",
-        },
-        ContractCase {
+        })]
+#[case::optional_comments(ContractCase {
             name: "Optional comments",
             operator: "type_nullable_remove",
             original: "Optional[\n    # retained leading comment\n    int\n    | str  # retained trailing comment\n]",
@@ -1053,8 +1035,8 @@ async fn nullable_optional_removal_preserves_source_layout() {
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[\"NoneType\",\"int\",\"str\"]\n",
             mutant_stdout: "[\"int\",\"str\"]\n",
-        },
-        ContractCase {
+        })]
+#[case::optional_nested_grouping(ContractCase {
             name: "Optional nested grouping",
             operator: "type_nullable_remove",
             original: "Optional[((int\n | str))]",
@@ -1063,8 +1045,8 @@ async fn nullable_optional_removal_preserves_source_layout() {
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[\"NoneType\",\"int\",\"str\"]\n",
             mutant_stdout: "[\"int\",\"str\"]\n",
-        },
-        ContractCase {
+        })]
+#[case::optional_grouped_union_surrounding_whitespace(ContractCase {
             name: "Optional grouped union surrounding whitespace",
             operator: "type_nullable_remove",
             original: "Optional[\n    (int | str)\n]",
@@ -1073,8 +1055,8 @@ async fn nullable_optional_removal_preserves_source_layout() {
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[\"NoneType\",\"int\",\"str\"]\n",
             mutant_stdout: "[\"int\",\"str\"]\n",
-        },
-        ContractCase {
+        })]
+#[case::ordinary_optional(ContractCase {
             name: "ordinary Optional",
             operator: "type_nullable_remove",
             original: "Optional[int]",
@@ -1083,8 +1065,8 @@ async fn nullable_optional_removal_preserves_source_layout() {
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[\"NoneType\",\"int\"]\n",
             mutant_stdout: "[\"int\"]\n",
-        },
-        ContractCase {
+        })]
+#[case::optional_hash_string_literal(ContractCase {
             name: "Optional hash string literal",
             operator: "type_nullable_remove",
             original: "Optional[resolve(\"#\")]",
@@ -1093,18 +1075,14 @@ async fn nullable_optional_removal_preserves_source_layout() {
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[\"NoneType\",\"int\"]\n",
             mutant_stdout: "[\"int\"]\n",
-        },
-    ];
-
-    for case in cases {
-        assert_contract(case).await;
-    }
+        })]
+#[tokio::test]
+async fn nullable_optional_removal_preserves_source_layout(#[case] case: ContractCase<'static>) {
+    assert_contract(case).await;
 }
 
-#[tokio::test]
-async fn nullable_union_removal_preserves_source_layout() {
-    let cases = [
-        ContractCase {
+#[rstest::rstest]
+#[case::none_leading_grouped_union(ContractCase {
             name: "None leading grouped union",
             operator: "type_nullable_remove",
             original: "None | (int\n | str)",
@@ -1113,8 +1091,8 @@ async fn nullable_union_removal_preserves_source_layout() {
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[\"NoneType\",\"int\",\"str\"]\n",
             mutant_stdout: "[\"int\",\"str\"]\n",
-        },
-        ContractCase {
+        })]
+#[case::none_trailing_grouped_union(ContractCase {
             name: "None trailing grouped union",
             operator: "type_nullable_remove",
             original: "(int\n | str) | None",
@@ -1123,8 +1101,8 @@ async fn nullable_union_removal_preserves_source_layout() {
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[\"NoneType\",\"int\",\"str\"]\n",
             mutant_stdout: "[\"int\",\"str\"]\n",
-        },
-        ContractCase {
+        })]
+#[case::none_trailing_ungrouped_multiline_union(ContractCase {
             name: "None trailing ungrouped multiline union",
             operator: "type_nullable_remove",
             original: "int\n | str\n | None",
@@ -1133,8 +1111,8 @@ async fn nullable_union_removal_preserves_source_layout() {
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[\"NoneType\",\"int\",\"str\"]\n",
             mutant_stdout: "[\"int\",\"str\"]\n",
-        },
-        ContractCase {
+        })]
+#[case::ordinary_trailing_none(ContractCase {
             name: "ordinary trailing None",
             operator: "type_nullable_remove",
             original: "int | None",
@@ -1143,8 +1121,8 @@ async fn nullable_union_removal_preserves_source_layout() {
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[\"NoneType\",\"int\"]\n",
             mutant_stdout: "[\"int\"]\n",
-        },
-        ContractCase {
+        })]
+#[case::none_trailing_hash_string_literal(ContractCase {
             name: "None trailing hash string literal",
             operator: "type_nullable_remove",
             original: "resolve(\"#\") | None",
@@ -1153,18 +1131,14 @@ async fn nullable_union_removal_preserves_source_layout() {
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[\"NoneType\",\"int\"]\n",
             mutant_stdout: "[\"int\"]\n",
-        },
-    ];
-
-    for case in cases {
-        assert_contract(case).await;
-    }
+        })]
+#[tokio::test]
+async fn nullable_union_removal_preserves_source_layout(#[case] case: ContractCase<'static>) {
+    assert_contract(case).await;
 }
 
-#[tokio::test]
-async fn python_314_none_identity_function_replacements_execute() {
-    let cases = [
-        ContractCase {
+#[rstest::rstest]
+#[case::operator_is_none(ContractCase {
             name: "operator.is_none",
             operator: "operator_function",
             original: "is_none",
@@ -1173,8 +1147,8 @@ async fn python_314_none_identity_function_replacements_execute() {
             harness: "import subject; print(subject.action(None))\n",
             baseline_stdout: "True\n",
             mutant_stdout: "False\n",
-        },
-        ContractCase {
+        })]
+#[case::from_import_operator_is_not_none(ContractCase {
             name: "from-import operator.is_not_none",
             operator: "operator_function",
             original: "present",
@@ -1183,38 +1157,82 @@ async fn python_314_none_identity_function_replacements_execute() {
             harness: "import subject; print(subject.action(None))\n",
             baseline_stdout: "False\n",
             mutant_stdout: "True\n",
-        },
-    ];
-
-    for case in cases {
-        assert_contract(case).await;
-    }
+        })]
+#[tokio::test]
+async fn python_314_none_identity_function_replacements_execute(
+    #[case] case: ContractCase<'static>,
+) {
+    assert_contract(case).await;
 }
 
+#[rstest::rstest]
+#[case::exception_1("(Exception)")]
+#[case::exception_2("((Exception))")]
+#[case::grouping_exception_3("(\n    # grouping\n    Exception\n)")]
 #[tokio::test]
-async fn parenthesized_exception_removals_preserve_intended_catch_sets() {
-    for expression in [
-        "(Exception)",
-        "((Exception))",
-        "(\n    # grouping\n    Exception\n)",
-    ] {
-        let source = format!(
-            "def run(error):\n    try:\n        raise error\n    except {expression}:\n        return 'caught'\n"
-        );
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("subject.py");
-        fs::write(&path, &source).unwrap();
-        let harness = "import subject\nfor error in [ValueError(), KeyboardInterrupt()]:\n    try:\n        print(subject.run(error))\n    except BaseException:\n        print('escaped')\n";
-        assert_python_output(
-            expression,
-            "baseline",
-            &run_python(directory.path(), harness),
-            "caught\nescaped\n",
-        );
-        let manifest = plan(directory.path(), "exception_exception_to_bare").await;
-        let candidates = manifest["candidates"].as_array().unwrap();
-        assert_eq!(candidates.len(), 1);
-        let candidate = &candidates[0];
+async fn parenthesized_exception_removals_preserve_intended_catch_sets_1(#[case] expression: &str) {
+    let source = format!(
+        "def run(error):\n    try:\n        raise error\n    except {expression}:\n        return 'caught'\n"
+    );
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("subject.py");
+    fs::write(&path, &source).unwrap();
+    let harness = "import subject\nfor error in [ValueError(), KeyboardInterrupt()]:\n    try:\n        print(subject.run(error))\n    except BaseException:\n        print('escaped')\n";
+    assert_python_output(
+        expression,
+        "baseline",
+        &run_python(directory.path(), harness),
+        "caught\nescaped\n",
+    );
+
+    let manifest = plan(directory.path(), "exception_exception_to_bare").await;
+    let candidates = manifest["candidates"].as_array().unwrap();
+
+    assert_eq!(candidates.len(), 1);
+    let candidate = &candidates[0];
+    let start = usize::try_from(candidate["span"]["start"].as_u64().unwrap()).unwrap();
+    let length = usize::try_from(candidate["span"]["length"].as_u64().unwrap()).unwrap();
+    let mut mutated = source.clone();
+    mutated.replace_range(
+        start..start + length,
+        candidate["replacement"].as_str().unwrap(),
+    );
+    fs::write(&path, mutated).unwrap();
+    // pins: issue #451 — an empty tuple reparses but catches neither exception.
+    assert_python_output(
+        expression,
+        "mutant",
+        &run_python(directory.path(), harness),
+        "caught\ncaught\n",
+    );
+}
+
+#[rstest::rstest]
+#[case::valueerror_typeerror_1("((ValueError), TypeError)")]
+#[case::valueerror_typeerror_2("(ValueError, ((TypeError)))")]
+#[case::valueerror_retained_typeerror_3("((ValueError), # retained\n    (TypeError),)")]
+#[tokio::test]
+async fn parenthesized_exception_removals_preserve_intended_catch_sets_2(#[case] expression: &str) {
+    let source = format!(
+        "def run(error):\n    try:\n        raise error\n    except {expression}:\n        return 'caught'\n"
+    );
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("subject.py");
+    fs::write(&path, &source).unwrap();
+    let harness = "import subject\nfor error in [ValueError(), TypeError(), KeyboardInterrupt()]:\n    try:\n        print(subject.run(error))\n    except BaseException:\n        print('escaped')\n";
+    assert_python_output(
+        expression,
+        "baseline",
+        &run_python(directory.path(), harness),
+        "caught\ncaught\nescaped\n",
+    );
+
+    let manifest = plan(directory.path(), "exception_tuple_remove_member").await;
+    let candidates = manifest["candidates"].as_array().unwrap();
+
+    assert_eq!(candidates.len(), 2);
+    let mut outcomes = std::collections::BTreeSet::new();
+    for candidate in candidates {
         let start = usize::try_from(candidate["span"]["start"].as_u64().unwrap()).unwrap();
         let length = usize::try_from(candidate["span"]["length"].as_u64().unwrap()).unwrap();
         let mut mutated = source.clone();
@@ -1223,65 +1241,25 @@ async fn parenthesized_exception_removals_preserve_intended_catch_sets() {
             candidate["replacement"].as_str().unwrap(),
         );
         fs::write(&path, mutated).unwrap();
-        // pins: issue #451 — an empty tuple reparses but catches neither exception.
-        assert_python_output(
-            expression,
-            "mutant",
-            &run_python(directory.path(), harness),
-            "caught\ncaught\n",
+        let output = run_python(directory.path(), harness);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        outcomes.insert(
+            String::from_utf8(output.stdout)
+                .unwrap()
+                .replace("\r\n", "\n"),
         );
     }
-    for expression in [
-        "((ValueError), TypeError)",
-        "(ValueError, ((TypeError)))",
-        "((ValueError), # retained\n    (TypeError),)",
-    ] {
-        let source = format!(
-            "def run(error):\n    try:\n        raise error\n    except {expression}:\n        return 'caught'\n"
-        );
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("subject.py");
-        fs::write(&path, &source).unwrap();
-        let harness = "import subject\nfor error in [ValueError(), TypeError(), KeyboardInterrupt()]:\n    try:\n        print(subject.run(error))\n    except BaseException:\n        print('escaped')\n";
-        assert_python_output(
-            expression,
-            "baseline",
-            &run_python(directory.path(), harness),
-            "caught\ncaught\nescaped\n",
-        );
-        let manifest = plan(directory.path(), "exception_tuple_remove_member").await;
-        let candidates = manifest["candidates"].as_array().unwrap();
-        assert_eq!(candidates.len(), 2);
-        let mut outcomes = std::collections::BTreeSet::new();
-        for candidate in candidates {
-            let start = usize::try_from(candidate["span"]["start"].as_u64().unwrap()).unwrap();
-            let length = usize::try_from(candidate["span"]["length"].as_u64().unwrap()).unwrap();
-            let mut mutated = source.clone();
-            mutated.replace_range(
-                start..start + length,
-                candidate["replacement"].as_str().unwrap(),
-            );
-            fs::write(&path, mutated).unwrap();
-            let output = run_python(directory.path(), harness);
-            assert!(
-                output.status.success(),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            outcomes.insert(
-                String::from_utf8(output.stdout)
-                    .unwrap()
-                    .replace("\r\n", "\n"),
-            );
-        }
-        assert_eq!(
-            outcomes,
-            std::collections::BTreeSet::from([
-                "escaped\ncaught\nescaped\n".to_owned(),
-                "caught\nescaped\nescaped\n".to_owned(),
-            ])
-        );
-    }
+    assert_eq!(
+        outcomes,
+        std::collections::BTreeSet::from([
+            "escaped\ncaught\nescaped\n".to_owned(),
+            "caught\nescaped\nescaped\n".to_owned(),
+        ])
+    );
 }
 
 #[path = "behavioral_research/contracts.rs"]

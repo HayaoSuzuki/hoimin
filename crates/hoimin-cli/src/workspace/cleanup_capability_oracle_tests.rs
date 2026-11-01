@@ -119,6 +119,7 @@ fn cleanup_capability_corpus_contract_is_exact() {
     parse_corpus(CORPUS).unwrap();
 
     let crossed_mode = CORPUS.replacen("\"mode\":\"strict\"", "\"mode\":\"model-only\"", 1);
+
     assert!(parse_corpus(&crossed_mode).is_err());
 
     let unknown = CORPUS.replacen("\"id\":\"stable_entry\"", "\"id\":\"unknown\"", 1);
@@ -310,7 +311,9 @@ mod unix {
         set_mode(stable_outside.path(), 0o400);
         let mut fixture = Fixture::new();
         set_mode(fixture.worker.root().join("pkg/a.py").as_std_path(), 0o400);
+
         let result = fixture.worker.try_cleanup();
+
         assert_eq!(result_name(&result), stable.result);
         assert_eq!(
             is_owner_writable(stable_outside.path()),
@@ -327,7 +330,9 @@ mod unix {
             fixture.worker.root().join("outside-link"),
         )
         .unwrap();
+
         let result = fixture.worker.try_cleanup();
+
         assert_eq!(result_name(&result), preexisting.result);
         assert_eq!(
             is_owner_writable(preexisting_outside.path()),
@@ -360,9 +365,11 @@ mod unix {
         let wrapper = root.parent().unwrap().to_owned();
         set_mode(root.as_std_path(), 0o000);
         set_mode(wrapper.as_std_path(), 0o000);
+
         let result = fixture.worker.try_cleanup();
         restore_failed_cleanup_modes(&result, wrapper.as_std_path(), root.as_std_path());
         result.unwrap();
+
         assert!(!wrapper.exists());
     }
 
@@ -519,6 +526,7 @@ mod unix {
         resume.send(()).unwrap();
 
         let (mut worker, result) = cleanup.join().unwrap();
+
         assert!(
             result.is_err(),
             "inaccessible wrapper must block final removal"

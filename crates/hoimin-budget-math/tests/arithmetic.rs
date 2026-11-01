@@ -30,151 +30,95 @@ fn zero_duration_is_rejected() {
     assert_eq!(result, None);
 }
 
-macro_rules! positive_case {
-    ($name:ident, $duration:expr) => {
-        #[test]
-        fn $name() {
-            let duration = $duration;
+#[rstest::rstest]
+#[case::one_nanosecond_round_trips(Duration::from_nanos(1))]
+#[case::maximum_duration_round_trips(Duration::MAX)]
+fn positive_duration_round_trips(#[case] duration: Duration) {
+    let result = NonZeroDuration::new(duration).unwrap().get();
 
-            let result = NonZeroDuration::new(duration).unwrap().get();
-
-            assert_eq!(result, duration);
-        }
-    };
+    assert_eq!(result, duration);
 }
-positive_case!(one_nanosecond_round_trips, Duration::from_nanos(1));
-positive_case!(maximum_duration_round_trips, Duration::MAX);
 
-macro_rules! waves_case {
-    ($name:ident, $selected:expr, $jobs:expr, $expected:expr) => {
-        #[test]
-        fn $name() {
-            let projection = project($selected, $jobs, Duration::from_nanos(1));
+#[rstest::rstest]
+#[case::zero_selected_has_no_waves(0, usize::MAX, 0)]
+#[case::maximum_selected_serial(usize::MAX, 1, usize::MAX)]
+#[case::maximum_selected_rounds_up(usize::MAX, usize::MAX - 1, 2)]
+#[case::exact_division_has_no_extra_wave(30, 5, 6)]
+fn projection_wave_boundaries(
+    #[case] selected: usize,
+    #[case] jobs: usize,
+    #[case] expected: usize,
+) {
+    let projection = project(selected, jobs, Duration::from_nanos(1));
 
-            assert_eq!(projection.waves, $expected);
-        }
-    };
+    assert_eq!(projection.waves, expected);
 }
-waves_case!(zero_selected_has_no_waves, 0, usize::MAX, 0);
-waves_case!(maximum_selected_serial, usize::MAX, 1, usize::MAX);
-waves_case!(maximum_selected_rounds_up, usize::MAX, usize::MAX - 1, 2);
-waves_case!(exact_division_has_no_extra_wave, 30, 5, 6);
 
-macro_rules! auto_case {
-    ($name:ident, $baseline:expr, $expected:expr) => {
-        #[test]
-        fn $name() {
-            let result = auto_mutant_timeout($baseline);
+#[rstest::rstest]
+#[case::zero_baseline_uses_floor(Duration::ZERO, Duration::from_secs(5))]
+#[case::auto_floor_equality(Duration::from_secs(2), Duration::from_secs(5))]
+#[case::auto_preserves_nanoseconds(Duration::new(2, 1), Duration::new(5, 2))]
+#[case::auto_multiplication_saturates(Duration::MAX, Duration::MAX)]
+#[case::auto_addition_saturates(Duration::new(u64::MAX / 2, 500_000_000), Duration::MAX)]
+fn automatic_timeout_boundaries(#[case] baseline: Duration, #[case] expected: Duration) {
+    let result = auto_mutant_timeout(baseline);
 
-            assert_eq!(result, $expected);
-        }
-    };
+    assert_eq!(result, expected);
 }
-auto_case!(
-    zero_baseline_uses_floor,
-    Duration::ZERO,
-    Duration::from_secs(5)
-);
-auto_case!(
-    auto_floor_equality,
-    Duration::from_secs(2),
-    Duration::from_secs(5)
-);
-auto_case!(
-    auto_preserves_nanoseconds,
-    Duration::new(2, 1),
-    Duration::new(5, 2)
-);
-auto_case!(auto_multiplication_saturates, Duration::MAX, Duration::MAX);
-auto_case!(
-    auto_addition_saturates,
-    Duration::new(u64::MAX / 2, 500_000_000),
-    Duration::MAX
-);
 
-macro_rules! capacity_case {
-    ($name:ident, $selected:expr, $duration:expr, $expected:expr) => {
-        #[test]
-        fn $name() {
-            let projection = project($selected, 1, $duration);
-
-            assert_eq!(projection.projected_capacity, $expected);
-        }
-    };
-}
-capacity_case!(
-    zero_waves_times_maximum_is_zero,
-    0,
-    Duration::MAX,
-    Duration::ZERO
-);
-capacity_case!(
-    maximum_duration_times_one_is_exact,
-    1,
-    Duration::MAX,
-    Duration::MAX
-);
-capacity_case!(duration_product_saturates, 2, Duration::MAX, Duration::MAX);
-capacity_case!(
-    intermediate_product_saturates,
-    usize::MAX,
-    Duration::MAX,
-    Duration::MAX
-);
-capacity_case!(
-    nanoseconds_carry_into_seconds,
+#[rstest::rstest]
+#[case::zero_waves_times_maximum_is_zero(0, Duration::MAX, Duration::ZERO)]
+#[case::maximum_duration_times_one_is_exact(1, Duration::MAX, Duration::MAX)]
+#[case::duration_product_saturates(2, Duration::MAX, Duration::MAX)]
+#[case::intermediate_product_saturates(usize::MAX, Duration::MAX, Duration::MAX)]
+#[case::nanoseconds_carry_into_seconds(
     3,
     Duration::new(0, 500_000_001),
     Duration::new(1, 500_000_003)
-);
-#[cfg(target_pointer_width = "64")]
-capacity_case!(
-    waves_above_u32_are_not_truncated,
-    4_294_967_296,
-    Duration::from_nanos(1),
-    Duration::new(4, 294_967_296)
-);
+)]
+fn projection_capacity_boundaries(
+    #[case] selected: usize,
+    #[case] duration: Duration,
+    #[case] expected: Duration,
+) {
+    let projection = project(selected, 1, duration);
 
-macro_rules! shortfall_case {
-    ($name:ident, $capacity:expr, $remaining:expr, $expected:expr) => {
-        #[test]
-        fn $name() {
-            // Deliberately inconsistent other fields: any public struct is valid input.
-            let projection = TopBudgetProjection {
-                selected: usize::MAX,
-                jobs: 0,
-                planned_total_timeout: Duration::ZERO,
-                baseline: Duration::MAX,
-                effective_mutant_timeout: Duration::MAX,
-                remaining: $remaining,
-                waves: 0,
-                projected_capacity: $capacity,
-            };
-
-            let result = projection.is_shortfall();
-
-            assert_eq!(result, $expected);
-        }
-    };
+    assert_eq!(projection.projected_capacity, expected);
 }
-shortfall_case!(
-    manual_equal_is_not_shortfall,
-    Duration::MAX,
-    Duration::MAX,
-    false
-);
-shortfall_case!(
-    manual_greater_is_shortfall,
-    Duration::from_nanos(1),
-    Duration::ZERO,
-    true
-);
-shortfall_case!(
-    manual_less_is_not_shortfall,
-    Duration::ZERO,
-    Duration::from_nanos(1),
-    false
-);
+
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn waves_above_u32_are_not_truncated() {
+    let projection = project(4_294_967_296, 1, Duration::from_nanos(1));
+
+    assert_eq!(projection.projected_capacity, Duration::new(4, 294_967_296));
+}
+
+#[rstest::rstest]
+#[case::manual_equal_is_not_shortfall(Duration::MAX, Duration::MAX, false)]
+#[case::manual_greater_is_shortfall(Duration::from_nanos(1), Duration::ZERO, true)]
+#[case::manual_less_is_not_shortfall(Duration::ZERO, Duration::from_nanos(1), false)]
+fn manual_projection_shortfall_boundaries(
+    #[case] capacity: Duration,
+    #[case] remaining: Duration,
+    #[case] expected: bool,
+) {
+    // Deliberately inconsistent fields: public structs are valid input.
+    let projection = TopBudgetProjection {
+        selected: usize::MAX,
+        jobs: 0,
+        planned_total_timeout: Duration::ZERO,
+        baseline: Duration::MAX,
+        effective_mutant_timeout: Duration::MAX,
+        remaining,
+        waves: 0,
+        projected_capacity: capacity,
+    };
+
+    let result = projection.is_shortfall();
+
+    assert_eq!(result, expected);
+}
 
 proptest! {
     #[test]

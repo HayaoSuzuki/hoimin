@@ -244,17 +244,17 @@ fn resumed_outcome_rejects_unknown_field() {
 
 #[test]
 fn tagged_summary_preserves_raw_filesystem_integer_above_i64() {
-    // Arrange.
     let mut value = nested_event(5);
     value["disk"]["filesystems"][0]["end_available_bytes"] = u64::MAX.into();
     value["disk"]["filesystems"][0]["available_bytes_change"] = (u64::MAX - 1).into();
     let wire = serde_json::to_string(&value).unwrap();
-    // Act.
+
     let result = serde_json::from_str::<OutputEvent>(&wire);
-    // Assert.
+
     let OutputEvent::RunFinished(summary) = result.unwrap() else {
         panic!("expected summary")
     };
+
     assert_eq!(
         summary.disk.filesystems[0].available_bytes_change,
         Some(i128::from(u64::MAX - 1))
@@ -335,7 +335,9 @@ fn run_finished_requires_explicit_resolved_timeout_or_null() {
     wire.as_object_mut()
         .unwrap()
         .remove("resolved_mutant_timeout");
+
     let error = serde_json::from_value::<OutputEvent>(wire).unwrap_err();
+
     assert!(
         error
             .to_string()
@@ -364,24 +366,35 @@ fn resolved_timeout_wire_rejects_noncanonical_nanoseconds() {
     assert_invalid_resolved_timeout(serde_json::json!({"secs":1,"nanos":1_000_000_000}));
 }
 
-#[test]
-fn every_event_kind_requires_a_string() {
-    for index in 0..6 {
-        let original: serde_json::Value = serde_json::from_str(&event(index)).unwrap();
-        let kind = original["kind"].as_str().unwrap();
-        for invalid in [
-            serde_json::json!({kind: null}),
-            serde_json::json!([kind]),
-            serde_json::Value::Null,
-            serde_json::json!(42),
-        ] {
-            let mut value = original.clone();
-            value["kind"] = invalid;
-            let wire = serde_json::to_string(&value).unwrap();
-            assert!(
-                serde_json::from_str::<OutputEvent>(&wire).is_err(),
-                "event {kind} accepted a non-string discriminator"
-            );
-        }
-    }
+#[rstest::rstest]
+#[case::run_started(0)]
+#[case::baseline_finished(1)]
+#[case::mutant_started(2)]
+#[case::mutant_finished(3)]
+#[case::diagnostic(4)]
+#[case::run_finished(5)]
+fn every_event_kind_requires_a_string(
+    #[case] index: usize,
+    #[values(0, 1, 2, 3)] invalid_index: usize,
+) {
+    let mut original: serde_json::Value = serde_json::from_str(&event(index)).unwrap();
+    let kind = original["kind"].as_str().unwrap().to_owned();
+    let invalid = [
+        serde_json::json!({kind.clone(): null}),
+        serde_json::json!([kind.clone()]),
+        serde_json::Value::Null,
+        serde_json::json!(42),
+    ]
+    .into_iter()
+    .nth(invalid_index)
+    .unwrap();
+    original["kind"] = invalid;
+    let wire = serde_json::to_string(&original).unwrap();
+
+    let result = serde_json::from_str::<OutputEvent>(&wire);
+
+    assert!(
+        result.is_err(),
+        "event {kind} accepted a non-string discriminator"
+    );
 }

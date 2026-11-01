@@ -296,45 +296,48 @@ fn public_prepare_releases_manifest_bytes_before_source_read_for_top_five() {
     assert_manifest_lifetime_and_preview(5);
 }
 
-#[test]
-fn normal_prepare_retained_heap_is_independent_of_preview_payload() {
+#[rstest::rstest]
+#[case::input_4_1024_1(4 * 1024)]
+#[case::input_128_1024_2(128 * 1024)]
+fn normal_prepare_retained_heap_is_independent_of_preview_payload(
+    #[case] payload: usize,
+    #[values(1, 5, 16)] selected: usize,
+) {
     let _observation = OBSERVATION.lock().unwrap();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap();
-    for payload in [4 * 1024, 128 * 1024] {
-        let directory = tempfile::tempdir().unwrap();
-        let marker = directory.path().join("must-not-run");
-        let (path, manifest, _) =
-            write_public_manifest_with_payload(&runtime, directory.path(), &marker, payload);
-        drop(manifest);
-        for selected in [1, 5, 16] {
-            let request = VerifySelection::Top {
-                count: NonZeroUsize::new(selected).unwrap(),
-                policy: TopSelectionPolicy::Strict,
-                offset: 0,
-            };
-            // Warm runtime caches before measuring live allocations retained by
-            // a second, independently checked preparation.
-            drop(
-                runtime
-                    .block_on(prepare_verify_selection(&path, &request))
-                    .unwrap(),
-            );
-            let before = LIVE_BYTES.load(Ordering::SeqCst);
-            let verified = runtime
-                .block_on(prepare_verify_selection(&path, &request))
-                .unwrap();
-            let retained = LIVE_BYTES.load(Ordering::SeqCst).saturating_sub(before);
-            eprintln!("normal-prepare payload={payload} selected={selected} retained={retained}");
-            assert!(retained < 64 * 1024, "display payload retained: {retained}");
-            assert_eq!(
-                verified.selection().candidate_ids().unwrap().len(),
-                selected
-            );
-            drop(verified);
-        }
-        assert!(!marker.exists());
-    }
+
+    let directory = tempfile::tempdir().unwrap();
+    let marker = directory.path().join("must-not-run");
+    let (path, manifest, _) =
+        write_public_manifest_with_payload(&runtime, directory.path(), &marker, payload);
+    drop(manifest);
+    let request = VerifySelection::Top {
+        count: NonZeroUsize::new(selected).unwrap(),
+        policy: TopSelectionPolicy::Strict,
+        offset: 0,
+    };
+    // Warm runtime caches before measuring live allocations retained by
+    // a second, independently checked preparation.
+    drop(
+        runtime
+            .block_on(prepare_verify_selection(&path, &request))
+            .unwrap(),
+    );
+    let before = LIVE_BYTES.load(Ordering::SeqCst);
+    let verified = runtime
+        .block_on(prepare_verify_selection(&path, &request))
+        .unwrap();
+    let retained = LIVE_BYTES.load(Ordering::SeqCst).saturating_sub(before);
+    eprintln!("normal-prepare payload={payload} selected={selected} retained={retained}");
+
+    assert!(retained < 64 * 1024, "display payload retained: {retained}");
+    assert_eq!(
+        verified.selection().candidate_ids().unwrap().len(),
+        selected
+    );
+    drop(verified);
+    assert!(!marker.exists());
 }

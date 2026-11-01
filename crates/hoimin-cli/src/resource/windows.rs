@@ -724,8 +724,12 @@ mod tests {
         }
     }
 
-    #[test]
-    fn native_caps_follow_each_request_and_outer_job_only_owns_cleanup() {
+    #[rstest::rstest]
+    #[case::value_128_1024_1024_1(0)]
+    #[case::value_160_1024_1024_2(1)]
+    fn native_caps_follow_each_request_and_outer_job_only_owns_cleanup_scenario_1(
+        #[case] scenario_index: usize,
+    ) {
         use windows_sys::Win32::System::JobObjects::{
             JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_JOB_MEMORY,
             JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
@@ -745,6 +749,7 @@ mod tests {
                     &raw mut returned,
                 )
             };
+
             assert_ne!(
                 ok,
                 0,
@@ -762,28 +767,75 @@ mod tests {
         );
         assert_eq!(outer.JobMemoryLimit, 0);
         assert_eq!(outer.BasicLimitInformation.ActiveProcessLimit, 0);
-        for (memory, processes) in [(128 * 1024 * 1024, 3), (160 * 1024 * 1024, 16)] {
-            let requested = ProcessLimits {
-                max_memory_bytes: memory,
-                max_processes: processes,
-                ..fixture_limits()
+
+        let (memory, processes) = [(128 * 1024 * 1024, 3), (160 * 1024 * 1024, 16)]
+            .into_iter()
+            .nth(scenario_index)
+            .unwrap();
+
+        let requested = ProcessLimits {
+            max_memory_bytes: memory,
+            max_processes: processes,
+            ..fixture_limits()
+        };
+        let mut command = Command::new("python");
+        let crate::resource::ProcessSupervisor::Windows(supervisor) =
+            backend.prepare(&mut command, requested).unwrap()
+        else {
+            panic!("Windows backend returned another supervisor");
+        };
+        let inner = read(supervisor.root_job.raw());
+        assert_eq!(
+            inner.BasicLimitInformation.LimitFlags,
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+                | JOB_OBJECT_LIMIT_JOB_MEMORY
+                | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+        );
+        assert_eq!(inner.JobMemoryLimit, usize::try_from(memory).unwrap());
+        assert_eq!(inner.BasicLimitInformation.ActiveProcessLimit, processes);
+        drop(supervisor);
+        backend.close().unwrap();
+    }
+
+    #[test]
+    fn native_caps_follow_each_request_and_outer_job_only_owns_cleanup() {
+        use windows_sys::Win32::System::JobObjects::{
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+            JobObjectExtendedLimitInformation, QueryInformationJobObject,
+        };
+        let read = |job| {
+            let mut information = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+            let mut returned = 0;
+            let size = u32::try_from(std::mem::size_of_val(&information)).unwrap();
+            // SAFETY: both output pointers refer to initialized, correctly sized live values.
+            let ok = unsafe {
+                QueryInformationJobObject(
+                    job,
+                    JobObjectExtendedLimitInformation,
+                    (&raw mut information).cast(),
+                    size,
+                    &raw mut returned,
+                )
             };
-            let mut command = Command::new("python");
-            let crate::resource::ProcessSupervisor::Windows(supervisor) =
-                backend.prepare(&mut command, requested).unwrap()
-            else {
-                panic!("Windows backend returned another supervisor");
-            };
-            let inner = read(supervisor.root_job.raw());
-            assert_eq!(
-                inner.BasicLimitInformation.LimitFlags,
-                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-                    | JOB_OBJECT_LIMIT_JOB_MEMORY
-                    | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+
+            assert_ne!(
+                ok,
+                0,
+                "native limit query: {}",
+                std::io::Error::last_os_error()
             );
-            assert_eq!(inner.JobMemoryLimit, usize::try_from(memory).unwrap());
-            assert_eq!(inner.BasicLimitInformation.ActiveProcessLimit, processes);
-        }
+            assert_eq!(returned, size);
+            information
+        };
+        let backend = WindowsBackend::new().unwrap();
+        let outer = read(backend.inner.job.raw());
+        assert_eq!(
+            outer.BasicLimitInformation.LimitFlags,
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        );
+        assert_eq!(outer.JobMemoryLimit, 0);
+        assert_eq!(outer.BasicLimitInformation.ActiveProcessLimit, 0);
+
         backend.close().unwrap();
     }
 
@@ -1563,6 +1615,7 @@ diagnostic.write('release observed\n')";
         let pid = child.id();
         let process = FixtureProcessHandle::open(pid);
         let status = child.wait().unwrap();
+
         assert_eq!(status.code(), Some(7));
         assert_eq!(
             process.wait_result(),
@@ -1614,6 +1667,7 @@ diagnostic.write('release observed\n')";
         let pid = child.id();
         let process = FixtureProcessHandle::open(pid);
         let status = child.wait().unwrap();
+
         assert_eq!(status.code(), Some(8));
         assert_eq!(
             process.wait_result(),
@@ -1672,12 +1726,14 @@ diagnostic.write('release observed\n')";
             pid,
             process: Some(process),
         });
+
         let result = backend.inner.wait_root_exit_with(root_id, |process| {
             let mut state = backend
                 .inner
                 .state
                 .try_lock()
                 .expect("root exit wait must not retain the registry mutex");
+
             assert!(state.active[0].process.is_some());
             record_notification(
                 &mut state,
@@ -1755,12 +1811,14 @@ diagnostic.write('release observed\n')";
             pid,
             process: Some(Arc::new(FixtureProcessHandle::open(pid).0)),
         });
+
         let error = backend
             .inner
             .wait_root_exit_with(root_id, |_| Ok(false))
             .unwrap_err();
         child.kill().unwrap();
         child.wait().unwrap();
+
         assert!(error.to_string().contains("timed out"));
         let state = backend.inner.state.lock().unwrap();
         assert_eq!(state.active.len(), 1);
@@ -1819,6 +1877,7 @@ diagnostic.write('release observed\n')";
             .unwrap();
         let pid = child.id();
         let process = FixtureProcessHandle::open(pid);
+
         assert_eq!(
             process.wait_result(),
             WAIT_TIMEOUT,
@@ -1846,6 +1905,7 @@ diagnostic.write('release observed\n')";
         let backend = WindowsBackend::with_test_close_failure().unwrap();
 
         let first = backend.close().expect_err("first termination is injected");
+
         assert!(
             first
                 .to_string()
@@ -2041,6 +2101,7 @@ diagnostic.write('release observed\n')";
             process: Some(process),
         });
         backend.inner.wait_root_exit(old_id).unwrap();
+
         assert!(retained.upgrade().is_some());
         let mut state = backend.inner.state.lock().unwrap();
         // Simulate the delayed packet encountering another registration for the same PID.

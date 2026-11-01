@@ -47,71 +47,86 @@ async fn selected_environment_change_reruns_and_matches_fresh_weak_control() {
     );
 }
 
+#[rstest::rstest]
+#[case::input_1_1(vec![FLAG], "1")]
+#[case::input_0_2(vec![], "0")]
 #[tokio::test]
-async fn same_values_reuse_and_unselected_changes_keep_existing_behavior() {
-    for (names, value) in [(vec![FLAG], "1"), (vec![], "0")] {
-        let fixture = Fixture::new();
-        let first = fixture
-            .run("session.sqlite", false, &names, Some(OsStr::new("1")))
-            .await;
-        let resumed = fixture
-            .run("session.sqlite", true, &names, Some(OsStr::new(value)))
-            .await;
-        assert_eq!(
-            first.report["run"]["run_id"],
-            resumed.report["run"]["run_id"]
-        );
-        assert_eq!(
-            mutation_outcome::status(&resumed.report["mutants"][0]),
-            "killed"
-        );
-        assert!(mutation_outcome::termination(&resumed.report["mutants"][0]).is_null());
-        assert_eq!(resumed.metrics["executed"], 0);
-    }
+async fn same_values_reuse_and_unselected_changes_keep_existing_behavior(
+    #[case] names: Vec<&str>,
+    #[case] value: &str,
+) {
+    let fixture = Fixture::new();
+    let first = fixture
+        .run("session.sqlite", false, &names, Some(OsStr::new("1")))
+        .await;
+
+    let resumed = fixture
+        .run("session.sqlite", true, &names, Some(OsStr::new(value)))
+        .await;
+
+    assert_eq!(
+        first.report["run"]["run_id"],
+        resumed.report["run"]["run_id"]
+    );
+    assert_eq!(
+        mutation_outcome::status(&resumed.report["mutants"][0]),
+        "killed"
+    );
+    assert!(mutation_outcome::termination(&resumed.report["mutants"][0]).is_null());
+    assert_eq!(resumed.metrics["executed"], 0);
 }
 
+#[rstest::rstest]
+#[case::input_1(None, Some(OsStr::new("")))]
+#[case::input_2(Some(OsStr::new("")), None)]
 #[tokio::test]
-async fn absent_and_empty_values_are_distinct_resume_inputs() {
-    for (before, after) in [(None, Some(OsStr::new(""))), (Some(OsStr::new("")), None)] {
-        let fixture = Fixture::new();
-        let first = fixture.run("session.sqlite", false, &[FLAG], before).await;
-        let resumed = fixture.run("session.sqlite", true, &[FLAG], after).await;
-        assert_ne!(
-            first.report["run"]["run_id"],
-            resumed.report["run"]["run_id"]
-        );
-        assert_ne!(
-            mutation_outcome::status(&first.report["mutants"][0]),
-            mutation_outcome::status(&resumed.report["mutants"][0])
-        );
-        assert_eq!(resumed.metrics["executed"], 1);
-    }
+async fn absent_and_empty_values_are_distinct_resume_inputs(
+    #[case] before: Option<&std::ffi::OsStr>,
+    #[case] after: Option<&std::ffi::OsStr>,
+) {
+    let fixture = Fixture::new();
+    let first = fixture.run("session.sqlite", false, &[FLAG], before).await;
+
+    let resumed = fixture.run("session.sqlite", true, &[FLAG], after).await;
+
+    assert_ne!(
+        first.report["run"]["run_id"],
+        resumed.report["run"]["run_id"]
+    );
+    assert_ne!(
+        mutation_outcome::status(&first.report["mutants"][0]),
+        mutation_outcome::status(&resumed.report["mutants"][0])
+    );
+    assert_eq!(resumed.metrics["executed"], 1);
 }
 
+#[rstest::rstest]
+#[case::vec_flag_vec_flag_other_false_1(vec![FLAG], vec![FLAG, "HOIMIN_AUDIT_ENV_OTHER"], false)]
+#[case::vec_flag_other_vec_flag_false_2(vec![FLAG, "HOIMIN_AUDIT_ENV_OTHER"], vec![FLAG], false)]
+#[case::vec_flag_vec_other_false_3(vec![FLAG], vec!["HOIMIN_AUDIT_ENV_OTHER"], false)]
+#[case::vec_vec_flag_false_4(vec![], vec![FLAG], false)]
+#[case::vec_flag_vec_false_5(vec![FLAG], vec![], false)]
+#[case::vec_other_flag_other_vec_flag_other_flag_true_6(vec!["HOIMIN_AUDIT_ENV_OTHER", FLAG, "HOIMIN_AUDIT_ENV_OTHER"], vec![FLAG, "HOIMIN_AUDIT_ENV_OTHER", FLAG], true)]
 #[tokio::test]
-async fn name_set_changes_invalidate_but_order_and_duplicates_do_not() {
-    let other = "HOIMIN_AUDIT_ENV_OTHER";
-    for (before, after, reuse) in [
-        (vec![FLAG], vec![FLAG, other], false),
-        (vec![FLAG, other], vec![FLAG], false),
-        (vec![FLAG], vec![other], false),
-        (vec![], vec![FLAG], false),
-        (vec![FLAG], vec![], false),
-        (vec![other, FLAG, other], vec![FLAG, other, FLAG], true),
-    ] {
-        let fixture = Fixture::new();
-        let first = fixture
-            .run("session.sqlite", false, &before, Some(OsStr::new("1")))
-            .await;
-        let resumed = fixture
-            .run("session.sqlite", true, &after, Some(OsStr::new("1")))
-            .await;
-        assert_eq!(
-            first.report["run"]["run_id"] == resumed.report["run"]["run_id"],
-            reuse
-        );
-        assert_eq!(resumed.metrics["executed"], usize::from(!reuse));
-    }
+async fn name_set_changes_invalidate_but_order_and_duplicates_do_not(
+    #[case] before: Vec<&str>,
+    #[case] after: Vec<&str>,
+    #[case] reuse: bool,
+) {
+    let fixture = Fixture::new();
+    let first = fixture
+        .run("session.sqlite", false, &before, Some(OsStr::new("1")))
+        .await;
+
+    let resumed = fixture
+        .run("session.sqlite", true, &after, Some(OsStr::new("1")))
+        .await;
+
+    assert_eq!(
+        first.report["run"]["run_id"] == resumed.report["run"]["run_id"],
+        reuse
+    );
+    assert_eq!(resumed.metrics["executed"], usize::from(!reuse));
 }
 
 #[cfg(unix)]

@@ -72,19 +72,20 @@ fn intermediate_directory_swap_before_open_does_not_read_outside_source() {
 }
 
 #[cfg(unix)]
-#[test]
-fn internal_final_and_directory_symlinks_are_rejected() {
+#[rstest::rstest]
+#[case::alias_py_1("alias.py")]
+#[case::alias_sample_py_2("alias/sample.py")]
+fn internal_final_and_directory_symlinks_are_rejected(#[case] path: &str) {
     let (_dir, root, mut candidate) = fixture("real/sample.py");
     std::os::unix::fs::symlink(root.join("real/sample.py"), root.join("alias.py")).unwrap();
     std::os::unix::fs::symlink(root.join("real"), root.join("alias")).unwrap();
-    for path in ["alias.py", "alias/sample.py"] {
-        candidate.path = path.into();
-        candidate.id = stable_mutant_id(&CandidateIdentity::from(&CandidateDescriptor::from(
-            &candidate,
-        )))
-        .to_string();
-        assert_rejected(source_state(&root, &candidate));
-    }
+
+    candidate.path = path.into();
+    candidate.id = stable_mutant_id(&CandidateIdentity::from(&CandidateDescriptor::from(
+        &candidate,
+    )))
+    .to_string();
+    assert_rejected(source_state(&root, &candidate));
 }
 
 #[test]
@@ -94,6 +95,7 @@ fn exact_source_byte_limit_is_read_but_one_extra_byte_is_unavailable() {
     file.set_len(crate::artifacts::READ_ONLY_ARTIFACT_LIMIT)
         .unwrap();
     SOURCE_WORK.with(|work| work.set((0, 0)));
+
     assert_eq!(source_state(&root, &candidate).unwrap(), SourceState::Stale);
     assert_eq!(SOURCE_WORK.with(std::cell::Cell::get), (1, 1));
     file.set_len(crate::artifacts::READ_ONLY_ARTIFACT_LIMIT + 1)
@@ -113,6 +115,7 @@ fn duplicate_paths_share_the_observation_during_a_replacement() {
     });
     SOURCE_WORK.with(|work| work.set((0, 0)));
     let states = source_states(&root, &[&candidate, &candidate]);
+
     assert!(
         states
             .into_iter()

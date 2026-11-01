@@ -508,6 +508,7 @@ mod tests {
         collector.process_finished(2, true).unwrap();
 
         let metrics = collector.finish(2, 2).unwrap();
+
         assert_eq!(
             metrics
                 .stages
@@ -531,6 +532,7 @@ mod tests {
         let mut collector = MetricsCollector::with_clock("run-1", FakeClock::default());
         collector.begin_stage("analysis").unwrap();
         collector.finish_stage("analysis").unwrap();
+
         assert!(matches!(
             collector.finish_stage("analysis"),
             Err(MetricsError::StageAlreadyFinished { .. })
@@ -545,6 +547,7 @@ mod tests {
     fn finish_rejects_queued_and_running_processes() {
         let mut queued = MetricsCollector::with_clock("run-1", FakeClock::default());
         queued.queued(3).unwrap();
+
         assert!(matches!(
             queued.finish(0, 0),
             Err(MetricsError::ProcessOutstanding { worker: 3 })
@@ -565,6 +568,7 @@ mod tests {
         collector
             .clock
             .set(Duration::from_millis(u64::MAX) + Duration::from_millis(1));
+
         assert_eq!(collector.finish(0, 0).unwrap().elapsed_ms, u64::MAX);
     }
 
@@ -577,7 +581,9 @@ mod tests {
             .finish(0, 0)
             .unwrap();
         write_metrics(&path, &metrics).unwrap();
+
         let actual: RunMetrics = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+
         assert_eq!(actual, metrics);
     }
 
@@ -587,7 +593,9 @@ mod tests {
         let path = directory.path().join("metrics.json");
         fs::create_dir(&path).unwrap();
         fs::write(path.join("sentinel"), b"preserved").unwrap();
+
         let output = MetricsOutput::open(&path).unwrap();
+
         assert!(matches!(
             write_output(&output, &RunMetrics::empty("run-1")),
             Err(MetricsError::Persist { .. })
@@ -606,20 +614,24 @@ mod tests {
         fs::create_dir(&parent).unwrap();
         fs::create_dir(&protected).unwrap();
         fs::write(protected.join("calc.py"), b"protected source").unwrap();
+
         let output = MetricsOutput::open(&parent.join("calc.py")).unwrap();
         fs::rename(&parent, &parked).unwrap();
         std::os::unix::fs::symlink(&protected, &parent).unwrap();
         write_output(&output, &RunMetrics::empty("run-1")).unwrap();
+
         assert_eq!(
             fs::read(protected.join("calc.py")).unwrap(),
             b"protected source"
         );
+
         let actual: RunMetrics =
             serde_json::from_slice(&fs::read(parked.join("calc.py")).unwrap()).unwrap();
         actual.validate().unwrap();
 
         fs::remove_file(parked.join("calc.py")).unwrap();
         fs::create_dir(parked.join("calc.py")).unwrap();
+
         assert!(matches!(
             write_output(&output, &RunMetrics::empty("run-1")),
             Err(MetricsError::Persist { .. })
@@ -689,8 +701,10 @@ mod tests {
             .finish(0, 0)
             .unwrap();
         write_metrics(Path::new("metrics.json"), &metrics).unwrap();
+
         let actual: RunMetrics =
             serde_json::from_slice(&fs::read("metrics.json").unwrap()).unwrap();
+
         assert_eq!(actual, metrics);
     }
 

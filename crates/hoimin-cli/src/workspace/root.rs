@@ -1408,39 +1408,49 @@ mod tests {
         pub(super) static SORT_COMPONENT_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     }
 
-    #[test]
-    fn worker_entry_sort_does_not_rescan_path_components() {
-        for depth in [1, 8, 32] {
-            for files in [1, 32, 128] {
-                let fixture = RootFixture::new();
-                let prefix = "nested/".repeat(depth);
-                fs::create_dir_all(fixture.worker.join(&prefix)).unwrap();
-                for i in (0..files).rev() {
-                    fs::write(fixture.worker.join(format!("{prefix}f{i:04}")), b"x").unwrap();
-                }
-                let root = WorkerRoot::open(fixture.worker_path()).unwrap();
-                SORT_COMPONENT_VISITS.set(0);
-                let entries = root.entries().unwrap();
-                let sort_visits = SORT_COMPONENT_VISITS.get();
-                assert_eq!(entries.len(), depth + files);
-                assert!(entries.windows(2).all(|pair| {
-                    (
-                        pair[0].native_path.components().count(),
-                        &pair[0].native_path,
-                    ) <= (
-                        pair[1].native_path.components().count(),
-                        &pair[1].native_path,
-                    )
-                }));
-                assert_eq!(sort_visits, 0, "depth={depth}, files={files}");
-            }
+    #[rstest::rstest]
+    #[case::input_1_1_input_1_1(1, 1)]
+    #[case::input_1_1_input_32_2(1, 32)]
+    #[case::input_1_1_input_128_3(1, 128)]
+    #[case::input_8_2_input_1_1(8, 1)]
+    #[case::input_8_2_input_32_2(8, 32)]
+    #[case::input_8_2_input_128_3(8, 128)]
+    #[case::input_32_3_input_1_1(32, 1)]
+    #[case::input_32_3_input_32_2(32, 32)]
+    #[case::input_32_3_input_128_3(32, 128)]
+    fn worker_entry_sort_does_not_rescan_path_components(
+        #[case] depth: usize,
+        #[case] files: usize,
+    ) {
+        let fixture = RootFixture::new();
+        let prefix = "nested/".repeat(depth);
+        fs::create_dir_all(fixture.worker.join(&prefix)).unwrap();
+        for i in (0..files).rev() {
+            fs::write(fixture.worker.join(format!("{prefix}f{i:04}")), b"x").unwrap();
         }
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+        SORT_COMPONENT_VISITS.set(0);
+        let entries = root.entries().unwrap();
+        let sort_visits = SORT_COMPONENT_VISITS.get();
+
+        assert_eq!(entries.len(), depth + files);
+        assert!(entries.windows(2).all(|pair| {
+            (
+                pair[0].native_path.components().count(),
+                &pair[0].native_path,
+            ) <= (
+                pair[1].native_path.components().count(),
+                &pair[1].native_path,
+            )
+        }));
+        assert_eq!(sort_visits, 0, "depth={depth}, files={files}");
     }
 
     #[test]
     fn worker_entries_keep_depth_then_native_path_order() {
         let fixture = RootFixture::new();
         let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+
         assert_eq!(root.entries().unwrap(), []);
         fs::create_dir_all(fixture.worker.join("z/a")).unwrap();
         fs::create_dir_all(fixture.worker.join("a")).unwrap();
@@ -1610,18 +1620,32 @@ mod tests {
         assert!(WindowsFinalOperation::RemoveEntry.accepts_directory_or_reparse());
     }
 
+    #[rstest::rstest]
+    #[case::file_py("file.py")]
+    #[case::a_b("a b")]
+    #[case::txt("日本語.txt")]
+    fn windows_final_names_are_single_components_scenario_1(#[case] valid: &str) {
+        assert!(windows_final_name_units_are_valid(
+            &valid.encode_utf16().collect::<Vec<_>>()
+        ));
+    }
+
+    #[rstest::rstest]
+    #[case::value("")]
+    #[case::value_2(".")]
+    #[case::value_3("..")]
+    #[case::a_b("a/b")]
+    #[case::r_a_b(r"a\b")]
+    #[case::name_stream("name:stream")]
+    #[case::nul_byte("nul\0byte")]
+    fn windows_final_names_are_single_components_scenario_2(#[case] invalid: &str) {
+        assert!(!windows_final_name_units_are_valid(
+            &invalid.encode_utf16().collect::<Vec<_>>()
+        ));
+    }
+
     #[test]
     fn windows_final_names_are_single_components() {
-        for valid in ["file.py", "a b", "日本語.txt"] {
-            assert!(windows_final_name_units_are_valid(
-                &valid.encode_utf16().collect::<Vec<_>>()
-            ));
-        }
-        for invalid in ["", ".", "..", "a/b", r"a\b", "name:stream", "nul\0byte"] {
-            assert!(!windows_final_name_units_are_valid(
-                &invalid.encode_utf16().collect::<Vec<_>>()
-            ));
-        }
         assert!(windows_final_name_units_are_valid(&[
             u16::from(b'x'),
             0xD800,
@@ -1745,19 +1769,28 @@ mod tests {
         assert!(fixture.worker.join("new/nested").is_dir());
     }
 
+    #[rstest::rstest]
+    #[case::src("src")]
+    #[case::src_pkg_empty("src/pkg/empty")]
+    #[case::value("日本語/設定")]
+    fn ensure_directory_creates_nested_paths_without_probe_files_scenario_1(#[case] path: &str) {
+        let fixture = RootFixture::new();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+
+        for _ in 0..2 {
+            root.ensure_directory(Utf8Path::new(path)).unwrap();
+            let directory = fixture.worker.join(path);
+
+            assert!(directory.is_dir());
+            assert!(!directory.join(".hoimin-directory-probe").exists());
+        }
+    }
+
     #[test]
     fn ensure_directory_creates_nested_paths_without_probe_files() {
         let fixture = RootFixture::new();
         let root = WorkerRoot::open(fixture.worker_path()).unwrap();
 
-        for path in ["src", "src/pkg/empty", "日本語/設定"] {
-            for _ in 0..2 {
-                root.ensure_directory(Utf8Path::new(path)).unwrap();
-                let directory = fixture.worker.join(path);
-                assert!(directory.is_dir());
-                assert!(!directory.join(".hoimin-directory-probe").exists());
-            }
-        }
         root.write(Utf8Path::new("src/pkg/empty/module.py"), b"value = 1\n")
             .unwrap();
         assert_eq!(
@@ -1766,54 +1799,68 @@ mod tests {
         );
     }
 
-    #[test]
-    fn ensure_directory_rejects_non_normal_paths_before_creating_entries() {
+    #[rstest::rstest]
+    #[case::value("")]
+    #[case::value_2(".")]
+    #[case::value_3("..")]
+    #[case::outside("../outside")]
+    #[case::absolute("/absolute")]
+    #[case::new("new/")]
+    #[case::new_nested("new//nested")]
+    #[case::new_nested_8("new/./nested")]
+    #[case::new_nested_9("new/../nested")]
+    #[case::new_ested("new\\nested")]
+    #[case::new_nested_11("new\0nested")]
+    #[case::server_share("//server/share")]
+    #[case::c_ested("C:\\nested")]
+    fn ensure_directory_rejects_non_normal_paths_before_creating_entries_scenario_1(
+        #[case] path: &str,
+    ) {
         let fixture = RootFixture::new();
         let root = WorkerRoot::open(fixture.worker_path()).unwrap();
 
-        for path in [
-            "",
-            ".",
-            "..",
-            "../outside",
-            "/absolute",
-            "new/",
-            "new//nested",
-            "new/./nested",
-            "new/../nested",
-            "new\\nested",
-            "new\0nested",
-            "//server/share",
-            "C:\\nested",
-        ] {
-            let result = root.ensure_directory(Utf8Path::new(path));
-            assert!(
-                matches!(result, Err(WorkspaceError::InvalidPath { .. })),
-                "{path:?}: {result:?}"
-            );
-        }
-        #[cfg(windows)]
-        for path in ["C:/nested", "new:stream", "new/nested:stream"] {
-            assert!(matches!(
-                root.ensure_directory(Utf8Path::new(path)),
-                Err(WorkspaceError::InvalidPath { .. })
-            ));
-        }
+        let result = root.ensure_directory(Utf8Path::new(path));
+
+        assert!(
+            matches!(result, Err(WorkspaceError::InvalidPath { .. })),
+            "{path:?}: {result:?}"
+        );
+
         assert_eq!(fs::read_dir(&fixture.worker).unwrap().count(), 0);
     }
 
-    #[test]
-    fn ensure_directory_rejects_linked_components() {
+    #[cfg(windows)]
+    #[rstest::rstest]
+    #[case::c_nested("C:/nested")]
+    #[case::new_stream("new:stream")]
+    #[case::new_nested_stream("new/nested:stream")]
+    fn ensure_directory_rejects_non_normal_paths_before_creating_entries_scenario_2(
+        #[case] path: &str,
+    ) {
+        let fixture = RootFixture::new();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+
+        assert!(matches!(
+            root.ensure_directory(Utf8Path::new(path)),
+            Err(WorkspaceError::InvalidPath { .. })
+        ));
+
+        assert_eq!(fs::read_dir(&fixture.worker).unwrap().count(), 0);
+    }
+
+    #[rstest::rstest]
+    #[case::linked("linked")]
+    #[case::linked_nested("linked/nested")]
+    fn ensure_directory_rejects_linked_components_scenario_1(#[case] path: &str) {
         let fixture = RootFixture::new();
         fixture.link_dir("outside", "linked").unwrap();
         let root = WorkerRoot::open(fixture.worker_path()).unwrap();
 
-        for path in ["linked", "linked/nested"] {
-            assert!(matches!(
-                root.ensure_directory(Utf8Path::new(path)),
-                Err(WorkspaceError::InvalidPath { .. })
-            ));
-        }
+        assert!(matches!(
+            root.ensure_directory(Utf8Path::new(path)),
+            Err(WorkspaceError::InvalidPath { .. })
+        ));
+
         assert_eq!(
             fs::read_dir(fixture.worker.parent().unwrap().join("outside"))
                 .unwrap()
@@ -1847,10 +1894,12 @@ mod tests {
     #[test]
     fn read_rejects_a_fifo() {
         let fixture = RootFixture::new();
+
         let output = std::process::Command::new("mkfifo")
             .arg(fixture.worker.join("fifo.py"))
             .output()
             .unwrap();
+
         assert!(output.status.success());
         let root = WorkerRoot::open(fixture.worker_path()).unwrap();
 
@@ -1915,19 +1964,30 @@ mod tests {
         ));
     }
 
+    #[rstest::rstest]
+    #[case::value("")]
+    #[case::value_2(".")]
+    #[case::value_3("..")]
+    #[case::outside("../outside")]
+    fn rejects_non_normal_and_linked_parent_components_scenario_1(#[case] path: &str) {
+        let fixture = RootFixture::new();
+        fixture.link_dir("outside", "linked").unwrap();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+
+        assert!(matches!(
+            root.open_parent(Utf8Path::new(path), false),
+            Err(WorkspaceError::InvalidPath { .. })
+        ));
+    }
+
     #[test]
     fn rejects_non_normal_and_linked_parent_components() {
         let fixture = RootFixture::new();
         fixture.link_dir("outside", "linked").unwrap();
         let root = WorkerRoot::open(fixture.worker_path()).unwrap();
 
-        for path in ["", ".", "..", "../outside"] {
-            assert!(matches!(
-                root.open_parent(Utf8Path::new(path), false),
-                Err(WorkspaceError::InvalidPath { .. })
-            ));
-        }
         let result = root.open_parent(Utf8Path::new("linked/secret.txt"), false);
+
         assert!(
             matches!(result, Err(WorkspaceError::InvalidPath { .. })),
             "{result:?}"
@@ -1960,6 +2020,7 @@ mod tests {
         });
 
         let replacement = PausedParent::replace_parent(&fixture.worker, &opened, &resume);
+
         let result = operation.join().unwrap();
 
         assert_eq!(result.unwrap(), b"worker");
@@ -1990,6 +2051,7 @@ mod tests {
         });
 
         let replacement = PausedParent::replace_parent(&fixture.worker, &opened, &resume);
+
         let result = operation.join().unwrap();
 
         assert_eq!(result.unwrap(), blake3::hash(b"worker"));
@@ -2020,6 +2082,7 @@ mod tests {
         });
 
         let replacement = PausedParent::replace_parent(&fixture.worker, &opened, &resume);
+
         let result = operation.join().unwrap();
 
         result.unwrap();
@@ -2027,6 +2090,7 @@ mod tests {
             .worker
             .join(replacement.operated_parent)
             .join("target");
+
         assert_eq!(fs::read(operated_target).unwrap(), b"changed");
         for outside_permissions in &replacement.outside_permissions {
             let outside = fixture.worker.join("swap/target");
@@ -2050,6 +2114,7 @@ mod tests {
         });
 
         let replacement = PausedParent::replace_parent(&fixture.worker, &opened, &resume);
+
         let result = operation.join().unwrap();
 
         result.unwrap();
@@ -2057,6 +2122,7 @@ mod tests {
             .worker
             .join(replacement.operated_parent)
             .join("target");
+
         assert!(!operated_target.exists());
         for outside_permissions in &replacement.outside_permissions {
             let outside = fixture.worker.join("swap/target");
@@ -2150,6 +2216,7 @@ mod tests {
     fn missing_removal_is_a_noop_and_link_guards_reject_links() {
         let fixture = RootFixture::new();
         let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+
         assert!(root.remove_any_if_exists(Utf8Path::new("missing")).is_ok());
 
         let link = fixture.worker.join("linked");

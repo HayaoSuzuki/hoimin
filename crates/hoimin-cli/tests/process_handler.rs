@@ -1908,45 +1908,43 @@ fn portable_backend_description_is_stable_and_reaches_process_handler() {
     assert_eq!(handler.mode(), policy.mode);
 }
 
-#[tokio::test]
-async fn completion_worker_matches_typed_process_context() {
-    fn command<C>(context: C) -> RunProcess<C> {
-        let probe = run_python(80, "pass", limits(Duration::from_secs(5), 64));
-        RunProcess {
-            id: probe.id,
-            context,
-            argv: probe.argv,
-            cwd: probe.cwd,
-            limits: probe.limits,
-        }
+fn typed_context_command<C>(context: C) -> RunProcess<C> {
+    let probe = run_python(80, "pass", limits(Duration::from_secs(5), 64));
+    RunProcess {
+        id: probe.id,
+        context,
+        argv: probe.argv,
+        cwd: probe.cwd,
+        limits: probe.limits,
     }
-    for (request, expected_worker) in [
-        (
-            ProcessRequest::from(command(hoimin_core::ProbeContext)),
-            None,
-        ),
-        (
-            ProcessRequest::from(command(hoimin_core::BaselineContext {
+}
+
+#[rstest::rstest]
+#[case::processrequest_from_command_hoimin_core_probecontext_no_1(
+    ProcessRequest::from(typed_context_command(hoimin_core::ProbeContext)),
+    None
+)]
+#[case::run_2(ProcessRequest::from(typed_context_command(hoimin_core::BaselineContext {
                 worker: 3,
                 run_id: "run".into(),
-            })),
-            Some(3),
-        ),
-        (
-            ProcessRequest::from(command(hoimin_core::MutantContext {
+            })), Some(3))]
+#[case::run_3(ProcessRequest::from(typed_context_command(hoimin_core::MutantContext {
                 worker: 7,
                 run_id: "run".into(),
                 mutant_id: "mutant".into(),
-            })),
-            Some(7),
-        ),
-    ] {
-        // Arrange.
-        let output = tempfile::tempdir().unwrap();
-        let handler = portable_handler(Utf8Path::from_path(output.path()).unwrap());
-        // Act.
-        let event = handler.run(request).await.unwrap();
-        // Assert.
-        assert_eq!(event.worker, expected_worker);
-    }
+            })), Some(7))]
+#[tokio::test]
+async fn completion_worker_matches_typed_process_context(
+    #[case] request: ProcessRequest,
+    #[case] expected_worker: Option<u32>,
+) {
+    // Arrange.
+    let output = tempfile::tempdir().unwrap();
+    let handler = portable_handler(Utf8Path::from_path(output.path()).unwrap());
+    // Act.
+
+    let event = handler.run(request).await.unwrap();
+    // Assert.
+
+    assert_eq!(event.worker, expected_worker);
 }

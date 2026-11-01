@@ -138,43 +138,42 @@ fn an_escaped_negation_keeps_the_existing_invalid_glob_diagnostic() {
     );
 }
 
-#[test]
-fn resolve_rejects_absolute_parent_nul_and_invalid_glob_patterns() {
+#[rstest::rstest]
+#[case::tmp_x_1("/tmp/x")]
+#[case::c_tmp_x_2("C:\\tmp\\x")]
+#[case::nested_file_toml_stream_3("nested/file.toml:stream")]
+#[case::x_4("../x")]
+#[case::nested_x_5("nested\\..\\x")]
+#[case::file_0name_6("file\0name")]
+#[case::input_7("[")]
+fn resolve_rejects_absolute_parent_nul_and_invalid_glob_patterns(#[case] pattern: &str) {
     let fixture = fixture_root(&[("file.txt", "x")]);
 
-    for pattern in [
-        "/tmp/x",
-        "C:\\tmp\\x",
-        "nested/file.toml:stream",
-        "../x",
-        "nested\\..\\x",
-        "file\0name",
-        "[",
-    ] {
-        let error = resolve(&fixture.root, &[pattern.into()], &[]).unwrap_err();
-        assert_error_prefix(&error, "fingerprint.include.invalid_glob");
-    }
+    let error = resolve(&fixture.root, &[pattern.into()], &[]).unwrap_err();
+    assert_error_prefix(&error, "fingerprint.include.invalid_glob");
 }
 
-#[test]
-fn exact_file_rejects_colons_in_every_component() {
+#[rstest::rstest]
+#[case::cache_metadata_file_toml_1("cache:metadata/file.toml")]
+#[case::nested_file_toml_stream_2("nested/file.toml:stream")]
+fn exact_file_rejects_colons_in_every_component(#[case] path: &str) {
     let fixture = fixture_root(&[]);
 
-    for path in ["cache:metadata/file.toml", "nested/file.toml:stream"] {
-        let error = resolve(&fixture.root, &[], &[path.into()]).unwrap_err();
-        assert_error_prefix(&error, "fingerprint.file.invalid_path");
-    }
+    let error = resolve(&fixture.root, &[], &[path.into()]).unwrap_err();
+    assert_error_prefix(&error, "fingerprint.file.invalid_path");
 }
 
 #[cfg(unix)]
-#[test]
-fn broad_glob_rejects_colon_named_fingerprint_files() {
-    for path in ["config:sample.toml", "config:local/sample.toml"] {
-        let fixture = fixture_root(&[(path, "setting = true\n")]);
-        let error = resolve(&fixture.root, &["**/*.toml".into()], &[]).unwrap_err();
-        assert_error_prefix(&error, "fingerprint.include.unsupported_file");
-        assert!(error.to_string().contains(path));
-    }
+#[rstest::rstest]
+#[case::config_sample_toml_1("config:sample.toml")]
+#[case::config_local_sample_toml_2("config:local/sample.toml")]
+fn broad_glob_rejects_colon_named_fingerprint_files(#[case] path: &str) {
+    let fixture = fixture_root(&[(path, "setting = true\n")]);
+
+    let error = resolve(&fixture.root, &["**/*.toml".into()], &[]).unwrap_err();
+    assert_error_prefix(&error, "fingerprint.include.unsupported_file");
+
+    assert!(error.to_string().contains(path));
 }
 
 #[test]
@@ -224,6 +223,7 @@ fn resolve_rejects_read_failures() {
     let result = resolve(&fixture.root, &["unreadable.txt".into()], &[]);
 
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
     let error = result.unwrap_err();
     assert_error_prefix(&error, "fingerprint.include.unsupported_file");
 }
@@ -298,6 +298,7 @@ fn exact_file_selection_order_does_not_change_sorted_records() {
             hash: blake3::hash(b"z").to_hex().to_string(),
         },
     ];
+
     assert_eq!(forward, expected);
     assert_eq!(reverse, expected);
 }
@@ -359,23 +360,28 @@ fn glob_walk_rejects_a_literal_backslash_with_its_original_spelling() {
     );
 }
 
-#[test]
-fn exact_file_rejects_unsafe_and_missing_paths() {
+#[rstest::rstest]
+#[case::empty("")]
+#[case::absolute_unix("/tmp/x")]
+#[case::absolute_windows("C:\\tmp\\x")]
+#[case::unc("\\\\server\\share\\x")]
+#[case::parent("../x")]
+#[case::backslash_parent("nested\\..\\x")]
+#[case::nul("file\0name")]
+fn exact_file_rejects_unsafe_paths(#[case] path: &str) {
     let fixture = fixture_root(&[("file.txt", "x")]);
-    for path in [
-        "",
-        "/tmp/x",
-        "C:\\tmp\\x",
-        "\\\\server\\share\\x",
-        "../x",
-        "nested\\..\\x",
-        "file\0name",
-    ] {
-        let error = resolve(&fixture.root, &[], &[path.into()]).unwrap_err();
-        assert_error_prefix(&error, "fingerprint.file.invalid_path");
-    }
+
+    let error = resolve(&fixture.root, &[], &[path.into()]).unwrap_err();
+
+    assert_error_prefix(&error, "fingerprint.file.invalid_path");
+}
+
+#[test]
+fn exact_file_rejects_missing_paths() {
+    let fixture = fixture_root(&[("file.txt", "x")]);
 
     let error = resolve(&fixture.root, &[], &["missing.toml".into()]).unwrap_err();
+
     assert_error_prefix(&error, "fingerprint.file.not_found");
 }
 
@@ -442,21 +448,33 @@ fn exact_missing_file_beneath_symlinked_parent_does_not_probe_outside() {
     assert_error_prefix(&error, "fingerprint.file.unsupported_file");
 }
 
-#[test]
-fn binary_hashes_cover_empty_and_stream_buffer_boundaries() {
+#[rstest::rstest]
+#[case::input_0_1_binary_dat_1(0, vec![], vec!["binary.dat".into()])]
+#[case::input_0_1_dat_2(0, vec!["*.dat".into()], vec![])]
+#[case::input_1_2_binary_dat_1(1, vec![], vec!["binary.dat".into()])]
+#[case::input_1_2_dat_2(1, vec!["*.dat".into()], vec![])]
+#[case::input_65_535_3_binary_dat_1(65_535, vec![], vec!["binary.dat".into()])]
+#[case::input_65_535_3_dat_2(65_535, vec!["*.dat".into()], vec![])]
+#[case::input_65_536_4_binary_dat_1(65_536, vec![], vec!["binary.dat".into()])]
+#[case::input_65_536_4_dat_2(65_536, vec!["*.dat".into()], vec![])]
+#[case::input_65_537_5_binary_dat_1(65_537, vec![], vec!["binary.dat".into()])]
+#[case::input_65_537_5_dat_2(65_537, vec!["*.dat".into()], vec![])]
+#[case::input_131_079_6_binary_dat_1(131_079, vec![], vec!["binary.dat".into()])]
+#[case::input_131_079_6_dat_2(131_079, vec!["*.dat".into()], vec![])]
+fn binary_hashes_cover_empty_and_stream_buffer_boundaries(
+    #[case] size: usize,
+    #[case] patterns: Vec<String>,
+    #[case] files: Vec<String>,
+) {
     let fixture = fixture_root(&[]);
-    for size in [0, 1, 65_535, 65_536, 65_537, 131_079] {
-        let bytes: Vec<u8> = (0_u8..=255).cycle().take(size).collect();
-        std::fs::write(fixture.root.join("binary.dat"), &bytes).unwrap();
-        let expected = blake3::hash(&bytes).to_hex().to_string();
-        for (patterns, files) in [
-            (vec![], vec!["binary.dat".into()]),
-            (vec!["*.dat".into()], vec![]),
-        ] {
-            let records = resolve(&fixture.root, &patterns, &files).unwrap();
-            assert_eq!(records.len(), 1);
-            assert_eq!(records[0].path, "binary.dat");
-            assert_eq!(records[0].hash, expected, "size={size}");
-        }
-    }
+
+    let bytes: Vec<u8> = (0_u8..=255).cycle().take(size).collect();
+    std::fs::write(fixture.root.join("binary.dat"), &bytes).unwrap();
+    let expected = blake3::hash(&bytes).to_hex().to_string();
+
+    let records = resolve(&fixture.root, &patterns, &files).unwrap();
+
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].path, "binary.dat");
+    assert_eq!(records[0].hash, expected, "size={size}");
 }

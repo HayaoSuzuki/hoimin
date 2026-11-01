@@ -93,56 +93,57 @@ async fn plan(root: &Path, operators: &str, test: &str) -> serde_json::Value {
     document
 }
 
+#[rstest::rstest]
+#[case::int_1("int")]
+#[case::float_2("float")]
+#[case::complex_3("complex")]
+#[case::bool_4("bool")]
+#[case::str_5("str")]
+#[case::bytes_6("bytes")]
+#[case::list_7("list")]
+#[case::tuple_8("tuple")]
+#[case::dict_9("dict")]
+#[case::set_10("set")]
+#[case::frozenset_11("frozenset")]
 #[tokio::test]
-async fn conversions_cover_builtins_source_and_precedence() {
-    for name in [
-        "int",
-        "float",
-        "complex",
-        "bool",
-        "str",
-        "bytes",
-        "list",
-        "tuple",
-        "dict",
-        "set",
-        "frozenset",
-    ] {
-        let source = format!(
-            "é = 1\r\ndef f(raw):\r\n    return {name}(\r\n        raw # comment\r\n    )\r\n"
-        );
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("subject.py"), &source).unwrap();
-        let doc = plan(root.path(), "conversion_call_remove", "pass").await;
-        let candidates = doc["candidates"].as_array().unwrap();
-        assert_eq!(candidates.len(), 1, "{name}");
-        assert_eq!(candidates[0]["replacement"], "(raw)");
-        let c = &candidates[0];
-        let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
-        let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
-        let mut mutant = source.clone();
-        mutant.replace_range(start..end, c["replacement"].as_str().unwrap());
-        compile(&mutant).await;
-        assert_eq!(
-            doc["candidates"],
-            plan(root.path(), "conversion_call_remove", "pass").await["candidates"]
-        );
-    }
-    for source in [
-        "value = int(1 if True else 2)\n",
-        "value = list((1,2))\n",
-        "value = str(lambda: 1)\n",
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("subject.py"), source).unwrap();
-        let doc = plan(root.path(), "conversion_call_remove", "pass").await;
-        let c = &doc["candidates"][0];
-        let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
-        let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
-        let mut mutant = source.to_owned();
-        mutant.replace_range(start..end, c["replacement"].as_str().unwrap());
-        compile(&mutant).await;
-    }
+async fn conversions_cover_builtins_source_and_precedence_1(#[case] name: &str) {
+    let source =
+        format!("é = 1\r\ndef f(raw):\r\n    return {name}(\r\n        raw # comment\r\n    )\r\n");
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), &source).unwrap();
+
+    let doc = plan(root.path(), "conversion_call_remove", "pass").await;
+    let candidates = doc["candidates"].as_array().unwrap();
+
+    assert_eq!(candidates.len(), 1, "{name}");
+    assert_eq!(candidates[0]["replacement"], "(raw)");
+    let c = &candidates[0];
+    let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
+    let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
+    let mut mutant = source.clone();
+    mutant.replace_range(start..end, c["replacement"].as_str().unwrap());
+    compile(&mutant).await;
+    assert_eq!(
+        doc["candidates"],
+        plan(root.path(), "conversion_call_remove", "pass").await["candidates"]
+    );
+}
+
+#[rstest::rstest]
+#[case::value_int_1_if_true_else_2_1("value = int(1 if True else 2)\n")]
+#[case::value_list_1_2_2("value = list((1,2))\n")]
+#[case::value_str_lambda_1_3("value = str(lambda: 1)\n")]
+#[tokio::test]
+async fn conversions_cover_builtins_source_and_precedence_2(#[case] source: &str) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), source).unwrap();
+    let doc = plan(root.path(), "conversion_call_remove", "pass").await;
+    let c = &doc["candidates"][0];
+    let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
+    let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
+    let mut mutant = source.to_owned();
+    mutant.replace_range(start..end, c["replacement"].as_str().unwrap());
+    compile(&mutant).await;
 }
 
 #[tokio::test]
@@ -169,103 +170,127 @@ async fn conversion_removal_keeps_arithmetic_precedence_at_runtime() {
     );
 }
 
+#[rstest::rstest]
+#[case::int_custom_x_int_raw_1("int = custom\nx = int(raw)\n")]
+#[case::complex_custom_x_complex_raw_2("complex = custom\nx = complex(raw)\n")]
+#[case::def_f_complex_return_complex_raw_3("def f(complex): return complex(raw)\n")]
+#[case::def_rebind_global_complex_complex_custom_def_f_return_c_4(
+    "def rebind():\n    global complex\n    complex = custom\ndef f(): return complex(raw)\n"
+)]
+#[case::def_f_int_return_int_raw_5("def f(int): return int(raw)\n")]
+#[case::def_f_x_int_raw_int_custom_6("def f():\n    x = int(raw)\n    int = custom\n")]
+#[case::def_rebind_global_int_int_custom_def_f_return_int_raw_7(
+    "def rebind():\n    global int\n    int = custom\ndef f(): return int(raw)\n"
+)]
+#[case::def_outer_int_custom_def_inner_nonlocal_int_return_int_8(
+    "def outer():\n    int = custom\n    def inner():\n        nonlocal int\n        return int(raw)\n"
+)]
+#[case::from_somewhere_import_x_int_raw_9("from somewhere import *\nx = int(raw)\n")]
+#[case::exec_code_x_int_raw_10("exec(code)\nx = int(raw)\n")]
+#[case::x_builtins_int_raw_x_int_x_int_raw_10_x_int_raw_base_10_11(
+    "x = builtins.int(raw)\nx = int()\nx = int(raw, 10)\nx = int(raw, base=10)\nx = int(*args)\nx = int(**kw)\n"
+)]
+#[case::x_list_x_for_x_in_xs_x_int_x_for_x_in_y_for_y_in_ys_x_i_12(
+    "x = list(x for x in xs)\nx = int([x for x in (y for y in ys)])\nx = int(a:=1)\n"
+)]
+#[case::async_def_f_return_int_await_g_13("async def f(): return int(await g())\n")]
+#[case::def_f_return_int_yield_1_14("def f(): return int((yield 1))\n")]
+#[case::from_typing_import_typealias_a_typealias_int_raw_x_int_15(
+    "from typing import TypeAlias\nA: TypeAlias = int(raw)\nx: int(raw)\ntype B = int(raw)\na[int(raw)] = 1\n"
+)]
 #[tokio::test]
-async fn conversions_exclude_shadowing_unsafe_and_nonruntime_roles() {
-    for source in [
-        "int = custom\nx = int(raw)\n",
-        "complex = custom\nx = complex(raw)\n",
-        "def f(complex): return complex(raw)\n",
-        "def rebind():\n    global complex\n    complex = custom\ndef f(): return complex(raw)\n",
-        "def f(int): return int(raw)\n",
-        "def f():\n    x = int(raw)\n    int = custom\n",
-        "def rebind():\n    global int\n    int = custom\ndef f(): return int(raw)\n",
-        "def outer():\n    int = custom\n    def inner():\n        nonlocal int\n        return int(raw)\n",
-        "from somewhere import *\nx = int(raw)\n",
-        "exec(code)\nx = int(raw)\n",
-        "x = builtins.int(raw)\nx = int()\nx = int(raw, 10)\nx = int(raw, base=10)\nx = int(*args)\nx = int(**kw)\n",
-        "x = list(x for x in xs)\nx = int([x for x in (y for y in ys)])\nx = int(a:=1)\n",
-        "async def f(): return int(await g())\n",
-        "def f(): return int((yield 1))\n",
-        "from typing import TypeAlias\nA: TypeAlias = int(raw)\nx: int(raw)\ntype B = int(raw)\na[int(raw)] = 1\n",
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("subject.py"), source).unwrap();
-        assert!(
-            plan(root.path(), "conversion_call_remove", "pass").await["candidates"]
-                .as_array()
-                .unwrap()
-                .is_empty(),
-            "{source}"
-        );
-    }
+async fn conversions_exclude_shadowing_unsafe_and_nonruntime_roles(#[case] source: &str) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), source).unwrap();
+
+    assert!(
+        plan(root.path(), "conversion_call_remove", "pass").await["candidates"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "{source}"
+    );
 }
 
+#[rstest::rstest]
+#[case::from_subject_import_count_assert_count_7_7_1(
+    "from subject import count; assert count(7)==7",
+    0,
+    1
+)]
+#[case::from_subject_import_count_value_count_7_assert_type_val_2(
+    "from subject import count; value=count('7'); assert type(value) is int and value==7",
+    1,
+    0
+)]
 #[tokio::test]
-async fn conversions_saved_plan_needs_string_input_and_type_check() {
-    for (test, killed, survived) in [
-        ("from subject import count; assert count(7)==7", 0, 1),
-        (
-            "from subject import count; value=count('7'); assert type(value) is int and value==7",
-            1,
-            0,
-        ),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(
-            root.path().join("subject.py"),
-            "def count(raw): return int(raw)\n",
-        )
+async fn conversions_saved_plan_needs_string_input_and_type_check(
+    #[case] test: &str,
+    #[case] killed: usize,
+    #[case] survived: usize,
+) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("subject.py"),
+        "def count(raw): return int(raw)\n",
+    )
+    .unwrap();
+    let doc = plan(root.path(), "conversion_call_remove", test).await;
+    let manifest = root.path().join("plan.json");
+    std::fs::write(&manifest, serde_json::to_vec(&doc).unwrap()).unwrap();
+
+    let (_, report) = cli(vec![
+        "hoimin".into(),
+        "verify".into(),
+        manifest.into_os_string(),
+        "--top".into(),
+        "1".into(),
+    ])
+    .await;
+
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+    assert_eq!(report["summary"]["counts"]["killed"], killed);
+    assert_eq!(report["summary"]["counts"]["survived"], survived);
+}
+
+#[rstest::rstest]
+#[case::calls_class_box_def_int_self_calls_append_convert_retur_1(
+    "calls=[]\nclass Box:\n    def __int__(self):\n        calls.append('convert')\n        return 7\ndef get():\n    calls.append('argument')\n    return Box()\nvalue = int(get())\n",
+    "assert calls == ['argument'] and type(value) is Box\n"
+)]
+#[case::original_value_dict_original_value_x_1_2(
+    "original={}\nvalue=dict(original)\nvalue['x']=1\n",
+    "assert original == {'x':1} and value is original\n"
+)]
+#[tokio::test]
+async fn conversions_keep_one_argument_evaluation_and_distinct_legacy_edits(
+    #[case] source: &str,
+    #[case] assertion: &str,
+) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), source).unwrap();
+    let doc = plan(root.path(), "conversion_call_remove", "pass").await;
+    assert_eq!(doc["candidates"].as_array().unwrap().len(), 1);
+    let c = &doc["candidates"][0];
+    let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
+    let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
+    let mut mutant = source.to_owned();
+    mutant.replace_range(start..end, c["replacement"].as_str().unwrap());
+    mutant.push_str(assertion);
+    let output = tokio::process::Command::new(python())
+        .args(["-c", &mutant])
+        .output()
+        .await
         .unwrap();
-        let doc = plan(root.path(), "conversion_call_remove", test).await;
-        let manifest = root.path().join("plan.json");
-        std::fs::write(&manifest, serde_json::to_vec(&doc).unwrap()).unwrap();
-        let (_, report) = cli(vec![
-            "hoimin".into(),
-            "verify".into(),
-            manifest.into_os_string(),
-            "--top".into(),
-            "1".into(),
-        ])
-        .await;
-        assert_eq!(report["baseline"]["termination"]["Exit"], 0);
-        assert_eq!(report["summary"]["counts"]["killed"], killed);
-        assert_eq!(report["summary"]["counts"]["survived"], survived);
-    }
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[tokio::test]
-async fn conversions_keep_one_argument_evaluation_and_distinct_legacy_edits() {
-    for (source, assertion) in [
-        (
-            "calls=[]\nclass Box:\n    def __int__(self):\n        calls.append('convert')\n        return 7\ndef get():\n    calls.append('argument')\n    return Box()\nvalue = int(get())\n",
-            "assert calls == ['argument'] and type(value) is Box\n",
-        ),
-        (
-            "original={}\nvalue=dict(original)\nvalue['x']=1\n",
-            "assert original == {'x':1} and value is original\n",
-        ),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("subject.py"), source).unwrap();
-        let doc = plan(root.path(), "conversion_call_remove", "pass").await;
-        assert_eq!(doc["candidates"].as_array().unwrap().len(), 1);
-        let c = &doc["candidates"][0];
-        let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
-        let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
-        let mut mutant = source.to_owned();
-        mutant.replace_range(start..end, c["replacement"].as_str().unwrap());
-        mutant.push_str(assertion);
-        let output = tokio::process::Command::new(python())
-            .args(["-c", &mutant])
-            .output()
-            .await
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
+async fn conversions_preserve_distinct_legacy_operator_edits() {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("subject.py"), "x = list(raw)\n").unwrap();
     let doc = plan(

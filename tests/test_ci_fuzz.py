@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 import yaml
+from hypothesis import example, given
+from hypothesis import strategies as st
 from pytest_mock import MockerFixture
 
 from tools import ci_fuzz
@@ -17,29 +19,28 @@ MAX_SEED = 4294967295
 JOB_MINUTES = 11
 
 
-def test_fuzz_workflows_install_and_cache_the_runner_toolchain() -> None:
-    for name in ("ci.yml", "fuzz.yml"):
-        workflow = yaml.safe_load(
-            (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
-        )
-        steps = workflow["jobs"]["fuzz"]["steps"]
-        install = next(
-            s for s in steps if s.get("name") == "Install pinned fuzz toolchain"
-        )
+@pytest.mark.parametrize("name", ["ci.yml", "fuzz.yml"])
+def test_fuzz_workflows_install_and_cache_the_runner_toolchain(name: str) -> None:
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+    )
+    steps = workflow["jobs"]["fuzz"]["steps"]
+    install = next(s for s in steps if s.get("name") == "Install pinned fuzz toolchain")
 
-        assert install["run"] == (
-            f"rustup toolchain install {ci_fuzz.TOOLCHAIN} --profile minimal"
-        )
-        cache = next(s for s in steps if s.get("name") == "Cache cargo-fuzz executable")
+    cache = next(s for s in steps if s.get("name") == "Cache cargo-fuzz executable")
 
-        assert cache["with"]["key"].endswith(f"-{ci_fuzz.TOOLCHAIN}")
-        build = next(
-            s
-            for s in steps
-            if s.get("name") == "Install cargo-fuzz within remaining budget"
-        )
+    build = next(
+        s
+        for s in steps
+        if s.get("name") == "Install cargo-fuzz within remaining budget"
+    )
 
-        assert f"cargo +{ci_fuzz.TOOLCHAIN} install cargo-fuzz" in build["run"]
+    assert (
+        install["run"]
+        == f"rustup toolchain install {ci_fuzz.TOOLCHAIN} --profile minimal"
+    )
+    assert cache["with"]["key"].endswith(f"-{ci_fuzz.TOOLCHAIN}")
+    assert f"cargo +{ci_fuzz.TOOLCHAIN} install cargo-fuzz" in build["run"]
 
 
 @pytest.fixture
@@ -67,19 +68,37 @@ def fake_fuzz_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
-@pytest.mark.parametrize(
-    ("remaining", "targets", "expected"),
-    [(300, 5, 50), (120, 3, 30), (11, 1, 1), (59.9, 5, 1)],
+@given(
+    targets=st.integers(1, 64),
+    seconds=st.integers(1, 600),
+    fraction=st.floats(
+        min_value=0, max_value=0.999, allow_nan=False, allow_infinity=False
+    ),
 )
+@example(targets=5, seconds=50, fraction=0)
+@example(targets=3, seconds=30, fraction=0)
+@example(targets=1, seconds=1, fraction=0)
+@example(targets=5, seconds=1, fraction=0.9)
+@example(targets=5, seconds=1, fraction=4.9)
 def test_shares_remaining_budget_with_startup_margin(
-    remaining: float, targets: int, expected: int
+    targets: int, seconds: int, fraction: float
 ) -> None:
+    remaining = targets * (seconds + 10) + fraction
+
     fuzz_seconds_result = ci_fuzz.fuzz_seconds(remaining, targets)
 
-    assert fuzz_seconds_result == expected
+    assert fuzz_seconds_result == seconds
 
 
-@pytest.mark.parametrize("remaining", [-1, 0, 10, 54.9])
+@given(
+    remaining=st.floats(
+        min_value=-1000, max_value=54.999999, allow_nan=False, allow_infinity=False
+    )
+)
+@example(remaining=-1)
+@example(remaining=0)
+@example(remaining=10)
+@example(remaining=54.9)
 def test_insufficient_budget_cannot_be_success(remaining: float) -> None:
     with pytest.raises(ci_fuzz.FuzzError, match="budget"):
         ci_fuzz.fuzz_seconds(remaining, 5)
@@ -119,10 +138,10 @@ def test_timeout_terminates_child_processes(tmp_path: Path) -> None:
         campaign.run("timeout", [sys.executable, "-c", parent_code], timeout=0.5)
     time.sleep(1)
 
-    assert not sentinel.exists()
-    assert "started" in (tmp_path / "timeout.log").read_text()
     report = json.loads((tmp_path / "summary.json").read_text())
 
+    assert not sentinel.exists()
+    assert "started" in (tmp_path / "timeout.log").read_text()
     assert report["stages"][0]["status"] == "timeout"
 
 
@@ -154,7 +173,9 @@ def test_budget_uses_monotonic_time_after_initial_setup(
     clock.monotonic.return_value = 130
     expected_remaining = 50
 
-    assert campaign.remaining() == expected_remaining
+    observed_result = campaign.remaining()
+
+    assert observed_result == expected_remaining
 
 
 @pytest.mark.skipif(os.name != "posix", reason="Fuzz CI runs on Linux")
@@ -180,7 +201,22 @@ def test_campaign_reports_all_targets(
     report_dir = fake_fuzz_root / "report"
 
     campaign = ci_fuzz.Campaign(time.time() + 120, report_dir, seed=123)
+
     ci_fuzz.run_campaign(campaign)
+
+    report = json.loads((report_dir / "summary.json").read_text())
+    stages = {stage["name"]: stage for stage in report["stages"]}
+
+    target_argv = {name: stages[name]["argv"] for name in campaign.completed_targets}
+    durations = [
+        int(
+            next(arg for arg in argv if arg.startswith("-max_total_time=")).split("=")[
+                1
+            ]
+        )
+        for argv in target_argv.values()
+    ]
+
     assert campaign.completed_targets == [
         "source_encoding",
         "source_index",
@@ -190,8 +226,6 @@ def test_campaign_reports_all_targets(
         "target_resolution",
         "sampling",
     ]
-    report = json.loads((report_dir / "summary.json").read_text())
-    stages = {stage["name"]: stage for stage in report["stages"]}
     assert {
         "generate-grammar-314",
         "generate-libcst-314",
@@ -199,12 +233,10 @@ def test_campaign_reports_all_targets(
         "generate-libcst-315",
         "generate-python315-315",
     } <= stages.keys()
-    durations = []
-    for name in campaign.completed_targets:
-        argv = stages[name]["argv"]
-        assert argv.index(f"fuzz/corpus/{name}") < argv.index(f"fuzz/seeds/{name}")
-        duration = next(arg for arg in argv if arg.startswith("-max_total_time="))
-        durations.append(int(duration.split("=")[1]))
+    assert all(
+        argv.index(f"fuzz/corpus/{name}") < argv.index(f"fuzz/seeds/{name}")
+        for name, argv in target_argv.items()
+    )
     assert durations == sorted(durations)
 
 
@@ -220,8 +252,11 @@ def test_campaign_gives_every_target_the_requested_fixed_time(
 
     report = json.loads((report_dir / "summary.json").read_text())
     stages = {stage["name"]: stage for stage in report["stages"]}
-    for target in campaign.completed_targets:
-        assert "-max_total_time=37" in stages[target]["argv"]
+
+    assert all(
+        "-max_total_time=37" in stages[target]["argv"]
+        for target in campaign.completed_targets
+    )
 
 
 def test_cli_failure_writes_report(tmp_path: Path) -> None:
@@ -243,9 +278,9 @@ def test_cli_failure_writes_report(tmp_path: Path) -> None:
         timeout=10,
     )
 
-    assert result.returncode == 1
     report = json.loads((tmp_path / "summary.json").read_text())
 
+    assert result.returncode == 1
     assert report["status"] == "failure"
     assert "budget" in report["error"]
     assert 1 <= report["seed"] <= MAX_SEED
@@ -276,9 +311,9 @@ def test_cli_accepts_positive_fixed_time_and_writes_report(
         timeout=10,
     )
 
-    assert result.returncode == 1
     report = json.loads((tmp_path / "summary.json").read_text())
 
+    assert result.returncode == 1
     assert report["status"] == "failure"
     assert "budget" in report["error"]
     assert report["completed_targets"] == []
@@ -317,6 +352,12 @@ def test_workflow_runs_fuzz_in_parallel_with_bounded_total_time() -> None:
     )
     job = workflow["jobs"]["fuzz"]
 
+    uploads = [
+        step
+        for step in job["steps"]
+        if step.get("uses", "").startswith("actions/upload-artifact@")
+    ]
+
     assert job["needs"] == ["changes", "quality"]
     assert job["if"] == "needs.changes.outputs.rust == 'true'"
     assert job["runs-on"] == "ubuntu-latest"
@@ -324,12 +365,6 @@ def test_workflow_runs_fuzz_in_parallel_with_bounded_total_time() -> None:
     assert workflow["permissions"] == {"contents": "read"}
     assert "FUZZ_DEADLINE" in job["steps"][0]["run"]
     assert "+ 600" in job["steps"][0]["run"]
-    uploads = [
-        step
-        for step in job["steps"]
-        if step.get("uses", "").startswith("actions/upload-artifact@")
-    ]
-
     assert len(uploads) == 1
     assert uploads[0]["if"] == "always()"
     assert "fuzz/artifacts" in uploads[0]["with"]["path"]
@@ -341,6 +376,7 @@ def test_campaign_generates_with_both_interpreters_before_one_fuzz_run(
     monkeypatch.setattr(ci_fuzz, "ROOT", tmp_path)
     (tmp_path / "fuzz").mkdir()
     (tmp_path / "fuzz/Cargo.toml").write_bytes((ROOT / "fuzz/Cargo.toml").read_bytes())
+
     campaign = ci_fuzz.Campaign(time.time() + 300, tmp_path / "report", seed=7)
 
     def create_environment(
@@ -361,28 +397,46 @@ def test_campaign_generates_with_both_interpreters_before_one_fuzz_run(
     ci_fuzz.run_campaign(campaign, seconds_per_target=1)
 
     calls = {call.args[0]: call for call in run.call_args_list}
-    environments = []
-    for version in ("3.14", "3.15"):
-        suffix = version.replace(".", "")
-        stages = [
-            f"dependencies-{suffix}",
-            f"generator-tests-{suffix}",
-            f"generate-grammar-{suffix}",
-            f"generate-libcst-{suffix}",
-        ]
-        if version == "3.15":
-            stages.append("generate-python315-315")
-        for name in stages:
-            argv = calls[name].args[1]
-            assert argv[argv.index("--python") + 1] == version
-        selected = [
+    stage_names = {
+        "3.14": [
+            "dependencies-314",
+            "generator-tests-314",
+            "generate-grammar-314",
+            "generate-libcst-314",
+        ],
+        "3.15": [
+            "dependencies-315",
+            "generator-tests-315",
+            "generate-grammar-315",
+            "generate-libcst-315",
+            "generate-python315-315",
+        ],
+    }
+    interpreters = {
+        name: calls[name].args[1][calls[name].args[1].index("--python") + 1]
+        for stages in stage_names.values()
+        for name in stages
+    }
+    selected_environments = {
+        version: {
             calls[name].kwargs["env"]["UV_PROJECT_ENVIRONMENT"] for name in stages
-        ]
-        assert len(set(selected)) == 1
-        assert not Path(selected[0]).exists(), "generation environments must be cleaned"
-        environments.append(selected[0])
-    assert environments[0] != environments[1]
+        }
+        for version, stages in stage_names.items()
+    }
+    environments = {
+        version: next(iter(selected))
+        for version, selected in selected_environments.items()
+    }
     names = [call.args[0] for call in run.call_args_list]
+
+    assert interpreters == {
+        name: version for version, stages in stage_names.items() for name in stages
+    }
+    assert all(len(selected) == 1 for selected in selected_environments.values())
+    assert all(
+        not Path(environment).exists() for environment in environments.values()
+    ), "generation environments must be cleaned"
+    assert environments["3.14"] != environments["3.15"]
     assert names.count("build") == 1
     assert names.index("generate-python315-315") < names.index("python_analyzer")
     assert campaign.completed_targets == [
@@ -400,13 +454,15 @@ def test_child_environment_overlay_does_not_change_parent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("HOIMIN_FUZZ_OVERLAY", "parent")
+
     campaign = ci_fuzz.Campaign(time.time() + 10, tmp_path, seed=1)
     campaign.run(
         "child-env",
         [sys.executable, "-c", "import os; print(os.environ['HOIMIN_FUZZ_OVERLAY'])"],
         env={"HOIMIN_FUZZ_OVERLAY": "child"},
     )
+    report = json.loads((tmp_path / "summary.json").read_text())
+
     assert (tmp_path / "child-env.log").read_text().strip() == "child"
     assert os.environ["HOIMIN_FUZZ_OVERLAY"] == "parent"
-    report = json.loads((tmp_path / "summary.json").read_text())
     assert report["stages"][0]["environment"] == {"HOIMIN_FUZZ_OVERLAY": "child"}

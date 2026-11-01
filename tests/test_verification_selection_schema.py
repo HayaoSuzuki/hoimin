@@ -50,11 +50,10 @@ def selection(mode: str, policy: str, scope: str) -> dict[str, object]:
 def test_selection_rejects_policy_from_another_mode(
     validator: Validator, mode: str, scope: str, policy: str
 ) -> None:
-    # Arrange.
     value = selection(mode, policy, scope)
-    # Act.
+
     errors = list(validator.iter_errors(value))
-    # Assert.
+
     assert errors
 
 
@@ -68,11 +67,10 @@ def test_selection_rejects_policy_from_another_mode(
 def test_selection_rejects_scope_from_another_mode(
     validator: Validator, mode: str, policy: str, scope: str
 ) -> None:
-    # Arrange.
     value = selection(mode, policy, scope)
-    # Act.
+
     errors = list(validator.iter_errors(value))
-    # Assert.
+
     assert errors
 
 
@@ -88,9 +86,8 @@ def test_selection_rejects_scope_from_another_mode(
 def test_selection_accepts_current_non_sample_modes(
     validator: Validator, mode: str, policy: str, scope: str
 ) -> None:
-    # Arrange.
     value = selection(mode, policy, scope)
-    # Act.
+
     errors = list(validator.iter_errors(value))
-    # Assert.
+
     assert not errors

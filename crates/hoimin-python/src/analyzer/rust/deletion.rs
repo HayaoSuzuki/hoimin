@@ -56,6 +56,7 @@ mod tests {
             panic!()
         };
         let visits = std::cell::Cell::new(0);
+
         assert!(!can_remove(&statement.value, &|| {
             visits.set(visits.get() + 1);
             visits.get() == 3

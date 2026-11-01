@@ -39,7 +39,6 @@ fn scan(replay: &mut CandidateReplay, reference: &CandidateSpoolRef) {
 
 #[test]
 fn reverse_selected_reads_visit_one_scan_plus_one_record_per_fetch() {
-    // Arrange.
     let candidates: Vec<_> = (1..=32).map(candidate).collect();
     let (_directory, reference) = spool(&candidates);
     let selected = [
@@ -51,8 +50,8 @@ fn reverse_selected_reads_visit_one_scan_plus_one_record_per_fetch() {
     let mut replay = CandidateReplay::new(selected.map(str::to_owned));
     RECORD_READS.set(0);
 
-    // Act.
     scan(&mut replay, &reference);
+
     let actual: Vec<_> = selected
         .map(|id| {
             replay
@@ -63,7 +62,7 @@ fn reverse_selected_reads_visit_one_scan_plus_one_record_per_fetch() {
         })
         .into();
 
-    // Assert: the bounded reader counts physical record reads, including indexed reads.
+    // the bounded reader counts physical record reads, including indexed reads.
     assert_eq!(actual, [32, 24, 16, 8]);
     assert_eq!(RECORD_READS.get(), 36);
 }
@@ -162,7 +161,6 @@ fn retiring_a_sequential_read_rewinds_only_its_record() {
 
 #[test]
 fn retiring_a_failed_read_does_not_rewind_an_accepted_record() {
-    // Arrange.
     let (_directory, reference) = spool(&[candidate(1), candidate(2)]);
     let mut replay = CandidateReplay::new([]);
     replay.read(&reference, &CandidateReadTarget::Next).unwrap();
@@ -171,12 +169,12 @@ fn retiring_a_failed_read_does_not_rewind_an_accepted_record() {
     let tail = corrupt.iter().position(|byte| *byte == b'\n').unwrap() + 1;
     corrupt[tail] = b'!';
     std::fs::write(&reference.token, corrupt).unwrap();
+
     assert!(matches!(
         replay.read(&reference, &CandidateReadTarget::Next),
         Err(StoreError::CorruptRecord(_))
     ));
 
-    // Act.
     replay.retire_read();
     std::fs::write(&reference.token, original).unwrap();
     let next = replay
@@ -184,7 +182,6 @@ fn retiring_a_failed_read_does_not_rewind_an_accepted_record() {
         .unwrap()
         .unwrap();
 
-    // Assert.
     assert_eq!(next.sequence, 2);
 }
 

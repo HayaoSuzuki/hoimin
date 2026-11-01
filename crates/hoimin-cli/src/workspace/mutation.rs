@@ -341,42 +341,57 @@ mod tests {
         }
     }
 
-    #[test]
-    fn issue_1082_apply_rejects_append_and_truncate_with_finite_descriptor_read() {
+    #[rstest::rstest]
+    #[case::appended_1(0)]
+    #[case::b_ori_to_vec_2(1)]
+    fn issue_1082_apply_rejects_append_and_truncate_with_finite_descriptor_read(
+        #[case] scenario_index: usize,
+    ) {
         let mut appended = b"original\n".to_vec();
         appended.extend_from_slice(&[b'x'; 4096]);
-        for changed in [appended, b"ori".to_vec()] {
-            let (project, mut worker, candidate) = worker_and_candidate();
-            let target = worker.root().join(&candidate.path);
-            let hook = Arc::new(MutationReadObservation {
-                target: target.clone(),
-                changed: changed.clone(),
-                consumed: std::sync::atomic::AtomicU64::new(u64::MAX),
-            });
-            let guard = install_workspace_race_hook(hook.clone());
-            let result = worker.apply_mutation(&candidate);
-            drop(guard);
-            assert!(matches!(
-                result,
-                Err(super::WorkspaceError::MutationHashMismatch { .. })
-            ));
-            assert_eq!(fs::read(&target).unwrap(), changed);
-            assert!(fs::metadata(&target).unwrap().permissions().readonly());
-            assert_eq!(
-                fs::read(project.path().join(&candidate.path)).unwrap(),
-                b"original\n"
-            );
-            let consumed = hook.consumed.load(Ordering::SeqCst);
-            assert!(
-                consumed <= b"original\n".len() as u64 + 1,
-                "consumed {consumed} bytes after a 9-byte budget"
-            );
-        }
+
+        let changed = [appended, b"ori".to_vec()]
+            .into_iter()
+            .nth(scenario_index)
+            .unwrap();
+
+        let (project, mut worker, candidate) = worker_and_candidate();
+        let target = worker.root().join(&candidate.path);
+        let hook = Arc::new(MutationReadObservation {
+            target: target.clone(),
+            changed: changed.clone(),
+            consumed: std::sync::atomic::AtomicU64::new(u64::MAX),
+        });
+        let guard = install_workspace_race_hook(hook.clone());
+
+        let result = worker.apply_mutation(&candidate);
+        drop(guard);
+
+        assert!(matches!(
+            result,
+            Err(super::WorkspaceError::MutationHashMismatch { .. })
+        ));
+        assert_eq!(fs::read(&target).unwrap(), changed);
+        assert!(fs::metadata(&target).unwrap().permissions().readonly());
+        assert_eq!(
+            fs::read(project.path().join(&candidate.path)).unwrap(),
+            b"original\n"
+        );
+        let consumed = hook.consumed.load(Ordering::SeqCst);
+        assert!(
+            consumed <= b"original\n".len() as u64 + 1,
+            "consumed {consumed} bytes after a 9-byte budget"
+        );
     }
 
-    #[test]
-    fn source_reuse_preserves_growth_shrink_unicode_bom_and_latin1() {
-        for (source, original, replacement, start, length, location, expected) in [
+    #[rstest::rstest]
+    #[case::b_old_1(0)]
+    #[case::b_original_2(1)]
+    #[case::x_as_bytes_3(2)]
+    #[case::b_xef_xbb_xbf_old_4(3)]
+    #[case::b_coding_latin_1_xe9x_5(4)]
+    fn source_reuse_preserves_growth_shrink_unicode_bom_and_latin1(#[case] scenario_index: usize) {
+        let (source, original, replacement, start, length, location, expected) = [
             (
                 &b"# old\n"[..],
                 "old",
@@ -422,20 +437,24 @@ mod tests {
                 (2, 2),
                 &b"# coding: latin-1\n# \xe0\xe0x\n"[..],
             ),
-        ] {
-            let (project, mut worker, candidate) = source_worker(
-                source,
-                ByteSpan { start, length },
-                original,
-                replacement,
-                location,
-            );
-            worker.apply_mutation(&candidate).unwrap();
-            assert_eq!(worker.read("source.py").unwrap(), expected);
-            assert_eq!(fs::read(project.path().join("source.py")).unwrap(), source);
-            worker.reset().unwrap();
-            assert_eq!(worker.read("source.py").unwrap(), source);
-        }
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+        let (project, mut worker, candidate) = source_worker(
+            source,
+            ByteSpan { start, length },
+            original,
+            replacement,
+            location,
+        );
+        worker.apply_mutation(&candidate).unwrap();
+
+        assert_eq!(worker.read("source.py").unwrap(), expected);
+        assert_eq!(fs::read(project.path().join("source.py")).unwrap(), source);
+        worker.reset().unwrap();
+        assert_eq!(worker.read("source.py").unwrap(), source);
     }
 
     #[test]
@@ -454,6 +473,7 @@ mod tests {
         let target = worker.root().join("source.py");
         make_read_only(&target);
         let permissions = permission_fingerprint(&target);
+
         assert!(matches!(
             worker.apply_mutation(&candidate),
             Err(super::WorkspaceError::MutationSpanInvalid { .. })
@@ -463,52 +483,63 @@ mod tests {
         assert_eq!(permission_fingerprint(&target), permissions);
     }
 
-    #[test]
-    fn hash_mismatch_precedes_invalid_span_and_location_without_writing() {
-        for changed_worker in [false, true] {
-            let (_project, mut worker, mut candidate) = worker_and_candidate();
-            candidate.span.start = u64::MAX;
-            candidate.line = u32::MAX;
-            if changed_worker {
-                fs::write(worker.root().join(&candidate.path), b"changed\n").unwrap();
-            } else {
-                candidate.file_hash = "0".repeat(64);
-            }
-            let before = worker.read(&candidate.path).unwrap();
-            assert!(matches!(
-                worker.apply_mutation(&candidate),
-                Err(super::WorkspaceError::MutationHashMismatch { .. })
-            ));
-            assert_eq!(worker.read(&candidate.path).unwrap(), before);
+    #[rstest::rstest]
+    #[case::false_1(false)]
+    #[case::true_2(true)]
+    fn hash_mismatch_precedes_invalid_span_and_location_without_writing(
+        #[case] changed_worker: bool,
+    ) {
+        let (_project, mut worker, mut candidate) = worker_and_candidate();
+        candidate.span.start = u64::MAX;
+        candidate.line = u32::MAX;
+        if changed_worker {
+            fs::write(worker.root().join(&candidate.path), b"changed\n").unwrap();
+        } else {
+            candidate.file_hash = "0".repeat(64);
         }
+        let before = worker.read(&candidate.path).unwrap();
+
+        assert!(matches!(
+            worker.apply_mutation(&candidate),
+            Err(super::WorkspaceError::MutationHashMismatch { .. })
+        ));
+        assert_eq!(worker.read(&candidate.path).unwrap(), before);
     }
 
-    #[test]
-    fn mutation_context_failure_keeps_hash_mismatch_precedence() {
+    #[rstest::rstest]
+    #[case::current_1(0)]
+    #[case::different_2(1)]
+    #[case::current_3(2)]
+    fn mutation_context_failure_keeps_hash_mismatch_precedence(#[case] scenario_index: usize) {
         let (_project, _worker, mut candidate) = worker_and_candidate();
         let source = b"original\n";
         let current = blake3::hash(source);
         let different = blake3::hash(b"changed\n");
-        for (expected, candidate_hash, hash_failure) in [
+
+        let (expected, candidate_hash, hash_failure) = [
             (current, current, false),
             (different, different, true),
             (current, different, true),
-        ] {
-            candidate.file_hash = candidate_hash.to_hex().to_string();
-            let result = super::mutation_context(source, &candidate, expected, |_| {
-                Err(hoimin_core::CandidateValidationError::SourceTooLarge)
-            });
-            if hash_failure {
-                assert!(matches!(
-                    result,
-                    Err(super::WorkspaceError::MutationHashMismatch { .. })
-                ));
-            } else {
-                assert!(matches!(
-                    result,
-                    Err(super::WorkspaceError::MutationSpanInvalid { .. })
-                ));
-            }
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+        candidate.file_hash = candidate_hash.to_hex().to_string();
+
+        let result = super::mutation_context(source, &candidate, expected, |_| {
+            Err(hoimin_core::CandidateValidationError::SourceTooLarge)
+        });
+        if hash_failure {
+            assert!(matches!(
+                result,
+                Err(super::WorkspaceError::MutationHashMismatch { .. })
+            ));
+        } else {
+            assert!(matches!(
+                result,
+                Err(super::WorkspaceError::MutationSpanInvalid { .. })
+            ));
         }
     }
 
@@ -745,6 +776,7 @@ mod tests {
         let root = worker.root().to_owned();
         let target = root.join("swap/target.py");
         make_read_only(&target);
+
         assert!(fs::metadata(&target).unwrap().permissions().readonly());
         let (opened_tx, opened_rx) = sync_channel(0);
         let (resume_tx, resume_rx) = sync_channel(0);
@@ -756,6 +788,7 @@ mod tests {
         let thread_hook = Arc::clone(&hook);
         let operation = thread::spawn(move || {
             let _guard = install_workspace_race_hook(thread_hook);
+
             let result = worker.apply_mutation(&candidate);
             (worker, result)
         });
@@ -766,6 +799,7 @@ mod tests {
         let (worker, result) = operation.join().unwrap();
 
         result.unwrap();
+
         assert_eq!(fs::read(operated_target.clone()).unwrap(), b"mutated!\n");
         assert!(
             !fs::metadata(operated_target.clone())

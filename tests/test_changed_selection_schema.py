@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 
 import pytest
+from hypothesis import example, given
+from hypothesis import strategies as st
 from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,21 +21,26 @@ EVENT = json.loads(
 )
 
 
-@pytest.mark.parametrize(
-    "changed",
-    [None, {"context": 0}, {"context": 1073741823, "diff_base": "main"}],
+@given(
+    changed=st.one_of(
+        st.none(),
+        st.fixed_dictionaries(
+            {"context": st.integers(0, 1073741823)},
+            optional={"diff_base": st.one_of(st.none(), st.text(max_size=32))},
+        ),
+    )
 )
+@example(changed=None)
+@example(changed={"context": 0})
+@example(changed={"context": 1073741823, "diff_base": "main"})
 def test_current_event_accepts_typed_changed_selection(changed: object) -> None:
-    # Arrange.
     event = copy.deepcopy(EVENT)
     event["schema_version"] = 10
     selection = event["normalized_config"]["selection"]
     selection["changed"] = changed
 
-    # Act.
     errors = list(VALIDATOR.iter_errors(event))
 
-    # Assert.
     assert not errors
 
 
@@ -49,25 +56,19 @@ def test_current_event_accepts_typed_changed_selection(changed: object) -> None:
     ],
 )
 def test_current_event_rejects_invalid_changed_selection(changed: object) -> None:
-    # Arrange.
     event = copy.deepcopy(EVENT)
     event["normalized_config"]["selection"]["changed"] = changed
 
-    # Act.
     errors = list(VALIDATOR.iter_errors(event))
 
-    # Assert.
     assert errors
 
 
 @pytest.mark.parametrize("field", ["changed_context", "diff_base"])
 def test_current_event_rejects_obsolete_selection_siblings(field: str) -> None:
-    # Arrange.
     event = copy.deepcopy(EVENT)
     event["normalized_config"]["selection"][field] = None
 
-    # Act.
     errors = list(VALIDATOR.iter_errors(event))
 
-    # Assert.
     assert errors
