@@ -12,6 +12,9 @@ It also classifies deleted paths and the old paths of renamed files. Unknown pat
 Change selection, result aggregation and quality tooling use Python 3.14.
 The Linux and manual Windows/macOS Rust test jobs run on Python 3.14 and 3.15.
 Wheel smoke checks exercise the same built wheel on both versions in Linux CI, manual Windows/macOS CI and all three platform release jobs.
+macOS release builds use `macos-26`; packaged archive smoke checks and the manual
+non-Linux matrices use `macos-15` to exercise the distribution on an older
+supported runner. SBOM build-environment metadata identifies the build runner.
 
 The dependency audit workflow checks licenses and sources in both Rust workspaces in addition to vulnerability scanning.
 See the [dependency policy](../dependencies/policy.md) for its scope and build-script diff reviews.
