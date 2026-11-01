@@ -13,3 +13,13 @@ __pycache__/
 htmlcov/
 coverage.xml
 /mutants.out*
+
+# Local IDE and agent workspace data.
+/.idea/
+/.serena/
+.DS_Store
+
+# Local Python environments and analysis caches.
+/.venv/
+.ruff_cache/
+.mypy_cache/
