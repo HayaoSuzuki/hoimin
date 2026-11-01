@@ -200,7 +200,7 @@ def inventory(root: Path) -> Inventory:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, default=Path("docs/knowledge"))
+    parser.add_argument("--root", type=Path, default=Path("docs/development/knowledge"))
     args = parser.parse_args()
     result = inventory(args.root)
     sys.stdout.write(json.dumps(result, indent=2, default=str) + "\n")

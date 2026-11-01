@@ -14,10 +14,10 @@ changed.
 - `crates/hoimin-cli/src/analyzer/rust/operator_functions.rs`
 - `crates/hoimin-cli/src/analyzer/rust_tests.rs`
 - `crates/hoimin-cli/tests/operator_function_contracts.rs`
-- `docs/development.md`
-- `docs/superpowers/specs/2026-09-08-issue-431-class-comprehensions-design.md`
-- `docs/superpowers/plans/2026-09-08-issue-431-class-comprehensions.md`
-- `docs/superpowers/reports/2026-09-08-issue-431-class-comprehensions.md`
+- `docs/development/guides/contributing.md`
+- `docs/development/work/designs/2026-09-08-issue-431-class-comprehensions-design.md`
+- `docs/development/work/plans/2026-09-08-issue-431-class-comprehensions.md`
+- `docs/development/work/reports/2026-09-08-issue-431-class-comprehensions.md`
 
 ## RED evidence
 

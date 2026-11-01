@@ -44,7 +44,7 @@
 //! `formal/HoiminOracle/HoiminOracle/`: proofs concern the models, while adapters
 //! compare selected implementation observations, not all Rust/OS executions.
 //!
-//! [development guide]: https://github.com/HayaoSuzuki/hoimin/blob/main/docs/development.md#shutdown-deadline-invariants
+//! [development guide]: https://github.com/HayaoSuzuki/hoimin/blob/main/docs/development/guides/contributing.md#shutdown-deadline-invariants
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::future::Future;

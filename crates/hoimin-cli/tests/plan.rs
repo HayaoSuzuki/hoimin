@@ -5315,7 +5315,7 @@ async fn verify_preview_details_distinguish_same_line_mutations(
         assert_eq!(candidate.replacement, replacement);
     }
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../docs/json-schema/verify-preview.schema.json"
+        "../../../docs/user/reference/json-schema/verify-preview.schema.json"
     ))
     .unwrap();
 

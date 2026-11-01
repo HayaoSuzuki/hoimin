@@ -1,0 +1,2415 @@
+# Development
+
+This guide is for maintainers changing and validating hoimin. Start with the
+procedure for your task, then consult the linked contracts and implementation.
+For using hoimin to improve another project's tests, see the
+[plan/verify workflow](../../user/guides/usage.md#plan-and-verify-with-an-agent).
+
+Maintain the current CLI and saved formats without cross-version compatibility
+requirements. The intended workflow is local and short-lived; users' CI
+integrations are outside the product scope, and long-term plan retention is not
+a requirement. Follow the [change policy](../../user/reference/compatibility.md) when changing usage or formats.
+
+For the runtime boundary, component responsibilities and execution flow, start
+with the [C4 architecture views](../architecture/c4-model.md), maintained as Markdown
+and Mermaid in the repository.
+
+## Find the procedure for your change
+
+Use these entry points before reading implementation or audit notes:
+
+| Task | Procedure | Rationale and evidence |
+| --- | --- | --- |
+| Validate a code change | [Local quality gate](#local-quality-gate) and [CI selection](../ci/index.md) | [Test structure](#test-structure) and affected [contracts](../knowledge/index.md#designs-and-contracts) |
+| Change CLI help or arguments | [Generate the CLI reference](#generated-cli-reference) | [Reference scope](../knowledge/cli-reference.md) and [runtime usage contracts](../../user/guides/usage.md) |
+| Change limits, shutdown or cleanup | [Resource boundary](#resource-policy-at-the-core-boundary) | [Runtime lifecycle](../knowledge/design/runtime-lifecycle.md) and linked model comparisons |
+| Publish packages | [GitHub Releases](../releases/index.md) and [PyPI](../releases/pypi-publishing.md) | [Build provenance](../knowledge/release-provenance.md) and [index verification](../knowledge/pypi-publishing.md) |
+| Edit documentation | [Knowledge update procedure](okf-workflow.md) and [site publication](documentation.md) | [Guide ownership and evidence](../knowledge/overview.md) |
+
+The procedures in this guide and linked operational guides are maintained with
+the code. Issue-specific counts, measurements and dated records describe their
+recorded revision and environment; they are not evidence for your current change.
+Keep useful originals in place and follow the
+[catalog's task routes](../knowledge/index.md#start-with-your-task) for other topics.
+
+The [agent skill guide](../../user/guides/agent-skills.md) covers the distributable `skills/`
+packages, GitHub CLI installation, and packaging validation. Current user and
+maintainer guides use English; historical design and audit records retain their
+original language.
+
+## Product direction
+
+Read the [product principles](../../user/about/product-principles.md) when evaluating changes.
+The primary user is an AI agent improving tests locally under explicit resource
+budgets, with humans resolving specification questions and reviewing changes.
+Prioritize useful behavioral tests, reproducible evidence, and safe termination
+over increasing mutation scores. Do not add user-facing CI gates or preserve
+removed gates through compatibility aliases. Memory and disk controls, cleanup,
+and honest incomplete results are core requirements. Existing development CI and
+validation remain required; this direction does not relax them.
+
+## Verification selection metadata
+
+Construct `VerificationSelection` with `candidate_ids`, `top`, or `sample`.
+Use `VerificationTopPolicy` for Top and `VerificationSampling::new` for ordered
+sample evidence. Mode, scope and fixed policies derive from the selection kind;
+counts and evidence are immutable. Deserialize validates the same invariants.
+Keep algorithm and CLI validation with plan/verify, and use the read-only
+metadata accessors for reporting. See the [selection contract](../knowledge/design/selection-plan-verify.md#validated-verification-selection-issue-911)
+and [verification record](../work/reports/issue-911/review.md).
+
+Ranked Rust requests use `VerifySelection::Top { count, policy, offset }`.
+Use `offset: 0` for a prefix; the former `TopRange` variant has been removed.
+CLI normalization supplies zero when `--offset` is omitted. Keep the raw
+`Option<usize>` so an explicitly supplied offset, including zero, still requires
+`--top`. Selection and preview consume the normalized offset directly.
+See the [Issue #959 record](../work/maintenance/2026-10-16-issue-959.md).
+
+## Baseline restoration boundary
+
+A successful baseline enters `RunPhase::BaselineRestoration` and requests the
+existing owned `ResetWorker(0)` operation. Only its accepted `WorkerReset`
+completion permits analysis or the budget check for ordered verification.
+Explicit candidate-ID verification skips this budget observation. Baseline output
+acknowledgement is independent. Keep failure and stop retirement at this
+boundary so a late reset cannot dispatch a mutant; preserve original verification
+and cleanup ownership when extending the state machine.
+
+The restoration phase contributes to the baseline stage in metrics, while
+the recorded baseline duration still measures the process. Fingerprint schema 13
+prevents old conclusive session results from bypassing the corrected initial
+workspace state. See the [runtime contract](../knowledge/design/runtime-lifecycle.md#baseline-restoration-gates-dispatch-issue-984)
+and [migration notice](../../user/reference/compatibility.md#baseline-restoration-and-result-reuse-in-0130).
+
+## Internal ownership and performance changes
+
+The private Rust `artifacts` module owns bounded file reads, run-report
+decoding, and SQLite companion names. Callers retain their path resolution,
+validation order, and destination-protection policies. Keep plan validation,
+review assessment, progress comparison and verify execution policies with their
+respective commands. Shared decoding does not make
+their acceptance rules interchangeable. Its regular-file opener uses Unix
+`O_NONBLOCK` before checking the obtained descriptor, so FIFO inputs do not wait
+for a writer. Input symlinks to regular files remain valid; review-store symlink
+rejection stays with the caller. This does not bound general filesystem I/O.
+Read-only plan validation builds one borrowed source-path/hash index after header
+validation and checks candidate identity before source membership.
+
+The internal `hoimin-python` crate owns pure source analysis, charged candidate
+results and the exception index. The CLI acquires filesystem inputs, fingerprints
+projects, converts validated candidates and writes spools. Dedicated heap/corpus
+tests and the Python fuzz target use the same Cargo API; private semantic and
+oracle tests run only in `hoimin-python`. Its `test-support` feature provides
+logical payload observations to CLI dev-dependencies and is absent from normal
+builds. The separate fuzz workspace resolves the same patched parser through
+`hoimin-python` and keeps its own committed lockfile.
+
+The analyzer owns an internal 16 MiB retained-payload budget shared across
+producers, conversion and files. Keep reservations beside the allocations they
+cover; move leases with their data and release them only when that data drops.
+Detached workers retain charges, including when the handler receives another
+request. The [analyzer contract](../knowledge/design/analyzer.md#retained-candidate-payload-issue-978)
+records counted bytes, exclusions and measurement scope. `--max-memory` remains
+a descendant-process limit.
+
+Construct `RunState` without a supplied fingerprint. Preflight supplies the
+live fingerprint used by fresh and resumed sessions; missing fingerprints still
+fail when sessions are enabled. The removed `with_fingerprint` constructor had
+its value overwritten before use. Common raw run/plan CLI arguments now stay in
+one composed structure and normalize through the shared boundary; retain native
+test argv until the platform-specific encoding boundary.
+
+`tools/release_policy.py` owns the supported platform identities, Rust targets,
+wheel tags and version syntax without importing tooling dependencies. Keep the
+broader release-assembly wheel patterns separate from exact PyPI staging tags.
+When changing support, update the release workflow and its artifact validation
+together; this module does not generate workflow YAML or verify signatures.
+
+For performance work, measure the affected path before retaining an optimization.
+The [runtime investigation](../work/performance/2026-10-12-runtime-improvements.md)
+records the #813–#817 decisions, reproducible probes and measurement limits.
+The [CLI maintenance record](../work/maintenance/2026-10-12-cli-refactors.md) describes
+the SQLite naming and command-result refactors in #826 and #827.
+
+Shell completions distinguish serial events, process accounting data, and
+blocking ownership results. Retain the completion source until metrics and joins
+finish; event kinds alone do not identify the task that completed. See the
+[typed completion record](../work/maintenance/2026-10-12-shell-completions.md) for the
+normal and shutdown-drain paths.
+
+Keep checked plans immutable after preparation. Inspect shared references and
+use the metrics-only override before consuming the plan for execution; retain
+manifest and fingerprint protection in the owned handoff. The
+[verified-plan record](../work/maintenance/2026-10-12-verified-plan.md) describes the
+internal Rust source migration and validation evidence. The
+[selected execution API record](../work/maintenance/2026-10-13-verified-execution.md)
+identifies the removed unchecked wrappers and the retained `VerifiedPlan::execute`
+entry point, including the placement of runtime negative tests.
+
+Run CLI commands through `run_with_writers(args, stdout, stderr)` with owned
+`Write + Send + 'static` outputs; `run_from` delegates using stdio. Replace
+`run_with_io` calls and borrowed shell writers with owned values. For collected
+output, give the run a clone of a shared collecting writer and inspect a snapshot
+after it returns. `VerifiedPlan::execute` also consumes owned writers;
+`ShellContext` no longer has writer type parameters. Shell
+execution errors are already diagnosed; inspect the returned error if needed,
+but do not print it again. Short progress, review, help and completion output
+still uses the locally owned synchronous writers. See the
+[owned writer plan and evidence](../work/plans/2026-10-14-issue-889.md).
+
+Construct analyzers with `AnalyzerHandler::new(root, operators, profile,
+max_candidates) -> Self`, using a positive `NonZeroUsize` limit. The handler owns
+these settings for its lifetime; file requests carry only their ID, target and
+final-target marker. Finalization starts the next session with an empty store
+and the same settings. Use a new handler to change settings. Construction performs
+no project I/O or store allocation; source access and candidate-store errors occur
+during analysis. The [initialization API record](../work/maintenance/2026-10-13-analyzer-initialization.md)
+records the earlier root-only migration; [Issues #971–#979](../work/maintenance/2026-10-18-issues-971-979.md)
+record its successor. The [handler session contract](../../../crates/hoimin-cli/src/analyzer/mod.rs)
+explains accumulation, transfer and spool cleanup. An interrupted wait does not
+prove blocking analysis has stopped. See the [issue #866 evidence record](../work/plans/2026-10-14-issue-866.md)
+for the implementation and existing tests behind that contract. The
+[shell coordination contract](../../../crates/hoimin-cli/src/shell.rs) governs acceptance,
+drain, and managed-root cleanup outside the handler.
+
+Use `WorkspaceHandler` methods directly; the duplicate free-function entry
+points are removed. See the [workspace API record](../work/maintenance/2026-10-12-workspace-api.md)
+for the internal source migration and compatibility decision.
+
+Execution and delivery cleanup each track local attempt progress separately from
+DiskLifecycle's safety barriers. Preserve that distinction on lifecycle errors;
+see the [cleanup progress record](../work/maintenance/2026-10-12-cleanup-progress.md).
+
+The [follow-up verification record](../work/maintenance/2026-10-13-philosophy-stack-verification.md)
+collects the four changes' shared checks, independent review and platform limits.
+
+Use enums with associated data for mutually exclusive execution states. Keep
+independent observations separate, and retain ownership across cancelled awaits.
+The [enum boundary record](../work/maintenance/2026-10-13-enum-state-boundaries.md)
+explains the metrics and report states, exclusions and verification.
+
+## Disk failure contracts
+
+Construct disk stops with `DiskFailureReason` and its required observation or
+message. Derive codes from the variant and use the shared evidence/report
+conversions. See the [disk failure contract](../knowledge/design/disk-failure.md)
+for exact evidence equality and the saved failure format change.
+
+Run the policy, payload, lifecycle and disk oracle checks from the repository root:
+
+```sh
+cargo test -p hoimin-core --test disk_policy --test lean_disk_guard_oracle
+cargo test -p hoimin-cli --test lean_disk_shutdown_oracle
+```
+
+The full workspace suite also checks monitor, shutdown, report delivery and
+cleanup behavior. See the [issue #900 review record](../work/reports/issue-900/review.md)
+for executed checks and platform limits.
+
+## Documentation publication
+
+Edit the existing Markdown and open a PR; the Documentation workflow checks the
+site, and a main merge publishes it through the configured GitHub Pages workflow.
+See the [publication guide](documentation.md) for the local build, review artifact
+and manual retry. The [searchable site](https://hayaosuzuki.github.io/hoimin/)
+tracks main and displays its source commit on every page.
+
+## Discussion maintenance
+
+Discussions is enabled for public usage questions and possible defects. Keep the
+external Issue/PR submission restrictions in place; see the [reporting guide](../../user/about/support.md).
+The category slugs `bug-reports` and `q-a` must match
+[bug-reports.yml](../../../.github/DISCUSSION_TEMPLATE/bug-reports.yml) and
+[q-a.yml](../../../.github/DISCUSSION_TEMPLATE/q-a.yml). **Bug reports** uses an open-ended
+format and **Q&A** uses a question-and-answer format. Templates take effect from
+the default branch; they do not configure categories or submission permissions.
+
+When restoring settings, enable **Settings → General → Features → Discussions**
+and restore the categories and matching slugs. Change templates through a branch/PR.
+After category or template changes, open both new-discussion forms without posting
+and inspect required/optional fields, links, and code formatting. Check candidate,
+baseline, resource-control, and usage questions, including a startup failure with
+no available version. Do not fetch or execute submitted code automatically.
+
+See GitHub's [category-form instructions](https://docs.github.com/en/discussions/managing-discussions-for-your-community/creating-discussion-category-forms)
+and [form syntax](https://docs.github.com/en/discussions/managing-discussions-for-your-community/syntax-for-discussion-category-forms).
+
+## Knowledge workflow
+
+Start development work with [the OKF catalog](../knowledge/index.md). Read the
+relevant contracts and audit limitations, then inspect their sources and the
+affected implementation. Update the corresponding OKF concepts in the same
+change when behavior, design decisions, procedures, or audit evidence change.
+Add a new concept when the work establishes a distinct reusable topic.
+
+Follow [the OKF authoring and review procedure](okf-workflow.md) for update
+criteria, source provenance, and validation. Include consulted pages, updated
+pages (or the reason no update was needed), and checks performed in the PR or
+final handoff. These steps also apply when no personal `create-okf` skill is
+installed.
+
+The [documentation navigation record](../work/maintenance/2026-10-12-documentation-navigation.md)
+records the #742/#818 cleanup, representative lookup paths and verification
+scope; it supplements this procedure rather than owning another update checklist.
+
+## Resource policy at the core boundary
+
+Select the process backend before constructing `RunState`. Pass its
+`ProcessHandler::resource_control()` description as the final argument to
+`RunState::new` or `RunState::with_selection`. Construct `RunSelection` with
+`all`, `explicit`, or `ordered`; the checked constructors couple execution IDs
+with verification mode, count and Sample order. Pass a verified plan through
+`plan.selection()` and inspect its provenance with
+`plan.selection().verification_selection()`. `RunStarted::minimal` also
+requires an explicit `ResourceControl` as its final argument. Rust callers using the older constructor
+signatures must supply this argument; there is no inferred or default backend.
+Tests that supply a policy exercise core reporting, not native OS enforcement.
+The report schema retains its existing `mode` and singular `mechanism` fields.
+
+## Test structure
+
+Write Python and Rust tests using Arrange–Act–Assert (AAA). Group fixtures and
+inputs first, leave a blank line before the operation under test, then leave a
+blank line before assertions. Use names that describe the input, result and
+expected behavior; `Arrange`, `Act` and `Assert` comments are unnecessary.
+
+```python
+def test_empty_diff_requires_no_checks() -> None:
+    paths: list[str] = []
+
+    flags = ci_selection.classify(paths)
+
+    assert not any(flags.values())
+```
+
+```rust
+#[test]
+fn reading_missing_store_does_not_create_it() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("reviews.sqlite3");
+    let project = camino::Utf8Path::new("/project");
+
+    let store = ReviewStore::open_read(&path, project).unwrap();
+
+    assert!(store.is_none());
+    assert!(!path.exists());
+}
+```
+
+Each test invocation must exercise one test case: one prepared input/state, one
+behavior under test, and its expected outcome. Parameterized functions and property
+tests satisfy this rule for each selected or generated input. Keep assertions
+about the same result together, including related side effects; one case can need
+multiple assertions. Split independent successful and rejected inputs into named
+tests or parameterized cases. Each case must start from its own prepared state.
+Keep ordered operations together when testing their interaction, such as retries,
+concurrent writes or
+persisting history across reopen. Capture intermediate results and verify them
+together after the sequence. Fixture precondition checks can stay with setup;
+keep cleanup in fixtures, context managers or Rust RAII. For exceptions,
+`pytest.raises` naturally contains the action and the exception expectation.
+Property tests follow the same structure for each generated input; preserve their
+strategies, seeds and limits when reorganizing them.
+
+Do not choose different operations or assertions with `if`, conditional
+expressions, or scenario-selecting `match` inside a test. Parameterize inputs and
+expected results, or split the scenarios into named tests. Use `skipif`/fixtures
+and Rust `cfg` for platform or tool availability. Fixture builders and stateful
+test drivers may branch to construct inputs or simulate the system; do not move
+conditional assertions into helpers. A Rust variant guard that fails immediately
+for an unexpected result is an assertion, rather than a choice of test scenario.
+
+Parameterize cases that share setup, execution and assertion logic. Use
+`pytest.mark.parametrize` in Python and `rstest::rstest` with named `#[case(...)]`
+rows in Rust. Add `rstest` as a dev-dependency to the crate that uses it. Give each
+case a descriptive ID/name so failures identify the input. Do not run independent
+cases in a loop inside a test, and do not duplicate test bodies for different
+input values. A standalone test remains appropriate for a distinct behavior.
+
+Review parameter tables for conversion to property-based tests whenever adding or
+changing tests. Convert sampled numeric ranges, strings, collections and other
+wider domains governed by one invariant to Hypothesis in Python or proptest in
+Rust. Generate inputs from that domain rather than only sampling the old table.
+Keep the original boundaries and regression inputs as explicit examples or
+separate regression tests, use bounded strategies, and retain shrinking. Keep
+finite categories exhaustive (platforms, execution event kinds, error kinds and
+oracle corpus rows). Avoid generating large numbers of expensive subprocess cases
+when focused examples suffice.
+
+When reviewing Python or Rust tests, check AAA phase separation, one case per
+invocation, parameterization of repeated logic, and opportunities for generated
+inputs. Check Rust tables for `rstest` use. Apply these rules to repository-owned
+tests; leave vendored test suites under their upstream conventions.
+
+See [Semaphore's AAA guide](https://semaphore.io/blog/aaa-pattern-test-automation)
+and [Alex Nicolas's examples](https://dev.to/alexnicolascode/mastering-unit-testing-the-power-of-the-aaa-arrange-act-assert-oki).
+
+## Local quality gate
+
+Install [prek](https://github.com/j178/prek) and enable the Git pre-commit hook
+once per checkout:
+
+```console
+uv tool install prek
+prek install
+prek run --all-files
+```
+
+The hooks in [`prek.toml`](../../../prek.toml) run the same Rust formatting and Clippy
+checks as CI, including the vendored parser. They use Cargo from `PATH` and
+the toolchain (with rustfmt and Clippy) pinned in `rust-toolchain.toml`.
+Formatting is checked without rewriting files; run `cargo fmt --all` or
+`cargo fmt --manifest-path vendor/ruff_python_parser/Cargo.toml` to fix it.
+
+Hooks run when staged changes include Rust sources, Cargo manifests or lockfiles,
+Rust toolchain, Cargo, rustfmt or Clippy configuration, or `prek.toml`.
+Documentation-only changes skip them. Each hook checks its entire workspace
+once, in sequence. The separate `fuzz/` workspace uses the explicit checks
+documented below and does not trigger these hooks.
+
+Run `prek validate-config prek.toml` after changing the hook configuration.
+Use `prek run --all-files` for all four Rust checks, or
+`prek run cargo-clippy --all-files` for the workspace Clippy check alone.
+
+Run the quality gates locally with the same commands used in CI:
+
+```console
+uv sync --frozen --group fuzz --no-install-project
+uv run --frozen --no-sync ruff format --check .
+uv run --frozen --no-sync ruff check --no-fix .
+uv run --frozen --no-sync ty check
+cargo fmt --all -- --check
+cargo fmt --manifest-path vendor/ruff_python_parser/Cargo.toml -- --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo clippy --locked -p ruff_python_parser --lib --no-deps -- -D warnings
+cargo test --workspace
+cargo test -p hoimin-core --features contracts
+cargo test -p hoimin-cli --features contracts
+uv run --frozen pytest
+uvx maturin build --release
+uv sync --frozen --no-install-project
+uv run --frozen --no-sync python tests/wheel_smoke.py
+uv run --no-project --python 3.15 --with packaging==26.0 python tests/wheel_smoke.py
+```
+
+## Measuring test execution costs
+
+Measure collection separately with `uv run --frozen pytest --collect-only -q`.
+Use `uv run --frozen pytest --randomly-seed=812 --durations=25` to locate expensive
+setup, calls and teardown. Keep the seed, interpreter, collected cases and inputs
+fixed for before/after comparisons. Profile separately with Python's `cProfile`;
+instrumented times are not baseline wall times, and parent profiling does not
+measure CPU work inside subprocesses.
+
+For Rust, first use `cargo test --locked --workspace --no-run`, then time
+`cargo test --locked --workspace` on the same artifacts. The second command still
+includes Cargo startup and freshness checks. Read the per-binary summaries to
+find expensive integration targets. `cargo test --workspace` already includes
+`run_e2e`; use `cargo test -p hoimin-cli --test run_e2e` for a focused run rather
+than repeating it after the workspace suite. Keep the separate reference-example,
+contracts, randomized-order and platform/resource checks: they cover different
+conditions.
+
+Use a task-owned `CARGO_TARGET_DIR` when measuring cold builds or cleaning Cargo
+artifacts. Check free disk between phases and clean that target after preserving
+results; do not remove another task's artifacts. Keep real timeout, child cleanup
+and OS resource tests. Lightweight command-recording stubs are appropriate for
+workflow orchestration tests that already substitute the actual command.
+
+See the [Python and Rust measurements](../work/performance/2026-10-12-test-bottlenecks.md)
+for the measured scope and adopted changes. Do not replace JSON or introduce a
+test runner solely on an isolated serializer microbenchmark; include conversion,
+process startup, I/O, memory, compatibility and dependency costs.
+
+## CI selection and workflow validation
+
+See [CI selection and workflow validation](../ci/index.md) for path classification,
+the aggregate required check, pinned actionlint/ShellCheck/zizmor commands,
+documented inline exceptions, and before/after measurements.
+
+## Dependency vulnerability audits
+
+The `Dependency audit` workflow checks committed dependencies on pull requests,
+merge queues, pushes to `main`, and daily at 02:23 UTC. It can also be started
+manually. Python and Rust audits run independently, and a detected vulnerability
+or a failed advisory lookup fails the corresponding job.
+
+Python auditing uses uv 0.13.1 with the `audit-command` preview feature. It audits
+all extras and dependency groups, including development and fuzz dependencies,
+for Linux, macOS and Windows using separate target-platform selections on a
+Linux runner. These are dependency checks, not execution tests on those systems.
+`--frozen` preserves the committed `uv.lock`. Rust auditing uses cargo-audit 0.22.2
+and checks both the root workspace and the independent fuzz workspace against
+the current RustSec database. Known vulnerabilities fail the audit; cargo-audit's
+informational warnings retain their default severity.
+
+Run the same checks locally:
+
+```console
+uv audit --frozen --preview-features audit-command --python-platform linux
+uv audit --frozen --preview-features audit-command --python-platform macos
+uv audit --frozen --preview-features audit-command --python-platform windows
+cargo install cargo-audit --version 0.22.2 --locked
+cargo audit --file Cargo.lock
+cargo audit --file fuzz/Cargo.lock
+```
+
+Audits require access to the advisory services and detect known dependency
+vulnerabilities; they do not prove the absence of security defects. Renovate
+continues to propose dependency and lockfile updates separately. Review and fix
+findings instead of adding blanket exclusions or allowing failed audits to pass.
+
+The package supports Python 3.14 and 3.15 (`>=3.14,<3.16`).
+Quality tooling, Ruff and ty retain Python 3.14 as the shared baseline; the Linux
+Rust test matrix runs with both versions. The Renovate rule for
+`actions/python-versions` permits these two minor series; review the rule and
+workflow interpreters together when the supported Python range changes.
+A separate rule disables major/minor Python updates so Renovate cannot replace
+the 3.14 lane with 3.15. Patch updates remain eligible; supported minor lines
+change through an explicit support review.
+Python 3.15 lazy imports and unpacking in comprehensions use the Ruff 0.17.2
+parser and aligned crates.io AST dependencies. Explicit lazy aliases do not
+establish trusted imports. A module mentioning `__lazy_modules__` or the lazy
+import configuration API disables import identity proofs for callable, enum,
+annotation and project exception mutations; ordinary literal/operator mutations
+remain available. The parser supports the syntax independently of the Python
+interpreter used to run hoimin; execute 3.15-only source with Python 3.15.
+Python dependency ranges control which updates are allowed. For example,
+`>=4.26.0,<5` permits minor and patch updates in the 4.x series, while
+`>=0.29.0,<1` permits updates throughout the 0.x series. Hypothesis uses the
+same range in the `dev` and `fuzz` groups. Run
+`uv sync -U --all-groups` to update and install all groups within their declared
+ranges. Exact versions remain recorded in `uv.lock`; CI uses the committed
+lockfile with `--frozen`.
+
+## Property-based boundary tests
+
+Proptest is already a development dependency in both Rust crates. The
+`boundary_property_` tests complement fixed examples and Lean correspondence
+cases with generated encoding boundaries, mixed-newline selections, and
+streaming copy/hash/comparison inputs. They run in the normal `cargo test
+--workspace` suite; no separate CI service or dependency is needed.
+
+Run just these properties, or increase their case count with a reproducible seed:
+
+```console
+cargo test -p hoimin-core --test source_encoding_properties
+cargo test -p hoimin-cli --lib boundary_property_
+PROPTEST_CASES=1024 PROPTEST_RNG_SEED=20260926 cargo test -p hoimin-core --test source_encoding_properties
+PROPTEST_CASES=1024 PROPTEST_RNG_SEED=20260926 cargo test -p hoimin-cli --lib boundary_property_
+```
+
+The default is 256 successful generated cases per property. Keep the default
+random seed in ordinary CI runs to explore new combinations. On failure,
+proptest shrinks the input (these properties cap shrinking at 2048 iterations),
+prints the failing input, and persists a regression seed. Commit real regression
+files alongside the fix and retain a literal regression test when the discovered
+case expresses an important contract. Replay uses the same input strategy;
+changing the strategy can change what a persisted seed generates. See the
+[proptest failure persistence documentation](https://proptest-rs.github.io/proptest/proptest/failure-persistence.html).
+
+Input sizes are bounded. Stream tests use arbitrary small byte vectors and
+repeated generated patterns around one and two 64 KiB buffers. Their readers use
+independent fixed fragment sizes, optional single interruptions before progress,
+and terminal I/O errors; they do not explore every possible read schedule or OS
+filesystem race. Properties compare against materialized scalar/line observations,
+whole-slice equality, and one-shot hashes. They are finite tests, not proofs.
+
+## Coverage-guided fuzzing
+
+`fuzz/` is a separate Cargo workspace with its own committed lockfile. It depends
+on `hoimin-core` and the pure `hoimin-python` analyzer by path. libFuzzer does
+not enter the shipping workspace or the ordinary `cargo test --workspace` run. The targets supplement proptest:
+
+- `source_encoding`: arbitrary bytes exercise encoding declarations and malformed
+  input. Successful decodes must preserve bytes on re-encoding and match scalar
+  boundary maps. Explicit Latin-1 and valid UTF-8 variants must decode successfully.
+- `source_index`: UTF-8 text is checked against a sequential scalar walk for every
+  byte offset, including split scalars, EOF, mixed LF/CRLF/CR, and a leading BOM.
+- `candidate_validation`: constructs valid UTF-8 and Latin-1 candidates with
+  independently calculated spans and coordinates, then checks rejection of nine
+  single-field corruptions and unencodable Latin-1 replacements. The first five
+  input bytes choose the codec and two little-endian scalar boundary indices;
+  the remaining bytes supply the source payload.
+- `python_analyzer`: runs the production Python analyzer with all mutation
+  operators and either the full or focused profile (selected by input length
+  parity). Checks immediate cancellation, candidate validation, ordering, the
+  32-candidate cap, and prefix preservation when that cap is reduced to one.
+  Syntax errors and supported depth-limit errors are valid outcomes.
+- `report_sequence`: deserializes arbitrary JSON event lines, round-trips valid
+  events, and feeds accepted events into the report lifecycle validator. It also
+  constructs a complete run with one mutant for every input and verifies result
+  classification, terminal-state rejection, and recovery after a rejected result.
+- `target_resolution`: exercises arbitrary path normalization and constructs
+  bounded discovery inventories with file, line, and symbol selectors. It checks
+  exact resolution against an independent reference model, line-index membership,
+  and changed-line normalization and intersection.
+- `sampling`: checks sample size, uniqueness, index bounds, and seeded prefix
+  consistency, with populations bounded to 4096 elements.
+
+The Python analyzer target uses the same `hoimin-python` Cargo API as the CLI
+and dedicated corpus tests. Results keep their charged payload leases across
+that boundary. CLI modules retain source reads, project acquisition and candidate
+spools. Its local dependency resolves the patched parser and aligned registry
+crates through `hoimin-python`; keep the separate fuzz lockfile synchronized
+when those dependencies change.
+These are in-memory checks; filesystem discovery, file I/O, subprocesses, and
+mutation execution are outside their scope. The four structured targets reject
+inputs larger than 4096 bytes to bound per-input work, including during artifact
+replay.
+
+The unused analyzer JSONL parser and its `analyzer_protocol` target were
+[retired in #851](../work/maintenance/2026-10-13-analyzer-protocol.md). This does not
+affect execution reporting or the current in-process analyzer.
+
+Install cargo-fuzz and the pinned nightly (the locked libfuzzer-sys version
+requires a C++17 compiler).
+These commands run from the repository root. The normal Rust toolchain stays
+unchanged:
+
+```console
+cargo install cargo-fuzz --version 0.13.2 --locked
+rustup toolchain install nightly-2026-10-08 --profile minimal
+cargo +nightly-2026-10-08 fuzz build
+for target in source_encoding source_index candidate_validation python_analyzer report_sequence target_resolution sampling; do
+  mkdir -p "fuzz/corpus/$target"
+  cargo +nightly-2026-10-08 fuzz run "$target" "fuzz/corpus/$target" "fuzz/seeds/$target" -- -max_total_time=30 -max_len=4096 -timeout=5 -rss_limit_mb=1024 || break
+done
+```
+
+AddressSanitizer, debug assertions, and overflow checks use cargo-fuzz's defaults.
+The first corpus directory receives newly discovered inputs; the second contains
+committed seeds, including non-UTF-8 bytes. Keep that order so fuzzing does not
+write generated inputs into `seeds/`. Corpus, artifacts, coverage, and build
+outputs are ignored. Increase `-max_total_time` for longer local runs. The limit
+applies to fuzzing time, not compilation; `-timeout` bounds an individual input.
+
+Replay and minimize a reported failure, using its actual artifact path:
+
+```console
+cargo +nightly-2026-10-08 fuzz run source_encoding fuzz/artifacts/source_encoding/crash-<hash>
+cargo +nightly-2026-10-08 fuzz tmin source_encoding fuzz/artifacts/source_encoding/crash-<hash>
+```
+
+Retain the minimized input in the target's `seeds/` directory and add a normal
+Rust regression test with the fix. A bounded successful run is evidence only for
+the inputs executed. The Python target checks candidate structure and retention,
+not whether every replacement has the intended Python runtime semantics. Cookie
+error classification and OS/process behavior are not exhaustively checked.
+
+Formatting and lint checks for the separate workspace are explicit:
+
+```console
+cargo fmt --manifest-path fuzz/Cargo.toml -- --check
+cargo clippy --locked --manifest-path fuzz/Cargo.toml --bins -- -D warnings
+```
+
+To generate additional 3.15 inputs without changing the development venv:
+
+```console
+uv run --isolated --frozen --group fuzz --no-install-project --python 3.15 python tools/hypothesmith_corpus.py --strategy python315 --examples 50 --seed 20261024
+```
+
+The JSON output records the actual Python and generator package versions.
+This command generates corpus inputs; it does not execute libFuzzer.
+
+See the [cargo-fuzz documentation](https://rust-fuzz.github.io/book/cargo-fuzz.html).
+
+### Bounded CI fuzzing
+
+The automatic CI workflow runs `Fuzz (bounded)` on Linux after `quality`, in
+parallel with the existing test jobs. Its **11-minute job timeout includes
+setup, compilation, fuzzing, and artifact/cache handling**. The longest test
+jobs in main runs [36142375064](https://github.com/tokyogas-tech/hoimin/actions/runs/36142375064),
+[36142944345](https://github.com/tokyogas-tech/hoimin/actions/runs/36142944345), and
+[36158455427](https://github.com/tokyogas-tech/hoimin/actions/runs/36158455427)
+took 11m18s, 11m35s, and 12m09s: 11 minutes is approximately 91–98% of those
+durations. This is a fixed budget; revisit it when normal test durations change.
+
+The first step sets a ten-minute active deadline, leaving approximately one
+minute for uploading diagnostics and saving small caches. `tools/ci_fuzz.py`
+deducts elapsed setup time and builds the Rust targets once. It then installs
+frozen fuzz dependencies into separate temporary environments for Python 3.14
+and 3.15. Each interpreter runs the generator tests and generates 50 examples
+with each Hypothesmith strategy (`grammar` and `libcst`). Python 3.15 also runs
+the `python315` structured strategy for lazy imports and synchronous/asynchronous
+unpacking in list, set and dict comprehensions and generator expressions.
+Every generated source is compiled with that lane's CPython, without execution;
+3.14 rejects a request for the `python315` strategy. Eleven fixed 3.15 seeds
+also enter the analyzer target. Both lanes feed the same hash-named corpus.
+
+The workflow's Python 3.14 setup is the campaign driver; every `uv sync` and
+`uv run` selects its generation interpreter explicitly with `--python`.
+Temporary environments are deleted after generation, including on failure,
+and never replace the development venv or enter the report/corpus. Python
+installation, synchronization, tests and generation remain inside the active
+deadline. The Rust-only campaign runs once on the combined inputs, avoiding
+a duplicated matrix build. It divides the remaining time among all targets in
+`fuzz/Cargo.toml`, reserving ten seconds per target for startup and shutdown.
+An exhausted budget, a failed command, or a target timeout fails the job; an
+unexecuted target is never counted as a pass. Subprocess timeouts kill the
+process group, including compiler and fuzzer children.
+
+The cargo-fuzz executable and discovered corpus are cached. Large compiled
+target directories are not cached, keeping post-job work small. CI builds use
+16 codegen units to reduce compilation time. Both generation and fuzzing use
+a seed derived from the workflow run ID. The `fuzz-report` artifact retains
+per-stage command logs (with Python-version suffixes for generation), a JSON
+summary with timings, explicit environment selectors and completed targets, and
+any crash inputs for seven days. Artifact upload runs even after failure,
+although cancellation or the hard job timeout can interrupt it. Use the saved
+crash input for replay; the seed alone does not reproduce a time-bounded run
+against an evolving corpus.
+
+### Scheduled fuzzing
+
+The `fuzz.yml` workflow runs every day at 18:17 UTC and gives each target 60
+seconds of mutation time. A manual run accepts 30, 60, or 300 seconds per
+target:
+
+```console
+gh workflow run fuzz.yml --ref main -f seconds=300
+```
+
+The scheduled workflow uses the same pinned nightly, cargo-fuzz version,
+dual-interpreter generators, seeds, and resource limits as bounded CI. It passes a
+fixed per-target duration to `tools/ci_fuzz.py` instead of dividing an
+ten-minute CI budget. A 55-minute active deadline leaves five minutes for
+cache and artifact steps before the workflow's 60-minute limit.
+
+Each run restores the latest corpus for its branch and saves the enlarged
+corpus under a new cache key. GitHub retains command logs, the JSON summary,
+and crash inputs as `fuzz-diagnostics` artifacts for 14 days. The save and
+upload steps run after a fuzzing failure; cancellation or the workflow timeout
+can still interrupt them.
+
+The initial local validation found a parser panic on a nested unterminated
+f/t-string inside a format specification. It is fixed in the vendored parser;
+the minimized inputs are seeds `fstring-format-spec-recovery` and
+`tstring-format-spec-recovery`, and `foreign_middle_token_in_a_format_spec_is_invalid_syntax`
+in `crates/hoimin-cli/tests/rust_analyzer.rs` is the ordinary regression test.
+That local validation did not measure GitHub Actions execution or cold Linux
+build timing. Use the scheduled workflow's run logs for hosted execution evidence;
+the local result does not establish hosted timing.
+
+### Generate Python inputs with hypothesmith
+
+The optional `fuzz` dependency group permits hypothesmith updates from 0.3.3
+through the 0.x series. Hypothesis is shared with the `dev` group; hypothesmith,
+LibCST, and Lark require the `fuzz` group. Exact versions are recorded in the
+lockfile. Run from the repository root:
+
+```console
+uv sync --frozen --group fuzz --no-install-project
+uv run --frozen --no-sync python tools/hypothesmith_corpus.py --examples 100 --seed 20260926 --strategy grammar
+uv run --frozen --no-sync python tools/hypothesmith_corpus.py --examples 100 --seed 20260926 --strategy libcst
+cargo +nightly-2026-10-08 fuzz run python_analyzer fuzz/corpus/python_analyzer fuzz/seeds/python_analyzer -- -max_total_time=30 -max_len=4096 -timeout=5 -rss_limit_mb=1024
+```
+
+The generator writes to `fuzz/corpus/python_analyzer` by default; `--output DIR`
+selects another directory. `grammar` uses `from_grammar()` and `libcst` uses
+`from_node()`, both with automatic complexity targeting enabled. `--examples`
+is the Hypothesis example budget, not a promised number of distinct files.
+Whitespace-only, invalid, and oversized examples are counted and skipped; repeated
+inputs are deduplicated by SHA-256. UTF-8 bytes and physical newlines are preserved.
+`--max-bytes` defaults to 4096 and accepts values from 1 through 4096, matching the
+Rust target's limit. This bounds saved inputs, not generator memory or wall time.
+
+Generated source is compiled for syntax validation by CPython, never executed.
+The tool reports JSON on stdout with the seed, strategy, limits, Python/library
+versions, and written/existing/skipped counts. Exit 0 means at least one usable
+input was written or already present; exit 1 means no usable input was collected;
+invalid options or missing optional dependencies exit 2. Generation errors remain
+failures, even if earlier examples were already saved.
+
+Reuse the same seed, options, interpreter, and locked dependencies for replay;
+generation is not stable across dependency upgrades. Change the seed to explore
+different inputs. Corpus files and Hypothesis caches are ignored; promote a
+discovered regression to a committed seed and a normal regression test.
+
+Both strategies were exercised on CPython 3.14.7 with Hypothesis 6.168.1,
+LibCST 1.9.0, and Lark 1.3.1. That does not establish coverage of every Python 3.14
+syntax form. The existing Rust fuzz target permits syntax diagnostics because
+libFuzzer can turn a valid seed into invalid Python; this integration is not an
+assertion that CPython and the Rust parser accept identical languages.
+
+Run generator tests with the optional dependencies enabled:
+
+```console
+uv run --frozen --group fuzz --no-install-project pytest tests/test_hypothesmith_corpus.py
+```
+
+Without that group, only the two real-generator integration cases are skipped;
+the byte-preservation, size-boundary, syntax-rejection, and CLI validation tests
+still run. See the [hypothesmith project](https://github.com/Zac-HD/hypothesmith).
+
+## Python formatting, lint, types and tests
+
+Ruff, ty and pytest are development dependencies managed by `uv.lock`. For Python
+checks alone, `uv sync --frozen --group fuzz --no-install-project` installs the tools
+and the optional fuzz generators without building the Rust executable. Run
+`uv run --frozen --no-sync ty check` and `uv run --frozen --no-sync pytest` in that
+environment; the full quality gate above also builds and validates the wheel.
+
+To apply formatting or safe lint fixes explicitly:
+
+```console
+uv run --frozen --no-sync ruff format .
+uv run --frozen --no-sync ruff check --fix .
+```
+
+Ruff targets Python 3.14, uses an 88-column formatter, and enables `ALL` rules.
+The exclusions in `pyproject.toml` follow the supplied kraken-hub policy for
+docstrings, assertions, formatter conflicts and selected style rules. Additional
+per-file exceptions allow standalone script modules and literal expected values in
+test assertions. Required subprocess execution, CLI output and existing orchestration
+complexity have individual documented suppressions; adding a suppression requires
+the same explanation. Unused imports are reported rather than automatically
+removed, and unsafe fixes are not enabled.
+
+Maintained Python files under `tests/`, `tools/`, `formal/HoiminOracle/tools/`
+and `crates/hoimin-cli/tests/support/` are checked. Vendored code, historical
+documentation/audits, generated output, worktrees and mutation fixture projects
+are excluded so formatting cannot rewrite test inputs or recorded evidence.
+
+The same maintained directories are included in ty's type checking. Run
+`uv run --frozen --no-sync ty check` from the repository root. The configuration
+targets Python 3.14 and all platforms, so availability of platform-specific APIs
+must be checked before use. All ty rules are enabled as errors, including checks
+for missing generic arguments, unsound assignments and returns, and unused or
+blanket ignore comments. Warnings also fail the check. Strict equality semantics
+and strict generic narrowing are enabled; `type: ignore` comments cannot suppress
+ty diagnostics. See the [ty configuration reference](
+https://docs.astral.sh/ty/reference/configuration/).
+
+JSON and YAML inputs need checked types at their boundaries. Preserve precise
+record types through helpers and tests instead of using `Any` or casts to bypass
+diagnostics. Ruff's existing annotation rules complement ty by requiring function
+annotations. This does not prove that every third-party or dynamically loaded
+value has a static type; runtime checks are still needed where data enters typed
+code. Mutation fixture projects are excluded because some deliberately contain
+type errors, and their acceptance tests run their own checker configuration.
+
+Pytest uses strict mode and collects from `tests/`, excluding fixture projects. The
+source-distribution tests invoke the declared Maturin module and Cargo metadata
+to build one temporary archive. They check copied source bytes and excluded
+vendor outputs. The `hoimin-python/Cargo.toml` check permits Maturin's CRLF-to-LF
+normalization while preserving the rest of the text; copied parser files remain
+byte-exact. No Rust compilation is performed by that fixture.
+Tests use module-level functions, plain `assert`, `pytest.raises`, and
+`pytest.mark.parametrize` for independent cases. Use `tmp_path` and fixtures for
+test setup. Use the `mocker` fixture from [pytest-mock](
+https://pytest-mock.readthedocs.io/en/latest/usage.html) for mocks and patches;
+pytest restores patches after each test. Use `monkeypatch` for environment
+variables and configuration values.
+Rust end-to-end tests run the sample project's pytest tests under
+`tests/fixtures/`. The boundary-contracts job also runs its Python checks with
+pytest from the frozen uv environment.
+
+Automatic Linux and manual non-Linux quality jobs run the same read-only Ruff
+and ty checks. Their wheel smoke jobs execute the Python suite with pytest before
+building the wheel. See the [design, implementation plan and review record](
+../work/plans/2026-09-24-python-quality.md).
+
+### Coverage and randomized test order
+
+The dev group also includes `pytest-cov` and `pytest-randomly`. The latter
+automatically randomizes test order and seeds Python's random generator. Use
+pytest without `-q` to see the chosen seed in its session header. To reproduce
+an order-dependent failure, pass the reported seed or reuse the last local seed:
+
+```console
+uv run --frozen pytest --randomly-seed=12345
+uv run --frozen pytest --randomly-seed=last
+```
+
+To measure branch coverage of the Python tools:
+
+```console
+uv run --frozen pytest --cov=tools --cov-branch --cov-report=term-missing
+```
+
+Coverage is opt-in and has no minimum percentage gate. This command measures
+`tools/` in the pytest process; it does not measure the Rust implementation or
+every subprocess. Generated coverage data and common report outputs are ignored
+by Git. See the [pytest-cov configuration guide](
+https://pytest-cov.readthedocs.io/en/latest/config.html) and
+[pytest-randomly usage](https://github.com/pytest-dev/pytest-randomly#usage).
+
+## CI platform execution policy
+
+Pull requests and pushes to `main` run the repository gates on Linux. Linux CI
+consumes runner capacity; it is the platform deliberately kept automatic.
+Windows and macOS validation lives in the separate `Manual non-Linux CI`
+workflow and starts only through `workflow_dispatch`. Its results are not a
+dependency or merge condition for automatic Linux CI.
+
+Run the workflow against the final ref that needs non-Linux evidence:
+
+```console
+gh workflow run non-linux-ci.yml --ref <REF>
+```
+
+Do not dispatch it for intermediate commits. The merged-PR release workflow
+is separate from this validation policy.
+
+## Pinned workflow actions
+
+Workflow files are the source of exact GitHub Action commit pins. Keep each
+remote action on a full 40-character SHA. Add version comments when updating
+pins so dependency tooling can identify the release. Contract tests validate
+the pin format and expected action identity,
+then check job behavior independently of the particular commit. Do not copy
+current SHAs into test expectations. Changes to permissions, inputs, commands,
+shells, environments and the artifact-only release policy still require their
+existing contract checks. See the [combined update plan and review evidence](
+../work/plans/2026-09-24-actions-update-contracts.md).
+
+The release workflow also owns the exact `maturin-version` input. Both platform
+builds must use the same canonical `vMAJOR.MINOR.PATCH` pin. Release contract tests
+validate this format and agreement without duplicating the current version;
+all other inputs and publication restrictions remain exact. See the
+[maturin update plan and validation](
+../work/plans/2026-09-24-maturin-release-contract.md).
+
+## Pinned Rust toolchain
+
+`rust-toolchain.toml` is the source of the exact stable Rust version used for
+repository development and blocking CI, including rustfmt and Clippy. Run `rustup toolchain
+install` from the repository root to install that exact declaration. The
+weekly latest-stable canary reports upcoming compatibility issues without
+changing the blocking toolchain.
+
+The workflow contract test requires a complete `major.minor.patch` stable pin,
+the minimal profile, and both components. It does not duplicate the current
+version number, so a patch or minor update does not require changing the test.
+Wheel package versions must still match the package metadata exactly.
+
+Update the pin and minimum supported Rust version together in one PR. Hoimin
+follows the latest stable release after validation; development, blocking CI,
+and wheel builds use that exact version. The floating `stable` channel is only
+used by the weekly canary. A new release does not silently change a historical
+checkout's build toolchain.
+
+## Minimum supported Rust version
+
+`workspace.package.rust-version` in `Cargo.toml` must equal the exact stable pin
+in `rust-toolchain.toml`. The workflow contract tests reject a mismatch. There
+is no separate old-compiler CI job. Source builds require the declared version
+or newer; users installing a compatible prebuilt wheel do not need Rust.
+Dependencies are not held back to preserve support for an older compiler.
+
+For each stable update:
+
+1. Check the [official release list](https://blog.rust-lang.org/releases/) and
+   update both declarations in the same PR, including patch versions. Install
+   with `rustup toolchain install` and check the locked workspace with
+   `cargo check --workspace --all-targets --all-features --locked`.
+2. Run the quality gates above, including the vendored parser and contracts.
+   Validate all supported wheel builds and smoke tests through the release
+   workflow's PR preview; dispatch non-Linux CI once against the final ref.
+3. Check the pinned nightly can still build the workspace. When updating it,
+   use an available recent `nightly-YYYY-MM-DD` and update both fuzz workflows,
+   `tools/ci_fuzz.py`, the shuffle job, cargo-fuzz cache keys, workflow contracts,
+   these command examples, and the required check name in
+   `infra/github/Pulumi.yaml`. Run bounded fuzzing and shuffled workspace tests.
+4. Review the canary result and the source-build compatibility change before
+   merging. Do not publish a release merely to test the toolchain update.
+
+Renovate's [rust-toolchain manager](https://docs.renovatebot.com/modules/manager/rust-toolchain/)
+detects exact stable pins. The existing repository-wide `minimumReleaseAge` of
+seven days applies to these update PRs. Maintain that waiting period for routine
+updates; an urgent manual update still requires the checks above. A toolchain
+update PR is not assumed to update Cargo's minimum version: update `rust-version`
+on the same branch before merging. The equality contract prevents accepting a
+one-sided update. Nightly dates in scripts and YAML remain a coordinated manual
+update rather than a daily floating-channel upgrade.
+
+Install the smoke script's dependencies with `uv sync --frozen --no-install-project`,
+then use `uv run --frozen --no-sync` to run it. This avoids rebuilding hoimin or
+replacing the wheel being tested.
+
+Before running the standalone wheel smoke script, you must build a release wheel
+first with `uvx maturin build --release`. Alternatively, set `HOIMIN_WHEEL`
+to the exact path of an existing wheel to test. The script only selects and
+tests an existing artifact; it does not build one.
+
+## Reproduce randomized Rust test order
+
+CI supplements the stable cross-platform suite with Rust's standard nightly
+test harness in randomized order:
+
+```console
+rustup toolchain install nightly-2026-10-08 --profile minimal
+cargo +nightly-2026-10-08 test --workspace -- -Z unstable-options --shuffle
+```
+
+The harness prints the generated seed. Replay a failing order exactly with:
+
+```console
+cargo +nightly-2026-10-08 test --workspace -- \
+  -Z unstable-options --shuffle-seed <SEED>
+```
+
+The nightly job supplements rather than replaces the automatic stable Ubuntu
+jobs. Windows and macOS validation uses the manually dispatched workflow
+described above.
+
+## Lean state-machine oracle
+
+The formal model covers effect completion, stopping, cleanup, and final-report
+lifecycle semantics. Lean proves properties of that model; it does not prove
+the Rust implementation. A Rust adapter separately drives the public
+`RunState` and `transition` API with the Lean-generated corpus to check their
+correspondence.
+
+Run the gates from the repository root in this order:
+
+```console
+(cd formal/HoiminOracle && lake build)
+(cd formal/HoiminOracle && lake exe generate -- --check corpus/state-machine.jsonl)
+cargo test -p hoimin-core --test lean_oracle
+HOIMIN_ORACLE_CASE=cleanup_is_emitted_once \
+  cargo test -p hoimin-core --test lean_oracle \
+  oracle_correspondence -- --exact --nocapture
+```
+
+The generated JSONL corpus is owned by Lean and must not be edited by hand.
+New cases begin in report mode while their model/implementation boundary is
+reviewed. Promoted strict cases are blocking; infrastructure errors always
+fail.
+
+The six follow-up audit models from 2026-09-15 also participate in the Lean
+build, corpus freshness, and sensitivity gates. Their implementation gaps
+remain in report mode; see the [promotion report](../work/reports/2026-09-15-followup-lean-promotion.md)
+for model boundaries, corpus paths, and the unresolved issue ledger.
+
+The Linux `Lean audit` CI job is configured to compile every package module
+serially before building the aggregate library. It then runs every registered
+corpus freshness check and each generator that exposes a sensitivity gate. The
+workflow is the canonical list of package targets, corpus paths, and gate
+commands; update its contract test whenever a library module or `lakefile.toml`
+executable changes.
+
+Every build and generator invocation runs alone through
+`tools/lean_resource_guard.py`, with a 30-second wall-time limit, 2 GiB
+aggregate RSS limit, and 250 ms sampling. Resource statistics are retained as
+the `lean-audit-stats` workflow artifact even when a gate fails. The Lake package
+uses `-j1` and `-DElab.async=false` to keep elaboration serial within each
+process. Run local Lean checks serially with the same guard rather than starting
+an unbounded aggregate build. Corpus freshness checks compare generated output;
+regenerate through the corresponding `lake exe generate* -- --output ...`
+command when an intentional model change requires it. Generated JSONL files
+must not be edited by hand.
+
+The earlier 171-command sequence passed from an empty build cache in a
+one-CPU Linux aarch64 container with a hard 2 GiB limit and no swap. The longest
+command took 13.198 seconds; peak aggregate RSS was 1,077,976 KiB. Budget
+statistics take their exploration depth at runtime and run only for `--stats`,
+so corpus checks do not initialize the exhaustive statistics search. The
+statistics formulas, depth-six audit, proofs, and corpora remain unchanged.
+The initial GitHub-hosted run exceeded the former 20-second limit while
+building `ShutdownProofs` at 1,022,208 KiB peak RSS. The current 30-second limit
+retains the 2 GiB memory bound; the local measurements above used 20 seconds.
+The hosted follow-up passed all 171 commands. `ShutdownProofs` was the longest
+at 24.625 seconds and also had the highest RSS at 1,033,644 KiB.
+
+## Shutdown deadline invariants
+
+Start with the [shell module contract](../../../crates/hoimin-cli/src/shell.rs) for
+dispatch/completion ownership, cleanup admission and final-output ordering.
+The [process module contract](../../../crates/hoimin-cli/src/process/mod.rs) describes
+owned tasks, cancellation requests, drain evidence and backend release.
+
+Once total timeout, cancellation, or a fatal failure starts shutdown, the
+first cause and its absolute shutdown deadline are immutable. Total timeout is
+anchored to the original run deadline plus the fixed two-second grace;
+cancellation and fatal failure receive the same grace from their first
+observation. Later stop signals or failures must not restart or extend that
+budget. Every cancellable post-stop scheduler wait, completion receive, process
+drain, blocking-I/O drain, resource close, and internal metrics finalization
+must use the same deadline.
+
+When a stop arrives during an owned serial report operation, retain the stop
+while waiting for that operation within the fixed shutdown budget. Accept a
+completed operation before applying the retained stop; otherwise finalization
+can repeat output whose acknowledgement was discarded. The pending stop blocks
+further dispatch. A completion observed after expiry does not acknowledge output.
+
+At grace expiry, accept already-buffered completions before aborting Tokio task
+wrappers so returned workspace ownership is recovered when possible. Do not
+claim cleanup, session completion, or `run_finished` unless its completion was
+accepted before expiry. Resource ownership still held by the shell is moved to
+a detached blocking cleanup rather than leaked; that cleanup may finish after
+the run future returns and is never reported as accepted. Tokio cannot cancel
+an already-running `spawn_blocking` operation: aborting its wrapper detaches
+that operation. The CLI can exit with infrastructure failure even when the
+expired budget prevents a final diagnostic; a library caller may observe the
+detached operation finish later. Run and verify entry points require owned
+`Write + Send + 'static` outputs. Delivery bounds the async wait while the
+blocking operation retains its writer and delivery-root leases. The deadline
+cannot preempt the blocking `Write` itself. Short commands still write locally
+and synchronously.
+
+## Metrics destination permission
+
+The owned blocking Preflight validates metrics output against resolved source
+entries, explicit fingerprint inputs and session artifacts before the baseline.
+Its completion returns a typed destination together with workspace ownership;
+the shell accepts both before applying the core event. The finalizer uses only
+that resolved path. A collision failure can otherwise return a modeled nonzero
+result and reach finalization, so checking `run_result.is_ok()` cannot authorize
+output. Cleanup completions preserve the preflight decision. A later baseline
+failure retains authorized metrics; a Rust error retains `metrics.incomplete`.
+
+Compare the parent directory and native entry name for rename replacement.
+Distinct hardlinks and final symlinks remain separate output entries. Unix
+inspection caches directory names and lazily indexes no-follow file identities
+to resolve inexact spellings; file identity alone does not equate outputs. The
+session artifact resolver supplies the canonical database, its companion files,
+and the ownership directory used by SessionHandler on every platform. Protect
+that literal directory entry and its resolved tree. Inspect the originally
+configured database entry before preflight replaces the session path with its
+canonical path. On Windows, also retain protection of companion names under the
+configured basename when the final entry is an alias.
+
+For prospective ASCII case aliases in one directory, query macOS pathconf,
+Windows directory case information, or the ext4/f2fs casefold flag on Linux.
+Unknown filesystem behavior, ambiguous entry aliases and prospective non-ASCII
+comparisons with protected names withhold metrics and produce a late
+`metrics.write` warning. Unsupported Windows trailing-dot, trailing-space,
+stream and prospective short-name spellings follow that policy. Keep ordinary
+directory or missing-parent output failures as warnings. Require an existing
+resolved parent before granting write permission, even if a baseline might
+create the directory later. A prospective ownership tree can still establish
+a collision before this permission check. Preserve directory-only output syntax
+before path normalization: a trailing separator or terminal `.` / `..` withholds
+metrics, so normalization cannot turn a directory requirement into replacement
+of its final symlink. These checks establish
+preflight destination identity; they do not freeze the filesystem against
+external renames during a run. Native platform tests must establish the path
+semantics; abstract lifecycle oracles alone cannot do so.
+
+## Analyzer timeout invariants
+
+`DiscoveryConfig` owns the positive, bounded plan-only timeout. Plans require
+`normalized_config.discovery.analyzer_timeout`, and verify reads it before
+converting to execution-only configuration. `RawRunLimits`, `RunLimits` and
+execution fingerprints omit it; both limit types reject unknown saved fields.
+The raw-plan timeout oracle composes discovery validation with shared run
+normalization.
+
+Plan creation and verification rediscovery apply the saved
+`--analyzer-timeout` as one absolute deadline for the complete discovery phase;
+the deadline is not restarted for each target. Both plan entry points report
+the same `plan.discovery: analyzer.timeout` diagnostic and exit 2. Plan
+creation produces no manifest, and verification does not start the test
+command.
+
+Discovery runs as an owned blocking task with cooperative cancellation. When
+the deadline expires, the async caller returns promptly and detaches an analyzer
+that is already running; the detached task observes cancellation, stops, and
+releases every resource it owns. Tokio cannot preempt synchronous work already
+executing in that task. In particular, a source read blocked inside a system
+call must return before cancellation can be observed and the detached task can
+finish.
+
+## Extending collection and structural mutations
+
+The Rust analyzer keeps token-local mutations in its token scanner and adds an
+AST candidate pass for calls, literals, subscripts, and slices. Both passes
+emit the same candidate form and use the shared selection, profile filtering,
+deduplication, source ordering, and candidate-limit pipeline. Keep new
+structural rewrites to one contiguous AST span; build the replacement from the
+original source text so nested expressions, comments, and spelling are
+preserved.
+
+Raw-token replacements are restricted to the AST-proven token-start allowlist
+recorded by `AstFacts`. It records only the operator spellings in the precise
+AST gaps for their supported roles, such as comparisons, boolean and binary
+expressions, unary expressions, augmented assignments, boolean literals,
+`True`/`False` singleton match patterns, and `break`/`continue`. The pattern
+traversal admits boolean singletons inside nested patterns but excludes `None`,
+wildcard and capture patterns, and string values. A token with an ambiguous
+grammatical role does not produce a candidate: matching text alone never grants
+eligibility.
+
+Mapping-pattern boolean flips and complex separator flips are excluded when
+only that edit would duplicate another literal key in the same mapping. A
+per-mapping hash index models Python equality for the replacement domain:
+boolean targets are exactly 0/1, while nonzero imaginary parts only compare
+against complex keys. Zero-imaginary separator edits preserve equality and
+remain eligible. Ordinary integer keys are never rounded for comparison;
+integer real parts of complex literals use `num-bigint` conversion to match
+Python construction, including radix spelling and ties-to-even rounding.
+Float infinity and signed zero are handled separately from integer conversion
+overflow, which cannot form a valid original complex pattern literal.
+Nested mappings, value patterns, and dictionary expressions retain their own
+eligibility. Integration tests compile public plan mutants with CPython and
+check that import-only runs do not count invalid duplicate-key edits as kills.
+
+Native Python operator syntax uses these token-local mappings:
+
+- `**` becomes `*` (`binary_power`) and `@` becomes `*` (`binary_matmul`).
+- `^` becomes `&` (`bitwise_xor`) and unary `~` becomes unary `+`
+  (`bitwise_invert`).
+- `**=` and `@=` become `*=` (`augmented_power` and `augmented_matmul`).
+- `&=` and `|=` exchange spellings (`augmented_bitwise_and_or`), `^=` becomes
+  `&=` (`augmented_bitwise_xor`), and `<<=` and `>>=` exchange spellings
+  (`augmented_bitwise_shift`).
+
+The binary, unary, and augmented-assignment AST roles admit these spellings only
+in their operator positions. Decorators, keyword unpacking, annotations,
+strings, and comments remain excluded.
+
+`operator_function` is a default runtime selector for the Python 3.14 `operator`
+callables (53 canonical names and 46 documented dunder aliases). The independent
+`OperatorImports` index trusts only unique, unconditional module-level imports:
+`import operator`, module aliases, and absolute `from operator import ...`
+aliases. It does not alter the audited builtin resolver. Callable references are
+eligible in both direct calls and higher-order uses such as `map(op.add, xs, ys)`.
+
+| Callable names | Replacement |
+| --- | --- |
+| `eq` / `ne`, `lt` / `le`, `gt` / `ge` | Exchange each pair |
+| `add` / `sub`, `mul` / `truediv`, `floordiv` / `mod` | Exchange each pair |
+| `pow`, `matmul` | `mul` |
+| `and_` / `or_`, `lshift` / `rshift` | Exchange each pair |
+| `xor` | `and_` |
+| `neg` / `pos` | Exchange |
+| `abs` | `neg` |
+| `index`, `inv`, `invert` | `pos` |
+| `not_` / `truth`, `is_` / `is_not`, `is_none` / `is_not_none` | Exchange each pair |
+| `iadd` / `isub`, `imul` / `itruediv`, `ifloordiv` / `imod` | Exchange each pair |
+| `ipow`, `imatmul` | `imul` |
+| `iand` / `ior`, `ilshift` / `irshift` | Exchange each pair |
+| `ixor` | `iand` |
+| `concat` / `iconcat`, `countOf` / `indexOf` | Exchange each pair |
+| `getitem` | `contains` |
+| `contains` | `(lambda container, item, /: item not in container)` |
+| `setitem` | `(lambda container, key, value, /: None)` |
+| `delitem` | `(lambda container, key, /: None)` |
+| `call` | `(lambda target, /, *args, **kwargs: None)` |
+
+For function pairs through a module alias, only the member token changes. A
+dunder source keeps dunder spelling when the destination has a documented alias;
+for example, `__not__` becomes `truth`. A from-import reference becomes
+`__import__('operator').replacement` only when the builtin `__import__` has no
+binding or namespace uncertainty. Lambda mutations replace the complete callable
+reference. All forms retain argument text, order, count, and evaluation frequency;
+lambdas intentionally suppress the underlying operation. Callable identity and
+introspection are not preserved. Helpers `attrgetter`, `itemgetter`,
+`methodcaller`, and `length_hint`, undocumented aliases, and functions outside
+the documented Python 3.14 inventory are excluded. The Python 3.14 identity
+predicates have no documented dunder aliases; names such as `__is_none__` and
+`__is_not_none__` are not candidates.
+
+The index invalidates an imported name if any other binding anywhere in the
+module affects it, including parameters, definitions, type parameters, imports,
+assignment/deletion targets, comprehensions, walrus expressions, exception and
+pattern captures, and `global`/`nonlocal` declarations. Relative, conditional,
+and local imports are not trusted. References before the import are excluded,
+including function bodies defined before the import even if callers would run
+them afterward. Stores, annotations, and match patterns do not produce callable
+candidates; pattern grammar cannot generally accept the replacement expressions.
+
+All imported-alias loads evaluated in a class namespace are excluded. A custom
+or inherited metaclass can supply even ordinary names through `__prepare__`
+without an AST assignment target. The exclusion includes class-body statements
+and method decorators and defaults; it deliberately skips safe class-namespace
+loads instead of attempting metaclass-provenance inference. Ordinary method and
+lambda bodies use function/global lookup and remain eligible. Class-body list,
+set, and dict comprehensions and generator expressions likewise use their
+implicit function scope for targets, filters, later iterables, and produced
+expressions. Their leftmost iterable remains a class-namespace lookup and is
+excluded. Import aliases
+beginning with `__` remain excluded throughout class-definition ranges,
+including method bodies and nested functions, because private-name mangling and
+compiler-provided names such as `__class__`, `__module__`, and `__qualname__`
+can resolve them to other objects.
+
+Wildcard imports, dynamic namespace operations, explicit `__dict__`/`vars`
+access, and writes to builtin `__import__` invalidate namespace certainty.
+Taking references to namespace operations (`exec`, `eval`, `globals`, `locals`,
+`vars`, `setattr`, `delattr`, `__import__`) also counts, including qualified
+attributes and aliases imported from `builtins` or `operator`. Namespace
+dunders (`__dict__`, `__setattr__`, `__delattr__`, `__getattribute__`) are also
+uncertain, including from-import aliases. `sys.modules` access and imports
+are conservative exclusions. Attribute names associated with these operations
+are treated as uncertain even on other objects. A write/delete through any
+imported `operator` module alias, including local aliases, invalidates all
+operator imports. Letting a module alias escape through assignment, argument
+passing, or another bare load also invalidates all operator imports, avoiding
+unsound assumptions about mutation through another alias. Ordinary writes such
+as `self.value = value` do not invalidate independent operator bindings.
+
+These checks are intra-module and deliberately conservative. They assume normal
+standard-library imports, do not resolve project import search paths, and do not
+prove absence of external monkey-patching or custom import loaders. The index
+traversal checks cancellation, and its candidates enter the existing bounded AST
+producer, selection, profile filtering, and deterministic merge.
+
+Every approved raw-token operator is then checked against the annotation
+containment index and skipped when its complete token range lies inside an
+annotation. Deliberate annotation mutations remain in the separate opt-in
+`type_*` producer. These gates do not change the existing selection, profile
+filtering, deduplication, source ordering, or candidate-limit behavior.
+
+For one source file, the token scanner, AST pass, and type-annotation pass
+each retain no more than `max_candidates + 1` candidate records and
+deduplication identities before their bounded merge. An additional internal
+16 MiB (16,777,216-byte) budget covers retained candidate payload. One plan
+owner spans all producers, merge, files and already converted candidates. A run
+handler shares its owner with live blocking work, including workers that remain
+after cancellation or a dropped future. Reusing the handler does not reset
+charges held by those workers. Completed disk-spool records consume no payload
+budget.
+
+The budget counts logical UTF-8 lengths of owned original, replacement, path
+and symbol strings, converted operator/file-hash/ID strings, and separately
+owned deduplication strings. Non-Clone leases move with candidates; eviction,
+deduplication and dropping candidates release their charges. Validation reserves
+a conservative scratch bound beside the core code that owns the Latin-1 encoding,
+identity, normalized-path and ID copies. Spool writes reserve their exact encoded
+record length before allocating the buffer. Enum and hierarchy destinations,
+container fragments and optional-keyword fragments borrow existing strings.
+
+Exceeding the budget or overflowing byte arithmetic fails with
+`analyzer.payload_limit` (inside the existing plan-discovery error wrapper for
+plan). It never produces a shortened successful result. This resource failure
+can precede global merge, count selection or record validation. The independent
+2 MiB record limit still applies to selected candidates; the analyzer does not
+validate every generated record before eviction.
+
+The guarantee covers retained populations. It excludes source buffers, parser
+state, AST/facts, diagnostics, fixed structures, collection capacity, allocator
+overhead and disk. One in-flight generated candidate and the annotation batch
+of at most three replacements also remain outside the budget; their bytes depend
+on source size. Thus the budget does not bound analyzer RSS or all construction
+scratch. `--max-memory` controls descendants rather than the Hoimin CLI.
+
+`analyzer::payload_tests` checks deterministic charged peaks, release/transfer,
+producer/file overlap and early construction stops. The ignored
+`analyzer::payload_probes` cases measure the production plan-accounting path on
+SHA-256-verified audit fixtures under `/tmp/hoimin-design-audit-5d3aee95/analysis-inputs`.
+Invoke them with `cargo test --release -p hoimin-cli --lib analyzer::payload_probes
+-- --ignored --nocapture --test-threads=2`; missing or changed fixtures fail.
+These charged peaks include conservative reservations and differ from final
+candidate-string totals and process RSS.
+
+`depth::parse_checked` owns AST acquisition for symbol definitions, mutation
+analysis, and exception module summaries. It retains the unchecked parser result
+until syntax and depth checks pass, and disposes rejected partial trees through
+the parser's iterative cleanup. It checks syntax before depth and polls
+cancellation only in the depth traversal; callers keep their pre-parse checks.
+Invalid syntax remains a symbol-validation error, a mutation diagnostic, or a
+skipped hierarchy module, respectively. Accepted results retain their module and
+tokens without changing candidate discovery.
+
+Before facts, name resolution, or annotation analysis, `rust/depth.rs` checks
+AST depth using a borrowed `AnyNodeRef` worklist. The module has depth 1; every
+child exposed by Ruff's source-order visitor adds one, including auxiliary
+nodes. The supported limit is 128. For `value = 1+...+1`, 126 terms reach depth
+128 and 127 terms exceed it. Rejection is a typed `AnalysisError::DepthExceeded`,
+mapped by both analyzer callers to `analyzer.depth` with the target path.
+Cancellation remains a separate error. Plan creation fails without a manifest;
+run reports incomplete analysis after its normal baseline stage.
+
+The vendored parser is a source snapshot of Ruff 0.17.2,
+commit `30516b42ab972ffa2569e5efcfee81135da466d3`. Its aligned Ruff dependencies
+use crates.io version `0.0.19`; direct dependencies are pinned exactly.
+The parser standalone manifest and local safety adaptations are documented in
+[`README.hoimin.md`](../../../vendor/ruff_python_parser/README.hoimin.md).
+Recursive checkpoints use `stacker` (locked to 0.1.25): each checks a 128 KiB
+red zone and grows a 1 MiB segment when needed. The upstream unchecked-depth
+optimization is disabled. Context assignment, assignment/delete validation, old-decorator checks,
+and pattern-to-expression recovery have checkpoints too. This preserves the
+grammar and syntax diagnostics before applying Hoimin's AST-depth limit, without
+assuming that one larger worker stack is sufficient for every input.
+
+The parser's retained/unchecked module API preserves partial invalid trees so
+Hoimin can dispose of them safely while keeping existing invalid-syntax
+behavior. Rejected, invalid, and preflight-cancelled trees use an owned worklist:
+Ruff's `Transformer` detaches statements, expressions, patterns, and interpolated
+string elements before their shallow shells drop. These four callbacks cut every
+recursive cycle in the pinned Transformer's traversal, including nested format
+specifications. This disposal implementation lives in the parser's `ast_cleanup`
+module and also releases discarded with/match speculative results, invalid
+keyword patterns, and discarded `as` subpatterns. Hoimin's `depth::dispose` calls
+the same implementation. Accepted trees use ordinary drop after passing the depth check.
+Both worklists can allocate in proportion to input size; they are stack-depth
+controls, not general memory bounds.
+
+Regression coverage includes exact accepted/rejected boundaries with actual
+binary and annotation candidates on a 2 MiB thread, auxiliary AST kinds,
+repeated 25,000-term rejections with retained-allocation checks, and debug/release
+public plan/run subprocesses at 2,000, 20,000, and 25,000 terms. The 20,000-term
+fixture previously overflowed during ordinary AST drop alone. These observations
+validate the selected limit on tested stacks; they do not prove arbitrary parser
+inputs or every platform stack safe. In particular, the guard runs after parsing.
+
+Candidate-local punctuation queries must use
+`AstFacts::candidate_tokens_in_range` with the smallest relevant AST range.
+Do not scan `Tokens::iter()` for each call, literal, or exception tuple: that
+turns a module containing many small candidates into quadratic work. The
+test-only candidate token lookup statistics count calls and tokens in the
+returned slices. Treat their operation-count bound as the complexity contract;
+wall-clock timings are diagnostic only.
+
+`AstFacts` finalizes immutable lookup indexes after its AST walk. Annotation
+and focused-profile arid containment use sorted starts with prefix-maximum end
+offsets, so overlapping ranges remain exact with `O(log n)` lookup. Unary
+`not` operands use an exact-start hash lookup with amortized `O(1)` access.
+Definition ranges are swept into disjoint innermost-scope segments and queried
+by binary search in `O(log n)`. Do not replace these with a raw-vector fallback
+or make lookup correctness depend on token/visitor call order.
+
+Property tests compare the indexes with independent linear definitions for
+overlap, nesting, gaps, equal starts, and half-open boundaries. The ignored
+adversarial benchmark covers hundreds of scopes and annotations plus thousands
+of unary `not` and focused arid facts:
+
+```console
+cargo test --release -p hoimin-cli --lib \
+  benchmark_adversarial_ast_fact_indexes -- --ignored --nocapture
+```
+
+It asserts exact candidates and logarithmic comparison ceilings through
+test-only counters. Elapsed time is printed for profiling but is deliberately
+not a test threshold. When adding a fact query, extend the semantic comparison
+and operation-count assertions rather than introducing a timing-sensitive CI
+gate.
+
+Bare builtin calls (`any`, `all`, `list`, `tuple`, `set`, `frozenset`, `min`,
+`max`, `sorted`, and `reversed`) use scope-aware shadowing checks. A pair is a
+candidate only when both its source and replacement names definitely resolve
+through Python's builtins namespace at that occurrence. The resolver follows
+whole-function local binding, module/class source order, and closure lookup.
+It also preserves class non-closure, `global`/`nonlocal`, and the comprehension
+leftmost-iterable boundary. Wildcard imports, conditional bindings, deletions,
+bare `exec`/`globals`/`locals`/`vars` calls, missing occurrence facts, and other
+ambiguous cases are `Unknown` and suppress the candidate. Qualified builtin
+calls are not candidates. Method mutations are syntax-directed and do not
+infer receiver types.
+
+The analyzer emits a `split`/`rsplit` swap only when the call supplies a
+second positional argument or the named `maxsplit` keyword. Calls that omit
+`maxsplit` produce identical string results, so the analyzer skips them.
+
+All type operators share the disallowed-descendant gate. It recursively checks
+subscript arguments, unions, tuple/list elements, and starred argument unpacking.
+An excluded type (including Any, object, TypeVar, a string forward reference,
+Annotated, Callable, Literal, or Protocol) in either mapping argument or a nested
+argument suppresses the whole annotation's type mutations. Clean multi-argument
+and unpacked annotations remain eligible; this structural check does not establish
+that a builtin-spelled name is unshadowed.
+
+The Lean NullableGate model proves blocked-descendant rejection for arbitrary
+model depth. Its generated corpus is checked through public CLI plan in
+`tests/lean_nullable_gate_oracle.rs`; all 65 rows are strict and cover structural
+eligibility, all seven type operators, and the four name-rebinding cases fixed
+by issue #564. The adapter rejects report-only modes. Regenerate and check the corpus through
+`generate_nullable_gate`; do not change expected pairs in the Rust adapter.
+
+Type-annotation collection records an import-state snapshot at each annotation
+site in source order. Signature annotations use their enclosing state, while a
+function body predeclares Python-local names before its body is visited. Nested
+scopes do not leak their bindings into an enclosing scope. At control-flow
+joins, retain only imports known identically on every reachable exit; when no
+safe direct-name or module-alias spelling remains, skip the replacement.
+Finally annotation entries also include implicit exceptions from expressions
+and statement protocols evaluated before later imports (calls, subscripts,
+attributes, names, operators, container protocols, formatting, assertions,
+iteration, context managers, and class construction). Partial assignment and
+pattern targets are conservatively invalidated on these entries. These pending exceptions stay separate from normal fallthrough;
+a normally finishing finally resumes them. Implicit entries retain one merged
+environment per flow instead of one snapshot per expression. Class globals/nonlocals are
+conservatively invalidated without leaking class-local environments. Import
+failures and arbitrary dynamic hooks remain outside this analysis.
+
+Finally transfer reuses one local result only when no enclosing class context or
+observable test hook is active. The local lifetime fixes the body and scope;
+exact imports identify reusable input. Keep the residual imports alongside the
+exit result and restore them on a hit. Recording annotations remains a separate
+walk, and same-category normalization must preserve distinct environments and
+completion categories. Keep last-occurrence order: the final contributor to an
+exit category determines residual imports seen by later unreachable annotations. Do not move this cache to file or collector lifetime
+without revisiting its full context and side-effect contract.
+
+Cancellation checks at suite, statement, finally-entry and loop-transfer
+boundaries must propagate through the production collector result, including
+annotation-free and transfer-only work. Preserve context-restoration epilogues
+and pre-existing payload errors; partial traversal is not successful analysis.
+See the [finally-work contract](../knowledge/design/analyzer.md#multi-exit-finally-work-issue-987)
+and [measurements](../work/maintenance/2026-10-19-issue-987-finally-work.md) for the bounded
+input family and unverified general cases.
+
+Synchronous and asynchronous `with` statements also collect body exceptions, even
+without an enclosing `finally`. Any manager, including a dynamic or custom
+manager, may suppress an exception; the normal successor therefore intersects
+body fallthrough with possible suppressed exception states. Explicit raises stay
+separate from successful return, break, and continue, which are not suppressed.
+Exceptions while evaluating return values can still be suppressed. A falling
+finally resumes the original exit category; an abrupt finally replaces it.
+
+Multiple with items follow nested-manager ordering. The first manager cannot
+suppress its own entry failure, but an entered manager can suppress failures in
+later manager entry, target binding, or an inner manager's exit. Partial target
+bindings invalidate affected names conservatively. Possible unsuppressed
+exceptions remain available to enclosing handlers and finally blocks. Import
+failures remain excluded, so an unconditional import before a later call, or an
+import-only body with a simple target, retains eligible typing candidates.
+
+
+The supported structural shapes are exact: `append(value)` ↔
+`extend([value])` only when the inverse list literal has one non-starred
+element; `mapping.get(key)` ↔ `mapping[key]` only for a simple name or
+attribute receiver, one positional key, and load context; `sort()` ↔
+`reverse()` only with no arguments; and `sorted(value)` ↔ `reversed(value)`
+only with one positional argument and no keywords. Calls with unsupported
+keywords, star arguments, defaults, trailing commas where a rewrite would be
+ambiguous, complex mapping receivers, or target contexts are skipped.
+
+Boundary mutations likewise use only load-context subscripts. An index must be
+a plain decimal integer literal: emit `+1`, and also `-1` when positive.
+For a slice, plain decimal start, stop, and step literals may move to adjacent
+valid values, except a step mutation to zero. Negative, empty, non-decimal, and
+expression bounds are excluded. Comprehensions, assignment/delete targets,
+the `append`/`pop` pair, and set literals wrapped as `frozenset(...)` are not
+supported transformations.
+
+Regression tests should use `apply_candidate_and_reparse` to replace the
+candidate's one span in its source and verify
+`ruff_python_parser::parse_module` accepts the result. This is a test-only
+invariant; production does not parse each candidate separately. Keep exact
+candidate/replacement assertions alongside this parse-preservation check.
+
+Run focused analyzer tests while changing these rules:
+
+```console
+cargo test -p hoimin-python --lib rust::rust_tests::shadowed_collection_builtins_are_not_mutated_as_calls -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::collection_calls_and_literals_emit_exact_parseable_candidates -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::structure_calls_emit_exact_parseable_candidates -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::structure_index_neighbor_mutates_decimal_load_indices_only -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::structure_slice_neighbor_mutates_decimal_bounds_without_zero_steps -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests
+```
+
+## Extending Python exception mutations
+
+Python exception candidates are collected by the Rust analyzer's
+`ExceptHandler` AST pass and its `Stmt::Raise` statement pass, then use the
+shared selection, profile, source ordering, deduplication, and candidate-limit
+pipeline. The default `exception_type_pair` operator replaces only simple,
+unqualified handler names in either `except` or `except*`, or the simple
+primary name of a supported raise expression, with a curated counterpart:
+`ValueError`/`TypeError`, `KeyError` with `IndexError` and `AttributeError`,
+`FileNotFoundError`/`PermissionError`, `ConnectionError`/`TimeoutError`,
+`ImportError`/`ModuleNotFoundError`, and
+`ZeroDivisionError`/`OverflowError`.
+
+`AstCandidateCollector` must enter its exception-type context for both `except`
+and `except*`, keep that context balanced, collect dedicated exception
+candidates outside the generic collection gate, and visit handler bodies
+normally. This keeps collection mutations out of type positions, where Python
+requires an exception class or a tuple of exception classes, including generic
+`list`/`tuple` constructor-call and literal candidates nested in the type.
+
+Exception names use the same scope-aware resolver as builtin-call pairs. Both
+the handler's source name and each inserted or replacement name must definitely
+resolve through Python's builtins namespace. Assignments, imports, parameters,
+comprehension and match captures, and `except ... as` targets suppress only
+occurrences where their binding is visible; sibling scopes do not leak. Class
+targets are not closure bindings for methods. Wildcard imports and ambiguous
+control flow remain conservative `Unknown` results. Qualified and dynamic
+handler types and tuple members are skipped by the safe pair operator. The
+starred handler path invokes only this safe simple-name collector; its
+`Exception`/`BaseException`, bare-handler, and tuple rewrites remain disabled
+even when the explicit-only risky operators are selected.
+
+For a raise statement, `AstCandidateCollector::visit_stmt` inspects only
+`StmtRaise.exc`. It accepts `raise ValueError` and calls whose callee is a
+simple name, such as `raise ValueError(message)`. The replacement span is only
+that name, so arguments and `raise ValueError(...) from cause` remain intact.
+Normal AST walking then visits the primary expression and cause exactly once,
+preserving candidates from other selected operators without interpreting the
+cause as an exception type. Bare re-raise, qualified names, dynamic callees,
+shadowed source or destination names, and termination exceptions are skipped.
+
+The five structural operators in `exception_risky` are explicit-only:
+bare-handler insertion/removal, the `Exception`/`BaseException` boundary, and
+curated tuple add/remove rewrites. Tuple candidates use parser token ranges and
+the original source text so commas, comments, trailing commas, and line endings
+remain intact and every replacement can be reparsed. The BaseException boundary
+can change handling of `SystemExit`, `KeyboardInterrupt`, and `GeneratorExit`,
+so it must not be added to the default selection.
+
+When changing these rules, keep exact candidate and replacement assertions next
+to `apply_candidate_and_reparse` checks. Run the focused tests before the full
+analyzer module:
+
+```console
+cargo test -p hoimin-python --lib rust::rust_tests::exception_type_pair_candidates_are_curated_and_syntax_directed -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::raise_exception_type_pair_candidates_preserve_the_primary_expression -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::raise_exception_type_pairs_use_scope_aware_source_and_destination_resolution -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::exception_risky_candidates_require_explicit_selection_and_reparse -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::sibling_bindings_do_not_suppress_builtin_or_exception_pairs -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::comprehension_exception_target_and_wildcard_boundaries_are_conservative -- --exact
+```
+
+## Extending plan ranking
+
+Plan manifests use schema version 10 and ranking rule version 4. The schema
+version describes the manifest's serialized shape; the ranking rule version
+describes the category and scoring semantics used to order its candidates.
+Change the ranking rule version whenever those semantics change, even when the
+manifest schema itself does not.
+
+An explicitly selected symbol contributes 250 points to that symbol and its
+dot-delimited descendants in the same resolved file. The bonus is awarded once,
+even when both a parent and child selector match; `Box` matches `Box.check`, but
+does not match `BoxOther.check`. Verification rejects plans with older ranking
+rules and directs the user to regenerate them.
+
+Every canonical mutation operator is exhaustively assigned to exactly one
+fixed-score category:
+
+- `high_value_control` (100): comparisons, membership and identity tests,
+  boolean operations, `not`, boolean literals, and `break`/`continue`.
+- `exception_handling` (90): safe and risky exception-handler mutations.
+- `behavioral` (80): collection, structural, and `operator_function` callable
+  and protocol behavior mutations.
+- `arithmetic` (70): arithmetic, unary-sign, and bitwise mutations.
+- `type_annotation` (50): type-annotation mutations.
+
+Keep the `MutationOperator` match exhaustive instead of adding a fallback arm.
+This makes a new operator fail compilation until its ranking category has been
+chosen. Unknown external operator strings remain invalid and do not acquire a
+generic category.
+
+`plan::create` validates its completed manifest with the same header validator
+used by `verify` before returning it. Preserve this output-boundary invariant:
+generated plans must satisfy schema, source-record, ranking, candidate-ID, and
+normalized-path checks rather than deferring an internal inconsistency until a
+later verification command.
+
+## Test provenance comments
+
+Use `// pins: issue #NNN` only when an assertion intentionally preserves a
+surprising policy or a former defect whose expected result is not self-evident.
+Do not annotate ordinary exact assertions.
+
+Place the comment immediately before the assertion or operation whose outcome
+needs that context. Prefer the concrete former-defect issue over an umbrella or
+property-testing issue. Do not annotate generators, fixture constructors, or
+routine schema values, and do not backfill unrelated tests mechanically.
+
+## Verify delegated cgroup v2 CI
+
+CI runs `linux-cgroup-v2-hard` only for a push to `main` when the repository
+variable `HOIMIN_CGROUP_V2_DELEGATED` is `true`. The matching self-hosted runner
+must be online and carry all of these labels: `self-hosted`, `linux`, `x64`,
+and `cgroup-v2-delegated`.
+
+Find the main-push run and inspect its jobs and delegated log:
+
+```console
+gh run list --workflow CI --event push --branch main
+gh run view <RUN_ID>
+gh run view <RUN_ID> --job <JOB_ID> --log
+```
+
+Successful hard-backend evidence requires `linux-cgroup-v2-hard` to complete
+and its `Require delegated cgroup v2 hard tests to run` log to contain no
+`SKIP:` marker. If no online idle runner matches every label, GitHub leaves the
+job queued until a matching runner becomes available and fails it after 24
+hours. Check the repository or organization Actions runner page for runner
+status and labels; do not replace the job with a hosted or best-effort runner.
+
+## Rust test workflow
+
+### Internal Python results and Rust contracts
+
+Install the locked maintenance dependencies before invoking release helpers:
+
+```console
+uv sync --frozen --only-group internal-tooling --no-install-project
+uv run --frozen --no-sync python tools/release.py --help
+```
+
+The normal dev and provenance groups include this group. CI selection remains
+standard-library-only. `tools.release.parse_stable_version` returns
+`Result[VersionTuple, ValueError]`, and `check_release_version` returns
+`Result[None, ValueError]`. Expected input errors are `Failure` values. Existing
+`version_tuple` and `validate_version` adapters raise the contained `ValueError`
+for callers which use exceptions. deal checks relationships on these pure
+transformations; it does not replace input validation or wrap publication I/O.
+An incorrect successful result is a programming error, not an invalid-input error.
+
+Rust's optional `contracts` feature enables the repository's standard-library
+`contract_require!` and `contract_ensure!` macros without an external contract
+crate. Budget reserve/release check the invariant after successful and error
+results. Reserve also checks that the reserved total increases by the requested
+amount on success and stays unchanged on error. Its fallible operations run
+inside a closure so `?` returns to the shared postcondition checks. Preserve that
+boundary when changing allocation or validation.
+
+Disabled builds evaluate neither contract conditions nor the old-total snapshot.
+Keep allocator uniqueness assertions and ordinary validation unconditional.
+Contract diagnostics include the condition, context and stable
+`budget.total.invariant` or `budget.reserve.accounting` ID. The repository's own
+CI still tests feature-enabled builds. The
+[October 12 review](../work/reviews/2026-10-12-typed-results-and-contracts.md) records the
+former third-party macro adoption; it does not describe the current Rust
+implementation. Python deal/returns checks and existing Lean/Creusot proofs
+retain their separate scopes.
+
+Use the normal Rust tests, contract tests, and Lean oracle checks to validate
+changes to the Rust implementation. Select a package, integration test, or test
+name when investigating one behavior, then run the workspace checks before
+merging:
+
+```console
+cargo test -p hoimin-cli --test analyzer_handler
+cargo test --workspace
+cargo test -p hoimin-core --features contracts
+cargo test -p hoimin-cli --features contracts
+```
+
+Rust mutation testing with cargo-mutants has been removed because its memory
+and disk consumption is unsuitable for this repository's development workflow.
+Do not install or invoke it for repository checks. Earlier audit reports and
+implementation plans describe historical runs and are not current instructions.
+
+Hoimin's Python mutation testing remains available through `hoimin plan` and
+`hoimin verify`; see the repository's Python mutation-testing skills for target
+selection and resource limits.
+
+## Abstract set annotation providers
+
+Collection annotation pairs use provider-specific abstract names:
+`typing.AbstractSet` and `collections.abc.Set` both pair with builtin `set`.
+Plain/aliased module imports and direct/aliased member imports are supported;
+`typing.Set` is not the abstract counterpart. Replacement spellings retain the
+resolved module provider, including unaliased `collections.abc`. Existing
+source and destination shadowing checks still apply. Tests evaluate generated
+annotations under CPython 3.14 in addition to reparsing their source.
+
+## Session load completion contract
+
+`SessionLoaded` carries an effect ID and one required `SessionLoadOutcome`:
+`Resumed(SessionResumeRef)` identifies the owned saved run; `Fresh(ResumeFreshReason)`
+explains why a new run starts. Serde encodes these as
+`{"id":1,"outcome":{"Resumed":{"run_id":"saved"}}}` and
+`{"id":1,"outcome":{"Fresh":"no_prior_run"}}`. Missing outcomes and old or mixed
+`resume`/`fresh_reason` fields are rejected. The machine validates the completion ID
+before one match selects start-run or begin-session effects. Fresh reasons survive
+BeginSession until the real RunStarted report event.
+
+Report `ResumeOutcome` remains separate: it records status/reason without the run
+reference. The six current reasons and selection precedence are described in the
+[resume usage contract](../../user/guides/usage.md). `NoCompatibleRun` and its implicit fallback are
+removed; update custom event producers rather than synthesizing a missing reason.
+Candidate SQL, conditional budget update, ownership acquisition and the
+`candidate_changed` race outcome retain their behavior. The diagnostic oracle
+adapts the enum into its existing two observation columns; its 64 strict cases
+and 17 model-only race cases retain their input and expected outcomes. Running
+that corpus checks bounded selection behavior, not SQLite scheduling or a new proof.
+
+## Normalized project root
+
+`RunConfig` and `PlanConfig` store the project root only in `selection.root`.
+Raw CLI normalization moves `RawRunConfig.root` into `Selection`; run/plan
+conversion retains it without canonicalization. Workspace, analyzer, process
+working-directory and fingerprint consumers use that same field. Worker
+fingerprint rechecks replace the root on a cloned config, leaving the prepared
+configuration intact. Keep all other selection and configuration validation.
+
+Plan schema 10 and report schema 8 reject the former outer root in typed readers.
+See the [0.12.0 migration notice](../../user/reference/compatibility.md#discovery-timeout-ownership-in-0120)
+and [implementation evidence](../work/maintenance/2026-10-16-issue-949.md). Progress's
+opaque configuration contract is unchanged; strict review reads the one root
+from the decoded selection. Existing Lean oracle comparisons cover retained
+semantics; this ownership change introduces no new state machine.
+
+## Worker import roots
+
+`RawRunConfig.import_roots` normalizes to an ordered, duplicate-free list in
+`RunConfig` and `PlanConfig`, separate from `Selection.sources`. The normalized
+config validators reject escaped or non-normalized paths from persisted data.
+Saved run and plan configs require explicit `import_roots` and
+`fingerprint_files` arrays, including `[]` when no entries are configured. Missing
+or null arrays fail decoding in typed configuration/event readers and review;
+verify rejects affected plans before baseline execution. Progress retains its
+opaque `normalized_config` object/null contract. See the
+[0.9.0 compatibility notice](../../user/reference/compatibility.md#required-saved-configuration-arrays-in-090)
+for older inputs missing an array. Plan schema 10 stores fingerprint input records
+only in `normalized_config.fingerprint_inputs`; the top-level duplicate is
+rejected. Regenerate schema-9 and older plans before verify or review; see the
+[0.12.0 compatibility notice](../../user/reference/compatibility.md#discovery-timeout-ownership-in-0120). Fingerprint schema
+13 frames the ordered import roots under field tag 9, the ordered include/exclude
+copy patterns under tags 10/11, and configured source roots under tag 12,
+preventing old-session reuse. Source file hashes retain their set semantics;
+source-root order separately captures worker Python import precedence. Patterns retain
+their exact spelling and order because negated overrides can change matching
+precedence. Operational jobs/max-output settings still do not affect compatibility.
+An older incomplete fingerprint can produce `session.resume.incompatible` under
+the existing selection policy; start a new run without resume or use another
+session path. Existing data is retained.
+
+`WorkspaceHandler::with_import_roots` preserves the existing constructor and
+copy lifecycle. The owned blocking worker-materialization task checks that explicit roots
+exist as directories in the copied worker before publishing `WorkerCreated`.
+Failed validation retains cleanup ownership through the existing pending-worker
+path; command environment construction performs no filesystem reads. The error
+identifies `--import-root` and suggests checking exclusions. Import roots do
+not bypass copying policy or select additional targets. Environment order is
+worker root, explicit roots, selected source roots, then rewritten inherited
+PYTHONPATH, using the existing OS split/join and deduplication.
+
+`tests/import_roots.rs` creates a network-free `venv --without-pip` and a
+regular package exposed by a path-only `.pth`. It records actual module paths
+and results for baseline and mutant, checks narrow file/line selection and
+plan-to-verify inheritance, and retains an inherited-PYTHONPATH control. This
+observes Python import behavior directly; Lean session/workspace oracles do not
+prove how Python loaders resolve imports. The setting covers path-only `.pth`
+regular packages when Python honors PYTHONPATH, not arbitrary editable finders,
+custom loaders, or invocations with `-E`/`-I`.
+
+
+## Performance cost correspondence
+
+The shape registry now retains the original 21 gates and adds four actual cost
+counter gates plus a separate workspace preflight allocator-peak gate. The 56
+Lean-owned cases exercise zero/one, tree boundaries and N/2N/4N; never edit
+`formal/HoiminOracle/corpus/performance-cost.jsonl` by hand. The generator and
+its model/proofs are registered in the existing serial bounded Lean CI lane.
+
+Run `cargo test -p hoimin-cli --lib performance_cost_tests` and
+`cargo test -p hoimin-cli --test workspace_preflight_heap`; the registry gate
+runs these tests by exact name. Counter correspondence is internal-fixture,
+while release time/RSS observations use separate public subprocesses. See the
+[performance guide](../performance/README.md) and
+[cost worksheet](../work/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md)
+for measured steps, native-integer premises and excluded costs.
+## Valid Python candidate corpus
+
+`formal/HoiminOracle/ValidPythonAuditMain.lean` owns the seed489 fixtures and
+eligible/ineligible sites. The `valid_python_corpus` integration test compiles
+original bytes with CPython3.14 before comparing the direct Rust analyzer with
+the real CLI plan. It validates every emitted candidate, checks independent
+physical-line/Unicode locations, and compiles each one-candidate replacement.
+Runtime probes check representative bindings and protocol behavior.
+
+```console
+HOIMIN_OPERATOR_TEST_PYTHON=/path/to/python3.14 \
+  cargo test -p hoimin-cli --test valid_python_corpus valid_python_ -- --nocapture
+```
+
+The output names every fixture/operator, seed, known-risk triple and uncovered
+axis pair. Register every new canonical operator in
+`crates/hoimin-cli/tests/fixtures/valid-python-operators.json`; a deferred entry
+must explain why it remains outside this bounded corpus. A registered negative
+fixture is not evidence of positive coverage for that operator. The producer
+controls and required-position gates prevent an all-empty corpus from passing.
+
+Regenerate only through `generate_valid_python`; use the existing 30-second,
+2GiB Lean resource guard for output, freshness and sensitivity commands. The
+[correspondence worksheet](../work/reports/2026-09-14-issue-489-correspondence-worksheet.md)
+explains normalized scope/key premises, public observations and model limits.
+This corpus supplements the focused operator regressions and existing Lean
+adapters; it does not relabel their internal-fixture or model-only cases.
+### Cross-boundary contract replay
+
+`tests/fixtures/boundary-contracts.json` connects six boundaries to exact tests.
+Run `python3 tools/boundary_contracts.py strict --output /tmp/hoimin-boundaries`
+from a worktree with its own Cargo target and prepared `.venv`. Each strict row
+must execute and match; zero-test success, unavailable premises and external
+deadlines cannot count as matches. The runner removes inherited minimal-case
+filters so corpus coverage stays complete.
+
+Run `python3 tools/boundary_contracts.py report --from-results
+/tmp/hoimin-boundaries/strict.json --output /tmp/hoimin-boundaries` as one command
+to retain failures and unexecuted native/preparation cases. Missing strict
+results produce unexecuted rows, not inferred passes. CI runs this after the
+existing Lean proof/sensitivity/freshness gate, then adapter checks, strict
+replay, all-case report and a minimal result-validation witness. Native Linux
+hard controls, Windows PID/fault cases and preparation cancellation remain
+explicit report gaps. See [the worksheet](../work/designs/2026-09-14-issue-490-boundary-contracts-design.md).
+## Python source encoding contract
+
+Use `hoimin_core::decode_python_source` for source bytes that need Python text,
+including symbol existence checks. Its `DecodedPythonSource` exposes `text()`,
+`encoding()`, `utf8_to_raw()` and `raw_to_utf8()`. The two offset methods accept
+only character boundaries. UTF-8/ASCII borrow source text; Latin-1 owns decoded
+UTF-8 plus a sparse expansion index. This storage grows with source input and
+is not bounded by `max_candidates`.
+
+Candidate spans and source hashes always describe original bytes. Convert
+Ruff's UTF-8 spans before constructing persisted candidates, then validate with
+`CandidateValidationContext`. It owns decoded facts and shares the existing
+Unicode-column index across candidates. The candidate strings are Unicode;
+the source codec must encode original and replacement text. Keep replacement
+representability checks before worker writes, and write raw prefix, encoded
+replacement, raw suffix. Never apply decoded offsets directly to raw Latin-1
+bytes or write `replacement.as_bytes()` for every codec.
+
+The stable-ID schema remains 1: it already frames raw source hash/span and
+Unicode replacement. Source records and fingerprint inputs remain raw bytes.
+Run `cargo test -p hoimin-core --test source_encoding --test candidate_policy`
+and `cargo test -p hoimin-cli --test source_encoding --test plan` for codec
+changes. The CLI encoding fixture observes CPython worker bytes and values;
+existing UTF-8 Lean/source-index proofs do not establish codec correspondence.
+
+## Resume budget compatibility
+
+Fingerprint schema 13 omits `max_mutants` from verdict compatibility; this
+budget rule was introduced in schema 10. SQLite schema 5 persists each run's
+accepted limit as a positive eight-byte big-endian unsigned value. Newly created
+DBs enforce NOT NULL as well as the BLOB type, length and positivity constraints.
+Existing DBs with the current required-budget schema reopen without rewriting
+their DDL or data. Earlier nullable schema-5 DBs are rejected at admission even
+when their rows contain positive budgets. Start a new session; no compatibility
+fallback repairs their schema. Malformed rows in an otherwise current schema
+remain subject to runtime validation.
+Selection finds the newest
+compatible incomplete run whose accepted limit does not exceed the requested
+limit. After acquiring the existing run ownership lock, a conditional update
+checks the exact validated old budget before reserving the new limit. Invalid
+budget blobs fail as `session.corrupt`. Scheduler accounting still charges
+reused results against the cumulative limit.
+
+`generate_resume_budget` produces 108 bounded strict cases consumed through
+public SessionHandler operations in `session_handler`. Lean proves no decreases
+and monotonic eligibility; it does not model SQLite locking or the scheduler.
+Public CLI tests cover baseline execution, cumulative reuse/execution, completion,
+and equality with fresh execution.
+
+## Session schema initialization
+
+`session/schema.rs` owns admission and a single current DDL batch. Only a new
+path or an actually empty database with `user_version = 0`, `application_id = 0`
+and no schema objects may initialize. A current schema-5 database must have
+application ID zero and the canonical tables, constraints and indexes, including
+the required positive budget. Admission compares normalized schema SQL from the
+same initializer; it does not accept arbitrary schemas that merely use version 5.
+
+Existing databases are inspected before writable configuration. A closed WAL DB
+uses an immutable advisory read to avoid creating companion files; rollback-mode
+DBs use ordinary read-only SQLite access so initializer locks apply. A live read
+transaction then checks version, application ID and schema in one snapshot. For
+an empty DB, an immediate transaction repeats admission under the write lock and
+creates schema 5 only if it is still empty. Failed initialization rolls back.
+WAL is enabled only after admission/initialization. Foreign keys, a five-second
+busy timeout and WAL contention retry remain enabled.
+
+Foreign, unsupported and earlier nullable schema-5 databases are rejected with
+new-session guidance. Closed on-disk regressions check unchanged database bytes,
+logical contents, journal mode and companion files. There is no migration,
+automatic repair or deletion. These checks do not guarantee immutable admission
+under arbitrary concurrent foreign writers, filesystem replacement races or
+hot-journal recovery; immutable preflight does not inspect active WAL frames.
+Current required-budget golden tests cover reopening, results, diagnostics and
+budgets; older goldens cover refusal and preservation.
+
+The `SchemaMigration` model and executable names retain their audit lineage.
+Their live model now creates current directly from fresh and rejects initialized
+unsupported versions. The strict Rust adapter checks public session opens;
+six cases remain strict; the forced stale-read schedule and abstract rollback
+case are model-only. The old rollback fixture contains foreign tables and now
+fails admission before DDL; it is tested separately for unchanged rejection.
+A schema-owner unit test uses SQLITE_FULL to exercise real DDL rollback. Another
+schema unit test uses a rendezvous to force both fresh reads before either initializer takes the
+write lock. Historical migration reports describe the earlier implementation.
+
+## Target discovery inventory
+
+`hoimin_core::resolve_explicit` consumes an inventory already filtered by discovery.
+Callers apply include/exclude globs, ignore rules and built-in copy exclusions before
+calling it. The core resolver validates and combines selectors; it does not treat
+pattern strings as literal filenames or independently implement glob matching.
+The CLI uses `target::fs::discover_explicit` for this filtering.
+
+Explicit source discovery walks from the project root but prunes entries outside
+the union of selected source subtrees and exact/line paths plus their ancestors.
+Both normal and include-restoration walks use this scope; original source order
+still controls symbol lookup. A root source retains broad discovery. Non-Python
+records inside a selected source remain available to resolution. Malformed names
+or traversal errors solely inside pruned unrelated subtrees are outside this
+request; selected-path and root errors remain visible, as with exact selectors.
+The source-scaling regression counts actual walker visits and retained records:
+unrelated descendant file counts do not affect either, while root-level sibling
+enumeration can still grow. It does not impose an elapsed-time or RSS threshold.
+
+## Checked execution configuration
+
+`RunConfig<E>` owns immutable settings after semantic acceptance. Raw CLI
+normalization and direct deserialization use the same checked normalized-data
+constructor. For Rust callers, edit owned `RunConfigData<E>` and pass it to
+`RunConfig::try_from`; use `into_data()` to consume an existing checked value for
+editing. Shared field reads remain available, but nested field writes and
+collection mutations require reconstruction. `PlanConfig::into_run_config`
+returns a `Result` because persisted plan data remains editable.
+
+`prepare_run_config` accepts only checked request settings before capturing the
+environment or resolving filesystem fingerprints. `with_environment` preserves
+the request/snapshot distinction. The consuming `with_output` and
+`with_fingerprint_inputs` operations replace presentation settings and prepared
+records without changing validated selection, operators, command, or limits.
+Preparation still checks output destinations and input freshness.
+
+Strict review checks embedded configuration semantics during decoding, before
+project-root resolution. Progress retains opaque object-or-null configuration
+handling. This ownership change preserves saved shapes and fingerprint bytes;
+it does not certify filesystem safety or freshness at configuration construction.
+
+## Explicit inherited environment fingerprints
+
+`--fingerprint-env` accepts portable ASCII identifiers only. Core config
+normalization sorts/deduplicates names and uppercases them on Windows; Unix
+preserves case. The CLI captures each selected inherited native value during
+preparation, before worker environment rewriting. Its incremental BLAKE3 encoding
+contains a domain/version tag, platform tag, entry count, framed name, presence
+byte, and framed native value. Unset and empty are distinct; Windows stores UTF-16
+units in little-endian order, and Unix uses raw bytes.
+
+`EnvironmentRequest` owns normalized names before capture. `RunConfig<E>` has one
+environment state parameter; its default is `EnvironmentSnapshot`. CLI normalization
+returns `RunConfig<EnvironmentRequest>`. The `run_loop` and `plan::create` frontends
+own OS capture through `prepare_run_config`, which consumes the request and returns
+a snapshot configuration. `RunConfig::with_environment` requires the captured names
+to match the request. `RunState`, fingerprint generation, and persisted `PlanConfig`
+accept only snapshots. Common config validation checks other fields; environment
+constructors and deserialization enforce environment invariants.
+
+`EnvironmentSnapshot` is `Untracked` or `Captured` with private, immutable metadata.
+The captured constructor and deserializer reject empty, duplicate, unsorted, or
+noncanonical name sets and digests outside 64 lowercase hexadecimal characters.
+No `prepared` mode or separate optional hash exists. Reports and plans write an
+explicit `environment` object with a `state` tag; omission in the prior writer
+was also a valid current untracked encoding. Plan schema 10/report schema 8 require
+the explicit snapshot and reject the older representation rather than adapting it.
+Regenerate older plans; retain old reports with their producing binary.
+
+Fingerprint schema 13 retains the original field-13 environment name/digest
+framing. Schema 12 removed discovery timeout; schema 13 changes only the leading
+version byte to prevent reuse of results produced before baseline restoration.
+Historical schema-11 and schema-12 digest goldens verify incompatibility; separate
+exact untracked and captured vectors freeze current schema-13 bytes. SQLite
+schema 5 and budget selection are unchanged. Verify captures the same saved
+name set and compares the complete snapshot before project work or the baseline.
+Captured plaintext is not added to persistence or output; digests do not guarantee
+secrecy for low-entropy values.
+
+`EnvironmentFingerprintModel` generates 32 strict cases for tracking on/off and
+four before/after values (absent, empty, one, zero). Its proofs cover tracked
+fresh-equivalence, unchanged reuse, untracked compatibility, and injective abstract
+presence encoding. `lean_environment_fingerprint_oracle` executes real CLI runs
+with isolated SQLite databases and checks model-generated verdict/reuse/budget/
+termination/exit observations. Hash collisions, arbitrary native bytes, Windows
+OS behavior, and concurrent environment mutation are outside the finite model.
+Native/framing/platform config tests and public plan/verify/privacy controls cover
+those implementation boundaries where stated; tests do not mutate global env.
+
+## User-defined exception hierarchies
+
+`exception_hierarchy` is an explicit-only operator implemented in
+`analyzer/exception_hierarchy.rs`, `analyzer/exception_scopes.rs`, and
+`analyzer/exception_project.rs`. The project
+loader discovers Python inputs using the existing include/exclude policy, without
+file/line/symbol/changed mutation filters. Module roots follow worker precedence:
+project root, explicit import roots, then source roots. Inherited external
+PYTHONPATH entries and third-party packages are outside the analysis scope.
+
+The index retains binding/import/class summaries and decoded-source hashes.
+Loaded bytes must also match the prepared fingerprint before decoding. Prepared
+Python input paths reserve module origins even if temporarily missing, so a lower
+search root cannot silently supply different classes during a delete/restore race. Both
+plan discovery and run analysis reuse a cached index for sequential loads within their analysis session;
+failed or cancelled builds are not cached. Selected source contents must match the
+indexed snapshot. The cache does not enforce single initialization or first-success
+publication for concurrent callers. `fingerprint_inputs::resolve_config` adds the allowed Python input
+set to existing fingerprint records, and verify/run rechecks recompute the set.
+This covers dependency additions and deletions as well as content changes, and the
+workspace manifest check verifies copied automatic inputs.
+
+Supported class identities are unconditional top-level single-inheritance classes
+without decorators, type parameters, class keywords or custom subclass hooks. Class
+bodies can contain methods, pass statements and docstrings. Explicit class imports,
+relative class imports, module imports, and aliases are recognized; re-exports and
+`from package import submodule` are not inferred. Duplicate/rebound bindings and
+namespace manipulation invalidate trust. Relative imports use the known name under which their containing module is loaded,
+rather than guessing from its first filesystem root. A file imported under multiple module
+names is excluded because Python creates distinct class identities for those loads.
+Ambiguous module/package layouts, including namespace portions shadowed by a regular
+package at a different root, are conservatively excluded. Top-level CPython 3.14 standard-library/frozen module names and `__main__` are
+reserved; an identically named project file cannot establish an import identity.
+Names below project packages, such as `pkg.sys`, remain eligible. This lexical model does
+not prove safety against arbitrary external monkeypatching or custom import hooks.
+Simple, chained and annotated name assignments and assignment expressions propagate
+known attribute writes back through their possible aliases, including private names.
+Cycles and rebinding retain all possible edges. Keys contain a lexical scope ID
+and the normalized name: unrelated parameters and local imports do not share a
+vertex with a module binding. Implicit `__class__` writes resolve to the owning
+class, including through aliases and nested closures. Global/nonlocal/free references resolve before
+propagation; methods skip class namespaces, while class-body reads conservatively
+retain both local and outer possibilities. Definition headers, lambda bodies and
+comprehensions have separate binding rules, including outer walrus targets and
+first-iterable evaluation. Only affected module bindings invalidate module names;
+reached import keys invalidate their provider from any scope. Each module has
+separate limits of 65536 assignment edges, direct write roots and scope IDs. Each
+scope's declaration set is capped at 65536 entries, with 131072 declaration entries
+across all scopes. This does not make assignment aliases eligible spellings.
+Untracked function/container aliases inside indexed modules can still affect
+candidates in other modules. Unsupported effects are not always detected and skipped,
+so emitted spellings are not guaranteed
+to resolve to exception classes at runtime. The
+[original-design review](../work/reports/2026-10-05-exception-hierarchy-design-review.md)
+records the design gaps; the [alias correspondence audit](../work/reports/2026-10-05-exception-alias-lean-audit.md)
+records the bounded assignment repair, Lean proofs and extracted-fact comparisons.
+The [scope and outcome audit](../work/reports/2026-10-05-exception-scope-lean-audit.md)
+records scoped identities, diagnostic semantics, and their verification.
+
+Pairs connect direct user-defined parents/children and siblings with a shared
+user-defined direct parent. Builtins seed ancestry only. Termination and exception
+group ancestry is rejected. Handler mutations allow custom constructors; `raise`
+mutations require the entire user-defined ancestry to inherit the plain `Exception`
+constructor, with neither `__init__` nor `__new__` overrides. Specialized builtin
+constructors are handler-only. Arguments and `from` causes are preserved.
+
+Function parameters, binding targets, captures and definition-header assignments
+suppress affected references throughout their lexical scope, including private
+bindings after Python class name mangling. Qualified references require their
+submodule to have been loaded before the containing function or module-level use. Class bodies are
+excluded; method scopes skip class-local bindings. Module definitions used inside a
+function must already exist before that function's definition, preventing early
+calls from observing an inserted future name. Conservative exclusions may suppress
+valid candidates; they never authorize an inserted import.
+
+The loader limits input to 4096 files, 16 MiB per file, 64 MiB total decoded source,
+and 65536 entries per module-name, binding and visible-alias table. Class ancestry retains its 256-step limit and source parsing uses the existing
+AST depth guard. Eager imports use the shared graph rule below. Cancellation is checked during discovery,
+index construction and replacement enumeration. Per-site replacement retention is
+bounded by `max_candidates + 1`, preserving the existing producer's source-order
+prefix and truncation signal. One `exception_hierarchy_skipped` diagnostic per file
+aggregates incomplete-analysis reasons (disabled scope, unsupported expression,
+unresolved binding or untrusted module) and locates the earliest skipped site.
+Intentional exclusions such as no related class, no visible destination, custom
+constructor policy and bare raises do not warn. Diagnostics do not mark analysis
+as truncated. The input/table limits above
+do not constitute a peak-memory bound: decoded sources, an AST and transient
+summaries can coexist, and some summary limits are checked after construction.
+
+Eager-import exclusion builds a path-identity graph once after import normalization.
+Only mapped, parsed destinations of eager absolute dependencies are edges;
+already dynamic modules remain in the graph. Iterative Kosaraju identifies strongly
+connected components (SCCs), marking only cyclic members unconditionally. For SCC C
+with weight w(C) equal to its module count, the sink-to-source depth calculation is
+`H(C) = min(256, max(terminal(C), max(C -> D, w(C) + H(D))))`, where terminal is
+w(C) for a cyclic component and zero otherwise. Other modules are excluded exactly
+when H reaches 256. Thus a one-edge prefix into a 254-node cycle stays eligible,
+while a prefix into a 255-node cycle is excluded. The weighted bound can add
+conservative exclusions compared with the old name-order-dependent traversal;
+it preserves all previous cycle/depth exclusions.
+
+Graph visits and auxiliary storage are O(V + E); graph construction also scans
+all dependency entries and pays existing ordered name/path lookup and string
+comparison costs. Graph scratch is released before class/visibility construction.
+Cancellation polls per node and dependency/edge, including lazy/missing imports;
+allocation and cleanup are not individually preemptible. These bounds describe
+this stage, not total index time or process memory. The
+[issue #1005 record](../work/maintenance/2026-10-19-issue-1005/report.md) separates operation
+counts, normal release CLI timing and instrumented pure-index heap measurements.
+
+Focused verification:
+
+```console
+cargo test -p hoimin-core --test operator_selection
+cargo test -p hoimin-cli --lib hierarchy
+cargo test -p hoimin-cli --test exception_hierarchy
+```
+
+## Report input and source-access ownership
+
+`artifacts::run_report` decodes current JSONL execution streams and validates structure,
+sequence, identity and summary coherence. Its `DecodedReport<C>` handoff and
+`ReportReadError` carry data and input failures. Progress owns unusable-report
+classification and output errors; review owns project-root resolution and its
+complete-run/passing-baseline requirement. Keep the shared decoder independent
+of either command's output policy or filesystem identity checks. Aggregate JSON
+execution reports and format dispatch are unsupported. The execution event schema
+is [`run-event.schema.json`](../../user/reference/json-schema/run-event.schema.json); plan, verify dry-run,
+progress, review and metrics retain their single JSON documents.
+
+`source_file::PortableFileReader` exposes capability-relative reads and hashes
+with read-specific errors. Workspace mutation, restoration and cleanup retain
+their own authority and adapt shared file-access errors. Reuse the low-level
+no-follow opener and parent traversal when changing either path; preserve finite
+read budgets, retained handles and Windows share/access/disposition semantics.
+See the [C4 ownership views](../architecture/c4-model.md) and
+[report contract](../knowledge/design/session-report.md#current-report-reader-and-diagnostic-boundaries).
+
+CLI-specific oracle configuration belongs in CLI `tests/support`. Shared Python
+corpus helpers contain cases and expectations, and live allocation probes belong
+in test support. Historical measurement code under `docs/development/work/maintenance` remains
+archived evidence rather than an implementation dependency for current tests.
+
+## Progress JSON contract
+
+[`progress-result.schema.json`](../../user/reference/json-schema/progress-result.schema.json) is the
+single current progress output schema. Both details modes emit version 3 and
+require `details`: null for an absent request, an object for a request, including
+an unavailable final pair. The run-report input schema is independent. Keep
+comparison and exit-policy checks separate from presentation changes; display
+limits cannot alter aggregate counts or stalled/saturated decisions.
+
+Run the progress integration cases and full JSON Schema validator after changing
+this output contract:
+
+```console
+cargo test --locked -p hoimin-cli --test progress
+uv run --locked pytest -q tests/test_progress_schema.py
+```
+
+## Generated CLI reference
+
+The command definitions in `crates/hoimin-cli/src/cli.rs` are the source of truth
+for [the CLI reference](../../user/reference/cli.md). After changing public command help or
+arguments, regenerate and commit the Markdown on the same work branch:
+
+```console
+cargo run --locked -p hoimin-cli --example generate_cli_reference
+cargo run --locked -p hoimin-cli --example generate_cli_reference -- --check
+cargo test --locked -p hoimin-cli --example generate_cli_reference
+```
+
+The development example uses the same command factory as parsing and completions.
+Check mode never writes; missing or stale output fails with a regeneration command.
+It accepts CRLF checkouts but generation writes UTF-8/LF, with fixed help width,
+no terminal color, timestamps or absolute paths. Rust CI checks freshness, including
+changes limited to `docs/user/reference/cli.md`.
+
+Keep examples, conditional requirements, numeric parser bounds, runtime validation,
+OS-specific limits and plan/verify inheritance in [the usage guide](../../user/guides/usage.md).
+Clap's stable reflection API does not expose every parser or conditional requirement.
+The generator preserves long help and adds available argument/group metadata;
+it is not a substitute for runtime contract documentation.
+
+## Survivor review verification
+
+The review command stores human assessments separately from execution sessions.
+Run its focused behavioral tests and the generated Lean oracle with:
+
+```console
+cargo test -p hoimin-cli --lib review::
+cargo test -p hoimin-cli --test review_cli --test lean_survivor_review_oracle
+```
+
+`SurvivorReviewModel`, `SurvivorReviewProofs`, and `SurvivorReviewCases` model exact
+project/descriptor matching and revision-checked append-only history. The three
+theorems establish application preconditions, unchanged state on rejection, and
+prefix preservation plus revision increment on success. They do not prove the
+Rust implementation, hash collision resistance, SQLite, or OS persistence.
+The generated `corpus/survivor-review.jsonl` checks the Rust pure functions across
+168 identity/freshness/revision cases. The generator's sensitivity mode checks
+every identity-field mismatch and a stale revision against omitted guards.
+
+Register new modules and generators in the serial `Lean audit` CI gate and its
+workflow contract test. Run `generate_survivor_review -- --check
+corpus/survivor-review.jsonl` and `-- --sensitivity` through the existing POSIX
+resource guard described above. Corpus content is generated by Lean.
+See the [implementation evidence](../work/reports/2026-10-11-issue-711-survivor-review.md)
+for local toolchain and OS limitations.
+
+## Nonzero duration configuration boundary
+
+`NonZeroDuration` guarantees a strictly positive `Duration`. Raw CLI limit
+conversion and serde deserialization use the same checked constructor; the
+private tuple field prevents unchecked construction outside its module.
+The saved representation remains `{ "secs": N, "nanos": N }`.
+A zero duration fails while reading a saved configuration, before
+`RunConfig::validate()` or `PlanConfig::validate()` runs. The serde diagnostic
+identifies `duration`; raw CLI errors retain the specific timeout flag.
+Plan verify and review reject these inputs with their existing invalid-input
+error categories and exit code 2, before project work or review-store creation.
+
+The type does not enforce `MAX_TIMEOUT`. Configuration validation separately
+checks the inclusive timeout ceiling, the derived automatic mutant timeout,
+and jobs/process relationships. Callers must still validate configurations
+after deserialization or public-field mutation. Existing later validation
+already rejected zero timeouts; this boundary closes a type-invariant gap.
+Valid saved plans and timeout values keep their schemas and representation,
+so this invalid-input tightening requires no release-floor increase under the
+[compatibility policy](../../user/reference/compatibility.md#choosing-the-release-floor).
+See the [Issue 886 implementation record](../work/plans/2026-10-14-issue-886.md)
+for the regression and focused validation evidence.
+## Typed mutation outcome producers
+
+`MutantResult` and report `MutantFinished` carry one owned `MutationOutcome`.
+Construct `Executed` only when a completed process event supplies termination,
+explicit output state, output spool, and elapsed duration. Use `Reused` with
+`ReusedMutationStatus::Killed` or `Survived` for cache reuse. `NotRun` means no
+classified completed result is available; a process may have started. Project
+status, elapsed time, and optional output through the outcome's domain methods.
+Keep diagnostics independent, and never reconstruct output state from a code.
+`ProcessFinished` JSON requires explicit `output_state`; no legacy default applies.
+
+Report schema 8 and session schema 5 replace the flat result format. Update strict
+consumers and start a different session path for older databases; no conversion
+adapter is provided. Preserve historical golden files when adding current ones.
+Read the [outcome design](../work/reports/issue-895/design.md),
+[implementation plan](../work/reports/issue-895/plan.md), and
+[review evidence](../work/reports/issue-895/review.md) before changing this boundary.
+
+Use the focused tests for this contract before the workspace checks:
+
+```console
+cargo test -p hoimin-core --test mutation_outcome --test machine --test report_policy --test lean_report_sequence_oracle --test lean_process_output_oracle -- --test-threads=2
+cargo test -p hoimin-cli --test session_handler --test report_handler --test progress --test lean_session_oracle --test lean_progress_input_oracle --test lean_schema_migration_oracle -- --test-threads=2
+```
+
+From `formal/HoiminOracle`, build the changed proofs and check current corpora:
+
+```console
+lake build HoiminOracle.ReportSequenceProofs HoiminOracle.ProgressInputProofs HoiminOracle.SchemaMigrationProofs
+lake exe generate_report_sequence --check corpus/report-sequence.jsonl
+lake exe generate_progress_input --check corpus/progress-input.jsonl
+lake exe generate_schema_migration --check corpus/schema-migration-concurrency.jsonl
+```
+
+Each generator also accepts `--sensitivity`. The progress model's status variables
+are reported summary assertions; typed execution evidence supplies actual status.
+Missing executed termination is a decoding failure. These finite correspondence
+checks do not establish operating-system execution or cancellation guarantees.
+
+
+## Typed process execution requests
+
+`RunProcess<C>` shares argv, cwd and limits while its context fixes the required
+identity. `RunEffect::RunBaseline` accepts `BaselineContext` (worker and run ID);
+`RunEffect::RunMutant` accepts `MutantContext` (worker, run ID and mutant ID).
+Standalone probes use `ProbeContext` and have no workspace identity. The request
+has no default context type. Its serde representation nests required metadata
+under `context`; obsolete sibling metadata and missing context fields fail
+deserialization. This internal change does not change public report schemas.
+
+The shell prepares workspace commands only from baseline or mutant contexts.
+It removes inherited `HOIMIN_WORKER_ROOT`, `HOIMIN_RUN_ID` and `HOIMIN_MUTANT_ID`
+case-insensitively, then writes the actual worker root and required run ID.
+Mutant commands also receive their required mutant ID; baseline commands have
+no mutant variable. Empty supplied IDs retain their existing meaning.
+
+At the process mechanism boundary, `ProcessRequest` consumes the typed command
+and stores one private execution-context enum. The same runner owns resource
+supervision, cancellation and output drains for all contexts. Optional worker
+and mutant tags in tracing and `ProcessFinished` are projections of the typed
+context: probe worker absence and baseline mutant absence are valid. Dispatch
+and queued-mutant metrics use the required workspace worker directly.
+
+See the [Issue 898 design](../work/designs/2026-10-15-issue-898-design.md)
+for request ownership and the rejected alternatives.
+
+## Typed changed selection
+
+`Selection.changed` is `Option<ChangedSelection>`. A disabled selection stores
+`None`; an enabled selection owns its context and optional Git base together.
+`ChangedSelection::new(context, diff_base)` rejects context above 1073741823.
+Its private fields and validated deserializer keep this bound true after
+construction and loading. Read-only `context()` and `diff_base()` accessors
+supply Git resolution. An absent base uses the HEAD/worktree comparison;
+an explicit base uses the merge-base/worktree comparison.
+
+`RawRunConfig` retains the CLI's independent `changed`, `changed_context`, and
+`diff_base` inputs. Raw normalization checks their relationships once. The
+shared selection validator still requires a source for changed selection and
+keeps file, line, and symbol selectors available for intersection. Ranking
+uses the presence of the changed value, including selected context lines.
+
+Plan schema 10 and report schema 8 encode disabled state as `"changed": null` and enabled state
+as `"changed": {"context": 2, "diff_base": "main"}`. The enabled object's
+`context` is required; `diff_base` can be null or omitted. Selection rejects
+unknown fields, including the obsolete sibling `changed_context` and
+`diff_base`. Boolean `changed` values are rejected. Regenerate old plans;
+there is no compatibility conversion. Report consumers that load typed
+configuration must use this shape or read old reports with their producing
+binary. Effective target ranges and fingerprint bytes keep their meaning.
+
+## Root cleanup state checks
+
+When changing per-root disk cleanup state, run the typed snapshot, safety and
+formal-correspondence checks:
+
+```console
+cargo test -p hoimin-core --test disk_root_cleanup
+cargo test -p hoimin-core --test disk_policy --test lean_disk_guard_oracle
+cargo test -p hoimin-cli --test lean_disk_shutdown_oracle
+```
+
+The snapshot exposes registration-ordered typed root entries. The runtime
+adapter validates the Lean corpus memberships before mapping them to expected
+entries; it retains event acceptance, rejection point and component/stop checks.
+Run the complete workspace suite and all-target/all-feature clippy before
+shipping changes. See the [root cleanup contract](../knowledge/design/runtime-lifecycle.md#root-cleanup-state)
+for Deferred, Retained and Delivery completion rules.
+
+## Windows exit-notification checks
+
+Run the Windows backend tests on Windows, including both the native lifecycle
+fixtures and the separate notification case/property tests:
+
+```console
+cargo test --locked -p hoimin-cli --all-features --lib resource::windows::tests -- --test-threads=2
+cargo test --locked -p hoimin-cli --all-features --test process_handler job_object -- --test-threads=2
+cargo test --locked -p hoimin-cli --all-features --test windows_resource_scope -- --test-threads=2
+```
+
+The `windows-resource-scope` job in `Manual non-Linux CI` uses the same backend
+filter. Notification tests live under the existing `tests` namespace, so that
+filter includes both modules. See the [notification-interest contract](../knowledge/design/runtime-lifecycle.md#windows-root-notification-interest-issue-967)
+and [Issue 967 verification record](../work/maintenance/2026-10-17-issue-967.md) for
+generation retention, completion evidence and formal-model limits.
+
+
+## Production budget proofs (Issue #999)
+
+`hoimin-budget-math` owns the production duration types, auto timeout and budget
+projection. Stable Rust 1.99.0 builds it without proof tools, including with all
+features. Core and CLI call that owner directly. The separate pinned Linux
+Creusot job generates and proves all three release targets from current source.
+See the [maintenance commands and proof boundary](../../../formal/creusot/README.md),
+[knowledge contract](../knowledge/creusot-budget-proofs.md) and
+[execution record](../work/reports/2026-10-19-issue-999-creusot-adoption.md).
+The existing Lean corpus correspondence and runtime contracts remain required;
+arithmetic proof does not establish BudgetLedger, persistence or OS timing.
+
+
+## Immutable metadata and location-index performance
+
+Prepare analyzer range membership once per file and keep it independent of
+source coordinates and candidate payload. Whole `WorkspaceManifest` clones
+share private immutable storage; worker roots, disk charges and cleanup remain
+with their existing owners. `logical_bytes()` and `WorkspacePlan::completed()`
+are ordinary Rust functions after this source migration.
+
+Validation contexts defer location indexes until the existing strict location
+check. Preserve eager source-size/decode/hash work and encoding-specific
+coordinates. Successful Unicode analysis and validation still build two indexes
+sequentially. Follow the [analyzer](../knowledge/design/analyzer.md#prepared-admission-and-deferred-positions-issues-1006-and-1008)
+and [manifest](../knowledge/design/runtime-lifecycle.md#immutable-manifest-handles-issue-1007)
+contracts when changing these boundaries; the [integration evidence](../work/maintenance/2026-10-20-perf-three/README.md)
+records scoped gains, timing increases and the user's post-observation Task3
+small-ASCII acceptance decision.
+
+
+### Optional-call and exception-import work
+
+When changing optional-keyword generation, preserve whole-call start selection
+and child traversal separately. When changing imported exception visibility,
+measure unrelated member scans separately from required alias × class output.
+The [analyzer contract](../knowledge/design/analyzer.md#optional-call-admission-and-imported-exception-members-issues-1030-and-1029)
+links the admission and resolution boundaries; the
+[integration record](../work/maintenance/2026-10-20-issues-1029-1030/README.md)
+records deterministic counters, release allocation/time probes and their limits.
+Run before/after timing without concurrent compilation or tests, and report
+cumulative requested allocation, retained/peak requested heap and RSS as distinct
+metrics.

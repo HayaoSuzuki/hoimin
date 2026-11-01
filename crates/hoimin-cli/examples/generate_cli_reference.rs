@@ -36,8 +36,8 @@ fn render(mut command: Command) -> String {
     command.build();
     let mut output =
         String::from("# CLI reference\n\n<!-- Generated; do not edit by hand. -->\n\n");
-    writeln!(output, "Source: [Rust CLI definitions](../crates/hoimin-cli/src/cli.rs).\n\nRegenerate with `{REGENERATE}`; append ` -- --check` to verify without writing.\n").unwrap();
-    output.push_str("See the [usage guide](usage.md) for examples, OS-specific resource limits,\nplan/verify inheritance and validation beyond Clap. Conditional requirements\nand numeric parser bounds have no general stable Clap reflection API; their\nhelp text and the manual guide remain authoritative. The metadata below lists\nreflected arity, repetition, required arguments/groups, conflicts and delimiters.\n\n");
+    writeln!(output, "Source: [Rust CLI definitions](../../../crates/hoimin-cli/src/cli.rs).\n\nRegenerate with `{REGENERATE}`; append ` -- --check` to verify without writing.\n").unwrap();
+    output.push_str("See the [usage guide](../guides/usage.md) for examples, OS-specific resource limits,\nplan/verify inheritance and validation beyond Clap. Conditional requirements\nand numeric parser bounds have no general stable Clap reflection API; their\nhelp text and the manual guide remain authoritative. The metadata below lists\nreflected arity, repetition, required arguments/groups, conflicts and delimiters.\n\n");
     let name = command.get_name().to_owned();
     render_command(&mut command, &name, &mut output);
     let normalized = output
@@ -180,7 +180,7 @@ fn main() -> Result<(), String> {
         [flag] if flag == "--check" => true,
         _ => return Err(format!("Usage: {REGENERATE} [-- --check]")),
     };
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/cli-reference.md");
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/user/reference/cli.md");
     update(&path, &render(hoimin_cli::cli::root_command()), check)
 }
 
@@ -207,8 +207,8 @@ mod tests {
         ] {
             assert!(text.contains(expected), "missing {expected}");
         }
-        let path =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/cli-reference.md");
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../docs/user/reference/cli.md");
         super::update(&path, &text, true).unwrap();
         assert!(!text.contains(env!("CARGO_MANIFEST_DIR")));
     }

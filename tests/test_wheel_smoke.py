@@ -74,8 +74,12 @@ def test_windows_quality_and_wheel_smoke_remain_in_manual_ci(job: str) -> None:
 
 def test_documentation_requires_build_before_standalone_smoke() -> None:
     repository_root = Path(__file__).resolve().parents[1]
-    development = (repository_root / "docs/development.md").read_text(encoding="utf-8")
-    releases = (repository_root / "docs/releases.md").read_text(encoding="utf-8")
+    development = (
+        repository_root / "docs/development/guides/contributing.md"
+    ).read_text(encoding="utf-8")
+    releases = (repository_root / "docs/development/releases/index.md").read_text(
+        encoding="utf-8"
+    )
     development_build_command = "uvx maturin build --release"
     release_build_command = "uv run maturin build --release"
     development_smoke = "uv run --frozen --no-sync python tests/wheel_smoke.py"

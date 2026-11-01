@@ -183,7 +183,7 @@ def test_mutation_skills_require_disk_safe_execution(name: str, phrase: str) -> 
 
 
 def test_macos_memory_policy_is_documented() -> None:
-    usage = (ROOT / "docs/usage.md").read_text(encoding="utf-8")
+    usage = (ROOT / "docs/user/guides/usage.md").read_text(encoding="utf-8")
 
     assert "--max-memory" in usage
     assert "not enforced" in usage

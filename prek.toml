@@ -1,7 +1,7 @@
 # Run the Rust quality checks from CI using the pinned repository toolchain.
 default_stages = ["pre-commit"]
 files = '(\.rs$|(^|/)Cargo\.(toml|lock)$|(^|/)\.?rustfmt\.toml$|(^|/)\.?clippy\.toml$|^rust-toolchain(\.toml)?$|^\.cargo/|^prek\.toml$)'
-# The fuzz workspace has separate checks documented in docs/development.md.
+# The fuzz workspace has separate checks documented in docs/development/guides/contributing.md.
 exclude = '^fuzz/'
 
 [[repos]]

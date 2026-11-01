@@ -1130,7 +1130,8 @@ async fn metrics_sidecar_observes_complete_parallel_run_without_changing_report(
     assert!(!metrics_text.contains(project.path().to_str().unwrap()));
     let metrics_value: serde_json::Value = serde_json::from_str(&metrics_text).unwrap();
     let metrics_schema: serde_json::Value = serde_json::from_slice(
-        &std::fs::read(repo_root().join("docs/json-schema/run-metrics.schema.json")).unwrap(),
+        &std::fs::read(repo_root().join("docs/user/reference/json-schema/run-metrics.schema.json"))
+            .unwrap(),
     )
     .unwrap();
     assert_schema_valid(&metrics_schema, &metrics_value);

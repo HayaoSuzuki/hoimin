@@ -2034,7 +2034,9 @@ async fn progress_json_document_matches_its_schema() {
     let (code, stdout, _) = run_progress(&reports).await;
     assert_eq!(code, 0);
 
-    let schema = read_schema(&repo_root().join("docs/json-schema/progress-result.schema.json"));
+    let schema = read_schema(
+        &repo_root().join("docs/user/reference/json-schema/progress-result.schema.json"),
+    );
     let document: Value = serde_json::from_slice(&stdout).unwrap();
     assert_schema_valid(&schema, &document);
 
@@ -3913,7 +3915,9 @@ async fn progress_json_contract_without_details(
 ) {
     let fixture = tempfile::tempdir().unwrap();
     let reports = independent_contract_history(&fixture, scenario);
-    let schema = read_schema(&repo_root().join("docs/json-schema/progress-result.schema.json"));
+    let schema = read_schema(
+        &repo_root().join("docs/user/reference/json-schema/progress-result.schema.json"),
+    );
 
     let (code, output, stderr) = progress_output(&reports, false).await;
 
@@ -3959,7 +3963,9 @@ async fn progress_json_details_preserve_aggregate_decisions(
 ) {
     let fixture = tempfile::tempdir().unwrap();
     let reports = independent_contract_history(&fixture, scenario);
-    let schema = read_schema(&repo_root().join("docs/json-schema/progress-result.schema.json"));
+    let schema = read_schema(
+        &repo_root().join("docs/user/reference/json-schema/progress-result.schema.json"),
+    );
 
     let (code, actual, stderr) = progress_with_limit(&reports, limit).await;
     let (plain_code, plain, plain_stderr) = progress_output(&reports, false).await;
@@ -4272,7 +4278,9 @@ async fn details_schema_jsonl_and_quoted_locations_are_consistent() {
     let (before_doc, after_doc) = quoted_location_documents();
     let before = write_json(&fixture, "before.json", &before_doc);
     let after = write_json(&fixture, "after.json", &after_doc);
-    let schema = read_schema(&repo_root().join("docs/json-schema/progress-result.schema.json"));
+    let schema = read_schema(
+        &repo_root().join("docs/user/reference/json-schema/progress-result.schema.json"),
+    );
     let mut paths = Vec::new();
     for (name, doc) in [("before.jsonl", before_doc), ("after.jsonl", after_doc)] {
         let path = fixture.path().join(name);
@@ -4307,7 +4315,9 @@ async fn details_schema_rejects_invalid_fields(#[case] damage: fn(&mut Value)) {
     let (before_doc, after_doc) = quoted_location_documents();
     let before = write_json(&fixture, "before.json", &before_doc);
     let after = write_json(&fixture, "after.json", &after_doc);
-    let schema = read_schema(&repo_root().join("docs/json-schema/progress-result.schema.json"));
+    let schema = read_schema(
+        &repo_root().join("docs/user/reference/json-schema/progress-result.schema.json"),
+    );
     let mut invalid = progress_details(&[before, after], 100).await;
     damage(&mut invalid);
 

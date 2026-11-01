@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_registry_covers_all_dimensions() -> None:
-    registry = shapes.load_registry(ROOT / "docs/performance/shapes.json")
+    registry = shapes.load_registry(ROOT / "docs/development/performance/shapes.json")
 
     assert {row["dimension"] for row in registry["shapes"]} == {
         "discovery",
@@ -31,7 +31,7 @@ def test_registry_covers_all_dimensions() -> None:
 
 
 def test_registry_rejects_duplicate_shapes() -> None:
-    registry = shapes.load_registry(ROOT / "docs/performance/shapes.json")
+    registry = shapes.load_registry(ROOT / "docs/development/performance/shapes.json")
     duplicate = deepcopy(registry)
     duplicate["shapes"].append(duplicate["shapes"][0])
 
@@ -40,7 +40,7 @@ def test_registry_rejects_duplicate_shapes() -> None:
 
 
 def test_registry_rejects_invalid_sizes() -> None:
-    registry = shapes.load_registry(ROOT / "docs/performance/shapes.json")
+    registry = shapes.load_registry(ROOT / "docs/development/performance/shapes.json")
     value = [2, 2, 4]
 
     assert isinstance(value, list)
@@ -53,7 +53,7 @@ def test_registry_rejects_invalid_sizes() -> None:
 
 @pytest.mark.parametrize("field", ["metric", "status"])
 def test_registry_rejects_invalid_metric_or_status(field: str) -> None:
-    registry = shapes.load_registry(ROOT / "docs/performance/shapes.json")
+    registry = shapes.load_registry(ROOT / "docs/development/performance/shapes.json")
     value = {"metric": "memory", "status": "passing"}[field]
 
     assert isinstance(value, str)
@@ -64,7 +64,7 @@ def test_registry_rejects_invalid_metric_or_status(field: str) -> None:
 
 
 def test_registry_rejects_untraceable_pending_gate() -> None:
-    registry = shapes.load_registry(ROOT / "docs/performance/shapes.json")
+    registry = shapes.load_registry(ROOT / "docs/development/performance/shapes.json")
     registry["gates"].append(
         {"id": "untraceable", "status": "pending", "metric": "operations", "args": []}
     )
@@ -74,7 +74,7 @@ def test_registry_rejects_untraceable_pending_gate() -> None:
 
 
 def test_registry_rejects_invalid_gate_metric() -> None:
-    registry = shapes.load_registry(ROOT / "docs/performance/shapes.json")
+    registry = shapes.load_registry(ROOT / "docs/development/performance/shapes.json")
     registry["gates"][0]["metric"] = "memory"
 
     with pytest.raises(ValueError, match="gate metric"):
@@ -101,7 +101,7 @@ def test_test_gate_accepts_executed_tests() -> None:
 
 
 def test_registry_accepts_explicit_test_family() -> None:
-    registry = shapes.load_registry(ROOT / "docs/performance/shapes.json")
+    registry = shapes.load_registry(ROOT / "docs/development/performance/shapes.json")
     registry["gates"][0]["args"] = [
         "test",
         "-p",
@@ -374,7 +374,9 @@ def test_environment_probe_failure_writes_infrastructure_artifact(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "artifacts"
-    registry = json.loads((ROOT / "docs/performance/shapes.json").read_text())
+    registry = json.loads(
+        (ROOT / "docs/development/performance/shapes.json").read_text()
+    )
     for gate in registry["gates"]:
         gate.setdefault("metric", "operations")
     registry_path = tmp_path / "registry.json"
@@ -669,7 +671,9 @@ def test_registry_load_rejects_invalid_document_structure(
 def test_registry_load_rejects_invalid_shape_fields(
     tmp_path: Path, field: str, value: object
 ) -> None:
-    document = json.loads((ROOT / "docs/performance/shapes.json").read_text())
+    document = json.loads(
+        (ROOT / "docs/development/performance/shapes.json").read_text()
+    )
     document["shapes"][0][field] = value
     path = tmp_path / "registry.json"
     path.write_text(json.dumps(document))
@@ -685,7 +689,9 @@ def test_registry_load_rejects_invalid_shape_fields(
 def test_registry_load_rejects_invalid_gate_fields(
     tmp_path: Path, field: str, value: object
 ) -> None:
-    document = json.loads((ROOT / "docs/performance/shapes.json").read_text())
+    document = json.loads(
+        (ROOT / "docs/development/performance/shapes.json").read_text()
+    )
     document["gates"][0][field] = value
     path = tmp_path / "registry.json"
     path.write_text(json.dumps(document))

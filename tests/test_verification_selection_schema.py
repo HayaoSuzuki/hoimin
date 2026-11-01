@@ -16,9 +16,9 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture(params=["run-event", "verify-preview"])
 def validator(request: pytest.FixtureRequest) -> Validator:
     document = json.loads(
-        (ROOT / f"docs/json-schema/{request.param}.schema.json").read_text(
-            encoding="utf-8"
-        )
+        (
+            ROOT / f"docs/user/reference/json-schema/{request.param}.schema.json"
+        ).read_text(encoding="utf-8")
     )
     schema = (
         document["$defs"]["verificationSelection"]
