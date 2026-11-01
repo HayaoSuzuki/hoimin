@@ -155,8 +155,6 @@ def test_venv_interpreter_symlink_keeps_its_environment(
     venv.EnvBuilder(symlinks=True).create(environment)
     python = environment / "bin/python"
 
-    assert python.is_symlink()
-
     command = mocker.patch(
         "wheel_smoke.run",
         side_effect=[
@@ -173,4 +171,5 @@ def test_venv_interpreter_symlink_keeps_its_environment(
 
     exercise_cli(Path(sys.executable), python, tmp_path / "fixture", "0.3.0")
 
+    assert python.is_symlink()
     assert command.call_args.args[0][-4] == str(python.absolute())

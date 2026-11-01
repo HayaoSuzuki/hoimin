@@ -119,79 +119,87 @@ async fn base_order_shuffle_is_default_opt_out_and_stable_under_selectors() {
     );
 }
 
+#[rstest::rstest]
+#[case::from_subject_import_child_seen_child_run_seen_append_as_1(
+    "from subject import Child; seen=[]; Child().run(seen.append); assert sorted(seen)==['a','b']",
+    0,
+    1
+)]
+#[case::from_subject_import_child_seen_child_run_seen_append_as_2(
+    "from subject import Child; seen=[]; Child().run(seen.append); assert seen==['a','b']",
+    1,
+    0
+)]
 #[tokio::test]
-async fn base_order_shuffle_saved_plan_exposes_missing_order_assertions() {
-    for (check, killed, survived) in [
-        (
-            "from subject import Child; seen=[]; Child().run(seen.append); assert sorted(seen)==['a','b']",
-            0,
-            1,
-        ),
-        (
-            "from subject import Child; seen=[]; Child().run(seen.append); assert seen==['a','b']",
-            1,
-            0,
-        ),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("subject.py"), COOPERATIVE).unwrap();
-        let saved = plan(root.path(), &["--operators", OP], check).await;
-        assert_eq!(candidates(&saved).len(), 1);
-        let manifest = root.path().join("plan.json");
-        std::fs::write(&manifest, serde_json::to_vec(&saved).unwrap()).unwrap();
-        let report = cli(vec![
-            "hoimin".into(),
-            "verify".into(),
-            manifest.into_os_string(),
-            "--top".into(),
-            "1".into(),
-        ])
-        .await;
-        assert_eq!(report["baseline"]["termination"]["Exit"], 0);
-        assert_eq!(report["summary"]["counts"]["killed"], killed);
-        assert_eq!(report["summary"]["counts"]["survived"], survived);
-        assert_eq!(
-            std::fs::read(root.path().join("subject.py")).unwrap(),
-            COOPERATIVE.as_bytes()
-        );
-    }
+async fn base_order_shuffle_saved_plan_exposes_missing_order_assertions(
+    #[case] check: &str,
+    #[case] killed: usize,
+    #[case] survived: usize,
+) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), COOPERATIVE).unwrap();
+
+    let saved = plan(root.path(), &["--operators", OP], check).await;
+
+    assert_eq!(candidates(&saved).len(), 1);
+    let manifest = root.path().join("plan.json");
+    std::fs::write(&manifest, serde_json::to_vec(&saved).unwrap()).unwrap();
+    let report = cli(vec![
+        "hoimin".into(),
+        "verify".into(),
+        manifest.into_os_string(),
+        "--top".into(),
+        "1".into(),
+    ])
+    .await;
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+    assert_eq!(report["summary"]["counts"]["killed"], killed);
+    assert_eq!(report["summary"]["counts"]["survived"], survived);
+    assert_eq!(
+        std::fs::read(root.path().join("subject.py")).unwrap(),
+        COOPERATIVE.as_bytes()
+    );
 }
 
+#[rstest::rstest]
+#[case::input_1("\n")]
+#[case::input_2("\r\n")]
+#[case::input_3("\r")]
 #[tokio::test]
-async fn base_order_shuffle_preserves_encoded_multiline_grouped_source() {
-    for newline in ["\n", "\r\n", "\r"] {
-        let root = tempfile::tempdir().unwrap();
-        let source = "# coding: latin-1\n# café\nclass A: pass\nclass B: pass\nclass Child(\n (A), # first\n (B), # second\n):\n 'doc'; pass\n".replace('\n', newline);
-        let bytes: Vec<u8> = source
-            .chars()
-            .map(|c| u8::try_from(u32::from(c)).unwrap())
-            .collect();
-        std::fs::write(root.path().join("subject.py"), &bytes).unwrap();
-        let saved = plan(root.path(), &["--operators", OP], "pass").await;
-        let cs = candidates(&saved);
-        assert_eq!(cs.len(), 1);
-        let c = &cs[0];
-        let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
-        let length = usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
-        let mut mutant = bytes.clone();
-        mutant.splice(
-            start..start + length,
-            c["replacement"].as_str().unwrap().bytes(),
-        );
-        std::fs::write(root.path().join("mutant.py"), &mutant).unwrap();
-        let output = tokio::time::timeout(Duration::from_secs(15), tokio::process::Command::new(python())
+async fn base_order_shuffle_preserves_encoded_multiline_grouped_source(#[case] newline: &str) {
+    let root = tempfile::tempdir().unwrap();
+    let source = "# coding: latin-1\n# café\nclass A: pass\nclass B: pass\nclass Child(\n (A), # first\n (B), # second\n):\n 'doc'; pass\n".replace('\n', newline);
+    let bytes: Vec<u8> = source
+        .chars()
+        .map(|c| u8::try_from(u32::from(c)).unwrap())
+        .collect();
+    std::fs::write(root.path().join("subject.py"), &bytes).unwrap();
+
+    let saved = plan(root.path(), &["--operators", OP], "pass").await;
+    let cs = candidates(&saved);
+
+    assert_eq!(cs.len(), 1);
+    let c = &cs[0];
+    let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
+    let length = usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
+    let mut mutant = bytes.clone();
+    mutant.splice(
+        start..start + length,
+        c["replacement"].as_str().unwrap().bytes(),
+    );
+    std::fs::write(root.path().join("mutant.py"), &mutant).unwrap();
+    let output = tokio::time::timeout(Duration::from_secs(15), tokio::process::Command::new(python())
             .args(["-B", "-c", "from pathlib import Path; exec(compile(Path('mutant.py').read_bytes(), 'mutant.py', 'exec')); assert Child.__bases__ == (B, A); assert Child.__doc__ == 'doc'"])
             .current_dir(root.path()).kill_on_drop(true).output()).await.unwrap().unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert_eq!(
-            std::fs::read(root.path().join("subject.py")).unwrap(),
-            bytes
-        );
-    }
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        std::fs::read(root.path().join("subject.py")).unwrap(),
+        bytes
+    );
 }
 
 #[tokio::test]

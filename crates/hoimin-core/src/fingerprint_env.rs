@@ -162,17 +162,36 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    #[test]
-    fn names_follow_platform_case_rules_and_set_semantics() {
+    #[rstest::rstest]
+    #[case::value("")]
+    #[case::value_1bad("1BAD")]
+    #[case::a_b("A=B")]
+    #[case::a_b_4("A\0B")]
+    #[case::a_b_5("A-B")]
+    #[case::value_6("日本語")]
+    #[case::a_b_7("A B")]
+    fn names_follow_platform_case_rules_and_set_semantics_scenario_1(#[case] name: &str) {
         let names = vec!["Path".into(), "PATH".into(), "Path".into(), "Z_1".into()];
+
         assert_eq!(normalize_names(&names, true).unwrap(), ["PATH", "Z_1"]);
         assert_eq!(
             normalize_names(&names, false).unwrap(),
             ["PATH", "Path", "Z_1"]
         );
-        for name in ["", "1BAD", "A=B", "A\0B", "A-B", "日本語", "A B"] {
-            assert!(EnvironmentRequest::new(&[name.into()]).is_err());
-        }
+
+        assert!(EnvironmentRequest::new(&[name.into()]).is_err());
+    }
+
+    #[test]
+    fn names_follow_platform_case_rules_and_set_semantics() {
+        let names = vec!["Path".into(), "PATH".into(), "Path".into(), "Z_1".into()];
+
+        assert_eq!(normalize_names(&names, true).unwrap(), ["PATH", "Z_1"]);
+        assert_eq!(
+            normalize_names(&names, false).unwrap(),
+            ["PATH", "Path", "Z_1"]
+        );
+
         assert_eq!(
             EnvironmentRequest::new(&["B".into(), "A".into(), "B".into()])
                 .unwrap()
@@ -181,24 +200,55 @@ mod tests {
         );
     }
 
-    #[test]
-    fn snapshot_deserialization_enforces_complete_canonical_metadata() {
+    #[rstest::rstest]
+    #[case::json_1(0)]
+    #[case::json_z_a_2(1)]
+    #[case::json_a_a_3(2)]
+    #[case::json_a_b_4(3)]
+    fn snapshot_deserialization_enforces_complete_canonical_metadata_scenario_1(
+        #[case] scenario_index: usize,
+    ) {
         let valid = json!({"state":"captured", "names":["FLAG"], "digest":"a".repeat(64)});
         let snapshot: EnvironmentSnapshot = serde_json::from_value(valid.clone()).unwrap();
+
         assert_eq!(serde_json::to_value(&snapshot).unwrap(), valid);
         assert_eq!(snapshot.names(), ["FLAG"]);
         assert_eq!(snapshot.digest(), Some("a".repeat(64).as_str()));
-        for names in [
+
+        let names = [
             json!([]),
             json!(["Z", "A"]),
             json!(["A", "A"]),
             json!(["A=B"]),
-        ] {
-            let mut invalid = valid.clone();
-            invalid["names"] = names;
-            assert!(serde_json::from_value::<EnvironmentSnapshot>(invalid).is_err());
-        }
-        for digest in [
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+        let mut invalid = valid.clone();
+        invalid["names"] = names;
+        assert!(serde_json::from_value::<EnvironmentSnapshot>(invalid).is_err());
+    }
+
+    #[rstest::rstest]
+    #[case::json_null_1(0)]
+    #[case::json_2(1)]
+    #[case::json_a_repeat_63_3(2)]
+    #[case::json_a_repeat_65_4(3)]
+    #[case::json_a_repeat_64_5(4)]
+    #[case::json_g_repeat_64_6(5)]
+    #[case::json_42_7(6)]
+    fn snapshot_deserialization_enforces_complete_canonical_metadata_scenario_2(
+        #[case] scenario_index: usize,
+    ) {
+        let valid = json!({"state":"captured", "names":["FLAG"], "digest":"a".repeat(64)});
+        let snapshot: EnvironmentSnapshot = serde_json::from_value(valid.clone()).unwrap();
+
+        assert_eq!(serde_json::to_value(&snapshot).unwrap(), valid);
+        assert_eq!(snapshot.names(), ["FLAG"]);
+        assert_eq!(snapshot.digest(), Some("a".repeat(64).as_str()));
+
+        let digest = [
             json!(null),
             json!(""),
             json!("a".repeat(63)),
@@ -206,24 +256,70 @@ mod tests {
             json!("A".repeat(64)),
             json!("g".repeat(64)),
             json!(42),
-        ] {
-            let mut invalid = valid.clone();
-            invalid["digest"] = digest;
-            assert!(serde_json::from_value::<EnvironmentSnapshot>(invalid).is_err());
-        }
-        for key in ["names", "digest", "state"] {
-            let mut invalid = valid.clone();
-            invalid.as_object_mut().unwrap().remove(key);
-            assert!(serde_json::from_value::<EnvironmentSnapshot>(invalid).is_err());
-        }
-        for invalid in [
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+        let mut invalid = valid.clone();
+        invalid["digest"] = digest;
+        assert!(serde_json::from_value::<EnvironmentSnapshot>(invalid).is_err());
+    }
+
+    #[rstest::rstest]
+    #[case::names("names")]
+    #[case::digest("digest")]
+    #[case::state("state")]
+    fn snapshot_deserialization_enforces_complete_canonical_metadata_scenario_3(#[case] key: &str) {
+        let valid = json!({"state":"captured", "names":["FLAG"], "digest":"a".repeat(64)});
+        let snapshot: EnvironmentSnapshot = serde_json::from_value(valid.clone()).unwrap();
+
+        assert_eq!(serde_json::to_value(&snapshot).unwrap(), valid);
+        assert_eq!(snapshot.names(), ["FLAG"]);
+        assert_eq!(snapshot.digest(), Some("a".repeat(64).as_str()));
+
+        let mut invalid = valid.clone();
+        invalid.as_object_mut().unwrap().remove(key);
+        assert!(serde_json::from_value::<EnvironmentSnapshot>(invalid).is_err());
+    }
+
+    #[rstest::rstest]
+    #[case::json_state_untracked_digest_a_repeat_64_1(0)]
+    #[case::json_state_untracked_names_2(1)]
+    #[case::json_state_pending_3(2)]
+    #[case::json_state_captured_names_flag_digest_a_repeat_64_value_private_4(3)]
+    fn snapshot_deserialization_enforces_complete_canonical_metadata_scenario_4(
+        #[case] scenario_index: usize,
+    ) {
+        let valid = json!({"state":"captured", "names":["FLAG"], "digest":"a".repeat(64)});
+        let snapshot: EnvironmentSnapshot = serde_json::from_value(valid.clone()).unwrap();
+
+        assert_eq!(serde_json::to_value(&snapshot).unwrap(), valid);
+        assert_eq!(snapshot.names(), ["FLAG"]);
+        assert_eq!(snapshot.digest(), Some("a".repeat(64).as_str()));
+
+        let invalid = [
             json!({"state":"untracked","digest":"a".repeat(64)}),
             json!({"state":"untracked","names":[]}),
             json!({"state":"pending"}),
             json!({"state":"captured","names":["FLAG"],"digest":"a".repeat(64),"value":"private"}),
-        ] {
-            assert!(serde_json::from_value::<EnvironmentSnapshot>(invalid).is_err());
-        }
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+        assert!(serde_json::from_value::<EnvironmentSnapshot>(invalid).is_err());
+    }
+
+    #[test]
+    fn snapshot_deserialization_enforces_complete_canonical_metadata() {
+        let valid = json!({"state":"captured", "names":["FLAG"], "digest":"a".repeat(64)});
+        let snapshot: EnvironmentSnapshot = serde_json::from_value(valid.clone()).unwrap();
+
+        assert_eq!(serde_json::to_value(&snapshot).unwrap(), valid);
+        assert_eq!(snapshot.names(), ["FLAG"]);
+        assert_eq!(snapshot.digest(), Some("a".repeat(64).as_str()));
+
         assert!(EnvironmentSnapshot::captured(vec![], "a".repeat(64)).is_err());
         assert!(EnvironmentSnapshot::captured(vec!["FLAG".into()], "bad".into()).is_err());
     }
@@ -237,6 +333,7 @@ mod tests {
             ..crate::RawRunConfig::default()
         })
         .unwrap();
+
         assert!(
             request
                 .clone()
@@ -279,10 +376,13 @@ mod tests {
         .with_environment(EnvironmentSnapshot::Untracked)
         .unwrap();
         let encoded = serde_json::to_value(&config).unwrap();
+
         assert_eq!(encoded["environment"], json!({"state":"untracked"}));
         assert!(encoded.get("fingerprint_env").is_none());
         assert!(encoded.get("fingerprint_env_hash").is_none());
+
         let decoded: crate::RunConfig = serde_json::from_value(encoded.clone()).unwrap();
+
         assert_eq!(decoded, config);
         let mut omitted = encoded;
         omitted.as_object_mut().unwrap().remove("environment");

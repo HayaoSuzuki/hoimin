@@ -426,8 +426,27 @@ fn reset_keeps_worker_and_explicit_checkpoint_detects_original_change() {
     ));
 }
 
-#[test]
-fn root_relative_file_apis_reject_non_normal_paths_before_io() {
+#[rstest::rstest]
+#[case::read_empty(|_: &Utf8Path| Utf8PathBuf::new(), |handler: &mut WorkspaceHandler, path: &Utf8Path| handler.worker(0).unwrap().read(path).map(|_| ()))]
+#[case::write_empty(|_: &Utf8Path| Utf8PathBuf::new(), |handler: &mut WorkspaceHandler, path: &Utf8Path| handler.worker_mut(0).unwrap().write(path, b"x"))]
+#[case::remove_empty(|_: &Utf8Path| Utf8PathBuf::new(), |handler: &mut WorkspaceHandler, path: &Utf8Path| handler.worker_mut(0).unwrap().remove(path))]
+#[case::exists_empty(|_: &Utf8Path| Utf8PathBuf::new(), |handler: &mut WorkspaceHandler, path: &Utf8Path| handler.worker(0).unwrap().exists(path).map(|_| ()))]
+#[case::read_parent_escape(|_: &Utf8Path| Utf8PathBuf::from("../outside"), |handler: &mut WorkspaceHandler, path: &Utf8Path| handler.worker(0).unwrap().read(path).map(|_| ()))]
+#[case::write_parent_escape(|_: &Utf8Path| Utf8PathBuf::from("../outside"), |handler: &mut WorkspaceHandler, path: &Utf8Path| handler.worker_mut(0).unwrap().write(path, b"x"))]
+#[case::remove_parent_escape(|_: &Utf8Path| Utf8PathBuf::from("../outside"), |handler: &mut WorkspaceHandler, path: &Utf8Path| handler.worker_mut(0).unwrap().remove(path))]
+#[case::exists_parent_escape(|_: &Utf8Path| Utf8PathBuf::from("../outside"), |handler: &mut WorkspaceHandler, path: &Utf8Path| handler.worker(0).unwrap().exists(path).map(|_| ()))]
+#[case::read_dot_component(|_: &Utf8Path| Utf8PathBuf::from("./pkg/a.py"), |handler: &mut WorkspaceHandler, path: &Utf8Path| handler.worker(0).unwrap().read(path).map(|_| ()))]
+#[case::write_dot_component(|_: &Utf8Path| Utf8PathBuf::from("./pkg/a.py"), |handler: &mut WorkspaceHandler, path: &Utf8Path| handler.worker_mut(0).unwrap().write(path, b"x"))]
+#[case::remove_dot_component(|_: &Utf8Path| Utf8PathBuf::from("./pkg/a.py"), |handler: &mut WorkspaceHandler, path: &Utf8Path| handler.worker_mut(0).unwrap().remove(path))]
+#[case::exists_dot_component(|_: &Utf8Path| Utf8PathBuf::from("./pkg/a.py"), |handler: &mut WorkspaceHandler, path: &Utf8Path| handler.worker(0).unwrap().exists(path).map(|_| ()))]
+#[case::read_absolute(|root: &Utf8Path| root.join("pkg/a.py"), |handler: &mut WorkspaceHandler, path: &Utf8Path| handler.worker(0).unwrap().read(path).map(|_| ()))]
+#[case::write_absolute(|root: &Utf8Path| root.join("pkg/a.py"), |handler: &mut WorkspaceHandler, path: &Utf8Path| handler.worker_mut(0).unwrap().write(path, b"x"))]
+#[case::remove_absolute(|root: &Utf8Path| root.join("pkg/a.py"), |handler: &mut WorkspaceHandler, path: &Utf8Path| handler.worker_mut(0).unwrap().remove(path))]
+#[case::exists_absolute(|root: &Utf8Path| root.join("pkg/a.py"), |handler: &mut WorkspaceHandler, path: &Utf8Path| handler.worker(0).unwrap().exists(path).map(|_| ()))]
+fn root_relative_file_apis_reject_non_normal_paths_before_io(
+    #[case] make_path: fn(&Utf8Path) -> Utf8PathBuf,
+    #[case] operation: fn(&mut WorkspaceHandler, &Utf8Path) -> Result<(), WorkspaceError>,
+) {
     let project = tempfile::tempdir().unwrap();
     let root = Utf8Path::from_path(project.path()).unwrap();
     write(root, "pkg/a.py", b"original\n");
@@ -436,31 +455,12 @@ fn root_relative_file_apis_reject_non_normal_paths_before_io() {
     handler
         .handle_create_worker(grant.create_worker(EffectId(131), 0).unwrap())
         .unwrap();
-    let absolute = root.join("pkg/a.py");
 
-    for invalid in [
-        Utf8PathBuf::new(),
-        Utf8PathBuf::from("../outside"),
-        Utf8PathBuf::from("./pkg/a.py"),
-        absolute,
-    ] {
-        assert!(matches!(
-            handler.worker(0).unwrap().read(&invalid),
-            Err(WorkspaceError::InvalidPath { .. })
-        ));
-        assert!(matches!(
-            handler.worker_mut(0).unwrap().write(&invalid, b"x"),
-            Err(WorkspaceError::InvalidPath { .. })
-        ));
-        assert!(matches!(
-            handler.worker_mut(0).unwrap().remove(&invalid),
-            Err(WorkspaceError::InvalidPath { .. })
-        ));
-        assert!(matches!(
-            handler.worker(0).unwrap().exists(&invalid),
-            Err(WorkspaceError::InvalidPath { .. })
-        ));
-    }
+    let invalid = make_path(root);
+
+    let result = operation(&mut handler, &invalid);
+
+    assert!(matches!(result, Err(WorkspaceError::InvalidPath { .. })));
 }
 
 type CreateSymlink = fn(&Path, &Path) -> std::io::Result<()>;

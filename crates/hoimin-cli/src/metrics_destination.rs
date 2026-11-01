@@ -533,30 +533,31 @@ mod tests {
         EntryInspector::default().entry(path)
     }
 
-    #[test]
-    fn directory_only_syntax_preserves_terminal_components_and_separator_policy() {
-        for (path, windows, expected) in [
-            ("alias/", false, true),
-            ("alias/.", false, true),
-            ("alias/..", false, true),
-            (".", false, true),
-            ("..", false, true),
-            ("alias/.metrics", false, false),
-            ("alias/...", false, false),
-            ("alias/../metrics.json", false, false),
-            (r"alias\.", false, false),
-            (r"alias\.", true, true),
-            (r"alias\child/..", true, true),
-            (r"alias/child\.", true, true),
-            (r"alias/child\", true, true),
-            (r"alias/child\metrics.json", true, false),
-        ] {
-            assert_eq!(
-                directory_only_syntax(Path::new(path), windows),
-                expected,
-                "{path:?}, windows={windows}"
-            );
-        }
+    #[rstest::rstest]
+    #[case::alias("alias/", false, true)]
+    #[case::alias_2("alias/.", false, true)]
+    #[case::alias_3("alias/..", false, true)]
+    #[case::value(".", false, true)]
+    #[case::value_5("..", false, true)]
+    #[case::alias_metrics("alias/.metrics", false, false)]
+    #[case::alias_7("alias/...", false, false)]
+    #[case::alias_metrics_json("alias/../metrics.json", false, false)]
+    #[case::r_alias(r"alias\.", false, false)]
+    #[case::r_alias_10(r"alias\.", true, true)]
+    #[case::r_alias_child(r"alias\child/..", true, true)]
+    #[case::r_alias_child_12(r"alias/child\.", true, true)]
+    #[case::r_alias_child_13(r"alias/child\", true, true)]
+    #[case::r_alias_child_metrics_json(r"alias/child\metrics.json", true, false)]
+    fn directory_only_syntax_preserves_terminal_components_and_separator_policy(
+        #[case] path: &str,
+        #[case] windows: bool,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(
+            directory_only_syntax(Path::new(path), windows),
+            expected,
+            "{path:?}, windows={windows}"
+        );
     }
 
     #[test]
@@ -565,6 +566,7 @@ mod tests {
         let source = temp.path().join("Source.py");
         std::fs::write(&source, b"original").unwrap();
         let case_alias = temp.path().join("SOURCE.PY");
+
         assert_eq!(
             same_entry(&entry(&source).unwrap(), &entry(&case_alias).unwrap()).unwrap(),
             case_alias.exists(),
@@ -609,9 +611,48 @@ mod tests {
         let insensitive = temp.path().join("PROBE").exists();
         let left = entry(&temp.path().join("session.db")).unwrap();
         let right = entry(&temp.path().join("SESSION.DB")).unwrap();
+
         assert!(!left.exists && !right.exists);
         assert_eq!(same_entry(&left, &right).unwrap(), insensitive);
         assert!(!temp.path().join("session.db").exists());
+    }
+
+    #[cfg(windows)]
+    #[rstest::rstest]
+    #[case::configured_db_1(0)]
+    #[case::original_db_2(1)]
+    fn windows_session_symlink_sidecars_protect_configured_and_canonical_entries_scenario_1(
+        #[case] scenario_index: usize,
+        #[values(0, 1, 2)] nested_scenario_index: usize,
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("original.db");
+        std::fs::write(&database, b"database entry").unwrap();
+        let configured = temp.path().join("configured.db");
+        if let Err(error) = std::os::windows::fs::symlink_file(&database, &configured) {
+            assert!(
+                std::env::var_os("HOIMIN_REQUIRE_WINDOWS_SYMLINKS").is_none(),
+                "required Windows session symlink setup failed: {error}"
+            );
+            eprintln!("SKIP Windows session symlink namespace: symlink setup unavailable: {error}");
+            return;
+        }
+        let (files, trees) =
+            session_artifacts(&configured, &mut EntryInspector::default()).unwrap();
+        let parent = std::fs::canonicalize(temp.path()).unwrap();
+        assert!(files.contains(&parent.join("configured.db-wal")));
+
+        let basename = ["configured.db", "original.db"]
+            .into_iter()
+            .nth(scenario_index)
+            .unwrap();
+
+        let suffix = ["-wal", "-shm", "-journal"]
+            .into_iter()
+            .nth(nested_scenario_index)
+            .unwrap();
+
+        assert!(files.contains(&parent.join(format!("{basename}{suffix}"))));
     }
 
     #[cfg(windows)]
@@ -633,11 +674,7 @@ mod tests {
             session_artifacts(&configured, &mut EntryInspector::default()).unwrap();
         let parent = std::fs::canonicalize(temp.path()).unwrap();
         assert!(files.contains(&parent.join("configured.db-wal")));
-        for basename in ["configured.db", "original.db"] {
-            for suffix in ["-wal", "-shm", "-journal"] {
-                assert!(files.contains(&parent.join(format!("{basename}{suffix}"))));
-            }
-        }
+
         assert!(trees.contains(&parent.join(".original.db.hoimin-locks")));
     }
 }

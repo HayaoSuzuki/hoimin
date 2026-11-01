@@ -98,15 +98,32 @@ def accepts_sbom(path: Path, asset: Path) -> bool:
     return True
 
 
-def test_seeded_structural_fuzz(tmp_path: Path) -> None:
-    assets = release_assets(tmp_path)
+# Accepted optional-field mutations in the original seed-741 regression corpus.
+ACCEPTED_SEEDED_MUTATIONS = frozenset(
+    {184, 188, 331, 334, 376, 468, 482, 519, 574, 786, 813}
+)
+
+
+@pytest.fixture(scope="module")
+def seeded_mutations(tmp_path_factory: pytest.TempPathFactory) -> list[object]:
+    directory = tmp_path_factory.mktemp("sbom-structural-corpus")
+    assets = release_assets(directory)
     path = attach_sboms(assets)[0]
     original = json.loads(path.read_text())
-    results = []
-    for data in structural_mutations(original):
-        path.write_text(json.dumps(data))
+    return list(structural_mutations(original))
 
-        results.append(accepts_sbom(path, assets[0]))
 
-    assert results.count(False) > 0
-    assert results.count(True) > 0  # Removing optional fields can be valid.
+@pytest.mark.parametrize(
+    "mutation_index", range(1000), ids=lambda index: f"seed-741-mutation-{index}"
+)
+def test_seeded_structural_mutation(
+    tmp_path: Path, seeded_mutations: list[object], mutation_index: int
+) -> None:
+    assets = release_assets(tmp_path)
+    path = attach_sboms(assets)[0]
+    path.write_text(json.dumps(seeded_mutations[mutation_index]))
+    expected = mutation_index in ACCEPTED_SEEDED_MUTATIONS
+
+    accepted = accepts_sbom(path, assets[0])
+
+    assert accepted == expected

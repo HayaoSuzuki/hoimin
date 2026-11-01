@@ -222,29 +222,29 @@ async fn metrics_collision_preserves_existing_session_database_without_recovery(
     );
 }
 
+#[rstest::rstest]
+#[case::session_db_wal_1("session.db-wal")]
+#[case::session_db_shm_2("session.db-shm")]
+#[case::session_db_journal_3("session.db-journal")]
+#[case::session_db_hoimin_locks_owned_lock_4(".session.db.hoimin-locks/owned.lock")]
 #[tokio::test]
-async fn metrics_collision_protects_exact_session_companions_and_lock_tree() {
-    for suffix in [
-        "session.db-wal",
-        "session.db-shm",
-        "session.db-journal",
-        ".session.db.hoimin-locks/owned.lock",
-    ] {
-        let (temp, root) = fixture();
-        let database = temp.path().join("session.db");
-        let protected = temp.path().join(suffix);
-        std::fs::create_dir_all(protected.parent().unwrap()).unwrap();
-        let bytes = b"owned artifact\n";
-        std::fs::write(&protected, bytes).unwrap();
-        let output = run(
-            &root,
-            &protected,
-            &["--session", database.to_str().unwrap()],
-        )
-        .await;
-        assert_collision(&output, temp.path(), &protected, bytes);
-        assert!(!database.exists());
-    }
+async fn metrics_collision_protects_exact_session_companions_and_lock_tree(#[case] suffix: &str) {
+    let (temp, root) = fixture();
+    let database = temp.path().join("session.db");
+    let protected = temp.path().join(suffix);
+    std::fs::create_dir_all(protected.parent().unwrap()).unwrap();
+    let bytes = b"owned artifact\n";
+    std::fs::write(&protected, bytes).unwrap();
+
+    let output = run(
+        &root,
+        &protected,
+        &["--session", database.to_str().unwrap()],
+    )
+    .await;
+    assert_collision(&output, temp.path(), &protected, bytes);
+
+    assert!(!database.exists());
 }
 
 #[tokio::test]
@@ -389,30 +389,35 @@ async fn metrics_missing_parent_retains_late_warning() {
 }
 
 #[cfg(unix)]
+#[rstest::rstest]
+#[case::false_1(false)]
+#[case::true_2(true)]
 #[tokio::test]
-async fn metrics_collision_preserves_configured_and_actual_session_symlink_entries() {
-    for actual in [false, true] {
-        let (temp, root) = fixture();
-        let database = temp.path().join("session.db");
-        drop(hoimin_cli::session::SessionHandler::open(&database).unwrap());
-        let bytes = std::fs::read(&database).unwrap();
-        let configured = temp.path().join("session-link.db");
-        std::os::unix::fs::symlink(&database, &configured).unwrap();
-        let destination = if actual { &database } else { &configured };
-        let output = run(
-            &root,
-            destination,
-            &["--session", configured.to_str().unwrap()],
-        )
-        .await;
-        assert_collision(&output, temp.path(), &database, &bytes);
-        assert!(
-            std::fs::symlink_metadata(configured)
-                .unwrap()
-                .file_type()
-                .is_symlink()
-        );
-    }
+async fn metrics_collision_preserves_configured_and_actual_session_symlink_entries(
+    #[case] actual: bool,
+) {
+    let (temp, root) = fixture();
+    let database = temp.path().join("session.db");
+    drop(hoimin_cli::session::SessionHandler::open(&database).unwrap());
+    let bytes = std::fs::read(&database).unwrap();
+    let configured = temp.path().join("session-link.db");
+    std::os::unix::fs::symlink(&database, &configured).unwrap();
+    let destination = if actual { &database } else { &configured };
+
+    let output = run(
+        &root,
+        destination,
+        &["--session", configured.to_str().unwrap()],
+    )
+    .await;
+    assert_collision(&output, temp.path(), &database, &bytes);
+
+    assert!(
+        std::fs::symlink_metadata(configured)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
 }
 
 #[tokio::test]
@@ -435,33 +440,36 @@ async fn metrics_allows_similarly_named_inactive_session_artifact() {
 }
 
 #[cfg(unix)]
+#[rstest::rstest]
+#[case::false_1(false)]
+#[case::true_2(true)]
 #[tokio::test]
-async fn metrics_collision_protects_session_lock_directory_symlink_referent() {
-    for lexical in [false, true] {
-        let (temp, root) = fixture();
-        let database = root.join("session.db");
-        let locks = root.join("actual-locks");
-        let alias = root.join(".session.db.hoimin-locks");
-        std::fs::create_dir(&locks).unwrap();
-        std::os::unix::fs::symlink(&locks, &alias).unwrap();
-        let protected = locks.join("owned.lock");
-        let bytes = b"owned lock\n";
-        std::fs::write(&protected, bytes).unwrap();
-        let output_path = if lexical {
-            alias.join("owned.lock")
-        } else {
-            protected.clone()
-        };
-        let output = run(
-            &root,
-            &output_path,
-            &["--session", database.to_str().unwrap()],
-        )
-        .await;
-        assert_collision(&output, temp.path(), &protected, bytes);
-        assert!(!database.exists());
-        assert_eq!(std::fs::read_dir(&locks).unwrap().count(), 1);
-    }
+async fn metrics_collision_protects_session_lock_directory_symlink_referent(#[case] lexical: bool) {
+    let (temp, root) = fixture();
+    let database = root.join("session.db");
+    let locks = root.join("actual-locks");
+    let alias = root.join(".session.db.hoimin-locks");
+    std::fs::create_dir(&locks).unwrap();
+    std::os::unix::fs::symlink(&locks, &alias).unwrap();
+    let protected = locks.join("owned.lock");
+    let bytes = b"owned lock\n";
+    std::fs::write(&protected, bytes).unwrap();
+    let output_path = if lexical {
+        alias.join("owned.lock")
+    } else {
+        protected.clone()
+    };
+
+    let output = run(
+        &root,
+        &output_path,
+        &["--session", database.to_str().unwrap()],
+    )
+    .await;
+    assert_collision(&output, temp.path(), &protected, bytes);
+
+    assert!(!database.exists());
+    assert_eq!(std::fs::read_dir(&locks).unwrap().count(), 1);
 }
 
 #[cfg(unix)]
@@ -639,23 +647,27 @@ async fn metrics_collision_preserves_owned_lock_when_copy_admission_would_reject
 }
 
 #[cfg(windows)]
+#[rstest::rstest]
+#[case::calc_py_1("calc.py.")]
+#[case::calc_py_2("calc.py ")]
+#[case::calc_py_stream_3("calc.py:stream")]
 #[tokio::test]
-async fn metrics_withholds_unsupported_windows_entry_spellings() {
-    for name in ["calc.py.", "calc.py ", "calc.py:stream"] {
-        let (temp, root) = fixture();
-        let metrics = temp.path().join(name);
-        let database = temp.path().join("session-database.db");
-        let output = run(&root, &metrics, &["--session", database.to_str().unwrap()]).await;
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(temp.path().join("baseline-marker").exists());
-        assert!(String::from_utf8_lossy(&output.stderr).contains("metrics.write"));
-        assert!(!metrics.exists(), "unexpected output at {name}");
-        assert_eq!(std::fs::read(root.join("calc.py")).unwrap(), SOURCE);
-    }
+async fn metrics_withholds_unsupported_windows_entry_spellings(#[case] name: &str) {
+    let (temp, root) = fixture();
+    let metrics = temp.path().join(name);
+    let database = temp.path().join("session-database.db");
+
+    let output = run(&root, &metrics, &["--session", database.to_str().unwrap()]).await;
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(temp.path().join("baseline-marker").exists());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("metrics.write"));
+    assert!(!metrics.exists(), "unexpected output at {name}");
+    assert_eq!(std::fs::read(root.join("calc.py")).unwrap(), SOURCE);
 }
 
 #[cfg(windows)]

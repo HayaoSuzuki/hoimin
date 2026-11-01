@@ -261,6 +261,7 @@ mod tests {
             .unwrap();
         contender.join().unwrap();
         serde_json::from_slice::<serde_json::Value>(&captured.lock().unwrap()).unwrap();
+
         assert!(
             !interleaved.load(Ordering::Acquire),
             "another stderr writer entered mid-record"

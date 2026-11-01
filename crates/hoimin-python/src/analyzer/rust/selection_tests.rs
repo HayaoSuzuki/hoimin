@@ -226,6 +226,7 @@ proptest::proptest! {
         line in proptest::prelude::any::<u32>(),
     ) {
         let expected = ranges.is_empty() || ranges.iter().any(|&(start, end)| start <= line && line <= end);
+
         proptest::prop_assert_eq!(membership(&ranges, line), expected);
     }
 }
@@ -331,7 +332,9 @@ fn selection_invalid_syntax_keeps_priority_over_preparation() {
     let operators = operators(MutationOperator::BooleanLiteral);
     let lines = [LineRange { start: 3, end: 1 }];
     WORK.set(Work::default());
+
     let output = analyze_source(&request(&operators, &lines, &[], 1), "def broken(:\n");
+
     assert_eq!(
         output.diagnostics[0].code,
         AnalyzerDiagnosticCode::InvalidSyntax
@@ -341,7 +344,7 @@ fn selection_invalid_syntax_keeps_priority_over_preparation() {
 
 #[test]
 fn selection_equivalent_ranges_keep_candidate_order_and_truncation() {
-    // Arrange: equivalent unions, including nesting, reversed ranges and duplicates.
+    // equivalent unions, including nesting, reversed ranges and duplicates.
     let source = "a = True\nb = False\nc = True\nd = False\n";
     let operators = operators(MutationOperator::BooleanLiteral);
     let canonical = [LineRange { start: 1, end: 4 }];
@@ -351,10 +354,11 @@ fn selection_equivalent_ranges_keep_candidate_order_and_truncation() {
         LineRange { start: 2, end: 2 },
         LineRange { start: 5, end: 0 },
     ];
-    // Act.
+
     let expected = analyze_source(&request(&operators, &canonical, &[], 2), source);
+
     let actual = analyze_source(&request(&operators, &raw, &[], 2), source);
-    // Assert: keep the exact prefix, rather than only the candidate count.
+    // keep the exact prefix, rather than only the candidate count.
     assert_eq!(actual.candidates, expected.candidates);
     assert_eq!(actual.diagnostics, expected.diagnostics);
     assert_eq!(
@@ -382,35 +386,39 @@ pub(super) fn record_symbol_preparation() {
     });
 }
 
-#[test]
-fn selection_distinct_symbols_exact_work_gate() {
+#[rstest::rstest]
+#[case::value_32(32)]
+#[case::value_128(128)]
+#[case::value_512(512)]
+fn selection_distinct_symbols_exact_work_gate(
+    #[case] selectors: usize,
+    #[values(0, 1, 2)] scenario_index: usize,
+) {
     // Catches restoring a per-candidate selector scan.
     // The two axes are independent: misses visit every old selector, and hits
     // at the end prevent an accidentally first-selector-only implementation.
     let operators = operators(MutationOperator::BooleanLiteral);
-    for selectors in [32, 128, 512] {
-        let symbols: Vec<_> = (0..selectors).map(|i| format!("chosen_{i}")).collect();
-        for candidates in [32, 128, 512] {
-            WORK.set(Work::default());
-            let selection = CandidateSelection::new(
-                &request(&operators, &[], &symbols, candidates + 1),
-                &|| false,
-            )
-            .unwrap();
-            let prepared = WORK.get();
-            for _ in 0..candidates {
-                assert!(!selection.includes(1, Some("missing")));
-            }
-            let work = WORK.get();
-            eprintln!(
-                "symbol-selection selectors={selectors} candidates={candidates} work={work:?}"
-            );
-            assert_eq!(work.symbol_lookups, candidates, "{work:?}");
-            assert_eq!(prepared.symbol_preparation, selectors, "{prepared:?}");
-            assert_eq!(work.symbol_preparation, prepared.symbol_preparation);
-            assert!(selection.includes(1, symbols.last().map(String::as_str)));
-        }
+
+    let symbols: Vec<_> = (0..selectors).map(|i| format!("chosen_{i}")).collect();
+
+    let candidates = [32, 128, 512].into_iter().nth(scenario_index).unwrap();
+
+    WORK.set(Work::default());
+    let selection =
+        CandidateSelection::new(&request(&operators, &[], &symbols, candidates + 1), &|| {
+            false
+        })
+        .unwrap();
+    let prepared = WORK.get();
+    for _ in 0..candidates {
+        assert!(!selection.includes(1, Some("missing")));
     }
+    let work = WORK.get();
+    eprintln!("symbol-selection selectors={selectors} candidates={candidates} work={work:?}");
+    assert_eq!(work.symbol_lookups, candidates, "{work:?}");
+    assert_eq!(prepared.symbol_preparation, selectors, "{prepared:?}");
+    assert_eq!(work.symbol_preparation, prepared.symbol_preparation);
+    assert!(selection.includes(1, symbols.last().map(String::as_str)));
 }
 
 #[test]
@@ -421,6 +429,7 @@ fn selection_rejected_lines_skip_symbol_work() {
     let selection =
         CandidateSelection::new(&request(&operators, &lines, &symbols, 1), &|| false).unwrap();
     WORK.set(Work::default());
+
     assert!(!selection.includes(2, Some("outer.inner")));
     assert_eq!(WORK.get().symbol_lookups, 0);
 }
@@ -442,6 +451,7 @@ fn selection_old_linear_control_exceeds_exact_work_budget() {
             prefix_constructions += 1;
             "missing".starts_with(&format!("{selector}."))
         });
+
         assert!(!selected);
     }
     assert_eq!(comparisons, 1024);
@@ -456,6 +466,7 @@ fn selection_symbol_modes_keep_empty_and_module_mismatch_distinct() {
     let all = CandidateSelection::new(&request(&operators, &[], &[], 1), &|| false).unwrap();
     let none =
         CandidateSelection::new(&request(&operators, &[], &mismatched, 1), &|| false).unwrap();
+
     assert!(all.is_unrestricted());
     assert!(all.includes(1, None));
     assert!(!none.is_unrestricted());
@@ -498,10 +509,12 @@ fn selection_cancel_during_symbol_preparation() {
     let operators = operators(MutationOperator::BooleanLiteral);
     let symbols: Vec<_> = (0..32).map(|i| format!("chosen_{i}")).collect();
     let calls = Cell::new(0);
+
     let result = CandidateSelection::new(&request(&operators, &[], &symbols, 1), &|| {
         calls.set(calls.get() + 1);
         calls.get() == 4
     });
+
     assert!(matches!(result, Err(AnalysisCancelled)));
     assert_eq!(calls.get(), 4);
 }
@@ -513,6 +526,7 @@ fn selection_distinct_symbols_keep_candidate_values_order_and_truncation() {
         "def first():\n return True\ndef other():\n return True\ndef last():\n return False\n";
     let mut symbols: Vec<_> = (0..32).map(|i| format!("missing_{i}")).collect();
     symbols.extend(["subject:last".to_owned(), "first".to_owned()]);
+
     let output = analyze_source(&request(&operators, &[], &symbols, 8), source);
     let observed: Vec<_> = output
         .candidates
@@ -526,6 +540,7 @@ fn selection_distinct_symbols_keep_candidate_values_order_and_truncation() {
             )
         })
         .collect();
+
     assert_eq!(
         observed,
         [

@@ -246,25 +246,27 @@ fn encoding_cookie(mut source: &[u8]) -> Option<&str> {
 mod tests {
     use super::partition_index;
 
-    #[test]
-    fn derived_coordinate_search_stays_logarithmic_for_arbitrary_queries() {
-        for (length, limit) in [
-            (0usize, 0),
-            (1, 1),
-            (1_024, 11),
-            (65_536, 17),
-            (524_256, 19),
-        ] {
-            for boundary in [length, 0, length / 2, length.saturating_sub(1)] {
-                let mut comparisons = 0;
-                let found = partition_index(length, |index| {
-                    comparisons += 1;
-                    index < boundary
-                });
-                assert_eq!(found, boundary);
-                assert!(comparisons <= limit);
-            }
-        }
+    #[rstest::rstest]
+    #[case::value_0usize(0usize, 0)]
+    #[case::value_1(1, 1)]
+    #[case::value_1_024(1_024, 11)]
+    #[case::value_65_536(65_536, 17)]
+    #[case::value_524_256(524_256, 19)]
+    fn derived_coordinate_search_stays_logarithmic_for_arbitrary_queries(
+        #[case] length: usize,
+        #[case] limit: usize,
+        #[values(0, 1, 2, 3)] query_kind: usize,
+    ) {
+        let boundary = [length, 0, length / 2, length.saturating_sub(1)][query_kind];
+        let mut comparisons = 0;
+
+        let found = partition_index(length, |index| {
+            comparisons += 1;
+            index < boundary
+        });
+
+        assert_eq!(found, boundary);
+        assert!(comparisons <= limit);
     }
     proptest::proptest! {
         #[test]

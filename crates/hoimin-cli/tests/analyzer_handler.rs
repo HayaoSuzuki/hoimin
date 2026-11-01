@@ -277,6 +277,7 @@ fn candidate_store_enforces_limit_without_retaining_records() {
     let mut store = CandidateStore::new(2).unwrap();
     store.push(&candidate(1)).unwrap();
     store.push(&candidate(2)).unwrap();
+
     assert!(matches!(
         store.push(&candidate(3)),
         Err(StoreError::LimitExceeded { limit: 2 })
@@ -311,6 +312,7 @@ fn replays_in_stable_offset_order() {
     let (second, end_cursor) = CandidateStore::replay_one(&reference, second_cursor)
         .unwrap()
         .unwrap();
+
     assert_eq!((first, second), (candidate(1), candidate(2)));
     assert_eq!(
         CandidateStore::replay_one(&reference, end_cursor).unwrap(),
@@ -338,6 +340,7 @@ fn replay_rejects_duplicate_or_reversed_sequence() {
     let (_, next) = CandidateStore::replay_one(&reference, CandidateCursor::START)
         .unwrap()
         .unwrap();
+
     assert!(matches!(
         CandidateStore::replay_one(&reference, next),
         Err(StoreError::InvalidSequence {
@@ -377,25 +380,27 @@ fn replay_rejects_zero_expected_sequence() {
     ));
 }
 
-#[test]
-fn replay_rejects_offsets_outside_record_boundaries() {
+#[rstest::rstest]
+#[case::inside_record(0)]
+#[case::past_end(1)]
+fn replay_rejects_offsets_outside_record_boundaries(#[case] position: usize) {
     let mut store = CandidateStore::new(1).unwrap();
     store.push(&candidate(1)).unwrap();
     let reference = store.finish().unwrap();
     let length = fs::metadata(&reference.token).unwrap().len();
 
-    for offset in [1, length + 1] {
-        assert!(matches!(
-            CandidateStore::replay_one(
-                &reference,
-                CandidateCursor {
-                    offset,
-                    expected_sequence: 1,
-                },
-            ),
-            Err(StoreError::InvalidOffset { offset: actual }) if actual == offset
-        ));
-    }
+    let offset = [1, length + 1][position];
+
+    assert!(matches!(
+        CandidateStore::replay_one(
+            &reference,
+            CandidateCursor {
+                offset,
+                expected_sequence: 1,
+            },
+        ),
+        Err(StoreError::InvalidOffset { offset: actual }) if actual == offset
+    ));
 }
 
 #[test]
@@ -458,6 +463,7 @@ fn replay_rejects_sequence_gap() {
     let (_, next) = CandidateStore::replay_one(&reference, CandidateCursor::START)
         .unwrap()
         .unwrap();
+
     assert!(matches!(
         CandidateStore::replay_one(&reference, next),
         Err(StoreError::InvalidSequence {
@@ -479,6 +485,7 @@ fn replay_rejects_early_eof_before_reference_record_count() {
     let (_, end) = CandidateStore::replay_one(&reference, CandidateCursor::START)
         .unwrap()
         .unwrap();
+
     assert!(matches!(
         CandidateStore::replay_one(&reference, end),
         Err(StoreError::UnexpectedEof {
@@ -500,6 +507,7 @@ fn replay_rejects_truncated_record() {
     let (_, next) = CandidateStore::replay_one(&reference, CandidateCursor::START)
         .unwrap()
         .unwrap();
+
     assert!(matches!(
         CandidateStore::replay_one(&reference, next),
         Err(StoreError::UnexpectedEof {

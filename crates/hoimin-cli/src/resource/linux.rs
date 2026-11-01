@@ -1866,6 +1866,7 @@ mod platform {
                 remove_fake_cgroup(path, pid)
             })
             .unwrap();
+
             assert_eq!(
                 observations
                     .iter()
@@ -1904,6 +1905,7 @@ mod platform {
                 release_tx.send(()).unwrap();
                 terminating.join().unwrap().unwrap();
                 closing.join().unwrap().unwrap();
+
                 assert!(
                     closed,
                     "close must publish closed and release state before waiting"
@@ -1920,9 +1922,11 @@ mod platform {
             let first = fake_root(&run);
             let second = fake_root(&run);
             let mut calls = Vec::new();
+
             let error = run
                 .close_with(|path, pid| {
                     calls.push(path.to_owned());
+
                     assert!(run.close_gate.try_lock().is_err());
                     assert!(first.cleanup_gate.try_lock().is_err());
                     assert!(second.cleanup_gate.try_lock().is_err());
@@ -1981,6 +1985,7 @@ mod platform {
             .unwrap_err();
             {
                 let state = run.state.lock().unwrap();
+
                 assert!(state.closed);
                 assert!(!state.cleaned);
                 assert_eq!(state.roots.len(), 1);
@@ -2007,9 +2012,11 @@ mod platform {
             let run = fake_run(&directory.path().join("run"));
             let root = fake_root(&run);
             std::fs::write(root.path.join("memory.events"), b"oom_kill invalid\n").unwrap();
+
             let error = run
                 .terminate_root_with(&root, None, remove_fake_cgroup)
                 .unwrap_err();
+
             assert!(matches!(error, super::ResourceError::InvalidCgroupData(_)));
             assert!(run.state.lock().unwrap().roots.is_empty());
             run.terminate_root_with(&root, None, |_, _| {
@@ -2075,6 +2082,7 @@ mod platform {
                 41,
                 |pid| {
                     events.borrow_mut().push("open");
+
                     assert_eq!(pid, 41);
                     Ok("original process")
                 },
@@ -2145,70 +2153,96 @@ mod platform {
             .unwrap();
         }
 
-        #[test]
-        fn pidfd_open_failures_are_fail_closed() {
-            for error_code in [libc::ENOSYS, libc::EPERM, libc::EMFILE, libc::EINVAL] {
-                let membership_read = Cell::new(false);
-                let signaled = Cell::new(false);
-                let error = signal_verified_member(
-                    Path::new("/owned"),
-                    41,
-                    |_| Err::<(), _>(io::Error::from_raw_os_error(error_code)),
-                    |_| {
-                        membership_read.set(true);
-                        Ok(vec![41])
-                    },
-                    |()| {
-                        signaled.set(true);
-                        Ok(())
-                    },
-                )
-                .unwrap_err();
+        #[rstest::rstest]
+        #[case::libc_enosys_1(0)]
+        #[case::libc_eperm_2(1)]
+        #[case::libc_emfile_3(2)]
+        #[case::libc_einval_4(3)]
+        fn pidfd_open_failures_are_fail_closed(#[case] scenario_index: usize) {
+            let error_code = [libc::ENOSYS, libc::EPERM, libc::EMFILE, libc::EINVAL]
+                .into_iter()
+                .nth(scenario_index)
+                .unwrap();
 
-                let super::ResourceError::CgroupCleanup { source, .. } = error else {
-                    panic!("unexpected error: {error}");
-                };
-                assert_eq!(source.raw_os_error(), Some(error_code));
-                assert!(!membership_read.get());
-                assert!(!signaled.get());
-            }
+            let membership_read = Cell::new(false);
+            let signaled = Cell::new(false);
+
+            let error = signal_verified_member(
+                Path::new("/owned"),
+                41,
+                |_| Err::<(), _>(io::Error::from_raw_os_error(error_code)),
+                |_| {
+                    membership_read.set(true);
+                    Ok(vec![41])
+                },
+                |()| {
+                    signaled.set(true);
+                    Ok(())
+                },
+            )
+            .unwrap_err();
+
+            let super::ResourceError::CgroupCleanup { source, .. } = error else {
+                panic!("unexpected error: {error}");
+            };
+
+            assert_eq!(source.raw_os_error(), Some(error_code));
+            assert!(!membership_read.get());
+            assert!(!signaled.get());
         }
 
-        #[test]
-        fn pidfd_signal_failures_are_fail_closed_and_release_the_handle() {
-            for error_code in [libc::ENOSYS, libc::EPERM, libc::EINVAL] {
-                let drops = Cell::new(0);
-                let error = signal_verified_member(
-                    Path::new("/owned"),
-                    41,
-                    |_| Ok(DropRecorder(&drops)),
-                    |_| Ok(vec![41]),
-                    |_| Err(io::Error::from_raw_os_error(error_code)),
-                )
-                .unwrap_err();
+        #[rstest::rstest]
+        #[case::libc_enosys_1(0)]
+        #[case::libc_eperm_2(1)]
+        #[case::libc_einval_3(2)]
+        fn pidfd_signal_failures_are_fail_closed_and_release_the_handle(
+            #[case] scenario_index: usize,
+        ) {
+            let error_code = [libc::ENOSYS, libc::EPERM, libc::EINVAL]
+                .into_iter()
+                .nth(scenario_index)
+                .unwrap();
 
-                let super::ResourceError::CgroupCleanup { source, .. } = error else {
-                    panic!("unexpected error: {error}");
-                };
-                assert_eq!(source.raw_os_error(), Some(error_code));
-                assert_eq!(drops.get(), 1);
-            }
+            let drops = Cell::new(0);
+
+            let error = signal_verified_member(
+                Path::new("/owned"),
+                41,
+                |_| Ok(DropRecorder(&drops)),
+                |_| Ok(vec![41]),
+                |_| Err(io::Error::from_raw_os_error(error_code)),
+            )
+            .unwrap_err();
+
+            let super::ResourceError::CgroupCleanup { source, .. } = error else {
+                panic!("unexpected error: {error}");
+            };
+
+            assert_eq!(source.raw_os_error(), Some(error_code));
+            assert_eq!(drops.get(), 1);
         }
 
-        #[test]
-        fn page_sized_memory_limits_are_written_and_verified() {
+        #[rstest::rstest]
+        #[case::page_size_1(0)]
+        #[case::page_size_1_2(1)]
+        fn page_sized_memory_limits_are_written_and_verified(#[case] scenario_index: usize) {
             let directory = tempfile::tempdir().unwrap();
             let path = directory.path().join("memory.max");
             let page_size = system_page_size().unwrap();
-            for requested in [page_size, page_size + 1] {
-                let mut diagnostics = Vec::new();
-                write_memory_limit(&path, requested, &mut diagnostics).unwrap();
-                assert_eq!(
-                    std::fs::read_to_string(&path).unwrap(),
-                    page_size.to_string()
-                );
-                assert_eq!(diagnostics.is_empty(), requested == page_size);
-            }
+
+            let requested = [page_size, page_size + 1]
+                .into_iter()
+                .nth(scenario_index)
+                .unwrap();
+
+            let mut diagnostics = Vec::new();
+            write_memory_limit(&path, requested, &mut diagnostics).unwrap();
+
+            assert_eq!(
+                std::fs::read_to_string(&path).unwrap(),
+                page_size.to_string()
+            );
+            assert_eq!(diagnostics.is_empty(), requested == page_size);
         }
 
         #[test]
@@ -2217,9 +2251,11 @@ mod platform {
             let path = directory.path().join("memory.max");
             std::fs::write(&path, b"unchanged").unwrap();
             let mut diagnostics = Vec::new();
+
             let error =
                 write_memory_limit(&path, system_page_size().unwrap() - 1, &mut diagnostics)
                     .unwrap_err();
+
             assert!(error.to_string().contains("--max-memory"));
             assert_eq!(std::fs::read(&path).unwrap(), b"unchanged");
             assert_eq!(diagnostics, Vec::<String>::new());
@@ -2234,6 +2270,7 @@ mod platform {
                 state: std::sync::Mutex::new(RunState::default()),
                 close_gate: Mutex::new(()),
             });
+
             let error = run
                 .prepare_root(hoimin_core::ProcessLimits {
                     timeout: std::time::Duration::from_secs(1),
@@ -2242,6 +2279,7 @@ mod platform {
                     max_processes: 1,
                 })
                 .unwrap_err();
+
             assert!(error.to_string().contains("--max-memory"), "{error}");
             assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
             assert!(run.state.lock().unwrap().roots.is_empty());
@@ -2363,45 +2401,63 @@ mod tests {
         }
     }
 
-    #[test]
-    fn memory_limit_normalization_rejects_subpage_values() {
-        for page_size in [4_096, 16_384, 65_536] {
-            for requested in [0, 1, 100, page_size - 1] {
-                let error = normalized_memory_limit(requested, page_size, 1_000_000)
-                    .expect_err("subpage memory must not normalize to zero");
-                let message = error.to_string();
-                assert!(message.contains("--max-memory"), "{message}");
-                assert!(message.contains(&requested.to_string()), "{message}");
-                assert!(message.contains(&page_size.to_string()), "{message}");
-            }
-        }
+    #[rstest::rstest]
+    #[case::input_4_096_1(4_096)]
+    #[case::input_16_384_2(16_384)]
+    #[case::input_65_536_3(65_536)]
+    fn memory_limit_normalization_rejects_subpage_values(
+        #[case] page_size: u64,
+        #[values(0, 1, 2, 3)] scenario_index: usize,
+    ) {
+        let requested = [0, 1, 100, page_size - 1]
+            .into_iter()
+            .nth(scenario_index)
+            .unwrap();
+
+        let error = normalized_memory_limit(requested, page_size, 1_000_000)
+            .expect_err("subpage memory must not normalize to zero");
+
+        let message = error.to_string();
+
+        assert!(message.contains("--max-memory"), "{message}");
+        assert!(message.contains(&requested.to_string()), "{message}");
+        assert!(message.contains(&page_size.to_string()), "{message}");
     }
 
-    #[test]
-    fn memory_limit_normalization_accepts_one_page_boundary() {
-        for page_size in [4_096, 16_384, 65_536] {
-            for requested in [page_size, page_size + 1, 2 * page_size - 1] {
-                assert_eq!(
-                    normalized_memory_limit(requested, page_size, 2).unwrap(),
-                    page_size
-                );
-            }
-        }
+    #[rstest::rstest]
+    #[case::input_4_096_1(4_096)]
+    #[case::input_16_384_2(16_384)]
+    #[case::input_65_536_3(65_536)]
+    fn memory_limit_normalization_accepts_one_page_boundary(
+        #[case] page_size: u64,
+        #[values(0, 1, 2)] scenario_index: usize,
+    ) {
+        let requested = [page_size, page_size + 1, 2 * page_size - 1]
+            .into_iter()
+            .nth(scenario_index)
+            .unwrap();
+
+        assert_eq!(
+            normalized_memory_limit(requested, page_size, 2).unwrap(),
+            page_size
+        );
     }
 
-    #[test]
-    fn memory_limit_normalization_rounds_down_to_the_host_page_size() {
+    #[rstest::rstest]
+    #[case::input_1_000_000_000_4_096_999_997_440_1(1_000_000_000, 4_096, 999_997_440)]
+    #[case::input_1024_1024_1024_4_096_1024_1024_1024_2(1024 * 1024 * 1024, 4_096, 1024 * 1024 * 1024)]
+    #[case::input_1_000_000_000_65_536_999_948_288_3(1_000_000_000, 65_536, 999_948_288)]
+    fn memory_limit_normalization_rounds_down_to_the_host_page_size(
+        #[case] requested: u64,
+        #[case] page_size: u64,
+        #[case] expected: u64,
+    ) {
         let page_counter_max_pages = 1_000_000_000;
-        for (requested, page_size, expected) in [
-            (1_000_000_000, 4_096, 999_997_440),
-            (1024 * 1024 * 1024, 4_096, 1024 * 1024 * 1024),
-            (1_000_000_000, 65_536, 999_948_288),
-        ] {
-            assert_eq!(
-                normalized_memory_limit(requested, page_size, page_counter_max_pages).unwrap(),
-                expected
-            );
-        }
+
+        assert_eq!(
+            normalized_memory_limit(requested, page_size, page_counter_max_pages).unwrap(),
+            expected
+        );
     }
 
     #[test]
@@ -2467,8 +2523,12 @@ mod tests {
         assert_eq!(mounts[1].root, std::path::PathBuf::from("/delegated"));
     }
 
-    #[test]
-    fn pressure_counters_do_not_create_terminal_memory_evidence() {
+    #[rstest::rstest]
+    #[case::cgroupeventcounters_memory_max_6_before_1(0)]
+    #[case::cgroupeventcounters_oom_8_before_2(1)]
+    #[case::cgroupeventcounters_oom_group_kill_14_before_3(2)]
+    #[case::cgroupeventcounters_memory_max_6_oom_8_oom_group_kill_14_before_4(3)]
+    fn pressure_counters_do_not_create_terminal_memory_evidence(#[case] scenario_index: usize) {
         let before = CgroupEventCounters {
             memory_max: 5,
             oom: 7,
@@ -2493,9 +2553,10 @@ mod tests {
                 ..before
             },
         ];
-        for after in observations {
-            assert_eq!(violations_since(before, after), 0);
-        }
+
+        let after = observations.into_iter().nth(scenario_index).unwrap();
+
+        assert_eq!(violations_since(before, after), 0);
     }
 
     #[test]
@@ -2564,10 +2625,19 @@ mod tests {
         );
     }
 
-    #[test]
-    fn known_violation_bits_map_with_memory_precedence() {
+    #[rstest::rstest]
+    #[case::value_0_1(0)]
+    #[case::memory_violation_2(1)]
+    #[case::process_violation_3(2)]
+    #[case::both_violations_4(3)]
+    #[case::value_4_5(4)]
+    #[case::value_4_memory_violation_6(5)]
+    #[case::value_4_process_violation_7(6)]
+    #[case::value_4_both_violations_8(7)]
+    fn known_violation_bits_map_with_memory_precedence(#[case] scenario_index: usize) {
         let incoming = ProcessTermination::Exit(7);
-        for (bits, expected) in [
+
+        let (bits, expected) = [
             (0, incoming),
             (MEMORY_VIOLATION, ProcessTermination::OutOfMemory),
             (PROCESS_VIOLATION, ProcessTermination::ProcessLimit),
@@ -2576,9 +2646,12 @@ mod tests {
             (4 | MEMORY_VIOLATION, ProcessTermination::OutOfMemory),
             (4 | PROCESS_VIOLATION, ProcessTermination::ProcessLimit),
             (4 | BOTH_VIOLATIONS, ProcessTermination::OutOfMemory),
-        ] {
-            assert_eq!(classify_violations(incoming, bits), expected);
-        }
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+        assert_eq!(classify_violations(incoming, bits), expected);
     }
 
     #[test]
@@ -2590,6 +2663,7 @@ mod tests {
         std::fs::write(&obstruction, b"pid").unwrap();
 
         let error = remove_cgroup_dir(&cgroup).unwrap_err();
+
         assert!(matches!(error, ResourceError::CgroupCleanup { .. }));
         assert!(cgroup.exists());
 

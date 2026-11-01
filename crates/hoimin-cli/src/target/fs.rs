@@ -359,53 +359,55 @@ mod tests {
     use hoimin_core::{LineRange, LineSelection};
     use std::fs;
 
-    #[test]
-    fn source_subtrees_prune_unrelated_descendants_and_records() {
-        for count in [0, 1_000, 5_000] {
-            let temp = tempfile::tempdir().unwrap();
-            fs::create_dir_all(temp.path().join("selected")).unwrap();
-            fs::create_dir_all(temp.path().join("unrelated")).unwrap();
-            fs::write(temp.path().join("selected/app.py"), "value = 1 + 2\n").unwrap();
-            fs::write(temp.path().join("selected/data.bin"), b"fixture").unwrap();
-            for index in 0..count {
-                fs::write(
-                    temp.path().join("unrelated").join(format!("{index}.txt")),
-                    b"x",
-                )
-                .unwrap();
-            }
-            let selection = Selection {
-                root: Utf8PathBuf::from_path_buf(temp.path().to_owned()).unwrap(),
-                sources: vec!["selected".into()],
-                ..Selection::default()
-            };
-            let broad = Selection {
-                sources: vec![".".into()],
-                ..selection.clone()
-            };
-            let broad_stats = DiscoveryStats::default();
-            let broad_files = discover_explicit_with_stats(&broad, &broad_stats).unwrap();
-            assert_eq!(broad_files.len(), count + 2);
-            let stats = DiscoveryStats::default();
-            let files = discover_explicit_with_stats(&selection, &stats).unwrap();
-            assert_eq!(
-                hoimin_core::resolve_explicit(&selection, &files).unwrap(),
-                hoimin_core::resolve_explicit(&selection, &broad_files).unwrap()
-            );
-            eprintln!(
-                "unrelated={count} visited={} records={} broad_visited={} broad_records={}",
-                stats.visited_entries.load(Ordering::Relaxed),
-                stats.collected_records.load(Ordering::Relaxed),
-                broad_stats.visited_entries.load(Ordering::Relaxed),
-                broad_stats.collected_records.load(Ordering::Relaxed)
-            );
-            assert_eq!(files.len(), 2, "unrelated records must not be retained");
-            assert!(
-                stats.visited_entries.load(Ordering::Relaxed) <= 5,
-                "unrelated descendants must not be visited"
-            );
-            assert_eq!(stats.collected_records.load(Ordering::Relaxed), 2);
+    #[rstest::rstest]
+    #[case::input_0_1(0)]
+    #[case::input_1_000_2(1_000)]
+    #[case::input_5_000_3(5_000)]
+    fn source_subtrees_prune_unrelated_descendants_and_records(#[case] count: usize) {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("selected")).unwrap();
+        fs::create_dir_all(temp.path().join("unrelated")).unwrap();
+        fs::write(temp.path().join("selected/app.py"), "value = 1 + 2\n").unwrap();
+        fs::write(temp.path().join("selected/data.bin"), b"fixture").unwrap();
+        for index in 0..count {
+            fs::write(
+                temp.path().join("unrelated").join(format!("{index}.txt")),
+                b"x",
+            )
+            .unwrap();
         }
+        let selection = Selection {
+            root: Utf8PathBuf::from_path_buf(temp.path().to_owned()).unwrap(),
+            sources: vec!["selected".into()],
+            ..Selection::default()
+        };
+        let broad = Selection {
+            sources: vec![".".into()],
+            ..selection.clone()
+        };
+        let broad_stats = DiscoveryStats::default();
+        let broad_files = discover_explicit_with_stats(&broad, &broad_stats).unwrap();
+
+        assert_eq!(broad_files.len(), count + 2);
+        let stats = DiscoveryStats::default();
+        let files = discover_explicit_with_stats(&selection, &stats).unwrap();
+        assert_eq!(
+            hoimin_core::resolve_explicit(&selection, &files).unwrap(),
+            hoimin_core::resolve_explicit(&selection, &broad_files).unwrap()
+        );
+        eprintln!(
+            "unrelated={count} visited={} records={} broad_visited={} broad_records={}",
+            stats.visited_entries.load(Ordering::Relaxed),
+            stats.collected_records.load(Ordering::Relaxed),
+            broad_stats.visited_entries.load(Ordering::Relaxed),
+            broad_stats.collected_records.load(Ordering::Relaxed)
+        );
+        assert_eq!(files.len(), 2, "unrelated records must not be retained");
+        assert!(
+            stats.visited_entries.load(Ordering::Relaxed) <= 5,
+            "unrelated descendants must not be visited"
+        );
+        assert_eq!(stats.collected_records.load(Ordering::Relaxed), 2);
     }
 
     #[test]
@@ -431,6 +433,7 @@ mod tests {
             ..Selection::default()
         };
         let stats = DiscoveryStats::default();
+
         assert_eq!(
             discover_explicit_with_stats(&selection, &stats).unwrap(),
             [DiscoveredFile::python("ignored/selected/app.py")]
@@ -531,31 +534,38 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest::rstest]
+    #[case::value_2_000_1(0)]
+    #[case::value_4_000_2(1)]
+    #[case::value_8_000_3(2)]
     #[ignore = "release performance evidence"]
-    fn measure_exact_file_discovery_scaling() {
-        for count in [2_000, 4_000, 8_000] {
-            let temp = tempfile::tempdir().unwrap();
-            fs::write(temp.path().join("calc.py"), "value = 1 + 2\n").unwrap();
-            for index in 0..count {
-                let path = temp.path().join("unrelated").join(format!("{index}.txt"));
-                fs::create_dir_all(path.parent().unwrap()).unwrap();
-                fs::write(path, []).unwrap();
-            }
-            let selection = Selection {
-                root: Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap(),
-                files: vec!["calc.py".into()],
-                ..Selection::default()
-            };
-            let mut samples = Vec::new();
-            for _ in 0..5 {
-                let started = std::time::Instant::now();
-                let files = discover_explicit(&selection).unwrap();
-                samples.push(started.elapsed());
-                assert_eq!(files, [DiscoveredFile::python("calc.py")]);
-            }
-            samples.sort_unstable();
-            println!("unrelated={count} median={:?}", samples[2]);
+    fn measure_exact_file_discovery_scaling(#[case] scenario_index: usize) {
+        let count = [2_000, 4_000, 8_000]
+            .into_iter()
+            .nth(scenario_index)
+            .unwrap();
+
+        let temp = tempfile::tempdir().unwrap();
+        fs::write(temp.path().join("calc.py"), "value = 1 + 2\n").unwrap();
+        for index in 0..count {
+            let path = temp.path().join("unrelated").join(format!("{index}.txt"));
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, []).unwrap();
         }
+        let selection = Selection {
+            root: Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap(),
+            files: vec!["calc.py".into()],
+            ..Selection::default()
+        };
+        let mut samples = Vec::new();
+        for _ in 0..5 {
+            let started = std::time::Instant::now();
+            let files = discover_explicit(&selection).unwrap();
+            samples.push(started.elapsed());
+
+            assert_eq!(files, [DiscoveredFile::python("calc.py")]);
+        }
+        samples.sort_unstable();
+        println!("unrelated={count} median={:?}", samples[2]);
     }
 }

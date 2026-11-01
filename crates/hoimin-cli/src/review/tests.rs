@@ -63,34 +63,42 @@ async fn post_commit_validation_failure_reports_saved_revision() {
     assert_eq!(store.snapshot().unwrap()[0].1.history.len(), 1);
 }
 
-#[test]
-fn applicability_reflects_source_state_for_matching_identity() {
+#[rstest::rstest]
+#[case::sourcestate_fresh_applicability_current_1(SourceState::Fresh, Applicability::Current)]
+#[case::sourcestate_stale_applicability_stale_2(SourceState::Stale, Applicability::Stale)]
+#[case::sourcestate_unavailable_applicability_sourceunavailable_3(
+    SourceState::Unavailable,
+    Applicability::SourceUnavailable
+)]
+fn applicability_reflects_source_state_for_matching_identity(
+    #[case] source: SourceState,
+    #[case] expected: Applicability,
+) {
     let original = key();
 
-    for (source, expected) in [
-        (SourceState::Fresh, Applicability::Current),
-        (SourceState::Stale, Applicability::Stale),
-        (SourceState::Unavailable, Applicability::SourceUnavailable),
-    ] {
-        let actual = applicability(&original, &original, source);
+    let actual = applicability(&original, &original, source);
 
-        assert_eq!(actual, expected, "{source:?}");
-    }
+    assert_eq!(actual, expected, "{source:?}");
 }
 
-#[test]
-fn applicability_rejects_different_project_or_descriptor() {
+#[rstest::rstest]
+#[case::different_project_1(0)]
+#[case::different_descriptor_2(1)]
+fn applicability_rejects_different_project_or_descriptor(#[case] scenario_index: usize) {
     let original = key();
     let mut different_project = original.clone();
     different_project.project = "/another".into();
     let mut different_descriptor = original.clone();
     different_descriptor.descriptor.original = "9".into();
 
-    for other in [different_project, different_descriptor] {
-        let actual = applicability(&original, &other, SourceState::Fresh);
+    let other = [different_project, different_descriptor]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
 
-        assert_eq!(actual, Applicability::IdentityConflict, "{other:?}");
-    }
+    let actual = applicability(&original, &other, SourceState::Fresh);
+
+    assert_eq!(actual, Applicability::IdentityConflict, "{other:?}");
 }
 
 #[test]
@@ -103,18 +111,27 @@ fn first_update_preserves_empty_input_and_starts_revision_one() {
     assert_eq!(empty.history, Vec::new());
 }
 
-#[test]
-fn update_rejects_conflicting_revision_and_stale_source() {
+#[rstest::rstest]
+#[case::applicability_current_0_updaterejection_revisionconflic_1(
+    Applicability::Current,
+    0,
+    UpdateRejection::RevisionConflict
+)]
+#[case::applicability_stale_1_updaterejection_notcurrent_2(
+    Applicability::Stale,
+    1,
+    UpdateRejection::NotCurrent
+)]
+fn update_rejects_conflicting_revision_and_stale_source(
+    #[case] applicability: Applicability,
+    #[case] revision: u64,
+    #[case] expected: UpdateRejection,
+) {
     let first = apply_update(&ReviewState::default(), Applicability::Current, 0, draft()).unwrap();
 
-    for (applicability, revision, expected) in [
-        (Applicability::Current, 0, UpdateRejection::RevisionConflict),
-        (Applicability::Stale, 1, UpdateRejection::NotCurrent),
-    ] {
-        let result = apply_update(&first, applicability, revision, draft());
+    let result = apply_update(&first, applicability, revision, draft());
 
-        assert_eq!(result, Err(expected), "{applicability:?}");
-    }
+    assert_eq!(result, Err(expected), "{applicability:?}");
 }
 
 #[test]
@@ -152,35 +169,32 @@ fn draft_accepts_maximum_reason_and_evidence_sizes() {
     assert!(result.is_ok());
 }
 
-#[test]
-fn draft_rejects_invalid_reason_without_relying_on_other_limits() {
-    for invalid in [
-        "x".repeat(4097),
-        " \n\t".to_string(),
-        "\x1b[31m".to_string(),
-        "\0".to_string(),
-        "あ".repeat(1366),
-    ] {
-        let mut value = draft();
-        value.reason = invalid;
+#[rstest::rstest]
+#[case::x_1("x".repeat(4097))]
+#[case::t_2(" \n\t".to_string())]
+#[case::x1b_31m_3("\x1b[31m".to_string())]
+#[case::input_0_4("\0".to_string())]
+#[case::input_5("あ".repeat(1366))]
+fn draft_rejects_invalid_reason_without_relying_on_other_limits(#[case] invalid: String) {
+    let mut value = draft();
+    value.reason = invalid;
 
-        let result = validate_draft(&value);
+    let result = validate_draft(&value);
 
-        assert!(result.is_err(), "reason bytes={}", value.reason.len());
-    }
+    assert!(result.is_err(), "reason bytes={}", value.reason.len());
 }
 
-#[test]
-fn draft_rejects_excessive_evidence_count_or_item_size() {
-    for evidence in [vec!["x".repeat(2048); 9], vec!["x".repeat(2049)]] {
-        let mut value = draft();
-        value.reason = "reason\n\tmore".into();
-        value.evidence = evidence;
+#[rstest::rstest]
+#[case::x_1(vec!["x".repeat(2048); 9])]
+#[case::x_2(vec!["x".repeat(2049)])]
+fn draft_rejects_excessive_evidence_count_or_item_size(#[case] evidence: Vec<String>) {
+    let mut value = draft();
+    value.reason = "reason\n\tmore".into();
+    value.evidence = evidence;
 
-        let result = validate_draft(&value);
+    let result = validate_draft(&value);
 
-        assert!(result.is_err());
-    }
+    assert!(result.is_err());
 }
 
 #[test]
@@ -286,85 +300,111 @@ async fn plan_readers_reject_old_shapes_without_rewriting() {
     }
 }
 
+#[rstest::rstest]
+#[case::false_1(false)]
+#[case::true_2(true)]
 #[tokio::test]
-async fn plan_readers_reject_obsolete_top_level_fingerprint_inputs() {
-    for review in [false, true] {
-        // Arrange.
-        let (_dir, path) = plan_fixture().await;
-        let mut value: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        value["fingerprint_inputs"] = serde_json::json!([]);
-        std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+async fn plan_readers_reject_obsolete_top_level_fingerprint_inputs(#[case] review: bool) {
+    // Arrange.
+    let (_dir, path) = plan_fixture().await;
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    value["fingerprint_inputs"] = serde_json::json!([]);
+    std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
 
-        // Act.
-        let result = if review {
-            super::input::load_plan(&path)
-                .map(|_| ())
-                .map_err(|error| error.to_string())
-        } else {
-            crate::plan::prepare_verify(&path, &[])
-                .await
-                .map(|_| ())
-                .map_err(|error| error.to_string())
-        };
+    // Act.
 
-        // Assert.
-        let error = result.unwrap_err();
-        assert!(
-            error.contains("unknown field `fingerprint_inputs`"),
-            "review={review}: {error}"
-        );
-    }
+    let result = if review {
+        super::input::load_plan(&path)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    } else {
+        crate::plan::prepare_verify(&path, &[])
+            .await
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    };
+
+    // Assert.
+    let error = result.unwrap_err();
+
+    assert!(
+        error.contains("unknown field `fingerprint_inputs`"),
+        "review={review}: {error}"
+    );
 }
 
+#[rstest::rstest]
+#[case::kind_1_true_1(
+    "kind",
+    "\"kind\":\"plan\"",
+    "\"kind\":\"plan\",\"kind\":\"plan\"",
+    true
+)]
+#[case::kind_1_false_2(
+    "kind",
+    "\"kind\":\"plan\"",
+    "\"kind\":\"plan\",\"kind\":\"plan\"",
+    false
+)]
+#[case::fingerprint_inputs_2_true_1(
+    "fingerprint_inputs",
+    "\"fingerprint_inputs\":[]",
+    "\"fingerprint_inputs\":[],\"fingerprint_inputs\":[]",
+    true
+)]
+#[case::fingerprint_inputs_2_false_2(
+    "fingerprint_inputs",
+    "\"fingerprint_inputs\":[]",
+    "\"fingerprint_inputs\":[],\"fingerprint_inputs\":[]",
+    false
+)]
 #[tokio::test]
-async fn plan_readers_reject_duplicate_known_fields() {
-    for (field, original, duplicate) in [
-        (
-            "kind",
-            "\"kind\":\"plan\"",
-            "\"kind\":\"plan\",\"kind\":\"plan\"",
-        ),
-        (
-            "fingerprint_inputs",
-            "\"fingerprint_inputs\":[]",
-            "\"fingerprint_inputs\":[],\"fingerprint_inputs\":[]",
-        ),
-    ] {
-        for review in [true, false] {
-            // Arrange: retain duplicate keys in raw JSON, not a Value map.
-            let (_dir, path) = plan_fixture().await;
-            let saved = std::fs::read_to_string(&path).unwrap();
-            let duplicated = saved.replacen(original, duplicate, 1);
-            assert_ne!(duplicated, saved);
-            std::fs::write(&path, &duplicated).unwrap();
+async fn plan_readers_reject_duplicate_known_fields(
+    #[case] field: &str,
+    #[case] original: &str,
+    #[case] duplicate: &str,
+    #[case] review: bool,
+) {
+    // retain duplicate keys in raw JSON, not a Value map.
 
-            // Act.
-            let result = if review {
-                super::input::load_plan(&path)
-                    .map(|_| ())
-                    .map_err(|error| error.to_string())
-            } else {
-                crate::plan::prepare_verify(&path, &[])
-                    .await
-                    .map(|_| ())
-                    .map_err(|error| error.to_string())
-            };
+    let (_dir, path) = plan_fixture().await;
+    let saved = std::fs::read_to_string(&path).unwrap();
+    let duplicated = saved.replacen(original, duplicate, 1);
 
-            // Assert.
-            let error = result.unwrap_err();
-            assert!(
-                error.contains(&format!("duplicate field `{field}`")),
-                "review={review}: {error}"
-            );
-        }
-    }
+    assert_ne!(duplicated, saved);
+    std::fs::write(&path, &duplicated).unwrap();
+
+    let result = if review {
+        super::input::load_plan(&path)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    } else {
+        crate::plan::prepare_verify(&path, &[])
+            .await
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    };
+
+    let error = result.unwrap_err();
+
+    assert!(
+        error.contains(&format!("duplicate field `{field}`")),
+        "review={review}: {error}"
+    );
 }
 
+#[rstest::rstest]
+#[case::missing_1(0)]
+#[case::null_2(1)]
+#[case::duplicate_3(2)]
+#[case::hash_4(3)]
+#[case::path_5(4)]
 #[tokio::test]
-async fn plan_readers_reject_malformed_nested_fingerprint_records() {
+async fn plan_readers_reject_malformed_nested_fingerprint_records(#[case] scenario_index: usize) {
     let record = serde_json::json!({"path": "config.toml", "hash": "a".repeat(64)});
-    for (name, replacement, fragment) in [
+
+    let (name, replacement, fragment) = [
         ("missing", None, "missing field `fingerprint_inputs`"),
         ("null", Some(serde_json::Value::Null), "invalid type: null"),
         (
@@ -382,77 +422,85 @@ async fn plan_readers_reject_malformed_nested_fingerprint_records() {
             Some(serde_json::json!([{"path": "../outside", "hash": "a".repeat(64)}])),
             "path",
         ),
-    ] {
-        for review in [false, true] {
-            // Arrange.
-            let (_dir, path) = plan_fixture().await;
-            let mut value: serde_json::Value =
-                serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-            value["normalized_config"]
-                .as_object_mut()
-                .unwrap()
-                .remove("fingerprint_inputs");
-            if let Some(replacement) = &replacement {
-                value["normalized_config"]["fingerprint_inputs"] = replacement.clone();
-            }
-            std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
 
-            // Act.
-            let result = if review {
-                super::input::load_plan(&path)
-                    .map(|_| ())
-                    .map_err(|error| error.to_string())
-            } else {
-                crate::plan::prepare_verify(&path, &[])
-                    .await
-                    .map(|_| ())
-                    .map_err(|error| error.to_string())
-            };
-
-            // Assert.
-            let error = result.unwrap_err();
-            assert!(error.contains(fragment), "{name}, review={review}: {error}");
+    for review in [false, true] {
+        // Arrange.
+        let (_dir, path) = plan_fixture().await;
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        value["normalized_config"]
+            .as_object_mut()
+            .unwrap()
+            .remove("fingerprint_inputs");
+        if let Some(replacement) = &replacement {
+            value["normalized_config"]["fingerprint_inputs"] = replacement.clone();
         }
+        std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+
+        // Act.
+        let result = if review {
+            super::input::load_plan(&path)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        } else {
+            crate::plan::prepare_verify(&path, &[])
+                .await
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        };
+
+        // Assert.
+        let error = result.unwrap_err();
+        assert!(error.contains(fragment), "{name}, review={review}: {error}");
     }
 }
 
+#[rstest::rstest]
+#[case::false_1(false)]
+#[case::true_2(true)]
 #[tokio::test]
-async fn store_destination_protects_fingerprint_only_inputs_without_modification() {
-    for hard_link in [false, true] {
-        // Arrange: the protected input is not a mutation source.
-        let (dir, path) = plan_fixture().await;
-        let input = dir.path().join("config.toml");
-        let original = b"setting = true\n";
-        std::fs::write(&input, original).unwrap();
-        let mut value: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        value["normalized_config"]["fingerprint_inputs"] = serde_json::json!([{
-            "path": "config.toml", "hash": blake3::hash(original).to_hex().to_string()
-        }]);
-        let saved = serde_json::to_vec(&value).unwrap();
-        std::fs::write(&path, &saved).unwrap();
-        let plan = super::input::load_plan(&path).unwrap();
-        let destination = if hard_link {
-            let alias = dir.path().join("reviews.sqlite3");
-            std::fs::hard_link(&input, &alias).unwrap();
-            alias
-        } else {
-            input.clone()
-        };
+async fn store_destination_protects_fingerprint_only_inputs_without_modification(
+    #[case] hard_link: bool,
+) {
+    // Arrange: the protected input is not a mutation source.
+    let (dir, path) = plan_fixture().await;
+    let input = dir.path().join("config.toml");
+    let original = b"setting = true\n";
+    std::fs::write(&input, original).unwrap();
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    value["normalized_config"]["fingerprint_inputs"] = serde_json::json!([{
+        "path": "config.toml", "hash": blake3::hash(original).to_hex().to_string()
+    }]);
+    let saved = serde_json::to_vec(&value).unwrap();
+    std::fs::write(&path, &saved).unwrap();
+    let plan = super::input::load_plan(&path).unwrap();
+    let destination = if hard_link {
+        let alias = dir.path().join("reviews.sqlite3");
+        std::fs::hard_link(&input, &alias).unwrap();
+        alias
+    } else {
+        input.clone()
+    };
 
-        // Act.
-        let result = super::input::validate_store_destination(&destination, &plan, None);
+    // Act.
 
-        // Assert.
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("store aliases a protected input")
-        );
-        assert_eq!(std::fs::read(&input).unwrap(), original);
-        assert_eq!(std::fs::read(&path).unwrap(), saved);
-    }
+    let result = super::input::validate_store_destination(&destination, &plan, None);
+
+    // Assert.
+
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("store aliases a protected input")
+    );
+    assert_eq!(std::fs::read(&input).unwrap(), original);
+    assert_eq!(std::fs::read(&path).unwrap(), saved);
 }
 
 #[tokio::test]
@@ -503,18 +551,25 @@ async fn source_state_is_unavailable_for_missing_file() {
     assert_eq!(actual, SourceState::Unavailable);
 }
 
+#[rstest::rstest]
+#[case::path_1(0)]
+#[case::dir_path_join_sample_py_2(1)]
+#[case::alias_3(2)]
 #[tokio::test]
-async fn store_destination_rejects_plan_source_and_hard_link_alias() {
+async fn store_destination_rejects_plan_source_and_hard_link_alias(#[case] scenario_index: usize) {
     let (dir, path) = plan_fixture().await;
     let loaded = super::input::load_plan(&path).unwrap();
     let alias = dir.path().join("alias.sqlite3");
     std::fs::hard_link(&path, &alias).unwrap();
 
-    for destination in [path, dir.path().join("sample.py"), alias] {
-        let result = super::input::validate_store_destination(&destination, &loaded, None);
+    let destination = [path, dir.path().join("sample.py"), alias]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
 
-        assert!(result.is_err(), "{}", destination.display());
-    }
+    let result = super::input::validate_store_destination(&destination, &loaded, None);
+
+    assert!(result.is_err(), "{}", destination.display());
 }
 
 #[tokio::test]
@@ -723,58 +778,69 @@ invalid_report_command_cases! {
         => "invalid --import-root ../escape";
 }
 
+#[rstest::rstest]
+#[case::none_1(0)]
+#[case::some_serde_json_value_null_2(1)]
 #[tokio::test]
-async fn review_rejects_absent_report_import_roots() {
-    for replacement in [None, Some(serde_json::Value::Null)] {
-        // Arrange
-        let (_dir, path, report_path) = report_fixture().await;
-        let plan = super::input::load_plan(&path).unwrap();
-        let mut report: serde_json::Value = report_view(&std::fs::read(&report_path).unwrap());
-        report["run"]["normalized_config"]
-            .as_object_mut()
-            .unwrap()
-            .remove("import_roots");
-        if let Some(replacement) = replacement {
-            report["run"]["normalized_config"]["import_roots"] = replacement;
-        }
-        std::fs::write(&report_path, jsonl_bytes(&report)).unwrap();
+async fn review_rejects_absent_report_import_roots(#[case] scenario_index: usize) {
+    let replacement = [None, Some(serde_json::Value::Null)]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
 
-        // Act
-        let result =
-            super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan));
-
-        // Assert
-        assert!(
-            result.is_err(),
-            "review accepted absent report import_roots"
-        );
+    // Arrange
+    let (_dir, path, report_path) = report_fixture().await;
+    let plan = super::input::load_plan(&path).unwrap();
+    let mut report: serde_json::Value = report_view(&std::fs::read(&report_path).unwrap());
+    report["run"]["normalized_config"]
+        .as_object_mut()
+        .unwrap()
+        .remove("import_roots");
+    if let Some(replacement) = replacement {
+        report["run"]["normalized_config"]["import_roots"] = replacement;
     }
+    std::fs::write(&report_path, jsonl_bytes(&report)).unwrap();
+
+    // Act
+    let result = super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan));
+
+    // Assert
+    assert!(
+        result.is_err(),
+        "review accepted absent report import_roots"
+    );
 }
 
+#[rstest::rstest]
+#[case::none_1(0)]
+#[case::some_serde_json_value_null_2(1)]
 #[tokio::test]
-async fn progress_preserves_opaque_report_import_roots() {
-    for replacement in [None, Some(serde_json::Value::Null)] {
-        // Arrange
-        let (_dir, _path, report_path) = report_fixture().await;
-        let mut report: serde_json::Value = report_view(&std::fs::read(&report_path).unwrap());
-        report["run"]["normalized_config"]
-            .as_object_mut()
-            .unwrap()
-            .remove("import_roots");
-        if let Some(replacement) = replacement {
-            report["run"]["normalized_config"]["import_roots"] = replacement;
-        }
-        std::fs::write(&report_path, jsonl_bytes(&report)).unwrap();
+async fn progress_preserves_opaque_report_import_roots(#[case] scenario_index: usize) {
+    let replacement = [None, Some(serde_json::Value::Null)]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
 
-        // Act
-        let result = crate::progress::read_report(&report_path);
-
-        // Assert
-        assert!(matches!(
-            result.unwrap(),
-            crate::progress::InputReport::Usable(_)
-        ));
+    // Arrange
+    let (_dir, _path, report_path) = report_fixture().await;
+    let mut report: serde_json::Value = report_view(&std::fs::read(&report_path).unwrap());
+    report["run"]["normalized_config"]
+        .as_object_mut()
+        .unwrap()
+        .remove("import_roots");
+    if let Some(replacement) = replacement {
+        report["run"]["normalized_config"]["import_roots"] = replacement;
     }
+    std::fs::write(&report_path, jsonl_bytes(&report)).unwrap();
+
+    // Act
+    let result = crate::progress::read_report(&report_path);
+
+    // Assert
+    assert!(matches!(
+        result.unwrap(),
+        crate::progress::InputReport::Usable(_)
+    ));
 }
 
 #[tokio::test]
@@ -801,43 +867,58 @@ async fn review_missing_project_error_identifies_report_and_project() {
     );
 }
 
+#[rstest::rstest]
+#[case::incomplete_1(0)]
+#[case::failed_baseline_2(1)]
+#[case::missing_baseline_3(2)]
 #[tokio::test]
-async fn review_requires_usable_report_after_structural_decode() {
+async fn review_requires_usable_report_after_structural_decode(#[case] scenario_index: usize) {
     let (_dir, path, report_path) = report_fixture().await;
     let plan = super::input::load_plan(&path).unwrap();
     let planned = super::input::index_plan(&plan);
     let original: serde_json::Value = report_view(&std::fs::read(&report_path).unwrap());
     assert!(super::input::load_report(&report_path, &plan, &planned).is_ok());
-    for state in ["incomplete", "failed baseline", "missing baseline"] {
-        let mut report = original.clone();
-        match state {
-            "incomplete" => {
-                report["summary"]["complete"] = false.into();
-                report["summary"]["exit_code"] = 4.into();
-            }
-            "failed baseline" => report["baseline"]["termination"]["Exit"] = 1.into(),
-            "missing baseline" => {
-                report["baseline"] = serde_json::Value::Null;
-                report["mutants"] = serde_json::json!([]);
-                report["summary"]["counts"] =
-                    serde_json::to_value(hoimin_core::MutationSummary::default()).unwrap();
-            }
-            _ => unreachable!(),
+
+    let state = ["incomplete", "failed baseline", "missing baseline"]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+    let mut report = original.clone();
+    match state {
+        "incomplete" => {
+            report["summary"]["complete"] = false.into();
+            report["summary"]["exit_code"] = 4.into();
         }
-        std::fs::write(&report_path, jsonl_bytes(&report)).unwrap();
-        let error = super::input::load_report(&report_path, &plan, &planned)
-            .err()
-            .expect("review must reject unusable reports");
-        assert!(
-            matches!(error, super::ReviewError::Invalid(ref message)
-                if message == "review requires a complete report with a passing baseline"),
-            "{state}: {error}"
-        );
+        "failed baseline" => report["baseline"]["termination"]["Exit"] = 1.into(),
+        "missing baseline" => {
+            report["baseline"] = serde_json::Value::Null;
+            report["mutants"] = serde_json::json!([]);
+            report["summary"]["counts"] =
+                serde_json::to_value(hoimin_core::MutationSummary::default()).unwrap();
+        }
+        _ => unreachable!(),
     }
+    std::fs::write(&report_path, jsonl_bytes(&report)).unwrap();
+    let error = super::input::load_report(&report_path, &plan, &planned)
+        .err()
+        .expect("review must reject unusable reports");
+    assert!(
+        matches!(error, super::ReviewError::Invalid(ref message)
+            if message == "review requires a complete report with a passing baseline"),
+        "{state}: {error}"
+    );
 }
 
+#[rstest::rstest]
+#[case::incomplete_1(0)]
+#[case::baseline_2(1)]
+#[case::root_3(2)]
+#[case::summary_4(3)]
+#[case::descriptor_5(4)]
+#[case::version_6(5)]
 #[tokio::test]
-async fn review_rejects_report_with_changed_identity_or_execution() {
+async fn review_rejects_report_with_changed_identity_or_execution(#[case] scenario_index: usize) {
     let changes: [(&str, &str, serde_json::Value); 6] = [
         ("incomplete", "/summary/complete", false.into()),
         ("baseline", "/baseline/termination/Exit", 1.into()),
@@ -854,18 +935,18 @@ async fn review_rejects_report_with_changed_identity_or_execution() {
         ),
         ("version", "/run/schema_version", 3.into()),
     ];
-    for (change, pointer, replacement) in changes {
-        let (_dir, path, report_path) = report_fixture().await;
-        let plan = super::input::load_plan(&path).unwrap();
-        let mut value: serde_json::Value = report_view(&std::fs::read(&report_path).unwrap());
-        *value.pointer_mut(pointer).unwrap() = replacement;
-        std::fs::write(&report_path, jsonl_bytes(&value)).unwrap();
 
-        let result =
-            super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan));
+    let (change, pointer, replacement) = changes.into_iter().nth(scenario_index).unwrap();
 
-        assert!(result.is_err(), "{change}");
-    }
+    let (_dir, path, report_path) = report_fixture().await;
+    let plan = super::input::load_plan(&path).unwrap();
+    let mut value: serde_json::Value = report_view(&std::fs::read(&report_path).unwrap());
+    *value.pointer_mut(pointer).unwrap() = replacement;
+    std::fs::write(&report_path, jsonl_bytes(&value)).unwrap();
+
+    let result = super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan));
+
+    assert!(result.is_err(), "{change}");
 }
 
 #[tokio::test]
@@ -1351,45 +1432,53 @@ fn source_fixture() -> (
     (dir, root, candidate)
 }
 
-#[test]
-fn source_batch_preserves_hash_descriptor_and_identity_precedence() {
+#[rstest::rstest]
+#[case::span_1("span")]
+#[case::original_2("original")]
+#[case::location_3("location")]
+#[case::mutation_4("mutation")]
+#[case::identity_5("identity")]
+fn source_batch_preserves_hash_descriptor_and_identity_precedence(#[case] field: &str) {
     let (_dir, root, candidate) = source_fixture();
-    for field in ["span", "original", "location", "mutation", "identity"] {
-        let mut invalid = candidate.clone();
-        match field {
-            "span" => invalid.span.start = 100,
-            "original" => invalid.original = "9".into(),
-            "location" => invalid.line = 9,
-            "mutation" => invalid.replacement = invalid.original.clone(),
-            "identity" => invalid.id = "0".repeat(64),
-            _ => unreachable!(),
-        }
-        assert!(
-            super::input::source_states(&root, &[&candidate, &invalid])
-                .pop()
-                .unwrap()
-                .is_err(),
-            "{field}"
-        );
-        invalid.file_hash = "0".repeat(64);
-        assert_eq!(
-            super::input::source_state(&root, &invalid).unwrap(),
-            SourceState::Stale,
-            "{field}"
-        );
+
+    let mut invalid = candidate.clone();
+    match field {
+        "span" => invalid.span.start = 100,
+        "original" => invalid.original = "9".into(),
+        "location" => invalid.line = 9,
+        "mutation" => invalid.replacement = invalid.original.clone(),
+        "identity" => invalid.id = "0".repeat(64),
+        _ => unreachable!(),
     }
+
+    assert!(
+        super::input::source_states(&root, &[&candidate, &invalid])
+            .pop()
+            .unwrap()
+            .is_err(),
+        "{field}"
+    );
+    invalid.file_hash = "0".repeat(64);
+    assert_eq!(
+        super::input::source_state(&root, &invalid).unwrap(),
+        SourceState::Stale,
+        "{field}"
+    );
 }
 
 #[test]
 fn source_state_preserves_encoding_checks_and_stale_precedence() {
     let (dir, root, mut candidate) = source_fixture();
     std::fs::write(dir.path().join("sample.py"), b"1\n\xff").unwrap();
+
     assert_eq!(
         super::input::source_state(&root, &candidate).unwrap(),
         SourceState::Stale
     );
     candidate.file_hash = blake3::hash(b"1\n\xff").to_hex().to_string();
+
     let error = super::input::source_state(&root, &candidate).unwrap_err();
+
     assert!(error.to_string().contains("not valid UTF-8"));
 
     let latin1 = b"# coding: latin-1\n1\n";
@@ -1398,7 +1487,9 @@ fn source_state_preserves_encoding_checks_and_stale_precedence() {
     candidate.span.start = 18;
     candidate.line = 2;
     candidate.replacement = "\u{100}".into();
+
     let error = super::input::source_state(&root, &candidate).unwrap_err();
+
     assert!(error.to_string().contains("encoding"));
 }
 
@@ -1406,6 +1497,7 @@ fn source_state_preserves_encoding_checks_and_stale_precedence() {
 fn source_state_rejects_path_escape_and_bounds_source_reads() {
     let (dir, root, mut candidate) = source_fixture();
     candidate.path = "../sample.py".into();
+
     assert!(super::input::source_state(&root, &candidate).is_err());
     candidate.path = "sample.py".into();
     std::fs::File::create(dir.path().join("sample.py"))
@@ -1424,6 +1516,7 @@ fn source_batch_reuses_one_context_for_many_candidates_and_record_reads_again() 
     super::input::SOURCE_WORK.with(|count| count.set((0, 0)));
     let candidates = vec![&candidate; 128];
     let states = super::input::source_states(&root, &candidates);
+
     assert_eq!(states.len(), 128);
     assert!(
         states
@@ -1456,7 +1549,9 @@ fn source_batch_preserves_interleaved_states_and_first_error_order() {
 
     let states =
         super::input::source_states(&root, &[&candidate, &other, &stale, &missing, &candidate]);
+
     let actual: Vec<_> = states.into_iter().map(Result::unwrap).collect();
+
     assert_eq!(
         actual,
         [
@@ -1478,6 +1573,7 @@ fn source_batch_preserves_interleaved_states_and_first_error_order() {
         .into_iter()
         .collect::<Result<Vec<_>, _>>()
         .unwrap_err();
+
     assert!(error.to_string().contains("original text"));
 }
 
@@ -1494,6 +1590,7 @@ fn source_batch_rejects_canonical_root_escape() {
     )
     .unwrap();
     let states = super::input::source_states(&root, &[&candidate, &candidate]);
+
     assert!(
         states
             .into_iter()
@@ -1501,19 +1598,24 @@ fn source_batch_rejects_canonical_root_escape() {
     );
 }
 
-#[test]
-fn persisted_plan_rejects_legacy_run_id() {
-    for run_id in [serde_json::Value::Null, "run-1".into()] {
-        // Arrange
-        let mut json = serde_json::to_value(draft()).unwrap();
-        json["plan"]["run_id"] = run_id;
+#[rstest::rstest]
+#[case::serde_json_value_null_1(0)]
+#[case::run_1_into_2(1)]
+fn persisted_plan_rejects_legacy_run_id(#[case] scenario_index: usize) {
+    let run_id = [serde_json::Value::Null, "run-1".into()]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
 
-        // Act
-        let result = serde_json::from_value::<ReviewDraft>(json);
+    // Arrange
+    let mut json = serde_json::to_value(draft()).unwrap();
+    json["plan"]["run_id"] = run_id;
 
-        // Assert
-        assert!(result.is_err());
-    }
+    // Act
+    let result = serde_json::from_value::<ReviewDraft>(json);
+
+    // Assert
+    assert!(result.is_err());
 }
 
 proptest::proptest! {
@@ -1521,58 +1623,63 @@ proptest::proptest! {
     fn report_reference_roundtrips_required_run_identity(
         run_id in "[a-zA-Z0-9_-]{1,80}", hash in "[0-9a-f]{64}"
     ) {
-        // Arrange
+
         let mut json = serde_json::to_value(draft()).unwrap();
         json["report"] = serde_json::json!({
             "artifact": {"path": "report.json", "content_hash": hash},
             "run_id": run_id,
         });
 
-        // Act
+
         let decoded = serde_json::from_value::<ReviewDraft>(json.clone());
 
-        // Assert
+
         proptest::prop_assert!(decoded.is_ok());
+
         let decoded = decoded.unwrap();
+
         proptest::prop_assert_eq!(serde_json::to_value(decoded).unwrap(), json);
     }
 }
 
-#[test]
-fn persisted_report_rejects_missing_or_null_run_identity() {
-    for run_id in [None, Some(serde_json::Value::Null)] {
-        // Arrange
-        let mut json = serde_json::to_value(draft()).unwrap();
-        let mut report = serde_json::json!({"artifact": json["plan"].clone()});
-        if let Some(run_id) = run_id {
-            report["run_id"] = run_id;
-        }
-        json["report"] = report;
+#[rstest::rstest]
+#[case::none_1(0)]
+#[case::some_serde_json_value_null_2(1)]
+fn persisted_report_rejects_missing_or_null_run_identity(#[case] scenario_index: usize) {
+    let run_id = [None, Some(serde_json::Value::Null)]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
 
-        // Act
-        let result = serde_json::from_value::<ReviewDraft>(json);
-
-        // Assert
-        assert!(result.is_err());
+    // Arrange
+    let mut json = serde_json::to_value(draft()).unwrap();
+    let mut report = serde_json::json!({"artifact": json["plan"].clone()});
+    if let Some(run_id) = run_id {
+        report["run_id"] = run_id;
     }
+    json["report"] = report;
+
+    // Act
+    let result = serde_json::from_value::<ReviewDraft>(json);
+
+    // Assert
+    assert!(result.is_err());
 }
 
-#[test]
-fn report_identifier_rejects_blank_text() {
-    for id in ["", " ", "\u{00a0}"] {
-        // Arrange
-        let mut value = draft();
-        value.report = Some(ReportReference {
-            artifact: value.plan.clone(),
-            run_id: id.into(),
-        });
+#[rstest::rstest]
+#[case::input_1("")]
+#[case::input_2(" ")]
+#[case::u_00a0_3("\u{00a0}")]
+fn report_identifier_rejects_blank_text(#[case] id: &str) {
+    let mut value = draft();
+    value.report = Some(ReportReference {
+        artifact: value.plan.clone(),
+        run_id: id.into(),
+    });
 
-        // Act
-        let result = validate_draft(&value);
+    let result = validate_draft(&value);
 
-        // Assert
-        assert!(result.is_err());
-    }
+    assert!(result.is_err());
 }
 
 #[test]
@@ -1718,58 +1825,54 @@ fn report_identifier_accepts_maximum_utf8_byte_length() {
     assert!(result.is_ok());
 }
 
-#[test]
-fn reference_content_rejects_empty_path() {
-    for report_reference in [false, true] {
-        // Arrange
-        let mut value = draft();
-        let reference = ArtifactReference {
-            path: "".into(),
-            content_hash: "a".repeat(64),
-        };
-        if report_reference {
-            value.report = Some(ReportReference {
-                artifact: reference,
-                run_id: "run-1".into(),
-            });
-        } else {
-            value.plan = reference;
-        }
-
-        // Act
-        let result = validate_draft(&value);
-
-        // Assert
-        assert!(result.is_err());
+#[rstest::rstest]
+#[case::false_1(false)]
+#[case::true_2(true)]
+fn reference_content_rejects_empty_path(#[case] report_reference: bool) {
+    let mut value = draft();
+    let reference = ArtifactReference {
+        path: "".into(),
+        content_hash: "a".repeat(64),
+    };
+    if report_reference {
+        value.report = Some(ReportReference {
+            artifact: reference,
+            run_id: "run-1".into(),
+        });
+    } else {
+        value.plan = reference;
     }
+
+    let result = validate_draft(&value);
+
+    assert!(result.is_err());
 }
 
-#[test]
-fn reference_content_rejects_malformed_hash() {
-    for hash in ["A".repeat(64), "g".repeat(64), "a".repeat(63)] {
-        for report_reference in [false, true] {
-            // Arrange
-            let mut value = draft();
-            let reference = ArtifactReference {
-                path: "plan.json".into(),
-                content_hash: hash.clone(),
-            };
-            if report_reference {
-                value.report = Some(ReportReference {
-                    artifact: reference,
-                    run_id: "run-1".into(),
-                });
-            } else {
-                value.plan = reference;
-            }
-
-            // Act
-            let result = validate_draft(&value);
-
-            // Assert
-            assert!(result.is_err());
-        }
+#[rstest::rstest]
+#[case::a_1_false_1("A".repeat(64), false)]
+#[case::a_1_true_2("A".repeat(64), true)]
+#[case::g_2_false_1("g".repeat(64), false)]
+#[case::g_2_true_2("g".repeat(64), true)]
+#[case::a_3_false_1("a".repeat(63), false)]
+#[case::a_3_true_2("a".repeat(63), true)]
+fn reference_content_rejects_malformed_hash(#[case] hash: String, #[case] report_reference: bool) {
+    let mut value = draft();
+    let reference = ArtifactReference {
+        path: "plan.json".into(),
+        content_hash: hash.clone(),
+    };
+    if report_reference {
+        value.report = Some(ReportReference {
+            artifact: reference,
+            run_id: "run-1".into(),
+        });
+    } else {
+        value.plan = reference;
     }
+
+    let result = validate_draft(&value);
+
+    assert!(result.is_err());
 }
 
 #[test]

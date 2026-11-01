@@ -47,17 +47,14 @@ invalid_documents! {
 
 }
 
-#[test]
-fn obsolete_shapes_are_rejected_without_diagnostic_precedence() {
-    for bytes in [
-        br#"{"schema_version":9} trailing"#.as_slice(),
-        br#"{"schema_version":9,"old":"\q"}"#,
-        br#"{"schema_version":9,"old":"\uD800"}"#,
-        br#"{"schema_version":9,"old":1e400}"#,
-        b"{\"schema_version\":9,\"old\":\"\xff\"}",
-    ] {
-        assert!(decode_manifest(bytes).is_err());
-    }
+#[rstest::rstest]
+#[case::br_schema_version_9_trailing_as_slice(br#"{"schema_version":9} trailing"#.as_slice())]
+#[case::br_schema_version_9_old_q(br#"{"schema_version":9,"old":"\q"}"#)]
+#[case::br_schema_version_9_old_ud800(br#"{"schema_version":9,"old":"\uD800"}"#)]
+#[case::br_schema_version_9_old_1e400(br#"{"schema_version":9,"old":1e400}"#)]
+#[case::b_schema_version_9_old_xff(b"{\"schema_version\":9,\"old\":\"\xff\"}")]
+fn obsolete_shapes_are_rejected_without_diagnostic_precedence(#[case] bytes: &[u8]) {
+    assert!(decode_manifest(bytes).is_err());
 }
 
 #[test]
@@ -139,6 +136,7 @@ fn duplicate_nested_known_field_is_rejected_from_original_bytes() {
         "\"files\":[\"sample.py\"],\"files\":[\"sample.py\"]",
         1,
     );
+
     assert!(
         input.matches("\"files\"").count() == 2,
         "fixture did not duplicate files"
@@ -183,14 +181,15 @@ proptest! {
     }
 }
 
-#[test]
-fn current_shaped_old_and_future_versions_are_rejected() {
-    for version in [9, 11] {
-        let bytes = bytes_with_schema(7, false, 32);
-        let text = String::from_utf8(bytes).unwrap().replace(
-            "\"schema_version\":10",
-            &format!("\"schema_version\":{version}"),
-        );
-        assert!(message(text.as_bytes()).contains("unsupported schema version"));
-    }
+#[rstest::rstest]
+#[case::input_9_1(9)]
+#[case::input_11_2(11)]
+fn current_shaped_old_and_future_versions_are_rejected(#[case] version: usize) {
+    let bytes = bytes_with_schema(7, false, 32);
+    let text = String::from_utf8(bytes).unwrap().replace(
+        "\"schema_version\":10",
+        &format!("\"schema_version\":{version}"),
+    );
+
+    assert!(message(text.as_bytes()).contains("unsupported schema version"));
 }

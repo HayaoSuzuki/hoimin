@@ -321,47 +321,47 @@ async fn large_single_line_patch_preserves_legacy_rename_line_identity() {
     );
 }
 
+#[rstest::rstest]
+#[case::into_1("into", "data/old.py", "selected/new.py", 2, vec![LineRange { start: 41, end: 41 }])]
+#[case::out_2("out", "selected/old.py", "data/new.py", 1, vec![])]
+#[case::unrelated_3("unrelated", "data/old.py", "data/new.py", 1, vec![])]
 #[tokio::test]
-async fn selected_and_unrelated_rename_directions_preserve_hunk_ranges() {
-    for (direction, old, new, expected_count, expected_rename_lines) in [
-        (
-            "into",
-            "data/old.py",
-            "selected/new.py",
-            2,
-            vec![LineRange { start: 41, end: 41 }],
-        ),
-        ("out", "selected/old.py", "data/new.py", 1, vec![]),
-        ("unrelated", "data/old.py", "data/new.py", 1, vec![]),
-    ] {
-        let repo = Repository::new().await;
-        let header = "# stable rename evidence\n".repeat(40);
-        repo.write("selected/ordinary.py", "x = 1\n");
-        repo.write(old, format!("{header}x = 1\n"));
-        repo.commit().await;
-        std::fs::create_dir_all(repo.root().join("data")).unwrap();
-        repo.git(&["mv", old, new]).await;
-        repo.write(new, format!("{header}x = 2\n"));
-        repo.write("selected/ordinary.py", "x = 9\n");
-        let status = String::from_utf8(
-            repo.git(&["diff", "--name-status", "--find-renames", "HEAD"])
-                .await,
-        )
-        .unwrap();
-        assert!(status.lines().any(|line| line.starts_with('R')), "{status}");
-        let changed = repo.compare(0, None).await;
-        assert_eq!(changed.len(), expected_count, "{direction}");
-        assert_eq!(
-            changed
-                .iter()
-                .filter(|target| target.path == new)
-                .flat_map(|target| target.lines.iter())
-                .copied()
-                .collect::<Vec<_>>(),
-            expected_rename_lines,
-            "{direction}"
-        );
-    }
+async fn selected_and_unrelated_rename_directions_preserve_hunk_ranges(
+    #[case] direction: &str,
+    #[case] old: &str,
+    #[case] new: &str,
+    #[case] expected_count: usize,
+    #[case] expected_rename_lines: Vec<LineRange>,
+) {
+    let repo = Repository::new().await;
+    let header = "# stable rename evidence\n".repeat(40);
+    repo.write("selected/ordinary.py", "x = 1\n");
+    repo.write(old, format!("{header}x = 1\n"));
+    repo.commit().await;
+    std::fs::create_dir_all(repo.root().join("data")).unwrap();
+    repo.git(&["mv", old, new]).await;
+    repo.write(new, format!("{header}x = 2\n"));
+    repo.write("selected/ordinary.py", "x = 9\n");
+
+    let status = String::from_utf8(
+        repo.git(&["diff", "--name-status", "--find-renames", "HEAD"])
+            .await,
+    )
+    .unwrap();
+
+    assert!(status.lines().any(|line| line.starts_with('R')), "{status}");
+    let changed = repo.compare(0, None).await;
+    assert_eq!(changed.len(), expected_count, "{direction}");
+    assert_eq!(
+        changed
+            .iter()
+            .filter(|target| target.path == new)
+            .flat_map(|target| target.lines.iter())
+            .copied()
+            .collect::<Vec<_>>(),
+        expected_rename_lines,
+        "{direction}"
+    );
 }
 
 #[cfg(unix)]
@@ -449,26 +449,27 @@ async fn empty_scope_still_validates_diff_base_and_repository() {
     ));
 }
 
+#[rstest::rstest]
+#[case::input_0_linerange_start_2_end_3_1(0, LineRange { start: 2, end: 3 })]
+#[case::input_1_linerange_start_1_end_4_2(1, LineRange { start: 1, end: 4 })]
 #[tokio::test]
-async fn tracked_mixed_newlines_select_physical_rows_with_git_context() {
-    for (context, expected) in [
-        (0, LineRange { start: 2, end: 3 }),
-        (1, LineRange { start: 1, end: 4 }),
-    ] {
-        let repo = Repository::new().await;
-        repo.write("selected/app.py", b"a = 1\r\nb = 2\rc = 3\nd = 4\r");
-        repo.commit().await;
-        repo.write("selected/app.py", b"a = 1\r\nb = 9\rc = 3\nd = 4\r");
-        let selection = Selection {
-            changed: Some(hoimin_core::ChangedSelection::new(context, None).unwrap()),
-            ..repo.selection()
-        };
+async fn tracked_mixed_newlines_select_physical_rows_with_git_context(
+    #[case] context: u32,
+    #[case] expected: LineRange,
+) {
+    let repo = Repository::new().await;
+    repo.write("selected/app.py", b"a = 1\r\nb = 2\rc = 3\nd = 4\r");
+    repo.commit().await;
+    repo.write("selected/app.py", b"a = 1\r\nb = 9\rc = 3\nd = 4\r");
+    let selection = Selection {
+        changed: Some(hoimin_core::ChangedSelection::new(context, None).unwrap()),
+        ..repo.selection()
+    };
 
-        let changed = TargetHandler::resolve(&selection).await.unwrap();
+    let changed = TargetHandler::resolve(&selection).await.unwrap();
 
-        assert_eq!(changed.len(), 1);
-        assert_eq!(changed[0].lines, [expected]);
-    }
+    assert_eq!(changed.len(), 1);
+    assert_eq!(changed[0].lines, [expected]);
 }
 
 #[tokio::test]
@@ -493,41 +494,37 @@ async fn explicit_diff_base_translates_mixed_newlines_to_physical_rows() {
     assert_eq!(changed[0].lines, [LineRange { start: 1, end: 2 }]);
 }
 
+#[rstest::rstest]
+#[case::mixed_cr_lf(b"a = 1\rb = 2\n".as_slice())]
+#[case::mixed_crlf_cr(b"a = 1\r\nb = 2\r")]
+#[case::no_trailing_newline(b"a = 1\nb = 2")]
 #[tokio::test]
-async fn unborn_index_ranges_already_count_python_physical_rows() {
-    for contents in [
-        b"a = 1\rb = 2\n".as_slice(),
-        b"a = 1\r\nb = 2\r",
-        b"a = 1\nb = 2",
-    ] {
-        let repo = Repository::new().await;
-        repo.write("selected/app.py", contents);
-        repo.git(&["add", "."]).await;
-        let selection = repo.selection();
+async fn unborn_index_ranges_already_count_python_physical_rows(#[case] contents: &[u8]) {
+    let repo = Repository::new().await;
+    repo.write("selected/app.py", contents);
+    repo.git(&["add", "."]).await;
+    let selection = repo.selection();
 
-        let changed = TargetHandler::resolve(&selection).await.unwrap();
+    let changed = TargetHandler::resolve(&selection).await.unwrap();
 
-        assert_eq!(changed.len(), 1);
-        assert_eq!(changed[0].lines, [LineRange { start: 1, end: 2 }]);
-    }
+    assert_eq!(changed.len(), 1);
+    assert_eq!(changed[0].lines, [LineRange { start: 1, end: 2 }]);
 }
 
+#[rstest::rstest]
+#[case::mixed_cr_lf(b"a = 1\rb = 2\n".as_slice())]
+#[case::mixed_crlf_cr(b"a = 1\r\nb = 2\r")]
+#[case::no_trailing_newline(b"a = 1\nb = 2")]
 #[tokio::test]
-async fn untracked_ranges_already_count_python_physical_rows() {
-    for contents in [
-        b"a = 1\rb = 2\n".as_slice(),
-        b"a = 1\r\nb = 2\r",
-        b"a = 1\nb = 2",
-    ] {
-        let repo = Repository::new().await;
-        repo.git(&["commit", "--allow-empty", "-qm", "initial"])
-            .await;
-        repo.write("selected/app.py", contents);
-        let selection = repo.selection();
+async fn untracked_ranges_already_count_python_physical_rows(#[case] contents: &[u8]) {
+    let repo = Repository::new().await;
+    repo.git(&["commit", "--allow-empty", "-qm", "initial"])
+        .await;
+    repo.write("selected/app.py", contents);
+    let selection = repo.selection();
 
-        let changed = TargetHandler::resolve(&selection).await.unwrap();
+    let changed = TargetHandler::resolve(&selection).await.unwrap();
 
-        assert_eq!(changed.len(), 1);
-        assert_eq!(changed[0].lines, [LineRange { start: 1, end: 2 }]);
-    }
+    assert_eq!(changed.len(), 1);
+    assert_eq!(changed[0].lines, [LineRange { start: 1, end: 2 }]);
 }

@@ -183,132 +183,166 @@ fn check_payload_window(
     within_bound
 }
 
+#[rstest::rstest]
+#[case::large_bodies(256 * 1024, 2)]
+#[case::many_small_bodies(16, 64)]
 #[allow(
     clippy::too_many_lines,
-    reason = "keep measured public transition paths together"
+    reason = "keep the measured transition chain together"
 )]
-#[test]
-fn worker_identity_transitions_do_not_copy_candidate_bodies() {
+fn worker_identity_cached_transitions_do_not_copy_candidate_bodies(
+    #[case] field_bytes: usize,
+    #[case] count: u64,
+) {
     let _guard = OBSERVATION.lock().unwrap();
     worker_heap::self_check();
     let mut within_bound = true;
-    // Large bodies and many small bodies are distinct bounded workloads.
-    for (field_bytes, count) in [(256 * 1024, 2), (16, 64)] {
-        for session in [false, true] {
-            let started = std::time::Instant::now();
-            let mut allocated = 0;
-            let mut peak = 0;
-            for sequence in 1..=count {
-                let (state, read) = waiting_for_first_read(1, session);
-                let loaded = RunEvent::CandidateLoaded(CandidateLoaded {
-                    id: read.id,
-                    worker: read.worker,
-                    candidate: Some(candidate(sequence, field_bytes)),
-                });
-                let (mut state, mut effects) = if session {
-                    let (state, effects, measured) = observed(state, loaded);
-                    within_bound &= check_window("lookup dispatch", &measured);
-                    allocated += measured.allocated;
-                    peak = peak.max(measured.peak_delta);
-                    (state, effects)
-                } else {
-                    transition(state, loaded).unwrap()
-                };
-                if session {
-                    let RunEffect::LookupStoredResult(request) = effects.remove(0) else {
-                        panic!("lookup");
-                    };
-                    let event = RunEvent::StoredResultLoaded(hoimin_core::StoredResultLoaded {
-                        id: request.id,
-                        worker: request.worker,
-                        result: Some(hoimin_core::StoredResult {
-                            mutant_id: request.mutant_id,
-                            status: hoimin_core::MutationStatus::Killed,
-                        }),
-                    });
-                    let measured;
-                    (state, effects, measured) = observed(state, event);
-                    within_bound &=
-                        check_window("reuse identity validation and started output", &measured);
-                    allocated += measured.allocated;
-                    peak = peak.max(measured.peak_delta);
-                    let RunEffect::EmitOutput(output) = effects.remove(0) else {
-                        panic!("synthetic started");
-                    };
-                    let event = RunEvent::OutputEmitted(OutputEmitted { id: output.id });
-                    drop(output);
-                    let measured;
-                    (state, effects, measured) = observed(state, event);
-                    within_bound &= check_payload_window(
-                        "synthetic finished output",
-                        &measured,
-                        2 * field_bytes,
-                    );
-                    allocated += measured.allocated;
-                    peak = peak.max(measured.peak_delta);
-                } else {
-                    let RunEffect::ApplyMutation(request) = effects.remove(0) else {
-                        panic!("apply");
-                    };
-                    let event = RunEvent::MutationApplied(hoimin_core::MutationApplied {
-                        id: request.id,
-                        worker: request.worker,
-                    });
-                    drop(request);
-                    let measured;
-                    (state, effects, measured) = observed(state, event);
-                    within_bound &= check_window("started output", &measured);
-                    allocated += measured.allocated;
-                    peak = peak.max(measured.peak_delta);
-                    let RunEffect::EmitOutput(output) = effects.remove(0) else {
-                        panic!("started");
-                    };
-                    assert!(matches!(
-                        output.event,
-                        hoimin_core::OutputEvent::MutantStarted(_)
-                    ));
-                    let event = RunEvent::OutputEmitted(OutputEmitted { id: output.id });
-                    drop(output);
-                    let measured;
-                    (state, effects, measured) = observed(state, event);
-                    within_bound &= check_window("process dispatch", &measured);
-                    allocated += measured.allocated;
-                    peak = peak.max(measured.peak_delta);
-                    assert!(
-                        matches!(effects.as_slice(), [RunEffect::RunMutant(process)] if process.context.mutant_id == format!("{sequence:064x}"))
-                    );
-                    let RunEffect::RunMutant(process) = effects.remove(0) else {
-                        panic!("process");
-                    };
-                    let event = RunEvent::MutantFinished(ProcessFinished {
-                        id: process.id,
-                        worker: Some(process.context.worker),
-                        termination: ProcessTermination::Exit(1),
-                        output_state: ProcessOutputState::Complete,
-                        output: OutputSpoolRef {
-                            token: "mutant".into(),
-                            retained: 0,
-                            observed: 0,
-                        },
-                        elapsed: Duration::from_millis(1),
-                        resource_mode: ResourceMode::Hard,
-                    });
-                    drop(process);
-                    let measured;
-                    (state, effects, measured) = observed(state, event);
-                    within_bound &=
-                        check_payload_window("finished result", &measured, 2 * field_bytes);
-                    allocated += measured.allocated;
-                    peak = peak.max(measured.peak_delta);
-                }
-                std::hint::black_box((&state, &effects));
-            }
-            eprintln!(
-                "worker-heap field_bytes={field_bytes} candidates={count} session={session} allocated={allocated} peak={peak} elapsed={:?}",
-                started.elapsed()
-            );
+    let session = true;
+    let started = std::time::Instant::now();
+    let mut allocated = 0;
+    let mut peak = 0;
+    for sequence in 1..=count {
+        let (state, read) = waiting_for_first_read(1, session);
+        let loaded = RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read.id,
+            worker: read.worker,
+            candidate: Some(candidate(sequence, field_bytes)),
+        });
+        let (mut state, mut effects) = {
+            let (state, effects, measured) = observed(state, loaded);
+            within_bound &= check_window("lookup dispatch", &measured);
+            allocated += measured.allocated;
+            peak = peak.max(measured.peak_delta);
+            (state, effects)
+        };
+        {
+            let RunEffect::LookupStoredResult(request) = effects.remove(0) else {
+                panic!("lookup");
+            };
+            let event = RunEvent::StoredResultLoaded(hoimin_core::StoredResultLoaded {
+                id: request.id,
+                worker: request.worker,
+                result: Some(hoimin_core::StoredResult {
+                    mutant_id: request.mutant_id,
+                    status: hoimin_core::MutationStatus::Killed,
+                }),
+            });
+            let measured;
+            (state, effects, measured) = observed(state, event);
+            within_bound &= check_window("reuse identity validation and started output", &measured);
+            allocated += measured.allocated;
+            peak = peak.max(measured.peak_delta);
+            let RunEffect::EmitOutput(output) = effects.remove(0) else {
+                panic!("synthetic started");
+            };
+            let event = RunEvent::OutputEmitted(OutputEmitted { id: output.id });
+            drop(output);
+            let measured;
+            (state, effects, measured) = observed(state, event);
+            within_bound &=
+                check_payload_window("synthetic finished output", &measured, 2 * field_bytes);
+            allocated += measured.allocated;
+            peak = peak.max(measured.peak_delta);
         }
+        std::hint::black_box((&state, &effects));
     }
+    eprintln!(
+        "worker-heap field_bytes={field_bytes} candidates={count} session={session} allocated={allocated} peak={peak} elapsed={:?}",
+        started.elapsed()
+    );
+    assert!(
+        within_bound,
+        "identity transitions allocated candidate-sized temporary bodies"
+    );
+}
+
+#[rstest::rstest]
+#[case::large_bodies(256 * 1024, 2)]
+#[case::many_small_bodies(16, 64)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "keep the measured transition chain together"
+)]
+fn worker_identity_executed_transitions_do_not_copy_candidate_bodies(
+    #[case] field_bytes: usize,
+    #[case] count: u64,
+) {
+    let _guard = OBSERVATION.lock().unwrap();
+    worker_heap::self_check();
+    let mut within_bound = true;
+    let session = false;
+    let started = std::time::Instant::now();
+    let mut allocated = 0;
+    let mut peak = 0;
+    for sequence in 1..=count {
+        let (state, read) = waiting_for_first_read(1, session);
+        let loaded = RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read.id,
+            worker: read.worker,
+            candidate: Some(candidate(sequence, field_bytes)),
+        });
+        let (mut state, mut effects) = { transition(state, loaded).unwrap() };
+        {
+            let RunEffect::ApplyMutation(request) = effects.remove(0) else {
+                panic!("apply");
+            };
+            let event = RunEvent::MutationApplied(hoimin_core::MutationApplied {
+                id: request.id,
+                worker: request.worker,
+            });
+            drop(request);
+            let measured;
+            (state, effects, measured) = observed(state, event);
+            within_bound &= check_window("started output", &measured);
+            allocated += measured.allocated;
+            peak = peak.max(measured.peak_delta);
+            let RunEffect::EmitOutput(output) = effects.remove(0) else {
+                panic!("started");
+            };
+
+            assert!(matches!(
+                output.event,
+                hoimin_core::OutputEvent::MutantStarted(_)
+            ));
+            let event = RunEvent::OutputEmitted(OutputEmitted { id: output.id });
+            drop(output);
+            let measured;
+            (state, effects, measured) = observed(state, event);
+            within_bound &= check_window("process dispatch", &measured);
+            allocated += measured.allocated;
+            peak = peak.max(measured.peak_delta);
+            assert!(
+                matches!(effects.as_slice(), [RunEffect::RunMutant(process)] if process.context.mutant_id == format!("{sequence:064x}"))
+            );
+            let RunEffect::RunMutant(process) = effects.remove(0) else {
+                panic!("process");
+            };
+            let event = RunEvent::MutantFinished(ProcessFinished {
+                id: process.id,
+                worker: Some(process.context.worker),
+                termination: ProcessTermination::Exit(1),
+                output_state: ProcessOutputState::Complete,
+                output: OutputSpoolRef {
+                    token: "mutant".into(),
+                    retained: 0,
+                    observed: 0,
+                },
+                elapsed: Duration::from_millis(1),
+                resource_mode: ResourceMode::Hard,
+            });
+            drop(process);
+            let measured;
+            (state, effects, measured) = observed(state, event);
+            within_bound &= check_payload_window("finished result", &measured, 2 * field_bytes);
+            allocated += measured.allocated;
+            peak = peak.max(measured.peak_delta);
+        }
+        std::hint::black_box((&state, &effects));
+    }
+    eprintln!(
+        "worker-heap field_bytes={field_bytes} candidates={count} session={session} allocated={allocated} peak={peak} elapsed={:?}",
+        started.elapsed()
+    );
     assert!(
         within_bound,
         "identity transitions allocated candidate-sized temporary bodies"

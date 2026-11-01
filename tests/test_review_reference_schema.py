@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from hypothesis import example, given
 from hypothesis import strategies as st
 from jsonschema import Draft202012Validator
@@ -16,20 +17,20 @@ VALIDATOR = Draft202012Validator({"$defs": SCHEMA["$defs"], **REPORT})
 CONTROLS = tuple(chr(code) for code in (*range(32), *range(127, 160)))
 
 
-@example(control="\n", at_end=True)
-@given(control=st.sampled_from(CONTROLS), at_end=st.booleans())
+@pytest.mark.parametrize(
+    "control", CONTROLS, ids=lambda control: f"U+{ord(control):04X}"
+)
+@example(at_end=True)
+@given(at_end=st.booleans())
 def test_report_identifier_rejects_control_characters(
     *, control: str, at_end: bool
 ) -> None:
-    # Arrange
     run_id = f"run-1{control}" if at_end else f"run{control}1"
     report = {
         "artifact": {"path": "report.json", "content_hash": "a" * 64},
         "run_id": run_id,
     }
 
-    # Act
     errors = list(VALIDATOR.iter_errors(report))
 
-    # Assert
     assert errors

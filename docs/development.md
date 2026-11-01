@@ -296,10 +296,14 @@ fn reading_missing_store_does_not_create_it() {
 }
 ```
 
-Keep assertions about the same result together, including related side effects.
-Split independent successful and rejected inputs into named tests or parameterized
-cases. Each case should start from its own prepared state. Keep ordered operations
-together when testing their interaction, such as retries, concurrent writes or
+Each test invocation must exercise one test case: one prepared input/state, one
+behavior under test, and its expected outcome. Parameterized functions and property
+tests satisfy this rule for each selected or generated input. Keep assertions
+about the same result together, including related side effects; one case can need
+multiple assertions. Split independent successful and rejected inputs into named
+tests or parameterized cases. Each case must start from its own prepared state.
+Keep ordered operations together when testing their interaction, such as retries,
+concurrent writes or
 persisting history across reopen. Capture intermediate results and verify them
 together after the sequence. Fixture precondition checks can stay with setup;
 keep cleanup in fixtures, context managers or Rust RAII. For exceptions,
@@ -315,11 +319,27 @@ test drivers may branch to construct inputs or simulate the system; do not move
 conditional assertions into helpers. A Rust variant guard that fails immediately
 for an unexpected result is an assertion, rather than a choice of test scenario.
 
-Prefer property-based tests when a parameter table samples a wider input domain
-governed by one invariant. Keep the original boundaries as explicit examples,
-use bounded strategies, and retain shrinking. Keep finite categories exhaustive
-(platforms, execution event kinds, error kinds and oracle corpus rows). Avoid generating
-large numbers of expensive subprocess cases when focused examples suffice.
+Parameterize cases that share setup, execution and assertion logic. Use
+`pytest.mark.parametrize` in Python and `rstest::rstest` with named `#[case(...)]`
+rows in Rust. Add `rstest` as a dev-dependency to the crate that uses it. Give each
+case a descriptive ID/name so failures identify the input. Do not run independent
+cases in a loop inside a test, and do not duplicate test bodies for different
+input values. A standalone test remains appropriate for a distinct behavior.
+
+Review parameter tables for conversion to property-based tests whenever adding or
+changing tests. Convert sampled numeric ranges, strings, collections and other
+wider domains governed by one invariant to Hypothesis in Python or proptest in
+Rust. Generate inputs from that domain rather than only sampling the old table.
+Keep the original boundaries and regression inputs as explicit examples or
+separate regression tests, use bounded strategies, and retain shrinking. Keep
+finite categories exhaustive (platforms, execution event kinds, error kinds and
+oracle corpus rows). Avoid generating large numbers of expensive subprocess cases
+when focused examples suffice.
+
+When reviewing Python or Rust tests, check AAA phase separation, one case per
+invocation, parameterization of repeated logic, and opportunities for generated
+inputs. Check Rust tables for `rstest` use. Apply these rules to repository-owned
+tests; leave vendored test suites under their upstream conventions.
 
 See [Semaphore's AAA guide](https://semaphore.io/blog/aaa-pattern-test-automation)
 and [Alex Nicolas's examples](https://dev.to/alexnicolascode/mastering-unit-testing-the-power-of-the-aaa-arrange-act-assert-oki).

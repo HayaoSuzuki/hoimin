@@ -555,21 +555,22 @@ source_boundary_case!(
 
 #[test]
 fn normalized_relative_cycle_excludes_only_its_members() {
-    // Arrange: package-qualified aliases must converge on the same two vertices.
+    // package-qualified aliases must converge on the same two vertices.
     let sources = [
         ("pkg/__init__.py", ""),
         ("pkg/target.py", "from .a import sentinel\n"),
         ("pkg/a.py", "from .b import sentinel\n"),
         ("pkg/b.py", "from .a import sentinel\n"),
     ];
-    // Act.
+
     let index = source_index(&sources);
-    // Assert.
+
     let excluded = index
         .modules
         .iter()
         .filter(|(_, module)| module.dynamic)
         .map(|(path, _)| path.as_str())
         .collect::<Vec<_>>();
+
     assert_eq!(excluded, ["pkg/a.py", "pkg/b.py"]);
 }

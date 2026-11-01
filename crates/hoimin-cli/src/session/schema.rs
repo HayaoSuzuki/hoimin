@@ -345,6 +345,7 @@ mod tests {
         let path = temp.path().join("session.sqlite3");
         std::fs::write(&path, []).unwrap();
         let handler = super::super::SessionHandler::open(&path).unwrap();
+
         assert_eq!(user_version(&handler.connection), SCHEMA_VERSION);
         drop(handler);
         let reopened = super::super::SessionHandler::open(&path).unwrap();
@@ -425,62 +426,61 @@ mod tests {
         entries
     }
 
-    #[test]
-    fn issue_1094_shared_companions_are_rejected_before_any_sqlite_side_effects() {
-        let mut failures = Vec::new();
-        for state in [
-            CompanionDatabase::Missing,
-            CompanionDatabase::Empty,
-            CompanionDatabase::Current,
-            CompanionDatabase::Foreign,
-            CompanionDatabase::Unsupported,
-        ] {
-            for suffix in ["-journal", "-wal", "-shm"] {
-                let temp = tempfile::tempdir().unwrap();
-                let database = temp.path().join("session.sqlite3");
-                prepare_companion_database(&database, state);
-                let source = temp.path().join("source.py");
-                std::fs::write(&source, []).unwrap();
-                let companion = database.with_file_name(format!("session.sqlite3{suffix}"));
-                std::fs::hard_link(&source, &companion).unwrap();
-                let before = directory_snapshot(temp.path());
-                let result = super::super::SessionHandler::open(&database);
-                let rejected = matches!(
-                    &result,
-                    Err(super::super::SessionError::Schema(SchemaError::SharedFile))
-                );
-                let error = result.as_ref().err().map(ToString::to_string);
-                drop(result);
-                let after = directory_snapshot(temp.path());
-                if !rejected || before != after {
-                    failures.push(format!("{state:?} {suffix}: shared rejection={rejected}, source bytes={}, disk unchanged={}, error={error:?}",
-                        std::fs::metadata(&source).unwrap().len(), before == after));
-                }
-            }
-        }
-        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    #[rstest::rstest]
+    #[case::missing(CompanionDatabase::Missing)]
+    #[case::empty(CompanionDatabase::Empty)]
+    #[case::current(CompanionDatabase::Current)]
+    #[case::foreign(CompanionDatabase::Foreign)]
+    #[case::unsupported(CompanionDatabase::Unsupported)]
+    fn issue_1094_shared_companions_are_rejected_before_any_sqlite_side_effects(
+        #[case] state: CompanionDatabase,
+        #[values("-journal", "-wal", "-shm")] suffix: &str,
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("session.sqlite3");
+        prepare_companion_database(&database, state);
+        let source = temp.path().join("source.py");
+        std::fs::write(&source, []).unwrap();
+        let companion = database.with_file_name(format!("session.sqlite3{suffix}"));
+        std::fs::hard_link(&source, &companion).unwrap();
+        let before = directory_snapshot(temp.path());
+
+        let result = super::super::SessionHandler::open(&database);
+        let rejected = matches!(
+            &result,
+            Err(super::super::SessionError::Schema(SchemaError::SharedFile))
+        );
+        drop(result);
+        let after = directory_snapshot(temp.path());
+
+        assert!(rejected, "{state:?} {suffix}");
+        assert_eq!(before, after, "{state:?} {suffix}");
     }
 
-    #[test]
-    fn issue_1094_single_link_companions_allow_initialization_and_reopen() {
-        for state in [
-            CompanionDatabase::Missing,
-            CompanionDatabase::Empty,
-            CompanionDatabase::Current,
-        ] {
-            for suffix in ["-journal", "-wal", "-shm"] {
-                let temp = tempfile::tempdir().unwrap();
-                let path = temp.path().join("session.sqlite3");
-                prepare_companion_database(&path, state);
-                std::fs::write(path.with_file_name(format!("session.sqlite3{suffix}")), [])
-                    .unwrap();
-                let handler = super::super::SessionHandler::open(&path).unwrap();
-                assert_eq!(user_version(&handler.connection), SCHEMA_VERSION);
-                drop(handler);
-                let reopened = super::super::SessionHandler::open(&path).unwrap();
-                assert_eq!(user_version(&reopened.connection), SCHEMA_VERSION);
-            }
-        }
+    #[rstest::rstest]
+    #[case::companiondatabase_missing_1_journal_1(CompanionDatabase::Missing, "-journal")]
+    #[case::companiondatabase_missing_1_wal_2(CompanionDatabase::Missing, "-wal")]
+    #[case::companiondatabase_missing_1_shm_3(CompanionDatabase::Missing, "-shm")]
+    #[case::companiondatabase_empty_2_journal_1(CompanionDatabase::Empty, "-journal")]
+    #[case::companiondatabase_empty_2_wal_2(CompanionDatabase::Empty, "-wal")]
+    #[case::companiondatabase_empty_2_shm_3(CompanionDatabase::Empty, "-shm")]
+    #[case::companiondatabase_current_3_journal_1(CompanionDatabase::Current, "-journal")]
+    #[case::companiondatabase_current_3_wal_2(CompanionDatabase::Current, "-wal")]
+    #[case::companiondatabase_current_3_shm_3(CompanionDatabase::Current, "-shm")]
+    fn issue_1094_single_link_companions_allow_initialization_and_reopen(
+        #[case] state: CompanionDatabase,
+        #[case] suffix: &str,
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("session.sqlite3");
+        prepare_companion_database(&path, state);
+        std::fs::write(path.with_file_name(format!("session.sqlite3{suffix}")), []).unwrap();
+        let handler = super::super::SessionHandler::open(&path).unwrap();
+
+        assert_eq!(user_version(&handler.connection), SCHEMA_VERSION);
+        drop(handler);
+        let reopened = super::super::SessionHandler::open(&path).unwrap();
+        assert_eq!(user_version(&reopened.connection), SCHEMA_VERSION);
     }
 
     #[test]
@@ -501,6 +501,7 @@ mod tests {
         let companions = crate::artifacts::SqliteCompanions::new(&path);
         for companion in [&companions.wal, &companions.shm] {
             let file = std::fs::File::open(companion).unwrap();
+
             assert!(file.metadata().unwrap().len() > 0);
             assert_eq!(crate::file_links::file_link_count(&file).unwrap(), 1);
         }
@@ -512,53 +513,63 @@ mod tests {
         assert_eq!(user_version(&reopened.connection), SCHEMA_VERSION);
     }
 
-    #[test]
-    fn issue_1094_companion_directories_are_rejected_before_database_creation() {
-        for suffix in ["-journal", "-wal", "-shm"] {
-            let temp = tempfile::tempdir().unwrap();
-            let path = temp.path().join("session.sqlite3");
-            let directory = path.with_file_name(format!("session.sqlite3{suffix}"));
-            std::fs::create_dir(&directory).unwrap();
-            std::fs::write(directory.join("keep"), b"keep").unwrap();
-            assert!(matches!(
-                super::super::SessionHandler::open(&path),
-                Err(super::super::SessionError::Schema(SchemaError::Inspect(_)))
-            ));
-            assert!(!path.exists());
-            assert_eq!(std::fs::read(directory.join("keep")).unwrap(), b"keep");
-        }
+    #[rstest::rstest]
+    #[case::journal_1("-journal")]
+    #[case::wal_2("-wal")]
+    #[case::shm_3("-shm")]
+    fn issue_1094_companion_directories_are_rejected_before_database_creation(
+        #[case] suffix: &str,
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("session.sqlite3");
+        let directory = path.with_file_name(format!("session.sqlite3{suffix}"));
+        std::fs::create_dir(&directory).unwrap();
+        std::fs::write(directory.join("keep"), b"keep").unwrap();
+
+        assert!(matches!(
+            super::super::SessionHandler::open(&path),
+            Err(super::super::SessionError::Schema(SchemaError::Inspect(_)))
+        ));
+        assert!(!path.exists());
+        assert_eq!(std::fs::read(directory.join("keep")).unwrap(), b"keep");
     }
 
     #[cfg(unix)]
-    #[test]
-    fn issue_1094_companion_symlinks_are_rejected_before_database_creation() {
-        for suffix in ["-journal", "-wal", "-shm"] {
-            for dangling in [false, true] {
-                let temp = tempfile::tempdir().unwrap();
-                let path = temp.path().join("session.sqlite3");
-                let source = temp.path().join("source.py");
-                if !dangling {
-                    std::fs::write(&source, b"keep").unwrap();
-                }
-                let companion = path.with_file_name(format!("session.sqlite3{suffix}"));
-                std::os::unix::fs::symlink(&source, &companion).unwrap();
-                assert!(matches!(
-                    super::super::SessionHandler::open(&path),
-                    Err(super::super::SessionError::Schema(SchemaError::Inspect(_)))
-                ));
-                assert!(!path.exists());
-                assert!(
-                    std::fs::symlink_metadata(&companion)
-                        .unwrap()
-                        .file_type()
-                        .is_symlink()
-                );
-                if dangling {
-                    assert!(!source.exists());
-                } else {
-                    assert_eq!(std::fs::read(&source).unwrap(), b"keep");
-                }
-            }
+    #[rstest::rstest]
+    #[case::journal_1_false_1("-journal", false)]
+    #[case::journal_1_true_2("-journal", true)]
+    #[case::wal_2_false_1("-wal", false)]
+    #[case::wal_2_true_2("-wal", true)]
+    #[case::shm_3_false_1("-shm", false)]
+    #[case::shm_3_true_2("-shm", true)]
+    fn issue_1094_companion_symlinks_are_rejected_before_database_creation(
+        #[case] suffix: &str,
+        #[case] dangling: bool,
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("session.sqlite3");
+        let source = temp.path().join("source.py");
+        if !dangling {
+            std::fs::write(&source, b"keep").unwrap();
+        }
+        let companion = path.with_file_name(format!("session.sqlite3{suffix}"));
+        std::os::unix::fs::symlink(&source, &companion).unwrap();
+
+        assert!(matches!(
+            super::super::SessionHandler::open(&path),
+            Err(super::super::SessionError::Schema(SchemaError::Inspect(_)))
+        ));
+        assert!(!path.exists());
+        assert!(
+            std::fs::symlink_metadata(&companion)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        if dangling {
+            assert!(!source.exists());
+        } else {
+            assert_eq!(std::fs::read(&source).unwrap(), b"keep");
         }
     }
 
@@ -576,8 +587,10 @@ mod tests {
         std::fs::write(&companion, b"keep").unwrap();
         let permissions = std::fs::metadata(&companion).unwrap().permissions();
         std::fs::set_permissions(&companion, std::fs::Permissions::from_mode(0o000)).unwrap();
+
         let result = super::super::SessionHandler::open(&path);
         std::fs::set_permissions(&companion, permissions).unwrap();
+
         assert!(matches!(
             result,
             Err(super::super::SessionError::Schema(SchemaError::Inspect(_)))
@@ -588,26 +601,31 @@ mod tests {
 
     // These fixtures are closed before open: admission must not change their
     // journal mode, headers, contents, or leave SQLite companion files behind.
-    #[test]
-    fn admission_rejects_foreign_databases_without_disk_changes() {
-        for sql in [
-            "CREATE TABLE application_data(value TEXT); INSERT INTO application_data VALUES ('keep');",
-            "CREATE TABLE diagnostics(marker TEXT); INSERT INTO diagnostics VALUES ('keep');",
-            "PRAGMA application_id=12345;",
-            "CREATE TABLE application_data(value TEXT); INSERT INTO application_data VALUES ('keep'); PRAGMA user_version=5;",
-            "PRAGMA user_version=-1;",
-            "PRAGMA user_version=6;",
-            "CREATE VIEW application_view AS SELECT 1;",
-            "PRAGMA journal_mode=WAL; CREATE TABLE application_data(value TEXT); INSERT INTO application_data VALUES ('keep');",
-        ] {
-            let temp = tempfile::tempdir().unwrap();
-            let path = temp.path().join("foreign.sqlite3");
-            {
-                let connection = Connection::open(&path).unwrap();
-                connection.execute_batch(sql).unwrap();
-            }
-            assert_rejected_without_disk_changes(&path);
+    #[rstest::rstest]
+    #[case::create_table_application_data_value_text_insert_into_ap_1(
+        "CREATE TABLE application_data(value TEXT); INSERT INTO application_data VALUES ('keep');"
+    )]
+    #[case::create_table_diagnostics_marker_text_insert_into_diagno_2(
+        "CREATE TABLE diagnostics(marker TEXT); INSERT INTO diagnostics VALUES ('keep');"
+    )]
+    #[case::pragma_application_id_12345_3("PRAGMA application_id=12345;")]
+    #[case::create_table_application_data_value_text_insert_into_ap_4(
+        "CREATE TABLE application_data(value TEXT); INSERT INTO application_data VALUES ('keep'); PRAGMA user_version=5;"
+    )]
+    #[case::pragma_user_version_1_5("PRAGMA user_version=-1;")]
+    #[case::pragma_user_version_6_6("PRAGMA user_version=6;")]
+    #[case::create_view_application_view_as_select_1_7("CREATE VIEW application_view AS SELECT 1;")]
+    #[case::pragma_journal_mode_wal_create_table_application_data_v_8(
+        "PRAGMA journal_mode=WAL; CREATE TABLE application_data(value TEXT); INSERT INTO application_data VALUES ('keep');"
+    )]
+    fn admission_rejects_foreign_databases_without_disk_changes(#[case] sql: &str) {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("foreign.sqlite3");
+        {
+            let connection = Connection::open(&path).unwrap();
+            connection.execute_batch(sql).unwrap();
         }
+        assert_rejected_without_disk_changes(&path);
     }
 
     #[test]
@@ -680,27 +698,28 @@ mod tests {
         assert!(rejected, "foreign or unsupported database was admitted");
     }
 
-    #[test]
-    fn admission_initializes_new_and_empty_on_disk_databases() {
-        for existing_empty in [false, true] {
-            let temp = tempfile::tempdir().unwrap();
-            let path = temp.path().join("session.sqlite3");
-            if existing_empty {
-                Connection::open(&path)
-                    .unwrap()
-                    .execute_batch("VACUUM;")
-                    .unwrap();
-            }
-            let handler = super::super::SessionHandler::open(&path).unwrap();
-            assert_eq!(user_version(&handler.connection), 5);
-            assert_eq!(
-                handler
-                    .connection
-                    .query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0))
-                    .unwrap(),
-                "wal"
-            );
+    #[rstest::rstest]
+    #[case::false_1(false)]
+    #[case::true_2(true)]
+    fn admission_initializes_new_and_empty_on_disk_databases(#[case] existing_empty: bool) {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("session.sqlite3");
+        if existing_empty {
+            Connection::open(&path)
+                .unwrap()
+                .execute_batch("VACUUM;")
+                .unwrap();
         }
+        let handler = super::super::SessionHandler::open(&path).unwrap();
+
+        assert_eq!(user_version(&handler.connection), 5);
+        assert_eq!(
+            handler
+                .connection
+                .query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0))
+                .unwrap(),
+            "wal"
+        );
     }
 
     #[test]
@@ -754,6 +773,7 @@ mod tests {
             // filenames even without URI access. Preserve that rejection.
             let temp = tempfile::tempdir().unwrap();
             let before = directory_bytes(temp.path());
+
             assert!(super::super::SessionHandler::open(temp.path().join(name)).is_err());
             assert!(
                 directory_bytes(temp.path()) == before,
@@ -808,6 +828,7 @@ mod tests {
         let (result_tx, result_rx) = std::sync::mpsc::channel();
         let worker = thread::spawn(move || {
             started_tx.send(()).unwrap();
+
             let result = super::super::SessionHandler::open(&path)
                 .map(|_| ())
                 .map_err(|error| error.to_string());
@@ -818,6 +839,7 @@ mod tests {
         // The first initializer fails; the waiting opener can now initialize
         // the genuinely empty database rather than rejecting partial pages.
         transaction.rollback().unwrap();
+
         let result = match premature {
             Ok(result) => {
                 worker.join().unwrap();
@@ -829,6 +851,7 @@ mod tests {
             Err(error) => panic!("initializer worker disconnected: {error}"),
         };
         worker.join().unwrap();
+
         assert!(result.is_ok(), "waiting opener failed: {result:?}");
     }
 
@@ -844,6 +867,7 @@ mod tests {
             let mut initializer = Connection::open(&path).unwrap();
             configure(&mut initializer).unwrap();
         });
+
         assert!(
             matches!(observed, Ok(0)),
             "admission mixed an old version with newly committed schema: {observed:?}"
@@ -859,11 +883,13 @@ mod tests {
         let path = temp.path().join("session.sqlite3");
         let mut connection = Connection::open(&path).unwrap();
         let mut before = None;
+
         let result = configure_observed(&mut connection, || {
             let other = Connection::open(&path).unwrap();
             other.execute_batch("CREATE TABLE application_data(value TEXT); INSERT INTO application_data VALUES ('keep');").unwrap();
             before = Some(database_snapshot(&other));
         });
+
         assert!(
             result.is_err(),
             "schema populated before lock must be rejected"
@@ -885,8 +911,11 @@ mod tests {
             .unwrap();
             let mut connection = Connection::open(path).unwrap();
             let before = database_snapshot(&connection);
+
             let error = configure(&mut connection).expect_err("old schema must be rejected");
+
             let message = error.to_string();
+
             assert!(message.contains("unsupported"), "{message}");
             assert!(message.contains("new session"), "{message}");
             assert_eq!(user_version(&connection), version);
@@ -938,27 +967,30 @@ mod tests {
         let timeout: i64 = connection
             .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
             .unwrap();
+
         assert_eq!(timeout, 5_000);
     }
 
-    #[test]
-    fn diagnostics_queries_use_the_result_index() {
+    #[rstest::rstest]
+    #[case::select_mutant_id_level_code_message_from_diagnostics_where_run_id(
+        "SELECT mutant_id,level,code,message FROM diagnostics
+             WHERE run_id=?1 AND mutant_id=?2 ORDER BY id"
+    )]
+    #[case::delete_from_diagnostics_where_run_id_1_and_mutant_id_2(
+        "DELETE FROM diagnostics WHERE run_id=?1 AND mutant_id=?2"
+    )]
+    fn diagnostics_queries_use_the_result_index(#[case] sql: &str) {
         let mut connection = Connection::open_in_memory().unwrap();
         configure(&mut connection).unwrap();
 
-        for sql in [
-            "SELECT mutant_id,level,code,message FROM diagnostics
-             WHERE run_id=?1 AND mutant_id=?2 ORDER BY id",
-            "DELETE FROM diagnostics WHERE run_id=?1 AND mutant_id=?2",
-        ] {
-            let details = query_plan(&connection, sql);
-            assert!(
-                details
-                    .iter()
-                    .any(|detail| detail.contains("INDEX diagnostics_result")),
-                "query did not use diagnostics_result: {details:?}"
-            );
-        }
+        let details = query_plan(&connection, sql);
+
+        assert!(
+            details
+                .iter()
+                .any(|detail| detail.contains("INDEX diagnostics_result")),
+            "query did not use diagnostics_result: {details:?}"
+        );
     }
 
     #[test]
@@ -975,6 +1007,7 @@ mod tests {
         for _ in 0..2 {
             let mut connection = Connection::open(&path).unwrap();
             configure(&mut connection).unwrap();
+
             assert_eq!(user_version(&connection), SCHEMA_VERSION);
             assert_eq!(database_snapshot(&connection), before);
         }
@@ -1012,6 +1045,7 @@ mod tests {
         let mut connection = Connection::open_in_memory().unwrap();
         connection.execute_batch("CREATE TABLE diagnostics(marker TEXT); INSERT INTO diagnostics VALUES ('preserve me');").unwrap();
         let before = database_snapshot(&connection);
+
         assert!(matches!(
             configure(&mut connection),
             Err(SchemaError::InvalidIdentity)
@@ -1024,6 +1058,7 @@ mod tests {
     fn negative_version_is_rejected_without_initialization() {
         let mut connection = Connection::open_in_memory().unwrap();
         connection.execute_batch("PRAGMA user_version=-1;").unwrap();
+
         assert!(matches!(
             configure(&mut connection),
             Err(SchemaError::UnsupportedVersion(-1))
@@ -1036,6 +1071,7 @@ mod tests {
     fn configures_foreign_keys_on_the_handler_connection() {
         let mut connection = Connection::open_in_memory().unwrap();
         configure(&mut connection).unwrap();
+
         assert_eq!(
             connection
                 .query_row("PRAGMA foreign_keys", [], |row| row.get::<_, i64>(0))
@@ -1084,6 +1120,7 @@ mod tests {
             .unwrap();
 
         let before = database_snapshot(&connection);
+
         assert!(matches!(
             configure(&mut connection),
             Err(SchemaError::UnsupportedVersion(6))

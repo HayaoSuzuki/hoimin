@@ -95,77 +95,86 @@ fn copying_a_name_replaces_or_removes_its_previous_binding() {
     }
 }
 
-#[test]
-fn wildcard_retains_only_modules_for_known_providers() {
-    for (provider, expected) in [
-        ("typing", vec!["module:t=typing"]),
-        ("collections.abc", vec!["module:t=typing"]),
-        ("helpers", vec![]),
-        (".typing", vec![]),
-    ] {
-        // Arrange.
-        let source = format!(
-            "import typing as t\nfrom typing import Sequence, TypeVar\nT = TypeVar('T')\nfrom {provider} import *\n"
-        );
+#[rstest::rstest]
+#[case::typing("typing", vec!["module:t=typing"])]
+#[case::collections_abc("collections.abc", vec!["module:t=typing"])]
+#[case::helpers("helpers", vec![])]
+#[case::typing_4(".typing", vec![])]
+fn wildcard_retains_only_modules_for_known_providers(
+    #[case] provider: &str,
+    #[case] expected: Vec<&str>,
+) {
+    // Arrange.
+    let source = format!(
+        "import typing as t\nfrom typing import Sequence, TypeVar\nT = TypeVar('T')\nfrom {provider} import *\n"
+    );
 
-        // Act.
-        let actual = imports_from(&source);
+    // Act.
+    let actual = imports_from(&source);
 
-        // Assert: recognized wildcard imports preserve module aliases only.
-        assert_eq!(
-            normalize_binding_flow_imports(&actual),
-            expected,
-            "{provider}"
-        );
-    }
+    // Assert: recognized wildcard imports preserve module aliases only.
+    assert_eq!(
+        normalize_binding_flow_imports(&actual),
+        expected,
+        "{provider}"
+    );
 }
 
-#[test]
-fn unqualified_spelling_prefers_direct_alias_then_lexical_order() {
-    for (source, expected) in [
-        (
-            "import typing as a\nfrom typing import Sequence as z\n",
-            "z",
-        ),
-        ("from typing import Sequence as z, Sequence as b\n", "b"),
-        ("import typing as z\nimport typing as b\n", "b.Sequence"),
-    ] {
-        // Arrange.
-        let imports = imports_from(source);
+#[rstest::rstest]
+#[case::import_typing_as_a_from_typing_import_sequence_as_z(
+    "import typing as a\nfrom typing import Sequence as z\n",
+    "z"
+)]
+#[case::from_typing_import_sequence_as_z_sequence_as_b(
+    "from typing import Sequence as z, Sequence as b\n",
+    "b"
+)]
+#[case::import_typing_as_z_import_typing_as_b(
+    "import typing as z\nimport typing as b\n",
+    "b.Sequence"
+)]
+fn unqualified_spelling_prefers_direct_alias_then_lexical_order(
+    #[case] source: &str,
+    #[case] expected: &str,
+) {
+    // Arrange.
+    let imports = imports_from(source);
 
-        // Act.
-        let actual = imports.spelling_for("list", &["typing.Sequence"]);
+    // Act.
+    let actual = imports.spelling_for("list", &["typing.Sequence"]);
 
-        // Assert: category priority precedes lexical ordering.
-        assert_eq!(actual.as_deref(), Some(expected));
-    }
+    // Assert: category priority precedes lexical ordering.
+    assert_eq!(actual.as_deref(), Some(expected));
 }
 
-#[test]
-fn type_variables_with_scalar_names_are_disallowed_annotations() {
-    for name in ["str", "int", "float", "bool", "bytes"] {
-        // Arrange.
-        let imports = imports_from(&format!(
-            "from typing import TypeVar\n{name} = TypeVar('{name}')\n"
-        ));
-        let resolution = NameResolutionIndex::default();
-        let annotation_imports = AnnotationImports {
-            eager_imports_available: true,
-            known: &imports,
-            resolution: &resolution,
-            offset: 0,
-        };
-        let parsed = parse_module(&format!("value: {name}\n")).unwrap();
-        let Stmt::AnnAssign(statement) = &parsed.syntax().body[0] else {
-            panic!("annotation fixture");
-        };
+#[rstest::rstest]
+#[case::str("str")]
+#[case::int("int")]
+#[case::float("float")]
+#[case::bool("bool")]
+#[case::bytes("bytes")]
+fn type_variables_with_scalar_names_are_disallowed_annotations(#[case] name: &str) {
+    // Arrange.
+    let imports = imports_from(&format!(
+        "from typing import TypeVar\n{name} = TypeVar('{name}')\n"
+    ));
+    let resolution = NameResolutionIndex::default();
+    let annotation_imports = AnnotationImports {
+        eager_imports_available: true,
+        known: &imports,
+        resolution: &resolution,
+        offset: 0,
+    };
+    let parsed = parse_module(&format!("value: {name}\n")).unwrap();
+    let Stmt::AnnAssign(statement) = &parsed.syntax().body[0] else {
+        panic!("annotation fixture");
+    };
 
-        // Act.
-        let actual = contains_disallowed_annotation(&statement.annotation, &annotation_imports);
+    // Act.
+    let actual = contains_disallowed_annotation(&statement.annotation, &annotation_imports);
 
-        // Assert: the scalar spelling cannot bypass TypeVar exclusion.
-        assert!(actual, "{name}");
-    }
+    // Assert: the scalar spelling cannot bypass TypeVar exclusion.
+    assert!(actual, "{name}");
 }
 
 #[test]
@@ -261,37 +270,48 @@ thread_local! {
     pub(super) static QUALIFIED_BINDING_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-#[test]
-fn qualified_spelling_work_is_independent_of_unrelated_imports() {
-    for imports_count in [1, 32, 256] {
-        use std::fmt::Write as _;
-        let mut source = String::new();
-        for i in 0..imports_count {
-            writeln!(source, "import typing as t{i}").unwrap();
-        }
-        let imports = imports_from(&source);
-        for annotations in [1, 16, 64] {
-            QUALIFIED_BINDING_VISITS.set(0);
-            for _ in 0..annotations {
-                assert_eq!(
-                    imports
-                        .spelling_for("t0.List", &["typing.Sequence"])
-                        .as_deref(),
-                    Some("t0.Sequence")
-                );
-            }
-            assert!(
-                QUALIFIED_BINDING_VISITS.get() <= annotations,
-                "imports={imports_count}, annotations={annotations}, visits={}",
-                QUALIFIED_BINDING_VISITS.get()
-            );
-        }
+#[rstest::rstest]
+#[case::value_1(1)]
+#[case::value_32(32)]
+#[case::value_256(256)]
+fn qualified_spelling_work_is_independent_of_unrelated_imports(
+    #[case] imports_count: usize,
+    #[values(0, 1, 2)] scenario_index: usize,
+) {
+    use std::fmt::Write as _;
+    let mut source = String::new();
+    for i in 0..imports_count {
+        writeln!(source, "import typing as t{i}").unwrap();
     }
+    let imports = imports_from(&source);
+
+    let annotations = [1, 16, 64].into_iter().nth(scenario_index).unwrap();
+
+    QUALIFIED_BINDING_VISITS.set(0);
+    for _ in 0..annotations {
+        assert_eq!(
+            imports
+                .spelling_for("t0.List", &["typing.Sequence"])
+                .as_deref(),
+            Some("t0.Sequence")
+        );
+    }
+    assert!(
+        QUALIFIED_BINDING_VISITS.get() <= annotations,
+        "imports={imports_count}, annotations={annotations}, visits={}",
+        QUALIFIED_BINDING_VISITS.get()
+    );
 }
 
-#[test]
-fn qualified_spelling_preserves_provider_prefix_and_shadowing() {
-    for (source, spelling, expected) in [
+#[rstest::rstest]
+#[case::import_typing_as_t_1(0)]
+#[case::import_typing_as_t10_2(1)]
+#[case::import_collections_abc_3(2)]
+#[case::import_collections_abc_as_abc_4(3)]
+#[case::import_typing_as_t_t_1_5(4)]
+#[case::from_typing_import_list_as_t_6(5)]
+fn qualified_spelling_preserves_provider_prefix_and_shadowing(#[case] scenario_index: usize) {
+    let (source, spelling, expected) = [
         ("import typing as t\n", "t.List", Some("t.Sequence")),
         ("import typing as t10\n", "t1.List", None),
         (
@@ -306,17 +326,21 @@ fn qualified_spelling_preserves_provider_prefix_and_shadowing() {
         ),
         ("import typing as t\nt = 1\n", "t.List", None),
         ("from typing import List as t\n", "t.List", None),
-    ] {
-        let imports = imports_from(source);
-        let targets = ["typing.Sequence", "collections.abc.Sequence"];
-        assert_eq!(
-            imports.spelling_for(spelling, &targets).as_deref(),
-            expected,
-            "{source}"
-        );
-        assert_eq!(
-            imports.spelling_for_where(spelling, &targets, |_| false),
-            None
-        );
-    }
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
+
+    let imports = imports_from(source);
+    let targets = ["typing.Sequence", "collections.abc.Sequence"];
+
+    assert_eq!(
+        imports.spelling_for(spelling, &targets).as_deref(),
+        expected,
+        "{source}"
+    );
+    assert_eq!(
+        imports.spelling_for_where(spelling, &targets, |_| false),
+        None
+    );
 }

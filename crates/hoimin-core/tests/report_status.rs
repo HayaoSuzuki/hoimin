@@ -334,13 +334,13 @@ duplicate_case!(duplicate_conflicting_status, "survived");
 
 #[test]
 fn matching_status_does_not_open_unknown_fields() {
-    // Arrange.
     let mut wire = matching_wire();
+
     assert!(serde_json::from_value::<MutantFinished>(wire.clone()).is_ok());
     wire["unexpected"] = json!(true);
-    // Act.
+
     let error = serde_json::from_value::<MutantFinished>(wire).unwrap_err();
-    // Assert.
+
     assert!(
         error.to_string().contains("unknown field `unexpected`"),
         "{error}"

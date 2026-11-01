@@ -1715,6 +1715,7 @@ mod tests {
             std::time::Duration::from_secs(5)
         })
         .unwrap_err();
+
         assert_eq!(deadline.kind(), std::io::ErrorKind::TimedOut);
 
         state.entries = super::MAX_TREE_ENTRIES;

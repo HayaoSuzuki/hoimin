@@ -278,6 +278,48 @@ fn nested_try_corpus_is_closed_and_valid() {
     );
 }
 
+#[rstest::rstest]
+#[case::schema_1(0)]
+#[case::mode_2(1)]
+#[case::entry_category_3(2)]
+fn nested_try_corpus_rejects_inexact_and_crossed_rows_scenario_1(#[case] scenario_index: usize) {
+    let first = CORPUS.lines().next().expect("first corpus row");
+
+    let mut unknown: serde_json::Value = serde_json::from_str(first).unwrap();
+    unknown["unexpected"] = serde_json::json!(true);
+    assert!(
+        parse_corpus(&format!("{unknown}\n"))
+            .unwrap_err()
+            .contains("unknown field")
+    );
+
+    assert_eq!(
+        parse_corpus(&format!("{first}\n{first}\n")).unwrap_err(),
+        "duplicate case id finally_annotation_meets_normal_and_raise"
+    );
+
+    let (field, value, expected) = [
+        ("schema", serde_json::json!(2), "unsupported schema"),
+        ("mode", serde_json::json!("report"), "unknown mode"),
+        (
+            "entry_category",
+            serde_json::json!("return"),
+            "unknown entry category",
+        ),
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
+
+    let mut invalid: serde_json::Value = serde_json::from_str(first).unwrap();
+    invalid[field] = value;
+    assert!(
+        parse_corpus(&format!("{invalid}\n"))
+            .unwrap_err()
+            .contains(expected)
+    );
+}
+
 #[test]
 fn nested_try_corpus_rejects_inexact_and_crossed_rows() {
     let first = CORPUS.lines().next().expect("first corpus row");
@@ -294,24 +336,6 @@ fn nested_try_corpus_rejects_inexact_and_crossed_rows() {
         parse_corpus(&format!("{first}\n{first}\n")).unwrap_err(),
         "duplicate case id finally_annotation_meets_normal_and_raise"
     );
-
-    for (field, value, expected) in [
-        ("schema", serde_json::json!(2), "unsupported schema"),
-        ("mode", serde_json::json!("report"), "unknown mode"),
-        (
-            "entry_category",
-            serde_json::json!("return"),
-            "unknown entry category",
-        ),
-    ] {
-        let mut invalid: serde_json::Value = serde_json::from_str(first).unwrap();
-        invalid[field] = value;
-        assert!(
-            parse_corpus(&format!("{invalid}\n"))
-                .unwrap_err()
-                .contains(expected)
-        );
-    }
 
     let mut crossed: serde_json::Value = serde_json::from_str(first).unwrap();
     crossed["family"] = serde_json::json!("post-finally");

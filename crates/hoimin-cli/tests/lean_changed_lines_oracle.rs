@@ -276,6 +276,7 @@ fn changed_lines_corpus_is_closed_and_rejects_duplicates_and_schema_drift() {
     cases(CORPUS);
     let mut lines = CORPUS.lines().collect::<Vec<_>>();
     lines[1] = lines[0];
+
     assert!(std::panic::catch_unwind(|| cases(&lines.join("\n"))).is_err());
     assert!(
         std::panic::catch_unwind(|| cases(&CORPUS.replacen("\"schema\":1", "\"schema\":2", 1)))
@@ -372,72 +373,140 @@ async fn changed_lines_public_run_and_saved_plan_verify_execute_the_mutant() {
     }
 }
 
+#[rstest::rstest]
+#[case::b_xef_xbb_xbf_utf_8_as_slice_1(0)]
+#[case::b_coding_latin_1_2(1)]
 #[tokio::test]
-async fn changed_codec_rows_preserve_public_identity_and_explicit_selectors() {
-    for (header, comment) in [
+async fn changed_codec_explicit_selectors_preserve_identity(
+    #[case] scenario_index: usize,
+    #[values(0, 1, 2)] nested_scenario_index: usize,
+) {
+    let (header, comment) = [
         (
             b"\xef\xbb\xbf# UTF-8\r\n".as_slice(),
             b"# caf\xc3\xa9\r".as_slice(),
         ),
         (b"# coding: latin-1\r", b"# caf\xe9\r\n"),
-    ] {
-        let directory = tempfile::tempdir().unwrap();
-        let root = directory.path();
-        std::fs::create_dir(root.join("src")).unwrap();
-        git(root, &["init", "-q"]).await;
-        let mut source = header.to_vec();
-        source.extend_from_slice(comment);
-        source.extend_from_slice(b"def f():\r    return 1 - 2\ndef g():\r    return 4 + 5\n");
-        std::fs::write(root.join("src/subject.py"), &source).unwrap();
-        git(root, &["add", "src/subject.py"]).await;
-        git(root, &["commit", "-qm", "before"]).await;
-        let target = source
-            .windows(b"1 - 2".len())
-            .position(|bytes| bytes == b"1 - 2")
-            .unwrap()
-            + 2;
-        source[target] = b'+';
-        std::fs::write(root.join("src/subject.py"), &source).unwrap();
-        let baseline_manifest = invoke(args(root, "plan", false)).await;
-        let expected = baseline_manifest["candidates"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|candidate| candidate["symbol"] == "f")
-            .cloned()
-            .collect::<Vec<_>>();
-        assert_eq!(expected.len(), 1);
-        assert_eq!(expected[0]["line"], 4);
-        assert_eq!(expected[0]["span"], json!({"start":target,"length":1}));
-        assert_eq!(
-            expected[0]["file_hash"],
-            blake3::hash(&source).to_hex().as_str()
-        );
-        for (line, symbol, expected_ids) in [
-            (4, "subject:f", identities(&expected)),
-            (3, "subject:f", Vec::new()),
-            (6, "subject:g", Vec::new()),
-        ] {
-            let mut selected_args = args(root, "plan", true);
-            let separator = selected_args.iter().position(|arg| arg == "--").unwrap();
-            selected_args.splice(
-                separator..separator,
-                [
-                    "--line".into(),
-                    format!("src/subject.py:{line}").into(),
-                    "--symbol".into(),
-                    symbol.into(),
-                ],
-            );
-            let plan = invoke(selected_args).await;
-            assert_eq!(
-                identities(plan["candidates"].as_array().unwrap()),
-                expected_ids
-            );
-        }
-        let report = invoke(args(root, "run", true)).await;
-        assert_eq!(report["summary"]["counts"]["killed"], 1);
-        assert_eq!(report["mutants"].as_array().unwrap().len(), 1);
-        assert_eq!(std::fs::read(root.join("src/subject.py")).unwrap(), source);
-    }
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
+
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    std::fs::create_dir(root.join("src")).unwrap();
+    git(root, &["init", "-q"]).await;
+    let mut source = header.to_vec();
+    source.extend_from_slice(comment);
+    source.extend_from_slice(b"def f():\r    return 1 - 2\ndef g():\r    return 4 + 5\n");
+    std::fs::write(root.join("src/subject.py"), &source).unwrap();
+    git(root, &["add", "src/subject.py"]).await;
+    git(root, &["commit", "-qm", "before"]).await;
+    let target = source
+        .windows(b"1 - 2".len())
+        .position(|bytes| bytes == b"1 - 2")
+        .unwrap()
+        + 2;
+    source[target] = b'+';
+    std::fs::write(root.join("src/subject.py"), &source).unwrap();
+    let baseline_manifest = invoke(args(root, "plan", false)).await;
+    let expected = baseline_manifest["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|candidate| candidate["symbol"] == "f")
+        .cloned()
+        .collect::<Vec<_>>();
+
+    assert_eq!(expected.len(), 1);
+    assert_eq!(expected[0]["line"], 4);
+    assert_eq!(expected[0]["span"], json!({"start":target,"length":1}));
+    assert_eq!(
+        expected[0]["file_hash"],
+        blake3::hash(&source).to_hex().as_str()
+    );
+
+    let (line, symbol, expected_ids) = [
+        (4, "subject:f", identities(&expected)),
+        (3, "subject:f", Vec::new()),
+        (6, "subject:g", Vec::new()),
+    ]
+    .into_iter()
+    .nth(nested_scenario_index)
+    .unwrap();
+
+    let mut selected_args = args(root, "plan", true);
+    let separator = selected_args.iter().position(|arg| arg == "--").unwrap();
+    selected_args.splice(
+        separator..separator,
+        [
+            "--line".into(),
+            format!("src/subject.py:{line}").into(),
+            "--symbol".into(),
+            symbol.into(),
+        ],
+    );
+    let plan = invoke(selected_args).await;
+    assert_eq!(
+        identities(plan["candidates"].as_array().unwrap()),
+        expected_ids
+    );
+}
+
+#[rstest::rstest]
+#[case::b_xef_xbb_xbf_utf_8_as_slice_1(0)]
+#[case::b_coding_latin_1_2(1)]
+#[tokio::test]
+async fn changed_codec_rows_preserve_public_identity_and_explicit_selectors(
+    #[case] scenario_index: usize,
+) {
+    let (header, comment) = [
+        (
+            b"\xef\xbb\xbf# UTF-8\r\n".as_slice(),
+            b"# caf\xc3\xa9\r".as_slice(),
+        ),
+        (b"# coding: latin-1\r", b"# caf\xe9\r\n"),
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
+
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    std::fs::create_dir(root.join("src")).unwrap();
+    git(root, &["init", "-q"]).await;
+    let mut source = header.to_vec();
+    source.extend_from_slice(comment);
+    source.extend_from_slice(b"def f():\r    return 1 - 2\ndef g():\r    return 4 + 5\n");
+    std::fs::write(root.join("src/subject.py"), &source).unwrap();
+    git(root, &["add", "src/subject.py"]).await;
+    git(root, &["commit", "-qm", "before"]).await;
+    let target = source
+        .windows(b"1 - 2".len())
+        .position(|bytes| bytes == b"1 - 2")
+        .unwrap()
+        + 2;
+    source[target] = b'+';
+    std::fs::write(root.join("src/subject.py"), &source).unwrap();
+    let baseline_manifest = invoke(args(root, "plan", false)).await;
+    let expected = baseline_manifest["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|candidate| candidate["symbol"] == "f")
+        .cloned()
+        .collect::<Vec<_>>();
+
+    assert_eq!(expected.len(), 1);
+    assert_eq!(expected[0]["line"], 4);
+    assert_eq!(expected[0]["span"], json!({"start":target,"length":1}));
+    assert_eq!(
+        expected[0]["file_hash"],
+        blake3::hash(&source).to_hex().as_str()
+    );
+
+    let report = invoke(args(root, "run", true)).await;
+    assert_eq!(report["summary"]["counts"]["killed"], 1);
+    assert_eq!(report["mutants"].as_array().unwrap().len(), 1);
+    assert_eq!(std::fs::read(root.join("src/subject.py")).unwrap(), source);
 }

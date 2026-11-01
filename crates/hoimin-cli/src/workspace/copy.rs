@@ -1115,6 +1115,7 @@ mod tests {
         let source = tempfile::tempdir().unwrap();
         fs::write(source.path().join("target.py"), b"1234").unwrap();
         let source_root = Utf8Path::from_path(source.path()).unwrap();
+
         assert_eq!(
             inventory_logical_bytes(source_root, &CopyOptions::default()).unwrap(),
             4
@@ -1154,52 +1155,56 @@ mod tests {
         assert_eq!(names.len(), 2, "partial snapshot leaked: {names:?}");
     }
 
-    #[test]
-    fn added_file_crossing_the_limit_cleans_a_partial_snapshot() {
-        for (original, added) in [(b"1234".as_slice(), b"12".as_slice()), (b"12", b"1234")] {
-            let source = tempfile::tempdir().unwrap();
-            fs::write(source.path().join("target.py"), original).unwrap();
-            let source_root = Utf8Path::from_path(source.path()).unwrap();
-            assert_eq!(
-                inventory_logical_bytes(source_root, &CopyOptions::default()).unwrap(),
-                original.len() as u64
-            );
-            fs::write(source.path().join("added.py"), added).unwrap();
-            let parent = tempfile::tempdir().unwrap();
-            let parent = Utf8Path::from_path(parent.path()).unwrap();
-            let coordinator = ManagedRootCoordinator::open(parent).unwrap();
-            let root =
-                Arc::new(ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
-            reset_snapshot_write_metrics();
+    #[rstest::rstest]
+    #[case::b_1234_as_slice(b"1234".as_slice(), b"12".as_slice())]
+    #[case::b_12(b"12", b"1234")]
+    fn added_file_crossing_the_limit_cleans_a_partial_snapshot(
+        #[case] original: &[u8],
+        #[case] added: &[u8],
+    ) {
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("target.py"), original).unwrap();
+        let source_root = Utf8Path::from_path(source.path()).unwrap();
 
-            let error = create_pending_disk_snapshot(
-                source_root,
-                &CopyOptions::default(),
-                1,
-                PreflightLimits {
-                    owned: Some(10),
-                    ..PreflightLimits::default()
-                },
-                Some(&root),
-            )
-            .unwrap_err();
+        assert_eq!(
+            inventory_logical_bytes(source_root, &CopyOptions::default()).unwrap(),
+            original.len() as u64
+        );
+        fs::write(source.path().join("added.py"), added).unwrap();
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root =
+            Arc::new(ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
+        reset_snapshot_write_metrics();
 
-            assert_eq!(
-                error,
-                WorkspaceError::OwnedWorkspaceLimit {
-                    planned: 12,
-                    limit: 10,
-                }
-            );
-            let (writes, written_bytes) = snapshot_write_metrics();
-            assert_eq!(writes, 1);
-            assert!(matches!(written_bytes, 2 | 4), "{written_bytes}");
-            let names = fs::read_dir(root.path())
-                .unwrap()
-                .map(|entry| entry.unwrap().file_name())
-                .collect::<Vec<_>>();
-            assert_eq!(names.len(), 2, "partial snapshot leaked: {names:?}");
-        }
+        let error = create_pending_disk_snapshot(
+            source_root,
+            &CopyOptions::default(),
+            1,
+            PreflightLimits {
+                owned: Some(10),
+                ..PreflightLimits::default()
+            },
+            Some(&root),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            WorkspaceError::OwnedWorkspaceLimit {
+                planned: 12,
+                limit: 10,
+            }
+        );
+        let (writes, written_bytes) = snapshot_write_metrics();
+        assert_eq!(writes, 1);
+        assert!(matches!(written_bytes, 2 | 4), "{written_bytes}");
+        let names = fs::read_dir(root.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(names.len(), 2, "partial snapshot leaked: {names:?}");
     }
 
     #[test]
@@ -1207,6 +1212,7 @@ mod tests {
         let source = tempfile::tempdir().unwrap();
         fs::write(source.path().join("target.py"), b"12345").unwrap();
         let source_root = Utf8Path::from_path(source.path()).unwrap();
+
         assert_eq!(
             inventory_logical_bytes(source_root, &CopyOptions::default()).unwrap(),
             5
@@ -1251,6 +1257,7 @@ mod tests {
                 ..PreflightLimits::default()
             },
         );
+
         let error = writer
             .write_reader(
                 Utf8Path::new("data"),
@@ -1259,6 +1266,7 @@ mod tests {
                 permissions,
             )
             .unwrap_err();
+
         assert_eq!(
             error,
             WorkspaceError::OwnedWorkspaceLimit {
@@ -1291,6 +1299,7 @@ mod tests {
         let grant = reserve_workspace_copy(&mut ledger, &plan.completed()).unwrap();
         let request = grant.create_worker(EffectId(2), 0).unwrap();
         fs::write(plan.snapshot.root.join("data"), vec![b'x'; 2 * block]).unwrap();
+
         assert!(matches!(
             plan.create_worker(&request),
             Err(WorkspaceError::CopyAllowanceExceeded { .. })
@@ -1348,6 +1357,7 @@ mod tests {
         else {
             panic!("expected nested-snapshot error, got {error:?}");
         };
+
         assert_eq!(operation, "create shared snapshot");
         assert_eq!(
             message,
@@ -1472,6 +1482,7 @@ mod tests {
         let expected_snapshot_hash_bytes = 2 * fixture_bytes;
         #[cfg(not(feature = "contracts"))]
         let expected_snapshot_hash_bytes = 0;
+
         assert_eq!(
             plan.materialization_io_snapshot(),
             MaterializationIoSnapshot {
@@ -1537,6 +1548,7 @@ mod tests {
         let plan = WorkspacePlan::preflight(source_root, EffectId(7), 1, options).unwrap();
 
         let bytes_len = u64::try_from(bytes.len()).unwrap();
+
         assert_eq!(plan.manifest.logical_bytes(), bytes_len);
         assert_eq!(snapshot_write_metrics(), (1, bytes_len));
         assert_eq!(
@@ -1590,6 +1602,7 @@ mod tests {
 
         writer.write(&entry(first_bytes), first_bytes).unwrap();
         fs::write(source.path().join("target.py"), second_bytes).unwrap();
+
         let error = writer
             .write(&entry(second_bytes), second_bytes)
             .unwrap_err();
@@ -1723,6 +1736,7 @@ mod tests {
                             .is_some_and(|name| name.to_string_lossy().starts_with("snapshot-"))
                     })
                     .expect("validation should observe the pending snapshot");
+
                 assert_eq!(
                     fs::read(snapshot.join("workspace").join("target.py")).unwrap(),
                     b"payload\n"
@@ -1909,6 +1923,7 @@ mod tests {
         else {
             panic!("expected snapshot-read failure, got {failed:?}");
         };
+
         assert_eq!(operation, "read shared snapshot");
         assert_eq!(path, Utf8Path::new("target.py"));
         assert_eq!(plan.materialized_workers(), 0);
@@ -1977,7 +1992,7 @@ mod tests {
 
     #[test]
     fn surviving_workers_reset_independently_after_all_plans_drop() {
-        // Arrange: independent worker owners from the same immutable snapshot.
+        // independent worker owners from the same immutable snapshot.
         let source = tempfile::tempdir().unwrap();
         fs::write(source.path().join("target.py"), b"original\n").unwrap();
         let root = Utf8Path::from_path(source.path()).unwrap();
@@ -1996,16 +2011,16 @@ mod tests {
             .create_worker(&grant.create_worker(EffectId(16), 1).unwrap())
             .unwrap();
         let cloned_plan = plan.clone();
+
         assert_eq!(cloned_plan.manifest(), first.manifest());
         drop(plan);
         drop(cloned_plan);
         fs::write(source.path().join("target.py"), b"external change\n").unwrap();
         fs::write(first.root().join("target.py"), b"worker change\n").unwrap();
 
-        // Act.
         first.reset().unwrap();
 
-        // Assert: the surviving worker's reset uses retained snapshot metadata and bytes.
+        // the surviving worker's reset uses retained snapshot metadata and bytes.
         assert_eq!(first.read("target.py").unwrap(), b"original\n");
         assert_eq!(second.read("target.py").unwrap(), b"original\n");
         assert_eq!(first.manifest(), second.manifest());
@@ -2107,6 +2122,7 @@ mod tests {
         let second_thread = thread::spawn(move || {
             result_tx.send(second_plan.create_worker(&second)).unwrap();
         });
+
         assert!(result_rx.recv_timeout(Duration::from_millis(50)).is_err());
 
         release_tx.send(()).unwrap();
@@ -2183,6 +2199,7 @@ mod tests {
             let barrier = Arc::clone(&barrier);
             thread::spawn(move || {
                 barrier.wait();
+
                 let result = state.lock().unwrap().accept_grant(
                     &request,
                     completed.id,

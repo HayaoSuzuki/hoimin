@@ -3,156 +3,161 @@ use hoimin_core::{
     RunConfig,
 };
 
-#[test]
-fn unknown_operator_error_lists_valid_operators_and_selectors() {
+#[rstest::rstest]
+#[case::compare_eq_ne("compare_eq_ne")]
+#[case::type_nullable("type_nullable")]
+#[case::type_dict_mapping("type_dict_mapping")]
+fn unknown_operator_error_lists_valid_operators_and_selectors(#[case] valid: &str) {
     let error = MutationOperatorSelection::parse_selector("not_a_real_operator").unwrap_err();
+
     let message = error.to_string();
 
-    for valid in ["compare_eq_ne", "type_nullable", "type_dict_mapping"] {
-        assert!(message.contains(valid), "missing {valid} in {message}");
-    }
+    assert!(message.contains(valid), "missing {valid} in {message}");
 }
 
-#[test]
-fn augmented_arithmetic_operator_ids_are_default_and_valid() {
+#[rstest::rstest]
+#[case::augmented_mul_div("augmented_mul_div")]
+#[case::augmented_floor_mod("augmented_floor_mod")]
+fn augmented_arithmetic_operator_ids_are_default_and_valid(#[case] name: &str) {
     let selected = MutationOperatorSelection::default();
     let selected_names = selected.names();
     let valid_names = MutationOperatorSelection::valid_names();
 
-    for name in ["augmented_mul_div", "augmented_floor_mod"] {
-        assert!(selected_names.iter().any(|selected| selected == name));
-        assert!(valid_names.contains(&name));
-        assert_eq!(
-            MutationOperatorSelection::parse_selector(name)
-                .unwrap()
-                .len(),
-            1
-        );
-    }
+    assert!(selected_names.iter().any(|selected| selected == name));
+    assert!(valid_names.contains(&name));
+    assert_eq!(
+        MutationOperatorSelection::parse_selector(name)
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
-#[test]
-fn native_python_operator_ids_are_default_valid_and_selectable() {
+#[rstest::rstest]
+#[case::binary_power("binary_power")]
+#[case::binary_matmul("binary_matmul")]
+#[case::augmented_power("augmented_power")]
+#[case::augmented_matmul("augmented_matmul")]
+#[case::bitwise_xor("bitwise_xor")]
+#[case::bitwise_invert("bitwise_invert")]
+#[case::augmented_bitwise_and_or("augmented_bitwise_and_or")]
+#[case::augmented_bitwise_xor("augmented_bitwise_xor")]
+#[case::augmented_bitwise_shift("augmented_bitwise_shift")]
+#[case::operator_function("operator_function")]
+fn native_python_operator_ids_are_default_valid_and_selectable(#[case] name: &str) {
     let selected = MutationOperatorSelection::default();
     let selected_names = selected.names();
     let valid_names = MutationOperatorSelection::valid_names();
 
-    for name in [
-        "binary_power",
-        "binary_matmul",
-        "augmented_power",
-        "augmented_matmul",
-        "bitwise_xor",
-        "bitwise_invert",
-        "augmented_bitwise_and_or",
-        "augmented_bitwise_xor",
-        "augmented_bitwise_shift",
-        "operator_function",
-    ] {
-        assert!(selected_names.iter().any(|selected| selected == name));
-        assert!(valid_names.contains(&name));
-        assert_eq!(
-            MutationOperatorSelection::parse_selector(name)
-                .unwrap()
-                .len(),
-            1
-        );
-    }
+    assert!(selected_names.iter().any(|selected| selected == name));
+    assert!(valid_names.contains(&name));
+    assert_eq!(
+        MutationOperatorSelection::parse_selector(name)
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
-#[test]
-fn default_runtime_selection_contains_collection_structure_and_bitwise_operators() {
+#[rstest::rstest]
+#[case::mutationoperator_collectionanyall(MutationOperator::CollectionAnyAll)]
+#[case::mutationoperator_collectionlisttuple(MutationOperator::CollectionListTuple)]
+#[case::mutationoperator_collectionsetfrozenset(MutationOperator::CollectionSetFrozenset)]
+#[case::mutationoperator_collectionappendinsert(MutationOperator::CollectionAppendInsert)]
+#[case::mutationoperator_collectionminmax(MutationOperator::CollectionMinMax)]
+#[case::mutationoperator_collectionsetadddiscard(MutationOperator::CollectionSetAddDiscard)]
+#[case::mutationoperator_collectionsetremovediscard(MutationOperator::CollectionSetRemoveDiscard)]
+#[case::mutationoperator_collectionstringstartsends(MutationOperator::CollectionStringStartsEnds)]
+#[case::mutationoperator_collectionstringsplitrsplit(MutationOperator::CollectionStringSplitRsplit)]
+#[case::mutationoperator_bitwiseandor(MutationOperator::BitwiseAndOr)]
+#[case::mutationoperator_bitwiseshift(MutationOperator::BitwiseShift)]
+#[case::mutationoperator_structureappendextend(MutationOperator::StructureAppendExtend)]
+#[case::mutationoperator_structuremappinggetsubscript(
+    MutationOperator::StructureMappingGetSubscript
+)]
+#[case::mutationoperator_structuresortreverse(MutationOperator::StructureSortReverse)]
+#[case::mutationoperator_structuresortedreversed(MutationOperator::StructureSortedReversed)]
+#[case::mutationoperator_structureindexneighbor(MutationOperator::StructureIndexNeighbor)]
+#[case::mutationoperator_structuresliceneighbor(MutationOperator::StructureSliceNeighbor)]
+#[case::mutationoperator_exceptiontypepair(MutationOperator::ExceptionTypePair)]
+fn default_runtime_selection_included(#[case] operator: MutationOperator) {
     let selected = MutationOperatorSelection::default();
 
-    for operator in [
-        MutationOperator::CollectionAnyAll,
-        MutationOperator::CollectionListTuple,
-        MutationOperator::CollectionSetFrozenset,
-        MutationOperator::CollectionAppendInsert,
-        MutationOperator::CollectionMinMax,
-        MutationOperator::CollectionSetAddDiscard,
-        MutationOperator::CollectionSetRemoveDiscard,
-        MutationOperator::CollectionStringStartsEnds,
-        MutationOperator::CollectionStringSplitRsplit,
-        MutationOperator::BitwiseAndOr,
-        MutationOperator::BitwiseShift,
-        MutationOperator::StructureAppendExtend,
-        MutationOperator::StructureMappingGetSubscript,
-        MutationOperator::StructureSortReverse,
-        MutationOperator::StructureSortedReversed,
-        MutationOperator::StructureIndexNeighbor,
-        MutationOperator::StructureSliceNeighbor,
-        MutationOperator::ExceptionTypePair,
-    ] {
-        assert!(selected.contains(operator), "missing {operator:?}");
-    }
+    assert!(selected.contains(operator), "missing {operator:?}");
+}
 
-    for type_operator in [
-        MutationOperator::TypeNullableRemove,
-        MutationOperator::TypeNullableAdd,
-        MutationOperator::TypeListSequence,
-        MutationOperator::TypeSetAbstractSet,
-        MutationOperator::TypeMapping,
-        MutationOperator::TypeIterableIterator,
-        MutationOperator::TypeSequenceIterable,
-    ] {
-        assert!(
-            !selected.contains(type_operator),
-            "included {type_operator:?}"
-        );
-    }
-    for risky_operator in [
-        MutationOperator::ExceptionBareToException,
-        MutationOperator::ExceptionExceptionToBare,
-        MutationOperator::ExceptionBaseBoundary,
-        MutationOperator::ExceptionTupleAddPair,
-        MutationOperator::ExceptionTupleRemoveMember,
-    ] {
-        assert!(
-            !selected.contains(risky_operator),
-            "included {risky_operator:?}"
-        );
-    }
+#[rstest::rstest]
+#[case::mutationoperator_typenullableremove(MutationOperator::TypeNullableRemove)]
+#[case::mutationoperator_typenullableadd(MutationOperator::TypeNullableAdd)]
+#[case::mutationoperator_typelistsequence(MutationOperator::TypeListSequence)]
+#[case::mutationoperator_typesetabstractset(MutationOperator::TypeSetAbstractSet)]
+#[case::mutationoperator_typemapping(MutationOperator::TypeMapping)]
+#[case::mutationoperator_typeiterableiterator(MutationOperator::TypeIterableIterator)]
+#[case::mutationoperator_typesequenceiterable(MutationOperator::TypeSequenceIterable)]
+fn default_runtime_selection_type_excluded(#[case] type_operator: MutationOperator) {
+    let selected = MutationOperatorSelection::default();
+
+    assert!(
+        !selected.contains(type_operator),
+        "included {type_operator:?}"
+    );
+}
+
+#[rstest::rstest]
+#[case::mutationoperator_exceptionbaretoexception(MutationOperator::ExceptionBareToException)]
+#[case::mutationoperator_exceptionexceptiontobare(MutationOperator::ExceptionExceptionToBare)]
+#[case::mutationoperator_exceptionbaseboundary(MutationOperator::ExceptionBaseBoundary)]
+#[case::mutationoperator_exceptiontupleaddpair(MutationOperator::ExceptionTupleAddPair)]
+#[case::mutationoperator_exceptiontupleremovemember(MutationOperator::ExceptionTupleRemoveMember)]
+fn default_runtime_selection_risky_excluded(#[case] risky_operator: MutationOperator) {
+    let selected = MutationOperatorSelection::default();
+
+    assert!(
+        !selected.contains(risky_operator),
+        "included {risky_operator:?}"
+    );
+}
+
+#[rstest::rstest]
+#[case::collection_any_all("collection_any_all")]
+#[case::collection_list_tuple("collection_list_tuple")]
+#[case::collection_set_frozenset("collection_set_frozenset")]
+#[case::collection_append_insert("collection_append_insert")]
+#[case::collection_min_max("collection_min_max")]
+#[case::collection_set_add_discard("collection_set_add_discard")]
+#[case::collection_set_remove_discard("collection_set_remove_discard")]
+#[case::collection_string_starts_ends("collection_string_starts_ends")]
+#[case::collection_string_split_rsplit("collection_string_split_rsplit")]
+#[case::bitwise_and_or("bitwise_and_or")]
+#[case::bitwise_shift("bitwise_shift")]
+#[case::structure_append_extend("structure_append_extend")]
+#[case::structure_mapping_get_subscript("structure_mapping_get_subscript")]
+#[case::structure_sort_reverse("structure_sort_reverse")]
+#[case::structure_sorted_reversed("structure_sorted_reversed")]
+#[case::structure_index_neighbor("structure_index_neighbor")]
+#[case::structure_slice_neighbor("structure_slice_neighbor")]
+#[case::exception_type_pair("exception_type_pair")]
+#[case::exception_bare_to_exception("exception_bare_to_exception")]
+#[case::exception_exception_to_bare("exception_exception_to_bare")]
+#[case::exception_base_boundary("exception_base_boundary")]
+#[case::exception_tuple_add_pair("exception_tuple_add_pair")]
+#[case::exception_tuple_remove_member("exception_tuple_remove_member")]
+#[case::collection_ops("collection_ops")]
+#[case::structure_ops("structure_ops")]
+#[case::bitwise_ops("bitwise_ops")]
+#[case::exception_ops("exception_ops")]
+#[case::exception_risky("exception_risky")]
+fn collection_structure_and_bitwise_operator_ids_are_valid_names(#[case] name: &str) {
+    let valid_names = MutationOperatorSelection::valid_names();
+
+    assert!(valid_names.contains(&name), "missing {name}");
 }
 
 #[test]
-fn collection_structure_and_bitwise_operator_ids_are_valid_names() {
-    let valid_names = MutationOperatorSelection::valid_names();
+fn valid_operator_names_are_sorted() {
+    let names = MutationOperatorSelection::valid_names();
 
-    for name in [
-        "collection_any_all",
-        "collection_list_tuple",
-        "collection_set_frozenset",
-        "collection_append_insert",
-        "collection_min_max",
-        "collection_set_add_discard",
-        "collection_set_remove_discard",
-        "collection_string_starts_ends",
-        "collection_string_split_rsplit",
-        "bitwise_and_or",
-        "bitwise_shift",
-        "structure_append_extend",
-        "structure_mapping_get_subscript",
-        "structure_sort_reverse",
-        "structure_sorted_reversed",
-        "structure_index_neighbor",
-        "structure_slice_neighbor",
-        "exception_type_pair",
-        "exception_bare_to_exception",
-        "exception_exception_to_bare",
-        "exception_base_boundary",
-        "exception_tuple_add_pair",
-        "exception_tuple_remove_member",
-        "collection_ops",
-        "structure_ops",
-        "bitwise_ops",
-        "exception_ops",
-        "exception_risky",
-    ] {
-        assert!(valid_names.contains(&name), "missing {name}");
-    }
-
-    assert!(valid_names.windows(2).all(|names| names[0] < names[1]));
+    assert!(names.windows(2).all(|pair| pair[0] < pair[1]));
 }
 
 #[test]
@@ -218,6 +223,39 @@ fn exception_selector_families_expand_safe_and_risky_operators() {
 
 #[test]
 fn excluding_collection_family_preserves_other_runtime_families() {
+    let raw = RawRunConfig {
+        root: ".".into(),
+        files: vec!["src/lib.py".into()],
+        exclude_operators: vec!["collection_ops".to_owned()],
+        test_argv: vec![CommandArg::Unix(b"python".to_vec())],
+        ..RawRunConfig::default()
+    };
+    let excluded = MutationOperatorSelection::parse_selector("collection_ops").unwrap();
+    let retained = MutationOperatorSelection::parse_selector("structure_ops")
+        .unwrap()
+        .into_iter()
+        .chain(MutationOperatorSelection::parse_selector("bitwise_ops").unwrap())
+        .collect::<Vec<_>>();
+
+    let config = RunConfig::try_from(raw)
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+        .unwrap();
+
+    assert!(
+        excluded
+            .into_iter()
+            .all(|operator| !config.operators.contains(operator))
+    );
+    assert!(
+        retained
+            .into_iter()
+            .all(|operator| config.operators.contains(operator))
+    );
+}
+
+#[test]
+fn excluding_structure_family_preserves_collection_operators() {
     let mut raw = RawRunConfig {
         root: ".".into(),
         files: vec!["src/lib.py".into()],
@@ -225,25 +263,6 @@ fn excluding_collection_family_preserves_other_runtime_families() {
         test_argv: vec![CommandArg::Unix(b"python".to_vec())],
         ..RawRunConfig::default()
     };
-    let config = RunConfig::try_from(raw.clone())
-        .unwrap()
-        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
-        .unwrap();
-
-    for operator in MutationOperatorSelection::parse_selector("collection_ops").unwrap() {
-        assert!(
-            !config.operators.contains(operator),
-            "included {operator:?}"
-        );
-    }
-    for operator in MutationOperatorSelection::parse_selector("structure_ops")
-        .unwrap()
-        .into_iter()
-        .chain(MutationOperatorSelection::parse_selector("bitwise_ops").unwrap())
-    {
-        assert!(config.operators.contains(operator), "missing {operator:?}");
-    }
-
     raw.exclude_operators = vec!["structure_ops".to_owned()];
     let config = RunConfig::try_from(raw)
         .unwrap()
@@ -267,6 +286,7 @@ fn raw_operator_includes_and_excludes_cannot_normalize_to_empty() {
     raw.exclude_operators = vec!["compare_eq_ne".to_owned()];
 
     let error = RunConfig::try_from(raw).unwrap_err();
+
     assert_eq!(error, ConfigError::EmptyMutationOperatorSelection);
     assert!(error.to_string().contains("--operators"));
     assert!(error.to_string().contains("--exclude-operators"));
@@ -316,19 +336,21 @@ fn raw_config() -> RawRunConfig {
     }
 }
 
-#[test]
-fn exception_hierarchy_is_explicit_only() {
+#[rstest::rstest]
+#[case::exception_ops("exception_ops")]
+#[case::exception_risky("exception_risky")]
+fn exception_hierarchy_is_explicit_only(#[case] family: &str) {
     let operators = MutationOperatorSelection::parse_selector("exception_hierarchy").unwrap();
+
     assert_eq!(operators.len(), 1);
     assert_eq!(operators[0].as_str(), "exception_hierarchy");
     assert!(!MutationOperatorSelection::default().contains(operators[0]));
-    for family in ["exception_ops", "exception_risky"] {
-        assert!(
-            !MutationOperatorSelection::parse_selector(family)
-                .unwrap()
-                .contains(&operators[0])
-        );
-    }
+
+    assert!(
+        !MutationOperatorSelection::parse_selector(family)
+            .unwrap()
+            .contains(&operators[0])
+    );
 }
 
 // Fixed current policy, independent of catalog and production default builders.
@@ -453,6 +475,7 @@ fn default_exclusions_remove_only_selected_current_operators() {
         .into_iter()
         .filter(|name| !matches!(*name, "statement_delete" | "method_call_remove"))
         .collect();
+
     assert_eq!(config.operators.names(), expected);
 }
 
@@ -487,6 +510,7 @@ fn stored_explicit_selection_roundtrips_without_default_expansion() {
     let restored: PlanConfig = serde_json::from_slice(&json).unwrap();
 
     restored.validate().unwrap();
+
     assert_eq!(
         restored.operators.names(),
         ["binary_add_sub", "type_list_sequence", "method_call_remove"]
@@ -494,28 +518,26 @@ fn stored_explicit_selection_roundtrips_without_default_expansion() {
     assert_eq!(serde_json::to_vec(&restored).unwrap(), json);
 }
 
-#[test]
-fn effective_python_mutations_are_default_and_individually_selectable() {
+#[rstest::rstest]
+#[case::none_truthiness("none_truthiness")]
+#[case::mutable_default_share("mutable_default_share")]
+#[case::nonlocal_remove("nonlocal_remove")]
+#[case::yield_from_to_yield("yield_from_to_yield")]
+#[case::mapping_setdefault_to_get("mapping_setdefault_to_get")]
+#[case::bisect_boundary_swap("bisect_boundary_swap")]
+#[case::deepcopy_to_copy("deepcopy_to_copy")]
+#[case::deque_popleft_to_pop("deque_popleft_to_pop")]
+#[case::gather_return_exceptions("gather_return_exceptions")]
+#[case::itertools_take_drop_swap("itertools_take_drop_swap")]
+#[case::fstring_conversion_swap("fstring_conversion_swap")]
+fn effective_python_mutations_are_default_and_individually_selectable(#[case] name: &str) {
     let defaults = MutationOperatorSelection::default();
-    for name in [
-        "none_truthiness",
-        "mutable_default_share",
-        "nonlocal_remove",
-        "yield_from_to_yield",
-        "mapping_setdefault_to_get",
-        "bisect_boundary_swap",
-        "deepcopy_to_copy",
-        "deque_popleft_to_pop",
-        "gather_return_exceptions",
-        "itertools_take_drop_swap",
-        "fstring_conversion_swap",
-    ] {
-        assert!(defaults.names().iter().any(|item| item == name), "{name}");
-        assert_eq!(
-            MutationOperatorSelection::parse_selector(name)
-                .unwrap()
-                .len(),
-            1
-        );
-    }
+
+    assert!(defaults.names().iter().any(|item| item == name), "{name}");
+    assert_eq!(
+        MutationOperatorSelection::parse_selector(name)
+            .unwrap()
+            .len(),
+        1
+    );
 }

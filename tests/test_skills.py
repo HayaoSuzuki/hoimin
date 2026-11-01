@@ -248,6 +248,7 @@ def test_execution_examples_use_jsonl_without_format_selection(name: str) -> Non
     verify = next(
         line for line in body.splitlines() if line.startswith("hoimin verify ")
     )
+
     assert "--format" not in verify
     assert "$temp_dir/verify-001.jsonl" in body
     assert "schema-10 JSONL" in body

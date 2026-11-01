@@ -1074,8 +1074,13 @@ mod ordered_history_tests {
         resolution
     }
 
-    #[test]
-    fn indexed_history_matches_insertion_order_reference_at_every_boundary() {
+    #[rstest::rstest]
+    #[case::vec_8_bindingeffect_unknown_2_bindingeffect_bind_8_bindingeffect_1(0)]
+    #[case::vec_4_bindingeffect_maybebind_4_bindingeffect_bind_4_bindingeffec_2(1)]
+    #[case::vec_4_bindingeffect_unknown_4_bindingeffect_bind_4_bindingeffect_3(2)]
+    fn indexed_history_matches_insertion_order_reference_at_every_boundary(
+        #[case] scenario_index: usize,
+    ) {
         let cases = [
             vec![
                 (8, BindingEffect::Unknown),
@@ -1095,15 +1100,16 @@ mod ordered_history_tests {
                 (4, BindingEffect::MaybeBind),
             ],
         ];
-        for events in cases {
-            let mut history = OrderedBindingHistory::default();
-            for event in &events {
-                history.push(*event);
-            }
-            history.finalize();
-            for offset in 0..=10 {
-                assert_eq!(history.resolve_at(offset), reference_fold(&events, offset));
-            }
+
+        let events = cases.into_iter().nth(scenario_index).unwrap();
+
+        let mut history = OrderedBindingHistory::default();
+        for event in &events {
+            history.push(*event);
+        }
+        history.finalize();
+        for offset in 0..=10 {
+            assert_eq!(history.resolve_at(offset), reference_fold(&events, offset));
         }
     }
 
@@ -1144,6 +1150,7 @@ mod ordered_history_tests {
             history.finalize();
 
             for offset in 0..=32 {
+
                 let actual = history.resolve_at(offset);
 
                 proptest::prop_assert_eq!(actual, reference_fold(&events, offset));
@@ -1159,6 +1166,7 @@ mod ordered_history_tests {
             history.push((offset * 2, BindingEffect::Bind));
         }
         history.finalize();
+
         assert_eq!(history.events.len(), count);
         assert_eq!(history.cumulative.len(), count);
         assert_eq!(
@@ -8843,73 +8851,87 @@ mod method_replacement_tests;
 mod performance_cost_tests {
     use super::*;
 
-    #[test]
-    fn scalar_annotations_do_not_scan_unrelated_imports() {
+    #[rstest::rstest]
+    #[case::value_8(8)]
+    #[case::value_32(32)]
+    #[case::value_128(128)]
+    fn scalar_annotations_do_not_scan_unrelated_imports(
+        #[case] imports: usize,
+        #[values(0, 1, 2)] scenario_index: usize,
+    ) {
         use std::fmt::Write as _;
-        for imports in [8, 32, 128] {
-            for annotations in [8, 32, 128] {
-                let mut source = String::new();
-                for index in 0..imports {
-                    writeln!(source, "import typing as t{index}").unwrap();
-                }
-                source.push_str(&"x: int\n".repeat(annotations));
-                let mut operators = MutationOperatorSelection::default();
-                operators.include(MutationOperator::TypeNullableAdd);
-                ANNOTATION_IMPORT_LOOKUPS.set(0);
-                let output = analyze_source(
-                    &AnalyzeRequest {
-                        payload: payload::PayloadBudget::default(),
-                        path: Utf8Path::new("subject.py"),
-                        lines: &[],
-                        symbols: &[],
-                        operators: &operators,
-                        profile: MutationProfile::Full,
-                        max_candidates: 10_000,
-                    },
-                    &source,
-                );
-                assert_eq!(output.candidates.len(), annotations);
-                assert_eq!(
-                    ANNOTATION_IMPORT_LOOKUPS.get(),
-                    0,
-                    "scalar annotation lookup work depends on {imports} unused imports and {annotations} annotations"
-                );
-            }
+
+        let annotations = [8, 32, 128].into_iter().nth(scenario_index).unwrap();
+
+        let mut source = String::new();
+        for index in 0..imports {
+            writeln!(source, "import typing as t{index}").unwrap();
         }
+        source.push_str(&"x: int\n".repeat(annotations));
+        let mut operators = MutationOperatorSelection::default();
+        operators.include(MutationOperator::TypeNullableAdd);
+        ANNOTATION_IMPORT_LOOKUPS.set(0);
+
+        let output = analyze_source(
+            &AnalyzeRequest {
+                payload: payload::PayloadBudget::default(),
+                path: Utf8Path::new("subject.py"),
+                lines: &[],
+                symbols: &[],
+                operators: &operators,
+                profile: MutationProfile::Full,
+                max_candidates: 10_000,
+            },
+            &source,
+        );
+
+        assert_eq!(output.candidates.len(), annotations);
+        assert_eq!(
+            ANNOTATION_IMPORT_LOOKUPS.get(),
+            0,
+            "scalar annotation lookup work depends on {imports} unused imports and {annotations} annotations"
+        );
     }
 
-    #[test]
-    fn straight_line_import_transfer_copy_cost_is_independent_of_annotations() {
+    #[rstest::rstest]
+    #[case::value_8(8)]
+    #[case::value_0(0)]
+    #[case::value_32(32)]
+    #[case::value_128(128)]
+    fn straight_line_import_transfer_copy_cost_is_independent_of_annotations(
+        #[case] imports: usize,
+        #[values(0, 1, 2, 3)] scenario_index: usize,
+    ) {
         use std::fmt::Write as _;
-        for imports in [8, 0, 32, 128] {
-            for annotations in [32, 0, 8, 128] {
-                let mut source = String::new();
-                for index in 0..imports {
-                    writeln!(source, "import typing as t{index}").unwrap();
-                }
-                source.push_str(&"x: int\n".repeat(annotations));
-                let parsed = parse_unchecked_source(&source, ruff_python_ast::PySourceType::Python);
-                assert!(parsed.has_valid_syntax());
-                IMPORT_CLONE_CALLS.set(0);
-                IMPORT_CLONE_ENTRIES.set(0);
-                let mut records = 0;
-                AnnotationCollector::visit_each(parsed.syntax(), &|| false, &mut |_, _, _| {
-                    records += 1;
-                })
-                .unwrap();
-                assert_eq!(records, annotations);
-                assert!(
-                    IMPORT_CLONE_CALLS.get() <= 1,
-                    "I={imports}, A={annotations}: {} clone calls",
-                    IMPORT_CLONE_CALLS.get()
-                );
-                assert!(
-                    IMPORT_CLONE_ENTRIES.get() <= imports,
-                    "I={imports}, A={annotations}: {} copied entries",
-                    IMPORT_CLONE_ENTRIES.get()
-                );
-            }
+
+        let annotations = [32, 0, 8, 128].into_iter().nth(scenario_index).unwrap();
+
+        let mut source = String::new();
+        for index in 0..imports {
+            writeln!(source, "import typing as t{index}").unwrap();
         }
+        source.push_str(&"x: int\n".repeat(annotations));
+        let parsed = parse_unchecked_source(&source, ruff_python_ast::PySourceType::Python);
+
+        assert!(parsed.has_valid_syntax());
+        IMPORT_CLONE_CALLS.set(0);
+        IMPORT_CLONE_ENTRIES.set(0);
+        let mut records = 0;
+        AnnotationCollector::visit_each(parsed.syntax(), &|| false, &mut |_, _, _| {
+            records += 1;
+        })
+        .unwrap();
+        assert_eq!(records, annotations);
+        assert!(
+            IMPORT_CLONE_CALLS.get() <= 1,
+            "I={imports}, A={annotations}: {} clone calls",
+            IMPORT_CLONE_CALLS.get()
+        );
+        assert!(
+            IMPORT_CLONE_ENTRIES.get() <= imports,
+            "I={imports}, A={annotations}: {} copied entries",
+            IMPORT_CLONE_ENTRIES.get()
+        );
     }
 
     #[test]
@@ -8925,6 +8947,7 @@ mod performance_cost_tests {
         IMPORT_CLONE_CALLS.set(0);
         IMPORT_CLONE_ENTRIES.set(0);
         let copied = imports.clone();
+
         assert_eq!(copied, imports);
         assert_eq!(
             (IMPORT_CLONE_CALLS.get(), IMPORT_CLONE_ENTRIES.get()),
@@ -8935,6 +8958,7 @@ mod performance_cost_tests {
     fn replacement_counter_observes_direct_builder_calls() {
         let source = "value = [0]\n";
         let parsed = parse_unchecked_source(source, ruff_python_ast::PySourceType::Python);
+
         assert!(parsed.has_valid_syntax());
         let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
         let Stmt::Assign(assign) = &parsed.syntax().body[0] else {
@@ -9318,13 +9342,16 @@ mod performance_cost_tests {
             && observation.bytes == native(case.replacement_bytes)
     }
 
-    #[test]
-    fn real_operation_counters_match_lean_cost_corpus() {
+    #[rstest::rstest]
+    #[case::family_annotation_1(0)]
+    #[case::family_replacement_2(1)]
+    fn real_operation_counters_match_lean_cost_corpus_scenario_1(#[case] scenario_index: usize) {
         let cases = corpus();
         let binding = cases
             .iter()
             .filter(|case| matches!(case.family, Family::Binding))
             .collect::<Vec<_>>();
+
         assert_eq!(binding.len(), 21);
         for case in binding {
             let observation = binding_observation(case, false);
@@ -9335,23 +9362,114 @@ mod performance_cost_tests {
                 case.id
             );
         }
-        for (family, expected_count) in [(Family::Annotation, 14), (Family::Replacement, 21)] {
-            let selected = cases
-                .iter()
-                .filter(|case| {
-                    std::mem::discriminant(&case.family) == std::mem::discriminant(&family)
-                })
-                .collect::<Vec<_>>();
-            assert_eq!(selected.len(), expected_count);
-            for case in selected {
-                let observation = source_observation(case, false);
 
-                assert!(
-                    source_matches(case, &observation),
-                    "{} cost {observation:?}",
-                    case.id
-                );
-            }
+        let (family, expected_count) = [(Family::Annotation, 14), (Family::Replacement, 21)]
+            .into_iter()
+            .nth(scenario_index)
+            .unwrap();
+
+        let selected = cases
+            .iter()
+            .filter(|case| std::mem::discriminant(&case.family) == std::mem::discriminant(&family))
+            .collect::<Vec<_>>();
+        assert_eq!(selected.len(), expected_count);
+        for case in selected {
+            let observation = source_observation(case, false);
+
+            assert!(
+                source_matches(case, &observation),
+                "{} cost {observation:?}",
+                case.id
+            );
+        }
+    }
+
+    #[test]
+    fn real_operation_counters_match_lean_cost_corpus() {
+        let cases = corpus();
+        let binding = cases
+            .iter()
+            .filter(|case| matches!(case.family, Family::Binding))
+            .collect::<Vec<_>>();
+
+        assert_eq!(binding.len(), 21);
+        for case in binding {
+            let observation = binding_observation(case, false);
+
+            assert!(
+                binding_matches(case, observation),
+                "{} binding cost",
+                case.id
+            );
+        }
+    }
+
+    #[rstest::rstest]
+    #[case::family_annotation_1(0)]
+    #[case::family_replacement_2(1)]
+    fn real_broken_cost_variants_are_detected_without_semantic_changes_scenario_1(
+        #[case] scenario_index: usize,
+    ) {
+        let cases = corpus();
+        let mut binding_detected = false;
+        for case in cases
+            .iter()
+            .filter(|case| matches!(case.family, Family::Binding))
+        {
+            let observed = binding_observation(case, true);
+
+            assert_eq!(
+                observed.1,
+                native(case.linear_visits),
+                "{} scan count",
+                case.id
+            );
+            binding_detected |= !binding_matches(case, observed);
+        }
+        assert!(
+            binding_detected,
+            "actual broken binding family must be detected"
+        );
+
+        let family = [Family::Annotation, Family::Replacement]
+            .into_iter()
+            .nth(scenario_index)
+            .unwrap();
+
+        let selected = cases
+            .iter()
+            .filter(|case| std::mem::discriminant(&case.family) == std::mem::discriminant(&family))
+            .collect::<Vec<_>>();
+        for case in &selected {
+            let normal = source_observation(case, false);
+            let broken = source_observation(case, true);
+
+            assert!(source_matches(case, &normal), "{} normal cost", case.id);
+            assert_eq!(
+                normal.semantics, broken.semantics,
+                "{} changed semantics",
+                case.id
+            );
+        }
+        let detectable = selected
+            .into_iter()
+            .filter(|case| {
+                (matches!(case.family, Family::Annotation) && case.selected && case.annotations > 0)
+                    || (matches!(case.family, Family::Replacement) && !case.selected)
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            !detectable.is_empty(),
+            "actual broken source family must be detected"
+        );
+        for case in detectable {
+            let broken = source_observation(case, true);
+
+            assert!(
+                !source_matches(case, &broken),
+                "{} broken cost escaped",
+                case.id
+            );
         }
     }
 
@@ -9377,47 +9495,6 @@ mod performance_cost_tests {
             binding_detected,
             "actual broken binding family must be detected"
         );
-        for family in [Family::Annotation, Family::Replacement] {
-            let selected = cases
-                .iter()
-                .filter(|case| {
-                    std::mem::discriminant(&case.family) == std::mem::discriminant(&family)
-                })
-                .collect::<Vec<_>>();
-            for case in &selected {
-                let normal = source_observation(case, false);
-                let broken = source_observation(case, true);
-
-                assert!(source_matches(case, &normal), "{} normal cost", case.id);
-                assert_eq!(
-                    normal.semantics, broken.semantics,
-                    "{} changed semantics",
-                    case.id
-                );
-            }
-            let detectable = selected
-                .into_iter()
-                .filter(|case| {
-                    (matches!(case.family, Family::Annotation)
-                        && case.selected
-                        && case.annotations > 0)
-                        || (matches!(case.family, Family::Replacement) && !case.selected)
-                })
-                .collect::<Vec<_>>();
-            assert!(
-                !detectable.is_empty(),
-                "actual broken source family must be detected"
-            );
-            for case in detectable {
-                let broken = source_observation(case, true);
-
-                assert!(
-                    !source_matches(case, &broken),
-                    "{} broken cost escaped",
-                    case.id
-                );
-            }
-        }
     }
 }
 

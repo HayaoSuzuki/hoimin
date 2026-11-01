@@ -87,35 +87,33 @@ mod tests {
         }
     }
 
-    #[test]
-    fn comparison_handles_different_short_reads_interrupts_and_eof() {
-        for right in [
-            b"abc\0def".as_slice(),
-            b"abc\0deg",
-            b"abc\0de",
-            b"abc\0defg",
-        ] {
-            let mut left = Fragmented {
-                remaining: b"abc\0def",
-                interrupted: true,
-                size: 2,
-            };
-            let mut right_reader = Fragmented {
-                remaining: right,
-                interrupted: false,
-                size: 3,
-            };
-            let mut counts = (0, 0);
-            assert_eq!(
-                equal(&mut left, &mut right_reader, |l, r| {
-                    counts.0 += l;
-                    counts.1 += r;
-                })
-                .unwrap(),
-                right == b"abc\0def"
-            );
-            assert_eq!(counts, (7, right.len()));
-        }
+    #[rstest::rstest]
+    #[case::b_abc_def_as_slice(b"abc\0def".as_slice())]
+    #[case::b_abc_deg(b"abc\0deg")]
+    #[case::b_abc_de(b"abc\0de")]
+    #[case::b_abc_defg(b"abc\0defg")]
+    fn comparison_handles_different_short_reads_interrupts_and_eof(#[case] right: &[u8]) {
+        let mut left = Fragmented {
+            remaining: b"abc\0def",
+            interrupted: true,
+            size: 2,
+        };
+        let mut right_reader = Fragmented {
+            remaining: right,
+            interrupted: false,
+            size: 3,
+        };
+        let mut counts = (0, 0);
+
+        assert_eq!(
+            equal(&mut left, &mut right_reader, |l, r| {
+                counts.0 += l;
+                counts.1 += r;
+            })
+            .unwrap(),
+            right == b"abc\0def"
+        );
+        assert_eq!(counts, (7, right.len()));
     }
 
     #[test]
@@ -132,6 +130,7 @@ mod tests {
                 Ok(())
             })
             .unwrap();
+
         assert_eq!(written, b"abc\0def");
         assert_eq!(entry.size, 7);
         assert_eq!(entry.blake3, blake3::hash(b"abc\0def"));

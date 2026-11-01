@@ -104,7 +104,7 @@ async fn execute(source: &str, assertion: &str) {
 }
 
 #[tokio::test]
-async fn segments_default_to_enabled_and_allow_explicit_exclusion() {
+async fn segments_are_enabled_by_default() {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(
         root.path().join("subject.py"),
@@ -121,175 +121,199 @@ async fn segments_default_to_enabled_and_allow_explicit_exclusion() {
     assert_eq!(segments.len(), 1);
     assert_eq!(segments[0]["original"], "prefix:");
     assert_eq!(segments[0]["replacement"], "");
-    for selection in [
-        vec!["--exclude-operators", "string_segment_empty"],
-        vec!["--operators", "string_literal_empty"],
-    ] {
-        assert!(
-            plan(root.path(), &selection, "pass").await["candidates"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|c| c["operator"] != "string_segment_empty")
-        );
-    }
 }
 
+#[rstest::rstest]
+#[case::explicit_exclusion(vec!["--exclude-operators", "string_segment_empty"])]
+#[case::another_operator_selected(vec!["--operators", "string_literal_empty"])]
 #[tokio::test]
-async fn segments_keep_interpolation_evaluation_and_formatting() {
+async fn segments_are_absent_when_not_selected(#[case] selection: Vec<&str>) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("subject.py"),
+        "value = f'prefix:{x}:suffix'\n",
+    )
+    .unwrap();
+
+    let doc = plan(root.path(), &selection, "pass").await;
+
+    assert!(
+        doc["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|candidate| candidate["operator"] != "string_segment_empty")
+    );
+}
+
+#[rstest::rstest]
+#[case::f_prefix_mark_1_suffix_mark_2_1(
+    "f'prefix:{mark(1)}:suffix{mark(2)}'",
+    "prefix:",
+    "1:suffix2",
+    "[1,2]"
+)]
+#[case::f_mark_1_suffix_2("f'{mark(1)}:suffix'", ":suffix", "1", "[1]")]
+#[case::fr_mark_1_suffix_3("fr'\\n{{前}}{mark(1)}:suffix'", "\\n{{前}}", "1:suffix", "[1]")]
+#[case::f_mark_1_4("f'''前\\n{mark(1)}後'''", "前\\n", "1後", "[1]")]
+#[case::f_n_snowman_mark_1_5("f'\\N{SNOWMAN}{{}}{mark(1)}'", "\\N{SNOWMAN}{{}}", "1", "[1]")]
+#[case::f_prefix_mark_1_r_mark_2_6("f'prefix:{mark(1)!r:>{mark(2)}}'", "prefix:", " 1", "[1,2]")]
+#[case::f_prefix_mark_1_suffix_7(
+    "f'prefix:{mark(1)=}:suffix'",
+    "prefix:",
+    "mark(1)=1:suffix",
+    "[1]"
+)]
+#[case::f_mark_1_suffix_8("f'{mark(1)=}:suffix'", ":suffix", "mark(1)=1", "[1]")]
+#[case::f_mark_1_9("f'{{{mark(1)}}}'", "{{", "1}", "[1]")]
+#[case::f_mark_1_10("f'{mark(1)}{{}}'", "{{}}", "1", "[1]")]
+#[case::f_11("f'\\\"{mark(1)}'", "\\\"", "1", "[1]")]
+#[case::f_mark_1_suffix_12("f'\\\n{mark(1)}:suffix'", ":suffix", "1", "[1]")]
+#[case::prefix_f_mark_1_suffix_13("'prefix' f'{mark(1)}:suffix'", "'prefix'", "1:suffix", "[1]")]
+#[tokio::test]
+async fn segments_keep_interpolation_evaluation_and_formatting(
+    #[case] expression: &str,
+    #[case] original: &str,
+    #[case] expected: &str,
+    #[case] events: &str,
+) {
     let prelude = "events=[]\ndef mark(x):\n events.append(x)\n return x\n";
-    for (expression, original, expected, events) in [
-        (
-            "f'prefix:{mark(1)}:suffix{mark(2)}'",
-            "prefix:",
-            "1:suffix2",
-            "[1,2]",
+
+    let root = tempfile::tempdir().unwrap();
+    let source = format!("{prelude}result = {expression}\n");
+    std::fs::write(root.path().join("subject.py"), &source).unwrap();
+
+    let doc = plan(
+        root.path(),
+        &["--operators", "string_segment_empty"],
+        "pass",
+    )
+    .await;
+    let candidates = doc["candidates"].as_array().unwrap();
+
+    assert_eq!(candidates.len(), 1, "{expression}: {doc}");
+    assert_eq!(candidates[0]["original"], original, "{expression}");
+    execute(
+        &mutated(&source, &candidates[0]),
+        &format!(
+            "assert result == {}, repr(result); assert events == {events}, events",
+            serde_json::to_string(expected).unwrap()
         ),
-        ("f'{mark(1)}:suffix'", ":suffix", "1", "[1]"),
-        (
-            "fr'\\n{{前}}{mark(1)}:suffix'",
-            "\\n{{前}}",
-            "1:suffix",
-            "[1]",
-        ),
-        ("f'''前\\n{mark(1)}後'''", "前\\n", "1後", "[1]"),
-        (
-            "f'\\N{SNOWMAN}{{}}{mark(1)}'",
-            "\\N{SNOWMAN}{{}}",
-            "1",
-            "[1]",
-        ),
-        ("f'prefix:{mark(1)!r:>{mark(2)}}'", "prefix:", " 1", "[1,2]"),
-        (
-            "f'prefix:{mark(1)=}:suffix'",
-            "prefix:",
-            "mark(1)=1:suffix",
-            "[1]",
-        ),
-        ("f'{mark(1)=}:suffix'", ":suffix", "mark(1)=1", "[1]"),
-        ("f'{{{mark(1)}}}'", "{{", "1}", "[1]"),
-        ("f'{mark(1)}{{}}'", "{{}}", "1", "[1]"),
-        ("f'\\\"{mark(1)}'", "\\\"", "1", "[1]"),
-        ("f'\\\n{mark(1)}:suffix'", ":suffix", "1", "[1]"),
-        (
-            "'prefix' f'{mark(1)}:suffix'",
-            "'prefix'",
-            "1:suffix",
-            "[1]",
-        ),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        let source = format!("{prelude}result = {expression}\n");
-        std::fs::write(root.path().join("subject.py"), &source).unwrap();
-        let doc = plan(
+    )
+    .await;
+    assert_eq!(
+        doc["candidates"],
+        plan(
             root.path(),
             &["--operators", "string_segment_empty"],
-            "pass",
+            "pass"
         )
-        .await;
-        let candidates = doc["candidates"].as_array().unwrap();
-        assert_eq!(candidates.len(), 1, "{expression}: {doc}");
-        assert_eq!(candidates[0]["original"], original, "{expression}");
-        execute(
-            &mutated(&source, &candidates[0]),
-            &format!(
-                "assert result == {}, repr(result); assert events == {events}, events",
-                serde_json::to_string(expected).unwrap()
-            ),
-        )
-        .await;
-        assert_eq!(
-            doc["candidates"],
-            plan(
-                root.path(),
-                &["--operators", "string_segment_empty"],
-                "pass"
-            )
-            .await["candidates"]
-        );
-    }
+        .await["candidates"]
+    );
 }
 
+#[rstest::rstest]
+#[case::r_prefix_suffix_1("'' r'prefix' 'suffix'", "result", "suffix")]
+#[case::prefix_keep_suffix_2("('prefix' # keep\n 'suffix')", "# keep", "suffix")]
+#[case::u_3("u'前' '''後'''", "result", "後")]
+#[case::prefix_suffix_4("'\\\n' 'prefix' 'suffix'", "result", "suffix")]
 #[tokio::test]
-async fn segments_empty_one_nonempty_concat_piece_and_keep_comments() {
-    for (expression, preserved_fragment, expected_result) in [
-        ("'' r'prefix' 'suffix'", "result", "suffix"),
-        ("('prefix' # keep\n 'suffix')", "# keep", "suffix"),
-        ("u'前' '''後'''", "result", "後"),
-        ("'\\\n' 'prefix' 'suffix'", "result", "suffix"),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        let source = format!("result = {expression}\n");
-        std::fs::write(root.path().join("subject.py"), &source).unwrap();
-        let doc = plan(
-            root.path(),
-            &["--operators", "string_segment_empty"],
-            "pass",
-        )
-        .await;
-        let candidates = doc["candidates"].as_array().unwrap();
-        assert_eq!(candidates.len(), 1, "{doc}");
-        let result = mutated(&source, &candidates[0]);
-        assert!(result.contains(preserved_fragment));
-        execute(
-            &result,
-            &format!(
-                "assert result == {}",
-                serde_json::to_string(expected_result).unwrap()
-            ),
-        )
-        .await;
-    }
+async fn segments_empty_one_nonempty_concat_piece_and_keep_comments(
+    #[case] expression: &str,
+    #[case] preserved_fragment: &str,
+    #[case] expected_result: &str,
+) {
+    let root = tempfile::tempdir().unwrap();
+    let source = format!("result = {expression}\n");
+    std::fs::write(root.path().join("subject.py"), &source).unwrap();
+
+    let doc = plan(
+        root.path(),
+        &["--operators", "string_segment_empty"],
+        "pass",
+    )
+    .await;
+    let candidates = doc["candidates"].as_array().unwrap();
+
+    assert_eq!(candidates.len(), 1, "{doc}");
+    let result = mutated(&source, &candidates[0]);
+    assert!(result.contains(preserved_fragment));
+    execute(
+        &result,
+        &format!(
+            "assert result == {}",
+            serde_json::to_string(expected_result).unwrap()
+        ),
+    )
+    .await;
 }
 
+#[rstest::rstest]
+#[case::prefix_1("'prefix'\"suffix\"", "suffix")]
+#[case::prefix_2("'prefix'\"\"\"suffix\"\"\"", "suffix")]
+#[case::prefix_suffix_3("'prefix''suffix'", "suffix")]
+#[case::input_4("\"\"'prefix'", "")]
+#[case::input_5("''\"prefix\"'suffix'", "suffix")]
+#[case::f_prefix_suffix_6("f'prefix''suffix'", "suffix")]
+#[case::rf_prefix_7("rf'prefix'\"suffix\"", "suffix")]
+#[case::f_prefix_8("f'''prefix'''\"\"\"suffix\"\"\"", "suffix")]
+#[case::prefix_f_1_9("'prefix'f'{1}'", "1")]
+#[case::f_prefix_suffix_10("''f'prefix''suffix'", "suffix")]
 #[tokio::test]
-async fn segment_emptying_keeps_adjacent_quote_token_boundaries() {
-    for (expression, expected_result) in [
-        ("'prefix'\"suffix\"", "suffix"),
-        ("'prefix'\"\"\"suffix\"\"\"", "suffix"),
-        ("'prefix''suffix'", "suffix"),
-        ("\"\"'prefix'", ""),
-        ("''\"prefix\"'suffix'", "suffix"),
-        ("f'prefix''suffix'", "suffix"),
-        ("rf'prefix'\"suffix\"", "suffix"),
-        ("f'''prefix'''\"\"\"suffix\"\"\"", "suffix"),
-        ("'prefix'f'{1}'", "1"),
-        ("''f'prefix''suffix'", "suffix"),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        let source = format!("result={expression}\n");
-        execute(&source, "assert isinstance(result, str)").await;
-        std::fs::write(root.path().join("subject.py"), &source).unwrap();
-        let doc = plan(
-            root.path(),
-            &["--operators", "string_segment_empty"],
-            "pass",
-        )
-        .await;
-        let cs = doc["candidates"].as_array().unwrap();
-        assert_eq!(cs.len(), 1, "{doc}");
-        execute(
-            &mutated(&source, &cs[0]),
-            &format!(
-                "assert result == {}, repr(result)",
-                serde_json::to_string(expected_result).unwrap()
-            ),
-        )
-        .await;
-        // The same token spellings must also remain valid as a bare expression.
-        let bare = format!("{expression}\n");
-        std::fs::write(root.path().join("subject.py"), &bare).unwrap();
-        // Ordinary bare strings are docstrings, so use a later expression statement.
-        let bare = format!("pass\n{bare}");
-        std::fs::write(root.path().join("subject.py"), &bare).unwrap();
-        let doc = plan(
-            root.path(),
-            &["--operators", "string_segment_empty"],
-            "pass",
-        )
-        .await;
-        execute(&mutated(&bare, &doc["candidates"][0]), "pass").await;
-    }
+async fn segment_emptying_keeps_adjacent_quote_token_boundaries(
+    #[case] expression: &str,
+    #[case] expected_result: &str,
+) {
+    let root = tempfile::tempdir().unwrap();
+    let source = format!("result={expression}\n");
+    execute(&source, "assert isinstance(result, str)").await;
+    std::fs::write(root.path().join("subject.py"), &source).unwrap();
+
+    let doc = plan(
+        root.path(),
+        &["--operators", "string_segment_empty"],
+        "pass",
+    )
+    .await;
+    let cs = doc["candidates"].as_array().unwrap();
+
+    assert_eq!(cs.len(), 1, "{doc}");
+    execute(
+        &mutated(&source, &cs[0]),
+        &format!(
+            "assert result == {}, repr(result)",
+            serde_json::to_string(expected_result).unwrap()
+        ),
+    )
+    .await;
+}
+
+#[rstest::rstest]
+#[case::prefix_1("'prefix'\"suffix\"")]
+#[case::prefix_2("'prefix'\"\"\"suffix\"\"\"")]
+#[case::prefix_suffix_3("'prefix''suffix'")]
+#[case::input_4("\"\"'prefix'")]
+#[case::input_5("''\"prefix\"'suffix'")]
+#[case::f_prefix_suffix_6("f'prefix''suffix'")]
+#[case::rf_prefix_7("rf'prefix'\"suffix\"")]
+#[case::f_prefix_8("f'''prefix'''\"\"\"suffix\"\"\"")]
+#[case::prefix_f_1_9("'prefix'f'{1}'")]
+#[case::f_prefix_suffix_10("''f'prefix''suffix'")]
+#[tokio::test]
+async fn segment_emptying_keeps_bare_adjacent_quote_token_boundaries(#[case] expression: &str) {
+    let root = tempfile::tempdir().unwrap();
+    // The same token spellings must also remain valid as a bare expression.
+    let bare = format!("{expression}\n");
+    // Ordinary bare strings are docstrings, so use a later expression statement.
+    let bare = format!("pass\n{bare}");
+    std::fs::write(root.path().join("subject.py"), &bare).unwrap();
+    let doc = plan(
+        root.path(),
+        &["--operators", "string_segment_empty"],
+        "pass",
+    )
+    .await;
+    execute(&mutated(&bare, &doc["candidates"][0]), "pass").await;
 }
 
 #[tokio::test]
@@ -363,116 +387,134 @@ result = f'prefix:{value()!r:>{width()}}/{value()!s}/{value()!a}/{value():>{widt
 assert events == ['value', 'repr', 'width', 'value', 'str', 'value', 'repr', 'value', 'width', ('format', '>4')], events").await;
 }
 
+#[rstest::rstest]
+#[case::f_prefix_1_1_from_subject_import_state_assert_state_prefix_1_1(
+    "f'prefix:{1}'",
+    "from subject import state; assert state() == 'prefix:1'",
+    "killed"
+)]
+#[case::f_prefix_1_1_from_subject_import_state_assert_state_endswith_1_2(
+    "f'prefix:{1}'",
+    "from subject import state; assert state().endswith('1')",
+    "survived"
+)]
+#[case::prefix_1_2_from_subject_import_state_assert_state_prefix_1_1(
+    "'prefix:' '1'",
+    "from subject import state; assert state() == 'prefix:1'",
+    "killed"
+)]
+#[case::prefix_1_2_from_subject_import_state_assert_state_endswith_1_2(
+    "'prefix:' '1'",
+    "from subject import state; assert state().endswith('1')",
+    "survived"
+)]
 #[tokio::test]
-async fn segment_saved_plans_distinguish_strong_and_weak_assertions() {
-    for expression in ["f'prefix:{1}'", "'prefix:' '1'"] {
-        for (test, outcome) in [
-            (
-                "from subject import state; assert state() == 'prefix:1'",
-                "killed",
-            ),
-            (
-                "from subject import state; assert state().endswith('1')",
-                "survived",
-            ),
-        ] {
-            let root = tempfile::tempdir().unwrap();
-            let source = format!("def state():\n return {expression}\n");
-            std::fs::write(root.path().join("subject.py"), &source).unwrap();
-            let doc = plan(root.path(), &["--operators", "string_segment_empty"], test).await;
-            let path = root.path().join("plan.json");
-            std::fs::write(&path, serde_json::to_vec(&doc).unwrap()).unwrap();
-            let report = cli(vec![
-                "hoimin".into(),
-                "verify".into(),
-                path.into_os_string(),
-                "--top".into(),
-                "1".into(),
-            ])
-            .await;
-            assert_eq!(report["baseline"]["termination"]["Exit"], 0);
-            assert_eq!(report["summary"]["counts"][outcome], 1);
-            assert_eq!(
-                std::fs::read_to_string(root.path().join("subject.py")).unwrap(),
-                source
-            );
-        }
-    }
+async fn segment_saved_plans_distinguish_strong_and_weak_assertions(
+    #[case] expression: &str,
+    #[case] test: &str,
+    #[case] outcome: &str,
+) {
+    let root = tempfile::tempdir().unwrap();
+    let source = format!("def state():\n return {expression}\n");
+    std::fs::write(root.path().join("subject.py"), &source).unwrap();
+    let doc = plan(root.path(), &["--operators", "string_segment_empty"], test).await;
+    let path = root.path().join("plan.json");
+    std::fs::write(&path, serde_json::to_vec(&doc).unwrap()).unwrap();
+
+    let report = cli(vec![
+        "hoimin".into(),
+        "verify".into(),
+        path.into_os_string(),
+        "--top".into(),
+        "1".into(),
+    ])
+    .await;
+
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+    assert_eq!(report["summary"]["counts"][outcome], 1);
+    assert_eq!(
+        std::fs::read_to_string(root.path().join("subject.py")).unwrap(),
+        source
+    );
 }
 
+#[rstest::rstest]
+#[case::lf_utf8("\n", &encoded_source::ENCODINGS[0])]
+#[case::lf_bom("\n", &encoded_source::ENCODINGS[1])]
+#[case::lf_latin1("\n", &encoded_source::ENCODINGS[2])]
+#[case::crlf_utf8("\r\n", &encoded_source::ENCODINGS[0])]
+#[case::crlf_bom("\r\n", &encoded_source::ENCODINGS[1])]
+#[case::crlf_latin1("\r\n", &encoded_source::ENCODINGS[2])]
+#[case::cr_utf8("\r", &encoded_source::ENCODINGS[0])]
+#[case::cr_bom("\r", &encoded_source::ENCODINGS[1])]
+#[case::cr_latin1("\r", &encoded_source::ENCODINGS[2])]
 #[tokio::test]
-async fn segment_spans_use_original_encoding_and_newlines() {
-    for newline in ["\n", "\r\n", "\r"] {
-        for encoding in encoded_source::ENCODINGS {
-            let root = tempfile::tempdir().unwrap();
-            let encoding_name = encoding.name;
-            let text = format!(
-                "# coding: {}{newline}# é{newline}value=1{newline}result=f'é{{value}}:suffix'{newline}",
-                encoding.cookie
-            );
-            let mut bytes = encoding.source(&text);
-            std::fs::write(root.path().join("subject.py"), &bytes).unwrap();
-            let doc = plan(
-                root.path(),
-                &["--operators", "string_segment_empty"],
-                "pass",
-            )
-            .await;
-            let cs = doc["candidates"].as_array().unwrap();
-            assert_eq!(cs.len(), 1, "{encoding_name} {newline:?}: {doc}");
-            let start = usize::try_from(cs[0]["span"]["start"].as_u64().unwrap()).unwrap();
-            let len = usize::try_from(cs[0]["span"]["length"].as_u64().unwrap()).unwrap();
-            assert_eq!(&bytes[start..start + len], (encoding.encode)("é"));
-            bytes.drain(start..start + len);
-            let code = format!(
-                "import json; ns={{}}; exec(compile(bytes(json.loads({})), '<encoded>', 'exec'),ns); assert ns['result']=='1:suffix'",
-                serde_json::to_string(&serde_json::to_string(&bytes).unwrap()).unwrap()
-            );
-            execute("", &code).await;
-        }
-    }
+async fn segment_spans_use_original_encoding_and_newlines(
+    #[case] newline: &str,
+    #[case] encoding: &encoded_source::SourceEncoding,
+) {
+    let root = tempfile::tempdir().unwrap();
+    let encoding_name = encoding.name;
+    let text = format!(
+        "# coding: {}{newline}# é{newline}value=1{newline}result=f'é{{value}}:suffix'{newline}",
+        encoding.cookie
+    );
+    let mut bytes = encoding.source(&text);
+    std::fs::write(root.path().join("subject.py"), &bytes).unwrap();
+
+    let doc = plan(
+        root.path(),
+        &["--operators", "string_segment_empty"],
+        "pass",
+    )
+    .await;
+    let cs = doc["candidates"].as_array().unwrap();
+
+    assert_eq!(cs.len(), 1, "{encoding_name} {newline:?}: {doc}");
+    let start = usize::try_from(cs[0]["span"]["start"].as_u64().unwrap()).unwrap();
+    let len = usize::try_from(cs[0]["span"]["length"].as_u64().unwrap()).unwrap();
+    assert_eq!(&bytes[start..start + len], (encoding.encode)("é"));
+    bytes.drain(start..start + len);
+    let code = format!(
+        "import json; ns={{}}; exec(compile(bytes(json.loads({})), '<encoded>', 'exec'),ns); assert ns['result']=='1:suffix'",
+        serde_json::to_string(&serde_json::to_string(&bytes).unwrap()).unwrap()
+    );
+    execute("", &code).await;
 }
 
+#[rstest::rstest]
+#[case::invalid_offset(|_: &std::path::Path, document: &mut serde_json::Value| document["candidates"][0]["span"]["start"]=0.into(), "plan.candidate.invalid")]
+#[case::changed_source(|root: &std::path::Path, _: &mut serde_json::Value| std::fs::write(root.join("subject.py"),"result=f'changed:{1}'\n").unwrap(), "plan.source.changed")]
 #[tokio::test]
-async fn segment_plan_rejects_changed_source_and_invalid_offsets() {
-    type InvalidatePlan = fn(&std::path::Path, &mut serde_json::Value);
-    let cases: [(InvalidatePlan, &str); 2] = [
-        (
-            |_, document| document["candidates"][0]["span"]["start"] = 0.into(),
-            "plan.candidate.invalid",
-        ),
-        (
-            |root, _| std::fs::write(root.join("subject.py"), "result=f'changed:{1}'\n").unwrap(),
-            "plan.source.changed",
-        ),
-    ];
-    for (invalidate, expected_error) in cases {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("subject.py"), "result=f'prefix:{1}'\n").unwrap();
-        let mut doc = plan(
-            root.path(),
-            &["--operators", "string_segment_empty"],
-            "pass",
-        )
-        .await;
-        invalidate(root.path(), &mut doc);
-        let path = root.path().join("plan.json");
-        std::fs::write(&path, serde_json::to_vec(&doc).unwrap()).unwrap();
-        let stdout = CollectingWriter::default();
-        let stderr = CollectingWriter::default();
-        let code = hoimin_cli::run_with_writers(
-            vec![
-                "hoimin".into(),
-                "verify".into(),
-                path.into_os_string(),
-                "--top".into(),
-                "1".into(),
-            ],
-            stdout.clone(),
-            stderr.clone(),
-        )
-        .await;
-        assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr.snapshot()));
-        assert!(String::from_utf8_lossy(&stderr.snapshot()).contains(expected_error));
-    }
+async fn segment_plan_rejects_changed_source_and_invalid_offsets(
+    #[case] invalidate: fn(&std::path::Path, &mut serde_json::Value),
+    #[case] expected_error: &str,
+) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), "result=f'prefix:{1}'\n").unwrap();
+    let mut doc = plan(
+        root.path(),
+        &["--operators", "string_segment_empty"],
+        "pass",
+    )
+    .await;
+    invalidate(root.path(), &mut doc);
+    let path = root.path().join("plan.json");
+    std::fs::write(&path, serde_json::to_vec(&doc).unwrap()).unwrap();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let code = hoimin_cli::run_with_writers(
+        vec![
+            "hoimin".into(),
+            "verify".into(),
+            path.into_os_string(),
+            "--top".into(),
+            "1".into(),
+        ],
+        stdout.clone(),
+        stderr.clone(),
+    )
+    .await;
+    assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+    assert!(String::from_utf8_lossy(&stderr.snapshot()).contains(expected_error));
 }

@@ -794,38 +794,27 @@ fn corpus_is_well_formed() {
     assert_eq!(parse_corpus(corpus_text()).unwrap().len(), 20);
 }
 
-#[test]
-fn corpus_rejects_unknown_schema_mode_and_event() {
-    let first = corpus_text().lines().next().unwrap();
-    let schema = first.replacen("\"schema\":1", "\"schema\":2", 1);
-    assert!(
-        parse_corpus(&schema)
-            .unwrap_err()
-            .contains("unsupported schema")
-    );
-    for mode in [
-        "model-only",
-        "internal-fixture",
-        "infrastructure-error",
-        "report",
-    ] {
-        let text = first.replacen("\"mode\":\"strict\"", &format!("\"mode\":\"{mode}\""), 1);
-        assert!(parse_corpus(&text).unwrap_err().contains("unknown mode"));
-    }
-    let event = first.replacen("open:h0", "crash:h0", 2);
-    assert!(parse_corpus(&event).unwrap_err().contains("unknown event"));
-    let status = corpus_text()
-        .lines()
-        .find(|line| line.contains("\"status\":"))
-        .unwrap();
-    let status = status.replacen("\"status\":\"killed\"", "\"status\":\"unknown\"", 1);
-    assert!(
-        parse_corpus(&status)
-            .unwrap_err()
-            .contains("unknown result role")
-    );
-    let short = first.replacen("\"schedule\":[", "\"schedule\":[],\"ignored\":[", 1);
-    assert!(parse_corpus(&short).is_err());
+#[rstest::rstest]
+#[case::schema(corpus_text().lines().next().unwrap().replacen("\"schema\":1", "\"schema\":2", 1), "unsupported schema")]
+#[case::model_only_mode(unknown_mode_row("model-only"), "unknown mode")]
+#[case::internal_fixture_mode(unknown_mode_row("internal-fixture"), "unknown mode")]
+#[case::infrastructure_mode(unknown_mode_row("infrastructure-error"), "unknown mode")]
+#[case::report_mode(unknown_mode_row("report"), "unknown mode")]
+#[case::event(corpus_text().lines().next().unwrap().replacen("open:h0","crash:h0",2),"unknown event")]
+#[case::status(corpus_text().lines().find(|line|line.contains("\"status\":" )).unwrap().replacen("\"status\":\"killed\"", "\"status\":\"unknown\"",1),"unknown result role")]
+#[case::short_schedule(corpus_text().lines().next().unwrap().replacen("\"schedule\":[","\"schedule\":[],\"ignored\":[",1),"")]
+fn corpus_rejects_unknown_schema_mode_and_event(#[case] input: String, #[case] fragment: &str) {
+    let error = parse_corpus(&input).unwrap_err();
+
+    assert!(error.contains(fragment), "{error}");
+}
+
+fn unknown_mode_row(mode: &str) -> String {
+    corpus_text().lines().next().unwrap().replacen(
+        "\"mode\":\"strict\"",
+        &format!("\"mode\":\"{mode}\""),
+        1,
+    )
 }
 
 #[test]

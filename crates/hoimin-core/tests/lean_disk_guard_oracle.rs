@@ -286,29 +286,27 @@ fn direct_policy_api_agrees_with_the_lifecycle_entry_point() {
     ));
 }
 
-#[test]
-fn corpus_detects_each_reviewed_broken_policy_family() {
+#[rstest::rstest]
+#[case::brokenfamily_exclusivesize(BrokenFamily::ExclusiveSize)]
+#[case::brokenfamily_reversedreserve(BrokenFamily::ReversedReserve)]
+#[case::brokenfamily_dropsimultaneoussecondary(BrokenFamily::DropSimultaneousSecondary)]
+#[case::brokenfamily_overwriteprimary(BrokenFamily::OverwritePrimary)]
+#[case::brokenfamily_allowpoststopdispatch(BrokenFamily::AllowPostStopDispatch)]
+fn corpus_detects_each_reviewed_broken_policy_family_scenario_1(#[case] family: BrokenFamily) {
     let cases = parse_corpus();
-    for family in [
-        BrokenFamily::ExclusiveSize,
-        BrokenFamily::ReversedReserve,
-        BrokenFamily::DropSimultaneousSecondary,
-        BrokenFamily::OverwritePrimary,
-        BrokenFamily::AllowPostStopDispatch,
-    ] {
-        let mismatches = cases
-            .iter()
-            .filter(|case| {
-                case.layer == "policy"
-                    && case
-                        .implementation_targets
-                        .iter()
-                        .any(|value| value == "rust")
-            })
-            .filter(|case| broken_policy_mismatches(case, family))
-            .count();
-        assert!(mismatches > 0, "{family:?} escaped the committed corpus");
-    }
+
+    let mismatches = cases
+        .iter()
+        .filter(|case| {
+            case.layer == "policy"
+                && case
+                    .implementation_targets
+                    .iter()
+                    .any(|value| value == "rust")
+        })
+        .filter(|case| broken_policy_mismatches(case, family))
+        .count();
+    assert!(mismatches > 0, "{family:?} escaped the committed corpus");
 }
 
 #[derive(Clone, Copy, Debug)]

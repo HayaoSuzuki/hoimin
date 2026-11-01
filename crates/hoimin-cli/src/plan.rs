@@ -1112,8 +1112,14 @@ mod tests {
         prepare_verify_with_discovery_control, requested_discovery_targets, validate_header,
     };
 
-    #[test]
-    fn analyzer_diagnostics_preserve_plan_names_and_structured_fields() {
+    #[rstest::rstest]
+    #[case::analyzerdiagnosticcode_invalidsyntax_1(0)]
+    #[case::analyzerdiagnosticcode_unsupportedexceptionhierarchy_2(1)]
+    #[case::analyzerdiagnosticcode_unsupportedenumdefinition_3(2)]
+    #[case::analyzerdiagnosticcode_candidatelimitexceeded_4(3)]
+    fn analyzer_diagnostics_preserve_plan_names_and_structured_fields(
+        #[case] scenario_index: usize,
+    ) {
         use hoimin_python::{AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
         let cases = [
@@ -1131,28 +1137,29 @@ mod tests {
                 "candidate_limit",
             ),
         ];
-        for (code, expected_name) in cases {
-            let diagnostic = AnalyzerDiagnostic {
-                code,
-                path: Some("src/example.py".into()),
-                line: Some(7),
-                column: Some(12),
-                message: None,
-            };
 
-            let mapped = super::plan_diagnostic(&diagnostic);
+        let (code, expected_name) = cases.into_iter().nth(scenario_index).unwrap();
 
-            assert_eq!(
-                serde_json::to_value(mapped).unwrap(),
-                serde_json::json!({
-                    "code": expected_name,
-                    "path": "src/example.py",
-                    "line": 7,
-                    "column": 12,
-                    "message": "",
-                }),
-            );
-        }
+        let diagnostic = AnalyzerDiagnostic {
+            code,
+            path: Some("src/example.py".into()),
+            line: Some(7),
+            column: Some(12),
+            message: None,
+        };
+
+        let mapped = super::plan_diagnostic(&diagnostic);
+
+        assert_eq!(
+            serde_json::to_value(mapped).unwrap(),
+            serde_json::json!({
+                "code": expected_name,
+                "path": "src/example.py",
+                "line": 7,
+                "column": 12,
+                "message": "",
+            }),
+        );
     }
 
     #[test]
@@ -1297,6 +1304,7 @@ mod tests {
             path: "../outside.py".into(),
             hash: "invalid".into(),
         });
+
         assert!(matches!(
             validate_header(&manifest),
             Err(PlanError::ManifestInvalid(message))
@@ -1304,44 +1312,48 @@ mod tests {
         ));
     }
 
+    #[rstest::rstest]
+    #[case::input_1_1(1)]
+    #[case::input_2_2(2)]
+    #[case::input_4_3(4)]
     #[tokio::test]
-    async fn requested_validation_preprocesses_each_file_once() {
-        for count in [1, 2, 4] {
-            let project = Project::new();
-            let source = "x = 1 + 2\n".repeat(count);
-            std::fs::write(project.root.join("src/calc.py"), &source).unwrap();
-            let config = project.config();
-            let targets = crate::target::TargetHandler::resolve(&config.selection)
-                .await
-                .unwrap();
-            let output = super::create(
-                config.clone(),
-                hoimin_core::DiscoveryConfig::new(Duration::from_secs(30)).unwrap(),
-            )
+    async fn requested_validation_preprocesses_each_file_once(#[case] count: usize) {
+        let project = Project::new();
+        let source = "x = 1 + 2\n".repeat(count);
+        std::fs::write(project.root.join("src/calc.py"), &source).unwrap();
+        let config = project.config();
+        let targets = crate::target::TargetHandler::resolve(&config.selection)
             .await
             .unwrap();
-            // Each line has one binary and four integer-neighbor candidates.
-            assert_eq!(output.manifest.candidates.len(), 5 * count);
-            let ids = output
-                .manifest
-                .candidates
-                .iter()
-                .map(|c| c.id.clone())
-                .collect();
-            let mut stats = super::ValidationStats::default();
-            super::validate_requested_candidates(
-                &output.manifest,
-                &ids,
-                &crate::shell::prepare_run_config(config).unwrap(),
-                &targets,
-                None,
-                Some(&mut stats),
-            )
-            .await
-            .unwrap();
-            assert_eq!(stats.contexts, 1, "{count} candidates: {stats:?}");
-            assert_eq!(stats.source_bytes, source.len());
-        }
+
+        let output = super::create(
+            config.clone(),
+            hoimin_core::DiscoveryConfig::new(Duration::from_secs(30)).unwrap(),
+        )
+        .await
+        .unwrap();
+        // Each line has one binary and four integer-neighbor candidates.
+
+        assert_eq!(output.manifest.candidates.len(), 5 * count);
+        let ids = output
+            .manifest
+            .candidates
+            .iter()
+            .map(|c| c.id.clone())
+            .collect();
+        let mut stats = super::ValidationStats::default();
+        super::validate_requested_candidates(
+            &output.manifest,
+            &ids,
+            &crate::shell::prepare_run_config(config).unwrap(),
+            &targets,
+            None,
+            Some(&mut stats),
+        )
+        .await
+        .unwrap();
+        assert_eq!(stats.contexts, 1, "{count} candidates: {stats:?}");
+        assert_eq!(stats.source_bytes, source.len());
     }
 
     #[tokio::test]
@@ -1384,6 +1396,7 @@ mod tests {
     #[test]
     fn plan_output_validates_ranking_and_preserves_truncated_exit_code() {
         let output = plan_output(manifest()).expect("empty candidate ranking is valid");
+
         assert_eq!(output.exit_code, 4);
 
         let mut malformed = output.manifest;
@@ -1410,6 +1423,7 @@ mod tests {
         });
 
         let error = plan_output(malformed).expect_err("missing operator reason must be rejected");
+
         assert!(
             matches!(error, PlanError::ManifestInvalid(message) if message == "candidate ranking must contain exactly one operator reason, got 0")
         );

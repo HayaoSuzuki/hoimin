@@ -109,10 +109,12 @@ proptest! {
         let mut left_reader = Reader::new(&left, left_fragment, left_interrupts);
         let mut right_reader = Reader::new(&right, right_fragment, right_interrupts);
         let mut observed = (0, 0);
+
         let actual = equal(&mut left_reader, &mut right_reader, |l, r| {
             observed.0 += l;
             observed.1 += r;
         })?;
+
         prop_assert_eq!(actual, expected);
         prop_assert_eq!(observed, (left.len(), right.len()));
         prop_assert!(left_reader.bytes.is_empty());
@@ -133,6 +135,7 @@ proptest! {
                 Ok(())
             },
         )?;
+
         prop_assert_eq!(entry.size, u64::try_from(bytes.len()).unwrap());
         prop_assert_eq!(entry.blake3, blake3::hash(&bytes));
         prop_assert_eq!(&copied, &bytes);
@@ -149,14 +152,17 @@ proptest! {
         let mut reader = Reader::new(&bytes, fragment, interrupts);
         reader.terminal_error = Some(io::ErrorKind::PermissionDenied);
         let mut copied = Vec::new();
+
         let result = chunks(&mut reader, Utf8Path::new("generated.bin"), "read", |part| {
             copied.extend_from_slice(part);
             Ok(())
         });
+
         let error = result.unwrap_err();
         let WorkspaceError::Io { operation, path, message } = error else {
             return Err(TestCaseError::fail("terminal read error lost its I/O context"));
         };
+
         prop_assert_eq!(operation, "read");
         prop_assert_eq!(path, Utf8Path::new("generated.bin"));
         prop_assert_eq!(message, io::Error::from(io::ErrorKind::PermissionDenied).to_string());
@@ -166,7 +172,9 @@ proptest! {
         let mut right = Reader::new(&bytes, fragment + 1, !interrupts);
         left.terminal_error = fail_left.then_some(io::ErrorKind::PermissionDenied);
         right.terminal_error = (!fail_left).then_some(io::ErrorKind::PermissionDenied);
+
         let error = equal(&mut left, &mut right, |_, _| {}).unwrap_err();
+
         prop_assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
     }
 
@@ -181,11 +189,13 @@ proptest! {
         let fail_call = at % bytes.len().div_ceil(fragment) + 1;
         let mut calls = 0;
         let mut delivered = Vec::new();
+
         let result = chunks(&mut reader, Utf8Path::new("generated.bin"), "read", |part| {
             calls += 1;
             delivered.extend_from_slice(part);
             consumer_outcome(calls, fail_call)
         });
+
         prop_assert!(matches!(result, Err(WorkspaceError::CopySizeOverflow)));
         prop_assert_eq!(calls, fail_call);
         let length = (fail_call * fragment).min(bytes.len());

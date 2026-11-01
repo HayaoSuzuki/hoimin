@@ -126,16 +126,20 @@ async fn check_python(case: &Case, mutants: &[String]) {
 }
 
 #[test]
-fn nullable_gate_parser_requires_every_row_to_be_strict() {
+fn nullable_gate_parser_accepts_complete_strict_corpus() {
     let rows = cases();
     assert_eq!(rows.len(), 65);
     assert!(rows.iter().all(|case| case.mode == Mode::Strict));
-    for mode in ["strcit", "report-only"] {
-        let mut invalid: serde_json::Value =
-            serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
-        invalid["mode"] = serde_json::json!(mode);
-        assert!(serde_json::from_value::<Case>(invalid).is_err());
-    }
+}
+
+#[rstest::rstest]
+#[case::strcit_1("strcit")]
+#[case::report_only_2("report-only")]
+fn nullable_gate_parser_requires_every_row_to_be_strict(#[case] mode: &str) {
+    let mut invalid: serde_json::Value =
+        serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
+    invalid["mode"] = serde_json::json!(mode);
+    assert!(serde_json::from_value::<Case>(invalid).is_err());
 }
 
 #[tokio::test]

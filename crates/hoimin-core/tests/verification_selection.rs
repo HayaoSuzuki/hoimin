@@ -15,92 +15,92 @@ fn sample() -> Value {
     value
 }
 
-#[test]
-fn selection_rejects_policy_from_another_mode() {
-    for (mode, scope, policy) in [
-        ("candidate_ids", "explicit_candidates", "strict"),
-        ("top", "retained_candidates", "explicit_candidates"),
-        ("sample", "sampled_candidates", "file_round_robin_v1"),
-    ] {
-        // Arrange
-        let mut value = if mode == "sample" {
-            sample()
-        } else {
-            selection(mode, policy, scope)
-        };
-        value["policy"] = json!(policy);
-        // Act
-        let result = serde_json::from_value::<VerificationSelection>(value);
-        // Assert
-        assert!(result.is_err(), "mode={mode}, policy={policy}");
-    }
+#[rstest::rstest]
+#[case::candidate_ids("candidate_ids", "explicit_candidates", "strict")]
+#[case::top("top", "retained_candidates", "explicit_candidates")]
+#[case::sample("sample", "sampled_candidates", "file_round_robin_v1")]
+fn selection_rejects_policy_from_another_mode(
+    #[case] mode: &str,
+    #[case] scope: &str,
+    #[case] policy: &str,
+) {
+    // Arrange
+    let mut value = if mode == "sample" {
+        sample()
+    } else {
+        selection(mode, policy, scope)
+    };
+    value["policy"] = json!(policy);
+    // Act
+    let result = serde_json::from_value::<VerificationSelection>(value);
+    // Assert
+    assert!(result.is_err(), "mode={mode}, policy={policy}");
 }
 
-#[test]
-fn selection_rejects_scope_from_another_mode() {
-    for (mode, policy, scope) in [
-        (
-            "candidate_ids",
-            "explicit_candidates",
-            "retained_candidates",
-        ),
-        ("top", "strict", "sampled_candidates"),
-        (
-            "sample",
-            "splitmix64_fisher_yates_v1",
-            "explicit_candidates",
-        ),
-    ] {
-        // Arrange
-        let mut value = if mode == "sample" {
-            sample()
-        } else {
-            selection(mode, policy, scope)
-        };
-        value["scope"] = json!(scope);
-        // Act
-        let result = serde_json::from_value::<VerificationSelection>(value);
-        // Assert
-        assert!(result.is_err(), "mode={mode}, scope={scope}");
-    }
+#[rstest::rstest]
+#[case::candidate_ids("candidate_ids", "explicit_candidates", "retained_candidates")]
+#[case::top("top", "strict", "sampled_candidates")]
+#[case::sample("sample", "splitmix64_fisher_yates_v1", "explicit_candidates")]
+fn selection_rejects_scope_from_another_mode(
+    #[case] mode: &str,
+    #[case] policy: &str,
+    #[case] scope: &str,
+) {
+    // Arrange
+    let mut value = if mode == "sample" {
+        sample()
+    } else {
+        selection(mode, policy, scope)
+    };
+    value["scope"] = json!(scope);
+    // Act
+    let result = serde_json::from_value::<VerificationSelection>(value);
+    // Assert
+    assert!(result.is_err(), "mode={mode}, scope={scope}");
 }
 
-#[test]
-fn sample_requires_evidence() {
-    for evidence in [None, Some(Value::Null)] {
-        // Arrange
-        let mut value = sample();
-        value.as_object_mut().unwrap().remove("sampling");
-        if let Some(evidence) = evidence {
-            value["sampling"] = evidence;
-        }
-        // Act
-        let result = serde_json::from_value::<VerificationSelection>(value);
-        // Assert
-        assert!(result.is_err());
+#[rstest::rstest]
+#[case::none_1(0)]
+#[case::some_value_null_2(1)]
+fn sample_requires_evidence(#[case] scenario_index: usize) {
+    let evidence = [None, Some(Value::Null)]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+    // Arrange
+    let mut value = sample();
+    value.as_object_mut().unwrap().remove("sampling");
+    if let Some(evidence) = evidence {
+        value["sampling"] = evidence;
     }
+    // Act
+    let result = serde_json::from_value::<VerificationSelection>(value);
+    // Assert
+    assert!(result.is_err());
 }
 
-#[test]
-fn non_sample_rejects_even_null_sampling_fields() {
-    for (mode, policy, scope) in [
-        (
-            "candidate_ids",
-            "explicit_candidates",
-            "explicit_candidates",
-        ),
-        ("top", "strict", "retained_candidates"),
-    ] {
-        for evidence in [Value::Null, sample()["sampling"].clone()] {
-            // Arrange
-            let mut value = selection(mode, policy, scope);
-            value["sampling"] = evidence;
-            // Act
-            let result = serde_json::from_value::<VerificationSelection>(value);
-            // Assert
-            assert!(result.is_err(), "mode={mode}");
-        }
-    }
+#[rstest::rstest]
+#[case::candidate_ids("candidate_ids", "explicit_candidates", "explicit_candidates")]
+#[case::top("top", "strict", "retained_candidates")]
+fn non_sample_rejects_even_null_sampling_fields(
+    #[case] mode: &str,
+    #[case] policy: &str,
+    #[case] scope: &str,
+    #[values(0, 1)] scenario_index: usize,
+) {
+    let evidence = [Value::Null, sample()["sampling"].clone()]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+    // Arrange
+    let mut value = selection(mode, policy, scope);
+    value["sampling"] = evidence;
+    // Act
+    let result = serde_json::from_value::<VerificationSelection>(value);
+    // Assert
+    assert!(result.is_err(), "mode={mode}");
 }
 
 #[test]
@@ -171,24 +171,21 @@ fn sample_rejects_more_ids_than_the_population() {
     assert!(result.is_err());
 }
 
-#[test]
-fn non_sample_accepts_zero_selected_count() {
-    for (mode, policy, scope) in [
-        (
-            "candidate_ids",
-            "explicit_candidates",
-            "explicit_candidates",
-        ),
-        ("top", "strict", "retained_candidates"),
-    ] {
-        // Arrange
-        let mut value = selection(mode, policy, scope);
-        value["selected"] = json!(0);
-        // Act
-        let result = serde_json::from_value::<VerificationSelection>(value);
-        // Assert
-        assert!(result.is_ok(), "{result:?}");
-    }
+#[rstest::rstest]
+#[case::candidate_ids("candidate_ids", "explicit_candidates", "explicit_candidates")]
+#[case::top("top", "strict", "retained_candidates")]
+fn non_sample_accepts_zero_selected_count(
+    #[case] mode: &str,
+    #[case] policy: &str,
+    #[case] scope: &str,
+) {
+    // Arrange
+    let mut value = selection(mode, policy, scope);
+    value["selected"] = json!(0);
+    // Act
+    let result = serde_json::from_value::<VerificationSelection>(value);
+    // Assert
+    assert!(result.is_ok(), "{result:?}");
 }
 
 #[test]

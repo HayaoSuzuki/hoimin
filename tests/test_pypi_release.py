@@ -106,8 +106,9 @@ def test_stages_only_verified_wheels_without_changing_bytes(
     assert {path.name for path in staged} == {
         f"hoimin-1.2.3-py3-none-{platform}.whl" for platform in PLATFORMS
     }
-    for path in staged:
-        assert path.read_bytes() == (release_assets / path.name).read_bytes()
+    assert {path.name: path.read_bytes() for path in staged} == {
+        path.name: (release_assets / path.name).read_bytes() for path in staged
+    }
 
 
 @pytest.mark.parametrize("requires_python", [">=3.14, <3.16", "<3.16,>=3.14"])
@@ -291,7 +292,9 @@ def test_rejects_invalid_wheel_contents(
 
 @pytest.mark.parametrize("tag", ["main", "v1.2.3-dev.1", "v01.2.3", "v1.2.3;echo oops"])
 def test_rejects_nonstable_tags(release_assets: Path, tag: str) -> None:
-    assert prepare(release_assets, tag).returncode != 0
+    observed_result = prepare(release_assets, tag)
+
+    assert observed_result.returncode != 0
     assert not (release_assets.parent / "dist").exists()
 
 
@@ -306,28 +309,30 @@ def test_requires_matching_published_release(
     state[field] = value
     (release_assets.parent / "release.json").write_text(json.dumps(state))
 
-    assert prepare(release_assets).returncode != 0
+    observed_result = prepare(release_assets)
+
+    assert observed_result.returncode != 0
     assert not (release_assets.parent / "dist").exists()
 
 
 def test_pypi_workflow_keeps_oidc_in_protected_upload_job() -> None:
     workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
 
-    assert workflow["permissions"] == {"contents": "read"}
     prepare_job = workflow["jobs"]["pypi-prepare"]
 
+    publish = workflow["jobs"]["pypi-publish"]
+
+    upload = publish["steps"][1]
+
+    assert workflow["permissions"] == {"contents": "read"}
     assert "github.ref == 'refs/heads/main'" in prepare_job["if"]
     assert "github.repository == 'HayaoSuzuki/hoimin'" in prepare_job["if"]
     assert "id-token" not in prepare_job.get("permissions", {})
-    publish = workflow["jobs"]["pypi-publish"]
-
     assert publish["needs"] == ["pypi-prepare", "pypi-inspect"]
     assert publish["environment"]["name"] == "pypi"
     assert publish["permissions"] == {"id-token": "write"}
     assert len(publish["steps"]) == 2
     assert publish["steps"][0]["uses"].startswith("actions/download-artifact@")
-    upload = publish["steps"][1]
-
     assert upload["uses"].startswith("pypa/gh-action-pypi-publish@")
     assert upload["with"]["packages-dir"] == "dist/"
     assert "password" not in upload["with"]
@@ -351,6 +356,8 @@ def test_sbom_checksums_do_not_change_pypi_payload(release_assets: Path) -> None
     output = release_assets.parent / "dist"
 
     assert len(list(output.iterdir())) == 3
-    for path in output.iterdir():
-        assert path.suffix == ".whl"
-        assert path.read_bytes() == (release_assets / path.name).read_bytes()
+    assert all(path.suffix == ".whl" for path in output.iterdir())
+    assert {path.name: path.read_bytes() for path in output.iterdir()} == {
+        path.name: (release_assets / path.name).read_bytes()
+        for path in output.iterdir()
+    }

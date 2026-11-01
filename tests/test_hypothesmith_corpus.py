@@ -180,14 +180,15 @@ def test_real_generator_is_reproducible_and_reports_existing_inputs(
     first = {p.name: p.read_bytes() for p in outputs[0].iterdir()}
     second = {p.name: p.read_bytes() for p in outputs[1].iterdir()}
 
+    for data in first.values():
+        compile(data, "<generated>", "exec", dont_inherit=True)
+
     assert first == second
     assert first
     assert reports[0]["written"] == len(first)
     assert reports[2]["written"] == 0
     assert reports[2]["existing"] > 0
-    for data in first.values():
-        assert 0 < len(data) <= MAX_CORPUS_BYTES
-        compile(data, "<generated>", "exec", dont_inherit=True)
+    assert all(0 < len(data) <= MAX_CORPUS_BYTES for data in first.values())
 
 
 def test_libcst_generator_accepts_expected_internal_filtering(tmp_path: Path) -> None:
@@ -216,20 +217,40 @@ def test_python315_strategy_rejects_older_interpreter(tmp_path: Path) -> None:
             strategy="python315",
             max_bytes=4096,
         )
+
     assert not (tmp_path / "corpus").exists()
 
 
 @pytest.mark.skipif(sys.version_info < (3, 15), reason="Python 3.15 compiler required")
-def test_python315_templates_and_seeds_compile_without_execution() -> None:
-    for template in corpus.PYTHON315_TEMPLATES:
-        source = template.format(name="値", number=7)
-        compile(source, "<python315-template>", "exec", dont_inherit=True)
+@pytest.mark.parametrize(
+    "template",
+    corpus.PYTHON315_TEMPLATES,
+    ids=[f"template-{index}" for index in range(len(corpus.PYTHON315_TEMPLATES))],
+)
+def test_python315_template_compiles_without_execution(template: str) -> None:
+    source = template.format(name="値", number=7)
+
+    compile(source, "<python315-template>", "exec", dont_inherit=True)
+
+
+@pytest.mark.skipif(sys.version_info < (3, 15), reason="Python 3.15 compiler required")
+@pytest.mark.parametrize(
+    "seed",
+    sorted((ROOT / "fuzz/seeds/python_analyzer").glob("python315-*")),
+    ids=lambda path: path.name,
+)
+def test_python315_seed_compiles_without_execution(seed: Path) -> None:
+    source = seed.read_bytes()
+
+    compile(source, str(seed), "exec", dont_inherit=True)
+
+    assert len(source) <= MAX_CORPUS_BYTES
+
+
+def test_python315_seed_inventory_retains_regression_cases() -> None:
     seeds = sorted((ROOT / "fuzz/seeds/python_analyzer").glob("python315-*"))
+
     assert len(seeds) >= 11
-    for seed in seeds:
-        source = seed.read_bytes()
-        assert len(source) <= MAX_CORPUS_BYTES
-        compile(source, str(seed), "exec", dont_inherit=True)
 
 
 @pytest.mark.skipif(sys.version_info < (3, 15), reason="Python 3.15 compiler required")
@@ -237,10 +258,12 @@ def test_python315_generator_compiles_bounded_sources(tmp_path: Path) -> None:
     pytest.importorskip(
         "hypothesmith", reason="install the optional fuzz dependency group"
     )
+
     counts = corpus.generate(
         tmp_path, examples=50, random_seed=123, strategy="python315", max_bytes=4096
     )
-    assert counts["written"] > 0
-    assert counts["invalid"] == 0
     for path in tmp_path.iterdir():
         compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
+
+    assert counts["written"] > 0
+    assert counts["invalid"] == 0

@@ -791,6 +791,7 @@ mod tests {
     fn native_managed_descriptor_owner_equals_token_user() {
         let token = super::UserToken::open().unwrap();
         let descriptor = super::SecurityDescriptor::for_user(&token, true).unwrap();
+
         assert_ne!(
             unsafe {
                 windows_sys::Win32::Security::EqualSid(descriptor.owner().unwrap(), token.sid())
@@ -1031,8 +1032,22 @@ mod tests {
         );
     }
 
-    #[test]
-    fn relative_managed_component_rejects_non_components_and_device_names() {
+    #[rstest::rstest]
+    #[case::osstring_from_1(0)]
+    #[case::osstring_from_2(1)]
+    #[case::osstring_from_3(2)]
+    #[case::osstring_from_a_b_4(3)]
+    #[case::osstring_from_a_b_5(4)]
+    #[case::osstring_from_name_stream_6(5)]
+    #[case::osstring_from_bad_name_7(6)]
+    #[case::osstring_from_trailing_8(7)]
+    #[case::osstring_from_nul_txt_9(8)]
+    #[case::osstring_from_com_10(9)]
+    #[case::osstring_from_conout_log_11(10)]
+    #[case::osstring_from_wide_u16_from_b_a_0_u16_from_b_b_12(11)]
+    fn relative_managed_component_rejects_non_components_and_device_names(
+        #[case] scenario_index: usize,
+    ) {
         let invalid = [
             OsString::from(""),
             OsString::from("."),
@@ -1048,17 +1063,25 @@ mod tests {
             OsString::from_wide(&[u16::from(b'a'), 0, u16::from(b'b')]),
         ];
 
-        for name in invalid {
-            assert_eq!(
-                super::encoded_component(&name).unwrap_err().kind(),
-                io::ErrorKind::InvalidInput,
-                "{name:?}",
-            );
-        }
+        let name = invalid.into_iter().nth(scenario_index).unwrap();
+
+        assert_eq!(
+            super::encoded_component(&name).unwrap_err().kind(),
+            io::ErrorKind::InvalidInput,
+            "{name:?}",
+        );
     }
 
-    #[test]
-    fn relative_managed_wrappers_reject_invalid_names_without_changing_real_parent() {
+    #[rstest::rstest]
+    #[case::osstring_from_1(0)]
+    #[case::osstring_from_2(1)]
+    #[case::osstring_from_a_b_3(2)]
+    #[case::osstring_from_a_b_4(3)]
+    #[case::osstring_from_name_stream_5(4)]
+    #[case::osstring_from_nul_txt_6(5)]
+    fn relative_managed_wrappers_reject_invalid_names_without_changing_real_parent_scenario_1(
+        #[case] scenario_index: usize,
+    ) {
         let temporary = tempfile::tempdir().unwrap();
         std::fs::write(temporary.path().join("sentinel"), b"unchanged").unwrap();
         let parent =
@@ -1069,34 +1092,32 @@ mod tests {
             .map(|entry| entry.unwrap().file_name())
             .collect::<Vec<_>>();
 
-        for name in [
+        let name = [
             OsString::from(""),
             OsString::from(".."),
             OsString::from("a/b"),
             OsString::from("a\\b"),
             OsString::from("name:stream"),
             OsString::from("NUL.txt"),
-        ] {
-            assert_eq!(
-                super::create_relative_managed_directory(&parent, &name)
-                    .unwrap_err()
-                    .kind(),
-                io::ErrorKind::InvalidInput,
-                "directory wrapper accepted {name:?}",
-            );
-            assert_eq!(
-                super::create_relative_managed_file(
-                    &parent,
-                    &name,
-                    super::ManagedFileAccess::Write,
-                )
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+        assert_eq!(
+            super::create_relative_managed_directory(&parent, &name)
                 .unwrap_err()
                 .kind(),
-                io::ErrorKind::InvalidInput,
-                "file wrapper accepted {name:?}",
-            );
-        }
-
+            io::ErrorKind::InvalidInput,
+            "directory wrapper accepted {name:?}",
+        );
+        assert_eq!(
+            super::create_relative_managed_file(&parent, &name, super::ManagedFileAccess::Write,)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidInput,
+            "file wrapper accepted {name:?}",
+        );
         let after = std::fs::read_dir(temporary.path())
             .unwrap()
             .map(|entry| entry.unwrap().file_name())
@@ -1108,35 +1129,42 @@ mod tests {
         );
     }
 
-    #[test]
-    fn relative_managed_verifier_failure_rolls_back_created_entries() {
+    #[rstest::rstest]
+    #[case::rolled_back_directory_1(0)]
+    #[case::rolled_back_file_2(1)]
+    fn relative_managed_verifier_failure_rolls_back_created_entries(#[case] scenario_index: usize) {
         let temporary = tempfile::tempdir().unwrap();
         let parent =
             cap_std::fs::Dir::open_ambient_dir(temporary.path(), cap_std::ambient_authority())
                 .unwrap();
 
-        for (name, kind) in [
+        let (name, kind) = [
             ("rolled-back-directory", super::ManagedEntryKind::Directory),
             (
                 "rolled-back-file",
                 super::ManagedEntryKind::File(super::ManagedFileAccess::Write),
             ),
-        ] {
-            let error = super::create_relative_managed_with_verifier(
-                &parent,
-                OsStr::new(name),
-                kind,
-                |_, _, _| Err(io::Error::other("injected verification failure")),
-            )
-            .unwrap_err();
-            assert_eq!(error.kind(), io::ErrorKind::Other);
-            assert!(!temporary.path().join(name).exists(), "{name}");
-        }
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+        let error = super::create_relative_managed_with_verifier(
+            &parent,
+            OsStr::new(name),
+            kind,
+            |_, _, _| Err(io::Error::other("injected verification failure")),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::Other);
+        assert!(!temporary.path().join(name).exists(), "{name}");
     }
 
     #[test]
     fn created_rollback_error_keeps_primary_failure_first() {
         let temporary = tempfile::NamedTempFile::new().unwrap();
+
         let error = super::error_after_created_rollback_with(
             temporary.as_file(),
             io::Error::other("primary verification failure"),
@@ -1153,6 +1181,7 @@ mod tests {
     #[test]
     fn existing_owner_mismatch_prevents_dacl_repair() {
         let mut dacl_writes = 0;
+
         let result = super::repair_existing_policy(
             || {
                 Err(io::Error::new(
@@ -1165,6 +1194,7 @@ mod tests {
                 Ok(())
             },
         );
+
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
         assert_eq!(dacl_writes, 0);
     }
@@ -1180,6 +1210,7 @@ mod tests {
     #[test]
     fn mutation_barrier_exists_exactly_while_its_owner_handle_is_live() {
         let run_id = Uuid::new_v4().to_string();
+
         assert!(!super::root_mutation_barrier_exists(&run_id).unwrap());
 
         let barrier = super::RootMutationBarrier::create(&run_id).unwrap();

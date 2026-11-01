@@ -676,10 +676,17 @@ fn valid_python_strict_analyzer_detects_each_declared_broken_site() {
     }
 }
 
-#[test]
-fn valid_python_operator_inventory_requires_registration_and_positive_producers() {
+#[rstest::rstest]
+#[case::token_1(0)]
+#[case::ast_2(1)]
+#[case::annotation_3(2)]
+#[case::operator_import_4(3)]
+fn valid_python_operator_inventory_requires_registration_and_positive_producers(
+    #[case] scenario_index: usize,
+) {
     let registry: Vec<Registration> = serde_json::from_str(REGISTRY).unwrap();
     let registered: BTreeSet<_> = registry.iter().map(|r| r.operator.as_str()).collect();
+
     assert_eq!(registered.len(), registry.len());
     let canonical: BTreeSet<_> = MutationOperatorSelection::valid_names()
         .into_iter()
@@ -744,20 +751,24 @@ fn valid_python_operator_inventory_requires_registration_and_positive_producers(
             r.operator, r.status, r.reason
         );
     }
-    for producer in ["token", "ast", "annotation", "operator-import"] {
-        assert!(
-            cases
-                .iter()
-                .any(|c| c.producer == producer && c.sites.iter().any(|s| s.eligible)),
-            "vacuous {producer}"
-        );
-        assert!(
-            cases
-                .iter()
-                .any(|c| c.producer == producer && c.sites.iter().any(|s| !s.eligible)),
-            "missing negative control {producer}"
-        );
-    }
+
+    let producer = ["token", "ast", "annotation", "operator-import"]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+    assert!(
+        cases
+            .iter()
+            .any(|c| c.producer == producer && c.sites.iter().any(|s| s.eligible)),
+        "vacuous {producer}"
+    );
+    assert!(
+        cases
+            .iter()
+            .any(|c| c.producer == producer && c.sites.iter().any(|s| !s.eligible)),
+        "missing negative control {producer}"
+    );
 }
 
 #[tokio::test]
@@ -855,8 +866,17 @@ fn analyze(
     hoimin_python::analyze_source_cancellable(request, source, || false).unwrap()
 }
 
+#[rstest::rstest]
+#[case::def_f_result_for_x_in_1_2_3_result_append_x_preserve_else_result_1(0)]
+#[case::def_f_x_0_while_x_3_x_1_else_x_10_return_x_2(1)]
+#[case::def_f_result_for_x_in_1_2_result_append_x_keep_return_result_3(2)]
+#[case::def_f_result_for_x_in_1_2_for_y_in_3_4_result_append_x_y_return_r_4(3)]
+#[case::import_asyncio_async_def_values_yield_1_yield_2_async_def_f_resul_5(4)]
 #[tokio::test]
-async fn loop_break_insert_compiles_and_changes_iteration_and_else_behavior() {
+async fn loop_break_insert_compiles_and_changes_iteration_and_else_behavior(
+    #[case] scenario_index: usize,
+    #[values(0, 1, 2)] nested_scenario_index: usize,
+) {
     let operators = serde_json::from_value(serde_json::json!(["loop_break_insert"])).unwrap();
     let fixtures = [
         (
@@ -885,109 +905,130 @@ async fn loop_break_insert_compiles_and_changes_iteration_and_else_behavior() {
             "[1]\n",
         ),
     ];
-    for (fixture, baseline, expected) in fixtures {
-        for newline in ["\n", "\r\n", "\r"] {
-            let source = fixture.replace('\n', newline);
-            let output = analyze(
-                &hoimin_python::AnalyzeRequest {
-                    payload: hoimin_python::payload::PayloadBudget::default(),
-                    path: Utf8Path::new("subject.py"),
-                    lines: &[],
-                    symbols: &[],
-                    operators: &operators,
-                    profile: MutationProfile::Full,
-                    max_candidates: 10,
-                },
-                &source,
-            );
-            assert_eq!(output.diagnostics.len(), 0);
-            assert_eq!(
-                output.candidates.len(),
-                if expected.is_empty() { 2 } else { 1 }
-            );
-            let mut sources = vec![source.as_bytes().to_vec()];
-            for candidate in &output.candidates {
-                validate_candidate(source.as_bytes(), &descriptor(&source, candidate)).unwrap();
-                let mut mutant = source.as_bytes().to_vec();
-                let start = usize::try_from(candidate.span.start).unwrap();
-                let end = start + usize::try_from(candidate.span.length).unwrap();
-                mutant.splice(start..end, candidate.replacement.bytes());
-                sources.push(mutant);
-            }
-            let harness = if fixture.starts_with("import asyncio") {
-                "print(asyncio.run(f()))"
-            } else {
-                "print(f())"
-            };
-            let observations = python_observe(&sources, harness).await.unwrap();
-            assert_eq!(observations[0]["stdout"], baseline);
-            for observation in &observations {
-                assert_eq!(observation["compiled"], true, "{source}: {observation}");
-                assert!(
-                    observation["exception"].is_null(),
-                    "{source}: {observation}"
-                );
-            }
-            if expected.is_empty() {
-                let outputs: BTreeSet<_> = observations[1..]
-                    .iter()
-                    .map(|o| o["stdout"].as_str().unwrap())
-                    .collect();
-                assert_eq!(
-                    outputs,
-                    BTreeSet::from(["[(1, 3), (1, 4)]\n", "[(1, 3), (2, 3)]\n"])
-                );
-            } else {
-                assert_eq!(observations[1]["stdout"], expected);
-            }
-        }
+
+    let (fixture, baseline, expected) = fixtures.into_iter().nth(scenario_index).unwrap();
+
+    let newline = ["\n", "\r\n", "\r"]
+        .into_iter()
+        .nth(nested_scenario_index)
+        .unwrap();
+
+    let source = fixture.replace('\n', newline);
+
+    let output = analyze(
+        &hoimin_python::AnalyzeRequest {
+            payload: hoimin_python::payload::PayloadBudget::default(),
+            path: Utf8Path::new("subject.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile: MutationProfile::Full,
+            max_candidates: 10,
+        },
+        &source,
+    );
+
+    assert_eq!(output.diagnostics.len(), 0);
+    assert_eq!(
+        output.candidates.len(),
+        if expected.is_empty() { 2 } else { 1 }
+    );
+    let mut sources = vec![source.as_bytes().to_vec()];
+    for candidate in &output.candidates {
+        validate_candidate(source.as_bytes(), &descriptor(&source, candidate)).unwrap();
+        let mut mutant = source.as_bytes().to_vec();
+        let start = usize::try_from(candidate.span.start).unwrap();
+        let end = start + usize::try_from(candidate.span.length).unwrap();
+        mutant.splice(start..end, candidate.replacement.bytes());
+        sources.push(mutant);
+    }
+    let harness = if fixture.starts_with("import asyncio") {
+        "print(asyncio.run(f()))"
+    } else {
+        "print(f())"
+    };
+    let observations = python_observe(&sources, harness).await.unwrap();
+    assert_eq!(observations[0]["stdout"], baseline);
+    for observation in &observations {
+        assert_eq!(observation["compiled"], true, "{source}: {observation}");
+        assert!(
+            observation["exception"].is_null(),
+            "{source}: {observation}"
+        );
+    }
+    if expected.is_empty() {
+        let outputs: BTreeSet<_> = observations[1..]
+            .iter()
+            .map(|o| o["stdout"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            outputs,
+            BTreeSet::from(["[(1, 3), (1, 4)]\n", "[(1, 3), (2, 3)]\n"])
+        );
+    } else {
+        assert_eq!(observations[1]["stdout"], expected);
     }
 }
 
+#[rstest::rstest]
+#[case::sync_source_1(0)]
+#[case::async_source_2(1)]
 #[tokio::test]
-async fn iterator_stop_insert_causes_protocol_exhaustion_without_runtime_error() {
+async fn iterator_stop_insert_causes_protocol_exhaustion_without_runtime_error(
+    #[case] scenario_index: usize,
+    #[values(0, 1, 2)] nested_scenario_index: usize,
+) {
     let sync_source = "class Items:\n    def __init__(self): self.index = 0\n    def __iter__(self): return self\n    def __next__(self):\n        \"\"\"Read one item.\"\"\"\n        if self.index >= 2:\n            raise StopIteration\n        self.index += 1\n        return self.index\n";
     let async_source = "import asyncio\nclass Items:\n    def __init__(self): self.index = 0\n    def __aiter__(self): return self\n    async def __anext__(self):\n        if self.index >= 2:\n            raise StopAsyncIteration\n        await asyncio.sleep(0)\n        self.index += 1\n        return self.index\nasync def collect():\n    return [value async for value in Items()]\n";
-    for (source, operator, harness) in [
+
+    let (source, operator, harness) = [
         (sync_source, "iterator_stop_insert", "print(list(Items()))"),
         (
             async_source,
             "async_iterator_stop_insert",
             "print(asyncio.run(collect()))",
         ),
-    ] {
-        for newline in ["\n", "\r\n", "\r"] {
-            let source = source.replace('\n', newline);
-            let operators = serde_json::from_value(serde_json::json!([operator])).unwrap();
-            let output = analyze(
-                &hoimin_python::AnalyzeRequest {
-                    payload: hoimin_python::payload::PayloadBudget::default(),
-                    path: Utf8Path::new("subject.py"),
-                    lines: &[],
-                    symbols: &[],
-                    operators: &operators,
-                    profile: MutationProfile::Full,
-                    max_candidates: 10,
-                },
-                &source,
-            );
-            assert_eq!(output.candidates.len(), 1, "{source}");
-            let candidate = &output.candidates[0];
-            validate_candidate(source.as_bytes(), &descriptor(&source, candidate)).unwrap();
-            let mut mutant = source.as_bytes().to_vec();
-            let start = usize::try_from(candidate.span.start).unwrap();
-            let end = start + usize::try_from(candidate.span.length).unwrap();
-            mutant.splice(start..end, candidate.replacement.bytes());
-            let observations = python_observe(&[source.into_bytes(), mutant], harness)
-                .await
-                .unwrap();
-            assert_eq!(observations[0]["stdout"], "[1, 2]\n");
-            assert_eq!(observations[1]["stdout"], "[]\n");
-            for observation in observations {
-                assert_eq!(observation["compiled"], true);
-                assert_eq!(observation["exception"], serde_json::Value::Null);
-            }
-        }
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
+
+    let newline = ["\n", "\r\n", "\r"]
+        .into_iter()
+        .nth(nested_scenario_index)
+        .unwrap();
+
+    let source = source.replace('\n', newline);
+    let operators = serde_json::from_value(serde_json::json!([operator])).unwrap();
+
+    let output = analyze(
+        &hoimin_python::AnalyzeRequest {
+            payload: hoimin_python::payload::PayloadBudget::default(),
+            path: Utf8Path::new("subject.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile: MutationProfile::Full,
+            max_candidates: 10,
+        },
+        &source,
+    );
+
+    assert_eq!(output.candidates.len(), 1, "{source}");
+    let candidate = &output.candidates[0];
+    validate_candidate(source.as_bytes(), &descriptor(&source, candidate)).unwrap();
+    let mut mutant = source.as_bytes().to_vec();
+    let start = usize::try_from(candidate.span.start).unwrap();
+    let end = start + usize::try_from(candidate.span.length).unwrap();
+    mutant.splice(start..end, candidate.replacement.bytes());
+    let observations = python_observe(&[source.into_bytes(), mutant], harness)
+        .await
+        .unwrap();
+    assert_eq!(observations[0]["stdout"], "[1, 2]\n");
+    assert_eq!(observations[1]["stdout"], "[]\n");
+    for observation in observations {
+        assert_eq!(observation["compiled"], true);
+        assert_eq!(observation["exception"], serde_json::Value::Null);
     }
 }
 

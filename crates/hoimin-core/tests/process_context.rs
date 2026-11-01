@@ -43,12 +43,13 @@ fn process<C>(context: C) -> RunProcess<C> {
 proptest! {
     #[test]
     fn baseline_context_roundtrips_required_identity(worker in any::<u32>(), run_id in prop_oneof![Just(String::new()), any::<String>()]) {
-        // Arrange.
+
         let effect = RunEffect::RunBaseline(process(BaselineContext { worker, run_id }));
-        // Act.
+
         let encoded = serde_json::to_value(&effect).unwrap();
+
         let decoded = serde_json::from_value::<RunEffect>(encoded).unwrap();
-        // Assert.
+
         prop_assert_eq!(decoded, effect);
     }
 
@@ -56,56 +57,58 @@ proptest! {
     fn mutant_context_roundtrips_required_identity(
         worker in any::<u32>(), run_id in prop_oneof![Just(String::new()), any::<String>()], mutant_id in prop_oneof![Just(String::new()), any::<String>()]
     ) {
-        // Arrange.
+
         let effect = RunEffect::RunMutant(process(MutantContext { worker, run_id, mutant_id }));
-        // Act.
+
         let encoded = serde_json::to_value(&effect).unwrap();
+
         let decoded = serde_json::from_value::<RunEffect>(encoded).unwrap();
-        // Assert.
+
         prop_assert_eq!(decoded, effect);
     }
 
 }
 
-#[test]
-fn baseline_rejects_missing_required_context_field() {
-    for field in ["worker", "run_id"] {
-        // Arrange.
-        let effect = RunEffect::RunBaseline(process(BaselineContext {
-            worker: 0,
-            run_id: "run".into(),
-        }));
-        let mut encoded = serde_json::to_value(effect).unwrap();
-        encoded["RunBaseline"]["context"]
-            .as_object_mut()
-            .unwrap()
-            .remove(field);
-        // Act.
-        let decoded = serde_json::from_value::<RunEffect>(encoded);
-        // Assert.
-        assert!(decoded.is_err(), "accepted missing {field}");
-    }
+#[rstest::rstest]
+#[case::worker("worker")]
+#[case::run_id("run_id")]
+fn baseline_rejects_missing_required_context_field(#[case] field: &str) {
+    // Arrange.
+    let effect = RunEffect::RunBaseline(process(BaselineContext {
+        worker: 0,
+        run_id: "run".into(),
+    }));
+    let mut encoded = serde_json::to_value(effect).unwrap();
+    encoded["RunBaseline"]["context"]
+        .as_object_mut()
+        .unwrap()
+        .remove(field);
+    // Act.
+    let decoded = serde_json::from_value::<RunEffect>(encoded);
+    // Assert.
+    assert!(decoded.is_err(), "accepted missing {field}");
 }
 
-#[test]
-fn mutant_rejects_missing_required_context_field() {
-    for field in ["worker", "run_id", "mutant_id"] {
-        // Arrange.
-        let effect = RunEffect::RunMutant(process(MutantContext {
-            worker: 0,
-            run_id: "run".into(),
-            mutant_id: "mutant".into(),
-        }));
-        let mut encoded = serde_json::to_value(effect).unwrap();
-        encoded["RunMutant"]["context"]
-            .as_object_mut()
-            .unwrap()
-            .remove(field);
-        // Act.
-        let decoded = serde_json::from_value::<RunEffect>(encoded);
-        // Assert.
-        assert!(decoded.is_err(), "accepted missing {field}");
-    }
+#[rstest::rstest]
+#[case::worker("worker")]
+#[case::run_id("run_id")]
+#[case::mutant_id("mutant_id")]
+fn mutant_rejects_missing_required_context_field(#[case] field: &str) {
+    // Arrange.
+    let effect = RunEffect::RunMutant(process(MutantContext {
+        worker: 0,
+        run_id: "run".into(),
+        mutant_id: "mutant".into(),
+    }));
+    let mut encoded = serde_json::to_value(effect).unwrap();
+    encoded["RunMutant"]["context"]
+        .as_object_mut()
+        .unwrap()
+        .remove(field);
+    // Act.
+    let decoded = serde_json::from_value::<RunEffect>(encoded);
+    // Assert.
+    assert!(decoded.is_err(), "accepted missing {field}");
 }
 
 #[test]
@@ -135,11 +138,11 @@ fn workspace_effect_rejects_probe_context() {
 
 #[test]
 fn probe_roundtrips_without_workspace_identity() {
-    // Arrange.
     let request = process(ProbeContext);
-    // Act.
+
     let encoded = serde_json::to_value(&request).unwrap();
+
     let decoded = serde_json::from_value::<RunProcess<ProbeContext>>(encoded).unwrap();
-    // Assert.
+
     assert_eq!(decoded, request);
 }

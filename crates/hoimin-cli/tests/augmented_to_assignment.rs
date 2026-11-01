@@ -93,31 +93,43 @@ async fn plan(root: &Path, operators: &str, test: &str) -> serde_json::Value {
     document
 }
 
+#[rstest::rstest]
+#[case::input_1("+=")]
+#[case::input_2("-=")]
+#[case::input_3("*=")]
+#[case::input_4("/=")]
+#[case::input_5("//=")]
+#[case::input_6("%=")]
+#[case::input_7("**=")]
+#[case::input_8("@=")]
+#[case::input_9("&=")]
+#[case::input_10("|=")]
+#[case::input_11("^=")]
+#[case::input_12("<<=")]
+#[case::input_13(">>=")]
 #[tokio::test]
-async fn augmented_assignment_replaces_only_every_operator_token() {
-    for op in [
-        "+=", "-=", "*=", "/=", "//=", "%=", "**=", "@=", "&=", "|=", "^=", "<<=", ">>=",
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        let source = format!(
-            "é = '前'\r\ndef f(total, amount):\r\n    (total) {op} (\r\n        amount # += not a token\r\n    ); return total\r\n"
-        );
-        std::fs::write(root.path().join("subject.py"), &source).unwrap();
-        let doc = plan(root.path(), "augmented_to_assignment", "pass").await;
-        let cs = doc["candidates"].as_array().unwrap();
-        assert_eq!(cs.len(), 1, "{doc}");
-        let c = &cs[0];
-        assert_eq!(c["original"], op);
-        assert_eq!(c["replacement"], "=");
-        let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
-        assert_eq!(&source[start..start + op.len()], op);
-        let mutant = format!("{}={}", &source[..start], &source[start + op.len()..]);
-        compile(&mutant).await;
-        assert_eq!(
-            doc["candidates"],
-            plan(root.path(), "augmented_to_assignment", "pass").await["candidates"]
-        );
-    }
+async fn augmented_assignment_replaces_only_every_operator_token(#[case] op: &str) {
+    let root = tempfile::tempdir().unwrap();
+    let source = format!(
+        "é = '前'\r\ndef f(total, amount):\r\n    (total) {op} (\r\n        amount # += not a token\r\n    ); return total\r\n"
+    );
+    std::fs::write(root.path().join("subject.py"), &source).unwrap();
+
+    let doc = plan(root.path(), "augmented_to_assignment", "pass").await;
+    let cs = doc["candidates"].as_array().unwrap();
+
+    assert_eq!(cs.len(), 1, "{doc}");
+    let c = &cs[0];
+    assert_eq!(c["original"], op);
+    assert_eq!(c["replacement"], "=");
+    let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
+    assert_eq!(&source[start..start + op.len()], op);
+    let mutant = format!("{}={}", &source[..start], &source[start + op.len()..]);
+    compile(&mutant).await;
+    assert_eq!(
+        doc["candidates"],
+        plan(root.path(), "augmented_to_assignment", "pass").await["candidates"]
+    );
 }
 
 #[tokio::test]
@@ -142,29 +154,41 @@ async fn augmented_assignment_excludes_complex_targets_and_coexists() {
     assert!(selected.iter().any(|c| c["replacement"] == "-="));
 }
 
+#[rstest::rstest]
+#[case::from_subject_import_total_assert_total_3_3_1(
+    "from subject import total; assert total([3])==3",
+    0,
+    1
+)]
+#[case::from_subject_import_total_assert_total_3_5_8_2(
+    "from subject import total; assert total([3,5])==8",
+    1,
+    0
+)]
 #[tokio::test]
-async fn augmented_assignment_accumulation_requires_multiple_elements() {
-    for (test, killed, survived) in [
-        ("from subject import total; assert total([3])==3", 0, 1),
-        ("from subject import total; assert total([3,5])==8", 1, 0),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("subject.py"),"def total(values):\n    result=0\n    for value in values:\n        result += value\n    return result\n").unwrap();
-        let doc = plan(root.path(), "augmented_to_assignment", test).await;
-        let manifest = root.path().join("plan.json");
-        std::fs::write(&manifest, serde_json::to_vec(&doc).unwrap()).unwrap();
-        let (_, report) = cli(vec![
-            "hoimin".into(),
-            "verify".into(),
-            manifest.into_os_string(),
-            "--top".into(),
-            "1".into(),
-        ])
-        .await;
-        assert_eq!(report["baseline"]["termination"]["Exit"], 0);
-        assert_eq!(report["summary"]["counts"]["killed"], killed);
-        assert_eq!(report["summary"]["counts"]["survived"], survived);
-    }
+async fn augmented_assignment_accumulation_requires_multiple_elements(
+    #[case] test: &str,
+    #[case] killed: usize,
+    #[case] survived: usize,
+) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"),"def total(values):\n    result=0\n    for value in values:\n        result += value\n    return result\n").unwrap();
+    let doc = plan(root.path(), "augmented_to_assignment", test).await;
+    let manifest = root.path().join("plan.json");
+    std::fs::write(&manifest, serde_json::to_vec(&doc).unwrap()).unwrap();
+
+    let (_, report) = cli(vec![
+        "hoimin".into(),
+        "verify".into(),
+        manifest.into_os_string(),
+        "--top".into(),
+        "1".into(),
+    ])
+    .await;
+
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+    assert_eq!(report["summary"]["counts"]["killed"], killed);
+    assert_eq!(report["summary"]["counts"]["survived"], survived);
 }
 
 #[tokio::test]

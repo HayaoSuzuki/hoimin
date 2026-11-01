@@ -64,7 +64,7 @@ proptest! {
 
     #[test]
     fn changed_selection_survives_plan_run_roundtrip(context in 0..=MAX_CHANGED_CONTEXT, base in proptest::option::of(prop_oneof![Just(String::new()), "(?s).{1,30}"])) {
-        // Arrange.
+
         let raw = RawRunConfig {
             sources: vec!["src".into()],
             changed: true,
@@ -74,11 +74,12 @@ proptest! {
             ..RawRunConfig::default()
         };
         let plan = RunConfig::try_from(raw).unwrap().with_environment(hoimin_core::EnvironmentSnapshot::Untracked).unwrap().into_plan_config(hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap());
-        // Act.
+
         let restored: PlanConfig = serde_json::from_value(serde_json::to_value(plan).unwrap()).unwrap();
         let run = restored.into_run_config(OutputConfig { metrics: None }).unwrap();
-        // Assert.
+
         let changed = run.selection.changed.as_ref().unwrap();
+
         prop_assert_eq!(changed.context(), context);
         prop_assert_eq!(changed.diff_base(), base.as_deref());
     }
@@ -100,20 +101,18 @@ fn constructor_reports_context_bound() {
     );
 }
 
-#[test]
-fn saved_changed_value_rejects_malformed_representation() {
+#[rstest::rstest]
+#[case::serde_json_json_true(serde_json::json!(true))]
+#[case::serde_json_json_false(serde_json::json!(false))]
+#[case::serde_json_json_diff_base_main(serde_json::json!({"diff_base": "main"}))]
+#[case::serde_json_json_context_0_changed_context_1(serde_json::json!({"context": 0, "changed_context": 1}))]
+#[case::serde_json_json_context_1(serde_json::json!({"context": -1}))]
+#[case::serde_json_json_context_4_294_967_296_u64(serde_json::json!({"context": 4_294_967_296_u64}))]
+fn saved_changed_value_rejects_malformed_representation(#[case] value: serde_json::Value) {
     // Arrange: each value would lose or invent part of the requested scope.
-    for value in [
-        serde_json::json!(true),
-        serde_json::json!(false),
-        serde_json::json!({"diff_base": "main"}),
-        serde_json::json!({"context": 0, "changed_context": 1}),
-        serde_json::json!({"context": -1}),
-        serde_json::json!({"context": 4_294_967_296_u64}),
-    ] {
-        // Act.
-        let result = serde_json::from_value::<ChangedSelection>(value.clone());
-        // Assert.
-        assert!(result.is_err(), "accepted {value}");
-    }
+
+    // Act.
+    let result = serde_json::from_value::<ChangedSelection>(value.clone());
+    // Assert.
+    assert!(result.is_err(), "accepted {value}");
 }

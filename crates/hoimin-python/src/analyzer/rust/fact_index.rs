@@ -238,8 +238,15 @@ mod tests {
             .any(|&(outer_start, outer_end)| outer_start <= start && end <= outer_end)
     }
 
-    #[test]
-    fn containment_matches_linear_semantics_at_boundaries_and_overlaps() {
+    #[rstest::rstest]
+    #[case::vec_1(0)]
+    #[case::vec_0_10_2(1)]
+    #[case::vec_0_10_5_6_3(2)]
+    #[case::vec_5_6_0_10_5_12_12_15_4(3)]
+    #[case::vec_3_3_3_8_3_5_5(4)]
+    fn containment_matches_linear_semantics_at_boundaries_and_overlaps(
+        #[case] scenario_index: usize,
+    ) {
         let cases = [
             vec![],
             vec![(0, 10)],
@@ -248,16 +255,16 @@ mod tests {
             vec![(3, 3), (3, 8), (3, 5)],
         ];
 
-        for ranges in cases {
-            let index = ContainmentIndex::new(ranges.clone());
-            for start in 0..=16 {
-                for end in start..=16 {
-                    assert_eq!(
-                        index.contains(start, end),
-                        linear_contains(&ranges, start, end),
-                        "ranges={ranges:?} query={start}..{end}",
-                    );
-                }
+        let ranges = cases.into_iter().nth(scenario_index).unwrap();
+
+        let index = ContainmentIndex::new(ranges.clone());
+        for start in 0..=16 {
+            for end in start..=16 {
+                assert_eq!(
+                    index.contains(start, end),
+                    linear_contains(&ranges, start, end),
+                    "ranges={ranges:?} query={start}..{end}",
+                );
             }
         }
     }
@@ -289,20 +296,26 @@ mod tests {
         }
     }
 
-    #[test]
-    fn scope_segments_cover_disjoint_and_empty_inputs() {
-        for scopes in [
+    #[rstest::rstest]
+    #[case::vec_1(0)]
+    #[case::vec_scopeinterval_new_3_5_first_2(1)]
+    #[case::vec_scopeinterval_new_0_2_first_scopeinterval_new_4_6_second_3(2)]
+    fn scope_segments_cover_disjoint_and_empty_inputs(#[case] scenario_index: usize) {
+        let scopes = [
             vec![],
             vec![ScopeInterval::new(3, 5, "first")],
             vec![
                 ScopeInterval::new(0, 2, "first"),
                 ScopeInterval::new(4, 6, "second"),
             ],
-        ] {
-            let index = ScopeIndex::new(scopes.clone());
-            for offset in 0..=7 {
-                assert_eq!(index.symbol_at(offset), linear_scope(&scopes, offset));
-            }
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+        let index = ScopeIndex::new(scopes.clone());
+        for offset in 0..=7 {
+            assert_eq!(index.symbol_at(offset), linear_scope(&scopes, offset));
         }
     }
 

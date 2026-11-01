@@ -29,6 +29,7 @@ fn workspace_failures_are_machine_readable_and_keep_the_effect_id() {
 fn run_effect_deserialization_preserves_messages_but_rejects_worker_capabilities() {
     let ordinary = RunEffect::Preflight(Preflight { id: EffectId(50) });
     let ordinary_json = serde_json::to_string(&ordinary).unwrap();
+
     assert_eq!(
         serde_json::from_str::<RunEffect>(&ordinary_json).unwrap(),
         ordinary
@@ -55,24 +56,23 @@ fn run_effect_deserialization_preserves_messages_but_rejects_worker_capabilities
     assert!(serde_json::from_str::<RunEffect>(&capability_json).is_err());
 }
 
-#[test]
-fn original_integrity_checkpoints_have_typed_effect_and_completion_events() {
-    for (sequence, checkpoint) in [
-        IntegrityCheckpoint::PreAnalysis,
-        IntegrityCheckpoint::PostMaterialization,
-        IntegrityCheckpoint::Periodic,
-        IntegrityCheckpoint::PreFinalReport,
-        IntegrityCheckpoint::Cleanup,
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let id = EffectId(sequence as u64);
-        let effect = RunEffect::VerifyOriginals(VerifyOriginals { id, checkpoint });
-        let event = RunEvent::OriginalsVerified(OriginalsVerified { id, checkpoint });
-        assert!(matches!(effect, RunEffect::VerifyOriginals(_)));
-        assert!(matches!(event, RunEvent::OriginalsVerified(_)));
-    }
+#[rstest::rstest]
+#[case::pre_analysis(0, IntegrityCheckpoint::PreAnalysis)]
+#[case::post_materialization(1, IntegrityCheckpoint::PostMaterialization)]
+#[case::periodic(2, IntegrityCheckpoint::Periodic)]
+#[case::pre_final_report(3, IntegrityCheckpoint::PreFinalReport)]
+#[case::cleanup(4, IntegrityCheckpoint::Cleanup)]
+fn original_integrity_checkpoints_have_typed_effect_and_completion_events(
+    #[case] sequence: u64,
+    #[case] checkpoint: IntegrityCheckpoint,
+) {
+    let id = EffectId(sequence);
+
+    let effect = RunEffect::VerifyOriginals(VerifyOriginals { id, checkpoint });
+    let event = RunEvent::OriginalsVerified(OriginalsVerified { id, checkpoint });
+
+    assert!(matches!(effect, RunEffect::VerifyOriginals(_)));
+    assert!(matches!(event, RunEvent::OriginalsVerified(_)));
 }
 
 #[test]

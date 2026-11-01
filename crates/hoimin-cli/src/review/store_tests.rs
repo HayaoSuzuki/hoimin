@@ -131,6 +131,7 @@ fn store_initialization_preserves_a_file_created_before_publication() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("reviews.sqlite3");
     let competitor = path.clone();
+
     let result = with_initialization_hook(
         Box::new(move |stage| {
             if stage == "publish" {
@@ -180,6 +181,7 @@ fn store_initialization_opens_the_valid_publication_winner() {
     .unwrap();
 
     let key = key();
+
     assert_eq!(store.snapshot().unwrap()[0].1.history.len(), 1);
     assert!(store.append(&key, SourceState::Fresh, 0, draft()).is_err());
     store.append(&key, SourceState::Fresh, 1, draft()).unwrap();
@@ -311,6 +313,7 @@ fn store_concurrent_initialization_and_updates() {
                                     |count| *count < 2,
                                 )
                                 .unwrap();
+
                             assert_eq!(*count, 2, "both databases must initialize privately");
                         }
                         Ok(())
@@ -334,21 +337,22 @@ fn store_concurrent_initialization_and_updates() {
     assert_eq!(saved[0].1.history.len(), 1);
 }
 
-#[test]
-fn store_rejects_empty_or_corrupt_database_without_changing_bytes() {
+#[rstest::rstest]
+#[case::empty("empty", b"".as_slice())]
+#[case::bad("bad", b"not a database".as_slice())]
+fn store_rejects_empty_or_corrupt_database_without_changing_bytes(
+    #[case] name: &str,
+    #[case] contents: &[u8],
+) {
     let dir = tempfile::tempdir().unwrap();
-    for (name, contents) in [
-        ("empty", b"".as_slice()),
-        ("bad", b"not a database".as_slice()),
-    ] {
-        let path = dir.path().join(name);
-        std::fs::write(&path, contents).unwrap();
 
-        let result = ReviewStore::open_write(&path, &key().project);
+    let path = dir.path().join(name);
+    std::fs::write(&path, contents).unwrap();
 
-        assert!(result.is_err(), "{name}");
-        assert_eq!(std::fs::read(path).unwrap(), contents);
-    }
+    let result = ReviewStore::open_write(&path, &key().project);
+
+    assert!(result.is_err(), "{name}");
+    assert_eq!(std::fs::read(path).unwrap(), contents);
 }
 
 #[test]
@@ -618,6 +622,7 @@ fn foreign_wal_read_admission_preserves_all_files() {
     let path = directory.path().join("foreign.sqlite3");
     closed_foreign_wal(&path);
     let before = directory_bytes(directory.path());
+
     assert_eq!(before.len(), 1);
 
     assert!(ReviewStore::open_read(&path, &key().project).is_err());
@@ -645,8 +650,11 @@ fn foreign_wal_write_admission_preserves_all_files() {
     assert_foreign_wal_contents(&path);
 }
 
+#[rstest::rstest]
+#[case::list_1("list")]
+#[case::show_2("show")]
 #[tokio::test]
-async fn foreign_wal_public_list_and_show_preserve_all_files() {
+async fn foreign_wal_public_list_and_show_preserve_all_files(#[case] command: &str) {
     let directory = tempfile::tempdir().unwrap();
     std::fs::write(directory.path().join("sample.py"), "value = 1\n").unwrap();
     let crate::cli::ParsedCommand::Plan(args) = crate::cli::parse_from([
@@ -666,6 +674,7 @@ async fn foreign_wal_public_list_and_show_preserve_all_files() {
         panic!("plan")
     };
     let (config, discovery) = args.into_configs().unwrap();
+
     let output = crate::plan::create(config, discovery).await.unwrap();
     let candidate = output.manifest.candidates[0].id.clone();
     let plan_path = directory.path().join("plan.json");
@@ -673,37 +682,37 @@ async fn foreign_wal_public_list_and_show_preserve_all_files() {
     // Keep the store in its own directory so the snapshot covers every entry.
     let stores = tempfile::tempdir().unwrap();
     let path = stores.path().join("foreign.sqlite3");
-    for command in ["list", "show"] {
-        closed_foreign_wal(&path);
-        let before = directory_bytes(stores.path());
-        let common = crate::cli::ReviewCommonArgs {
-            plan: plan_path.clone(),
-            store: path.clone(),
-            report: None,
-        };
-        let args = if command == "list" {
-            crate::cli::ReviewArgs::List(crate::cli::ReviewListArgs {
-                common,
-                stale: false,
-            })
-        } else {
-            crate::cli::ReviewArgs::Show(crate::cli::ReviewShowArgs {
-                common,
-                candidate: candidate.clone(),
-            })
-        };
-        let mut output = Vec::new();
 
-        assert!(super::run(&args, &mut output).is_err());
+    closed_foreign_wal(&path);
+    let before = directory_bytes(stores.path());
+    let common = crate::cli::ReviewCommonArgs {
+        plan: plan_path.clone(),
+        store: path.clone(),
+        report: None,
+    };
+    let args = if command == "list" {
+        crate::cli::ReviewArgs::List(crate::cli::ReviewListArgs {
+            common,
+            stale: false,
+        })
+    } else {
+        crate::cli::ReviewArgs::Show(crate::cli::ReviewShowArgs {
+            common,
+            candidate: candidate.clone(),
+        })
+    };
 
-        assert!(output.is_empty(), "rejected store must not render output");
-        assert!(
-            directory_bytes(stores.path()) == before,
-            "{command} rejection changed database or companions"
-        );
-        assert_foreign_wal_contents(&path);
-        std::fs::remove_file(&path).unwrap();
-    }
+    let mut output = Vec::new();
+
+    assert!(super::run(&args, &mut output).is_err());
+
+    assert!(output.is_empty(), "rejected store must not render output");
+    assert!(
+        directory_bytes(stores.path()) == before,
+        "{command} rejection changed database or companions"
+    );
+    assert_foreign_wal_contents(&path);
+    std::fs::remove_file(&path).unwrap();
 }
 
 #[test]
@@ -721,6 +730,7 @@ fn delete_store_admission_preserves_history_and_files_on_native_path() {
             // without URI access. Admission must preserve that rejection.
             let directory = tempfile::tempdir().unwrap();
             let before = directory_bytes(directory.path());
+
             assert!(ReviewStore::open_write(&directory.path().join(name), &key().project).is_err());
             assert!(
                 directory_bytes(directory.path()) == before,
@@ -759,6 +769,7 @@ fn assert_delete_store_path(name: &std::ffi::OsStr) {
 #[test]
 fn store_admission_rejects_directory_and_symlink() {
     let directory = tempfile::tempdir().unwrap();
+
     assert!(ReviewStore::open_read(directory.path(), &key().project).is_err());
     assert!(ReviewStore::open_write(directory.path(), &key().project).is_err());
     #[cfg(unix)]

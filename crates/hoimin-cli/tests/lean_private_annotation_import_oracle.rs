@@ -179,7 +179,8 @@ fn command(root: &Path, case: &Case, mode: &str) -> Vec<OsString> {
 }
 
 #[test]
-fn private_annotation_import_corpus_rejects_schema_drift_and_missing_cases() {
+fn private_annotation_import_corpus_rejects_schema_drift_and_missing_cases_accepts_complete_corpus()
+{
     let cases = parse_cases(CORPUS).unwrap();
     assert_eq!(cases.len(), 36);
     assert_eq!(
@@ -189,16 +190,17 @@ fn private_annotation_import_corpus_rejects_schema_drift_and_missing_cases() {
             .count(),
         4
     );
-    for bad in [
-        CORPUS.replacen("\"schema\":1", "\"schema\":2", 1),
-        CORPUS.replacen("C-Alias-source-false", "unknown-case", 1),
-        CORPUS.replacen("\"mode\":\"strict\"", "\"mode\":\"model-only\"", 1),
-        CORPUS.replacen("\"schema\":1", "\"extra\":true,\"schema\":1", 1),
-        CORPUS.lines().skip(1).collect::<Vec<_>>().join("\n"),
-        format!("{CORPUS}{}\n", CORPUS.lines().next().unwrap()),
-    ] {
-        assert!(parse_cases(&bad).is_err());
-    }
+}
+
+#[rstest::rstest]
+#[case::input_1(CORPUS.replacen("\"schema\":1", "\"schema\":2", 1))]
+#[case::c_alias_source_false_2(CORPUS.replacen("C-Alias-source-false", "unknown-case", 1))]
+#[case::input_3(CORPUS.replacen("\"mode\":\"strict\"", "\"mode\":\"model-only\"", 1))]
+#[case::input_4(CORPUS.replacen("\"schema\":1", "\"extra\":true,\"schema\":1", 1))]
+#[case::input_5(CORPUS.lines().skip(1).collect::<Vec<_>>().join("\n"))]
+#[case::corpus_6(format!("{CORPUS}{}\n", CORPUS.lines().next().unwrap()))]
+fn private_annotation_import_corpus_rejects_schema_drift_and_missing_cases(#[case] bad: String) {
+    assert!(parse_cases(&bad).is_err());
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -354,97 +356,101 @@ async fn private_annotation_import_public_run_does_not_count_custom_pairs() {
 
 // Extra public controls exercise implementation scope routing beyond the finite
 // 36-case Lean model; their expected counts are ordinary regression assertions.
+#[rstest::rstest]
+#[case::from_typing_import_iterable_class_c_from_typing_import_1(
+    "from typing import Iterable\nclass C:\n from typing import Sequence as _C__Alias\n __Alias = tuple\n value: _C__Alias[int] # target\n",
+    "subject.C.__annotations__['value'] == tuple[int]",
+    0
+)]
+#[case::from_typing_import_sequence_class_c_from_typing_import_2(
+    "from typing import Sequence\nclass C:\n from typing import Iterable as _C__Alias\n __Alias = tuple\n value: Sequence[int] # target\n",
+    "subject.C._C__Alias is tuple",
+    0
+)]
+#[case::from_typing_import_sequence_as_c_alias_iterable_class_c_3(
+    "from typing import Sequence as _C__Alias, Iterable\nclass C:\n global __Alias\n __Alias = tuple\nvalue: _C__Alias[int] # target\n",
+    "subject._C__Alias is tuple",
+    0
+)]
+#[case::from_typing_import_sequence_as_c_alias_iterable_class_c_4(
+    "from typing import Sequence as _C__Alias, Iterable\nclass C:\n __Alias = tuple\nvalue: _C__Alias[int] # target\n",
+    "subject._C__Alias is typing.Sequence",
+    1
+)]
+#[case::from_typing_import_sequence_as_c_alias_iterable_class_c_5(
+    "from typing import Sequence as _C__Alias, Iterable\nclass C:\n def factory(__Alias):\n  def inner(value: _C__Alias[int]): pass # target\n  return inner\n",
+    "subject.C.factory(tuple).__annotations__['value'] == tuple[int]",
+    0
+)]
+#[case::from_typing_import_iterable_class_outer_class_from_typi_6(
+    "from typing import Iterable\nclass Outer:\n class ___:\n  from typing import Sequence as __Alias\n  value: __Alias[int] # target\n",
+    "subject.Outer.___.__annotations__['value'] == typing.Sequence[int]",
+    1
+)]
 #[tokio::test(flavor = "current_thread")]
-async fn private_alias_reverse_writes_and_lexical_context_public_controls() {
-    for (source, observation, expected) in [
-        (
-            "from typing import Iterable\nclass C:\n from typing import Sequence as _C__Alias\n __Alias = tuple\n value: _C__Alias[int] # target\n",
-            "subject.C.__annotations__['value'] == tuple[int]",
-            0,
-        ),
-        (
-            "from typing import Sequence\nclass C:\n from typing import Iterable as _C__Alias\n __Alias = tuple\n value: Sequence[int] # target\n",
-            "subject.C._C__Alias is tuple",
-            0,
-        ),
-        (
-            "from typing import Sequence as _C__Alias, Iterable\nclass C:\n global __Alias\n __Alias = tuple\nvalue: _C__Alias[int] # target\n",
-            "subject._C__Alias is tuple",
-            0,
-        ),
-        (
-            "from typing import Sequence as _C__Alias, Iterable\nclass C:\n __Alias = tuple\nvalue: _C__Alias[int] # target\n",
-            "subject._C__Alias is typing.Sequence",
-            1,
-        ),
-        (
-            "from typing import Sequence as _C__Alias, Iterable\nclass C:\n def factory(__Alias):\n  def inner(value: _C__Alias[int]): pass # target\n  return inner\n",
-            "subject.C.factory(tuple).__annotations__['value'] == tuple[int]",
-            0,
-        ),
-        (
-            "from typing import Iterable\nclass Outer:\n class ___:\n  from typing import Sequence as __Alias\n  value: __Alias[int] # target\n",
-            "subject.Outer.___.__annotations__['value'] == typing.Sequence[int]",
-            1,
-        ),
-    ] {
-        let directory = tempfile::tempdir().unwrap();
-        std::fs::write(directory.path().join("subject.py"), source).unwrap();
-        let baseline = tokio::time::timeout(
-            Duration::from_secs(15),
-            tokio::process::Command::new(python())
-                .current_dir(directory.path())
-                .args([
-                    "-B",
-                    "-c",
-                    &format!("import subject, typing; assert {observation}"),
-                ])
-                .kill_on_drop(true)
-                .output(),
-        )
-        .await
-        .expect("infrastructure error: boundary baseline timeout")
-        .unwrap();
-        assert!(
-            baseline.status.success(),
-            "{source}: {}",
-            String::from_utf8_lossy(&baseline.stderr)
-        );
-        let line = source
-            .lines()
-            .position(|line| line.contains("# target"))
-            .unwrap()
-            + 1;
-        let args: Vec<OsString> = vec![
-            "hoimin".into(),
-            "plan".into(),
-            "--root".into(),
-            directory.path().into(),
-            "--file".into(),
-            "subject.py".into(),
-            "--line".into(),
-            format!("subject.py:{line}-{line}").into(),
-            "--operators".into(),
-            "type_sequence_iterable".into(),
-            "--allow-best-effort-memory".into(),
-            "--min-free-space".into(),
-            "1B".into(),
-            "--".into(),
-            python().into_os_string(),
-            "-B".into(),
-            "-c".into(),
-            "import subject".into(),
-        ];
-        let stdout = CollectingWriter::default();
-        let stderr = CollectingWriter::default();
-        let exit = tokio::time::timeout(
-            Duration::from_secs(15),
-            hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()),
-        )
-        .await
-        .expect("infrastructure error: boundary plan timeout");
-        assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
-        let plan: PlanManifest = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
-        assert_eq!(plan.candidates.len(), expected, "{source}");
-    }
+async fn private_alias_reverse_writes_and_lexical_context_public_controls(
+    #[case] source: &str,
+    #[case] observation: &str,
+    #[case] expected: usize,
+) {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(directory.path().join("subject.py"), source).unwrap();
+
+    let baseline = tokio::time::timeout(
+        Duration::from_secs(15),
+        tokio::process::Command::new(python())
+            .current_dir(directory.path())
+            .args([
+                "-B",
+                "-c",
+                &format!("import subject, typing; assert {observation}"),
+            ])
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .expect("infrastructure error: boundary baseline timeout")
+    .unwrap();
+
+    assert!(
+        baseline.status.success(),
+        "{source}: {}",
+        String::from_utf8_lossy(&baseline.stderr)
+    );
+    let line = source
+        .lines()
+        .position(|line| line.contains("# target"))
+        .unwrap()
+        + 1;
+    let args: Vec<OsString> = vec![
+        "hoimin".into(),
+        "plan".into(),
+        "--root".into(),
+        directory.path().into(),
+        "--file".into(),
+        "subject.py".into(),
+        "--line".into(),
+        format!("subject.py:{line}-{line}").into(),
+        "--operators".into(),
+        "type_sequence_iterable".into(),
+        "--allow-best-effort-memory".into(),
+        "--min-free-space".into(),
+        "1B".into(),
+        "--".into(),
+        python().into_os_string(),
+        "-B".into(),
+        "-c".into(),
+        "import subject".into(),
+    ];
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let exit = tokio::time::timeout(
+        Duration::from_secs(15),
+        hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()),
+    )
+    .await
+    .expect("infrastructure error: boundary plan timeout");
+    assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+    let plan: PlanManifest = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
+    assert_eq!(plan.candidates.len(), expected, "{source}");
 }

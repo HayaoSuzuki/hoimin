@@ -110,84 +110,97 @@ async fn check_operator(source: &str, candidates: usize, operator: &str, replace
     assert_eq!(std::fs::read_to_string(path).unwrap(), source);
 }
 
+#[rstest::rstest]
+#[case::source_list("any", "[(NAME := custom) for _ in [0]]")]
+#[case::source_set("any", "{(NAME := custom) for _ in [0]}")]
+#[case::source_mapping("any", "{0: (NAME := custom) for _ in [0]}")]
+#[case::source_nested_list("any", "[[(NAME := custom) for _ in [0]] for _ in [0]]")]
+#[case::source_eager_generator("any", "list((NAME := custom) for _ in [0])")]
+#[case::destination_list("all", "[(NAME := custom) for _ in [0]]")]
+#[case::destination_set("all", "{(NAME := custom) for _ in [0]}")]
+#[case::destination_mapping("all", "{0: (NAME := custom) for _ in [0]}")]
+#[case::destination_nested_list("all", "[[(NAME := custom) for _ in [0]] for _ in [0]]")]
+#[case::destination_eager_generator("all", "list((NAME := custom) for _ in [0])")]
 #[tokio::test]
-async fn module_comprehension_named_targets_shadow_source() {
-    module_cases("any").await;
+async fn module_comprehension_named_targets_shadow_endpoints(
+    #[case] name: &str,
+    #[case] expression: &str,
+) {
+    let expression = expression.replace("NAME", name);
+    check(&format!("custom = lambda values: 'custom'\n{expression}\nassert {name} is custom\nresult = any([False, True])\n"), 0).await;
 }
 
+#[rstest::rstest]
+#[case::any_for_any_in_0_1("[any for any in [0]]")]
+#[case::unrelated_0_for_in_0_2("[(unrelated := 0) for _ in [0]]")]
+#[case::lambda_any_0_for_in_0_3("[(lambda: (any := 0))() for _ in [0]]")]
+#[case::def_unrelated_any_0_for_in_0_4("def unrelated():\n    [(any := 0) for _ in [0]]")]
 #[tokio::test]
-async fn module_comprehension_named_targets_shadow_destination() {
-    module_cases("all").await;
+async fn comprehension_controls_preserve_real_candidates(#[case] prefix: &str) {
+    check(&format!("{prefix}\nassert any([False, True]) is True\n"), 1).await;
 }
 
-async fn module_cases(name: &str) {
-    for expression in [
-        "[(NAME := custom) for _ in [0]]",
-        "{(NAME := custom) for _ in [0]}",
-        "{0: (NAME := custom) for _ in [0]}",
-        "[[(NAME := custom) for _ in [0]] for _ in [0]]",
-        "list((NAME := custom) for _ in [0])",
-    ] {
-        let expression = expression.replace("NAME", name);
-        check(&format!("custom = lambda values: 'custom'\n{expression}\nassert {name} is custom\nresult = any([False, True])\n"), 0).await;
-    }
+#[rstest::rstest]
+#[case::any_custom_for_in_1("[(any := custom) for _ in []]")]
+#[case::any_custom_for_in_0_2("((any := custom) for _ in [0])")]
+#[tokio::test]
+async fn empty_and_lazy_comprehensions_are_possible_module_writes(#[case] expression: &str) {
+    check(&format!("import builtins\ncustom = lambda values: 'custom'\n{expression}\nassert any is builtins.any\nresult = any([False, True])\n"), 0).await;
 }
 
+#[rstest::rstest]
+#[case::any_0_for_in_1("[(any := 0) for _ in []]")]
+#[case::any_0_for_in_0_2("((any := 0) for _ in [0])")]
 #[tokio::test]
-async fn comprehension_controls_preserve_real_candidates() {
-    for prefix in [
-        "[any for any in [0]]",
-        "[(unrelated := 0) for _ in [0]]",
-        "[(lambda: (any := 0))() for _ in [0]]",
-        "def unrelated():\n    [(any := 0) for _ in [0]]",
-    ] {
-        check(&format!("{prefix}\nassert any([False, True]) is True\n"), 1).await;
-    }
+async fn named_comprehensions_declare_static_function_locals(#[case] expression: &str) {
+    check(&format!("def f():\n    result = any([False, True])\n    {expression}\ntry:\n    f()\nexcept UnboundLocalError:\n    pass\nelse:\n    raise AssertionError('walrus must declare function local')\n"), 0).await;
 }
 
+#[rstest::rstest]
+#[case::global(
+    "custom = lambda values: 'custom'\ndef f():\n    global any\n    [(any := custom) for _ in [0]]\nf()\nassert any is custom\nresult = any([False, True])\n",
+    0
+)]
+#[case::nonlocal(
+    "def outer():\n    any = lambda values: 'custom'\n    def inner():\n        nonlocal any\n        [(any := lambda values: 'updated') for _ in [0]]\n        return any([False, True])\n    assert inner() == 'updated'\nouter()\n",
+    0
+)]
 #[tokio::test]
-async fn empty_and_lazy_comprehensions_are_possible_module_writes() {
-    for expression in [
-        "[(any := custom) for _ in []]",
-        "((any := custom) for _ in [0])",
-    ] {
-        check(&format!("import builtins\ncustom = lambda values: 'custom'\n{expression}\nassert any is builtins.any\nresult = any([False, True])\n"), 0).await;
-    }
+async fn containing_global_and_nonlocal_directives_apply(
+    #[case] source: &str,
+    #[case] expected: usize,
+) {
+    check(source, expected).await;
 }
 
+#[rstest::rstest]
+#[case::any_builtins_any_1("any = builtins.any")]
+#[case::from_builtins_import_any_2("from builtins import any")]
+#[case::any_0_del_any_3("any = 0\ndel any")]
 #[tokio::test]
-async fn named_comprehensions_declare_static_function_locals() {
-    for expression in ["[(any := 0) for _ in []]", "((any := 0) for _ in [0])"] {
-        check(&format!("def f():\n    result = any([False, True])\n    {expression}\ntry:\n    f()\nexcept UnboundLocalError:\n    pass\nelse:\n    raise AssertionError('walrus must declare function local')\n"), 0).await;
-    }
+async fn delayed_generator_write_survives_intervening_reset(#[case] reset: &str) {
+    check(&format!("import builtins\ncustom = lambda values: 'custom'\ngenerator = ((any := custom) for _ in [0])\n{reset}\nnext(generator)\nassert any is custom\nresult = any([False, True])\n"), 0).await;
 }
 
+#[rstest::rstest]
+#[case::local_comprehension(
+    "custom = lambda values: True\n[(unrelated := any([False, True])) for any in [custom]]\nassert any([False, True]) is True\n",
+    1
+)]
+#[case::outer_loop_backedge(
+    "custom = lambda values: True\nfor _ in [0, 1]:\n    result = any([False, True])\n    [(any := custom) for _ in [0]]\nassert any is custom\n",
+    0
+)]
+#[case::earlier_module_read(
+    "assert any([False, True]) is True\n[(any := lambda values: True) for _ in [0]]\n",
+    1
+)]
 #[tokio::test]
-async fn containing_global_and_nonlocal_directives_apply() {
-    check("custom = lambda values: 'custom'\ndef f():\n    global any\n    [(any := custom) for _ in [0]]\nf()\nassert any is custom\nresult = any([False, True])\n", 0).await;
-    check("def outer():\n    any = lambda values: 'custom'\n    def inner():\n        nonlocal any\n        [(any := lambda values: 'updated') for _ in [0]]\n        return any([False, True])\n    assert inner() == 'updated'\nouter()\n", 0).await;
-}
-
-#[tokio::test]
-async fn delayed_generator_write_survives_intervening_reset() {
-    for reset in [
-        "any = builtins.any",
-        "from builtins import any",
-        "any = 0\ndel any",
-    ] {
-        check(&format!("import builtins\ncustom = lambda values: 'custom'\ngenerator = ((any := custom) for _ in [0])\n{reset}\nnext(generator)\nassert any is custom\nresult = any([False, True])\n"), 0).await;
-    }
-}
-
-#[tokio::test]
-async fn rhs_keeps_comprehension_scope_and_outer_loop_backedges() {
-    check("custom = lambda values: True\n[(unrelated := any([False, True])) for any in [custom]]\nassert any([False, True]) is True\n", 1).await;
-    check("custom = lambda values: True\nfor _ in [0, 1]:\n    result = any([False, True])\n    [(any := custom) for _ in [0]]\nassert any is custom\n", 0).await;
-    check(
-        "assert any([False, True]) is True\n[(any := lambda values: True) for _ in [0]]\n",
-        1,
-    )
-    .await;
+async fn rhs_keeps_comprehension_scope_and_outer_loop_backedges(
+    #[case] source: &str,
+    #[case] expected: usize,
+) {
+    check(source, expected).await;
 }
 
 #[tokio::test]
@@ -263,143 +276,192 @@ async fn lean_named_binding_routing_matches_public_plan_and_cpython() {
     );
 }
 
+#[rstest::rstest]
+#[case::list_1_source("list", "tuple", "collection_list_tuple", "list")]
+#[case::list_1_destination("list", "tuple", "collection_list_tuple", "tuple")]
+#[case::set_2_source("set", "frozenset", "collection_set_frozenset", "set")]
+#[case::set_2_destination("set", "frozenset", "collection_set_frozenset", "frozenset")]
+#[case::min_3_source("min", "max", "collection_min_max", "min")]
+#[case::min_3_destination("min", "max", "collection_min_max", "max")]
+#[case::sorted_4_source("sorted", "reversed", "structure_sorted_reversed", "sorted")]
+#[case::sorted_4_destination("sorted", "reversed", "structure_sorted_reversed", "reversed")]
 #[tokio::test]
-async fn named_binding_routes_apply_to_other_builtin_pairs() {
-    for (original, replacement, operator) in [
-        ("list", "tuple", "collection_list_tuple"),
-        ("set", "frozenset", "collection_set_frozenset"),
-        ("min", "max", "collection_min_max"),
-        ("sorted", "reversed", "structure_sorted_reversed"),
-    ] {
-        for name in [original, replacement] {
-            check_operator(&format!("custom = lambda values: 0\n[({name} := custom) for _ in range(1)]\nassert {name} is custom\nresult = {original}(range(2))\n"), 0, operator, replacement).await;
-        }
-        check_operator(
-            &format!("[(unrelated := 0) for _ in range(1)]\nresult = {original}(range(2))\n"),
-            1,
-            operator,
-            replacement,
-        )
-        .await;
-    }
+async fn named_binding_routes_apply_to_other_builtin_pairs(
+    #[case] original: &str,
+    #[case] replacement: &str,
+    #[case] operator: &str,
+    #[case] name: &str,
+) {
+    check_operator(&format!("custom = lambda values: 0\n[({name} := custom) for _ in range(1)]\nassert {name} is custom\nresult = {original}(range(2))\n"), 0, operator, replacement).await;
 }
 
+#[rstest::rstest]
+#[case::list_1("list", "tuple", "collection_list_tuple")]
+#[case::set_2("set", "frozenset", "collection_set_frozenset")]
+#[case::min_3("min", "max", "collection_min_max")]
+#[case::sorted_4("sorted", "reversed", "structure_sorted_reversed")]
 #[tokio::test]
-async fn first_iterable_precedes_body_named_bindings() {
-    for expression in [
-        "[(NAME := lambda values: \"custom\", item)[1] for item in [any((0, 1))]]",
-        "{(NAME := lambda values: \"custom\", item)[1] for item in [any((0, 1))]}",
-        "{item: (NAME := lambda values: \"custom\") for item in [any((0, 1))]}",
-        "((NAME := lambda values: \"custom\", item)[1] for item in [any((0, 1))])",
-    ] {
-        for name in ["any", "all"] {
-            let source = format!(
-                "values = {}\nassert next(iter(values)) is True\n",
-                expression.replace("NAME", name)
-            );
-            check(&source, 1).await;
-            let mut mutation = tokio::process::Command::new(python());
-            mutation.args(["-c", &source.replace("any((0, 1))", "all((0, 1))")]);
-            let result = tokio::time::timeout(
-                Duration::from_secs(20),
-                mutation.kill_on_drop(true).output(),
-            )
-            .await
-            .unwrap()
-            .unwrap();
-            assert!(!result.status.success());
-            assert!(String::from_utf8_lossy(&result.stderr).contains("AssertionError"));
-        }
-    }
+async fn unrelated_named_binding_preserves_other_builtin_pairs(
+    #[case] original: &str,
+    #[case] replacement: &str,
+    #[case] operator: &str,
+) {
+    check_operator(
+        &format!("[(unrelated := 0) for _ in range(1)]\nresult = {original}(range(2))\n"),
+        1,
+        operator,
+        replacement,
+    )
+    .await;
 }
 
+#[rstest::rstest]
+#[case::name_lambda_values_1_any_1(
+    "[(NAME := lambda values: \"custom\", item)[1] for item in [any((0, 1))]]",
+    "any"
+)]
+#[case::name_lambda_values_1_all_2(
+    "[(NAME := lambda values: \"custom\", item)[1] for item in [any((0, 1))]]",
+    "all"
+)]
+#[case::name_lambda_values_2_any_1(
+    "{(NAME := lambda values: \"custom\", item)[1] for item in [any((0, 1))]}",
+    "any"
+)]
+#[case::name_lambda_values_2_all_2(
+    "{(NAME := lambda values: \"custom\", item)[1] for item in [any((0, 1))]}",
+    "all"
+)]
+#[case::item_name_lambda_values_3_any_1(
+    "{item: (NAME := lambda values: \"custom\") for item in [any((0, 1))]}",
+    "any"
+)]
+#[case::item_name_lambda_values_3_all_2(
+    "{item: (NAME := lambda values: \"custom\") for item in [any((0, 1))]}",
+    "all"
+)]
+#[case::name_lambda_values_4_any_1(
+    "((NAME := lambda values: \"custom\", item)[1] for item in [any((0, 1))])",
+    "any"
+)]
+#[case::name_lambda_values_4_all_2(
+    "((NAME := lambda values: \"custom\", item)[1] for item in [any((0, 1))])",
+    "all"
+)]
 #[tokio::test]
-async fn first_iterable_order_preserves_scope_and_flow_controls() {
-    for (source, expected) in [
-        ("g = ((all := 0) for item in [any((0, 1))])\n", 1),
-        (
-            "g = ((all := 0) for item in [any((0, 1))])\nresult = any((0, 1))\n",
-            1,
-        ),
-        (
-            "all = lambda values: True\nvalues = [(all := 0) for item in [any((0, 1))]]\n",
-            0,
-        ),
-        (
-            "values = ([(all := lambda values: True) for _ in range(1)], any((0, 1)))\n",
-            0,
-        ),
-        (
-            "values = [[(all := lambda values: True, item)[1] for _ in range(1)] for item in [any((0, 1))]]\nassert values == [[True]]\n",
-            1,
-        ),
-        (
-            "values = [item for item in [any((0, 1))] if (all := True)]\nassert values == [True]\n",
-            1,
-        ),
-        (
-            "def f():\n    return [(any := 0) for item in [any((0, 1))]]\ntry:\n    f()\nexcept UnboundLocalError:\n    pass\nelse:\n    raise AssertionError('expected static local')\n",
-            0,
-        ),
-        (
-            "def f():\n    return [(all := 0) for item in [any((0, 1))]]\nf()\n",
-            0,
-        ),
-        (
-            "for _ in range(2):\n    values = [(all := lambda values: True, item)[1] for item in [any((0, 1))]]\n",
-            0,
-        ),
-        (
-            "for _ in range(2):\n    values = ((all := lambda values: True, item)[1] for item in [any((0, 1))])\n    next(values)\n",
-            0,
-        ),
-        ("assert (all := any((0, 1))) is True\n", 1),
-        (
-            "values = [(lambda: (all := 0))() for item in [any((0, 1))]]\n",
-            1,
-        ),
-        (
-            "items = [any((0, 1))]\nvalues = [(all := 0) for item in items]\n",
-            1,
-        ),
-        (
-            "def f(all):\n    return [(all := 0) for item in [any((0, 1))]]\nf(0)\n",
-            0,
-        ),
-        (
-            "def f():\n    global any\n    return [(any := 0) for item in [any((0, 1))]]\nf()\n",
-            0,
-        ),
-        (
-            "def outer():\n    from builtins import all\n    def inner():\n        nonlocal all\n        return [(all := 0) for item in [any((0, 1))]]\n    inner()\nouter()\n",
-            0,
-        ),
-        (
-            "values = [(lambda unused=(all := 0): item)() for item in [any((0, 1))]]\nassert values == [True]\n",
-            1,
-        ),
-    ] {
-        check(source, expected).await;
-    }
+async fn first_iterable_precedes_body_named_bindings(#[case] expression: &str, #[case] name: &str) {
+    let source = format!(
+        "values = {}\nassert next(iter(values)) is True\n",
+        expression.replace("NAME", name)
+    );
+    check(&source, 1).await;
+    let mut mutation = tokio::process::Command::new(python());
+    mutation.args(["-c", &source.replace("any((0, 1))", "all((0, 1))")]);
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(20),
+        mutation.kill_on_drop(true).output(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("AssertionError"));
 }
 
+#[rstest::rstest]
+#[case::g_all_0_for_item_in_any_0_1_1("g = ((all := 0) for item in [any((0, 1))])\n", 1)]
+#[case::g_all_0_for_item_in_any_0_1_result_any_0_1_2(
+    "g = ((all := 0) for item in [any((0, 1))])\nresult = any((0, 1))\n",
+    1
+)]
+#[case::all_lambda_values_true_values_all_0_for_item_in_any_0_1_3(
+    "all = lambda values: True\nvalues = [(all := 0) for item in [any((0, 1))]]\n",
+    0
+)]
+#[case::values_all_lambda_values_true_for_in_range_1_any_0_1_4(
+    "values = ([(all := lambda values: True) for _ in range(1)], any((0, 1)))\n",
+    0
+)]
+#[case::values_all_lambda_values_true_item_1_for_in_range_1_for_5(
+    "values = [[(all := lambda values: True, item)[1] for _ in range(1)] for item in [any((0, 1))]]\nassert values == [[True]]\n",
+    1
+)]
+#[case::values_item_for_item_in_any_0_1_if_all_true_assert_valu_6(
+    "values = [item for item in [any((0, 1))] if (all := True)]\nassert values == [True]\n",
+    1
+)]
+#[case::def_f_return_any_0_for_item_in_any_0_1_try_f_except_unb_7(
+    "def f():\n    return [(any := 0) for item in [any((0, 1))]]\ntry:\n    f()\nexcept UnboundLocalError:\n    pass\nelse:\n    raise AssertionError('expected static local')\n",
+    0
+)]
+#[case::def_f_return_all_0_for_item_in_any_0_1_f_8(
+    "def f():\n    return [(all := 0) for item in [any((0, 1))]]\nf()\n",
+    0
+)]
+#[case::for_in_range_2_values_all_lambda_values_true_item_1_for_9(
+    "for _ in range(2):\n    values = [(all := lambda values: True, item)[1] for item in [any((0, 1))]]\n",
+    0
+)]
+#[case::for_in_range_2_values_all_lambda_values_true_item_1_for_10(
+    "for _ in range(2):\n    values = ((all := lambda values: True, item)[1] for item in [any((0, 1))])\n    next(values)\n",
+    0
+)]
+#[case::assert_all_any_0_1_is_true_11("assert (all := any((0, 1))) is True\n", 1)]
+#[case::values_lambda_all_0_for_item_in_any_0_1_12(
+    "values = [(lambda: (all := 0))() for item in [any((0, 1))]]\n",
+    1
+)]
+#[case::items_any_0_1_values_all_0_for_item_in_items_13(
+    "items = [any((0, 1))]\nvalues = [(all := 0) for item in items]\n",
+    1
+)]
+#[case::def_f_all_return_all_0_for_item_in_any_0_1_f_0_14(
+    "def f(all):\n    return [(all := 0) for item in [any((0, 1))]]\nf(0)\n",
+    0
+)]
+#[case::def_f_global_any_return_any_0_for_item_in_any_0_1_f_15(
+    "def f():\n    global any\n    return [(any := 0) for item in [any((0, 1))]]\nf()\n",
+    0
+)]
+#[case::def_outer_from_builtins_import_all_def_inner_nonlocal_a_16(
+    "def outer():\n    from builtins import all\n    def inner():\n        nonlocal all\n        return [(all := 0) for item in [any((0, 1))]]\n    inner()\nouter()\n",
+    0
+)]
+#[case::values_lambda_unused_all_0_item_for_item_in_any_0_1_ass_17(
+    "values = [(lambda unused=(all := 0): item)() for item in [any((0, 1))]]\nassert values == [True]\n",
+    1
+)]
 #[tokio::test]
-async fn first_iterable_order_applies_to_other_builtin_pairs() {
-    for (original, replacement, operator) in [
-        ("list", "tuple", "collection_list_tuple"),
-        ("min", "max", "collection_min_max"),
-        ("sorted", "reversed", "structure_sorted_reversed"),
-    ] {
-        for name in [original, replacement] {
-            check_operator(
-                &format!("values = [({name} := 0) for item in ({original}(range(2)),)]\n"),
-                1,
-                operator,
-                replacement,
-            )
-            .await;
-        }
-    }
+async fn first_iterable_order_preserves_scope_and_flow_controls(
+    #[case] source: &str,
+    #[case] expected: usize,
+) {
+    check(source, expected).await;
+}
+
+#[rstest::rstest]
+#[case::list_1_source("list", "tuple", "collection_list_tuple", "list")]
+#[case::list_1_destination("list", "tuple", "collection_list_tuple", "tuple")]
+#[case::min_2_source("min", "max", "collection_min_max", "min")]
+#[case::min_2_destination("min", "max", "collection_min_max", "max")]
+#[case::sorted_3_source("sorted", "reversed", "structure_sorted_reversed", "sorted")]
+#[case::sorted_3_destination("sorted", "reversed", "structure_sorted_reversed", "reversed")]
+#[tokio::test]
+async fn first_iterable_order_applies_to_other_builtin_pairs(
+    #[case] original: &str,
+    #[case] replacement: &str,
+    #[case] operator: &str,
+    #[case] name: &str,
+) {
+    check_operator(
+        &format!("values = [({name} := 0) for item in ({original}(range(2)),)]\n"),
+        1,
+        operator,
+        replacement,
+    )
+    .await;
 }
 
 #[tokio::test]

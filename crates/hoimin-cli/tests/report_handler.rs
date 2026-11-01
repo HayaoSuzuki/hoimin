@@ -1,3 +1,4 @@
+use hoimin_core::ResumeFreshReason;
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
 #[path = "support/mutation_outcome.rs"]
@@ -18,6 +19,30 @@ use hoimin_core::{
 
 const TEST_MIN_FREE_SPACE: &str = "1B";
 
+fn assert_preview_schema_bytes(
+    bytes: &[u8],
+    preview_schema: &serde_json::Value,
+    event_schema: &serde_json::Value,
+) {
+    let document = serde_json::from_slice(bytes).unwrap();
+    assert_schema_valid(preview_schema, &document, event_schema);
+}
+
+fn assert_event_schema_bytes(
+    bytes: &[u8],
+    _preview_schema: &serde_json::Value,
+    event_schema: &serde_json::Value,
+) {
+    let events = std::str::from_utf8(bytes)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect::<Vec<_>>();
+    for event in events {
+        assert_schema_valid(event_schema, &event, event_schema);
+    }
+}
+
 #[derive(Clone, Default)]
 struct SharedWriter(Arc<Mutex<WriterState>>);
 
@@ -28,9 +53,17 @@ struct WriterState {
     writes: usize,
 }
 
-#[test]
-fn published_resume_schema_accepts_producer_reasons_and_rejects_retired_fallback() {
-    use hoimin_core::{ResumeFreshReason, ResumeOutcome};
+#[rstest::rstest]
+#[case::resumefreshreason_nopriorrun_1(ResumeFreshReason::NoPriorRun)]
+#[case::resumefreshreason_matchingruncomplete_2(ResumeFreshReason::MatchingRunComplete)]
+#[case::resumefreshreason_budgetdecreased_3(ResumeFreshReason::BudgetDecreased)]
+#[case::resumefreshreason_fingerprintmismatch_4(ResumeFreshReason::FingerprintMismatch)]
+#[case::resumefreshreason_noincompleterun_5(ResumeFreshReason::NoIncompleteRun)]
+#[case::resumefreshreason_candidatechanged_6(ResumeFreshReason::CandidateChanged)]
+fn published_resume_schema_accepts_producer_reasons_and_rejects_retired_fallback_1(
+    #[case] reason: ResumeFreshReason,
+) {
+    use hoimin_core::ResumeOutcome;
     let event_schema = read_schema(&repo_root().join("docs/json-schema/run-event.schema.json"));
     let schema = &event_schema["$defs"]["resumeOutcome"];
     assert_schema_valid(
@@ -38,22 +71,30 @@ fn published_resume_schema_accepts_producer_reasons_and_rejects_retired_fallback
         &serde_json::to_value(ResumeOutcome::Resumed).unwrap(),
         &event_schema,
     );
-    for reason in [
-        ResumeFreshReason::NoPriorRun,
-        ResumeFreshReason::MatchingRunComplete,
-        ResumeFreshReason::BudgetDecreased,
-        ResumeFreshReason::FingerprintMismatch,
-        ResumeFreshReason::NoIncompleteRun,
-        ResumeFreshReason::CandidateChanged,
-    ] {
-        let value = serde_json::to_value(ResumeOutcome::Fresh { reason }).unwrap();
-        assert_schema_valid(schema, &value, &event_schema);
-    }
-    for reason in ["no_compatible_run", "unknown"] {
-        let value = serde_json::json!({"status":"fresh","reason":reason});
-        assert_schema_invalid(schema, &value, &event_schema);
-        assert!(serde_json::from_value::<ResumeOutcome>(value).is_err());
-    }
+
+    let value = serde_json::to_value(ResumeOutcome::Fresh { reason }).unwrap();
+    assert_schema_valid(schema, &value, &event_schema);
+}
+
+#[rstest::rstest]
+#[case::no_compatible_run_1("no_compatible_run")]
+#[case::unknown_2("unknown")]
+fn published_resume_schema_accepts_producer_reasons_and_rejects_retired_fallback_2(
+    #[case] reason: &str,
+) {
+    use hoimin_core::ResumeOutcome;
+    let event_schema = read_schema(&repo_root().join("docs/json-schema/run-event.schema.json"));
+    let schema = &event_schema["$defs"]["resumeOutcome"];
+    assert_schema_valid(
+        schema,
+        &serde_json::to_value(ResumeOutcome::Resumed).unwrap(),
+        &event_schema,
+    );
+
+    let value = serde_json::json!({"status":"fresh","reason":reason});
+    assert_schema_invalid(schema, &value, &event_schema);
+
+    assert!(serde_json::from_value::<ResumeOutcome>(value).is_err());
 }
 
 #[test]
@@ -113,52 +154,54 @@ fn disk_filesystem_schema_requires_a_delta_for_two_endpoints() {
     assert_schema_invalid(filesystem_schema, &incomplete, &event_schema);
 }
 
-#[test]
-fn environment_snapshot_schema_requires_a_complete_closed_state() {
+#[rstest::rstest]
+#[case::state_1(serde_json::json!({"state":"untracked"}))]
+#[case::state_2(serde_json::json!({"state":"captured","names":["FLAG"],"digest":"a".repeat(64)}))]
+fn environment_snapshot_schema_accepts_closed_state(#[case] valid: serde_json::Value) {
     let root = repo_root();
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
     let snapshot_schema = &event_schema["$defs"]["environmentSnapshot"];
-    for valid in [
-        serde_json::json!({"state":"untracked"}),
-        serde_json::json!({"state":"captured","names":["FLAG"],"digest":"a".repeat(64)}),
-    ] {
-        assert_schema_valid(snapshot_schema, &valid, &event_schema);
-    }
-    for invalid in [
-        serde_json::json!({"state":"untracked","names":[]}),
-        serde_json::json!({"state":"captured","names":["FLAG"]}),
-        serde_json::json!({"state":"captured","names":["FLAG"],"digest":"a".repeat(64),"value":"private"}),
-    ] {
-        assert_schema_invalid(snapshot_schema, &invalid, &event_schema);
-    }
+
+    assert_schema_valid(snapshot_schema, &valid, &event_schema);
 }
 
-#[test]
-fn report_event_goldens_are_typed_complete_sequences() {
+#[rstest::rstest]
+#[case::state_1(serde_json::json!({"state":"untracked","names":[]}))]
+#[case::state_2(serde_json::json!({"state":"captured","names":["FLAG"]}))]
+#[case::state_3(serde_json::json!({"state":"captured","names":["FLAG"],"digest":"a".repeat(64),"value":"private"}))]
+fn environment_snapshot_schema_rejects_closed_state(#[case] invalid: serde_json::Value) {
+    let root = repo_root();
+    let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
+    let snapshot_schema = &event_schema["$defs"]["environmentSnapshot"];
+
+    assert_schema_invalid(snapshot_schema, &invalid, &event_schema);
+}
+
+#[rstest::rstest]
+#[case::schema_v10_original_jsonl_1("schema-v10-original.jsonl", false)]
+#[case::schema_v10_current_jsonl_2("schema-v10-current.jsonl", true)]
+fn report_event_goldens_are_typed_complete_sequences(#[case] name: &str, #[case] current: bool) {
     let repo = repo_root();
     let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
     let root = repo.join("crates/hoimin-cli/tests/golden/events");
-    for (name, current) in [
-        ("schema-v10-original.jsonl", false),
-        ("schema-v10-current.jsonl", true),
-    ] {
-        let text = std::fs::read_to_string(root.join(name)).unwrap();
-        let checked = text
-            .lines()
-            .map(|line| {
-                let event = serde_json::from_str::<OutputEvent>(line).unwrap();
-                let value: serde_json::Value = serde_json::from_str(line).unwrap();
-                assert_schema_valid(&event_schema, &value, &event_schema);
-                event
-            })
-            .collect::<Vec<_>>();
-        let mut sequence = ReportSequence::new();
-        for event in &checked {
-            sequence.observe(event).unwrap();
-        }
-        assert_eq!(checked, all_optional_report_events(current));
-        assert_event_optionals(&checked, current);
+
+    let text = std::fs::read_to_string(root.join(name)).unwrap();
+    let checked = text
+        .lines()
+        .map(|line| {
+            let event = serde_json::from_str::<OutputEvent>(line).unwrap();
+            let value: serde_json::Value = serde_json::from_str(line).unwrap();
+            assert_schema_valid(&event_schema, &value, &event_schema);
+            event
+        })
+        .collect::<Vec<_>>();
+    let mut sequence = ReportSequence::new();
+    for event in &checked {
+        sequence.observe(event).unwrap();
     }
+
+    assert_eq!(checked, all_optional_report_events(current));
+    assert_event_optionals(&checked, current);
 }
 
 #[test]
@@ -1373,51 +1416,55 @@ fn test_resource_control() -> hoimin_core::ResourceControl {
     }
 }
 
-#[test]
-fn json_diagnostics_coalesce_writes_without_changing_bytes_or_event_flushes() {
-    for unit in ["x", "x\n", "\"\\\n\t\r\u{0000}é"] {
-        for size in [16 * 1024, 1024 * 1024] {
-            let message = unit.repeat(size / unit.len());
-            let stderr = SharedWriter::default();
-            let stdout = SharedWriter::default();
-            let mut handler = ReportHandler::new(stdout.clone(), stderr.clone());
-            let event = OutputEvent::Diagnostic(Diagnostic::new(
-                "run",
-                1,
-                "error",
-                "baseline.output",
-                message.clone(),
-            ));
-            let expected = serde_json::to_string(&event).unwrap() + "\n";
-            let ack = handler
-                .handle(EmitOutput {
-                    id: EffectId(42),
-                    event,
-                })
-                .unwrap();
-            assert_eq!(ack.id, EffectId(42));
-            let state = stderr.0.lock().unwrap();
-            assert_eq!(state.bytes, expected.as_bytes());
-            assert_eq!(state.flushes, 1);
-            let value: serde_json::Value = serde_json::from_slice(&state.bytes).unwrap();
-            assert_eq!(value["message"], message);
-            let bound = expected.len().div_ceil(4096) + 8;
-            eprintln!(
-                "diagnostic format=jsonl payload={} encoded={} writes={} bound={bound}",
-                message.len(),
-                expected.len(),
-                state.writes
-            );
-            assert!(
-                state.writes <= bound,
-                "unbuffered diagnostic writes={} bound={bound}",
-                state.writes
-            );
-            drop(state);
-            assert_eq!(stdout.text(), "");
-            assert_eq!(stdout.flushes(), 0);
-        }
-    }
+#[rstest::rstest]
+#[case::x_1("x")]
+#[case::x_2("x\n")]
+#[case::input_3("\"\\\n\t\r\u{0000}é")]
+fn json_diagnostics_coalesce_writes_without_changing_bytes_or_event_flushes(
+    #[case] unit: &str,
+    #[values(16 * 1024, 1024 * 1024)] size: usize,
+) {
+    let message = unit.repeat(size / unit.len());
+    let stderr = SharedWriter::default();
+    let stdout = SharedWriter::default();
+    let mut handler = ReportHandler::new(stdout.clone(), stderr.clone());
+    let event = OutputEvent::Diagnostic(Diagnostic::new(
+        "run",
+        1,
+        "error",
+        "baseline.output",
+        message.clone(),
+    ));
+    let expected = serde_json::to_string(&event).unwrap() + "\n";
+
+    let ack = handler
+        .handle(EmitOutput {
+            id: EffectId(42),
+            event,
+        })
+        .unwrap();
+
+    assert_eq!(ack.id, EffectId(42));
+    let state = stderr.0.lock().unwrap();
+    assert_eq!(state.bytes, expected.as_bytes());
+    assert_eq!(state.flushes, 1);
+    let value: serde_json::Value = serde_json::from_slice(&state.bytes).unwrap();
+    assert_eq!(value["message"], message);
+    let bound = expected.len().div_ceil(4096) + 8;
+    eprintln!(
+        "diagnostic format=jsonl payload={} encoded={} writes={} bound={bound}",
+        message.len(),
+        expected.len(),
+        state.writes
+    );
+    assert!(
+        state.writes <= bound,
+        "unbuffered diagnostic writes={} bound={bound}",
+        state.writes
+    );
+    drop(state);
+    assert_eq!(stdout.text(), "");
+    assert_eq!(stdout.flushes(), 0);
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1464,46 +1511,61 @@ impl Write for DiagnosticFaultWriter {
     }
 }
 
-#[test]
-fn buffered_diagnostic_failures_do_not_acknowledge_or_retry_on_drop() {
-    for (mode, minimum_writes, maximum_writes, maximum_bytes, expected_flushes) in [
-        (DiagnosticFault::PartialError, 2, 2, 4, 0),
-        (DiagnosticFault::Zero, 1, 1, 0, 0),
-        (DiagnosticFault::Flush, 0, usize::MAX, usize::MAX, 1),
-    ] {
-        for message in ["small".to_owned(), "x\n".repeat(16384)] {
-            let state = Arc::new(Mutex::new(WriterState::default()));
-            let writer = DiagnosticFaultWriter {
-                mode,
-                state: state.clone(),
-            };
-            let mut handler = ReportHandler::new(io::sink(), writer);
-            let failure = handler
-                .handle(EmitOutput {
-                    id: EffectId(77),
-                    event: OutputEvent::Diagnostic(Diagnostic::new(
-                        "run",
-                        1,
-                        "error",
-                        "baseline.output",
-                        message,
-                    )),
-                })
-                .unwrap_err();
-            assert_eq!(failure.id, EffectId(77));
-            assert!(
-                matches!(failure.failure, EffectFailure::ReportIo { ref operation, .. } if operation == "write JSON Lines event")
-            );
-            drop(handler);
-            let state = state.lock().unwrap();
-            assert!(
-                (minimum_writes..=maximum_writes).contains(&state.writes),
-                "retried after write error: jsonl"
-            );
-            assert!(state.bytes.len() <= maximum_bytes);
-            assert_eq!(state.flushes, expected_flushes);
-        }
-    }
+#[rstest::rstest]
+#[case::diagnosticfault_partialerror_2_2_4_0_1_small_1(DiagnosticFault::PartialError, 2, 2, 4, 0, "small".to_owned())]
+#[case::diagnosticfault_partialerror_2_2_4_0_1_x_2(DiagnosticFault::PartialError, 2, 2, 4, 0, "x\n".repeat(16384))]
+#[case::diagnosticfault_zero_1_1_0_0_2_small_1(DiagnosticFault::Zero, 1, 1, 0, 0, "small".to_owned())]
+#[case::diagnosticfault_zero_1_1_0_0_2_x_2(DiagnosticFault::Zero, 1, 1, 0, 0, "x\n".repeat(16384))]
+#[case::diagnosticfault_flush_0_usize_max_usize_max_1_3_small_1(DiagnosticFault::Flush,
+    0,
+    usize::MAX,
+    usize::MAX,
+    1, "small".to_owned())]
+#[case::diagnosticfault_flush_0_usize_max_usize_max_1_3_x_2(DiagnosticFault::Flush,
+    0,
+    usize::MAX,
+    usize::MAX,
+    1, "x\n".repeat(16384))]
+fn buffered_diagnostic_failures_do_not_acknowledge_or_retry_on_drop(
+    #[case] mode: DiagnosticFault,
+    #[case] minimum_writes: usize,
+    #[case] maximum_writes: usize,
+    #[case] maximum_bytes: usize,
+    #[case] expected_flushes: usize,
+    #[case] message: String,
+) {
+    let state = Arc::new(Mutex::new(WriterState::default()));
+    let writer = DiagnosticFaultWriter {
+        mode,
+        state: state.clone(),
+    };
+    let mut handler = ReportHandler::new(io::sink(), writer);
+
+    let failure = handler
+        .handle(EmitOutput {
+            id: EffectId(77),
+            event: OutputEvent::Diagnostic(Diagnostic::new(
+                "run",
+                1,
+                "error",
+                "baseline.output",
+                message,
+            )),
+        })
+        .unwrap_err();
+
+    assert_eq!(failure.id, EffectId(77));
+    assert!(
+        matches!(failure.failure, EffectFailure::ReportIo { ref operation, .. } if operation == "write JSON Lines event")
+    );
+    drop(handler);
+    let state = state.lock().unwrap();
+    assert!(
+        (minimum_writes..=maximum_writes).contains(&state.writes),
+        "retried after write error: jsonl"
+    );
+    assert!(state.bytes.len() <= maximum_bytes);
+    assert_eq!(state.flushes, expected_flushes);
 }
 
 #[test]
@@ -1540,54 +1602,62 @@ fn buffered_diagnostics_retry_interrupted_writes_and_flush_each_record() {
     }
 }
 
-#[test]
-fn historical_schema_three_goldens_validate_the_archived_raw_contract() {
+#[rstest::rstest]
+#[case::original_1("original")]
+#[case::current_2("current")]
+fn historical_schema_three_goldens_validate_the_archived_raw_contract_1(#[case] era: &str) {
     let root = repo_root();
     let schema = read_schema(&root.join("docs/json-schema/run-event-v3.schema.json"));
     let result_schema = read_schema(&root.join("docs/json-schema/run-result-v3.schema.json"));
-    for era in ["original", "current"] {
-        let value = read_schema(&root.join(format!(
-            "crates/hoimin-cli/tests/golden/reports/schema-v3-{era}.json"
-        )));
-        assert_schema_valid(&result_schema, &value, &schema);
-    }
-    for name in ["schema-v3-original.jsonl", "schema-v3-current.jsonl"] {
-        let text = std::fs::read_to_string(
-            root.join("crates/hoimin-cli/tests/golden/events")
-                .join(name),
-        )
-        .unwrap();
-        let events: Vec<serde_json::Value> = text
-            .lines()
-            .map(|line| {
-                let value = serde_json::from_str(line).unwrap();
-                assert_schema_valid(&schema, &value, &schema);
-                value
-            })
-            .collect();
-        let kinds: Vec<_> = events
-            .iter()
-            .map(|event| event["kind"].as_str().unwrap())
-            .collect();
+
+    let value = read_schema(&root.join(format!(
+        "crates/hoimin-cli/tests/golden/reports/schema-v3-{era}.json"
+    )));
+    assert_schema_valid(&result_schema, &value, &schema);
+}
+
+#[rstest::rstest]
+#[case::schema_v3_original_jsonl_1("schema-v3-original.jsonl")]
+#[case::schema_v3_current_jsonl_2("schema-v3-current.jsonl")]
+fn historical_schema_three_goldens_validate_the_archived_raw_contract_2(#[case] name: &str) {
+    let root = repo_root();
+    let schema = read_schema(&root.join("docs/json-schema/run-event-v3.schema.json"));
+    let text = std::fs::read_to_string(
+        root.join("crates/hoimin-cli/tests/golden/events")
+            .join(name),
+    )
+    .unwrap();
+    let events: Vec<serde_json::Value> = text
+        .lines()
+        .map(|line| {
+            let value = serde_json::from_str(line).unwrap();
+            assert_schema_valid(&schema, &value, &schema);
+            value
+        })
+        .collect();
+    let kinds: Vec<_> = events
+        .iter()
+        .map(|event| event["kind"].as_str().unwrap())
+        .collect();
+
+    assert_eq!(
+        kinds,
+        [
+            "run_started",
+            "baseline_finished",
+            "mutant_started",
+            "mutant_finished",
+            "diagnostic",
+            "run_finished"
+        ]
+    );
+    for (index, event) in events.iter().enumerate() {
+        assert_eq!(event["schema_version"], 3);
         assert_eq!(
-            kinds,
-            [
-                "run_started",
-                "baseline_finished",
-                "mutant_started",
-                "mutant_finished",
-                "diagnostic",
-                "run_finished"
-            ]
+            event["sequence"].as_u64().unwrap(),
+            u64::try_from(index + 1).unwrap()
         );
-        for (index, event) in events.iter().enumerate() {
-            assert_eq!(event["schema_version"], 3);
-            assert_eq!(
-                event["sequence"].as_u64().unwrap(),
-                u64::try_from(index + 1).unwrap()
-            );
-            assert_eq!(event["run_id"], events[0]["run_id"]);
-        }
+        assert_eq!(event["run_id"], events[0]["run_id"]);
     }
 }
 
@@ -1601,10 +1671,7 @@ async fn public_resume_reports_validate_current_schema_in_jsonl() {
     let root = fixture.path().join("project");
     std::fs::create_dir(&root).unwrap();
     std::fs::write(root.join("calc.py"), "value = 1 + 2\nother = 4 + 5\n").unwrap();
-    for expected in [
-        serde_json::json!({"status":"fresh","reason":"no_prior_run"}),
-        serde_json::json!({"status":"resumed"}),
-    ] {
+    for _ in 0..2 {
         let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
         command
             .args(["run", "--root"])
@@ -1641,35 +1708,56 @@ async fn public_resume_reports_validate_current_schema_in_jsonl() {
             String::from_utf8_lossy(&output.stderr)
         );
         assert_eq!(output.stderr, Vec::<u8>::new());
-        reports.push((output.stdout, expected));
+        reports.push(output.stdout);
     }
-    for (stdout, expected) in &reports {
-        let events: Vec<serde_json::Value> = std::str::from_utf8(stdout)
-            .unwrap()
-            .lines()
-            .map(|line| serde_json::from_str(line).unwrap())
-            .collect();
-        for event in &events {
-            assert_schema_valid(&event_schema, event, &event_schema);
-        }
-        assert_eq!(events[0]["resume"], *expected);
-        let mutant = events
-            .iter()
-            .find(|event| event["kind"] == "mutant_finished" && event["status"] == "killed")
-            .unwrap();
-        if expected["status"] == "resumed" {
-            assert_eq!(
-                mutant["outcome"],
-                serde_json::json!({"reused":{"status":"killed"}})
-            );
-        } else {
-            assert!(mutant["outcome"].get("executed").is_some());
-        }
+
+    let reports = reports
+        .iter()
+        .map(|stdout| {
+            std::str::from_utf8(stdout)
+                .unwrap()
+                .lines()
+                .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    for event in reports.iter().flatten() {
+        assert_schema_valid(&event_schema, event, &event_schema);
     }
+    let fresh = &reports[0];
+    let resumed = &reports[1];
+    let fresh_mutant = fresh
+        .iter()
+        .find(|event| event["kind"] == "mutant_finished" && event["status"] == "killed")
+        .unwrap();
+    let resumed_mutant = resumed
+        .iter()
+        .find(|event| event["kind"] == "mutant_finished" && event["status"] == "killed")
+        .unwrap();
+
+    assert_eq!(
+        fresh[0]["resume"],
+        serde_json::json!({"status":"fresh","reason":"no_prior_run"})
+    );
+    assert_eq!(
+        resumed[0]["resume"],
+        serde_json::json!({"status":"resumed"})
+    );
+    assert!(fresh_mutant["outcome"].get("executed").is_some());
+    assert_eq!(
+        resumed_mutant["outcome"],
+        serde_json::json!({"reused":{"status":"killed"}})
+    );
 }
 
+#[rstest::rstest]
+#[case::execution(&[], assert_event_schema_bytes)]
+#[case::preview(&["--dry-run"], assert_preview_schema_bytes)]
 #[tokio::test]
-async fn line_diverse_public_reports_and_previews_match_current_schemas() {
+async fn line_diverse_public_reports_and_previews_match_current_schemas(
+    #[case] extra_args: &[&str],
+    #[case] validate: fn(&[u8], &serde_json::Value, &serde_json::Value),
+) {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().join("project");
     std::fs::create_dir(&root).unwrap();
@@ -1703,45 +1791,33 @@ async fn line_diverse_public_reports_and_previews_match_current_schemas() {
     std::fs::write(&plan, stdout.snapshot()).unwrap();
     let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
     let preview_schema = read_schema(&repo.join("docs/json-schema/verify-preview.schema.json"));
-    let mut reports = Vec::new();
-    for (dry, extra_args, expected_code) in [(false, &[][..], 0), (true, &["--dry-run"][..], 0)] {
-        stdout.clear();
-        stderr.clear();
-        let mut args = vec![
-            "hoimin".into(),
-            "verify".into(),
-            plan.as_os_str().to_owned(),
-            "--top".into(),
-            "1".into(),
-            "--selection-policy".into(),
-            "line-diverse".into(),
-        ];
-        args.extend(extra_args.iter().map(std::ffi::OsString::from));
-        let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
-        assert_eq!(
-            code,
-            expected_code,
-            "{}",
-            String::from_utf8_lossy(&stderr.snapshot())
-        );
-        let text = String::from_utf8(stdout.snapshot()).unwrap();
-        assert!(text.contains("line_round_robin_v1"));
-        reports.push((dry, stdout.snapshot()));
-    }
-    for (_, bytes) in reports.iter().filter(|(dry, _)| *dry) {
-        let document = serde_json::from_slice(bytes).unwrap();
-        assert_schema_valid(&preview_schema, &document, &event_schema);
-    }
-    for (_, bytes) in reports.iter().filter(|(dry, _)| !*dry) {
-        for line in std::str::from_utf8(bytes).unwrap().lines() {
-            let event = serde_json::from_str(line).unwrap();
-            assert_schema_valid(&event_schema, &event, &event_schema);
-        }
-    }
+    stdout.clear();
+    stderr.clear();
+    let mut args = vec![
+        "hoimin".into(),
+        "verify".into(),
+        plan.as_os_str().to_owned(),
+        "--top".into(),
+        "1".into(),
+        "--selection-policy".into(),
+        "line-diverse".into(),
+    ];
+    args.extend(extra_args.iter().map(std::ffi::OsString::from));
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+    let text = String::from_utf8(stdout.snapshot()).unwrap();
+    assert!(text.contains("line_round_robin_v1"));
+    validate(&stdout.snapshot(), &preview_schema, &event_schema);
 }
 
+#[rstest::rstest]
+#[case::execution(&[], assert_event_schema_bytes)]
+#[case::preview(&["--dry-run"], assert_preview_schema_bytes)]
 #[tokio::test]
-async fn sample_public_reports_and_previews_match_current_schemas() {
+async fn sample_public_reports_and_previews_match_current_schemas(
+    #[case] extra_args: &[&str],
+    #[case] validate: fn(&[u8], &serde_json::Value, &serde_json::Value),
+) {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().join("project");
     std::fs::create_dir(&root).unwrap();
@@ -1775,41 +1851,23 @@ async fn sample_public_reports_and_previews_match_current_schemas() {
     std::fs::write(&plan, stdout.snapshot()).unwrap();
     let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
     let preview_schema = read_schema(&repo.join("docs/json-schema/verify-preview.schema.json"));
-    let mut reports = Vec::new();
-    for (dry, extra_args, expected_code) in [(false, &[][..], 0), (true, &["--dry-run"][..], 0)] {
-        stdout.clear();
-        stderr.clear();
-        let mut args = vec![
-            "hoimin".into(),
-            "verify".into(),
-            plan.as_os_str().to_owned(),
-            "--sample".into(),
-            "1".into(),
-            "--seed".into(),
-            "18446744073709551615".into(),
-        ];
-        args.extend(extra_args.iter().map(std::ffi::OsString::from));
-        let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
-        assert_eq!(
-            code,
-            expected_code,
-            "{}",
-            String::from_utf8_lossy(&stderr.snapshot())
-        );
-        let text = String::from_utf8(stdout.snapshot()).unwrap();
-        assert!(text.contains("splitmix64_fisher_yates_v1"));
-        reports.push((dry, stdout.snapshot()));
-    }
-    for (_, bytes) in reports.iter().filter(|(dry, _)| *dry) {
-        let document = serde_json::from_slice(bytes).unwrap();
-        assert_schema_valid(&preview_schema, &document, &event_schema);
-    }
-    for (_, bytes) in reports.iter().filter(|(dry, _)| !*dry) {
-        for line in std::str::from_utf8(bytes).unwrap().lines() {
-            let event = serde_json::from_str(line).unwrap();
-            assert_schema_valid(&event_schema, &event, &event_schema);
-        }
-    }
+    stdout.clear();
+    stderr.clear();
+    let mut args = vec![
+        "hoimin".into(),
+        "verify".into(),
+        plan.as_os_str().to_owned(),
+        "--sample".into(),
+        "1".into(),
+        "--seed".into(),
+        "18446744073709551615".into(),
+    ];
+    args.extend(extra_args.iter().map(std::ffi::OsString::from));
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+    let text = String::from_utf8(stdout.snapshot()).unwrap();
+    assert!(text.contains("splitmix64_fisher_yates_v1"));
+    validate(&stdout.snapshot(), &preview_schema, &event_schema);
 }
 
 // Each expansion is a runner-visible case, so one failure cannot hide later inputs.
@@ -1922,22 +1980,24 @@ proptest::proptest! {
     }
 }
 
-#[test]
-fn machine_diagnostic_preserves_transcript_and_ordinary_message_layout() {
+#[rstest::rstest]
+#[case::baseline_output_1("baseline.output")]
+#[case::ordinary_2("ordinary")]
+fn machine_diagnostic_preserves_transcript_and_ordinary_message_layout(#[case] code: &str) {
     let message = "baseline token=out offset=0:\n日本語\t\\u{1b}[31m\r\u{7f}\n";
-    for code in ["baseline.output", "ordinary"] {
-        let stderr = SharedWriter::default();
-        let mut handler = ReportHandler::new(io::sink(), stderr.clone());
-        emit(
-            &mut handler,
-            1,
-            OutputEvent::Diagnostic(Diagnostic::new("run", 1, "warn\x1b", code, message)),
-        );
-        let wire: serde_json::Value = serde_json::from_str(&stderr.text()).unwrap();
-        assert_eq!(wire["level"], "warn\x1b");
-        assert_eq!(wire["code"], code);
-        assert_eq!(wire["message"], message);
-    }
+
+    let stderr = SharedWriter::default();
+    let mut handler = ReportHandler::new(io::sink(), stderr.clone());
+    emit(
+        &mut handler,
+        1,
+        OutputEvent::Diagnostic(Diagnostic::new("run", 1, "warn\x1b", code, message)),
+    );
+    let wire: serde_json::Value = serde_json::from_str(&stderr.text()).unwrap();
+
+    assert_eq!(wire["level"], "warn\x1b");
+    assert_eq!(wire["code"], code);
+    assert_eq!(wire["message"], message);
 }
 
 fn assert_started_identifier(raw: &str, _escaped: &str, label: &str) {

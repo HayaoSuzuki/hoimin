@@ -15,28 +15,32 @@ fn multi_exit_source(depth: usize, leaf: &str) -> String {
     source
 }
 
-#[test]
-fn multi_exit_transfer_only_has_linear_statement_work() {
-    for depth in [1usize, 2, 4, 8, 12, 20] {
-        // Arrange: the reported homogeneous normal/return/implicit-exception family.
-        let source = multi_exit_source(depth, "x: int");
-        let parsed = parse_module(&source).unwrap();
-        let mut collector = AnnotationCollector::empty();
-        collector.record_annotations = false;
-        LOOP_STATEMENT_VISITS.set(0);
-        LOOP_ANNOTATION_VISITS.set(0);
+#[rstest::rstest]
+#[case::value_1usize(1usize)]
+#[case::value_2(2)]
+#[case::value_4(4)]
+#[case::value_8(8)]
+#[case::value_12(12)]
+#[case::value_20(20)]
+fn multi_exit_transfer_only_has_linear_statement_work(#[case] depth: usize) {
+    // Arrange: the reported homogeneous normal/return/implicit-exception family.
+    let source = multi_exit_source(depth, "x: int");
+    let parsed = parse_module(&source).unwrap();
+    let mut collector = AnnotationCollector::empty();
+    collector.record_annotations = false;
+    LOOP_STATEMENT_VISITS.set(0);
+    LOOP_ANNOTATION_VISITS.set(0);
 
-        // Act.
-        collector.visit_suite(&parsed.syntax().body);
+    // Act.
+    collector.visit_suite(&parsed.syntax().body);
 
-        // Assert: actual visits, independently of transfer bookkeeping.
-        assert_eq!(LOOP_ANNOTATION_VISITS.get(), 1, "depth={depth}");
-        assert!(
-            LOOP_STATEMENT_VISITS.get() <= 3 * depth + 2,
-            "depth={depth}: {} visits",
-            LOOP_STATEMENT_VISITS.get()
-        );
-    }
+    // Assert: actual visits, independently of transfer bookkeeping.
+    assert_eq!(LOOP_ANNOTATION_VISITS.get(), 1, "depth={depth}");
+    assert!(
+        LOOP_STATEMENT_VISITS.get() <= 3 * depth + 2,
+        "depth={depth}: {} visits",
+        LOOP_STATEMENT_VISITS.get()
+    );
 }
 
 #[test]
@@ -125,48 +129,71 @@ fn analyze(source: &str, selected: bool) -> (Vec<AnalyzerCandidate>, usize, usiz
     )
 }
 
-#[test]
-fn nested_finally_bounds_actual_statement_and_annotation_visits() {
-    for (wrapper, indent) in [("", ""), ("class C:\n", "    "), ("def f():\n", "    ")] {
-        for depth in [1, 2, 4, 8, 16, 17, 18, 19, 20] {
-            let mut source = String::from("from typing import Sequence\n");
-            source.push_str(wrapper);
-            for line in nested_source(depth).lines() {
-                source.push_str(indent);
-                source.push_str(line);
-                source.push('\n');
-            }
-            let (unselected, statements, leaves) = analyze(&source, false);
-            assert_eq!(unselected, Vec::new());
-            assert_eq!((statements, leaves), (0, 0));
-            let (candidates, statements, leaves) = analyze(&source, true);
-            assert_eq!(candidates.len(), 1);
-            assert_eq!(candidates[0].original, "Sequence[int]");
-            assert_eq!(candidates[0].replacement, "list[int]");
-            eprintln!("wrapper={wrapper:?} depth={depth} statements={statements} leaves={leaves}");
-            assert!(leaves <= depth + 1, "depth={depth}: {leaves} leaf visits");
-            assert!(
-                statements <= (depth + 1).pow(2) + 1 + usize::from(!wrapper.is_empty()),
-                "depth={depth}: {statements} statement visits"
-            );
-        }
+fn wrapped_nested_source(depth: usize, wrapper: &str, indent: &str) -> String {
+    let mut source = String::from("from typing import Sequence\n");
+    source.push_str(wrapper);
+    for line in nested_source(depth).lines() {
+        source.push_str(indent);
+        source.push_str(line);
+        source.push('\n');
     }
+    source
 }
 
-#[test]
-fn record_disabled_finally_visits_leaf_once() {
-    for depth in [1, 2, 4, 8, 20] {
-        let source = nested_source(depth);
-        let parsed = parse_module(&source).unwrap();
-        let mut collector = AnnotationCollector::empty();
-        collector.record_annotations = false;
-        LOOP_STATEMENT_VISITS.set(0);
-        LOOP_ANNOTATION_VISITS.set(0);
-        collector.visit_suite(&parsed.syntax().body);
-        assert!(collector.annotations.is_empty());
-        assert_eq!(LOOP_ANNOTATION_VISITS.get(), 1, "depth={depth}");
-        assert_eq!(LOOP_STATEMENT_VISITS.get(), 2 * depth + 1, "depth={depth}");
-    }
+#[rstest::rstest]
+#[case::module("", "")]
+#[case::class("class C:\n", "    ")]
+#[case::function("def f():\n", "    ")]
+fn nested_finally_bounds_actual_statement_and_annotation_visits(
+    #[case] wrapper: &str,
+    #[case] indent: &str,
+    #[values(1, 2, 4, 8, 16, 17, 18, 19, 20)] depth: usize,
+) {
+    let source = wrapped_nested_source(depth, wrapper, indent);
+
+    let (candidates, statements, leaves) = analyze(&source, true);
+
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].original, "Sequence[int]");
+    assert_eq!(candidates[0].replacement, "list[int]");
+    assert!(leaves <= depth + 1);
+    assert!(statements <= (depth + 1).pow(2) + 1 + usize::from(!wrapper.is_empty()));
+}
+
+#[rstest::rstest]
+#[case::module("", "")]
+#[case::class("class C:\n", "    ")]
+#[case::function("def f():\n", "    ")]
+fn unselected_nested_finally_skips_statement_and_annotation_visits(
+    #[case] wrapper: &str,
+    #[case] indent: &str,
+    #[values(1, 2, 4, 8, 16, 17, 18, 19, 20)] depth: usize,
+) {
+    let source = wrapped_nested_source(depth, wrapper, indent);
+
+    let (candidates, statements, leaves) = analyze(&source, false);
+
+    assert_eq!(candidates, Vec::new());
+    assert_eq!((statements, leaves), (0, 0));
+}
+
+#[rstest::rstest]
+#[case::value_1(1)]
+#[case::value_2(2)]
+#[case::value_4(4)]
+#[case::value_8(8)]
+#[case::value_20(20)]
+fn record_disabled_finally_visits_leaf_once(#[case] depth: usize) {
+    let source = nested_source(depth);
+    let parsed = parse_module(&source).unwrap();
+    let mut collector = AnnotationCollector::empty();
+    collector.record_annotations = false;
+    LOOP_STATEMENT_VISITS.set(0);
+    LOOP_ANNOTATION_VISITS.set(0);
+    collector.visit_suite(&parsed.syntax().body);
+    assert!(collector.annotations.is_empty());
+    assert_eq!(LOOP_ANNOTATION_VISITS.get(), 1, "depth={depth}");
+    assert_eq!(LOOP_STATEMENT_VISITS.get(), 2 * depth + 1, "depth={depth}");
 }
 
 struct OldRecordingGuard(bool);
@@ -257,118 +284,119 @@ fn observe(source: &str, old: bool) -> FlowObservation {
     observation
 }
 
+#[rstest::rstest]
+#[case::flow_1(
+    "from typing import Sequence\ntry:\n if a:\n  break\n elif b:\n  continue\n elif c:\n  return\n elif d:\n  raise Error\n hazard()\nfinally:\n try:\n  pass\n finally:\n  value: Sequence[int]\nafter: Sequence[int]\n"
+)]
+#[case::flow_2(
+    "from typing import Sequence\ntry:\n hazard()\n Sequence = unknown\nfinally:\n try:\n  pass\n finally:\n  value: Sequence[int]\nafter: Sequence[int]\n"
+)]
+#[case::flow_3(
+    "from typing import Sequence\nclass C:\n global Sequence\n try:\n  pass\n finally:\n  try:\n   pass\n  finally:\n   Sequence = unknown\n   def f(self, arg: Sequence[int]):\n    local: Sequence[int]\n   from typing import Sequence\n after: Sequence[int]\n"
+)]
+#[case::flow_4(
+    "from typing import Sequence\ntry:\n return\nfinally:\n try:\n  pass\n finally:\n  class C:\n   def f(self, arg: Sequence[int]):\n    local: Sequence[int]\n"
+)]
+fn finally_routing_preserves_callbacks_and_all_exit_categories(#[case] source: &str) {
+    let current = observe(source, false);
+    let reference = observe(source, true);
+    let candidates = analyze(source, true).0;
+    let reference_candidates = {
+        let _guard = OldRecordingGuard::enabled(true);
+        analyze(source, true).0
+    };
+
+    assert_eq!(current, reference);
+    assert_ne!(current.annotations, Vec::new());
+    assert_eq!(candidates, reference_candidates);
+}
+
 #[test]
-fn finally_routing_preserves_callbacks_and_all_exit_categories() {
-    let cases = [
-        "from typing import Sequence\ntry:\n if a:\n  break\n elif b:\n  continue\n elif c:\n  return\n elif d:\n  raise Error\n hazard()\nfinally:\n try:\n  pass\n finally:\n  value: Sequence[int]\nafter: Sequence[int]\n",
-        "from typing import Sequence\ntry:\n hazard()\n Sequence = unknown\nfinally:\n try:\n  pass\n finally:\n  value: Sequence[int]\nafter: Sequence[int]\n",
-        "from typing import Sequence\nclass C:\n global Sequence\n try:\n  pass\n finally:\n  try:\n   pass\n  finally:\n   Sequence = unknown\n   def f(self, arg: Sequence[int]):\n    local: Sequence[int]\n   from typing import Sequence\n after: Sequence[int]\n",
-        "from typing import Sequence\ntry:\n return\nfinally:\n try:\n  pass\n finally:\n  class C:\n   def f(self, arg: Sequence[int]):\n    local: Sequence[int]\n",
-    ];
-    for source in cases {
-        let current = observe(source, false);
-        assert_eq!(current, observe(source, true), "{source}");
-        assert_ne!(current.annotations, Vec::new());
-        assert_eq!(analyze(source, true).0, {
-            let _guard = OldRecordingGuard::enabled(true);
-            analyze(source, true).0
-        });
-    }
-    let stable = observe(cases[0], false);
-    assert!(stable.annotations.iter().all(|(_, _, facts)| {
+fn stable_finally_routing_keeps_import_provenance_for_every_callback() {
+    let source = "from typing import Sequence\ntry:\n if a:\n  break\n elif b:\n  continue\n elif c:\n  return\n elif d:\n  raise Error\n hazard()\nfinally:\n try:\n  pass\n finally:\n  value: Sequence[int]\nafter: Sequence[int]\n";
+
+    let observation = observe(source, false);
+
+    assert!(observation.annotations.iter().all(|(_, _, facts)| {
         facts
             .iter()
             .any(|fact| fact == "direct:Sequence=typing.Sequence")
     }));
-    let mixed = observe(cases[1], false);
+}
+
+#[test]
+fn shadowed_finally_routing_removes_import_provenance_from_first_callback() {
+    let source = "from typing import Sequence\ntry:\n hazard()\n Sequence = unknown\nfinally:\n try:\n  pass\n finally:\n  value: Sequence[int]\nafter: Sequence[int]\n";
+
+    let observation = observe(source, false);
+
     assert!(
-        !mixed.annotations[0]
+        !observation.annotations[0]
             .2
             .iter()
             .any(|fact| fact == "direct:Sequence=typing.Sequence")
     );
-
-    // A nested abrupt finally overrides each pending exit, including implicit
-    // exceptions; assert categories independently of the old implementation.
-    for pending in [
-        "pass",
-        "break",
-        "continue",
-        "return",
-        "raise Error",
-        "hazard()",
-    ] {
-        for replacement in ["break", "continue", "return", "raise Error"] {
-            let source =
-                format!("try:\n {pending}\nfinally:\n try:\n  pass\n finally:\n  {replacement}\n");
-            let current = observe(&source, false);
-            assert_eq!(current, observe(&source, true), "{source}");
-            assert!(current.explicit.fallthrough.is_empty(), "{source}");
-            assert_eq!(
-                !current.explicit.breaks.is_empty(),
-                replacement == "break",
-                "{source}"
-            );
-            assert_eq!(
-                !current.explicit.continues.is_empty(),
-                replacement == "continue",
-                "{source}"
-            );
-            assert_eq!(
-                !current.raises.is_empty(),
-                replacement == "raise Error",
-                "{source}"
-            );
-            // The legacy snapshot combines explicit raises with returns.
-            assert_eq!(
-                !current.explicit.terminates.is_empty(),
-                matches!(replacement, "return" | "raise Error"),
-                "{source}"
-            );
-        }
-    }
-    for pending in [
-        "pass",
-        "break",
-        "continue",
-        "return",
-        "raise Error",
-        "hazard()",
-    ] {
-        for replacement in ["break", "continue", "return"] {
-            let source =
-                format!("try:\n {pending}\nfinally:\n try:\n  pass\n finally:\n  {replacement}\n");
-
-            let current = observe(&source, false);
-
-            assert!(
-                current.implicit.is_none(),
-                "pending exception survived: {source}"
-            );
-        }
-    }
 }
 
-#[test]
-fn empty_entry_finally_records_only_when_enabled() {
+#[rstest::rstest]
+#[case::breaks("break", true, false, false, false)]
+#[case::continues("continue", false, true, false, false)]
+#[case::returns("return", false, false, false, true)]
+#[case::raises("raise Error", false, false, true, true)]
+fn nested_abrupt_finally_overrides_pending_exit(
+    #[values("pass", "break", "continue", "return", "raise Error", "hazard()")] pending: &str,
+    #[case] replacement: &str,
+    #[case] breaks: bool,
+    #[case] continues: bool,
+    #[case] raises: bool,
+    #[case] terminates: bool,
+) {
+    let source = format!("try:\n {pending}\nfinally:\n try:\n  pass\n finally:\n  {replacement}\n");
+
+    let current = observe(&source, false);
+    let reference = observe(&source, true);
+
+    assert_eq!(current, reference);
+    assert_eq!(current.explicit.fallthrough, Vec::<Vec<String>>::new());
+    assert_eq!(!current.explicit.breaks.is_empty(), breaks);
+    assert_eq!(!current.explicit.continues.is_empty(), continues);
+    assert_eq!(!current.raises.is_empty(), raises);
+    assert_eq!(!current.explicit.terminates.is_empty(), terminates);
+}
+
+#[rstest::rstest]
+fn nested_abrupt_finally_removes_pending_implicit_exception(
+    #[values("pass", "break", "continue", "return", "raise Error", "hazard()")] pending: &str,
+    #[values("break", "continue", "return")] replacement: &str,
+) {
+    let source = format!("try:\n {pending}\nfinally:\n try:\n  pass\n finally:\n  {replacement}\n");
+
+    let current = observe(&source, false);
+
+    assert!(current.implicit.is_none());
+}
+
+#[rstest::rstest]
+#[case::disabled(false)]
+#[case::enabled(true)]
+fn empty_entry_finally_records_only_when_enabled(#[case] record: bool) {
     let parsed = parse_module("value: Sequence[int]\n").unwrap();
-    for record in [false, true] {
-        let mut collector = AnnotationCollector::empty();
-        collector.record_annotations = record;
-        LOOP_STATEMENT_VISITS.set(0);
-        LOOP_ANNOTATION_VISITS.set(0);
-        let exits = collector.apply_finally(ControlFlowExits::default(), &parsed.syntax().body);
-        assert_eq!(LOOP_ANNOTATION_VISITS.get(), usize::from(record));
-        assert_eq!(collector.annotations.len(), usize::from(record));
-        assert!(exits.fallthrough.is_none());
-        assert!(
-            exits.breaks.is_empty()
-                && exits.continues.is_empty()
-                && exits.terminates.is_empty()
-                && exits.raises.is_empty()
-                && exits.implicit_raises.is_none()
-        );
-    }
+
+    let mut collector = AnnotationCollector::empty();
+    collector.record_annotations = record;
+    LOOP_STATEMENT_VISITS.set(0);
+    LOOP_ANNOTATION_VISITS.set(0);
+    let exits = collector.apply_finally(ControlFlowExits::default(), &parsed.syntax().body);
+    assert_eq!(LOOP_ANNOTATION_VISITS.get(), usize::from(record));
+    assert_eq!(collector.annotations.len(), usize::from(record));
+    assert!(exits.fallthrough.is_none());
+    assert!(
+        exits.breaks.is_empty()
+            && exits.continues.is_empty()
+            && exits.terminates.is_empty()
+            && exits.raises.is_empty()
+            && exits.implicit_raises.is_none()
+    );
 }
 
 struct SharingGuard(bool);
@@ -393,94 +421,101 @@ fn reset_finally_work() {
     LOOP_ANNOTATION_VISITS.set(0);
 }
 
-#[test]
-fn multi_exit_recording_has_quadratic_work_and_constant_vectors() {
-    for leaf in ["x: int", "pass"] {
-        for depth in [1usize, 2, 4, 8, 12, 20] {
-            // Arrange.
-            let source = multi_exit_source(depth, leaf);
-            let parsed = parse_module(&source).unwrap();
-            let mut collector = AnnotationCollector::empty();
-            reset_finally_work();
+#[rstest::rstest]
+#[case::annotation("x: int", 1)]
+#[case::pass("pass", 0)]
+fn multi_exit_recording_has_quadratic_work_and_constant_vectors(
+    #[case] leaf: &str,
+    #[case] annotation_count: usize,
+    #[values(1, 2, 4, 8, 12, 20)] depth: usize,
+) {
+    // Arrange.
+    let source = multi_exit_source(depth, leaf);
+    let parsed = parse_module(&source).unwrap();
+    let mut collector = AnnotationCollector::empty();
+    reset_finally_work();
 
-            // Act.
-            collector.visit_suite(&parsed.syntax().body);
+    // Act.
+    collector.visit_suite(&parsed.syntax().body);
 
-            // Assert: the actual raw vector peak is measured before normalization.
-            let statements = LOOP_STATEMENT_VISITS.get();
-            let leaves = LOOP_ANNOTATION_VISITS.get();
-            let misses = finally_work::MISSES.get();
-            let hits = finally_work::HITS.get();
-            let peak = finally_work::MAX_VECTOR.get();
-            eprintln!(
-                "multi record depth={depth} leaf={leaf:?} statements={statements} leaves={leaves} misses={misses} hits={hits} max_vector={peak}"
-            );
-            assert!(statements <= 3 * (depth + 1).pow(2) + 2);
-            assert_eq!(leaves, if leaf == "pass" { 0 } else { depth + 1 });
-            assert_eq!(collector.annotations.len(), usize::from(leaf != "pass"));
-            assert!(misses <= depth * (depth + 1) / 2);
-            assert!(hits > 0);
-            assert!(peak <= 4);
-        }
-    }
+    // Assert: the actual raw vector peak is measured before normalization.
+    let statements = LOOP_STATEMENT_VISITS.get();
+    let leaves = LOOP_ANNOTATION_VISITS.get();
+    let misses = finally_work::MISSES.get();
+    let hits = finally_work::HITS.get();
+    let peak = finally_work::MAX_VECTOR.get();
+    eprintln!(
+        "multi record depth={depth} leaf={leaf:?} statements={statements} leaves={leaves} misses={misses} hits={hits} max_vector={peak}"
+    );
+    assert!(statements <= 3 * (depth + 1).pow(2) + 2);
+    assert_eq!(leaves, annotation_count * (depth + 1));
+    assert_eq!(collector.annotations.len(), annotation_count);
+    assert!(misses <= depth * (depth + 1) / 2);
+    assert!(hits > 0);
+    assert!(peak <= 4);
 }
 
-#[test]
-fn multi_exit_transfer_vectors_and_misses_are_bounded() {
-    for depth in [1usize, 2, 4, 8, 12, 20] {
-        // Arrange: inspect the function body exits instead of swallowing them at def.
-        let source = multi_exit_source(depth, "x: int");
-        let parsed = parse_module(&source).unwrap();
-        let Stmt::FunctionDef(definition) = &parsed.syntax().body[0] else {
-            panic!()
-        };
-        let mut collector = AnnotationCollector::empty();
-        collector.record_annotations = false;
-        reset_finally_work();
+#[rstest::rstest]
+#[case::value_1usize(1usize)]
+#[case::value_2(2)]
+#[case::value_4(4)]
+#[case::value_8(8)]
+#[case::value_12(12)]
+#[case::value_20(20)]
+fn multi_exit_transfer_vectors_and_misses_are_bounded(#[case] depth: usize) {
+    // Arrange: inspect the function body exits instead of swallowing them at def.
+    let source = multi_exit_source(depth, "x: int");
+    let parsed = parse_module(&source).unwrap();
+    let Stmt::FunctionDef(definition) = &parsed.syntax().body[0] else {
+        panic!()
+    };
+    let mut collector = AnnotationCollector::empty();
+    collector.record_annotations = false;
+    reset_finally_work();
 
-        // Act.
-        let exits = collector.visit_suite_flow(&definition.body);
+    // Act.
+    let exits = collector.visit_suite_flow(&definition.body);
 
-        // Assert.
-        eprintln!(
-            "multi transfer depth={depth} statements={} leaves={} misses={} hits={} max_vector={}",
-            LOOP_STATEMENT_VISITS.get(),
-            LOOP_ANNOTATION_VISITS.get(),
-            finally_work::MISSES.get(),
-            finally_work::HITS.get(),
-            finally_work::MAX_VECTOR.get()
-        );
-        assert_eq!(finally_work::MISSES.get(), depth);
-        assert_eq!(finally_work::HITS.get(), 2 * depth);
-        assert_eq!(LOOP_STATEMENT_VISITS.get(), 3 * depth + 1);
-        assert!(finally_work::MAX_VECTOR.get() <= 4);
-        assert_eq!(exits.terminates.len(), 1);
-        assert!(exits.breaks.is_empty() && exits.continues.is_empty() && exits.raises.is_empty());
-        assert!(exits.fallthrough.is_some() && exits.implicit_raises.is_some());
-    }
+    // Assert.
+    eprintln!(
+        "multi transfer depth={depth} statements={} leaves={} misses={} hits={} max_vector={}",
+        LOOP_STATEMENT_VISITS.get(),
+        LOOP_ANNOTATION_VISITS.get(),
+        finally_work::MISSES.get(),
+        finally_work::HITS.get(),
+        finally_work::MAX_VECTOR.get()
+    );
+    assert_eq!(finally_work::MISSES.get(), depth);
+    assert_eq!(finally_work::HITS.get(), 2 * depth);
+    assert_eq!(LOOP_STATEMENT_VISITS.get(), 3 * depth + 1);
+    assert!(finally_work::MAX_VECTOR.get() <= 4);
+    assert_eq!(exits.terminates.len(), 1);
+    assert!(exits.breaks.is_empty() && exits.continues.is_empty() && exits.raises.is_empty());
+    assert!(exits.fallthrough.is_some() && exits.implicit_raises.is_some());
 }
 
-#[test]
-fn small_unoptimized_reference_exceeds_work_bound_with_identical_candidates() {
-    for depth in [1usize, 2, 4] {
-        // Arrange.
-        let source = multi_exit_source(depth, "x: Sequence[int]");
-        let source = format!("from typing import Sequence\n{source}");
-        reset_finally_work();
+#[rstest::rstest]
+#[case::value_1usize(1usize)]
+#[case::value_2(2)]
+#[case::value_4(4)]
+fn small_unoptimized_reference_exceeds_work_bound_with_identical_candidates(#[case] depth: usize) {
+    // Arrange.
+    let source = multi_exit_source(depth, "x: Sequence[int]");
+    let source = format!("from typing import Sequence\n{source}");
+    reset_finally_work();
 
-        // Act.
-        let current = analyze(&source, true);
-        let hits = finally_work::HITS.get();
-        let _guard = SharingGuard::disabled();
-        let reference = analyze(&source, true);
+    // Act.
+    let current = analyze(&source, true);
+    let hits = finally_work::HITS.get();
+    let _guard = SharingGuard::disabled();
+    let reference = analyze(&source, true);
 
-        // Assert: complete descriptors include ID, span, replacement, symbol and order.
-        assert_eq!(current.0, reference.0);
-        assert_eq!(current.0.len(), 1);
-        assert!(hits > 0);
-        assert!(reference.1 > current.1);
-        assert!(reference.2 > depth + 1);
-    }
+    // Assert: complete descriptors include ID, span, replacement, symbol and order.
+    assert_eq!(current.0, reference.0);
+    assert_eq!(current.0.len(), 1);
+    assert!(hits > 0);
+    assert!(reference.1 > current.1);
+    assert!(reference.2 > depth + 1);
 }
 
 fn membership(exits: &ControlFlowExits) -> [bool; 6] {
@@ -509,35 +544,38 @@ fn pending_exit(category: usize) -> ControlFlowExits {
     exits
 }
 
-#[test]
-fn finally_category_table_preserves_or_overrides_each_pending_completion() {
-    for pending in 0..6 {
-        for (replacement, body) in ["pass", "break", "continue", "return", "raise"]
-            .iter()
-            .enumerate()
-        {
-            // Arrange: no ambient implicit tracking; test the routing law independently.
-            let parsed = parse_module(body).unwrap();
-            let mut collector = AnnotationCollector::empty();
-            collector.record_annotations = false;
-            let mut expected = [false; 6];
-            expected[if replacement == 0 {
-                pending
-            } else {
-                replacement
-            }] = true;
+#[rstest::rstest]
+fn normal_finally_preserves_pending_completion(#[values(0, 1, 2, 3, 4, 5)] pending: usize) {
+    let parsed = parse_module("pass").unwrap();
+    let mut collector = AnnotationCollector::empty();
+    collector.record_annotations = false;
+    let mut expected = [false; 6];
+    expected[pending] = true;
 
-            // Act.
-            let actual = collector.apply_finally(pending_exit(pending), &parsed.syntax().body);
+    let actual = collector.apply_finally(pending_exit(pending), &parsed.syntax().body);
 
-            // Assert: successful returns and explicit/implicit raises stay separate.
-            assert_eq!(
-                membership(&actual),
-                expected,
-                "pending={pending}, finally={body}"
-            );
-        }
-    }
+    assert_eq!(membership(&actual), expected);
+}
+
+#[rstest::rstest]
+#[case::breaks("break", 1)]
+#[case::continues("continue", 2)]
+#[case::returns("return", 3)]
+#[case::raises("raise", 4)]
+fn abrupt_finally_overrides_pending_completion(
+    #[values(0, 1, 2, 3, 4, 5)] pending: usize,
+    #[case] body: &str,
+    #[case] replacement: usize,
+) {
+    let parsed = parse_module(body).unwrap();
+    let mut collector = AnnotationCollector::empty();
+    collector.record_annotations = false;
+    let mut expected = [false; 6];
+    expected[replacement] = true;
+
+    let actual = collector.apply_finally(pending_exit(pending), &parsed.syntax().body);
+
+    assert_eq!(membership(&actual), expected);
 }
 
 #[test]
@@ -563,53 +601,62 @@ fn identical_imports_hit_across_all_pending_categories_without_flattening() {
     );
 }
 
-#[test]
-fn distinct_typed_imports_are_not_deduplicated_or_reused() {
-    let bindings = [
-        KnownBinding::Direct("typing.Sequence".into()),
-        KnownBinding::Direct("typing.Mapping".into()),
-        KnownBinding::Module("typing".into()),
-        KnownBinding::Module("collections.abc".into()),
-        KnownBinding::TypeVar,
-    ];
-    for first in &bindings {
-        for second in &bindings {
-            if first == second {
-                continue;
-            }
-            // Arrange: A/B/A tests one-slot eviction as well as exact typed keys.
-            let a = KnownImports {
-                bindings: HashMap::from([("T".into(), first.clone())]),
-            };
-            let b = KnownImports {
-                bindings: HashMap::from([("T".into(), second.clone())]),
-            };
-            let parsed = parse_module("pass").unwrap();
-            let mut collector = AnnotationCollector::empty();
-            collector.record_annotations = false;
-            let entries = ControlFlowExits {
-                fallthrough: Some(a.clone()),
-                breaks: vec![b.clone()],
-                continues: vec![a.clone()],
-                terminates: vec![a.clone(), b.clone(), a.clone()],
-                ..ControlFlowExits::default()
-            };
-            reset_finally_work();
+#[rstest::rstest]
+#[case::sequence_then_mapping(KnownBinding::Direct("typing.Sequence".into()), KnownBinding::Direct("typing.Mapping".into()))]
+#[case::sequence_then_typing_module(KnownBinding::Direct("typing.Sequence".into()), KnownBinding::Module("typing".into()))]
+#[case::sequence_then_collections_module(KnownBinding::Direct("typing.Sequence".into()), KnownBinding::Module("collections.abc".into()))]
+#[case::sequence_then_typevar(KnownBinding::Direct("typing.Sequence".into()), KnownBinding::TypeVar)]
+#[case::mapping_then_sequence(KnownBinding::Direct("typing.Mapping".into()), KnownBinding::Direct("typing.Sequence".into()))]
+#[case::mapping_then_typing_module(KnownBinding::Direct("typing.Mapping".into()), KnownBinding::Module("typing".into()))]
+#[case::mapping_then_collections_module(KnownBinding::Direct("typing.Mapping".into()), KnownBinding::Module("collections.abc".into()))]
+#[case::mapping_then_typevar(KnownBinding::Direct("typing.Mapping".into()), KnownBinding::TypeVar)]
+#[case::typing_module_then_sequence(KnownBinding::Module("typing".into()), KnownBinding::Direct("typing.Sequence".into()))]
+#[case::typing_module_then_mapping(KnownBinding::Module("typing".into()), KnownBinding::Direct("typing.Mapping".into()))]
+#[case::typing_module_then_collections_module(KnownBinding::Module("typing".into()), KnownBinding::Module("collections.abc".into()))]
+#[case::typing_module_then_typevar(KnownBinding::Module("typing".into()), KnownBinding::TypeVar)]
+#[case::collections_module_then_sequence(KnownBinding::Module("collections.abc".into()), KnownBinding::Direct("typing.Sequence".into()))]
+#[case::collections_module_then_mapping(KnownBinding::Module("collections.abc".into()), KnownBinding::Direct("typing.Mapping".into()))]
+#[case::collections_module_then_typing_module(KnownBinding::Module("collections.abc".into()), KnownBinding::Module("typing".into()))]
+#[case::collections_module_then_typevar(KnownBinding::Module("collections.abc".into()), KnownBinding::TypeVar)]
+#[case::typevar_then_sequence(KnownBinding::TypeVar, KnownBinding::Direct("typing.Sequence".into()))]
+#[case::typevar_then_mapping(KnownBinding::TypeVar, KnownBinding::Direct("typing.Mapping".into()))]
+#[case::typevar_then_typing_module(KnownBinding::TypeVar, KnownBinding::Module("typing".into()))]
+#[case::typevar_then_collections_module(KnownBinding::TypeVar, KnownBinding::Module("collections.abc".into()))]
+fn distinct_typed_imports_are_not_deduplicated_or_reused(
+    #[case] first: KnownBinding,
+    #[case] second: KnownBinding,
+) {
+    // Arrange: A/B/A tests one-slot eviction as well as exact typed keys.
+    let a = KnownImports {
+        bindings: HashMap::from([("T".into(), first)]),
+    };
+    let b = KnownImports {
+        bindings: HashMap::from([("T".into(), second)]),
+    };
+    let parsed = parse_module("pass").unwrap();
+    let mut collector = AnnotationCollector::empty();
+    collector.record_annotations = false;
+    let entries = ControlFlowExits {
+        fallthrough: Some(a.clone()),
+        breaks: vec![b.clone()],
+        continues: vec![a.clone()],
+        terminates: vec![a.clone(), b.clone(), a.clone()],
+        ..ControlFlowExits::default()
+    };
+    reset_finally_work();
 
-            // Act.
-            let actual = collector.apply_finally(entries, &parsed.syntax().body);
+    // Act.
+    let actual = collector.apply_finally(entries, &parsed.syntax().body);
 
-            // Assert: last-occurrence normalization preserves both distinct return states.
-            assert_eq!(actual.fallthrough, Some(a.clone()));
-            assert_eq!(actual.breaks, vec![b.clone()]);
-            assert_eq!(actual.continues, vec![a.clone()]);
-            assert_eq!(actual.terminates, vec![b, a]);
-            assert_eq!(
-                (finally_work::MISSES.get(), finally_work::HITS.get()),
-                (5, 0)
-            );
-        }
-    }
+    // Assert: last-occurrence normalization preserves both distinct return states.
+    assert_eq!(actual.fallthrough, Some(a.clone()));
+    assert_eq!(actual.breaks, vec![b.clone()]);
+    assert_eq!(actual.continues, vec![a.clone()]);
+    assert_eq!(actual.terminates, vec![b, a]);
+    assert_eq!(
+        (finally_work::MISSES.get(), finally_work::HITS.get()),
+        (5, 0)
+    );
 }
 
 #[test]
@@ -640,60 +687,58 @@ fn abrupt_cache_hit_restores_residual_imports_for_unreachable_annotations() {
     );
 }
 
-#[test]
-fn generated_distinct_binding_flows_preserve_production_callbacks_and_candidates() {
-    for binding in [
-        "from typing import Sequence",
-        "import typing as Sequence",
-        "Sequence = unknown",
-    ] {
-        for completion in ["pass", "return", "raise Error", "break", "continue"] {
-            // Arrange: multiple annotations and nested scopes give provenance/order evidence.
-            let source = format!(
-                "from typing import Sequence\nbefore: Sequence[int]\ndef f[T]():\n try:\n  if c:\n   {binding}\n   {completion}\n finally:\n  try:\n   if d:\n    return\n  finally:\n   value: Sequence[int]\n   class C:\n    def method(self, arg: Sequence[int]):\n     local: Sequence[int]\nafter: Sequence[int]\n"
-            );
-            reset_finally_work();
+#[rstest::rstest]
+#[case::from_typing_import_sequence("from typing import Sequence")]
+#[case::import_typing_as_sequence("import typing as Sequence")]
+#[case::sequence_unknown("Sequence = unknown")]
+fn generated_distinct_binding_flows_preserve_production_callbacks_and_candidates(
+    #[case] binding: &str,
+    #[values("pass", "return", "raise Error", "break", "continue")] completion: &str,
+) {
+    // Arrange: multiple annotations and nested scopes give provenance/order evidence.
+    let source = format!(
+        "from typing import Sequence\nbefore: Sequence[int]\ndef f[T]():\n try:\n  if c:\n   {binding}\n   {completion}\n finally:\n  try:\n   if d:\n    return\n  finally:\n   value: Sequence[int]\n   class C:\n    def method(self, arg: Sequence[int]):\n     local: Sequence[int]\nafter: Sequence[int]\n"
+    );
+    reset_finally_work();
 
-            // Act.
-            let current = observe(&source, false);
-            let candidates = analyze(&source, true).0;
-            let hits = finally_work::HITS.get();
-            let _guard = SharingGuard::disabled();
-            let reference = observe(&source, false);
-            let reference_candidates = analyze(&source, true).0;
+    // Act.
+    let current = observe(&source, false);
+    let candidates = analyze(&source, true).0;
+    let hits = finally_work::HITS.get();
+    let _guard = SharingGuard::disabled();
+    let reference = observe(&source, false);
+    let reference_candidates = analyze(&source, true).0;
 
-            // Assert: no test observer hooks were installed; these are actual cache hits.
-            assert!(hits > 0);
-            assert_eq!(current, reference, "{source}");
-            assert_eq!(candidates, reference_candidates, "{source}");
-            assert!(
-                candidates
-                    .windows(2)
-                    .all(|pair| pair[0].span.start < pair[1].span.start)
-            );
-        }
-    }
+    // Assert: no test observer hooks were installed; these are actual cache hits.
+    assert!(hits > 0);
+    assert_eq!(current, reference, "{source}");
+    assert_eq!(candidates, reference_candidates, "{source}");
+    assert!(
+        candidates
+            .windows(2)
+            .all(|pair| pair[0].span.start < pair[1].span.start)
+    );
 }
 
-#[test]
-fn class_fallback_mutation_bypasses_reuse_and_normalization() {
-    for declaration in ["global Sequence", "nonlocal Sequence"] {
-        // Arrange: global/nonlocal projection and method fallback execute in class context.
-        let source = format!(
-            "from typing import Sequence\ndef outer():\n from typing import Sequence\n class C[T]:\n  {declaration}\n  try:\n   if c:\n    raise Error\n  finally:\n   Sequence = unknown\n   def method(self, arg: Sequence[int]):\n    local: Sequence[int]\n   from typing import Sequence\n  after: Sequence[int]\n"
-        );
-        reset_finally_work();
+#[rstest::rstest]
+#[case::global_sequence("global Sequence")]
+#[case::nonlocal_sequence("nonlocal Sequence")]
+fn class_fallback_mutation_bypasses_reuse_and_normalization(#[case] declaration: &str) {
+    // Arrange: global/nonlocal projection and method fallback execute in class context.
+    let source = format!(
+        "from typing import Sequence\ndef outer():\n from typing import Sequence\n class C[T]:\n  {declaration}\n  try:\n   if c:\n    raise Error\n  finally:\n   Sequence = unknown\n   def method(self, arg: Sequence[int]):\n    local: Sequence[int]\n   from typing import Sequence\n  after: Sequence[int]\n"
+    );
+    reset_finally_work();
 
-        // Act.
-        let actual = observe(&source, false);
-        let hits = finally_work::HITS.get();
-        let _guard = SharingGuard::disabled();
-        let reference = observe(&source, false);
+    // Act.
+    let actual = observe(&source, false);
+    let hits = finally_work::HITS.get();
+    let _guard = SharingGuard::disabled();
+    let reference = observe(&source, false);
 
-        // Assert.
-        assert_eq!(actual, reference);
-        assert_eq!(hits, 0);
-    }
+    // Assert.
+    assert_eq!(actual, reference);
+    assert_eq!(hits, 0);
 }
 
 #[test]
@@ -782,24 +827,28 @@ fn cached_finally_entry_still_polls_cancellation() {
     assert_eq!(LOOP_STATEMENT_VISITS.get(), 1);
 }
 
-#[test]
-fn unselected_type_operators_skip_multi_exit_annotation_work() {
-    for depth in [1, 2, 4, 8, 12, 20] {
-        // Arrange.
-        let source = multi_exit_source(depth, "x: int");
-        reset_finally_work();
+#[rstest::rstest]
+#[case::value_1(1)]
+#[case::value_2(2)]
+#[case::value_4(4)]
+#[case::value_8(8)]
+#[case::value_12(12)]
+#[case::value_20(20)]
+fn unselected_type_operators_skip_multi_exit_annotation_work(#[case] depth: usize) {
+    // Arrange.
+    let source = multi_exit_source(depth, "x: int");
+    reset_finally_work();
 
-        // Act.
-        let (candidates, statements, annotations) = analyze(&source, false);
+    // Act.
+    let (candidates, statements, annotations) = analyze(&source, false);
 
-        // Assert.
-        assert_eq!(candidates, Vec::new());
-        assert_eq!((statements, annotations), (0, 0));
-        assert_eq!(
-            (finally_work::MISSES.get(), finally_work::HITS.get()),
-            (0, 0)
-        );
-    }
+    // Assert.
+    assert_eq!(candidates, Vec::new());
+    assert_eq!((statements, annotations), (0, 0));
+    assert_eq!(
+        (finally_work::MISSES.get(), finally_work::HITS.get()),
+        (0, 0)
+    );
 }
 
 #[test]
@@ -834,60 +883,68 @@ fn observed_payload_failure_keeps_priority_over_later_cancellation() {
     assert_eq!(result.err(), Some(AnalysisError::PayloadLimit { limit: 1 }));
 }
 
-#[test]
-fn observer_and_mutation_hooks_bypass_reuse_and_normalization() {
-    for hook in 0..4 {
-        // Arrange.
-        let parsed = parse_module("pass").unwrap();
-        let mut collector = AnnotationCollector::empty();
-        collector.record_annotations = false;
-        match hook {
-            0 => {
-                collector.marker_projection = Some(BindingFlowMarkerProjection {
-                    source: "pass".into(),
-                    marker: 0..4,
-                    line_start: 0,
-                    entry: None,
-                });
-            }
-            1 => {
-                collector.handler_exit_projection = Some(BindingFlowHandlerExitProjection {
-                    source: "pass".into(),
-                    marker: 0..4,
-                    line_start: 0,
-                    category: ExitCategory::Terminate,
-                    matching_handlers: 0,
-                    matched_handler: None,
-                    states: vec![],
-                });
-            }
-            2 => {
-                collector.try_exit_projection = Some(BindingFlowTryExitProjection {
-                    marker: 0..4,
-                    matching_tries: 0,
-                    matched_try: None,
-                    exits: None,
-                });
-            }
-            3 => collector.test_mutation = Some(BindingFlowTestMutation::OmitLoopContinueBackEdge),
-            _ => unreachable!(),
-        }
-        let entries = ControlFlowExits {
-            terminates: vec![KnownImports::default(), KnownImports::default()],
-            ..ControlFlowExits::default()
-        };
-        reset_finally_work();
+fn marker_projection(collector: &mut AnnotationCollector<'_, '_>) {
+    collector.marker_projection = Some(BindingFlowMarkerProjection {
+        source: "pass".into(),
+        marker: 0..4,
+        line_start: 0,
+        entry: None,
+    });
+}
 
-        // Act.
-        let actual = collector.apply_finally(entries, &parsed.syntax().body);
+fn handler_projection(collector: &mut AnnotationCollector<'_, '_>) {
+    collector.handler_exit_projection = Some(BindingFlowHandlerExitProjection {
+        source: "pass".into(),
+        marker: 0..4,
+        line_start: 0,
+        category: ExitCategory::Terminate,
+        matching_handlers: 0,
+        matched_handler: None,
+        states: vec![],
+    });
+}
 
-        // Assert.
-        assert_eq!(actual.terminates.len(), 2);
-        assert_eq!(
-            (finally_work::MISSES.get(), finally_work::HITS.get()),
-            (2, 0)
-        );
-    }
+fn try_projection(collector: &mut AnnotationCollector<'_, '_>) {
+    collector.try_exit_projection = Some(BindingFlowTryExitProjection {
+        marker: 0..4,
+        matching_tries: 0,
+        matched_try: None,
+        exits: None,
+    });
+}
+
+fn mutation_hook(collector: &mut AnnotationCollector<'_, '_>) {
+    collector.test_mutation = Some(BindingFlowTestMutation::OmitLoopContinueBackEdge);
+}
+
+#[rstest::rstest]
+#[case::marker_projection(marker_projection)]
+#[case::handler_projection(handler_projection)]
+#[case::try_projection(try_projection)]
+#[case::mutation_hook(mutation_hook)]
+fn observer_and_mutation_hooks_bypass_reuse_and_normalization(
+    #[case] setup: fn(&mut AnnotationCollector<'_, '_>),
+) {
+    // Arrange.
+    let parsed = parse_module("pass").unwrap();
+    let mut collector = AnnotationCollector::empty();
+    collector.record_annotations = false;
+    setup(&mut collector);
+    let entries = ControlFlowExits {
+        terminates: vec![KnownImports::default(), KnownImports::default()],
+        ..ControlFlowExits::default()
+    };
+    reset_finally_work();
+
+    // Act.
+    let actual = collector.apply_finally(entries, &parsed.syntax().body);
+
+    // Assert.
+    assert_eq!(actual.terminates.len(), 2);
+    assert_eq!(
+        (finally_work::MISSES.get(), finally_work::HITS.get()),
+        (2, 0)
+    );
 }
 
 #[test]
@@ -986,22 +1043,7 @@ fn residual_order_aba_retains_last_transfer_imports() {
     assert_eq!(collector.imports, a);
 }
 
-fn three_state_words(maximum_len: u32) -> impl Iterator<Item = Vec<usize>> {
-    (0..=maximum_len).flat_map(|length| {
-        (0..3usize.pow(length)).map(move |mut encoded| {
-            (0..length)
-                .map(|_| {
-                    let digit = encoded % 3;
-                    encoded /= 3;
-                    digit
-                })
-                .collect()
-        })
-    })
-}
-
-#[test]
-fn residual_order_normalization_preserves_each_last_category_contributor() {
+fn assert_residual_order_normalization(word: &[usize]) {
     let states = [
         KnownBinding::Direct("typing.Sequence".into()),
         KnownBinding::Module("typing".into()),
@@ -1010,38 +1052,47 @@ fn residual_order_normalization_preserves_each_last_category_contributor() {
     .map(|binding| KnownImports {
         bindings: HashMap::from([("T".into(), binding)]),
     });
-    for word in three_state_words(5) {
-        // Arrange: independent index-based oracle keeps entries with no equal successor.
-        let original = word
-            .iter()
-            .map(|&index| states[index].clone())
-            .collect::<Vec<_>>();
-        let expected = original
-            .iter()
-            .enumerate()
-            .filter(|(index, state)| !original[index + 1..].contains(state))
-            .map(|(_, state)| state.clone())
-            .collect::<Vec<_>>();
-        let mut exits = ControlFlowExits {
-            breaks: original.clone(),
-            continues: original.clone(),
-            terminates: original.clone(),
-            raises: original,
-            ..ControlFlowExits::default()
-        };
+    // Arrange: independent index-based oracle keeps entries with no equal successor.
+    let original = word
+        .iter()
+        .map(|&index| states[index].clone())
+        .collect::<Vec<_>>();
+    let expected = original
+        .iter()
+        .enumerate()
+        .filter(|(index, state)| !original[index + 1..].contains(state))
+        .map(|(_, state)| state.clone())
+        .collect::<Vec<_>>();
+    let mut exits = ControlFlowExits {
+        breaks: original.clone(),
+        continues: original.clone(),
+        terminates: original.clone(),
+        raises: original,
+        ..ControlFlowExits::default()
+    };
 
-        // Act.
-        exits.deduplicate_abrupt();
+    // Act.
+    exits.deduplicate_abrupt();
 
-        // Assert: exact last-occurrence order and every possible subset's last contributor.
-        for actual in [
+    assert_eq!(
+        (
             &exits.breaks,
             &exits.continues,
             &exits.terminates,
-            &exits.raises,
-        ] {
-            assert_eq!(actual, &expected, "word={word:?}");
-            for contributors in 0..8 {
+            &exits.raises
+        ),
+        (&expected, &expected, &expected, &expected)
+    );
+    assert!(
+        [
+            &exits.breaks,
+            &exits.continues,
+            &exits.terminates,
+            &exits.raises
+        ]
+        .iter()
+        .all(|actual| {
+            (0..8).all(|contributors| {
                 let contributes = |state: &KnownImports| {
                     states.iter().enumerate().any(|(index, candidate)| {
                         contributors & (1 << index) != 0 && candidate == state
@@ -1053,9 +1104,29 @@ fn residual_order_normalization_preserves_each_last_category_contributor() {
                     .map(|&index| &states[index])
                     .find(|state| contributes(state));
                 let after = actual.iter().rev().find(|state| contributes(state));
-                assert_eq!(after, before, "word={word:?}, contributors={contributors}");
-            }
-        }
+                after == before
+            })
+        }),
+        "word={word:?}"
+    );
+}
+
+#[rstest::rstest]
+#[case::empty(vec![])]
+#[case::direct(vec![0])]
+#[case::module(vec![1])]
+#[case::typevar(vec![2])]
+#[case::aba(vec![0, 1, 0])]
+#[case::abcba(vec![0, 1, 2, 1, 0])]
+#[case::repeated(vec![2; 5])]
+fn residual_order_normalization_preserves_each_last_category_contributor(#[case] word: Vec<usize>) {
+    assert_residual_order_normalization(&word);
+}
+
+proptest::proptest! {
+    #[test]
+    fn generated_residual_order_normalization_preserves_last_contributors(word in proptest::collection::vec(0usize..3, 0..=16)) {
+        assert_residual_order_normalization(&word);
     }
 }
 
@@ -1082,41 +1153,78 @@ fn residual_order_source(word: &[usize], nested: bool) -> String {
     source
 }
 
-#[test]
-fn residual_order_generated_handlers_preserve_callbacks_and_full_candidates() {
-    for word in three_state_words(4) {
-        for nested in [false, true] {
-            // Arrange: literal handler types/bindings leave no implicit entry to hide the tail.
-            let source = residual_order_source(&word, nested);
-            let last = word.last().copied().unwrap_or(0);
+fn assert_residual_order_handlers(word: &[usize], nested: bool) {
+    // Arrange: literal handler types/bindings leave no implicit entry to hide the tail.
+    let source = residual_order_source(word, nested);
+    let last = word.last().copied().unwrap_or(0);
 
-            // Act.
-            let actual = observe(&source, false);
-            let candidates = analyze(&source, true).0;
-            let _guard = SharingGuard::disabled();
-            let reference = observe(&source, false);
-            let reference_candidates = analyze(&source, true).0;
+    // Act.
+    let actual = observe(&source, false);
+    let candidates = analyze(&source, true).0;
+    let _guard = SharingGuard::disabled();
+    let reference = observe(&source, false);
+    let reference_candidates = analyze(&source, true).0;
 
-            // Assert: independent expected facts as well as disabled-reference equality.
-            assert_eq!(actual, reference, "word={word:?}, nested={nested}");
-            assert_eq!(
-                candidates, reference_candidates,
-                "word={word:?}, nested={nested}"
-            );
-            assert_eq!(candidates.len(), usize::from(last != 1));
-            assert_eq!(actual.annotations.len(), 2);
-            assert_eq!(
-                actual.annotations[0]
-                    .2
-                    .contains(&"direct:Sequence=typing.Sequence".to_owned()),
-                last != 1
-            );
-            assert_eq!(
-                actual.annotations[1]
-                    .2
-                    .contains(&"direct:Mapping=typing.Mapping".to_owned()),
-                last != 2
-            );
-        }
+    // Assert: independent expected facts as well as disabled-reference equality.
+    assert_eq!(actual, reference, "word={word:?}, nested={nested}");
+    assert_eq!(
+        candidates, reference_candidates,
+        "word={word:?}, nested={nested}"
+    );
+    assert_eq!(candidates.len(), usize::from(last != 1));
+    assert_eq!(actual.annotations.len(), 2);
+    assert_eq!(
+        actual.annotations[0]
+            .2
+            .contains(&"direct:Sequence=typing.Sequence".to_owned()),
+        last != 1
+    );
+    assert_eq!(
+        actual.annotations[1]
+            .2
+            .contains(&"direct:Mapping=typing.Mapping".to_owned()),
+        last != 2
+    );
+}
+
+#[rstest::rstest]
+#[case::empty(vec![])]
+#[case::direct(vec![0])]
+#[case::sequence_shadow(vec![1])]
+#[case::mapping_shadow(vec![2])]
+#[case::sequence_aba(vec![1, 2, 1])]
+#[case::mapping_aba(vec![2, 1, 2])]
+#[case::four_handlers(vec![0, 1, 2, 0])]
+fn residual_order_generated_handlers_preserve_callbacks_and_full_candidates(
+    #[case] word: Vec<usize>,
+    #[values(false, true)] nested: bool,
+) {
+    assert_residual_order_handlers(&word, nested);
+}
+
+proptest::proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(64))]
+    #[test]
+    fn generated_residual_handlers_preserve_callbacks_and_candidates(
+        word in proptest::collection::vec(0usize..3, 0..=8), nested in proptest::bool::ANY,
+    ) {
+        assert_residual_order_handlers(&word, nested);
+    }
+}
+
+proptest::proptest! {
+    #[test]
+    fn generated_multi_exit_transfer_work_stays_linear(depth in 1usize..=24) {
+        let source = multi_exit_source(depth, "x: int");
+        let parsed = parse_module(&source).unwrap();
+        let mut collector = AnnotationCollector::empty();
+        collector.record_annotations = false;
+        LOOP_STATEMENT_VISITS.set(0);
+        LOOP_ANNOTATION_VISITS.set(0);
+
+        collector.visit_suite(&parsed.syntax().body);
+
+        proptest::prop_assert_eq!(LOOP_ANNOTATION_VISITS.get(), 1);
+        proptest::prop_assert!(LOOP_STATEMENT_VISITS.get() <= 3 * depth + 2);
     }
 }

@@ -164,6 +164,7 @@ fn record_measurement(unrelated: usize, history: usize) -> Measurement {
 fn record_streams_unrelated_history_with_bounded_queries_and_peak_rust_heap() {
     let small = record_measurement(0, 3);
     let large = record_measurement(192, 3);
+
     assert!(large.work.data_queries <= 3, "{large:?}");
     assert!(
         large.peak_rust_bytes <= small.peak_rust_bytes + 64 * 1024,
@@ -175,6 +176,7 @@ fn record_streams_unrelated_history_with_bounded_queries_and_peak_rust_heap() {
 fn record_retains_target_history_once_without_cloning_existing_events() {
     let short = record_measurement(0, 1);
     let long = record_measurement(0, 128);
+
     assert_eq!(long.work.cloned_events, 0, "{long:?}");
     assert!(long.work.data_queries <= 3, "{long:?}");
     assert!(long.peak_rust_bytes > short.peak_rust_bytes);
@@ -191,6 +193,7 @@ fn full_snapshot_uses_bounded_queries_without_decoding_history_twice() {
         .unwrap()
         .unwrap();
     let (snapshot, measured) = measure(|| store.snapshot().unwrap());
+
     assert_eq!(snapshot.len(), 193);
     assert_eq!(measured.work.key_decodes, 193);
     assert_eq!(measured.work.draft_decodes, 195);
@@ -270,42 +273,48 @@ async fn show_streams_unrelated_history_and_keeps_the_selected_history() {
     );
 }
 
-#[test]
-fn unrelated_corruption_is_rejected_and_append_rolls_back() {
-    for corruption in [
-        "UPDATE review_events SET draft_json='{}' WHERE candidate_id=?1",
-        "UPDATE review_events SET revision=x'0000000000000002' WHERE candidate_id=?1",
-        "DELETE FROM review_events WHERE candidate_id=?1",
-        "UPDATE candidates SET key_json='{}' WHERE id=?1",
-        "DELETE FROM candidates WHERE id=?1",
-    ] {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("reviews.sqlite3");
-        let target = key();
-        populate(&path, &target, 1, 3);
-        let mut store = ReviewStore::open_write(&path, &target.project).unwrap();
-        let connection = rusqlite::Connection::open(&path).unwrap();
-        connection
-            .pragma_update(None, "foreign_keys", "OFF")
-            .unwrap();
-        connection
-            .execute(corruption, [distinct_key(1).candidate_id])
-            .unwrap();
-        drop(connection);
-        let before = std::fs::read(&path).unwrap();
-        assert!(
-            store
-                .append(&target, SourceState::Fresh, 3, draft())
-                .is_err(),
-            "{corruption}"
-        );
-        assert!(store.snapshot().is_err(), "{corruption}");
-        assert!(
-            store.candidate(&target.candidate_id).is_err(),
-            "{corruption}"
-        );
-        assert_eq!(std::fs::read(&path).unwrap(), before, "{corruption}");
-    }
+#[rstest::rstest]
+#[case::update_review_events_set_draft_json_where_candidate_id_1(
+    "UPDATE review_events SET draft_json='{}' WHERE candidate_id=?1"
+)]
+#[case::update_review_events_set_revision_x_0000000000000002_wh_2(
+    "UPDATE review_events SET revision=x'0000000000000002' WHERE candidate_id=?1"
+)]
+#[case::delete_from_review_events_where_candidate_id_1_3(
+    "DELETE FROM review_events WHERE candidate_id=?1"
+)]
+#[case::update_candidates_set_key_json_where_id_1_4(
+    "UPDATE candidates SET key_json='{}' WHERE id=?1"
+)]
+#[case::delete_from_candidates_where_id_1_5("DELETE FROM candidates WHERE id=?1")]
+fn unrelated_corruption_is_rejected_and_append_rolls_back(#[case] corruption: &str) {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("reviews.sqlite3");
+    let target = key();
+    populate(&path, &target, 1, 3);
+    let mut store = ReviewStore::open_write(&path, &target.project).unwrap();
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .pragma_update(None, "foreign_keys", "OFF")
+        .unwrap();
+    connection
+        .execute(corruption, [distinct_key(1).candidate_id])
+        .unwrap();
+    drop(connection);
+    let before = std::fs::read(&path).unwrap();
+
+    assert!(
+        store
+            .append(&target, SourceState::Fresh, 3, draft())
+            .is_err(),
+        "{corruption}"
+    );
+    assert!(store.snapshot().is_err(), "{corruption}");
+    assert!(
+        store.candidate(&target.candidate_id).is_err(),
+        "{corruption}"
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), before, "{corruption}");
 }
 
 // The command writes directly into a counter during measurement. Holding its
@@ -356,104 +365,110 @@ fn populate_selected_history(
     assert!(std::fs::metadata(path).unwrap().len() <= 1024 * 1024);
 }
 
+#[rstest::rstest]
+#[case::show_1("show")]
+#[case::list_2("list")]
+#[case::list_stale_3("list-stale")]
 #[tokio::test]
-async fn selected_review_history_is_retained_once_while_rendering() {
+async fn selected_review_history_is_retained_once_while_rendering(
+    #[case] command: &str,
+    #[values(0, 1)] scenario_index: usize,
+) {
     let (directory, plan_path) = super::tests::plan_fixture().await;
     let plan = super::input::load_plan(&plan_path).unwrap();
     let current = super::input::review_key(&plan.project, &plan.manifest.candidates[0].candidate);
-    for command in ["show", "list", "list-stale"] {
-        let mut target = current.clone();
-        if command == "list-stale" {
-            target.descriptor.replacement = "987654321".into();
-            target.candidate_id = hoimin_core::stable_mutant_id(
-                &hoimin_core::CandidateIdentity::from(&target.descriptor),
-            )
-            .to_string();
-            assert!(
-                plan.manifest
-                    .candidates
-                    .iter()
-                    .all(|row| row.candidate.id != target.candidate_id)
-            );
-        }
-        for text_bytes in [1024, 4096] {
-            let mut measurements = Vec::new();
-            for history in [1, 16, 64] {
-                let path = directory
-                    .path()
-                    .join(format!("{command}-{text_bytes}-{history}.sqlite3"));
-                populate_selected_history(&path, &target, history, text_bytes);
-                let mut cli_arguments = vec![
-                    "hoimin",
-                    "review",
-                    if command == "show" { "show" } else { "list" },
-                    plan_path.to_str().unwrap(),
-                    "--store",
-                    path.to_str().unwrap(),
-                ];
-                if command == "show" {
-                    cli_arguments.extend(["--candidate", current.candidate_id.as_str()]);
-                } else if command == "list-stale" {
-                    cli_arguments.push("--stale");
-                }
-                let crate::cli::ParsedCommand::Review(args) =
-                    crate::cli::parse_from(cli_arguments).unwrap()
-                else {
-                    panic!("review")
-                };
-                let mut writer = CountingWriter::default();
-                let (code, measured) = measure(|| super::run(&args, &mut writer).unwrap());
-                assert_eq!(code, 0);
-                assert!(writer.0 >= history * (text_bytes + text_bytes.min(2048)));
 
-                // Validate actual output separately, after the allocator is off.
-                let mut bytes = Vec::new();
-                assert_eq!(super::run(&args, &mut bytes).unwrap(), 0);
-                let document: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-                let field = if command == "list-stale" {
-                    "stale_candidates"
-                } else {
-                    "candidates"
-                };
-                let row = document[field]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .find(|row| row["candidate"]["id"] == target.candidate_id)
-                    .unwrap();
-                let events = row["history"].as_array().unwrap();
-                assert_eq!(events.len(), history);
-                for (index, event) in events.iter().enumerate() {
-                    assert_eq!(event["revision"], index + 1);
-                    assert_eq!(event["draft"]["reason"], "r".repeat(text_bytes));
-                    assert_eq!(
-                        event["draft"]["evidence"][0],
-                        "e".repeat(text_bytes.min(2048))
-                    );
-                }
-                if command == "list-stale" {
-                    assert!(row["review"].is_null());
-                    assert_eq!(row["applicability"], "stale");
-                } else {
-                    assert_eq!(&row["review"], events.last().unwrap());
-                    assert_eq!(row["applicability"], "current");
-                }
-                eprintln!(
-                    "selected {command} history={history} text_bytes={text_bytes}: {measured:?}"
-                );
-                measurements.push(measured);
-            }
-            // One snapshot must retain the text. Row metadata, event capacity,
-            // decoder scratch and plan/source validation get 96 KiB of slack;
-            // retaining a second 64-event history exceeds this even at 1 KiB.
-            let payload_growth = 63 * (text_bytes + text_bytes.min(2048));
-            let growth = measurements[2].peak_rust_bytes - measurements[0].peak_rust_bytes;
-            assert!(
-                growth <= payload_growth as i128 + 96 * 1024,
-                "{command} text_bytes={text_bytes}: growth={growth}, single_history_payload_growth={payload_growth}; {measurements:?}"
+    let mut target = current.clone();
+    if command == "list-stale" {
+        target.descriptor.replacement = "987654321".into();
+        target.candidate_id = hoimin_core::stable_mutant_id(&hoimin_core::CandidateIdentity::from(
+            &target.descriptor,
+        ))
+        .to_string();
+
+        assert!(
+            plan.manifest
+                .candidates
+                .iter()
+                .all(|row| row.candidate.id != target.candidate_id)
+        );
+    }
+
+    let text_bytes = [1024, 4096].into_iter().nth(scenario_index).unwrap();
+
+    let mut measurements = Vec::new();
+    for history in [1, 16, 64] {
+        let path = directory
+            .path()
+            .join(format!("{command}-{text_bytes}-{history}.sqlite3"));
+        populate_selected_history(&path, &target, history, text_bytes);
+        let mut cli_arguments = vec![
+            "hoimin",
+            "review",
+            if command == "show" { "show" } else { "list" },
+            plan_path.to_str().unwrap(),
+            "--store",
+            path.to_str().unwrap(),
+        ];
+        if command == "show" {
+            cli_arguments.extend(["--candidate", current.candidate_id.as_str()]);
+        } else if command == "list-stale" {
+            cli_arguments.push("--stale");
+        }
+        let crate::cli::ParsedCommand::Review(args) =
+            crate::cli::parse_from(cli_arguments).unwrap()
+        else {
+            panic!("review")
+        };
+        let mut writer = CountingWriter::default();
+        let (code, measured) = measure(|| super::run(&args, &mut writer).unwrap());
+        assert_eq!(code, 0);
+        assert!(writer.0 >= history * (text_bytes + text_bytes.min(2048)));
+
+        // Validate actual output separately, after the allocator is off.
+        let mut bytes = Vec::new();
+        assert_eq!(super::run(&args, &mut bytes).unwrap(), 0);
+        let document: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let field = if command == "list-stale" {
+            "stale_candidates"
+        } else {
+            "candidates"
+        };
+        let row = document[field]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["candidate"]["id"] == target.candidate_id)
+            .unwrap();
+        let events = row["history"].as_array().unwrap();
+        assert_eq!(events.len(), history);
+        for (index, event) in events.iter().enumerate() {
+            assert_eq!(event["revision"], index + 1);
+            assert_eq!(event["draft"]["reason"], "r".repeat(text_bytes));
+            assert_eq!(
+                event["draft"]["evidence"][0],
+                "e".repeat(text_bytes.min(2048))
             );
         }
+        if command == "list-stale" {
+            assert!(row["review"].is_null());
+            assert_eq!(row["applicability"], "stale");
+        } else {
+            assert_eq!(&row["review"], events.last().unwrap());
+            assert_eq!(row["applicability"], "current");
+        }
+        eprintln!("selected {command} history={history} text_bytes={text_bytes}: {measured:?}");
+        measurements.push(measured);
     }
+    // One snapshot must retain the text. Row metadata, event capacity,
+    // decoder scratch and plan/source validation get 96 KiB of slack;
+    // retaining a second 64-event history exceeds this even at 1 KiB.
+    let payload_growth = 63 * (text_bytes + text_bytes.min(2048));
+    let growth = measurements[2].peak_rust_bytes - measurements[0].peak_rust_bytes;
+    assert!(
+        growth <= payload_growth as i128 + 96 * 1024,
+        "{command} text_bytes={text_bytes}: growth={growth}, single_history_payload_growth={payload_growth}; {measurements:?}"
+    );
 }
 
 #[tokio::test]
@@ -606,6 +621,7 @@ fn issue_1083_store_identity_does_not_clone_replacement() {
             .unwrap()
             .unwrap();
         let (row, measured) = measure(|| store.candidate(&target.candidate_id).unwrap().unwrap());
+
         assert_eq!(row.0, target);
         assert_eq!(row.1.history.len(), 1);
         eprintln!("identity store payload={payload}: {measured:?}");
@@ -670,90 +686,96 @@ impl std::io::Write for Issue1087RenderWriter {
     }
 }
 
+#[rstest::rstest]
+#[case::value_16_1(0)]
+#[case::value_64_2(1)]
 #[tokio::test]
-async fn issue_1087_current_candidate_payloads_are_retained_once_at_first_json_write() {
+async fn issue_1087_current_candidate_payloads_are_retained_once_at_first_json_write(
+    #[case] scenario_index: usize,
+) {
     let (directory, plan_path) = super::tests::plan_fixture().await;
     let mut manifest = crate::plan::read_for_review(&plan_path).unwrap().manifest;
     let template = manifest.candidates[0].clone();
-    for count in [16, 64] {
-        let mut measurements = Vec::new();
-        for payload in [4 * 1024, 16 * 1024, 64 * 1024] {
-            manifest.candidates = (0..count)
-                .map(|index| {
-                    let mut row = template.clone();
-                    // A valid Python expression, with distinct equal-size payloads.
-                    row.candidate.replacement = format!("'{index:04}{}'", "r".repeat(payload - 6));
-                    assert_eq!(row.replacement.len(), payload);
-                    row.candidate.sequence = u64::try_from(index + 1).unwrap();
-                    row.candidate.id = hoimin_core::CandidateIdentityRef::from(&row.candidate)
-                        .stable_mutant_id()
-                        .to_string();
-                    row
-                })
-                .collect();
-            // All preceding ranking keys are identical; stable ID breaks ties.
-            manifest
-                .candidates
-                .sort_by(|left, right| left.id.cmp(&right.id));
-            for (index, row) in manifest.candidates.iter_mut().enumerate() {
-                row.rank = index + 1;
-            }
-            let encoded = serde_json::to_vec(&manifest).unwrap();
-            assert!(encoded.len() < 8 * 1024 * 1024);
-            std::fs::write(&plan_path, encoded).unwrap();
-            let checked = super::input::load_plan(&plan_path).unwrap();
-            assert!(
-                super::input::source_states(
-                    &checked.project,
-                    &checked
-                        .manifest
-                        .candidates
-                        .iter()
-                        .map(|row| &row.candidate)
-                        .collect::<Vec<_>>()
-                )
-                .into_iter()
-                .all(|state| state.unwrap() == SourceState::Fresh)
-            );
-            let project = checked.project.clone();
-            drop(checked);
-            let crate::cli::ParsedCommand::Review(args) = crate::cli::parse_from([
-                "hoimin",
-                "review",
-                "list",
-                plan_path.to_str().unwrap(),
-                "--store",
-                directory.path().join("absent.sqlite3").to_str().unwrap(),
-            ])
-            .unwrap() else {
-                panic!("review list")
-            };
-            let mut writer = Issue1087RenderWriter::default();
-            let (code, _) = measure(|| super::run(&args, &mut writer).unwrap());
-            assert_eq!(code, 0);
-            assert!(writer.bytes >= count * payload);
-            let live = writer
-                .first_write_live_bytes
-                .expect("actual JSON write observed");
-            assert!(
-                live >= (count * payload) as i128,
-                "the loaded plan must retain its payloads"
-            );
-            eprintln!("issue_1087 count={count} replacement_bytes={payload} render_live={live}");
-            measurements.push((payload, live));
-            // Full content and ordering are checked with allocation tracking off.
-            assert_issue_1087_output(&args, &manifest, &project);
+
+    let count = [16, 64].into_iter().nth(scenario_index).unwrap();
+
+    let mut measurements = Vec::new();
+    for payload in [4 * 1024, 16 * 1024, 64 * 1024] {
+        manifest.candidates = (0..count)
+            .map(|index| {
+                let mut row = template.clone();
+                // A valid Python expression, with distinct equal-size payloads.
+                row.candidate.replacement = format!("'{index:04}{}'", "r".repeat(payload - 6));
+                assert_eq!(row.replacement.len(), payload);
+                row.candidate.sequence = u64::try_from(index + 1).unwrap();
+                row.candidate.id = hoimin_core::CandidateIdentityRef::from(&row.candidate)
+                    .stable_mutant_id()
+                    .to_string();
+                row
+            })
+            .collect();
+        // All preceding ranking keys are identical; stable ID breaks ties.
+        manifest
+            .candidates
+            .sort_by(|left, right| left.id.cmp(&right.id));
+        for (index, row) in manifest.candidates.iter_mut().enumerate() {
+            row.rank = index + 1;
         }
-        for pair in measurements.windows(2) {
-            let payload_growth = count * (pair[1].0 - pair[0].0);
-            let live_growth = pair[1].1 - pair[0].1;
-            // The plan needs one payload population. Fixed-size row/index metadata
-            // and allocator capacity receive 128 KiB; a second population fails.
-            assert!(
-                live_growth <= payload_growth as i128 + 128 * 1024,
-                "count={count}: live_growth={live_growth}, single_population_growth={payload_growth}; {measurements:?}"
-            );
-        }
+        let encoded = serde_json::to_vec(&manifest).unwrap();
+        assert!(encoded.len() < 8 * 1024 * 1024);
+        std::fs::write(&plan_path, encoded).unwrap();
+        let checked = super::input::load_plan(&plan_path).unwrap();
+        assert!(
+            super::input::source_states(
+                &checked.project,
+                &checked
+                    .manifest
+                    .candidates
+                    .iter()
+                    .map(|row| &row.candidate)
+                    .collect::<Vec<_>>()
+            )
+            .into_iter()
+            .all(|state| state.unwrap() == SourceState::Fresh)
+        );
+        let project = checked.project.clone();
+        drop(checked);
+        let crate::cli::ParsedCommand::Review(args) = crate::cli::parse_from([
+            "hoimin",
+            "review",
+            "list",
+            plan_path.to_str().unwrap(),
+            "--store",
+            directory.path().join("absent.sqlite3").to_str().unwrap(),
+        ])
+        .unwrap() else {
+            panic!("review list")
+        };
+        let mut writer = Issue1087RenderWriter::default();
+        let (code, _) = measure(|| super::run(&args, &mut writer).unwrap());
+        assert_eq!(code, 0);
+        assert!(writer.bytes >= count * payload);
+        let live = writer
+            .first_write_live_bytes
+            .expect("actual JSON write observed");
+        assert!(
+            live >= (count * payload) as i128,
+            "the loaded plan must retain its payloads"
+        );
+        eprintln!("issue_1087 count={count} replacement_bytes={payload} render_live={live}");
+        measurements.push((payload, live));
+        // Full content and ordering are checked with allocation tracking off.
+        assert_issue_1087_output(&args, &manifest, &project);
+    }
+    for pair in measurements.windows(2) {
+        let payload_growth = count * (pair[1].0 - pair[0].0);
+        let live_growth = pair[1].1 - pair[0].1;
+        // The plan needs one payload population. Fixed-size row/index metadata
+        // and allocator capacity receive 128 KiB; a second population fails.
+        assert!(
+            live_growth <= payload_growth as i128 + 128 * 1024,
+            "count={count}: live_growth={live_growth}, single_population_growth={payload_growth}; {measurements:?}"
+        );
     }
 }
 
@@ -827,45 +849,45 @@ pub(super) fn issue_1089_candidates(
     (source, candidates)
 }
 
-#[test]
-fn issue_1089_execution_comparison_does_not_copy_descriptor_payloads() {
-    let mut observations = Vec::new();
-    for count in [16, 64] {
-        for payload in [4 * 1024, 16 * 1024, 64 * 1024] {
-            let (_, candidates) = issue_1089_candidates(count, payload);
-            let document: serde_json::Value =
-                crate::artifacts::run_report::test_support::current_report_view();
-            let mut wire = document["mutants"][0].clone();
-            wire.as_object_mut().unwrap().remove("kind");
-            let template: hoimin_core::MutantFinished = serde_json::from_value(wire).unwrap();
-            let reported: Vec<_> = candidates
-                .iter()
-                .map(|candidate| {
-                    let mut result = template.clone();
-                    result.candidate = candidate.clone();
-                    result
-                })
-                .collect();
-            let index = reported
-                .iter()
-                .map(|result| (result.candidate.id.as_str(), result))
-                .collect();
-            let ((), measurement) = measure(|| {
-                for candidate in &candidates {
-                    let result = super::execution(candidate, Some(&index)).unwrap();
-                    assert!(matches!(result, super::render::ReviewExecution::Result(_)));
-                }
-            });
-            eprintln!(
-                "issue_1089 execution count={count} payload={payload} peak={}",
-                measurement.peak_rust_bytes
-            );
-            observations.push((count, payload, measurement.peak_rust_bytes));
+#[rstest::rstest]
+#[case::sixteen_candidates(16)]
+#[case::sixty_four_candidates(64)]
+fn issue_1089_execution_comparison_does_not_copy_descriptor_payloads(
+    #[case] count: usize,
+    #[values(4 * 1024, 16 * 1024, 64 * 1024)] payload: usize,
+) {
+    let (_, candidates) = issue_1089_candidates(count, payload);
+    let document: serde_json::Value =
+        crate::artifacts::run_report::test_support::current_report_view();
+    let mut wire = document["mutants"][0].clone();
+    wire.as_object_mut().unwrap().remove("kind");
+    let template: hoimin_core::MutantFinished = serde_json::from_value(wire).unwrap();
+    let reported: Vec<_> = candidates
+        .iter()
+        .map(|candidate| {
+            let mut result = template.clone();
+            result.candidate = candidate.clone();
+            result
+        })
+        .collect();
+    let index = reported
+        .iter()
+        .map(|result| (result.candidate.id.as_str(), result))
+        .collect();
+    let ((), measurement) = measure(|| {
+        for candidate in &candidates {
+            let result = super::execution(candidate, Some(&index)).unwrap();
+
+            assert!(matches!(result, super::render::ReviewExecution::Result(_)));
         }
-    }
+    });
+    eprintln!(
+        "issue_1089 execution count={count} payload={payload} peak={}",
+        measurement.peak_rust_bytes
+    );
     assert!(
-        observations.iter().all(|(_, _, peak)| *peak < 4096),
-        "descriptor comparison copied payloads: {observations:?}"
+        measurement.peak_rust_bytes < 4096,
+        "count={count} payload={payload}: {measurement:?}"
     );
 }
 
@@ -885,6 +907,7 @@ fn issue_1089_execution_excludes_sequence_but_checks_symbol() {
     reported.candidate.sequence = 0;
     {
         let index = std::collections::HashMap::from([(candidate.id.as_str(), &reported)]);
+
         assert!(matches!(
             super::execution(candidate, Some(&index)).unwrap(),
             super::render::ReviewExecution::Result(hoimin_core::MutationStatus::NotRun)

@@ -75,10 +75,8 @@ def test_sdist_retains_internal_python_api_and_patched_parser_bytes(
         assert source is not None
         actual = source.read()
 
-    if member.endswith("Cargo.toml"):
-        # Maturin rewrites local dependency manifests with LF, including CRLF checkouts.
-        actual = actual.replace(b"\r\n", b"\n")
-        expected = expected.replace(b"\r\n", b"\n")
+    actual, expected = normalize_manifest_bytes(member, actual, expected)
+
     assert actual == expected
 
 
@@ -107,6 +105,7 @@ def test_sdist_retains_workspace_manifest_text(
         actual = source.read()
 
     # Maturin rewrites workspace manifests with LF, including CRLF checkouts.
+
     assert actual.replace(b"\r\n", b"\n") == expected.replace(b"\r\n", b"\n")
 
 
@@ -117,4 +116,15 @@ def test_sdist_only_vendors_the_patched_parser(source_archive: Path) -> None:
             for name in archive.getnames()
             if "/vendor/ruff_" in name
         }
+
     assert vendor_crates == {"ruff_python_parser"}
+
+
+def normalize_manifest_bytes(
+    member: str, actual: bytes, expected: bytes
+) -> tuple[bytes, bytes]:
+    if member.endswith("Cargo.toml"):
+        # Maturin rewrites local dependency manifests with LF, including CRLF checkouts.
+        actual = actual.replace(b"\r\n", b"\n")
+        expected = expected.replace(b"\r\n", b"\n")
+    return actual, expected

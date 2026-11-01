@@ -56,130 +56,137 @@ fn source_args(command: &str, root: &Path, limit: usize) -> Vec<String> {
     ]
 }
 
+#[rstest::rstest]
+#[case::overflow_retained_prefix(1, 4, true, 0)]
+#[case::all_candidates_fit(2, 0, false, 2)]
 #[tokio::test]
 #[allow(clippy::too_many_lines)] // One fixture traces the same candidates across three commands.
-async fn literal_selector_fixture_respects_run_overflow_and_partial_verify() {
+async fn literal_selector_fixture_respects_run_overflow_and_partial_verify(
+    #[case] limit: usize,
+    #[case] exit_code: i32,
+    #[case] truncated: bool,
+    #[case] executed_count: usize,
+) {
     let project = tempfile::tempdir().unwrap();
     let reports = tempfile::tempdir().unwrap();
     std::fs::write(project.path().join("case.py"), SOURCE).unwrap();
-    for (limit, exit_code, truncated, executed_count) in [(1, 4, true, 0), (2, 0, false, 2)] {
-        let plan_output = cli(&source_args("plan", project.path(), limit)).await;
-        assert_eq!(
-            plan_output.status.code(),
-            Some(exit_code),
-            "{}",
-            String::from_utf8_lossy(&plan_output.stderr)
-        );
-        let plan: Value = serde_json::from_slice(&plan_output.stdout).unwrap();
-        assert_eq!(plan["truncated"], truncated);
-        let candidates = plan["candidates"].as_array().unwrap();
-        assert_eq!(candidates.len(), limit);
-        for (index, (candidate, offset)) in candidates.iter().zip([10, 25]).enumerate() {
-            assert_eq!(candidate["rank"], index + 1);
-            assert_eq!(candidate["path"], "case.py");
-            assert_eq!(candidate["span"], json!({"start":offset,"length":1}));
-            assert_eq!(candidate["original"], "+");
-            assert_eq!(candidate["replacement"], "-");
-        }
-        // Ranking annotations belong to the plan; process reports retain candidate identity.
-        let projected_candidates: Vec<_> = candidates
+
+    let plan_output = cli(&source_args("plan", project.path(), limit)).await;
+    assert_eq!(
+        plan_output.status.code(),
+        Some(exit_code),
+        "{}",
+        String::from_utf8_lossy(&plan_output.stderr)
+    );
+    let plan: Value = serde_json::from_slice(&plan_output.stdout).unwrap();
+    assert_eq!(plan["truncated"], truncated);
+    let candidates = plan["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), limit);
+    for (index, (candidate, offset)) in candidates.iter().zip([10, 25]).enumerate() {
+        assert_eq!(candidate["rank"], index + 1);
+        assert_eq!(candidate["path"], "case.py");
+        assert_eq!(candidate["span"], json!({"start":offset,"length":1}));
+        assert_eq!(candidate["original"], "+");
+        assert_eq!(candidate["replacement"], "-");
+    }
+    // Ranking annotations belong to the plan; process reports retain candidate identity.
+    let projected_candidates: Vec<_> = candidates
+        .iter()
+        .map(|candidate| {
+            let mut identity = candidate.as_object().unwrap().clone();
+            for field in ["rank", "score", "ranking_reasons"] {
+                assert!(identity.remove(field).is_some());
+            }
+            Value::Object(identity)
+        })
+        .collect();
+    let ids: Vec<_> = candidates.iter().map(|c| c["id"].clone()).collect();
+    let run_output = cli(&source_args("run", project.path(), limit)).await;
+    assert_eq!(
+        run_output.status.code(),
+        Some(exit_code),
+        "{}",
+        String::from_utf8_lossy(&run_output.stderr)
+    );
+    let run: Value = jsonl_report::from_slice(&run_output.stdout).unwrap();
+    let run_mutants = run["mutants"].as_array().unwrap();
+    assert_eq!(
+        run_mutants.len(),
+        executed_count,
+        "ordinary overflow must not execute a retained prefix"
+    );
+    assert_eq!(run["summary"]["complete"], !truncated);
+    assert_eq!(
+        run_mutants
             .iter()
-            .map(|candidate| {
-                let mut identity = candidate.as_object().unwrap().clone();
-                for field in ["rank", "score", "ranking_reasons"] {
-                    assert!(identity.remove(field).is_some());
-                }
-                Value::Object(identity)
-            })
-            .collect();
-        let ids: Vec<_> = candidates.iter().map(|c| c["id"].clone()).collect();
-        let run_output = cli(&source_args("run", project.path(), limit)).await;
+            .map(|mutant| mutant["candidate"]["id"].clone())
+            .collect::<Vec<_>>(),
+        ids[..executed_count]
+    );
+    assert_eq!(
+        run_mutants
+            .iter()
+            .map(|mutant| &mutant["candidate"])
+            .collect::<Vec<_>>(),
+        projected_candidates[..executed_count]
+            .iter()
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        run_mutants
+            .iter()
+            .all(|mutant| mutation_outcome::status(mutant) == "killed")
+    );
+    let manifest = reports.path().join(format!("plan-{limit}.json"));
+    std::fs::write(&manifest, &plan_output.stdout).unwrap();
+    let verify_output = cli(&[
+        "verify".into(),
+        manifest.display().to_string(),
+        "--top".into(),
+        limit.to_string(),
+    ])
+    .await;
+    assert_eq!(
+        verify_output.status.code(),
+        Some(exit_code),
+        "{}",
+        String::from_utf8_lossy(&verify_output.stderr)
+    );
+    let verify: Value = jsonl_report::from_slice(&verify_output.stdout).unwrap();
+    assert_eq!(
+        verify["mutants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["candidate"]["id"].clone())
+            .collect::<Vec<_>>(),
+        ids
+    );
+    assert_eq!(verify["summary"]["complete"], !truncated);
+    assert_eq!(
+        verify["mutants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| &m["candidate"])
+            .collect::<Vec<_>>(),
+        projected_candidates.iter().collect::<Vec<_>>()
+    );
+    assert_eq!(plan["normalized_config"]["profile"], "full");
+    assert!(plan["normalized_config"]["selection"].is_object());
+    for field in ["profile", "selection"] {
         assert_eq!(
-            run_output.status.code(),
-            Some(exit_code),
-            "{}",
-            String::from_utf8_lossy(&run_output.stderr)
-        );
-        let run: Value = jsonl_report::from_slice(&run_output.stdout).unwrap();
-        let run_mutants = run["mutants"].as_array().unwrap();
-        assert_eq!(
-            run_mutants.len(),
-            executed_count,
-            "ordinary overflow must not execute a retained prefix"
-        );
-        assert_eq!(run["summary"]["complete"], !truncated);
-        assert_eq!(
-            run_mutants
-                .iter()
-                .map(|mutant| mutant["candidate"]["id"].clone())
-                .collect::<Vec<_>>(),
-            ids[..executed_count]
-        );
-        assert_eq!(
-            run_mutants
-                .iter()
-                .map(|mutant| &mutant["candidate"])
-                .collect::<Vec<_>>(),
-            projected_candidates[..executed_count]
-                .iter()
-                .collect::<Vec<_>>()
-        );
-        assert!(
-            run_mutants
-                .iter()
-                .all(|mutant| mutation_outcome::status(mutant) == "killed")
-        );
-        let manifest = reports.path().join(format!("plan-{limit}.json"));
-        std::fs::write(&manifest, &plan_output.stdout).unwrap();
-        let verify_output = cli(&[
-            "verify".into(),
-            manifest.display().to_string(),
-            "--top".into(),
-            limit.to_string(),
-        ])
-        .await;
-        assert_eq!(
-            verify_output.status.code(),
-            Some(exit_code),
-            "{}",
-            String::from_utf8_lossy(&verify_output.stderr)
-        );
-        let verify: Value = jsonl_report::from_slice(&verify_output.stdout).unwrap();
-        assert_eq!(
-            verify["mutants"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|m| m["candidate"]["id"].clone())
-                .collect::<Vec<_>>(),
-            ids
-        );
-        assert_eq!(verify["summary"]["complete"], !truncated);
-        assert_eq!(
-            verify["mutants"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|m| &m["candidate"])
-                .collect::<Vec<_>>(),
-            projected_candidates.iter().collect::<Vec<_>>()
-        );
-        assert_eq!(plan["normalized_config"]["profile"], "full");
-        assert!(plan["normalized_config"]["selection"].is_object());
-        for field in ["profile", "selection"] {
-            assert_eq!(
-                verify["run"]["normalized_config"][field],
-                plan["normalized_config"][field]
-            );
-        }
-        assert_eq!(
-            verify["run"]["normalized_config"]["limits"],
-            plan["normalized_config"]["limits"]
-        );
-        assert_eq!(verify["run"]["verification_selection"]["selected"], limit);
-        assert_eq!(
-            std::fs::read_to_string(project.path().join("case.py")).unwrap(),
-            SOURCE
+            verify["run"]["normalized_config"][field],
+            plan["normalized_config"][field]
         );
     }
+    assert_eq!(
+        verify["run"]["normalized_config"]["limits"],
+        plan["normalized_config"]["limits"]
+    );
+    assert_eq!(verify["run"]["verification_selection"]["selected"], limit);
+    assert_eq!(
+        std::fs::read_to_string(project.path().join("case.py")).unwrap(),
+        SOURCE
+    );
 }

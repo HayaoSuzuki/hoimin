@@ -29,6 +29,11 @@ sources:
   revision: 7d5bdc5a643add4ba55e8541fa59a069d0ff5c5e
   working_tree: untracked
   sha256: 44c57d037d64e80ebf5b22ee9f253f18661ad03c0528bfe836a0c2166e2e9bd6
+- id: current-runner
+  resource: ../../../tools/boundary_contracts.py
+  revision: 214576a53b4cd982f53a1a86ab6779e625f637ac
+  working_tree: modified
+  sha256: 66fac7d2d2dd72c02678d05c7757ad35ddf9b59d15fff8b60ab4d76a9227dc24
 ---
 
 # 境界をまたぐ契約 fixture と実行証拠
@@ -37,9 +42,14 @@ sources:
 plan/verify の六つの境界を、前提・公開観測・証拠レベル・実行モードで結ぶ。
 設計の worksheet が各条件を定義する。[^issue-490-design]
 
-strict モードは登録された exact test を実行する。テストの存在やゼロ件成功を
-一致とは扱わず、match、mismatch、infrastructure-error、unexecuted を区別する。
-report モードは失敗と未実行行も保存する。[^issue-490-registry][^issue-490-runner]
+初回の strict 実装は登録された exact test を実行した。テストの存在やゼロ件成功を
+一致とは扱わず、match、mismatch、infrastructure-error、unexecuted を区別した。
+report モードでは失敗と未実行行も保存した。[^issue-490-registry][^issue-490-runner]
+
+現在の strict runner は登録名に一致するテストと、その名前空間内の rstest 子ケースを
+実行する。成功と判定するには、出力された名前がすべて対象内で重複せず、成功件数が
+その名前の数と一致する必要がある。ゼロ件実行、無関係なテストの混入、結果の欠落、
+ignored ケースを含む実行は一致と判定しない。[^current-runner]
 
 今回の macOS 実行では strict 10 件が一致した。既存 Lean 入力 282 件を JSON v2、
 JSON v3、JSONL v3 で実 CLI に適用した 846 観測と、実 SQLite に対する既存 session
@@ -62,3 +72,4 @@ verify 全体の期限は検証していない。Linux hard 制御と Windows PI
 [^issue-490-evidence]: [原文](../../superpowers/reports/2026-09-14-issue-490-boundary-contracts-verification.json)。参照版と SHA-256 は frontmatter に記録。
 [^issue-490-registry]: [原文](../../../tests/fixtures/boundary-contracts.json)。参照版と SHA-256 は frontmatter に記録。
 [^issue-490-runner]: [原文](../../../tools/boundary_contracts.py)。参照版と SHA-256 は frontmatter に記録。
+[^current-runner]: [現在の runner](../../../tools/boundary_contracts.py)。参照版と作業ツリーの状態は frontmatter に記録。

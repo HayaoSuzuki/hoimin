@@ -63,6 +63,7 @@ mod tests {
     #[test]
     fn clap_contexts_escape_overlapping_values_without_changing_usage_layout() {
         use clap::error::{ContextKind, ContextValue, ErrorKind};
+
         let mut error = clap::Error::new(ErrorKind::ArgumentConflict);
         error.insert(ContextKind::InvalidArg, ContextValue::String("\n".into()));
         error.insert(

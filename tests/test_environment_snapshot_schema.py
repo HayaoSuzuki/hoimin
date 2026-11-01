@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 
 import pytest
+from hypothesis import example, given
+from hypothesis import strategies as st
 from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,15 +15,32 @@ EVENT_SCHEMA = json.loads(
 SNAPSHOT_VALIDATOR = Draft202012Validator(EVENT_SCHEMA["$defs"]["environmentSnapshot"])
 
 
-@pytest.mark.parametrize(
-    "snapshot",
-    [
-        {"state": "untracked"},
-        {"state": "captured", "names": ["FLAG"], "digest": "a" * 64},
-    ],
+@given(
+    snapshot=st.one_of(
+        st.just({"state": "untracked"}),
+        st.fixed_dictionaries(
+            {
+                "state": st.just("captured"),
+                "names": st.lists(
+                    st.from_regex(r"[A-Za-z_][A-Za-z0-9_]{0,20}", fullmatch=True),
+                    min_size=1,
+                    max_size=5,
+                    unique=True,
+                ),
+                "digest": st.text(
+                    alphabet="0123456789abcdef", min_size=64, max_size=64
+                ),
+            }
+        ),
+    )
 )
+@example(snapshot={"state": "untracked"})
+@example(snapshot={"state": "captured", "names": ["FLAG"], "digest": "a" * 64})
 def test_valid_environment_snapshots(snapshot: dict[str, object]) -> None:
-    SNAPSHOT_VALIDATOR.validate(snapshot)
+
+    errors = list(SNAPSHOT_VALIDATOR.iter_errors(snapshot))
+
+    assert not errors
 
 
 @pytest.mark.parametrize(
@@ -51,4 +70,7 @@ def test_valid_environment_snapshots(snapshot: dict[str, object]) -> None:
     ],
 )
 def test_invalid_environment_snapshots(snapshot: dict[str, object]) -> None:
-    assert list(SNAPSHOT_VALIDATOR.iter_errors(snapshot))
+
+    errors = list(SNAPSHOT_VALIDATOR.iter_errors(snapshot))
+
+    assert errors

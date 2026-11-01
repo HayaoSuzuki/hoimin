@@ -134,46 +134,50 @@ impl io::Write for CountingWriter {
     }
 }
 
-#[test]
-fn jsonl_record_heap_is_bounded_for_large_candidate_payloads() {
+#[rstest::rstest]
+#[case::input_16_1(16)]
+#[case::input_64_2(64)]
+fn jsonl_record_heap_is_bounded_for_large_candidate_payloads(
+    #[case] count: u64,
+    #[values(1, 4 * 1024, 16 * 1024, 64 * 1024)] payload_bytes: usize,
+) {
     let _guard = MEASUREMENT.lock().unwrap();
-    for count in [16, 64] {
-        for payload_bytes in [1, 4 * 1024, 16 * 1024, 64 * 1024] {
-            let stdout = CountingWriter::default();
-            let mut handler = ReportHandler::new(stdout.clone(), io::sink());
-            emit(
-                &mut handler,
-                OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
-            );
-            stdout.0.store(0, std::sync::atomic::Ordering::Relaxed);
-            let mut expected_bytes = 0;
-            let mut peak = 0;
-            for index in 0..count {
-                let mut event = mutant_finished(index + 2, index);
-                let OutputEvent::MutantFinished(mutant) = &mut event else {
-                    unreachable!()
-                };
-                mutant.candidate.original = "a".repeat(payload_bytes);
-                mutant.candidate.replacement = "b".repeat(payload_bytes);
-                expected_bytes += serde_json::to_vec(&event).unwrap().len() + 1;
-                let request = EmitOutput {
-                    id: EffectId(event.sequence()),
-                    event,
-                };
-                heap_tracking::begin();
-                let result = handler.handle(request);
-                let event_peak = heap_tracking::finish();
-                result.unwrap();
-                peak = peak.max(event_peak);
-            }
-            assert_eq!(
-                stdout.0.load(std::sync::atomic::Ordering::Relaxed),
-                expected_bytes
-            );
-            assert!(
-                peak <= 16 * 1024,
-                "count={count}, payload={payload_bytes}: record allocated {peak} bytes"
-            );
-        }
+
+    let stdout = CountingWriter::default();
+    let mut handler = ReportHandler::new(stdout.clone(), io::sink());
+    emit(
+        &mut handler,
+        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
+    );
+    stdout.0.store(0, std::sync::atomic::Ordering::Relaxed);
+    let mut expected_bytes = 0;
+    let mut peak = 0;
+    for index in 0..count {
+        let mut event = mutant_finished(index + 2, index);
+        let OutputEvent::MutantFinished(mutant) = &mut event else {
+            unreachable!()
+        };
+        mutant.candidate.original = "a".repeat(payload_bytes);
+        mutant.candidate.replacement = "b".repeat(payload_bytes);
+        expected_bytes += serde_json::to_vec(&event).unwrap().len() + 1;
+        let request = EmitOutput {
+            id: EffectId(event.sequence()),
+            event,
+        };
+        heap_tracking::begin();
+
+        let result = handler.handle(request);
+        let event_peak = heap_tracking::finish();
+        result.unwrap();
+        peak = peak.max(event_peak);
     }
+
+    assert_eq!(
+        stdout.0.load(std::sync::atomic::Ordering::Relaxed),
+        expected_bytes
+    );
+    assert!(
+        peak <= 16 * 1024,
+        "count={count}, payload={payload_bytes}: record allocated {peak} bytes"
+    );
 }

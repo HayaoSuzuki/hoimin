@@ -163,12 +163,16 @@ fn known_reason(value: &str) -> bool {
 #[test]
 fn lean_candidate_ranking_corpus_is_valid() {
     let cases = parse_corpus(CORPUS).expect("Lean corpus must satisfy the adapter schema");
+
     assert_eq!(cases.len(), 4);
     assert_eq!(cases.iter().filter(|item| item.mode == "strict").count(), 1);
 }
 
+#[rstest::rstest]
+#[case::strict_1(0)]
+#[case::diverse_2(1)]
 #[tokio::test]
-async fn public_plan_and_verify_match_the_lean_diverse_tier_case() {
+async fn public_plan_and_verify_match_the_lean_diverse_tier_case(#[case] scenario_index: usize) {
     let cases = parse_corpus(CORPUS).expect("valid Lean corpus");
     let item = cases
         .iter()
@@ -177,6 +181,7 @@ async fn public_plan_and_verify_match_the_lean_diverse_tier_case() {
     let fixture = Fixture::new().expect("create isolated project");
 
     let plan = run_cli(plan_args(&fixture)).await.expect("public plan");
+
     assert_eq!(plan.code, 0, "stderr={}", plan.stderr);
     let manifest: serde_json::Value = serde_json::from_str(plan.stdout.trim()).expect("plan JSON");
     let candidates = manifest["candidates"].as_array().expect("plan candidates");
@@ -202,18 +207,24 @@ async fn public_plan_and_verify_match_the_lean_diverse_tier_case() {
     let plan_path = fixture.root.join("plan.json");
     std::fs::write(&plan_path, plan.stdout.as_bytes()).expect("write plan manifest");
     let plan_before = std::fs::read(&plan_path).expect("read plan manifest");
-    for (policy, expected) in [
+
+    let (policy, expected) = [
         ("strict", &item.expected_strict),
         ("diverse", &item.expected_diverse),
-    ] {
-        let run = run_cli(verify_args(&plan_path, item.limit, policy))
-            .await
-            .unwrap_or_else(|error| panic!("public verify {policy}: {error}"));
-        assert_eq!(run.code, 0, "policy={policy}; stderr={}", run.stderr);
-        let actual = selected_roles(&run.stdout, &id_roles).expect("selected role order");
-        assert_eq!(&actual, expected, "policy={policy}");
-        assert_eq!(std::fs::read(&plan_path).unwrap(), plan_before);
-    }
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
+
+    let run = run_cli(verify_args(&plan_path, item.limit, policy))
+        .await
+        .unwrap_or_else(|error| panic!("public verify {policy}: {error}"));
+    assert_eq!(run.code, 0, "policy={policy}; stderr={}", run.stderr);
+
+    let actual = selected_roles(&run.stdout, &id_roles).expect("selected role order");
+
+    assert_eq!(&actual, expected, "policy={policy}");
+    assert_eq!(std::fs::read(&plan_path).unwrap(), plan_before);
 }
 
 fn ranked_observation(

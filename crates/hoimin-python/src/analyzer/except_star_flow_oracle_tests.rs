@@ -362,32 +362,33 @@ fn internal_rows_match_complete_production_try_exits() {
     }
 }
 
-#[test]
-fn internal_rows_detect_production_transfer_mutations() {
+#[rstest::rstest]
+#[case::starred_summary_meets_disagreement(
+    "starred_summary_meets_disagreement",
+    BindingFlowTestMutation::KeepFirstHandlerOnly
+)]
+#[case::starred_target_cleanup(
+    "starred_target_cleanup",
+    BindingFlowTestMutation::OmitHandlerFallthroughCleanup
+)]
+#[case::starred_unhandled_remainder(
+    "starred_unhandled_remainder",
+    BindingFlowTestMutation::DropBodyTerminates
+)]
+fn internal_rows_detect_production_transfer_mutations_scenario_1(
+    #[case] id: &str,
+    #[case] mutation: BindingFlowTestMutation,
+) {
     let cases = parse_corpus(CORPUS).expect("valid Lean except-star corpus");
     let case = |id: &str| cases.iter().find(|item| item.id == id).unwrap();
-    for (id, mutation) in [
-        (
-            "starred_summary_meets_disagreement",
-            BindingFlowTestMutation::KeepFirstHandlerOnly,
-        ),
-        (
-            "starred_target_cleanup",
-            BindingFlowTestMutation::OmitHandlerFallthroughCleanup,
-        ),
-        (
-            "starred_unhandled_remainder",
-            BindingFlowTestMutation::DropBodyTerminates,
-        ),
-    ] {
-        let item = case(id);
-        let mutated =
-            binding_flow_try_exit_snapshot_with_mutation(&item.source, &item.marker, mutation)
-                .expect("mutation premise must remain observable");
-        assert_ne!(
-            mutated,
-            expected_snapshot(item),
-            "{id} must detect {mutation:?}"
-        );
-    }
+
+    let item = case(id);
+    let mutated =
+        binding_flow_try_exit_snapshot_with_mutation(&item.source, &item.marker, mutation)
+            .expect("mutation premise must remain observable");
+    assert_ne!(
+        mutated,
+        expected_snapshot(item),
+        "{id} must detect {mutation:?}"
+    );
 }

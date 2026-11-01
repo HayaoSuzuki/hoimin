@@ -350,6 +350,7 @@ mod tests {
             let mut inner = ExecutionFinalization::new().unwrap();
             let mut outer = ExecutionFinalization::new().unwrap();
             let mut errors = Vec::new();
+
             assert_eq!(inner.observe_inner_drains(evidence).unwrap(), flags == 7);
             assert_eq!(
                 outer.observe_outer_drains(evidence, &mut errors),
@@ -366,6 +367,7 @@ mod tests {
     #[test]
     fn an_unjoined_scan_cannot_be_replaced_by_later_success() {
         let mut owner = ExecutionFinalization::new().unwrap();
+
         assert!(owner.observe_inner_drains(JOINED).unwrap());
         owner.observe_measurement(Ok(Ok(100))).unwrap();
         assert!(
@@ -387,6 +389,7 @@ mod tests {
     #[test]
     fn deferred_admission_never_grants_unjoined_measurement_removal() {
         let mut owner = ExecutionFinalization::new().unwrap();
+
         assert!(
             owner
                 .observe_measurement(Err(CleanupThreadFailure::TimedOut))
@@ -409,6 +412,7 @@ mod tests {
     #[test]
     fn a_joined_failed_measurement_is_quiescent_but_has_no_bytes() {
         let mut owner = ExecutionFinalization::new().unwrap();
+
         assert!(
             owner
                 .observe_measurement(Ok(Err(io::Error::other("measurement failed"))))
@@ -427,6 +431,7 @@ mod tests {
     fn rejected_attempt_is_retained_after_outer_observations() {
         let mut owner = ExecutionFinalization::new().unwrap();
         owner.defer_without_attempt("retained/root".into());
+
         assert!(!owner.cleanup_attempted());
         assert!(!owner.request_cleanup());
         assert!(owner.cleanup_attempted());
@@ -445,27 +450,52 @@ mod tests {
         );
     }
 
+    fn cleanup_after_drains(
+        observe: fn(&mut ExecutionFinalization) -> bool,
+    ) -> ExecutionFinalization {
+        let mut owner = ExecutionFinalization::new().unwrap();
+        owner.observe_measurement(Ok(Ok(123))).unwrap();
+        assert!(observe(&mut owner));
+        assert!(owner.request_cleanup());
+        assert!(owner.complete_cleanup(record(CleanupDisposition::Clean), ""));
+        assert!(!owner.request_cleanup());
+        owner
+    }
+
+    fn inner_drains(owner: &mut ExecutionFinalization) -> bool {
+        owner.observe_inner_drains(JOINED).unwrap()
+    }
+
+    fn outer_drains(owner: &mut ExecutionFinalization) -> bool {
+        owner.observe_outer_drains(JOINED, &mut Vec::new())
+    }
+
+    #[rstest::rstest]
+    #[case::inner(inner_drains)]
+    #[case::outer(outer_drains)]
+    fn cleanup_projects_the_observed_record(
+        #[case] observe: fn(&mut ExecutionFinalization) -> bool,
+    ) {
+        let owner = cleanup_after_drains(observe);
+        let mut summary = summary();
+
+        owner.project_summary(&mut summary);
+
+        assert_eq!(summary.disk.removed_logical_bytes, Some(123));
+        assert_eq!(summary.disk.cleanup[0].examined_entries, 7);
+    }
+
     #[test]
     fn normal_and_outer_cleanup_project_the_same_observed_record() {
-        let mut summaries = Vec::new();
-        for outer in [false, true] {
-            let mut owner = ExecutionFinalization::new().unwrap();
-            owner.observe_measurement(Ok(Ok(123))).unwrap();
-            if outer {
-                assert!(owner.observe_outer_drains(JOINED, &mut Vec::new()));
-            } else {
-                assert!(owner.observe_inner_drains(JOINED).unwrap());
-            }
-            assert!(owner.request_cleanup());
-            assert!(owner.complete_cleanup(record(CleanupDisposition::Clean), ""));
-            assert!(!owner.request_cleanup());
-            let mut summary = summary();
-            owner.project_summary(&mut summary);
-            assert_eq!(summary.disk.removed_logical_bytes, Some(123));
-            assert_eq!(summary.disk.cleanup[0].examined_entries, 7);
-            summaries.push(summary);
-        }
-        assert_eq!(summaries[0], summaries[1]);
+        let inner = cleanup_after_drains(inner_drains);
+        let outer = cleanup_after_drains(outer_drains);
+        let mut inner_summary = summary();
+        let mut outer_summary = summary();
+
+        inner.project_summary(&mut inner_summary);
+        outer.project_summary(&mut outer_summary);
+
+        assert_eq!(inner_summary, outer_summary);
     }
 
     #[test]
@@ -476,6 +506,7 @@ mod tests {
             calls.set(calls.get() + 1);
             Err(io::Error::other("free space unavailable"))
         });
+
         assert!(first.is_err());
         owner
             .observe_end_available(|| {

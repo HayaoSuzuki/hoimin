@@ -83,196 +83,212 @@ fn candidates(document: &serde_json::Value, operator: &str) -> Vec<serde_json::V
         .collect()
 }
 
+#[rstest::rstest]
+#[case::override_delete("override_method_delete")]
+#[case::super_move("super_call_move")]
 #[tokio::test]
-async fn inheritance_defaults_opt_out_and_selected_ids_are_stable() {
+async fn inheritance_defaults_opt_out_and_selected_ids_are_stable(#[case] operator: &str) {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("subject.py"), SOURCE).unwrap();
     let defaults = plan(root.path(), &[], "pass").await;
-    for operator in OPS {
-        let expected = candidates(&defaults, operator);
-        assert_eq!(expected.len(), 1, "{operator}");
-        assert_eq!(
-            candidates(
-                &plan(root.path(), &["--operators", operator], "pass").await,
-                operator
-            ),
-            expected
-        );
-        assert_eq!(
-            candidates(
-                &plan(
-                    root.path(),
-                    &["--operators", operator, "--symbol", "subject:Child.run"],
-                    "pass"
-                )
-                .await,
-                operator
-            ),
-            expected
-        );
-        let excluded = plan(root.path(), &["--exclude-operators", operator], "pass").await;
-        assert_eq!(
-            candidates(&excluded, operator),
-            Vec::<serde_json::Value>::new()
-        );
-        let other = OPS.into_iter().find(|name| *name != operator).unwrap();
-        assert_eq!(candidates(&excluded, other), candidates(&defaults, other));
-    }
+
+    let expected = candidates(&defaults, operator);
+
+    assert_eq!(expected.len(), 1, "{operator}");
+    assert_eq!(
+        candidates(
+            &plan(root.path(), &["--operators", operator], "pass").await,
+            operator
+        ),
+        expected
+    );
+    assert_eq!(
+        candidates(
+            &plan(
+                root.path(),
+                &["--operators", operator, "--symbol", "subject:Child.run"],
+                "pass"
+            )
+            .await,
+            operator
+        ),
+        expected
+    );
+    let excluded = plan(root.path(), &["--exclude-operators", operator], "pass").await;
+    assert_eq!(
+        candidates(&excluded, operator),
+        Vec::<serde_json::Value>::new()
+    );
+    let other = OPS.into_iter().find(|name| *name != operator).unwrap();
+    assert_eq!(candidates(&excluded, other), candidates(&defaults, other));
+
     assert_eq!(
         std::fs::read(root.path().join("subject.py")).unwrap(),
         SOURCE.as_bytes()
     );
 }
 
+#[rstest::rstest]
+#[case::delete_weak(
+    "override_method_delete",
+    "from subject import Child; seen=[]; Child().run(seen.append); assert seen[0]==1",
+    0,
+    1
+)]
+#[case::delete_strong(
+    "override_method_delete",
+    "from subject import Child; seen=[]; Child().run(seen.append); assert seen==[1,2]",
+    1,
+    0
+)]
+#[case::move_weak(
+    "super_call_move",
+    "from subject import Child; seen=[]; Child().run(seen.append); assert sorted(seen)==[1,2]",
+    0,
+    1
+)]
+#[case::move_strong(
+    "super_call_move",
+    "from subject import Child; seen=[]; Child().run(seen.append); assert seen==[1,2]",
+    1,
+    0
+)]
 #[tokio::test]
-async fn inheritance_saved_plans_expose_missing_override_and_order_assertions() {
-    for operator in OPS {
-        let strong =
-            "from subject import Child; seen=[]; Child().run(seen.append); assert seen==[1,2]";
-        let weak = if operator == "override_method_delete" {
-            "from subject import Child; seen=[]; Child().run(seen.append); assert seen[0]==1"
-        } else {
-            "from subject import Child; seen=[]; Child().run(seen.append); assert sorted(seen)==[1,2]"
-        };
-        for (check, killed, survived) in [(weak, 0, 1), (strong, 1, 0)] {
-            let root = tempfile::tempdir().unwrap();
-            std::fs::write(root.path().join("subject.py"), SOURCE).unwrap();
-            let saved = plan(root.path(), &["--operators", operator], check).await;
-            assert_eq!(candidates(&saved, operator).len(), 1);
-            let manifest = root.path().join("plan.json");
-            std::fs::write(&manifest, serde_json::to_vec(&saved).unwrap()).unwrap();
-            let report = cli(vec![
-                "hoimin".into(),
-                "verify".into(),
-                manifest.into_os_string(),
-                "--top".into(),
-                "1".into(),
-            ])
-            .await;
-            assert_eq!(report["baseline"]["termination"]["Exit"], 0);
-            assert_eq!(report["summary"]["counts"]["killed"], killed, "{operator}");
-            assert_eq!(
-                report["summary"]["counts"]["survived"], survived,
-                "{operator}"
-            );
-            assert_eq!(
-                std::fs::read(root.path().join("subject.py")).unwrap(),
-                SOURCE.as_bytes()
-            );
-        }
-    }
+async fn inheritance_saved_plans_expose_missing_override_and_order_assertions(
+    #[case] operator: &str,
+    #[case] check: &str,
+    #[case] killed: usize,
+    #[case] survived: usize,
+) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), SOURCE).unwrap();
+    let saved = plan(root.path(), &["--operators", operator], check).await;
+
+    assert_eq!(candidates(&saved, operator).len(), 1);
+    let manifest = root.path().join("plan.json");
+    std::fs::write(&manifest, serde_json::to_vec(&saved).unwrap()).unwrap();
+    let report = cli(vec![
+        "hoimin".into(),
+        "verify".into(),
+        manifest.into_os_string(),
+        "--top".into(),
+        "1".into(),
+    ])
+    .await;
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+    assert_eq!(report["summary"]["counts"]["killed"], killed, "{operator}");
+    assert_eq!(
+        report["summary"]["counts"]["survived"], survived,
+        "{operator}"
+    );
+    assert_eq!(
+        std::fs::read(root.path().join("subject.py")).unwrap(),
+        SOURCE.as_bytes()
+    );
 }
 
+#[rstest::rstest]
+#[case::override_delete("override_method_delete")]
+#[case::super_move("super_call_move")]
 #[tokio::test]
-async fn inheritance_planning_does_not_import_target() {
+async fn inheritance_planning_does_not_import_target(#[case] operator: &str) {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(
         root.path().join("subject.py"),
         format!("raise RuntimeError('do not import')\n{SOURCE}"),
     )
     .unwrap();
-    for operator in OPS {
-        assert_eq!(
-            candidates(
-                &plan(root.path(), &["--operators", operator], "pass").await,
-                operator
-            )
-            .len(),
-            1
-        );
-    }
+
+    assert_eq!(
+        candidates(
+            &plan(root.path(), &["--operators", operator], "pass").await,
+            operator
+        )
+        .len(),
+        1
+    );
 }
 
+#[rstest::rstest]
+#[case::input_1("\n")]
+#[case::input_2("\r\n")]
+#[case::input_3("\r")]
 #[tokio::test]
-async fn inheritance_saved_plans_preserve_encoded_sources_and_newlines() {
-    for newline in ["\n", "\r\n", "\r"] {
-        for operator in OPS {
-            let root = tempfile::tempdir().unwrap();
-            let source = format!("# coding: latin-1\n# café\n{SOURCE}")
-                .replace(
-                    "  super().run(emit)",
-                    "  'method doc'\n  (super().run(\n   emit\n  )) # source slot",
-                )
-                .replace('\n', newline);
-            let bytes: Vec<u8> = source
-                .chars()
-                .map(|c| u8::try_from(u32::from(c)).unwrap())
-                .collect();
-            std::fs::write(root.path().join("subject.py"), &bytes).unwrap();
-            let saved = plan(
-                root.path(),
-                &["--operators", operator],
-                "from subject import Child; seen=[]; Child().run(seen.append); assert seen==[1,2]",
-            )
-            .await;
-            assert_eq!(candidates(&saved, operator).len(), 1);
-            let manifest = root.path().join("plan.json");
-            std::fs::write(&manifest, serde_json::to_vec(&saved).unwrap()).unwrap();
-            let report = cli(vec![
-                "hoimin".into(),
-                "verify".into(),
-                manifest.into_os_string(),
-                "--top".into(),
-                "1".into(),
-            ])
-            .await;
-            assert_eq!(report["baseline"]["termination"]["Exit"], 0);
-            assert_eq!(report["summary"]["counts"]["killed"], 1, "{operator}");
-            assert_eq!(
-                std::fs::read(root.path().join("subject.py")).unwrap(),
-                bytes
-            );
-        }
-    }
+async fn inheritance_saved_plans_preserve_encoded_sources_and_newlines(
+    #[case] newline: &str,
+    #[values("override_method_delete", "super_call_move")] operator: &str,
+) {
+    let root = tempfile::tempdir().unwrap();
+    let source = format!("# coding: latin-1\n# café\n{SOURCE}")
+        .replace(
+            "  super().run(emit)",
+            "  'method doc'\n  (super().run(\n   emit\n  )) # source slot",
+        )
+        .replace('\n', newline);
+    let bytes: Vec<u8> = source
+        .chars()
+        .map(|c| u8::try_from(u32::from(c)).unwrap())
+        .collect();
+    std::fs::write(root.path().join("subject.py"), &bytes).unwrap();
+
+    let saved = plan(
+        root.path(),
+        &["--operators", operator],
+        "from subject import Child; seen=[]; Child().run(seen.append); assert seen==[1,2]",
+    )
+    .await;
+
+    assert_eq!(candidates(&saved, operator).len(), 1);
+    let manifest = root.path().join("plan.json");
+    std::fs::write(&manifest, serde_json::to_vec(&saved).unwrap()).unwrap();
+    let report = cli(vec![
+        "hoimin".into(),
+        "verify".into(),
+        manifest.into_os_string(),
+        "--top".into(),
+        "1".into(),
+    ])
+    .await;
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+    assert_eq!(report["summary"]["counts"]["killed"], 1, "{operator}");
+    assert_eq!(
+        std::fs::read(root.path().join("subject.py")).unwrap(),
+        bytes
+    );
 }
 
+#[rstest::rstest]
+#[case::equivalent_override(OPS[0], "class Base:\n def run(self, emit): emit(1)\nclass Child(Base):\n def run(self, emit): emit(1)\n", "from subject import Child; seen=[]; Child().run(seen.append); assert seen==[1]", 0, 1)]
+#[case::removed_override_breaks_dependency(OPS[0], "class Base:\n def run(self, emit): emit(self.ready)\nclass Child(Base):\n def prepare(self): self.ready = 1\n def run(self, emit): self.prepare(); super().run(emit)\n", "from subject import Child; Child().run(print)", 1, 0)]
+#[case::moved_super_breaks_dependency(OPS[1], "class Base:\n def run(self, emit): emit(self.ready)\nclass Child(Base):\n def prepare(self): self.ready = 1\n def run(self, emit): self.prepare(); super().run(emit)\n", "from subject import Child; Child().run(print)", 1, 0)]
 #[tokio::test]
-async fn inheritance_equivalence_and_runtime_failure_controls() {
-    let equivalent = "class Base:\n def run(self, emit): emit(1)\nclass Child(Base):\n def run(self, emit): emit(1)\n";
-    let dependent = "class Base:\n def run(self, emit): emit(self.ready)\nclass Child(Base):\n def prepare(self): self.ready = 1\n def run(self, emit): self.prepare(); super().run(emit)\n";
-    for (operator, source, check, killed, survived) in [
-        (
-            OPS[0],
-            equivalent,
-            "from subject import Child; seen=[]; Child().run(seen.append); assert seen==[1]",
-            0,
-            1,
-        ),
-        (
-            OPS[0],
-            dependent,
-            "from subject import Child; Child().run(print)",
-            1,
-            0,
-        ),
-        (
-            OPS[1],
-            dependent,
-            "from subject import Child; Child().run(print)",
-            1,
-            0,
-        ),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("subject.py"), source).unwrap();
-        let saved = plan(root.path(), &["--operators", operator], check).await;
-        assert_eq!(candidates(&saved, operator).len(), 1);
-        let manifest = root.path().join("plan.json");
-        std::fs::write(&manifest, serde_json::to_vec(&saved).unwrap()).unwrap();
-        let report = cli(vec![
-            "hoimin".into(),
-            "verify".into(),
-            manifest.into_os_string(),
-            "--top".into(),
-            "1".into(),
-        ])
-        .await;
-        assert_eq!(report["baseline"]["termination"]["Exit"], 0);
-        assert_eq!(report["summary"]["counts"]["killed"], killed);
-        assert_eq!(report["summary"]["counts"]["survived"], survived);
-        assert_eq!(
-            std::fs::read(root.path().join("subject.py")).unwrap(),
-            source.as_bytes()
-        );
-    }
+async fn inheritance_equivalence_and_runtime_failure_controls(
+    #[case] operator: &str,
+    #[case] source: &str,
+    #[case] check: &str,
+    #[case] killed: usize,
+    #[case] survived: usize,
+) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), source).unwrap();
+    let saved = plan(root.path(), &["--operators", operator], check).await;
+
+    assert_eq!(candidates(&saved, operator).len(), 1);
+    let manifest = root.path().join("plan.json");
+    std::fs::write(&manifest, serde_json::to_vec(&saved).unwrap()).unwrap();
+    let report = cli(vec![
+        "hoimin".into(),
+        "verify".into(),
+        manifest.into_os_string(),
+        "--top".into(),
+        "1".into(),
+    ])
+    .await;
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+    assert_eq!(report["summary"]["counts"]["killed"], killed);
+    assert_eq!(report["summary"]["counts"]["survived"], survived);
+    assert_eq!(
+        std::fs::read(root.path().join("subject.py")).unwrap(),
+        source.as_bytes()
+    );
 }

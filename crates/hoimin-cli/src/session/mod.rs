@@ -1152,15 +1152,18 @@ fn classify_fresh_history(
 
 #[cfg(test)]
 mod resume_history_tests {
-    #[test]
-    fn an_eligible_row_appearing_after_candidate_selection_is_not_reported_as_mismatch() {
-        for budget in [false, true] {
-            for completed in [false, true] {
-                assert_eq!(
-                    super::classify_fresh_history((true, budget, completed, true, true)),
-                    hoimin_core::ResumeFreshReason::CandidateChanged
-                );
-            }
-        }
+    #[rstest::rstest]
+    #[case::false_1_false_1(false, false)]
+    #[case::false_1_true_2(false, true)]
+    #[case::true_2_false_1(true, false)]
+    #[case::true_2_true_2(true, true)]
+    fn an_eligible_row_appearing_after_candidate_selection_is_not_reported_as_mismatch(
+        #[case] budget: bool,
+        #[case] completed: bool,
+    ) {
+        assert_eq!(
+            super::classify_fresh_history((true, budget, completed, true, true)),
+            hoimin_core::ResumeFreshReason::CandidateChanged
+        );
     }
 }

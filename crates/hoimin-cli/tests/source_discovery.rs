@@ -49,65 +49,79 @@ fn assert_broad_correspondence(
     actual
 }
 
-#[test]
-fn source_unions_normalization_and_mixed_selectors_match_broad_discovery() {
-    let (_temp, base) = fixture();
-    for (sources, expected) in [
-        (vec!["alpha"], vec!["alpha/mod.py", "alpha/nested/deep.py"]),
-        (
+#[rstest::rstest]
+#[case::alpha_1(vec!["alpha"], vec!["alpha/mod.py", "alpha/nested/deep.py"])]
+#[case::alpha_2(
             vec!["alpha", "alpha/nested"],
             vec!["alpha/mod.py", "alpha/nested/deep.py"],
-        ),
-        (
+        )]
+#[case::alpha_unused_3(
             vec!["./alpha/unused/..", "beta"],
             vec!["alpha/mod.py", "alpha/nested/deep.py", "beta/mod.py"],
-        ),
-        (vec!["alpha/mod.py"], vec!["alpha/mod.py"]),
-        (vec!["empty"], vec![]),
-    ] {
-        let selection = Selection {
-            sources: sources.into_iter().map(Into::into).collect(),
-            ..base.clone()
-        };
-        let targets = assert_broad_correspondence(&selection).unwrap();
-        assert_eq!(
-            targets
-                .iter()
-                .map(|target| target.path.as_str())
-                .collect::<Vec<_>>(),
-            expected
-        );
-    }
-    for sources in [
-        vec!["alpha"],
-        vec!["alpha", "alpha/nested"],
-        vec!["./alpha/unused/..", "beta"],
-        vec!["alpha/mod.py"],
-    ] {
-        let selection = Selection {
-            sources: sources.into_iter().map(Into::into).collect(),
-            files: vec!["alpha/mod.py".into()],
-            lines: vec![LineSelection {
-                path: "alpha/mod.py".into(),
-                range: LineRange { start: 1, end: 2 },
-            }],
-            ..base.clone()
-        };
-        let mixed = assert_broad_correspondence(&selection).unwrap();
-        assert_eq!(mixed[0].lines, [LineRange { start: 1, end: 2 }]);
-    }
-    for source in [
-        base.root.join("alpha"),
-        base.root.clone(),
-        ".".into(),
-        "".into(),
-    ] {
-        let selection = Selection {
-            sources: vec![source],
-            ..base.clone()
-        };
-        assert_ne!(assert_broad_correspondence(&selection).unwrap(), Vec::new());
-    }
+        )]
+#[case::alpha_mod_py_4(vec!["alpha/mod.py"], vec!["alpha/mod.py"])]
+#[case::empty_5(vec!["empty"], vec![])]
+fn source_unions_normalization_match_broad_discovery(
+    #[case] sources: Vec<&str>,
+    #[case] expected: Vec<&str>,
+) {
+    let (_temp, base) = fixture();
+
+    let selection = Selection {
+        sources: sources.into_iter().map(Into::into).collect(),
+        ..base.clone()
+    };
+    let targets = assert_broad_correspondence(&selection).unwrap();
+    assert_eq!(
+        targets
+            .iter()
+            .map(|target| target.path.as_str())
+            .collect::<Vec<_>>(),
+        expected
+    );
+}
+
+#[rstest::rstest]
+#[case::alpha_1(vec!["alpha"])]
+#[case::alpha_2(vec!["alpha", "alpha/nested"])]
+#[case::alpha_unused_3(vec!["./alpha/unused/..", "beta"])]
+#[case::alpha_mod_py_4(vec!["alpha/mod.py"])]
+fn source_unions_preserve_explicit_line_selectors(#[case] sources: Vec<&str>) {
+    let (_temp, base) = fixture();
+
+    let selection = Selection {
+        sources: sources.into_iter().map(Into::into).collect(),
+        files: vec!["alpha/mod.py".into()],
+        lines: vec![LineSelection {
+            path: "alpha/mod.py".into(),
+            range: LineRange { start: 1, end: 2 },
+        }],
+        ..base.clone()
+    };
+    let mixed = assert_broad_correspondence(&selection).unwrap();
+    assert_eq!(mixed[0].lines, [LineRange { start: 1, end: 2 }]);
+}
+
+#[rstest::rstest]
+#[case::absolute_subtree(|base: &Selection| base.root.join("alpha"))]
+#[case::absolute_root(|base: &Selection| base.root.clone())]
+#[case::dot_root(|_: &Selection| Utf8PathBuf::from("."))]
+#[case::empty_root(|_: &Selection| Utf8PathBuf::new())]
+fn source_root_spellings_match_broad_discovery(#[case] make_source: fn(&Selection) -> Utf8PathBuf) {
+    let (_temp, base) = fixture();
+    let source = make_source(&base);
+
+    let selection = Selection {
+        sources: vec![source],
+        ..base.clone()
+    };
+    assert_ne!(assert_broad_correspondence(&selection).unwrap(), Vec::new());
+}
+
+#[test]
+fn explicit_file_outside_source_is_rejected() {
+    let (_temp, base) = fixture();
+
     let outside = Selection {
         sources: vec!["alpha".into()],
         files: vec!["beta/mod.py".into()],
@@ -120,51 +134,53 @@ fn source_unions_normalization_and_mixed_selectors_match_broad_discovery() {
     ));
 }
 
-#[test]
-fn include_exclude_and_source_order_preserve_symbol_resolution() {
+#[rstest::rstest]
+#[case::alpha_1(["alpha", "beta"], "alpha/mod.py")]
+#[case::beta_2(["beta", "alpha"], "beta/mod.py")]
+fn include_exclude_and_source_order_preserve_symbol_resolution(
+    #[case] sources: [&str; 2],
+    #[case] symbol_path: &str,
+) {
     let (_temp, base) = fixture();
-    for (sources, symbol_path) in [
-        (["alpha", "beta"], "alpha/mod.py"),
-        (["beta", "alpha"], "beta/mod.py"),
-    ] {
-        let selection = Selection {
-            sources: sources.into_iter().map(Into::into).collect(),
-            symbols: vec![SymbolSelection {
-                module: "mod".into(),
-                qualname: "f".into(),
-            }],
-            includes: vec![
-                "alpha/ignored/**".into(),
-                "alpha_extra/**".into(),
-                "alpha/blocked/**".into(),
-                "alpha/.venv/**".into(),
-                "beta/.hidden.py".into(),
-            ],
-            ..base.clone()
-        };
-        let targets = assert_broad_correspondence(&selection).unwrap();
-        assert_eq!(
-            targets
-                .iter()
-                .filter(|target| !target.symbols.is_empty())
-                .map(|target| target.path.as_str())
-                .collect::<Vec<_>>(),
-            [symbol_path]
-        );
-        assert_eq!(
-            targets
-                .iter()
-                .map(|target| target.path.as_str())
-                .collect::<Vec<_>>(),
-            [
-                "alpha/ignored/restored.py",
-                "alpha/mod.py",
-                "alpha/nested/deep.py",
-                "beta/.hidden.py",
-                "beta/mod.py"
-            ]
-        );
-    }
+
+    let selection = Selection {
+        sources: sources.into_iter().map(Into::into).collect(),
+        symbols: vec![SymbolSelection {
+            module: "mod".into(),
+            qualname: "f".into(),
+        }],
+        includes: vec![
+            "alpha/ignored/**".into(),
+            "alpha_extra/**".into(),
+            "alpha/blocked/**".into(),
+            "alpha/.venv/**".into(),
+            "beta/.hidden.py".into(),
+        ],
+        ..base.clone()
+    };
+    let targets = assert_broad_correspondence(&selection).unwrap();
+
+    assert_eq!(
+        targets
+            .iter()
+            .filter(|target| !target.symbols.is_empty())
+            .map(|target| target.path.as_str())
+            .collect::<Vec<_>>(),
+        [symbol_path]
+    );
+    assert_eq!(
+        targets
+            .iter()
+            .map(|target| target.path.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "alpha/ignored/restored.py",
+            "alpha/mod.py",
+            "alpha/nested/deep.py",
+            "beta/.hidden.py",
+            "beta/mod.py"
+        ]
+    );
 }
 
 #[test]
@@ -183,44 +199,43 @@ fn source_subtree_case_rules_match_the_platform() {
 }
 
 #[cfg(unix)]
-#[test]
-fn malformed_paths_are_diagnosed_only_in_the_selected_source_scope() {
+#[rstest::rstest]
+#[case::selected_backslash(std::ffi::OsString::from(r"bad\name.py"), "selected", Err(()))]
+#[case::unrelated_backslash(std::ffi::OsString::from(r"bad\name.py"), "unrelated", Ok(vec![hoimin_core::DiscoveredFile::python("selected/app.py")]))]
+#[cfg_attr(not(target_os="macos"), case::selected_invalid_utf8(invalid_utf8_source_name(), "selected", Err(())))]
+#[cfg_attr(not(target_os="macos"), case::unrelated_invalid_utf8(invalid_utf8_source_name(), "unrelated", Ok(vec![hoimin_core::DiscoveredFile::python("selected/app.py")])))]
+fn malformed_paths_are_diagnosed_only_in_the_selected_source_scope(
+    #[case] name: std::ffi::OsString,
+    #[case] parent: &str,
+    #[case] expected: Result<Vec<hoimin_core::DiscoveredFile>, ()>,
+) {
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(temp.path().join("selected")).unwrap();
+    fs::create_dir_all(temp.path().join("unrelated")).unwrap();
+    fs::write(temp.path().join("selected/app.py"), "x = 1\n").unwrap();
+    fs::write(temp.path().join(parent).join(name), "x = 2\n").unwrap();
+    let selection = Selection {
+        root: Utf8PathBuf::from_path_buf(temp.path().to_owned()).unwrap(),
+        sources: vec!["selected".into()],
+        ..Selection::default()
+    };
+    let broad = Selection {
+        sources: vec![".".into()],
+        ..selection.clone()
+    };
+
+    let result = discover_explicit(&selection);
+    let broad_result = discover_explicit(&broad);
+
+    assert_eq!(result.map_err(|_| ()), expected);
+    assert!(broad_result.is_err());
+}
+
+// APFS rejects non-UTF-8 entry names before discovery can observe them.
+#[cfg(all(unix, not(target_os = "macos")))]
+fn invalid_utf8_source_name() -> std::ffi::OsString {
     use std::os::unix::ffi::OsStringExt;
-    // APFS rejects non-UTF-8 directory entry names before discovery can observe them.
-    let names = [
-        Some(std::ffi::OsString::from(r"bad\name.py")),
-        cfg!(not(target_os = "macos"))
-            .then(|| std::ffi::OsString::from_vec(b"bad\xff.py".to_vec())),
-    ];
-    for name in names.into_iter().flatten() {
-        for (parent, expected) in [
-            ("selected", Err(())),
-            (
-                "unrelated",
-                Ok(vec![hoimin_core::DiscoveredFile::python("selected/app.py")]),
-            ),
-        ] {
-            let temp = tempfile::tempdir().unwrap();
-            fs::create_dir_all(temp.path().join("selected")).unwrap();
-            fs::create_dir_all(temp.path().join("unrelated")).unwrap();
-            fs::write(temp.path().join("selected/app.py"), "x = 1\n").unwrap();
-            fs::write(temp.path().join(parent).join(&name), "x = 2\n").unwrap();
-            let selection = Selection {
-                root: Utf8PathBuf::from_path_buf(temp.path().to_owned()).unwrap(),
-                sources: vec!["selected".into()],
-                ..Selection::default()
-            };
-            let result = discover_explicit(&selection);
-            assert_eq!(result.map_err(|_| ()), expected);
-            assert!(
-                discover_explicit(&Selection {
-                    sources: vec![".".into()],
-                    ..selection
-                })
-                .is_err()
-            );
-        }
-    }
+    std::ffi::OsString::from_vec(b"bad\xff.py".to_vec())
 }
 
 #[cfg(unix)]

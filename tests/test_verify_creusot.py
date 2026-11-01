@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any, BinaryIO
 
@@ -94,6 +95,7 @@ def test_source_scope_rejects_missing_or_weakened_contract(
     function = next(item for item in manifest["functions"] if item["id"] == function_id)
     source = root / function["source"]
     original = source.read_text()
+
     assert old in original
     source.write_text(original.replace(old, new, 1))
 
@@ -184,31 +186,7 @@ def test_manifest_cannot_drop_required_proof_scope(
     proof_project: tuple[Path, dict[str, Any]], damage: str
 ) -> None:
     root, manifest = proof_project
-    if damage == "function":
-        manifest["functions"] = [
-            item for item in manifest["functions"] if item["id"] != "projection"
-        ]
-    elif damage == "contract":
-        projection = next(
-            item for item in manifest["functions"] if item["id"] == "projection"
-        )
-        projection["contracts"] = [
-            item
-            for item in projection["contracts"]
-            if item["id"] != "mathematical_ceiling"
-        ]
-        source = root / projection["source"]
-        source.write_text(
-            source.read_text().replace(
-                "#[cfg_attr(creusot, ensures(result.waves@ == "
-                "(selected@ + jobs@ - 1) / jobs@))]",
-                "",
-            )
-        )
-    elif damage == "logical":
-        manifest["logical_definitions"] = []
-    else:
-        manifest["targets"] = manifest["targets"][:2]
+    damage_manifest_scope(root, manifest, damage)
 
     with pytest.raises(verify_creusot.ProofError):
         verify_creusot.check_source_scope(root, manifest)
@@ -240,18 +218,7 @@ def test_generated_scope_rejects_incomplete_or_stale_coma(
 ) -> None:
     root, manifest = proof_project
     path = root / "verif/hoimin_budget_math_rlib/projection/project_top_budget.coma"
-    if damage == "missing":
-        path.unlink()
-    elif damage == "empty":
-        path.write_text("")
-    elif damage == "old":
-        os.utime(path, ns=(1, 1))
-    else:
-        path.write_text(
-            path.read_text().replace(
-                "project_top_budget ensures #5", "changed ensures #5"
-            )
-        )
+    damage_generated_scope(path, damage)
 
     with pytest.raises(verify_creusot.ProofError):
         verify_creusot.check_generated_scope(root, manifest, generated_after_ns=2)
@@ -289,18 +256,7 @@ def test_proof_status_rejects_incomplete_targets(
 ) -> None:
     root, manifest = proof_project
     log = (EVIDENCE / "proof.log").read_text(encoding="utf-8")
-    if damage == "missing_goal":
-        log = log.replace("  Goal vc_project_top_budget: ✔ (1)\n", "", 1)
-    elif damage == "unproved":
-        log = log.replace(
-            "  Goal vc_project_top_budget: ✔ (1)",
-            "  Goal vc_project_top_budget: ✘ (0)",
-            1,
-        )
-    elif damage == "missing_target":
-        log = log.replace("Proved (25 files) ✔", "Proved (24 files) ✔")
-    else:
-        log = ""
+    log = damaged_proof_log(log, damage)
 
     with pytest.raises(verify_creusot.ProofError):
         verify_creusot.check_proof_status(root, manifest, log)
@@ -399,6 +355,7 @@ def test_deadline_kills_child_in_separate_process_group(tmp_path: Path) -> None:
 
     child = int(pid_file.read_text())
     state_file = Path(f"/proc/{child}/stat")
+
     assert not state_file.exists() or state_file.read_text().split(") ", 1)[1][0] == "Z"
 
 
@@ -443,7 +400,9 @@ def test_sigterm_kills_child_in_separate_process_group(tmp_path: Path) -> None:
         assert child_pid is not None, "child did not start"
 
         process.send_signal(signal.SIGTERM)
-        assert process.wait(timeout=10) == 17
+        exit_code = process.wait(timeout=10)
+
+        assert exit_code == 17
         state_file = Path(f"/proc/{child_pid}/stat")
         assert not state_file.exists() or (
             state_file.read_text().split(") ", 1)[1][0] == "Z"
@@ -503,7 +462,9 @@ def test_command_child_receives_sigterm(tmp_path: Path) -> None:
         assert child_pid is not None, "child did not start"
 
         os.kill(child_pid, signal.SIGTERM)
-        assert process.wait(timeout=10) == 0
+        exit_code = process.wait(timeout=10)
+
+        assert exit_code == 0
         assert received.read_text() == "received"
     finally:
         if process.poll() is None:
@@ -566,9 +527,16 @@ def test_sigterm_during_wait_lock_acquisition_does_not_deadlock(
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX SIGTERM is required")
-@pytest.mark.parametrize("when", ["during_launch", "after_reap"])
+@pytest.mark.parametrize(
+    ("when", "expected_cleaned"),
+    [("during_launch", [12345]), ("after_reap", [])],
+    ids=["during-launch", "after-reap"],
+)
 def test_sigterm_cleanup_respects_command_lifecycle(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, when: str
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    when: str,
+    expected_cleaned: list[int],
 ) -> None:
     cleaned: list[int] = []
 
@@ -599,7 +567,7 @@ def test_sigterm_cleanup_respects_command_lifecycle(
             deadline=time.monotonic() + 10,
         )
 
-    assert cleaned == ([12345] if when == "during_launch" else [])
+    assert cleaned == expected_cleaned
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Linux session ownership required")
@@ -620,11 +588,29 @@ def test_session_cleanup_stops_command_group_before_solver_groups(
     assert 101 in calls
 
 
-@pytest.mark.parametrize("unresolved_target", [None, "x86_64-pc-windows-msvc"])
+@pytest.mark.parametrize(
+    ("unresolved_target", "expectation", "expected_results"),
+    [
+        pytest.param(
+            None,
+            contextlib.nullcontext(),
+            (list(verify_creusot.TARGETS), [{"files": 25, "goals": 59}] * 3),
+            id="all-targets-proved",
+        ),
+        pytest.param(
+            "x86_64-pc-windows-msvc",
+            pytest.raises(verify_creusot.ProofError, match="unproved goal"),
+            ([], []),
+            id="windows-goal-unproved",
+        ),
+    ],
+)
 def test_runner_requires_three_fresh_target_results(
     proof_project: tuple[Path, dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
     unresolved_target: str | None,
+    expectation: AbstractContextManager[object],
+    expected_results: tuple[list[str], list[dict[str, int]]],
 ) -> None:
     root, manifest = proof_project
     for name in (
@@ -675,15 +661,17 @@ def test_runner_requires_three_fresh_target_results(
     output = root / "report"
     output.mkdir()
 
-    if unresolved_target is not None:
-        with pytest.raises(verify_creusot.ProofError, match="unproved goal"):
-            verify_creusot.verify(root, output, manifest, time.monotonic() + 10)
-    else:
+    expected_targets, expected_proofs = expected_results
+    results: list[dict[str, Any]] = []
+
+    with expectation:
         results = verify_creusot.verify(root, output, manifest, time.monotonic() + 10)
-        assert [result["target"] for result in results] == list(verify_creusot.TARGETS)
-        assert all(result["proved"] == {"files": 25, "goals": 59} for result in results)
+
     proves = [call for call in calls if "--only=prove" in call]
     generations = [call for call in calls if "--only=coma" in call]
+
+    assert [result["target"] for result in results] == expected_targets
+    assert [result["proved"] for result in results] == expected_proofs
     assert len(generations) == 3
     assert all(
         "--ignore-rust-version" in call[call.index("--") + 1 :] for call in generations
@@ -694,3 +682,62 @@ def test_runner_requires_three_fresh_target_results(
         for call in proves
     )
     assert sum("check" in call for call in calls) == 6
+
+
+def damage_manifest_scope(root: Path, manifest: dict[str, Any], damage: str) -> None:
+    if damage == "function":
+        manifest["functions"] = [
+            item for item in manifest["functions"] if item["id"] != "projection"
+        ]
+    elif damage == "contract":
+        projection = next(
+            item for item in manifest["functions"] if item["id"] == "projection"
+        )
+        projection["contracts"] = [
+            item
+            for item in projection["contracts"]
+            if item["id"] != "mathematical_ceiling"
+        ]
+        source = root / projection["source"]
+        source.write_text(
+            source.read_text().replace(
+                "#[cfg_attr(creusot, ensures(result.waves@ == "
+                "(selected@ + jobs@ - 1) / jobs@))]",
+                "",
+            )
+        )
+    elif damage == "logical":
+        manifest["logical_definitions"] = []
+    else:
+        manifest["targets"] = manifest["targets"][:2]
+
+
+def damage_generated_scope(path: Path, damage: str) -> None:
+    if damage == "missing":
+        path.unlink()
+    elif damage == "empty":
+        path.write_text("")
+    elif damage == "old":
+        os.utime(path, ns=(1, 1))
+    else:
+        path.write_text(
+            path.read_text().replace(
+                "project_top_budget ensures #5", "changed ensures #5"
+            )
+        )
+
+
+def damaged_proof_log(log: str, damage: str) -> str:
+    if damage == "missing_goal":
+        log = log.replace("  Goal vc_project_top_budget: ✔ (1)\n", "", 1)
+    elif damage == "unproved":
+        log = log.replace(
+            "  Goal vc_project_top_budget: ✔ (1)",
+            "  Goal vc_project_top_budget: ✘ (0)",
+            1,
+        )
+    elif damage == "missing_target":
+        log = log.replace("Proved (25 files) ✔", "Proved (24 files) ✔")
+    else:
+        log = ""
+    return log

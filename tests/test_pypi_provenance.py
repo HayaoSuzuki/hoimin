@@ -11,7 +11,6 @@ from collections.abc import Callable
 from email.message import Message
 from operator import setitem
 from pathlib import Path
-from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -153,7 +152,7 @@ def test_propagation_stops_when_request_time_consumes_budget() -> None:
     sleep.assert_not_called()
 
 
-@given(status=st.sampled_from([403, 429, 500, 502, 503]))
+@pytest.mark.parametrize("status", [403, 429, 500, 502, 503])
 def test_propagation_does_not_retry_other_http_errors(status: int) -> None:
     rejected = urllib.error.HTTPError(
         "https://pypi.org/", status, "rejected", Message(), None
@@ -325,7 +324,33 @@ def test_rejects_invalid_index_statement_sets(
         pypi_provenance.statement_types(statements, "a.whl", "a" * 64)
 
 
-def test_index_inventory_rejects_partial_or_changed_publication(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "records",
+    [[], ["valid", "valid"], ["yanked"], ["changed"]],
+    ids=["missing", "duplicate", "yanked", "digest-mismatch"],
+)
+def test_index_inventory_rejects_partial_or_changed_publication(
+    tmp_path: Path, records: list[str]
+) -> None:
+    wheel = tmp_path / "a.whl"
+    wheel.write_bytes(b"wheel")
+    record = {
+        "filename": "a.whl",
+        "digests": {"sha256": hashlib.sha256(b"wheel").hexdigest()},
+        "yanked": False,
+    }
+    variants = {
+        "valid": record,
+        "yanked": {**record, "yanked": True},
+        "changed": {**record, "digests": {"sha256": "0" * 64}},
+    }
+    inventory: dict[str, object] = {"urls": [variants[name] for name in records]}
+
+    with pytest.raises(ValueError, match="index"):
+        pypi_provenance.check_inventory(inventory, [wheel])
+
+
+def test_index_inventory_accepts_matching_publication(tmp_path: Path) -> None:
     wheel = tmp_path / "a.whl"
     wheel.write_bytes(b"wheel")
     record = {
@@ -335,14 +360,6 @@ def test_index_inventory_rejects_partial_or_changed_publication(tmp_path: Path) 
     }
 
     pypi_provenance.check_inventory({"urls": [record]}, [wheel])
-    for records in (
-        [],
-        [record, record],
-        [{**record, "yanked": True}],
-        [{**record, "digests": {"sha256": "0" * 64}}],
-    ):
-        with pytest.raises(ValueError, match="index"):
-            pypi_provenance.check_inventory({"urls": records}, [wheel])
 
 
 def test_release_automates_test_index_before_production_with_opt_in() -> None:
@@ -360,13 +377,19 @@ def test_release_automates_test_index_before_production_with_opt_in() -> None:
         "testpypi-publish",
     ]
     assert "testpypi" in jobs["pypi-inspect"]["needs"]
-    for index in ("testpypi", "pypi"):
-        upload = jobs[index + "-publish"]
 
-        assert "uses" not in upload
-        assert upload["permissions"] == {"id-token": "write"}
-        assert upload["environment"]["name"] == index
-        assert all("run" not in step for step in upload["steps"])
+
+@pytest.mark.parametrize("index", ["testpypi", "pypi"])
+def test_pypi_upload_uses_protected_oidc_environment(index: str) -> None:
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.safe_load((root / ".github/workflows/release.yml").read_text())
+
+    upload = workflow["jobs"][index + "-publish"]
+
+    assert "uses" not in upload
+    assert upload["permissions"] == {"id-token": "write"}
+    assert upload["environment"]["name"] == index
+    assert all("run" not in step for step in upload["steps"])
 
 
 def test_real_github_aggregate_signature_is_valid_but_not_pypi_compatible() -> None:
@@ -398,62 +421,85 @@ def test_real_github_aggregate_signature_is_valid_but_not_pypi_compatible() -> N
         )
 
 
-def test_real_cli_download_contains_individually_verifiable_wheel_proof() -> None:
-    lines = (
+def downloaded_proof_lines() -> list[str]:
+    return (
         (ROOT / "tests/fixtures/pypi-provenance-download.jsonl")
         .read_text(encoding="utf-8")
         .splitlines()
     )
-    individual_proofs: list[tuple[str, Attestation, list[Any]]] = []
-    counts: list[int] = []
-    for line in lines:
-        bundle = Bundle.from_json(line)
-        value = Attestation.from_bundle(bundle)
 
-        statement = pypi_provenance.statement_of(value.model_dump(mode="json"))
-        subjects = statement["subject"]
 
-        assert isinstance(subjects, list)
-        counts.append(len(subjects))
-        individual_proofs.append((line, value, subjects))
+def proof_subject_count(line: str) -> int:
+    envelope = json.loads(line)["dsseEnvelope"]
+    return len(json.loads(base64.b64decode(envelope["payload"]))["subject"])
+
+
+def test_real_cli_download_contains_aggregate_and_individual_proof() -> None:
+    lines = downloaded_proof_lines()
+
+    counts = [proof_subject_count(line) for line in lines]
 
     assert sorted(counts) == [1, 13]
 
-    for line, value, subjects in [
-        proof for proof in individual_proofs if len(proof[2]) == 1
-    ]:
-        subject = object_mapping(subjects[0])
 
-        distribution = Distribution(
-            name=str(subject["name"]),
-            digest=str(object_mapping(subject["digest"])["sha256"]),
-        )
-        predicate, _ = value.verify(
-            GitHubPublisher(repository="HayaoSuzuki/hoimin", workflow="release.yml"),
-            distribution,
-            offline=True,
-        )
+@pytest.mark.parametrize(
+    ("line", "expected_subjects"),
+    list(zip(downloaded_proof_lines(), [1, 13], strict=True)),
+    ids=["individual-wheel", "aggregate-release"],
+)
+def test_downloaded_bundle_retains_typed_subjects(
+    line: str, expected_subjects: int
+) -> None:
+    bundle = Bundle.from_json(line)
 
-        assert predicate == "https://slsa.dev/provenance/v1"
-        value.verify(
-            policy.OIDCSourceRepositoryDigest(
-                "c9f92eb721d8a858a2f55643a5c72723763174dd"
-            ),
-            distribution,
-            offline=True,
-        )
+    value = Attestation.from_bundle(bundle)
+    statement = pypi_provenance.statement_of(value.model_dump(mode="json"))
 
-        object_mapping_result = object_mapping(json.loads(line)["dsseEnvelope"])
+    assert isinstance(statement["subject"], list)
+    assert len(statement["subject"]) == expected_subjects
 
-        assert value.envelope.statement == base64.b64decode(
-            str(object_mapping_result["payload"])
-        )
+
+@pytest.mark.parametrize(
+    "line",
+    [line for line in downloaded_proof_lines() if proof_subject_count(line) == 1],
+    ids=["individual-wheel"],
+)
+@pytest.mark.parametrize(
+    "identity",
+    [
+        GitHubPublisher(repository="HayaoSuzuki/hoimin", workflow="release.yml"),
+        policy.OIDCSourceRepositoryDigest("c9f92eb721d8a858a2f55643a5c72723763174dd"),
+    ],
+    ids=["workflow-publisher", "source-revision"],
+)
+def test_real_cli_download_contains_individually_verifiable_wheel_proof(
+    line: str, identity: GitHubPublisher | policy.OIDCSourceRepositoryDigest
+) -> None:
+    value = Attestation.from_bundle(Bundle.from_json(line))
+
+    statement = pypi_provenance.statement_of(value.model_dump(mode="json"))
+    subjects = statement["subject"]
+
+    assert isinstance(subjects, list)
+    subject = object_mapping(subjects[0])
+    distribution = Distribution(
+        name=str(subject["name"]),
+        digest=str(object_mapping(subject["digest"])["sha256"]),
+    )
+    envelope = object_mapping(json.loads(line)["dsseEnvelope"])
+    expected_statement = base64.b64decode(str(envelope["payload"]))
+
+    predicate, _ = value.verify(identity, distribution, offline=True)
+
+    assert predicate == "https://slsa.dev/provenance/v1"
+    assert value.envelope.statement == expected_statement
 
 
 def test_real_signature_rejects_corruption() -> None:
     raw = recorded_bundle()
     envelope = object_mapping(raw["dsseEnvelope"])
     signatures = envelope["signatures"]
+
     assert isinstance(signatures, list)
     signature = object_mapping(signatures[0])
     signature["sig"] = base64.b64encode(b"invalid signature").decode()
@@ -686,14 +732,19 @@ def test_stage_preserves_signed_statement_bytes(
 
     pypi_provenance.stage("v1.2.3", "a" * 40, assets, release_json, output)
 
-    assert len(list(output.iterdir())) == 6
-    for wheel in output.glob("*.whl"):
-        assert wheel.read_bytes() == (assets / wheel.name).read_bytes()
-        value = Attestation.model_validate_json(
+    wheels = list(output.glob("*.whl"))
+    statements = {
+        wheel.name: Attestation.model_validate_json(
             wheel.with_suffix(".whl.slsa.attestation").read_text(encoding="utf-8")
-        )
+        ).envelope.statement
+        for wheel in wheels
+    }
 
-        assert value.envelope.statement == source_statements[wheel.name]
+    assert len(list(output.iterdir())) == 6
+    assert {wheel.name: wheel.read_bytes() for wheel in wheels} == {
+        wheel.name: (assets / wheel.name).read_bytes() for wheel in wheels
+    }
+    assert statements == {wheel.name: source_statements[wheel.name] for wheel in wheels}
 
 
 def index_data(

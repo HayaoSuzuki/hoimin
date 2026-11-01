@@ -94,6 +94,66 @@ def test_captured_case_output_can_interrupt_the_named_test_line() -> None:
     assert classification is BoundaryStatus.MATCH
 
 
+@pytest.mark.parametrize(
+    ("returncode", "log", "expected"),
+    [
+        pytest.param(
+            0,
+            "test wanted::case_1_first ... ok\n"
+            "test wanted::case_2_second ... ok\n"
+            "test result: ok. 2 passed; 0 failed; 0 ignored;",
+            BoundaryStatus.MATCH,
+            id="all-parameter-cases",
+        ),
+        pytest.param(
+            101,
+            "test wanted::case_1_first ... ok\n"
+            "test wanted::case_2_second ... FAILED\n"
+            "test result: FAILED. 1 passed; 1 failed; 0 ignored;",
+            BoundaryStatus.MISMATCH,
+            id="failing-parameter-case",
+        ),
+        pytest.param(
+            0,
+            "test wanted::case_1_first ... ok\n"
+            "test wanted_extra ... ok\n"
+            "test result: ok. 2 passed; 0 failed; 0 ignored;",
+            BoundaryStatus.INFRASTRUCTURE_ERROR,
+            id="unrelated-filter-match",
+        ),
+        pytest.param(
+            0,
+            "test wanted::case_1_first ... ok\n"
+            "test result: ok. 2 passed; 0 failed; 0 ignored;",
+            BoundaryStatus.INFRASTRUCTURE_ERROR,
+            id="missing-case-result",
+        ),
+        pytest.param(
+            0,
+            "test wanted::case_1_first ... ok\n"
+            "test wanted::case_1_first ... ok\n"
+            "test result: ok. 2 passed; 0 failed; 0 ignored;",
+            BoundaryStatus.INFRASTRUCTURE_ERROR,
+            id="duplicate-case-result",
+        ),
+        pytest.param(
+            0,
+            "test wanted::case_1_first ... ok\n"
+            "test wanted::case_2_second ... ignored\n"
+            "test result: ok. 1 passed; 0 failed; 1 ignored;",
+            BoundaryStatus.INFRASTRUCTURE_ERROR,
+            id="ignored-parameter-case",
+        ),
+    ],
+)
+def test_parameterized_boundary_requires_complete_family_results(
+    returncode: int, log: str, expected: BoundaryStatus
+) -> None:
+    result = classify(returncode, log, "wanted")
+
+    assert result is expected
+
+
 def test_report_mode_preserves_failure_and_complete_unexecuted_rows(
     tmp_path: Path,
 ) -> None:
@@ -137,9 +197,9 @@ def test_nested_mismatch_cannot_be_laundered_by_outer_success() -> None:
 def test_missing_strict_results_are_reported_as_unexecuted(tmp_path: Path) -> None:
     exit_code = main(["report", "--output", str(tmp_path)])
 
-    assert exit_code == 0
     rows = json.loads((tmp_path / "report.json").read_text())["rows"]
 
+    assert exit_code == 0
     assert rows
     assert all(row["status"] == "unexecuted" for row in rows)
 
@@ -224,6 +284,35 @@ def test_strict_execution_removes_inherited_corpus_filters(
     assert execute_result["status"] == "match"
 
 
+def test_strict_execution_includes_every_parameterized_case(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+) -> None:
+    case = load_registry()["cases"][0]
+    assert case["mode"] == "strict"
+    calls: list[list[str]] = []
+
+    def spawn(argv: list[str], *, stdout: TextIO, **_kwargs: object) -> Mock:
+        calls.append(argv)
+        stdout.write(
+            f"test {case['test']}::case_1_first ... ok\n"
+            f"test {case['test']}::case_2_second ... ok\n"
+            "test result: ok. 2 passed; 0 failed; 0 ignored;"
+        )
+        stdout.flush()
+        return Mock(wait=Mock(return_value=0))
+
+    monkeypatch.setattr("tools.boundary_contracts.sys.platform", case["platforms"][0])
+    monkeypatch.setattr("tools.boundary_contracts.os.killpg", Mock(), raising=False)
+    monkeypatch.setattr("tools.boundary_contracts.signal.SIGKILL", 9, raising=False)
+    mocker.patch("tools.boundary_contracts.subprocess.Popen", side_effect=spawn)
+
+    row = execute(case, tmp_path)
+
+    assert len(calls) == 1
+    assert calls[0][-2:] == ["--", "--show-output"]
+    assert row["status"] == "match"
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -300,6 +389,7 @@ def test_timeout_kills_process_group_and_reports_infrastructure_error(
 
     row = execute(case, tmp_path)
     spawn.assert_called_once()
+
     assert hasattr(signal, "SIGKILL")
     kill.assert_called_once_with(123, signal.SIGKILL)
 
@@ -317,9 +407,10 @@ def test_execution_without_process_group_support_is_unexecuted(
 
     row = execute(case, tmp_path)
 
+    spawn.assert_not_called()
+
     assert row["status"] == "unexecuted"
     assert row["reason"] == "native platform unavailable"
-    spawn.assert_not_called()
 
 
 @pytest.mark.parametrize("value", [None, [], {}, {"status": 1}])

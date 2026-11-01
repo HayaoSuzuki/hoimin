@@ -309,39 +309,40 @@ fn colon_paths_are_copied_restored_and_checked_for_original_changes() {
 }
 
 #[cfg(unix)]
-#[test]
-fn colon_paths_can_be_explicitly_excluded_from_copy_and_integrity_checks() {
-    use hoimin_cli::workspace::LiteralExclusion::{File, Tree};
-
-    let project = FixtureProject::new();
-    let file = ".dockerfiles/appconfig/app:env:conf-sample";
-    let tree = "fixtures:local";
-    for options in [
-        CopyOptions {
+#[rstest::rstest]
+#[case::input_1(|file: &str, tree: &str| CopyOptions {
             excludes: vec![file.into(), tree.into()],
             includes: vec!["**".into()],
             ..CopyOptions::default()
-        },
-        CopyOptions {
-            literal_exclusions: vec![File(file.into()), Tree(tree.into())],
+        })]
+#[case::input_2(|file: &str, tree: &str| CopyOptions {
+            literal_exclusions: vec![hoimin_cli::workspace::LiteralExclusion::File(file.into()), hoimin_cli::workspace::LiteralExclusion::Tree(tree.into())],
             includes: vec!["**".into()],
             ..CopyOptions::default()
-        },
-    ] {
-        write_file(project.temp.path(), file, b"fixture\n");
-        write_file(project.temp.path(), "fixtures:local/data.txt", b"fixture\n");
-        let plan = preflight_plan(project.root(), 1, options);
-        let grant = grant_plan(&plan, plan.aggregate_bytes());
-        let worker = plan
-            .create_worker(&grant.create_worker(EffectId(901), 0).unwrap())
-            .unwrap();
-        assert!(!worker.root().join(file).exists());
-        assert!(!worker.root().join(tree).exists());
-        assert_eq!(worker.read("pkg/a.py").unwrap(), b"original\n");
-        write_file(project.temp.path(), file, b"changed\n");
-        write_file(project.temp.path(), "fixtures:local/new.txt", b"new\n");
-        plan.verify_originals().unwrap();
-    }
+        })]
+fn colon_paths_can_be_explicitly_excluded_from_copy_and_integrity_checks(
+    #[case] make_options: fn(&str, &str) -> CopyOptions,
+) {
+    let project = FixtureProject::new();
+    let file = ".dockerfiles/appconfig/app:env:conf-sample";
+    let tree = "fixtures:local";
+
+    let options = make_options(file, tree);
+
+    write_file(project.temp.path(), file, b"fixture\n");
+    write_file(project.temp.path(), "fixtures:local/data.txt", b"fixture\n");
+    let plan = preflight_plan(project.root(), 1, options);
+    let grant = grant_plan(&plan, plan.aggregate_bytes());
+    let worker = plan
+        .create_worker(&grant.create_worker(EffectId(901), 0).unwrap())
+        .unwrap();
+
+    assert!(!worker.root().join(file).exists());
+    assert!(!worker.root().join(tree).exists());
+    assert_eq!(worker.read("pkg/a.py").unwrap(), b"original\n");
+    write_file(project.temp.path(), file, b"changed\n");
+    write_file(project.temp.path(), "fixtures:local/new.txt", b"new\n");
+    plan.verify_originals().unwrap();
 }
 
 #[cfg(target_os = "linux")]
@@ -399,6 +400,7 @@ fn windows_reset_handles_or_explicitly_rejects_a_lone_surrogate_name() {
         .join(OsString::from_wide(&[u16::from(b'x'), 0xD800]));
     for () in lone_surrogate_entry(&native_path) {
         worker.reset().unwrap();
+
         assert!(!native_path.exists());
     }
 }
@@ -650,6 +652,7 @@ fn reset_removes_a_fifo_without_waiting_for_a_peer() {
     let (worker, result) = run_fifo_operation(worker, fifo.as_std_path(), WorkerWorkspace::reset);
 
     result.unwrap();
+
     assert!(!worker.exists("planted").unwrap());
     assert_eq!(worker.read("pkg/a.py").unwrap(), b"original\n");
 }
@@ -683,8 +686,22 @@ fn excludes_git_venv_and_caches() {
     assert_eq!(paths, vec!["pkg/a.py", "pkg/b.py"]);
 }
 
-#[test]
-fn broad_include_restores_gitignored_files_without_default_excluded_directories() {
+#[rstest::rstest]
+#[case::git_config_1(0)]
+#[case::venv_lib_site_py_2(1)]
+#[case::venv_lib_site_py_3(2)]
+#[case::env_lib_site_py_4(3)]
+#[case::pkg_pycache_a_pyc_5(4)]
+#[case::pytest_cache_state_6(5)]
+#[case::mypy_cache_state_7(6)]
+#[case::ruff_cache_state_8(7)]
+#[case::pyre_state_9(8)]
+#[case::pytype_state_10(9)]
+#[case::tox_state_11(10)]
+#[case::nox_state_12(11)]
+fn broad_include_restores_gitignored_files_without_default_excluded_directories(
+    #[case] scenario_index: usize,
+) {
     let project = FixtureProject::new();
     write_file(project.temp.path(), ".gitignore", b"ignored.txt\n");
     write_file(project.temp.path(), "ignored.txt", b"included");
@@ -722,7 +739,8 @@ fn broad_include_restores_gitignored_files_without_default_excluded_directories(
         .collect::<Vec<_>>();
 
     assert!(paths.contains(&"ignored.txt"));
-    for excluded in [
+
+    let excluded = [
         ".git/config",
         ".venv/lib/site.py",
         "venv/lib/site.py",
@@ -735,12 +753,15 @@ fn broad_include_restores_gitignored_files_without_default_excluded_directories(
         ".pytype/state",
         ".tox/state",
         ".nox/state",
-    ] {
-        assert!(
-            !paths.contains(&excluded),
-            "{excluded} entered the manifest"
-        );
-    }
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
+
+    assert!(
+        !paths.contains(&excluded),
+        "{excluded} entered the manifest"
+    );
 }
 
 #[test]
@@ -827,6 +848,7 @@ fn charges_every_worker_copy_against_one_allowance() {
     let _first = plan
         .create_worker(&grant.create_worker(EffectId(910), 0).unwrap())
         .unwrap();
+
     assert_eq!(plan.observed_copy_bytes(), per_worker);
     let _second = plan
         .create_worker(&grant.create_worker(EffectId(911), 1).unwrap())
@@ -843,6 +865,7 @@ fn dropping_a_worker_releases_its_copy_charge_and_worker_slot() {
     let grant = grant_plan(&plan, per_worker);
     let request = grant.create_worker(EffectId(920), 0).unwrap();
     let worker = plan.create_worker(&request).unwrap();
+
     assert_eq!(plan.materialized_workers(), 1);
     assert_eq!(plan.observed_copy_bytes(), per_worker);
 
@@ -927,6 +950,7 @@ fn mutation_checks_hash_exact_original_and_span() {
     let candidate = mutation_candidate(&worker);
 
     worker.apply_mutation(&candidate).unwrap();
+
     assert_eq!(worker.read("pkg/a.py").unwrap(), b"mutated!\n");
     let mut stale = candidate;
     stale.original = "wrong!!!".into();
@@ -1045,6 +1069,7 @@ fn effect_handlers_preserve_original_ids_for_success_and_failure() {
     let completed = handler
         .handle_preflight(Preflight { id: EffectId(1) })
         .unwrap();
+
     assert_eq!(completed.id, EffectId(1));
     let mut ledger = BudgetLedger::new(RunBudgets {
         memory: 1,
@@ -1170,108 +1195,182 @@ fn explicit_close_removes_active_worker_before_handler_drop() {
     assert_eq!(handler.pending_cleanup_count(), 0);
 }
 
-#[test]
-fn literal_artifacts_are_omitted_from_copy_and_every_integrity_check() {
+#[rstest::rstest]
+#[case::default(vec![], b"".as_slice())]
+#[case::include_all(vec!["**".into()], b"*.db*\n.*hoimin*\n".as_slice())]
+fn literal_artifacts_are_omitted_from_copy_and_every_integrity_check(
+    #[case] includes: Vec<String>,
+    #[case] gitignore: &[u8],
+    #[values("fixture.db", "pkg/a.py")] mutation_path: &str,
+) {
     use hoimin_cli::workspace::LiteralExclusion::{File, Tree};
-    for (includes, gitignore) in [
-        (vec![], b"".as_slice()),
-        (vec!["**".into()], b"*.db*\n.*hoimin*\n"),
-    ] {
-        let project = FixtureProject::new();
-        let artifacts = [
-            "active[1].db",
-            "active[1].db-wal",
-            "active[1].db-shm",
-            "active[1].db-journal",
-        ];
-        let mut exclusions = artifacts
-            .iter()
-            .map(|path| File((*path).into()))
-            .collect::<Vec<_>>();
-        exclusions.push(Tree(".active[1].db.hoimin-locks".into()));
+
+    let project = FixtureProject::new();
+    let artifacts = [
+        "active[1].db",
+        "active[1].db-wal",
+        "active[1].db-shm",
+        "active[1].db-journal",
+    ];
+    let mut exclusions = artifacts
+        .iter()
+        .map(|path| File((*path).into()))
+        .collect::<Vec<_>>();
+    exclusions.push(Tree(".active[1].db.hoimin-locks".into()));
+    for path in artifacts {
+        write_file(project.temp.path(), path, b"active");
+    }
+    write_file(
+        project.temp.path(),
+        ".active[1].db.hoimin-locks/nested/run.lock",
+        b"lock",
+    );
+    let fixtures = [
+        "active1.db",
+        "active[1].db.backup",
+        "active[1].db-wal-copy",
+        "nested/active[1].db",
+        "nested/.active[1].db.hoimin-locks/run.lock",
+        ".active[1].db.hoimin-locks-extra/run.lock",
+        "fixture.db",
+    ];
+    for path in fixtures {
+        write_file(project.temp.path(), path, b"fixture bytes");
+    }
+    for contents in std::iter::once(gitignore).filter(|contents| !contents.is_empty()) {
+        fs::write(project.temp.path().join(".gitignore"), contents).unwrap();
+    }
+    let plan = preflight_plan(
+        project.root(),
+        2,
+        CopyOptions {
+            includes,
+            excludes: vec![],
+            literal_exclusions: exclusions,
+        },
+    );
+    let expected_bytes: u64 = plan
+        .manifest()
+        .entries()
+        .iter()
+        .map(|entry| {
+            fs::metadata(project.root().join(&entry.path))
+                .unwrap()
+                .len()
+        })
+        .sum();
+
+    assert_eq!(plan.aggregate_bytes(), expected_bytes * 2);
+    for path in artifacts {
+        write_file(project.temp.path(), path, b"changed active");
+    }
+    write_file(
+        project.temp.path(),
+        ".active[1].db.hoimin-locks/new.lock",
+        b"new lock",
+    );
+    plan.verify_originals().unwrap();
+    let grant = grant_plan(&plan, plan.aggregate_bytes());
+    for index in 0..2 {
+        let worker = plan
+            .create_worker(
+                &grant
+                    .create_worker(EffectId(901 + u64::from(index)), index)
+                    .unwrap(),
+            )
+            .unwrap();
         for path in artifacts {
-            write_file(project.temp.path(), path, b"active");
+            assert!(!worker.root().join(path).exists());
         }
-        write_file(
-            project.temp.path(),
-            ".active[1].db.hoimin-locks/nested/run.lock",
-            b"lock",
-        );
-        let fixtures = [
-            "active1.db",
-            "active[1].db.backup",
-            "active[1].db-wal-copy",
-            "nested/active[1].db",
-            "nested/.active[1].db.hoimin-locks/run.lock",
-            ".active[1].db.hoimin-locks-extra/run.lock",
-            "fixture.db",
-        ];
+        assert!(!worker.root().join(".active[1].db.hoimin-locks").exists());
         for path in fixtures {
-            write_file(project.temp.path(), path, b"fixture bytes");
-        }
-        for contents in std::iter::once(gitignore).filter(|contents| !contents.is_empty()) {
-            fs::write(project.temp.path().join(".gitignore"), contents).unwrap();
-        }
-        let plan = preflight_plan(
-            project.root(),
-            2,
-            CopyOptions {
-                includes,
-                excludes: vec![],
-                literal_exclusions: exclusions,
-            },
-        );
-        let expected_bytes: u64 = plan
-            .manifest()
-            .entries()
-            .iter()
-            .map(|entry| {
-                fs::metadata(project.root().join(&entry.path))
-                    .unwrap()
-                    .len()
-            })
-            .sum();
-        assert_eq!(plan.aggregate_bytes(), expected_bytes * 2);
-        for path in artifacts {
-            write_file(project.temp.path(), path, b"changed active");
-        }
-        write_file(
-            project.temp.path(),
-            ".active[1].db.hoimin-locks/new.lock",
-            b"new lock",
-        );
-        plan.verify_originals().unwrap();
-        let grant = grant_plan(&plan, plan.aggregate_bytes());
-        for index in 0..2 {
-            let worker = plan
-                .create_worker(
-                    &grant
-                        .create_worker(EffectId(901 + u64::from(index)), index)
-                        .unwrap(),
-                )
-                .unwrap();
-            for path in artifacts {
-                assert!(!worker.root().join(path).exists());
-            }
-            assert!(!worker.root().join(".active[1].db.hoimin-locks").exists());
-            for path in fixtures {
-                assert_eq!(
-                    fs::read(worker.root().join(path)).unwrap(),
-                    b"fixture bytes"
-                );
-            }
-        }
-        for path in ["fixture.db", "pkg/a.py"] {
-            let original = fs::read(project.root().join(path)).unwrap();
-            write_file(project.temp.path(), path, b"real change");
-            assert!(matches!(
-                plan.verify_originals(),
-                Err(WorkspaceError::OriginalChanged { .. })
-            ));
-            write_file(project.temp.path(), path, &original);
-            plan.verify_originals().unwrap();
+            assert_eq!(
+                fs::read(worker.root().join(path)).unwrap(),
+                b"fixture bytes"
+            );
         }
     }
+    {
+        let path = mutation_path;
+        let original = fs::read(project.root().join(path)).unwrap();
+        write_file(project.temp.path(), path, b"real change");
+        assert!(matches!(
+            plan.verify_originals(),
+            Err(WorkspaceError::OriginalChanged { .. })
+        ));
+        write_file(project.temp.path(), path, &original);
+        plan.verify_originals().unwrap();
+    }
+}
+
+#[rstest::rstest]
+#[case::value_1(0)]
+#[case::value_2(1)]
+#[case::outside_3(2)]
+#[case::a_b_4(3)]
+#[case::absolute_5(4)]
+#[case::a_b_6(5)]
+#[case::a_b_7(6)]
+#[case::a_8(7)]
+#[case::a_b_9(8)]
+fn literal_exclusions_distinguish_files_and_trees_and_reject_invalid_paths_case(
+    #[case] scenario_index: usize,
+) {
+    use hoimin_cli::workspace::LiteralExclusion::{File, Tree};
+    let project = FixtureProject::new();
+    write_file(project.temp.path(), "file-rule/child", b"keep directory");
+    write_file(project.temp.path(), "tree-rule", b"keep file");
+    let plan = preflight_plan(
+        project.root(),
+        1,
+        CopyOptions {
+            literal_exclusions: vec![File("file-rule".into()), Tree("tree-rule".into())],
+            ..CopyOptions::default()
+        },
+    );
+
+    assert!(
+        plan.manifest()
+            .entries()
+            .iter()
+            .any(|entry| entry.path == "file-rule/child")
+    );
+    assert!(
+        plan.manifest()
+            .entries()
+            .iter()
+            .any(|entry| entry.path == "tree-rule")
+    );
+
+    let path = [
+        "",
+        ".",
+        "../outside",
+        "a/../b",
+        "/absolute",
+        "a//b",
+        "a/./b",
+        "a/",
+        "a\\b",
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
+
+    let result = WorkspacePlan::preflight(
+        project.root(),
+        EffectId(900),
+        1,
+        CopyOptions {
+            literal_exclusions: vec![File(path.into())],
+            ..CopyOptions::default()
+        },
+    );
+
+    assert!(
+        matches!(result, Err(WorkspaceError::InvalidPath { .. })),
+        "{path}"
+    );
 }
 
 #[test]
@@ -1288,6 +1387,7 @@ fn literal_exclusions_distinguish_files_and_trees_and_reject_invalid_paths() {
             ..CopyOptions::default()
         },
     );
+
     assert!(
         plan.manifest()
             .entries()
@@ -1300,31 +1400,6 @@ fn literal_exclusions_distinguish_files_and_trees_and_reject_invalid_paths() {
             .iter()
             .any(|entry| entry.path == "tree-rule")
     );
-    for path in [
-        "",
-        ".",
-        "../outside",
-        "a/../b",
-        "/absolute",
-        "a//b",
-        "a/./b",
-        "a/",
-        "a\\b",
-    ] {
-        let result = WorkspacePlan::preflight(
-            project.root(),
-            EffectId(900),
-            1,
-            CopyOptions {
-                literal_exclusions: vec![File(path.into())],
-                ..CopyOptions::default()
-            },
-        );
-        assert!(
-            matches!(result, Err(WorkspaceError::InvalidPath { .. })),
-            "{path}"
-        );
-    }
 }
 
 #[test]
@@ -1345,6 +1420,7 @@ fn explicit_import_roots_precede_sources_and_rewritten_inherited_paths() {
     )
     .unwrap();
     let paths: Vec<_> = std::env::split_paths(&environment.env[OsStr::new("PYTHONPATH")]).collect();
+
     assert_eq!(
         paths,
         [

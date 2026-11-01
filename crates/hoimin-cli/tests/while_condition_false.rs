@@ -93,90 +93,99 @@ async fn plan(root: &Path, operators: &str, test: &str) -> serde_json::Value {
     document
 }
 
+#[rstest::rstest]
+#[case::while_pass_1("while[]: pass\n", 1)]
+#[case::while_x_2_x_1_2("while x < 2: x += 1\n", 1)]
+#[case::while_a_and_b_break_3("while a and b: break\n", 1)]
+#[case::while_ready_while_nested_break_break_else_done_4(
+    "while ready():\n    while nested(): break\n    break\nelse: done()\n",
+    2
+)]
+#[case::while_a_and_comment_b_break_5(
+    "é = '前'\r\nwhile (\r\n    a and # comment\r\n    b\r\n): break\r\n",
+    1
+)]
 #[tokio::test]
-async fn while_false_replaces_each_loop_test_and_compiles() {
-    for (source, expected_count) in [
-        ("while[]: pass\n", 1),
-        ("while x < 2: x += 1\n", 1),
-        ("while a and b: break\n", 1),
-        (
-            "while ready():\n    while nested(): break\n    break\nelse: done()\n",
-            2,
-        ),
-        (
-            "é = '前'\r\nwhile (\r\n    a and # comment\r\n    b\r\n): break\r\n",
-            1,
-        ),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("subject.py"), source).unwrap();
-        let doc = plan(root.path(), "while_condition_false", "pass").await;
-        let candidates = doc["candidates"].as_array().unwrap();
-        assert_eq!(candidates.len(), expected_count);
-        for c in candidates {
-            assert!(matches!(c["replacement"].as_str().unwrap(), "(False)"));
-            let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
-            let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
-            let mut mutant = source.to_owned();
-            mutant.replace_range(start..end, c["replacement"].as_str().unwrap());
-            compile(&mutant).await;
-        }
-        assert_eq!(
-            doc["candidates"],
-            plan(root.path(), "while_condition_false", "pass").await["candidates"]
-        );
+async fn while_false_replaces_each_loop_test_and_compiles(
+    #[case] source: &str,
+    #[case] expected_count: usize,
+) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), source).unwrap();
+
+    let doc = plan(root.path(), "while_condition_false", "pass").await;
+    let candidates = doc["candidates"].as_array().unwrap();
+
+    assert_eq!(candidates.len(), expected_count);
+    for c in candidates {
+        assert!(matches!(c["replacement"].as_str().unwrap(), "(False)"));
+        let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
+        let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
+        let mut mutant = source.to_owned();
+        mutant.replace_range(start..end, c["replacement"].as_str().unwrap());
+        compile(&mutant).await;
     }
+    assert_eq!(
+        doc["candidates"],
+        plan(root.path(), "while_condition_false", "pass").await["candidates"]
+    );
 }
 
+#[rstest::rstest]
+#[case::while_true_break_while_false_pass_1("while (True): break\nwhile False: pass\n")]
+#[case::for_x_in_xs_pass_if_x_pass_z_a_for_a_in_xs_if_a_2(
+    "for x in xs: pass\nif x: pass\nz = [a for a in xs if a]\n"
+)]
+#[case::while_f_x_1_break_3("while f(x := 1): break\n")]
+#[case::while_lambda_x_1_break_4("while (lambda: (x := 1))(): break\n")]
+#[case::async_def_f_while_g_await_h_break_5("async def f():\n    while g(await h()): break\n")]
+#[case::def_f_while_g_yield_1_break_6("def f():\n    while g((yield 1)): break\n")]
+#[case::def_f_while_g_yield_from_h_break_7("def f():\n    while g((yield from h())): break\n")]
 #[tokio::test]
-async fn while_false_exclude_other_predicates_and_binding_changes() {
-    for source in [
-        "while (True): break\nwhile False: pass\n",
-        "for x in xs: pass\nif x: pass\nz = [a for a in xs if a]\n",
-        "while f(x := 1): break\n",
-        "while (lambda: (x := 1))(): break\n",
-        "async def f():\n    while g(await h()): break\n",
-        "def f():\n    while g((yield 1)): break\n",
-        "def f():\n    while g((yield from h())): break\n",
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("subject.py"), source).unwrap();
-        let doc = plan(root.path(), "while_condition_false", "pass").await;
-        assert!(doc["candidates"].as_array().unwrap().is_empty(), "{source}");
-    }
+async fn while_false_exclude_other_predicates_and_binding_changes(#[case] source: &str) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), source).unwrap();
+
+    let doc = plan(root.path(), "while_condition_false", "pass").await;
+
+    assert!(doc["candidates"].as_array().unwrap().is_empty(), "{source}");
 }
 
+#[rstest::rstest]
+#[case::from_subject_import_drain_drain_1_2_1("from subject import drain; drain([1,2])", 0, 1)]
+#[case::from_subject_import_drain_assert_drain_1_2_2_4_2(
+    "from subject import drain; assert drain([1,2]) == [2,4]",
+    1,
+    0
+)]
 #[tokio::test]
-async fn while_false_saved_queue_plan() {
-    for (test, killed, survived) in [
-        ("from subject import drain; drain([1,2])", 0, 1),
-        (
-            "from subject import drain; assert drain([1,2]) == [2,4]",
-            1,
-            0,
-        ),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(
+async fn while_false_saved_queue_plan(
+    #[case] test: &str,
+    #[case] killed: usize,
+    #[case] survived: usize,
+) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
             root.path().join("subject.py"),
             "def drain(queue):\n    out = []\n    while queue:\n        out.append(queue.pop(0)*2)\n    return out\n",
         )
         .unwrap();
-        let doc = plan(root.path(), "while_condition_false", test).await;
-        let manifest = root.path().join("plan.json");
-        std::fs::write(&manifest, serde_json::to_vec(&doc).unwrap()).unwrap();
-        let (_, report) = cli(vec![
-            "hoimin".into(),
-            "verify".into(),
-            manifest.into_os_string(),
-            "--top".into(),
-            "2".into(),
-        ])
-        .await;
-        assert_eq!(report["baseline"]["termination"]["Exit"], 0);
-        assert_eq!(report["summary"]["counts"]["killed"], killed);
-        assert_eq!(report["summary"]["counts"]["survived"], survived);
-    }
+    let doc = plan(root.path(), "while_condition_false", test).await;
+    let manifest = root.path().join("plan.json");
+    std::fs::write(&manifest, serde_json::to_vec(&doc).unwrap()).unwrap();
+
+    let (_, report) = cli(vec![
+        "hoimin".into(),
+        "verify".into(),
+        manifest.into_os_string(),
+        "--top".into(),
+        "2".into(),
+    ])
+    .await;
+
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+    assert_eq!(report["summary"]["counts"]["killed"], killed);
+    assert_eq!(report["summary"]["counts"]["survived"], survived);
 }
 
 #[tokio::test]

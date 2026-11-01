@@ -20,41 +20,45 @@ fn apply(source: &str, candidate: &crate::AnalyzerCandidate) -> String {
 fn base_order_is_default_and_individually_excludable() {
     let operator = MutationOperator::from_name(OP).expect("registered operator");
     let mut operators = MutationOperatorSelection::default();
+
     assert!(operators.contains(operator));
     operators.exclude(operator);
     assert!(!operators.contains(operator));
 }
 
-#[test]
-fn base_order_swaps_names_and_preserves_every_source_separator() {
-    for (source, expected) in [
-        ("class C(A, B): pass\n", "class C(B, A): pass\n"),
-        ("class C((A), (B),): pass\n", "class C((B), (A),): pass\n"),
-        (
-            "class C(\n A, # first\n B, # second\n):\n 'doc'\n pass\n",
-            "class C(\n B, # first\n A, # second\n):\n 'doc'\n pass\n",
-        ),
-        (
-            "class 子(親甲, 親乙): pass\n",
-            "class 子(親乙, 親甲): pass\n",
-        ),
-        (
-            "def f():\n class C(A,B): pass\n",
-            "def f():\n class C(B,A): pass\n",
-        ),
-    ] {
-        for newline in ["\n", "\r\n", "\r"] {
-            let source = source.replace('\n', newline);
-            let expected = expected.replace('\n', newline);
-            let output = analyze_selected(&[OP], &source);
-            assert_eq!(output.candidates.len(), 1, "{source}");
-            assert_eq!(apply(&source, &output.candidates[0]), expected);
-            assert_eq!(
-                output.candidates,
-                analyze_selected(&[OP], &source).candidates
-            );
-        }
-    }
+#[rstest::rstest]
+#[case::class_c_a_b_pass("class C(A, B): pass\n", "class C(B, A): pass\n")]
+#[case::class_c_a_b_pass_2("class C((A), (B),): pass\n", "class C((B), (A),): pass\n")]
+#[case::class_c_a_first_b_second_doc_pass(
+    "class C(\n A, # first\n B, # second\n):\n 'doc'\n pass\n",
+    "class C(\n B, # first\n A, # second\n):\n 'doc'\n pass\n"
+)]
+#[case::class_pass("class 子(親甲, 親乙): pass\n", "class 子(親乙, 親甲): pass\n")]
+#[case::def_f_class_c_a_b_pass(
+    "def f():\n class C(A,B): pass\n",
+    "def f():\n class C(B,A): pass\n"
+)]
+fn base_order_swaps_names_and_preserves_every_source_separator(
+    #[case] source: &str,
+    #[case] expected: &str,
+    #[values(0, 1, 2)] scenario_index: usize,
+) {
+    let newline = ["\n", "\r\n", "\r"]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+    let source = source.replace('\n', newline);
+    let expected = expected.replace('\n', newline);
+
+    let output = analyze_selected(&[OP], &source);
+
+    assert_eq!(output.candidates.len(), 1, "{source}");
+    assert_eq!(apply(&source, &output.candidates[0]), expected);
+    assert_eq!(
+        output.candidates,
+        analyze_selected(&[OP], &source).candidates
+    );
 }
 
 #[test]
@@ -65,7 +69,9 @@ fn base_order_multi_base_shuffle_changes_order_without_losing_bases() {
         for padding in 0..24 {
             let separator = format!(",{}", " ".repeat(padding));
             let source = format!("class C({}): pass\n", original.join(&separator));
+
             let output = analyze_selected(&[OP], &source);
+
             assert_eq!(output.candidates.len(), 1);
             let mutant = apply(&source, &output.candidates[0]);
             let parsed = parse_module(&mutant).unwrap();
@@ -97,28 +103,25 @@ fn base_order_multi_base_shuffle_changes_order_without_losing_bases() {
     assert!(observed.len() > 1);
 }
 
-#[test]
-fn base_order_rejects_dynamic_decorated_generic_keyword_and_duplicate_bases() {
-    for source in [
-        "class C: pass\n",
-        "class C(A): pass\n",
-        "class C(A,A): pass\n",
-        "class C(K,\u{212a}): pass\n",
-        "class C(*bases): pass\n",
-        "class C(A,*bases): pass\n",
-        "class C(A,f()): pass\n",
-        "class C(A,mod.B): pass\n",
-        "class C(A,B[int]): pass\n",
-        "class C(A,B,metaclass=M): pass\n",
-        "class C(A,B,**kw): pass\n",
-        "class C[T](A,B): pass\n",
-        "@decorate\nclass C(A,B): pass\n",
-    ] {
-        assert!(
-            analyze_selected(&[OP], source).candidates.is_empty(),
-            "{source}"
-        );
-    }
+#[rstest::rstest]
+#[case::class_c_pass("class C: pass\n")]
+#[case::class_c_a_pass("class C(A): pass\n")]
+#[case::class_c_a_a_pass("class C(A,A): pass\n")]
+#[case::class_c_k_u_212a_pass("class C(K,\u{212a}): pass\n")]
+#[case::class_c_bases_pass("class C(*bases): pass\n")]
+#[case::class_c_a_bases_pass("class C(A,*bases): pass\n")]
+#[case::class_c_a_f_pass("class C(A,f()): pass\n")]
+#[case::class_c_a_mod_b_pass("class C(A,mod.B): pass\n")]
+#[case::class_c_a_b_int_pass("class C(A,B[int]): pass\n")]
+#[case::class_c_a_b_metaclass_m_pass("class C(A,B,metaclass=M): pass\n")]
+#[case::class_c_a_b_kw_pass("class C(A,B,**kw): pass\n")]
+#[case::class_c_t_a_b_pass("class C[T](A,B): pass\n")]
+#[case::decorate_class_c_a_b_pass("@decorate\nclass C(A,B): pass\n")]
+fn base_order_rejects_dynamic_decorated_generic_keyword_and_duplicate_bases(#[case] source: &str) {
+    assert!(
+        analyze_selected(&[OP], source).candidates.is_empty(),
+        "{source}"
+    );
 }
 
 #[test]
@@ -144,11 +147,14 @@ fn base_order_selectors_caps_and_cancellation_preserve_candidate_identity() {
         max_candidates: 10,
     };
     let full = analyze_source(&request, source);
+
     assert_eq!(full.candidates.len(), 2);
     request.lines = &[LineRange { start: 2, end: 2 }];
     let symbols = ["Chosen".to_owned()];
     request.symbols = &symbols;
+
     let output = analyze_source(&request, source);
+
     assert_eq!(output.candidates, full.candidates[1..]);
     assert_eq!(output.candidates[0].symbol.as_deref(), Some("Chosen"));
     assert!(analyze_source_cancellable(&request, source, || true).is_err());
@@ -177,6 +183,7 @@ fn base_order_excluded_work_is_zero_and_cancellation_and_payload_limits_release_
     };
     let source = "class First(A,B): pass\nclass Second(A,B): pass\n";
     reset_work();
+
     assert!(
         analyze_source(&request, source).candidates.is_empty(),
         "excluded classes must not emit candidates"

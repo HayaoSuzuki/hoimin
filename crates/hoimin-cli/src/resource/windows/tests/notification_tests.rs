@@ -22,87 +22,104 @@ fn root(id: u128, pid: u32) -> ActiveRoot {
     }
 }
 
-#[test]
-fn exit_notification_completes_only_its_root() {
-    for message in [
+#[rstest::rstest]
+#[case::job_object_msg_exit_process_1(0)]
+#[case::job_object_msg_abnormal_exit_process_2(1)]
+fn exit_notification_completes_only_its_root(#[case] scenario_index: usize) {
+    let message = [
         JOB_OBJECT_MSG_EXIT_PROCESS,
         JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS,
-    ] {
-        let mut state = RunState {
-            active: vec![root(1, 101), root(2, 102)],
-            ..RunState::default()
-        };
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
 
-        record_notification(&mut state, message, 101, false);
+    let mut state = RunState {
+        active: vec![root(1, 101), root(2, 102)],
+        ..RunState::default()
+    };
 
-        assert!(root_notification_consumed(&state, Uuid::from_u128(1)));
-        assert!(!root_notification_consumed(&state, Uuid::from_u128(2)));
-        assert_eq!(
-            state.active.iter().map(|root| root.id).collect::<Vec<_>>(),
-            vec![Uuid::from_u128(2)]
-        );
-    }
+    record_notification(&mut state, message, 101, false);
+
+    assert!(root_notification_consumed(&state, Uuid::from_u128(1)));
+    assert!(!root_notification_consumed(&state, Uuid::from_u128(2)));
+    assert_eq!(
+        state.active.iter().map(|root| root.id).collect::<Vec<_>>(),
+        vec![Uuid::from_u128(2)]
+    );
 }
 
-#[test]
-fn active_process_zero_requires_empty_job_before_completing_roots() {
-    for (job_is_empty, expected_active, expected_complete) in [
-        (false, vec![Uuid::from_u128(1)], false),
-        (true, vec![], true),
-    ] {
-        let mut state = RunState {
-            active: vec![root(1, 101)],
-            ..RunState::default()
-        };
+#[rstest::rstest]
+#[case::false_vec_uuid_from_u128_1_false_1(false, vec![Uuid::from_u128(1)], false)]
+#[case::true_vec_true_2(true, vec![], true)]
+fn active_process_zero_requires_empty_job_before_completing_roots(
+    #[case] job_is_empty: bool,
+    #[case] expected_active: Vec<Uuid>,
+    #[case] expected_complete: bool,
+) {
+    let mut state = RunState {
+        active: vec![root(1, 101)],
+        ..RunState::default()
+    };
 
-        record_notification(
-            &mut state,
-            JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO,
-            0,
-            job_is_empty,
-        );
+    record_notification(
+        &mut state,
+        JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO,
+        0,
+        job_is_empty,
+    );
 
-        assert_eq!(
-            state.active.iter().map(|root| root.id).collect::<Vec<_>>(),
-            expected_active
-        );
-        assert_eq!(
-            root_notification_consumed(&state, Uuid::from_u128(1)),
-            expected_complete
-        );
-    }
+    assert_eq!(
+        state.active.iter().map(|root| root.id).collect::<Vec<_>>(),
+        expected_active
+    );
+    assert_eq!(
+        root_notification_consumed(&state, Uuid::from_u128(1)),
+        expected_complete
+    );
 }
 
-#[test]
-fn run_wide_limit_notifications_preserve_root_registry() {
-    for message in [
+#[rstest::rstest]
+#[case::job_object_msg_job_memory_limit_1(0)]
+#[case::job_object_msg_active_process_limit_2(1)]
+fn run_wide_limit_notifications_preserve_root_registry(#[case] scenario_index: usize) {
+    let message = [
         JOB_OBJECT_MSG_JOB_MEMORY_LIMIT,
         JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT,
-    ] {
-        let mut state = RunState {
-            active: vec![root(1, 101), root(2, 102)],
-            ..RunState::default()
-        };
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
 
-        record_notification(&mut state, message, 101, false);
+    let mut state = RunState {
+        active: vec![root(1, 101), root(2, 102)],
+        ..RunState::default()
+    };
 
-        assert_eq!(
-            state
-                .active
-                .iter()
-                .map(|root| (root.id, root.pid))
-                .collect::<Vec<_>>(),
-            vec![(Uuid::from_u128(1), 101), (Uuid::from_u128(2), 102)]
-        );
-        assert!(!root_notification_consumed(&state, Uuid::from_u128(1)));
-        assert!(!root_notification_consumed(&state, Uuid::from_u128(2)));
-        assert!(root_notification_consumed(&state, Uuid::from_u128(3)));
-    }
+    record_notification(&mut state, message, 101, false);
+
+    assert_eq!(
+        state
+            .active
+            .iter()
+            .map(|root| (root.id, root.pid))
+            .collect::<Vec<_>>(),
+        vec![(Uuid::from_u128(1), 101), (Uuid::from_u128(2), 102)]
+    );
+    assert!(!root_notification_consumed(&state, Uuid::from_u128(1)));
+    assert!(!root_notification_consumed(&state, Uuid::from_u128(2)));
+    assert!(root_notification_consumed(&state, Uuid::from_u128(3)));
 }
 
-#[test]
-fn nested_limit_notifications_choose_memory_before_process_limit() {
-    for (messages, input, expected) in [
+#[rstest::rstest]
+#[case::vec_1(0)]
+#[case::vec_2(1)]
+#[case::vec_job_object_msg_active_process_limit_3(2)]
+#[case::vec_job_object_msg_job_memory_limit_4(3)]
+#[case::vec_job_object_msg_active_process_limit_job_object_msg_job_memory_5(4)]
+#[case::vec_job_object_msg_job_memory_limit_job_object_msg_active_process_6(5)]
+fn nested_limit_notifications_choose_memory_before_process_limit(#[case] scenario_index: usize) {
+    let (messages, input, expected) = [
         (
             vec![],
             ProcessTermination::Exit(7),
@@ -139,38 +156,41 @@ fn nested_limit_notifications_choose_memory_before_process_limit() {
             ProcessTermination::Exit(7),
             ProcessTermination::OutOfMemory,
         ),
-    ] {
-        let backend = WindowsBackend::new().unwrap();
-        let mut command = Command::new("cmd.exe");
-        let limits = ProcessLimits {
-            timeout: std::time::Duration::from_secs(1),
-            max_memory_bytes: 256 * 1024 * 1024,
-            max_processes: 8,
-            max_output_bytes: 64,
-        };
-        let ProcessSupervisor::Windows(supervisor) = backend.prepare(&mut command, limits).unwrap()
-        else {
-            panic!("Windows supervisor required");
-        };
-        for message in messages {
-            // SAFETY: the supervisor owns this live port; a null PID is sufficient for limit messages.
-            assert_ne!(
-                unsafe {
-                    PostQueuedCompletionStatus(
-                        supervisor.completion_port.raw(),
-                        message,
-                        0,
-                        std::ptr::null(),
-                    )
-                },
-                0
-            );
-        }
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
 
-        let actual = supervisor.classify_root_notification(input);
-
-        assert_eq!(actual, expected);
+    let backend = WindowsBackend::new().unwrap();
+    let mut command = Command::new("cmd.exe");
+    let limits = ProcessLimits {
+        timeout: std::time::Duration::from_secs(1),
+        max_memory_bytes: 256 * 1024 * 1024,
+        max_processes: 8,
+        max_output_bytes: 64,
+    };
+    let ProcessSupervisor::Windows(supervisor) = backend.prepare(&mut command, limits).unwrap()
+    else {
+        panic!("Windows supervisor required");
+    };
+    for message in messages {
+        // SAFETY: the supervisor owns this live port; a null PID is sufficient for limit messages.
+        assert_ne!(
+            unsafe {
+                PostQueuedCompletionStatus(
+                    supervisor.completion_port.raw(),
+                    message,
+                    0,
+                    std::ptr::null(),
+                )
+            },
+            0
+        );
     }
+
+    let actual = supervisor.classify_root_notification(input);
+
+    assert_eq!(actual, expected);
 }
 
 proptest! {

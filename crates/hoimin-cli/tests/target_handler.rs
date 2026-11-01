@@ -965,8 +965,13 @@ async fn combined_handler_preserves_effect_id_and_resolves_changed_targets() {
     );
 }
 
+#[rstest::rstest]
+#[case::default(vec![])]
+#[case::explicit_glob(vec!["**/*.py".to_owned()])]
 #[test]
-fn automatic_discovery_shares_workspace_exclusions_even_with_includes() {
+fn automatic_discovery_shares_workspace_exclusions_even_with_includes(
+    #[case] includes: Vec<String>,
+) {
     let temp = tempfile::tempdir().unwrap();
     let paths = [
         "calc.py",
@@ -981,54 +986,56 @@ fn automatic_discovery_shares_workspace_exclusions_even_with_includes() {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, "value = 1 + 2\n").unwrap();
     }
-    for includes in [vec![], vec!["**/*.py".to_owned()]] {
-        let selection = Selection {
-            root: Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap(),
-            sources: vec![Utf8PathBuf::from(".")],
-            includes,
-            ..Selection::default()
-        };
-        let files = hoimin_cli::target::fs::discover_explicit(&selection).unwrap();
-        // pins: issue #452 — candidates must be present in the worker manifest.
-        assert_eq!(
-            files
-                .iter()
-                .map(|file| file.path.as_str())
-                .collect::<Vec<_>>(),
-            ["calc.py"]
-        );
-    }
+    let selection = Selection {
+        root: Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap(),
+        sources: vec![Utf8PathBuf::from(".")],
+        includes,
+        ..Selection::default()
+    };
+    let files = hoimin_cli::target::fs::discover_explicit(&selection).unwrap();
+    // pins: issue #452 — candidates must be present in the worker manifest.
+    assert_eq!(
+        files
+            .iter()
+            .map(|file| file.path.as_str())
+            .collect::<Vec<_>>(),
+        ["calc.py"]
+    );
 }
 
-#[tokio::test]
-async fn explicit_excluded_targets_explain_the_path_and_remediation() {
-    let temp = tempfile::tempdir().unwrap();
-    fs::create_dir(temp.path().join("venv")).unwrap();
-    fs::write(temp.path().join("venv/dep.py"), "value = 1 + 2\n").unwrap();
-    let root = Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap();
-    for selection in [
-        Selection {
+#[rstest::rstest]
+#[case::venv_dep_py_1(|root: Utf8PathBuf| Selection {
             root: root.clone(),
             files: vec![root.join("venv/./dep.py")],
             ..Selection::default()
-        },
-        Selection {
+        })]
+#[case::venv_dep_py_2(|root: Utf8PathBuf| Selection {
             root: root.clone(),
             lines: vec![LineSelection {
                 path: "venv/dep.py".into(),
                 range: LineRange { start: 1, end: 1 },
             }],
             ..Selection::default()
-        },
-    ] {
-        let error = TargetHandler::resolve(&selection)
-            .await
-            .unwrap_err()
-            .to_string();
-        assert!(error.contains("venv/dep.py"), "{error}");
-        assert!(error.contains("built-in"), "{error}");
-        assert!(error.contains("outside"), "{error}");
-    }
+        })]
+#[tokio::test]
+async fn explicit_excluded_targets_explain_the_path_and_remediation(
+    #[case] make_selection: fn(Utf8PathBuf) -> Selection,
+) {
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir(temp.path().join("venv")).unwrap();
+    fs::write(temp.path().join("venv/dep.py"), "value = 1 + 2\n").unwrap();
+    let root = Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap();
+
+    let selection = make_selection(root);
+
+    let error = TargetHandler::resolve(&selection)
+        .await
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("venv/dep.py"), "{error}");
+    assert!(error.contains("built-in"), "{error}");
+    assert!(error.contains("outside"), "{error}");
 }
 
 #[test]
@@ -1073,41 +1080,50 @@ async fn a_root_named_venv_is_not_itself_excluded() {
     assert_eq!(targets[0].path, "calc.py");
 }
 
+async fn assert_exclusion_case_rules(actual: &str, spelling: &str) {
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir(temp.path().join(actual)).unwrap();
+    fs::write(temp.path().join(actual).join("dep.py"), "value = 1 + 2\n").unwrap();
+    let root = Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap();
+
+    let files = hoimin_cli::target::fs::discover_explicit(&Selection {
+        root: root.clone(),
+        includes: vec!["**/*.py".into()],
+        ..Selection::default()
+    })
+    .unwrap();
+    let error = TargetHandler::resolve(&Selection {
+        root,
+        files: vec![format!("{spelling}/dep.py").into()],
+        ..Selection::default()
+    })
+    .await
+    .unwrap_err()
+    .to_string();
+
+    assert_eq!(files, [] as [hoimin_core::DiscoveredFile; 0]);
+    assert!(
+        error.contains("built-in") && error.contains("outside"),
+        "{error}"
+    );
+}
+
 #[tokio::test]
 async fn exclusion_case_rules_follow_the_platform_for_walks_and_selectors() {
-    #[cfg(windows)]
-    let cases = [
-        ("venv", ["venv", "VENV"].as_slice()),
-        ("VENV", ["venv", "VENV"].as_slice()),
-    ];
-    #[cfg(not(windows))]
-    let cases = [("venv", ["venv"].as_slice())];
-    for (actual, spellings) in cases {
-        let temp = tempfile::tempdir().unwrap();
-        fs::create_dir(temp.path().join(actual)).unwrap();
-        fs::write(temp.path().join(actual).join("dep.py"), "value = 1 + 2\n").unwrap();
-        let root = Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap();
-        let files = hoimin_cli::target::fs::discover_explicit(&Selection {
-            root: root.clone(),
-            includes: vec!["**/*.py".into()],
-            ..Selection::default()
-        })
-        .unwrap();
-        assert_eq!(files, [] as [hoimin_core::DiscoveredFile; 0]);
-        for spelling in spellings {
-            let result = TargetHandler::resolve(&Selection {
-                root: root.clone(),
-                files: vec![format!("{spelling}/dep.py").into()],
-                ..Selection::default()
-            })
-            .await;
-            let error = result.unwrap_err().to_string();
-            assert!(
-                error.contains("built-in") && error.contains("outside"),
-                "{error}"
-            );
-        }
-    }
+    assert_exclusion_case_rules("venv", "venv").await;
+}
+
+#[cfg(windows)]
+#[rstest::rstest]
+#[case::lower_directory_upper_selector("venv", "VENV")]
+#[case::upper_directory_lower_selector("VENV", "venv")]
+#[case::upper_directory_upper_selector("VENV", "VENV")]
+#[tokio::test]
+async fn exclusion_case_rules_ignore_windows_spelling_case(
+    #[case] actual: &str,
+    #[case] spelling: &str,
+) {
+    assert_exclusion_case_rules(actual, spelling).await;
 }
 
 #[cfg(not(windows))]
@@ -1135,91 +1151,72 @@ async fn uppercase_venv_remains_included_on_case_sensitive_platforms() {
     assert_eq!(targets.len(), 1);
 }
 
+#[rstest::rstest]
+#[case::a_1_b_2_c_3_d_4_1("a = 1\nb = 2\nc = 3\nd = 4\n", "a = 1\nb = 20\nc = 3\nd = 4\n", 0, vec![LineRange { start: 2, end: 2 }])]
+#[case::a_1_b_2_c_3_d_4_2("a = 1\nb = 2\nc = 3\nd = 4\n", "a = 1\nb = 20\nc = 3\nd = 4\n", 1, vec![LineRange { start: 1, end: 3 }])]
+#[case::a_1_b_2_c_3_3("a = 1\nb = 2\nc = 3\n", "a = 1\nc = 3\n", 0, vec![])]
+#[case::a_1_b_2_c_3_4("a = 1\nb = 2\nc = 3\n", "a = 1\nc = 3\n", 1, vec![LineRange { start: 1, end: 2 }])]
+#[case::a_1_b_2_c_3_5("a = 1\nb = 2\nc = 3\n", "b = 2\nc = 3\n", 1, vec![LineRange { start: 1, end: 1 }])]
+#[case::a_1_b_2_c_3_6("a = 1\nb = 2\nc = 3\n", "a = 1\nb = 2\n", 1, vec![LineRange { start: 2, end: 2 }])]
+#[case::a_1_7("a = 1\n", "", 1, vec![])]
+#[case::a_1_b_2_c_3_8("a = 1\nb = 2\nc = 3\n", "a = 1\nb = 20\nc = 3\n", 1_073_741_823, vec![LineRange { start: 1, end: 3 }])]
 #[tokio::test]
-async fn changed_context_expands_current_lines_and_intersects_explicit_ranges() {
-    for (before, after, context, expected) in [
-        (
-            "a = 1\nb = 2\nc = 3\nd = 4\n",
-            "a = 1\nb = 20\nc = 3\nd = 4\n",
-            0,
-            vec![LineRange { start: 2, end: 2 }],
-        ),
-        (
-            "a = 1\nb = 2\nc = 3\nd = 4\n",
-            "a = 1\nb = 20\nc = 3\nd = 4\n",
-            1,
-            vec![LineRange { start: 1, end: 3 }],
-        ),
-        ("a = 1\nb = 2\nc = 3\n", "a = 1\nc = 3\n", 0, vec![]),
-        (
-            "a = 1\nb = 2\nc = 3\n",
-            "a = 1\nc = 3\n",
-            1,
-            vec![LineRange { start: 1, end: 2 }],
-        ),
-        (
-            "a = 1\nb = 2\nc = 3\n",
-            "b = 2\nc = 3\n",
-            1,
-            vec![LineRange { start: 1, end: 1 }],
-        ),
-        (
-            "a = 1\nb = 2\nc = 3\n",
-            "a = 1\nb = 2\n",
-            1,
-            vec![LineRange { start: 2, end: 2 }],
-        ),
-        ("a = 1\n", "", 1, vec![]),
-        (
-            "a = 1\nb = 2\nc = 3\n",
-            "a = 1\nb = 20\nc = 3\n",
-            1_073_741_823,
-            vec![LineRange { start: 1, end: 3 }],
-        ),
-    ] {
-        let repo = FixtureRepo::new();
-        repo.write("src/calc.py", before);
-        repo.write("src/unchanged.py", "untouched = 1\n");
-        repo.commit_all("initial");
-        repo.write("src/calc.py", after);
-        let mut value = serde_json::to_value(Selection {
-            root: repo.root(),
-            sources: vec!["src".into()],
-            changed: Some(hoimin_core::ChangedSelection::default()),
-            ..Selection::default()
-        })
-        .unwrap();
-        value["changed"]["context"] = serde_json::json!(context);
-        let mut selection: Selection = serde_json::from_value(value).unwrap();
-        let targets = TargetHandler::resolve(&selection).await.unwrap();
-        let expected_targets: Vec<_> = std::iter::once(hoimin_core::TargetSlice {
+async fn changed_context_expands_current_lines_and_intersects_explicit_ranges(
+    #[case] before: &str,
+    #[case] after: &str,
+    #[case] context: u32,
+    #[case] expected: Vec<LineRange>,
+) {
+    let repo = FixtureRepo::new();
+    repo.write("src/calc.py", before);
+    repo.write("src/unchanged.py", "untouched = 1\n");
+    repo.commit_all("initial");
+    repo.write("src/calc.py", after);
+    let mut value = serde_json::to_value(Selection {
+        root: repo.root(),
+        sources: vec!["src".into()],
+        changed: Some(hoimin_core::ChangedSelection::default()),
+        ..Selection::default()
+    })
+    .unwrap();
+    value["changed"]["context"] = serde_json::json!(context);
+    let mut selection: Selection = serde_json::from_value(value).unwrap();
+
+    let targets = TargetHandler::resolve(&selection).await.unwrap();
+    let expected_targets: Vec<_> = std::iter::once(hoimin_core::TargetSlice {
+        path: "src/calc.py".into(),
+        lines: expected.clone(),
+        symbols: Vec::new(),
+    })
+    .filter(|target| !target.lines.is_empty())
+    .collect();
+
+    assert_eq!(targets, expected_targets, "context={context}");
+    selection.lines = vec![LineSelection {
+        path: "src/calc.py".into(),
+        range: LineRange { start: 2, end: 2 },
+    }];
+    let restricted = TargetHandler::resolve(&selection).await.unwrap();
+    let expected_restricted: Vec<_> = expected
+        .iter()
+        .filter(|range| range.start <= 2 && range.end >= 2)
+        .map(|_| hoimin_core::TargetSlice {
             path: "src/calc.py".into(),
-            lines: expected.clone(),
+            lines: vec![LineRange { start: 2, end: 2 }],
             symbols: Vec::new(),
         })
-        .filter(|target| !target.lines.is_empty())
         .collect();
-        assert_eq!(targets, expected_targets, "context={context}");
-        selection.lines = vec![LineSelection {
-            path: "src/calc.py".into(),
-            range: LineRange { start: 2, end: 2 },
-        }];
-        let restricted = TargetHandler::resolve(&selection).await.unwrap();
-        let expected_restricted: Vec<_> = expected
-            .iter()
-            .filter(|range| range.start <= 2 && range.end >= 2)
-            .map(|_| hoimin_core::TargetSlice {
-                path: "src/calc.py".into(),
-                lines: vec![LineRange { start: 2, end: 2 }],
-                symbols: Vec::new(),
-            })
-            .collect();
-        assert_eq!(restricted, expected_restricted);
-    }
+    assert_eq!(restricted, expected_restricted);
 }
 
+#[rstest::rstest]
+#[case::overlapping(3, true)]
+#[case::outside(5, false)]
 #[tokio::test]
-async fn changed_cr_rows_are_translated_before_explicit_python_line_intersection() {
+async fn changed_cr_rows_are_translated_before_explicit_python_line_intersection(
+    #[case] line: u32,
+    #[case] selected: bool,
+) {
     let repo = FixtureRepo::new();
     repo.write(
         "src/calc.py",
@@ -1234,37 +1231,41 @@ async fn changed_cr_rows_are_translated_before_explicit_python_line_intersection
         repo.changed_lines(None).await.changed[&Utf8PathBuf::from("src/calc.py")],
         [LineRange { start: 1, end: 3 }]
     );
-    for (line, selected) in [(3, true), (5, false)] {
-        let targets = TargetHandler::resolve(&Selection {
-            root: repo.root(),
-            sources: vec!["src".into()],
-            changed: Some(hoimin_core::ChangedSelection::default()),
-            lines: vec![LineSelection {
-                path: "src/calc.py".into(),
-                range: LineRange {
-                    start: line,
-                    end: line,
-                },
-            }],
-            ..Selection::default()
-        })
-        .await
-        .unwrap();
-        assert_eq!(!targets.is_empty(), selected);
-        for target in targets {
-            assert_eq!(
-                target.lines,
-                [LineRange {
-                    start: line,
-                    end: line
-                }]
-            );
-        }
+    let targets = TargetHandler::resolve(&Selection {
+        root: repo.root(),
+        sources: vec!["src".into()],
+        changed: Some(hoimin_core::ChangedSelection::default()),
+        lines: vec![LineSelection {
+            path: "src/calc.py".into(),
+            range: LineRange {
+                start: line,
+                end: line,
+            },
+        }],
+        ..Selection::default()
+    })
+    .await
+    .unwrap();
+    assert_eq!(!targets.is_empty(), selected);
+    for target in targets {
+        assert_eq!(
+            target.lines,
+            [LineRange {
+                start: line,
+                end: line
+            }]
+        );
     }
 }
 
+#[rstest::rstest]
+#[case::input_0_vec_1(0, vec![])]
+#[case::input_1_vec_linerange_start_1_end_4_2(1, vec![LineRange { start: 1, end: 4 }])]
 #[tokio::test]
-async fn changed_cr_deletion_context_preserves_surviving_byte_coverage() {
+async fn changed_cr_deletion_context_preserves_surviving_byte_coverage(
+    #[case] context: u32,
+    #[case] expected: Vec<LineRange>,
+) {
     let repo = FixtureRepo::new();
     repo.write(
         "src/calc.py",
@@ -1275,19 +1276,19 @@ async fn changed_cr_deletion_context_preserves_surviving_byte_coverage() {
         "src/calc.py",
         b"left = 1 + 2\r# left\n# right\rright = 4 + 5\n",
     );
-    for (context, expected) in [(0, vec![]), (1, vec![LineRange { start: 1, end: 4 }])] {
-        let targets = TargetHandler::resolve(&Selection {
-            root: repo.root(),
-            sources: vec!["src".into()],
-            changed: Some(hoimin_core::ChangedSelection::new(context, None).unwrap()),
-            ..Selection::default()
-        })
-        .await
-        .unwrap();
-        assert_eq!(targets.len(), usize::from(!expected.is_empty()));
-        for target in targets {
-            assert_eq!(target.lines, expected);
-        }
+
+    let targets = TargetHandler::resolve(&Selection {
+        root: repo.root(),
+        sources: vec!["src".into()],
+        changed: Some(hoimin_core::ChangedSelection::new(context, None).unwrap()),
+        ..Selection::default()
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(targets.len(), usize::from(!expected.is_empty()));
+    for target in targets {
+        assert_eq!(target.lines, expected);
     }
 }
 
@@ -1321,28 +1322,37 @@ async fn changed_mixed_rows_preserve_rename_binary_and_text_attribute_behavior()
     );
 }
 
+#[rstest::rstest]
+#[case::current(|_: &Utf8PathBuf| Utf8PathBuf::from("."))]
+#[case::absolute_root(|root: &Utf8PathBuf| root.clone())]
+#[case::lexical_parent(|_: &Utf8PathBuf| Utf8PathBuf::from("absent/../src"))]
+#[case::absolute_directory(|root: &Utf8PathBuf| root.join("src"))]
+#[case::file(|_: &Utf8PathBuf| Utf8PathBuf::from("src/calc.py"))]
 #[tokio::test]
-async fn source_existence_uses_lexical_paths_and_preserves_file_sources() {
+async fn source_existence_uses_lexical_paths_and_preserves_file_sources(
+    #[case] make_source: fn(&Utf8PathBuf) -> Utf8PathBuf,
+) {
     let project = tempfile::tempdir().unwrap();
     let root = Utf8PathBuf::from_path_buf(project.path().to_owned()).unwrap();
     fs::create_dir(root.join("src")).unwrap();
     fs::write(root.join("src/calc.py"), "value = 1 + 2\n").unwrap();
-    for source in [
-        Utf8PathBuf::from("."),
-        root.clone(),
-        Utf8PathBuf::from("absent/../src"),
-        root.join("src"),
-        Utf8PathBuf::from("src/calc.py"),
-    ] {
-        let selection = Selection {
-            root: root.clone(),
-            sources: vec![source.clone()],
-            ..Selection::default()
-        };
-        let targets = TargetHandler::resolve(&selection).await.unwrap();
-        assert_eq!(targets.len(), 1, "source={source}");
-        assert_eq!(targets[0].path, "src/calc.py");
-    }
+    let source = make_source(&root);
+    let selection = Selection {
+        root: root.clone(),
+        sources: vec![source.clone()],
+        ..Selection::default()
+    };
+    let targets = TargetHandler::resolve(&selection).await.unwrap();
+    assert_eq!(targets.len(), 1, "source={source}");
+    assert_eq!(targets[0].path, "src/calc.py");
+}
+
+#[tokio::test]
+async fn source_existence_rejects_paths_outside_root() {
+    let project = tempfile::tempdir().unwrap();
+    let root = Utf8PathBuf::from_path_buf(project.path().to_owned()).unwrap();
+    fs::create_dir(root.join("src")).unwrap();
+    fs::write(root.join("src/calc.py"), "value = 1 + 2\n").unwrap();
     let outside = Selection {
         root: root.clone(),
         sources: vec!["../outside".into()],
@@ -1352,6 +1362,14 @@ async fn source_existence_uses_lexical_paths_and_preserves_file_sources() {
         TargetHandler::resolve(&outside).await,
         Err(TargetError::PathOutsideRoot(_))
     ));
+}
+
+#[tokio::test]
+async fn missing_source_diagnostics_escape_control_characters() {
+    let project = tempfile::tempdir().unwrap();
+    let root = Utf8PathBuf::from_path_buf(project.path().to_owned()).unwrap();
+    fs::create_dir(root.join("src")).unwrap();
+    fs::write(root.join("src/calc.py"), "value = 1 + 2\n").unwrap();
     let missing = Selection {
         root,
         sources: vec!["bad\nsource".into()],
@@ -1363,6 +1381,26 @@ async fn source_existence_uses_lexical_paths_and_preserves_file_sources() {
         .to_string();
     assert!(error.contains("bad\\nsource"), "{error}");
     assert!(!error.contains('\n'));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn linked_source_directory_is_not_discovered() {
+    let project = tempfile::tempdir().unwrap();
+    let root = Utf8PathBuf::from_path_buf(project.path().to_owned()).unwrap();
+    fs::create_dir(root.join("actual")).unwrap();
+    fs::write(root.join("actual/calc.py"), "value = 1 + 2\n").unwrap();
+    std::os::unix::fs::symlink("actual", root.join("linked")).unwrap();
+    std::os::unix::fs::symlink("absent", root.join("dangling")).unwrap();
+    let selection = |source: &str| Selection {
+        root: root.clone(),
+        sources: vec![source.into()],
+        ..Selection::default()
+    };
+    assert_eq!(
+        TargetHandler::resolve(&selection("linked")).await.unwrap(),
+        Vec::<TargetSlice>::new()
+    );
 }
 
 #[cfg(unix)]
@@ -1379,10 +1417,6 @@ async fn dangling_source_links_are_missing_without_enabling_link_discovery() {
         sources: vec![source.into()],
         ..Selection::default()
     };
-    assert_eq!(
-        TargetHandler::resolve(&selection("linked")).await.unwrap(),
-        Vec::<TargetSlice>::new()
-    );
     let error = TargetHandler::resolve(&selection("dangling"))
         .await
         .unwrap_err()

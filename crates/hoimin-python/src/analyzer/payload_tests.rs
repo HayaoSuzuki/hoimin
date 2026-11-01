@@ -127,6 +127,7 @@ fn duplicate_does_not_allocate_an_identity_or_consume_budget() {
 
     prefix.push(tiny_candidate(1, "y")).unwrap();
     let after = budget.snapshot();
+
     let output = prefix.finish().unwrap();
 
     assert_eq!(after.reservations, before.reservations);
@@ -144,6 +145,7 @@ fn nonwinner_does_not_consume_payload_budget() {
 
     prefix.push(tiny_candidate(2, &"z".repeat(100))).unwrap();
     let after = budget.snapshot();
+
     let output = prefix.finish().unwrap();
 
     assert_eq!(after.reservations, before.reservations);
@@ -160,6 +162,7 @@ fn winning_eviction_releases_payload_before_admission() {
 
     prefix.push(tiny_candidate(1, "y")).unwrap();
     let retained = budget.snapshot();
+
     let output = prefix.finish().unwrap();
 
     assert_eq!(retained.used, 7);

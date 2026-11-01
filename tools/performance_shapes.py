@@ -355,10 +355,14 @@ def validate_registry(registry: Registry) -> Registry:  # noqa: C901, PLR0912
             if (
                 not args
                 or args[0] != "test"
-                or "--exact" not in args
+                or "--" not in args
+                or (
+                    "--exact" not in args
+                    and not args[args.index("--") - 1].endswith("::")
+                )
                 or "--ignored" in args
             ):
-                msg = "exact non-ignored Rust test required"
+                msg = "exact non-ignored Rust test or explicit :: family required"
                 raise ValueError(msg)
         else:
             msg = "unknown gate status"
@@ -374,18 +378,35 @@ def load_registry(path: Path) -> Registry:
     return validate_registry(document)
 
 
-def executed_tests(output: str) -> int:
+def executed_tests(output: str, selector: str | None = None) -> int:
     results = re.findall(
         r"test result: (\w+)\. (\d+) passed; (\d+) failed; (\d+) ignored;", output
     )
     if (
         not results
-        or any(s != "ok" or int(f) for s, _, f, _ in results)
+        or any(s != "ok" or int(f) or int(i) for s, _, f, i in results)
         or sum(int(p) for _, p, _, _ in results) == 0
     ):
         msg = "gate did not execute a passing test"
         raise ValueError(msg)
-    return sum(int(p) for _, p, _, _ in results)
+    count = sum(int(p) for _, p, _, _ in results)
+    if selector is not None:
+        names = re.findall(r"(?m)^test (\S+) \.\.\.", output)
+        if (
+            len(names) != count
+            or len(names) != len(set(names))
+            or any(
+                not (
+                    name.startswith(selector)
+                    if selector.endswith("::")
+                    else name == selector
+                )
+                for name in names
+            )
+        ):
+            msg = "gate did not execute only the registered tests"
+            raise ValueError(msg)
+    return count
 
 
 def tool_version(argv: list[str]) -> str:
@@ -769,8 +790,13 @@ def run_gate(registry: GateRegistry, artifact: Path) -> list[GateOutcome]:
             print(output, file=sys.stderr)  # noqa: T201 - CLI status or failure diagnostics.
             msg = f"gate failed: {gate['id']}"
             raise ValueError(msg)
+        selector = gate["args"][gate["args"].index("--") - 1]
         outcomes.append(
-            {"id": gate["id"], "status": "passed", "tests": executed_tests(output)}
+            {
+                "id": gate["id"],
+                "status": "passed",
+                "tests": executed_tests(output, selector),
+            }
         )
     return outcomes
 

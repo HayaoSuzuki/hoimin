@@ -62,8 +62,11 @@ fn command_arg_round_trips_each_snake_case_variant() {
     );
 }
 
-#[test]
-fn plan_config_round_trips_canonical_names_and_rejects_legacy_names() {
+#[rstest::rstest]
+#[case::timeout("timeout")]
+#[case::argv("argv")]
+#[case::operator("operator")]
+fn plan_config_round_trips_canonical_names_and_rejects_legacy_names(#[case] field: &str) {
     let expected = config(
         CommandArg::Windows(vec![112, 121]),
         Some(Duration::from_secs(7)),
@@ -86,21 +89,19 @@ fn plan_config_round_trips_canonical_names_and_rejects_legacy_names() {
         expected
     );
 
-    for field in ["timeout", "argv", "operator"] {
-        let mut legacy = canonical.clone();
-        match field {
-            "timeout" => {
-                legacy["limits"]["mutant_timeout"] =
-                    serde_json::json!({"Fixed": {"secs": 7, "nanos": 0}});
-            }
-            "argv" => legacy["test_argv"] = serde_json::json!([{"Windows": [112, 121]}]),
-            _ => legacy["operators"] = serde_json::json!(["type_mapping"]),
+    let mut legacy = canonical.clone();
+    match field {
+        "timeout" => {
+            legacy["limits"]["mutant_timeout"] =
+                serde_json::json!({"Fixed": {"secs": 7, "nanos": 0}});
         }
-        assert!(
-            serde_json::from_value::<PlanConfig>(legacy).is_err(),
-            "{field}"
-        );
+        "argv" => legacy["test_argv"] = serde_json::json!([{"Windows": [112, 121]}]),
+        _ => legacy["operators"] = serde_json::json!(["type_mapping"]),
     }
+    assert!(
+        serde_json::from_value::<PlanConfig>(legacy).is_err(),
+        "{field}"
+    );
 }
 
 #[test]
@@ -125,32 +126,34 @@ fn run_started_round_trips_canonical_normalized_config() {
     assert_eq!(serde_json::from_value::<OutputEvent>(value).unwrap(), event);
 }
 
-#[test]
-fn run_started_rejects_legacy_normalized_config_names() {
+#[rstest::rstest]
+#[case::timeout("timeout")]
+#[case::argv("argv")]
+#[case::operator("operator")]
+fn run_started_rejects_legacy_normalized_config_names(#[case] field: &str) {
     let mut started = RunStarted::minimal("run-1", 1, test_resource_control());
     started.normalized_config = Some(config(
         CommandArg::Windows(vec![112, 121]),
         Some(Duration::from_secs(7)),
     ));
     let canonical = serde_json::to_value(OutputEvent::RunStarted(started)).unwrap();
-    for field in ["timeout", "argv", "operator"] {
-        let mut legacy = canonical.clone();
-        match field {
-            "timeout" => {
-                legacy["normalized_config"]["limits"]["mutant_timeout"] =
-                    serde_json::json!({"Fixed": {"secs": 7, "nanos": 0}});
-            }
-            "argv" => {
-                legacy["normalized_config"]["test_argv"] =
-                    serde_json::json!([{"Windows": [112, 121]}]);
-            }
-            _ => legacy["normalized_config"]["operators"] = serde_json::json!(["type_mapping"]),
+
+    let mut legacy = canonical.clone();
+    match field {
+        "timeout" => {
+            legacy["normalized_config"]["limits"]["mutant_timeout"] =
+                serde_json::json!({"Fixed": {"secs": 7, "nanos": 0}});
         }
-        assert!(
-            serde_json::from_value::<OutputEvent>(legacy).is_err(),
-            "{field}"
-        );
+        "argv" => {
+            legacy["normalized_config"]["test_argv"] = serde_json::json!([{"Windows": [112, 121]}]);
+        }
+        _ => legacy["normalized_config"]["operators"] = serde_json::json!(["type_mapping"]),
     }
+
+    assert!(
+        serde_json::from_value::<OutputEvent>(legacy).is_err(),
+        "{field}"
+    );
 }
 
 fn config(test_arg: CommandArg, mutant_timeout: Option<Duration>) -> RunConfig {
@@ -175,26 +178,28 @@ fn test_resource_control() -> hoimin_core::ResourceControl {
     }
 }
 
+#[rstest::rstest]
+#[case::serde_json_json_auto(serde_json::json!("Auto"))]
+#[case::serde_json_json_fixed_secs_7_nanos_0(serde_json::json!({"Fixed": {"secs": 7, "nanos": 0}}))]
+fn saved_enum_names_reject_legacy_aliases_table_1(#[case] value: serde_json::Value) {
+    assert!(
+        serde_json::from_value::<MutantTimeout>(value.clone()).is_err(),
+        "{value}"
+    );
+}
+
+#[rstest::rstest]
+#[case::serde_json_json_unix_112_121(serde_json::json!({"Unix": [112, 121]}))]
+#[case::serde_json_json_windows_112_121(serde_json::json!({"Windows": [112, 121]}))]
+fn saved_enum_names_reject_legacy_aliases_table_2(#[case] value: serde_json::Value) {
+    assert!(
+        serde_json::from_value::<CommandArg>(value.clone()).is_err(),
+        "{value}"
+    );
+}
+
 #[test]
 fn saved_enum_names_reject_legacy_aliases() {
-    for value in [
-        serde_json::json!("Auto"),
-        serde_json::json!({"Fixed": {"secs": 7, "nanos": 0}}),
-    ] {
-        assert!(
-            serde_json::from_value::<MutantTimeout>(value.clone()).is_err(),
-            "{value}"
-        );
-    }
-    for value in [
-        serde_json::json!({"Unix": [112, 121]}),
-        serde_json::json!({"Windows": [112, 121]}),
-    ] {
-        assert!(
-            serde_json::from_value::<CommandArg>(value.clone()).is_err(),
-            "{value}"
-        );
-    }
     assert!(
         serde_json::from_value::<hoimin_core::MutationOperator>(serde_json::json!("type_mapping"))
             .is_err()
@@ -206,43 +211,56 @@ fn nonzero_duration_rejects_zero_during_deserialization() {
     let error =
         serde_json::from_value::<NonZeroDuration>(serde_json::json!({"secs": 0, "nanos": 0}))
             .unwrap_err();
+
     assert!(error.to_string().contains("duration"), "{error}");
 }
 
-#[test]
-fn nonzero_duration_preserves_positive_duration_representation() {
+#[rstest::rstest]
+#[case::duration_from_nanos_1_1(0)]
+#[case::max_timeout_2(1)]
+#[case::max_timeout_duration_from_nanos_1_3(2)]
+#[case::duration_max_4(3)]
+fn nonzero_duration_preserves_positive_duration_representation(#[case] scenario_index: usize) {
     // The type guarantees positivity; timeout policy owns the upper bound.
-    for duration in [
+
+    let duration = [
         Duration::from_nanos(1),
         MAX_TIMEOUT,
         MAX_TIMEOUT + Duration::from_nanos(1),
         Duration::MAX,
-    ] {
-        let value =
-            serde_json::json!({"secs": duration.as_secs(), "nanos": duration.subsec_nanos()});
-        let decoded: NonZeroDuration = serde_json::from_value(value.clone()).unwrap();
-        assert_eq!(decoded.get(), duration);
-        assert_eq!(serde_json::to_value(decoded).unwrap(), value);
-    }
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
+
+    let value = serde_json::json!({"secs": duration.as_secs(), "nanos": duration.subsec_nanos()});
+
+    let decoded: NonZeroDuration = serde_json::from_value(value.clone()).unwrap();
+
+    assert_eq!(decoded.get(), duration);
+    assert_eq!(serde_json::to_value(decoded).unwrap(), value);
 }
 
-#[test]
-fn nonzero_duration_rejects_invalid_duration_representation() {
-    for value in [
-        serde_json::json!({"secs": -1, "nanos": 0}),
-        serde_json::json!({"secs": 1}),
-        serde_json::json!({"secs": 1, "nanos": "invalid"}),
-        serde_json::json!({"secs": u64::MAX, "nanos": 1_000_000_000_u64}),
-    ] {
-        assert!(
-            serde_json::from_value::<NonZeroDuration>(value.clone()).is_err(),
-            "{value}"
-        );
-    }
+#[rstest::rstest]
+#[case::serde_json_json_secs_1_nanos_0(serde_json::json!({"secs": -1, "nanos": 0}))]
+#[case::serde_json_json_secs_1(serde_json::json!({"secs": 1}))]
+#[case::serde_json_json_secs_1_nanos_invalid(serde_json::json!({"secs": 1, "nanos": "invalid"}))]
+#[case::serde_json_json_secs_u64_max_nanos_1_000_000_000_u64(serde_json::json!({"secs": u64::MAX, "nanos": 1_000_000_000_u64}))]
+fn nonzero_duration_rejects_invalid_duration_representation(#[case] value: serde_json::Value) {
+    assert!(
+        serde_json::from_value::<NonZeroDuration>(value.clone()).is_err(),
+        "{value}"
+    );
 }
 
-#[test]
-fn saved_configs_reject_zero_durations_before_semantic_validation() {
+#[rstest::rstest]
+#[case::baseline_timeout("baseline_timeout", "")]
+#[case::total_timeout("total_timeout", "")]
+#[case::mutant_timeout("mutant_timeout", "fixed")]
+fn saved_configs_reject_zero_durations_before_semantic_validation(
+    #[case] field: &str,
+    #[case] variant: &str,
+) {
     let config = config(
         CommandArg::Unix(b"python".to_vec()),
         Some(Duration::from_secs(7)),
@@ -252,58 +270,59 @@ fn saved_configs_reject_zero_durations_before_semantic_validation() {
         hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
     ))
     .unwrap();
-    for (field, variant) in [
-        ("baseline_timeout", ""),
-        ("total_timeout", ""),
-        ("mutant_timeout", "fixed"),
-    ] {
-        let zero = serde_json::json!({"secs": 0, "nanos": 0});
-        let duration = if field == "mutant_timeout" {
-            serde_json::json!({variant: zero})
-        } else {
-            zero
-        };
-        let mut run = run.clone();
-        let mut plan = plan.clone();
-        run["limits"][field] = duration.clone();
-        plan["limits"][field] = duration;
-        let run_error = serde_json::from_value::<RunConfig>(run).unwrap_err();
-        assert!(
-            run_error.to_string().contains("duration"),
-            "run {field} {variant}: {run_error}"
-        );
-        let plan_error = serde_json::from_value::<PlanConfig>(plan).unwrap_err();
-        assert!(
-            plan_error.to_string().contains("duration"),
-            "plan {field} {variant}: {plan_error}"
-        );
-    }
+
+    let zero = serde_json::json!({"secs": 0, "nanos": 0});
+    let duration = if field == "mutant_timeout" {
+        serde_json::json!({variant: zero})
+    } else {
+        zero
+    };
+    let mut run = run.clone();
+    let mut plan = plan.clone();
+    run["limits"][field] = duration.clone();
+    plan["limits"][field] = duration;
+    let run_error = serde_json::from_value::<RunConfig>(run).unwrap_err();
+
+    assert!(
+        run_error.to_string().contains("duration"),
+        "run {field} {variant}: {run_error}"
+    );
+    let plan_error = serde_json::from_value::<PlanConfig>(plan).unwrap_err();
+    assert!(
+        plan_error.to_string().contains("duration"),
+        "plan {field} {variant}: {plan_error}"
+    );
 }
 
-#[test]
-fn run_started_rejects_absent_import_roots() {
-    for replacement in [None, Some(serde_json::Value::Null)] {
-        // Arrange
-        let mut started = RunStarted::minimal("run-1", 1, test_resource_control());
-        started.normalized_config = Some(config(CommandArg::Unix(b"python".to_vec()), None));
-        let mut value = serde_json::to_value(OutputEvent::RunStarted(started)).unwrap();
-        value["normalized_config"]
-            .as_object_mut()
-            .unwrap()
-            .remove("import_roots");
-        if let Some(replacement) = replacement {
-            value["normalized_config"]["import_roots"] = replacement;
-        }
+#[rstest::rstest]
+#[case::none_1(0)]
+#[case::some_serde_json_value_null_2(1)]
+fn run_started_rejects_absent_import_roots(#[case] scenario_index: usize) {
+    let replacement = [None, Some(serde_json::Value::Null)]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
 
-        // Act
-        let result = serde_json::from_value::<OutputEvent>(value);
-
-        // Assert
-        assert!(
-            result.is_err(),
-            "accepted absent import_roots in typed event"
-        );
+    // Arrange
+    let mut started = RunStarted::minimal("run-1", 1, test_resource_control());
+    started.normalized_config = Some(config(CommandArg::Unix(b"python".to_vec()), None));
+    let mut value = serde_json::to_value(OutputEvent::RunStarted(started)).unwrap();
+    value["normalized_config"]
+        .as_object_mut()
+        .unwrap()
+        .remove("import_roots");
+    if let Some(replacement) = replacement {
+        value["normalized_config"]["import_roots"] = replacement;
     }
+
+    // Act
+    let result = serde_json::from_value::<OutputEvent>(value);
+
+    // Assert
+    assert!(
+        result.is_err(),
+        "accepted absent import_roots in typed event"
+    );
 }
 
 #[test]

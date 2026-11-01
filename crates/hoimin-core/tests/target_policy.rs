@@ -22,6 +22,7 @@ fn raw_config() -> RawRunConfig {
 #[test]
 fn mutation_profile_defaults_to_full_and_is_normalized() {
     let raw = raw_config();
+
     assert_eq!(raw.profile, MutationProfile::Full);
     assert_eq!(
         RunConfig::try_from(raw.clone())
@@ -48,6 +49,7 @@ fn mutation_profile_defaults_to_full_and_is_normalized() {
 fn rejects_missing_selector() {
     let mut raw = raw_config();
     raw.files.clear();
+
     assert_eq!(RunConfig::try_from(raw), Err(ConfigError::MissingSelector));
 }
 
@@ -55,6 +57,7 @@ fn rejects_missing_selector() {
 fn diff_base_without_changed_is_rejected() {
     let mut raw = raw_config();
     raw.diff_base = Some("main".into());
+
     assert_eq!(
         RunConfig::try_from(raw),
         Err(ConfigError::DiffBaseRequiresChanged)
@@ -65,6 +68,7 @@ fn diff_base_without_changed_is_rejected() {
 fn changed_requires_source() {
     let mut raw = raw_config();
     raw.changed = true;
+
     assert_eq!(
         RunConfig::try_from(raw),
         Err(ConfigError::ChangedRequiresSource)
@@ -79,6 +83,7 @@ fn symbol_requires_source() {
         module: "pkg.a".into(),
         qualname: "run".into(),
     });
+
     assert_eq!(
         RunConfig::try_from(raw),
         Err(ConfigError::SymbolRequiresSource)
@@ -89,6 +94,7 @@ fn symbol_requires_source() {
 fn resume_requires_session() {
     let mut raw = raw_config();
     raw.resume = true;
+
     assert_eq!(
         RunConfig::try_from(raw),
         Err(ConfigError::ResumeRequiresSession)
@@ -99,6 +105,7 @@ fn resume_requires_session() {
 fn rejects_zero_or_overflow_limit() {
     let mut raw = raw_config();
     raw.limits.jobs = 0;
+
     assert_eq!(
         RunConfig::try_from(raw),
         Err(ConfigError::InvalidLimit("jobs"))
@@ -119,16 +126,17 @@ fn rejects_zero_or_overflow_limit() {
     );
 }
 
-#[test]
-fn invalid_limit_messages_use_cli_flag_spellings() {
-    for (internal, flag) in [
-        ("jobs", "--jobs"),
-        ("baseline_timeout", "--baseline-timeout"),
-        ("max_memory", "--max-memory"),
-    ] {
-        let message = ConfigError::InvalidLimit(internal).to_string();
-        assert!(message.contains(flag), "{message} does not mention {flag}");
-    }
+#[rstest::rstest]
+#[case::jobs("jobs", "--jobs")]
+#[case::baseline_timeout("baseline_timeout", "--baseline-timeout")]
+#[case::max_memory("max_memory", "--max-memory")]
+fn invalid_limit_messages_use_cli_flag_spellings(
+    #[case] internal: &'static str,
+    #[case] flag: &str,
+) {
+    let message = ConfigError::InvalidLimit(internal).to_string();
+
+    assert!(message.contains(flag), "{message} does not mention {flag}");
 }
 
 #[test]
@@ -136,6 +144,7 @@ fn rejects_jobs_before_any_jobs_sized_allocation_is_possible() {
     let mut raw = raw_config();
     raw.limits.jobs = MAX_JOBS + 1;
     raw.limits.max_processes = MAX_JOBS + 1;
+
     assert_eq!(
         RunConfig::try_from(raw),
         Err(ConfigError::JobsExceedsMaximum {
@@ -160,20 +169,23 @@ fn raw_configuration_accepts_more_workers_than_processes_per_tree() {
     assert_eq!(config.limits.max_processes.get(), 1);
 }
 
-#[test]
-fn automatic_mutant_timeout_uses_baseline_duration() {
-    assert_eq!(
-        auto_mutant_timeout(Duration::from_secs(1)),
-        Duration::from_secs(5)
-    );
-    assert_eq!(
-        auto_mutant_timeout(Duration::from_secs(8)),
-        Duration::from_secs(17)
-    );
+#[rstest::rstest]
+#[case::floor(Duration::from_secs(1), Duration::from_secs(5))]
+#[case::scaled(Duration::from_secs(8), Duration::from_secs(17))]
+fn automatic_mutant_timeout_uses_baseline_duration(
+    #[case] baseline: Duration,
+    #[case] expected: Duration,
+) {
+    let actual = auto_mutant_timeout(baseline);
+
+    assert_eq!(actual, expected);
 }
 
-#[test]
-fn raw_timeout_limits_accept_the_ceiling_and_reject_one_nanosecond_more() {
+#[rstest::rstest]
+#[case::baseline_timeout(0)]
+#[case::mutant_timeout(1)]
+#[case::total_timeout(2)]
+fn raw_timeout_zero(#[case] scenario_index: usize) {
     type SetTimeout = fn(&mut RawRunConfig, Duration);
     let cases: [(&str, SetTimeout); 3] = [
         ("baseline_timeout", |raw, duration| {
@@ -186,37 +198,80 @@ fn raw_timeout_limits_accept_the_ceiling_and_reject_one_nanosecond_more() {
             raw.limits.total_timeout = duration;
         }),
     ];
-    for (name, set_timeout) in cases {
-        let mut zero = raw_config();
-        set_timeout(&mut zero, Duration::ZERO);
-        assert_eq!(
-            RunConfig::try_from(zero),
-            Err(ConfigError::InvalidLimit(name)),
-            "zero {name}"
-        );
 
-        let mut accepted = raw_config();
-        accepted.limits.mutant_timeout = Some(Duration::from_secs(5));
-        set_timeout(&mut accepted, MAX_TIMEOUT);
+    let (name, set_timeout) = cases.into_iter().nth(scenario_index).unwrap();
 
-        assert!(RunConfig::try_from(accepted).is_ok(), "accepted {name}");
+    let mut raw = raw_config();
+    raw.limits.mutant_timeout = Some(Duration::from_secs(5));
+    set_timeout(&mut raw, Duration::ZERO);
 
-        let mut rejected = raw_config();
-        rejected.limits.mutant_timeout = Some(Duration::from_secs(5));
-        let oversized = MAX_TIMEOUT + Duration::from_nanos(1);
-        set_timeout(&mut rejected, oversized);
+    let result = RunConfig::try_from(raw);
 
-        assert_eq!(
-            RunConfig::try_from(rejected),
-            Err(ConfigError::InvalidLimit(name)),
-            "rejected {name}"
-        );
-    }
+    assert_eq!(result, Err(ConfigError::InvalidLimit(name)));
+}
+
+#[rstest::rstest]
+#[case::baseline_timeout(0)]
+#[case::mutant_timeout(1)]
+#[case::total_timeout(2)]
+fn raw_timeout_ceiling(#[case] scenario_index: usize) {
+    type SetTimeout = fn(&mut RawRunConfig, Duration);
+    let cases: [(&str, SetTimeout); 3] = [
+        ("baseline_timeout", |raw, duration| {
+            raw.limits.baseline_timeout = duration;
+        }),
+        ("mutant_timeout", |raw, duration| {
+            raw.limits.mutant_timeout = Some(duration);
+        }),
+        ("total_timeout", |raw, duration| {
+            raw.limits.total_timeout = duration;
+        }),
+    ];
+
+    let (name, set_timeout) = cases.into_iter().nth(scenario_index).unwrap();
+
+    let mut raw = raw_config();
+    raw.limits.mutant_timeout = Some(Duration::from_secs(5));
+    set_timeout(&mut raw, MAX_TIMEOUT);
+
+    let result = RunConfig::try_from(raw);
+
+    assert!(result.is_ok(), "accepted {name}");
+}
+
+#[rstest::rstest]
+#[case::baseline_timeout(0)]
+#[case::mutant_timeout(1)]
+#[case::total_timeout(2)]
+fn raw_timeout_above_ceiling(#[case] scenario_index: usize) {
+    type SetTimeout = fn(&mut RawRunConfig, Duration);
+    let cases: [(&str, SetTimeout); 3] = [
+        ("baseline_timeout", |raw, duration| {
+            raw.limits.baseline_timeout = duration;
+        }),
+        ("mutant_timeout", |raw, duration| {
+            raw.limits.mutant_timeout = Some(duration);
+        }),
+        ("total_timeout", |raw, duration| {
+            raw.limits.total_timeout = duration;
+        }),
+    ];
+
+    let (name, set_timeout) = cases.into_iter().nth(scenario_index).unwrap();
+
+    let mut raw = raw_config();
+    raw.limits.mutant_timeout = Some(Duration::from_secs(5));
+    set_timeout(&mut raw, MAX_TIMEOUT + Duration::from_nanos(1));
+
+    let result = RunConfig::try_from(raw);
+
+    assert_eq!(result, Err(ConfigError::InvalidLimit(name)));
 }
 
 #[test]
 fn raw_auto_mutant_timeout_bounds_the_derived_deadline() {
     let maximum_baseline = MAX_TIMEOUT.checked_sub(Duration::from_secs(1)).unwrap() / 2;
+
     assert_eq!(auto_mutant_timeout(maximum_baseline), MAX_TIMEOUT);
 
     let mut accepted = raw_config();
@@ -340,8 +395,13 @@ fn whole_file_and_subfile_selectors_resolve_sorted_targets() {
     assert_eq!(targets[2].lines, Vec::new());
 }
 
-#[test]
-fn root_equal_source_selects_every_python_file() {
+#[rstest::rstest]
+#[case::utf8pathbuf_new_1(0)]
+#[case::utf8pathbuf_from_2(1)]
+#[case::utf8pathbuf_from_3(2)]
+#[case::utf8pathbuf_from_pkg_4(3)]
+#[case::root_clone_5(4)]
+fn root_equal_source_selects_every_python_file(#[case] scenario_index: usize) {
     #[cfg(windows)]
     let root = Utf8PathBuf::from("C:/project");
     #[cfg(not(windows))]
@@ -352,29 +412,33 @@ fn root_equal_source_selects_every_python_file() {
         DiscoveredFile::python("root.py"),
     ];
 
-    for source in [
+    let source = [
         Utf8PathBuf::new(),
         Utf8PathBuf::from("."),
         Utf8PathBuf::from("./"),
         Utf8PathBuf::from("pkg/.."),
         root.clone(),
-    ] {
-        let selection = Selection {
-            root: root.clone(),
-            sources: vec![source.clone()],
-            ..Selection::default()
-        };
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
 
-        let targets = resolve_explicit(&selection, &discovered).unwrap();
-        assert_eq!(
-            targets
-                .iter()
-                .map(|target| target.path.as_str())
-                .collect::<Vec<_>>(),
-            ["pkg/nested.py", "root.py"],
-            "root-equivalent source {source:?} did not select the project"
-        );
-    }
+    let selection = Selection {
+        root: root.clone(),
+        sources: vec![source.clone()],
+        ..Selection::default()
+    };
+
+    let targets = resolve_explicit(&selection, &discovered).unwrap();
+
+    assert_eq!(
+        targets
+            .iter()
+            .map(|target| target.path.as_str())
+            .collect::<Vec<_>>(),
+        ["pkg/nested.py", "root.py"],
+        "root-equivalent source {source:?} did not select the project"
+    );
 }
 
 #[test]
@@ -395,6 +459,7 @@ fn root_source_contains_root_relative_file_and_line_selectors() {
     ];
 
     let targets = resolve_explicit(&selection, &discovered).unwrap();
+
     assert_eq!(
         targets
             .iter()
@@ -574,6 +639,7 @@ fn rejects_path_outside_root() {
         files: vec![Utf8PathBuf::from("../outside.py")],
         ..Selection::default()
     };
+
     assert_eq!(
         resolve_explicit(&selection, &[]),
         Err(TargetError::PathOutsideRoot(Utf8PathBuf::from(
@@ -591,6 +657,7 @@ fn rejects_file_outside_source() {
         ..Selection::default()
     };
     let discovered = [DiscoveredFile::python("tests/test_a.py")];
+
     assert_eq!(
         resolve_explicit(&selection, &discovered),
         Err(TargetError::FileOutsideSource(Utf8PathBuf::from(
@@ -610,6 +677,7 @@ fn rejects_invalid_line_range() {
         ..Selection::default()
     };
     let discovered = [DiscoveredFile::python("pkg/a.py")];
+
     assert_eq!(
         resolve_explicit(&selection, &discovered),
         Err(TargetError::InvalidLineRange(LineRange {
@@ -626,6 +694,7 @@ fn rejects_missing_or_non_python_file() {
         files: vec![Utf8PathBuf::from("pkg/a.txt")],
         ..Selection::default()
     };
+
     assert_eq!(
         resolve_explicit(&selection, &[DiscoveredFile::regular("pkg/a.txt")]),
         Err(TargetError::MissingOrNonPythonFile(Utf8PathBuf::from(
@@ -646,13 +715,19 @@ fn resolver_consumes_inventory_after_discovery_exclusion() {
     // Discovery owns glob precedence; the excluded file is absent from its result.
     let discovered = [DiscoveredFile::python("pkg/a.py")];
     let targets = resolve_explicit(&selection, &discovered).unwrap();
+
     assert_eq!(targets.len(), 1);
     assert_eq!(targets[0].path, "pkg/a.py");
 }
 
-#[test]
-fn discovered_bracket_filename_is_not_reinterpreted_as_a_literal_exclude() {
-    for (selector, selection) in [
+#[rstest::rstest]
+#[case::source_1(0)]
+#[case::file_2(1)]
+#[case::line_3(2)]
+fn discovered_bracket_filename_is_not_reinterpreted_as_a_literal_exclude(
+    #[case] scenario_index: usize,
+) {
+    let (selector, selection) = [
         (
             "source",
             Selection {
@@ -677,18 +752,21 @@ fn discovered_bracket_filename_is_not_reinterpreted_as_a_literal_exclude() {
                 ..Selection::default()
             },
         ),
-    ] {
-        let selection = Selection {
-            root: "project".into(),
-            excludes: vec!["src/[ab].py".into()],
-            ..selection
-        };
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
 
-        let targets =
-            resolve_explicit(&selection, &[DiscoveredFile::python("src/[ab].py")]).unwrap();
-        assert_eq!(targets.len(), 1, "{selector}");
-        assert_eq!(targets[0].path, "src/[ab].py");
-    }
+    let selection = Selection {
+        root: "project".into(),
+        excludes: vec!["src/[ab].py".into()],
+        ..selection
+    };
+
+    let targets = resolve_explicit(&selection, &[DiscoveredFile::python("src/[ab].py")]).unwrap();
+
+    assert_eq!(targets.len(), 1, "{selector}");
+    assert_eq!(targets[0].path, "src/[ab].py");
 }
 
 #[test]
@@ -875,6 +953,7 @@ fn windows_paths_use_mixed_slashes_and_case_insensitive_containment() {
         ..Selection::default()
     };
     let targets = resolve_explicit(&selection, &[DiscoveredFile::python("pkg/a.py")]).unwrap();
+
     assert_eq!(targets[0].path, "pkg/a.py");
 }
 
@@ -887,6 +966,7 @@ fn windows_absolute_selector_strips_root_case_insensitively() {
         ..Selection::default()
     };
     let targets = resolve_explicit(&selection, &[DiscoveredFile::python("pkg/a.py")]).unwrap();
+
     assert_eq!(targets[0].path, "pkg/a.py");
 }
 
@@ -898,6 +978,7 @@ fn windows_non_ascii_path_outside_root_returns_typed_error() {
         files: vec![Utf8PathBuf::from("C:/€x/file.py")],
         ..Selection::default()
     };
+
     assert_eq!(
         resolve_explicit(&selection, &[]),
         Err(TargetError::PathOutsideRoot(Utf8PathBuf::from(
@@ -916,6 +997,7 @@ fn windows_unicode_case_variants_resolve_under_root() {
         ..Selection::default()
     };
     let targets = resolve_explicit(&selection, &[DiscoveredFile::python("pkg/a.py")]).unwrap();
+
     assert_eq!(targets[0].path, "pkg/a.py");
 }
 
@@ -928,6 +1010,7 @@ fn windows_final_sigma_uses_uppercase_case_equivalence() {
         ..Selection::default()
     };
     let targets = resolve_explicit(&selection, &[DiscoveredFile::python("pkg/a.py")]).unwrap();
+
     assert_eq!(targets[0].path, "pkg/a.py");
 }
 
@@ -939,6 +1022,7 @@ fn windows_multi_character_uppercase_does_not_overmatch_root() {
         files: vec![Utf8PathBuf::from("C:/SS/file.py")],
         ..Selection::default()
     };
+
     assert_eq!(
         resolve_explicit(&selection, &[]),
         Err(TargetError::PathOutsideRoot(Utf8PathBuf::from(
@@ -955,6 +1039,7 @@ fn run_config_normalizes_operator_selectors() {
         .unwrap()
         .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap();
+
     assert!(
         config
             .operators

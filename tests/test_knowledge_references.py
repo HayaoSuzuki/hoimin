@@ -24,6 +24,7 @@ def test_missing_sources_links_and_unreachable_pages_are_independent(
     (tmp_path / "nested/child.md").write_text("[root](/index.md)\n")
     (tmp_path / "orphan.md").write_text("orphan\n")
     result = inventory(tmp_path)
+
     assert len(result["missing_markdown"]) == 2
     assert {row["target"] for row in result["missing_markdown"]} == {"gone.rs"}
     assert [row["id"] for row in result["missing_sources"]] == ["missing"]
@@ -38,6 +39,7 @@ def test_source_resource_does_not_make_a_concept_navigable(tmp_path: Path) -> No
     )
     (tmp_path / "hidden.md").write_text("hidden\n")
     result = inventory(tmp_path)
+
     assert result["unreachable_pages"] == ["hidden.md"]
     assert result["missing_sources"] == []
 
@@ -52,6 +54,7 @@ def test_unused_reference_definition_does_not_create_navigation(tmp_path: Path) 
     (tmp_path / "index.md").write_text("[unused]: hidden.md\n")
     (tmp_path / "hidden.md").write_text("hidden\n")
     result = inventory(tmp_path)
+
     assert result["unreachable_pages"] == ["hidden.md"]
     assert [row["target"] for row in result["markdown"]] == ["hidden.md"]
 
@@ -67,5 +70,6 @@ def test_used_references_and_footnotes_create_navigation(tmp_path: Path) -> None
     for name in ("child", "collapsed", "shortcut", "evidence", "hidden"):
         (tmp_path / f"{name}.md").write_text(name)
     result = inventory(tmp_path)
+
     assert result["unreachable_pages"] == ["hidden.md"]
     assert result["missing_markdown"] == []

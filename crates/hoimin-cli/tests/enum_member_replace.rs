@@ -26,8 +26,8 @@ fn python() -> PathBuf {
     )
 }
 
-async fn compile(source: &str) {
-    let output = tokio::time::timeout(
+async fn compile(source: &str) -> std::process::Output {
+    tokio::time::timeout(
         Duration::from_secs(15),
         tokio::process::Command::new(python())
             .args([
@@ -40,12 +40,7 @@ async fn compile(source: &str) {
     )
     .await
     .expect("CPython compiler deadline")
-    .expect("CPython 3.14 or 3.15; set HOIMIN_OPERATOR_TEST_PYTHON to its executable");
-    assert!(
-        output.status.success(),
-        "{source}\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    .expect("CPython 3.14 or 3.15; set HOIMIN_OPERATOR_TEST_PYTHON to its executable")
 }
 
 async fn cli(args: Vec<OsString>) -> (i32, serde_json::Value) {
@@ -93,170 +88,226 @@ async fn plan(root: &Path, operators: &str, test: &str) -> serde_json::Value {
     document
 }
 
+#[rstest::rstest]
+#[case::integer_members("Enum", "A=1; B=2; C=3", vec!["B", "C"])]
+#[case::integer_alias("IntEnum", "A=-1; Alias=-1; B=2", vec!["B"])]
+#[case::string_alias("Enum", "A='a'; Alias='a'; B='b'", vec!["B"])]
+#[case::automatic_values("Enum", "A=auto(); B=auto(); C=auto()", vec!["B", "C"])]
+#[case::case_folded_string_alias("StrEnum", "A=auto(); a=auto(); B=auto()", vec!["B"])]
+#[case::aliases_without_destination("Enum", "A=1; Alias=1", vec![])]
 #[tokio::test]
-async fn enum_members_are_distinct_canonical_destinations() {
-    for (base, members, expected) in [
-        ("Enum", "A=1; B=2; C=3", vec!["B", "C"]),
-        ("IntEnum", "A=-1; Alias=-1; B=2", vec!["B"]),
-        ("Enum", "A='a'; Alias='a'; B='b'", vec!["B"]),
-        ("Enum", "A=auto(); B=auto(); C=auto()", vec!["B", "C"]),
-        ("StrEnum", "A=auto(); a=auto(); B=auto()", vec!["B"]),
-        ("Enum", "A=1; Alias=1", vec![]),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        let source = format!(
-            "from enum import {base} as Base, auto\nclass Status(Base):\n    {members}\ndef choose():\n    return Status.A\n"
-        );
-        std::fs::write(root.path().join("subject.py"), &source).unwrap();
-        let doc = plan(root.path(), "enum_member_replace", "pass").await;
-        let cs = doc["candidates"].as_array().unwrap();
-        let mut actual: Vec<_> = cs
-            .iter()
-            .map(|c| c["replacement"].as_str().unwrap())
-            .collect();
-        actual.sort_unstable();
-        assert_eq!(actual, expected, "{source} {doc}");
-        for c in cs {
-            assert_eq!(c["original"], "A");
-            assert_eq!(c["symbol"], "choose");
-            let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
-            let mut mutant = source.clone();
-            mutant.replace_range(start..=start, c["replacement"].as_str().unwrap());
-            compile(&mutant).await;
-        }
-        assert_eq!(
-            doc["candidates"],
-            plan(root.path(), "enum_member_replace", "pass").await["candidates"]
-        );
+async fn enum_members_are_distinct_canonical_destinations(
+    #[case] base: &str,
+    #[case] members: &str,
+    #[case] expected: Vec<&str>,
+) {
+    let root = tempfile::tempdir().unwrap();
+    let source = format!(
+        "from enum import {base} as Base, auto\nclass Status(Base):\n    {members}\ndef choose():\n    return Status.A\n"
+    );
+    std::fs::write(root.path().join("subject.py"), &source).unwrap();
+
+    let doc = plan(root.path(), "enum_member_replace", "pass").await;
+    let cs = doc["candidates"].as_array().unwrap();
+    let mut actual: Vec<_> = cs
+        .iter()
+        .map(|c| c["replacement"].as_str().unwrap())
+        .collect();
+    actual.sort_unstable();
+
+    let replay = plan(root.path(), "enum_member_replace", "pass").await;
+    let mut compiled = Vec::new();
+    for c in cs {
+        let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
+        let mut mutant = source.clone();
+        mutant.replace_range(start..=start, c["replacement"].as_str().unwrap());
+        compiled.push(compile(&mutant).await);
     }
+
+    assert_eq!(actual, expected, "{source} {doc}");
+    assert!(cs.iter().all(|candidate| candidate["original"] == "A"));
+    assert!(cs.iter().all(|candidate| candidate["symbol"] == "choose"));
+    assert!(
+        compiled.iter().all(|output| output.status.success()),
+        "{source} {compiled:?}"
+    );
+    assert_eq!(doc["candidates"], replay["candidates"]);
+}
+
+#[rstest::rstest]
+#[case::unshadowed_function("def f(): return Status.A\n", 1)]
+#[case::parameter_shadow("def f(Status): return Status.A\n", 0)]
+#[case::local_assignment_shadow("def f():\n    x=Status.A\n    Status=object()\n", 0)]
+#[case::module_assignment_shadow("Status=object()\nx=Status.A\n", 0)]
+#[case::annotation("x: Status.A\n", 0)]
+#[case::match_pattern("match x:\n    case Status.A: pass\n", 0)]
+#[case::member_assignment("Status.A=1\n", 0)]
+#[case::comprehension_shadow("x=[Status.A for Status in values]\n", 0)]
+#[case::global_assignment_shadow(
+    "def f():\n    global Status\n    Status=object()\nx=Status.A\n",
+    0
+)]
+#[tokio::test]
+async fn enum_scope_selects_only_unshadowed_load_references(
+    #[case] tail: &str,
+    #[case] count: usize,
+) {
+    let root = tempfile::tempdir().unwrap();
+    let source = format!("import enum as e\nclass Status(e.Enum):\n    A=1; B=2\n{tail}");
+    std::fs::write(root.path().join("subject.py"), source).unwrap();
+
+    let doc = plan(root.path(), "enum_member_replace", "pass").await;
+
+    assert_eq!(
+        doc["candidates"].as_array().unwrap().len(),
+        count,
+        "{tail} {doc}"
+    );
+}
+
+#[rstest::rstest]
+#[case::mixed_manual_and_auto_values("A=1; B=auto()")]
+#[case::ignored_member("_ignore_='B'; A=1; B=2")]
+#[case::dynamic_member_value("A=1; B=make()")]
+#[case::custom_auto_generator("A=1; B=2\n    def _generate_next_value_(*args): return 1")]
+#[tokio::test]
+async fn enum_unsupported_definitions_are_skipped_with_diagnostic(#[case] body: &str) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("subject.py"),
+        format!("from enum import Enum, auto\nclass Status(Enum):\n    {body}\nx=Status.A\n"),
+    )
+    .unwrap();
+
+    let doc = plan(root.path(), "enum_member_replace", "pass").await;
+
+    assert!(doc["candidates"].as_array().unwrap().is_empty(), "{doc}");
+    assert!(doc.to_string().contains("enum_definition_skipped"), "{doc}");
+}
+
+#[rstest::rstest]
+#[case::type_check_survives(
+    "from subject import choose,Status; assert isinstance(choose(), Status)",
+    0,
+    2
+)]
+#[case::identity_check_kills(
+    "from subject import choose,Status; assert choose() is Status.A",
+    2,
+    0
+)]
+#[tokio::test]
+async fn enum_identity_checks_kill_what_type_checks_miss(
+    #[case] test: &str,
+    #[case] killed: usize,
+    #[case] survived: usize,
+) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), "from enum import Enum\nclass Status(Enum):\n    A=1; B=2; C=3\ndef choose():\n    return Status.A\n").unwrap();
+    let doc = plan(root.path(), "enum_member_replace", test).await;
+    let manifest = root.path().join("plan.json");
+    std::fs::write(&manifest, serde_json::to_vec(&doc).unwrap()).unwrap();
+
+    let (_, report) = cli(vec![
+        "hoimin".into(),
+        "verify".into(),
+        manifest.into_os_string(),
+        "--top".into(),
+        "2".into(),
+    ])
+    .await;
+
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+    assert_eq!(report["summary"]["counts"]["killed"], killed);
+    assert_eq!(report["summary"]["counts"]["survived"], survived);
+}
+
+#[rstest::rstest]
+#[case::integer_literal_alias("Enum", "A=0x1; Alias=+1; B=2; C=3")]
+#[case::case_folded_auto_alias("StrEnum", "A=auto(); a=auto(); B=auto(); C=auto()")]
+#[tokio::test]
+async fn enum_load_contexts_preserve_comments_and_match_cpython_values(
+    #[case] base: &str,
+    #[case] values: &str,
+) {
+    let root = tempfile::tempdir().unwrap();
+    let source = format!(
+        "from enum import {base}, auto\r\nclass Status({base}):\r\n    {values}\r\n    def method(self): return self.value\r\n# é前\r\nx=Status.A\r\ny=Status.A == x\r\nz=str(Status.A)\r\ndef choose():\r\n    return (Status # comment\r\n            . A)\r\n"
+    );
+    std::fs::write(root.path().join("subject.py"), &source).unwrap();
+
+    let doc = plan(root.path(), "enum_member_replace", "pass").await;
+
+    let mut executed = Vec::new();
+    let mut preserved_prefixes = Vec::new();
+    for c in doc["candidates"].as_array().unwrap() {
+        let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
+        let mut mutant = source.clone();
+        mutant.replace_range(start..=start, c["replacement"].as_str().unwrap());
+        let output = tokio::process::Command::new(python())
+            .args([
+                "-c",
+                "import sys; ns={}; exec(compile(sys.argv[1],'<enum>','exec'),ns); S=ns['Status']; assert len(S)==3; assert S[sys.argv[2]] is not S.A; assert type(S[sys.argv[2]]) is S",
+                &mutant,
+                c["replacement"].as_str().unwrap(),
+            ])
+            .output()
+            .await
+            .unwrap();
+        executed.push(output);
+        preserved_prefixes.push(mutant[..start] == source[..start]);
+    }
+
+    assert_eq!(doc["candidates"].as_array().unwrap().len(), 8, "{doc}");
+    assert!(
+        executed.iter().all(|output| output.status.success()),
+        "{executed:?}"
+    );
+    assert!(preserved_prefixes.into_iter().all(|preserved| preserved));
+}
+
+#[rstest::rstest]
+#[case::annotated_module_alias(
+    "import enum\nother: object=enum\nother.Enum=object\nclass E(enum.Enum): A=1; B=2\nx=E.A\n"
+)]
+#[case::walrus_module_alias(
+    "import enum\n(other:=enum)\nother.Enum=object\nclass E(enum.Enum): A=1; B=2\nx=E.A\n"
+)]
+#[case::unpacked_module_alias(
+    "import enum\nother,=(enum,)\nother.Enum=object\nclass E(enum.Enum): A=1; B=2\nx=E.A\n"
+)]
+#[case::deleted_global_enum(
+    "from enum import Enum\nclass E(Enum): A=1; B=2\ndef remove():\n    global E\n    del E\nx=E.A\n"
+)]
+#[case::module_dictionary_replacement(
+    "import enum\nclass Fake: pass\nenum.__dict__['Enum']=Fake\nclass E(enum.Enum): A=1; B=2\nx=E.A\n"
+)]
+#[case::module_attribute_replacement(
+    "import enum\nother=enum\nclass Fake: pass\nother.Enum=Fake\nclass E(enum.Enum): A=1; B=2\nx=E.A\n"
+)]
+#[case::surrogate_member_values(
+    "from enum import Enum\nclass E(Enum): A='\\ud800'; B='\\ud801'; C='\\ufffd'\nx=E.A\n"
+)]
+#[tokio::test]
+async fn enum_review_regressions_reject_ambiguous_identity(#[case] source: &str) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), source).unwrap();
+
+    let doc = plan(root.path(), "enum_member_replace", "pass").await;
+
+    assert!(doc["candidates"].as_array().unwrap().is_empty(), "{doc}");
+    assert!(doc.to_string().contains("enum_definition_skipped"), "{doc}");
 }
 
 #[tokio::test]
-async fn enum_scope_and_unsupported_definitions_are_conservative() {
-    for (tail, count) in [
-        ("def f(): return Status.A\n", 1),
-        ("def f(Status): return Status.A\n", 0),
-        ("def f():\n    x=Status.A\n    Status=object()\n", 0),
-        ("Status=object()\nx=Status.A\n", 0),
-        ("x: Status.A\n", 0),
-        ("match x:\n    case Status.A: pass\n", 0),
-        ("Status.A=1\n", 0),
-        ("x=[Status.A for Status in values]\n", 0),
-        (
-            "def f():\n    global Status\n    Status=object()\nx=Status.A\n",
-            0,
-        ),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        let source = format!("import enum as e\nclass Status(e.Enum):\n    A=1; B=2\n{tail}");
-        std::fs::write(root.path().join("subject.py"), source).unwrap();
-        let doc = plan(root.path(), "enum_member_replace", "pass").await;
-        assert_eq!(
-            doc["candidates"].as_array().unwrap().len(),
-            count,
-            "{tail} {doc}"
-        );
-    }
-    for body in [
-        "A=1; B=auto()",
-        "_ignore_='B'; A=1; B=2",
-        "A=1; B=make()",
-        "A=1; B=2\n    def _generate_next_value_(*args): return 1",
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(
-            root.path().join("subject.py"),
-            format!("from enum import Enum, auto\nclass Status(Enum):\n    {body}\nx=Status.A\n"),
-        )
-        .unwrap();
-        let doc = plan(root.path(), "enum_member_replace", "pass").await;
-        assert!(doc["candidates"].as_array().unwrap().is_empty(), "{doc}");
-        assert!(doc.to_string().contains("enum_definition_skipped"), "{doc}");
-    }
-}
-
-#[tokio::test]
-async fn enum_identity_checks_kill_what_type_checks_miss() {
-    for (test, killed, survived) in [
-        (
-            "from subject import choose,Status; assert isinstance(choose(), Status)",
-            0,
-            2,
-        ),
-        (
-            "from subject import choose,Status; assert choose() is Status.A",
-            2,
-            0,
-        ),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("subject.py"), "from enum import Enum\nclass Status(Enum):\n    A=1; B=2; C=3\ndef choose():\n    return Status.A\n").unwrap();
-        let doc = plan(root.path(), "enum_member_replace", test).await;
-        let manifest = root.path().join("plan.json");
-        std::fs::write(&manifest, serde_json::to_vec(&doc).unwrap()).unwrap();
-        let (_, report) = cli(vec![
-            "hoimin".into(),
-            "verify".into(),
-            manifest.into_os_string(),
-            "--top".into(),
-            "2".into(),
-        ])
-        .await;
-        assert_eq!(report["baseline"]["termination"]["Exit"], 0);
-        assert_eq!(report["summary"]["counts"]["killed"], killed);
-        assert_eq!(report["summary"]["counts"]["survived"], survived);
-    }
-}
-
-#[tokio::test]
-async fn enum_load_contexts_preserve_comments_and_match_cpython_values() {
-    for (base, values) in [
-        ("Enum", "A=0x1; Alias=+1; B=2; C=3"),
-        ("StrEnum", "A=auto(); a=auto(); B=auto(); C=auto()"),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        let source = format!(
-            "from enum import {base}, auto\r\nclass Status({base}):\r\n    {values}\r\n    def method(self): return self.value\r\n# é前\r\nx=Status.A\r\ny=Status.A == x\r\nz=str(Status.A)\r\ndef choose():\r\n    return (Status # comment\r\n            . A)\r\n"
-        );
-        std::fs::write(root.path().join("subject.py"), &source).unwrap();
-        let doc = plan(root.path(), "enum_member_replace", "pass").await;
-        assert_eq!(doc["candidates"].as_array().unwrap().len(), 8, "{doc}");
-        for c in doc["candidates"].as_array().unwrap() {
-            let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
-            let mut mutant = source.clone();
-            mutant.replace_range(start..=start, c["replacement"].as_str().unwrap());
-            let output=tokio::process::Command::new(python()).args(["-c", "import sys; ns={}; exec(compile(sys.argv[1],'<enum>','exec'),ns); S=ns['Status']; assert len(S)==3; assert S[sys.argv[2]] is not S.A; assert type(S[sys.argv[2]]) is S", &mutant, c["replacement"].as_str().unwrap()]).output().await.unwrap();
-            assert!(
-                output.status.success(),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            assert_eq!(&mutant[..start], &source[..start]);
-        }
-    }
-}
-
-#[tokio::test]
-async fn enum_review_regressions_reject_ambiguous_identity_and_preserve_spelling() {
-    for source in [
-        "import enum\nother: object=enum\nother.Enum=object\nclass E(enum.Enum): A=1; B=2\nx=E.A\n",
-        "import enum\n(other:=enum)\nother.Enum=object\nclass E(enum.Enum): A=1; B=2\nx=E.A\n",
-        "import enum\nother,=(enum,)\nother.Enum=object\nclass E(enum.Enum): A=1; B=2\nx=E.A\n",
-        "from enum import Enum\nclass E(Enum): A=1; B=2\ndef remove():\n    global E\n    del E\nx=E.A\n",
-        "import enum\nclass Fake: pass\nenum.__dict__['Enum']=Fake\nclass E(enum.Enum): A=1; B=2\nx=E.A\n",
-        "import enum\nother=enum\nclass Fake: pass\nother.Enum=Fake\nclass E(enum.Enum): A=1; B=2\nx=E.A\n",
-        "from enum import Enum\nclass E(Enum): A='\\ud800'; B='\\ud801'; C='\\ufffd'\nx=E.A\n",
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("subject.py"), source).unwrap();
-        let doc = plan(root.path(), "enum_member_replace", "pass").await;
-        assert!(doc["candidates"].as_array().unwrap().is_empty(), "{doc}");
-        assert!(doc.to_string().contains("enum_definition_skipped"), "{doc}");
-    }
+async fn enum_review_regression_preserves_unicode_member_spelling() {
     let root = tempfile::tempdir().unwrap();
     let source = "from enum import Enum\nclass E(Enum): A=1; ｆｏｒ=2\nx=E.A\n";
     std::fs::write(root.path().join("subject.py"), source).unwrap();
+
     let doc = plan(root.path(), "enum_member_replace", "pass").await;
+    let compiled = compile(&source.replace("x=E.A", "x=E.ｆｏｒ")).await;
+
     assert_eq!(doc["candidates"][0]["replacement"], "ｆｏｒ");
-    compile(&source.replace("x=E.A", "x=E.ｆｏｒ")).await;
+    assert!(compiled.status.success(), "{compiled:?}");
 }

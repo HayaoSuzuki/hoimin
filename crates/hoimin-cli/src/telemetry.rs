@@ -147,6 +147,7 @@ mod tests {
         let mut dropped = RecordWriter::new(sender.clone());
         dropped.write_all(b"{\"message\":\"second\"}\n").unwrap();
         drop(dropped);
+
         assert_eq!(receiver.try_recv().unwrap(), b"{\"message\":\"first\"}\n");
         assert!(receiver.try_recv().is_err());
         let mut oversized = RecordWriter::new(sender);
@@ -195,8 +196,10 @@ mod tests {
         let (sender, receiver) = mpsc::sync_channel(QUEUE_CAPACITY);
         sender.send(b"first\n".to_vec()).unwrap();
         sender.send(b"second\n".to_vec()).unwrap();
+
         let mut output = Vec::new();
         write_output(&mut output, &receiver, &AtomicBool::new(true)).unwrap();
+
         assert_eq!(output, b"first\nsecond\n");
         drop(sender);
     }
@@ -235,6 +238,7 @@ mod tests {
             remaining: QUEUE_CAPACITY + 1,
         };
         write_output(&mut sink, &receiver, &AtomicBool::new(true)).unwrap();
+
         assert_eq!(sink.output, b"record\n".repeat(QUEUE_CAPACITY));
         assert!(sink.flushed);
         assert_eq!(receiver.try_recv().unwrap(), b"record\n");
@@ -277,6 +281,7 @@ mod tests {
         drop(guard);
         let elapsed = start.elapsed();
         release_tx.send(()).unwrap();
+
         assert!(
             elapsed < Duration::from_secs(1),
             "publish/flush blocked for {elapsed:?}"

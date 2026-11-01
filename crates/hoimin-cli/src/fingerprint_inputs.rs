@@ -468,26 +468,23 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[test]
-    fn recheck_rejects_changed_worker_input() {
-        for (path, changed_bytes) in [
-            ("settings.toml", "value = 3\n"),
-            ("errors.py", "class Other(Exception): pass\n"),
-        ] {
-            let original = tempfile::tempdir().unwrap();
-            let worker = tempfile::tempdir().unwrap();
-            let original_root = Utf8Path::from_path(original.path()).unwrap();
-            let worker_root = Utf8Path::from_path(worker.path()).unwrap();
-            let config = prepared_config(original_root, worker_root);
-            std::fs::write(worker_root.join(path), changed_bytes).unwrap();
+    #[rstest::rstest]
+    #[case::settings_toml_1("settings.toml", "value = 3\n")]
+    #[case::errors_py_2("errors.py", "class Other(Exception): pass\n")]
+    fn recheck_rejects_changed_worker_input(#[case] path: &str, #[case] changed_bytes: &str) {
+        let original = tempfile::tempdir().unwrap();
+        let worker = tempfile::tempdir().unwrap();
+        let original_root = Utf8Path::from_path(original.path()).unwrap();
+        let worker_root = Utf8Path::from_path(worker.path()).unwrap();
+        let config = prepared_config(original_root, worker_root);
+        std::fs::write(worker_root.join(path), changed_bytes).unwrap();
 
-            let result = recheck_config(&config, worker_root);
+        let result = recheck_config(&config, worker_root);
 
-            assert!(
-                matches!(result, Err(FingerprintInputRecheckError::RecordsChanged)),
-                "{path}"
-            );
-        }
+        assert!(
+            matches!(result, Err(FingerprintInputRecheckError::RecordsChanged)),
+            "{path}"
+        );
     }
 
     #[test]
@@ -504,36 +501,63 @@ mod tests {
         assert_eq!(config, expected);
     }
 
-    #[test]
-    fn pattern_count_and_unrelated_tree_size_do_not_multiply_walks() {
-        for unrelated in [0, 64] {
-            let directory = tempfile::tempdir().unwrap();
-            std::fs::write(directory.path().join("a.toml"), "a").unwrap();
-            std::fs::create_dir(directory.path().join("unrelated")).unwrap();
-            for index in 0..unrelated {
-                std::fs::write(
-                    directory
-                        .path()
-                        .join("unrelated")
-                        .join(format!("{index}.txt")),
-                    "x",
-                )
-                .unwrap();
-            }
-            let root = Utf8Path::from_path(directory.path()).unwrap();
-            assert_eq!(resolve_patterns(root, &[]).unwrap().walks, 0);
-            for count in [1, 2, 4] {
-                let patterns = std::iter::repeat_n("*.toml".to_owned(), count).collect::<Vec<_>>();
-                let resolution = resolve_patterns(root, &patterns).unwrap();
-                assert_eq!(
-                    resolution.walks, 1,
-                    "patterns={count}, unrelated={unrelated}"
-                );
-                assert_eq!(
-                    resolution.selected.keys().collect::<Vec<_>>(),
-                    [Utf8Path::new("a.toml")]
-                );
-            }
+    #[rstest::rstest]
+    #[case::input_0_1(0)]
+    #[case::input_64_2(64)]
+    fn pattern_count_and_unrelated_tree_size_do_not_multiply_walks_scenario_1(
+        #[case] unrelated: usize,
+        #[values(0, 1, 2)] scenario_index: usize,
+    ) {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("a.toml"), "a").unwrap();
+        std::fs::create_dir(directory.path().join("unrelated")).unwrap();
+        for index in 0..unrelated {
+            std::fs::write(
+                directory
+                    .path()
+                    .join("unrelated")
+                    .join(format!("{index}.txt")),
+                "x",
+            )
+            .unwrap();
         }
+        let root = Utf8Path::from_path(directory.path()).unwrap();
+
+        assert_eq!(resolve_patterns(root, &[]).unwrap().walks, 0);
+
+        let count = [1, 2, 4].into_iter().nth(scenario_index).unwrap();
+
+        let patterns = std::iter::repeat_n("*.toml".to_owned(), count).collect::<Vec<_>>();
+        let resolution = resolve_patterns(root, &patterns).unwrap();
+        assert_eq!(
+            resolution.walks, 1,
+            "patterns={count}, unrelated={unrelated}"
+        );
+        assert_eq!(
+            resolution.selected.keys().collect::<Vec<_>>(),
+            [Utf8Path::new("a.toml")]
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::input_0_1(0)]
+    #[case::input_64_2(64)]
+    fn pattern_count_and_unrelated_tree_size_do_not_multiply_walks(#[case] unrelated: usize) {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("a.toml"), "a").unwrap();
+        std::fs::create_dir(directory.path().join("unrelated")).unwrap();
+        for index in 0..unrelated {
+            std::fs::write(
+                directory
+                    .path()
+                    .join("unrelated")
+                    .join(format!("{index}.txt")),
+                "x",
+            )
+            .unwrap();
+        }
+        let root = Utf8Path::from_path(directory.path()).unwrap();
+
+        assert_eq!(resolve_patterns(root, &[]).unwrap().walks, 0);
     }
 }

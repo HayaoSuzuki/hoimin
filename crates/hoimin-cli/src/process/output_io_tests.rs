@@ -35,73 +35,81 @@ impl AsyncWrite for ObservedFile {
     }
 }
 
+#[rstest::rstest]
+#[case::input_256_vec_8_16_1_1(256, vec![8; 16], 1)]
+#[case::input_16_vec_8_4_2_2(16, vec![8; 4], 2)]
+#[case::input_16_vec_10_10_2_3(16, vec![10, 10], 2)]
+#[case::input_16_vec_4_40_4_3_4(16, vec![4, 40, 4], 3)]
+#[case::input_0_vec_8_16_0_5(0, vec![8; 16], 0)]
+#[case::input_16_vec_0_0_0_6(16, vec![0, 0], 0)]
 #[tokio::test]
-async fn aligned_ring_writes_avoid_redundant_seeks() {
-    for (capacity, lengths, expected_seeks) in [
-        (256, vec![8; 16], 1),
-        (16, vec![8; 4], 2),
-        (16, vec![10, 10], 2),
-        (16, vec![4, 40, 4], 3),
-        (0, vec![8; 16], 0),
-        (16, vec![0, 0], 0),
-    ] {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("ring");
-        let file = File::create(&path).await.unwrap();
-        let mut file = ObservedFile {
-            file,
-            seeks: 0,
-            fail_seek_at: None,
-        };
-        let mut position = 0;
-        let mut expected = Vec::new();
-        let mut cursor = 0;
-        for (i, length) in lengths.iter().enumerate() {
-            let chunk = vec![u8::try_from(i).unwrap(); *length];
-            position = write_ring(&mut file, capacity, position, &chunk)
-                .await
-                .unwrap();
-            for byte in chunk {
-                if capacity > 0 {
-                    if cursor == expected.len() {
-                        expected.push(byte);
-                    } else {
-                        expected[cursor] = byte;
-                    }
-                    cursor = (cursor + 1) % usize::try_from(capacity).unwrap();
-                }
-            }
-        }
-        file.flush().await.unwrap();
-        assert_eq!(
-            std::fs::read(&path).unwrap(),
-            expected,
-            "capacity={capacity} lengths={lengths:?}"
-        );
-        assert_eq!(
-            file.seeks, expected_seeks,
-            "capacity={capacity} lengths={lengths:?}"
-        );
-    }
-}
+async fn aligned_ring_writes_avoid_redundant_seeks(
+    #[case] capacity: u64,
+    #[case] lengths: Vec<usize>,
+    #[case] expected_seeks: usize,
+) {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("ring");
 
-#[tokio::test]
-async fn required_wrap_and_skipped_offset_seek_errors_propagate() {
-    for lengths in [[6, 6], [6, 12]] {
-        let directory = tempfile::tempdir().unwrap();
-        let mut file = ObservedFile {
-            file: File::create(directory.path().join("ring")).await.unwrap(),
-            seeks: 0,
-            fail_seek_at: Some(2),
-        };
-        let position = write_ring(&mut file, 8, 0, &vec![1; lengths[0]])
+    let file = File::create(&path).await.unwrap();
+    let mut file = ObservedFile {
+        file,
+        seeks: 0,
+        fail_seek_at: None,
+    };
+    let mut position = 0;
+    let mut expected = Vec::new();
+    let mut cursor = 0;
+    for (i, length) in lengths.iter().enumerate() {
+        let chunk = vec![u8::try_from(i).unwrap(); *length];
+        position = write_ring(&mut file, capacity, position, &chunk)
             .await
             .unwrap();
-        let error = write_ring(&mut file, 8, position, &vec![2; lengths[1]])
-            .await
-            .unwrap_err();
-        assert_eq!(error.to_string(), "required-seek-failed");
+        for byte in chunk {
+            if capacity > 0 {
+                if cursor == expected.len() {
+                    expected.push(byte);
+                } else {
+                    expected[cursor] = byte;
+                }
+                cursor = (cursor + 1) % usize::try_from(capacity).unwrap();
+            }
+        }
     }
+    file.flush().await.unwrap();
+
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        expected,
+        "capacity={capacity} lengths={lengths:?}"
+    );
+    assert_eq!(
+        file.seeks, expected_seeks,
+        "capacity={capacity} lengths={lengths:?}"
+    );
+}
+
+#[rstest::rstest]
+#[case::input_6_6_1([6, 6])]
+#[case::input_6_12_2([6, 12])]
+#[tokio::test]
+async fn required_wrap_and_skipped_offset_seek_errors_propagate(#[case] lengths: [usize; 2]) {
+    let directory = tempfile::tempdir().unwrap();
+
+    let mut file = ObservedFile {
+        file: File::create(directory.path().join("ring")).await.unwrap(),
+        seeks: 0,
+        fail_seek_at: Some(2),
+    };
+    let position = write_ring(&mut file, 8, 0, &vec![1; lengths[0]])
+        .await
+        .unwrap();
+
+    let error = write_ring(&mut file, 8, position, &vec![2; lengths[1]])
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.to_string(), "required-seek-failed");
 }
 
 #[tokio::test]

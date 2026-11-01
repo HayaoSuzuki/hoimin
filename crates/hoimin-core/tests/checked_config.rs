@@ -102,7 +102,7 @@ proptest::proptest! {
         tracked in proptest::bool::ANY,
         argv in proptest::collection::vec(proptest::collection::vec(proptest::num::u8::ANY, 0..20), 1..5),
     ) {
-        // Arrange: constraints are generated independently of production validation.
+        // constraints are generated independently of production validation.
         let environment = if tracked {
             EnvironmentSnapshot::captured(vec!["FLAG".into()], "a".repeat(64)).unwrap()
         } else {
@@ -115,12 +115,13 @@ proptest::proptest! {
         data.test_argv = argv.iter().cloned().map(CommandArg::Unix).collect();
         data.environment = environment.clone();
 
-        // Act
+
         let accepted = RunConfig::try_from(data).unwrap();
         let encoded = serde_json::to_vec(&accepted).unwrap();
+
         let decoded: RunConfig = serde_json::from_slice(&encoded).unwrap();
 
-        // Assert
+
         proptest::prop_assert_eq!(decoded.limits.jobs.get(), jobs);
         proptest::prop_assert_eq!(decoded.limits.max_processes.get(), max_processes);
         proptest::prop_assert_eq!(decoded.import_roots[0].as_str(), root);

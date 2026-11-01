@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 
 import pytest
+from hypothesis import example, given
+from hypothesis import strategies as st
 from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,13 +19,24 @@ SUMMARY = json.loads(
 )
 
 
-@pytest.mark.parametrize(
-    "value", [None, {"secs": 5, "nanos": 0}, {"secs": 1, "nanos": 234567891}]
+@given(
+    value=st.one_of(
+        st.none(),
+        st.fixed_dictionaries(
+            {"secs": st.integers(0, 2**64 - 1), "nanos": st.integers(0, 999_999_999)}
+        ),
+    )
 )
+@example(value=None)
+@example(value={"secs": 5, "nanos": 0})
+@example(value={"secs": 1, "nanos": 234567891})
 def test_resolved_timeout_accepts_null_or_precise_duration(value: object) -> None:
     event = copy.deepcopy(SUMMARY)
     event["resolved_mutant_timeout"] = value
-    assert not list(VALIDATOR.iter_errors(event))
+
+    errors = list(VALIDATOR.iter_errors(event))
+
+    assert not errors
 
 
 @pytest.mark.parametrize(
@@ -40,10 +53,16 @@ def test_resolved_timeout_accepts_null_or_precise_duration(value: object) -> Non
 def test_resolved_timeout_rejects_invalid_wire_shapes(value: object) -> None:
     event = copy.deepcopy(SUMMARY)
     event["resolved_mutant_timeout"] = value
-    assert list(VALIDATOR.iter_errors(event))
+
+    errors = list(VALIDATOR.iter_errors(event))
+
+    assert errors
 
 
 def test_resolved_timeout_requires_explicit_null_when_unresolved() -> None:
     event = copy.deepcopy(SUMMARY)
     del event["resolved_mutant_timeout"]
-    assert list(VALIDATOR.iter_errors(event))
+
+    errors = list(VALIDATOR.iter_errors(event))
+
+    assert errors

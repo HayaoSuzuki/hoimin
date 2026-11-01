@@ -130,10 +130,11 @@ fn admitted_copy_keeps_two_content_passes() {
 
 #[test]
 fn copy_source_growth_after_inventory_rolls_back_without_writes() {
-    // Arrange: inventory admits four bytes, then the source grows to five.
+    // inventory admits four bytes, then the source grows to five.
     let source = tempfile::tempdir().unwrap();
     fs::write(source.path().join("target.py"), b"1234").unwrap();
     let source_root = Utf8Path::from_path(source.path()).unwrap();
+
     assert_eq!(
         inventory_logical_bytes(source_root, &CopyOptions::default()).unwrap(),
         4
@@ -149,7 +150,6 @@ fn copy_source_growth_after_inventory_rolls_back_without_writes() {
     let children_before = fs::read_dir(root.path()).unwrap().count();
     reset_snapshot_write_metrics();
 
-    // Act.
     let result = create_pending_disk_snapshot(
         source_root,
         &CopyOptions::default(),
@@ -161,7 +161,6 @@ fn copy_source_growth_after_inventory_rolls_back_without_writes() {
         Some(&root),
     );
 
-    // Assert.
     assert_eq!(snapshot_write_metrics(), (0, 0));
     assert_eq!(
         result.unwrap_err(),
@@ -268,10 +267,11 @@ fn copy_inventory_rejection_precedes_content_validation() {
 
 #[test]
 fn copy_added_file_crossing_cap_rolls_back_partial_snapshot() {
-    // Arrange: either enumeration order permits exactly the first four-byte file.
+    // either enumeration order permits exactly the first four-byte file.
     let source = tempfile::tempdir().unwrap();
     fs::write(source.path().join("first.py"), b"1234").unwrap();
     let source_root = Utf8Path::from_path(source.path()).unwrap();
+
     assert_eq!(
         inventory_logical_bytes(source_root, &CopyOptions::default()).unwrap(),
         4
@@ -287,7 +287,6 @@ fn copy_added_file_crossing_cap_rolls_back_partial_snapshot() {
     let children_before = fs::read_dir(root.path()).unwrap().count();
     reset_snapshot_write_metrics();
 
-    // Act.
     let result = create_pending_disk_snapshot(
         source_root,
         &CopyOptions::default(),
@@ -299,7 +298,6 @@ fn copy_added_file_crossing_cap_rolls_back_partial_snapshot() {
         Some(&root),
     );
 
-    // Assert.
     assert_eq!(snapshot_write_metrics(), (1, 4));
     assert_eq!(
         result.unwrap_err(),

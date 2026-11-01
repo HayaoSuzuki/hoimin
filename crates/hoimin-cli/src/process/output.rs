@@ -488,6 +488,7 @@ mod tests {
 
         let mut unknown = rows.clone();
         unknown[0]["unexpected"] = serde_json::json!(true);
+
         assert!(std::panic::catch_unwind(|| parse_audit_corpus(&render_rows(unknown))).is_err());
 
         let mut crossed = rows.clone();
@@ -582,6 +583,7 @@ mod tests {
             .into_iter()
             .find(|case| case.scenario == "arithmetic")
             .unwrap();
+
         assert_eq!(
             add_observed(case.observed_seed, case.arithmetic_increment),
             case.expected_observed
@@ -618,53 +620,56 @@ mod tests {
         assert_eq!(error.to_string(), "lean-error-11");
     }
 
+    #[rstest::rstest]
+    #[case::input_1_1(1)]
+    #[case::input_2_2(2)]
     #[tokio::test]
-    async fn collector_drops_the_failed_sink_before_eof() {
-        for fail_write_at in [1, 2] {
-            // Arrange: fail immediately or after a successful write.
-            let write_calls = Arc::new(AtomicUsize::new(0));
-            let finalize_calls = Arc::new(AtomicUsize::new(0));
-            let (drop_sender, drop_receiver) = tokio::sync::oneshot::channel();
-            let sink = ObservedFaultSink {
-                write_calls: write_calls.clone(),
-                finalize_calls: finalize_calls.clone(),
-                fail_write_at: Some(fail_write_at),
-                dropped: Some(drop_sender),
-            };
-            let (sender, receiver) = pipe_channel();
-            let collector = tokio::spawn(collect_output_with_sink(
-                "token".into(),
-                8,
-                receiver,
-                Ok(sink),
-            ));
+    async fn collector_drops_the_failed_sink_before_eof(#[case] fail_write_at: usize) {
+        // Arrange: fail immediately or after a successful write.
+        let write_calls = Arc::new(AtomicUsize::new(0));
+        let finalize_calls = Arc::new(AtomicUsize::new(0));
+        let (drop_sender, drop_receiver) = tokio::sync::oneshot::channel();
+        let sink = ObservedFaultSink {
+            write_calls: write_calls.clone(),
+            finalize_calls: finalize_calls.clone(),
+            fail_write_at: Some(fail_write_at),
+            dropped: Some(drop_sender),
+        };
+        let (sender, receiver) = pipe_channel();
+        let collector = tokio::spawn(collect_output_with_sink(
+            "token".into(),
+            8,
+            receiver,
+            Ok(sink),
+        ));
 
-            // Act: keep the channel open while the failing write is consumed.
-            for _ in 0..fail_write_at {
-                sender.send(vec![1]).await.unwrap();
-            }
-            let dropped = tokio::time::timeout(Duration::from_secs(1), drop_receiver).await;
-
-            let waiting_for_eof = !collector.is_finished();
-            for _ in 0..32 {
-                tokio::time::timeout(Duration::from_secs(1), sender.send(vec![2]))
-                    .await
-                    .expect("collector continues draining")
-                    .unwrap();
-            }
-            drop(sender);
-            let error = tokio::time::timeout(Duration::from_secs(1), collector)
-                .await
-                .expect("collector reaches EOF")
-                .unwrap()
-                .unwrap_err();
-            // Assert: disposal precedes EOF, and draining never touches the sink again.
-            dropped.expect("failed sink drops before EOF").unwrap();
-            assert!(waiting_for_eof, "collector still waits for EOF");
-            assert_eq!(write_calls.load(Ordering::SeqCst), fail_write_at);
-            assert_eq!(finalize_calls.load(Ordering::SeqCst), 0);
-            assert_eq!(error.to_string(), "first-write-error");
+        // Act: keep the channel open while the failing write is consumed.
+        for _ in 0..fail_write_at {
+            sender.send(vec![1]).await.unwrap();
         }
+        let dropped = tokio::time::timeout(Duration::from_secs(1), drop_receiver).await;
+
+        let waiting_for_eof = !collector.is_finished();
+        for _ in 0..32 {
+            tokio::time::timeout(Duration::from_secs(1), sender.send(vec![2]))
+                .await
+                .expect("collector continues draining")
+                .unwrap();
+        }
+        drop(sender);
+
+        let error = tokio::time::timeout(Duration::from_secs(1), collector)
+            .await
+            .expect("collector reaches EOF")
+            .unwrap()
+            .unwrap_err();
+        // Assert: disposal precedes EOF, and draining never touches the sink again.
+        dropped.expect("failed sink drops before EOF").unwrap();
+
+        assert!(waiting_for_eof, "collector still waits for EOF");
+        assert_eq!(write_calls.load(Ordering::SeqCst), fail_write_at);
+        assert_eq!(finalize_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(error.to_string(), "first-write-error");
     }
 
     #[tokio::test]

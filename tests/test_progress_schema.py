@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 
 import pytest
+from hypothesis import example, given
+from hypothesis import strategies as st
 from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,18 +43,19 @@ DETAILS = {
     ids=["not-requested", "limit-zero", "available", "unavailable"],
 )
 def test_progress_accepts_current_details_states(details: object) -> None:
-    # Arrange
     document = copy.deepcopy(GOLDEN)
     document["details"] = details
 
-    # Act
     errors = list(VALIDATOR.iter_errors(document))
 
-    # Assert
     assert not errors
 
 
-@pytest.mark.parametrize("version", [0, 1, 2, 4])
+@given(version=st.one_of(st.integers(-(2**32), 2), st.integers(4, 2**32)))
+@example(version=0)
+@example(version=1)
+@example(version=2)
+@example(version=4)
 def test_progress_rejects_noncurrent_versions(version: int) -> None:
     document = {**GOLDEN, "schema_version": version}
 

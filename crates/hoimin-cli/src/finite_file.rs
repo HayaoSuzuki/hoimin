@@ -103,6 +103,7 @@ mod tests {
             .unwrap();
         writer.write_all(&[b' '; 4096]).unwrap();
         let mut bytes = [0; 8192];
+
         assert_eq!(reader.read(&mut bytes).unwrap(), 4);
         assert_eq!(&bytes[..4], b"null");
         let growth = reader.read(&mut bytes).unwrap_err();
@@ -113,27 +114,42 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_reader_rejects_shrink_and_accepts_exact_eof() {
+    fn snapshot_reader_accepts_exact_eof() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("input");
         std::fs::write(&path, b"null").unwrap();
-        let mut exact = SnapshotReader::new(File::open(&path).unwrap()).unwrap();
+        let mut reader = SnapshotReader::new(File::open(&path).unwrap()).unwrap();
         let mut bytes = Vec::new();
-        exact.read_to_end(&mut bytes).unwrap();
+
+        reader.read_to_end(&mut bytes).unwrap();
+
         assert_eq!(bytes, b"null");
-        let mut shortened = SnapshotReader::new(File::open(&path).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn snapshot_reader_rejects_shrink() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("input");
+        std::fs::write(&path, b"null").unwrap();
+        let mut reader = SnapshotReader::new(File::open(&path).unwrap()).unwrap();
         File::create(&path).unwrap();
-        let shrink = shortened.read(&mut [0; 8]).unwrap_err();
+
+        let shrink = reader.read(&mut [0; 8]).unwrap_err();
+
         assert_eq!(shrink.kind(), std::io::ErrorKind::UnexpectedEof);
         assert!(is_snapshot_length_change(&shrink));
-        for kind in [
-            std::io::ErrorKind::InvalidData,
-            std::io::ErrorKind::UnexpectedEof,
-        ] {
-            assert!(!is_snapshot_length_change(&std::io::Error::new(
-                kind,
-                "ordinary filesystem error"
-            )));
-        }
+    }
+
+    #[rstest::rstest]
+    #[case::ordinary_invalid_data(std::io::ErrorKind::InvalidData)]
+    #[case::ordinary_eof(std::io::ErrorKind::UnexpectedEof)]
+    fn ordinary_filesystem_errors_are_not_snapshot_length_changes(
+        #[case] kind: std::io::ErrorKind,
+    ) {
+        let error = std::io::Error::new(kind, "ordinary filesystem error");
+
+        let actual = is_snapshot_length_change(&error);
+
+        assert!(!actual);
     }
 }

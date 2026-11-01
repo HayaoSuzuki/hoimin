@@ -6266,6 +6266,7 @@ mod tests {
         let finished = finished_rx.recv_timeout(Duration::from_millis(250));
         drop(pause);
         waiter.join().unwrap();
+
         assert_eq!(
             finished,
             Ok(Err(std::sync::mpsc::RecvTimeoutError::Timeout)),
@@ -6538,6 +6539,7 @@ mod tests {
     #[test]
     fn later_success_cannot_erase_a_failed_lifecycle_component() {
         let mut lifecycle = ShellDiskLifecycle::new([]).unwrap();
+
         assert!(lifecycle.apply(DiskLifecycleEvent::ProcessDrainSucceeded));
         assert!(lifecycle.apply(DiskLifecycleEvent::OutputDrainSucceeded));
         assert!(lifecycle.apply(DiskLifecycleEvent::MonitorJoinFailed));
@@ -6572,6 +6574,8 @@ mod tests {
         let managed_parent = Utf8Path::from_path(control.managed_parent.path()).unwrap();
         let coordinator = ManagedRootCoordinator::open(managed_parent).unwrap();
         let preserved = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        // A concurrent fork can retain the lease after the owner's handle closes.
+        preserved.unlock_fixture_lease();
         drop(preserved);
         drop(coordinator);
         control.inject_execution_cleanup_deferred();
@@ -6699,9 +6703,14 @@ mod tests {
         );
     }
 
-    #[test]
-    fn cleanup_disposition_projects_without_diagnostic_classification() {
-        for (disposition, expected) in [
+    #[rstest::rstest]
+    #[case::cleanupdisposition_clean_1(0)]
+    #[case::cleanupdisposition_failed_2(1)]
+    #[case::cleanupdisposition_deferred_none_3(2)]
+    fn cleanup_disposition_projects_without_diagnostic_classification(
+        #[case] scenario_index: usize,
+    ) {
+        let (disposition, expected) = [
             (
                 CleanupDisposition::Clean,
                 hoimin_core::DiskCleanupStatus::Clean,
@@ -6714,128 +6723,123 @@ mod tests {
                 CleanupDisposition::Deferred(None),
                 hoimin_core::DiskCleanupStatus::Deferred,
             ),
-        ] {
-            let cleanup = CleanupRecord {
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+        let cleanup = CleanupRecord {
+            disposition,
+            evidence: CleanupEvidence::default(),
+        };
+        let mut report = hoimin_core::DiskCleanupReport {
+            root_id: "execution".to_owned(),
+            owner: "hoimin".to_owned(),
+            status: hoimin_core::DiskCleanupStatus::Retained,
+            examined_entries: 0,
+            removed_entries: 0,
+            details: Vec::new(),
+            omitted_detail_count: 0,
+            remaining_root: None,
+        };
+
+        apply_execution_cleanup_evidence(&mut report, Some(&cleanup));
+
+        assert_eq!(report.status, expected);
+    }
+
+    #[rstest::rstest]
+    #[case::workspace_cleanup_deferred_misleading_diagnostic_1(CleanupDisposition::Failed, "workspace.cleanup.deferred: misleading diagnostic", DiskCleanupOutcome::Failed(
+                    "workspace.cleanup.deferred: misleading diagnostic".to_owned(),
+                ))]
+    #[case::workspace_cleanup_failed_misleading_diagnostic_2(CleanupDisposition::Deferred(None), "workspace.cleanup.failed: misleading diagnostic", DiskCleanupOutcome::Deferred(
+                    "workspace.cleanup.failed: misleading diagnostic".to_owned(),
+                ))]
+    fn managed_cleanup_disk_classification_ignores_diagnostic_wording(
+        #[case] disposition: CleanupDisposition,
+        #[case] error: &str,
+        #[case] expected: DiskCleanupOutcome,
+    ) {
+        let outcome = ManagedCleanupOutcome {
+            record: CleanupRecord {
                 disposition,
                 evidence: CleanupEvidence::default(),
-            };
-            let mut report = hoimin_core::DiskCleanupReport {
-                root_id: "execution".to_owned(),
-                owner: "hoimin".to_owned(),
-                status: hoimin_core::DiskCleanupStatus::Retained,
-                examined_entries: 0,
-                removed_entries: 0,
-                details: Vec::new(),
-                omitted_detail_count: 0,
-                remaining_root: None,
-            };
+            },
+            error: error.to_owned(),
+        };
 
-            apply_execution_cleanup_evidence(&mut report, Some(&cleanup));
+        let actual = outcome.disk_outcome();
 
-            assert_eq!(report.status, expected);
-        }
+        assert_eq!(actual, expected);
     }
 
-    #[test]
-    fn managed_cleanup_disk_classification_ignores_diagnostic_wording() {
-        for (disposition, error, expected) in [
-            (
-                CleanupDisposition::Failed,
-                "workspace.cleanup.deferred: misleading diagnostic",
-                DiskCleanupOutcome::Failed(
-                    "workspace.cleanup.deferred: misleading diagnostic".to_owned(),
-                ),
-            ),
-            (
-                CleanupDisposition::Deferred(None),
-                "workspace.cleanup.failed: misleading diagnostic",
-                DiskCleanupOutcome::Deferred(
-                    "workspace.cleanup.failed: misleading diagnostic".to_owned(),
-                ),
-            ),
-        ] {
-            let outcome = ManagedCleanupOutcome {
-                record: CleanupRecord {
-                    disposition,
-                    evidence: CleanupEvidence::default(),
-                },
-                error: error.to_owned(),
-            };
-
-            let actual = outcome.disk_outcome();
-
-            assert_eq!(actual, expected);
-        }
-    }
-
-    #[test]
-    fn report_only_cleanup_states_preserve_evidence_without_an_execution_result() {
-        for status in [
+    #[rstest::rstest]
+    #[case::hoimin_core_diskcleanupstatus_retained_1(0)]
+    #[case::hoimin_core_diskcleanupstatus_cleanupafterdelivery_2(1)]
+    fn report_only_cleanup_states_preserve_evidence_without_an_execution_result(
+        #[case] scenario_index: usize,
+    ) {
+        let status = [
             hoimin_core::DiskCleanupStatus::Retained,
             hoimin_core::DiskCleanupStatus::CleanupAfterDelivery,
-        ] {
-            let mut report = hoimin_core::DiskCleanupReport {
-                root_id: "execution".to_owned(),
-                owner: "hoimin".to_owned(),
-                status,
-                examined_entries: 8,
-                removed_entries: 3,
-                details: vec!["delivery pending".to_owned()],
-                omitted_detail_count: 2,
-                remaining_root: Some("known-root".to_owned()),
-            };
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
 
-            apply_execution_cleanup_evidence(&mut report, None);
+        let mut report = hoimin_core::DiskCleanupReport {
+            root_id: "execution".to_owned(),
+            owner: "hoimin".to_owned(),
+            status,
+            examined_entries: 8,
+            removed_entries: 3,
+            details: vec!["delivery pending".to_owned()],
+            omitted_detail_count: 2,
+            remaining_root: Some("known-root".to_owned()),
+        };
 
-            assert_eq!(report.status, status);
-            assert_eq!((report.examined_entries, report.removed_entries), (8, 3));
-            assert_eq!(report.remaining_root.as_deref(), Some("known-root"));
-            assert_eq!(report.details, ["delivery pending"]);
-            assert_eq!(report.omitted_detail_count, 2);
-        }
+        apply_execution_cleanup_evidence(&mut report, None);
+
+        assert_eq!(report.status, status);
+        assert_eq!((report.examined_entries, report.removed_entries), (8, 3));
+        assert_eq!(report.remaining_root.as_deref(), Some("known-root"));
+        assert_eq!(report.details, ["delivery pending"]);
+        assert_eq!(report.omitted_detail_count, 2);
     }
 
-    #[test]
-    fn cleanup_ready_failure_retains_each_original_classification() {
-        for (disposition, expected, expected_error) in [
-            (
-                CleanupDisposition::Clean,
-                DiskCleanupOutcome::Clean,
-                "original",
-            ),
-            (
-                CleanupDisposition::Failed,
-                DiskCleanupOutcome::Failed("original; cleanup-ready: marker failed".to_owned()),
-                "original; cleanup-ready: marker failed",
-            ),
-            (
-                CleanupDisposition::Deferred(None),
-                DiskCleanupOutcome::Deferred("original; cleanup-ready: marker failed".to_owned()),
-                "original; cleanup-ready: marker failed",
-            ),
-        ] {
-            let outcome = ManagedCleanupOutcome {
-                record: CleanupRecord {
-                    disposition,
-                    evidence: CleanupEvidence::default(),
-                },
-                error: "original".to_owned(),
-            };
+    #[rstest::rstest]
+    #[case::original_1(CleanupDisposition::Clean, DiskCleanupOutcome::Clean, "original")]
+    #[case::original_cleanup_ready_marker_failed_2(CleanupDisposition::Failed, DiskCleanupOutcome::Failed("original; cleanup-ready: marker failed".to_owned()), "original; cleanup-ready: marker failed")]
+    #[case::original_cleanup_ready_marker_failed_3(CleanupDisposition::Deferred(None), DiskCleanupOutcome::Deferred("original; cleanup-ready: marker failed".to_owned()), "original; cleanup-ready: marker failed")]
+    fn cleanup_ready_failure_retains_each_original_classification(
+        #[case] disposition: CleanupDisposition,
+        #[case] expected: DiskCleanupOutcome,
+        #[case] expected_error: &str,
+    ) {
+        let outcome = ManagedCleanupOutcome {
+            record: CleanupRecord {
+                disposition,
+                evidence: CleanupEvidence::default(),
+            },
+            error: "original".to_owned(),
+        };
 
-            let outcome = attach_cleanup_ready_error(outcome, Some("marker failed"));
+        let outcome = attach_cleanup_ready_error(outcome, Some("marker failed"));
 
-            assert_eq!(outcome.disk_outcome(), expected);
-            assert_eq!(outcome.error, expected_error);
-            assert_eq!(
-                outcome.record.evidence.details,
-                ["cleanup-ready: marker failed"]
-            );
-        }
+        assert_eq!(outcome.disk_outcome(), expected);
+        assert_eq!(outcome.error, expected_error);
+        assert_eq!(
+            outcome.record.evidence.details,
+            ["cleanup-ready: marker failed"]
+        );
     }
 
-    proptest::proptest! {
-        #[test]
-        fn cleanup_projection_preserves_generated_evidence_and_ignores_detail(
+    macro_rules! cleanup_projection_preserves_generated_evidence_and_ignores_detail_case {
+    ($name:ident, $index:expr) => {
+        proptest::proptest! {
+
+            #[test]
+            fn $name(
             detail in ".{0,4096}",
             error in ".{0,128}",
             remaining_root in proptest::option::of("[a-z]{1,32}"),
@@ -6843,80 +6847,107 @@ mod tests {
             removed in 0_u64..10000,
             omitted in proptest::arbitrary::any::<u64>(),
         ) {
-            for (disposition, status, disk) in [
+
+        let (disposition, status, disk) = [
                 (CleanupDisposition::Clean, hoimin_core::DiskCleanupStatus::Clean, DiskCleanupOutcome::Clean),
                 (CleanupDisposition::Failed, hoimin_core::DiskCleanupStatus::Failed, DiskCleanupOutcome::Failed(error.clone())),
                 (CleanupDisposition::Deferred(None), hoimin_core::DiskCleanupStatus::Deferred, DiskCleanupOutcome::Deferred(error.clone())),
-            ] {
-                let mut evidence = CleanupEvidence {
-                    examined_entries: examined, removed_entries: removed,
-                    omitted_detail_count: omitted,
-                    remaining_root: remaining_root.clone().map(Utf8PathBuf::from),
-                    ..CleanupEvidence::default()
-                };
-                evidence.push_detail(detail.clone());
-                let outcome = ManagedCleanupOutcome { record: CleanupRecord { disposition, evidence: evidence.clone() }, error: error.clone() };
-                let mut report = hoimin_core::DiskCleanupReport {
-                    root_id: "execution".to_owned(), owner: "hoimin".to_owned(),
-                    status: hoimin_core::DiskCleanupStatus::Retained,
-                    examined_entries: 0, removed_entries: 0, details: Vec::new(),
-                    omitted_detail_count: 0, remaining_root: None,
-                };
+            ].into_iter().nth($index).unwrap();
 
-                let actual = outcome.disk_outcome();
-                apply_execution_cleanup_evidence(&mut report, Some(&outcome.record));
+            let mut evidence = CleanupEvidence {
+                examined_entries: examined, removed_entries: removed,
+                omitted_detail_count: omitted,
+                remaining_root: remaining_root.clone().map(Utf8PathBuf::from),
+                ..CleanupEvidence::default()
+            };
+            evidence.push_detail(detail.clone());
+            let outcome = ManagedCleanupOutcome { record: CleanupRecord { disposition, evidence: evidence.clone() }, error: error.clone() };
+            let mut report = hoimin_core::DiskCleanupReport {
+                root_id: "execution".to_owned(), owner: "hoimin".to_owned(),
+                status: hoimin_core::DiskCleanupStatus::Retained,
+                examined_entries: 0, removed_entries: 0, details: Vec::new(),
+                omitted_detail_count: 0, remaining_root: None,
+            };
 
-                proptest::prop_assert_eq!(actual, disk);
-                proptest::prop_assert_eq!(report.status, status);
-                proptest::prop_assert_eq!(report.remaining_root.as_ref(), remaining_root.as_ref());
-                proptest::prop_assert_eq!(report.examined_entries, examined);
-                proptest::prop_assert_eq!(report.removed_entries, removed);
-                proptest::prop_assert_eq!(report.details, evidence.details);
-                proptest::prop_assert_eq!(report.omitted_detail_count, evidence.omitted_detail_count);
+            let actual = outcome.disk_outcome();
+            apply_execution_cleanup_evidence(&mut report, Some(&outcome.record));
+
+            proptest::prop_assert_eq!(actual, disk);
+            proptest::prop_assert_eq!(report.status, status);
+            proptest::prop_assert_eq!(report.remaining_root.as_ref(), remaining_root.as_ref());
+            proptest::prop_assert_eq!(report.examined_entries, examined);
+            proptest::prop_assert_eq!(report.removed_entries, removed);
+            proptest::prop_assert_eq!(report.details, evidence.details);
+            proptest::prop_assert_eq!(report.omitted_detail_count, evidence.omitted_detail_count);
+
             }
         }
-    }
+    };
+}
 
-    #[test]
-    fn recordless_thread_failure_preserves_kind_and_root_evidence() {
+    cleanup_projection_preserves_generated_evidence_and_ignores_detail_case!(
+        cleanup_projection_preserves_generated_evidence_and_ignores_detail_clean,
+        0
+    );
+    cleanup_projection_preserves_generated_evidence_and_ignores_detail_case!(
+        cleanup_projection_preserves_generated_evidence_and_ignores_detail_failed,
+        1
+    );
+    cleanup_projection_preserves_generated_evidence_and_ignores_detail_case!(
+        cleanup_projection_preserves_generated_evidence_and_ignores_detail_deferred,
+        2
+    );
+
+    #[rstest::rstest]
+    #[case::cleanupthreadfailure_spawn_diagnostic_changed_to_owned_1(0)]
+    #[case::cleanupthreadfailure_spawn_diagnostic_changed_to_owned_2(1)]
+    #[case::cleanupthreadfailure_stopped_3(2)]
+    #[case::cleanupthreadfailure_stopped_4(3)]
+    #[case::cleanupthreadfailure_timedout_5(4)]
+    #[case::cleanupthreadfailure_timedout_6(5)]
+    fn recordless_thread_failure_preserves_kind_and_root_evidence(#[case] scenario_index: usize) {
         let stable = Utf8PathBuf::from("stable-active-root");
-        for (failure, remaining_root, expected) in [
-            (
-                CleanupThreadFailure::Spawn("diagnostic changed".to_owned()),
-                Some(stable.clone()),
-                CleanupDisposition::Failed,
-            ),
-            (
-                CleanupThreadFailure::Spawn("diagnostic changed".to_owned()),
-                None,
-                CleanupDisposition::Deferred(None),
-            ),
-            (
-                CleanupThreadFailure::Stopped,
-                Some(stable.clone()),
-                CleanupDisposition::Failed,
-            ),
-            (
-                CleanupThreadFailure::Stopped,
-                None,
-                CleanupDisposition::Deferred(None),
-            ),
-            (
-                CleanupThreadFailure::TimedOut,
-                Some(stable.clone()),
-                CleanupDisposition::Deferred(None),
-            ),
-            (
-                CleanupThreadFailure::TimedOut,
-                None,
-                CleanupDisposition::Deferred(None),
-            ),
-        ] {
-            let outcome = recordless_cleanup_outcome(&failure, remaining_root.clone());
 
-            assert_eq!(outcome.record.disposition, expected);
-            assert_eq!(outcome.record.evidence.remaining_root, remaining_root);
-        }
+        let (failure, remaining_root, expected) = [
+            (
+                CleanupThreadFailure::Spawn("diagnostic changed".to_owned()),
+                Some(stable.clone()),
+                CleanupDisposition::Failed,
+            ),
+            (
+                CleanupThreadFailure::Spawn("diagnostic changed".to_owned()),
+                None,
+                CleanupDisposition::Deferred(None),
+            ),
+            (
+                CleanupThreadFailure::Stopped,
+                Some(stable.clone()),
+                CleanupDisposition::Failed,
+            ),
+            (
+                CleanupThreadFailure::Stopped,
+                None,
+                CleanupDisposition::Deferred(None),
+            ),
+            (
+                CleanupThreadFailure::TimedOut,
+                Some(stable.clone()),
+                CleanupDisposition::Deferred(None),
+            ),
+            (
+                CleanupThreadFailure::TimedOut,
+                None,
+                CleanupDisposition::Deferred(None),
+            ),
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+        let outcome = recordless_cleanup_outcome(&failure, remaining_root.clone());
+
+        assert_eq!(outcome.record.disposition, expected);
+        assert_eq!(outcome.record.evidence.remaining_root, remaining_root);
     }
 
     #[test]
@@ -6924,6 +6955,7 @@ mod tests {
         let outcome = recordless_cleanup_outcome(&CleanupThreadFailure::Stopped, None);
 
         let ManagedCleanupOutcome { record, error } = outcome;
+
         assert!(matches!(
             record.disposition,
             CleanupDisposition::Deferred(_)
@@ -7001,6 +7033,7 @@ mod tests {
         );
 
         let ManagedCleanupOutcome { record, error } = outcome;
+
         assert!(matches!(record.disposition, CleanupDisposition::Failed));
         assert_eq!(
             record.disposition.report_status(),
@@ -7037,6 +7070,8 @@ mod tests {
         let managed_parent = Utf8Path::from_path(control.managed_parent.path()).unwrap();
         let coordinator = ManagedRootCoordinator::open(managed_parent).unwrap();
         let preserved = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        // A concurrent fork can retain the lease after the owner's handle closes.
+        preserved.unlock_fixture_lease();
         drop(preserved);
         drop(coordinator);
         control.inject_execution_cleanup_failed_without_record();
@@ -7370,70 +7405,74 @@ mod tests {
             Ok(())
         }
     }
-
+    #[rstest::rstest]
+    #[case::false_1(false)]
+    #[case::true_2(true)]
     #[tokio::test(flavor = "current_thread")]
-    async fn interrupted_delivery_retains_its_owner_until_write_or_flush_returns() {
-        for pause_flush in [false, true] {
-            let project = tempfile::tempdir().unwrap();
-            let config = output_failure_test_config(&project);
-            assert_host_independent_test_reserve(&config);
-            let mut control = RunControl::new();
-            control.shutdown_grace = Duration::from_millis(50);
-            let observed = control.clone();
-            let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
-            let (release_tx, release_rx) = std::sync::mpsc::channel();
-            let writer = PausedReportWriter {
-                entered: Some(entered_tx),
-                release: release_rx,
-                pause_flush,
-                record: Vec::new(),
-                terminal: false,
-            };
-            let diagnostics = SharedDiagnosticCapture::default();
-            let captured = diagnostics.clone();
-            let mut run = Box::pin(run_loop_with_control(config, writer, diagnostics, control));
-            tokio::select! {
-                result = &mut run => panic!(
-                    "run finished before report pause: {result:?}; stderr={}",
-                    String::from_utf8_lossy(&captured.0.lock().unwrap()),
-                ),
-                entered = entered_rx => entered.unwrap_or_else(|error| panic!(
-                    "report pause signal dropped: {error}; stderr={}",
-                    String::from_utf8_lossy(&captured.0.lock().unwrap()),
-                )),
-            }
-            let roots = observed.managed_root_paths();
-            let delivery = &roots[1];
-            let child = std::fs::read_dir(delivery)
-                .unwrap()
-                .map(|entry| entry.unwrap().path())
-                .find(|path| {
-                    path.file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .starts_with("report-")
-                })
-                .expect("delivery child exists during JSONL write");
-            observed.cancel();
-            let result = tokio::time::timeout(Duration::from_secs(1), &mut run).await;
-            let retained = delivery.exists() && child.exists();
-            let execution_removed = !roots[0].exists();
-            let acknowledged = observed
-                .finalization_events()
-                .contains(&"output_acknowledged");
-            release_tx.send(()).unwrap();
-            drop(run);
-            assert_eq!(result.unwrap().unwrap_or(2), 2);
-            assert!(
-                retained,
-                "cleanup removed a report resource while its operation was blocked"
-            );
-            assert!(
-                execution_removed,
-                "report delivery retained an already-cleaned execution root"
-            );
-            assert!(!acknowledged, "incomplete report delivery was acknowledged");
+    async fn interrupted_delivery_retains_its_owner_until_write_or_flush_returns(
+        #[case] pause_flush: bool,
+    ) {
+        let project = tempfile::tempdir().unwrap();
+        let config = output_failure_test_config(&project);
+        assert_host_independent_test_reserve(&config);
+        let mut control = RunControl::new();
+        control.shutdown_grace = Duration::from_millis(50);
+        let observed = control.clone();
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let writer = PausedReportWriter {
+            entered: Some(entered_tx),
+            release: release_rx,
+            pause_flush,
+            record: Vec::new(),
+            terminal: false,
+        };
+        let diagnostics = SharedDiagnosticCapture::default();
+        let captured = diagnostics.clone();
+        let mut run = Box::pin(run_loop_with_control(config, writer, diagnostics, control));
+        tokio::select! {
+            result = &mut run => panic!(
+                "run finished before report pause: {result:?}; stderr={}",
+                String::from_utf8_lossy(&captured.0.lock().unwrap()),
+            ),
+            entered = entered_rx => entered.unwrap_or_else(|error| panic!(
+                "report pause signal dropped: {error}; stderr={}",
+                String::from_utf8_lossy(&captured.0.lock().unwrap()),
+            )),
         }
+        let roots = observed.managed_root_paths();
+        let delivery = &roots[1];
+        let child = std::fs::read_dir(delivery)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("report-")
+            })
+            .expect("delivery child exists during JSONL write");
+        observed.cancel();
+
+        let result = tokio::time::timeout(Duration::from_secs(1), &mut run).await;
+        let retained = delivery.exists() && child.exists();
+        let execution_removed = !roots[0].exists();
+        let acknowledged = observed
+            .finalization_events()
+            .contains(&"output_acknowledged");
+        release_tx.send(()).unwrap();
+        drop(run);
+
+        assert_eq!(result.unwrap().unwrap_or(2), 2);
+        assert!(
+            retained,
+            "cleanup removed a report resource while its operation was blocked"
+        );
+        assert!(
+            execution_removed,
+            "report delivery retained an already-cleaned execution root"
+        );
+        assert!(!acknowledged, "incomplete report delivery was acknowledged");
     }
 
     impl Write for AlwaysFailingWriter {
@@ -7808,35 +7847,42 @@ mod tests {
     );
     preparation_stop_case!(preparation_cancel_after_delivery_ready, DeliveryReady, true);
 
-    #[test]
-    fn every_managed_root_publication_boundary_rolls_back_on_unwind() {
-        for selected in [
-            ManagedRootSetupBoundary::ExecutionPublished,
-            ManagedRootSetupBoundary::DeliveryPublished,
-            ManagedRootSetupBoundary::ExecutionSpoolCreated,
-            ManagedRootSetupBoundary::DeliverySpoolCreated,
-        ] {
-            let parent = tempfile::tempdir().unwrap();
-            let parent = Utf8Path::from_path(parent.path()).unwrap();
+    #[rstest::rstest]
+    #[case::managedrootsetupboundary_executionpublished_1(
+        ManagedRootSetupBoundary::ExecutionPublished
+    )]
+    #[case::managedrootsetupboundary_deliverypublished_2(
+        ManagedRootSetupBoundary::DeliveryPublished
+    )]
+    #[case::managedrootsetupboundary_executionspoolcreated_3(
+        ManagedRootSetupBoundary::ExecutionSpoolCreated
+    )]
+    #[case::managedrootsetupboundary_deliveryspoolcreated_4(
+        ManagedRootSetupBoundary::DeliverySpoolCreated
+    )]
+    fn every_managed_root_publication_boundary_rolls_back_on_unwind(
+        #[case] selected: ManagedRootSetupBoundary,
+    ) {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
 
-            let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _ = create_managed_shell_roots_in(parent, &|observed| {
-                    assert_ne!(observed, selected, "injected setup failure at {selected:?}");
-                });
-            }));
+        let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = create_managed_shell_roots_in(parent, &|observed| {
+                assert_ne!(observed, selected, "injected setup failure at {selected:?}");
+            });
+        }));
 
-            assert!(unwind.is_err(), "boundary {selected:?} did not unwind");
-            let managed = parent.join("hoimin-workspaces-v2");
-            let residual = std::fs::read_dir(&managed)
-                .unwrap()
-                .map(|entry| entry.unwrap().file_name())
-                .filter(|name| name != ".hoimin-coordinator")
-                .collect::<Vec<_>>();
-            assert!(
-                residual.is_empty(),
-                "boundary {selected:?} leaked managed roots: {residual:?}"
-            );
-        }
+        assert!(unwind.is_err(), "boundary {selected:?} did not unwind");
+        let managed = parent.join("hoimin-workspaces-v2");
+        let residual = std::fs::read_dir(&managed)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .filter(|name| name != ".hoimin-coordinator")
+            .collect::<Vec<_>>();
+        assert!(
+            residual.is_empty(),
+            "boundary {selected:?} leaked managed roots: {residual:?}"
+        );
     }
 
     #[test]
@@ -7907,42 +7953,41 @@ mod tests {
         assert_eq!(report.remaining_root, None);
     }
 
-    #[test]
-    fn every_post_publication_setup_boundary_rolls_back_on_unwind() {
-        for selected in [
-            ShellSetupBoundary::RootsCreated,
-            ShellSetupBoundary::DiskPolicyVerified,
-            ShellSetupBoundary::WorkspaceCreated,
-            ShellSetupBoundary::BackendCreated,
-            ShellSetupBoundary::ProcessCreated,
-            ShellSetupBoundary::AnalyzerCreated,
-            ShellSetupBoundary::DeliveryReady,
-        ] {
-            let project = tempfile::tempdir().unwrap();
-            let managed_parent = tempfile::tempdir().unwrap();
-            let parent = Utf8Path::from_path(managed_parent.path()).unwrap();
-            let config = shell_setup_test_config(&project)
-                .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
-                .unwrap();
+    #[rstest::rstest]
+    #[case::shellsetupboundary_rootscreated_1(ShellSetupBoundary::RootsCreated)]
+    #[case::shellsetupboundary_diskpolicyverified_2(ShellSetupBoundary::DiskPolicyVerified)]
+    #[case::shellsetupboundary_workspacecreated_3(ShellSetupBoundary::WorkspaceCreated)]
+    #[case::shellsetupboundary_backendcreated_4(ShellSetupBoundary::BackendCreated)]
+    #[case::shellsetupboundary_processcreated_5(ShellSetupBoundary::ProcessCreated)]
+    #[case::shellsetupboundary_analyzercreated_6(ShellSetupBoundary::AnalyzerCreated)]
+    #[case::shellsetupboundary_deliveryready_7(ShellSetupBoundary::DeliveryReady)]
+    fn every_post_publication_setup_boundary_rolls_back_on_unwind(
+        #[case] selected: ShellSetupBoundary,
+    ) {
+        let project = tempfile::tempdir().unwrap();
+        let managed_parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(managed_parent.path()).unwrap();
+        let config = shell_setup_test_config(&project)
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap();
 
-            let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _ = prepare_shell_setup_sync_in(config, parent, &|observed| {
-                    assert_ne!(observed, selected, "injected setup failure at {selected:?}");
-                });
-            }));
+        let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = prepare_shell_setup_sync_in(config, parent, &|observed| {
+                assert_ne!(observed, selected, "injected setup failure at {selected:?}");
+            });
+        }));
 
-            assert!(unwind.is_err(), "boundary {selected:?} did not unwind");
-            let managed = parent.join("hoimin-workspaces-v2");
-            let residual = std::fs::read_dir(&managed)
-                .unwrap()
-                .map(|entry| entry.unwrap().file_name())
-                .filter(|name| name != ".hoimin-coordinator")
-                .collect::<Vec<_>>();
-            assert!(
-                residual.is_empty(),
-                "boundary {selected:?} leaked managed roots: {residual:?}"
-            );
-        }
+        assert!(unwind.is_err(), "boundary {selected:?} did not unwind");
+        let managed = parent.join("hoimin-workspaces-v2");
+        let residual = std::fs::read_dir(&managed)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .filter(|name| name != ".hoimin-coordinator")
+            .collect::<Vec<_>>();
+        assert!(
+            residual.is_empty(),
+            "boundary {selected:?} leaked managed roots: {residual:?}"
+        );
     }
 
     #[test]
@@ -8354,6 +8399,7 @@ mod tests {
         );
 
         let budget = active.unwrap();
+
         assert_eq!(budget.cause(), ShutdownCause::Failure);
         assert_eq!(budget.deadline(), now + Duration::from_millis(70));
     }
@@ -8379,6 +8425,7 @@ mod tests {
         let now = tokio::time::Instant::now();
         let edge = last_representable_instant(now);
         let grace = Duration::from_secs(2);
+
         assert!(edge.checked_add(grace).is_none());
 
         let budget = ShutdownBudget::for_total_timeout_with_grace(edge, grace);
@@ -10558,6 +10605,7 @@ mod tests {
             unreachable!()
         };
         request.id = EffectId(999);
+
         assert!(state.is_effect_pending(pending_id));
         assert!(!state.is_effect_pending(obsolete_effect.id()));
         let mut effects = VecDeque::from([obsolete_effect, pending]);
@@ -11051,6 +11099,7 @@ mod tests {
                 accept_drained_completion(completion, &mut in_flight, &mut metrics, &mut warnings, &mut drop);
                 remaining.push(in_flight);
             }
+
             let result = metrics.unwrap().finish(0, 0);
 
             proptest::prop_assert_eq!(remaining, expected_remaining);
@@ -11093,8 +11142,10 @@ mod tests {
             first_interrupt_event(Ok(())),
             Ok(RunEvent::CancellationRequested)
         ));
+
         let error =
             first_interrupt_event(Err("install Ctrl+C handler: fixture".to_owned())).unwrap_err();
+
         assert_eq!(error, "install Ctrl+C handler: fixture");
     }
 }

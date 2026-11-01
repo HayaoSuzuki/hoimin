@@ -131,43 +131,56 @@ async fn prepare_excluded_repository(root: &std::path::Path, state: &str, bad: &
     }
 }
 
+#[rstest::rstest]
+#[case::tracked_1_txt_1("tracked", "txt")]
+#[case::tracked_1_py_2("tracked", "py")]
+#[case::untracked_2_txt_1("untracked", "txt")]
+#[case::untracked_2_py_2("untracked", "py")]
+#[case::unborn_indexed_3_txt_1("unborn-indexed", "txt")]
+#[case::unborn_indexed_3_py_2("unborn-indexed", "py")]
 #[tokio::test]
-async fn excluded_git_names_do_not_change_public_plan_in_three_repository_states() {
-    for state in ["tracked", "untracked", "unborn-indexed"] {
-        for extension in ["txt", "py"] {
-            let directory = tempfile::tempdir().unwrap();
-            let root = directory.path();
-            git(root, &["init", "-q"]).await;
-            let bad = format!(r"data/fixture\asset.{extension}");
-            prepare_excluded_repository(root, state, &bad).await;
-            let (plain_code, baseline, plain_error) = plan(root, false, &[]).await;
-            assert_eq!(plain_code, 0, "{state}/{extension}: {plain_error}");
-            assert_eq!(identities(&baseline).len(), 1);
-            let (changed_code, changed, error) = plan(root, true, &[]).await;
-            assert_eq!(changed_code, 0, "{state}/{extension}: {error}");
-            assert_eq!(
-                identities(&changed),
-                identities(&baseline),
-                "{state}/{extension}"
-            );
-        }
-    }
+async fn excluded_git_names_do_not_change_public_plan_in_three_repository_states(
+    #[case] state: &str,
+    #[case] extension: &str,
+) {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    git(root, &["init", "-q"]).await;
+    let bad = format!(r"data/fixture\asset.{extension}");
+    prepare_excluded_repository(root, state, &bad).await;
+
+    let (plain_code, baseline, plain_error) = plan(root, false, &[]).await;
+
+    assert_eq!(plain_code, 0, "{state}/{extension}: {plain_error}");
+    assert_eq!(identities(&baseline).len(), 1);
+    let (changed_code, changed, error) = plan(root, true, &[]).await;
+    assert_eq!(changed_code, 0, "{state}/{extension}: {error}");
+    assert_eq!(
+        identities(&changed),
+        identities(&baseline),
+        "{state}/{extension}"
+    );
 }
 
+#[rstest::rstest]
+#[case::false_1(false)]
+#[case::true_2(true)]
 #[tokio::test]
-async fn selected_unsupported_python_names_still_fail_plain_and_changed_plan() {
+async fn selected_unsupported_python_names_still_fail_plain_and_changed_plan(
+    #[case] changed: bool,
+) {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path();
     git(root, &["init", "-q"]).await;
     write(root, r"selected/literal\module.py", "value = True\n");
-    for changed in [false, true] {
-        let (code, _, error) = plan(root, changed, &[]).await;
-        assert_eq!(code, 2);
-        assert!(
-            error.contains("target path cannot be represented portably"),
-            "{error}"
-        );
-    }
+
+    let (code, _, error) = plan(root, changed, &[]).await;
+
+    assert_eq!(code, 2);
+    assert!(
+        error.contains("target path cannot be represented portably"),
+        "{error}"
+    );
 }
 
 #[tokio::test]

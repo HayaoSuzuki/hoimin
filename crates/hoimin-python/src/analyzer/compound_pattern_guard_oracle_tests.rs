@@ -343,26 +343,29 @@ fn compound_pattern_guard_internal_corpus() {
     }
 }
 
+#[rstest::rstest]
+#[case::or_failure_meets_arms("or_failure_meets_arms")]
+#[case::as_child_failure_precedes_alias("as_child_failure_precedes_alias")]
+#[case::mapping_child_failure_precedes_rest("mapping_child_failure_precedes_rest")]
+#[case::class_early_failure_precedes_capture("class_early_failure_precedes_capture")]
+fn internal_rows_detect_broken_compound_pattern_transfers_scenario_1(#[case] id: &str) {
+    let cases = parse_corpus(CORPUS).unwrap();
+
+    let item = cases.iter().find(|item| item.id == id).unwrap();
+    let correct = binding_flow_marker_snapshot(&item.source, &item.marker).unwrap();
+    let broken = binding_flow_marker_snapshot_with_mutation(
+        &item.source,
+        &item.marker,
+        BindingFlowTestMutation::UseMatchedPatternFailureEnvironment,
+    )
+    .unwrap();
+    assert_eq!(correct, item.expected_facts, "{id}");
+    assert_ne!(broken, correct, "{id} must detect late capture on failure");
+}
+
 #[test]
 fn internal_rows_detect_broken_compound_pattern_transfers() {
     let cases = parse_corpus(CORPUS).unwrap();
-    for id in [
-        "or_failure_meets_arms",
-        "as_child_failure_precedes_alias",
-        "mapping_child_failure_precedes_rest",
-        "class_early_failure_precedes_capture",
-    ] {
-        let item = cases.iter().find(|item| item.id == id).unwrap();
-        let correct = binding_flow_marker_snapshot(&item.source, &item.marker).unwrap();
-        let broken = binding_flow_marker_snapshot_with_mutation(
-            &item.source,
-            &item.marker,
-            BindingFlowTestMutation::UseMatchedPatternFailureEnvironment,
-        )
-        .unwrap();
-        assert_eq!(correct, item.expected_facts, "{id}");
-        assert_ne!(broken, correct, "{id} must detect late capture on failure");
-    }
 
     let unrelated = cases
         .iter()

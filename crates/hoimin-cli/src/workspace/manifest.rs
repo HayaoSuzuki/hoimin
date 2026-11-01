@@ -494,8 +494,13 @@ mod tests {
     };
     use std::time::Duration;
 
-    #[test]
-    fn issue_1081_membership_matches_manifest_for_literal_exclusions() {
+    #[rstest::rstest]
+    #[case::vec_1(0)]
+    #[case::vec_literalexclusion_file_nested_file_txt_into_2(1)]
+    #[case::vec_literalexclusion_tree_nested_into_3(2)]
+    fn issue_1081_membership_matches_manifest_for_literal_exclusions(
+        #[case] scenario_index: usize,
+    ) {
         let directory = tempfile::tempdir().unwrap();
         let root = Utf8Path::from_path(directory.path()).unwrap();
         fs::create_dir(root.join("nested")).unwrap();
@@ -509,32 +514,32 @@ mod tests {
             Utf8PathBuf::from("missing.txt"),
             Utf8PathBuf::from("nested"),
         ];
-        for literal_exclusions in [
+
+        let literal_exclusions = [
             vec![],
             vec![LiteralExclusion::File("nested/file.txt".into())],
             vec![LiteralExclusion::Tree("nested".into())],
-        ] {
-            let options = CopyOptions {
-                includes: vec!["nested/**".into()],
-                literal_exclusions,
-                ..CopyOptions::default()
-            };
-            let (legacy, _) = build_manifest(root, &options).unwrap();
-            let expected = requested
-                .iter()
-                .filter(|path| legacy.entry(path).is_some())
-                .cloned()
-                .collect::<BTreeSet<_>>();
-            assert_eq!(
-                selected_copy_membership(
-                    root,
-                    &options,
-                    requested.iter().map(Utf8PathBuf::as_path)
-                )
+        ]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
+
+        let options = CopyOptions {
+            includes: vec!["nested/**".into()],
+            literal_exclusions,
+            ..CopyOptions::default()
+        };
+        let (legacy, _) = build_manifest(root, &options).unwrap();
+        let expected = requested
+            .iter()
+            .filter(|path| legacy.entry(path).is_some())
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            selected_copy_membership(root, &options, requested.iter().map(Utf8PathBuf::as_path))
                 .unwrap(),
-                expected
-            );
-        }
+            expected
+        );
     }
 
     #[cfg(target_os = "linux")]
@@ -553,6 +558,7 @@ mod tests {
         )
         .unwrap();
         let options = CopyOptions::default();
+
         assert!(matches!(
             build_manifest(root, &options),
             Err(WorkspaceError::NonUtf8Path)
@@ -570,6 +576,7 @@ mod tests {
         let root = Utf8Path::from_path(directory.path()).unwrap();
         fs::write(root.join("native\\name.txt"), b"asset").unwrap();
         let options = CopyOptions::default();
+
         assert!(matches!(
             build_manifest(root, &options),
             Err(WorkspaceError::InvalidPath { .. })
@@ -588,6 +595,7 @@ mod tests {
             includes: vec!["[".into()],
             ..CopyOptions::default()
         };
+
         assert!(matches!(
             build_manifest(root, &options),
             Err(WorkspaceError::InvalidGlob(_))

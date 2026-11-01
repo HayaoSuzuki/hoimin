@@ -14,6 +14,7 @@ fn plan_value() -> serde_json::Value {
 #[test]
 fn disk_limits_have_mandatory_eight_and_ten_gibibyte_defaults() {
     let raw = RawRunLimits::default();
+
     assert_eq!(raw.max_workspace_size, 8 * 1024 * 1024 * 1024);
     assert_eq!(raw.min_free_space, 10 * 1024 * 1024 * 1024);
 
@@ -35,9 +36,11 @@ fn disk_limits_have_mandatory_eight_and_ten_gibibyte_defaults() {
     );
 }
 
-#[test]
-fn zero_disk_limits_name_the_public_flags() {
-    for (raw, expected) in [
+#[rstest::rstest]
+#[case::rawrunlimits_max_workspace_size_0_rawrunlimits_default_1(0)]
+#[case::rawrunlimits_min_free_space_0_rawrunlimits_default_2(1)]
+fn zero_disk_limits_name_the_public_flags(#[case] scenario_index: usize) {
+    let (raw, expected) = [
         (
             RawRunLimits {
                 max_workspace_size: 0,
@@ -52,11 +55,14 @@ fn zero_disk_limits_name_the_public_flags() {
             },
             "--min-free-space",
         ),
-    ] {
-        let error = hoimin_core::RunLimits::try_from(&raw).unwrap_err();
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
 
-        assert!(error.to_string().contains(expected), "{expected}: {error}");
-    }
+    let error = hoimin_core::RunLimits::try_from(&raw).unwrap_err();
+
+    assert!(error.to_string().contains(expected), "{expected}: {error}");
 }
 
 type InvalidPlanCase = (&'static str, fn(&mut serde_json::Value), ConfigError);
@@ -88,41 +94,47 @@ fn plan_config_round_trips_run_semantics_with_session_disabled() {
     assert_eq!(restored, expected);
 }
 
-#[test]
-fn plan_config_rejects_absent_required_arrays() {
-    for field in ["import_roots", "fingerprint_files"] {
-        for replacement in [None, Some(serde_json::Value::Null)] {
-            // Arrange
-            let mut value = plan_value();
-            value.as_object_mut().unwrap().remove(field);
-            if let Some(replacement) = replacement {
-                value[field] = replacement;
-            }
+#[rstest::rstest]
+#[case::import_roots("import_roots")]
+#[case::fingerprint_files("fingerprint_files")]
+fn plan_config_rejects_absent_required_arrays(
+    #[case] field: &str,
+    #[values(0, 1)] scenario_index: usize,
+) {
+    let replacement = [None, Some(serde_json::Value::Null)]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
 
-            // Act
-            let result = serde_json::from_value::<PlanConfig>(value);
-
-            // Assert
-            assert!(result.is_err(), "accepted absent {field}");
-        }
+    // Arrange
+    let mut value = plan_value();
+    value.as_object_mut().unwrap().remove(field);
+    if let Some(replacement) = replacement {
+        value[field] = replacement;
     }
+
+    // Act
+    let result = serde_json::from_value::<PlanConfig>(value);
+
+    // Assert
+    assert!(result.is_err(), "accepted absent {field}");
 }
 
-#[test]
-fn plan_config_preserves_explicit_required_arrays() {
-    for paths in [vec![], vec!["vendor", "src"]] {
-        // Arrange
-        let mut value = plan_value();
-        value["import_roots"] = serde_json::json!(paths);
-        value["fingerprint_files"] = serde_json::json!(paths);
+#[rstest::rstest]
+#[case::vec(vec![])]
+#[case::vec_vendor_src(vec!["vendor", "src"])]
+fn plan_config_preserves_explicit_required_arrays(#[case] paths: Vec<&str>) {
+    // Arrange
+    let mut value = plan_value();
+    value["import_roots"] = serde_json::json!(paths);
+    value["fingerprint_files"] = serde_json::json!(paths);
 
-        // Act
-        let plan: PlanConfig = serde_json::from_value(value).unwrap();
+    // Act
+    let plan: PlanConfig = serde_json::from_value(value).unwrap();
 
-        // Assert
-        assert_eq!(plan.import_roots, paths);
-        assert_eq!(plan.fingerprint_files, paths);
-    }
+    // Assert
+    assert_eq!(plan.import_roots, paths);
+    assert_eq!(plan.fingerprint_files, paths);
 }
 
 #[test]
@@ -159,30 +171,31 @@ fn valid_normalized_plan_and_run_configs_pass_validation() {
     assert_eq!(run.validate(), Ok(()));
 }
 
-#[test]
-fn normalized_configs_reject_the_removed_outer_root() {
-    for root in ["project", "other-project", "project/./"] {
-        let mut run_value = serde_json::to_value(fixture_run_config()).unwrap();
-        run_value["root"] = serde_json::json!(root);
-        let mut plan = plan_value();
-        plan["root"] = serde_json::json!(root);
+#[rstest::rstest]
+#[case::project("project")]
+#[case::other_project("other-project")]
+#[case::project_3("project/./")]
+fn normalized_configs_reject_the_removed_outer_root(#[case] root: &str) {
+    let mut run_value = serde_json::to_value(fixture_run_config()).unwrap();
+    run_value["root"] = serde_json::json!(root);
+    let mut plan = plan_value();
+    plan["root"] = serde_json::json!(root);
 
-        let run_result = serde_json::from_value::<RunConfig>(run_value);
-        let plan_result = serde_json::from_value::<PlanConfig>(plan);
+    let run_result = serde_json::from_value::<RunConfig>(run_value);
+    let plan_result = serde_json::from_value::<PlanConfig>(plan);
 
-        assert!(
-            run_result
-                .unwrap_err()
-                .to_string()
-                .contains("unknown field `root`")
-        );
-        assert!(
-            plan_result
-                .unwrap_err()
-                .to_string()
-                .contains("unknown field `root`")
-        );
-    }
+    assert!(
+        run_result
+            .unwrap_err()
+            .to_string()
+            .contains("unknown field `root`")
+    );
+    assert!(
+        plan_result
+            .unwrap_err()
+            .to_string()
+            .contains("unknown field `root`")
+    );
 }
 
 #[test]
@@ -210,6 +223,7 @@ proptest::proptest! {
         let run: RunConfig = serde_json::from_value(value).unwrap();
         let plan_value = serde_json::to_value(run.into_plan_config(hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap())).unwrap();
         let plan: PlanConfig = serde_json::from_value(plan_value.clone()).unwrap();
+
         let restored = plan.into_run_config(OutputConfig::default()).unwrap();
         let run_value = serde_json::to_value(&restored).unwrap();
 
@@ -219,8 +233,14 @@ proptest::proptest! {
     }
 }
 
-#[test]
-fn plan_config_rejects_invalid_normalized_semantics() {
+#[rstest::rstest]
+#[case::missing_selector_1(0)]
+#[case::changed_without_source_2(1)]
+#[case::symbol_without_source_3(2)]
+#[case::empty_test_argv_4(3)]
+#[case::jobs_above_maximum_5(4)]
+#[case::baseline_arithmetic_overflow_6(5)]
+fn plan_config_rejects_invalid_normalized_semantics(#[case] scenario_index: usize) {
     let cases: &[InvalidPlanCase] = &[
         (
             "missing selector",
@@ -276,12 +296,13 @@ fn plan_config_rejects_invalid_normalized_semantics() {
         ),
     ];
 
-    for (name, mutate, expected) in cases {
-        let mut value = plan_value();
-        mutate(&mut value);
-        let config: PlanConfig = serde_json::from_value(value).unwrap();
-        assert_eq!(config.validate(), Err(expected.clone()), "{name}");
-    }
+    let (name, mutate, expected) = cases.get(scenario_index).unwrap();
+
+    let mut value = plan_value();
+    mutate(&mut value);
+    let config: PlanConfig = serde_json::from_value(value).unwrap();
+
+    assert_eq!(config.validate(), Err(expected.clone()), "{name}");
 }
 
 #[test]
@@ -309,8 +330,11 @@ fn normalized_limit_validation_accepts_maximum_jobs() {
     assert_eq!(config.validate(), Ok(()));
 }
 
-#[test]
-fn normalized_timeout_limits_enforce_the_inclusive_ceiling() {
+#[rstest::rstest]
+#[case::baseline_timeout_1(0)]
+#[case::mutant_timeout_2(1)]
+#[case::total_timeout_3(2)]
+fn normalized_timeout_limits_enforce_the_inclusive_ceiling(#[case] scenario_index: usize) {
     let maximum = serde_json::json!({
         "secs": MAX_TIMEOUT.as_secs(),
         "nanos": MAX_TIMEOUT.subsec_nanos()
@@ -320,7 +344,8 @@ fn normalized_timeout_limits_enforce_the_inclusive_ceiling() {
         "secs": oversized.as_secs(),
         "nanos": oversized.subsec_nanos()
     });
-    for (name, maximum, oversized) in [
+
+    let (name, maximum, oversized) = [
         ("baseline_timeout", maximum.clone(), oversized.clone()),
         (
             "mutant_timeout",
@@ -328,31 +353,34 @@ fn normalized_timeout_limits_enforce_the_inclusive_ceiling() {
             serde_json::json!({"fixed": oversized}),
         ),
         ("total_timeout", maximum, oversized),
-    ] {
-        let mut accepted = plan_value();
-        accepted["limits"]["mutant_timeout"] = serde_json::json!({
-            "fixed": {"secs": 5, "nanos": 0}
-        });
-        accepted["limits"][name] = maximum;
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
 
-        let config: PlanConfig = serde_json::from_value(accepted).unwrap();
+    let mut accepted = plan_value();
+    accepted["limits"]["mutant_timeout"] = serde_json::json!({
+        "fixed": {"secs": 5, "nanos": 0}
+    });
+    accepted["limits"][name] = maximum;
 
-        assert_eq!(config.validate(), Ok(()), "accepted {name}");
+    let config: PlanConfig = serde_json::from_value(accepted).unwrap();
 
-        let mut rejected = plan_value();
-        rejected["limits"]["mutant_timeout"] = serde_json::json!({
-            "fixed": {"secs": 5, "nanos": 0}
-        });
-        rejected["limits"][name] = oversized;
+    assert_eq!(config.validate(), Ok(()), "accepted {name}");
 
-        let config: PlanConfig = serde_json::from_value(rejected).unwrap();
+    let mut rejected = plan_value();
+    rejected["limits"]["mutant_timeout"] = serde_json::json!({
+        "fixed": {"secs": 5, "nanos": 0}
+    });
+    rejected["limits"][name] = oversized;
 
-        assert_eq!(
-            config.validate(),
-            Err(ConfigError::InvalidLimit(name)),
-            "rejected {name}"
-        );
-    }
+    let config: PlanConfig = serde_json::from_value(rejected).unwrap();
+
+    assert_eq!(
+        config.validate(),
+        Err(ConfigError::InvalidLimit(name)),
+        "rejected {name}"
+    );
 }
 
 #[test]
@@ -433,41 +461,47 @@ fn fixture_run_config() -> RunConfig {
     }])
 }
 
-#[test]
-fn run_config_rejects_absent_required_arrays() {
-    for field in ["import_roots", "fingerprint_files"] {
-        for replacement in [None, Some(serde_json::Value::Null)] {
-            // Arrange
-            let mut value = serde_json::to_value(fixture_run_config()).unwrap();
-            value.as_object_mut().unwrap().remove(field);
-            if let Some(replacement) = replacement {
-                value[field] = replacement;
-            }
+#[rstest::rstest]
+#[case::import_roots("import_roots")]
+#[case::fingerprint_files("fingerprint_files")]
+fn run_config_rejects_absent_required_arrays(
+    #[case] field: &str,
+    #[values(0, 1)] scenario_index: usize,
+) {
+    let replacement = [None, Some(serde_json::Value::Null)]
+        .into_iter()
+        .nth(scenario_index)
+        .unwrap();
 
-            // Act
-            let result = serde_json::from_value::<RunConfig>(value);
-
-            // Assert
-            assert!(result.is_err(), "accepted absent {field}");
-        }
+    // Arrange
+    let mut value = serde_json::to_value(fixture_run_config()).unwrap();
+    value.as_object_mut().unwrap().remove(field);
+    if let Some(replacement) = replacement {
+        value[field] = replacement;
     }
+
+    // Act
+    let result = serde_json::from_value::<RunConfig>(value);
+
+    // Assert
+    assert!(result.is_err(), "accepted absent {field}");
 }
 
-#[test]
-fn run_config_preserves_explicit_required_arrays() {
-    for paths in [vec![], vec!["vendor", "src"]] {
-        // Arrange
-        let mut value = serde_json::to_value(fixture_run_config()).unwrap();
-        value["import_roots"] = serde_json::json!(paths);
-        value["fingerprint_files"] = serde_json::json!(paths);
+#[rstest::rstest]
+#[case::vec(vec![])]
+#[case::vec_vendor_src(vec!["vendor", "src"])]
+fn run_config_preserves_explicit_required_arrays(#[case] paths: Vec<&str>) {
+    // Arrange
+    let mut value = serde_json::to_value(fixture_run_config()).unwrap();
+    value["import_roots"] = serde_json::json!(paths);
+    value["fingerprint_files"] = serde_json::json!(paths);
 
-        // Act
-        let run: RunConfig = serde_json::from_value(value).unwrap();
+    // Act
+    let run: RunConfig = serde_json::from_value(value).unwrap();
 
-        // Assert
-        assert_eq!(run.import_roots, paths);
-        assert_eq!(run.fingerprint_files, paths);
-    }
+    // Assert
+    assert_eq!(run.import_roots, paths);
+    assert_eq!(run.fingerprint_files, paths);
 }
 
 proptest::proptest! {
@@ -475,19 +509,20 @@ proptest::proptest! {
     fn saved_configs_preserve_ordered_import_roots(
         roots in proptest::collection::vec("[a-z]{1,8}", 0..8),
     ) {
-        // Arrange: valid normalized roots, including meaningful order variations.
+        // valid normalized roots, including meaningful order variations.
         proptest::prop_assume!(roots.iter().collect::<std::collections::BTreeSet<_>>().len() == roots.len());
         let mut config = fixture_run_config().into_data();
         config.import_roots = roots.iter().map(Into::into).collect();
 
-        // Act
+
         let run: RunConfig = serde_json::from_slice(&serde_json::to_vec(&config).unwrap()).unwrap();
         let plan: PlanConfig = serde_json::from_slice(
             &serde_json::to_vec(&RunConfig::try_from(config).unwrap().into_plan_config(hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap())).unwrap(),
         ).unwrap();
+
         let restored = plan.into_run_config(OutputConfig::default()).unwrap();
 
-        // Assert: neither representation may erase or reorder import precedence.
+        // neither representation may erase or reorder import precedence.
         proptest::prop_assert_eq!(&run.import_roots, &roots);
         proptest::prop_assert_eq!(&restored.import_roots, &roots);
     }
@@ -496,17 +531,18 @@ proptest::proptest! {
     fn saved_plan_preserves_explicit_fingerprint_files(
         files in proptest::collection::vec("[a-z]{1,8}\\.toml", 0..8),
     ) {
-        // Arrange
+
         let mut config = fixture_run_config().into_data();
         config.fingerprint_files = files.clone();
 
-        // Act
+
         let plan: PlanConfig = serde_json::from_slice(
             &serde_json::to_vec(&RunConfig::try_from(config).unwrap().into_plan_config(hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap())).unwrap(),
         ).unwrap();
+
         let restored = plan.into_run_config(OutputConfig::default()).unwrap();
 
-        // Assert: saved input retains the exact configured fingerprint file list.
+        // saved input retains the exact configured fingerprint file list.
         proptest::prop_assert_eq!(&restored.fingerprint_files, &files);
     }
 }
@@ -541,19 +577,20 @@ invalid_import_root_cases! {
     checked_import_roots_reject_parent_component: ["src/../src"];
 }
 
-#[test]
-fn saved_selection_rejects_obsolete_sibling_fields() {
+#[rstest::rstest]
+#[case::changed_context("changed_context")]
+#[case::diff_base("diff_base")]
+fn saved_selection_rejects_obsolete_sibling_fields(#[case] field: &str) {
     // Arrange: an otherwise valid saved selection with a discarded legacy field.
-    for field in ["changed_context", "diff_base"] {
-        let mut value = plan_value();
-        value["selection"][field] = serde_json::json!(null);
 
-        // Act.
-        let result = serde_json::from_value::<PlanConfig>(value);
+    let mut value = plan_value();
+    value["selection"][field] = serde_json::json!(null);
 
-        // Assert: silently dropping the field could change the selected targets.
-        assert!(result.is_err(), "accepted obsolete {field}");
-    }
+    // Act.
+    let result = serde_json::from_value::<PlanConfig>(value);
+
+    // Assert: silently dropping the field could change the selected targets.
+    assert!(result.is_err(), "accepted obsolete {field}");
 }
 
 #[test]
@@ -569,10 +606,15 @@ fn raw_config_keeps_the_default_for_omitted_import_roots() {
     assert_eq!(raw.import_roots, Vec::<camino::Utf8PathBuf>::new());
 }
 
-#[test]
-fn discovery_timeout_requires_a_positive_bounded_duration() {
+#[rstest::rstest]
+#[case::zero_1(0)]
+#[case::minimum_2(1)]
+#[case::maximum_3(2)]
+#[case::overflow_4(3)]
+fn discovery_timeout_requires_a_positive_bounded_duration(#[case] scenario_index: usize) {
     // Arrange: finite boundary cases, including the inclusive upper bound.
-    for (name, duration, accepted) in [
+
+    let (name, duration, accepted) = [
         ("zero", std::time::Duration::ZERO, false),
         ("minimum", std::time::Duration::from_nanos(1), true),
         ("maximum", MAX_TIMEOUT, true),
@@ -581,21 +623,29 @@ fn discovery_timeout_requires_a_positive_bounded_duration() {
             MAX_TIMEOUT + std::time::Duration::from_nanos(1),
             false,
         ),
-    ] {
-        // Act.
-        let result = hoimin_core::DiscoveryConfig::new(duration);
-        // Assert.
-        assert_eq!(result.is_ok(), accepted, "{name}");
-        if let Err(error) = result {
-            assert_eq!(error, ConfigError::InvalidLimit("analyzer_timeout"));
-        }
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
+
+    // Act.
+    let result = hoimin_core::DiscoveryConfig::new(duration);
+    // Assert.
+    assert_eq!(result.is_ok(), accepted, "{name}");
+    if let Err(error) = result {
+        assert_eq!(error, ConfigError::InvalidLimit("analyzer_timeout"));
     }
 }
 
-#[test]
-fn saved_plan_requires_complete_discovery_settings() {
+#[rstest::rstest]
+#[case::null_1(0)]
+#[case::missing_timeout_2(1)]
+#[case::zero_3(2)]
+#[case::unknown_field_4(3)]
+fn saved_plan_requires_complete_discovery_settings(#[case] scenario_index: usize) {
     // Arrange.
-    for (name, discovery) in [
+
+    let (name, discovery) = [
         ("null", serde_json::Value::Null),
         ("missing_timeout", serde_json::json!({})),
         (
@@ -606,14 +656,17 @@ fn saved_plan_requires_complete_discovery_settings() {
             "unknown_field",
             serde_json::json!({"analyzer_timeout": {"secs": 30, "nanos": 0}, "unknown": true}),
         ),
-    ] {
-        let mut value = plan_value();
-        value["discovery"] = discovery;
-        // Act.
-        let result = serde_json::from_value::<PlanConfig>(value);
-        // Assert.
-        assert!(result.is_err(), "{name}");
-    }
+    ]
+    .into_iter()
+    .nth(scenario_index)
+    .unwrap();
+
+    let mut value = plan_value();
+    value["discovery"] = discovery;
+    // Act.
+    let result = serde_json::from_value::<PlanConfig>(value);
+    // Assert.
+    assert!(result.is_err(), "{name}");
 }
 
 #[test]

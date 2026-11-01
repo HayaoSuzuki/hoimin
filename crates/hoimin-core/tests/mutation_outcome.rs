@@ -42,17 +42,18 @@ proptest! {
 
     #[test]
     fn executed_wire_round_trip_preserves_evidence(code in any::<i32>(), seconds in any::<u64>(), nanos in 0u32..1_000_000_000, retained in any::<u64>(), observed in any::<u64>(), close_timeout in any::<bool>()) {
-        // Arrange
+
         let outcome = MutationOutcome::Executed {
             termination: ProcessTermination::Exit(code),
             output_state: if close_timeout { ProcessOutputState::CloseTimedOut } else { ProcessOutputState::Complete },
             output: OutputSpoolRef { token: "output".into(), retained, observed },
             elapsed: Duration::new(seconds, nanos),
         };
-        // Act
+
         let encoded = serde_json::to_value(&outcome).unwrap();
+
         let decoded: MutationOutcome = serde_json::from_value(encoded).unwrap();
-        // Assert
+
         prop_assert_eq!(decoded, outcome);
     }
 }
