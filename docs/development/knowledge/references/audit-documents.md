@@ -1,0 +1,1733 @@
+---
+type: Reference
+title: 監査・報告の原文一覧
+description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状態付きで案内する。
+status: draft
+catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+sources:
+- id: issue-1123-implementation
+  resource: ../../work/reports/issue-1123/implementation.md
+  revision: c933c1ff608e155846d32f8a5ce08f03f3e50c75
+  working_tree: modified
+  sha256: 810140eedcba9e808fa0dc007e8fc898d27a54d523673a62d414696b0570ab2f
+- id: issue-1123-base-order
+  resource: ../../work/reports/issue-1123/base-order.md
+  revision: 0033b008582b24bead8bdf28f8980275e96500a3
+  working_tree: untracked
+  sha256: 0e91fa3072e301d37a373a2858652dbfdcadf98a3cdec1f40ebfa590ea8ace24
+- id: issue-1123-review
+  resource: ../../work/reports/issue-1123/self-review.md
+  revision: 0033b008582b24bead8bdf28f8980275e96500a3
+  working_tree: modified
+  sha256: 309528345f61c64aa4c5a8bb4983c3d3db5fd5faa06216063cdd4e4415bb33ee
+- id: issue-1123-report
+  resource: ../../work/reports/issue-1123/README.md
+  revision: c933c1ff608e155846d32f8a5ce08f03f3e50c75
+  working_tree: modified
+  sha256: 5dc9d8af964abbe2066ad4b015ec8449ee68c0cb08b1178c6251fb30468bba07
+- id: issues-1125-1131-four-implementation
+  resource: ../../work/reports/issues-1125-1131/four-implementation.md
+  revision: f3703cd875712b7a25bb37e5e2b19771eda8a52e
+  working_tree: untracked
+  sha256: 8f211d76ee496e1b020f2610eed1b5e0459ead3eefa41a554694d42a6871dd50
+- id: issues-1125-1131-four-review
+  resource: ../../work/reports/issues-1125-1131/four-implementation-review.md
+  revision: f3703cd875712b7a25bb37e5e2b19771eda8a52e
+  working_tree: untracked
+  sha256: c8e8609e2b9b5c4a20bfd7cc2d073a93c46cf123e06c11955a876c97478c34da
+- id: issues-1125-1131-reconsideration
+  resource: ../../work/reports/issues-1125-1131/reconsideration.md
+  revision: f3703cd875712b7a25bb37e5e2b19771eda8a52e
+  working_tree: modified
+  sha256: 9621257e891cba513df3590835509dc622abdb7f24c5b3e17977ce3bbc890143
+- id: issues-1125-1131-report
+  resource: ../../work/reports/issues-1125-1131/README.md
+  revision: f3703cd875712b7a25bb37e5e2b19771eda8a52e
+  working_tree: modified
+  sha256: 78f9c5d2beb9d3ab2cb2416f138b8810e1a651d00a89b8d639abb078bed26a0f
+- id: issues-1125-1131-methodology
+  resource: ../../work/reports/issues-1125-1131/methodology.md
+  revision: 42130ce3e82912c3fa4f7574b0a347d64401545e
+  working_tree: untracked
+  sha256: 7775372c77cf5b28835ae050135aebbb92ecdb9c7ae462fe49d669bb20233e39
+- id: issues-1125-1131-review
+  resource: ../../work/reports/issues-1125-1131/self-review.md
+  revision: 39c5a8050163ac383482909a80e9d57e57014b8a
+  working_tree: modified
+  sha256: 598a5a6a8d948546a6f0f411a3777ddaf7d730e49d23668d2cee02693e0c8b5a
+- id: issues-1121-1124-implementation
+  resource: ../../work/reports/issues-1121-1122-1124/implementation.md
+  revision: 1efe26f5e193540649cba9473034843f26824723
+  working_tree: untracked
+  sha256: e840bd8d5dec6883137dab7e31f29057357668205fc3e2af19119dd300727a65
+- id: issues-1121-1124-implementation-review
+  resource: ../../work/reports/issues-1121-1122-1124/implementation-review.md
+  revision: 1efe26f5e193540649cba9473034843f26824723
+  working_tree: untracked
+  sha256: 59941239e675bfde876b851c42676c71f0c11a9be80f10819c908767727a5266
+- id: issues-1121-1122-1124-report
+  resource: ../../work/reports/issues-1121-1122-1124/README.md
+  revision: 1efe26f5e193540649cba9473034843f26824723
+  working_tree: modified
+  sha256: b52f23a7821511deeb1ff895d2db4b09379112e40043c30db7b8c6da78a58b02
+- id: issues-1121-1122-1124-methodology
+  resource: ../../work/reports/issues-1121-1122-1124/methodology.md
+  revision: 7c2a79168c8698f85cc90d7efd6bf16a183e08b3
+  working_tree: untracked
+  sha256: 3b2dd841476afd5f9530b78eb88601a81217ee6d5ac63a947b078ad31a416fb4
+- id: issues-1121-1122-1124-review
+  resource: ../../work/reports/issues-1121-1122-1124/self-review.md
+  revision: 7c2a79168c8698f85cc90d7efd6bf16a183e08b3
+  working_tree: untracked
+  sha256: 3e69f88a2957f6fc3e49feb9bd66c845512a9a1aad7ffcd67f715879579df2ac
+- id: issue-999-adoption
+  resource: ../../work/reports/2026-10-19-issue-999-creusot-adoption.md
+  revision: fb89c55c1ab6b851302f36d0fef7fd9f7697655a
+  working_tree: modified
+  sha256: 87f7e3fa2c550ea837a699675f8d3d0571c1762747c329df2f9671b6aa1b1cb6
+- id: issue-911-design
+  resource: ../../work/reports/issue-911/design.md
+  working_tree: untracked
+  sha256: 9cafb2a20f48f581aa311e1bd6b0b8bd0676d75e2552363d5f33a61cc8256644
+- id: issue-911-review
+  resource: ../../work/reports/issue-911/review.md
+  working_tree: untracked
+  sha256: 7f51e40d998ae77447b6cf6c02d229901c332c49685e946ee5da210a72231088
+- id: issue-897-review
+  resource: ../../work/reports/2026-10-15-issue-897-review.md
+  revision: 0a148fcf5ca511b6ccca489feda2ccbc2429008f
+  working_tree: modified
+  sha256: c4c11806e1e8b6e9ad722f65c1ce42da8b0277809b4c2b9b039a222058d3bd48
+
+
+- id: issue-913-review
+  resource: ../../work/reports/2026-10-15-issue-913-review.md
+  revision: 4c9657a2ceb305271ce3908a78b6ae20677fe116
+  working_tree: modified
+  sha256: 1ba192963d525ca231ff0c8f4bb349fb666a83fdde67c749c327ec9ba58c219e
+- id: issue-898-process-review
+  resource: ../../work/reports/2026-10-15-issue-898-review.md
+  revision: 51c9e26b9d0006cac150b3833cb797a59349bac1
+  working_tree: modified
+  sha256: 66d7bb084d35c74ed50e24d5be9853361853b515ed98a8ca929d23a4e3c91a40
+
+- id: issue-899-changed-selection-review
+  resource: ../../work/reports/2026-10-15-issue-899-review.md
+  revision: ad65b8ce55b0dabc59712775e362d5d614b27559
+  working_tree: modified
+  sha256: 50a53fa428a46289ede33f60ae1bcc342f8cfa3b2a03e37ebc5ad127ff5444bc
+
+- id: issue-896-review
+  resource: ../../work/reports/2026-10-15-issue-896-review.md
+  revision: e7e3cae8c4e048ee77d2bf644b47da1792211cbe
+  working_tree: modified
+  sha256: 01f6c1cb4bbd07a56eba9df40235dbb6df9abe179fa0f33b4716bdf22c6d7316
+- id: issue-900-design
+  resource: ../../work/reports/issue-900/design.md
+  working_tree: untracked
+  sha256: 7c10b5c8a7898a374e985e773d4c758478b02e7927d9fd2e7b3873684fe49d50
+- id: issue-900-plan
+  resource: ../../work/reports/issue-900/plan.md
+  working_tree: untracked
+  sha256: f932d8acd44ac936c52d470ca85b590c8707cb0dd66801336013ea4195a19269
+- id: issue-900-review
+  resource: ../../work/reports/issue-900/review.md
+  working_tree: untracked
+  sha256: 9664c6be4e1e048ad59b7a4380fa151e008687e6f4e71cea538b8f1104fb1c4d
+- id: issue-759-staged-report
+  resource: ../../work/reports/2026-10-11-issue-759-staged-verification.md
+  working_tree: untracked
+  sha256: 728fe755181db6852830289d031d48725115531d2e90b26f7784b44d890a447e
+- id: issue-711-review-report
+  resource: ../../work/reports/2026-10-11-issue-711-survivor-review.md
+  working_tree: untracked
+  sha256: 2f388bf417df4054d41765ec4b66d74815880752cfb377956949bc628871c699
+- id: issue-778-kani-report
+  resource: ../../work/reports/2026-10-11-issue-778-kani.md
+  working_tree: untracked
+  sha256: 703f375d0a54f2bfbf0ffd457cf761402e2ae3101b9ab5b32114c93a7c27aa7c
+
+- id: issue-790-django-report
+  resource: ../../work/reports/2026-10-11-issue-790-django.md
+  revision: 93116fed96602628d04a2139645b3dfe1166e168
+  working_tree: modified
+  sha256: 7ae28e09ba8ddc8e2ad6f1dd8263cefb4ea770dfb58731cd565b67cf578c5689
+- id: issue-790-proofreadtools-report
+  resource: ../../work/reports/2026-10-11-issue-790-proofreadtools.md
+  revision: 93116fed96602628d04a2139645b3dfe1166e168
+  working_tree: modified
+  sha256: cc82e35bb1e1d24398826289ca1225aa80a900e620be580163bf66d8175e387e
+- id: issue-695-assessment
+  resource: ../../work/reports/issue-695/assessment.md
+  revision: 76f03acdefefdc03aff6973b0d2b49f6f3598837
+  working_tree: clean
+  sha256: c59799d8ae2b2dfb6c9e06f10ccec12c0d87d88ef7b849140b265f68c4ddf050
+- id: issue-695-design
+  resource: ../../work/reports/issue-695/design.md
+  revision: 76f03acdefefdc03aff6973b0d2b49f6f3598837
+  working_tree: clean
+  sha256: 01880cfdffc342bb4b70a51d139ce77d08f3e932ba512500f72e7c1fb9920915
+- id: issue-695-plan
+  resource: ../../work/reports/issue-695/plan.md
+  revision: 76f03acdefefdc03aff6973b0d2b49f6f3598837
+  working_tree: clean
+  sha256: 39ef60a6677db36fd5cbfe98a6f39c1e84102cb6e336fbc37c55e97226982bbb
+- id: issue-695-review
+  resource: ../../work/reports/issue-695/review.md
+  revision: 76f03acdefefdc03aff6973b0d2b49f6f3598837
+  working_tree: clean
+  sha256: e0601ed731dfa3357e9482070fb313177bdb89fca0405c30e984a59bec851a38
+- id: issue-692-exception-alias-lean-audit
+  resource: ../../work/reports/2026-10-05-exception-alias-lean-audit.md
+  revision: fae3ce3e82a8a768c8dca49531384aa081a97f71
+  working_tree: clean
+  sha256: ae7b94036a5af22ec2a1fc1bbfd3e3b1afca89597b0c22cf439b8a7642331027
+- id: issue-692-exception-hierarchy-design-recheck
+  resource: ../../work/reports/2026-10-05-exception-hierarchy-design-recheck.md
+  revision: fae3ce3e82a8a768c8dca49531384aa081a97f71
+  working_tree: clean
+  sha256: de4151c7a0ff9dc055e325e5970d63eaf1e4d9513fa62fcdc4314c87c5fa22d9
+- id: issue-692-exception-hierarchy-design-review
+  resource: ../../work/reports/2026-10-05-exception-hierarchy-design-review.md
+  revision: fae3ce3e82a8a768c8dca49531384aa081a97f71
+  working_tree: clean
+  sha256: 75a27a18440a7ac84691c1841da0021266b94723fd1593efa9e266331d6fa231
+- id: issue-692-exception-hierarchy-lean-audit
+  resource: ../../work/reports/2026-10-05-exception-hierarchy-lean-audit.md
+  revision: fae3ce3e82a8a768c8dca49531384aa081a97f71
+  working_tree: clean
+  sha256: c2ba971d1024f21d4696bce93c0ea24079c8b43d1169dd18d98ee4b566f4bacc
+- id: issue-692-exception-scope-lean-audit
+  resource: ../../work/reports/2026-10-05-exception-scope-lean-audit.md
+  revision: fae3ce3e82a8a768c8dca49531384aa081a97f71
+  working_tree: clean
+  sha256: 290244cc4afcb16315fd2d0353da0dedf0e6c64d82c5dc03cee393dbd98088ff
+- id: tracing-progress-report
+  resource: ../../work/reports/2026-09-26-tracing-progress.md
+  revision: f43ccffdee2996c8fd53da2d8be230045e7d5ab7
+  working_tree: modified
+  sha256: 820ea106b8bfab603dfabf01e0105b4d0cf7ae0f2902a6eb80b88297e44c2ce9
+- id: proptest-boundaries-report
+  resource: ../../work/reports/2026-09-26-proptest-boundaries.md
+  revision: b1641ee51911c4bdcb3704f32ee4dedbba2fb9b8
+  working_tree: modified
+  sha256: 31ade84992d5f31e46a1c093bfbf1f664bc303bcc300b97f5ddc969636ed9661
+- id: issue-561-results
+  resource: ../../work/audits/2026-09-15-evaluation-order/issue-561-results.md
+  revision: d2b8e83f054c13eacfceac84e37803fbe71512de
+  working_tree: clean
+  sha256: 406f91ee9b3b28ec33d2285fbae0047042dd53bd8dc9a7535a252f5f3708275f
+- id: issue-560-review
+  resource: ../../work/reports/2026-09-24-issue-560-review.md
+  revision: ffb65c051014f3d9601df2deb0bfeb5ff55c7c38
+  working_tree: modified
+  sha256: a96d2f42bd974491c68dfa0bf9bee040b6c43725ad70ec515536ebc412dbb146
+
+- id: issue-558-review
+  resource: ../../work/reports/2026-09-24-issue-558-review.md
+  revision: a49467ded359416a6ee743536100634f1cced3e2
+  working_tree: modified
+  sha256: 789a38f0bf2997640843c500aaea6fcf83108334087716adb7904c65c3841d38
+- id: issue-564-review
+  resource: ../../work/reports/2026-09-24-issue-564-review.md
+  revision: f6f5d96c099fb880884b2b7cb29717ff33d70d75
+  working_tree: modified
+  sha256: a7d9fc90f5b4b7fb15420f969cf99b85120f20cd97b7a6562811960d4c435a92
+- id: followup-lean-promotion
+  resource: ../../work/reports/2026-09-15-followup-lean-promotion.md
+  working_tree: untracked
+  sha256: 616caba8b9a1812ad70af5734c545090f1352d1f3c5ac91f5ac25e4f7a5abd24
+- id: nullable-gates-report
+  resource: ../../work/audits/2026-09-15-nullable-gates/README.md
+  working_tree: untracked
+  sha256: 13a3b384def390e0596119cc5901ef1b12ac7cd32bbd4ae73266000a6e207b52
+- id: nullable-gates-correspondence
+  resource: ../../work/audits/2026-09-15-nullable-gates/correspondence.md
+  working_tree: untracked
+  sha256: d129e9a236ab4f0419e769612c52a5e4521ed4fad71f9691c7b4e86b8ab0f18f
+- id: nullable-gates-name
+  resource: ../../work/audits/2026-09-15-nullable-gates/issue-name.md
+  working_tree: untracked
+  sha256: 5c7a5d17ae1d1868170a49a2d0de5d6e77918b991d30cffeec71a86992bfbe6b
+- id: nullable-gates-tuple
+  resource: ../../work/audits/2026-09-15-nullable-gates/issue-tuple.md
+  working_tree: untracked
+  sha256: cca889e7d86783afd769553692c9a2d8cb2daa275f9ef65bbfde15576d46f5ed
+- id: resume-copy-report
+  resource: ../../work/audits/2026-09-15-resume-copy/README.md
+  working_tree: untracked
+  sha256: 85e48710c73efb62a5ce970061dc6af55720579ee837a7c4e6fe762acfb61048
+- id: resume-copy-correspondence
+  resource: ../../work/audits/2026-09-15-resume-copy/correspondence.md
+  working_tree: untracked
+  sha256: ef28e19d67c40d1f946919883c6bef72b8b8a9620d3ab5efe4462dff22f8a2f6
+- id: resume-copy-issue
+  resource: ../../work/audits/2026-09-15-resume-copy/issue.md
+  working_tree: untracked
+  sha256: 324971624b07677f04dd4077d41edf4fc169357c7dd2e77bf65773b0fc13f4a8
+- id: declaration-only-report
+  resource: ../../work/audits/2026-09-15-declaration-only/README.md
+  working_tree: untracked
+  sha256: 4272c093852eab370489e8345c9ed515f20cdf26f2e5f13a4d495977db8636c9
+- id: declaration-only-correspondence
+  resource: ../../work/audits/2026-09-15-declaration-only/correspondence.md
+  working_tree: untracked
+  sha256: 060e6eff8289df5cc7900e4ba0a7d0a1350a6f643785073e2c0a7a4cbbdbc932
+- id: declaration-only-issue
+  resource: ../../work/audits/2026-09-15-declaration-only/issue.md
+  working_tree: untracked
+  sha256: a2fff281c5e3dd91822eb2a7340708f679333462a32f19c81e18579ed703f763
+- id: evaluation-order-report
+  resource: ../../work/audits/2026-09-15-evaluation-order/README.md
+  working_tree: untracked
+- id: evaluation-order-correspondence
+  resource: ../../work/audits/2026-09-15-evaluation-order/correspondence.md
+  working_tree: untracked
+- id: evaluation-order-bug
+  resource: ../../work/audits/2026-09-15-evaluation-order/issue-order.md
+  working_tree: untracked
+- id: evaluation-order-perf
+  resource: ../../work/audits/2026-09-15-evaluation-order/issue-method-allocation.md
+  working_tree: untracked
+- id: annotation-followup-report
+  resource: ../../work/audits/2026-09-15-annotation-followup/README.md
+  working_tree: untracked
+- id: annotation-followup-correspondence
+  resource: ../../work/audits/2026-09-15-annotation-followup/correspondence.md
+  working_tree: untracked
+- id: annotation-followup-deferred
+  resource: ../../work/audits/2026-09-15-annotation-followup/issue-deferred.md
+  working_tree: untracked
+- id: annotation-followup-set
+  resource: ../../work/audits/2026-09-15-annotation-followup/issue-abc-set.md
+  working_tree: untracked
+- id: with-finally-report
+  resource: ../../work/audits/2026-09-15-with-finally/README.md
+  working_tree: untracked
+- id: with-finally-correspondence
+  resource: ../../work/audits/2026-09-15-with-finally/correspondence.md
+  working_tree: untracked
+- id: with-finally-bug
+  resource: ../../work/audits/2026-09-15-with-finally/issue-with.md
+  working_tree: untracked
+- id: with-finally-performance
+  resource: ../../work/audits/2026-09-15-with-finally/issue-finally-performance.md
+  working_tree: untracked
+- id: audit-archive-01
+  resource: ../../work/audits/README.md
+  working_tree: modified
+  sha256: cc121de2cb11b757f0b594baa7766843f8379659ed8d51499a80baacca8b98dc
+- id: audit-archive-02
+  resource: ../../work/audits/2026-09-14-additional/README.md
+  working_tree: untracked
+  sha256: dd983964bea7840821b1d394739df065664e196cfc6eed8c927502038906acca
+- id: audit-archive-03
+  resource: ../../work/audits/2026-09-14-additional/correspondence.md
+  working_tree: untracked
+  sha256: 0b914f0483651e2032d592e5cc891dd5065679f22ddfaa0cabae6a07fcc9f600
+- id: audit-archive-04
+  resource: ../../work/audits/2026-09-14-additional/issue.md
+  working_tree: untracked
+  sha256: d67426ee6007a1462e500fb1a83e000d773668ed4728b1c36f644aea1f83e99e
+- id: audit-archive-05
+  resource: ../../work/audits/2026-09-14-followup/README.md
+  working_tree: untracked
+  sha256: dcd21d616d07d195997b0c9cdf2b11e5f38f2298c00c65bb01840b5a71bebf43
+- id: audit-archive-06
+  resource: ../../work/audits/2026-09-14-post-integration/README.md
+  working_tree: untracked
+  sha256: f163f5ff8fe76fcdf6ae807e6a5ec29b6af6a39ecefce89bc0ed9c1ede8ab6a7
+- id: audit-archive-07
+  resource: ../../work/audits/2026-09-14-post-integration/correspondence.md
+  working_tree: untracked
+  sha256: 92df03d143cafe57ef6cd11007e632ab0727c90a0e2660b547747e0b2d80e54f
+- id: audit-archive-08
+  resource: ../../work/audits/2026-09-14-post-integration/issue-flow-clones.md
+  working_tree: untracked
+  sha256: d6fd7bf525708a1b70ab334fd3d5bcf931db1926912261d34ba79e09294c3299
+- id: audit-archive-09
+  resource: ../../work/audits/2026-09-14-post-integration/issue-implicit-exception.md
+  working_tree: untracked
+  sha256: 757ff122d9cc61e3181e816ae40887042752fe4fa75394abcaef865f4aa63be0
+- id: audit-archive-10
+  resource: ../../work/audits/2026-09-14-post-integration/issue-loop-cost.md
+  working_tree: untracked
+  sha256: 8befde02562fef69b2bbdc0cb713ce8d721df6b63b5625261dee577dffe5d869
+- id: audit-archive-11
+  resource: ../../work/audits/2026-09-14-slice-tuples/README.md
+  working_tree: untracked
+  sha256: 8f72f9a1ea886adde140aded91197214bf5f8e42abaf17ce508f1ef2b77d7aaa
+- id: audit-archive-12
+  resource: ../../work/audits/2026-09-14-slice-tuples/correspondence.md
+  working_tree: untracked
+  sha256: 2c42a589d216c58061350b4116a76a048ed6dba82d365eb1252a20bd86b8f28a
+- id: audit-archive-13
+  resource: ../../work/audits/2026-09-14-slice-tuples/issue.md
+  working_tree: untracked
+  sha256: fae2d992f89a0932fad9b455582156e5ae5659007d10089fe887d53d20bbc843
+- id: audit-archive-14
+  resource: ../../work/reports/2026-09-15-issues-545-549-integration.md
+  working_tree: untracked
+  sha256: deb7754fbd1acefc841e8d9b076c60da6aa3f34659409998498dc6f5ef86086e
+- id: issue-549-report
+  resource: ../../work/reports/2026-09-15-issue-549-slice-tuple.md
+  revision: f11013542ccd735ab9741b5079c0b39a517df256
+  working_tree: untracked
+  sha256: 80f6a99dabfdbe084de6cba0e211e55b4033bf7449c5dd344ab922358c1fac6b
+
+- id: issue-548-report
+  resource: ../../work/reports/2026-09-15-issue-548-annotation-builtins-review.md
+  revision: f11013542ccd735ab9741b5079c0b39a517df256
+  working_tree: untracked
+  sha256: 20a2db1609dc6fc42f31a451b1a3a21113cba2d04cebc6847c77e43afd7176a4
+
+- id: issue-545
+  resource: ../../work/reports/2026-09-15-issue-545-implicit-finally-review.md
+  revision: f11013542ccd735ab9741b5079c0b39a517df256
+  working_tree: untracked
+  sha256: 1f24068440027fb9084264b25b9f9294421da130d4e939ea2532bc4e47099c60
+
+
+- id: issue-547-review
+  resource: ../../work/reports/2026-09-15-issue-547-self-review.md
+  working_tree: untracked
+  sha256: a4dd80f0c8d7e2c01271363db1b22a1e7fec5e59d8ce74d1da0df2c11b340934
+
+- id: issue-546-report
+  resource: ../../work/reports/2026-09-15-issue-546-loop-transfer-review.md
+  working_tree: untracked
+  sha256: 547a626c92a728919ae45f41b950383e7ce305379d2cd523d5405dc1c4ef4e4f
+- id: issue-491-rust-cost-review
+  resource: ../../work/reports/2026-09-14-issue-491-rust-cost-review.md
+  working_tree: untracked
+  sha256: 1337e928052a03ca8080674b8f76ef50d7b5cba9e14b5399f6a5ecce77f7c185
+- id: issue-491-input-axis-review
+  resource: ../../work/reports/2026-09-14-issue-491-input-axis-review.md
+  working_tree: untracked
+  sha256: a04236891ab5f2058f8c65d6deb915405a7a6066dff7cc543d93c0a55c35b8c5
+- id: issue-491-cost-correspondence-worksheet
+  resource: ../../work/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md
+  working_tree: untracked
+  sha256: 199af4da50a8332e620e5a23ea45e23e22bda523c967834dc5999b05aef83dcd
+- id: issue-491-operation-cost-review
+  resource: ../../work/reports/2026-09-14-issue-491-operation-cost-review.md
+  working_tree: modified
+  revision: f14aa1b34ec6d166882e720661aee0fceb3543ee
+  sha256: 90036e84a9987231975f14b7d20525dcd2bea3a290d3d7aa66c9a98c552526f6
+- id: issue-489-worksheet
+  resource: ../../work/reports/2026-09-14-issue-489-correspondence-worksheet.md
+  working_tree: untracked
+  sha256: bccdcb3cd771f72266a716fa9bad8c8521d4bfb9180d36d44635709360d00137
+- id: issue-489-reports
+  resource: ../../work/reports/2026-09-14-issue-489-valid-python-corpus.md
+  revision: fb8fabf8af84a1ecbdf7adc820be6fbb8ab40d25
+  working_tree: modified
+  sha256: b9afa31b3b0bfa7e6239aaae2b4de77974ee60723c37350cf87412ef6e404bf8
+- id: issue-464-review
+  resource: ../../work/reports/2026-09-14-issue-464-baseline-output-review.md
+  working_tree: modified
+  revision: c96c89ec575cc3ac72a621aa267fbc011e9be898
+  sha256: 4dc8b97db4e401f403397d2dab4b648c611d96ac3931d099eb4d3dd11f2f79fb
+- id: issue-454-review
+  resource: ../../work/reports/2026-09-14-issue-454-fixed-batches-review.md
+  working_tree: untracked
+  sha256: bddc76fea5ffd3dd176b09048deb6a155b7d16b4a63059589c79ee274486c485
+- id: issue-599-review
+  resource: ../../work/reports/2026-09-25-issue-599-verify-preview-review.md
+  revision: 69ab89d33a91ec2b14e73d4ccfdc5ae0a3f6ea1f
+  working_tree: modified
+  sha256: f6f806e9ad82eca7b1aeaca96da29c2a1f31f91a3c04998b0c87cc3bd17fcb88
+
+- id: issue-458-review
+  resource: ../../work/reports/2026-09-14-issue-458-verify-metrics-review.md
+  revision: 6a6e233
+  working_tree: modified
+  sha256: 43a74c2b6926c982c111bd49c590de34e7de05b8ad708384d6968209d719f74c
+- id: issue-471-reports
+  resource: ../../work/reports/2026-09-14-issue-471-negative-neighbors.md
+  working_tree: untracked
+  sha256: befd1573038e54b60ad8fd431597e3da5331c3915248d17c712aa70ea902cdf8
+- id: issue-466-revalidation
+  resource: ../../work/reports/2026-09-14-issue-466-revalidation.md
+  working_tree: untracked
+  sha256: 75fd46a6a0e5fac58f369fb837d571388ddb46969b1458139caa7fbde1b3f0d1
+- id: issue-490-review
+  resource: ../../work/reports/2026-09-14-issue-490-boundary-contracts-review.md
+  revision: c7ce87f8d4c584c2d8df2dcb9d65348c3dd3a706
+  working_tree: modified
+  sha256: 03cc7e076df1207ade765d1a2ee0160e1efeb3c45678e41d56ef5f5b4067a344
+- id: issue-467-review
+  resource: ../../work/reports/2026-09-14-issue-467-jsonl-progress-review.md
+  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
+  working_tree: untracked
+  sha256: 49ab2810c65360e6e65c1c44b8e625871e17b179e775b5e72a2b653a38a8dfb1
+- id: issue-480-report-index
+  resource: ../../work/reports/2026-09-14-issue-480-source-encoding-review.md
+  working_tree: modified
+  sha256: f8cc3f5e7e8d5ae7afec4b3321751e3d0a36dee584256c930395e5571fa59102
+  revision: a19bf3aadb0d56cc514d857a0e6359a563e67a18
+- id: issue-476-report-index
+  resource: ../../work/reports/2026-09-14-issue-476-symbol-diagnostics-review.md
+  working_tree: untracked
+  sha256: bff2a183f0c702c556d19c832b59836613d9e7a20975d89893d5d1c7fa0292ec
+- id: issue-461-merge-review
+  resource: ../../work/reports/2026-09-14-issue-461-self-review.md
+  revision: 11dd162101c4351dfdd15cb52ba112bdf1fe9cf2
+  working_tree: clean
+  sha256: f3f4229f345454faedf2541348dddaa77fc5f79033e0392818a66850345e4a2b
+- id: issue-470-merge-review
+  resource: ../../work/reports/2026-09-14-issue-470-self-review.md
+  revision: 55edef2f856d347b26db99d0cdb8ababf638abd9
+  working_tree: clean
+  sha256: 96e5eb365a1e5f8508941c9eff15f3f8cd9c95ecfbc7c0e2502f660977733302
+- id: issue-479-merge-review
+  resource: ../../work/reports/2026-09-14-issue-479-self-review.md
+  revision: 1b16fc05855b14eb87eae52e2ccac03bf259b63c
+  working_tree: clean
+  sha256: c5d90ff72953f9667d7c0bc135edb6fbc9dfab405ab370f3271512aebdd5d774
+- id: issue-482-merge-review
+  resource: ../../work/reports/2026-09-14-issue-482-self-review.md
+  revision: 58092b31994e43227e2292e6ba97f51874ea36e4
+  working_tree: clean
+  sha256: f686b3d5b382a8d7ee7c9346ab213bae833c19ff83d77938ef75d3199cff3a77
+- id: issue-491-review
+  resource: ../../work/reports/2026-09-14-issue-491-performance-shapes-review.md
+  working_tree: modified
+  revision: da6b9cf5fd6eff71438c503b0b99a15571b5e696
+  sha256: 903abf4a3d7010cd791a463fb8d1393583440e1150464ec4ec07bc28e85ad1f9
+- id: issue-598-report
+  resource: ../../work/reports/2026-09-25-issue-598-prepared-namespace.md
+  revision: 61957866feae3cc5cd62cd026b677314e34957ea
+  working_tree: modified
+  sha256: 9cc6842eefa4850aa0d57c979507dbf7abc77eb9b7fc5219d14c537566674143
+- id: issue-453-report
+  resource: ../../work/reports/2026-09-14-issue-453-scoped-discovery.md
+  sha256: 00388a47831d5139281558dc112b82d72504de76c4e2f3df00adfd1ad742433b
+  working_tree: clean
+  revision: 7b7192f8a2e1935c503bd9be1020e9b13f6b6858
+- id: issue-475-report
+  resource: ../../work/reports/2026-09-14-issue-475-range-normalization.md
+  sha256: 4a5ebaf30d38b75272a82443ec7c1845f4aeae8bf2be142324b7db504e25ad63
+  working_tree: clean
+  revision: 15f0d54ea2b8a1eba4317b04649a3d7f7c46079b
+- id: issue-474-report
+  resource: ../../work/reports/2026-09-14-issue-474-selector-index.md
+  working_tree: untracked
+  sha256: 4173549c5d8f5f037aec6e97b479028bf3a3320d30ef2e223a47ffb226b3c0ed
+
+- id: issue-456-review
+  resource: ../../work/reports/2026-09-14-issue-456-validation-context-review.md
+  working_tree: untracked
+  sha256: 5042ef83fb71837543be9fb358b2453931bdf70ce77f6033381e5756632b09f0
+- id: issue-600-review
+  resource: ../../work/reports/2026-09-25-issue-600-target-membership-review.md
+  working_tree: untracked
+  sha256: d4823d9add9a31d43a0cd1e80be6126b0593b80e1ca5638e44f9f766dcb593fc
+
+- id: issue-460-audit
+  resource: ../../work/reports/2026-09-11-issue-460-progress-result-audit.md
+  working_tree: untracked
+  sha256: 34c1bfe09482686fd796f35df674bb0fdf0f9325210437884519a906304fb3a0
+- id: doc-001
+  resource: ../../work/reports/2026-09-11-progress-input-lean.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-002
+  resource: ../../work/reports/2026-09-11-boundary-contract-audit/selection.md
+  working_tree: untracked
+  sha256: ba32a5d36f8e13c3a8237fa853d9e16f5aa733dcf14add78e2ee6f156dbafcc7
+- id: doc-003
+  resource: ../../work/reports/2026-09-11-boundary-contract-audit/runtime.md
+  working_tree: untracked
+  sha256: 3e338e5144cd0ce0df95877599cad053306eb7676759dfe64721b17ec4ad3907
+- id: doc-004
+  resource: ../../work/reports/2026-09-11-boundary-contract-audit/report-session.md
+  working_tree: untracked
+  sha256: b30e77536b3b8fcd06e51bfb95ecadd8b6c254089f280f9cfecaf400ccd28246
+- id: doc-005
+  resource: ../../work/reports/2026-09-11-boundary-contract-audit/lean-application.md
+  working_tree: untracked
+  sha256: 5d1f9dacbbd186b1043a41573eb698e1a90d5f948c1419d01f7cb7fdc9a1c4b5
+- id: doc-006
+  resource: ../../work/reports/2026-09-11-boundary-contract-audit/analyzer.md
+  working_tree: untracked
+  sha256: 30ec2c78aea9b7f4fd9c0da655fae9096ff7ed91499851f2da619fb1c483b1ea
+- id: doc-007
+  resource: ../../work/reports/2026-09-11-boundary-contract-audit/README.md
+  working_tree: untracked
+  sha256: 6afdc6ecff7fac290da8e43f3d27f5af25718405fcd86e0f493ff51280df1d40
+- id: doc-008
+  resource: ../../work/reports/2026-09-09-issue-447-fingerprint-memory.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-009
+  resource: ../../work/reports/2026-09-09-issue-446-line-ranking.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-010
+  resource: ../../work/reports/2026-09-09-issue-445-nullable-syntax.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-011
+  resource: ../../work/reports/2026-09-09-issue-442-candidate-spool.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-012
+  resource: ../../work/reports/2026-09-09-issue-441-structural-syntax.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-013
+  resource: ../../work/reports/2026-09-09-issue-438-ranking-index.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-014
+  resource: ../../work/reports/2026-09-09-issue-437-git-targets.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-015
+  resource: ../../work/reports/2026-09-08-python-operator-coverage.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-016
+  resource: ../../work/reports/2026-09-08-issue-433-diverse-selection.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-017
+  resource: ../../work/reports/2026-09-08-issue-432-progress-memory.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-018
+  resource: ../../work/reports/2026-09-08-issue-431-class-comprehensions.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-019
+  resource: ../../work/reports/2026-09-08-issue-369-lean-ci-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-020
+  resource: ../../work/reports/2026-09-08-issue-350-resume-limit-compatibility.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-021
+  resource: ../../work/reports/2026-09-08-issue-342-resource-waits.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-022
+  resource: ../../work/reports/2026-09-08-issue-342-resource-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-023
+  resource: ../../work/reports/2026-09-08-issue-342-linux.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-024
+  resource: ../../work/reports/2026-09-08-issue-335-report-shutdown.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-025
+  resource: ../../work/reports/2026-09-07-python-operator-contracts.md
+  working_tree: untracked
+  sha256: 9ff8875c9180c7d2cdee23ea3fbbc42b4c2da03a9b0750d76f6b0837e733cf8c
+- id: doc-026
+  resource: ../../work/reports/2026-09-07-issue-368-probe-errors.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-027
+  resource: ../../work/reports/2026-09-07-issue-367-history-paths.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-028
+  resource: ../../work/reports/2026-09-07-issue-364-verify-discovery.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-029
+  resource: ../../work/reports/2026-09-07-issue-363-session-ownership.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-030
+  resource: ../../work/reports/2026-09-07-issue-362-comparable-score.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-031
+  resource: ../../work/reports/2026-09-07-issue-361-operator-help.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-032
+  resource: ../../work/reports/2026-09-07-issue-360-line-validation.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-033
+  resource: ../../work/reports/2026-09-07-issue-359-empty-verification.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-034
+  resource: ../../work/reports/2026-09-07-issue-356-worker-exists.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-035
+  resource: ../../work/reports/2026-09-07-issue-355-reset-io.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-036
+  resource: ../../work/reports/2026-09-07-issue-354-manifest-fingerprint.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-037
+  resource: ../../work/reports/2026-09-07-issue-353-preflight-read-analysis.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-038
+  resource: ../../work/reports/2026-09-07-issue-351-worker-timing.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-039
+  resource: ../../work/reports/2026-09-07-issue-349-config-json.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-040
+  resource: ../../work/reports/2026-09-07-issue-348-portable-paths.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-041
+  resource: ../../work/reports/2026-09-07-issue-347-selector-consistency.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-042
+  resource: ../../work/reports/2026-09-07-issue-346-source-offsets.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-043
+  resource: ../../work/reports/2026-09-07-issue-343-subpage-memory.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-044
+  resource: ../../work/reports/2026-09-07-issue-341-pidfd-cleanup.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-045
+  resource: ../../work/reports/2026-09-07-issue-336-active-candidates.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-046
+  resource: ../../work/reports/2026-09-07-issue-328-operator-gaps.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-047
+  resource: ../../work/reports/2026-09-07-issue-327-except-star.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-048
+  resource: ../../work/reports/2026-09-04-issue-357-cleanup-capability-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-049
+  resource: ../../work/reports/2026-08-17-issue-334-timeout-limit-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-050
+  resource: ../../work/reports/2026-08-17-issue-330-cleaning-stop-guard-oracle.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-051
+  resource: ../../work/reports/2026-08-15-lean-output-retention-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-052
+  resource: ../../work/reports/2026-08-15-lean-mutation-score-exit-policy-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-053
+  resource: ../../work/reports/2026-08-15-lean-changed-target-composition-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-054
+  resource: ../../work/reports/2026-08-15-lean-byte-span-preservation-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-055
+  resource: ../../work/reports/2026-08-14-lean-multi-handler-joins-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-056
+  resource: ../../work/reports/2026-08-14-lean-except-star-flow-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-057
+  resource: ../../work/reports/2026-08-14-lean-compound-pattern-guards-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-058
+  resource: ../../work/reports/2026-08-14-lean-bounded-candidate-discovery-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-059
+  resource: ../../work/reports/2026-08-13-lean-report-sequence-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-060
+  resource: ../../work/reports/2026-08-13-lean-nested-try-finally-flow-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-061
+  resource: ../../work/reports/2026-08-13-lean-nested-match-exits-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-062
+  resource: ../../work/reports/2026-08-12-lean-top-budget-projection-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-063
+  resource: ../../work/reports/2026-08-12-lean-progress-decision-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-064
+  resource: ../../work/reports/2026-08-11-lean-schema-migration-concurrency-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-065
+  resource: ../../work/reports/2026-08-11-lean-exception-match-binding-correspondence-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-066
+  resource: ../../work/reports/2026-08-11-lean-candidate-ranking-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-067
+  resource: ../../work/reports/2026-08-11-lean-binding-flow-join-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-068
+  resource: ../../work/reports/2026-08-11-lean-annotation-scope-correspondence-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-069
+  resource: ../../work/reports/2026-08-10-lean-result-lifecycle-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-070
+  resource: ../../work/reports/2026-08-09-shutdown-orchestration-coverage-worksheet.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-071
+  resource: ../../work/reports/2026-08-09-lean-workspace-lifecycle-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-072
+  resource: ../../work/reports/2026-08-09-lean-state-machine-oracle.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-073
+  resource: ../../work/reports/2026-08-09-lean-state-machine-counterexamples.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-074
+  resource: ../../work/reports/2026-08-09-lean-shutdown-orchestration-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-075
+  resource: ../../work/reports/2026-08-09-lean-session-recovery-counterexamples.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-076
+  resource: ../../work/reports/2026-08-09-lean-session-recovery-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-077
+  resource: ../../work/reports/2026-08-09-lean-budget-cleanup-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-078
+  resource: ../../work/reports/2026-08-05-issue-129-line-offsets.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-079
+  resource: ../../work/reports/2026-08-05-issue-128-worker-materialization.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-080
+  resource: ../../work/reports/2026-08-05-issue-126-async-io.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-081
+  resource: ../../work/reports/2026-08-05-issue-125-dirty-reset.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-082
+  resource: ../../work/reports/2026-08-05-issue-124-original-verification.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-083
+  resource: ../../work/reports/2026-08-04-windows-real-pid-reuse-feasibility.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-084
+  resource: ../../work/reports/2026-08-03-test-issue-consolidation-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-085
+  resource: ../../work/reports/2026-07-31-issue-triage.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-086
+  resource: ../../work/reports/2026-07-26-progress-stall-adjacency.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-087
+  resource: ../../work/audits/2026-07-rust-codebase/report.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-088
+  resource: ../../work/audits/2026-07-rust-codebase/issues.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-089
+  resource: ../../work/audits/2026-07-rust-codebase/findings.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-090
+  resource: ../../work/audits/2026-07-rust-codebase/coverage.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: doc-091
+  resource: ../../work/audits/2026-07-rust-codebase/README.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: audit-promotion
+  resource: ../../work/reports/2026-09-15-audit-verification-promotion.md
+  working_tree: untracked
+  sha256: 3a3a79631919bc7f2d52b7e73c888345bf12050e7b5a2b198b7b24986b5191b1
+- id: default-operators
+  resource: ../../work/reports/default-analyzer-operators/design.md
+  working_tree: untracked
+  sha256: 8aa57f82bc7545d7bf5d0d88fb7b2c1b07175272320cac19561bf413ec37f643
+- id: default-operators-review
+  resource: ../../work/reports/default-analyzer-operators/review.md
+  working_tree: untracked
+  sha256: 9a0875f841d3b40d504c2a07b638ea03cbd403adb37b66ffd19c2ae43b3af719
+- id: issue-709-design
+  resource: ../../work/reports/issue-709/design.md
+  working_tree: untracked
+  sha256: 4b5d6005177bfb151a3a9a6dce053918c571ed970e9d2ed5c1761c2991773d21
+- id: issue-709-plan
+  resource: ../../work/reports/issue-709/plan.md
+  working_tree: untracked
+  sha256: 4c475534f4f19a29ad98324afc6613cf6e897c1c1c7d3877205b2cd21e2f13eb
+- id: issue-709-assessment
+  resource: ../../work/reports/issue-709/assessment.md
+  working_tree: untracked
+  sha256: c3fb86ebf25c5d4b8bfa2f9eb13fb57faf1d276c1e0e1d6706406da5d2b083fa
+- id: issue-709-review
+  resource: ../../work/reports/issue-709/review.md
+  working_tree: untracked
+  sha256: 291049426d815f46c6b68d75c81415e80024165972fc60df65f0fcfb09ed9800
+- id: issue-710-design
+  resource: ../../work/reports/issue-710/design.md
+  working_tree: untracked
+  sha256: 187d95a722fc212fa5748bd95b031035ecc34f89f43633a12d2b29e034d7701e
+
+- id: issue-710-plan
+  resource: ../../work/reports/issue-710/plan.md
+  working_tree: untracked
+  sha256: 664949692555d984ab034f9468f745f958fb16b529dee9f0b75e10a30d060f7a
+
+- id: issue-710-assessment
+  resource: ../../work/reports/issue-710/assessment.md
+  working_tree: untracked
+  sha256: 9e099f6d6125e40eed282924e41381fd0ed60d1a6f4f507dca3eeda14a21dece
+
+- id: issue-710-review
+  resource: ../../work/reports/issue-710/review.md
+  working_tree: untracked
+  sha256: 37e8886b574a7226c882551b72683241c31bcd39ed0654f417c9569f63ed4e31
+
+- id: fuzz-adoption-report
+  resource: ../../work/reports/issue-805/README.md
+  revision: 36c0e84e7e93022b3588dede701f3b85212d98ff
+  working_tree: modified
+  sha256: 40ead0b7481a3566451f9fd1dcdac9df068035c1c0ed025db5532c5bb79d7d8e
+- id: sampling-v1-regressions
+  resource: ../../work/reports/issue-807/README.md
+  working_tree: untracked
+  sha256: 4eeaf34be4234443b6d2ffaede55a9a06c64571074cc95585c387d84c0623771
+- id: corpus-distillation-803
+  resource: ../../work/reports/issue-803/README.md
+  working_tree: untracked
+  sha256: e18042e4114ed937a162649afef6dcf1f4a3d39d4dacb8793276797f980a98fe
+- id: second-order-assessment
+  resource: ../../work/reports/issue-763-764/README.md
+  revision: 3c3a7d6
+  working_tree: modified
+  sha256: da0624a1c113ab60bc5622a0e4a5d45ebcaa0c86330f4954c9255b3acb353a85
+- id: issue-895-design
+  resource: ../../work/reports/issue-895/design.md
+  revision: 62cee6bbd684d13dd69a67bd3a627901103f8624
+  working_tree: clean
+  sha256: 283d6d959f953906bb88271e7146d18ecc9a39a7ca12813f13552247a30f544d
+- id: issue-895-plan
+  resource: ../../work/reports/issue-895/plan.md
+  revision: 62cee6bbd684d13dd69a67bd3a627901103f8624
+  working_tree: clean
+  sha256: 2447ba6b0a732455911e9cb9737854c9a4c973e86f8334b36674faa201473302
+- id: issue-895-review
+  resource: ../../work/reports/issue-895/review.md
+  revision: 48d7f94968289be7a8469fd06f42d0702fc9ffba
+  working_tree: modified
+  sha256: e40737eaa4b50c6cfaa94d52f2859040c7f69c1813bb011f12f6493fbf1fb946
+
+---
+
+# 収録一覧
+
+2026-09-14時点の93件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
+
+主要な論点の要約は[入口](../index.md)から読む。ファイル名に含まれる日付は作成履歴の手がかりであり、そのファイルが最後に変更された日時ではない。
+
+| 原文 | 先頭見出し | 作成時の状態 |
+| --- | --- | --- |
+| [2026-10-15-issue-896-review.md](../../work/reports/2026-10-15-issue-896-review.md) | Issue 896 review and verification [^issue-896-review] | 未追跡（参照時点） |
+| [design.md](../../work/reports/issue-900/design.md) | Typed disk failure design [^issue-900-design] | untracked at reference time |
+| [plan.md](../../work/reports/issue-900/plan.md) | Implementation plan [^issue-900-plan] | untracked at reference time |
+| [review.md](../../work/reports/issue-900/review.md) | Issue #900 review record [^issue-900-review] | untracked at reference time |
+| [2026-10-05-exception-alias-lean-audit.md](../../work/reports/2026-10-05-exception-alias-lean-audit.md) | 代入による別名の形式監査 [^issue-692-exception-alias-lean-audit] | 追跡済み（fae3ce3） |
+| [2026-10-05-exception-hierarchy-design-recheck.md](../../work/reports/2026-10-05-exception-hierarchy-design-recheck.md) | 別名伝播修正後の原設計再レビュー [^issue-692-exception-hierarchy-design-recheck] | 追跡済み（fae3ce3） |
+| [2026-10-05-exception-hierarchy-design-review.md](../../work/reports/2026-10-05-exception-hierarchy-design-review.md) | 例外階層ミューテーションの原設計レビュー [^issue-692-exception-hierarchy-design-review] | 追跡済み（fae3ce3） |
+| [2026-10-05-exception-hierarchy-lean-audit.md](../../work/reports/2026-10-05-exception-hierarchy-lean-audit.md) | Exception hierarchy: formal audit and implementation correspondence [^issue-692-exception-hierarchy-lean-audit] | 追跡済み（fae3ce3） |
+| [2026-10-05-exception-scope-lean-audit.md](../../work/reports/2026-10-05-exception-scope-lean-audit.md) | Exception scope and outcome audit [^issue-692-exception-scope-lean-audit] | 追跡済み（fae3ce3） |
+| [2026-09-26-proptest-boundaries.md](../../work/reports/2026-09-26-proptest-boundaries.md) | Proptest boundary coverage: review and evidence [^proptest-boundaries-report] | 変更あり（CI追試） |
+| [2026-09-15-issue-549-slice-tuple.md](../../work/reports/2026-09-15-issue-549-slice-tuple.md) | Issue #549: Slice tuple修正の検証 [^issue-549-report] | 未追跡（参照時点） |
+
+| [2026-09-15-issue-545-implicit-finally-review.md](../../work/reports/2026-09-15-issue-545-implicit-finally-review.md) | Issue #545: 暗黙例外と finally の検証記録 [^issue-545] | 追跡済み |
+
+| [2026-09-15-issue-546-loop-transfer-review.md](../../work/reports/2026-09-15-issue-546-loop-transfer-review.md) | Issue #546: ループ転送再利用の自己レビュー [^issue-546-report] | 未追跡（参照時点） |
+| [2026-09-14-issue-491-rust-cost-review.md](../../work/reports/2026-09-14-issue-491-rust-cost-review.md) | Issue #491 Rust cost adapter and workspace preflight peak review [^issue-491-rust-cost-review] | 未追跡（参照時点） |
+| [2026-09-14-issue-491-input-axis-review.md](../../work/reports/2026-09-14-issue-491-input-axis-review.md) | Issue491 input-axis expansion review [^issue-491-input-axis-review] | 未追跡（参照時点） |
+| [2026-09-14-issue-491-cost-correspondence-worksheet.md](../../work/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md) | Issue #491: Cost correspondence worksheet [^issue-491-cost-correspondence-worksheet] | 未追跡（参照時点） |
+| [2026-09-14-issue-491-operation-cost-review.md](../../work/reports/2026-09-14-issue-491-operation-cost-review.md) | Issue #491: Remaining acceptance review and evidence [^issue-491-operation-cost-review] | 変更あり（再参照） |
+| [2026-09-14-issue-489-correspondence-worksheet.md](../../work/reports/2026-09-14-issue-489-correspondence-worksheet.md) | Issue #489: Case correspondence worksheet [^issue-489-worksheet] | 未追跡（参照時点） |
+| [2026-09-14-issue-489-valid-python-corpus.md](../../work/reports/2026-09-14-issue-489-valid-python-corpus.md) | Issue #489: Valid Python corpus review and evidence [^issue-489-reports] | 未追跡（参照時点） |
+| [2026-09-14-issue-471-negative-neighbors.md](../../work/reports/2026-09-14-issue-471-negative-neighbors.md) | Issue #471: Negative neighbor implementation and review [^issue-471-reports] | 未追跡（参照時点） |
+| [2026-09-14-issue-466-revalidation.md](../../work/reports/2026-09-14-issue-466-revalidation.md) | Issue 466 retirement revalidation and self-review [^issue-466-revalidation] | 未追跡 |
+| [2026-09-14-issue-467-jsonl-progress-review.md](../../work/reports/2026-09-14-issue-467-jsonl-progress-review.md) | Issue 467 JSONL progress implementation and review [^issue-467-review] | 未追跡 |
+| [2026-09-14-issue-480-source-encoding-review.md](../../work/reports/2026-09-14-issue-480-source-encoding-review.md) | Issue #480: source encoding review [^issue-480-report-index] | 追跡済み |
+| [2026-09-14-issue-476-symbol-diagnostics-review.md](../../work/reports/2026-09-14-issue-476-symbol-diagnostics-review.md) | Issue #476: symbol diagnostics review [^issue-476-report-index] | 未追跡 |
+| [2026-09-25-issue-598-prepared-namespace.md](../../work/reports/2026-09-25-issue-598-prepared-namespace.md) | Prepared namespace verification and review (#598) [^issue-598-report] | 追跡済み |
+| [2026-09-14-issue-453-scoped-discovery.md](../../work/reports/2026-09-14-issue-453-scoped-discovery.md) | Issue 453 scoped discovery report [^issue-453-report] | 未追跡 |
+| [2026-09-14-issue-475-range-normalization.md](../../work/reports/2026-09-14-issue-475-range-normalization.md) | Issue 475 range normalization report [^issue-475-report] | 未追跡 |
+| [2026-09-14-issue-474-selector-index.md](../../work/reports/2026-09-14-issue-474-selector-index.md) | Issue 474 explicit selector index report [^issue-474-report] | 未追跡 |
+| [2026-09-11-issue-460-progress-result-audit.md](../../work/reports/2026-09-11-issue-460-progress-result-audit.md) | Progress result validation audit (issue 460) [^issue-460-audit] | **未追跡** |
+| [2026-09-11-progress-input-lean.md](../../work/reports/2026-09-11-progress-input-lean.md) | Progress input summary coherence (#483) [^doc-001] | 追跡済み |
+| [selection.md](../../work/reports/2026-09-11-boundary-contract-audit/selection.md) | 対象選択・plan/verify・入力所有権の監査 [^doc-002] | **未追跡** |
+| [runtime.md](../../work/reports/2026-09-11-boundary-contract-audit/runtime.md) | Runtime boundary, concurrency, lifecycle, and CI audit [^doc-003] | **未追跡** |
+| [report-session.md](../../work/reports/2026-09-11-boundary-contract-audit/report-session.md) | Report / progress / session contract audit [^doc-004] | **未追跡** |
+| [lean-application.md](../../work/reports/2026-09-11-boundary-contract-audit/lean-application.md) | Leanの活用方針と既存資産の再確認 [^doc-005] | **未追跡** |
+| [analyzer.md](../../work/reports/2026-09-11-boundary-contract-audit/analyzer.md) | Analyzer boundary and cross-feature coverage audit [^doc-006] | **未追跡** |
+| [README.md](../../work/reports/2026-09-11-boundary-contract-audit/README.md) | 境界条件・機能間の整合性・入力規模の監査 [^doc-007] | **未追跡** |
+| [2026-09-09-issue-447-fingerprint-memory.md](../../work/reports/2026-09-09-issue-447-fingerprint-memory.md) | Issue #447 fingerprint input memory report [^doc-008] | 追跡済み |
+| [2026-09-09-issue-446-line-ranking.md](../../work/reports/2026-09-09-issue-446-line-ranking.md) | Issue #446: explicit-line ranking index [^doc-009] | 追跡済み |
+| [2026-09-09-issue-445-nullable-syntax.md](../../work/reports/2026-09-09-issue-445-nullable-syntax.md) | Issue #445 nullable annotation syntax repair [^doc-010] | 追跡済み |
+| [2026-09-09-issue-442-candidate-spool.md](../../work/reports/2026-09-09-issue-442-candidate-spool.md) | Issue #442 candidate spool write report [^doc-011] | 追跡済み |
+| [2026-09-09-issue-441-structural-syntax.md](../../work/reports/2026-09-09-issue-441-structural-syntax.md) | Issue #441 structural syntax repair [^doc-012] | 追跡済み |
+| [2026-09-09-issue-438-ranking-index.md](../../work/reports/2026-09-09-issue-438-ranking-index.md) | Issue #438 ranking index [^doc-013] | 追跡済み |
+| [2026-09-09-issue-437-git-targets.md](../../work/reports/2026-09-09-issue-437-git-targets.md) | Issue #437 implementation report [^doc-014] | 追跡済み |
+| [2026-09-08-python-operator-coverage.md](../../work/reports/2026-09-08-python-operator-coverage.md) | Python operator coverage delivery report [^doc-015] | 追跡済み |
+| [2026-09-08-issue-433-diverse-selection.md](../../work/reports/2026-09-08-issue-433-diverse-selection.md) | Issue #433: diverse selection report [^doc-016] | 追跡済み |
+| [2026-09-08-issue-432-progress-memory.md](../../work/reports/2026-09-08-issue-432-progress-memory.md) | Issue #432: Progress history memory report [^doc-017] | 追跡済み |
+| [2026-09-08-issue-431-class-comprehensions.md](../../work/reports/2026-09-08-issue-431-class-comprehensions.md) | Issue #431 class comprehension lookup scopes [^doc-018] | 追跡済み |
+| [2026-09-08-issue-369-lean-ci-audit.md](../../work/reports/2026-09-08-issue-369-lean-ci-audit.md) | Issue #369: Lean CI audit [^doc-019] | 追跡済み |
+| [2026-09-08-issue-350-resume-limit-compatibility.md](../../work/reports/2026-09-08-issue-350-resume-limit-compatibility.md) | Issue #350: resume-compatible operational limits [^doc-020] | 追跡済み |
+| [2026-09-08-issue-342-resource-waits.md](../../work/reports/2026-09-08-issue-342-resource-waits.md) | Resource wait isolation verification (#342) [^doc-021] | 追跡済み |
+| [2026-09-08-issue-342-resource-audit.md](../../work/reports/2026-09-08-issue-342-resource-audit.md) | Resource cleanup correspondence worksheet [^doc-022] | 追跡済み |
+| [2026-09-08-issue-342-linux.md](../../work/reports/2026-09-08-issue-342-linux.md) | Issue #342 Linux resource waits [^doc-023] | 追跡済み |
+| [2026-09-08-issue-335-report-shutdown.md](../../work/reports/2026-09-08-issue-335-report-shutdown.md) | Issue #335: owned report delivery [^doc-024] | 追跡済み |
+| [2026-09-07-python-operator-contracts.md](../../work/reports/2026-09-07-python-operator-contracts.md) | Python semantics and Rust mutation operators [^doc-025] | **未追跡** |
+| [2026-09-07-issue-368-probe-errors.md](../../work/reports/2026-09-07-issue-368-probe-errors.md) | Issue #368: preserve repository probe failures [^doc-026] | 追跡済み |
+| [2026-09-07-issue-367-history-paths.md](../../work/reports/2026-09-07-issue-367-history-paths.md) | Issue #367: preserve recent Git paths [^doc-027] | 追跡済み |
+| [2026-09-07-issue-364-verify-discovery.md](../../work/reports/2026-09-07-issue-364-verify-discovery.md) | Issue #364: candidate-scoped verification discovery [^doc-028] | 追跡済み |
+| [2026-09-07-issue-363-session-ownership.md](../../work/reports/2026-09-07-issue-363-session-ownership.md) | Issue #363: session result ownership [^doc-029] | 追跡済み |
+| [2026-09-07-issue-362-comparable-score.md](../../work/reports/2026-09-07-issue-362-comparable-score.md) | Issue 362 comparable score report [^doc-030] | 追跡済み |
+| [2026-09-07-issue-361-operator-help.md](../../work/reports/2026-09-07-issue-361-operator-help.md) | Issue #361: mutation operator help on applicable commands [^doc-031] | 追跡済み |
+| [2026-09-07-issue-360-line-validation.md](../../work/reports/2026-09-07-issue-360-line-validation.md) | Issue #360: validate CLI line selections [^doc-032] | 追跡済み |
+| [2026-09-07-issue-359-empty-verification.md](../../work/reports/2026-09-07-issue-359-empty-verification.md) | Issue #359: reject empty top-N verification [^doc-033] | 追跡済み |
+| [2026-09-07-issue-356-worker-exists.md](../../work/reports/2026-09-07-issue-356-worker-exists.md) | Issue #356: worker existence below a missing parent [^doc-034] | 追跡済み |
+| [2026-09-07-issue-355-reset-io.md](../../work/reports/2026-09-07-issue-355-reset-io.md) | Issue #355: avoid reads of size-mismatched worker files [^doc-035] | 追跡済み |
+| [2026-09-07-issue-354-manifest-fingerprint.md](../../work/reports/2026-09-07-issue-354-manifest-fingerprint.md) | Issue #354: manifest-backed run fingerprints [^doc-036] | 追跡済み |
+| [2026-09-07-issue-353-preflight-read-analysis.md](../../work/reports/2026-09-07-issue-353-preflight-read-analysis.md) | Issue #353: preflight source-read optimization [^doc-037] | 追跡済み |
+| [2026-09-07-issue-351-worker-timing.md](../../work/reports/2026-09-07-issue-351-worker-timing.md) | Worker timing validation (#351) [^doc-038] | 追跡済み |
+| [2026-09-07-issue-349-config-json.md](../../work/reports/2026-09-07-issue-349-config-json.md) | Issue #349: canonical normalized-config enum JSON [^doc-039] | 追跡済み |
+| [2026-09-07-issue-348-portable-paths.md](../../work/reports/2026-09-07-issue-348-portable-paths.md) | Issue #348: portable path colon boundaries [^doc-040] | 追跡済み |
+| [2026-09-07-issue-347-selector-consistency.md](../../work/reports/2026-09-07-issue-347-selector-consistency.md) | Issue #347: consistent sub-file target selectors [^doc-041] | 追跡済み |
+| [2026-09-07-issue-346-source-offsets.md](../../work/reports/2026-09-07-issue-346-source-offsets.md) | Candidate source length validation (#346) [^doc-042] | 追跡済み |
+| [2026-09-07-issue-343-subpage-memory.md](../../work/reports/2026-09-07-issue-343-subpage-memory.md) | Issue #343: reject subpage cgroup memory limits [^doc-043] | 追跡済み |
+| [2026-09-07-issue-341-pidfd-cleanup.md](../../work/reports/2026-09-07-issue-341-pidfd-cleanup.md) | Issue #341: pidfd-safe cgroup cleanup fallback [^doc-044] | 追跡済み |
+| [2026-09-07-issue-336-active-candidates.md](../../work/reports/2026-09-07-issue-336-active-candidates.md) | Remove write-only candidate bookkeeping (#336) [^doc-045] | 追跡済み |
+| [2026-09-07-issue-328-operator-gaps.md](../../work/reports/2026-09-07-issue-328-operator-gaps.md) | Issue #328: augmented assignment and match boolean operator gaps [^doc-046] | 追跡済み |
+| [2026-09-07-issue-327-except-star.md](../../work/reports/2026-09-07-issue-327-except-star.md) | Issue #327: Safe Exception Pairs for `except*` [^doc-047] | 追跡済み |
+| [2026-09-04-issue-357-cleanup-capability-audit.md](../../work/reports/2026-09-04-issue-357-cleanup-capability-audit.md) | Issue #357 capability-bound cleanup audit [^doc-048] | 追跡済み |
+| [2026-08-17-issue-334-timeout-limit-audit.md](../../work/reports/2026-08-17-issue-334-timeout-limit-audit.md) | Lean timeout-limit audit report [^doc-049] | 追跡済み |
+| [2026-08-17-issue-330-cleaning-stop-guard-oracle.md](../../work/reports/2026-08-17-issue-330-cleaning-stop-guard-oracle.md) | Issue #330: Cleaning stop-event oracle report [^doc-050] | 追跡済み |
+| [2026-08-15-lean-output-retention-audit.md](../../work/reports/2026-08-15-lean-output-retention-audit.md) | Bounded process-output retention Lean audit [^doc-051] | 追跡済み |
+| [2026-08-15-lean-mutation-score-exit-policy-audit.md](../../work/reports/2026-08-15-lean-mutation-score-exit-policy-audit.md) | Mutation score and exit policy Lean audit [^doc-052] | 追跡済み |
+| [2026-08-15-lean-changed-target-composition-audit.md](../../work/reports/2026-08-15-lean-changed-target-composition-audit.md) | Changed-target range composition Lean audit [^doc-053] | 追跡済み |
+| [2026-08-15-lean-byte-span-preservation-audit.md](../../work/reports/2026-08-15-lean-byte-span-preservation-audit.md) | Mutation byte-span preservation Lean audit [^doc-054] | 追跡済み |
+| [2026-08-14-lean-multi-handler-joins-audit.md](../../work/reports/2026-08-14-lean-multi-handler-joins-audit.md) | Lean Multiple Handler Join Audit [^doc-055] | 追跡済み |
+| [2026-08-14-lean-except-star-flow-audit.md](../../work/reports/2026-08-14-lean-except-star-flow-audit.md) | Lean `except*` Binding-Flow Audit [^doc-056] | 追跡済み |
+| [2026-08-14-lean-compound-pattern-guards-audit.md](../../work/reports/2026-08-14-lean-compound-pattern-guards-audit.md) | Lean Compound Pattern and Guard Audit [^doc-057] | 追跡済み |
+| [2026-08-14-lean-bounded-candidate-discovery-audit.md](../../work/reports/2026-08-14-lean-bounded-candidate-discovery-audit.md) | Bounded candidate discovery Lean audit [^doc-058] | 追跡済み |
+| [2026-08-13-lean-report-sequence-audit.md](../../work/reports/2026-08-13-lean-report-sequence-audit.md) | Lean report-sequence correspondence audit [^doc-059] | 追跡済み |
+| [2026-08-13-lean-nested-try-finally-flow-audit.md](../../work/reports/2026-08-13-lean-nested-try-finally-flow-audit.md) | Nested `try` / `finally` Binding-Flow Lean Audit [^doc-060] | 追跡済み |
+| [2026-08-13-lean-nested-match-exits-audit.md](../../work/reports/2026-08-13-lean-nested-match-exits-audit.md) | Lean Nested Match Exit Correspondence Audit [^doc-061] | 追跡済み |
+| [2026-08-12-lean-top-budget-projection-audit.md](../../work/reports/2026-08-12-lean-top-budget-projection-audit.md) | Lean top-budget projection audit report [^doc-062] | 追跡済み |
+| [2026-08-12-lean-progress-decision-audit.md](../../work/reports/2026-08-12-lean-progress-decision-audit.md) | Lean progress decision audit [^doc-063] | 追跡済み |
+| [2026-08-11-lean-schema-migration-concurrency-audit.md](../../work/reports/2026-08-11-lean-schema-migration-concurrency-audit.md) | Lean schema migration concurrency audit report [^doc-064] | 追跡済み |
+| [2026-08-11-lean-exception-match-binding-correspondence-audit.md](../../work/reports/2026-08-11-lean-exception-match-binding-correspondence-audit.md) | Lean Exception and Match Binding Correspondence Audit [^doc-065] | 追跡済み |
+| [2026-08-11-lean-candidate-ranking-audit.md](../../work/reports/2026-08-11-lean-candidate-ranking-audit.md) | Lean candidate ranking and top-selection audit report [^doc-066] | 追跡済み |
+| [2026-08-11-lean-binding-flow-join-audit.md](../../work/reports/2026-08-11-lean-binding-flow-join-audit.md) | Lean Binding-Flow Join Audit Report [^doc-067] | 追跡済み |
+| [2026-08-11-lean-annotation-scope-correspondence-audit.md](../../work/reports/2026-08-11-lean-annotation-scope-correspondence-audit.md) | Lean Annotation-Scope Correspondence Audit Report [^doc-068] | 追跡済み |
+| [2026-08-10-lean-result-lifecycle-audit.md](../../work/reports/2026-08-10-lean-result-lifecycle-audit.md) | Lean Result Lifecycle Consistency Audit [^doc-069] | 追跡済み |
+| [2026-08-09-shutdown-orchestration-coverage-worksheet.md](../../work/reports/2026-08-09-shutdown-orchestration-coverage-worksheet.md) | Shutdown Orchestration Coverage Worksheet [^doc-070] | 追跡済み |
+| [2026-08-09-lean-workspace-lifecycle-audit.md](../../work/reports/2026-08-09-lean-workspace-lifecycle-audit.md) | Lean workspace lifecycle audit report [^doc-071] | 追跡済み |
+| [2026-08-09-lean-state-machine-oracle.md](../../work/reports/2026-08-09-lean-state-machine-oracle.md) | Lean State-Machine Oracle Investigation Report [^doc-072] | 追跡済み |
+| [2026-08-09-lean-state-machine-counterexamples.md](../../work/reports/2026-08-09-lean-state-machine-counterexamples.md) | Lean State-Machine Counterexample Ledger [^doc-073] | 追跡済み |
+| [2026-08-09-lean-shutdown-orchestration-audit.md](../../work/reports/2026-08-09-lean-shutdown-orchestration-audit.md) | Lean Shutdown Orchestration Audit Report [^doc-074] | 追跡済み |
+| [2026-08-09-lean-session-recovery-counterexamples.md](../../work/reports/2026-08-09-lean-session-recovery-counterexamples.md) | Lean Session Recovery Counterexample Ledger [^doc-075] | 追跡済み |
+| [2026-08-09-lean-session-recovery-audit.md](../../work/reports/2026-08-09-lean-session-recovery-audit.md) | Lean Session Persistence, Recovery, and Ownership Audit Report [^doc-076] | 追跡済み |
+| [2026-08-09-lean-budget-cleanup-audit.md](../../work/reports/2026-08-09-lean-budget-cleanup-audit.md) | Lean Budget and Cleanup Formal Audit Report [^doc-077] | 追跡済み |
+| [2026-08-05-issue-129-line-offsets.md](../../work/reports/2026-08-05-issue-129-line-offsets.md) | Issue 129: Analyzer line-offset performance report [^doc-078] | 追跡済み |
+| [2026-08-05-issue-128-worker-materialization.md](../../work/reports/2026-08-05-issue-128-worker-materialization.md) | Issue #128: Worker Materialization I/O [^doc-079] | 追跡済み |
+| [2026-08-05-issue-126-async-io.md](../../work/reports/2026-08-05-issue-126-async-io.md) | Issue #126: Async Filesystem Effect Dispatch [^doc-080] | 追跡済み |
+| [2026-08-05-issue-125-dirty-reset.md](../../work/reports/2026-08-05-issue-125-dirty-reset.md) | Issue #125: Single-Pass Workspace Reset [^doc-081] | 追跡済み |
+| [2026-08-05-issue-124-original-verification.md](../../work/reports/2026-08-05-issue-124-original-verification.md) | Issue #124: Original Verification Performance [^doc-082] | 追跡済み |
+| [2026-08-04-windows-real-pid-reuse-feasibility.md](../../work/reports/2026-08-04-windows-real-pid-reuse-feasibility.md) | Windows Real PID Reuse Feasibility Report [^doc-083] | 追跡済み |
+| [2026-08-03-test-issue-consolidation-audit.md](../../work/reports/2026-08-03-test-issue-consolidation-audit.md) | Test-Issue Consolidation Acceptance-Coverage Audit [^doc-084] | 追跡済み |
+| [2026-07-31-issue-triage.md](../../work/reports/2026-07-31-issue-triage.md) | Claude Code Fable5 Issue Triage [^doc-085] | 追跡済み |
+| [2026-07-26-progress-stall-adjacency.md](../../work/reports/2026-07-26-progress-stall-adjacency.md) | Progress Stall Adjacency Implementation Report [^doc-086] | 追跡済み |
+| [report.md](../../work/audits/2026-07-rust-codebase/report.md) | Final Rust Codebase Audit Report [^doc-087] | 追跡済み |
+| [issues.md](../../work/audits/2026-07-rust-codebase/issues.md) | Issue Map [^doc-088] | 追跡済み |
+| [findings.md](../../work/audits/2026-07-rust-codebase/findings.md) | Findings Ledger [^doc-089] | 追跡済み |
+| [coverage.md](../../work/audits/2026-07-rust-codebase/coverage.md) | Coverage Matrix [^doc-090] | 追跡済み |
+| [README.md](../../work/audits/2026-07-rust-codebase/README.md) | Rust Codebase Audit — July 2026 [^doc-091] | 追跡済み |
+
+[^doc-001]: [2026-09-11-progress-input-lean.md](../../work/reports/2026-09-11-progress-input-lean.md)。
+[^doc-002]: [selection.md](../../work/reports/2026-09-11-boundary-contract-audit/selection.md)。
+[^doc-003]: [runtime.md](../../work/reports/2026-09-11-boundary-contract-audit/runtime.md)。
+[^doc-004]: [report-session.md](../../work/reports/2026-09-11-boundary-contract-audit/report-session.md)。
+[^doc-005]: [lean-application.md](../../work/reports/2026-09-11-boundary-contract-audit/lean-application.md)。
+[^doc-006]: [analyzer.md](../../work/reports/2026-09-11-boundary-contract-audit/analyzer.md)。
+[^doc-007]: [README.md](../../work/reports/2026-09-11-boundary-contract-audit/README.md)。
+[^doc-008]: [2026-09-09-issue-447-fingerprint-memory.md](../../work/reports/2026-09-09-issue-447-fingerprint-memory.md)。
+[^doc-009]: [2026-09-09-issue-446-line-ranking.md](../../work/reports/2026-09-09-issue-446-line-ranking.md)。
+[^doc-010]: [2026-09-09-issue-445-nullable-syntax.md](../../work/reports/2026-09-09-issue-445-nullable-syntax.md)。
+[^doc-011]: [2026-09-09-issue-442-candidate-spool.md](../../work/reports/2026-09-09-issue-442-candidate-spool.md)。
+[^doc-012]: [2026-09-09-issue-441-structural-syntax.md](../../work/reports/2026-09-09-issue-441-structural-syntax.md)。
+[^doc-013]: [2026-09-09-issue-438-ranking-index.md](../../work/reports/2026-09-09-issue-438-ranking-index.md)。
+[^doc-014]: [2026-09-09-issue-437-git-targets.md](../../work/reports/2026-09-09-issue-437-git-targets.md)。
+[^doc-015]: [2026-09-08-python-operator-coverage.md](../../work/reports/2026-09-08-python-operator-coverage.md)。
+[^doc-016]: [2026-09-08-issue-433-diverse-selection.md](../../work/reports/2026-09-08-issue-433-diverse-selection.md)。
+[^doc-017]: [2026-09-08-issue-432-progress-memory.md](../../work/reports/2026-09-08-issue-432-progress-memory.md)。
+[^doc-018]: [2026-09-08-issue-431-class-comprehensions.md](../../work/reports/2026-09-08-issue-431-class-comprehensions.md)。
+[^doc-019]: [2026-09-08-issue-369-lean-ci-audit.md](../../work/reports/2026-09-08-issue-369-lean-ci-audit.md)。
+[^doc-020]: [2026-09-08-issue-350-resume-limit-compatibility.md](../../work/reports/2026-09-08-issue-350-resume-limit-compatibility.md)。
+[^doc-021]: [2026-09-08-issue-342-resource-waits.md](../../work/reports/2026-09-08-issue-342-resource-waits.md)。
+[^doc-022]: [2026-09-08-issue-342-resource-audit.md](../../work/reports/2026-09-08-issue-342-resource-audit.md)。
+[^doc-023]: [2026-09-08-issue-342-linux.md](../../work/reports/2026-09-08-issue-342-linux.md)。
+[^doc-024]: [2026-09-08-issue-335-report-shutdown.md](../../work/reports/2026-09-08-issue-335-report-shutdown.md)。
+[^doc-025]: [2026-09-07-python-operator-contracts.md](../../work/reports/2026-09-07-python-operator-contracts.md)。
+[^doc-026]: [2026-09-07-issue-368-probe-errors.md](../../work/reports/2026-09-07-issue-368-probe-errors.md)。
+[^doc-027]: [2026-09-07-issue-367-history-paths.md](../../work/reports/2026-09-07-issue-367-history-paths.md)。
+[^doc-028]: [2026-09-07-issue-364-verify-discovery.md](../../work/reports/2026-09-07-issue-364-verify-discovery.md)。
+[^doc-029]: [2026-09-07-issue-363-session-ownership.md](../../work/reports/2026-09-07-issue-363-session-ownership.md)。
+[^doc-030]: [2026-09-07-issue-362-comparable-score.md](../../work/reports/2026-09-07-issue-362-comparable-score.md)。
+[^doc-031]: [2026-09-07-issue-361-operator-help.md](../../work/reports/2026-09-07-issue-361-operator-help.md)。
+[^doc-032]: [2026-09-07-issue-360-line-validation.md](../../work/reports/2026-09-07-issue-360-line-validation.md)。
+[^doc-033]: [2026-09-07-issue-359-empty-verification.md](../../work/reports/2026-09-07-issue-359-empty-verification.md)。
+[^doc-034]: [2026-09-07-issue-356-worker-exists.md](../../work/reports/2026-09-07-issue-356-worker-exists.md)。
+[^doc-035]: [2026-09-07-issue-355-reset-io.md](../../work/reports/2026-09-07-issue-355-reset-io.md)。
+[^doc-036]: [2026-09-07-issue-354-manifest-fingerprint.md](../../work/reports/2026-09-07-issue-354-manifest-fingerprint.md)。
+[^doc-037]: [2026-09-07-issue-353-preflight-read-analysis.md](../../work/reports/2026-09-07-issue-353-preflight-read-analysis.md)。
+[^doc-038]: [2026-09-07-issue-351-worker-timing.md](../../work/reports/2026-09-07-issue-351-worker-timing.md)。
+[^doc-039]: [2026-09-07-issue-349-config-json.md](../../work/reports/2026-09-07-issue-349-config-json.md)。
+[^doc-040]: [2026-09-07-issue-348-portable-paths.md](../../work/reports/2026-09-07-issue-348-portable-paths.md)。
+[^doc-041]: [2026-09-07-issue-347-selector-consistency.md](../../work/reports/2026-09-07-issue-347-selector-consistency.md)。
+[^doc-042]: [2026-09-07-issue-346-source-offsets.md](../../work/reports/2026-09-07-issue-346-source-offsets.md)。
+[^doc-043]: [2026-09-07-issue-343-subpage-memory.md](../../work/reports/2026-09-07-issue-343-subpage-memory.md)。
+[^doc-044]: [2026-09-07-issue-341-pidfd-cleanup.md](../../work/reports/2026-09-07-issue-341-pidfd-cleanup.md)。
+[^doc-045]: [2026-09-07-issue-336-active-candidates.md](../../work/reports/2026-09-07-issue-336-active-candidates.md)。
+[^doc-046]: [2026-09-07-issue-328-operator-gaps.md](../../work/reports/2026-09-07-issue-328-operator-gaps.md)。
+[^doc-047]: [2026-09-07-issue-327-except-star.md](../../work/reports/2026-09-07-issue-327-except-star.md)。
+[^doc-048]: [2026-09-04-issue-357-cleanup-capability-audit.md](../../work/reports/2026-09-04-issue-357-cleanup-capability-audit.md)。
+[^doc-049]: [2026-08-17-issue-334-timeout-limit-audit.md](../../work/reports/2026-08-17-issue-334-timeout-limit-audit.md)。
+[^doc-050]: [2026-08-17-issue-330-cleaning-stop-guard-oracle.md](../../work/reports/2026-08-17-issue-330-cleaning-stop-guard-oracle.md)。
+[^doc-051]: [2026-08-15-lean-output-retention-audit.md](../../work/reports/2026-08-15-lean-output-retention-audit.md)。
+[^doc-052]: [2026-08-15-lean-mutation-score-exit-policy-audit.md](../../work/reports/2026-08-15-lean-mutation-score-exit-policy-audit.md)。
+[^doc-053]: [2026-08-15-lean-changed-target-composition-audit.md](../../work/reports/2026-08-15-lean-changed-target-composition-audit.md)。
+[^doc-054]: [2026-08-15-lean-byte-span-preservation-audit.md](../../work/reports/2026-08-15-lean-byte-span-preservation-audit.md)。
+[^doc-055]: [2026-08-14-lean-multi-handler-joins-audit.md](../../work/reports/2026-08-14-lean-multi-handler-joins-audit.md)。
+[^doc-056]: [2026-08-14-lean-except-star-flow-audit.md](../../work/reports/2026-08-14-lean-except-star-flow-audit.md)。
+[^doc-057]: [2026-08-14-lean-compound-pattern-guards-audit.md](../../work/reports/2026-08-14-lean-compound-pattern-guards-audit.md)。
+[^doc-058]: [2026-08-14-lean-bounded-candidate-discovery-audit.md](../../work/reports/2026-08-14-lean-bounded-candidate-discovery-audit.md)。
+[^doc-059]: [2026-08-13-lean-report-sequence-audit.md](../../work/reports/2026-08-13-lean-report-sequence-audit.md)。
+[^doc-060]: [2026-08-13-lean-nested-try-finally-flow-audit.md](../../work/reports/2026-08-13-lean-nested-try-finally-flow-audit.md)。
+[^doc-061]: [2026-08-13-lean-nested-match-exits-audit.md](../../work/reports/2026-08-13-lean-nested-match-exits-audit.md)。
+[^doc-062]: [2026-08-12-lean-top-budget-projection-audit.md](../../work/reports/2026-08-12-lean-top-budget-projection-audit.md)。
+[^doc-063]: [2026-08-12-lean-progress-decision-audit.md](../../work/reports/2026-08-12-lean-progress-decision-audit.md)。
+[^doc-064]: [2026-08-11-lean-schema-migration-concurrency-audit.md](../../work/reports/2026-08-11-lean-schema-migration-concurrency-audit.md)。
+[^doc-065]: [2026-08-11-lean-exception-match-binding-correspondence-audit.md](../../work/reports/2026-08-11-lean-exception-match-binding-correspondence-audit.md)。
+[^doc-066]: [2026-08-11-lean-candidate-ranking-audit.md](../../work/reports/2026-08-11-lean-candidate-ranking-audit.md)。
+[^doc-067]: [2026-08-11-lean-binding-flow-join-audit.md](../../work/reports/2026-08-11-lean-binding-flow-join-audit.md)。
+[^doc-068]: [2026-08-11-lean-annotation-scope-correspondence-audit.md](../../work/reports/2026-08-11-lean-annotation-scope-correspondence-audit.md)。
+[^doc-069]: [2026-08-10-lean-result-lifecycle-audit.md](../../work/reports/2026-08-10-lean-result-lifecycle-audit.md)。
+[^doc-070]: [2026-08-09-shutdown-orchestration-coverage-worksheet.md](../../work/reports/2026-08-09-shutdown-orchestration-coverage-worksheet.md)。
+[^doc-071]: [2026-08-09-lean-workspace-lifecycle-audit.md](../../work/reports/2026-08-09-lean-workspace-lifecycle-audit.md)。
+[^doc-072]: [2026-08-09-lean-state-machine-oracle.md](../../work/reports/2026-08-09-lean-state-machine-oracle.md)。
+[^doc-073]: [2026-08-09-lean-state-machine-counterexamples.md](../../work/reports/2026-08-09-lean-state-machine-counterexamples.md)。
+[^doc-074]: [2026-08-09-lean-shutdown-orchestration-audit.md](../../work/reports/2026-08-09-lean-shutdown-orchestration-audit.md)。
+[^doc-075]: [2026-08-09-lean-session-recovery-counterexamples.md](../../work/reports/2026-08-09-lean-session-recovery-counterexamples.md)。
+[^doc-076]: [2026-08-09-lean-session-recovery-audit.md](../../work/reports/2026-08-09-lean-session-recovery-audit.md)。
+[^doc-077]: [2026-08-09-lean-budget-cleanup-audit.md](../../work/reports/2026-08-09-lean-budget-cleanup-audit.md)。
+[^doc-078]: [2026-08-05-issue-129-line-offsets.md](../../work/reports/2026-08-05-issue-129-line-offsets.md)。
+[^doc-079]: [2026-08-05-issue-128-worker-materialization.md](../../work/reports/2026-08-05-issue-128-worker-materialization.md)。
+[^doc-080]: [2026-08-05-issue-126-async-io.md](../../work/reports/2026-08-05-issue-126-async-io.md)。
+[^doc-081]: [2026-08-05-issue-125-dirty-reset.md](../../work/reports/2026-08-05-issue-125-dirty-reset.md)。
+[^doc-082]: [2026-08-05-issue-124-original-verification.md](../../work/reports/2026-08-05-issue-124-original-verification.md)。
+[^doc-083]: [2026-08-04-windows-real-pid-reuse-feasibility.md](../../work/reports/2026-08-04-windows-real-pid-reuse-feasibility.md)。
+[^doc-084]: [2026-08-03-test-issue-consolidation-audit.md](../../work/reports/2026-08-03-test-issue-consolidation-audit.md)。
+[^doc-085]: [2026-07-31-issue-triage.md](../../work/reports/2026-07-31-issue-triage.md)。
+[^doc-086]: [2026-07-26-progress-stall-adjacency.md](../../work/reports/2026-07-26-progress-stall-adjacency.md)。
+[^doc-087]: [report.md](../../work/audits/2026-07-rust-codebase/report.md)。
+[^doc-088]: [issues.md](../../work/audits/2026-07-rust-codebase/issues.md)。
+[^doc-089]: [findings.md](../../work/audits/2026-07-rust-codebase/findings.md)。
+[^doc-090]: [coverage.md](../../work/audits/2026-07-rust-codebase/coverage.md)。
+
+[^issue-598-report]: [Prepared namespace verification and review (#598)](../../work/reports/2026-09-25-issue-598-prepared-namespace.md)。
+
+[^issue-453-report]: [Issue 453 scoped discovery report](../../work/reports/2026-09-14-issue-453-scoped-discovery.md)。
+[^doc-091]: [README.md](../../work/audits/2026-07-rust-codebase/README.md)。
+
+[^issue-475-report]: [Issue 475 range normalization report](../../work/reports/2026-09-14-issue-475-range-normalization.md)。
+
+[^issue-474-report]: [Issue 474 explicit selector index report](../../work/reports/2026-09-14-issue-474-selector-index.md)。
+
+[^issue-460-audit]: [2026-09-11-issue-460-progress-result-audit.md](../../work/reports/2026-09-11-issue-460-progress-result-audit.md)。
+
+- [Issue #491 性能検証基盤](../../work/reports/2026-09-14-issue-491-performance-shapes-review.md) [^issue-491-review]
+
+[^issue-491-review]: [2026-09-14-issue-491-performance-shapes-review.md](../../work/reports/2026-09-14-issue-491-performance-shapes-review.md)。
+
+# 2026-09-14 の追加
+
+| 原文 | 内容 |
+| --- | --- |
+| [Issue #456: 候補検証の前処理共有と検証記録](../../work/reports/2026-09-14-issue-456-validation-context-review.md) | 操作回数、release計測、各工程の3回のセルフレビュー。[^issue-456-review] |
+| [Issue #600: Target membership review and measurements](../../work/reports/2026-09-25-issue-600-target-membership-review.md) | 操作回数、パス同値性、診断順と公開API/CLIの計測。[^issue-600-review] |
+
+[^issue-456-review]: [2026-09-14-issue-456-validation-context-review.md](../../work/reports/2026-09-14-issue-456-validation-context-review.md)。
+
+[^issue-600-review]: [Issue #600: Target membership review and measurements](../../work/reports/2026-09-25-issue-600-target-membership-review.md)。
+
+# 2026-09-14 統合時に補完した報告
+
+| 原文 | 内容 |
+| --- | --- |
+| [Issue #461 セルフレビュー記録](../../work/reports/2026-09-14-issue-461-self-review.md) | 実装、計数検査、release計測、各工程3回のレビュー。[^issue-461-merge-review] |
+| [Issue #470 セルフレビュー記録](../../work/reports/2026-09-14-issue-470-self-review.md) | 実装、計数検査、release計測、各工程3回のレビュー。[^issue-470-merge-review] |
+| [Issue #479 セルフレビュー記録](../../work/reports/2026-09-14-issue-479-self-review.md) | 実装、計数検査、release計測、各工程3回のレビュー。[^issue-479-merge-review] |
+| [Issue #482 セルフレビュー記録](../../work/reports/2026-09-14-issue-482-self-review.md) | 実装、計数検査、release計測、各工程3回のレビュー。[^issue-482-merge-review] |
+
+[^issue-461-merge-review]: [2026-09-14-issue-461-self-review.md](../../work/reports/2026-09-14-issue-461-self-review.md)。
+[^issue-470-merge-review]: [2026-09-14-issue-470-self-review.md](../../work/reports/2026-09-14-issue-470-self-review.md)。
+[^issue-479-merge-review]: [2026-09-14-issue-479-self-review.md](../../work/reports/2026-09-14-issue-479-self-review.md)。
+[^issue-482-merge-review]: [2026-09-14-issue-482-self-review.md](../../work/reports/2026-09-14-issue-482-self-review.md)。
+
+[^issue-491-operation-cost-review]: [2026-09-14-issue-491-operation-cost-review.md](../../work/reports/2026-09-14-issue-491-operation-cost-review.md)。
+
+[^issue-491-cost-correspondence-worksheet]: [2026-09-14-issue-491-cost-correspondence-worksheet.md](../../work/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md)。
+
+[^issue-491-input-axis-review]: [2026-09-14-issue-491-input-axis-review.md](../../work/reports/2026-09-14-issue-491-input-axis-review.md)。
+
+[^issue-491-rust-cost-review]: [2026-09-14-issue-491-rust-cost-review.md](../../work/reports/2026-09-14-issue-491-rust-cost-review.md)。
+[^issue-489-reports]: [2026-09-14-issue-489-valid-python-corpus.md](../../work/reports/2026-09-14-issue-489-valid-python-corpus.md)。
+
+[^issue-489-worksheet]: [2026-09-14-issue-489-correspondence-worksheet.md](../../work/reports/2026-09-14-issue-489-correspondence-worksheet.md)。
+## Issue #464 の検証
+
+[baselineログ出力のレビュー](../../work/reports/2026-09-14-issue-464-baseline-output-review.md):各工程3回のレビューと実CLI・出力制限・cleanup検証。[^issue-464-review]
+
+[^issue-464-review]: [原文](../../work/reports/2026-09-14-issue-464-baseline-output-review.md)。
+# Issue 454
+
+- [Issue 454 fixed-batch review](../../work/reports/2026-09-14-issue-454-fixed-batches-review.md) — 固定バッチ選択と確認範囲。[^issue-454-review]
+
+[^issue-454-review]: [Issue 454 fixed-batch review](../../work/reports/2026-09-14-issue-454-fixed-batches-review.md)。
+
+# Issue 599
+
+- [Issue 599: Verify preview review and verification](../../work/reports/2026-09-25-issue-599-verify-preview-review.md) — verifyの実行前previewと検証範囲。[^issue-599-review]
+
+[^issue-599-review]: [Issue 599: Verify preview review and verification](../../work/reports/2026-09-25-issue-599-verify-preview-review.md)。
+
+# Issue 458
+
+- [Issue 458 review record](../../work/reports/2026-09-14-issue-458-verify-metrics-review.md) — verifyのmetrics出力と確認範囲。[^issue-458-review]
+
+[^issue-458-review]: [Issue 458 review record](../../work/reports/2026-09-14-issue-458-verify-metrics-review.md)。
+[^issue-471-reports]: [2026-09-14-issue-471-negative-neighbors.md](../../work/reports/2026-09-14-issue-471-negative-neighbors.md)。
+[^issue-466-revalidation]: [Issue 466 retirement revalidation and self-review](../../work/reports/2026-09-14-issue-466-revalidation.md)。
+[^issue-467-review]: [2026-09-14-issue-467-jsonl-progress-review.md](../../work/reports/2026-09-14-issue-467-jsonl-progress-review.md)。
+
+- [Issue 490 boundary contracts](../../work/reports/2026-09-14-issue-490-boundary-contracts-review.md)。[^issue-490-review]
+
+[^issue-490-review]: [原文](../../work/reports/2026-09-14-issue-490-boundary-contracts-review.md)。出典版と SHA-256 は frontmatter に記録。
+[^issue-476-report-index]: [Issue #476: symbol diagnostics review](../../work/reports/2026-09-14-issue-476-symbol-diagnostics-review.md).
+
+[^issue-480-report-index]: [Issue #480: source encoding review](../../work/reports/2026-09-14-issue-480-source-encoding-review.md).
+
+
+[^issue-549-report]: [Issue #549: Slice tuple修正の検証](../../work/reports/2026-09-15-issue-549-slice-tuple.md)。
+
+# Issue #548
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Issue #548: Annotation builtin review and correspondence | [報告](../../work/reports/2026-09-15-issue-548-annotation-builtins-review.md) [^issue-548-report] |
+
+[^issue-548-report]: [Issue #548: Annotation builtin review and correspondence](../../work/reports/2026-09-15-issue-548-annotation-builtins-review.md)。
+
+[^issue-545]: [Issue #545: 暗黙例外と finally の検証記録](../../work/reports/2026-09-15-issue-545-implicit-finally-review.md)。
+
+# Issue #547
+
+- [2026-09-15-issue-547-self-review](../../work/reports/2026-09-15-issue-547-self-review.md) — 単一路のimport状態の受渡し。[^issue-547-review]
+
+[^issue-547-review]: [原文](../../work/reports/2026-09-15-issue-547-self-review.md)。
+
+[^issue-546-report]: [Issue #546: ループ転送再利用の自己レビュー](../../work/reports/2026-09-15-issue-546-loop-transfer-review.md)。
+
+# 2026年9月の監査原資料と統合検証
+
+ここに追加した資料は同じ変更でGit管理へ含める。元のログは修正前の対象版に対する観測であり、現在の検証先は[解析監査と回帰検証への反映](../audits/analysis-2026-09.md)を参照する。
+
+| 原文 | 見出し | 参照時点 |
+| --- | --- | --- |
+| [docs/development/work/audits/README.md](../../work/audits/README.md) | 監査資料 [^audit-archive-01] | 未追跡 |
+| [docs/development/work/audits/2026-09-14-additional/README.md](../../work/audits/2026-09-14-additional/README.md) | 追加監査: 型注釈の具体型名の解決 [^audit-archive-02] | 未追跡 |
+| [docs/development/work/audits/2026-09-14-additional/correspondence.md](../../work/audits/2026-09-14-additional/correspondence.md) | モデル化前の対応表 [^audit-archive-03] | 未追跡 |
+| [docs/development/work/audits/2026-09-14-additional/issue.md](../../work/audits/2026-09-14-additional/issue.md) | 確認した問題 [^audit-archive-04] | 未追跡 |
+| [docs/development/work/audits/2026-09-14-followup/README.md](../../work/audits/2026-09-14-followup/README.md) | 追加監査: plan / verify / progress [^audit-archive-05] | 未追跡 |
+| [docs/development/work/audits/2026-09-14-post-integration/README.md](../../work/audits/2026-09-14-post-integration/README.md) | 統合後のLean監査・性能調査 [^audit-archive-06] | 未追跡 |
+| [docs/development/work/audits/2026-09-14-post-integration/correspondence.md](../../work/audits/2026-09-14-post-integration/correspondence.md) | モデル化前の対応表 [^audit-archive-07] | 未追跡 |
+| [docs/development/work/audits/2026-09-14-post-integration/issue-flow-clones.md](../../work/audits/2026-09-14-post-integration/issue-flow-clones.md) | 確認した改善余地 [^audit-archive-08] | 未追跡 |
+| [docs/development/work/audits/2026-09-14-post-integration/issue-implicit-exception.md](../../work/audits/2026-09-14-post-integration/issue-implicit-exception.md) | 確認した問題 [^audit-archive-09] | 未追跡 |
+| [docs/development/work/audits/2026-09-14-post-integration/issue-loop-cost.md](../../work/audits/2026-09-14-post-integration/issue-loop-cost.md) | 確認した問題 [^audit-archive-10] | 未追跡 |
+| [docs/development/work/audits/2026-09-14-slice-tuples/README.md](../../work/audits/2026-09-14-slice-tuples/README.md) | 追加監査: 多次元スライスのtuple-to-list変換 [^audit-archive-11] | 未追跡 |
+| [docs/development/work/audits/2026-09-14-slice-tuples/correspondence.md](../../work/audits/2026-09-14-slice-tuples/correspondence.md) | モデル化前の対応表 [^audit-archive-12] | 未追跡 |
+| [docs/development/work/audits/2026-09-14-slice-tuples/issue.md](../../work/audits/2026-09-14-slice-tuples/issue.md) | 確認した問題 [^audit-archive-13] | 未追跡 |
+| [docs/development/work/reports/2026-09-15-issues-545-549-integration.md](../../work/reports/2026-09-15-issues-545-549-integration.md) | Issues #545–#549 統合検証（2026-09-15） [^audit-archive-14] | 未追跡 |
+
+[^audit-archive-01]: [監査資料](../../work/audits/README.md)。
+[^audit-archive-02]: [追加監査: 型注釈の具体型名の解決](../../work/audits/2026-09-14-additional/README.md)。
+[^audit-archive-03]: [モデル化前の対応表](../../work/audits/2026-09-14-additional/correspondence.md)。
+[^audit-archive-04]: [確認した問題](../../work/audits/2026-09-14-additional/issue.md)。
+[^audit-archive-05]: [追加監査: plan / verify / progress](../../work/audits/2026-09-14-followup/README.md)。
+[^audit-archive-06]: [統合後のLean監査・性能調査](../../work/audits/2026-09-14-post-integration/README.md)。
+[^audit-archive-07]: [モデル化前の対応表](../../work/audits/2026-09-14-post-integration/correspondence.md)。
+[^audit-archive-08]: [確認した改善余地](../../work/audits/2026-09-14-post-integration/issue-flow-clones.md)。
+[^audit-archive-09]: [確認した問題](../../work/audits/2026-09-14-post-integration/issue-implicit-exception.md)。
+[^audit-archive-10]: [確認した問題](../../work/audits/2026-09-14-post-integration/issue-loop-cost.md)。
+[^audit-archive-11]: [追加監査: 多次元スライスのtuple-to-list変換](../../work/audits/2026-09-14-slice-tuples/README.md)。
+[^audit-archive-12]: [モデル化前の対応表](../../work/audits/2026-09-14-slice-tuples/correspondence.md)。
+[^audit-archive-13]: [確認した問題](../../work/audits/2026-09-14-slice-tuples/issue.md)。
+[^audit-archive-14]: [Issues #545–#549 統合検証（2026-09-15）](../../work/reports/2026-09-15-issues-545-549-integration.md)。
+
+[^audit-promotion]: [監査コード・ケースの正式な検証への移行](../../work/reports/2026-09-15-audit-verification-promotion.md)。
+
+| 原文 | 内容 | 追跡状態 |
+| --- | --- | --- |
+| [docs/development/work/reports/2026-09-15-audit-verification-promotion.md](../../work/reports/2026-09-15-audit-verification-promotion.md) | 監査入力・定理・実行検証の正式テストへの移行 [^audit-promotion] | 未追跡 |
+
+## 2026-09-15: with/finally追加監査（対象5e631ef）
+
+同じHEADでの[遅延注釈・集合ABC追加監査](../../work/audits/2026-09-15-annotation-followup/README.md)は#558/#559を記録する。[対応表](../../work/audits/2026-09-15-annotation-followup/correspondence.md)、[遅延注釈Issue](../../work/audits/2026-09-15-annotation-followup/issue-deferred.md)、[集合ABC Issue](../../work/audits/2026-09-15-annotation-followup/issue-abc-set.md)も未追跡の原文として追加した。
+
+| 原文 | 内容 | 追跡状態 |
+| --- | --- | --- |
+| [報告](../../work/audits/2026-09-15-with-finally/README.md) | #556/#557、Lean証明、公開CLI、性能測定 | 未追跡 |
+| [対応表](../../work/audits/2026-09-15-with-finally/correspondence.md) | モデル化前の前提と観測の対応 | 未追跡 |
+| [不具合Issue本文](../../work/audits/2026-09-15-with-finally/issue-with.md) | withの例外抑制後のimport誤認 | 未追跡 |
+| [性能Issue本文](../../work/audits/2026-09-15-with-finally/issue-finally-performance.md) | 入れ子finallyの二重走査 | 未追跡 |
+
+## 2026-09-15: 評価順序と未選択methodの追加監査（対象5e631ef）
+
+#560/#561の資料を未追跡の原文として追加した。
+
+| 原文 | 追跡状態 |
+| --- | --- |
+| [報告](../../work/audits/2026-09-15-evaluation-order/README.md) | 未追跡 |
+| [対応表](../../work/audits/2026-09-15-evaluation-order/correspondence.md) | 未追跡 |
+| [評価順序Issue本文](../../work/audits/2026-09-15-evaluation-order/issue-order.md) | 未追跡 |
+| [確保量Issue本文](../../work/audits/2026-09-15-evaluation-order/issue-method-allocation.md) | 未追跡 |
+
+## 2026-09-15: 値なし注釈の候補精度（対象5e631ef）
+
+| 原文の先頭見出し | 原文 | 追跡状態 |
+| --- | --- | --- |
+| 追加監査: 値なし注釈と候補精度 | [README.md](../../work/audits/2026-09-15-declaration-only/README.md) [^declaration-only-report] | 未追跡 |
+| モデル化前の対応表 | [correspondence.md](../../work/audits/2026-09-15-declaration-only/correspondence.md) [^declaration-only-correspondence] | 未追跡 |
+| 改善したい挙動 | [issue.md](../../work/audits/2026-09-15-declaration-only/issue.md) [^declaration-only-issue] | 未追跡 |
+
+[^declaration-only-report]: [追加監査: 値なし注釈と候補精度](../../work/audits/2026-09-15-declaration-only/README.md)。
+[^declaration-only-correspondence]: [モデル化前の対応表](../../work/audits/2026-09-15-declaration-only/correspondence.md)。
+[^declaration-only-issue]: [改善したい挙動](../../work/audits/2026-09-15-declaration-only/issue.md)。
+
+## 2026-09-15: コピー方針とsession再開（対象5e631ef）
+
+| 原文の先頭見出し | 原文 | 追跡状態 |
+| --- | --- | --- |
+| 追加監査: コピー方針とsession再開 | [README.md](../../work/audits/2026-09-15-resume-copy/README.md) [^resume-copy-report] | 未追跡 |
+| モデル化前の対応表 | [correspondence.md](../../work/audits/2026-09-15-resume-copy/correspondence.md) [^resume-copy-correspondence] | 未追跡 |
+| 問題 | [issue.md](../../work/audits/2026-09-15-resume-copy/issue.md) [^resume-copy-issue] | 未追跡 |
+
+[^resume-copy-report]: [追加監査: コピー方針とsession再開](../../work/audits/2026-09-15-resume-copy/README.md)。
+[^resume-copy-correspondence]: [モデル化前の対応表](../../work/audits/2026-09-15-resume-copy/correspondence.md)。
+[^resume-copy-issue]: [問題](../../work/audits/2026-09-15-resume-copy/issue.md)。
+
+## 2026-09-15: nullable型変異の適用条件（対象5e631ef）
+
+| 原文の先頭見出し | 原文 | 追跡状態 |
+| --- | --- | --- |
+| 追加監査: nullable型変異の適用条件 | [README.md](../../work/audits/2026-09-15-nullable-gates/README.md) [^nullable-gates-report] | 未追跡 |
+| モデル化前の対応表 | [correspondence.md](../../work/audits/2026-09-15-nullable-gates/correspondence.md) [^nullable-gates-correspondence] | 未追跡 |
+| 問題 | [issue-name.md](../../work/audits/2026-09-15-nullable-gates/issue-name.md) [^nullable-gates-name] | 未追跡 |
+| 問題 | [issue-tuple.md](../../work/audits/2026-09-15-nullable-gates/issue-tuple.md) [^nullable-gates-tuple] | 未追跡 |
+
+[^nullable-gates-report]: [追加監査: nullable型変異の適用条件](../../work/audits/2026-09-15-nullable-gates/README.md)。
+[^nullable-gates-correspondence]: [モデル化前の対応表](../../work/audits/2026-09-15-nullable-gates/correspondence.md)。
+[^nullable-gates-name]: [問題](../../work/audits/2026-09-15-nullable-gates/issue-name.md)。
+[^nullable-gates-tuple]: [問題](../../work/audits/2026-09-15-nullable-gates/issue-tuple.md)。
+
+## 2026-09-15: 追加監査のLean統合
+
+6モデル・33定理・58入力の正式プロジェクトとCIへの組み込み、および実装との対応の限界を記録した。[^followup-lean-promotion]
+
+[^followup-lean-promotion]: [追加監査のLeanモデルを正式な検証へ組み込む](../../work/reports/2026-09-15-followup-lean-promotion.md)。
+
+# Issue #560
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Issue 560 review log | [原文](../../work/reports/2026-09-24-issue-560-review.md) [^issue-560-review] |
+
+[^issue-560-review]: [Issue 560 review log](../../work/reports/2026-09-24-issue-560-review.md)。
+
+## 2026-09-24: #558の遅延注釈の修正
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Issue #558 review and verification record | [レビューと検証結果](../../work/reports/2026-09-24-issue-558-review.md) [^issue-558-review] |
+
+[^issue-558-review]: [Issue #558 review and verification record](../../work/reports/2026-09-24-issue-558-review.md)。
+# Issue #564
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Issue 564 review log | [原文](../../work/reports/2026-09-24-issue-564-review.md) [^issue-564-review] |
+
+[^issue-564-review]: [Issue 564 review log](../../work/reports/2026-09-24-issue-564-review.md)。
+
+# Issue #561
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Issue #561 method replacement allocation results | [測定結果と再現手順](../../work/audits/2026-09-15-evaluation-order/issue-561-results.md) [^issue-561-results] |
+
+[^issue-561-results]: [Issue #561 method replacement allocation results](../../work/audits/2026-09-15-evaluation-order/issue-561-results.md)。
+
+[^proptest-boundaries-report]: [Proptest boundary coverage: review and evidence](../../work/reports/2026-09-26-proptest-boundaries.md)。
+
+
+## 2026-09-26: 実行中の進捗とtracing
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Tracing and terminal progress review | [レビューと検証結果](../../work/reports/2026-09-26-tracing-progress.md) [^tracing-progress-report] |
+
+[^tracing-progress-report]: [Tracing and terminal progress review](../../work/reports/2026-09-26-tracing-progress.md)。
+
+[^issue-692-exception-alias-lean-audit]: [2026-10-05-exception-alias-lean-audit.md](../../work/reports/2026-10-05-exception-alias-lean-audit.md)。
+
+[^issue-692-exception-hierarchy-design-recheck]: [2026-10-05-exception-hierarchy-design-recheck.md](../../work/reports/2026-10-05-exception-hierarchy-design-recheck.md)。
+
+[^issue-692-exception-hierarchy-design-review]: [2026-10-05-exception-hierarchy-design-review.md](../../work/reports/2026-10-05-exception-hierarchy-design-review.md)。
+
+[^issue-692-exception-hierarchy-lean-audit]: [2026-10-05-exception-hierarchy-lean-audit.md](../../work/reports/2026-10-05-exception-hierarchy-lean-audit.md)。
+
+[^issue-692-exception-scope-lean-audit]: [2026-10-05-exception-scope-lean-audit.md](../../work/reports/2026-10-05-exception-scope-lean-audit.md)。
+
+- Issue #696: [セルフレビューと検証結果](../../work/reports/issue-696/review.md)、[実パッケージ試行](../../work/reports/issue-696/project-trials.json)。
+
+- Issue #697: [整数隣接値の検証](../../work/reports/issue-697/review.md)。
+
+- Issue #698: [条件定数化の検証](../../work/reports/issue-698/review.md)。
+
+- Issue #699: [関数本体空化の検証](../../work/reports/issue-699/review.md)。
+
+- [Issue #700: Enum review](../../work/reports/issue-700/review.md) — 同値別名・束縛・文字列表現・元の識別子表記を検証。
+
+- [Issue #701: augmented assignment review](../../work/reports/issue-701/review.md) — 演算子トークン・集計の欠落・in-place 更新を検証。
+
+- [Issue #702: return tuple review](../../work/reports/issue-702/review.md) — 要素順・ソース範囲・関数スコープを検証。
+
+- [Issue #703: string literal review](../../work/reports/issue-703/review.md) — 空判定・docstring・型・文字コードを検証。
+
+- [Issue #704 review](../../work/reports/issue-704/review.md)
+
+- [Issue #705 review](../../work/reports/issue-705/review.md)
+
+- [Issue #706 review](../../work/reports/issue-706/review.md)
+
+- [Issue #707 review](../../work/reports/issue-707/review.md)
+
+- [Issue #708 review](../../work/reports/issue-708/review.md)
+
+- [Analyzer issues 696–708 stack and evidence](../../work/reports/analyzer-696-708.md)
+
+| 原文 | 参照時点 | 内容 |
+| --- | --- | --- |
+| [Default analyzer operators](../../work/reports/default-analyzer-operators/design.md) | 未追跡 | 7種類の既定化、opt-out、互換性の設計。[^default-operators] |
+| [Default operator selection review and validation](../../work/reports/default-analyzer-operators/review.md) | 未追跡 | 各段階5回のレビュー、Lean の証明範囲、実プロジェクトの候補数。[^default-operators-review] |
+
+[^default-operators]: [設計](../../work/reports/default-analyzer-operators/design.md)。
+[^default-operators-review]: [レビューと検証](../../work/reports/default-analyzer-operators/review.md)。
+
+# Issue #709: 反復検証の事前評価
+
+- [design.md](../../work/reports/issue-709/design.md) — 導入判断の根拠とレビュー。[^issue-709-design]
+- [plan.md](../../work/reports/issue-709/plan.md) — 導入判断の根拠とレビュー。[^issue-709-plan]
+- [assessment.md](../../work/reports/issue-709/assessment.md) — 導入判断の根拠とレビュー。[^issue-709-assessment]
+- [review.md](../../work/reports/issue-709/review.md) — 導入判断の根拠とレビュー。[^issue-709-review]
+
+[^issue-709-design]: [design.md](../../work/reports/issue-709/design.md)。
+
+[^issue-709-plan]: [plan.md](../../work/reports/issue-709/plan.md)。
+
+[^issue-709-assessment]: [assessment.md](../../work/reports/issue-709/assessment.md)。
+
+[^issue-709-review]: [review.md](../../work/reports/issue-709/review.md)。
+
+# Issue #710: 開始行の分散選択
+
+- [design.md](../../work/reports/issue-710/design.md) — 選択規則・比較実験・検証の記録。[^issue-710-design]
+- [plan.md](../../work/reports/issue-710/plan.md) — 選択規則・比較実験・検証の記録。[^issue-710-plan]
+- [assessment.md](../../work/reports/issue-710/assessment.md) — 選択規則・比較実験・検証の記録。[^issue-710-assessment]
+- [review.md](../../work/reports/issue-710/review.md) — 選択規則・比較実験・検証の記録。[^issue-710-review]
+
+[^issue-710-design]: [design.md](../../work/reports/issue-710/design.md)。
+
+[^issue-710-plan]: [plan.md](../../work/reports/issue-710/plan.md)。
+
+[^issue-710-assessment]: [assessment.md](../../work/reports/issue-710/assessment.md)。
+
+[^issue-710-review]: [review.md](../../work/reports/issue-710/review.md)。
+
+# Issue #695: seed付きの無作為抽出
+
+| 原文 | 参照時点 | 内容 |
+| --- | --- | --- |
+| [Issue 695: implementation assessment](../../work/reports/issue-695/assessment.md) | `76f03ac`、コミット済み | 既存選択との違いと導入判断。[^issue-695-assessment] |
+| [Seeded verification sampling](../../work/reports/issue-695/design.md) | `76f03ac`、コミット済み | 母集団、選択規則、報告範囲の契約。[^issue-695-design] |
+| [Seeded sampling implementation plan](../../work/reports/issue-695/plan.md) | `76f03ac`、コミット済み | 実装・検証・レビューの実施計画。[^issue-695-plan] |
+| [Issue 695: review and verification record](../../work/reports/issue-695/review.md) | `76f03ac`、コミット済み | 各段階のレビュー、形式証明の範囲、CLI照合と作成例の測定。[^issue-695-review] |
+
+[^issue-695-assessment]: [assessment.md](../../work/reports/issue-695/assessment.md)。
+
+[^issue-695-design]: [design.md](../../work/reports/issue-695/design.md)。
+
+[^issue-695-plan]: [plan.md](../../work/reports/issue-695/plan.md)。
+
+[^issue-695-review]: [review.md](../../work/reports/issue-695/review.md)。
+
+## Issue #741 リリースSBOM
+
+- [検証記録](../../work/reports/2026-10-10-issue-741-sbom.md) - 配布物別SBOMと公開ゲート。詳細は[契約](../release-sbom.md)を参照。
+
+## Issue #778 Kani実現性調査
+
+- [Kaniによるworkspaceコピー予算契約の実現性調査](../../work/reports/2026-10-11-issue-778-kani.md) - 実コード接続、60秒timeoutと4GiB OOM、導入保留の判断。[^issue-778-kani-report]
+
+[^issue-778-kani-report]: [Kaniによるworkspaceコピー予算契約の実現性調査](../../work/reports/2026-10-11-issue-778-kani.md)。
+
+## Issue #790・#776・#777
+
+- [proofreadtoolsの変異候補探索とテスト生成の評価](../../work/reports/2026-10-11-issue-790-proofreadtools.md) - 固定proofreadtoolsの設計と実測。[^issue-790-proofreadtools-report]
+
+[^issue-790-proofreadtools-report]: [proofreadtoolsの変異候補探索とテスト生成の評価](../../work/reports/2026-10-11-issue-790-proofreadtools.md)。
+
+- [Djangoでの制約付き変異探索](../../work/reports/2026-10-11-issue-790-django.md) - 3関数・5 seedの負の結果と比較の制約。[^issue-790-django-report]
+
+[^issue-790-django-report]: [Djangoでの制約付き変異探索](../../work/reports/2026-10-11-issue-790-django.md)。
+
+## Issue #711 survivor評価
+
+- [#711 survivor評価の実装と検証](../../work/reports/2026-10-11-issue-711-survivor-review.md) - 独立履歴、競合・入力境界、Leanモデル証明と実装テスト。[^issue-711-review-report]
+
+[^issue-711-review-report]: [#711 survivor評価の実装と検証](../../work/reports/2026-10-11-issue-711-survivor-review.md)。
+
+## Issue #759 段階的検証
+
+- [#759 段階的検証の実現性調査](../../work/reports/2026-10-11-issue-759-staged-verification.md) - 既存commandでの実現性、失敗・中断の除外、費用低減なしの測定と製品機能保留。[^issue-759-staged-report]
+
+[^issue-759-staged-report]: [#759 段階的検証の実現性調査](../../work/reports/2026-10-11-issue-759-staged-verification.md)。条件、運用手順、セルフレビュー各5回。
+
+
+## Issues #805 and #807
+
+- [Fuzzing adoption decisions for #805 and #807](../../work/reports/issue-805/README.md) - Bounded adoption decisions and evidence limitations.[^fuzz-adoption-report]
+
+[^fuzz-adoption-report]: [Fuzzing adoption decisions for #805 and #807](../../work/reports/issue-805/README.md).
+
+
+## Issue #807 versioned sampling
+
+- [Rejected sampling compatibility regression trial](../../work/reports/issue-807/README.md) - Existing Lean corpus coverage and removal of redundant trial tests.[^sampling-v1-regressions]
+
+[^sampling-v1-regressions]: [Execution and review record](../../work/reports/issue-807/README.md).
+
+
+## Issue #803 corpus distillation
+
+- [Bounded corpus distillation experiment](../../work/reports/issue-803/README.md) - Replay savings, exact feature/PC set mismatch and no replacement adoption.[^corpus-distillation-803]
+
+[^corpus-distillation-803]: [Executed experiment](../../work/reports/issue-803/README.md), retained IDs/logs and interpretation limits.
+
+
+## Second-order mutation assessment (2026-10-12)
+
+- [Second-order adoption assessment](../../work/reports/issue-763-764/README.md) - Finite pairs, a first-order comparator and the decision to defer composite infrastructure.[^second-order-assessment]
+
+[^second-order-assessment]: [Measured results and limits](../../work/reports/issue-763-764/README.md), projected cases, isolated confirmation and the retained regression assertion.
+
+## Issue 895 typed mutation outcomes
+
+| Record | Scope |
+| --- | --- |
+| [design.md](../../work/reports/issue-895/design.md) | Owned outcome and compatibility contract [^issue-895-design] |
+| [plan.md](../../work/reports/issue-895/plan.md) | TDD tasks and verification boundaries [^issue-895-plan] |
+| [review.md](../../work/reports/issue-895/review.md) | Actual findings, corrections, and verification evidence [^issue-895-review] |
+
+[^issue-895-design]: [Issue 895 design record](../../work/reports/issue-895/design.md).
+
+[^issue-895-plan]: [Issue 895 plan record](../../work/reports/issue-895/plan.md).
+
+[^issue-895-review]: [Issue 895 review record](../../work/reports/issue-895/review.md).
+
+
+## Issue #897 Worker ownership
+
+| Original heading | Source |
+| --- | --- |
+| Worker-owned state review and verification | [Original](../../work/reports/2026-10-15-issue-897-review.md) [^issue-897-review] |
+
+[^issue-897-review]: [Original record](../../work/reports/2026-10-15-issue-897-review.md). Implementation design and explicitly scoped execution evidence.
+
+## Issue 913 Unix process-group authority
+
+| Original heading | Source |
+| --- | --- |
+| Issue 913 implementation and verification | [Source](../../work/reports/2026-10-15-issue-913-review.md) [^issue-913-review] |
+
+[^issue-913-review]: [Issue 913 implementation and verification](../../work/reports/2026-10-15-issue-913-review.md). Unix signal authority, characterization and platform limits.
+
+## Issue 898 process requests
+
+| Original heading | Source |
+| --- | --- |
+| Issue 898 review and verification | [Review and verification](../../work/reports/2026-10-15-issue-898-review.md) [^issue-898-process-review] |
+
+[^issue-898-process-review]: [Review and verification](../../work/reports/2026-10-15-issue-898-review.md). Windows execution evidence: one unconfirmed initial mypy failure, followed by passing focused and contracts checks; no green full-workspace claim.
+
+
+## Issue 899 changed selection
+
+| Original heading | Source |
+| --- | --- |
+| Issue 899 review and verification | [Review and verification](../../work/reports/2026-10-15-issue-899-review.md) [^issue-899-changed-selection-review] |
+
+[^issue-899-changed-selection-review]: [Review and verification](../../work/reports/2026-10-15-issue-899-review.md). Windows execution evidence, initial fixture failures with focused corrections, CRLF formal-check limits, and the separately checked release-floor follow-up.
+
+[^issue-896-review]: [Issue 896 review and verification](../../work/reports/2026-10-15-issue-896-review.md).
+[^issue-900-design]: [Typed disk failure design](../../work/reports/issue-900/design.md).
+
+[^issue-900-plan]: [Implementation plan](../../work/reports/issue-900/plan.md).
+
+[^issue-900-review]: [Issue #900 review record](../../work/reports/issue-900/review.md).
+
+## Issue 911 verification selection
+
+| Document | Scope |
+| --- | --- |
+| [Design](../../work/reports/issue-911/design.md) [^issue-911-design] | Validated selection ownership and compatibility |
+| [Review](../../work/reports/issue-911/review.md) [^issue-911-review] | Five passes per stage and verification evidence |
+
+[^issue-911-design]: [Typed verification selection design](../../work/reports/issue-911/design.md).
+
+[^issue-911-review]: [Review and verification](../../work/reports/issue-911/review.md).
+
+
+- [Issue #999 production proofs, distribution and evidence](../../work/reports/2026-10-19-issue-999-creusot-adoption.md) — shared implementation, three-target proofs and recorded acceptance.
+
+## Issues 1121, 1122 and 1124 research
+
+| Document | Scope |
+| --- | --- |
+| [Research results](../../work/reports/issues-1121-1122-1124/README.md) [^issues-1121-1122-1124-report] | Slice/division adoption recommendations, survivor-deferral comparison and evidence limits |
+| [Methodology](../../work/reports/issues-1121-1122-1124/methodology.md) [^issues-1121-1122-1124-methodology] | Fixed budgets, independent requirements, controls and resource limits |
+| [Self-review](../../work/reports/issues-1121-1122-1124/self-review.md) [^issues-1121-1122-1124-review] | Five self-review passes per step, corrections and verification |
+| [Implementation](../../work/reports/issues-1121-1122-1124/implementation.md) [^issues-1121-1124-implementation] | Default-on operators, applicability, source-range rules and safety ownership |
+| [Implementation review](../../work/reports/issues-1121-1122-1124/implementation-review.md) [^issues-1121-1124-implementation-review] | Five reviews per implementation stage, independent review findings and validation |
+
+[^issues-1121-1122-1124-report]: [Bounded research report](../../work/reports/issues-1121-1122-1124/README.md).
+[^issues-1121-1122-1124-methodology]: [Research protocol](../../work/reports/issues-1121-1122-1124/methodology.md).
+[^issues-1121-1122-1124-review]: [Self-review record](../../work/reports/issues-1121-1122-1124/self-review.md).
+
+[^issues-1121-1124-implementation]: [Operator implementation](../../work/reports/issues-1121-1122-1124/implementation.md).
+[^issues-1121-1124-implementation-review]: [Implementation review record](../../work/reports/issues-1121-1122-1124/implementation-review.md).
+
+## Issues 1125–1131 behavioral research
+
+| Document | Scope |
+| --- | --- |
+| [Research decisions](../../work/reports/issues-1125-1131/README.md) [^issues-1125-1131-report] | Seven decisions, bounded comparisons and implemented scope |
+| [Methodology](../../work/reports/issues-1125-1131/methodology.md) [^issues-1125-1131-methodology] | Equal budget ceilings, independent requirements and resource limits |
+| [Self-review](../../work/reports/issues-1125-1131/self-review.md) [^issues-1125-1131-review] | Five passes per stage, corrections and final verification |
+
+[^issues-1125-1131-report]: [Research decisions](../../work/reports/issues-1125-1131/README.md).
+[^issues-1125-1131-methodology]: [Methodology](../../work/reports/issues-1125-1131/methodology.md).
+[^issues-1125-1131-review]: [Self-review and verification](../../work/reports/issues-1125-1131/self-review.md).
+
+## Issues 1126, 1127, 1128 and 1131 reconsideration
+
+- [Revised methods and feasibility evidence](../../work/reports/issues-1125-1131/reconsideration.md) [^issues-1125-1131-reconsideration] — ordinary dataclass identity, sorting priority, callback overrides and encoding API scope; historical method review, now superseded by implementation in the same PR.
+
+[^issues-1125-1131-reconsideration]: [Reconsideration](../../work/reports/issues-1125-1131/reconsideration.md).
+
+## Issues 1126, 1127, 1128 and 1131 implementation
+
+| Document | Scope |
+| --- | --- |
+| [Implementation](../../work/reports/issues-1125-1131/four-implementation.md) [^issues-1125-1131-four-implementation] | Four additional default-on operators implemented in PR1134, eligibility and resource ownership |
+| [Review](../../work/reports/issues-1125-1131/four-implementation-review.md) [^issues-1125-1131-four-review] | Five passes per stage, independent review fixes and final command results |
+
+[^issues-1125-1131-four-implementation]: [Four-operator implementation](../../work/reports/issues-1125-1131/four-implementation.md).
+[^issues-1125-1131-four-review]: [Four-operator review](../../work/reports/issues-1125-1131/four-implementation-review.md).
+
+
+## Issue 1123 inheritance research
+
+- [Research decision and reproduction](../../work/reports/issue-1123/README.md) [^issue-1123-report] — limited adoption proposal for override deletion and delegation movement; exact deletion overlap and fixed-corpus evidence.
+- [Review and verification](../../work/reports/issue-1123/self-review.md) [^issue-1123-review] — five self-review passes per stage, interpreter checks and evidence limits.
+- [Base-order follow-up](../../work/reports/issue-1123/base-order.md) [^issue-1123-base-order] — six multiple-inheritance examples, seeded permutations, surviving controls and MRO errors.
+- [Base-order implementation](../../work/reports/issue-1123/implementation.md) [^issue-1123-implementation] — default runtime operator, stable source edits, opt-out and verification.
+
+[^issue-1123-report]: [Inheritance research](../../work/reports/issue-1123/README.md).
+[^issue-1123-review]: [Review record](../../work/reports/issue-1123/self-review.md).
+[^issue-1123-base-order]: [Base-order follow-up](../../work/reports/issue-1123/base-order.md).
+[^issue-1123-implementation]: [Base-order implementation](../../work/reports/issue-1123/implementation.md).

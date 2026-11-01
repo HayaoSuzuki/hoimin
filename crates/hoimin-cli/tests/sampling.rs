@@ -521,6 +521,6 @@ async fn sample_authored_project_evaluation() {
     }
     let report = serde_json::json!({"scope":"two authored Python fixtures; no representative-project or real-defect claim", "os":std::env::consts::OS,"arch":std::env::consts::ARCH,"projects":projects});
     let destination = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../docs/superpowers/reports/issue-695/observations.json");
+        .join("../../docs/development/work/reports/issue-695/observations.json");
     std::fs::write(destination, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
 }

@@ -3,7 +3,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Ask usage questions here. Check the [usage reference](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/usage.md) and [reporting guide](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/support.md).
+        Ask usage questions here. Check the [usage reference](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/user/guides/usage.md) and [reporting guide](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/user/about/support.md).
         External Issues and pull requests are not accepted. Share only information you are allowed to publish, with credentials and private paths removed.
   - type: textarea
     id: question

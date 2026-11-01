@@ -1,0 +1,105 @@
+---
+type: Contract
+title: Release artifact SBOMs
+description: Per-artifact Cargo dependency graphs, provenance and incomplete-release rejection.
+status: draft
+sources:
+- id: issues-992-998-sdist-config
+  resource: ../../../pyproject.toml
+  revision: a8578a958702c8889dd8ad37ca813a09fe59b6a2
+  working_tree: clean
+  sha256: 5304c2030e5195b7310d9ba180bfb8140c2d1c090ec7d0b7d2e033b8a30723d5
+- id: issues-992-998-sdist-archive
+  resource: ../../../tests/test_sdist.py
+  revision: a8578a958702c8889dd8ad37ca813a09fe59b6a2
+  working_tree: clean
+  sha256: 13c574d05fa0bf1f1922924a96a3f17a5131a508fb064723230932e88367bf6a
+- id: issues-992-998-sbom-validator
+  resource: ../../../tools/sbom.py
+  revision: a8578a958702c8889dd8ad37ca813a09fe59b6a2
+  working_tree: clean
+  sha256: 212a2ce81a4a4c1ca0fac063b4155e2eb81ca9c45fe3e563741b89f3a0dac7dd
+- id: issues-992-998-sbom-capture
+  resource: ../../../tools/capture_sbom.py
+  revision: 5033e1bb74c4b01c66dc86c3c9f70fc1b8bf11ee
+  working_tree: clean
+  sha256: c6bd0663352ac0ccf8f5b5f718293c7d5fc4fa0f8f62148095337a328c2abf4f
+- id: ci
+  resource: ../ci/index.md
+  revision: 46ef6b9ef240ce644a11a5ab03f82c69b79f2afd
+  working_tree: modified
+  sha256: a17fa37454e672512a1ccb3a8649783a89c9edd99b63da4679fe77a29228d96d
+- id: release
+  resource: ../releases/index.md
+  revision: a8578a958702c8889dd8ad37ca813a09fe59b6a2
+  working_tree: clean
+  sha256: 803b0d8486e5f2a32bd364cdfb04aadc3f79e1c8bf0c268e70bd71a69fa04e20
+- id: design
+  resource: ../work/designs/2026-10-10-issue-741-sbom-design.md
+  working_tree: untracked
+  sha256: 9025a3ca80f190d69b0df391bbb536df0304ad9948db1910420fab5bf7c4d6b9
+- id: review
+  resource: ../work/reports/2026-10-10-issue-741-sbom.md
+  working_tree: modified
+  sha256: 83c27615f328d8d1157cb8d138ed4520227bfab96cd5687a7bea9aebcafb3e1c
+  revision: 1d2c0912d029318fd40c09f3e6576735c0a740e3
+- id: python315-vendor
+  resource: ../../../vendor/ruff_python_parser/README.hoimin.md
+  revision: a8578a958702c8889dd8ad37ca813a09fe59b6a2
+  working_tree: clean
+  sha256: 9284faff3a13a4a441410693c217f08e652c65710591647a7c7340a214d1a41e
+---
+
+# Mapping SBOMs to artifacts
+
+A release publishes six documents for standalone binaries and wheels on three platforms. CycloneDX JSON 1.5 records Cargo's normal and build transitive dependencies, the distribution file's SHA-256, release commit, adjusted Cargo.lock SHA-256, target, and features. Linux wheel evidence is captured inside the manylinux container, separately from the standalone host environment.[^release]
+
+# Repository package versions and generator cleanup
+
+The shipping graph contains exactly one `hoimin-budget-math`, one `hoimin-core` and one `hoimin-python`
+component, each matching the CLI root version. Missing, duplicate and mismatched
+internal components fail validation. Capture removes generator sidecars for all
+four shipping workspace members before generation and in final cleanup,
+including when generation changes the lockfile and output is rejected. The
+original lockfile is restored before that rejection.[^issues-992-998-sbom-validator][^issues-992-998-sbom-capture]
+
+# Publication conditions and provenance
+
+Before generating SHA256SUMS, reject missing required SBOMs, schema violations, metadata mismatches, and inconsistent graph references. PRs changing distribution inputs and manual runs also validate the aggregate artifact.[^ci] Preserve existing protection of published releases and wheel-only PyPI uploads.[^design]
+
+For the vendored Ruff parser, record its upstream package version, Ruff 0.17.2 VCS revision, and release-commit-pinned path and README. External Ruff crates retain their captured registry identities and metadata. The README describes the parser safety adaptations. A Cargo-derived graph is not a complete binary inventory including OS libraries, and does not claim that build dependencies are shipped in the binary.[^release]
+
+# Source distribution build inputs
+
+Source distributions explicitly include the patched parser manifest,
+Rust sources, provenance README and combined license notices.
+The other Ruff crates are registry dependencies recorded in Cargo.lock;
+the archive must not retain their former vendor directories.
+Real-archive tests compare internal Python API and patched parser files with
+their source bytes, and exclude untracked build/cache/scratch outputs. Cargo manifest checks compare text after CRLF-to-LF normalization, matching
+Maturin's archive normalization of workspace and local dependency manifests.
+Rust sources, build data, README and license notices retain raw byte checks.
+The include inventory must be updated when vendored Rust modules are added or moved.[^issues-992-998-sdist-config][^issues-992-998-sdist-archive]
+
+# Evidence and recheck conditions
+
+The [verification record](../work/reports/2026-10-10-issue-741-sbom.md) distinguishes self-reviews, regression tests, Hypothesis, structural-mutation fuzzing, Lean model proofs, and 256 implementation comparisons. Lean proofs apply only to the model's publication gate. Local evidence does not include hosted Windows/Linux native builds or actual publication.[^review]
+
+Recheck the correspondence between build settings and SBOM metadata when updating targets, features, the Maturin image, generator, schema, or parser.[^release]
+
+[^release]: [Operations and retrieval](../releases/index.md).
+[^design]: [Issue #741 design](../work/designs/2026-10-10-issue-741-sbom-design.md).
+[^review]: [Issue #741 verification record](../work/reports/2026-10-10-issue-741-sbom.md).
+[^ci]: [CI and preview selection](../ci/index.md).
+
+[^issues-992-998-sbom-validator]: [tools/sbom.py](../../../tools/sbom.py).
+[^issues-992-998-sbom-capture]: [tools/capture_sbom.py](../../../tools/capture_sbom.py).
+
+[^issues-992-998-sdist-config]: [pyproject.toml](../../../pyproject.toml).
+[^issues-992-998-sdist-archive]: [tests/test_sdist.py](../../../tests/test_sdist.py).
+
+
+The source archive also retains the production math crate's manifest and three
+Rust source files, including cfg-gated proof annotations. The
+[Creusot contract](creusot-budget-proofs.md) distinguishes verification-only
+registry dependencies from the ordinary shipping graph.

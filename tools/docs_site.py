@@ -26,28 +26,34 @@ from mkdocs.structure.pages import Page
 
 REPOSITORY = "https://github.com/HayaoSuzuki/hoimin"
 SITE_URL = "https://hayaosuzuki.github.io/hoimin/"
-PUBLIC_PAGES = (
-    "README.md",
-    "docs/product-principles.md",
-    "docs/usage.md",
-    "docs/agent-skills.md",
-    "docs/cli-reference.md",
-    "docs/compatibility.md",
-    "docs/support.md",
-    "docs/licensing.md",
-    "docs/development.md",
-    "docs/releases.md",
-    "docs/pypi-publishing.md",
-    "docs/dependency-policy.md",
-    "docs/dependency-build-scripts.md",
-    "docs/artifact-smoke.md",
-    "docs/ci.md",
-    "docs/documentation.md",
-)
+# Source organization is independent of established public URLs.
+PUBLICATION_PATHS = {
+    "README.md": "index.md",
+    "docs/user/about/product-principles.md": "docs/product-principles.md",
+    "docs/user/guides/usage.md": "docs/usage.md",
+    "docs/user/guides/agent-skills.md": "docs/agent-skills.md",
+    "docs/user/reference/cli.md": "docs/cli-reference.md",
+    "docs/user/reference/compatibility.md": "docs/compatibility.md",
+    "docs/user/about/support.md": "docs/support.md",
+    "docs/user/about/licensing.md": "docs/licensing.md",
+    "docs/development/guides/contributing.md": "docs/development.md",
+    "docs/development/releases/index.md": "docs/releases.md",
+    "docs/development/releases/pypi-publishing.md": "docs/pypi-publishing.md",
+    "docs/development/dependencies/policy.md": "docs/dependency-policy.md",
+    "docs/development/dependencies/build-scripts.md": (
+        "docs/dependency-build-scripts.md"
+    ),
+    "docs/development/ci/artifact-smoke.md": "docs/artifact-smoke.md",
+    "docs/development/ci/index.md": "docs/ci.md",
+    "docs/development/guides/documentation.md": "docs/documentation.md",
+    # The old contributing guide already occupies /docs/development/.
+    "docs/development/index.md": "docs/development/overview.md",
+}
+PUBLIC_PAGES = (*PUBLICATION_PATHS, "docs/user/index.md")
 
 
 def site_path(source: str) -> str:
-    return "index.md" if source == "README.md" else source
+    return PUBLICATION_PATHS.get(source, source)
 
 
 def project_path(url: str) -> str | None:
@@ -221,7 +227,9 @@ class SourcePlugin(BasePlugin[SourceConfig]):
         self, markdown: str, *, page: Page, config: MkDocsConfig, files: Files
     ) -> str:
         del config, files
-        source = "README.md" if page.file.src_uri == "index.md" else page.file.src_uri
+        source = next(
+            source for source in PUBLIC_PAGES if site_path(source) == page.file.src_uri
+        )
         self.links.source = self.links.root / source
         revision = self.links.revision
         return (
@@ -238,7 +246,7 @@ def prepare_sources(root: Path, destination: Path, revision: str) -> None:
         shutil.copyfile(root / source, target)
     stylesheet = destination / "stylesheets" / "extra.css"
     stylesheet.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(root / "docs" / "stylesheets" / "extra.css", stylesheet)
+    shutil.copyfile(root / "docs" / "assets" / "stylesheets" / "extra.css", stylesheet)
 
 
 def build_site(root: Path, output: Path) -> None:

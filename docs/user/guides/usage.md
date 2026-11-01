@@ -1,0 +1,2016 @@
+# Usage reference
+
+See the [README](../../../README.md) for installation and a quick start.
+The [generated CLI reference](../reference/cli.md) lists public commands, arguments,
+help, defaults and reflected Clap constraints. This guide covers examples and
+runtime contracts, including OS-specific limits and plan/verify inheritance.
+For the current-format policy and changed defaults, see the
+[change policy](../reference/compatibility.md).
+For questions and bug reports, see the [reporting guide](../about/support.md).
+
+- [Run it](#run-it)
+- [Plan and verify with an agent](#plan-and-verify-with-an-agent)
+- [Live progress and debugging](#live-progress-and-debugging)
+- [Select mutation targets](#select-mutation-targets)
+- [Python source encodings](#python-source-encodings)
+- [Limits and defaults](#limits-and-defaults)
+- [Disk-safe execution](#disk-safe-execution)
+- [Mutation operators](#mutation-operators)
+- [Mutation profiles](#mutation-profiles)
+- [Results](#results)
+- [Human review of mutation candidates](#human-review-of-mutation-candidates)
+- [Sessions and resume](#sessions-and-resume)
+- [Additional runtime mutations](#additional-runtime-mutations)
+
+## Run it
+
+Install hoimin using the [README](../../../README.md#install). Run commands from your
+project directory with an environment whose `python` has your test dependencies.
+Run the project's tests first and resolve failures before mutation testing.
+Rust performs analysis in-process; everything after `--` is the project's test
+command, passed directly as arguments without a shell.
+
+### Before execution
+
+Choose the resource policy before `run` or `plan`:
+
+| Platform | Initial policy |
+| --- | --- |
+| Windows | Keep the default Job Object hard limits |
+| Linux with delegated cgroup v2 | Keep the default cgroup hard limits |
+| macOS | Explicitly accept `--allow-best-effort-memory`; memory is not capped |
+| Linux without delegated cgroup v2 | Explicitly accept `--allow-best-effort-memory`; fallback address-space limits apply per process, not to the whole tree |
+
+Use the commands as written on Windows or hard-limit Linux. On macOS or fallback
+Linux, add `--allow-best-effort-memory` **before `--`** to the `run` or `plan`
+command only if that policy is acceptable. `verify` inherits the saved policy
+and does not accept this flag. See [limits and defaults](#limits-and-defaults)
+for enforcement scope and cleanup limitations. A limit or cleanup failure is a
+reason to stop and diagnose, not to disable a guard or retry indefinitely.
+
+Single-line commands work in Bash and PowerShell 7. Shell-specific examples
+are labeled. Use PowerShell 7 for JSON redirection; legacy Windows PowerShell
+can write UTF-16 output that hoimin cannot read as a saved JSON plan.
+
+For a direct run, replace `src/calc.py` with an existing target file:
+
+```console
+hoimin run --root . --file src/calc.py -- python -m pytest -q
+```
+
+### Plan and verify with an agent
+
+This is hoimin's primary workflow: let an external AI agent investigate a small
+batch of survivors and propose specification-backed tests, with humans resolving
+ambiguous requirements and reviewing changes. See the [product principles](../about/product-principles.md).
+Inspect the baseline and resource policy before starting the loop; stop on resource
+or cleanup failures instead of silently raising limits or repeating the run.
+
+This example uses a file rather than Git changes. You can follow it in an empty
+directory without initializing Git. Use an environment with pytest installed and
+apply the [execution prerequisites](#before-execution) before planning.
+
+1. Create `calc.py`. Its required behavior is to add two numbers:
+
+    ```python
+    def add(left, right):
+        return left + right
+    ```
+
+2. Create `test_calc.py` with a passing but incomplete test:
+
+    ```python
+    from calc import add
+
+
+    def test_add_zero():
+        result = add(0, 0)
+
+        assert result == 0
+    ```
+
+3. Confirm that the original tests pass:
+
+    ```console
+    python -m pytest -q
+    ```
+
+    Expect one passing test. Resolve a collection, import or test failure before
+    proceeding; a failed baseline cannot tell you whether a mutant was detected.
+
+4. Create `reports/` and a plan selecting only addition/subtraction replacement.
+    On Windows or delegated-cgroup Linux, use the command for your shell:
+
+    **Bash:**
+
+    ```bash
+    mkdir -p reports
+    hoimin plan --root . --file calc.py --operators binary_add_sub \
+      --jobs 1 --total-timeout 1m \
+      -- python -m pytest -q > PLAN.json
+    ```
+
+    **PowerShell 7:**
+
+    ```powershell
+    New-Item -ItemType Directory -Force reports | Out-Null
+    hoimin plan --root . --file calc.py --operators binary_add_sub `
+      --jobs 1 --total-timeout 1m `
+      -- python -m pytest -q > PLAN.json
+    ```
+
+    On macOS or fallback Linux, use this Bash plan command instead, after creating
+    `reports/`, only if you accept best-effort memory control:
+
+    ```bash
+    hoimin plan --root . --file calc.py --operators binary_add_sub \
+      --jobs 1 --total-timeout 1m --allow-best-effort-memory \
+      -- python -m pytest -q > PLAN.json
+    ```
+
+    The plan should retain one candidate, replacing `+` with `-`. `plan` does not
+    run tests. For a different project, inspect the plan before verification. If
+    it retains no candidates, check the file and operator selection; `verify
+    --top` rejects an empty selection. If discovery is truncated or fails, narrow
+    the target and resolve the diagnostic before treating the plan as complete.
+
+5. Verify the saved candidate and retain the initial report. These single-line
+    commands work in Bash and PowerShell 7:
+
+    ```console
+    hoimin verify PLAN.json --top 1 --dry-run > reports/preview.json
+    hoimin verify PLAN.json --top 1 > reports/before.jsonl
+    ```
+
+    Inspect `reports/before.jsonl`: the baseline should pass and the candidate
+    should survive because both `0 + 0` and `0 - 0` equal zero. Use the candidate
+    ID and replacement from the plan to investigate the actual change. A timeout,
+    error, resource stop or incomplete report is not a survivor; see [results](#results).
+    This verification exits **0** because it completed, including the survivor. Check
+    `complete` and `counts` on the final `run_finished` event, and `termination`
+    on the `baseline_finished` event.
+
+6. Keep `calc.py` unchanged and add this test to `test_calc.py`. The requirement
+    is addition, so distinct nonzero inputs distinguish it from subtraction:
+
+    ```python
+    def test_add_distinct_positive_numbers():
+        result = add(2, 3)
+
+        assert result == 5
+    ```
+
+    Run `python -m pytest -q` again and expect two passing tests. In real projects,
+    have the agent justify the assertion from the specification; ask a human to
+    resolve ambiguous behavior. Do not change production code merely to kill a
+    mutant or treat suspected equivalence as proof.
+
+7. Verify the same selection from the unchanged plan and compare reports:
+
+    ```console
+    hoimin verify PLAN.json --top 1 > reports/after.jsonl
+    hoimin progress reports/before.jsonl reports/after.jsonl
+    ```
+
+    The new baseline should pass and the same candidate should be killed by the
+    new assertion; this verification exits **0**. Preserve both reports with the
+    plan and test diff. Test-only
+    changes can reuse this plan unless those files are explicitly fingerprinted;
+    changing selected source or a fingerprint input requires a new plan.
+
+For your project, replace `calc.py` and the test command, agree a small budget,
+and repeat the same selection after justified test improvements. Stop when the
+scope is covered, the budget is exhausted, or remaining survivors lack a useful
+specification-backed test. Record uncertain or unhelpful candidates with
+[human review](#human-review-of-mutation-candidates) rather than chasing a score.
+
+#### Selection options after the first loop
+
+Create a fresh plan for different targets, operators or execution settings.
+For a real project with `src/`, you can restrict discovery to Git changes; this
+requires Git changes and is not a prerequisite for the example:
+
+```bash
+hoimin plan --root . --source src --changed --total-timeout 15m \
+  -- python -m pytest -q > CHANGED_PLAN.json
+```
+
+Apply the same OS policy choice to this `plan`. Preview a selection before
+executing it, and keep the same mode and parameters for before/after reports.
+On a plan with enough retained candidates, choose one of these alternatives:
+
+```console
+hoimin verify CHANGED_PLAN.json --top 10 --selection-policy diverse
+hoimin verify CHANGED_PLAN.json --top 10 --selection-policy line-diverse
+hoimin verify CHANGED_PLAN.json --sample 10 --seed 42
+```
+
+The first two spread equal-score candidates across files or source start lines.
+Sampling requires a complete plan; it is not equivalent to a ranked prefix.
+
+Each plan candidate records `rank`, `score`, and `ranking_reasons`.
+The scores are transparent ordering heuristics for focusing effort; they do not
+claim that a higher-ranked mutant is more likely to reveal a defect, and
+lower-ranked candidates remain valid. `verify` uses the saved ranks and never re-ranks
+against changed source or Git state.
+Before running or previewing a batch, verification checks every retained
+candidate's saved ranking against the plan's rules and resolved selectors.
+This check borrows candidate bodies instead of copying all original/replacement text.
+
+Ranking rule version 4 awards the explicit-symbol bonus to a selected symbol
+and its dot-delimited descendants in the same file. For example, selecting
+`Box` also boosts `Box.check` and `Box.Inner.check`, but not `BoxOther.check`.
+Plans created with an older ranking rule must be regenerated before verification.
+
+The `strict` selection policy is the default and uses the saved rank prefix.
+The `diverse` selection policy round-robins production files only within equal-score tiers.
+Higher-score tiers are exhausted before lower-score tiers.
+The `line-diverse` policy round-robins `(file, start line)` groups within each
+score tier. Group order follows the first saved rank and candidates inside each
+group keep their saved order. Multi-line mutations belong to their start line;
+remaining candidates return on later rounds, so none are suppressed.
+The verification report records `file_round_robin_v1`.
+For line diversity it records `line_round_robin_v1`.
+Older report readers may need updating to accept the new policy value.
+Line diversity can expose other test gaps with a small budget, but additional
+lines do not guarantee better defect detection or an unbiased mutation score.
+Verification does not rewrite the plan or change its execution limits.
+
+`--candidate ID` remains available for exact selection and may be repeated.
+`--candidate` and `--top` are mutually exclusive, and one selection mode is
+required. If `N` exceeds the retained candidate count, `--top N` selects every retained candidate
+and reports the actual selected count. A plan with no retained candidates cannot be verified
+with `--top`: all selection policies reject it with exit code 2 before running the baseline.
+Version-1 manifests
+must be regenerated with the current `hoimin plan`.
+
+`--candidate` is repeatable, so one `verify` invocation can execute multiple planned candidates.
+`verify` inherits the test command, execution limits, timeout settings, and resource policy from
+`PLAN.json`; execution output is always a JSONL event stream. It cannot override
+plan-time settings. In particular, `verify --top` retains all limits
+from the manifest. A timeout-capacity warning is an estimate, not a guaranteed failure, and does
+not adjust those limits automatically. To change `--jobs` or `--total-timeout`, create a new plan;
+the same applies to `--allow-best-effort-memory` or another execution or resource setting.
+
+The default total timeout is five minutes. Give a large candidate selection enough headroom
+when creating the plan, or split it into stable batches across multiple `verify` invocations.
+On macOS, `--max-memory` is accepted for plan compatibility but is not enforced. Hoimin still enforces monotonic wall-clock deadlines. On timeout or cancellation, while it owns a live root, it terminates that process group and reaps the root; descendants left after the root exits naturally are not guaranteed to be cleaned up. Pass `--allow-best-effort-memory` to `plan` when this memory policy is acceptable. `verify` does not provide that option.
+
+`plan` discovers candidates but does not run a baseline or test command, copy a worker, or create or reuse a session. A manifest with `truncated` set to `true` contains only a partial candidate set, and `plan` exits 4; it cannot establish full coverage of the selected targets. On such a plan, `--top N` means the top N among retained candidates, not among candidates that discovery did not retain. `verify` still runs the retained selection, but its report remains incomplete and exits 4 because discovery was truncated. `verify` rejects a changed target or fingerprint input before its baseline runs. Each `verify` command runs a fresh baseline and does not use a session. After a successful baseline, the worker is restored to the preflight snapshot before any mutant runs; baseline-created files and changes to existing files do not carry into the first mutant. A restoration failure stops execution. Plan manifests are trusted local invocation data, not a security boundary.
+
+`plan` source hashing and `verify` candidate validation read project sources
+through the same root-relative regular-file reader. Source hashing streams bytes
+without retaining the whole file; candidate validation retains the bytes it
+needs for one source at a time. Symlinks and nonregular sources introduced after
+target resolution are rejected. This source policy does not impose a hard
+deadline on all filesystem I/O.
+
+`verify` reads a plan from a regular file and accepts symlinks to regular files.
+Directories, missing paths and nonregular inputs are errors. On Unix, writerless
+FIFOs and symlinks to them are rejected without waiting for a writer. This does
+not promise a deadline for every filesystem operation or add review's 64 MiB
+input limit to `verify`.
+
+`verify` decodes the plan directly from a buffered reader rather than retaining
+its entire JSON encoding alongside the decoded candidates. The necessary plan
+payloads remain in memory. `verify` and `progress` bound a read to the opened
+file's initial length and reject observed growth or early truncation; use
+completed files and retry if another process is still writing. This is not an
+atomic snapshot and does not detect every in-place edit.
+
+Use a narrower selector to check one symbol:
+
+```console
+hoimin run --root . --source src --symbol calc:add -- python -m pytest -q
+```
+
+Everything after `--` is passed directly as native argv to the child process. hoimin does not join it into a command string, invoke a shell, expand globs or variables, or interpret shell quoting.
+
+### Live progress and debugging
+
+`run`, `plan`, and `verify` emit no periodic terminal progress lines. To inspect
+execution stages, enable tracing with `RUST_LOG`. The `hoimin progress` command
+compares saved reports and returns a JSON document.
+
+For the example's `calc.py`, enable diagnostic logs with the command for your
+shell. Keep actively written logs outside the project root: writing a log inside
+the copied project can trigger original-file integrity checks. These examples
+create `../hoimin-diagnostics/`. Apply the [OS policy choice](#before-execution)
+to `run` as well.
+
+**Bash:**
+
+```bash
+mkdir -p ../hoimin-diagnostics
+RUST_LOG=hoimin_cli=debug hoimin run --root . --file calc.py \
+  -- python -m pytest -q \
+  > ../hoimin-diagnostics/result.jsonl 2> ../hoimin-diagnostics/debug.jsonl
+```
+
+**PowerShell 7:**
+
+```powershell
+New-Item -ItemType Directory -Force ../hoimin-diagnostics | Out-Null
+$previousRustLog = $env:RUST_LOG
+try {
+    $env:RUST_LOG = 'hoimin_cli=debug'
+    hoimin run --root . --file calc.py `
+      -- python -m pytest -q `
+      > ../hoimin-diagnostics/result.jsonl 2> ../hoimin-diagnostics/debug.jsonl
+} finally {
+    $env:RUST_LOG = $previousRustLog
+}
+```
+
+Logs use JSON Lines on stderr, including when stderr is a terminal. With logging
+enabled, stderr can contain both tracing records and existing diagnostic events;
+tracing records do not use the versioned run-event schema. Filter by module,
+such as `RUST_LOG=hoimin_cli::process=debug`, to inspect process execution. Run,
+worker, and mutant identifiers connect logs from concurrent test processes.
+Use `RUST_LOG=hoimin_cli::progress=info` for execution-stage records and completed
+mutant counts. Counts include reused results and exclude candidates that were
+not run. These records follow execution events rather than a periodic timer.
+
+`RUST_LOG` supports a default level (`info`), module/target levels
+(`hoimin_cli=debug`), and comma-separated combinations
+(`warn,hoimin_cli::process=debug`). Levels are `off`, `error`, `warn`, `info`,
+`debug`, and `trace`. Advanced span or field directives are outside the supported
+logging syntax.
+
+Logging is off by default. `RUST_LOG=off`, an empty value, or an invalid filter
+disables tracing. Library callers choose their own tracing subscriber. Tracing
+uses a bounded queue: a slow sink can lose log records, and shutdown waits at most
+250 ms to flush. These logs supplement the run reports; use the reports for
+complete mutation results.
+
+## Select mutation targets
+
+At least one target selector is required:
+
+- `--source DIR` selects Python files below a source root and may be repeated. `--source .` selects every discovered Python file below the configured root. An absolute `--source` path exactly equal to an absolute `--root` has the same effect.
+- Each explicit `--source` must exist. Missing sources fail with exit 2 before baseline execution in `run`, `plan`, and saved-plan `verify`, including when combined with valid sources or `--changed`. Existing empty directories and valid selections filtered to zero candidates still succeed. A regular Python file is also accepted as a source. This existence check does not change the discovery policy for symbolic links.
+- `--file PATH` selects an entire Python file and may be repeated.
+- `--line PATH:START-END` selects an inclusive line range and may be repeated.
+- `--symbol MODULE:QUALNAME` selects a function, method, or class resolved below `--source` and may be repeated.
+- `--changed` restricts selection to staged, unstaged, and untracked Git changes. It requires `--source`.
+  Git change ranges are mapped to Python physical lines (LF, CRLF, or CR) before intersection with `--line`. A Git LF-delimited line can contain several CR-delimited Python lines; original source bytes are preserved.
+  For ordinary tracked changes, Git patch output is restricted to resolved targets in bounded literal-path batches. A selected rename or copy keeps the full rename-aware diff to preserve Git's original pairing and line ranges; the metadata inventory still covers the repository.
+- `--changed-context N` includes up to N neighboring lines on each side of Git changes. It requires `--changed`, defaults to 0, and accepts integers from 0 through 1073741823. With N > 0, a pure deletion selects up to N surviving lines on each side of the deletion boundary. Ranges are clipped at the current file boundaries; empty and deleted files contribute no lines. Untracked files still select their complete contents.
+- `--diff-base REV` uses the merge base of `REV` and `HEAD` for `--changed`. It is invalid without `--changed`.
+
+An explicit `--symbol` must name an existing function or class definition in the
+resolved Python file, including methods, nested definitions and package
+`__init__.py` definitions. A missing definition is an exit-2 error before the
+baseline in `run`, `plan` and `verify`, even with `--changed` and no changed
+lines. Existing definitions with no candidates under the selected operators,
+profile, lines or Git diff remain valid empty selections. Imported names and
+assignment aliases do not count as definitions.
+
+Whole-file selectors establish the selected files first. For example, `--source src --file src/calc.py` selects every Python file below `src`, while `--file src/calc.py` alone selects only that file. A `--line` or `--symbol` then narrows a matching file. Selectors for different files remain combined. The resolver merges multiple line ranges on one file. Candidates must satisfy both constraints when a file has line and symbol selectors.
+
+Python source positions recognize LF, CRLF and lone CR, including mixtures, without normalizing file bytes. Previously saved plans with incorrect lone-CR coordinates must be regenerated; existing reports retain their recorded coordinates. Correcting line/column metadata does not change a candidate ID for identical source bytes and the same mutation.
+
+For example, `--file src/calc.py --line src/calc.py:10-12` selects only lines 10 through 12 of `src/calc.py`. Adding `--file src/calc.py` to `--source src --symbol calc:add` preserves the symbol restriction on `src/calc.py`. Other Python files selected by `--source src` remain whole-file targets unless they have a line or symbol selector.
+
+For a `src` layout installed through a path-only editable `.pth`, add an import
+root independently of the selected file:
+
+```console
+hoimin run --root . --file src/calc.py --import-root src -- python -m pytest -q
+hoimin plan --root . --line src/calc.py:10-12 --import-root src -- python -m pytest -q > plan.json
+hoimin verify plan.json --top 1
+```
+
+`--import-root DIR` is repeatable on `run` and `plan`. It adds worker import
+paths without selecting any mutation targets; a target selector is still
+required. Directories are relative to `--root`, including `.`. Absolute paths
+and parent components that escape the root are rejected. Harmless components
+are normalized and duplicate roots retain their first position. PYTHONPATH
+order is the worker root, explicit import roots in supplied order, selected
+source roots, then inherited PYTHONPATH with project paths rewritten to the
+worker. The named directory must exist in the copied worker before baseline;
+an unavailable-root diagnostic means it is missing, is not a directory, or was
+excluded by the existing copy policy. The option does not override exclusions.
+
+This supports regular packages exposed by path-only `.pth` entries when Python
+honors PYTHONPATH. Finder-based editable installs and custom import loaders are
+not guaranteed, and Python `-E`/`-I` ignores PYTHONPATH. Setting inherited
+`PYTHONPATH=/absolute/project/src` remains a workaround: hoimin rewrites that
+project path to the worker. Neither approach edits the original source or venv.
+Saved plans preserve import-root order; `verify` inherits it without a flag.
+
+Git inspection retains at most 64 MiB of stdout per command. Exceeding this
+limit is an error: hoimin terminates and reaps the command without accepting
+partial changed-line results. Git stderr retains its first 64 KiB and an explicit
+truncation marker, while excess stderr is drained. These internal limits are
+independent of the test process's `--max-output` setting and use no temporary
+spool files.
+
+`--root DIR` resolves relative paths and defaults to the current directory. Combining explicit selectors with `--changed` intersects each explicit target with changed lines and any `--changed-context` neighborhood. Context never expands an explicit line or symbol selector. When that target also has a symbol selector, a candidate must be both in that Git selection and inside the selected symbol. The `changed_line` ranking reason and its 200-point boost apply to this entire selection, including context lines; the reason does not assert that the candidate itself was edited. Plans save the context setting, and `verify` reuses it. A `--symbol` requires `--source`; when `--source` is present, file and line paths must be inside a source root.
+
+Target, fingerprint, and copied-workspace paths use a portable `/`-separated representation. Native Windows path inputs are normalized to that form. On Unix, a concrete filename containing a literal backslash is rejected before collection because it cannot be represented unambiguously. Backslashes in glob options retain their existing escape syntax; the concrete paths matched by a glob are validated after walking.
+
+Copied workspace files and directories may contain `:` on Linux and macOS, including fixtures such as `.dockerfiles/appconfig/app:env:conf-sample`. These files participate in copying, worker reset, and original-file integrity checks. Windows workspace paths still reject `:` to prevent drive-prefix and alternate-data-stream interpretation. Mutation candidate and fingerprint paths retain their stricter portable-path restrictions. If a fixture is unnecessary for tests, omit it explicitly with `--exclude '.dockerfiles/**'`.
+
+`--include GLOB` can restore ignored or hidden files. `--exclude GLOB` adds exclusions and wins when both match. Both options may be repeated. Exclude patterns are interpreted only as globs: for example, `src/[ab].py` excludes `a.py` and `b.py`, not a file literally named `[ab].py`.
+
+Target discovery and worker copying always exclude `.git`, `.venv`, `venv`, `env`, `__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.pyre`, `.pytype`, `.tox`, and `.nox` below the project root. Names are compared case-insensitively on Windows and exactly on other platforms. Includes cannot restore these entries. Automatic source scans omit them; explicit `--file` and `--line` selectors inside them fail during target resolution with the path and remediation. Choose source outside the excluded directory. The project root itself remains usable even if its name is on this list. Ignore files apply in non-Git roots too; hidden mutation targets still require an include.
+
+`--fingerprint-file PATH` records exactly one regular file at the specified `--root`-relative path and may be repeated. Every path component must remain beneath `--root`; symlink and reparse-point components are rejected instead of followed. It does not search nested directories, and characters such as `*`, `?`, and `[` are treated literally. Use it for a root-level configuration file without also selecting files with the same name in nested worktrees.
+
+`--fingerprint-include GLOB` records every matching file as an explicit session-fingerprint input. A basename-only glob such as `pyproject.toml` can match that name at any depth. Both fingerprint options only invalidate compatible-run reuse: they do not control worker copying, select mutation targets, or implicitly watch files. Use `--include GLOB` independently when a fingerprinted input must also be copied into each worker; no files are implicitly watched.
+
+`--fingerprint-env NAME` tracks an inherited environment variable for resume compatibility
+and may be repeated in `run` or `plan`. Names must match
+`[A-Za-z_][A-Za-z0-9_]*`: Unix names are case-sensitive; Windows names normalize
+to uppercase. Name order and duplicate declarations do not matter. A selected
+variable becoming unset, empty, or a different value changes compatibility;
+unselected variables retain their existing behavior. Values are hashed using
+native Unix bytes or Windows UTF-16 code units without lossy Unicode conversion.
+
+Capture occurs during command preparation, before worker `PYTHONPATH` and
+metadata rewriting. Normalized config stores one `environment` snapshot: `{"state":"untracked"}`
+when no names are selected, or `{"state":"captured","names":["FLAG"],"digest":"…"}`
+with a nonempty canonical name set and aggregate digest. Only that metadata enters
+reports, sessions, and plan manifests; this option does not add captured values
+in plaintext. Hashing does not guarantee secrecy for low-entropy values.
+`verify` reads the names saved by `plan` and rejects a changed inherited snapshot
+with `plan.fingerprint_env.changed` before its baseline runs. Regenerate the plan
+after an intentional environment change. Concurrent environment mutation by an
+embedding caller is outside this snapshot contract.
+
+For example, when a test needs an ignored fixture input copied into its worker:
+
+```console
+hoimin run --root . --source src --fingerprint-include tests/fixtures/settings.toml --include tests/fixtures/settings.toml -- python -m pytest -q
+```
+
+Each candidate must fit a 2 MiB compact JSON spool record, including JSON escaping, UTF-8 and one trailing newline. `plan` rejects oversized candidates instead of saving an unusable plan; `verify` rejects oversized saved records before baseline. Direct `run` discovers candidates after baseline and reports an incomplete infrastructure failure if a record exceeds this limit. The diagnostic identifies the source path, line, operator and limit. Candidate-count limits do not override this byte limit.
+
+## Python source encodings
+
+Hoimin recognizes Python encoding declarations in a standalone comment on the
+first line, or on the second line after a blank/comment-only first line.
+Without a declaration it uses UTF-8. It supports these codecs in Rust:
+
+| Codec | Accepted names (case-insensitive; underscores may replace hyphens) |
+| --- | --- |
+| UTF-8 | `utf-8`, `utf8` |
+| ASCII | `ascii`, `us-ascii`, `646` |
+| Latin-1 / ISO-8859-1 | `latin-1`, `latin1`, `iso-8859-1`, `iso8859-1`, `iso-latin-1`, `latin`, `l1`, `cp819`, `ibm819` |
+
+Python's tokenizer also normalizes names beginning with `utf-8-`, `latin-1-`,
+`iso-8859-1-` or `iso-latin-1-` to those codecs. A leading UTF-8 BOM is preserved
+in file bytes and requires a tokenizer-normalized UTF-8 declaration: use
+`utf-8` rather than the generic `utf8` alias with a BOM. Declarations in strings,
+after a statement, or after the second line are ignored. A matching `coding:`
+inside an otherwise ordinary standalone comment still declares an encoding.
+
+Unsupported or unknown names, BOM conflicts and invalid UTF-8/ASCII bytes
+produce a diagnostic containing the path and declaration. Latin-1 maps every
+byte to a character, so it cannot detect that a file was intended to use a
+different encoding. Save each file using its declared codec.
+
+Analysis uses Unicode text; candidate spans and file hashes refer to original
+bytes. Mutation text is encoded back into the same codec, preserving untouched
+bytes, BOM and line endings. A replacement that cannot be encoded is rejected.
+`plan` decodes without running a baseline. Normal `run` retains its baseline
+before analysis, so a baseline failure may precede the encoding diagnostic;
+explicit symbol validation decodes earlier during target resolution. No Python
+loader or external Python process is used for production source decoding.
+
+## Limits and defaults
+
+Resource control is central to delegating mutation testing to an agent on a local
+machine. Choose budgets that leave room for the host and other work. A limit stop
+is a reason to diagnose and narrow the next run, not a request to disable the guard.
+The enforcement scopes and platform limitations below still apply.
+
+The defaults are:
+
+| Option | Default | Scope |
+| --- | ---: | --- |
+| `--jobs` | `1` | concurrent workers; maximum 256 |
+| `--max-mutants` | `100` | mutants executed |
+| `--max-candidates` | `10000` | candidates discovered before execution |
+| `--analyzer-timeout` | `30s` | plan only; saved for verify discovery |
+| `--baseline-timeout` | `60s` | baseline process |
+| `--mutant-timeout` | `auto` | each mutant; `max(5s, 2 × baseline elapsed + 1s)` |
+| `--total-timeout` | `5m` | complete run |
+| `--max-memory` | `1GiB` | per root tree; Windows measures committed memory, Linux cgroup measures charged memory |
+| `--max-output` | `1MiB` | combined retained stdout and stderr per process |
+| `--max-copy-size` | `1GiB` | run-wide logical bytes copied across all workers |
+| `--max-workspace-size` | `8GiB` | logical bytes in generated workspaces and run-owned output |
+| `--min-free-space` | `10GiB` | mandatory filesystem reserve before more work starts |
+| `--max-processes` | `64` | per root tree, including the root; Linux cgroup counts tasks, including threads |
+| `--profile full` / `--profile focused` | `full` | candidate-selection profile |
+| `--fingerprint-include GLOB` | none | invalidates compatible session reuse; does not copy worker files |
+| `--fingerprint-file PATH` | none | fingerprints one exact root-relative file; does not copy worker files |
+| `--fingerprint-env NAME` | none | fingerprints an explicitly selected inherited variable; repeatable |
+
+The final run summary reports `resolved_mutant_timeout`, the individual cap
+actually passed in mutant process requests. The `run_finished` event stores it
+as `resolved_mutant_timeout`. The value
+uses integer `secs` and `nanos` (for example, `{"secs": 6, "nanos": 800000000}`).
+It is `null` if no mutant process request was built.
+A failed baseline therefore never reports an unused configured cap as resolved.
+This value is separate from process elapsed time and the total run deadline,
+which can interrupt execution before the individual cap expires.
+
+By default, there are no include/exclude overrides or SQLite session, and `--changed`, `--resume`, and `--allow-best-effort-memory` are disabled.
+
+Every numeric limit must be nonzero. Copy and total-timeout limits are run-wide.
+
+Worker parallelism and the process allowance per root tree are independent.
+For example, `--jobs 4 --max-processes 1` allows four concurrent single-process
+test trees. On Linux cgroup v2, each tree must also remain single-threaded.
+The worker count remains limited to 256, regardless of the per-tree allowance.
+
+On Windows, each baseline or mutant root process and its descendants share their own full `--max-memory` and `--max-processes` allowance, enforced by a nested Job Object. Memory means committed memory, not RSS; the process count includes the root itself. With `--jobs J`, concurrent trees can approach `J × max-memory` and `J × max-processes` in total. The outer run Job Object owns cleanup and imposes no aggregate memory or process cap. Host-imposed parent Job Objects can make effective limits stricter.
+
+On Linux, delegated cgroup v2 enforces memory and task-count limits separately for each baseline or mutant root and its descendants. Each root cgroup receives the full `--max-memory` and `--max-processes` allowance; the latter also counts threads. With `--jobs J`, concurrent trees can approach `J × max-memory` and `J × max-processes` in total. Hoimin's parent run cgroup has no aggregate memory or task-count cap; limits imposed by ancestor cgroups remain effective.
+
+When hard enforcement is unavailable, Unix uses best-effort process groups and non-macOS Unix also applies per-process `RLIMIT_AS`. Linux and macOS require explicit `--allow-best-effort-memory` approval for this policy. On macOS, the memory limit is not enforced. Hoimin uses monotonic wall-clock deadlines on portable Unix and, on timeout or cancellation while it owns a live root, terminates that process group and reaps the root. Cleanup of descendants after the root exits naturally is not guaranteed.
+
+Reports identify `hard` or `best_effort` resource mode. This describes enforcement strength, not aggregation scope: with Windows Job Objects or Linux cgroup v2, the memory and process limits in `normalized_config` apply per root tree.
+
+Rust callers construct `WindowsBackend::new()` without run limits and supply caps through each `ProcessLimits` request; the formerly ignored constructor argument has been removed.
+
+The run header records the selected backend in `resource_control.mode` and the stable `resource_control.mechanism` identifier (`portable`, `linux_cgroup_v2`, or `windows_job_object`). Synthetic reused and not-run results report the current run’s selected mode; reused outcomes carry only a conclusive killed/survived status, project zero elapsed time, and own no execution output. Actual process results retain their observed mode.
+
+Linux cgroup hard enforcement requires `--max-memory` to be at least one host
+page. Smaller values fail before a test-process cgroup is created or the test command starts;
+the diagnostic reports the host-specific minimum. Larger limits continue to
+round down to page granularity. This does not impose a new minimum on macOS or
+portable best-effort backends.
+
+`--max-copy-size` counts copied source bytes across workers. `--max-workspace-size`
+counts generated workspace bytes, including materialized workers and run-owned output.
+Keep the 10 GiB reserve even when the workspace limit is smaller. In this policy,
+raising a consumption limit or lowering the reserve is explicit risk acceptance:
+sampled monitoring can stop new work, but one child can consume the reserve between
+samples. Aggregate hard enforcement requires a verified, named quota backend.
+Without one, the disk guard provides cooperative enforcement.
+
+During discovery of one source file, each token, AST, and type-annotation
+producer retains at most `max_candidates + 1` candidate records and their
+deduplication identities before the bounded merge. In addition, one internal
+16 MiB (16,777,216-byte) budget bounds retained candidate strings across producers,
+conversion and all files of a plan discovery. Runtime analysis shares the same
+kind of budget through its handler, including outstanding detached work.
+The budget counts UTF-8 logical string lengths and explicit validation/encoding
+scratch reservations. Exceeding it fails analysis with `analyzer.payload_limit`
+(`plan.discovery` at the plan command), without a successful partial result.
+This error may occur before count selection or the existing 2 MiB record check;
+it is distinct from requested candidate-count truncation.
+
+Source/parser/AST/facts, diagnostics, allocator overhead and capacities, prior
+disk records, one candidate under construction and the fixed annotation batch
+of at most three source-dependent replacements are outside this budget.
+`--max-candidates` and this payload budget therefore do not bound process RSS.
+`--max-memory` continues to govern descendant processes. See the
+[accounting contract and measurements](../../development/knowledge/design/analyzer.md#retained-candidate-payload-issue-978)
+for ownership, release rules and observed normal-input overhead.
+
+Analysis supports AST depth up to 128, counting the module as depth 1 and
+including auxiliary syntax nodes. A deeper tree fails with its source path and
+`analysis depth exceeds supported limit 128`; it does not produce a complete
+empty result. This limit applies even with `--max-candidates 1`. Flat files with
+many shallow statements are not rejected by this depth limit.
+The bundled Rust parser checks remaining stack during recursive parsing and
+recovery. Rejected and discarded partial trees are destroyed iteratively, so
+deep unary, power, lambda, and conditional expressions can reach this diagnostic.
+Parser stack segments and AST storage still consume memory proportional to input.
+
+`plan --analyzer-timeout` saves a positive timeout (at most 100 years) in
+`normalized_config.discovery.analyzer_timeout`; `verify` inherits it without
+an override. Direct `run` rejects this option and records no discovery setting.
+For plan creation and verify rediscovery, the saved timeout is one
+deadline for the complete discovery phase, not a new deadline per target. A
+discovery timeout returns promptly while an already-running blocking analyzer
+cooperatively stops and releases the resources it owns. It cannot interrupt a
+source read already blocked inside a system call; that read must return before
+the detached analyzer can finish stopping.
+
+### Tuning parallel runs
+
+Start with `--jobs 1` and a focused test command. Record the baseline elapsed time and
+estimate one test worker's memory use before increasing concurrency gradually. A small
+target can often keep `--jobs 1 --max-memory 1GiB --mutant-timeout auto`.
+
+With Windows Job Objects or Linux cgroup hard enforcement, `--max-memory` applies separately
+to each root tree: for example, `--jobs 4 --max-memory 4GiB` allows concurrent test trees to
+approach 16 GiB in total (committed memory on Windows). Size concurrency and
+per-root caps together. The in-process analyzer is not covered by these descendant limits. When increasing `--jobs`, set an explicit
+`--mutant-timeout` with headroom for contention instead of assuming that the `auto` value
+derived from a single baseline will remain sufficient. For example, a focused baseline
+that takes about 14 seconds can be tried with the following measured settings:
+
+`--max-memory` constrains descendant processes, not the hoimin CLI itself. The CLI keeps
+one immutable pristine workspace snapshot on disk for the run and shares it across
+workers, reading files on demand for reset. Per-worker copy accounting remains governed
+by `--max-copy-size`; allow disk capacity for the shared pristine copy in addition to the
+materialized workers.
+
+During reset, a worker file whose size differs from the pristine copy is restored
+without reading its changed contents. Same-size files still undergo full byte and
+permission comparison, including when their modification time has not changed.
+
+```console
+hoimin run --root . --source src --profile focused --jobs 4 --max-memory 4GiB --mutant-timeout 2m -- python -m pytest -q
+```
+
+Measure your own suite rather than treating these values as a sizing formula. If results
+contain `out_of_memory`, lower `--jobs` or raise `--max-memory`. If they contain `timeout`,
+lower `--jobs` or raise `--mutant-timeout`.
+
+hoimin copies regular files and selected directories, including empty fixture
+directories, into isolated workers. Removed directories are restored between
+mutants, including directories replaced by files or links. Directory selection
+uses the same ignore, include, exclude, default-protection and session-artifact
+rules as file copying. A children-only exclusion such as `fixtures/**` can leave
+the selected parent `fixtures` empty; exclude `fixtures` itself to remove the
+whole tree. Exact directory permissions are not copied, and directories do not
+add to logical file-byte budgets. Hoimin does not follow or copy symlinks; each
+skipped symlink produces a diagnostic. Original integrity checks include selected
+directory presence as well as file contents.
+
+Before changing a mutation target's permissions or contents, hoimin checks its
+opened file's link count. A shared inode fails with `workspace.mutation.shared`,
+even if its contents and permissions match the source. Cleanup also preserves
+external referent permissions; an unsupported safe unlink can leave a cleanup
+error. This protects hoimin's own writes and does not prevent a test program
+from writing elsewhere.
+
+These controls reduce accidental resource exhaustion. hoimin executes user-selected Python and test programs and is **not a security boundary** for untrusted code.
+
+## Disk-safe execution
+
+Hoimin treats disk safety as an ownership problem as well as a capacity limit. It
+meters generated workspaces and run-owned output against `--max-workspace-size`,
+checks `--min-free-space` before dispatching more work, and stops new mutation
+work when either guard is reached. These checks are cooperative unless a
+verified quota backend provides aggregate hard enforcement.
+
+Cleanup is limited to run roots whose identity, filesystem, and ownership were
+retained from creation. Hoimin does not follow symlinks or reparse points during
+cleanup, use wildcard recursive deletion, or continue through an identity or
+volume change. On Windows, pinned directory handles and handle-relative child
+operations protect workspace creation, publication, measurement, and cleanup;
+an unsupported identity, replacement race, sharing violation, or close failure
+fails closed instead of falling back to pathname-based deletion. Caller-provided
+output directories remain caller-owned.
+
+If cleanup is deferred, `run.json` and `report.md` record the exact retained
+scratch path and bounded diagnostics. Before removing it manually, verify its
+lease and run identifier, then remove only that exact path. Never delete the
+managed parent directory or use a wildcard. See
+[Windows filesystem safety](../../development/work/designs/2026-09-01-windows-disk-safety-capability-design.md) for
+the detailed capability and cleanup model.
+
+## Mutation operators
+
+Without `--operators`, a run selects 85 default runtime operators. `--operators`
+(comma-separated) selects an explicit set; `--exclude-operators` then removes
+individual IDs or selector families. Hoimin exposes 104 operator IDs in total:
+85 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
+`exception_hierarchy`, and six opt-in analyzers: `condition_constant`,
+`function_body_erase`, `enum_member_replace`, `condition_clause_delete`,
+`container_element_delete`, and `optional_keyword_delete`.
+
+The defaults include `statement_delete`, `integer_literal_neighbor`,
+`augmented_to_assignment`, `return_tuple_swap`, `string_literal_empty`,
+`while_condition_false`, `conversion_call_remove`, `method_call_remove`,
+`function_body_return_constant`, `string_segment_empty`,
+`stdlib_conversion_call_remove`, `loop_break_insert`, `iterator_stop_insert`, and
+`async_iterator_stop_insert`, `list_comprehension_to_generator`,
+`generator_return_insert`, `generator_skip_first`, `generator_empty`,
+`none_truthiness`, `mutable_default_share`, `nonlocal_remove`,
+`yield_from_to_yield`, `mapping_setdefault_to_get`, `bisect_boundary_swap`,
+`deepcopy_to_copy`, `deque_popleft_to_pop`, `gather_return_exceptions`,
+`itertools_take_drop_swap`, and `fstring_conversion_swap`.
+To disable any of these,
+use, for example, `--exclude-operators statement_delete,string_literal_empty`.
+The defaults also include `binary_div_floor`, `structure_slice_bound_omit` and
+`structure_slice_bound_move`. To omit these from a new run or plan, use
+`--exclude-operators binary_div_floor,structure_slice_bound_omit,structure_slice_bound_move`.
+
+Defaults also include `continue_remove`, `comparison_not_implemented`
+and `exception_cause_remove`. Each is individually selectable or
+excludable; no selector family is expanded by these additions.
+
+Defaults also include `dataclass_factory_share`, `sort_key_swap`,
+`lambda_capture_late`, `encoding_errors_ignore`, `base_order_shuffle`,
+`override_method_delete` and `super_call_move`. Each can be selected or
+excluded individually, without expanding any existing selector family.
+
+New default runs can generate more candidates and take longer. With a candidate
+cap, the retained prefix can also change. Explicit `--operators` selections and
+saved plans keep their operator sets; saved plans are not expanded on reload.
+The six analyzers above remain opt-in for a staged rollout: coarse whole-condition
+or body edits overlap finer mutations, clause/container deletion can add many
+candidates per expression, and enum/optional-keyword edits require extra module
+binding analysis. Their existing applicability guards are unchanged.
+
+| Group | Runtime IDs | Mutations |
+| --- | --- | --- |
+| State, sorting, capture and encoding | `dataclass_factory_share`, `sort_key_swap`, `lambda_capture_late`, `encoding_errors_ignore` | Shared empty factories, key priority, late capture and lossy encoding policies; enabled by default |
+| Continuation, comparison and causes | `continue_remove`, `comparison_not_implemented`, `exception_cause_remove` | Same-iteration continuation, reflected comparison and explicit diagnostic causes; enabled by default |
+| Existing expression/control flow | `compare_eq_ne`, `compare_order`, `membership`, `identity`, `boolean_and_or`, `binary_add_sub`, `augmented_add_sub`, `binary_mul_div`, `augmented_mul_div`, `binary_floor_mod`, `binary_div_floor`, `augmented_floor_mod`, `unary_sign`, `remove_not`, `boolean_literal`, `break_continue` | comparisons; membership and identity; binary `+`/`-`, `*`/`/`, `//`/`%`, and `/`/`//`; augmented `+=`/`-=`, `*=`/`/=`, and `//=`/`%=`; unary signs; boolean expressions and literals, including `True`/`False` match patterns; and control flow |
+| Generator behavior | `list_comprehension_to_generator`, `generator_return_insert`, `generator_skip_first`, `generator_empty` | Eager/lazy conversion, early return, first-item consumption and empty output; enabled by default |
+| Single inheritance | `override_method_delete`, `super_call_move` | Remove an ordinary overriding method or move its standalone same-method delegation; enabled by default |
+| Multiple inheritance | `base_order_shuffle` | Change the order of distinct simple-name direct bases; enabled by default, with stable source-derived permutations |
+| Missing values and shared state | `none_truthiness`, `mutable_default_share`, `nonlocal_remove`, `yield_from_to_yield`, `mapping_setdefault_to_get`, `bisect_boundary_swap`, `deepcopy_to_copy`, `deque_popleft_to_pop`, `gather_return_exceptions`, `itertools_take_drop_swap`, `fstring_conversion_swap` | Empty/missing distinctions, shared defaults, lost outer updates, delegation, dictionary insertion, duplicate boundaries, nested copies, FIFO order, exception results, iterator prefixes and representations; enabled by default |
+| Early iterator exhaustion | `iterator_stop_insert`, `async_iterator_stop_insert` | Insert a stop exception at iterator protocol method entry; enabled by default |
+| Premature loop exit | `loop_break_insert` | Appends `break` to eligible `for`, `async for`, and `while` bodies; enabled by default |
+| Collection calls and literals | `collection_any_all`, `collection_list_tuple`, `collection_set_frozenset`, `collection_append_insert` | `any(x)` ↔ `all(x)`; `list`/`tuple` calls and load-context literals outside exception-handler type positions (which Python requires to be an exception class or tuple of exception classes); `set` ↔ `frozenset` calls; `seq.append(x)` ↔ `seq.insert(0, x)` |
+| Same-contract methods | `collection_min_max`, `collection_set_add_discard`, `collection_set_remove_discard`, `collection_string_starts_ends`, `collection_string_split_rsplit` | `min(...)` ↔ `max(...)`; `add`/`discard`, `remove`/`discard`, `startswith`/`endswith`, and `split`/`rsplit` when `maxsplit` is supplied |
+| Structural calls | `structure_append_extend`, `structure_mapping_get_subscript`, `structure_sort_reverse`, `structure_sorted_reversed` | `append(x)` ↔ `extend([x])`; `mapping.get(k)` ↔ `mapping[k]`; `sort()` ↔ `reverse()`; `sorted(x)` ↔ `reversed(x)` |
+| Bitwise operators | `bitwise_and_or`, `bitwise_shift` | `&` ↔ `\|`; `<<` ↔ `>>` |
+| Additional operator syntax | `binary_power`, `binary_matmul`, `augmented_power`, `augmented_matmul`, `bitwise_xor`, `bitwise_invert`, `augmented_bitwise_and_or`, `augmented_bitwise_xor`, `augmented_bitwise_shift` | `**` and `@` become `*`; `**=` and `@=` become `*=`; `^` becomes `&`; `~` becomes unary `+`; `&=`/`\|=` and `<<=`/`>>=` exchange; `^=` becomes `&=` |
+| Standard-library operator functions | `operator_function` | Mutates trusted Python 3.14 `operator` callable references across comparison, arithmetic, bitwise, unary, truth, identity, in-place, and sequence operations; also covers `contains`, `getitem`, `setitem`, `delitem`, and `call` |
+| Boundary operators | `structure_index_neighbor`, `structure_slice_neighbor` | adjacent plain-decimal index and slice-bound values, including unary-minus integers |
+| Slice ranges | `structure_slice_bound_omit`, `structure_slice_bound_move` | omit one of two explicit bounds, or move a single bound to the other side; enabled by default |
+| Exception types | `exception_type_pair` | curated pairs such as `ValueError` ↔ `TypeError` in simple `except`/`except*` clauses and supported `raise` expressions |
+
+Slice range operators apply only to one-dimensional load-context slices without
+an explicit step value. Bounds must be names or integer literals, including
+parenthesized and negative integers. They exclude call, attribute and compound
+bounds, annotations, and direct assignment/deletion targets. Omission deletes a
+complete bound, including its parentheses, and emits at most two candidates for
+`xs[a:b]`; movement emits one candidate for `xs[:n]` or `xs[n:]`. `xs[:]` has no
+candidate. Both belong to `structure_ops`; numeric-neighbor behavior is unchanged.
+
+`binary_div_floor` exchanges only binary `/` and `//`, preserving operand
+evaluation once each in left-to-right order. It changes rounding and can change
+the result type or dispatched overloaded method. Existing `*`/`/` and `//`/`%`
+mutations remain separate; `/=` and `//=` are not expanded. A runtime exception
+or a survivor alone does not establish a test defect. See the
+[research and implementation evidence](../../development/work/reports/issues-1121-1122-1124/implementation.md)
+for measured scope and limitations.
+
+User-defined exceptions have a separate, explicit-only operator:
+
+```console
+hoimin plan --file src/service.py --import-root src --operators exception_hierarchy -- pytest -q
+```
+
+`exception_hierarchy` reads project Python class definitions and explicit imports,
+then replaces a visible exception with its direct user-defined parent, child, or
+sibling. It supports `except`, `except*`, and `raise`; raised-exception replacements
+require both classes to inherit `Exception`'s constructor without a custom
+`__init__` or `__new__`. For example, `MissingError(AppError)` and
+`ConflictError(AppError)` can be exchanged when both names are visible.
+This operator can broaden handlers and is not included in the default selection,
+`exception_ops`, or `exception_risky`.
+
+Analysis does not import project modules. Dynamic or ambiguous definitions,
+re-exports, multiple inheritance, termination exceptions, and exception groups are
+skipped. Imports using top-level standard-library module names are conservatively
+excluded, even when a project contains a file with that name. Definitions must precede the containing function or the module-level use;
+class bodies are skipped, while method bodies use module bindings. No imports are
+inserted. A per-file diagnostic reports incomplete analysis with its reason and
+first location. Valid exclusions, such as having no related class or an incompatible
+constructor, do not produce this diagnostic. All allowed project Python files, including unselected files, become
+fingerprint inputs for this operator, so dependency additions, removals and changes
+invalidate saved plans and resumed results. Function/container aliases that the
+analysis does not track can still change a class binding, even within indexed
+project files; such changes are not guaranteed to suppress affected candidates.
+The operator does not guarantee that every replacement denotes an exception class
+at runtime. See [the implementation boundaries](../../development/guides/contributing.md#user-defined-exception-hierarchies).
+
+Eager import cycles exclude their member modules, while a module that merely
+imports a cycle can remain eligible. Import depth uses a name-order-independent
+conservative bound with a limit of 256: on an acyclic graph it is the longest
+import path in edges; through a cycle it counts the component's module count.
+A bound of 255 is allowed and 256 is excluded. This can suppress additional
+candidates compared with the former order-dependent traversal, particularly for
+joined long paths or large cyclic components; it does not restore modules that
+the old cycle/depth check excluded. Lazy imports do not add eager graph edges.
+
+Boundary operators recognize ASCII decimal digits with an optional unary minus,
+including grouped or multiline spellings such as `items[(-1)]` and `items[-(1)]`.
+`items[-1]` and `items[:-1]` produce `0` and `-2`; `items[::-1]` produces only
+`-2`, because slice-step replacements never contain zero. `-2` produces `-1`
+and `-3`. The magnitude must fit `u64` (at most `18446744073709551615`);
+larger Python integers and neighbors outside that range are skipped. Unsigned
+`0` retains its existing `1` candidate; `-0` produces `1` and `-1`. Hexadecimal,
+underscored, float, unary-plus, repeated-sign and computed expressions are
+excluded. Type annotations and store/delete subscripts remain excluded.
+
+Boolean and complex-separator mapping-pattern key edits that would duplicate a
+sibling literal key are excluded, including Python equality such as `True == 1`. Valid key,
+value-pattern, and ordinary dictionary-expression mutations remain eligible.
+
+The runtime selector families are `collection_ops`, `structure_ops`, and
+`bitwise_ops`, and `exception_ops`; for example,
+`--exclude-operators collection_ops` removes the collection family while
+leaving the other selected IDs enabled. The type selector families are
+`type_nullable`, `type_collections`, and `type_iterables`. The type operator
+IDs are `type_nullable_remove`, `type_nullable_add`, `type_list_sequence`,
+`type_set_abstract_set`, `type_dict_mapping`, `type_iterable_iterator`, and
+`type_sequence_iterable`. Saved configurations require `type_dict_mapping`;
+the historical `type_mapping` alias is rejected. Regenerate plans containing
+old names. Timeout and command-argument variants likewise require `auto` / `fixed`
+and `unix` / `windows`; `Auto`, `Fixed`, `Unix` and `Windows` are rejected.
+This removal of saved-input aliases raises the release floor to 0.7.0.
+
+Builtin call and exception pairs require both names to resolve to builtins.
+Class bodies with bases or keyword arguments may use a metaclass-prepared
+namespace, so class-visible builtin names are treated as uncertain. This also
+applies to builtin names in class-visible type annotations. Bare classes and
+empty `()` headers retain ordinary lookup; methods and closures skip the class
+namespace, and explicit `global` declarations bypass it per name. Even known
+`object` bases or `metaclass=type` are conservatively excluded at class-visible
+sites.
+PEP 695 type parameters can shadow either name in generic function and class
+bodies, including nested closures and comprehensions. Function defaults and
+decorators use the enclosing scope; generic class bases and keywords can see
+the type parameters. Runtime mutations remain excluded from type positions.
+
+Import-dependent type replacements are emitted only when their direct name or
+module alias remains unshadowed at the annotation site. If no safe spelling is
+available, the candidate is skipped. Class-visible annotation imports and module
+aliases are also excluded when the class may have a prepared namespace, including
+explicit class imports and `nonlocal` references. Lexical descendants skip the
+class namespace; explicit `global` declarations bypass it for each declared name. Private
+import aliases and their mangled spelling (such as `__Seq` and `_C__Seq` inside
+class `C`) are conservatively excluded at both endpoints, including methods and
+nested functions that retain that compiler context. Leading underscores in class
+names are stripped; trailing-dunder aliases and underscore-only class names do
+not trigger mangling. Actual private writes to an explicitly mangled import name
+also invalidate its provenance in the destination namespace. Clean private
+aliases may therefore produce fewer candidates; ordinary aliases retain their
+existing behavior.
+
+The `operator_function` selector recognizes the documented callable pairs
+`eq`/`ne`, `lt`/`le`, `gt`/`ge`, `add`/`sub`, `mul`/`truediv`,
+`floordiv`/`mod`, `and_`/`or_`, `lshift`/`rshift`, `neg`/`pos`,
+`not_`/`truth`, `is_`/`is_not`, `is_none`/`is_not_none`, `iadd`/`isub`, `imul`/`itruediv`,
+`ifloordiv`/`imod`, `iand`/`ior`, `ilshift`/`irshift`,
+`concat`/`iconcat`, and `countOf`/`indexOf`. It also maps `pow` and `matmul`
+to `mul`; `xor` to `and_`; `abs` to `neg`; `index`, `inv`, and `invert` to
+`pos`; `ipow` and `imatmul` to `imul`; `ixor` to `iand`; and `getitem` to
+`contains`. The `contains` replacement reverses membership, while `setitem`,
+`delitem`, and `call` evaluate their arguments but suppress the underlying
+operation. Documented dunder aliases follow the same mappings. The unrelated
+helpers `attrgetter`, `itemgetter`, `methodcaller`, and `length_hint` stay out of
+scope, as do functions outside the documented Python 3.14 inventory.
+
+Hoimin trusts only unique, unmodified, unconditional module-level
+`import operator` and absolute `from operator import ...` bindings. It skips a
+binding after shadowing, deletion, wildcard or conditional imports, dynamic
+namespace access, module attribute writes, or an uncertain `__import__`
+binding. Hoimin excludes relative and local imports. Stores, annotations, and
+match patterns do not produce function candidates; match guards remain ordinary
+expressions. Hoimin excludes every imported-alias load evaluated in a class
+namespace because a custom metaclass can supply ordinary names without an AST
+assignment. Method and lambda bodies remain eligible because they use
+function/global lookup. An alias beginning with `__` stays excluded throughout
+a class definition because private-name mangling and compiler-provided class
+names can resolve it to another object. These checks operate within one module
+and assume the normal standard-library `operator` module; they do not prove
+anything about a custom import loader or external monkey-patching.
+
+The exception selector `exception_risky` is opt-in only; enable it with
+`--operators exception_risky` (or select individual IDs). It exposes
+`exception_bare_to_exception`, `exception_exception_to_bare`,
+`exception_base_boundary`, `exception_tuple_add_pair`, and
+`exception_tuple_remove_member`. These mutations can broaden or narrow a
+handler and the BaseException boundary can catch `SystemExit`,
+`KeyboardInterrupt`, or `GeneratorExit`; none is enabled by default. Safe
+exception pairs are limited to `ValueError`/`TypeError`, `KeyError`/`IndexError`,
+`AttributeError`/`KeyError`, `FileNotFoundError`/`PermissionError`,
+`ConnectionError`/`TimeoutError`, `ImportError`/`ModuleNotFoundError`, and
+`ZeroDivisionError`/`OverflowError`. Qualified or dynamic handlers and tuple
+members are skipped. Simple names in `except*` handlers use the same safe pairs
+and resolution checks as ordinary handlers, while the five structural
+`exception_risky` operators remain limited to ordinary `except` handlers. The
+same safe pairs apply to the primary name in `raise ValueError`,
+`raise ValueError(...)`, and
+`raise ValueError(...) from cause`. Constructor arguments and the cause are
+preserved. Bare re-raise, qualified or dynamic primary expressions, shadowed
+source or replacement names, and termination exceptions are not changed.
+
+The collection/structural operators are deliberately syntax-directed. They do
+not include an `append`/`pop` mutation, comprehensions, assignment or delete
+targets, or wrapping set literals in `frozenset(...)`. Unsupported keyword or
+starred call forms, arbitrary index expressions, and zero-step slice mutations
+are also excluded. See the development guide for the exact accepted shapes.
+
+For example, run a type checker against nullable and collection annotation mutations:
+
+```console
+hoimin run --root . --source src --operators type_nullable,type_collections -- uv run ty check
+```
+
+For example, append `--exclude-operators type_nullable_add` to retain
+nullable-removal mutations only. As with every command after `--`, `uv`, `run`,
+`ty`, and `check` are direct argv elements on both Windows and Unix.
+
+A type checker that exits nonzero for a mutated annotation kills that mutant.
+
+The Rust analyzer preserves the original source except for exactly one replacement per mutant.
+
+## Mutation profiles
+
+`--profile full` is the default and considers every candidate produced by the selected
+operators. `--profile focused` suppresses candidates in Python `__main__` guards, bare
+`print(...)` calls, `assert` statements, and function default expressions. It is intended
+to reduce low-value survivors in focused change checks, but may omit useful mutants; use
+`full` when measuring the complete selected target.
+
+```console
+hoimin run --profile focused --root . --source src -- python -m pytest -q
+```
+
+## Results
+
+Use results to investigate missing behavioral checks, not to maximize a mutation
+score. Equivalent or specification-permitted changes may survive without indicating
+a useful test improvement. An agent's suspected-equivalent assessment is a judgment,
+not a proof, and does not change the execution outcome. Compare scores only with
+their candidate sets and verification conditions in view; they are not a standalone
+quality guarantee or a CI acceptance target.
+
+### Mutation-progress reports
+
+Compare ordered run reports to track mutation-testing progress. Inputs are oldest-to-newest, and `--patience` defaults to three consecutive comparable stalls.
+The command returns JSON and accepts no `--format` selector.
+
+Repeated input paths and byte-identical copies produce warnings on stderr. Warnings identify the repeated input and an
+earlier input, with `same path` or `identical bytes` as the reason. Inputs remain
+in order: self-comparisons still count as stalls and can reach saturation, and
+unusable reports still break the stall chain. No strict rejection is applied.
+Different reports that share a run ID (for example, before and after resume)
+are not duplicates on that basis. Copy detection compares raw bytes, so the
+same execution saved with different whitespace is not
+detected as a copy. Copy confirmation is best-effort if files change or become
+unreadable after validation; reports should remain unchanged during comparison.
+
+Inputs are JSONL event streams saved from `hoimin run` or `hoimin verify`, using
+report schema 10. Aggregate JSON documents and older or unsupported future schemas
+are rejected with exit code 2. Each physical line is decoded as an event.
+There is no fixed total-size or line limit. Memory still includes finished mutant results, sequence-validation state,
+and the current event's decoding storage. Progress retains only adjacent report
+pairs for comparison. The initial-file-length read policy described above also
+applies to progress. For example:
+
+```console
+hoimin progress reports/before.jsonl reports/after.jsonl
+```
+
+JSONL is read one event per nonblank line. `run_started` must come first and
+`run_finished` must be present and last. `mutant_started` must precede the
+matching `mutant_finished`; diagnostic events are validated and then discarded.
+Run IDs, event sequence, baseline order, mutant identities, results and summary
+counts must be consistent. Truncated lines, missing completion, mixed runs and
+duplicate events are rejected with exit code 2. A valid stream whose completed
+summary marks the run incomplete, or whose baseline failed, is unusable for
+comparison. CRLF and a complete final line without
+a newline are accepted.
+
+Read historical reports with their producing binary, or run the tests again with
+the intended Hoimin version to generate new reports. Reports are not converted
+or rewritten automatically. Regenerating a plan alone cannot recreate a past
+execution report.
+
+The JSONL reader retains comparison candidates and event decoding state;
+it does not retain the diagnostic/start-event history or the entire input
+string. Its memory use still depends on candidate data and the largest event.
+
+
+```console
+hoimin progress --patience 3 reports/before.jsonl reports/after.jsonl reports/latest.jsonl
+hoimin progress reports/*.jsonl
+```
+
+Comparisons require adjacent reports that are both complete and have successful baselines. `saturated` means the configured number of consecutive comparable stalls was reached. Only immediately adjacent stalled comparisons contribute to this count. An improving, regressing, or indeterminate comparison resets the consecutive stall chain.
+
+Valid progress comparisons exit with code 0, including `regressing` and
+`indeterminate` results. Inspect JSON `latest.state` and the comparison history
+to decide what to investigate next. Input, validation, and output failures exit
+with code 2. Progress provides no regression gate. A surviving mutant is not
+proof of behavioral equivalence.
+
+The JSON `previous_score`, `current_score`, and `score_delta` fields use the intersection of common mutants with conclusive
+results in both reports. Read the latest run summary for its whole-run mutation
+score.
+
+For split verification, choose stable candidate batches and keep a separate oldest-to-newest
+report history for each batch. `--offset K --top N` skips K entries in the complete
+selected-policy ordering, then selects up to N candidates.
+
+Omitting `--offset` is equivalent to `--offset 0`, including in preview output:
+
+```console
+hoimin plan --root . --source src --max-mutants 100 -- python -m pytest -q > plan.json
+mkdir -p reports
+hoimin verify plan.json --top 100 --offset 0 > reports/batch-a-001.jsonl
+hoimin verify plan.json --top 20 --offset 100 > reports/batch-b-001.jsonl
+# After improving tests, repeat the same ranges from the same plan.
+hoimin verify plan.json --top 100 --offset 0 > reports/batch-a-002.jsonl
+hoimin verify plan.json --top 20 --offset 100 > reports/batch-b-002.jsonl
+hoimin progress reports/batch-a-001.jsonl reports/batch-a-002.jsonl
+hoimin progress reports/batch-b-001.jsonl reports/batch-b-002.jsonl
+```
+
+This example partitions a plan with 120 retained candidates. Keep the same
+`--selection-policy` for its batches: `strict` uses saved rank order; `diverse`
+uses the complete equal-score file-round-robin order; `line-diverse` uses the
+complete equal-score start-line-round-robin order. Both apply offset/top after
+ordering, so page boundaries never restart the rotation. Changing
+the policy between batches can change membership. The JSONL mutant events
+retain the actual selected candidate IDs; save the range/policy commands with
+those reports for reruns.
+
+Preview a batch before running its tests:
+
+```console
+hoimin verify plan.json --top 20 --offset 100 --selection-policy diverse --dry-run > preview.json
+```
+
+`--dry-run` performs the same plan, source, fingerprint and candidate validation
+as verification, then exits without baseline or mutation tests, worker copies,
+sessions or execution metrics. It conflicts with `--metrics`. A valid preview
+exits with code 0, including for a truncated plan when using ID/top selection;
+sampling rejects truncated plans. Invalid selections and stale
+plans exit with code 2. Runtime resource availability is checked when executing.
+
+### Reproducible random samples
+
+Use a sample when you want a limited number of mutants drawn across all saved
+ranks. Both the positive count and unsigned 64-bit seed are required:
+
+```console
+hoimin verify plan.json --sample 100 --seed 42 --dry-run > sample-preview.json
+hoimin verify plan.json --sample 100 --seed 42 > reports/sample-001.jsonl
+hoimin verify plan.json --sample 100 --seed 42 > reports/sample-002.jsonl
+hoimin progress reports/sample-001.jsonl reports/sample-002.jsonl
+```
+
+The population consists of the candidates in the complete saved plan, as limited
+by its selectors, profile and operators. Sampling rejects `truncated: true` and
+empty plans. A request above the population size selects the entire population
+in sampled order. If the actual selection exceeds the plan's `max_mutants`,
+verification rejects it before tests run; create a plan with a sufficient budget.
+`--sample` conflicts with `--top`, `--candidate`, `--offset` and
+`--selection-policy`. `--seed` is valid only with `--sample`.
+
+The `splitmix64_fisher_yates_v1` policy uses a fixed 64-bit pseudorandom generator,
+rejection sampling and a forward partial Fisher–Yates shuffle without replacement.
+The same plan, count, seed and algorithm version produce the same IDs and dispatch
+order across platforms. Parallel test completion order and elapsed time can vary.
+Increasing the count keeps the previous selection as a prefix.
+
+Preview and JSONL run metadata use `mode: sample`,
+`scope: sampled_candidates` and the versioned `policy` above. The
+`verification_selection.sampling` object contains `population`, `seed` and
+`selected_ids` in dispatch order; `requested` and `selected` distinguish requested
+and actual counts. Preserve u64 seeds as integers when reading JSON: a JavaScript
+Number cannot represent every accepted seed exactly. Run-start and summary
+metadata retain the full selection even when tests fail before all mutants run.
+Existing selection modes omit the optional `sampling` object.
+
+Completion and mutation score describe the selected sample. Mutants outside it
+have no outcome; killing the sample does not certify the population. Timeouts,
+cancellation and other unfinished outcomes retain the usual incomplete-result
+semantics. This feature reports no confidence interval or real-defect detection
+estimate. Fixed-seed frequency checks and small authored-project measurements are
+available in the [evaluation](../../development/work/reports/issue-695/review.md).
+
+For repeated evaluation, preserve the plan, count and seed and keep one report
+history per sample. Changes to tracked source or fingerprint inputs require a new
+plan; confirm its ordered selected IDs before treating it as the same sample.
+For a fixed candidate set in a regenerated plan, replay saved IDs with repeated
+`--candidate ID` options (that mode uses its existing discovery order).
+Changing seeds or populations can make `progress` indeterminate under its existing
+candidate identity and ambiguity checks. Source and fingerprint validation still
+applies in every mode.
+
+When saved source or fingerprint input records differ from the workspace,
+verification reports `modified`, `added` or `removed` with quoted root-relative
+paths. Normal verification and dry-run show the same diagnostic before tests
+run, with empty stdout and exit code 2. Details are sorted by path, limited to
+ten paths, and followed by the number of additional paths omitted. Control
+characters in paths are escaped. Earlier discovery or read errors retain their
+own diagnostic rather than being classified as record differences.
+
+Dry-run validates the saved plan and selected candidates without copying the
+workspace. Fingerprint copy membership uses path selection rather than reading
+every unrelated copied asset; with no fingerprint inputs that walk is skipped.
+Copy-content read or length-change errors may therefore appear during actual
+preflight, and a successful preview does not certify all copied asset bodies.
+
+The [preview schema](../reference/json-schema/verify-preview.schema.json) is independent
+of run reports: `kind` is `verify_preview` and `schema_version` is 2.
+Dry-run always returns one JSON object.
+The ordered `candidates` array gives each candidate's `id`, saved `rank`,
+`selection_order`, `path`, `line`, `column`, `operator`, `original` and `replacement`.
+Details come from the same validated plan candidate. Rank, line and batch selection
+order start at 1; column is the plan's 0-based Python source column.
+
+Plain-text errors, help, progress warnings and command diagnostics escape controls
+in external fields, including ESC, CR, LF and TAB; ordinary Unicode such as Japanese
+remains readable. JSON encoders escape strings while preserving the logical values
+of paths, IDs and other fields. Baseline child transcripts keep their separate
+streamed-output policy, including readable newlines and tabs; dry-run never executes
+baseline or test commands.
+
+The closed version-1 preview schema does not accept these added fields. Clients
+that accept only preview version 1 must update to version 2; the CLI emits version 2
+without a legacy-output option. Saved plan and run-report schema versions are unchanged.
+
+`verification_selection` records mode, policy, requested/selected counts,
+scope and `plan_truncated`; `offset` starts at 0 for top selection and is null
+for explicit IDs. `retained_candidates` is the count saved in the plan.
+
+Top selection follows the chosen strict/diverse order. Explicit `--candidate`
+selection follows discovery order, with duplicates removed. Selection order
+specifies the intended scheduling order; parallel completion and early runtime
+stops may differ. A truncated preview covers only retained candidates. Save
+preview JSON separately from run reports: it contains no mutation outcomes and
+cannot be used as `progress` history.
+
+Offset is zero-based, requires `--top`, and cannot accompany `--candidate`.
+An empty plan or an offset at/beyond its retained length fails before baseline.
+A range extending beyond the end selects the available suffix. Truncated plans
+permit only retained ranges and remain incomplete. Each batch inherits the saved
+limits, including `max-mutants`; skipped entries do not consume that limit.
+Changing selected source or fingerprint inputs still requires a new plan.
+
+After every test improvement, rerun every stable batch and save each report separately.
+Pass `hoimin progress` only reports covering the identical candidate-ID set.
+The command marks a comparison `indeterminate`, resets its comparable stall
+chain, and writes a warning when adjacent candidate-ID sets differ or contain
+duplicates. If batch membership changes, start a new history.
+Reports from different subsets, their
+scores, and their saturation states must not be combined into a synthetic whole-plan result.
+Judge overall completion from each batch's latest complete report for the same current test revision,
+accounting for the union of candidate IDs selected from the plan.
+
+When a baseline fails or reaches its process timeout, `run` and `verify` copy its retained combined stdout/stderr to stderr before execution cleanup. Redirect stderr to save these diagnostics, for example `hoimin run ... > result.jsonl 2> baseline.log`. Execution reporting keeps stdout unchanged and encodes stderr diagnostics as JSON Lines (`baseline.output`). The header records retained/observed byte counts and truncation; `--max-output` limits the retained tail. Output is streamed in 16 KiB chunks, preserving split UTF-8 characters; invalid bytes become U+FFFD and terminal control characters other than newline/tab are escaped. Chunk offsets refer to retained raw bytes. Successful baselines stay quiet. Read failures produce `baseline.output.read`; cancellation or a blocked diagnostic sink can stop export at the existing total timeout and shutdown grace, so interrupted export may be partial.
+
+`run` and `verify` emit flushed JSONL lifecycle events; diagnostics are JSON Lines on stderr. The execution event contract is versioned in [`run-event.schema.json`](../reference/json-schema/run-event.schema.json). Event kinds are `run_started`, `baseline_finished`, `mutant_started`, `mutant_finished`, `diagnostic`, and `run_finished`. Parallel events are emitted in completion order; candidate sequence numbers allow stable reordering.
+
+Report schema 10 requires `status` in each JSONL
+`mutant_finished` event. Read this field for the candidate's verdict, for example
+`{"status":"not_run","outcome":"not_run"}`. The writer computes it from
+`outcome`; strict progress/review readers reject a disagreement with exit 2.
+JSON Schema checks the required field and its seven allowed values; only the
+strict reader checks equality with the outcome. Summary, progress and resume
+continue to derive their classifications from outcome evidence.
+
+JSONL `mutant_finished` events include the full candidate
+ID, source position, operator, original and replacement expressions, and verdict.
+Use these fields to identify results when parallel workers finish in a different
+order.
+
+The final summary's `complete` is `false` when any mutant is inconclusive or the run fails or is interrupted. It is `true` only when every selected mutant is `killed` or `survived` and no run-level failure occurred; a successful run with no candidates is also complete. Therefore, an exit code of `4` always has `complete: false`.
+
+`progress` accepts JSONL reports from regular files, including symlinks
+to regular files. It rejects directories, missing paths and nonregular inputs;
+on Unix this includes writerless FIFOs without waiting for a writer. Review's
+64 MiB input limit does not apply to `progress`.
+
+Run `hoimin progress --details before.json after.json` to identify improvements and
+regressions in the **final adjacent input pair**. Details include candidate ID,
+operator, previous/current status and source positions (one-based lines, zero-based
+columns). JSON string values preserve the original field values. `--details-limit N`
+sets the maximum returned changes (default 100; zero shows only omission counts), ordered
+lexicographically by candidate ID.
+
+The detail fields `previous_input` and `current_input` are zero-based indices into
+the original inputs. An unusable final pair yields `available: false`; an earlier
+comparison is never substituted. `eligibility` states whether the candidate sets
+match, differ, or contain duplicate IDs. Only changes counted by the comparison
+with an identical ID unique in both inputs appear as details. Inconclusive and
+ambiguous matches are excluded. `omitted` counts identified changes beyond the
+limit; `unidentified` counts aggregate changes whose identity cannot be established,
+such as content-only matches with different IDs. All aggregate counts and decisions
+remain independent of the display limit.
+
+`progress` uses [progress schema 3](../reference/json-schema/progress-result.schema.json)
+with or without `--details`. The required `details` field is `null` when details
+were not requested. With `--details`, it is an object, including `available: false`
+when the final pair cannot be compared. Aggregate decisions and exit status are
+independent of whether details were requested. See the
+[current progress format](../reference/compatibility.md#single-progress-output-schema).
+
+### Operational metrics
+
+Run metrics are an opt-in operational sidecar, separate from the execution event stream. Write them by passing a destination to `--metrics`:
+
+```console
+hoimin run --root . --source src --metrics metrics.json -- python -m pytest -q
+hoimin verify plan.json --top 20 --metrics batch-metrics.json > batch-report.jsonl
+hoimin verify plan.json --candidate m1_ID --metrics candidate-metrics.json > candidate-report.jsonl
+```
+
+`verify --metrics` supports explicit candidate IDs and both strict and diverse top selections. Relative metrics paths use the directory where you invoke hoimin, independently of the saved project root. The destination is not stored in the plan and does not change candidate selection or execution limits. Metrics begin when shell execution starts; plan validation and rediscovery time are not included. A failure during plan preparation leaves the destination untouched. Once execution starts, failed baselines and interrupted runs follow the same sidecar and warning rules as `run`.
+
+The sidecar uses the versioned [`run-metrics.schema.json`](../reference/json-schema/run-metrics.schema.json) contract. Its `executed` count never exceeds `discovered` and equals the sum of per-worker `processes`. Metrics are operational observations: they do not affect resume compatibility and are not embedded in execution events. A metrics write failure warns without changing the mutation result. A confirmed collision with the verify input manifest, a selected source, explicit fingerprint input, session database, active SQLite companion or session ownership lock is rejected before the baseline. You can write metrics inside the project or replace an existing metrics file. For a verify input specified through a symlink, both the specified entry and its resolved file are protected. A separate hardlink or final symlink can be replaced while preserving its protected referent.
+
+Hoimin checks the entry that the final atomic rename replaces and retains its parent directory handle through writing and temporary-file cleanup. Renaming or replacing the parent's original pathname does not redirect metrics into a replacement directory: output stays in the retained directory or fails safely. On Windows, the retained handle can prevent the parent from being renamed. If Hoimin cannot establish a safe destination identity, it skips metrics and emits a `metrics.write` warning without changing the mutation result. This includes unresolved filesystem case behavior and some prospective non-ASCII or Windows alias names.
+
+The schema validates the document structure, schema version, and nonnegative integer values. The producer additionally guarantees unique stage names and workers in ascending worker-ID order; these semantic constraints are enforced by `RunMetrics::validate()` rather than JSON Schema.
+
+Mutant statuses are:
+
+- `killed`: the mutant test process exited nonzero and output collection completed, or a saved killed result was reused;
+- `survived`: it exited zero and output collection completed, or a saved survived result was reused;
+- `timeout`: its deadline elapsed;
+- `out_of_memory`: the kernel reported an OOM kill in the supervised root cgroup subtree;
+- `process_limit`: the root tree's process limit stopped it (Linux cgroup also counts threads);
+- `error`: infrastructure could not produce a valid result; output collection's `close_timed_out` overrides the termination, including `Exit(1)`;
+- `not_run`: no classified completion is available, including cancellation or a run-wide limit; a process may have started before cancellation.
+
+The score is `killed / (killed + survived)`. Inconclusive statuses are excluded. If no killed or survived mutant exists, `score` is `null`.
+
+Exit codes are:
+
+| Code | Meaning |
+| ---: | --- |
+| `0` | complete, including runs with survivors |
+| `2` | CLI, configuration, analyzer, storage, workspace, or other infrastructure error |
+| `3` | baseline failed |
+| `4` | incomplete because of timeout, memory/process/candidate/mutant limits, or `not_run` |
+| `130` | user cancellation |
+
+Higher-priority conditions win in this order: cancellation, infrastructure error, baseline failure, incomplete result.
+Survivors remain visible in mutant statuses, summary counts and scores; they do
+not change the exit code of a complete run.
+
+For `run`, `--total-timeout` starts after CLI configuration validation and before
+capturing environment values or reading and hashing fingerprint inputs. Startup
+janitor selection and cleanup, managed workspace and spool creation, resource
+backend preparation, and the initial disk measurement consume that same budget.
+Preparation does not reset the deadline before target discovery, copying,
+baseline, analysis, or mutation tests. With the same configured duration, slower
+preparation can leave time for fewer mutants.
+
+For `verify`, the deadline starts after the saved plan has been loaded,
+validated, and reanalyzed and a verified execution plan has been received. The
+shared execution preparation is included; those earlier plan checks are excluded.
+`plan` and `verify --dry-run` keep their existing contracts.
+
+If preparation times out, no later preparation stage, baseline command, or mutant
+command is started. The diagnostic identifies preparation and does not emit a
+report containing an unexecuted baseline. An orderly preparation timeout exits
+with `4`, and user cancellation exits with `130`. Preparation, rollback, and
+diagnostic output failures exit with `2`.
+
+`--total-timeout` stops normal work at its configured deadline. Scheduler,
+process, blocking-I/O, and internal-finalization waits then receive at most a
+fixed additional two seconds for orderly shutdown. The grace starts at the run
+deadline or the first cancellation request; changing stages does not restart it.
+Preparation rollback and diagnostics share it, including cleanup of multiple
+managed roots. A timeout whose cleanup
+completes inside that grace remains an incomplete run with exit code `4`. If
+cleanup cannot finish before the shutdown grace expires, the run is an
+infrastructure failure with exit code `2`. CLI report writes and flushes share
+that shutdown deadline. Once the budget expires, the CLI can exit without a
+final stderr diagnostic; stdout can contain a partial report if its consumer
+stalls. Library run and verify entry points require owned `Write + Send + 'static`
+writers and use the same delivery deadline. A started blocking operation can
+outlive the wait; it retains its writer and delivery resources until it returns.
+The same ownership rule applies to preparation I/O and live disk measurements:
+stopping the wait does not prove the operation has stopped, and its leases and
+managed roots remain owned until completion. Existing janitor rules recover
+residual roots when safe. The timeout does not guarantee immediate interruption
+of an OS operation.
+
+## Sessions and resume
+
+The project root is stored only in `run_started.normalized_config.selection.root`. Saved plans use schema 10. Regenerate schema-9 and older
+plans; read old reports with their producing binary or rerun with this version.
+See the [0.12.0 compatibility notice](../reference/compatibility.md#discovery-timeout-ownership-in-0120).
+
+Run and verify emit schema-10 JSONL; consumers validating the closed schema must update. `progress` accepts only schema-10 JSONL and rejects historical, unsupported future and mixed-version reports. When `--resume` is requested, events include `run_started.resume`: `{"status":"resumed"}` or `{"status":"fresh","reason":"CODE"}`. Runs without `--resume` omit this field.
+
+A compatible incomplete run always wins, even if newer runs are incompatible. If an eligible row appears only during the later history inspection, `candidate_changed` takes precedence. Otherwise reasons use this precedence: `budget_decreased` (matching incomplete runs require a higher `--max-mutants`), `matching_run_complete`, `fingerprint_mismatch` (other incomplete history), `no_incomplete_run` (only nonmatching complete history), then `no_prior_run`. `candidate_changed` means session history changed during resume selection. These codes describe observed history, not which configuration field or file changed. Existing old-schema, corrupt-data, database-read, and ownership errors remain errors.
+
+A successful baseline is followed by restoration to the preflight snapshot before
+the first mutant runs. If restoration fails or the run is cancelled during it,
+no mutant starts.
+
+No database is created by default. `--session PATH` stores a run in SQLite and commits each mutant result independently. `--resume` requires `--session` and looks up the newest compatible incomplete run. Compatibility includes ordered import roots and source roots, source and configuration fingerprints, test argv, verdict-affecting limits, resource policy, and the operator set. Profile selection is part of session compatibility, so a focused run never resumes results from a full run and vice versa. `--jobs` and `--max-output` are operational settings and may change when resuming; reports record their current values, and reused results do not import output retained under the earlier limit. Completed `killed` and `survived` results can be reused; `timeout`, `out_of_memory`, `process_limit`, `error`, and `not_run` are run again under the current settings. An incompatible or already complete run is not silently mixed with new results.
+
+`--max-mutants` may stay the same or increase when resuming an incomplete run.
+The limit counts reused results as well as newly executed mutants: increasing
+1 to 3 can reuse the first result and execute the next two. The database records
+the latest accepted limit, and a lower limit cannot resume that run. A baseline
+still runs on every invocation. Other verdict-affecting limits must remain compatible.
+
+Existing session databases must have exactly one hard link. hoimin rejects a
+multi-link file before SQLite writes or creates companion files, including when
+it contains a current session. Use a new `--session PATH`; hoimin does not remove
+aliases or repair the file. New paths and single-link empty/current databases
+remain supported.
+
+SQLite sessions use schema 5, which stores one typed mutation outcome per result.
+hoimin creates this schema directly for an uninitialized database and reopens
+existing schema-5 databases without rewriting saved rows. Schema versions 1-4
+and unsupported future versions are rejected. Choose a different `--session PATH`
+to start fresh, and keep older databases with their producing binary if you need
+to read or resume them. Files are not automatically converted, deleted, or
+replaced. The 0.8.0 floor covers this incompatible change.
+
+An existing schema-5 run can still lack a recorded historical budget. Start a new
+run when that incomplete run reports `session.resume.incompatible`; completed
+results remain available in the database.
+
+### Mutation result outcomes
+
+Report schema 8 represents each mutant result as one `outcome`, replacing
+independent `status`, nullable `termination`/`output`, `output_state`, and
+`elapsed_ms` fields from older formats:
+
+- `executed` carries termination, output state, output spool, and elapsed duration.
+- `{"reused": {"status": "killed"}}` or `{"reused": {"status": "survived"}}` identifies reuse from a compatible session. It contributes zero elapsed time and no output to this run.
+- `"not_run"` means no classified completed result is available. A process may have started before interruption. It contributes zero elapsed time and no output.
+
+An executed outcome has this form:
+
+```json
+{
+  "executed": {
+    "termination": {"Exit": 1},
+    "output_state": "complete",
+    "output": {"token": "spool", "retained": 3, "observed": 8},
+    "elapsed": {"secs": 0, "nanos": 5000000}
+  }
+}
+```
+
+Elapsed time requires a closed object with `secs` in the u64 range and `nanos`
+from 0 through 999,999,999. Array aliases and normalized oversized nanoseconds
+are rejected.
+
+For executed outcomes, `close_timed_out` means `error` regardless of termination.
+With `complete` output, exit 0 means `survived`, any other exit means `killed`,
+resource/time limits retain their named status, and cancellation means `not_run`.
+Diagnostics remain separate evidence and do not determine output state or status.
+Progress, review, and summary counts derive these statuses. Baseline
+report fields retain their existing representation. Update strict report consumers
+to schema 8; old flat mutation result records are rejected without conversion.
+
+Plan schema version 10 stores fingerprint input records only in
+`normalized_config.fingerprint_inputs`, alongside the validated environment snapshot
+and independent import roots (ranking rule version 4). `sources` separately records
+mutation targets. Regenerate schema-9 and older plans before verify or review using
+the original plan arguments and intended environment; neither command converts old
+files. The former top-level `fingerprint_inputs` field is rejected.
+Report schema 8 records typed changed selection and session intent, and retains the
+environment snapshot introduced in schema 5 in place of the independent
+`fingerprint_env` / `fingerprint_env_hash` fields. Update strict report consumers
+to schema 8; read schema-7 and older reports with their producing binary, or rerun
+with this version. The release floor is 0.13.0. Files are not automatically converted
+or deleted. Fingerprint schema 13 excludes reuse of results produced before the
+baseline restoration fix. Discovery timeout remains outside execution compatibility,
+as introduced in schema 12. See the [0.13.0 compatibility notice](../reference/compatibility.md#baseline-restoration-and-result-reuse-in-0130).
+Completed old history retains fresh-run behavior.
+Fingerprint schema version 13
+includes ordered import roots and source roots and the ordered `--include` / `--exclude` copy
+patterns, including empty lists for default invocations. Changing source-root order or either copy
+pattern list starts a new run even when explicit fingerprint-file bytes match.
+Pattern spelling and order are preserved; equivalent but differently spelled
+patterns may conservatively start a new run. Identical patterns remain compatible.
+If the latest incomplete run uses an older fingerprint schema and no compatible
+run exists, `--resume` retains the `session.resume.incompatible` error. Start a
+new run without `--resume`, or use a new session path; existing saved results are
+not rewritten.
+
+The active session database, its `-wal`, `-shm`, and `-journal` sidecars, and its `.<database-name>.hoimin-locks` directory are excluded from worker copies, copy-size accounting, and original-workspace integrity checks. Explicit `--include` patterns cannot restore these artifacts. Other database fixtures and similarly named files follow the normal copy rules and remain protected by integrity checks. Relative `--session` paths are resolved from the invoking working directory; existing database and parent-directory aliases resolve to the same active artifacts. Session ownership locking still prevents concurrent use of the same run.
+
+## Additional runtime mutations
+
+`--operators statement_delete` replaces an independent call statement (for example
+`store.persist(record)`) with `pass`. It removes evaluation of the callee and all
+arguments. It is enabled by default. Assignment, return, import, compound
+statements, and calls containing assignment expressions, `await`, `yield` or
+`yield from` (including nested lambda bodies) are excluded. An empty suite remains
+valid, and neighbouring statements and trailing comments are preserved. The usual
+profile, line/symbol/changed selection, limits and cancellation still apply.
+A surviving deletion means the missing effect deserves inspection; it does not
+prove a test defect or that the mutation is non-equivalent.
+
+`--operators integer_literal_neighbor` changes ordinary decimal integers from `n`
+to `n-1` or `n+1`, with parenthesized replacements. Unary-negative decimal literals
+are one expression, not a separate positive operand. Magnitudes through
+`18446744073709551615` are supported; neighbors outside the corresponding signed
+range are omitted. This is not arbitrary-precision integer mutation. Underscores,
+other bases, floats, complex numbers, bools, type expressions, match patterns,
+assignment/deletion targets and subscript slice expressions are excluded. Index
+and slice neighbors remain the responsibility of the structural operators.
+The operator is enabled by default.
+
+`--operators condition_constant` fixes an entire `if`/`elif` condition to `True`
+or `False`, skipping evaluation and side effects of the original condition.
+Existing boolean constants and conditions containing nested assignment expressions,
+`await`, `yield` or `yield from` are excluded. Bodies, else clauses and neighbouring
+clauses are preserved. While/assert/ternary/comprehension predicates are not targets.
+The operator is disabled by default, and focused-profile exclusions still apply.
+Killing both branch mutations does not establish finer boundary correctness.
+
+`--operators function_body_erase` replaces the body of a synchronous function or
+method with `pass`, preserving its leading docstring, decorators, signature and
+defaults. Value-returning functions, generators, async functions, dunder names and
+obvious docstring/pass/None-return/ellipsis stubs are excluded. Nested definitions'
+returns/yields belong to their own scopes; suspension in their evaluated defaults
+still excludes the outer function. This opt-in operator is a limited extreme
+mutation, not coverage collection or automatic identification of pseudo-tested code.
+
+Its selection anchor is the first erased statement (after the docstring): selecting
+only a later body line does not select the whole-function mutation. Symbol selection
+uses the erased function, even when its first statement defines a nested function.
+Preview shows the whole body span. The shared 2 MiB serialized-candidate limit still
+applies. A survivor remains `survived`; it does not establish whether the function
+ran, was observed, or was equivalent, and this score cannot replace fine-grained mutation.
+
+`--operators enum_member_replace` changes a same-module Enum/IntEnum/StrEnum
+member reference to a canonical member with a different value. Only unconditional
+top-level definitions with one trusted standard-library base and homogeneous
+integer/string literals or standard `auto()` calls are supported. Aliases share
+one destination; the attribute token's original spelling is preserved. The operator remains
+opt-in. Local/rebound names, annotations, patterns and class-body
+self references are excluded. Unsupported definitions emit `enum_definition_skipped`.
+Custom decorators/metaclasses/generators, reserved attributes (including `_ignore_`),
+mixed values, Flag/IntFlag, integers exceeding u64 magnitude, strings containing
+U+FFFD or parser-replaced surrogate escapes, and non-ASCII StrEnum auto names are
+conservatively excluded. Dynamic namespace operations, tracked global declarations
+and direct alias assignments invalidate this initial module index. Methods with
+ordinary undecorated names are ignored as non-members; decorated/special methods
+exclude the definition. No target module is imported by the analyzer.
+
+`--operators augmented_to_assignment` replaces any augmented-assignment operator
+on a simple name (`total += amount`) with `=` (`total = amount`). All 13 augmented
+operators are supported. Attributes and subscripts are excluded; only the operator
+token changes. Existing arithmetic substitutions may coexist at that location.
+This removes the old-value read and in-place operation, including list/object
+side effects; it is not restricted to numbers. The operator is enabled by default.
+
+`--operators return_tuple_swap` swaps two simple elements directly returned as a
+tuple by a synchronous, non-generator function. Names and standalone number/string/
+Boolean/None literals are supported, including signed numbers. Calls, attributes,
+subscripts, nested containers, implicit string concatenation, bytes/fstrings and
+suspension expressions are excluded. A single tuple span changes; element separators,
+comments, parentheses and trailing commas are preserved. Keyword-adjacent bare tuples
+are parenthesized when needed for lexical separation. Identical source atoms or
+normalized names are skipped. Names may have different runtime types; this operator
+does not promise type preservation or identify all equivalent swaps. It is enabled by default.
+
+`override_method_delete` and `super_call_move` are enabled by default. Disable
+both with `--exclude-operators override_method_delete,super_call_move`, or pass
+one ID to select or exclude it individually. Neither belongs to a selector family.
+
+`override_method_delete` replaces an overriding method definition with `pass`,
+so dispatch uses the parent's implementation. It can expose tests that omit the
+child's specialized behavior. `super_call_move` moves a standalone
+`super().same_method(...)` call from first to last executable statement, or from
+another position to first. It can expose missing assertions about the order of
+parent and child effects. A kill does not by itself establish whether `super()`
+is used correctly; assess the required behavior.
+
+Both recognize ordinary top-level single inheritance within one source module,
+with the parent declared earlier and without explicit bases. Class and method
+bindings must remain unambiguous. Decorators, class keywords, generic classes,
+class escapes, dynamic namespace operations, method aliases/writes and lookup
+hooks are excluded. Class attributes must use literal values; named values can
+be descriptors with class-creation hooks. Decorated methods elsewhere in the
+class and method references in class-evaluated headers are also excluded.
+Methods must be synchronous instance methods with matching
+parameter names/kinds, no defaults or annotations, and no variadics, nested
+definitions, suspension, special names or private mangled names. Imported,
+conditional, nested and multiple inheritance are outside these two operators.
+The checks cannot detect monkey-patching performed by external modules.
+
+Movement additionally requires builtin zero-argument `super`, a single delegation
+to the current method, and at least two straight-line expression statements.
+Walrus assignments, starred arguments and control-flow statements are excluded.
+The initial docstring stays fixed; edits that create a docstring are excluded.
+Statement fragments move between the original separator slots, so comments stay
+in their slots and whitespace, grouping and newline styles are retained.
+
+`base_order_shuffle` is enabled by default. Disable it with
+`--exclude-operators base_order_shuffle`, or select it alone with
+`--operators base_order_shuffle`. It swaps two direct bases, for example
+`class Child(A, B)` becomes `class Child(B, A)`. With three or more bases it
+generates one deterministic shuffle from the original base-list source; an
+unchanged shuffle falls back to swapping the first two bases. The order always
+changes, with every base retained once. Repeated plans and selectors produce
+the same candidate; there is no separate seed option or uniform-sampling promise.
+
+Eligible classes have at least two distinct simple-name bases and no decorators,
+type parameters or class keywords. Imported names and nested classes are supported.
+Calls, attributes, subscripts, starred bases, duplicate normalized identifiers,
+explicit metaclasses and other class keywords are excluded. Only the name slots
+change, preserving surrounding commas, comments, parentheses, trailing commas,
+class bodies and newline style. Line selection uses the first base name's line;
+symbol selection uses the containing class. Generation does not import targets.
+
+The mutation probes assertions about provider selection and cooperative call
+order, not correct `super()` usage. It does not resolve runtime base identities,
+MRO, implicit metaclasses or subclass hooks. Reordering dependent bases can raise
+`TypeError`; normal test-process classification applies, so a kill can include
+an execution error rather than an assertion gap. Inspect the failure before
+adding a test, and do not require an order the API does not promise.
+
+`--operators string_literal_empty` replaces each nonempty, single-token runtime str
+literal with `""`, including raw/u/triple-quoted strings. Decoded empty values,
+bytes, f/t strings (including their fields), implicit concatenation, module/class/
+function docstrings, annotations, explicit type-alias expressions and match patterns
+are excluded. Ordinary string expressions and call messages remain eligible. PEP613
+markers imported from typing/typing_extensions, including quoted/parenthesized markers,
+are recognized conservatively across scopes; shadowed or unusual marker spellings can
+suppress a candidate. Normal annotated assignment values remain eligible. Prefix and
+quote style need not survive; the replacement is an empty str. It is enabled by default.
+
+`string_segment_empty` is enabled by default; disable it with
+`--exclude-operators string_segment_empty`, or select it alone with
+`--operators string_segment_empty`. It removes the first eligible nonempty top-level
+literal segment of each f-string expression, or empties the first nonempty token of
+an implicitly concatenated ordinary string. Mixed ordinary/f-string concatenation
+is treated as one expression. Empty decoded pieces are skipped. For example,
+`f'prefix:{value}:suffix'` becomes `f'{value}:suffix'`, and
+`'prefix' 'suffix'` becomes `"" 'suffix'`. Only one candidate is generated per
+expression. Interpolation fields, conversion flags, format specs, debug text and
+comments between concatenated tokens keep their source text. Raw/triple-quoted
+strings, Unicode, escapes and doubled braces use AST source spans rather than
+decoded character lengths. Complete ordinary tokens become `""`; f-string text is
+deleted without losing interpolation side effects. An f-string token consisting
+only of fixed text becomes `f""`. Separating spaces are added against immediately
+adjacent quote tokens where needed to keep their lexical boundaries valid.
+
+Docstrings, annotations, explicit type aliases, patterns, bytes and t-strings
+(including their fields) are excluded. Interpolation contents and format-spec
+internals, including nested f-strings, are also excluded. Debug-derived text is not
+a literal segment; separately written text surrounding a debug field is eligible.
+This operator does not target single ordinary string tokens, which remain the
+responsibility of `string_literal_empty`. The existing operator's behavior is unchanged.
+A strong assertion on `state() == 'prefix:1'` kills the segment mutation of
+`f'prefix:{1}'`; a weaker `state().endswith('1')` assertion survives. This demonstrates
+missing fixed-text coverage, rather than establishing that every changed string is
+a useful defect. Existing explicit operator sets, candidate IDs and saved plan
+operator sets retain their meaning; default candidate counts and capped selections
+can change.
+
+`--operators while_condition_false` replaces eligible while tests with `(False)`.
+It skips both the original condition's evaluation and the loop body; an existing
+else suite still runs. Boolean literals, binding and suspension expressions are
+excluded. It is enabled by default and does not affect for loops or comprehensions.
+
+`--operators condition_clause_delete` removes one top-level operand from an if/elif
+and/or condition. Retained expressions keep their order and nested grouping;
+inter-operand formatting is normalized. The removed expression's effects disappear,
+and short-circuit behavior may expose previously skipped operands. Binding/suspension
+expressions and other condition contexts are excluded.
+
+`--operators container_element_delete` removes one list/parenthesized-tuple element
+or dict entry. Whole-literal reconstruction normalizes separators and inter-element
+comments while protecting retained expression grouping. Tuple kind, retained order,
+and dict key/value pairs are preserved; removed elements are not evaluated. Unpacking,
+binding/suspension expressions, nonruntime roles and assignment targets are excluded.
+
+`--operators conversion_call_remove` replaces a statically resolved builtin conversion
+with its single positional argument in parentheses. It supports int/float/complex/bool/
+str/bytes/list/tuple/dict/set/frozenset and skips keywords, unpacking, generators,
+binding/suspension, shadowed names, type roles and assignment targets. The argument is
+evaluated once; conversion hooks, validation, copying and iterator consumption disappear.
+Known scope rebinding is checked; arbitrary external builtin monkey patching is not proven.
+This operator is enabled by default.
+
+`--operators stdlib_conversion_call_remove` replaces a supported one-positional-argument
+conversion with its argument in parentheses. It covers these explicit Python 3.14
+constructors and factory methods:
+
+| Module | Supported calls |
+| --- | --- |
+| `decimal` | `Decimal`, `Decimal.from_float`, `Decimal.from_number` |
+| `fractions` | `Fraction`, `Fraction.from_float`, `Fraction.from_decimal`, `Fraction.from_number` |
+| `http` | `HTTPStatus` |
+| `socket` | `AddressFamily`, `SocketKind`, `MsgFlag`, `AddressInfo` |
+| `signal` | `Signals`, `Handlers`, `Sigmasks` (Unix only) |
+| `ssl` | `VerifyMode`, `VerifyFlags`, `Options`, `AlertDescription`, `SSLErrorNumber`, `TLSVersion` |
+| `re` | `RegexFlag` |
+| `calendar` | `Day`, `Month` |
+| `inspect` | `BufferFlags` |
+| `annotationlib` | `Format` |
+
+Both direct imports and module imports, including aliases, are supported, for
+example `from decimal import Decimal as D; D.from_float(value)` and
+`import http as h; h.HTTPStatus(code)`. A unique unconditional module-level import
+must establish the callable's identity. Enum availability and valid member values
+follow the target Python platform; analysis does not import the target modules.
+
+The argument is evaluated once; conversion, validation, copying and conversion
+hooks disappear. Numeric equality can hold while the result's type changes:
+removing `Decimal.from_float(value)` for `value = 1.5` can survive a comparison
+with `Decimal("1.5")`; removing `HTTPStatus(200)` can survive comparison with 200.
+An assertion such as `isinstance(result.amount, Decimal)` or
+`isinstance(result.status, HTTPStatus)` detects the retained float or int.
+
+The operator conservatively skips rebinding anywhere in the file, class-namespace
+loads, local/conditional imports, escaped or modified module objects, and dynamic
+namespace access. Factory methods additionally require that their class is not
+written through or referenced outside an immediate constructor/factory callee.
+This includes class aliases, extracted bound methods, class references in
+annotations, and possible references through duplicate/local imports or class
+scopes. Such uncertainty suppresses that class's factory candidates; direct
+constructor candidates and the other numeric class remain independently eligible.
+Arguments of otherwise accepted calls are still checked for escaping class references.
+
+The builtin conversion operator's argument and syntax-role exclusions also apply.
+Multi-argument calls, keywords (including Decimal's `context`), `typing.cast`,
+custom enum subclasses, enum base classes and types absent from the table are
+outside this operator's scope. `ctypes` conversions are excluded; any future
+support is intended to be opt-in. Static imports do not prove the absence of
+external monkey patching, import-path shadowing, or class recovery and mutation
+through constructed instances or arbitrary dataflow.
+
+This operator is enabled by default starting with the 0.5 version floor; disable
+it with `--exclude-operators stdlib_conversion_call_remove`. Existing saved plans
+retain their explicit operator set and candidates; regenerate plans to include
+new candidates. The larger candidate population can affect retained prefixes,
+runtime and mutation scores. See the
+[design and verification record](../../development/work/maintenance/2026-10-13-stdlib-conversion.md).
+
+`--operators optional_keyword_delete` removes one explicitly supplied optional keyword
+from a uniquely bound, undecorated synchronous top-level function in the same file.
+It validates the original argument binding, preserves other argument order and uses
+the existing default object without evaluating the removed argument. Calls before the
+definition ends, function escapes/aliases, known rebinding, dynamic namespace access,
+variadics, type parameters, names beginning with `__`, expansions and unsafe/type/target
+roles are excluded.
+Reconstruction normalizes inter-argument trivia; external monkey patching is not proven.
+
+`--operators method_call_remove` replaces an argument-free attribute call such as
+`text.strip()` with `(text)`. It retains receiver evaluation once and removes
+attribute lookup and invocation, including their side effects. It is enabled by default and
+syntax based: the callable need not be a bound method, and the result type may
+change. Arguments, binding/suspension/generator receivers, annotations, explicit
+type aliases, patterns and assignment targets are excluded. This is a restricted
+static adaptation of [PyTation's RemMetCall](https://arxiv.org/html/2601.19088v2).
+See the [design and evidence](../../development/work/reports/method-call-remove/design.md).
+
+`--operators function_body_return_constant` replaces a synchronous value-returning
+function body with complementary constants, preserving its header and leading
+docstring. A direct, unshadowed builtin return annotation selects `False`/`True`
+(`bool`), `0`/`1` (`int`), or `""`/`"A"` (`str`). An annotation is a heuristic, not a
+runtime type guarantee. Async functions, generators, dunder methods, functions
+without an own-scope value return, and ambiguous/quoted/composite annotations are
+excluded. A sole return of the same literal is skipped. Body side effects are
+intentionally removed. This extreme mutation is enabled by default and complements `function_body_erase`;
+a surviving mutant does not establish that covered code is pseudo-tested.
+See the [design and paper reference](../../development/work/reports/function-body-return-constant/design.md).
+
+The [default-selection policy](../../development/work/reports/recent-analyzer-defaults/design.md)
+supersedes the opt-in rollout described in the two original design reports.
+
+## Human review of mutation candidates
+
+`review` records human assessments of saved plan candidates in an explicitly
+selected local SQLite sidecar. List, show and record return JSON and accept no
+`--format` selector. It does not run the analyzer or tests, alter the
+plan/report, change mutation scores or progress decisions, or suppress candidates.
+
+An external agent can also use these commands to record reasoned assessments
+within its authorized task. The command does not invoke an LLM or establish
+equivalence. Humans resolve specification ambiguities and review the proposed
+tests; an agent must retain uncertainty when it lacks evidence.
+
+Inspect the saved plan with these single-line commands in Bash or PowerShell 7:
+
+```console
+hoimin review list PLAN.json --store reviews.sqlite3
+hoimin review show PLAN.json --store reviews.sqlite3 --candidate CANDIDATE_ID
+```
+
+Replace `CANDIDATE_ID` with the ID from your plan, and use your plan's path in
+place of `PLAN.json`. To record a justified assessment, use your shell's form:
+
+**Bash:**
+
+```bash
+hoimin review record PLAN.json --store reviews.sqlite3 --candidate CANDIDATE_ID \
+  --assessment actionable --reason 'A required field can be omitted without a failure' \
+  --expected-revision 0
+```
+
+**PowerShell 7:**
+
+```powershell
+hoimin review record PLAN.json --store reviews.sqlite3 --candidate CANDIDATE_ID `
+  --assessment actionable `
+  --reason 'A required field can be omitted without a failure' `
+  --expected-revision 0
+```
+
+Replace the example reason with evidence for the actual selected candidate;
+the required-field example is not an assessment of the addition tutorial.
+
+Assessments are `actionable`, `not_useful`, `suspected_equivalent`, and
+`needs_investigation`. No record means `unreviewed`, distinct from `not_useful`.
+Suspected equivalence is a reviewer judgment, not a proof. A specification-permitted
+reorder may be unhelpful, while an undetected required-field omission may identify
+a useful test improvement; neither changes the actual mutation outcome.
+
+`record` requires a nonblank reason of at most 4096 UTF-8 bytes. Repeat
+`--evidence TEXT` for at most eight inert references, each at most 2048 bytes.
+References are not opened or executed. Control characters other than newline
+and tab are rejected. JSON output escapes strings and preserves their logical values.
+
+Use revision 0 for the first assessment. For an update, read the latest revision
+with `show` and pass it to `--expected-revision`. Concurrent or outdated writes
+fail instead of overwriting history. Repeating an assessment with the current
+revision appends an event. If output fails after commit, the diagnostic names
+the saved revision; inspect it before retrying. Retrying the old revision cannot
+append a duplicate event.
+
+The store is bound to one canonical project root and each candidate's full
+descriptor and source hash. It is not automatically transferred to another
+checkout or moved root. Modified sources are `stale`; missing or unreadable
+sources are `source_unavailable`. Review reads sources through the same
+root-relative file reader as plan/verify. Symlink and reparse-point components
+are not followed, including links whose targets are inside the project; those
+sources are unavailable. Nonregular sources are also unavailable, without
+waiting for a FIFO writer. Invalid relative paths remain input errors.
+These assessments do not count as reviewed current candidates. `list --stale`
+includes stored candidates absent from the plan separately. List and show do
+not create a missing store.
+
+Plan-only output has execution state `not_loaded`. Add `--report run.jsonl` for
+actual results from a complete schema-v10 JSONL execution stream with a passing baseline and
+matching project/candidates. A plan candidate absent from the report is
+`not_in_report`; recording it with that report is rejected. Aggregate JSON and older
+reports are not supported by review. Plan-only recording remains allowed.
+
+Limits are 64 MiB per plan/report, 16 MiB per store, and 10,000 events per store.
+Source inspection is bounded to 64 MiB; larger sources are unavailable for
+review. Writer locks wait at most one second. Journals need additional disk
+space. Corrupt, unknown, or unrelated databases are rejected without automatic
+repair. Use a local filesystem; network filesystem concurrency is outside the
+initial contract. Store files and SQLite auxiliary paths must not alias plan,
+report, source, or fingerprint inputs.
+
+Starting with hoimin 0.8.0, review JSON uses version 2 of the independent
+[review schema](../reference/json-schema/review-result.schema.json). Plan references contain
+`path` and `content_hash`; report references contain an `artifact` object with
+those fields and a required `run_id`. A review without a report keeps `report: null`.
+SQLite review stores use `user_version = 2`. Version 1 stores are rejected on
+read and write; there is no automatic conversion. Keep an old store separately
+and use another `--store` path to record reviews in version 2.
+See the [review contract](../../development/knowledge/design/survivor-review.md) for identity and
+formal verification boundaries.
+
+## Premature loop exit
+
+`loop_break_insert` appends one `break` at the end of an eligible `for`, `async for`,
+or `while` body. When execution reaches that point, it exits the selected loop
+and skips the loop's `else` suite. This tests whether assertions distinguish
+complete iteration from premature termination.
+
+```python
+for item in items:
+    process(item)
+    break  # inserted by loop_break_insert
+```
+
+The operator is enabled by default. Use
+`--exclude-operators loop_break_insert` to disable it, or
+`--operators loop_break_insert` to select only it. Existing `break_continue`
+swaps an existing `break` and `continue`; it remains independently selectable.
+
+A direct unconditional `break`, `continue`, `return`, or `raise` anywhere in the
+body suppresses an unreachable tail insertion. Conditional `continue` can bypass
+the inserted `break`, so this does not guarantee exactly one iteration. Nested
+loops receive separate candidates; each candidate exits only its selected loop.
+The insertion preserves comments, indentation, logical line boundaries and line
+endings, including inline suites. It uses the final source anchor's line for
+line selection and the containing loop's enclosing symbol for symbol selection.
+An empty iterator or an initially false while condition never executes the new
+`break`. No `continue` insertion operator is provided.
+
+## Early iterator exhaustion
+
+`iterator_stop_insert` inserts `raise StopIteration()` at the entry of an
+undecorated synchronous class method named `__next__`. `async_iterator_stop_insert`
+inserts `raise StopAsyncIteration()` in an undecorated async `__anext__` method.
+Both preserve an initial docstring and the original body. A consumer receives no
+items from that method, which checks whether tests assert expected produced values.
+These mutations do not model dropping only a later item.
+
+Both operators are enabled by default. Disable either individually, or use
+`--exclude-operators iterator_stop_insert,async_iterator_stop_insert` to disable
+both. Select either by its ID with `--operators`.
+
+Generator and async-generator methods are excluded: a stop exception escaping a
+generator does not represent ordinary exhaustion. Nested generators do not exclude
+the enclosing method. Non-method functions, decorated methods, mismatched async
+forms, docstring-only bodies, methods declaring the inserted name global in their
+own scope, and methods already raising the same exception at
+entry are excluded. The inserted exception name must statically resolve to the
+builtin; shadowed or uncertain bindings suppress the candidate. Insertion happens
+before an existing statement, so its line and containing method identify the
+candidate for `--line` and `--symbol` selection. A surviving mutant identifies a
+test gap to inspect; it does not by itself establish a defect in the iterator.
+
+## Generator behavior
+
+These four operators are enabled by default and independently removable with
+`--exclude-operators`. Select an individual ID with `--operators`.
+
+| Operator | Change | What tests can detect |
+| --- | --- | --- |
+| `list_comprehension_to_generator` | `[f(x) for x in items]` becomes `(f(x) for x in items)` | One-shot iteration, truthiness and lazy evaluation; async comprehensions also change to generator expressions |
+| `generator_return_insert` | Inserts bare `return` after a docstring in a generator `def` or `async def` | Missing produced values; original `yield` source remains so the function retains its generator kind |
+| `generator_skip_first` | Consumes one item from a synchronous generator expression at construction and returns the same generator | Missing first values and earlier evaluation; empty dynamic inputs remain empty |
+| `generator_empty` | Constructs the original synchronous generator expression, then substitutes an empty generator | Tests accepting missing values despite successful iterable construction |
+
+For example, changing a list comprehension into a generator can make a second
+traversal empty. Testing `bool(generator)` does not establish whether it contains
+values. Assertions should check the values needed by the application.
+
+Skip-first and empty target explicit synchronous generator expressions, including
+implicit sole call arguments. They do not infer arbitrary variables' iterator
+types or consume asynchronous generators. A construction-time `await` in the
+leftmost iterable can still produce a synchronous generator; awaits executing
+inside its frame make it asynchronous. Syntactically known-empty list/tuple
+iterables are excluded from these two operators.
+
+Skip-first requires static proof that `next` refers to the builtin. Shadowed or
+uncertain bindings suppress it. Its single `next` call evaluates user code sooner
+and can raise that code's errors; normal hoimin execution budgets still apply.
+Empty preserves the original leftmost iterable evaluation and iterator acquisition
+once, without consuming its values. It models no remaining items, not the side
+effects of actually exhausting an entire stream. No full-drain mutation is used.
+
+Early return excludes non-generator functions and an existing first `return`.
+Nested function bodies do not make their enclosing function a generator; defaults
+evaluated in the enclosing scope can. Docstrings, original body source and
+LF/CRLF/CR spelling are retained. Expression mutations use their expression's
+start line; entry insertion uses the existing statement's line. Existing
+line/symbol selection, profiles, candidate caps and payload limits apply.
+A surviving mutant is a reason to inspect a test's assertions, not proof of a bug.
+
+
+## Missing values, shared state and delegation
+
+These eleven operators are enabled by default. Select one with `--operators`, or
+exclude any IDs with `--exclude-operators`:
+
+| Operator | Mutation | Assertions it exercises |
+| --- | --- | --- |
+| `none_truthiness` | A single `is None` becomes a falsiness test; `is not None` becomes a truthiness test | Distinguish omitted values from valid zero, False, empty strings and containers |
+| `mutable_default_share` | A None parameter default becomes [] or {} when its entry guard initializes that same parameter | Detect state shared across calls or instances; explicitly passed None still creates a fresh object |
+| `nonlocal_remove` | Replace a nonlocal declaration with pass | Check updates to enclosing state, including multi-name declarations |
+| `yield_from_to_yield` | Remove only the from token, yielding the operand itself instead of delegating | Check individual produced values, their shape and delegation behavior |
+| `mapping_setdefault_to_get` | Rename an eligible setdefault call to get | Check that missing-key defaults are stored, not just returned |
+| `bisect_boundary_swap` | Swap bisect_left and bisect_right | Check insertion boundaries when equal values repeat |
+| `deepcopy_to_copy` | Replace a one-argument deepcopy call with copy | Check that nested mutable objects remain independent |
+| `deque_popleft_to_pop` | Rename a zero-argument popleft call to pop | Check FIFO order using at least two items |
+| `gather_return_exceptions` | Add return_exceptions=True to an eligible asyncio.gather call | Check that failed tasks are propagated or inspected instead of treated as successful results |
+| `itertools_take_drop_swap` | Swap takewhile and dropwhile | Check selected values and iterator consumption at the predicate boundary |
+| `fstring_conversion_swap` | Swap explicit !r and !s in an f-string | Check display/debug representations, including nested format fields |
+
+None comparisons support either operand order and retain a bool result without
+introducing a bool function lookup. Chained comparisons, None/None comparisons,
+annotations and pattern expressions are excluded. The operand runs once; source
+grouping, comments and continuation lines are retained; grouping around the removed
+None operand is removed with that operand.
+
+Shared defaults require the first statement after an optional docstring to be an
+if statement testing that parameter `is None`, with exactly one assignment to it
+of an empty list or dict and no elif/else. Its parameter default must be None.
+Decorated and generic definitions, additional initializer statements, other
+factories and nonempty containers are excluded. Positional-only, keyword-only,
+async functions and methods are supported. The original guard/body remains;
+only omitted arguments share the new default. Dataclass fields are not rewritten.
+
+Nonlocal removal affects the entire declaration; an existing global declaration
+is not changed. Yield-from changes preserve the enclosing generator kind but
+intentionally change delegation, including its completion/send/throw behavior.
+Both retain surrounding comments and inline suite structure.
+
+Setdefault renaming accepts one or two ordinary positional arguments, no keywords
+or starred arguments, and a name or attribute receiver. It follows the existing
+syntactic method-operator model: it does not prove the receiver is a builtin dict,
+and custom same-name methods can also be affected. Receiver and argument source
+remain unchanged and execute once in their original order.
+
+Candidates use the changed token's line (default None, nonlocal, from or method
+name), or the comparison start for none_truthiness. Existing symbol/line selection,
+profiles, caps, payload budgets and cancellation apply. A surviving mutant needs
+inspection against the application's observable contract; it is not proof of a bug.
+
+
+The bisect and copy mutations require a stable top-level standard-library import,
+including aliases. They skip shadowed, rebound or escaped bindings according to
+the shared import resolver. Imported function aliases use a guarded __import__
+lookup; module attributes retain their receiver and change only the member.
+Deepcopy calls with memo arguments, keywords or starred arguments are excluded.
+Bisect's unsuffixed alias and insort functions are excluded.
+
+The queue mutation accepts simple name or attribute receivers, zero arguments
+and no keywords. Like setdefault matching, it is syntactic and can affect custom
+methods. It changes popleft to pop only; ordinary pop calls are unaffected.
+
+
+Gather matching requires a trusted asyncio import and at least one ordinary
+positional argument. Calls with keywords, starred arguments or generator
+expressions are excluded. Existing return_exceptions values are unchanged by
+this operator; boolean_literal already changes an explicit False to True.
+The edit replaces the closing parenthesis, so that token determines line
+selection. Comments, trailing commas and argument evaluation order are retained.
+Successful tasks keep their result values; failed tasks become exception objects
+in the returned list instead of propagating through gather.
+
+The iterator-prefix swap requires trusted itertools imports and supports
+module/function aliases under the same conservative resolver. It preserves the
+predicate and iterable expressions, while deliberately changing yielded values
+and how far the iterator is consumed.
+
+The formatting swap changes only an explicit r or s conversion letter in an
+f-string. It includes nested format fields and concatenated f-strings. It skips
+!a, omitted conversions, implicit debug repr and conversions in t-strings.
+Ordinary f-strings inside t-string expressions remain eligible. Expressions run
+once; debug text, format specs, comments and literal text are preserved.
+
+## Loop continuation, comparison delegation and exception causes
+
+`continue_remove` replaces a `continue` statement with `pass`, allowing later
+statements in the same iteration to run. Unlike `break_continue`, it does not
+stop later iterations. It applies inside nested loops, `with`, `try`/`finally`
+and loop `else`; existing surrounding control flow remains intact. A tail
+`continue` can be equivalent, so survival alone is not a missing-test claim.
+
+`comparison_not_implemented` replaces an unshadowed builtin `NotImplemented`
+returned directly by an ordinary synchronous class rich-comparison method
+(`__eq__`, `__ne__`, `__lt__`, `__le__`, `__gt__`, `__ge__`) with `False`. This
+can prevent reflected comparison delegation. Decorated, asynchronous, generator,
+arithmetic and non-method functions are excluded, as are nested function
+returns and uncertain/shadowed builtin references. It does not claim to infer
+the runtime operand types or support arithmetic delegation.
+
+`exception_cause_remove` changes an explicit named cause in `raise E from cause`
+to `None`. It suppresses explicit chaining; Python retains implicit
+`__context__` and sets `__suppress_context__`. Bare raises, existing `from None`,
+constructor calls, attributes and compound cause expressions are excluded.
+Only APIs promising cause diagnostics justify strengthening a test for this
+survivor; error-type/message-only contracts need no new cause assertion.
+
+All three use the existing candidate budget, selection and cancellation paths.
+They add no target imports during analysis, dependencies or saved schema.
+See the [bounded research and decisions](../../development/work/reports/issues-1125-1131/README.md)
+for rejected candidates and evidence limits.
+
+## Dataclass ownership, sorting keys, captures and encoding
+
+`dataclass_factory_share` replaces builtin list/dict/set factories in direct
+annotated fields with a lambda returning one shared empty container. It keeps
+field options and permits trusted dataclasses import aliases. Initially it
+accepts direct top-level ordinary dataclasses with no explicit bases, metaclass,
+type parameters or extra decorators. Class suites must contain only annotated
+name fields, pass and string literals; methods, assignments, control flow,
+private/duplicate field names and conflicting aliases are excluded. Uncertain
+imports, dynamic namespace access and shadowed builtin factories are excluded.
+A module rebinding after class evaluation does not change the already captured
+factory identity. Existing import resolution outside this guarded dataclass
+path is unchanged. Arbitrary factories are excluded; source code is never
+imported for discovery. Sharing/definition-time empty allocation and factory
+metadata changes are intentional mutation effects.
+
+`sort_key_swap` swaps two distinct simple reads in the tuple returned by an
+explicit key lambda on a proven builtin sorted call. Reads can be names,
+attribute chains or literal-index subscripts. Calls, compound expressions,
+variable/slice indices, starred elements, duplicate reads and named key functions
+are excluded; list.sort is not included. Grouping, separators and comments are
+retained. Line selection uses the actual edit-start line, including multiline
+calls. Each key component is still evaluated once, but the evaluation order
+changes; properties and custom subscripts can execute user code. This operator
+does not infer purity or require every detection to be unique to that operator.
+
+`lambda_capture_late` targets one-parameter `lambda value=value: value` captures
+inside a same-scope ordinary for-loop with a matching simple name target. A
+private getter/sentinel wrapper makes omitted values late-bound while retaining
+the original positional/keyword parameter and explicit overrides, including None
+and mutable identity. Helpers are wrapper-local with collision-free names. It
+excludes class-body loops, comprehensions, nested lambda/function/class scope crossings, async or
+unpacking target bindings, complex defaults/bodies, positional-only/keyword-only
+or variadic parameters and the matched loop's else suite. It can recognize a
+matching outer loop through a differently named inner loop. The mutation adds
+closures and a sentinel per callback and changes defaults/closure metadata and
+traceback shape; exact introspection equivalence is not promised.
+
+`encoding_errors_ignore` changes an explicit literal errors='surrogateescape'
+to errors='ignore' in trusted codecs.encode/decode imports or nominal simple
+receiver encode/decode methods. Nominal matching does not prove receiver type;
+a custom same-named method can match. Uncertain imported codecs references are
+excluded rather than falling back to nominal matching. Calls on computed
+receivers, dynamic keyword/positional expansion, positional errors, implicit
+string concatenation and f-strings are excluded. Encode/decode candidates may
+expose the same losslessness requirement; count that as one requirement.
+
+All four share candidate limits, payload admission, selection, profiles and
+cancellation. They add no dependency or saved-format compatibility path.
+See the [implementation and evidence](../../development/work/reports/issues-1125-1131/four-implementation.md).

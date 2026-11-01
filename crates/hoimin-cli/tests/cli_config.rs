@@ -219,8 +219,11 @@ const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 85] = [
 #[case::type_collections_62("type_collections")]
 #[case::type_iterables_63("type_iterables")]
 fn usage_documents_all_mutation_operator_ids_and_selector_families_1(#[case] name: &str) {
-    let usage =
-        fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/usage.md")).unwrap();
+    let usage = fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/user/guides/usage.md"
+    ))
+    .unwrap();
 
     assert!(usage.contains(name), "usage reference is missing {name}");
 }
@@ -241,8 +244,11 @@ fn usage_documents_all_mutation_operator_ids_and_selector_families_1(#[case] nam
 #[case::comprehensions_13("comprehensions")]
 #[case::set_literals_14("set literals")]
 fn usage_documents_all_mutation_operator_ids_and_selector_families_2(#[case] expected: &str) {
-    let usage =
-        fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/usage.md")).unwrap();
+    let usage = fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/user/guides/usage.md"
+    ))
+    .unwrap();
 
     assert!(
         usage.contains(expected),
@@ -267,7 +273,7 @@ fn usage_documents_all_mutation_operator_ids_and_selector_families_2(#[case] exp
 fn development_docs_explain_exception_mutation_policy(#[case] expected: &str) {
     let development = fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../docs/development.md"
+        "/../../docs/development/guides/contributing.md"
     ))
     .unwrap();
 
@@ -284,8 +290,11 @@ fn development_docs_explain_exception_mutation_policy(#[case] expected: &str) {
     "raising a consumption limit or lowering the reserve is explicit risk acceptance"
 )]
 fn docs_publish_mandatory_disk_defaults(#[case] expected: &str) {
-    let usage =
-        fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/usage.md")).unwrap();
+    let usage = fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/user/guides/usage.md"
+    ))
+    .unwrap();
 
     assert!(
         usage.contains(expected),

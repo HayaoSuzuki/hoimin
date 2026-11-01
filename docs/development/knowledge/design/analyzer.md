@@ -1,0 +1,1854 @@
+---
+type: Decision
+title: Python解析・変異候補と入力規模
+description: 構文・名前解決・変更するバイト範囲・候補保持上限を別々の契約として整理する。
+status: draft
+catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+sources:
+- id: effective-python-mutations-design
+  resource: ../../work/designs/2026-10-25-effective-python-mutations-design.md
+  revision: 8c3ebc2db9cd7212006ea76c5ca0f0ca077ca977
+  working_tree: untracked
+  sha256: 6a4e96362b73636f7e83538e0e4b4f2562b6399d7b6174254a09ace9168c6cf9
+- id: generator-mutations-design
+  resource: ../../work/designs/2026-10-25-generator-mutations-design.md
+  revision: 0c1fbbb9bed0db13139111f5d924c3f09261c843
+  working_tree: untracked
+  sha256: db1c130cc3553960129c4bc72b2f15c72d5f811c0ac4a8a0c42aec704c734287
+- id: iterator-stop-insert-design
+  resource: ../../work/designs/2026-10-25-iterator-stop-insert-design.md
+  revision: 23837533e00a42445d7026147aa0452282e153c4
+  working_tree: untracked
+  sha256: 3af5c5c6ccfb8589695eee152a743ec0af74dc10d0a06c4552f9b0529cf85f3c
+- id: loop-break-insert-design
+  resource: ../../work/designs/2026-10-25-loop-break-insert-design.md
+  revision: 29e7df70048e1d0d086594b12166e13354653ee0
+  working_tree: untracked
+  sha256: 7fb58b872d8d4637bd9eaaebffd050b6f373ece4f89aa20034499ef190aa343f
+- id: issue-1086-tokens
+  resource: ../../../../crates/hoimin-python/src/analyzer/rust.rs
+  revision: 11eb28d3ff43c441c3aabc78cd7fa6d7d0c72493
+  working_tree: modified
+  sha256: 1ee0e54693881a76b0076c8ba8868952f2f46baf98ba8328740c37405183698b
+- id: issue-1074-project
+  resource: ../../../../crates/hoimin-cli/src/analyzer/exception_project.rs
+  revision: 03c7e00fc2087fa87c3c0ee9ab9f70c766fc6956
+  working_tree: modified
+  sha256: 84d34a4faa0bf9ca32e0e6f6c6eeb68232b6e8633adae3a0f9b466ebacde99c3
+- id: issue-1074-builder
+  resource: ../../../../crates/hoimin-python/src/analyzer/exception_hierarchy.rs
+  revision: 03c7e00fc2087fa87c3c0ee9ab9f70c766fc6956
+  working_tree: modified
+  sha256: 86548f1626d8f1f84afceed70d0dd37f89a07894d29a90a2830690b287b85344
+- id: issue-1060-selection
+  resource: ../../../../crates/hoimin-python/src/analyzer/rust/selection.rs
+  revision: 8691e86562bf65ccf1624b784f845ed92bbda1cc
+  working_tree: modified
+  sha256: 2abe5c76c979f78e4e55b933574d1508d663d02e35667871d206c373fcc13b07
+- id: six-perf-record
+  resource: ../../work/maintenance/2026-10-21-issues-1039-1040-1041-1042-1044-1045/README.md
+  revision: 79f22535197cdc922e12318386102f1806df625e
+  working_tree: modified
+  sha256: 2361b6b7834e602c1c5a41fed9a31b706cdae9ced91f77ece2a67b83d05a0689
+- id: six-perf-imports
+  resource: ../../../../crates/hoimin-python/src/analyzer/rust.rs
+  revision: ab940366085cccfadcfe182bfbf8f447613e25bc
+  working_tree: clean
+  sha256: 38c8753ee29f41504dab88b815296a7425b5c4495add87ec0a6ea8223e5aa912
+- id: six-perf-hierarchy
+  resource: ../../../../crates/hoimin-python/src/analyzer/exception_hierarchy.rs
+  revision: 79f22535197cdc922e12318386102f1806df625e
+  working_tree: modified
+  sha256: f2da3385b3e24e5184c84a9c43bf2e38052175dbab2c3381be24c7f9989980d1
+- id: six-perf-lookup-tests
+  resource: ../../../../crates/hoimin-python/src/analyzer/exception_lookup_tests.rs
+  revision: 79f22535197cdc922e12318386102f1806df625e
+  working_tree: modified
+  sha256: 3664d8fff255a3c9d5f680a95c3b5105889c60f09db9571a7afefa960d5f19e3
+- id: issue-1030-admission
+  resource: ../../../../crates/hoimin-python/src/analyzer/rust.rs
+  revision: 1f7feae33fa310aae87fbadb390105f6d770439d
+  working_tree: modified
+  sha256: b6341dbd686f6084a4b63f9c897e776884e2de82d8df13dca03fda6e429f1004
+- id: issue-1029-members
+  resource: ../../../../crates/hoimin-python/src/analyzer/exception_hierarchy.rs
+  revision: 1f7feae33fa310aae87fbadb390105f6d770439d
+  working_tree: modified
+  sha256: 6395c960885332ceceed5ff1a19c6c8b9872aaebadff04bac9bf197300433335
+- id: perf-three-d1
+  resource: ../../work/maintenance/2026-10-20-perf-three/reports/task-3-d1-review.md
+  revision: f72134d76d28d87cd728305ed224f298df41af4a
+  working_tree: untracked
+  sha256: 940e252759779a85e44d2fa490888276c9ce6045f94cce5598e9ddf1f0beae73
+- id: perf-three-r6
+  resource: ../../work/maintenance/2026-10-20-issue-1008/r6/README.md
+  revision: f72134d76d28d87cd728305ed224f298df41af4a
+  working_tree: clean
+  sha256: dc8d380685fb078d256cc965a2aed63c31806ca4ac105bb6623b342cd4731d77
+- id: perf-three-context
+  resource: ../../../../crates/hoimin-core/src/candidate.rs
+  revision: f72134d76d28d87cd728305ed224f298df41af4a
+  working_tree: clean
+  sha256: bb98588e81434a8236204694cef02eec8f41123d90d65557d83123e5e76c753d
+- id: perf-three-selection
+  resource: ../../../../crates/hoimin-python/src/analyzer/rust/selection.rs
+  revision: f72134d76d28d87cd728305ed224f298df41af4a
+  working_tree: clean
+  sha256: 55784a1d7923b782f84f95b5cf67e9e7ae9e16e86a56b8bb0569a51039bfd5c5
+- id: issue-1005-graph
+  resource: ../../../../crates/hoimin-python/src/analyzer/exception_import_graph.rs
+  revision: faff6415d6a54f71ad881df97e521cc83ac19894
+  working_tree: untracked
+  sha256: ee7f8325a25d15e912ab75cf1e118d0829d6e2564444d85a248e7e48593fffe9
+- id: issue-1005-tests
+  resource: ../../../../crates/hoimin-python/src/analyzer/exception_import_graph_tests.rs
+  revision: faff6415d6a54f71ad881df97e521cc83ac19894
+  working_tree: untracked
+  sha256: 864b49faeeacd93ae8984a83f79ea295f5e6120c562e6a8b9a18a1aa67bd1536
+- id: issue-1005-properties
+  resource: ../../../../crates/hoimin-python/src/analyzer/exception_import_graph_properties.rs
+  revision: faff6415d6a54f71ad881df97e521cc83ac19894
+  working_tree: untracked
+  sha256: bb82ef574585c4b10a2e10c76b8dc1d50d5da0b2a7f905624ef5e649faff4be6
+- id: issue-1005-evidence
+  resource: ../../work/maintenance/2026-10-19-issue-1005/report.md
+  revision: 3aaf82b0d5b695a548dda33ea248ceaa1dd68219
+  working_tree: clean
+  sha256: f00dd5b9e1daa9f50c1289a0b3a1f2f684be377ce954a8ceae19ed1e55c247f0
+- id: issues-995-996-python
+  resource: ../../../../crates/hoimin-python/src/lib.rs
+  revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
+  working_tree: clean
+  sha256: 07cb1fee8759b7b20d738e9533998c06e1c5679e744061265d5da4394a40be3e
+- id: issue-995-index
+  resource: ../../../../crates/hoimin-python/src/analyzer/exception_hierarchy.rs
+  revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
+  working_tree: clean
+  sha256: b3b0ddfd0bcd07fef271c6682c62ddf9d3c70ae24d02922a81e55a84f80378c2
+- id: issue-943-record
+  resource: ../../work/maintenance/2026-10-16-issue-943.md
+  revision: ee5f5c653244537aa1bbd02bbb073403146a55ca
+  working_tree: modified
+  sha256: 7924c54043995f9c8137cd3aeb9b79200c1881df7bf9cf08b1fd39a1c2bc0d6e
+- id: issue-943-source
+  resource: ../../../../crates/hoimin-cli/src/analyzer/store.rs
+  revision: 465ff928c1f2ceb9f9b8f8084465475e45799ee8
+  working_tree: modified
+  sha256: dc5e5c31080e7e9294c658a391410615dbb32efe4f99f662e276cfe7160d1903
+- id: issue-935-bindings
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/341e153c093e2677b443d3ef85bdf29fc618ebdf/crates/hoimin-cli/src/analyzer/rust.rs
+  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
+  working_tree: modified
+  sha256: 07748a919716ded038afecfed1fe7288d78ae5c5ff119b129e778c0a5cee36c0
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  recovered_revision: 341e153c093e2677b443d3ef85bdf29fc618ebdf
+  recovered_blob: 479adf70e261535378115c7447f15ed9bc5e036e
+- id: issue-935-tests
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/341e153c093e2677b443d3ef85bdf29fc618ebdf/crates/hoimin-cli/src/analyzer/known_imports_tests.rs
+  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
+  working_tree: untracked
+  sha256: 82141fe8dcedb0bcca268600e8351b3cbde6dd4a9048485fac00d5a3c7d05537
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/known_imports_tests.rs
+  recovered_revision: 341e153c093e2677b443d3ef85bdf29fc618ebdf
+  recovered_blob: 48eef2b970f162d942d3ec0ae828834f09c32066
+- id: issue-935-evidence
+  resource: ../../work/plans/2026-10-16-issue-935.md
+  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
+  working_tree: untracked
+  sha256: 1ef27c5122656ae5da633cdb3a16f3524cd1c18d874fa5f6c08b1b083dd01f08
+- id: issue-929-plan
+  resource: ../../../../crates/hoimin-cli/src/plan.rs
+  revision: 0d3fbc1a1821074d6ba8a2a212116241adc85c4e
+  working_tree: modified
+  sha256: 834cd4424f45f5a139cb5fa0c5e50e49da26c1fb311a8cd4187298e58301132d
+- id: issue-929-run
+  resource: ../../../../crates/hoimin-cli/src/analyzer/mod.rs
+  revision: 0d3fbc1a1821074d6ba8a2a212116241adc85c4e
+  working_tree: modified
+  sha256: 1c46f3462180954d6ba207aa51ad49b579e48eba24a214c0a292e3ad23ed64e0
+- id: issue-929-live-codes
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/54a72e541a80db4a9df3225e728345146f636180/crates/hoimin-cli/src/analyzer/types.rs
+  revision: 0d3fbc1a1821074d6ba8a2a212116241adc85c4e
+  working_tree: modified
+  sha256: 77cd9052af7d310e7a34c6145768fde93db6617603163beaf800cba2bace8a64
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/types.rs
+  recovered_revision: 54a72e541a80db4a9df3225e728345146f636180
+  recovered_blob: 7bb09dc798f41391aef4007368035c85ee731456
+- id: issue-914-evidence
+  resource: ../../work/plans/2026-10-15-issue-914.md
+  revision: 54093222abe08c79e8e36e4656ee04b9c6d8dda0
+  working_tree: untracked
+  sha256: 8801090d34da44064e561eaab3f5ee44edf8768a2e1db1f2942174ae6e3e52d7
+- id: issue-914-class-context
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/75df00cabcebed7c839d6d77fa1b8ce96b9a858f/crates/hoimin-cli/src/analyzer/rust.rs
+  revision: 54093222abe08c79e8e36e4656ee04b9c6d8dda0
+  working_tree: modified
+  sha256: d128e5fe1af0de83481bfb435810b0fc0e5129757b517c9354d94a3045fec524
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  recovered_revision: 75df00cabcebed7c839d6d77fa1b8ce96b9a858f
+  recovered_blob: 7da5342a7c9d53dcc4a69c6b545b8af9797965d4
+- id: issue-871-acquisition
+  resource: ../../work/maintenance/2026-10-22-issue-1068-knowledge-links.md#issue-871-acquisition
+  revision: 49a34a63ac4e995bfefb156f85ff3a934b594e6b
+  working_tree: modified
+  sha256: bda56c389adde16eecbfdf6ce13726a1138f2a117442cc82ed3c541aa3eeab3c
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust/depth.rs
+  evidence_status: unavailable-recorded-working-tree-bytes
+- id: issue-871-evidence
+  resource: ../../work/plans/2026-10-14-issue-871.md
+  revision: 6f5ce7e61ea43cf76b795570ecc403080888a092
+  working_tree: modified
+  sha256: c3e53304b573959b44bc6f78a11f8701ec623ff39883348777ad18a1a1782679
+- id: issue-873-decoder
+  resource: ../../../../crates/hoimin-core/src/source_encoding.rs
+  revision: 30d9d9a0066cea85dfb89c68eb0a4db083a55f58
+  working_tree: modified
+  sha256: b9147eb48c247ca61474b3fe8d4aa13175e594949c077cc2441d6acbdcbcc32a
+- id: issue-873-candidates
+  resource: ../../../../crates/hoimin-core/src/candidate.rs
+  revision: 30d9d9a0066cea85dfb89c68eb0a4db083a55f58
+  working_tree: modified
+  sha256: a057e83a8b11bfd82c8c1d3791e33171213d546616a384847bca364450334e5f
+- id: issue-866-contract
+  resource: ../../../../crates/hoimin-cli/src/analyzer/mod.rs
+  revision: 3b79cab70063d688a3484dbb95b86f806a9a9457
+  working_tree: modified
+  sha256: 264196bfd07a1c3dc2a820c42ca658e1fc3be0937d489553b1f49e2ad6b9a9d7
+- id: issue-865-names
+  resource: ../../work/plans/2026-10-14-issue-865.md
+  working_tree: untracked
+  sha256: 9ade2e98bed5c27e32f0eac3daadf1c93b331f9d329d198afdd1e376a8163429
+- id: stdlib-conversion
+  resource: ../../work/maintenance/2026-10-13-stdlib-conversion.md
+  revision: 95ecb2471ac6cb0a60d4f74d3828f4c3fb24f5de
+  working_tree: modified
+  sha256: 40a2f10b2a203984c5a381bc6feddc6600a95bfca2471c0b81dc58ef5b8aa7fa
+- id: issue-851-protocol
+  resource: ../../work/maintenance/2026-10-13-analyzer-protocol.md
+- id: issue-849-initialization
+  resource: ../../work/maintenance/2026-10-13-analyzer-initialization.md
+- id: string-segment-implementation
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/a6965910bbc745e74aeb539628b3e2dc66c2a9d3/crates/hoimin-cli/src/analyzer/rust/string_segments.rs
+  revision: d6f4be7b467b584479250ff01dca034441a92b82
+  working_tree: untracked
+  sha256: b126bf9a14e7b812cc56d29c91ed849d6274be48d1cbc83b3380ee1fd77f61fa
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust/string_segments.rs
+  recovered_revision: a6965910bbc745e74aeb539628b3e2dc66c2a9d3
+  recovered_blob: 222b44d69d371e9a438b9108cc8b337a27249c38
+- id: string-segment-exclusions
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/a6965910bbc745e74aeb539628b3e2dc66c2a9d3/crates/hoimin-cli/src/analyzer/rust/string_literals.rs
+  revision: d6f4be7b467b584479250ff01dca034441a92b82
+  working_tree: modified
+  sha256: 3ea6e3c5e1f49de52765356a7f035c6d9673fa252f9b9ac8d44a468b3dc4532e
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust/string_literals.rs
+  recovered_revision: a6965910bbc745e74aeb539628b3e2dc66c2a9d3
+  recovered_blob: 9f442e22a9f93a6b7f7c6be4319c94cac9e23352
+- id: string-segment-selection
+  resource: ../../../../crates/hoimin-core/src/config.rs
+  revision: d6f4be7b467b584479250ff01dca034441a92b82
+  working_tree: modified
+  sha256: 5c9c069bf3505dcb411a70636eee41029ce754e8599ac84ff14175b5f6749331
+- id: string-segment-tests
+  resource: ../../../../crates/hoimin-cli/tests/string_segment_empty.rs
+  revision: d6f4be7b467b584479250ff01dca034441a92b82
+  working_tree: untracked
+  sha256: 676bf6fdd0d2452916873c3a6323c107b3a8ddc9702ee5714c6b8d176bc2fd2e
+- id: string-segment-review
+  resource: ../../work/reviews/2026-10-10-issue-761-string-segments.md
+  revision: d6f4be7b467b584479250ff01dca034441a92b82
+  working_tree: untracked
+  sha256: cf3f04a7fcd807124e3686780fbd0db6efec3393941ac600339fc0332c471558
+- id: issue-692-hierarchy
+  resource: ../../work/designs/2026-10-05-issue-692-exception-hierarchy.md
+  revision: fae3ce3e82a8a768c8dca49531384aa081a97f71
+  working_tree: clean
+  sha256: 540858afd18bf3ac21382ead8b016358aae9e5f2a4aa3e7fc37a2ae0591d2361
+- id: issue-692-scopes
+  resource: ../../work/designs/2026-10-05-exception-scope-outcomes.md
+  revision: fae3ce3e82a8a768c8dca49531384aa081a97f71
+  working_tree: clean
+  sha256: 08bcdc67d25554eb86990d7f8e83ca451d8f72639069ea72acbb6092d8a1f101
+- id: issue-692-verification
+  resource: ../../work/reports/2026-10-05-exception-scope-lean-audit.md
+  revision: fae3ce3e82a8a768c8dca49531384aa081a97f71
+  working_tree: clean
+  sha256: 290244cc4afcb16315fd2d0353da0dedf0e6c64d82c5dc03cee393dbd98088ff
+- id: issue-556-design
+  resource: ../../work/designs/2026-09-24-issue-556-with-suppression.md
+  revision: 282e941e4c1a5a23303d30beca881d7bbfde7763
+  working_tree: clean
+  sha256: 7ff74c9749274839e3cbe0ceb737544de0dd3b5fb5eef90aae17e3ff461269be
+
+- id: issue-560-design
+  resource: ../../work/designs/2026-09-24-issue-560-evaluation-order.md
+  revision: ffb65c051014f3d9601df2deb0bfeb5ff55c7c38
+  working_tree: clean
+  sha256: fec8835b826fb48eee6f58471f0e0d679cb0dcefe0a574b4bd1476051d99546e
+- id: issue-560-code
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/b91d3659215a150a6c8c24f0233f4c3880b52e28/crates/hoimin-cli/src/analyzer/rust.rs
+  revision: aefa2a8
+  working_tree: modified
+  sha256: 0d93c8c393d50ca9793ade1ce487504138b13aa3845557481ce94f89662959be
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  recovered_revision: b91d3659215a150a6c8c24f0233f4c3880b52e28
+  recovered_blob: 9f6c00fb1c1a342046a7269798b31a1a23b29d1f
+- id: issue-560-tests
+  resource: ../../../../crates/hoimin-cli/tests/builtin_evaluation_order.rs
+  revision: ffb65c051014f3d9601df2deb0bfeb5ff55c7c38
+  working_tree: untracked
+  sha256: 9775e388b7c951d7bcacea8a228e24af94d0864e240310f6fa5c377f6bc5b5b1
+
+- id: issue-558-design
+  resource: ../../work/designs/2026-09-24-issue-558-deferred-imports-design.md
+  revision: a49467ded359416a6ee743536100634f1cced3e2
+  working_tree: modified
+  sha256: 05fb86175690ff023986ef0bb2f0df2552ee8801ceab86910d01487db483ff6f
+- id: issue-564-design
+  resource: ../../work/designs/2026-09-24-issue-564-nullable-provenance.md
+  revision: f6f5d96c099fb880884b2b7cb29717ff33d70d75
+  working_tree: clean
+  sha256: a0237a6eca382f65069b6a15eb7681c155f6b94f468d8b09725cff7a9f514f8e
+- id: issue-564-code
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/f6f5d96c099fb880884b2b7cb29717ff33d70d75/crates/hoimin-cli/src/analyzer/rust.rs
+  revision: f6f5d96c099fb880884b2b7cb29717ff33d70d75
+  working_tree: clean
+  sha256: 977b7f871450b831854909f1d8d96a53992922f5688ffa103d5e7a94527e2b8a
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  recovered_revision: f6f5d96c099fb880884b2b7cb29717ff33d70d75
+  recovered_blob: c1aae5af5bde2e4ee38061fc675b7dc38ff97dde
+
+- id: issue-565-design
+  resource: ../../work/designs/2026-09-24-issue-565-annotation-descendants.md
+  revision: 75c1ddfd59a1c2ebf1bc9de05efb33c571c7c328
+  working_tree: clean
+  sha256: b13589887e2a7fc2f3386c0d284825582139503f3deab0504e79c13d7cb76f8f
+- id: nullable-gates-audit
+  resource: ../../work/audits/2026-09-15-nullable-gates/README.md
+  working_tree: untracked
+  sha256: 13a3b384def390e0596119cc5901ef1b12ac7cd32bbd4ae73266000a6e207b52
+- id: declaration-only-audit
+  resource: ../../work/audits/2026-09-15-declaration-only/README.md
+  working_tree: untracked
+  sha256: 4272c093852eab370489e8345c9ed515f20cdf26f2e5f13a4d495977db8636c9
+- id: evaluation-order-audit
+  resource: ../../work/audits/2026-09-15-evaluation-order/README.md
+  working_tree: untracked
+- id: annotation-followup
+  resource: ../../work/audits/2026-09-15-annotation-followup/README.md
+  working_tree: untracked
+- id: with-finally-audit
+  resource: ../../work/audits/2026-09-15-with-finally/README.md
+  working_tree: untracked
+- id: issue-549-report
+  resource: ../../work/reports/2026-09-15-issue-549-slice-tuple.md
+  revision: f11013542ccd735ab9741b5079c0b39a517df256
+  working_tree: untracked
+  sha256: 80f6a99dabfdbe084de6cba0e211e55b4033bf7449c5dd344ab922358c1fac6b
+- id: issue-549
+  resource: ../../work/designs/2026-09-15-issue-549-slice-tuple-design.md
+  revision: f11013542ccd735ab9741b5079c0b39a517df256
+  working_tree: untracked
+  sha256: 1e0e66ee142ae6e8e71019b67d4901bcc640797781ed8e8d3878cbe2e64460bf
+
+- id: issue-545
+  resource: ../../work/designs/2026-09-15-issue-545-implicit-finally-design.md
+  revision: f11013542ccd735ab9741b5079c0b39a517df256
+  working_tree: untracked
+  sha256: f2d56cddd7659add3ef30fed812ac8174bf45e725fa0ef380f2ca39c8b0dda51
+
+- id: issue-547
+  resource: ../../work/designs/2026-09-15-issue-547-import-transfer-design.md
+  working_tree: untracked
+  sha256: 3fa1b369ff21d00b335d91fb0c83b18b61f54fcd45747ef07ee5386cae273ae8
+
+- id: issue-546-design
+  resource: ../../work/designs/2026-09-15-issue-546-loop-transfer-design.md
+  working_tree: untracked
+  sha256: 13f80e2b6ea3088347ac6f7d5515f0973abdb745fc85ae2453cfaf9f6c0d4c66
+- id: issue-489
+  resource: ../../work/designs/2026-09-14-issue-489-valid-python-corpus-design.md
+  working_tree: untracked
+  sha256: 47a53d5cee6dd179baf0bca4b3a0cd3ae8892873986ec9a2fd70f8a7ce37c1dc
+- id: issue-471
+  resource: ../../work/designs/2026-09-14-issue-471-negative-neighbors-design.md
+  working_tree: untracked
+  sha256: c6b6af9099cdb3e6e15b504fd5cee6349e8906658f036a4775f41d02973ac110
+
+- id: issue-480-spec
+  resource: ../../work/designs/2026-09-14-issue-480-source-encoding-design.md
+  working_tree: clean
+  sha256: 55a99855ee216bfff5afdfd5ffdeeab6c13e1877ec751b0ee88c9a35cb78c37e
+  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
+- id: issue-480-codec
+  resource: ../../../../crates/hoimin-core/src/source_encoding.rs
+  working_tree: clean
+  sha256: 954deff5938c049804c83f9b903cc5742fd04f0c407a8859094b23344cef55d9
+  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
+- id: issue-480-validator
+  resource: ../../../../crates/hoimin-core/src/candidate.rs
+  working_tree: clean
+  sha256: 122f8224aa03efca2ea3da2d061d87fa8e341af29076c9c6b2c4882f989386bc
+  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
+- id: issue-480-writeback
+  resource: ../../../../crates/hoimin-cli/src/workspace/mutation.rs
+  working_tree: clean
+  sha256: 9df6269a7021d5ad604331ae14b952448b47cbc76d943b3665bf9b80541d9f86
+  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
+- id: issue-480-tests
+  resource: ../../../../crates/hoimin-cli/tests/source_encoding.rs
+  working_tree: modified
+  sha256: 8e81fa46f9b3caa687569fbaae5e8bd046def854773432b425e175ce32df4acf
+  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
+- id: issue-480-report
+  resource: ../../work/reports/2026-09-14-issue-480-source-encoding-review.md
+  working_tree: modified
+  sha256: f8cc3f5e7e8d5ae7afec4b3321751e3d0a36dee584256c930395e5571fa59102
+  revision: a19bf3aadb0d56cc514d857a0e6359a563e67a18
+- id: issue-482
+  resource: ../../work/designs/2026-09-14-issue-482-name-history-index-design.md
+  working_tree: untracked
+  sha256: d561460521f12160b3598596dc65d3e3e3898455d9fa93c22b6fdee21ac89f91
+
+- id: issue-479
+  resource: ../../work/designs/2026-09-14-issue-479-stream-annotations-design.md
+  working_tree: untracked
+  sha256: 14ecae895345bbd5bf40452ed53655fc2ff4aec67e292010c2f26a10c39ee3e2
+
+- id: issue-461
+  resource: ../../work/designs/2026-09-14-issue-461-lazy-candidates-design.md
+  working_tree: untracked
+  sha256: 683834f572abb49a7d2a5fc7c36890ce0ac57be4daebcb62467af5391edd1dc1
+
+- id: issue-470
+  resource: ../../work/designs/2026-09-14-issue-470-column-index-design.md
+  working_tree: untracked
+  sha256: 1e6e2edd408f35816863baad22f78426c506a099808846add62a33cd12b062a3
+- id: issue-513
+  resource: ../../work/designs/2026-09-12-issue-513-parser-recursion-design.md
+  working_tree: untracked
+  sha256: 5f9dbe6895760a0675c9a74e3a98207327832450e33433ac869e118125485dc8
+- id: issue-598-design
+  resource: ../../work/designs/2026-09-25-issue-598-prepared-namespace-design.md
+  revision: 61957866feae3cc5cd62cd026b677314e34957ea
+  working_tree: clean
+  sha256: b7740711d779a855a25dc8d658aa7df63be244f0059eda9bbdfbf87f7ec39ecf
+- id: issue-598-report
+  resource: ../../work/reports/2026-09-25-issue-598-prepared-namespace.md
+  revision: 61957866feae3cc5cd62cd026b677314e34957ea
+  working_tree: modified
+  sha256: 9cc6842eefa4850aa0d57c979507dbf7abc77eb9b7fc5219d14c537566674143
+- id: issue-515
+  resource: ../../work/designs/2026-09-12-issue-515-class-directives-design.md
+  working_tree: untracked
+  sha256: b8b9af043c170b7eff1ecb0344a6eea2bddcfec9337c67cb548f1579452edcd0
+- id: issue-514
+  resource: ../../work/designs/2026-09-12-issue-514-comprehension-effect-order-design.md
+  working_tree: untracked
+  sha256: adfc5116dd78b572a24680947062b4229857e776904dcf2eaf99d786d9033b18
+- id: issue-478
+  resource: ../../work/designs/2026-09-11-issue-478-analysis-depth-design.md
+  working_tree: untracked
+  sha256: 705f04cacb4004c050b986288b9e200c353ea19e994a609c8ee80a2b4cdfbf95
+
+- id: issue-469
+  resource: ../../work/designs/2026-09-11-issue-469-bom-column-design.md
+  working_tree: untracked
+  sha256: b8c06ba180a55c43f93558d9d6e4ec812313388373e4cf72edefdbf191d4d6ce
+
+- id: issue-468
+  resource: ../../work/designs/2026-09-11-issue-468-pattern-unary-design.md
+  working_tree: untracked
+  sha256: 5d76141fbf41f5811ba5b9132fcc3504962f67181bde62cfa726dd4e92c6dc31
+
+- id: issue-455
+  resource: ../../work/designs/2026-09-11-issue-455-python-newlines-design.md
+  working_tree: untracked
+  sha256: 2f3470c6ec0971d2e526d7134aecf56c3c089599bcd9dc7e33373f5c24d31db4
+
+- id: exception-parentheses
+  resource: ../../work/designs/2026-09-11-issue-451-exception-parentheses-design.md
+  working_tree: untracked
+  sha256: 73ff551e95721e2bfb0d188c2b76b1ce1ff1b1ef431b9eedd187af8af4298790
+- id: operators
+  resource: ../../work/designs/2026-08-06-collection-and-structural-mutation-operators-design.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: implementation
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/a7daea0b557cd435c1e55b540392fbdd116348e1/crates/hoimin-cli/src/analyzer/rust.rs
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  recovered_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  recovered_blob: 664a96c54d8060dc78a7ae1f95a3dbba5d448f3b
+- id: operator-report
+  resource: ../../work/reports/2026-09-08-python-operator-coverage.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: span
+  resource: ../../work/reports/2026-08-15-lean-byte-span-preservation-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: bounded
+  resource: ../../work/reports/2026-08-14-lean-bounded-candidate-discovery-audit.md
+  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  working_tree: clean
+- id: readme
+  resource: ../../../user/guides/usage.md
+  revision: 5a45bdc3bd444771c4c57e30fe211f174850ce93
+  working_tree: untracked
+  sha256: 6894a34743882cc26fdd1f39cb536c94dfc20d5f1dcf33b3cb7f3da9b13e6bef
+- id: issue-486
+  resource: ../../work/designs/2026-09-11-issue-486-type-parameter-bindings-design.md
+  working_tree: untracked
+  sha256: 49ad4851c7549542b91e02077502d843b05e878a36b3cc00af4220d713f4ff8c
+
+- id: issue-485
+  resource: ../../work/designs/2026-09-11-issue-485-mapping-pattern-keys-design.md
+  working_tree: untracked
+  sha256: 32041915ca7a4046cac8505f8b831b8280fb59d2b2833a929a2f0c32d44f7df0
+
+- id: issue-481
+  resource: ../../work/designs/2026-09-11-issue-481-comprehension-bindings-design.md
+  working_tree: untracked
+  sha256: 499b6d9c2814c81f12562ecbaa2728c8763a535077a69fecef9c01797db415dd
+- id: issue-559-repair
+  resource: ../../work/designs/2026-09-24-issue-559-design.md
+  revision: 98e78166b43940df38a8bb8099c9c6af6004ba5a
+  working_tree: clean
+
+- id: issue-696
+  resource: ../../work/reports/issue-696/design.md
+  revision: 4cc710dea80e4198f48b05a8673ac921961927e4
+  working_tree: untracked
+  sha256: 4796ccaf60b518dc7f79385efa5058b9565626e1629a2064bb0bcf77cd9d86f6
+
+- id: issue-697
+  resource: ../../work/reports/issue-697/design.md
+  revision: 3438b3a
+  working_tree: untracked
+  sha256: c5ed107d2acd19f67814da53bd64f5873c35656a56e0920111a2f79b6f06ea6b
+
+- id: issue-698
+  resource: ../../work/reports/issue-698/design.md
+  revision: 93df0b4
+  working_tree: untracked
+  sha256: 323657b55670eeac6e4304645b7a2ef785551632de05c63441b5d7a86981aaa6
+
+- id: issue-699
+  resource: ../../work/reports/issue-699/design.md
+  revision: e4a359e
+  working_tree: untracked
+  sha256: c84756dcff1e913353ae772dc9bfabf5a1d50938367faad1974a75332f90d2e1
+
+- id: issue-700
+  resource: ../../work/reports/issue-700/design.md
+  revision: 10a0021
+  working_tree: untracked
+  sha256: e8615e151e19ee6a0699326b59823c4e65170b36865102c59ee639c77d3e25cc
+
+- id: issue-701
+  resource: ../../work/reports/issue-701/design.md
+  revision: c7920e0
+  working_tree: untracked
+  sha256: 874cc475bf39b5c0d99c6176ac18a66211e67dea1ec8548caa2490e25d20843a
+
+- id: issue-702
+  resource: ../../work/reports/issue-702/design.md
+  revision: 4b37fcb
+  working_tree: untracked
+  sha256: 1aade18c32612463dbb7cacb57cf05eceb01e6f5b8f8c47be1d46cd9163a1fd4
+
+- id: issue-703
+  resource: ../../work/reports/issue-703/design.md
+  revision: 625e68e
+  working_tree: untracked
+  sha256: 31f19345bca108b883d6083984c505b9860718b607fe0091105b0244e7b03b65
+
+- id: issue-704
+  resource: ../../work/reports/issue-704/design.md
+  revision: 22483e46cea1802a29c3fb376442aefc0dde5b27
+  working_tree: untracked
+  sha256: f1083311f2f119625c62ee1558b769969f96992b06f9727a353e0347e877fde7
+
+- id: issue-705
+  resource: ../../work/reports/issue-705/design.md
+  revision: dbb9635e291ca83ac6895bd650f6185a7f46ffca
+  working_tree: untracked
+  sha256: 00a9ef473ab17de502b60e2279e6c77117794153113da5468c3048d6f16b5a6c
+
+- id: issue-706
+  resource: ../../work/reports/issue-706/design.md
+  revision: bbd765087f8bdda2a5af7b4cea2de6dc8b23f4aa
+  working_tree: untracked
+  sha256: a79205f7322678af6112d30bd6e59728fb0bacfc592b64ddc11dc3c815433636
+
+- id: issue-707
+  resource: ../../work/reports/issue-707/design.md
+  revision: 38a15ddd4e8de36d29800f81b2e8314109b3f855
+  working_tree: untracked
+  sha256: 30d5553957b88c0d968dcf953995d3cd81fcf53a2579b36272d694e9d935e6ad
+
+- id: issue-708
+  resource: ../../work/reports/issue-708/design.md
+  revision: 3c2a0fda1fbd54719433e55a6d747ce11f47e1c7
+  working_tree: untracked
+  sha256: 4fa705263311a2b6497f74f9bdedd359fb1cf83a3c01520855e04d77622cb48c
+
+- id: default-operators
+  resource: ../../work/reports/default-analyzer-operators/design.md
+  working_tree: untracked
+  sha256: 8aa57f82bc7545d7bf5d0d88fb7b2c1b07175272320cac19561bf413ec37f643
+- id: default-operators-review
+  resource: ../../work/reports/default-analyzer-operators/review.md
+  working_tree: untracked
+  sha256: 9a0875f841d3b40d504c2a07b638ea03cbd403adb37b66ffd19c2ae43b3af719
+- id: method-call-remove
+  resource: ../../work/reports/method-call-remove/design.md
+  revision: 3596c98
+  working_tree: untracked
+  sha256: f1b09d5746badd9bb8adb53404d35739275c1185a80339a8241811793ab16192
+
+- id: function-body-return-constant
+  resource: ../../work/reports/function-body-return-constant/design.md
+  revision: 1865f47
+  working_tree: untracked
+  sha256: b505c8e3f175303e82106e08836df1a3f9bf12ad94bfc52e07b1521721c2dcaf
+
+- id: recent-analyzer-defaults
+  resource: ../../work/reports/recent-analyzer-defaults/design.md
+  revision: 8437243
+  working_tree: untracked
+  sha256: 98c8c6c858b6159203d518deaff36f5a186e4f1304bca81085549b401161db26
+
+- id: issue-930-token-operators
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/59fff0890b78e0169b0318b2a8fe637dd0056334/crates/hoimin-cli/src/analyzer/rust.rs
+  revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
+  working_tree: modified
+  sha256: fc838b85cc69ce2e0d5500a089b1f0d034ec82794b94a0a576bd7b3f30180318
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  recovered_revision: 59fff0890b78e0169b0318b2a8fe637dd0056334
+  recovered_blob: 2f893f051b10ef4bc2ee544864e67373dbc67b98
+- id: issue-950-candidate
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/59fff0890b78e0169b0318b2a8fe637dd0056334/crates/hoimin-cli/src/analyzer/types.rs
+  revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
+  working_tree: modified
+  sha256: fe08e9d35c48024b4eb68ccad307116a2e529e3db4ca52f491ace49e5b2dc37f
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/types.rs
+  recovered_revision: 59fff0890b78e0169b0318b2a8fe637dd0056334
+  recovered_blob: b553107f55877be0d240b9a50e8d01a536b33ceb
+- id: issue-950-retention
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/59fff0890b78e0169b0318b2a8fe637dd0056334/crates/hoimin-cli/src/analyzer/rust.rs
+  revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
+  working_tree: modified
+  sha256: fc838b85cc69ce2e0d5500a089b1f0d034ec82794b94a0a576bd7b3f30180318
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  recovered_revision: 59fff0890b78e0169b0318b2a8fe637dd0056334
+  recovered_blob: 2f893f051b10ef4bc2ee544864e67373dbc67b98
+- id: issue-950-descriptor
+  resource: ../../../../crates/hoimin-cli/src/analyzer/mod.rs
+  revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
+  working_tree: modified
+  sha256: 8246e175ff7ed75800d7d2cd4cf7db1d99dc397e9bfcd73282b75fdd801f4f10
+- id: issue-950-tests
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/59fff0890b78e0169b0318b2a8fe637dd0056334/crates/hoimin-cli/src/analyzer/rust_tests.rs
+  revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
+  working_tree: modified
+  sha256: 99a2645a9d488283ad238c16fd3493a28da173c966b80ad3c5f78e6555777878
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/rust_tests.rs
+  recovered_revision: 59fff0890b78e0169b0318b2a8fe637dd0056334
+  recovered_blob: f0c52ed905f8e6cedc9968253adb57fff4cf985d
+- id: issue-972-handler
+  resource: ../../../../crates/hoimin-cli/src/analyzer/mod.rs
+  revision: 4ebed4457519920e9a28f8f653d8ce96985acdad
+  working_tree: clean
+  sha256: d2d5919545daa6add13dbfa43b4eafae255dd6edaa261ce0a63d51765fa9c2b5
+
+- id: issue-977-evidence
+  resource: ../../work/maintenance/2026-10-18-issues-971-979/task-8-report.md
+  working_tree: untracked
+  sha256: b3ae02cb2e123c0089cb127d4189c2d03c2dd4bfba21c6b1789fee9995858dc2
+
+- id: issue-978-payload
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/4ebed4457519920e9a28f8f653d8ce96985acdad/crates/hoimin-cli/src/analyzer/payload.rs
+  revision: 4ebed4457519920e9a28f8f653d8ce96985acdad
+  working_tree: clean
+  sha256: 2286b8eb233abacf91ce0d89bda9cd628ae05149def6ed341f470b0b6f09f0e8
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/payload.rs
+  recovered_revision: 4ebed4457519920e9a28f8f653d8ce96985acdad
+  recovered_blob: 571abd603802a87be2909407d7f5e245409d2f9f
+
+- id: issue-978-evidence
+  resource: ../../work/maintenance/2026-10-18-issues-971-979/task-9-report.md
+  working_tree: untracked
+  sha256: d9fd8051886a76403ff07084d186e237c9bf8a43848e735238152c5164b146a9
+- id: issue-986-walker
+  resource: https://github.com/HayaoSuzuki/hoimin/blob/2ec902ae2353c38f2da1a74cbf6552785387e42d/crates/hoimin-cli/src/analyzer/visitor.rs
+  revision: 2ec902ae2353c38f2da1a74cbf6552785387e42d
+  working_tree: clean
+  sha256: e7e0f607c3b8dce98dd93ac4a340ca4f92f3cec59a5500debec9df1506ff291b
+  original_resource: ../../../crates/hoimin-cli/src/analyzer/visitor.rs
+  recovered_revision: 2ec902ae2353c38f2da1a74cbf6552785387e42d
+  recovered_blob: a81bd3c074217587c6c2578f344dbd8c8b15854d
+- id: issue-986-evidence
+  resource: ../../work/maintenance/2026-10-18-issue-986-visitation.md
+  revision: 2ec902ae2353c38f2da1a74cbf6552785387e42d
+  working_tree: clean
+  sha256: 14cf1ba2a5f6a3cb83837730bdcc40e08d8f060571ba830f4038ede363debbdd
+- id: issue-987-evidence
+  resource: ../../work/maintenance/2026-10-19-issue-987-finally-work.md
+  revision: 7bf4cd3b6b9537539911a8c43ee29529bf92a230
+  working_tree: clean
+  sha256: ee20d80550468bc2bb6e9e1f69631efedbf7a311d35f97479010d6f5d375d227
+- id: python315-syntax
+  resource: ../../work/designs/2026-10-24-python-315-syntax-design.md
+  revision: a8578a958702c8889dd8ad37ca813a09fe59b6a2
+  working_tree: clean
+  sha256: e3ba8fa0209597b92031e623b90c050d2fdf02c60511879503f448ee9ade1b9b
+- id: python315-analyzer
+  resource: ../../../../crates/hoimin-python/src/analyzer/rust.rs
+  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  working_tree: clean
+  sha256: 0a9e39c99e2f072f9fbd73f3a1defdc9bec8a60dd9187352c6de6b93abc778b2
+- id: python315-lazy-policy
+  resource: ../../../../crates/hoimin-python/src/analyzer/rust/lazy_imports.rs
+  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  working_tree: clean
+  sha256: 0456554ad030dd9d616ff0e7e45babbce23b14c9dbb49c3a4bd3fa05ea07d68b
+- id: python315-compiler-oracle
+  resource: ../../../../crates/hoimin-cli/tests/python315_syntax.rs
+  revision: c9f17e694863aa512312bb570a61b9297073dc52
+  working_tree: clean
+  sha256: dcf6d024780f9eb902b767539e967ba6d9bc5c279a9e0748d5b0d34fa6d540b5
+---
+
+# Shared pure Python analysis (Issues #995 and #996)
+
+The internal `hoimin-python` crate owns pure analysis, charged candidate results
+and the exception index. CLI, dedicated heap/corpus tests and fuzz consume its
+Cargo API. CLI owns filesystem reads, project acquisition/fingerprinting and
+candidate spools. Moving results preserves their payload leases and the 16 MiB
+logical retained-payload contract; it does not establish a process RSS bound.
+The `test-support` feature is limited to development observations.[^issues-995-996-python]
+
+Visibility lookup uses ordered exact/prefix queries over loaded modules and
+indexed paths. It retains loaded descendants, alias offsets, ambiguity rules,
+cancellation and the 65,536-entry ceiling. Test-only operation counts measure
+visited entries; they exclude ordered-map comparisons and make no wall-time
+claim. Historical implementation sources below use commit-pinned URLs when their
+recorded bytes were recovered. `revision` remains the original comparison
+commit; `recovered_revision` and `recovered_blob` identify the recovered bytes.
+The two are not interchangeable for modified or untracked sources. Missing
+snapshots and the recheck procedure are recorded in the
+[reference repair record](../../work/maintenance/2026-10-22-issue-1068-knowledge-links.md).
+Current pure analyzer code is in
+[hoimin-python](../../../../crates/hoimin-python/src/lib.rs), including
+[diagnostic and candidate types](../../../../crates/hoimin-python/src/analyzer/types.rs).
+The [CLI handler](../../../../crates/hoimin-cli/src/analyzer/mod.rs) owns source
+acquisition and spool validation, and its
+[store](../../../../crates/hoimin-cli/src/analyzer/store.rs) owns spool replay. These
+live links are navigation, not substitutes for historical snapshot evidence.[^issue-995-index]
+
+# Shared eager-import graph (Issue #1005)
+
+The exception index constructs a graph of parsed source paths once from normalized,
+absolute eager dependencies whose mapped destinations are present. Already dynamic
+modules remain vertices; lazy or missing destinations add no edge. Iterative SCC
+analysis excludes cycle members, and a finite SCC-weighted depth bound excludes
+other modules only at 256. For component C, `H(C) = min(256, max(terminal(C),
+max(C -> D, w(C) + H(D))))`, where w is module count and terminal is w for a
+cyclic component, zero otherwise. This is exact longest edge depth on a DAG and a
+conservative bound through cycles. A one-edge prefix into cycle(254) stays
+eligible; into cycle(255) it does not. Existing dynamic flags and the separate
+class-ancestry limit remain unchanged.[^issue-1005-graph]
+
+The former per-start traversal could accept or exclude the same joined DAG under
+different module names. The approved deterministic rule preserves old module
+exclusions while permitting additional conservative exclusions, including prefixes
+into sufficiently large branching SCCs. It does not mark every cyclic ancestor
+dynamic. Literal real-bound source tests and independent transitive-closure/path
+properties cover cycle membership, prefix candidates, diagnostics, lazy/dynamic
+edges, renaming, old-exclusion containment and cancellation.[^issue-1005-tests][^issue-1005-properties]
+
+Graph visits and scratch storage are O(V+E); construction also examines D raw
+dependencies and pays ordered name/path lookup and string comparison costs.
+Node/dependency/edge cancellation checks include skipped entries. Allocation and
+scratch destruction are cooperative-cleanup limits, not a fixed interruption
+latency. Scratch is released before class/visibility construction; no new input
+cap or runtime counter is introduced.[^issue-1005-graph]
+
+The dated native macOS record preserves a clean Task 5 baseline, exact release
+artifacts, fixed issue fixtures and five-run before/after/control matrices at
+N=16/32/64/128. It separates old stack-pop counts from new all-phase graph events,
+normal CLI wall time from an instrumented pure-index allocation probe, and sampled
+RSS from requested heap bytes. Requested heap peaks were unchanged; allocation
+traffic and the observed dense-DAG CLI times decreased. These observations are
+neither a universal speed/memory guarantee nor native Linux/Windows evidence.
+The report preserves the exact timed runner in `measured-runner.py.txt`; later
+formatting and type-only tool changes have separate provenance.
+No historical formal proof was extended or relabeled as fresh execution.
+[^issue-1005-evidence]
+
+# 構文と名前解決の契約
+
+コレクション・構造変異の設計では、既存の演算子ID、対象選択、候補順序、重複除去を保ちながら変異対象を増やす。組込み関数と同じ名前が別の値へ再束縛されている場合、その名前を組込み関数として変異しないことも条件に含む。名前の参照先が不確かな場合には、候補を保守的に除外する。[^operators]
+
+現在のRust解析器はRuffの構文解析器を利用する。トークン（演算子や識別子などの字句）、抽象構文木（AST）、型注釈に関する候補を生成し、保持数を計測するための構造を持つ。[^implementation]
+
+内包表記の代入式は、反復変数とは異なり、最外の内包表記を囲むスコープに束縛する。global／nonlocal宣言とlambdaの境界を保ち、変異元・変異先の双方を確認する。空の内包表記やgeneratorの遅延実行では代入の可能性と実行済みの事実を区別する。Issue481の設計では、この束縛先と実行条件をRustの候補およびCPythonの観測と照合する。[^issue-481]
+
+Issue #514では、内包表記本体の代入式が外側へ与える束縛の可能性を、内包表記全体の完了位置で反映する。先に評価される最初のiterableで有効な組込み関数の変異を残すためである。関数ローカルの静的な束縛、generator作成後の代入の可能性、次のループ反復で参照される束縛情報は、従来どおり保持する。4形式それぞれの呼出し元・変異先を検証し、Leanから生成した18例を公開CLIと照合する。Leanの証明は宣言情報を固定したモデル内の評価順に限られ、PythonやRust実装全体を証明するものではない。[^issue-514]
+
+# BOMと候補の列番号
+
+Issue #469 の設計では、解析器と共通候補バリデータで列番号の計算を共有する。列は0始まりのUnicodeコードポイント数とし、ファイル先頭にあるBOMだけを表示上の列数から除く。2行目以降や文字列内のU+FEFFは数える。元ソースのバイト列、ハッシュ、変更範囲はBOMを含む実データに対応させたまま保持する。[^issue-469]
+
+解析器だけがBOMを除いていたため、有効な1行目の候補が公開discoveryの共通検証で拒否されていた。列計算をcoreにまとめることで、verifyとworkerの適用前検証も同じ規則を使う。検証では正しい座標の受理と従来の1列ずれの拒否を対にし、公開plan・verify・runで元ソースが保存されることを確認する。[^issue-469]
+
+Issue #470では、同じ列契約を再利用可能な疎な索引で計算する。索引は物理行の開始位置と非ASCII文字の累積余剰バイト数を一度だけ記録し、候補ごとの照会では二分探索を使う。ASCIIだけの長い1行では行頭から候補位置まで再走査せず、解析器と候補検証が同じ索引を参照する。照会順は問わず、候補の順位と保持上限の意味も変更しない。[^issue-470]
+
+# パターン内の単項符号
+
+Issue #468 の設計では、`case -1` などの数値パターンに通常の単項符号変異を適用しない。Pythonのリテラルパターンでは先頭の負符号は有効だが、正符号への置換は構文エラーになるためである。除外はASTの構文上の役割に基づいてトークン候補の登録時に行い、通常の式・ガード・case本体の符号と、複素数の二項符号や真偽値パターンの変異は維持する。[^issue-468]
+
+この契約はCPythonによるコンパイルと、importだけを行う公開CLI試験で確認する。構文エラーによるkillを正常な変異の検出として数えないことが目的であり、全パターンや他の演算子の構文安全性を一括して保証するものではない。[^issue-468]
+
+# 候補数と解析メモリの上限
+
+候補件数を制限しても、解析に使うメモリ全体の上限にはならない。ソース本文、トークン列、ASTなどの大きさは入力サイズに依存するためである。利用方法もこの適用範囲を明記している。[^readme]
+
+変異候補を検証する際は、次の対象を分けて調べる。各行は異なる資料で扱われた契約であり、全組合せを一つの試験で確認したものではない。[^operator-report][^span][^bounded][^readme]
+
+| 契約 | 確認する対象 |
+| --- | --- |
+| 構文・名前解決 | 候補位置の構文上の役割と、同名の別の束縛を誤って変異しないこと |
+| 変更範囲（byte span） | UTF-8境界、元バイト列、行・列、候補ID、書込み前の再検証 |
+| 意味の変化 | 元プログラムと変異後のプログラムをCPythonで実行した結果 |
+| 候補保持 | 所定の順序で先頭から保持する件数、上限超過の通知、対象間の残予算と連番 |
+| 入力規模 | 長い1行、ASTの深さ、名前の束縛数などによる時間・一時メモリの増加 |
+
+# 候補の適用と意味を調べた監査
+
+変更範囲の監査では、元バイト列が正しくても行・列やIDが不正な候補を、テスト実行用コピーの操作が受け入れる問題を見つけた。報告には、書込み前に共通の候補検証処理と正規のIDを確認する修正が記録されている。[^span]
+
+候補保持の監査では、定義した順序・重複除去に従う先頭の候補集合と、上限で打ち切ったことの通知をモデル化した。前提を明示してRust実装との対応を調べているが、解析メモリ全体や任意のPython構文の意味は証明対象に含めていない。[^bounded]
+
+意味の変化については、9月8日の演算子報告にCPythonでの実行結果がある。公開コマンド `plan` の候補を適用する8テスト・23動作ケースを確認し、意図的に壊した3種類の変異も検出した。実行環境は当時のmacOS arm64・CPython 3.14.7である。[^operator-report]
+
+# 後続監査と再確認条件
+
+[9月11日境界監査](../audits/boundary-2026-09.md)では、構文解析成功とPythonのコンパイル成功の差、ジェネリック型パラメータが有効な範囲、入力形状別の規模検証を追加課題に挙げた。先行報告で試験した入力と条件が異なるため、先行する成功結果だけではこれらの課題を判断できない。
+
+演算子、名前解決、変更範囲の検証、候補順序、保持構造を変更したら、対応する監査と実装比較用のテストを再確認する。原文の演算子数は報告時点の数値として読み、現行一覧は利用方法と実装を照合する。
+
+# 型パラメータとruntime候補の名前解決
+
+Issue486では、generic function／classの型パラメータが導入する束縛を名前解決に反映する。変異元または変異先が型パラメータを参照する場合は、組込み関数の組として変異しない。通常の関数ローカルに名前を追加するだけで済ませず、定義時の式、本体、内側の関数・内包表記での可視範囲を区別する。[^issue-486]
+
+関数のdecoratorや通常の引数defaultは型パラメータの外側で評価され、annotationやgeneric classの基底・keywordでは適切なannotation scopeを考慮する。class直下のannotationからの名前参照と、通常のmethodが外側のclass変数を参照できない規則も区別する。既存のtype positionでruntime候補を生成しない契約を保ち、候補が残る境界とCPythonの束縛観測を照合する。[^issue-486]
+
+Issue515では、methodや内包表記から外側の束縛を探す際、途中のclassにあるglobal／nonlocal宣言もclass変数とともに読み飛ばす。class本体での直接参照と、method自身の宣言は引き続き考慮する。型パラメータと通常の外側の関数変数について、参照先の観測と候補の有無を照合する。共有Leanモデルのclass探索にも同じ順序の不整合があったため、その修正と通常のclosureの照合を設計に含める。[^issue-515]
+
+# 準備済みクラス名前空間（Issue #598）
+
+基底クラスまたはkeyword引数があるclassでは、metaclassの `__prepare__` が独自の名前空間を渡し得るため、class名前空間を読む組込み名を確定しない。この条件は継承metaclass、基底の展開、`**keywords` にも適用する。引数のないclassと空の `()` は従来の候補を維持する。`class C(object)` や `metaclass=type` も保守的に除外する。[^issue-598-design]
+
+method・closure・内包表記の本体はclassを読み飛ばし、`global` は宣言した名前ごとにmoduleを参照する。内包表記の最初のiterable、関数default、classを参照できる型注釈は準備済み名前空間の判定を受ける。型注釈の組込み名とimport aliasの参照先は別経路であり、後者の `annotation_import_stable` は今回の保証対象に含めない。[^issue-598-design]
+
+Leanから生成した39入力について、CPythonの両名の参照先と公開planの候補を照合した。独自名前空間へのanyのみ・allのみ・両方の注入は、公開runでもkilled件数に入らない。独自metaclassが空のdictを返す入力は、実行時には組込みでも静的には候補を抑制する。モデルの証明、実装との照合、適用範囲は検証報告に分けて記録した。[^issue-598-report]
+
+[^issue-598-design]: [Prepared class namespace name resolution (#598)](../../work/designs/2026-09-25-issue-598-prepared-namespace-design.md)。
+[^issue-598-report]: [Prepared namespace verification and review (#598)](../../work/reports/2026-09-25-issue-598-prepared-namespace.md)。
+
+# Mapping patternのキー変異とコンパイル制約
+
+Issue485では、同じmapping pattern内で他のリテラルキーと等しくなる変異候補を除外する。`True == 1` のような数値間の等値性や、複素数を作る際の丸めも対象となる。文字列やASTの構造だけで比較せず、変更後のキーの値を比較する。単独キー、非衝突のキー、値側のpattern、通常のdict式の有効な候補は維持する。[^issue-485]
+
+Ruffや `ast.parse` が受け入れても、重複リテラルキーはCPythonのコンパイル時に拒否される。そのため、元の入力をコンパイルした上で、公開 `plan` の候補を適用した結果も `compile(..., 'exec')` で照合する。実行時に属性キーが返す任意の値の等値性や、独立した単項符号の問題まで解決したという主張には広げない。[^issue-485]
+
+# Issue 478: 再帰解析前の深さ検査
+
+長い二項演算式では、候補を保持する前のAST走査がスタックを使い切る。構造に基づく深さ検査をfacts・名前解決・注釈解析より前に置き、上限を超えたファイルはpathと原因を伴う失敗として扱う。候補上限による打切りや、完全な候補ゼロとは区別する。検査だけでなく、拒否したASTの破棄とキャンセル時の後始末もdebug・releaseの実プロセスで確認する。[^issue-478]
+
+2万項の有効な式では、通常のAST破棄も2MiBのスレッドで異常終了した。子ノードを所有する作業リストへ切り離して浅いノードから破棄し、拒否・キャンセル・構文エラー時の所有権をそろえる。この破棄用走査はRuffの子ノード定義との対応を維持する必要がある。[^issue-478]
+
+深さ128は、moduleを1としてRuffが報告する子ノードごとに1を加えて数える。128で実際の候補を維持し、129で拒否する境界を2MiBのスレッドで確認する実装上の上限であり、任意のOS stackやRuff parserの安全性を形式的に証明する値ではない。候補保持に関する既存Lean監査の証拠を、これらの安全性へ拡張して解釈しない。[^issue-478]
+
+`depth::parse_checked` owns unchecked parser results until syntax and depth
+checks pass for symbol validation, mutation analysis, and hierarchy summaries.
+It disposes invalid, too-deep, and cancelled partial trees nonrecursively before
+returning. Syntax precedes depth, and the helper adds no cancellation poll before
+syntax validation. Callers retain their pre-parse checks and their distinct
+invalid-source policies: symbol error, mutation diagnostic, and skipped hierarchy
+summary with its source hash retained. The checked result preserves the original
+module and tokens; the depth limit and candidate production are unchanged.[^issue-871-acquisition]
+
+The [issue #871 evidence record](../../work/plans/2026-10-14-issue-871.md)
+records characterization, sensitivity, bounded-stack and subprocess checks.
+Existing candidate and exception-flow Lean models do not model parser ownership,
+recursive destruction, or depth/cancellation observation order. Recheck the Rust
+contract if parser ownership, syntax validity, traversal order, or cleanup
+changes.[^issue-871-evidence]
+
+[^issue-871-acquisition]: [Checked AST acquisition](../../work/maintenance/2026-10-22-issue-1068-knowledge-links.md#issue-871-acquisition). Historical evidence (recorded bytes unavailable); [current owner](../../../../crates/hoimin-python/src/analyzer/rust/depth.rs).
+[^issue-871-evidence]: [Issue #871 design and validation](../../work/plans/2026-10-14-issue-871.md).
+
+[^operators]: [2026-08-06-collection-and-structural-mutation-operators-design.md](../../work/designs/2026-08-06-collection-and-structural-mutation-operators-design.md)。
+[^implementation]: [rust.rs](https://github.com/HayaoSuzuki/hoimin/blob/a7daea0b557cd435c1e55b540392fbdd116348e1/crates/hoimin-cli/src/analyzer/rust.rs)。 Historical evidence; [current owner](../../../../crates/hoimin-python/src/analyzer/rust.rs).
+[^operator-report]: [2026-09-08-python-operator-coverage.md](../../work/reports/2026-09-08-python-operator-coverage.md)。
+[^span]: [2026-08-15-lean-byte-span-preservation-audit.md](../../work/reports/2026-08-15-lean-byte-span-preservation-audit.md)。
+[^bounded]: [2026-08-14-lean-bounded-candidate-discovery-audit.md](../../work/reports/2026-08-14-lean-bounded-candidate-discovery-audit.md)。
+[^readme]: [利用方法](../../../user/guides/usage.md)。
+
+[^issue-486]: [2026-09-11-issue-486-type-parameter-bindings-design.md](../../work/designs/2026-09-11-issue-486-type-parameter-bindings-design.md)。
+
+[^issue-485]: [2026-09-11-issue-485-mapping-pattern-keys-design.md](../../work/designs/2026-09-11-issue-485-mapping-pattern-keys-design.md)。
+
+[^issue-481]: [2026-09-11-issue-481-comprehension-bindings-design.md](../../work/designs/2026-09-11-issue-481-comprehension-bindings-design.md)。
+
+[^issue-478]: [2026-09-11-issue-478-analysis-depth-design.md](../../work/designs/2026-09-11-issue-478-analysis-depth-design.md)。
+
+[^issue-469]: [2026-09-11-issue-469-bom-column-design.md](../../work/designs/2026-09-11-issue-469-bom-column-design.md)。
+[^issue-470]: [2026-09-14-issue-470-column-index-design.md](../../work/designs/2026-09-14-issue-470-column-index-design.md)。
+
+[^issue-468]: [2026-09-11-issue-468-pattern-unary-design.md](../../work/designs/2026-09-11-issue-468-pattern-unary-design.md)。
+
+# Pythonの物理行と元バイト列（Issue #455）
+
+LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証が同じ行境界を使う設計とした。元バイト列を変換せず、CRLFは一つの改行として数える。過去に誤ったCR行位置で作られたplanは再生成が必要となる。初行のBOMによる列検証の不一致は別Issue #469の対象である。[^issue-455]
+
+[^issue-455]: [Issue #455: Python physical newline indexing](../../work/designs/2026-09-11-issue-455-python-newlines-design.md)。
+
+# 括弧付き例外ハンドラの削除（Issue #451）
+
+例外名のAST範囲は外側の括弧を含まない。裸の `except` へ変える際は括弧を含む例外式全体を削除し、タプル要素を削除する際もその要素の括弧を削除対象に含める設計とした。削除対象の内部にあるコメントは式とともに削除し、その外側のコメントと残す例外の表記は維持する。構文解析に加えて、生成候補をCPythonで実行して捕捉する例外を検証する。検証結果は実装計画書に記録する。[^exception-parentheses]
+
+[^exception-parentheses]: [Issue #451 design](../../work/designs/2026-09-11-issue-451-exception-parentheses-design.md)。
+
+# Issue 513: 構文解析中のスタック制御
+
+ASTの深さ検査より前に、Ruffによる構文解析がスタックを使い切る入力があった。Issue #513では利用中のパーサーを同梱し、再帰箇所でスタック残量を確認して必要な領域を確保する上流の対策を移植する。構文解析後の深さ128、ファイル名付きエラー、不正構文の診断は維持する。[^issue-513]
+
+解析途中の代入先検査やパターン変換も、完成した部分木を再帰的にたどるため、同じスタック検査で保護する。試行解析の結果や無効なパターンを捨てる箇所では、子ノードを切り離して反復的に破棄する。構文解析中のスタック検査だけで、部分木の通常の破棄まで保護したとは扱わない。[^issue-513]
+
+公開plan/runの4種の有効例はCPythonでコンパイルを確認する。512 KiBスレッドでの深いリスト・suite・format specificationや不正構文は、Ruffの走査と所有権を調べる別の試験である。メモリ確保の総量や任意のOS・ビルド条件での安全性は保証しない。依存版、再帰箇所、AST型、破棄経路の変更時は、深さ境界・不正構文・繰り返し回収の回帰試験を再実行する。[^issue-513]
+
+[^issue-513]: [2026-09-12-issue-513-parser-recursion-design.md](../../work/designs/2026-09-12-issue-513-parser-recursion-design.md)。
+[^issue-515]: [Issue515 class directive design](../../work/designs/2026-09-12-issue-515-class-directives-design.md)。
+[^issue-514]: [Issue514 comprehension effect order design](../../work/designs/2026-09-12-issue-514-comprehension-effect-order-design.md)。
+
+# 名前束縛履歴の照会（Issue #482）
+
+Issue #482の設計では、module/classの束縛履歴をソースoffsetで索引化し、visitorの挿入順に解決変換を合成した。Issue #560では、この照会キーを評価イベント番号へ変更する。累積した束縛状態の二分探索と、従来の履歴foldとの一致を確認するテストは維持する。[^issue-482][^issue-560-code]
+
+[^issue-482]: [Issue #482: Name history index](../../work/designs/2026-09-14-issue-482-name-history-index-design.md)。
+
+# 型注釈候補の状態保持（Issue #479）
+
+型演算子を選択しない解析では、型候補用のimport flow収集を実行しない。型演算子を選択する場合は、各annotation時点のimportsを借用して候補を逐次生成し、全mapのsnapshotをsiteごとに保持しない。runtime候補を注釈内で抑止する範囲索引と、binding-flow correspondence用の所有snapshotは維持する。[^issue-479]
+
+[^issue-479]: [Issue #479: Streaming annotation candidates](../../work/designs/2026-09-14-issue-479-stream-annotations-design.md)。
+
+# 未選択候補の所有文字列（Issue #461）
+
+演算子や対象選択で除外できる候補は、元ソース範囲の複製より先に判定する。list/tuple literalのように置換生成自体が入力範囲に比例する場合は、演算子選択をhelper呼出し前に確認する。この省略は現在のnodeの候補生成に限り、子nodeの探索は継続する。候補上限は保持数を制約するが、解析中の全確保量を制約しない。[^issue-461]
+
+[^issue-461]: [Issue #461: Lazy candidate strings](../../work/designs/2026-09-14-issue-461-lazy-candidates-design.md)。
+
+# 有効Pythonを起点とする候補契約（Issue #489）
+
+CPython3.14で元入力をコンパイルしてから、宣言済みの適格・不適格位置とRust解析器・公開planの候補を照合する。各候補には共有validator、独立した位置計算、1件ずつ適用した結果のCPythonコンパイルを適用する。scope・key・spanの小さいLean契約を再利用し、producer間で未観測の組合せは未検証として出力する。[^issue-489]
+
+[^issue-489]: [Issue #489: Valid Python candidate contract corpus](../../work/designs/2026-09-14-issue-489-valid-python-corpus-design.md)。
+# 負の添字とslice境界（Issue #471）
+
+単項負号と十進整数の組を境界値演算子の対象へ追加する。負号を含むAST範囲全体を置換し、slice stepのゼロ候補を除く。整数の絶対値はu64の最大値以下に限定し、範囲を超える入力と隣接値を除外する。既存の符号なしゼロは+1だけを保持し、`-0`は+1と-1を生成する。型注釈・代入先・削除対象の除外は維持する。[^issue-471]
+
+[^issue-471]: [Issue #471: Negative index and slice neighbors](../../work/designs/2026-09-14-issue-471-negative-neighbors-design.md)。
+
+# ソース文字コードと元バイト位置
+
+Issue #480 では、Rustの共通decoderでUTF-8、ASCII、Latin-1の宣言を認識する。宣言なしはUTF-8とする。先頭行の独立したコメント、または先頭行が空白・コメントだけの場合の2行目を調べる。BOMがある場合はCPython tokenizerと同じUTF-8名の正規化条件を使う。未知・未対応codec、BOMとの衝突、UTF-8・ASCIIの不正バイトは、元の宣言名と対象pathを診断に含める。Latin-1は全バイトに対応するため、別の文字コードを意図して保存されたかどうかまでは判定できない。[^issue-480-spec][^issue-480-codec]
+
+解析用テキストはUnicode、候補spanとfile hashは元バイト列を基準にする。Latin-1では非ASCIIバイトの疎な索引を作り、UTF-8位置と元バイト位置の境界を二分探索で対応させる。共通候補検証は元codecでoriginalを照合し、対応後のUnicode列とreplacementの表現可能性を確認する。IDのschemaは1を維持し、元hash・元span・Unicode replacementという既存の入力を使う。[^issue-480-codec][^issue-480-validator]
+
+workerには元バイトのprefix、元codecでエンコードしたreplacement、元バイトのsuffixを書く。ファイル全体をUTF-8へ変換しない。公開CLIテストでは、アクセント付き文字の前後の候補と、それを含むcollectionの置換について、plan・run・verifyのID、元span、hash、CPythonが読む実バイトと値を照合する。[^issue-480-writeback][^issue-480-tests]
+
+通常のrunはbaseline後に解析するため、baselineの失敗が文字コード診断より先になることがある。planにはbaselineがなく、明示symbolは対象解決で先にdecodeする。これは既存の実行順序を変更する機能ではない。[^issue-480-spec]
+
+UTF-8とASCIIは入力を借用するが、Latin-1のテキストと索引のメモリは入力に比例する。過去のUTF-8対象のLean保証をcodec全体へ拡張して解釈しない。[^issue-480-spec][^issue-480-report]
+
+[^issue-480-spec]: [2026-09-14-issue-480-source-encoding-design.md](../../work/designs/2026-09-14-issue-480-source-encoding-design.md).
+
+[^issue-480-codec]: [source_encoding.rs](../../../../crates/hoimin-core/src/source_encoding.rs).
+
+[^issue-480-validator]: [candidate.rs](../../../../crates/hoimin-core/src/candidate.rs).
+
+[^issue-480-writeback]: [mutation.rs](../../../../crates/hoimin-cli/src/workspace/mutation.rs).
+
+[^issue-480-tests]: [source_encoding.rs](../../../../crates/hoimin-cli/tests/source_encoding.rs).
+
+[^issue-480-report]: [2026-09-14-issue-480-source-encoding-review.md](../../work/reports/2026-09-14-issue-480-source-encoding-review.md).
+
+# Sliceを含むtupleの適格条件（Issue #549）
+
+collection_list_tupleのtupleからlistへの変換は、直接の要素にSliceがある場合は生成しない。Sliceは `x[:,]` などの添字では有効だが、colonをlist要素へ移せない。通常の式tupleとstarredを維持し、Sliceのstart/stop/stepの子探索も続ける。これは候補生成時の条件であり、生成済みの不正候補を実行結果から除く処理ではない。[^issue-549]
+
+[^issue-549]: [Issue #549: Sliceを含むtupleの候補除外](../../work/designs/2026-09-15-issue-549-slice-tuple-design.md)。
+
+有限モデルの14入力と11反例、公開plan/CPythonの照合、import-only runの修正前後を[検証報告](../../work/reports/2026-09-15-issue-549-slice-tuple.md)に分けて記録する。[^issue-549-report]
+
+[^issue-549-report]: [Issue #549: Slice tuple修正の検証](../../work/reports/2026-09-15-issue-549-slice-tuple.md)。
+
+# コレクション型注釈の組込み型provenance（Issue #548）
+
+[型注釈の参照先の契約](annotation-builtins.md)では、具体型名の綴りだけで組込み型と判断せず、source・destinationの両方向で注釈scopeの束縛を確認する。runtimeの名前解決とは遅延評価の扱いが異なるため、module/classの後続束縛も考慮する。
+
+# finally への暗黙例外入口
+
+call、subscript、attribute、演算や比較、反復などの評価が後続 import より先に失敗した場合、finally の注釈は例外前の束縛も参照し得る。解析器はこの入口を正常入口と合流し、全入口で一致しない typing 由来の候補を抑制する。暗黙例外は正常後続へ混ぜず、finally の通常終了後も例外として外側へ渡す。[^issue-545]
+
+[検証範囲](../audits/implicit-finally.md)に小モデル、公開 plan 対応、未対応の式や動的挙動を記録する。
+
+[^issue-545]: [Issue #545 設計](../../work/designs/2026-09-15-issue-545-implicit-finally-design.md)。
+
+# 単一路のimport状態の受渡し
+
+Issue #547の設計では、型注釈collectorの通常の文から次の文へ進む状態を所有権移動で渡す。import数Iと注釈数Aを別々に増やした場合にも、単一路の全状態コピーをsuite境界の一回に限定する。分岐、loop、finallyの合流とスコープ復元のための複製は保持し、すべての入力で線形時間になるとは主張しない。[^issue-547]
+
+[^issue-547]: [Issue #547設計](../../work/designs/2026-09-15-issue-547-import-transfer-design.md)。
+
+# 入れ子ループの転送再解析（Issue #546）
+
+固定点とは、loop本体のfallthrough・continueから求めた次反復のimport状態が現在のheadと一致する状態である。注釈記録を停止した解析では、収束を確認した最後の本体終了結果をその場で消費して二度目の本体走査を省く。別の入力・scopeへ結果を持ち越すcacheは追加しない。[^issue-546-design]
+
+注釈callbackを実行する走査、最後の評価でclass fallbackが変化した走査、テストのprojection・変異を使う走査は従来どおり実行する。module/class内の単純な空状態のfor/whileの再解析を抑える変更であり、classや状態変化を含む全入力の計算量を保証するものではない。性能ゲートと実行結果は[入力形状別の性能検証](../audits/performance-shapes.md)から参照する。[^issue-546-design]
+
+[^issue-546-design]: [Issue #546: 入れ子ループの転送結果の再利用](../../work/designs/2026-09-15-issue-546-loop-transfer-design.md)。
+
+# withの例外抑制とfinallyの走査（Issue #556/#557）
+
+`5e631ef`の追加監査で、with本体の例外が抑制された後のimport合流に欠落を確認した。finallyの暗黙例外入口とは別に、例外から正常継続への変換が必要となる。finallyには記録無効でも記録用走査を行う経路が残り、入れ子のrelease計測で時間がほぼ倍増した。これらは監査時点の観測であり、[監査の証拠と修正後の確認範囲](../audits/with-finally-2026-09.md)を参照する。[^with-finally-audit]
+
+[^with-finally-audit]: [withの例外抑制とfinallyの解析コスト](../../work/audits/2026-09-15-with-finally/README.md)。
+
+Issue #556の修正では、通常のwithとasync withの本体で例外状態を収集し、抑制後の正常継続へ合流する。managerの実体が不明な場合も抑制経路を考慮する。明示raiseと、成功したreturn・break・continueは別々に保持し、finallyが終了方法を置き換えた場合も区別する。[^issue-556-design]
+
+複数itemでは、先に入ったmanagerが後続itemの開始失敗や内側の終了処理の失敗を抑制し得る。最初のmanager自身の開始失敗は、そのmanagerの正常継続へ合流しない。import失敗と任意の動的hookは従来どおり対象外であり、importだけの本体やcallより前のimportの正例を保持する。#557の解析コストはこの修正の対象外である。[^issue-556-design]
+
+[^issue-556-design]: [Issue 556: import facts after context-manager suppression](../../work/designs/2026-09-24-issue-556-with-suppression.md)。
+
+
+# 遅延注釈と集合ABCの綴り（Issue #558/#559）
+
+`5e631ef`では、型注釈のtyping aliasに定義時のimport状態を使うため、3.14の初回評価前の再代入を見落とす。また、collections.abcの集合抽象型はSetであるのに、AbstractSetという候補を生成する。両件の実行観測、初回評価キャッシュのモデル証明、型名の対応は[追加監査](../audits/annotation-followup-2026-09.md)を参照する。この監査時点では製品修正は未実施だった。[^annotation-followup]
+
+[^annotation-followup]: [遅延注釈とcollections.abc.Set](../../work/audits/2026-09-15-annotation-followup/README.md)。
+
+## 評価順序と未選択methodの追加監査
+
+`5e631ef`では、ソースoffsetによる名前解決が多重代入・引数展開の評価順序と一致せず、再代入済みの名前を組込みと誤認した（#560）。また、未選択のmethod変異のreplacement確保が残る（#561）。[監査の証拠と限界](../audits/evaluation-order-2026-09.md)に、7入力の照合とdebugの累積確保要求量を記録した。[^evaluation-order-audit]
+
+[^evaluation-order-audit]: [評価順序と未選択methodの確保](../../work/audits/2026-09-15-evaluation-order/README.md)。
+
+## 値なし注釈と候補精度
+
+`5e631ef`では、値を伴わない名前の注釈も再束縛として扱い、builtin・module import aliasの候補が欠落した。#562では、関数のローカル宣言を維持しながら、値なし注釈で既知の参照先を保持する改善を提案する。既存設計は保守的な欠落を許容するため、安全性違反とは分類していない。[監査の証拠と限界](../audits/declaration-only-2026-09.md)を参照する。[^declaration-only-audit]
+
+[^declaration-only-audit]: [値なし注釈と候補精度](../../work/audits/2026-09-15-declaration-only/README.md)。
+
+## nullable型変異の適用条件
+
+`5e631ef`ではnullable追加で名前の再束縛を見落とし（#564）、複数型引数のtuple内部で対象外要素の検査を省いていた（#565）。[監査の証拠と限界](../audits/nullable-gates-2026-09.md)に、15入力の照合と名前条件・子孫の再帰条件のLean証明を記録した。修正時には通常の組込み型と対象内だけの複数型引数を保持する。[^nullable-gates-audit]
+
+[^nullable-gates-audit]: [nullable型変異の適用条件](../../work/audits/2026-09-15-nullable-gates/README.md)。
+
+## 2026-09-24: Issue #559の修正
+
+2026-09-24の#559修正では、集合抽象型の対応をtyping.AbstractSetとcollections.abc.Setへ訂正した。module importと直接importの両方で別名と双方向の候補を扱い、置換先の修飾名には参照元モジュールのメンバー名を使う。typing.Setはこの抽象型の組合せへ追加しない。#558の遅延評価は別Issueとして扱う。[^issue-559-repair]
+
+[^issue-559-repair]: [修正設計](../../work/designs/2026-09-24-issue-559-design.md)。
+
+## 組込み名の評価イベント（Issue #560）
+
+名前の出現位置はソースのバイトoffsetで識別し、束縛状態は別に記録した評価イベント番号で照会する。代入は右辺を評価してからtargetへ左から順に格納し、入れ子のtargetでも格納の間に後続式を評価する。呼出しは位置引数・starred引数をkeyword引数より先に評価する。sourceまたはdestinationの綴りがその時点で束縛済みなら、組込み名の置換候補を生成しない。[^issue-560-design][^issue-560-code]
+
+拡張代入はtargetを一度評価してから右辺を評価するため、通常の代入とは順序が異なる。右辺で格納前に参照する組込み名の候補と、拡張代入のtarget内で先に参照する候補は保持する。例外で後続targetの格納が停止し得る場合は、既存の条件付き束縛を使って参照先を保守的に判定する。公開plan/runテストでは、CPythonで元入力の値を確認し、候補数・spanと誤ったkilled計上の抑制を照合する。任意の例外到達経路を判定する保証は含まない。[^issue-560-code][^issue-560-tests]
+
+[^issue-560-design]: [Issue 560: builtin resolution in evaluation order](../../work/designs/2026-09-24-issue-560-evaluation-order.md)。
+[^issue-560-code]: [NameResolutionBuilderの実装](https://github.com/HayaoSuzuki/hoimin/blob/b91d3659215a150a6c8c24f0233f4c3880b52e28/crates/hoimin-cli/src/analyzer/rust.rs)。 Historical evidence; [current owner](../../../../crates/hoimin-python/src/analyzer/rust.rs).
+[^issue-560-tests]: [公開plan/runの評価順序テスト](../../../../crates/hoimin-cli/tests/builtin_evaluation_order.rs)。
+
+## #558の遅延注釈の名前解決
+
+#558の修正では、注釈位置のimport状態に加えて、評価時に参照するscopeの後続束縛を確認する。typingとcollections.abcの置換元・置換先に共通の条件を適用し、由来を確認できない綴りは候補に使わない。変更のないimport、注釈より前のimport復元、別scopeの独立したimportは維持する。[^issue-558-design]
+
+条件分岐の合流でimport情報が失われた場合も、import名の履歴と参照先scopeを使って不確かな参照を除外する。関数内変数のsource-order例外には、既知のimport情報が必要である。[^issue-558-design]
+
+評価済みキャッシュの後の再代入と、注釈より後かつ初回参照前のimport復元は、安全な場合でも保守的に除外する。Pythonの版を推定せず、future annotations、遅延type alias、generic bound/defaultにもこの条件を適用する。実行時に評価されない関数内変数の注釈は従来のsource-order条件を維持する。collections.abc.Setの綴りは、併合元の#559で修正済みである。[^issue-558-design]
+
+[^issue-558-design]: [Issue #558: imported names in deferred annotations](../../work/designs/2026-09-24-issue-558-deferred-imports-design.md)。
+## nullable追加の組込み型の参照先（Issue #564）
+
+nullable追加では、str/int/float/bool/bytesの名前とlist/set/dictの型構成子について、注釈scopeで組込み型を参照すると確認できる場合だけ候補を生成する。型引数内の組込み名も同じ条件で確認する。module/classの後続束縛、外側の関数local、型パラメータによって参照先が不確かになる場合は抑制する。関数自身の引数・本体のlocalは、その関数headerの注釈を隠さない。[^issue-564-design][^issue-564-code]
+
+標準ライブラリのimport aliasは既存の名前対応で判定するため、`Sequence as list`のような綴りも保持する。nullable除去とcollection変異の条件は変更しない。複数型引数内の対象外構文を検査する#565と、typing aliasの後続再代入を扱う#558は別の変更として扱う。[^issue-564-design]
+
+[^issue-564-design]: [Issue 564: nullable annotation builtin provenance](../../work/designs/2026-09-24-issue-564-nullable-provenance.md)。
+[^issue-564-code]: [nullable追加の名前解決](https://github.com/HayaoSuzuki/hoimin/blob/f6f5d96c099fb880884b2b7cb29717ff33d70d75/crates/hoimin-cli/src/analyzer/rust.rs)。 Historical evidence; [current owner](../../../../crates/hoimin-python/src/analyzer/rust.rs).
+
+### 複数型引数とunpackの再帰検査（Issue #565）
+
+型演算子の共通除外条件は、Tuple・Listの全要素とStarredの値を再帰的に検査する。dictのkey/value、複数段の型引数、tuple/listのunpackにAnyなどの対象外要素が含まれる場合、注釈全体の候補を除く。対象内だけの複数引数やunpackは保持する。この条件はnullable追加・削除と五つのcollection/iterable演算子に共通する。[^issue-565-design]
+
+Leanの子孫検査モデルと公開planの対応を通常の回帰テストへ追加する。名前の再束縛に関する#564の修正を併合し、その4入力も期待値を保持したstrict検証へ移行する。65入力すべてを照合し、report-only指定は拒否する。検証範囲と過去の不一致は[監査記録](../audits/nullable-gates-2026-09.md)を参照する。[^issue-565-design]
+
+[^issue-565-design]: [Issue 565: recursively exclude disallowed annotation arguments](../../work/designs/2026-09-24-issue-565-annotation-descendants.md)。
+
+## ユーザ定義例外の継承関係（Issue #692）
+
+`exception_hierarchy` は明示指定する演算子で、プロジェクトの Python ファイルを実行せずに例外クラスと明示 import を収集する。既存の名前で参照できる直接のユーザ定義親子、または同じユーザ定義の直接親を持つ兄弟を、`except`・`except*`・`raise` の置換候補にする。`raise` は継承経路全体で `Exception` のコンストラクタを継承する組に限る。既定の演算子集合は変更せず、import の追加もしない。[^issue-692-hierarchy]
+
+索引用の入力には、変異対象に選ばれていない依存ファイルも含める。これらの追加・削除・内容変更を fingerprint で検出し、plan・run・verify の入力整合性を確認する。条件付き定義、多重継承、再 export、外部パッケージなどの解析範囲と資源上限は原設計を参照する。[^issue-692-hierarchy]
+
+別名と属性書き込みの追跡にはスコープ番号と正規化名の組を使い、無関係な同名引数をモジュールの例外クラスと混同しない。global・nonlocal・自由変数を解決し、メソッドの暗黙の `__class__` は所属クラスへ結び付ける。解析を打ち切った参照は理由・件数・最初の位置を一つの診断に集約し、関連クラスなしやコンストラクタ条件による除外とは区別する。[^issue-692-scopes]
+
+この変更の最終実装 `c5f288c` では、全体テスト2,601件成功・22件スキップ、Lean の18定理、公開160ケース・内部215ケースの照合を記録した。設計・計画・実装・テストの各段階のセルフレビューと、独立レビューで見つけた `__class__` 書き込みの修正も監査記録に残す。モデル上の証明は Rust 全体の正しさやプロセスのピークメモリ量の保証を意味しない。関数の引数・戻り値やコンテナを介する別名、型パラメータの注釈スコープなどはモデルの対象外である。[^issue-692-verification]
+
+この節は2026-10-05に出典と照合した。PR作成時に追加したのはカタログと参照検査であり、上記の実装テストを再実行したという記録ではない。名前解決、継承・コンストラクタ条件、依存入力の探索、診断条件を変更するときは、これらの設計・テスト・Lean の対応範囲も再確認する。
+
+[^issue-692-hierarchy]: [2026-10-05-issue-692-exception-hierarchy.md](../../work/designs/2026-10-05-issue-692-exception-hierarchy.md)。
+
+[^issue-692-scopes]: [2026-10-05-exception-scope-outcomes.md](../../work/designs/2026-10-05-exception-scope-outcomes.md)。
+
+[^issue-692-verification]: [2026-10-05-exception-scope-lean-audit.md](../../work/reports/2026-10-05-exception-scope-lean-audit.md)。
+
+# 呼び出し式文の削除（Issue #696）
+
+`statement_delete` は既定で有効で、独立した呼び出し式文を `pass` に置換する。代入式、await、yield、yield from を含む呼び出しは除外する。[^issue-696]
+
+Lean の証明は、与えられたノード分類に対する適用条件と単一置換のモデルを対象とする。Rust の解析器そのものの証明ではない。文字コード、構文、保存 plan の検証は公開 CLI と CPython 3.14 のテストで別途確認する。[^issue-696]
+
+[^issue-696]: [設計・証明範囲](../../work/reports/issue-696/design.md)、[実装計画](../../work/reports/issue-696/plan.md)。
+
+# 通常の整数リテラルの隣接値（Issue #697）
+
+`integer_literal_neighbor` は既定で有効で、通常の十進整数と単項負号付き整数を隣接値に変更する。絶対値の上限は u64::MAX で、範囲外の隣接値は生成しない。添字・スライス、型式、パターン、代入・削除ターゲットは対象外とし、括弧付き置換で優先順位を保つ。Lean は隣接値の算術モデルを証明し、構文・AST との対応は別途テストする。[^issue-697]
+
+[^issue-697]: [設計と証明範囲](../../work/reports/issue-697/design.md)。
+
+# if/elif 条件の定数化（Issue #698）
+
+`condition_constant` は明示選択時だけ if/elif の条件全体を True/False に置換し、条件の評価と副作用を省く。既存の真偽値リテラル、代入式・await・yield を含む条件は除外する。focused profile の main guard 除外も維持する。Lean の分岐選択モデルと公開 CLI の検証を区別する。[^issue-698]
+
+[^issue-698]: [設計とモデル範囲](../../work/reports/issue-698/design.md)。
+
+# 関数本体の空化（Issue #699）
+
+`function_body_erase` は明示選択時だけ、値を返さない同期関数の本体を pass に置換する。docstring・シグネチャ・デコレータを残し、generator・特殊名・空の本体は除外する。行選択の起点は最初に消す文で、シンボルは外側の対象関数を使う。生存から実行の有無や同値性を判定せず、細かな演算子の代用ともしない。[^issue-699]
+
+[^issue-699]: [設計と制限](../../work/reports/issue-699/design.md)、[モデル・検証範囲](../../work/reports/issue-699/review.md)。
+
+明示選択の `enum_member_replace` は、同一モジュールの確定した Enum 定義を索引化し、異なる値の代表メンバーへ属性名だけを置換する。同値の別名は候補を増やさない。名前の隠蔽、動的な名前空間操作、未対応の定義や値は保守的に除外する。識別子の元の綴りを保存し、解析器が値を区別できないサロゲート文字列は診断する。[^issue-700]
+
+[^issue-700]: [Enum の設計と制約](../../work/reports/issue-700/design.md)・[レビューと検証](../../work/reports/issue-700/review.md)
+
+`augmented_to_assignment` は単純な名前への複合代入だけを対象に、演算子トークンを `=` に置換する。旧値の読み出しと in-place 演算がなくなることを変異の意味に含める。右辺・空白・コメントは保存し、既存の演算子置換候補と共存する。[^issue-701]
+
+[^issue-701]: [複合代入置換の設計](../../work/reports/issue-701/design.md)・[レビューと検証](../../work/reports/issue-701/review.md)
+
+`return_tuple_swap` は同期・非ジェネレーター関数が直接返す2要素タプルの単純な要素を交換する。AST の要素範囲を使い、区切り・コメント・括弧を保存してタプル全体を1範囲として置換する。名前の実行時型の一致は仮定しない。入れ子関数の本体と、その場で評価される引数初期値などのスコープを区別する。[^issue-702]
+
+[^issue-702]: [戻り値タプル交換の設計](../../work/reports/issue-702/design.md)・[レビューと検証](../../work/reports/issue-702/review.md)
+
+`string_literal_empty` は単一トークンの非空 str リテラル全体を空文字列に置換する。空判定には復号した値を使い、docstring・型の式・パターン・補間文字列を除外する。明示的な TypeAlias マーカーは引用・括弧を含め保守的に認識する。通常のメッセージ文字列を関数名の綴りだけで除外しない。[^issue-703]
+
+[^issue-703]: [文字列の空文字化の設計](../../work/reports/issue-703/design.md)・[レビューと検証](../../work/reports/issue-703/review.md)
+
+while_condition_false は while 条件全体を偽にし、条件評価と本体を省略する。else は保持し、真偽値定数と束縛・中断を含む条件を除外する。 [^issue-704]
+
+[^issue-704]: [設計](../../work/reports/issue-704/design.md)
+
+condition_clause_delete は if/elif の最上位 BoolOp から1項だけ除き、残りの式の順序と木構造を保つ。短絡評価の変化を含む変異であり、束縛・中断を含む条件は除外する。 [^issue-705]
+
+[^issue-705]: [設計](../../work/reports/issue-705/design.md)
+
+container_element_delete は list・括弧付き tuple・dict から1要素を除く。型、残る式の順序、dict の組を保持し、型式・パターン・代入ターゲットと展開・束縛・中断を含むリテラルを除外する。 [^issue-706]
+
+[^issue-706]: [設計](../../work/reports/issue-706/design.md)
+
+conversion_call_remove は builtin と解決できる単純名の変換呼び出しを括弧付き引数に置換し、引数評価を1回残す。変換・コピー等は省略し、再束縛・展開・generator・束縛・中断・型式・代入ターゲットは除外する。 [^issue-707]
+
+[^issue-707]: [設計](../../work/reports/issue-707/design.md)
+
+optional_keyword_delete は一意な同一モジュール関数への呼び出しの引数束縛を検証し、default のある明示キーワードを1つ除く。残る引数の順序と既存 default を保ち、曖昧な束縛や関数の流出、型式、代入ターゲットを除外する。 [^issue-708]
+
+[^issue-708]: [設計](../../work/reports/issue-708/design.md)
+
+# 既定の演算子選択（2026-10-07）
+
+`statement_delete`、`integer_literal_neighbor`、`augmented_to_assignment`、
+`return_tuple_swap`、`string_literal_empty`、`while_condition_false`、
+`conversion_call_remove` の7種類を最初に既定化し、43から50種類へ増やした。
+`--exclude-operators` で個別に無効化できる。明示選択と保存済み plan は展開し直さず、
+`all_legacy()` は従来の43種類を保持する。候補数・実行時間・上限内に残る候補は変化し得る。
+残る6種類は、粗い変異との重複、要素数に応じた候補増加、追加の名前解決を理由に段階的な導入とした。
+過去の Issue 別文書の opt-in 記述は導入時の履歴であり、現在の既定値は本節に従う。[^default-operators]
+
+[^default-operators]: [設計](../../work/reports/default-analyzer-operators/design.md)、[実装計画](../../work/plans/2026-10-07-default-analyzer-operators.md)、[レビューと検証](../../work/reports/default-analyzer-operators/review.md)。
+
+既定値の選択規則を Lean モデルで証明し、公開 CLI で除外・明示選択・保存済み plan を検証した。モデルの証明範囲と実行結果は別々に記録している。[^default-operators-review]
+
+[^default-operators-review]: [レビューと検証](../../work/reports/default-analyzer-operators/review.md)。
+
+`method_call_remove` は引数のない属性呼び出しを括弧付き receiver に置換する演算子である。receiver の評価を1回残し、属性参照と呼び出しを除く。bound method であることや型の一致は保証せず、束縛・中断・generator を含む receiver、型式、代入ターゲットなどは除外する。[^method-call-remove]
+
+[^method-call-remove]: [設計と5回のレビュー](../../work/reports/method-call-remove/design.md)、[評価と形式証明の範囲](../../work/reports/method-call-remove/assessment.md)
+
+`function_body_return_constant` は、組込みの `bool`・`int`・`str` と確定できる直接の戻り値注釈に応じて、同期関数の本体を相補的な定数 return に置き換える演算子である。docstring とヘッダーを残し、async・generator・dunder・自身の値 return がない関数・同じリテラルだけを返す候補を除外する。注釈の解決には遅延評価用の名前解決を使う。注釈は実行時型の保証ではなく、生存変異だけから pseudo-tested とも判定しない。[^function-body-return-constant]
+
+[^function-body-return-constant]: [設計](../../work/reports/function-body-return-constant/design.md)、[原論文・評価・形式証明の範囲](../../work/reports/function-body-return-constant/assessment.md)
+
+`method_call_remove` と `function_body_return_constant` の既定化で合計52種類になった。
+この既定化でも、明示選択・保存済み plan・従来の43種類を返す `all_legacy()` は拡張していない。
+元の機能設計書の opt-in 記述は導入時の方針である。[^recent-analyzer-defaults]
+
+[^recent-analyzer-defaults]: [既定化の設計](../../work/reports/recent-analyzer-defaults/design.md)、[形式証明の範囲](../../work/reports/recent-analyzer-defaults/formal-audit.md)
+
+# 文字列の固定部分の空化（Issue #761）
+
+`string_segment_empty` は、f-stringまたは通常文字列の暗黙連結から、ソース順で最初の適格な非空リテラル部分を1か所だけ空化する。
+通常文字列とf-stringの混在連結も1式として扱い、復号した値が空の部分を飛ばす。
+f-stringでは最上位の固定テキストだけを削り、補間式・conversion・format spec・debug表記のソースを保持する。
+固定テキストだけからなるf-stringトークンは `f""` にし、通常の構成トークンは `""` にする。
+隣接する引用符が三重引用符に結合しないよう、必要な区切り空白を挿入する。
+文字数ではなくASTのソース範囲を使うため、エスケープ・二重波括弧・Unicodeの復号後の長さを範囲計算に使わない。[^string-segment-implementation]
+
+docstring・型注釈・明示的な型エイリアス・パターン・bytes・t-stringは除外する。
+補間式とformat specの内部にある文字列やネストしたf-stringも除外する。
+debug由来のテキストは対象外だが、その前後に別途書かれた固定テキストは対象になり得る。
+既存の `string_literal_empty` 用の補間文字列全体の除外を保ち、新演算子には別の除外範囲を使う。[^string-segment-exclusions]
+
+ユーザー指定により、この演算子は既定で有効とした。導入時の既定選択は53種類、公開IDは計72種類だった。
+導入時は `--exclude-operators string_segment_empty` で追加前の52種類に戻せた。
+以前の50種類へ戻すには、さらに `method_call_remove,function_body_return_constant` も除外した。
+現在の除外指定は [利用ガイド](../../../user/guides/usage.md#mutation-operators) を参照。
+明示選択と保存済みplanの演算子集合は展開し直さず、既存候補IDと `all_legacy()` の意味も保持する。
+新しい既定実行では候補数・所要時間・上限内に残る候補が変わり得る。[^string-segment-selection]
+
+CPython 3.14による実行で構文・値・補間の回数と順序・conversion・動的format specを確認する。
+固定部分を検査する強いassertではkillされ、値だけを調べる弱いassertでは生存する例を、保存済みplan経由で検証する。
+これは固定部分の検証漏れを示す例であり、任意の文字列変化を有用な欠陥と判定する根拠ではない。
+実プロジェクト評価の対象と限界はレビュー記録に記載する。[^string-segment-tests][^string-segment-review]
+
+[^string-segment-exclusions]: [文字列の役割別除外](https://github.com/HayaoSuzuki/hoimin/blob/a6965910bbc745e74aeb539628b3e2dc66c2a9d3/crates/hoimin-cli/src/analyzer/rust/string_literals.rs)。 Historical evidence; [current owner](../../../../crates/hoimin-python/src/analyzer/rust/string_literals.rs).
+[^string-segment-review]: [各段階のレビューと評価](../../work/reviews/2026-10-10-issue-761-string-segments.md)。
+
+[^string-segment-implementation]: [ソース範囲と置換](https://github.com/HayaoSuzuki/hoimin/blob/a6965910bbc745e74aeb539628b3e2dc66c2a9d3/crates/hoimin-cli/src/analyzer/rust/string_segments.rs)、[文字列の役割別除外](https://github.com/HayaoSuzuki/hoimin/blob/a6965910bbc745e74aeb539628b3e2dc66c2a9d3/crates/hoimin-cli/src/analyzer/rust/string_literals.rs)。 Historical evidence; [current owner](../../../../crates/hoimin-python/src/analyzer/rust/string_segments.rs).
+[^string-segment-selection]: [演算子の定義と既定選択](../../../../crates/hoimin-core/src/config.rs)。
+[^string-segment-tests]: [CPython・保存済みplanの回帰テスト](../../../../crates/hoimin-cli/tests/string_segment_empty.rs)、[各段階のセルフレビューと評価](../../work/reviews/2026-10-10-issue-761-string-segments.md)。
+
+# 解析器の初期化（Issue #849）
+
+Issue #849 introduced the infallible root-only `AnalyzerHandler::new(root)`
+constructor and deferred source/store I/O until analysis. Issue #972 later replaced
+that signature with fixed root, operators, profile and positive candidate limit.
+The constructor still performs no project I/O or store allocation.[^issue-849-initialization][^issue-972-handler]
+
+The historical Issue #849 migration removed unused backend, memory and process
+arguments and changed `new(root)?` to `new(root)`. ProcessHandler retained actual
+process resource control. That internal change required no CLI or saved-format
+migration; it is not the current constructor signature.[^issue-849-initialization]
+
+[^issue-849-initialization]: [初期化 API の変更と互換性・検証記録](../../work/maintenance/2026-10-13-analyzer-initialization.md)。
+
+# 現行解析器の結果型と旧JSONLパーサー（Issue #851）
+
+現行処理は Rust 解析器を直接呼び、候補と診断を型付きで受け取る。旧 `AnalyzerProtocol` の利用箇所は専用テストと fuzz target に限られ、保持目的を確認できなかったため削除した。候補・診断の3型は `types.rs` に移し、公開名と定義を維持した。候補検証、spool、順序、打ち切り、および CLI の JSON/JSONL レポートは変更していない。削除した Rust API と検証範囲は作業記録を参照。[^issue-851-protocol]
+
+[^issue-851-protocol]: [Issue #851 maintenance record](../../work/maintenance/2026-10-13-analyzer-protocol.md).
+
+# 標準ライブラリの数値変換削除
+
+`stdlib_conversion_call_remove` は、静的に import 元を確認できる `decimal.Decimal`・`fractions.Fraction` のコンストラクタと変換メソッド5種、および標準ライブラリの具体的な整数列挙型19種の1引数呼び出しを、括弧付きの引数へ置換する。引数を1回評価し、変換後と数値が等しくても戻り値の型が異なる変異を生成する。既定で有効とし、既定選択は54種類、公開IDは計73種類となる。個別除外で従来の53演算子へ戻せる。変換メソッドではクラス参照の持ち出しや別名経由の属性変更も保守的に除外する。`ctypes` は対象外。対象一覧、除外条件、互換性および検証範囲は作業記録と利用ガイドを参照。[^stdlib-conversion]
+
+[^stdlib-conversion]: [Standard-library conversion removal](../../work/maintenance/2026-10-13-stdlib-conversion.md).
+
+# Handler accumulation and interruption
+
+For Rust callers, an analyzer session accumulates serial requests into one spool.
+`AnalyzerHandler::new(root, operators, profile, max_candidates)` owns immutable
+settings, with a `NonZeroUsize` limit. File requests contain only ID, target and
+final-target intent. Store capacity and remaining analysis budgets derive from
+that single limit; callers cannot change settings per request. Candidates receive contiguous, one-based
+sequences across targets. Successful `spool: None` retains accumulation;
+`final_target` or truncation returns the complete spool and ends that session.
+A later request starts a new store and sequence with the same settings; changing
+settings requires another handler. See the
+[module/interface contract](../../../../crates/hoimin-cli/src/analyzer/mod.rs).[^issue-972-handler]
+
+Cancellation observed before store transfer, or a source-read error, preserves
+an initialized store. After transfer to blocking analysis, cancellation or error
+leaves no accumulated store in the handler. Dropping the future does not request
+cancellation or join the worker. The worker retains its configured directory
+owner until exit; a cancelled wait does not authorize recursive deletion.
+Finalization persists the spool file, and its reference does not clean it up.
+The caller coordinates cleanup, including when a detached worker finalizes an
+abandoned result. The shell provides managed directory ownership and its own
+cleanup admission contract.[^issue-866-contract]
+
+The [issue #866 review and evidence record](../../work/plans/2026-10-14-issue-866.md)
+distinguishes static control-flow evidence from existing native tests. No new
+retry, process-drain, or worker-exit guarantee is introduced. Recheck this contract
+if transfer order, cancellation, finalization, session limits, or spool ownership
+changes.[^issue-866-contract]
+
+[^issue-866-contract]: [Analyzer handler session contract](../../../../crates/hoimin-cli/src/analyzer/mod.rs), compared with main `3b79cab`; [review and validation scope](../../work/plans/2026-10-14-issue-866.md).
+
+# Diagnostic name ownership (Issues #865 and #929)
+
+`AnalyzerDiagnosticCode::canonical_name` owns the four current analyzer names
+without a prefix: `invalid_syntax`, `exception_hierarchy_skipped`,
+`enum_definition_skipped`, and `candidate_limit`. The enum represents diagnostics
+with current Rust analyzer producers. The unused `UnreconstructableSpan`,
+`UnparseableReplacement`, and `InvalidRequest` variants were removed in Issue 929
+without compatibility aliases.[^issue-929-live-codes]
+
+Plan copies the name and preserves separate path, line and column fields; an
+absent message becomes an empty string. Run adds `analyzer.` and retains its
+default explanations and location formatting. Saved diagnostic codes remain
+strings; removing in-memory variants does not reject old saved names or change
+schemas, exit codes, defaults or the version floor. Recheck this boundary when
+adding a diagnostic producer or changing saved diagnostic validation.
+[^issue-929-plan][^issue-929-run]
+
+The [Issue 929 review and verification record](../../work/plans/2026-10-16-issue-929.md)
+describes removal and retained behavioral coverage. The Issue 865 record remains
+historical evidence for the original seven-name centralization.[^issue-865-names]
+
+[^issue-929-live-codes]: [Historical analyzer diagnostic type](https://github.com/HayaoSuzuki/hoimin/blob/54a72e541a80db4a9df3225e728345146f636180/crates/hoimin-cli/src/analyzer/types.rs). Historical evidence; [current owner](../../../../crates/hoimin-python/src/analyzer/types.rs).
+[^issue-929-plan]: [Plan diagnostic representation and conversion](../../../../crates/hoimin-cli/src/plan.rs).
+[^issue-929-run]: [Run diagnostic conversion](../../../../crates/hoimin-cli/src/analyzer/mod.rs).
+[^issue-865-names]: [Issue #865 design, implementation and validation](../../work/plans/2026-10-14-issue-865.md).
+
+# Typed source-decoding classification
+
+The decoder returns one public SourceEncodingError enum directly.
+ImplicitUtf8 identifies invalid UTF-8 without an explicit declaration;
+Encoding covers declared-source decoding (including declared UTF-8) and
+mutation-text encoding failures. Candidate validation consumes the variant,
+so relabeling a diagnostic cannot switch InvalidUtf8 and InvalidEncoding.
+There is no separate classified decoder, private error wrapper or diagnostic
+projection. Original-span mismatch still precedes decoding failure, and source
+hashing, byte spans and candidate IDs retain their contracts.
+[^issue-873-decoder][^issue-873-candidates]
+
+SourceEncodingError changed from a public Rust struct to an enum: Rust callers
+construct or match variants rather than accessing struct fields directly.
+The user prioritized structural simplicity over preserving that API shape.
+Display diagnostics and CLI/saved-plan/report/session schemas do not change;
+no saved-plan migration or version-floor increase is required.
+The [issue #873 evidence](../../work/plans/2026-10-14-issue-873.md)
+separates historical wrapper checks from validation of the final enum.
+This classification change adds no new codec or formal guarantee.
+
+[^issue-873-decoder]: [Typed decoder and encoding errors](../../../../crates/hoimin-core/src/source_encoding.rs).
+[^issue-873-candidates]: [Candidate validation](../../../../crates/hoimin-core/src/candidate.rs).
+
+# Annotation class context (Issue #914)
+
+AnnotationCollector owns class-specific fallback imports, external declarations,
+and the enclosing scope kind in one private optional ClassContext. Entering a
+function or nested class saves the enclosing context by ownership transfer and
+restores it on return. Method bodies still resolve against the enclosing fallback,
+while class-local imports remain available to the class body. Global/nonlocal
+projection and type-parameter handling keep their existing semantics.[^issue-914-class-context]
+
+Loop convergence snapshots clone only fallback imports; the declaration sets and
+parent scope are not copied. This representation does not change candidates,
+ranking, schemas, or operator defaults. The context intentionally has no Clone
+implementation. The existing loop callback and visit-count checks remain the
+bounded cost evidence; this change establishes no general complexity bound or
+new formal guarantee.[^issue-914-class-context]
+
+[^issue-914-class-context]: [AnnotationCollector implementation](https://github.com/HayaoSuzuki/hoimin/blob/75df00cabcebed7c839d6d77fa1b8ce96b9a858f/crates/hoimin-cli/src/analyzer/rust.rs). Historical evidence; [current owner](../../../../crates/hoimin-python/src/analyzer/rust.rs).
+
+The Issue 914 verification record reports pre-refactor characterization, three
+manual mutation sensitivity checks, the retained loop/finally checks, nine strict
+Lean-corpus comparisons, and local all-feature workspace/quality-gate results.
+These are finite implementation observations on macOS; the Lean model was not
+rebuilt for this private representation change.[^issue-914-evidence]
+
+[^issue-914-evidence]: [Issue 914 design, reviews and verification](../../work/plans/2026-10-15-issue-914.md).
+
+# Typed token mutation operators (Issue #930)
+
+Token replacement returns `MutationOperator` alongside replacement text. The
+compound `not in`, `is not` and unary `not` branches use the same enum, eliminating
+the internal canonical-name lookup and its `expect`. Issue #930 retained string
+candidate fields; Issue #950 extends the enum through candidate retention and
+deduplication, as described below. Selection, limits and truncation follow the
+same paths.[^issue-930-token-operators][^issue-950-retention]
+
+The [Issue #930 record](../../work/plans/2026-10-16-issue-930.md) separates
+baseline and post-change checks from static comparison. This private type change
+adds no operator, format migration, performance claim or formal guarantee.
+The candidate-boundary change in Issue #950 retains canonical-name ordering.
+
+[^issue-930-token-operators]: [Token dispatch, replacement and candidate construction](https://github.com/HayaoSuzuki/hoimin/blob/59fff0890b78e0169b0318b2a8fe637dd0056334/crates/hoimin-cli/src/analyzer/rust.rs). Historical evidence; [current owner](../../../../crates/hoimin-python/src/analyzer/rust.rs).
+
+
+# Known binding categories (Issue #935)
+
+`KnownImports` stores one private `KnownBinding` per local name. A binding is a
+direct import, a module import, or a type variable; direct and module variants
+also hold the resolved name. This represents their exclusivity in the type and
+removes synchronization across three collections during invalidation, copying,
+intersection and clearing. Flow exit categories and the name-resolution index
+remain separate.[^issue-935-bindings]
+
+Intersection retains a name only when both category and payload agree. A wildcard
+from `typing` or `collections.abc` retains module aliases only; other wildcard
+imports clear all known bindings. TypeVars do not count as known imports for
+stability checks and are excluded from supported scalar annotations even when
+named `str` or `int`.
+Replacement selection still prefers direct aliases, then module spellings, with
+a lexical minimum within each category. Class global/nonlocal projection and
+PEP 695 shadowing retain their existing rules.[^issue-935-bindings]
+
+The source-driven tests characterize category replacement, copying, wildcard
+retention, annotation classification and spelling priority. Parameter tables
+cover category/payload agreement; proptest checks intersection idempotence,
+commutativity and associativity. Existing Lean correspondence adapters keep the
+same sorted `direct:`, `module:` and `type-var:` facts. Clone instrumentation
+counts the single map's entries. The representation change makes no speed claim:
+spelling searches may also scan TypeVars. Changing classification, wildcard or
+spelling rules requires rechecking these tests and the existing oracle cases.
+Execution evidence and its limits are recorded in the implementation plan.
+[^issue-935-tests][^issue-935-evidence]
+
+[^issue-935-bindings]: [KnownImports implementation](https://github.com/HayaoSuzuki/hoimin/blob/341e153c093e2677b443d3ef85bdf29fc618ebdf/crates/hoimin-cli/src/analyzer/rust.rs). Historical evidence; [current owner](../../../../crates/hoimin-python/src/analyzer/rust.rs).
+[^issue-935-tests]: [Known binding behavior and intersection properties](https://github.com/HayaoSuzuki/hoimin/blob/341e153c093e2677b443d3ef85bdf29fc618ebdf/crates/hoimin-cli/src/analyzer/known_imports_tests.rs). Historical evidence; [current owner](../../../../crates/hoimin-python/src/analyzer/known_imports_tests.rs).
+[^issue-935-evidence]: [Issue 935 design, reviews and verification](../../work/plans/2026-10-16-issue-935.md).
+
+
+## Accepted candidate count
+
+CandidateStore has one accepted-record count, updated only after a successful
+write_all. Its independent invariant is count <= max_candidates. Validation and
+I/O failure do not advance this count. A second field assigned the same value
+would not verify the file. Tests compare count and the finished reference to
+independent input lengths, physical JSONL records, and replay sequences; push does
+not reread the file. This change adds no atomic-write guarantee.[^issue-943-source]
+
+See the [Issue #943 implementation record](../../work/maintenance/2026-10-16-issue-943.md)
+for current verification and review evidence.[^issue-943-record]
+
+[^issue-943-source]: [Single-owner state](../../../../crates/hoimin-cli/src/analyzer/store.rs).
+
+[^issue-943-record]: [Issue #943 verification](../../work/maintenance/2026-10-16-issue-943.md).
+
+# Typed internal candidate operators (Issue #950)
+
+`AnalyzerCandidate.operator` and both internal dedup identities retain
+`MutationOperator`. Construction already has a known enum, so this removes an
+internal string conversion and identity clones without adding a parser or wrapper.
+`CandidateDescriptor` creation converts to an owned canonical name; saved
+candidates, their IDs and schema versions retain the same representation.
+[^issue-950-candidate][^issue-950-retention][^issue-950-descriptor]
+
+Candidate ranking explicitly compares `as_str()` in both the producer heap and
+final stable sort. Enum-derived ordering remains unsuitable here because it
+follows declaration order. The heap still uses emission order for equal rank;
+dedup still identifies start, replacement and operator, and the collector keeps
+its k+1 overflow probe. Focused annotation exemption uses the existing
+`TYPE_OPERATORS` set.[^issue-950-retention]
+
+Tests assert literal lexical names at coincident spans, including limited output,
+and generate duplicate emission orders and prefix limits. Existing Lean prefix
+correspondence remains a finite model comparison; no new proof or performance
+claim follows from this representation change. Recheck both comparators,
+descriptor conversion and family membership when changing operator identity.
+The [implementation record](../../work/maintenance/2026-10-16-issue-950.md) records
+executed checks and their limitations.[^issue-950-tests]
+
+[^issue-950-candidate]: [In-memory candidate type](https://github.com/HayaoSuzuki/hoimin/blob/59fff0890b78e0169b0318b2a8fe637dd0056334/crates/hoimin-cli/src/analyzer/types.rs). Historical evidence; [current owner](../../../../crates/hoimin-python/src/analyzer/types.rs).
+[^issue-950-retention]: [Candidate ranking, dedup and profile classification](https://github.com/HayaoSuzuki/hoimin/blob/59fff0890b78e0169b0318b2a8fe637dd0056334/crates/hoimin-cli/src/analyzer/rust.rs). Historical evidence; [current owner](../../../../crates/hoimin-python/src/analyzer/rust.rs).
+[^issue-950-descriptor]: [Saved descriptor boundary](../../../../crates/hoimin-cli/src/analyzer/mod.rs).
+[^issue-950-tests]: [Lexical order and prefix regressions](https://github.com/HayaoSuzuki/hoimin/blob/59fff0890b78e0169b0318b2a8fe637dd0056334/crates/hoimin-cli/src/analyzer/rust_tests.rs). Historical evidence; [current owner](../../../../crates/hoimin-python/src/analyzer/rust_tests.rs).
+
+# Selection before replacement construction (Issue #977)
+
+Container and condition whole-expression generators check existing start-line and
+scope selection before constructing replacements. Excluding a parent does not
+stop traversal into its children or bypass name resolution, syntax and depth
+checks. Work-counter tests distinguish completed replacement construction from
+candidate admission and RSS; selected values, IDs, order, deduplication,
+truncation and cancellation retain their contracts.[^issue-977-evidence]
+
+# Retained candidate payload (Issue #978)
+
+One `PayloadBudget` owner bounds 16,777,216 logical bytes across simultaneously retained
+producer outputs, converted candidates and all files of a plan discovery.
+A runtime handler owns a shared budget for its live work; detached workers keep
+their charges until data drops, even if the handler starts another request.
+Leases move with data and release on eviction, deduplication or drop. Plan
+handoff removes accounting only after generation/conversion finish and that
+owner will never admit more data.[^issue-978-payload][^issue-978-evidence]
+
+Count UTF-8 lengths of owned original/replacement/path/symbol strings, converted
+operator/hash/ID strings, separately owned identity/dedup strings, and explicit
+validation/encoded-record scratch reservations. Scalable enum/hierarchy and
+container fragment lists borrow existing strings rather than retaining copied
+batches. Validation bounds live beside core allocations; store encoding reserves
+its calculated record size. Checked overflow or budget exhaustion raises
+`analyzer.payload_limit`, wrapped as `plan.discovery` for plan, and stops further
+replacement builders. It produces no successful partial manifest or usable
+partial spool.[^issue-978-evidence]
+
+Fixed structures, spare capacities/allocator overhead, source/parser/AST/facts,
+diagnostics, prior disk-spool bytes, one in-flight generated candidate and the
+existing annotation batch of at most three source-dependent replacements are
+excluded. These last two exclusions can scale with source size. This is a
+retained-population guarantee, not an analyzer RSS bound. The existing 2 MiB
+record limit still applies; payload failure can now precede global count selection
+or record validation, including for candidates that selection might later discard.
+No compatibility adapter or configurable budget was added.[^issue-978-evidence]
+
+Recorded release observations compare 27 normal runs with identical source and
+candidate hashes, counts, truncation and final-string bytes. Generated/full median
+wall time changed from 0.045955 to 0.047601 seconds (about 3.6% higher). Instrumented
+charged peaks are separate from final output size and RSS. The evidence records
+all peaks, input hashes, binary revisions and build settings; these limited
+observations establish no universal speed or memory guarantee. The subsequent
+subscript early-stop fix affects an error path outside those measured normal and
+container-only matrices, so their after revision remains `e4e3a1d4`, not the final
+source revision.[^issue-978-evidence]
+
+[^issue-972-handler]: [Fixed handler settings and lifetime implementation](../../../../crates/hoimin-cli/src/analyzer/mod.rs).
+[^issue-977-evidence]: [Selection construction counters and verification](../../work/maintenance/2026-10-18-issues-971-979/task-8-report.md).
+[^issue-978-payload]: [Shared logical payload owner](https://github.com/HayaoSuzuki/hoimin/blob/4ebed4457519920e9a28f8f653d8ce96985acdad/crates/hoimin-cli/src/analyzer/payload.rs). Historical evidence; [current owner](../../../../crates/hoimin-python/src/analyzer/payload.rs).
+[^issue-978-evidence]: [Accounting, charged peaks, release comparison and early-stop fix](../../work/maintenance/2026-10-18-issues-971-979/task-9-report.md).
+
+# Single if/elif visitation (Issue #986)
+
+The analyzer's shared ordinary statement walker visits the initial if condition
+and body, then each elif/else clause once in upstream order. It corrects the
+pinned Ruff walker's extra elif-condition visit while delegating other statement
+kinds upstream and preserving existing suite callbacks and scope-specific
+behavior. It does not remove the duplicate-not assertion or deduplicate visits
+afterward.[^issue-986-walker][^issue-986-evidence]
+
+The re-exported upstream `Visitor` still has its original default `visit_stmt`.
+Visitors that can enter statements must explicitly route that method through the
+local walker. Expression-only visitors retain their narrower entry points;
+`SourceOrderVisitor`, used by depth traversal, is a separate unchanged path.
+Recheck this routing when adding a visitor or updating Ruff.[^issue-986-walker][^issue-986-evidence]
+
+Independent tests count ordered node names and source positions, vary elif/not
+forms and delegated suites, and check public plan descriptors, IDs and order.
+Debug and release regressions both passed on macOS. The confirmed original
+panic was in debug; these observations establish neither historical release
+candidate loss nor a universal AST proof.[^issue-986-evidence]
+
+[^issue-986-walker]: [Shared statement traversal boundary](https://github.com/HayaoSuzuki/hoimin/blob/2ec902ae2353c38f2da1a74cbf6552785387e42d/crates/hoimin-cli/src/analyzer/visitor.rs). Historical evidence; [current owner](../../../../crates/hoimin-python/src/analyzer/visitor.rs).
+[^issue-986-evidence]: [Visitation design, self-reviews and test evidence](../../work/maintenance/2026-10-18-issue-986-visitation.md).
+
+# Multi-exit finally work (Issue #987)
+
+Finally transfer keeps normal continuation, break, continue, successful return,
+explicit raise and implicit exception routing distinct. Exact same-category
+normalization removes repeated import environments without intersecting distinct
+explicit states. It retains last-occurrence order so the last contributor to each
+category, and residual imports observed by subsequent unreachable annotations,
+remain unchanged. A separate, single-entry transfer cache inside one `apply_finally`
+call avoids replaying an equivalent finalbody for different exit categories.
+Both optimizations require the absence of an enclosing `ClassContext`; existing
+class-fallback behavior and observable test-hook paths remain uncached.
+[^issue-987-evidence]
+
+The cache lifetime fixes the body, enclosing scope, qualified name, implicit
+exception tracking and transfer-only observation mode. Only exact `KnownImports`
+equality varies within that lifetime. A hit restores the collector's residual
+imports as well as returning its exits; annotation recording remains a separate
+traversal. On a miss the old slot is dropped before recursive work starts, and
+cancelled transfers are never admitted. Moving this cache to a wider lifetime
+would invalidate those context assumptions.[^issue-987-evidence]
+
+Cancellation is checked at suite, statement, finally-entry and loop-transfer
+boundaries, including cache hits. The production boundary reports cancellation
+instead of accepting partially collected candidates; lexical context and flag
+restoration still run. Annotation-free and transfer-only traversals therefore
+observe cancellation independently of annotation callbacks. This does not make
+synchronous parsing or every expression helper forcibly interruptible.
+[^issue-987-evidence]
+
+The measured homogeneous multi-exit nesting family has linear transfer-only and
+quadratic recording-enabled statement work after this change, with bounded
+same-category state multiplicity. Distinct environments can still require more
+work: stable vector deduplication compares up to quadratically many pairs, and
+class-context paths retain their prior traversal. One cache slot per active
+finally frame bounds the number of slots by nesting depth, not their bytes or
+process RSS. No state or candidate is discarded to enforce a resource cap.
+The dated record separates operation/state-count gates from wall-time samples
+and independent semantic controls.[^issue-987-evidence]
+
+[^issue-987-evidence]: [Finally work, cancellation and verification evidence](../../work/maintenance/2026-10-19-issue-987-finally-work.md).
+
+[^issues-995-996-python]: [crates/hoimin-python/src/lib.rs](../../../../crates/hoimin-python/src/lib.rs).
+[^issue-995-index]: [crates/hoimin-python/src/analyzer/exception_hierarchy.rs](../../../../crates/hoimin-python/src/analyzer/exception_hierarchy.rs).
+
+[^issue-1005-graph]: [Shared graph implementation](../../../../crates/hoimin-python/src/analyzer/exception_import_graph.rs).
+[^issue-1005-tests]: [Source, boundary, work and cancellation tests](../../../../crates/hoimin-python/src/analyzer/exception_import_graph_tests.rs).
+[^issue-1005-properties]: [Independent graph reference and properties](../../../../crates/hoimin-python/src/analyzer/exception_import_graph_properties.rs).
+[^issue-1005-evidence]: [Issue #1005 evidence and limits](../../work/maintenance/2026-10-19-issue-1005/report.md).
+
+
+# Prepared admission and deferred positions (Issues #1006 and #1008)
+
+The analyzer prepares a private `CandidateSelection` once per successfully
+parsed file. Empty raw line ranges select all lines; a nonempty reversed-only
+slice selects none. Sorted starts and prefix-maximum inclusive ends answer the
+union with logarithmic membership queries, including nested ranges and
+`u32::MAX`, while retaining existing symbol conjunction. Preparation takes
+O(R log R) work and O(R) storage. Token, AST and annotation producers borrow the
+same owner; the unrestricted expression path keeps its fast check. Cancellation
+checks cover copy/prefix work and surround sorting; sorting remains a synchronous
+phase. This admission index is independent of source-position indexes and
+candidate-payload reservations.[^perf-three-selection]
+
+Issue #1060 also prepares symbol membership once per file. A private enum
+distinguishes unrestricted selection from a restricted borrowed qualifier set,
+including a restricted set with no module matches. Module qualification is
+resolved during preparation; queries test the symbol and its dot-boundary
+ancestors without constructing prefix strings or scanning selectors. A rejected
+line returns before symbol lookup. The additional set stores O(S) borrowed
+entries; cancellation is checked while preparing selectors. The new work gate
+varies distinct selectors and queries independently, rather than repeating a
+single selector that target normalization deduplicates.[^issue-1060-selection]
+
+`CandidateValidationContext` retains its source borrow, decoded facts and raw
+hash, then constructs a private location index only when strict validation
+reaches its existing location check. Raw/decoded length checks and decoding/hash
+work remain eager. Rejection order, candidate bytes and stable IDs retain their
+existing meaning. Unicode validation uses decoded scalar coordinates; Latin1
+uses raw-byte line starts. A successful Unicode CLI flow still constructs two
+indexes in sequence; it avoids their simultaneous retention because analysis
+finishes before candidate conversion. External validate-before-analyze callers
+do not inherit global deduplication. Index scans remain synchronous.[^perf-three-context]
+
+The [integration record](../../work/maintenance/2026-10-20-perf-three/README.md)
+links operation/heap gates and fixed release observations. Those observations
+support scoped work and retention reductions, with mixed full-CLI timing.
+The initial task-local experiment left Task3 small-ASCII acceptance open: its
++0.067791 ms upper median-difference bound exceeded the prespecified +0.05 ms
+criterion. After observing those results, the user explicitly accepted a
++0.1 ms practical tolerance (D1). Both tiny (−0.019834 ms) and small (+0.067791 ms)
+meet that accepted criterion, with unchanged requested whole-plan peak/retained
+heap. The [D1 review](../../work/maintenance/2026-10-20-perf-three/reports/task-3-d1-review.md)
+closes I1 under that decision. D1 changes acceptance after observation; it does
+not change the original failed criterion or establish universal non-regression.
+The measured context stack grows from 160 to 168 bytes; heap evidence does not
+measure stack equality.[^perf-three-r6][^perf-three-d1]
+
+[^perf-three-selection]: [Private per-file admission](../../../../crates/hoimin-python/src/analyzer/rust/selection.rs).
+[^issue-1060-selection]: [Prepared symbol admission](../../../../crates/hoimin-python/src/analyzer/rust/selection.rs).
+[^perf-three-context]: [Source-bound validation context](../../../../crates/hoimin-core/src/candidate.rs).
+[^perf-three-r6]: [Task-local ASCII protocol, observations and open acceptance](../../work/maintenance/2026-10-20-issue-1008/r6/README.md).
+
+[^perf-three-d1]: [D1 acceptance decision and scoped independent review](../../work/maintenance/2026-10-20-perf-three/reports/task-3-d1-review.md).
+
+# Optional-call admission and imported exception members (Issues #1030 and #1029)
+
+The optional-keyword whole-call producer checks the existing expression-start
+selection predicate before looking up optional keywords or constructing any
+replacement. A selected interior line does not select a multiline call whose
+start is excluded. The visitor still walks the call's arguments, so separately
+selected child expressions retain their candidates. Selected-call identity,
+ordering, payload accounting and truncation keep their existing paths.
+[^issue-1030-admission]
+
+Exception visibility builds a temporary index of borrowed class member names
+from the resolved class table, grouped by module. Each module import alias
+iterates only those class members for explicitly loaded modules. It still calls
+importer-specific binding resolution before emitting a spelling; shadowing,
+dynamic modules, ambiguity, loaded descendants and binding positions retain
+their existing checks. The index visits each resolved class once and drops when
+visibility construction finishes. Necessary alias × visible-class output still
+requires its own work and summary-entry budget. The change does not claim a
+bound independent of output size or remove scans over the importer's bindings.
+[^issue-1029-members]
+
+The [integration record](../../work/maintenance/2026-10-20-issues-1029-1030/README.md)
+links deterministic operation regressions and fixed release observations.
+Recheck admission tests when changing whole-call producers or selection rules,
+and visibility oracles when changing class resolution, module loading or import
+binding semantics. Requested cumulative allocation, retained heap and peak heap
+are separate measurements; none is process RSS.
+
+[^issue-1030-admission]: [Optional-call admission and unchanged child traversal](../../../../crates/hoimin-python/src/analyzer/rust.rs).
+[^issue-1029-members]: [Eligible-member index and importer-specific visibility](../../../../crates/hoimin-python/src/analyzer/exception_hierarchy.rs).
+
+
+# Qualified and exception lookup work (Issues #1039, #1040 and #1044)
+
+Qualified type spellings select the import bound to the first identifier. Only
+that binding can resolve the qualified prefix; unqualified alias preference and
+lexical ordering keep their previous rules.[^six-perf-imports]
+
+Each exception collector lazily scans visible aliases once on its first
+nongeneric class and retains borrowed private roots for its own lifetime.
+Method-local exclusions and their restoration remain independent. Related-class
+lookup chooses the smaller of the visible identity set and adjacency set. One
+constructible count per existing child group preserves constructor-policy and
+no-visible-destination reasons even for invisible relatives. No class-pair cache
+is retained. Operation gates vary aliases/classes and siblings/sites independently;
+an exhaustive reference checks sparse and dense outcomes.[^six-perf-hierarchy][^six-perf-lookup-tests]
+
+[^six-perf-imports]: [rust.rs](../../../../crates/hoimin-python/src/analyzer/rust.rs).
+
+[^six-perf-hierarchy]: [exception_hierarchy.rs](../../../../crates/hoimin-python/src/analyzer/exception_hierarchy.rs).
+
+[^six-perf-lookup-tests]: [exception_lookup_tests.rs](../../../../crates/hoimin-python/src/analyzer/exception_lookup_tests.rs).
+
+The [implementation and measurement record](../../work/maintenance/2026-10-21-issues-1039-1040-1041-1042-1044-1045/README.md) separates operation gates,
+retained heap, guarded elapsed observations and sampled RSS limits.[^six-perf-record]
+
+[^six-perf-record]: [Six-issue implementation, measurements and validation](../../work/maintenance/2026-10-21-issues-1039-1040-1041-1042-1044-1045/README.md).
+
+The typed hierarchy follow-up uses `ExceptionSite` for raise/handler policy and
+`RelatedEligibility` for the three pre-visibility outcomes. Empty candidate
+sets map that outcome to the existing reason vocabulary. `ChildClasses` owns
+identity insertion and constructibility queries; inserting an existing identity
+cannot inflate its count. The representation and sparse/dense iteration bounds
+are unchanged. The original Boolean algorithm remains only in the test reference.
+[^six-perf-hierarchy][^six-perf-lookup-tests][^six-perf-record]
+
+# 例外階層の本文 lifetime（Issue #1074）
+
+`ExceptionProject::load` は本文を集めず、path と prepared origin を先に予約する。
+各ファイルを取得・hash 検査・decode し、借用した本文から owned summary を抽出した後、
+次のファイルへ進む。最終の import graph・class・visibility 構築には本文を渡さない。
+本文の保持は全ファイルの合計量ではなく最大 1 ファイルの量に従う。必要な path、
+summary、index と処理中の parser/AST は別に保持する。[^issue-1074-project][^issue-1074-builder]
+
+`ExceptionIndexBuilder` は mapping/解析の最初のエラーを保持する。全ファイルの
+bounded acquisition が成功してからそのエラーを返すため、後のファイルの decode や
+fingerprint エラーが先の解析エラーに隠れない。prepared origin の件数超過も同じ優先順に
+従う。総 decoded bytes 64 MiB、1 ファイル 16 MiB、4096 ファイル、summary 件数の
+上限は維持し、成功した index だけを cache に入れる。[^issue-1074-project]
+
+[^issue-1074-project]: [Per-file acquisition and successful-index cache](../../../../crates/hoimin-cli/src/analyzer/exception_project.rs).
+[^issue-1074-builder]: [Borrowed-source summary builder](../../../../crates/hoimin-python/src/analyzer/exception_hierarchy.rs).
+
+小さい実入力での allocation 観測、回帰試験と測定範囲は
+[実装記録](../../work/maintenance/2026-10-22-issues-1073-1074-1075/README.md)に記す。
+
+# Borrowed token storage (Issue #1086)
+
+Token candidate discovery borrows the parser's contiguous token slice. Previous
+and next significant-token searches retain their order and return references to
+the same parser-owned tokens. There is no second Vec of references proportional
+to the full token count. The parsed module remains alive through discovery.
+Candidate limits, trivia handling, diagnostics and cancellation checks retain
+their existing responsibilities.[^issue-1086-tokens]
+
+Temporary instrumentation of the actual token-view acquisition, candidate/output
+comparison and its limits are recorded in the
+[implementation evidence](../../work/maintenance/2026-10-22-issues-1085-1086-1087/README.md).
+
+[^issue-1086-tokens]: [Token discovery over parser storage](../../../../crates/hoimin-python/src/analyzer/rust.rs).
+
+# Python 3.15の構文と遅延import
+
+Ruff 0.17.2のparserは安全修正を含むvendorソースを使い、AST・周辺crateは同一コミットから公開されたcrates.io版0.0.19へ揃える。
+遅延importと内包表記・ジェネレーター式のアンパックを解析し、辞書内包表記の省略keyも訪問対象へ反映する。
+既存の深さ128の制限と反復破棄を維持する。[^python315-syntax]
+
+遅延importのaliasを、通常のimportに基づく静的な参照先の証明へ使わない。
+`__lazy_modules__`またはソースに見えるlazy設定APIがあるモジュールは、callable・enum・注釈・project例外のimport由来の証明を抑制する。
+リテラルなどimportの証明が不要な候補は引き続き生成する。
+通常のeager importは既存の規則を維持する。[^python315-syntax]
+
+[^python315-syntax]: [Python 3.15構文と上流Ruffの取り込み](../../work/designs/2026-10-24-python-315-syntax-design.md).
+
+# Opt-out loop break insertion
+
+`loop_break_insert` is enabled by default and independently removable with
+`--exclude-operators`. It appends a tail `break` to `for`, `async for`, and `while`
+bodies without a direct unconditional exit. It changes subsequent iteration and
+loop `else` execution when the tail is reached; conditional `continue` can bypass
+it. Each nested loop is a separate candidate. Explicit selections and saved plans
+retain their existing operator sets.[^loop-break-insert-design]
+
+The implementation uses a nonempty logical-newline or final-character source
+anchor instead of retaining another copy of the body. Inline suites use a
+semicolon. Logical newline tokens preserve comments and explicit continuations;
+source indentation and newline spelling are retained. The existing admission,
+selection, cancellation and retained-payload limits still apply. Scope metadata
+comes from the loop, even when its final statement defines a nested symbol.
+This does not prove all tail positions are reachable or all mutants inequivalent.
+[^loop-break-insert-design]
+
+[^loop-break-insert-design]: [Loop break insertion design](../../work/designs/2026-10-25-loop-break-insert-design.md).
+
+# Opt-out iterator stop insertion
+
+`iterator_stop_insert` and `async_iterator_stop_insert` add one entry exhaustion
+candidate for eligible synchronous `__next__` and async `__anext__` class methods.
+They retain docstrings and original bodies, exclude decorated/generator methods,
+and require builtin exception-name resolution. This tests whether consumers assert
+that any expected values are produced, not whether only a later item is missing.
+Both are default-enabled and independently removable.[^iterator-stop-insert-design]
+
+Protocol-method entry sites are recorded in the function's resolution scope. The
+two stop names participate in shadowing, wildcard and dynamic-binding uncertainty;
+they are separate from the exception-pair operator catalog. Own-scope yield
+inspection ignores nested function/class bodies while visiting defaults evaluated
+in the enclosing scope. Existing candidate admission, prefixes, cancellation and
+payload limits apply. Runtime tests establish behavior on the tested interpreters;
+static analysis does not prove arbitrary dynamic iterator dispatch.
+[^iterator-stop-insert-design]
+
+[^iterator-stop-insert-design]: [Iterator stop insertion design](../../work/designs/2026-10-25-iterator-stop-insert-design.md).
+
+# Opt-out generator behavior mutations
+
+Four default-enabled IDs cover eager-to-lazy comprehension conversion, generator
+entry return, first-item consumption and empty output. Return retains original
+yield source and thus generator/async-generator kind. Skip-first/empty target
+explicit synchronous Generator expressions, preserve construction once and avoid
+full draining. Their effects and limits are documented in the
+[user guide](../../../user/guides/usage.md#generator-behavior).[^generator-mutations-design]
+
+Function-entry layout and own-scope inspection are shared with iterator-stop
+insertion. The inserted next call requires builtin proof at construction in the
+parent scope. Range-keyed construction sites remain separate from ordinary name
+occurrences: implicit generators can start at an existing name, and nested
+generators can share an end offset across different scopes. Existing end-offset
+loop-back uncertainty remains conservative if such sites coincide. Deferred or
+dynamic bindings can suppress a candidate rather than assume a builtin.
+[^generator-mutations-design]
+
+Async-frame inspection distinguishes code executed by this generator from nested
+generator bodies and construction-time evaluation of its leftmost iterable.
+Selection precedes large replacement copies; admission, profiles, cancellation
+and payload limits retain their existing roles. These transformations do not
+prove every mutant inequivalent or every surviving case a production defect.
+[^generator-mutations-design]
+
+[^generator-mutations-design]: [Generator behavior mutation design](../../work/designs/2026-10-25-generator-mutations-design.md).
+
+
+## Missing values and shared state
+
+Eleven opt-out mutations distinguish missing values from empty values, expose
+shared parameter defaults and lost nonlocal updates, replace yield delegation,
+and remove setdefault insertion. The expansion swaps bisect boundaries, replaces
+deepcopy with copy, and changes FIFO removal to LIFO removal. Further operators
+turn gather failures into returned exception objects, swap iterator prefixes and
+change explicit f-string representations. Local patterns and token edits preserve scopes,
+comments and evaluation counts; syntactic method matching does not infer dict
+receiver types. Defaults: 72 operators; catalog: 91 IDs. Each remains independently selectable and
+excludable.[^effective-python-mutations-design]
+
+[^effective-python-mutations-design]: [Missing-value and shared-state mutation design](../../work/designs/2026-10-25-effective-python-mutations-design.md).

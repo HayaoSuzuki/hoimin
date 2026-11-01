@@ -38,9 +38,9 @@ def test_documentation_inputs_use_the_dedicated_build(path: str) -> None:
     [
         ("README.md", {"distribution"}),
         ("CONTRIBUTING.md", set()),
-        ("docs/usage.md", set()),
-        ("docs/cli-reference.md", {"rust"}),
-        ("docs/audits/note.md", set()),
+        ("docs/user/guides/usage.md", set()),
+        ("docs/user/reference/cli.md", {"rust"}),
+        ("docs/development/work/audits/note.md", set()),
         ("crates/hoimin-cli/src/main.rs", {"rust", "formal", "distribution"}),
         ("vendor/ruff_python_parser/src/lib.rs", {"rust", "formal", "distribution"}),
         ("tests/test_example.py", {"python", "rust", "formal"}),
@@ -48,8 +48,8 @@ def test_documentation_inputs_use_the_dedicated_build(path: str) -> None:
         ("tools/release.py", {"python", "distribution"}),
         ("tests/wheel_smoke.py", set(ci_selection.CATEGORIES)),
         ("LICENSE", {"distribution"}),
-        ("docs/json-schema/report.json", set(ci_selection.CATEGORIES)),
-        ("docs/audits/repro.py", set(ci_selection.CATEGORIES)),
+        ("docs/user/reference/json-schema/report.json", set(ci_selection.CATEGORIES)),
+        ("docs/development/work/audits/repro.py", set(ci_selection.CATEGORIES)),
         ("tests/fixtures/case.json", set(ci_selection.CATEGORIES)),
         (".github/workflows/ci.yml", set(ci_selection.CATEGORIES)),
         ("Cargo.lock", set(ci_selection.CATEGORIES)),
@@ -162,7 +162,7 @@ def needs_for(flags: dict[str, bool]) -> dict[str, dict[str, object]]:
 
 
 def test_aggregate_accepts_only_intentional_skips() -> None:
-    needs = needs_for(ci_selection.classify(["docs/usage.md"]))
+    needs = needs_for(ci_selection.classify(["docs/user/guides/usage.md"]))
 
     errors = ci_selection.aggregate(needs)
 

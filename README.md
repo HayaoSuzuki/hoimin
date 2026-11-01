@@ -8,7 +8,10 @@ Humans provide specification decisions and review changes.
 Mutation scores are diagnostic observations; equivalent mutants and specification-permitted changes make them unsuitable as a standalone quality target.
 hoimin targets local work and provides no mutation-score or regression CI gate.
 A completed run exits successfully even when mutants survive; inspect the JSONL events to choose the next test improvement.
-See the [product principles](docs/product-principles.md).
+For repository documentation, start with the [user guide](docs/user/index.md) or
+[development guide](docs/development/index.md).
+
+See the [product principles](docs/user/about/product-principles.md).
 See also the [documentation](https://hayaosuzuki.github.io/hoimin/) for installation, the agent workflow, resource limits, and command references.
 
 ## Install
@@ -27,7 +30,7 @@ Run `uv tool update-shell` if `hoimin` is not on `PATH`, then open a new shell.
 ## Quick start
 
 From your project directory, use a Python environment with passing tests and their dependencies installed.
-Choose the [OS memory policy](docs/usage.md#before-execution) first, then replace `src/calc.py` with an existing file:
+Choose the [OS memory policy](docs/user/guides/usage.md#before-execution) first, then replace `src/calc.py` with an existing file:
 
 ```console
 hoimin run --root . --file src/calc.py -- python -m pytest -q
@@ -35,14 +38,14 @@ hoimin run --root . --file src/calc.py -- python -m pytest -q
 
 Everything after `--` is your project's test command.
 hoimin runs it once as a baseline, then for each selected mutation. Have your agent investigate a small batch of survivors for missing assertions or test cases; a survivor alone does not establish a test defect.
-macOS and Linux without delegated cgroups require `--allow-best-effort-memory` before `--`; macOS memory is not capped. See the [resource limits](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/usage.md#limits-and-defaults).
+macOS and Linux without delegated cgroups require `--allow-best-effort-memory` before `--`; macOS memory is not capped. See the [resource limits](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/user/guides/usage.md#limits-and-defaults).
 
-See the [usage reference](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/usage.md) for selectors and configuration, the [step-by-step plan/verify workflow](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/usage.md#plan-and-verify-with-an-agent) for a Git-independent example with a before/after test improvement, and [results](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/usage.md#results), or run `hoimin --help`.
-For questions and bug reports, see the [reporting guide](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/support.md).
+See the [usage reference](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/user/guides/usage.md) for selectors and configuration, the [step-by-step plan/verify workflow](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/user/guides/usage.md#plan-and-verify-with-an-agent) for a Git-independent example with a before/after test improvement, and [results](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/user/guides/usage.md#results), or run `hoimin --help`.
+For questions and bug reports, see the [reporting guide](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/user/about/support.md).
 External Issues and pull requests are not accepted.
 
 Licensed under [Elastic License 2.0](https://github.com/HayaoSuzuki/hoimin/blob/main/LICENSE).
-See [licensing details](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/licensing.md).
+See [licensing details](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/user/about/licensing.md).
 
 ### Startup cleanup reports
 
@@ -51,4 +54,4 @@ See [licensing details](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/lic
 failures and unfinished cleanup diagnostics.
 The summary separates roots from deleted entries and reports bounded scan/detail
 omissions. It does not estimate remaining roots or freed disk space. See the
-[compatibility notice](docs/compatibility.md#structured-startup-cleanup-in-0140).
+[compatibility notice](docs/user/reference/compatibility.md#structured-startup-cleanup-in-0140).

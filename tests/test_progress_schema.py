@@ -11,7 +11,9 @@ from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = json.loads(
-    (ROOT / "docs/json-schema/progress-result.schema.json").read_text(encoding="utf-8")
+    (ROOT / "docs/user/reference/json-schema/progress-result.schema.json").read_text(
+        encoding="utf-8"
+    )
 )
 VALIDATOR = Draft202012Validator(SCHEMA)
 GOLDEN = json.loads(

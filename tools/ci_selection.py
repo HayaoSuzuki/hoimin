@@ -35,9 +35,9 @@ def categories_for(path: str) -> tuple[str, ...]:  # noqa: C901, PLR0911 -- expl
         return ("rust", "formal", "creusot", "distribution")
     if path.startswith("formal/creusot/"):
         return ("rust", "formal", "creusot")
-    if path == "docs/cli-reference.md":
+    if path == "docs/user/reference/cli.md":
         return ("rust",)
-    if path.startswith(("docs/json-schema/", "tests/fixtures/")):
+    if path.startswith(("docs/user/reference/json-schema/", "tests/fixtures/")):
         return CATEGORIES
     # Dedicated docs inputs are tested by the documentation workflow, without wheels.
     if path in DOCUMENTATION_INPUTS or (

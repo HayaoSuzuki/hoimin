@@ -44,7 +44,7 @@
 //! The shell supplies a managed directory owner and coordinates cleanup; dropping
 //! the handler only releases its own store/owner references and does not delete a
 //! finalized standalone spool. See the [shell coordination contract](crate::shell)
-//! and the [development guide](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/development.md#internal-ownership-and-performance-changes)
+//! and the [development guide](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/development/guides/contributing.md#internal-ownership-and-performance-changes)
 //! for the surrounding ownership boundaries and analysis documentation.
 
 pub(crate) mod exception_project;

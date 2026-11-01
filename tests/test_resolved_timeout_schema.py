@@ -10,7 +10,9 @@ from hypothesis import strategies as st
 from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA = json.loads((ROOT / "docs/json-schema/run-event.schema.json").read_text())
+SCHEMA = json.loads(
+    (ROOT / "docs/user/reference/json-schema/run-event.schema.json").read_text()
+)
 VALIDATOR = Draft202012Validator(SCHEMA)
 SUMMARY = json.loads(
     (ROOT / "crates/hoimin-cli/tests/golden/events/schema-v10-current.jsonl")

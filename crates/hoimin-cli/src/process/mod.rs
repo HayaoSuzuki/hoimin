@@ -26,7 +26,7 @@
 //! covers cancellation, descendant cleanup and backend-specific limits. These
 //! contracts do not extend a backend's descendant-tracking guarantees.
 //!
-//! [development guide]: https://github.com/HayaoSuzuki/hoimin/blob/main/docs/development.md#shutdown-deadline-invariants
+//! [development guide]: https://github.com/HayaoSuzuki/hoimin/blob/main/docs/development/guides/contributing.md#shutdown-deadline-invariants
 
 mod blocking;
 mod output;

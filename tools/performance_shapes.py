@@ -896,7 +896,9 @@ def main() -> int:  # noqa: C901, PLR0912, PLR0915
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=["check", "gate", "measure"])
     parser.add_argument(
-        "--registry", type=Path, default=ROOT / "docs/performance/shapes.json"
+        "--registry",
+        type=Path,
+        default=ROOT / "docs/development/performance/shapes.json",
     )
     parser.add_argument("--output", type=Path)
     parser.add_argument("--baseline", type=Path)

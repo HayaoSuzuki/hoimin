@@ -7,7 +7,9 @@ import pytest
 from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA = json.loads((ROOT / "docs/json-schema/run-event.schema.json").read_text())
+SCHEMA = json.loads(
+    (ROOT / "docs/user/reference/json-schema/run-event.schema.json").read_text()
+)
 OMISSIONS = SCHEMA["$defs"]["janitorSummary"]["properties"]["detail_omissions"]
 VALIDATOR = Draft202012Validator(OMISSIONS)
 COUNTERS = {"normal_details": 2, "issue_details": 1, "truncated_details": 3}

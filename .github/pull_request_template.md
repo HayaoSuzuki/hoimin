@@ -8,14 +8,14 @@
 
 ## Usage and format changes
 
-<!-- Follow docs/compatibility.md. Describe current CLI/schema/defaults/platform/package
+<!-- Follow docs/user/reference/compatibility.md. Describe current CLI/schema/defaults/platform/package
 changes (or no impact) and any need to regenerate plans or start a new session.
 Backward compatibility and historical artifact migration are not requirements.
 Mention a version-floor change only if deliberately included. -->
 
 ## OKF
 
-<!-- Follow docs/okf-workflow.md. Give repository paths so reviewers can follow them. -->
+<!-- Follow docs/development/guides/okf-workflow.md. Give repository paths so reviewers can follow them. -->
 
 - Consulted:
 - Updated, or reason no update was needed:

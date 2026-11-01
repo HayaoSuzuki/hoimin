@@ -64,7 +64,8 @@ fn published_resume_schema_accepts_producer_reasons_and_rejects_retired_fallback
     #[case] reason: ResumeFreshReason,
 ) {
     use hoimin_core::ResumeOutcome;
-    let event_schema = read_schema(&repo_root().join("docs/json-schema/run-event.schema.json"));
+    let event_schema =
+        read_schema(&repo_root().join("docs/user/reference/json-schema/run-event.schema.json"));
     let schema = &event_schema["$defs"]["resumeOutcome"];
     assert_schema_valid(
         schema,
@@ -83,7 +84,8 @@ fn published_resume_schema_accepts_producer_reasons_and_rejects_retired_fallback
     #[case] reason: &str,
 ) {
     use hoimin_core::ResumeOutcome;
-    let event_schema = read_schema(&repo_root().join("docs/json-schema/run-event.schema.json"));
+    let event_schema =
+        read_schema(&repo_root().join("docs/user/reference/json-schema/run-event.schema.json"));
     let schema = &event_schema["$defs"]["resumeOutcome"];
     assert_schema_valid(
         schema,
@@ -100,7 +102,8 @@ fn published_resume_schema_accepts_producer_reasons_and_rejects_retired_fallback
 #[test]
 fn disk_stop_secondary_evidence_matches_the_published_event_schema() {
     let root = repo_root();
-    let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
+    let event_schema =
+        read_schema(&root.join("docs/user/reference/json-schema/run-event.schema.json"));
     let mut disk = default_disk_summary();
     disk.stop = Some(hoimin_core::DiskStopReport {
         code: hoimin_core::FILESYSTEM_RESERVE_REACHED.to_owned(),
@@ -141,7 +144,8 @@ fn disk_stop_secondary_evidence_matches_the_published_event_schema() {
 #[test]
 fn disk_filesystem_schema_requires_a_delta_for_two_endpoints() {
     let root = repo_root();
-    let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
+    let event_schema =
+        read_schema(&root.join("docs/user/reference/json-schema/run-event.schema.json"));
     let filesystem_schema = &event_schema["$defs"]["diskFilesystem"];
     let incomplete = serde_json::json!({
         "key": "workspace",
@@ -159,7 +163,8 @@ fn disk_filesystem_schema_requires_a_delta_for_two_endpoints() {
 #[case::state_2(serde_json::json!({"state":"captured","names":["FLAG"],"digest":"a".repeat(64)}))]
 fn environment_snapshot_schema_accepts_closed_state(#[case] valid: serde_json::Value) {
     let root = repo_root();
-    let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
+    let event_schema =
+        read_schema(&root.join("docs/user/reference/json-schema/run-event.schema.json"));
     let snapshot_schema = &event_schema["$defs"]["environmentSnapshot"];
 
     assert_schema_valid(snapshot_schema, &valid, &event_schema);
@@ -171,7 +176,8 @@ fn environment_snapshot_schema_accepts_closed_state(#[case] valid: serde_json::V
 #[case::state_3(serde_json::json!({"state":"captured","names":["FLAG"],"digest":"a".repeat(64),"value":"private"}))]
 fn environment_snapshot_schema_rejects_closed_state(#[case] invalid: serde_json::Value) {
     let root = repo_root();
-    let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
+    let event_schema =
+        read_schema(&root.join("docs/user/reference/json-schema/run-event.schema.json"));
     let snapshot_schema = &event_schema["$defs"]["environmentSnapshot"];
 
     assert_schema_invalid(snapshot_schema, &invalid, &event_schema);
@@ -182,7 +188,8 @@ fn environment_snapshot_schema_rejects_closed_state(#[case] invalid: serde_json:
 #[case::schema_v10_current_jsonl_2("schema-v10-current.jsonl", true)]
 fn report_event_goldens_are_typed_complete_sequences(#[case] name: &str, #[case] current: bool) {
     let repo = repo_root();
-    let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
+    let event_schema =
+        read_schema(&repo.join("docs/user/reference/json-schema/run-event.schema.json"));
     let root = repo.join("crates/hoimin-cli/tests/golden/events");
 
     let text = std::fs::read_to_string(root.join(name)).unwrap();
@@ -207,7 +214,8 @@ fn report_event_goldens_are_typed_complete_sequences(#[case] name: &str, #[case]
 #[test]
 fn current_event_golden_matches_typed_semantic_regeneration() {
     let root = repo_root();
-    let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
+    let event_schema =
+        read_schema(&root.join("docs/user/reference/json-schema/run-event.schema.json"));
     let path = root.join("crates/hoimin-cli/tests/golden/events/schema-v10-current.jsonl");
     let text = std::fs::read_to_string(path).unwrap();
     let first: serde_json::Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
@@ -244,7 +252,8 @@ fn assert_canonical_normalized_config(event: &serde_json::Value) {
 #[test]
 fn raw_goldens_reject_unknown_fields_before_typed_comparison() {
     let root = repo_root();
-    let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
+    let event_schema =
+        read_schema(&root.join("docs/user/reference/json-schema/run-event.schema.json"));
     let line = std::fs::read_to_string(
         root.join("crates/hoimin-cli/tests/golden/events/schema-v10-current.jsonl"),
     )
@@ -496,7 +505,7 @@ impl SharedWriter {
 #[tokio::test]
 async fn documentation_contract() {
     let root = repo_root();
-    let usage = std::fs::read_to_string(root.join("docs/usage.md")).unwrap();
+    let usage = std::fs::read_to_string(root.join("docs/user/guides/usage.md")).unwrap();
     let commands = fenced_run_commands(&usage);
     assert!(
         !commands.is_empty(),
@@ -548,7 +557,8 @@ async fn documentation_contract() {
         documented_metrics,
         "a Usage run example must enable metrics"
     );
-    let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
+    let event_schema =
+        read_schema(&root.join("docs/user/reference/json-schema/run-event.schema.json"));
     assert_eq!(
         event_schema["$schema"],
         "https://json-schema.org/draft/2020-12/schema"
@@ -1607,8 +1617,10 @@ fn buffered_diagnostics_retry_interrupted_writes_and_flush_each_record() {
 #[case::current_2("current")]
 fn historical_schema_three_goldens_validate_the_archived_raw_contract_1(#[case] era: &str) {
     let root = repo_root();
-    let schema = read_schema(&root.join("docs/json-schema/run-event-v3.schema.json"));
-    let result_schema = read_schema(&root.join("docs/json-schema/run-result-v3.schema.json"));
+    let schema =
+        read_schema(&root.join("docs/user/reference/json-schema/run-event-v3.schema.json"));
+    let result_schema =
+        read_schema(&root.join("docs/user/reference/json-schema/run-result-v3.schema.json"));
 
     let value = read_schema(&root.join(format!(
         "crates/hoimin-cli/tests/golden/reports/schema-v3-{era}.json"
@@ -1621,7 +1633,8 @@ fn historical_schema_three_goldens_validate_the_archived_raw_contract_1(#[case] 
 #[case::schema_v3_current_jsonl_2("schema-v3-current.jsonl")]
 fn historical_schema_three_goldens_validate_the_archived_raw_contract_2(#[case] name: &str) {
     let root = repo_root();
-    let schema = read_schema(&root.join("docs/json-schema/run-event-v3.schema.json"));
+    let schema =
+        read_schema(&root.join("docs/user/reference/json-schema/run-event-v3.schema.json"));
     let text = std::fs::read_to_string(
         root.join("crates/hoimin-cli/tests/golden/events")
             .join(name),
@@ -1664,7 +1677,8 @@ fn historical_schema_three_goldens_validate_the_archived_raw_contract_2(#[case] 
 #[tokio::test]
 async fn public_resume_reports_validate_current_schema_in_jsonl() {
     let repo = repo_root();
-    let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
+    let event_schema =
+        read_schema(&repo.join("docs/user/reference/json-schema/run-event.schema.json"));
     let python = repository_python();
     let mut reports = Vec::new();
     let fixture = tempfile::tempdir().unwrap();
@@ -1789,8 +1803,10 @@ async fn line_diverse_public_reports_and_previews_match_current_schemas(
     );
     let plan = directory.path().join("plan.json");
     std::fs::write(&plan, stdout.snapshot()).unwrap();
-    let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
-    let preview_schema = read_schema(&repo.join("docs/json-schema/verify-preview.schema.json"));
+    let event_schema =
+        read_schema(&repo.join("docs/user/reference/json-schema/run-event.schema.json"));
+    let preview_schema =
+        read_schema(&repo.join("docs/user/reference/json-schema/verify-preview.schema.json"));
     stdout.clear();
     stderr.clear();
     let mut args = vec![
@@ -1849,8 +1865,10 @@ async fn sample_public_reports_and_previews_match_current_schemas(
     );
     let plan = directory.path().join("plan.json");
     std::fs::write(&plan, stdout.snapshot()).unwrap();
-    let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
-    let preview_schema = read_schema(&repo.join("docs/json-schema/verify-preview.schema.json"));
+    let event_schema =
+        read_schema(&repo.join("docs/user/reference/json-schema/run-event.schema.json"));
+    let preview_schema =
+        read_schema(&repo.join("docs/user/reference/json-schema/verify-preview.schema.json"));
     stdout.clear();
     stderr.clear();
     let mut args = vec![
@@ -2100,7 +2118,8 @@ fn janitor_details_preserve_holds_failures_and_counts() {
         "{text}"
     );
     let wire: serde_json::Value = serde_json::from_str(text.lines().last().unwrap()).unwrap();
-    let schema = read_schema(&repo_root().join("docs/json-schema/run-event.schema.json"));
+    let schema =
+        read_schema(&repo_root().join("docs/user/reference/json-schema/run-event.schema.json"));
     assert_schema_valid(&schema, &wire, &schema);
     assert_eq!(wire["disk"]["janitor"]["inspected_roots"], 2);
     assert_eq!(wire["disk"]["janitor"]["removed_entries"], 3);
@@ -2116,7 +2135,9 @@ macro_rules! janitor_schema_presence_case {
         #[test]
         fn $name() {
             // Arrange.
-            let schema = read_schema(&repo_root().join("docs/json-schema/run-event.schema.json"));
+            let schema = read_schema(
+                &repo_root().join("docs/user/reference/json-schema/run-event.schema.json"),
+            );
             let mut disk = serde_json::to_value(default_disk_summary()).unwrap();
             if !$present {
                 disk.as_object_mut().unwrap().remove("janitor");

@@ -39,7 +39,7 @@ def test_site_preparation_copies_only_allowlisted_theme_assets(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = tmp_path / "repository"
-    styles = root / "docs" / "stylesheets"
+    styles = root / "docs" / "assets" / "stylesheets"
     styles.mkdir(parents=True)
     (styles / "extra.css").write_bytes(b".md-sidebar--secondary { display: none; }")
     (styles / "private.css").write_bytes(b"unpublished")
@@ -143,21 +143,35 @@ def test_nonexistent_source_is_not_hidden_by_rewriting(tmp_path: Path) -> None:
         rewrite_url(tmp_path, source, "missing.md", REVISION)
 
 
-def test_published_page_stays_local(tmp_path: Path) -> None:
-    target = tmp_path / "docs" / "usage.md"
-    target.parent.mkdir()
-    target.write_text("# Usage", encoding="utf-8")
+@pytest.mark.parametrize(
+    ("source", "published"),
+    [
+        ("docs/user/guides/usage.md", "docs/usage.md"),
+        ("docs/user/reference/cli.md", "docs/cli-reference.md"),
+        ("docs/development/guides/contributing.md", "docs/development.md"),
+    ],
+    ids=["user-guide", "user-reference", "contributor-guide"],
+)
+def test_published_page_stays_local(
+    tmp_path: Path, source: str, published: str
+) -> None:
+    target = tmp_path / source
+    target.parent.mkdir(parents=True)
+    target.write_text("# Guide", encoding="utf-8")
 
-    result = rewrite_url(tmp_path, tmp_path / "README.md", "docs/usage.md", REVISION)
+    result = rewrite_url(tmp_path, tmp_path / "README.md", source, REVISION)
 
-    assert result == "docs/usage.md"
+    assert result == published
 
 
 def test_readme_links_resolve_to_site_landing_page(tmp_path: Path) -> None:
     (tmp_path / "README.md").write_text("# Home", encoding="utf-8")
 
     result = rewrite_url(
-        tmp_path, tmp_path / "docs" / "usage.md", "../README.md#install", REVISION
+        tmp_path,
+        tmp_path / "docs" / "user" / "guides" / "usage.md",
+        "../../../README.md#install",
+        REVISION,
     )
 
     assert result == "../index.md#install"
