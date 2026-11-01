@@ -1,5 +1,9 @@
 # GitHub rules managed with Pulumi
 
+For the current repository's `hoimin-release-state` protection, use the separate
+[release-state project](../github-release-state/README.md). This project retains
+the former-owner main rules and its existing backend.
+
 This Pulumi YAML project manages one `main-protection` repository ruleset for
 `tokyogas-tech/hoimin`. The GitHub provider is pinned to version 6.15.0.
 

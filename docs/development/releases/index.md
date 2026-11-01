@@ -103,6 +103,12 @@ that branch for automation: do not delete, rewind, or push application changes
 to it. Repository rules must allow the workflow to create/update this branch
 and create version tags. Version tags are never overwritten; if either update
 is rejected, the atomic push writes neither ref.
+
+The [release-state infrastructure project](../../../infra/github-release-state/README.md)
+defines deletion and non-fast-forward protection for this ref. It permits the
+workflow's direct fast-forward reservation updates without requiring a PR or
+status checks. Apply and verify that project to enable the GitHub rule.
+
 All concurrent automated reservations must use this protocol; manually created
 tags or runs of an older workflow do not participate in its shared lease.
 
