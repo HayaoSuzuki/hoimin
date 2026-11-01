@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -178,9 +179,19 @@ def classify(code: int, log: str, test: str) -> BoundaryStatus:
         row["status"] == BoundaryStatus.UNEXECUTED.value for row in observations(log)
     ):
         return BoundaryStatus.UNEXECUTED
-    if code == 0 and f"test {test} ..." in log and "test result: ok. 1 passed;" in log:
+    executed = re.findall(r"(?m)^test (\S+) \.\.\.", log)
+    selected = (
+        bool(executed)
+        and len(executed) == len(set(executed))
+        and all(name == test or name.startswith(test + "::") for name in executed)
+    )
+    passed = re.findall(r"test result: ok\. (\d+) passed;", log)
+    ignored = re.search(
+        r"test result: ok\. \d+ passed; \d+ failed; [1-9]\d* ignored;", log
+    )
+    if code == 0 and selected and passed == [str(len(executed))] and not ignored:
         return BoundaryStatus.MATCH
-    if code != 0 and f"test {test} ..." in log and "FAILED" in log:
+    if code != 0 and selected and "FAILED" in log:
         return BoundaryStatus.MISMATCH
     return BoundaryStatus.INFRASTRUCTURE_ERROR
 
@@ -247,8 +258,7 @@ def execute(case: RegistryCase, directory: Path) -> ResultRow:
         case["target"],
         case["test"],
         "--",
-        "--exact",
-        "--nocapture",
+        "--show-output",
     ]
     log_path = directory / (case["id"] + ".log")
     start = time.monotonic()

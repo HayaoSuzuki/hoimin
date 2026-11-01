@@ -100,6 +100,93 @@ def test_test_gate_accepts_executed_tests() -> None:
     assert executed == 1
 
 
+def test_registry_accepts_explicit_test_family() -> None:
+    registry = shapes.load_registry(ROOT / "docs/performance/shapes.json")
+    registry["gates"][0]["args"] = [
+        "test",
+        "-p",
+        "hoimin-python",
+        "--lib",
+        "rust::family::",
+        "--",
+    ]
+
+    validated = shapes.validate_registry(registry)
+
+    assert validated is registry
+
+
+def test_test_gate_counts_only_registered_family_cases() -> None:
+    output = (
+        "test rust::family::case_1 ... ok\n"
+        "test rust::family::case_2::value_1 ... ok\n"
+        "test result: ok. 2 passed; 0 failed; 0 ignored;"
+    )
+
+    count = shapes.executed_tests(output, "rust::family::")
+
+    assert count == 2
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        (
+            "test other::rust::family::case_1 ... ok\n"
+            "test result: ok. 1 passed; 0 failed; 0 ignored;"
+        ),
+        (
+            "test rust::family_extra::case_1 ... ok\n"
+            "test result: ok. 1 passed; 0 failed; 0 ignored;"
+        ),
+        (
+            "test rust::family::case_1 ... ok\n"
+            "test rust::family::case_1 ... ok\n"
+            "test result: ok. 2 passed; 0 failed; 0 ignored;"
+        ),
+        (
+            "test rust::family::case_1 ... ok\n"
+            "test result: ok. 2 passed; 0 failed; 0 ignored;"
+        ),
+        (
+            "test rust::family::case_1 ... ok\n"
+            "test rust::family::case_2 ... ignored\n"
+            "test result: ok. 1 passed; 0 failed; 1 ignored;"
+        ),
+    ],
+    ids=["substring", "sibling", "duplicate", "count-mismatch", "ignored"],
+)
+def test_test_gate_rejects_incomplete_or_unrelated_family_runs(output: str) -> None:
+    with pytest.raises(ValueError, match="gate did not execute"):
+        shapes.executed_tests(output, "rust::family::")
+
+
+def test_gate_runner_rejects_tests_outside_the_registered_selector(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    registry: shapes.GateRegistry = {
+        "gates": [
+            {
+                "id": "family",
+                "status": "active",
+                "args": ["test", "--lib", "rust::family::", "--"],
+            }
+        ]
+    }
+
+    def complete(
+        command: list[str], *, stdout: TextIO, **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        stdout.write("test rust::impostor::case_1 ... ok\n")
+        stdout.write("test result: ok. 1 passed; 0 failed; 0 ignored;\n")
+        return subprocess.CompletedProcess(command, 0)
+
+    mocker.patch.object(shapes.subprocess, "run", side_effect=complete)
+
+    with pytest.raises(ValueError, match="gate did not execute"):
+        shapes.run_gate(registry, tmp_path)
+
+
 @pytest.mark.parametrize(
     ("name", "expected"),
     [

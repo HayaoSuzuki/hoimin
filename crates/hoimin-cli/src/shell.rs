@@ -6574,6 +6574,8 @@ mod tests {
         let managed_parent = Utf8Path::from_path(control.managed_parent.path()).unwrap();
         let coordinator = ManagedRootCoordinator::open(managed_parent).unwrap();
         let preserved = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        // A concurrent fork can retain the lease after the owner's handle closes.
+        preserved.unlock_fixture_lease();
         drop(preserved);
         drop(coordinator);
         control.inject_execution_cleanup_deferred();
@@ -7068,6 +7070,8 @@ mod tests {
         let managed_parent = Utf8Path::from_path(control.managed_parent.path()).unwrap();
         let coordinator = ManagedRootCoordinator::open(managed_parent).unwrap();
         let preserved = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        // A concurrent fork can retain the lease after the owner's handle closes.
+        preserved.unlock_fixture_lease();
         drop(preserved);
         drop(coordinator);
         control.inject_execution_cleanup_failed_without_record();

@@ -639,9 +639,24 @@
         "-p",
         "hoimin-cli",
         "--lib",
-        "plan::validation_tests::descriptor_validation_cost_tracks_files_and_bytes_not_candidates",
+        "plan::validation_tests::descriptor_validation_cost_tracks_generated_files_bytes_and_candidates",
         "--",
         "--exact"
+      ]
+    },
+    {
+      "id": "context-builds-regressions",
+      "status": "active",
+      "issue": "https://github.com/tokyogas-tech/hoimin/issues/456",
+      "metric": "operations",
+      "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/523",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
+        "plan::validation_tests::descriptor_validation_cost_preserves_original_matrix::",
+        "--"
       ]
     },
     {
@@ -655,9 +670,8 @@
         "-p",
         "hoimin-cli",
         "--lib",
-        "fingerprint_inputs::tests::pattern_count_and_unrelated_tree_size_do_not_multiply_walks",
-        "--",
-        "--exact"
+        "fingerprint_inputs::tests::pattern_count_and_unrelated_tree_size_do_not_multiply_walks::",
+        "--"
       ]
     },
     {
@@ -704,9 +718,8 @@
         "-p",
         "hoimin-core",
         "--lib",
-        "candidate::tests::indexed_lookup_work_scales_with_queries_times_log_lines",
-        "--",
-        "--exact"
+        "candidate::tests::indexed_lookup_work_scales_with_queries_times_log_lines::",
+        "--"
       ]
     },
     {
@@ -836,6 +849,19 @@
       ]
     },
     {
+      "id": "lean-cost-real_operation_counters_match_lean_cost_corpus-source-families",
+      "status": "active",
+      "metric": "operations",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-python",
+        "--lib",
+        "rust::performance_cost_tests::real_operation_counters_match_lean_cost_corpus_scenario_1::",
+        "--"
+      ]
+    },
+    {
       "id": "lean-cost-real_broken_cost_variants_are_detected_without_semantic_changes",
       "status": "active",
       "metric": "operations",
@@ -847,6 +873,19 @@
         "rust::performance_cost_tests::real_broken_cost_variants_are_detected_without_semantic_changes",
         "--",
         "--exact"
+      ]
+    },
+    {
+      "id": "lean-cost-real_broken_cost_variants_are_detected_without_semantic_changes-source-families",
+      "status": "active",
+      "metric": "operations",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-python",
+        "--lib",
+        "rust::performance_cost_tests::real_broken_cost_variants_are_detected_without_semantic_changes_scenario_1::",
+        "--"
       ]
     },
     {
@@ -903,9 +942,8 @@
         "-p",
         "hoimin-python",
         "--lib",
-        "rust::performance_cost_tests::straight_line_import_transfer_copy_cost_is_independent_of_annotations",
-        "--",
-        "--exact"
+        "rust::performance_cost_tests::straight_line_import_transfer_copy_cost_is_independent_of_annotations::",
+        "--"
       ]
     },
     {
@@ -919,9 +957,8 @@
         "-p",
         "hoimin-python",
         "--lib",
-        "rust::rust_tests::straight_line_import_transfer_preserves_selected_candidates_and_skips_unselected",
-        "--",
-        "--exact"
+        "rust::rust_tests::straight_line_import_transfer_preserves_selected_candidates_and_skips_unselected::",
+        "--"
       ]
     },
     {
@@ -943,9 +980,8 @@
         "-p",
         "hoimin-python",
         "--lib",
-        "rust::nested_loop_transfer_tests::nested_loops_bound_actual_statement_and_annotation_visits",
-        "--",
-        "--exact"
+        "rust::nested_loop_transfer_tests::nested_loops_bound_actual_statement_and_annotation_visits::",
+        "--"
       ]
     },
     {
@@ -962,9 +998,8 @@
         "-p",
         "hoimin-python",
         "--lib",
-        "rust::nested_loop_transfer_tests::nested_loop_old_replay_exceeds_bound_with_identical_candidates",
-        "--",
-        "--exact"
+        "rust::nested_loop_transfer_tests::nested_loop_old_replay_exceeds_bound_with_identical_candidates::",
+        "--"
       ]
     },
     {
@@ -986,9 +1021,8 @@
         "-p",
         "hoimin-python",
         "--lib",
-        "rust::nested_loop_transfer_tests::nested_class_loops_bound_actual_statement_and_annotation_visits",
-        "--",
-        "--exact"
+        "rust::nested_loop_transfer_tests::nested_class_loops_bound_actual_statement_and_annotation_visits::",
+        "--"
       ]
     },
     {
@@ -1002,9 +1036,8 @@
         "-p",
         "hoimin-python",
         "--lib",
-        "rust::nested_loop_transfer_tests::archived_audit_nested_loops_bound_visits",
-        "--",
-        "--exact"
+        "rust::nested_loop_transfer_tests::archived_audit_nested_loops_bound_visits::",
+        "--"
       ]
     },
     {
@@ -1018,9 +1051,8 @@
         "-p",
         "hoimin-python",
         "--lib",
-        "rust::nested_loop_transfer_tests::archived_audit_import_annotations_bound_clone_cost",
-        "--",
-        "--exact"
+        "rust::nested_loop_transfer_tests::archived_audit_import_annotations_bound_clone_cost::",
+        "--"
       ]
     },
     {
@@ -1046,9 +1078,8 @@
         "-p",
         "hoimin-python",
         "--lib",
-        "rust::nested_finally_transfer_tests::nested_finally_bounds_actual_statement_and_annotation_visits",
-        "--",
-        "--exact"
+        "rust::nested_finally_transfer_tests::nested_finally_bounds_actual_statement_and_annotation_visits::",
+        "--"
       ]
     },
     {
@@ -1062,9 +1093,8 @@
         "-p",
         "hoimin-python",
         "--lib",
-        "rust::exception_hierarchy::visibility_tests::external_import_visibility_work_tracks_imports_not_project_mappings",
-        "--",
-        "--exact"
+        "rust::exception_hierarchy::visibility_tests::external_import_visibility_work_tracks_imports_not_project_mappings::",
+        "--"
       ]
     },
     {
@@ -1081,7 +1111,7 @@
         "machine::stop_tests::ordered_stop_rank_work_initial_2000",
         "--",
         "--exact",
-        "--nocapture"
+        "--show-output"
       ]
     },
     {
@@ -1098,7 +1128,7 @@
         "machine::stop_tests::ordered_stop_rank_work_initial_4000",
         "--",
         "--exact",
-        "--nocapture"
+        "--show-output"
       ]
     },
     {
@@ -1115,7 +1145,7 @@
         "machine::stop_tests::ordered_stop_rank_work_repeated_2000",
         "--",
         "--exact",
-        "--nocapture"
+        "--show-output"
       ]
     },
     {
@@ -1132,7 +1162,7 @@
         "machine::stop_tests::ordered_stop_rank_work_repeated_4000",
         "--",
         "--exact",
-        "--nocapture"
+        "--show-output"
       ]
     },
     {
@@ -1146,10 +1176,9 @@
         "-p",
         "hoimin-python",
         "--lib",
-        "rust::selection_tests::selection_distinct_symbols_exact_work_gate",
+        "rust::selection_tests::selection_distinct_symbols_exact_work_gate::",
         "--",
-        "--exact",
-        "--nocapture"
+        "--show-output"
       ]
     },
     {
@@ -1166,7 +1195,7 @@
         "rust::selection_tests::selection_sparse_1000",
         "--",
         "--exact",
-        "--nocapture"
+        "--show-output"
       ]
     },
     {
@@ -1183,7 +1212,7 @@
         "rust::selection_tests::selection_sparse_2000",
         "--",
         "--exact",
-        "--nocapture"
+        "--show-output"
       ]
     },
     {
@@ -1200,7 +1229,7 @@
         "rust::selection_tests::selection_sparse_4000",
         "--",
         "--exact",
-        "--nocapture"
+        "--show-output"
       ]
     },
     {
@@ -1217,7 +1246,7 @@
         "rust::selection_tests::selection_sparse_8000",
         "--",
         "--exact",
-        "--nocapture"
+        "--show-output"
       ]
     },
     {
@@ -1235,7 +1264,7 @@
         "retained_manifest_clones_do_not_multiply_metadata",
         "--",
         "--exact",
-        "--nocapture"
+        "--show-output"
       ]
     },
     {
@@ -1253,7 +1282,7 @@
         "retained_worker_metadata_does_not_multiply_file_inventory",
         "--",
         "--exact",
-        "--nocapture"
+        "--show-output"
       ]
     },
     {
@@ -1271,7 +1300,7 @@
         "unicode_context_and_cli_discovery_avoid_overlapping_location_indexes",
         "--",
         "--exact",
-        "--nocapture"
+        "--show-output"
       ]
     },
     {
@@ -1285,10 +1314,9 @@
         "-p",
         "hoimin-python",
         "--lib",
-        "rust::known_imports_tests::qualified_spelling_work_is_independent_of_unrelated_imports",
+        "rust::known_imports_tests::qualified_spelling_work_is_independent_of_unrelated_imports::",
         "--",
-        "--exact",
-        "--nocapture"
+        "--show-output"
       ]
     },
     {
@@ -1302,10 +1330,9 @@
         "-p",
         "hoimin-python",
         "--lib",
-        "rust::exception_hierarchy::lookup_tests::private_alias_scan_is_independent_of_class_count",
+        "rust::exception_hierarchy::lookup_tests::private_alias_scan_is_independent_of_class_count::",
         "--",
-        "--exact",
-        "--nocapture"
+        "--show-output"
       ]
     },
     {
@@ -1319,10 +1346,9 @@
         "-p",
         "hoimin-python",
         "--lib",
-        "rust::exception_hierarchy::lookup_tests::related_lookup_work_is_bounded_by_visible_classes",
+        "rust::exception_hierarchy::lookup_tests::related_lookup_work_is_bounded_by_visible_classes::",
         "--",
-        "--exact",
-        "--nocapture"
+        "--show-output"
       ]
     },
     {
@@ -1337,10 +1363,9 @@
         "hoimin-cli",
         "--test",
         "manifest_buffer_lifetime",
-        "normal_prepare_retained_heap_is_independent_of_preview_payload",
+        "normal_prepare_retained_heap_is_independent_of_preview_payload::",
         "--",
-        "--exact",
-        "--nocapture"
+        "--show-output"
       ]
     },
     {
@@ -1354,10 +1379,9 @@
         "-p",
         "hoimin-cli",
         "--lib",
-        "workspace::root::tests::worker_entry_sort_does_not_rescan_path_components",
+        "workspace::root::tests::worker_entry_sort_does_not_rescan_path_components::",
         "--",
-        "--exact",
-        "--nocapture"
+        "--show-output"
       ]
     },
     {
@@ -1371,10 +1395,9 @@
         "-p",
         "hoimin-cli",
         "--lib",
-        "process::output::io_tests::aligned_ring_writes_avoid_redundant_seeks",
+        "process::output::io_tests::aligned_ring_writes_avoid_redundant_seeks::",
         "--",
-        "--exact",
-        "--nocapture"
+        "--show-output"
       ]
     }
   ],

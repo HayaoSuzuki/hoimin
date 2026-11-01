@@ -184,6 +184,29 @@ async fn check(
     .await
 }
 
+#[rstest::rstest]
+#[tokio::test]
+async fn descriptor_validation_cost_preserves_original_matrix(
+    #[values(1, 2, 4)] file_count: usize,
+    #[values(1, 2, 4)] count: usize,
+) {
+    let project = super::tests::Project::new();
+    let mut all = Vec::new();
+    for file in 0..file_count {
+        let path = format!("src/file{file}.py");
+        let (source, mut records) = candidates(&path, count, 4096);
+        std::fs::write(project.root.join(&path), source).unwrap();
+        all.append(&mut records);
+    }
+    let mut stats = ValidationStats::default();
+
+    let paths = check(&project, &all, &mut stats).await.unwrap();
+
+    assert_eq!(paths.len(), file_count);
+    assert_eq!(stats.contexts, file_count);
+    assert_eq!(stats.source_bytes, file_count * 4096);
+}
+
 proptest::proptest! {
     #![proptest_config(proptest::test_runner::Config::with_cases(32))]
 

@@ -5102,6 +5102,12 @@ impl ManagedRunRoot {
     }
 
     #[cfg(test)]
+    pub(crate) fn unlock_fixture_lease(&self) {
+        let lease = self.lease.lock().unwrap();
+        File::unlock(lease.as_deref().unwrap()).unwrap();
+    }
+
+    #[cfg(test)]
     pub(crate) fn move_for_identity_replacement_test(
         &self,
         destination: &Utf8Path,
