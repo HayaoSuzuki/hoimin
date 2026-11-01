@@ -472,7 +472,7 @@ jobs:
           - os: ubuntu-22.04
             platform: linux-x86_64
             extension: tar.gz
-          - os: macos-14
+          - os: macos-15
             platform: macos-aarch64
             extension: tar.gz
     steps:

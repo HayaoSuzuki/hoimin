@@ -46,7 +46,7 @@ def environment(platform: str, kind: str) -> str:
             if kind == "standalone"
             else "ghcr.io/pyo3/maturin:v1.15.0 (manylinux2014)"
         )
-    return "windows-latest" if platform == "windows-x86_64" else "macos-14"
+    return "windows-latest" if platform == "windows-x86_64" else "macos-26"
 
 
 @lru_cache(maxsize=1)

@@ -32,8 +32,8 @@ gh api repos/HayaoSuzuki/hoimin/rulesets
 
 The project uses its own local backend, separate from the historical
 [`infra/github`](../github/README.md) project targeting the former owner. The
-`production` stack is initialized in the committed backend; it currently contains
-only stack metadata, with no deployed GitHub resources. Open it explicitly:
+`production` stack is initialized in the committed backend and manages the GitHub
+provider plus both deployed rulesets. Open it explicitly:
 
 ```sh
 pulumi stack --stack production
@@ -46,8 +46,9 @@ state. Commit the generated `Pulumi.production.yaml` and canonical state under
 Run one update at a time across clones; local backend locks do not coordinate
 separate checkouts.
 
-If either ruleset already exists, import it instead of creating a duplicate.
-Match the observed name to the corresponding resource and replace its ID below;
+If a ruleset exists on GitHub but is not already managed in this stack, import it
+instead of creating a duplicate. Match the observed name to the corresponding
+resource and replace its ID below;
 run only the import commands for rulesets that already exist:
 
 ```sh
@@ -55,8 +56,9 @@ GITHUB_OWNER=HayaoSuzuki pulumi import --stack production github:index/repositor
 GITHUB_OWNER=HayaoSuzuki pulumi import --stack production github:index/repositoryRuleset:RepositoryRuleset releaseTags 'hoimin:TAGS_RULESET_ID' --generate-code=false
 ```
 
-Review the preview before applying. A new deployment creates one provider and two
-rulesets, with no main-branch rule changes:
+Review the preview before applying. The stack manages one provider and two
+rulesets, with no main-branch rule changes. An unchanged configuration should show
+no pending changes:
 
 ```sh
 pulumi preview --stack production --refresh --diff

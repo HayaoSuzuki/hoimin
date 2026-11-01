@@ -50,9 +50,9 @@ AUTOMATIC_LINUX_MATRIX_JOBS = {
     "wheel-smoke",
 }
 MANUAL_NON_LINUX_MATRIX_JOBS = {
-    "quality": ["windows-latest", "macos-14"],
-    "rust": ["windows-latest", "macos-14"],
-    "wheel-smoke": ["windows-latest", "macos-14"],
+    "quality": ["windows-latest", "macos-15"],
+    "rust": ["windows-latest", "macos-15"],
+    "wheel-smoke": ["windows-latest", "macos-15"],
 }
 MANUAL_NON_LINUX_JOB_NAMES = {
     "quality": "Manual quality (${{ matrix.os }})",
@@ -1652,7 +1652,7 @@ def test_automatic_ci_hosted_matrices_are_linux_only() -> None:
         "workflow_dispatch",
     }
     assert "windows-latest" not in workflow
-    assert "macos-14" not in workflow
+    assert "macos-15" not in workflow
     assert all(isinstance(job["runs-on"], (str, list)) for job in jobs.values())
     matrix_runner_jobs = {
         job_name
@@ -1825,9 +1825,9 @@ def test_manual_rust_native_check_runs_before_workspace_suite(
 @pytest.mark.parametrize(
     ("job_name", "expected_matrix"),
     [
-        ("quality", {"os": ["windows-latest", "macos-14"]}),
-        ("rust", {"os": ["windows-latest", "macos-14"], "python": ["3.14", "3.15"]}),
-        ("wheel-smoke", {"os": ["windows-latest", "macos-14"]}),
+        ("quality", {"os": ["windows-latest", "macos-15"]}),
+        ("rust", {"os": ["windows-latest", "macos-15"], "python": ["3.14", "3.15"]}),
+        ("wheel-smoke", {"os": ["windows-latest", "macos-15"]}),
     ],
     ids=["quality", "rust", "wheel-smoke"],
 )
@@ -2632,3 +2632,20 @@ def test_python_syntax_matrix_pins_uv_interpreter(name: str) -> None:
     workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
 
     assert workflow["jobs"]["rust"]["env"]["UV_PYTHON"] == "${{ matrix.python }}"
+
+
+def test_packaged_macos_archive_runs_on_older_supported_os() -> None:
+    jobs = workflow_jobs(
+        workflow_document(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    )
+    strategy = mapping(jobs["archive-smoke"]["strategy"])
+    matrix = mapping(strategy["matrix"])
+    included = matrix["include"]
+    assert isinstance(included, list)
+    macos = next(
+        mapping(row) for row in included if mapping(row)["platform"] == "macos-aarch64"
+    )
+
+    runner = macos["os"]
+
+    assert runner == "macos-15"

@@ -4,6 +4,16 @@ title: Release artifact SBOMs
 description: Per-artifact Cargo dependency graphs, provenance and incomplete-release rejection.
 status: draft
 sources:
+- id: current-macos-workflow
+  resource: ../../../.github/workflows/release.yml
+  revision: 873f5296c41787be6c386733a6bdcdcfe1361fcf
+  working_tree: modified
+  sha256: 9a67af1739a1a0a8e1901260939fa7929ff8f76e90e49e21596996a704993c2c
+- id: current-macos-validator
+  resource: ../../../tools/sbom.py
+  revision: 873f5296c41787be6c386733a6bdcdcfe1361fcf
+  working_tree: modified
+  sha256: 265cc6db3c3ff186553221a54bc964b51f932e1c647f4f4bc4545c6ae78c9fea
 - id: issues-992-998-sdist-config
   resource: ../../../pyproject.toml
   revision: a8578a958702c8889dd8ad37ca813a09fe59b6a2
@@ -54,6 +64,10 @@ sources:
 
 A release publishes six documents for standalone binaries and wheels on three platforms. CycloneDX JSON 1.5 records Cargo's normal and build transitive dependencies, the distribution file's SHA-256, release commit, adjusted Cargo.lock SHA-256, target, and features. Linux wheel evidence is captured inside the manylinux container, separately from the standalone host environment.[^release]
 
+The macOS SBOM build environment follows the release build job (`macos-26`).
+The packaged archive is exercised separately on `macos-15`; this runtime smoke
+runner is not the environment that produced the artifact.[^current-macos-workflow][^current-macos-validator]
+
 # Repository package versions and generator cleanup
 
 The shipping graph contains exactly one `hoimin-budget-math`, one `hoimin-core` and one `hoimin-python`
@@ -103,3 +117,6 @@ The source archive also retains the production math crate's manifest and three
 Rust source files, including cfg-gated proof annotations. The
 [Creusot contract](creusot-budget-proofs.md) distinguishes verification-only
 registry dependencies from the ordinary shipping graph.
+
+[^current-macos-workflow]: [Release workflow](../../../.github/workflows/release.yml).
+[^current-macos-validator]: [SBOM environment metadata](../../../tools/sbom.py).

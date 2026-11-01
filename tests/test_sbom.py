@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from sbom_fixtures import COMMIT, capture_file, raw_bom, source_tree
 from test_release import release_assets
 
@@ -443,3 +444,13 @@ def damage_budget_math_component(
                 node["dependsOn"].remove("hoimin-budget-math")
     else:
         component["version"] = "9.9.9"
+
+
+@pytest.mark.parametrize("kind", ["standalone", "wheel"])
+def test_macos_sbom_environment_matches_actual_build_runner(kind: str) -> None:
+    workflow = yaml.safe_load((sbom.ROOT / ".github/workflows/release.yml").read_text())
+    expected = workflow["jobs"]["macos-wheel"]["runs-on"]
+
+    actual = sbom.environment("macos-aarch64", kind)
+
+    assert actual == expected
