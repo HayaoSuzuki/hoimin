@@ -1,22 +1,25 @@
 # GitHub rules managed with Pulumi
 
+For the current repository's release branch and version-tag protection, use the separate
+[release-state project](../github-release-state/README.md). This project retains
+the former-owner main rules and its existing backend.
+
 This Pulumi YAML project manages one `main-protection` repository ruleset for
 `tokyogas-tech/hoimin`. The GitHub provider is pinned to version 6.15.0.
 
-The rules require a pull request, the nine existing PR checks in
-`.github/workflows/ci.yml`, and a merge queue. They prohibit branch deletion
+The rules require a pull request and the nine configured PR checks in
+`.github/workflows/ci.yml`. They prohibit branch deletion
 and force pushes. The bypass list is empty, so administrators also follow
 the rules. Review approval count is zero; this change adds no reviewer quota.
 
-The queue uses merge commits, `ALLGREEN`, one concurrent build, one PR per
-merge, and a 120-minute check timeout. Adjust the timeout if runner waiting
-time plus CI duration exceeds it. Queue validation replaces the requirement
-to update each PR branch to the latest main before entering the queue.
+The configuration does not require a merge queue. Required checks use strict
+up-to-date validation, so update a PR branch to the latest main and rerun checks
+before merging when its base has changed.
 
 The required checks bind to GitHub Actions (integration ID `15368`). Manual
 non-Linux CI, scheduled Rust canary, performance measurements, releases, and
 the push-only `linux-cgroup-v2-hard` job are outside the PR gate. Preserve the
-cgroup job's trusted push-only trigger when changing queue configuration.
+cgroup job's trusted push-only trigger when changing protection settings.
 
 ## Prerequisites
 
@@ -24,8 +27,6 @@ cgroup job's trusted push-only trigger when changing queue configuration.
 - Use an identity that can manage repository rulesets. For a fine-grained
   token, grant access to this repository with Administration read/write.
   Store credentials outside Git, for example in `GITHUB_TOKEN`.
-- For a private repository, merge queues require GitHub Enterprise Cloud.
-  The organization API reported the `enterprise` plan during setup.
 - Install GitHub CLI and authenticate with `gh auth login` using the
   identity above.
 
@@ -53,10 +54,8 @@ a textual merge or use an old checkout to apply settings.
 
 ## First deployment
 
-1. Merge the accompanying `.github/workflows/ci.yml` change into `main`
-   **before enabling the ruleset**. It adds `merge_group: checks_requested`.
-   Confirm that the nine PR checks pass. Enabling the queue before this
-   workflow change reaches main can leave queued PRs waiting for checks.
+1. Confirm that the configured required checks run on `pull_request` and pass
+   **before enabling the ruleset**. No merge queue setup is required.
 2. Change directory and configure credentials for the current shell:
 
    ```sh
@@ -111,14 +110,15 @@ pulumi preview --stack production --refresh --diff
 
 Check that enforcement is `active`, the target is `refs/heads/main`, bypass
 actors are empty, and the rules include pull requests, nine required checks,
-deletion protection, force-push protection, and a merge queue. Use the next
-normal PR to confirm that failed required checks block merging and that
-queue entry starts CI on `merge_group`. Local validation cannot establish
-these live behaviors.
+deletion protection and force-push protection. Confirm strict up-to-date
+validation and the absence of a merge queue rule. Use the next normal PR to
+confirm that failed required checks and an outdated base block merging. Local
+validation cannot establish these live behaviors.
 
 When adding or renaming PR jobs, update `requiredChecks` in `Pulumi.yaml`
 in the same change and apply the stack after the workflow is ready. Ensure
-new required jobs run on both `pull_request` and `merge_group`. GitHub
+new required jobs run on `pull_request`. Existing `merge_group` workflow triggers
+may remain for compatibility; they do not require a merge queue. GitHub
 accepts skipped or neutral check conclusions; do not add conditional skips
 to required jobs as a substitute for successful validation. Currently the
 nine PR jobs have no job-level condition and their prerequisites are also
@@ -131,4 +131,4 @@ After applying, commit `Pulumi.production.yaml` and changes under `state/`
 with the configuration change. Keep credentials outside version control.
 
 References: [Pulumi RepositoryRuleset](https://www.pulumi.com/registry/packages/github/api-docs/repositoryruleset/),
-[GitHub merge queues](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue).
+[GitHub rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets).
