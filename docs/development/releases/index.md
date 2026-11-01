@@ -107,7 +107,9 @@ is rejected, the atomic push writes neither ref.
 The [release-state infrastructure project](../../../infra/github-release-state/README.md)
 defines deletion and non-fast-forward protection for this ref. It permits the
 workflow's direct fast-forward reservation updates without requiring a PR or
-status checks. Apply and verify that project to enable the GitHub rule.
+status checks. Its separate `v*` tag rule forbids deleting or changing an existing
+version tag while permitting new reservations. Apply and verify that project to
+enable these GitHub rules.
 
 All concurrent automated reservations must use this protocol; manually created
 tags or runs of an older workflow do not participate in its shared lease.

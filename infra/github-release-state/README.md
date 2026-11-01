@@ -1,8 +1,13 @@
-# Release-state branch protection
+# Release branch and tag protection
 
-This Pulumi YAML project manages `hoimin-release-state-protection` for
-`HayaoSuzuki/hoimin`. It targets only `refs/heads/hoimin-release-state`, prohibits
-branch deletion and non-fast-forward updates, and has no bypass actors. The
+This Pulumi YAML project manages two rulesets for `HayaoSuzuki/hoimin`:
+
+| Ruleset | Target | Protection |
+| --- | --- | --- |
+| `hoimin-release-state-protection` | `refs/heads/hoimin-release-state` | No deletion or non-fast-forward updates |
+| `release-tags-protection` | `refs/tags/v*` | No deletion or updates to existing version tags |
+
+Both rulesets have no bypass actors. New version tags remain creatable. The
 provider is pinned to the existing infrastructure's GitHub version 6.15.0.
 
 The release workflow creates and advances this ref directly as part of an atomic
@@ -41,15 +46,17 @@ state. Commit the generated `Pulumi.production.yaml` and canonical state under
 Run one update at a time across clones; local backend locks do not coordinate
 separate checkouts.
 
-If a ruleset with this name already exists, import its ID instead of creating a
-duplicate (replace `RULESET_ID` with the observed numeric ID):
+If either ruleset already exists, import it instead of creating a duplicate.
+Match the observed name to the corresponding resource and replace its ID below;
+run only the import commands for rulesets that already exist:
 
 ```sh
-GITHUB_OWNER=HayaoSuzuki pulumi import --stack production github:index/repositoryRuleset:RepositoryRuleset releaseState 'hoimin:RULESET_ID' --generate-code=false
+GITHUB_OWNER=HayaoSuzuki pulumi import --stack production github:index/repositoryRuleset:RepositoryRuleset releaseState 'hoimin:STATE_RULESET_ID' --generate-code=false
+GITHUB_OWNER=HayaoSuzuki pulumi import --stack production github:index/repositoryRuleset:RepositoryRuleset releaseTags 'hoimin:TAGS_RULESET_ID' --generate-code=false
 ```
 
-Review the preview before applying. A new deployment creates one provider and one
-ruleset, with no main-branch rule changes:
+Review the preview before applying. A new deployment creates one provider and two
+rulesets, with no main-branch rule changes:
 
 ```sh
 pulumi preview --stack production --refresh --diff
@@ -61,11 +68,14 @@ pulumi up --stack production --refresh --diff
 ```sh
 gh api "repos/HayaoSuzuki/hoimin/rulesets/$(pulumi stack output releaseStateRulesetId --stack production)"
 gh api repos/HayaoSuzuki/hoimin/rules/branches/hoimin-release-state
+gh api "repos/HayaoSuzuki/hoimin/rulesets/$(pulumi stack output releaseTagsRulesetId --stack production)"
 pulumi preview --stack production --refresh --diff
 ```
 
-Check the exact branch condition, active enforcement, empty bypass list, deletion
-rule and non-fast-forward rule. A normal release should still reserve its tag and
-advance the state ref atomically. Avoid testing destructive pushes against the
+Check both exact ref conditions, active enforcement and empty bypass lists.
+The branch rule prohibits deletion and non-fast-forward updates; the tag rule
+prohibits deletion and any update but permits creation. A normal release should
+still reserve a new tag and advance the state ref atomically. Retrying an existing
+reservation reuses its tag without updating it. Avoid testing destructive pushes against the
 production state branch. Local YAML checks are not evidence of a deployed rule.
 Pulumi `protect: true` also prevents accidental removal of the managed ruleset.

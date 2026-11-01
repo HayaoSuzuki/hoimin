@@ -1,6 +1,6 @@
 name: hoimin-release-state-github
 runtime: yaml
-description: Release reservation branch protection for HayaoSuzuki/hoimin
+description: Release reservation branch and immutable tags for HayaoSuzuki/hoimin
 backend:
   url: file://./state
 
@@ -34,5 +34,27 @@ resources:
         # The release workflow creates/advances this ref directly with an atomic
         # tag reservation. Require neither a PR nor status checks on this ref.
 
+  releaseTags:
+    type: github:index/repositoryRuleset:RepositoryRuleset
+    options:
+      provider: ${github}
+      version: 6.15.0
+      protect: true
+    properties:
+      repository: hoimin
+      name: release-tags-protection
+      target: tag
+      enforcement: active
+      bypassActors: []
+      conditions:
+        refName:
+          includes: [refs/tags/v*]
+          excludes: []
+      rules:
+        deletion: true
+        update: true
+        # New version tags remain creatable by the atomic reservation push.
+
 outputs:
   releaseStateRulesetId: ${releaseState.rulesetId}
+  releaseTagsRulesetId: ${releaseTags.rulesetId}

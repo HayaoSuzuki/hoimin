@@ -34,8 +34,8 @@ resources:
         pullRequest:
           requiredApprovingReviewCount: 0
         requiredStatusChecks:
-          # The queue tests against current main; PRs need not rebase first.
-          strictRequiredStatusChecksPolicy: false
+          # Without a merge queue, validate PRs against the latest main.
+          strictRequiredStatusChecksPolicy: true
           doNotEnforceOnCreate: false
           # Exact GitHub Actions check names from .github/workflows/ci.yml.
           # Manual, scheduled and push-only checks are not PR prerequisites.
@@ -58,14 +58,6 @@ resources:
               integrationId: 15368
             - context: linux-best-effort
               integrationId: 15368
-        mergeQueue:
-          checkResponseTimeoutMinutes: 120
-          groupingStrategy: ALLGREEN
-          maxEntriesToBuild: 1
-          maxEntriesToMerge: 1
-          mergeMethod: MERGE
-          minEntriesToMerge: 1
-          minEntriesToMergeWaitMinutes: 0
 
 outputs:
   rulesetId: ${main.rulesetId}
