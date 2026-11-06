@@ -1,6 +1,6 @@
-# Ruff parser crate 0.0.20 source snapshot for hoimin
+# Ruff parser crate 0.0.21 source snapshot for hoimin
 
-The parser is copied from [Ruff parser crate 0.0.20](https://github.com/astral-sh/ruff/tree/ba65abf8ba7bfbcc059f7fb9712be5ba9cab6abc), commit `ba65abf8ba7bfbcc059f7fb9712be5ba9cab6abc`. Its internal crate version is `0.0.20`. Only the parser is vendored because it retains the safety adaptations below. Its aligned AST, trivia, text-size and Unicode dependencies come from crates.io version `0.0.20`; direct Ruff dependencies use exact version requirements. Both the main and fuzz lockfiles record registry checksums. The published packages' VCS metadata identifies the same upstream commit.
+The parser is copied from [Ruff parser crate 0.0.21](https://github.com/astral-sh/ruff/tree/05cdc36a45a29e078c2af9358969d0f576408bef), commit `05cdc36a45a29e078c2af9358969d0f576408bef`. Its internal crate version is `0.0.21`. Only the parser is vendored because it retains the safety adaptations below. Its aligned AST, trivia, text-size and Unicode dependencies come from crates.io version `0.0.21`; direct Ruff dependencies use exact version requirements. Both the main and fuzz lockfiles record registry checksums. The published packages' VCS metadata identifies the same upstream commit.
 
 The parser manifest expands upstream workspace inheritance, omits upstream test/benchmark dependencies, and explicitly lists build input patterns to exclude temporary files from sdists. It is excluded from hoimin workspace membership and has its own workspace boundary. Hoimin's integration tests exercise parsing and recovery; upstream's test harness is not packaged as a standalone suite.
 

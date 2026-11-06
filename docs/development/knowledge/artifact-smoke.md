@@ -80,7 +80,7 @@ Consult PR/review records for the scope of successful hosted execution; document
 # Supported Python runtimes
 
 The wheel permits Python 3.14 and 3.15 (`>=3.14,<3.16`).
-The Ruff parser crate 0.0.20 source snapshot supports Python 3.15 lazy imports and unpacking in comprehensions. Import identity proofs remain conservative for lazy bindings.[^python-package][^python-runtime-design][^python-syntax-design]
+The Ruff parser crate 0.0.21 source snapshot supports Python 3.15 lazy imports and unpacking in comprehensions. Import identity proofs remain conservative for lazy bindings.[^python-package][^python-runtime-design][^python-syntax-design]
 
 Each platform release job checks the same wheel on both versions before packaging the release assets.
 The smoke helper uses its running interpreter for uvx and its temporary venv, and retains separate runtime reports.

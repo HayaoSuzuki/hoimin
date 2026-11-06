@@ -6,8 +6,8 @@ resolver = "3"
 [workspace.dependencies]
 rstest = { version = "0.28", default-features = false }
 ruff_python_parser = { path = "vendor/ruff_python_parser", features = ["stacker"] }
-ruff_python_ast = "=0.0.20"
-ruff_text_size = "=0.0.20"
+ruff_python_ast = "=0.0.21"
+ruff_text_size = "=0.0.21"
 
 [workspace.package]
 version = "0.14.0"

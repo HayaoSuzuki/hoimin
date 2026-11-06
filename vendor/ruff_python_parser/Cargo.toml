@@ -1,10 +1,10 @@
-# Ruff 0.0.20 crate release; upstream revision ba65abf8ba7bfbcc059f7fb9712be5ba9cab6abc.
+# Ruff 0.0.21 crate release; upstream revision 05cdc36a45a29e078c2af9358969d0f576408bef.
 # Workspace inheritance expanded for the hoimin source distribution.
 
 [package]
 include = ["src/**/*.rs", "Cargo.toml", "LICENSE*", "README.hoimin.md", "build.rs", "data/*.txt", "data/LICENSE*"]
 name = "ruff_python_parser"
-version = "0.0.20"
+version = "0.0.21"
 description = "This is an internal component crate of Ruff"
 authors = ["Charlie Marsh <charlie.r.marsh@gmail.com>", "RustPython Team"]
 edition = "2024"
@@ -24,10 +24,10 @@ path = "src/lib.rs"
 test = false
 
 [dependencies]
-ruff_python_ast = { version = "=0.0.20", features = ["get-size"] }
-ruff_python_trivia = { version = "=0.0.20" }
-ruff_text_size = { version = "=0.0.20", features = ["get-size"] }
-ruff_unicode_names2 = { version = "=0.0.20" }
+ruff_python_ast = { version = "=0.0.21", features = ["get-size"] }
+ruff_python_trivia = { version = "=0.0.21" }
+ruff_text_size = { version = "=0.0.21", features = ["get-size"] }
+ruff_unicode_names2 = { version = "=0.0.21" }
 bitflags = { version = "2.5.0", default-features = false }
 bstr = { version = "1.9.1", default-features = false, features = ["std"] }
 drop_bomb = { version = "0.1.5", default-features = false }
