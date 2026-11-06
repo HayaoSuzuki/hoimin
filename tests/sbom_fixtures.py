@@ -42,7 +42,7 @@ def raw_bom() -> dict[str, Any]:
             }
             for name, version in [
                 ("hoimin-core", "1.2.3"),
-                ("ruff_python_parser", "0.0.19"),
+                ("ruff_python_parser", "0.0.20"),
                 ("stacker", "0.1.25"),
                 ("hoimin-python", "1.2.3"),
                 ("hoimin-budget-math", "1.2.3"),

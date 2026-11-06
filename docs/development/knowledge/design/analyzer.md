@@ -1760,7 +1760,7 @@ comparison and its limits are recorded in the
 
 # Python 3.15の構文と遅延import
 
-Ruff 0.17.2のparserは安全修正を含むvendorソースを使い、AST・周辺crateは同一コミットから公開されたcrates.io版0.0.19へ揃える。
+Ruff parser crate 0.0.20のparserは安全修正を含むvendorソースを使い、AST・周辺crateは同一コミットから公開されたcrates.io版0.0.20へ揃える。
 遅延importと内包表記・ジェネレーター式のアンパックを解析し、辞書内包表記の省略keyも訪問対象へ反映する。
 既存の深さ128の制限と反復破棄を維持する。[^python315-syntax]
 

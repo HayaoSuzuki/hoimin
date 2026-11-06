@@ -305,7 +305,7 @@ their two distribution forms. The capture runs after version adjustment,
 using the same target and Cargo feature flags as the build.
 
 The vendored Ruff parser is identified through a commit-qualified Cargo
-package URL. Its pedigree, upstream package version (`0.0.19`), Ruff 0.17.2
+package URL. Its pedigree, upstream package version (`0.0.20`), Ruff parser crate 0.0.20
 VCS revision, and commit-pinned `README.hoimin.md` link identify the source
 snapshot and the parser safety adaptations.
 The README hash identifies the local-change description; the release commit
