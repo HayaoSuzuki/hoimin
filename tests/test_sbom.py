@@ -391,9 +391,9 @@ def test_sbom_preserves_registry_ruff_identity(tmp_path: Path, crate_name: str) 
         {
             "type": "library",
             "name": crate_name,
-            "version": "0.0.20",
+            "version": "0.0.21",
             "bom-ref": "ast",
-            "purl": f"pkg:cargo/{crate_name}@0.0.20",
+            "purl": f"pkg:cargo/{crate_name}@0.0.21",
             "properties": [{"name": "captured:source", "value": "crates.io"}],
         }
     )
