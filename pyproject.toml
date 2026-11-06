@@ -36,6 +36,7 @@ include = [
     { path = "vendor/ruff_python_parser/src/ast_cleanup.rs", format = "sdist" },
     { path = "vendor/ruff_python_parser/src/error.rs", format = "sdist" },
     { path = "vendor/ruff_python_parser/src/lexer/cursor.rs", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/lexer/keywords.rs", format = "sdist" },
     { path = "vendor/ruff_python_parser/src/lexer/indentation.rs", format = "sdist" },
     { path = "vendor/ruff_python_parser/src/lexer/interpolated_string.rs", format = "sdist" },
     { path = "vendor/ruff_python_parser/src/lexer.rs", format = "sdist" },

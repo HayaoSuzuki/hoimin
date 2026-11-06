@@ -81,7 +81,7 @@ original lockfile is restored before that rejection.[^issues-992-998-sbom-valida
 
 Before generating SHA256SUMS, reject missing required SBOMs, schema violations, metadata mismatches, and inconsistent graph references. PRs changing distribution inputs and manual runs also validate the aggregate artifact.[^ci] Preserve existing protection of published releases and wheel-only PyPI uploads.[^design]
 
-For the vendored Ruff parser, record its upstream package version, Ruff 0.17.2 VCS revision, and release-commit-pinned path and README. External Ruff crates retain their captured registry identities and metadata. The README describes the parser safety adaptations. A Cargo-derived graph is not a complete binary inventory including OS libraries, and does not claim that build dependencies are shipped in the binary.[^release]
+For the vendored Ruff parser, record its upstream package version, Ruff parser crate 0.0.20 VCS revision, and release-commit-pinned path and README. External Ruff crates retain their captured registry identities and metadata. The README describes the parser safety adaptations. A Cargo-derived graph is not a complete binary inventory including OS libraries, and does not claim that build dependencies are shipped in the binary.[^release]
 
 # Source distribution build inputs
 
