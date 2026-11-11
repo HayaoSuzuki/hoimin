@@ -89,7 +89,7 @@ The optional Rust `contracts` feature uses repository macros and adds no
 third-party contract dependency or MPL-2.0 exception. The October 12 adoption
 review and preserved notice describe the removed dependency.
 
-`creusot-std` and `creusot-std-proc` 0.14.0 have exact-version
+`creusot-std` and `creusot-std-proc` 0.15.0 have exact-version
 LGPL-2.1-or-later exceptions for verification. `cfg(creusot)` selects them;
 ordinary all-features builds exclude them, while unfiltered dependency audits
 include them. Neither package has a custom build script; the latter executes

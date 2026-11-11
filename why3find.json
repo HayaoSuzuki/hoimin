@@ -6,7 +6,7 @@
     "creusot"
   ],
   "provers": [
-    "z3@5.1.0",
+    "z3@5.3.2",
     "cvc5@1.4.1"
   ],
   "tactics": [

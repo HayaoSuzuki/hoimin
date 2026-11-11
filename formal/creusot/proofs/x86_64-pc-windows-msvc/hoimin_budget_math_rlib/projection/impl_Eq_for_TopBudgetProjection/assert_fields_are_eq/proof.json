@@ -3,7 +3,7 @@
   "proofs": {
     "Coma": {
       "vc_assert_fields_are_eq_TopBudgetProjection": {
-        "prover": "z3@5.1.0",
+        "prover": "z3@5.3.2",
         "time": 0.002
       }
     }
