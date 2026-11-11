@@ -1,0 +1,27 @@
+{
+  "observed_on": "2026-11-10",
+  "revision": "c88d581ce17ff52344a0a3399090eeaea3602f3f",
+  "working_tree_before_measurement": "clean",
+  "build_command": "cargo build --release --locked -p hoimin-cli",
+  "build_seconds": 43.05,
+  "binary_sha256": "de6452194b7e13029b32a02e901de20c407deeee298a21532f0b9d87c53aab0d",
+  "guarded_raw_directory": "/tmp/hoimin-perf-2026-11-10-c88d581-host",
+  "direct_raw_directory": "/tmp/hoimin-direct-2026-11-10-c88d581-r2",
+  "guarded_runs": 522,
+  "direct_cases": 65,
+  "direct_measured_runs": 585,
+  "direct_discarded_warmups": 65,
+  "comparison": "Both guarded labels use the identical executable. They measure repetition noise, not before/after optimization. Per-label groups are sequential, not randomized. Direct case order is shuffled each round.",
+  "initial_attempts": [
+    {
+      "path": "/tmp/hoimin-perf-2026-11-10-c88d581",
+      "result": "monitor_error before any usable observation; sandbox denies ps"
+    },
+    {
+      "path": "/tmp/hoimin-direct-2026-11-10-c88d581",
+      "result": "first warmup failed because test argv was omitted; no usable observations; corrected before r2"
+    }
+  ],
+  "limits": "Guard: 30s, sampled tree RSS 2GiB, sample interval 25ms. Direct: 30s process-group timeout, no RSS cap; registry sizes unchanged. Inputs prepared outside timings. No builds or tests concurrent with measurements; host not isolated from other applications.",
+  "profiling": "samply and hyperfine absent; xctrace stub present but xcrun cannot locate tool. No CPU or allocation profile taken. /usr/bin/time hardware counters are OS-reported without separate calibration."
+}

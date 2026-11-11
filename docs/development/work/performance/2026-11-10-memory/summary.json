@@ -1,0 +1,473 @@
+{
+  "cases": [
+    {
+      "name": "tiny-python-64",
+      "mode": "verify",
+      "candidates": 64,
+      "padding_bytes": 0,
+      "padding_files": 0,
+      "jobs": 1,
+      "test_code": "pass",
+      "argv": [
+        "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+        "verify",
+        "/private/tmp/hoimin-memory-2026-11-10-release/raw/tiny-python-64.plan.json",
+        "--top",
+        "64"
+      ],
+      "medians": {
+        "os_reported_max_rss_bytes": 11550720,
+        "sampled_parent_max_rss_bytes": 11534336,
+        "sampled_tree_max_sum_rss_bytes": 21594112
+      },
+      "ranges": {
+        "os_reported_max_rss_bytes": [
+          11206656,
+          11698176
+        ],
+        "sampled_parent_max_rss_bytes": [
+          11190272,
+          11681792
+        ],
+        "sampled_tree_max_sum_rss_bytes": [
+          21233664,
+          21774336
+        ]
+      },
+      "sampled_max_descendants": 1,
+      "sample_count": 1075
+    },
+    {
+      "name": "32m-python-16",
+      "mode": "verify",
+      "candidates": 16,
+      "padding_bytes": 33554432,
+      "padding_files": 1,
+      "jobs": 1,
+      "test_code": "pass",
+      "argv": [
+        "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+        "verify",
+        "/private/tmp/hoimin-memory-2026-11-10-release/raw/32m-python-16.plan.json",
+        "--top",
+        "16"
+      ],
+      "medians": {
+        "os_reported_max_rss_bytes": 11223040,
+        "sampled_parent_max_rss_bytes": 11190272,
+        "sampled_tree_max_sum_rss_bytes": 21200896
+      },
+      "ranges": {
+        "os_reported_max_rss_bytes": [
+          11075584,
+          11927552
+        ],
+        "sampled_parent_max_rss_bytes": [
+          11042816,
+          11878400
+        ],
+        "sampled_tree_max_sum_rss_bytes": [
+          21086208,
+          21856256
+        ]
+      },
+      "sampled_max_descendants": 1,
+      "sample_count": 577
+    },
+    {
+      "name": "512files-8m-python-16",
+      "mode": "verify",
+      "candidates": 16,
+      "padding_bytes": 8388608,
+      "padding_files": 512,
+      "jobs": 1,
+      "test_code": "pass",
+      "argv": [
+        "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+        "verify",
+        "/private/tmp/hoimin-memory-2026-11-10-release/raw/512files-8m-python-16.plan.json",
+        "--top",
+        "16"
+      ],
+      "medians": {
+        "os_reported_max_rss_bytes": 14106624,
+        "sampled_parent_max_rss_bytes": 14057472,
+        "sampled_tree_max_sum_rss_bytes": 23527424
+      },
+      "ranges": {
+        "os_reported_max_rss_bytes": [
+          13467648,
+          15745024
+        ],
+        "sampled_parent_max_rss_bytes": [
+          13451264,
+          15712256
+        ],
+        "sampled_tree_max_sum_rss_bytes": [
+          23134208,
+          24477696
+        ]
+      },
+      "sampled_max_descendants": 1,
+      "sample_count": 1461
+    },
+    {
+      "name": "workers-1-8m-128files",
+      "mode": "verify",
+      "candidates": 16,
+      "padding_bytes": 8388608,
+      "padding_files": 128,
+      "jobs": 1,
+      "test_code": "import time; time.sleep(0.03)",
+      "argv": [
+        "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+        "verify",
+        "/private/tmp/hoimin-memory-2026-11-10-release/raw/workers-1-8m-128files.plan.json",
+        "--top",
+        "16"
+      ],
+      "medians": {
+        "os_reported_max_rss_bytes": 13189120,
+        "sampled_parent_max_rss_bytes": 13172736,
+        "sampled_tree_max_sum_rss_bytes": 23298048
+      },
+      "ranges": {
+        "os_reported_max_rss_bytes": [
+          12533760,
+          13287424
+        ],
+        "sampled_parent_max_rss_bytes": [
+          12517376,
+          13271040
+        ],
+        "sampled_tree_max_sum_rss_bytes": [
+          22495232,
+          23314432
+        ]
+      },
+      "sampled_max_descendants": 1,
+      "sample_count": 1386
+    },
+    {
+      "name": "workers-2-8m-128files",
+      "mode": "verify",
+      "candidates": 16,
+      "padding_bytes": 8388608,
+      "padding_files": 128,
+      "jobs": 2,
+      "test_code": "import time; time.sleep(0.03)",
+      "argv": [
+        "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+        "verify",
+        "/private/tmp/hoimin-memory-2026-11-10-release/raw/workers-2-8m-128files.plan.json",
+        "--top",
+        "16"
+      ],
+      "medians": {
+        "os_reported_max_rss_bytes": 12304384,
+        "sampled_parent_max_rss_bytes": 12288000,
+        "sampled_tree_max_sum_rss_bytes": 32456704
+      },
+      "ranges": {
+        "os_reported_max_rss_bytes": [
+          11583488,
+          12451840
+        ],
+        "sampled_parent_max_rss_bytes": [
+          11567104,
+          12435456
+        ],
+        "sampled_tree_max_sum_rss_bytes": [
+          31752192,
+          33144832
+        ]
+      },
+      "sampled_max_descendants": 2,
+      "sample_count": 866
+    },
+    {
+      "name": "workers-4-8m-128files",
+      "mode": "verify",
+      "candidates": 16,
+      "padding_bytes": 8388608,
+      "padding_files": 128,
+      "jobs": 4,
+      "test_code": "import time; time.sleep(0.03)",
+      "argv": [
+        "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+        "verify",
+        "/private/tmp/hoimin-memory-2026-11-10-release/raw/workers-4-8m-128files.plan.json",
+        "--top",
+        "16"
+      ],
+      "medians": {
+        "os_reported_max_rss_bytes": 13156352,
+        "sampled_parent_max_rss_bytes": 13123584,
+        "sampled_tree_max_sum_rss_bytes": 54214656
+      },
+      "ranges": {
+        "os_reported_max_rss_bytes": [
+          13041664,
+          13549568
+        ],
+        "sampled_parent_max_rss_bytes": [
+          13025280,
+          13533184
+        ],
+        "sampled_tree_max_sum_rss_bytes": [
+          53198848,
+          54247424
+        ]
+      },
+      "sampled_max_descendants": 4,
+      "sample_count": 662
+    },
+    {
+      "name": "workers-8-8m-128files",
+      "mode": "verify",
+      "candidates": 16,
+      "padding_bytes": 8388608,
+      "padding_files": 128,
+      "jobs": 8,
+      "test_code": "import time; time.sleep(0.03)",
+      "argv": [
+        "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+        "verify",
+        "/private/tmp/hoimin-memory-2026-11-10-release/raw/workers-8-8m-128files.plan.json",
+        "--top",
+        "16"
+      ],
+      "medians": {
+        "os_reported_max_rss_bytes": 15138816,
+        "sampled_parent_max_rss_bytes": 15106048,
+        "sampled_tree_max_sum_rss_bytes": 96583680
+      },
+      "ranges": {
+        "os_reported_max_rss_bytes": [
+          15122432,
+          15564800
+        ],
+        "sampled_parent_max_rss_bytes": [
+          15089664,
+          15548416
+        ],
+        "sampled_tree_max_sum_rss_bytes": [
+          95895552,
+          98680832
+        ]
+      },
+      "sampled_max_descendants": 8,
+      "sample_count": 705
+    },
+    {
+      "name": "child64m",
+      "mode": "verify",
+      "candidates": 1,
+      "padding_bytes": 0,
+      "padding_files": 0,
+      "jobs": 1,
+      "test_code": "import time; data=bytearray(64*1024*1024); time.sleep(0.1)",
+      "argv": [
+        "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+        "verify",
+        "/private/tmp/hoimin-memory-2026-11-10-release/raw/child64m.plan.json",
+        "--top",
+        "1"
+      ],
+      "medians": {
+        "os_reported_max_rss_bytes": 77365248,
+        "sampled_parent_max_rss_bytes": 10600448,
+        "sampled_tree_max_sum_rss_bytes": 87556096
+      },
+      "ranges": {
+        "os_reported_max_rss_bytes": [
+          77365248,
+          77430784
+        ],
+        "sampled_parent_max_rss_bytes": [
+          10256384,
+          11075584
+        ],
+        "sampled_tree_max_sum_rss_bytes": [
+          87523328,
+          88129536
+        ]
+      },
+      "sampled_max_descendants": 1,
+      "sample_count": 358
+    },
+    {
+      "name": "child-control",
+      "mode": "verify",
+      "candidates": 1,
+      "padding_bytes": 0,
+      "padding_files": 0,
+      "jobs": 1,
+      "test_code": "import time; time.sleep(0.1)",
+      "argv": [
+        "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+        "verify",
+        "/private/tmp/hoimin-memory-2026-11-10-release/raw/child-control.plan.json",
+        "--top",
+        "1"
+      ],
+      "medians": {
+        "os_reported_max_rss_bytes": 10616832,
+        "sampled_parent_max_rss_bytes": 10600448,
+        "sampled_tree_max_sum_rss_bytes": 20480000
+      },
+      "ranges": {
+        "os_reported_max_rss_bytes": [
+          10485760,
+          10665984
+        ],
+        "sampled_parent_max_rss_bytes": [
+          10469376,
+          10633216
+        ],
+        "sampled_tree_max_sum_rss_bytes": [
+          20250624,
+          20627456
+        ]
+      },
+      "sampled_max_descendants": 1,
+      "sample_count": 344
+    },
+    {
+      "name": "plan-1000",
+      "mode": "plan",
+      "candidates": 1000,
+      "source_bytes": 10000,
+      "jobs": 1,
+      "argv": [
+        "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+        "plan",
+        "--root",
+        "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-mem-inputs-qtsw2vtr/plan-1000",
+        "--file",
+        "case.py",
+        "--operators",
+        "binary_add_sub",
+        "--max-candidates",
+        "20000",
+        "--allow-best-effort-memory",
+        "--",
+        "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3",
+        "-c",
+        "pass"
+      ],
+      "medians": {
+        "os_reported_max_rss_bytes": 9338880,
+        "sampled_parent_max_rss_bytes": 9240576,
+        "sampled_tree_max_sum_rss_bytes": 9240576
+      },
+      "ranges": {
+        "os_reported_max_rss_bytes": [
+          9306112,
+          9666560
+        ],
+        "sampled_parent_max_rss_bytes": [
+          9224192,
+          9568256
+        ],
+        "sampled_tree_max_sum_rss_bytes": [
+          9224192,
+          9568256
+        ]
+      },
+      "sampled_max_descendants": 0,
+      "sample_count": 15
+    },
+    {
+      "name": "plan-4000",
+      "mode": "plan",
+      "candidates": 4000,
+      "source_bytes": 40000,
+      "jobs": 1,
+      "argv": [
+        "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+        "plan",
+        "--root",
+        "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-mem-inputs-qtsw2vtr/plan-4000",
+        "--file",
+        "case.py",
+        "--operators",
+        "binary_add_sub",
+        "--max-candidates",
+        "20000",
+        "--allow-best-effort-memory",
+        "--",
+        "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3",
+        "-c",
+        "pass"
+      ],
+      "medians": {
+        "os_reported_max_rss_bytes": 13664256,
+        "sampled_parent_max_rss_bytes": 13582336,
+        "sampled_tree_max_sum_rss_bytes": 13582336
+      },
+      "ranges": {
+        "os_reported_max_rss_bytes": [
+          13582336,
+          13729792
+        ],
+        "sampled_parent_max_rss_bytes": [
+          13549568,
+          13647872
+        ],
+        "sampled_tree_max_sum_rss_bytes": [
+          13549568,
+          13647872
+        ]
+      },
+      "sampled_max_descendants": 0,
+      "sample_count": 26
+    },
+    {
+      "name": "plan-16000",
+      "mode": "plan",
+      "candidates": 16000,
+      "source_bytes": 160000,
+      "jobs": 1,
+      "argv": [
+        "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+        "plan",
+        "--root",
+        "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-mem-inputs-qtsw2vtr/plan-16000",
+        "--file",
+        "case.py",
+        "--operators",
+        "binary_add_sub",
+        "--max-candidates",
+        "20000",
+        "--allow-best-effort-memory",
+        "--",
+        "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3",
+        "-c",
+        "pass"
+      ],
+      "medians": {
+        "os_reported_max_rss_bytes": 32653312,
+        "sampled_parent_max_rss_bytes": 32571392,
+        "sampled_tree_max_sum_rss_bytes": 32571392
+      },
+      "ranges": {
+        "os_reported_max_rss_bytes": [
+          32538624,
+          33112064
+        ],
+        "sampled_parent_max_rss_bytes": [
+          32440320,
+          32980992
+        ],
+        "sampled_tree_max_sum_rss_bytes": [
+          32440320,
+          32980992
+        ]
+      },
+      "sampled_max_descendants": 0,
+      "sample_count": 83
+    }
+  ],
+  "aggregation": "median and min/max of three per-run maxima; sampled values are not guaranteed true peaks"
+}

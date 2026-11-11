@@ -1,5 +1,19 @@
 # Performance validation by input shape
 
+The [2026-11-10 baseline](../work/performance/2026-11-10-baseline/README.md)
+records 522 guarded observations and 585 direct measurements at revision
+`c88d581`, with real repository inputs and reported test-process durations.
+Both guarded comparison labels use the same binary; they do not show an optimization.
+
+The [process and workspace breakdown](../work/performance/2026-11-10-stage-breakdown/README.md)
+adds 140 paired CLI observations and 62 direct process controls. It separates
+spawn, exit waiting, preflight, worker creation and reset on bounded inputs;
+instrumentation remains in a temporary source copy.
+
+The [memory follow-up](../work/performance/2026-11-10-memory/README.md)
+records 36 RSS observations with child-process controls and 10 passing existing
+heap tests. It distinguishes parent RSS, sampled tree sums and allocator windows.
+
 [shapes.json](shapes.json) inventories inputs across eight dimensions and 29 shapes, N/2N/4N sizes, measurement subjects, and executable regression tests. `growth_model` describes input structure; `expected_after_fix` describes expectations after dependent issues are integrated. Read measurements as observations at their explicitly recorded revisions.
 
 | Dimension | Release-mode inputs | Deterministic ordinary gates |

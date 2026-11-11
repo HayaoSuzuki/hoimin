@@ -1,0 +1,581 @@
+{
+  "cases": [
+    {
+      "name": "tiny-python-16",
+      "mutants": 16,
+      "padding_files": 0,
+      "padding_bytes": 0,
+      "source_bytes": 160,
+      "test": [
+        "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3",
+        "-c",
+        "pass"
+      ],
+      "baseline_wall_ms": 315.604792,
+      "baseline_wall_range_ms": [
+        291.129875,
+        337.317584
+      ],
+      "probe_wall_ms": 323.297542,
+      "probe_wall_range_ms": [
+        315.2445,
+        352.638125
+      ],
+      "paired_delta_median_ms": 9.040458000000001,
+      "paired_delta_range_ms": [
+        -14.02004199999999,
+        47.80962499999998
+      ],
+      "probe_totals_median_ms": {
+        "process.output_finish": 0.054292,
+        "process.prepare": 0.499665,
+        "process.spawn": 14.295541,
+        "process.supervisor_finish": 0.216294,
+        "process.total": 249.406292,
+        "process.wait": 233.167749,
+        "workspace.apply": 1.537666,
+        "workspace.create_worker": 0.258792,
+        "workspace.inventory": 0.137292,
+        "workspace.preflight": 0.698417,
+        "workspace.preflight_validate": 0.009417,
+        "workspace.reset": 5.123085,
+        "workspace.snapshot": 0.431083,
+        "workspace.source_revalidation": 0.129833,
+        "workspace.verify_originals": 0.442917
+      },
+      "metrics_stage_median_ms": {
+        "analysis": 3,
+        "baseline": 15,
+        "cleanup": 9,
+        "copy": 0,
+        "mutants": 253,
+        "preflight": 1,
+        "targets": 0
+      },
+      "reset_mean_per_call_median_ms": 0.3013579411764706,
+      "process_spawn_mean_per_call_median_ms": 0.8409141764705882,
+      "process_wait_mean_per_call_median_ms": 13.715749941176469
+    },
+    {
+      "name": "tiny-python-64",
+      "mutants": 64,
+      "padding_files": 0,
+      "padding_bytes": 0,
+      "source_bytes": 640,
+      "test": [
+        "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3",
+        "-c",
+        "pass"
+      ],
+      "baseline_wall_ms": 1072.553167,
+      "baseline_wall_range_ms": [
+        1031.351042,
+        1116.592833
+      ],
+      "probe_wall_ms": 1093.197542,
+      "probe_wall_range_ms": [
+        1014.424083,
+        1133.29975
+      ],
+      "paired_delta_median_ms": 1.1802920000000086,
+      "paired_delta_range_ms": [
+        -16.92695900000001,
+        54.641332999999804
+      ],
+      "probe_totals_median_ms": {
+        "process.output_finish": 0.19409,
+        "process.prepare": 1.684255,
+        "process.spawn": 55.254629,
+        "process.supervisor_finish": 0.808462,
+        "process.total": 947.005288,
+        "process.wait": 883.595041,
+        "workspace.apply": 5.839037,
+        "workspace.create_worker": 0.301916,
+        "workspace.inventory": 0.152375,
+        "workspace.preflight": 0.747416,
+        "workspace.preflight_validate": 0.009375,
+        "workspace.reset": 19.811418,
+        "workspace.snapshot": 0.438625,
+        "workspace.source_revalidation": 0.136458,
+        "workspace.verify_originals": 0.425292
+      },
+      "metrics_stage_median_ms": {
+        "analysis": 4,
+        "baseline": 15,
+        "cleanup": 17,
+        "copy": 0,
+        "mutants": 1013,
+        "preflight": 1,
+        "targets": 0
+      },
+      "reset_mean_per_call_median_ms": 0.30479104615384617,
+      "process_spawn_mean_per_call_median_ms": 0.8500712153846154,
+      "process_wait_mean_per_call_median_ms": 13.593769861538462
+    },
+    {
+      "name": "tiny-true-16",
+      "mutants": 16,
+      "padding_files": 0,
+      "padding_bytes": 0,
+      "source_bytes": 160,
+      "test": [
+        "/usr/bin/true"
+      ],
+      "baseline_wall_ms": 110.928375,
+      "baseline_wall_range_ms": [
+        104.277542,
+        123.918625
+      ],
+      "probe_wall_ms": 115.858916,
+      "probe_wall_range_ms": [
+        112.364834,
+        136.247833
+      ],
+      "paired_delta_median_ms": 8.087292000000005,
+      "paired_delta_range_ms": [
+        -4.959751000000011,
+        19.31991600000002
+      ],
+      "probe_totals_median_ms": {
+        "process.output_finish": 0.022747,
+        "process.prepare": 0.428084,
+        "process.spawn": 11.662291,
+        "process.supervisor_finish": 0.15079,
+        "process.total": 44.805334,
+        "process.wait": 32.060499,
+        "workspace.apply": 1.217081,
+        "workspace.create_worker": 0.325709,
+        "workspace.inventory": 0.1455,
+        "workspace.preflight": 0.851083,
+        "workspace.preflight_validate": 0.0095,
+        "workspace.reset": 4.161085,
+        "workspace.snapshot": 0.477042,
+        "workspace.source_revalidation": 0.135542,
+        "workspace.verify_originals": 0.43195799999999995
+      },
+      "metrics_stage_median_ms": {
+        "analysis": 3,
+        "baseline": 3,
+        "cleanup": 9,
+        "copy": 0,
+        "mutants": 57,
+        "preflight": 1,
+        "targets": 0
+      },
+      "reset_mean_per_call_median_ms": 0.24476970588235294,
+      "process_spawn_mean_per_call_median_ms": 0.6860171176470589,
+      "process_wait_mean_per_call_median_ms": 1.885911705882353
+    },
+    {
+      "name": "tiny-true-64",
+      "mutants": 64,
+      "padding_files": 0,
+      "padding_bytes": 0,
+      "source_bytes": 640,
+      "test": [
+        "/usr/bin/true"
+      ],
+      "baseline_wall_ms": 286.396667,
+      "baseline_wall_range_ms": [
+        260.224291,
+        294.460916
+      ],
+      "probe_wall_ms": 285.60275,
+      "probe_wall_range_ms": [
+        271.649042,
+        312.571625
+      ],
+      "paired_delta_median_ms": 11.985749999999996,
+      "paired_delta_range_ms": [
+        -15.538207999999997,
+        33.263125
+      ],
+      "probe_totals_median_ms": {
+        "process.output_finish": 0.071501,
+        "process.prepare": 1.292254,
+        "process.spawn": 40.352955,
+        "process.supervisor_finish": 0.574583,
+        "process.total": 163.224167,
+        "process.wait": 117.444334,
+        "workspace.apply": 4.502665,
+        "workspace.create_worker": 0.265375,
+        "workspace.inventory": 0.1415,
+        "workspace.preflight": 0.717958,
+        "workspace.preflight_validate": 0.008959,
+        "workspace.reset": 14.564081999999999,
+        "workspace.snapshot": 0.429417,
+        "workspace.source_revalidation": 0.131875,
+        "workspace.verify_originals": 0.373499
+      },
+      "metrics_stage_median_ms": {
+        "analysis": 4,
+        "baseline": 3,
+        "cleanup": 16,
+        "copy": 0,
+        "mutants": 220,
+        "preflight": 1,
+        "targets": 0
+      },
+      "reset_mean_per_call_median_ms": 0.22406279999999998,
+      "process_spawn_mean_per_call_median_ms": 0.6208146923076924,
+      "process_wait_mean_per_call_median_ms": 1.8068359076923077
+    },
+    {
+      "name": "8m-python-16",
+      "mutants": 16,
+      "padding_files": 1,
+      "padding_bytes": 8388608,
+      "source_bytes": 160,
+      "test": [
+        "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3",
+        "-c",
+        "pass"
+      ],
+      "baseline_wall_ms": 366.33675,
+      "baseline_wall_range_ms": [
+        353.916917,
+        379.184958
+      ],
+      "probe_wall_ms": 367.107625,
+      "probe_wall_range_ms": [
+        353.288375,
+        381.720125
+      ],
+      "paired_delta_median_ms": 2.5351670000000013,
+      "paired_delta_range_ms": [
+        -8.935750000000041,
+        7.125917000000015
+      ],
+      "probe_totals_median_ms": {
+        "process.output_finish": 0.052001,
+        "process.prepare": 0.500831,
+        "process.spawn": 15.112459,
+        "process.supervisor_finish": 0.204084,
+        "process.total": 246.497122,
+        "process.wait": 229.147457,
+        "workspace.apply": 1.8804159999999999,
+        "workspace.create_worker": 2.023458,
+        "workspace.inventory": 0.149416,
+        "workspace.preflight": 10.531208,
+        "workspace.preflight_validate": 0.012458,
+        "workspace.reset": 27.366001,
+        "workspace.snapshot": 5.901,
+        "workspace.source_revalidation": 4.337667,
+        "workspace.verify_originals": 8.671667
+      },
+      "metrics_stage_median_ms": {
+        "analysis": 4,
+        "baseline": 17,
+        "cleanup": 10,
+        "copy": 6,
+        "mutants": 272,
+        "preflight": 10,
+        "targets": 0
+      },
+      "reset_mean_per_call_median_ms": 1.6097647647058824,
+      "process_spawn_mean_per_call_median_ms": 0.8889681764705882,
+      "process_wait_mean_per_call_median_ms": 13.479262176470588
+    },
+    {
+      "name": "32m-python-16",
+      "mutants": 16,
+      "padding_files": 1,
+      "padding_bytes": 33554432,
+      "source_bytes": 160,
+      "test": [
+        "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3",
+        "-c",
+        "pass"
+      ],
+      "baseline_wall_ms": 489.0325,
+      "baseline_wall_range_ms": [
+        475.061041,
+        523.366958
+      ],
+      "probe_wall_ms": 504.004458,
+      "probe_wall_range_ms": [
+        479.70425,
+        534.865583
+      ],
+      "paired_delta_median_ms": 14.066332999999986,
+      "paired_delta_range_ms": [
+        -43.66270799999995,
+        50.935
+      ],
+      "probe_totals_median_ms": {
+        "process.output_finish": 0.053581,
+        "process.prepare": 0.518501,
+        "process.spawn": 15.401706,
+        "process.supervisor_finish": 0.194836,
+        "process.total": 253.974998,
+        "process.wait": 236.632169,
+        "workspace.apply": 2.1774999999999998,
+        "workspace.create_worker": 7.235042,
+        "workspace.inventory": 0.160083,
+        "workspace.preflight": 38.905958,
+        "workspace.preflight_validate": 0.012875,
+        "workspace.reset": 88.188,
+        "workspace.snapshot": 22.31875,
+        "workspace.source_revalidation": 16.096416,
+        "workspace.verify_originals": 32.978833
+      },
+      "metrics_stage_median_ms": {
+        "analysis": 5,
+        "baseline": 20,
+        "cleanup": 11,
+        "copy": 23,
+        "mutants": 343,
+        "preflight": 39,
+        "targets": 0
+      },
+      "reset_mean_per_call_median_ms": 5.187529411764706,
+      "process_spawn_mean_per_call_median_ms": 0.905982705882353,
+      "process_wait_mean_per_call_median_ms": 13.919539352941177
+    },
+    {
+      "name": "8m-true-16",
+      "mutants": 16,
+      "padding_files": 1,
+      "padding_bytes": 8388608,
+      "source_bytes": 160,
+      "test": [
+        "/usr/bin/true"
+      ],
+      "baseline_wall_ms": 165.396167,
+      "baseline_wall_range_ms": [
+        159.550667,
+        200.753084
+      ],
+      "probe_wall_ms": 164.530917,
+      "probe_wall_range_ms": [
+        152.790375,
+        186.46725
+      ],
+      "paired_delta_median_ms": -3.8098750000000052,
+      "paired_delta_range_ms": [
+        -14.285833999999994,
+        13.957373999999987
+      ],
+      "probe_totals_median_ms": {
+        "process.output_finish": 0.035624,
+        "process.prepare": 0.454833,
+        "process.spawn": 12.978915,
+        "process.supervisor_finish": 0.152832,
+        "process.total": 49.720584,
+        "process.wait": 34.963915,
+        "workspace.apply": 1.647541,
+        "workspace.create_worker": 2.170208,
+        "workspace.inventory": 0.157,
+        "workspace.preflight": 10.928083,
+        "workspace.preflight_validate": 0.012667,
+        "workspace.reset": 25.113167,
+        "workspace.snapshot": 6.2855,
+        "workspace.source_revalidation": 4.439875,
+        "workspace.verify_originals": 8.59075
+      },
+      "metrics_stage_median_ms": {
+        "analysis": 4,
+        "baseline": 5,
+        "cleanup": 10,
+        "copy": 6,
+        "mutants": 84,
+        "preflight": 11,
+        "targets": 0
+      },
+      "reset_mean_per_call_median_ms": 1.477245117647059,
+      "process_spawn_mean_per_call_median_ms": 0.7634655882352942,
+      "process_wait_mean_per_call_median_ms": 2.056700882352941
+    },
+    {
+      "name": "32m-true-16",
+      "mutants": 16,
+      "padding_files": 1,
+      "padding_bytes": 33554432,
+      "source_bytes": 160,
+      "test": [
+        "/usr/bin/true"
+      ],
+      "baseline_wall_ms": 304.799291,
+      "baseline_wall_range_ms": [
+        288.531666,
+        426.162208
+      ],
+      "probe_wall_ms": 293.758375,
+      "probe_wall_range_ms": [
+        280.961042,
+        315.102959
+      ],
+      "paired_delta_median_ms": -7.7424159999999915,
+      "paired_delta_range_ms": [
+        -138.05979100000002,
+        15.764958999999976
+      ],
+      "probe_totals_median_ms": {
+        "process.output_finish": 0.039207,
+        "process.prepare": 0.509751,
+        "process.spawn": 14.712751,
+        "process.supervisor_finish": 0.152751,
+        "process.total": 53.163541,
+        "process.wait": 36.79875,
+        "workspace.apply": 2.104834,
+        "workspace.create_worker": 7.700208,
+        "workspace.inventory": 0.172584,
+        "workspace.preflight": 38.525792,
+        "workspace.preflight_validate": 0.012625,
+        "workspace.reset": 85.516419,
+        "workspace.snapshot": 21.999792,
+        "workspace.source_revalidation": 16.206958,
+        "workspace.verify_originals": 32.316582999999994
+      },
+      "metrics_stage_median_ms": {
+        "analysis": 5,
+        "baseline": 8,
+        "cleanup": 12,
+        "copy": 23,
+        "mutants": 147,
+        "preflight": 39,
+        "targets": 0
+      },
+      "reset_mean_per_call_median_ms": 5.030377588235294,
+      "process_spawn_mean_per_call_median_ms": 0.8654559411764706,
+      "process_wait_mean_per_call_median_ms": 2.1646323529411764
+    },
+    {
+      "name": "128files-8m-true-16",
+      "mutants": 16,
+      "padding_files": 128,
+      "padding_bytes": 8388608,
+      "source_bytes": 160,
+      "test": [
+        "/usr/bin/true"
+      ],
+      "baseline_wall_ms": 382.021042,
+      "baseline_wall_range_ms": [
+        372.166875,
+        412.348417
+      ],
+      "probe_wall_ms": 388.789625,
+      "probe_wall_range_ms": [
+        370.368416,
+        409.945667
+      ],
+      "paired_delta_median_ms": 3.247332999999969,
+      "paired_delta_range_ms": [
+        -18.465125,
+        9.157832999999982
+      ],
+      "probe_totals_median_ms": {
+        "process.output_finish": 0.038794,
+        "process.prepare": 0.563626,
+        "process.spawn": 15.134791,
+        "process.supervisor_finish": 0.166666,
+        "process.total": 48.494753,
+        "process.wait": 31.127418,
+        "workspace.apply": 2.100583,
+        "workspace.create_worker": 17.05075,
+        "workspace.inventory": 0.488334,
+        "workspace.preflight": 29.686459,
+        "workspace.preflight_validate": 0.013333,
+        "workspace.reset": 149.455081,
+        "workspace.snapshot": 20.905666,
+        "workspace.source_revalidation": 7.8795,
+        "workspace.verify_originals": 15.911959
+      },
+      "metrics_stage_median_ms": {
+        "analysis": 5,
+        "baseline": 13,
+        "cleanup": 51,
+        "copy": 25,
+        "mutants": 215,
+        "preflight": 29,
+        "targets": 0
+      },
+      "reset_mean_per_call_median_ms": 8.791475352941177,
+      "process_spawn_mean_per_call_median_ms": 0.8902818235294118,
+      "process_wait_mean_per_call_median_ms": 1.831024588235294
+    },
+    {
+      "name": "512files-8m-true-16",
+      "mutants": 16,
+      "padding_files": 512,
+      "padding_bytes": 8388608,
+      "source_bytes": 160,
+      "test": [
+        "/usr/bin/true"
+      ],
+      "baseline_wall_ms": 1077.926084,
+      "baseline_wall_range_ms": [
+        1063.483041,
+        1137.993458
+      ],
+      "probe_wall_ms": 1081.526,
+      "probe_wall_range_ms": [
+        1069.300958,
+        1197.646083
+      ],
+      "paired_delta_median_ms": 10.133000000000038,
+      "paired_delta_range_ms": [
+        -23.98112500000002,
+        76.54866600000014
+      ],
+      "probe_totals_median_ms": {
+        "process.output_finish": 0.044292,
+        "process.prepare": 0.546041,
+        "process.spawn": 15.676084,
+        "process.supervisor_finish": 0.170791,
+        "process.total": 49.192336,
+        "process.wait": 31.350292,
+        "workspace.apply": 2.214668,
+        "workspace.create_worker": 76.337417,
+        "workspace.inventory": 1.605042,
+        "workspace.preflight": 89.177083,
+        "workspace.preflight_validate": 0.012291,
+        "workspace.reset": 518.663912,
+        "workspace.snapshot": 68.968291,
+        "workspace.source_revalidation": 18.503708,
+        "workspace.verify_originals": 36.895209
+      },
+      "metrics_stage_median_ms": {
+        "analysis": 10,
+        "baseline": 39,
+        "cleanup": 186,
+        "copy": 94,
+        "mutants": 594,
+        "preflight": 89,
+        "targets": 0
+      },
+      "reset_mean_per_call_median_ms": 30.50964188235294,
+      "process_spawn_mean_per_call_median_ms": 0.9221225882352941,
+      "process_wait_mean_per_call_median_ms": 1.8441348235294117
+    }
+  ],
+  "controls": [
+    {
+      "name": "python",
+      "samples": 31,
+      "medians_ms": {
+        "wall_ms": 14.112125,
+        "outer_spawn_ms": 0.987583,
+        "outer_wait_ms": 13.16
+      },
+      "wall_range_ms": [
+        12.263083,
+        15.036959
+      ]
+    },
+    {
+      "name": "true",
+      "samples": 31,
+      "medians_ms": {
+        "wall_ms": 2.944375,
+        "outer_spawn_ms": 1.019,
+        "outer_wait_ms": 1.962541
+      },
+      "wall_range_ms": [
+        2.077167,
+        4.733041
+      ]
+    }
+  ],
+  "aggregation": "Medians of per-run totals. Per-call figures divide each run total by its call count before taking the median; these are not pooled individual-call medians. Nested preflight subphases must not be added to workspace.preflight. Independent medians need not sum to a median total."
+}

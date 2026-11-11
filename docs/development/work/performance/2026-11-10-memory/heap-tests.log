@@ -1,0 +1,96 @@
+   Compiling syn v2.0.119
+   Compiling rand_core v0.10.1
+   Compiling getrandom v0.4.3
+   Compiling regex-syntax v0.8.11
+   Compiling semver v1.0.28
+   Compiling aho-corasick v1.1.5
+   Compiling tokio v1.54.1
+   Compiling wait-timeout v0.2.1
+   Compiling fnv v1.0.7
+   Compiling relative-path v1.9.3
+   Compiling glob v0.3.4
+   Compiling bit-vec v0.10.1
+   Compiling quick-error v1.2.3
+   Compiling rustc_version v0.4.1
+   Compiling chacha20 v0.10.2
+   Compiling rand_xorshift v0.5.0
+   Compiling bit-set v0.11.1
+   Compiling core_detect v1.0.0
+   Compiling unarray v0.1.4
+   Compiling rstest_macros v0.28.0
+   Compiling tempfile v3.27.0
+   Compiling uuid v1.29.2
+   Compiling rand v0.10.3
+   Compiling regex-automata v0.4.18
+   Compiling rusty-fork v0.3.1
+   Compiling proptest v1.12.0
+   Compiling is-macro v0.3.8
+   Compiling tracing-attributes v0.1.31
+   Compiling regex v1.13.1
+   Compiling ruff_python_ast v0.0.21
+   Compiling tracing v0.1.44
+   Compiling globset v0.4.21
+   Compiling ignore v0.4.34
+   Compiling rstest v0.28.0
+   Compiling ruff_python_parser v0.0.21 (/Users/hayao/RustroverProjects/hoimin/vendor/ruff_python_parser)
+   Compiling hoimin-python v0.14.0 (/Users/hayao/RustroverProjects/hoimin/crates/hoimin-python)
+   Compiling hoimin-cli v0.14.0 (/Users/hayao/RustroverProjects/hoimin/crates/hoimin-cli)
+    Finished `release` profile [optimized] target(s) in 33.83s
+     Running tests/plan_source_heap.rs (target/release/deps/plan_source_heap-3b5c808829a22207)
+
+running 3 tests
+test plan_source_hashing_heap_is_independent_of_largest_source::case_1_input_1_1 ... plan-source-peak mib=1 bytes=1824
+ok
+test plan_source_hashing_heap_is_independent_of_largest_source::case_2_input_16_2 ... plan-source-peak mib=16 bytes=1696
+ok
+test plan_source_hashing_heap_is_independent_of_largest_source::case_3_input_64_3 ... plan-source-peak mib=64 bytes=1696
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+
+     Running tests/source_index_heap.rs (target/release/deps/source_index_heap-a55c29fb0957ac44)
+
+running 1 test
+test unicode_context_and_cli_discovery_avoid_overlapping_location_indexes ... unicode-index count=262144 context=64 discovery=3148938 eager_control=5245623
+unicode-index count=524288 context=64 discovery=6294183 eager_control=10488503
+unicode-index count=1048576 context=64 discovery=12585639 eager_control=20974263
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/workspace_heap.rs (target/release/deps/workspace_heap-11f28b193fd572e0)
+
+running 1 test
+test retained_heap_does_not_scale_with_workspace_bytes_times_workers ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/workspace_preflight_heap.rs (target/release/deps/workspace_preflight_heap-bc77021f5ead817a)
+
+running 1 test
+test preflight_peak_tracks_entries_not_file_bytes_or_worker_copies ... scale=1 preflight_peak_bytes files=87017 bytes=87017 workers=87017 baseline=87017
+scale=2 preflight_peak_bytes files=92617 bytes=87017 workers=87017 baseline=87017
+scale=4 preflight_peak_bytes files=98569 bytes=87017 workers=87017 baseline=87017
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests/workspace_stream_heap.rs (target/release/deps/workspace_stream_heap-daf706b906b64c5d)
+
+running 4 tests
+test eager_source_control_exceeds_the_streaming_heap_bound ... ok
+test workspace_content_buffers_do_not_scale_with_file_bytes::case_1_small ... mib=1 repeat=0 stage_peaks=[83154, 65950, 131640, 131640] elapsed_ms=5
+mib=1 repeat=1 stage_peaks=[83154, 65950, 131640, 131640] elapsed_ms=5
+mib=1 repeat=2 stage_peaks=[83154, 65950, 131640, 131640] elapsed_ms=5
+ok
+test workspace_content_buffers_do_not_scale_with_file_bytes::case_2_medium ... mib=8 repeat=0 stage_peaks=[83154, 65950, 131640, 131640] elapsed_ms=32
+mib=8 repeat=1 stage_peaks=[83154, 65950, 131640, 131640] elapsed_ms=26
+mib=8 repeat=2 stage_peaks=[83154, 65950, 131640, 131640] elapsed_ms=24
+ok
+test workspace_content_buffers_do_not_scale_with_file_bytes::case_3_large ... mib=32 repeat=0 stage_peaks=[83154, 65950, 131640, 131640] elapsed_ms=106
+mib=32 repeat=1 stage_peaks=[83154, 65950, 131640, 131640] elapsed_ms=106
+mib=32 repeat=2 stage_peaks=[83154, 65950, 131640, 131640] elapsed_ms=104
+ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s
+
