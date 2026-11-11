@@ -36,11 +36,11 @@ distribution notices and are not dependencies of the shipped CLI or wheels.
 
 ## Creusot verification dependencies
 
-The target-cfg dependency `creusot-std` 0.14.0 and its proc macro
-`creusot-std-proc` 0.14.0 declare LGPL-2.1-or-later. The upstream
-[license at the pinned source](https://github.com/creusot-rs/creusot/blob/65349025c67e69fcd7479f1f420fa5904f69bc27/LICENSE)
+The target-cfg dependency `creusot-std` 0.15.0 and its proc macro
+`creusot-std-proc` 0.15.0 declare LGPL-2.1-or-later. The upstream
+[license at the pinned source](https://github.com/creusot-rs/creusot/blob/fd4d85b2c237ef93147e99f6a0c04acfc89a6a17/LICENSE)
 is preserved verbatim in [licenses/creusot-LGPL-2.1-or-later.txt](../../../licenses/creusot-LGPL-2.1-or-later.txt).
-`pearlite-syn` 0.14.0 declares MIT OR Apache-2.0. The exact-version
+`pearlite-syn` 0.15.0 declares MIT OR Apache-2.0. The exact-version
 cargo-deny exceptions admit these two LGPL declarations only for review of the
 locked graphs; they do not establish redistribution compliance.
 
