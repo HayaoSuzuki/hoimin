@@ -1,0 +1,39 @@
+{
+  "observed_on": "2026-11-10",
+  "revision": "c88d581ce17ff52344a0a3399090eeaea3602f3f",
+  "platform": "macOS-15.7.7-arm64-arm-64bit",
+  "python": "3.12.6 (v3.12.6:a4a2d2b0d85, Sep  6 2024, 16:08:03) [Clang 13.0.0 (clang-1300.0.29.30)]",
+  "rust": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "binaries": {
+    "baseline": {
+      "path": "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+      "sha256": "de6452194b7e13029b32a02e901de20c407deeee298a21532f0b9d87c53aab0d"
+    },
+    "probe": {
+      "path": "/private/tmp/hoimin-stage-probe-c88d581/target/release/hoimin",
+      "sha256": "69a92e5bb42ec98394aaff420f94a72e3813cc105ff845c20d31ecc7f309214f"
+    }
+  },
+  "probe_build_command": "cargo build --release --locked --offline -p hoimin-cli --manifest-path /tmp/hoimin-stage-probe-c88d581/source/Cargo.toml --target-dir /tmp/hoimin-stage-probe-c88d581/target",
+  "probe_build_seconds": 38.54,
+  "probe_source": "git archive HEAD extracted to a temporary directory, then instrumentation.patch applied; original product sources and executable unchanged",
+  "measurement_command": "python3 measure.py --baseline /Users/hayao/RustroverProjects/hoimin/target/release/hoimin --probe /tmp/hoimin-stage-probe-c88d581/target/release/hoimin --output /tmp/hoimin-stage-probe-c88d581/measurements --repeats 7",
+  "measured_cli_runs": 140,
+  "discarded_cli_warmups": 20,
+  "measured_direct_controls": 62,
+  "discarded_direct_warmups": 6,
+  "fixture_preparation_plans": 10,
+  "original_working_tree": "previous baseline documentation changes only",
+  "probe_method": "Instant durations appended to a process-global mutex vector; one stderr dump after runtime.block_on returns, before telemetry shutdown. No per-event file writes. No asynchronous wait is replaced or reordered. Probe overhead and code layout effects remain in the observation.",
+  "execution_method": "No ps monitor and no time wrapper. perf_counter_ns around Popen and blocking wait with a SIGALRM process-group timeout (30s). stdout/stderr to files; metrics enabled on both binaries. One worker, identical saved plan per case, empty test commands, best-effort memory, max-copy-size256MiB/max-workspace-size512MiB/min-free-space10GiB. CLI run TMPDIR isolated and removed outside timing for every invocation. Warm filesystem cache; no builds/tests concurrent; other applications not isolated.",
+  "ordering": "one discarded warmup per binary/case; 7 seeded shuffled case rounds, within each pair baseline first on even rounds, probe first on odd rounds; direct controls 31 each after 3 warmups each in shuffled pairs",
+  "scope_limits": "Synthetic fixtures only. Python is 3.12.6. No pytest suite, dirty-output workload, multiple workers, cold cache, Windows/Linux, CPU or allocation profile. Direct controls inherit host environment/cwd, while Hoimin rewrites worker environment/cwd. Wait is elapsed time including child execution/scheduling, not CPU time. Cleanup metrics are integer ms. Raw archive includes warmups and plans.",
+  "artifact_sha256": {
+    "summary.json": "d361d557e626c153689548dd6c1c02eb147a7e669d2f8f2d26e0fee093bc0ccb",
+    "summary.csv": "74f95ef11f1faeab69326a451df60bf99609e4d5e6d48505dd66b7f5fc98910e",
+    "measure.py": "4c4b6c7dbbcc3c5a951afd27891d9b7bbf0cad51d4c8e7b266dabdfa523892e1",
+    "instrumentation.patch": "86e6bdd85d2de37e45861f04678e94e8c48c1a406b6435e345bfe9cb6a3df66b",
+    "measurements.json": "df10f356b1cafed90e12cbc63f313ba9253f7040c57e1344cef8b121ea8638c2",
+    "raw.tar.gz": "d34e34f83096fcfafe90ff09dae8be5399f12e00f82c0a05900bea27a23f53fa"
+  }
+}

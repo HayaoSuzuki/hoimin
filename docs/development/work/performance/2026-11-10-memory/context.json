@@ -1,0 +1,36 @@
+{
+  "observed_on": "2026-11-10",
+  "revision": "c88d581ce17ff52344a0a3399090eeaea3602f3f",
+  "binary_sha256": "de6452194b7e13029b32a02e901de20c407deeee298a21532f0b9d87c53aab0d",
+  "build": "cargo build --release --locked --offline -p hoimin-cli",
+  "environment": "macOS15.7.7 arm64, Rust1.99.1, Python3.12.6",
+  "runs": 36,
+  "cases": 12,
+  "warmups": 12,
+  "rounds": 3,
+  "seed": 20261110,
+  "command": "python3 measure.py /tmp/hoimin-memory-2026-11-10-release",
+  "rss_method": "unchanged release executable; wait4 kernel max RSS and libproc taskinfo/childpid sum sampled every 2ms plus API time; no ps subprocess. A sample traverses processes sequentially, so tree values are approximate sums, not atomic physical-memory peaks; shared pages can be counted repeatedly. The monitor parent is excluded. wait4 max RSS is saved as OS reported usage, not summed concurrent tree RSS. One discarded warmup per case, 3 shuffled measured rounds, seed20261110. Each CLI invocation has isolated TMPDIR. All output to files. No timing conclusions from monitored runs.",
+  "rss_api": "proc_pidinfo PROC_PIDTASKINFO=4; proc_taskinfo from macOS SDK sys/proc_info.h, 96bytes; proc_listchildpids returns PID count, not byte count. Smoke checked own RSS and a known sleeping child. wait4 usage.ru_maxrss is bytes on Darwin; child64m control shows this OS maximum can reflect a child, so do not label it parent-only RSS.",
+  "heap_command": "cargo test --release --locked --offline -p hoimin-cli --test workspace_stream_heap --test workspace_preflight_heap --test workspace_heap --test plan_source_heap --test source_index_heap -- --nocapture --test-threads=1",
+  "heap_result": "10 passed; 0 failed; independent allocator-window fixtures, not whole-process RSS",
+  "attempts_excluded": [
+    {
+      "directory": "/tmp/hoimin-memory-2026-11-10",
+      "reason": "API smoke check failed before measurements; corrected interpretation of proc_listchildpids return count"
+    },
+    {
+      "directory": "/tmp/hoimin-memory-2026-11-10-r2",
+      "reason": "successful preliminary36runs used cargo-test feature-unified binary50985e7d8c55cff5995b54bb7c3f0b89d38aa8196d48e5c3cbfb2cd33c6bf3c8; release rebuilt and all36observations rerun with the original de645219 binary"
+    }
+  ],
+  "limits": "No allocation call-stack profile, real pytest workload, cold cache, kernel page-cache accounting, or longer-running candidate counts beyond16000. Sum RSS can double-count shared pages. Samples sequential, 2ms sleep plus API work; no hard RSS cap in this custom monitor, 30s timeout, bounded fixtures. RSS measurement ran after heap test build/tests completed.",
+  "artifact_sha256": {
+    "summary.json": "3f64da9a25d1c98c4187665c4f5ed26c93a2ae653098375b95bba58ec1ef401e",
+    "summary.csv": "b76c77f1825a5f3beb09fd25c35a0498c78b2196c32049ac2966951d26b569b7",
+    "measure.py": "41ef86921181fe42d0d4bdd38e152cfaa40358d9c3c9f965c498f80a006dd4ae",
+    "measurements.json": "a7eb6b5cb57fe91c13da353d73d7f84a6d4a81d354dfd5238becb9aae78ac0cc",
+    "raw.tar.gz": "6770d9e55da308d14b1188723ec33ad2aae253840b4426b59c7a84090a70eaf2",
+    "heap-tests.log": "44416ece415dc8d04c41ae5878bf030310823a9b90d4aa4ec49f65d206996b77"
+  }
+}

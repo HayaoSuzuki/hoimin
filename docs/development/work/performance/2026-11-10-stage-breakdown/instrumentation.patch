@@ -1,0 +1,172 @@
+--- a/crates/hoimin-cli/src/lib.rs
++++ b/crates/hoimin-cli/src/lib.rs
+@@ -13,6 +13,7 @@
+ mod interrupt;
+ mod live_progress;
+ mod metrics;
++pub mod perf_probe;
+ mod metrics_destination;
+ pub mod plan;
+ mod portable_path;
+--- /dev/null
++++ b/crates/hoimin-cli/src/perf_probe.rs
+@@ -0,0 +1,18 @@
++//! Temporary measurement only; not part of the product source tree.
++use std::sync::Mutex;
++use std::time::Instant;
++static EVENTS: Mutex<Vec<(&'static str, u64)>> = Mutex::new(Vec::new());
++pub struct Probe { name: &'static str, started: Instant }
++impl Probe {
++    pub fn new(name: &'static str) -> Self { Self { name, started: Instant::now() } }
++}
++impl Drop for Probe {
++    fn drop(&mut self) {
++        let ns = self.started.elapsed().as_nanos() as u64;
++        EVENTS.lock().unwrap().push((self.name, ns));
++    }
++}
++pub fn flush() {
++    let events = EVENTS.lock().unwrap();
++    eprintln!("HOIMIN_PROBE {}", serde_json::to_string(&*events).unwrap());
++}
+--- a/crates/hoimin-cli/src/main.rs
++++ b/crates/hoimin-cli/src/main.rs
+@@ -10,6 +10,7 @@
+         .build()
+         .expect("build Tokio runtime");
+     let exit_code = runtime.block_on(hoimin_cli::run_from(std::env::args_os()));
++    hoimin_cli::perf_probe::flush();
+     telemetry::finish(exit_code);
+     drop(telemetry);
+     std::process::exit(exit_code);
+--- a/crates/hoimin-cli/src/process/mod.rs
++++ b/crates/hoimin-cli/src/process/mod.rs
+@@ -514,6 +514,8 @@
+     // This coordinates the complete child lifecycle; extracting stages would obscure cleanup ordering.
+     #[allow(clippy::too_many_lines)]
+     async fn run_owned(&self, request: ProcessRequest) -> Result<ProcessFinished, EffectFailed> {
++        let _probe_total = crate::perf_probe::Probe::new("process.total");
++        let probe_prepare = crate::perf_probe::Probe::new("process.prepare");
+         let ProcessRequest {
+             process,
+             cancellation,
+@@ -585,6 +587,7 @@
+                 )
+             })?;
+         let mut supervisor = BlockingOwner::new(supervisor);
++        drop(probe_prepare);
+         let started = Instant::now();
+         let deadline = tokio::time::Instant::now() + process.limits.timeout;
+         let start_guard = start_gate.as_ref().map(ProcessStartGate::begin_spawn);
+@@ -608,6 +611,7 @@
+         }
+         let mut active_process =
+             CompletionGuard::enter(&self.active_processes, &self.process_reap_failed);
++        let probe_spawn = crate::perf_probe::Probe::new("process.spawn");
+         let mut child = match command.spawn() {
+             Ok(child) => child,
+             Err(error) => {
+@@ -621,6 +625,7 @@
+                 ));
+             }
+         };
++        drop(probe_spawn);
+         if let Err(error) = supervisor.value_mut(id)?.attach(&child) {
+             let terminate_error = child.start_kill().err();
+             drop(spawn_guard);
+@@ -716,6 +721,7 @@
+             }
+         };
+ 
++        let probe_supervisor = crate::perf_probe::Probe::new("process.supervisor_finish");
+         if let Err(cleanup) = supervisor.finish(id).await {
+             process_reaped = false;
+             match &mut process_result {
+@@ -725,11 +731,13 @@
+                 Ok(_) => process_result = Err(cleanup),
+             }
+         }
++        drop(probe_supervisor);
+         if process_reaped {
+             active_process.complete();
+         }
+         drop(active_process);
+ 
++        let probe_output = crate::perf_probe::Probe::new("process.output_finish");
+         let output_outcome = await_output(
+             id,
+             stdout_task,
+@@ -738,6 +746,7 @@
+             tokio::time::Instant::now() + POST_TERMINATION_GRACE,
+         )
+         .await;
++        drop(probe_output);
+         if output_outcome.quiescent {
+             active_output_drain.complete();
+         }
+@@ -781,6 +790,7 @@
+     C: Future<Output = ()>,
+     D: Future<Output = ()>,
+ {
++    let _probe_wait = crate::perf_probe::Probe::new("process.wait");
+     tokio::select! {
+         biased;
+         () = cancellation => ProcessSelection::Cancelled,
+--- a/crates/hoimin-cli/src/workspace/mod.rs
++++ b/crates/hoimin-cli/src/workspace/mod.rs
+@@ -947,6 +947,13 @@
+     /// Runs with exclusive ownership; completion owns every surviving active or pending workspace.
+     /// The handler regains ownership only when it accepts the completion.
+     pub(crate) fn execute(self) -> WorkspaceTaskCompletion {
++        let name = match &self {
++            Self::Create { .. } => "workspace.create_worker",
++            Self::Apply { .. } => "workspace.apply",
++            Self::Reset { .. } => "workspace.reset",
++            Self::Verify { .. } => "workspace.verify_originals",
++        };
++        let _probe = crate::perf_probe::Probe::new(name);
+         match self {
+             Self::Create {
+                 request,
+--- a/crates/hoimin-cli/src/workspace/copy.rs
++++ b/crates/hoimin-cli/src/workspace/copy.rs
+@@ -441,6 +441,7 @@
+         limits: PreflightLimits,
+         validate: impl FnOnce(&Utf8Path, &WorkspaceManifest) -> Result<(), E>,
+     ) -> Result<Self, ValidatedPreflightError<E>> {
++        let _probe = crate::perf_probe::Probe::new("workspace.preflight");
+         if requested_workers == 0 {
+             return Err(WorkspaceError::ZeroWorkers.into());
+         }
+@@ -449,9 +450,11 @@
+         let original_root =
+             Utf8PathBuf::from_path_buf(canonical).map_err(|_| WorkspaceError::NonUtf8Path)?;
+         if limits.copy.is_some() || limits.owned.is_some() {
++            let _probe_inventory = crate::perf_probe::Probe::new("workspace.inventory");
+             let inventory_bytes = inventory_logical_bytes(&original_root, &options)?;
+             limits.check(inventory_bytes, requested_workers)?;
+         }
++        let probe_snapshot = crate::perf_probe::Probe::new("workspace.snapshot");
+         let (manifest, diagnostics, snapshot) = create_pending_disk_snapshot(
+             &original_root,
+             &options,
+@@ -459,7 +462,11 @@
+             limits,
+             managed_root.as_ref(),
+         )?;
++        drop(probe_snapshot);
++        let probe_validate = crate::perf_probe::Probe::new("workspace.preflight_validate");
+         validate(&original_root, &manifest).map_err(ValidatedPreflightError::Validation)?;
++        drop(probe_validate);
++        let probe_revalidate = crate::perf_probe::Probe::new("workspace.source_revalidation");
+         let (current, _) = build_manifest(&original_root, &options)?;
+         if !manifest.content_matches(&current) {
+             return Err(WorkspaceError::OriginalChanged {
+@@ -469,6 +476,7 @@
+             }
+             .into());
+         }
++        drop(probe_revalidate);
+         let aggregate_bytes = limits.check(manifest.logical_bytes(), requested_workers)?;
+         let snapshot = Arc::new(snapshot.finish());
+         Ok(Self {
