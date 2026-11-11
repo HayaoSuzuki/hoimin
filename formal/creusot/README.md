@@ -171,7 +171,7 @@ CPU-derived parallelism argument to Why3find. Both Why3 configurations include
 `running_provers_max = 2` and `memlimit = 2048`; the configuration used by
 cargo-creusot's WHY3CONFIG override includes exact Z3/CVC5 versions. Other solvers
 are neither installed nor selected. See the pinned upstream
-[cargo-creusot wrapper](https://github.com/creusot-rs/creusot/blob/65349025c67e69fcd7479f1f420fa5904f69bc27/cargo-creusot/src/why3find_wrapper.rs).
+[cargo-creusot wrapper](https://github.com/creusot-rs/creusot/blob/fd4d85b2c237ef93147e99f6a0c04acfc89a6a17/cargo-creusot/src/why3find_wrapper.rs).
 
 Why3find's `time` is a calibrated reference time. Its final attempts can be
 multiplied and its process monitor allows additional wall time. Therefore the
@@ -183,7 +183,7 @@ must preserve these limits, bound concurrent solvers to two and enforce the
 whole setup-plus-three-target job's 1800 seconds.
 Three targets run sequentially. This environment recipe does not claim a strict
 whole-environment RSS bound. See the pinned
-[runner](https://github.com/creusot-rs/why3find/blob/0f054b93c86ac7ba20bca7df5d1563a9a4434a30/src/runner.ml).
+[runner](https://github.com/creusot-rs/why3find/blob/89dd8721fb9de7fea5d00e58ebdabdc75a8235b8/src/runner.ml).
 
 Local timing uses an ARM64 Rancher Desktop engine with four CPUs and
 8,321,900,544 bytes RAM. `docker run --platform linux/amd64 ... uname -m` returned
@@ -254,7 +254,7 @@ observed image interpreter is Python 3.12.3.
 The verified package is `hoimin-budget-math`, the same package used by the
 application. Proof imports, logical models and contracts use `cfg(creusot)`;
 production types and function bodies are common to stable Rust and Creusot.
-`creusot-std = "=0.14.0"` is a target-cfg dependency, so normal builds and
+`creusot-std = "=0.15.0"` is a target-cfg dependency, so normal builds and
 all-features builds do not compile it. The root and fuzz lockfiles still record
 its resolved source checksums. Its upstream license declarations remain part of
 the dependency audit even though it is excluded from ordinary target builds.
@@ -347,3 +347,16 @@ each produced their corresponding unproved goal; omitting one projection field
 from structural equality also failed its equality goal. All mutation sources
 were restored before these final three-target runs. Stable Rust's all-features
 workspace suite passed 2,916 tests with 33 ignored and no failures; Clippy passed.
+
+## Creusot 0.15.0 migration validation
+
+Creusot and `creusot-std` are pinned to 0.15.0 together with the upstream
+Why3find revision `89dd8721fb9de7fea5d00e58ebdabdc75a8235b8` and Z3 5.3.2.
+The Rust nightly, Why3 and CVC5 pins are unchanged. Both architecture manifests
+record the updated archive checksums and exact Z3 version output.
+
+Local validation used the ARM64 image, reusing the previously pinned Rust and
+OCaml installation and rebuilding the updated tools. Installation checks and
+the production runner passed: all three target platforms generated and proved
+25 files and 59 goals each with solver caches disabled. This does not establish
+a clean image build or an AMD64 execution result; CI must verify those.

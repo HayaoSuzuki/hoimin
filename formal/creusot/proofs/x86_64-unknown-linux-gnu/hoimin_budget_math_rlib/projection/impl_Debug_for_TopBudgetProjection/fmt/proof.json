@@ -3,10 +3,10 @@
   "proofs": {
     "Coma": {
       "vc_debug_struct_fields_finish": {
-        "prover": "z3@5.1.0",
+        "prover": "z3@5.3.2",
         "time": 0.002
       },
-      "vc_fmt_TopBudgetProjection": { "prover": "z3@5.1.0", "time": 0.006 }
+      "vc_fmt_TopBudgetProjection": { "prover": "z3@5.3.2", "time": 0.006 }
     }
   }
 }

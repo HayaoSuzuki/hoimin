@@ -18,9 +18,9 @@
   },
   "artifacts": {
     "creusot": {
-      "url": "https://codeload.github.com/creusot-rs/creusot/tar.gz/65349025c67e69fcd7479f1f420fa5904f69bc27",
-      "sha256": "e68f15e09fbbddfc7d90edc2ca43ca69127e515c460b3eb39e01f7f8a6d8bb17",
-      "revision": "65349025c67e69fcd7479f1f420fa5904f69bc27"
+      "url": "https://codeload.github.com/creusot-rs/creusot/tar.gz/fd4d85b2c237ef93147e99f6a0c04acfc89a6a17",
+      "sha256": "bc57486e87231e87daec0b0f450487c10ce23ee688a421b4951303e7af27c54e",
+      "revision": "fd4d85b2c237ef93147e99f6a0c04acfc89a6a17"
     },
     "why3": {
       "url": "https://gitlab.inria.fr/why3/why3/-/archive/05bf4ddf55cb3042f34c3bc0ed3aff56a226978a/why3-05bf4ddf55cb3042f34c3bc0ed3aff56a226978a.tar.gz",
@@ -28,9 +28,9 @@
       "revision": "05bf4ddf55cb3042f34c3bc0ed3aff56a226978a"
     },
     "why3find": {
-      "url": "https://codeload.github.com/creusot-rs/why3find/tar.gz/0f054b93c86ac7ba20bca7df5d1563a9a4434a30",
-      "sha256": "7da871320d7c0dcf058dbb701f6fcff46d550ed4297b4a8c2c89f707ba39e1d9",
-      "revision": "0f054b93c86ac7ba20bca7df5d1563a9a4434a30"
+      "url": "https://codeload.github.com/creusot-rs/why3find/tar.gz/89dd8721fb9de7fea5d00e58ebdabdc75a8235b8",
+      "sha256": "0f2734d01f2fc96969d019b30b8a616aeb9eff14f04eb2aa5a804a395ab28e68",
+      "revision": "89dd8721fb9de7fea5d00e58ebdabdc75a8235b8"
     },
     "opam": {
       "url": "https://codeload.github.com/ocaml/opam-repository/tar.gz/c9d86fa5bb8024f7acb88e1096c3a7f1f9dd22a9",
@@ -54,8 +54,8 @@
       "sha256": "2fe83fc7a326584e458937aabbdd69fe1b5444dd2085b5247608e9dcec2a0537"
     },
     "z3": {
-      "url": "https://github.com/Z3Prover/z3/releases/download/z3-5.1.0/z3-5.1.0-arm64-glibc-2.38.zip",
-      "sha256": "2832cfd43c6862fbaf78834b5f1e35d031b4a87e85456b696c1c6f609cd5609e"
+      "url": "https://github.com/Z3Prover/z3/releases/download/z3-5.3.2/z3-5.3.2-arm64-glibc-2.38.zip",
+      "sha256": "30b6a718a6cfe1b2db056038cc32eda5410f6d02e5937622b5238645347f59d5"
     },
     "cvc5": {
       "url": "https://github.com/cvc5/cvc5/releases/download/cvc5-1.4.1/cvc5-Linux-arm64-static-gpl.zip",
@@ -110,7 +110,7 @@
         "creusot",
         "version"
       ],
-      "version": "cargo-creusot 0.14.0"
+      "version": "cargo-creusot 0.15.0"
     },
     "ocamlc": {
       "path": "/opt/creusot/opam-switch/_opam/bin/ocamlc",
@@ -138,7 +138,7 @@
       "args": [
         "--version"
       ],
-      "version": "Z3 version 5.1.0 - 64 bit"
+      "version": "Z3 version 5.3.2 - 64 bit - build hashcode b411c90217766c924e6ea3d0b51f452a89fd8fc2"
     },
     "cvc5": {
       "path": "/opt/creusot/data/bin/cvc5",
@@ -165,15 +165,15 @@
   "project_config": "/opt/creusot/data/why3find.json",
   "files": {
     "/opt/creusot/config/creusot/why3.conf": "5c61d2bca9fc9fc010d038c3437081223b447f3ce6e1c71f8214fc164e93ca68",
-    "/opt/creusot/data/creusot_why3.conf": "3759b4e283e47cda979f3d949107b8e49cf7a3a046595b5c63dd623465eea944",
-    "/opt/creusot/data/why3find.json": "0b37a82c9f09cb028361eab6baba2be0dbf64a3e1e32b2b4a079133ffb9f6cb0"
+    "/opt/creusot/data/creusot_why3.conf": "62cd182177452e881c517c0e1f5ce034e4c561d2de66dd1886f1c22986975ff3",
+    "/opt/creusot/data/why3find.json": "22619bf11c1d21bbbe99e1af008c1ae3f9cd435a405739ee8ad89b0c0885cd69"
   },
   "receipt": "/opt/creusot/receipt.json",
   "sources": [
-    "https://github.com/creusot-rs/creusot/blob/65349025c67e69fcd7479f1f420fa5904f69bc27/creusot-install/src/main.rs",
-    "https://github.com/creusot-rs/creusot/blob/65349025c67e69fcd7479f1f420fa5904f69bc27/creusot-setup/src/tools_versions_urls.rs",
+    "https://github.com/creusot-rs/creusot/blob/fd4d85b2c237ef93147e99f6a0c04acfc89a6a17/creusot-install/src/main.rs",
+    "https://github.com/creusot-rs/creusot/blob/fd4d85b2c237ef93147e99f6a0c04acfc89a6a17/creusot-setup/src/tools_versions_urls.rs",
     "https://static.rust-lang.org/dist/2026-08-03/channel-rust-nightly.toml",
-    "https://github.com/creusot-rs/why3find/blob/0f054b93c86ac7ba20bca7df5d1563a9a4434a30/src/runner.ml"
+    "https://github.com/creusot-rs/why3find/blob/89dd8721fb9de7fea5d00e58ebdabdc75a8235b8/src/runner.ml"
   ],
   "bootstrap_ca": {
     "url": "https://curl.se/ca/cacert-2025-09-09.pem",

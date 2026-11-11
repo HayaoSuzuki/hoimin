@@ -2,10 +2,10 @@
   "profile": [],
   "proofs": {
     "Coma": {
-      "vc_debug_tuple_field1_finish": { "prover": "z3@5.1.0", "time": 0.004 },
-      "vc_elim_Fixed": { "prover": "z3@5.1.0", "time": 0.004 },
-      "vc_fmt_MutantTimeout": { "prover": "z3@5.1.0", "time": 0.006 },
-      "vc_write_str": { "prover": "z3@5.1.0", "time": 0.003 }
+      "vc_debug_tuple_field1_finish": { "prover": "z3@5.3.2", "time": 0.004 },
+      "vc_elim_Fixed": { "prover": "z3@5.3.2", "time": 0.004 },
+      "vc_fmt_MutantTimeout": { "prover": "z3@5.3.2", "time": 0.006 },
+      "vc_write_str": { "prover": "z3@5.3.2", "time": 0.003 }
     }
   }
 }

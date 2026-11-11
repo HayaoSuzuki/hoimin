@@ -2,7 +2,7 @@
   "profile": [],
   "proofs": {
     "Coma": {
-      "vc_clone_NonZeroDuration": { "prover": "z3@5.1.0", "time": 0.003 }
+      "vc_clone_NonZeroDuration": { "prover": "z3@5.3.2", "time": 0.003 }
     }
   }
 }

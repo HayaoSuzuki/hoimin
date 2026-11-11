@@ -2,8 +2,8 @@
   "profile": [],
   "proofs": {
     "Coma": {
-      "vc_eq_Duration": { "prover": "z3@5.1.0", "time": 0.004 },
-      "vc_eq_NonZeroDuration": { "prover": "z3@5.1.0", "time": 0.005 }
+      "vc_eq_Duration": { "prover": "z3@5.3.2", "time": 0.004 },
+      "vc_eq_NonZeroDuration": { "prover": "z3@5.3.2", "time": 0.005 }
     }
   }
 }

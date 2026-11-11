@@ -6,7 +6,7 @@ cd smoke_crate
 python3 - <<'PY'
 from pathlib import Path
 p=Path('Cargo.toml')
-p.write_text(p.read_text().replace('creusot-std = "0.14.0"', 'creusot-std = { path = "/opt/creusot/src/creusot/creusot-65349025c67e69fcd7479f1f420fa5904f69bc27/creusot-std" }'))
+p.write_text(p.read_text().replace('creusot-std = "0.15.0"', 'creusot-std = { path = "/opt/creusot/src/creusot/creusot-fd4d85b2c237ef93147e99f6a0c04acfc89a6a17/creusot-std" }'))
 PY
 cp /opt/creusot/data/why3find.json why3find.json
 python3 /recipe/tools/creusot_environment.py check --manifest /recipe/formal/creusot/toolchain.json --project-root "$PWD"

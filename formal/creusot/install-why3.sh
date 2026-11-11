@@ -8,7 +8,7 @@ m=json.loads(pathlib.Path('formal/creusot/toolchain.json').read_text())
 repo=pathlib.Path('/opt/creusot/opam-pins');repo.mkdir()
 (repo/'repo').write_text('opam-version: "2.0"\n')
 base=next(pathlib.Path('/opt/creusot/src/opam').iterdir())
-for name,version in [('why3','git-05bf4ddf'),('why3find','git-0f054b93')]:
+for name,version in [('why3','git-05bf4ddf'),('why3find','git-89dd8721')]:
  if name=='why3':
   recipe=(base/'packages/why3/why3.1.8.2/opam').read_text().split('\nurl {')[0]
   recipe=recipe.replace('["./autogen.sh"] {dev}', '["./autogen.sh"]')
@@ -27,4 +27,4 @@ for name,version in [('why3','git-05bf4ddf'),('why3find','git-0f054b93')]:
  (package/'opam').write_text(recipe)
 PY
 opam repository add creusot-pins /opt/creusot/opam-pins --yes
-opam install why3.git-05bf4ddf why3find.git-0f054b93 ocamlgraph camlzip zarith --yes --jobs=2
+opam install why3.git-05bf4ddf why3find.git-89dd8721 ocamlgraph camlzip zarith --yes --jobs=2
