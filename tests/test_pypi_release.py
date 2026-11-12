@@ -246,6 +246,14 @@ WHEEL_LICENSE = "hoimin-1.2.3.dist-info/licenses/LICENSE"
         ),
         pytest.param(lambda files: delitem(files, WHEEL_LICENSE), id="missing-license"),
         pytest.param(
+            lambda files: setitem(
+                files,
+                WHEEL_METADATA,
+                files[WHEEL_METADATA].replace(b"License-File: LICENSE\n", b""),
+            ),
+            id="missing-license-declaration",
+        ),
+        pytest.param(
             lambda files: setitem(files, WHEEL_LICENSE, b"different terms"),
             id="wrong-license-text",
         ),

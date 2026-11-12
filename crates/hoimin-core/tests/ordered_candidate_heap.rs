@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 //! Ordered waiting queues must not retain selected candidate bodies.
 //! Exercise public transitions with candidate allocation inside the meter window;
 //! only external setup completions are supplied by this driver.

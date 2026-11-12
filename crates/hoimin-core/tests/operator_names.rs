@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use hoimin_core::{MutationOperator, MutationOperatorSelection};
 
 // Fixed wire-name and declaration-order contract at v0.5.0. This fixture is

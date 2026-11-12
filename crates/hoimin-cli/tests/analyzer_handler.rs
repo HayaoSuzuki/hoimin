@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use camino::Utf8PathBuf;
 use hoimin_cli::analyzer::{
     AnalyzerHandler, CandidateCursor, CandidateStore, StoreError, discover_targets,

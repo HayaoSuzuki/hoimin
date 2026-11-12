@@ -10,6 +10,7 @@ import tomllib
 from fnmatch import fnmatchcase
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from typing import TypedDict, TypeGuard
 
 import pytest
@@ -2649,3 +2650,79 @@ def test_packaged_macos_archive_runs_on_older_supported_os() -> None:
     runner = macos["os"]
 
     assert runner == "macos-15"
+
+
+@pytest.mark.parametrize("git_available", [True, False])
+@pytest.mark.parametrize("bundled_bash", [True, False])
+def test_windows_bash_resolution_prefers_git_installation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    git_available: bool,
+    bundled_bash: bool,
+) -> None:
+    git = tmp_path / "git" / "cmd" / "git.exe"
+    git.parent.mkdir(parents=True)
+    bash = tmp_path / "git" / "bin" / "bash.exe"
+    if bundled_bash:
+        bash.parent.mkdir()
+        bash.touch()
+    monkeypatch.setitem(globals(), "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(
+        shutil,
+        "which",
+        lambda name: str(git) if name == "git" and git_available else "fallback-bash",
+    )
+    # An absent git executable must fall through to the independently found bash.
+    if not git_available:
+        monkeypatch.setattr(
+            shutil, "which", lambda name: None if name == "git" else "fallback-bash"
+        )
+    assert bash_executable() == (
+        str(bash) if git_available and bundled_bash else "fallback-bash"
+    )
+
+
+def test_windows_bash_resolution_requires_available_shell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(globals(), "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(shutil, "which", lambda _: None)
+    with pytest.raises(AssertionError, match="Git Bash is required"):
+        bash_executable()
+
+
+@pytest.mark.parametrize("drive", ["C:", ""])
+def test_windows_git_bash_paths_require_drive_and_normalize_separators(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, drive: str
+) -> None:
+    monkeypatch.setitem(
+        globals(),
+        "os",
+        SimpleNamespace(
+            name="nt",
+            sep="\\",
+            path=SimpleNamespace(splitdrive=lambda _: (drive, r"\work\project")),
+        ),
+    )
+    if drive:
+        assert git_bash_path(tmp_path) == "/c/work/project"
+    else:
+        with pytest.raises(AssertionError, match="must be on a drive"):
+            git_bash_path(tmp_path)
+
+
+def test_missing_lean_invocation_record_means_no_calls(tmp_path: Path) -> None:
+    assert lean_calls(tmp_path / "absent") == []
+
+
+def test_multiline_job_condition_can_end_at_end_of_workflow() -> None:
+    workflow = (
+        "jobs:\n"
+        "  example:\n"
+        "    if: >-\n"
+        "      github.event_name == 'push' ||\n"
+        "\n"
+        '      github.event_name == "workflow_dispatch"\n'
+    )
+    assert job_event_conditions(workflow) == {"push", "workflow_dispatch"}

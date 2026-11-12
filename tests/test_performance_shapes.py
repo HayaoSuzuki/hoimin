@@ -781,3 +781,349 @@ def test_execution_reader_collects_finished_events_and_final_summary(
 
     assert result.mutants == [events[2]]
     assert result.summary == events[3]
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ("schema", "unsupported schema"),
+        ("model", "missing fixture/model"),
+        ("dimensions", "all eight dimensions"),
+        ("duplicate-gate", "duplicate gate"),
+        ("gate-status", "unknown gate status"),
+        ("gate-args", "exact non-ignored"),
+    ],
+)
+def test_registry_rejects_invalid_contracts(change: str, message: str) -> None:
+    registry = shapes.load_registry(ROOT / "docs/development/performance/shapes.json")
+    if change == "schema":
+        registry["schema_version"] = 2
+    elif change == "model":
+        registry["shapes"][0]["growth_model"] = ""
+    elif change == "dimensions":
+        registry["shapes"] = []
+    elif change == "duplicate-gate":
+        registry["gates"].append(deepcopy(registry["gates"][0]))
+    elif change == "gate-status":
+        registry["gates"][0]["status"] = "unknown"
+    else:
+        registry["gates"][0]["status"] = "active"
+        registry["gates"][0]["args"] = []
+    with pytest.raises(ValueError, match=message):
+        shapes.validate_registry(registry)
+
+
+@pytest.mark.parametrize(
+    "events",
+    [
+        [{"kind": "run_started"}, {"kind": "run_started"}],
+        [{"kind": "run_started"}, {"kind": "unknown"}],
+    ],
+)
+def test_execution_rejects_duplicate_start_and_unknown_event(
+    tmp_path: Path, events: list[dict[str, str]]
+) -> None:
+    path = tmp_path / "events.jsonl"
+    path.write_text("\n".join(map(json.dumps, events)))
+    with pytest.raises(shapes.SemanticMismatch, match=r"duplicate|unknown"):
+        shapes.load_execution_output(path)
+
+
+def test_output_modes_require_corresponding_document_types() -> None:
+    output = shapes.ExecutionOutput(
+        [], {"kind": "run_finished", "complete": True, "exit_code": 0}
+    )
+    with pytest.raises(shapes.SemanticMismatch, match="expected a plan document"):
+        shapes.validate_output(
+            output, {"mode": "plan", "expected_candidates": 0, "truncated": False}
+        )
+    with pytest.raises(shapes.SemanticMismatch, match="expected execution events"):
+        shapes.validate_output(
+            {}, {"mode": "run", "expected_candidates": 0, "truncated": False}
+        )
+
+
+def test_comparison_requires_both_binaries() -> None:
+    with pytest.raises(ValueError, match="missing baseline or candidate"):
+        shapes.summarize_comparisons(
+            [
+                {
+                    "shape": "example",
+                    "size": 1,
+                    "label": "baseline",
+                    "elapsed_ms": 1,
+                    "sampled_tree_rss_bytes": None,
+                    "output_document_bytes": 1,
+                }
+            ]
+        )
+
+
+@pytest.mark.parametrize("mode", ["plan", "run", "verify"])
+def test_measurement_records_valid_guarded_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    root = tmp_path / "project"
+    fixture = shapes.make_fixture(
+        {"plan": "ast", "run": "workspace-workers", "verify": "verify-multifile"}[mode],
+        1,
+        root,
+    )
+    artifact = tmp_path / "artifact"
+    artifact.mkdir()
+    events = [
+        {"kind": "run_started"},
+        *[{"kind": "mutant_finished"}] * fixture["expected_candidates"],
+        {"kind": "run_finished", "complete": True, "exit_code": 0},
+    ]
+
+    def run(
+        command: list[str], *, stdout: BinaryIO, **_kwargs: object
+    ) -> subprocess.CompletedProcess[bytes]:
+        if "--stats" in command:
+            Path(command[command.index("--stats") + 1]).write_text(
+                json.dumps(
+                    {"reason": "child_exit", "peak_rss_kib": 12, "elapsed_ms": 10}
+                )
+            )
+            value = (
+                json.dumps(
+                    {
+                        "candidates": [{}] * fixture["expected_candidates"],
+                        "truncated": False,
+                    }
+                )
+                if mode == "plan"
+                else "\n".join(map(json.dumps, events))
+            )
+        else:
+            value = json.dumps(
+                {"candidates": [{}] * fixture["plan_count"], "truncated": False}
+            )
+        stdout.write(value.encode())
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(shapes.subprocess, "run", run)
+    result = shapes.measure_once(Path("hoimin"), fixture, root, artifact, 25)
+    assert result["candidates"] == fixture["expected_candidates"]
+    assert result["sampled_tree_rss_bytes"] == 12 * 1024
+    assert result["elapsed_ms"] == 10
+    assert result["output_document_bytes"] > 0
+
+
+def test_main_measure_writes_medians_comparisons_and_growth(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = shapes.load_registry(ROOT / "docs/development/performance/shapes.json")
+    registry["shapes"] = registry["shapes"][:2]
+    row = registry["shapes"][0]
+    binary = tmp_path / "binary"
+    binary.write_bytes(b"binary")
+    output = tmp_path / "output"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "shapes",
+            "measure",
+            "--output",
+            str(output),
+            "--baseline",
+            str(binary),
+            "--candidate",
+            str(binary),
+            "--shape",
+            row["fixture"],
+        ],
+    )
+    monkeypatch.setattr(shapes, "load_registry", lambda _: registry)
+    monkeypatch.setattr(shapes, "tool_version", lambda _: "rustc test")
+    monkeypatch.setattr(
+        shapes,
+        "measure_once",
+        lambda *_: {
+            "elapsed_ms": 10,
+            "sampled_tree_rss_bytes": None,
+            "output_document_bytes": 20,
+            "candidates": 1,
+            "truncated": False,
+            "argv": [],
+            "exit_code": 0,
+            "sample_ms": 25,
+        },
+    )
+    assert shapes.main() == 0
+    report = json.loads((output / "result.json").read_text())
+    assert report["status"] == "passed"
+    assert len(report["runs"]) == 18
+    assert len(report["medians"]) == 6
+    assert len(report["comparisons"]) == 3
+    assert report["growth"]
+
+
+@pytest.mark.parametrize("mode", ["gate", "measure"])
+def test_main_requires_output(mode: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "argv", ["shapes", mode])
+    with pytest.raises(SystemExit) as error:
+        shapes.main()
+    assert error.value.code == 2
+
+
+def test_nonobject_shape_is_invalid() -> None:
+    assert not shapes.is_shape(None)
+
+
+@pytest.mark.parametrize("mode", ["gate", "measure"])
+def test_main_records_gate_success_or_missing_binary_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    output = tmp_path / "output"
+    monkeypatch.setattr(sys, "argv", ["shapes", mode, "--output", str(output)])
+    monkeypatch.setattr(shapes, "tool_version", lambda _: "rustc test")
+    monkeypatch.setattr(shapes, "run_gate", lambda *_: [])
+    assert shapes.main() == (0 if mode == "gate" else 1)
+    report = json.loads((output / "result.json").read_text())
+    assert report["status"] == ("passed" if mode == "gate" else "infrastructure-error")
+
+
+def test_main_records_semantic_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        sys, "argv", ["shapes", "gate", "--output", str(tmp_path / "output")]
+    )
+    monkeypatch.setattr(shapes, "tool_version", lambda _: "rustc test")
+
+    def mismatch(*_args: object) -> Never:
+        message = "wrong candidate count"
+        raise shapes.SemanticMismatch(message)
+
+    monkeypatch.setattr(shapes, "run_gate", mismatch)
+    assert shapes.main() == 1
+    report = json.loads((tmp_path / "output/result.json").read_text())
+    assert report["status"] == "mismatch"
+    assert report["error"] == "wrong candidate count"
+
+
+def test_main_check_validates_registry(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["shapes", "check"])
+    assert shapes.main() == 0
+    assert "validated" in capsys.readouterr().out
+
+
+def test_main_rejects_out_of_bounds_sampling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["shapes", "measure", "--output", str(tmp_path / "output"), "--sample-ms", "1"],
+    )
+    with pytest.raises(SystemExit) as error:
+        shapes.main()
+    assert error.value.code == 2
+    assert not (tmp_path / "output").exists()
+
+
+def test_gate_runner_records_pending_and_executed_tests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry: shapes.GateRegistry = {
+        "gates": [
+            {
+                "id": "pending",
+                "status": "pending",
+                "issue": "https://example.test/issue",
+            },
+            {
+                "id": "active",
+                "status": "active",
+                "args": ["test", "example", "--", "--exact"],
+            },
+        ]
+    }
+
+    def run(
+        command: list[str], *, stdout: TextIO, **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        stdout.write(
+            "running 1 test\ntest example ... ok\n"
+            "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured\n"
+        )
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(shapes.subprocess, "run", run)
+    result = shapes.run_gate(registry, tmp_path)
+    assert result[0]["status"] == "pending"
+    assert result[1]["tests"] == 1
+
+
+def test_gate_runner_reports_failed_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    registry: shapes.GateRegistry = {
+        "gates": [
+            {
+                "id": "failed",
+                "status": "active",
+                "args": ["test", "example", "--", "--exact"],
+            }
+        ]
+    }
+
+    def run(
+        command: list[str], *, stdout: TextIO, **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        stdout.write("compiler failure")
+        return subprocess.CompletedProcess(command, 1)
+
+    monkeypatch.setattr(shapes.subprocess, "run", run)
+    with pytest.raises(ValueError, match="gate failed"):
+        shapes.run_gate(registry, tmp_path)
+    assert "compiler failure" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("damage", ["plan-failure", "exit", "summary-exit"])
+def test_measurement_rejects_failed_or_inconsistent_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, damage: str
+) -> None:
+    root = tmp_path / "project"
+    fixture = shapes.make_fixture(
+        "verify-multifile" if damage == "plan-failure" else "workspace-workers", 1, root
+    )
+    artifact = tmp_path / "artifact"
+    artifact.mkdir()
+
+    def run(
+        command: list[str], *, stdout: BinaryIO, **_kwargs: object
+    ) -> subprocess.CompletedProcess[bytes]:
+        if damage == "plan-failure":
+            return subprocess.CompletedProcess(command, 1)
+        Path(command[command.index("--stats") + 1]).write_text(
+            json.dumps({"reason": "child_exit", "peak_rss_kib": 12, "elapsed_ms": 10})
+        )
+        events = [
+            {"kind": "run_started"},
+            {"kind": "run_finished", "complete": True, "exit_code": 1},
+        ]
+        stdout.write("\n".join(map(json.dumps, events)).encode())
+        return subprocess.CompletedProcess(command, 1 if damage == "exit" else 0)
+
+    monkeypatch.setattr(shapes.subprocess, "run", run)
+    with pytest.raises(ValueError, match=r"plan failed|CLI exit|summary exit code"):
+        shapes.measure_once(Path("hoimin"), fixture, root, artifact, 25)
+
+
+def test_registry_accepts_tracked_pending_gate() -> None:
+    registry = shapes.load_registry(ROOT / "docs/development/performance/shapes.json")
+    registry["gates"].append(
+        {
+            "id": "tracked",
+            "metric": "operations",
+            "status": "pending",
+            "issue": "https://github.com/tokyogas-tech/hoimin/issues/123",
+        }
+    )
+    assert shapes.validate_registry(registry) is registry

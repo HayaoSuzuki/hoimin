@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+from tools import creusot_environment
+
 SCRIPT = Path(__file__).resolve().parents[1] / "tools/creusot_environment.py"
 NAMES = (
     "rustc",
@@ -358,3 +360,65 @@ def test_rejects_path_selecting_different_executable(environment: Path) -> None:
 
     assert result.returncode != 0
     assert "PATH" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("environment", {}),
+        ("environment", {"HOME": 1}),
+        ("files", {"config": "xyz"}),
+        ("project_config", "relative.json"),
+    ],
+)
+def test_rejects_invalid_configuration_selection(
+    environment: Path, key: str, value: object
+) -> None:
+    manifest = json.loads(environment.read_text())
+    manifest[key] = value
+    environment.write_text(json.dumps(manifest))
+    result = check(environment)
+    assert result.returncode == 1
+    assert "manifest" in result.stderr
+
+
+@pytest.mark.parametrize("hashes", [None, {}, {"missing": "invalid"}])
+def test_rejects_invalid_receipt_hashes(environment: Path, hashes: object) -> None:
+    receipt_path = environment.parent / "receipt.json"
+    receipt = json.loads(receipt_path.read_text())
+    receipt["files"] = hashes
+    receipt_path.write_text(json.dumps(receipt))
+    result = check(environment)
+    assert result.returncode == 1
+    assert "hash" in result.stderr
+
+
+def test_rejects_nonexecutable_tool(environment: Path) -> None:
+    (environment.parent / "z3").chmod(0o644)
+    result = check(environment)
+    assert result.returncode == 1
+    assert "missing executable z3" in result.stderr
+
+
+def test_installation_check_rejects_project_selection(environment: Path) -> None:
+    result = subprocess.run(  # noqa: S603 -- Fixed Python interpreter and script.
+        [
+            sys.executable,
+            str(SCRIPT),
+            "check-installation",
+            "--manifest",
+            str(environment),
+            "--project-root",
+            str(environment.parent),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "does not accept --project-root" in result.stderr
+
+
+def test_module_import_exposes_preflight_api() -> None:
+
+    assert creusot_environment.valid_hash("a" * 64)

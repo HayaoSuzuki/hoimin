@@ -466,3 +466,33 @@ def test_child_environment_overlay_does_not_change_parent(
     assert (tmp_path / "child-env.log").read_text().strip() == "child"
     assert os.environ["HOIMIN_FUZZ_OVERLAY"] == "parent"
     assert report["stages"][0]["environment"] == {"HOIMIN_FUZZ_OVERLAY": "child"}
+
+
+def test_successful_campaign_cli_writes_success_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def campaign(campaign: ci_fuzz.Campaign, *, seconds_per_target: int | None) -> None:
+        assert seconds_per_target == 1
+        campaign.completed_targets.append("completed-fixture")
+
+    monkeypatch.setattr(ci_fuzz, "run_campaign", campaign)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "ci-fuzz",
+            "--deadline",
+            str(int(time.time()) + 60),
+            "--report",
+            str(tmp_path),
+            "--seed",
+            "7",
+            "--seconds-per-target",
+            "1",
+        ],
+    )
+    assert ci_fuzz.main() == 0
+    report = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
+    assert report["status"] == "success"
+    assert report["error"] is None
+    assert report["completed_targets"] == ["completed-fixture"]

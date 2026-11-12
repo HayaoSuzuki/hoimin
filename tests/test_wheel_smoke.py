@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import re
@@ -236,6 +237,7 @@ def test_compatibility_cases(
 
 def test_selects_the_expected_semantic_version() -> None:
     wheels = [
+        Path("invalid.whl"),
         Path("hoimin-0.9.0-cp314-cp314-manylinux_2_17_x86_64.whl"),
         Path("hoimin-0.10.0-cp314-cp314-manylinux_2_17_x86_64.whl"),
         Path("hoimin-0.10.0-cp314-cp314-win_amd64.whl"),
@@ -781,10 +783,21 @@ def test_distribution_supports_only_python_314_and_315(
     assert "Programming Language :: Python :: 3.15" in project["classifiers"]
 
 
+@pytest.mark.parametrize("write_report", [False, True])
 def test_distribution_smoke_uses_the_running_python(
-    tmp_path: Path, mocker: MockerFixture
+    tmp_path: Path,
+    mocker: MockerFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    write_report: bool,
 ) -> None:
     wheel = tmp_path / "hoimin.whl"
+    wheel.write_bytes(b"wheel contents")
+    report = tmp_path / "report.json"
+    if write_report:
+        monkeypatch.setenv("HOIMIN_SMOKE_REPORT", str(report))
+    else:
+        monkeypatch.delenv("HOIMIN_SMOKE_REPORT", raising=False)
     mocker.patch.object(wheel_smoke, "wheel_path", return_value=wheel)
     mocker.patch.object(
         wheel_smoke, "wheel_metadata", return_value=wheel_smoke.EXPECTED_WHEEL_METADATA
@@ -798,6 +811,11 @@ def test_distribution_smoke_uses_the_running_python(
     observed_result = main()
 
     assert observed_result == 0
+    assert report.exists() is write_report
+    if write_report:
+        evidence = json.loads(report.read_text(encoding="utf-8"))
+        assert evidence["wheel"] == wheel.name
+        assert evidence["sha256"] == hashlib.sha256(wheel.read_bytes()).hexdigest()
     assert calls.call_args_list[0].args[0] == [
         "uvx",
         "--python",

@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 //! The finite oracle's escaped-glob semantics are specific to Unix.
 
 #![cfg(unix)]

@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use camino::Utf8Path;
 use hoimin_cli::analyzer::discover_targets;
 use hoimin_core::{

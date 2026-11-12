@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 //! Lean generates expected order; this adapter only maps public manifest IDs
 //! to file/line identities and observes public plan/verify dry-run behavior.
 

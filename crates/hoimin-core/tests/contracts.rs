@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use std::cell::Cell;
 
 use hoimin_core::{ContractInvariant, contract_ensure, contract_require};

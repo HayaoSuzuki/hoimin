@@ -142,9 +142,11 @@ impl MutationFile {
                 path: path.to_owned(),
             });
         }
-        let capacity = usize::try_from(observed_size).map_err(|error| {
-            WorkspaceError::io("read mutation target", path, io::Error::other(error))
-        })?;
+        // Every u64 fits usize on 64-bit targets; retain instrumentation on 32-bit targets.
+        let capacity = usize::try_from(observed_size).map_err(
+            #[cfg_attr(all(coverage_nightly, target_pointer_width = "64"), coverage(off))]
+            |error| WorkspaceError::io("read mutation target", path, io::Error::other(error)),
+        )?;
         contents.try_reserve_exact(capacity).map_err(|error| {
             WorkspaceError::io("read mutation target", path, io::Error::other(error))
         })?;
@@ -1525,8 +1527,20 @@ mod tests {
                         outside_permissions: vec![],
                     };
                 }
+                // This is the test's failure diagnostic, not a successful race outcome.
                 #[cfg(not(windows))]
-                panic!("rename of opened parent failed unexpectedly: {error}");
+                {
+                    #[cfg(coverage_nightly)]
+                    {
+                        (#[coverage(off)]
+                        || -> ! { panic!("rename of opened parent failed unexpectedly: {error}") })(
+                        )
+                    }
+                    #[cfg(not(coverage_nightly))]
+                    {
+                        panic!("rename of opened parent failed unexpectedly: {error}")
+                    }
+                }
             }
             fs::create_dir(worker.join("swap")).unwrap();
             let outside = worker.join("swap/target");
@@ -2334,3 +2348,7 @@ mod tests {
         assert_eq!(fs::read(target).unwrap(), b"replacement");
     }
 }
+
+#[cfg(test)]
+#[path = "root_coverage_tests.rs"]
+mod coverage_tests;

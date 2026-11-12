@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 //! Public selectors must preserve analyzer membership, identities and truncation.
 use std::path::Path;
 use std::time::Duration;

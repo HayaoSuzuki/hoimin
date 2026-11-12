@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute, stmt_expr_attributes))]
 //! Internal pure Python analysis shared by the CLI, corpus tests and fuzzing.
 //!
 //! Results retain their logical payload leases until conversion or terminal handoff.

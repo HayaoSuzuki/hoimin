@@ -9,7 +9,7 @@ import pytest
 from tools import hypothesmith_corpus as corpus
 from tools import performance_shapes as shapes
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover -- Imports used only by static type checking.
     import hypothesis
     from hypothesis import strategies as st
 else:

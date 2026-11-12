@@ -327,3 +327,45 @@ def test_aggregate_cli_rejects_malformed_json(payload: str) -> None:
     )
 
     assert result.returncode == 1
+
+
+def test_creusot_test_selects_proof_validation() -> None:
+    assert ci_selection.categories_for("tests/test_verify_creusot.py") == (
+        "python",
+        "formal",
+        "creusot",
+    )
+
+
+@pytest.mark.parametrize(("base", "head"), [("", "head"), ("base", "-flag")])
+def test_diff_rejects_invalid_revision_arguments(
+    tmp_path: Path, base: str, head: str
+) -> None:
+    with pytest.raises(ValueError, match="Missing or invalid revision"):
+        ci_selection.changed_paths(tmp_path, base, head, merge_base=False)
+
+
+def test_diff_requires_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ci_selection.shutil, "which", lambda _: None)
+    with pytest.raises(FileNotFoundError, match="Git is required"):
+        ci_selection.changed_paths(tmp_path, "base", "head", merge_base=False)
+
+
+def test_revision_requires_string() -> None:
+    with pytest.raises(TypeError):
+        ci_selection.revision(None)
+
+
+def test_aggregate_rejects_nonobject_needs() -> None:
+    assert ci_selection.aggregate({"changes": []}) == ["Malformed CI results"]
+
+
+def test_plan_cli_missing_event_file_selects_all(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["ci-selection", "plan"])
+    monkeypatch.delenv("GITHUB_EVENT_PATH", raising=False)
+    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+    assert ci_selection.main() == 0
+    outputs = json.loads(capsys.readouterr().out)
+    assert all(outputs.get(key) for key in ci_selection.CATEGORIES)

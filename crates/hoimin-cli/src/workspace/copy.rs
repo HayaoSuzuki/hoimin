@@ -1078,7 +1078,11 @@ mod tests {
                 owned: Some(10),
                 ..PreflightLimits::default()
             },
-            |_, _| Ok::<_, Infallible>(()),
+            // Admission failure must return before the caller's validation callback.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |_, _| -> Result<(), Infallible> {
+                panic!("validation ran after owned admission failed")
+            },
         )
         .unwrap_err();
 
@@ -1342,9 +1346,11 @@ mod tests {
                 owned: Some(limit),
                 ..PreflightLimits::default()
             },
-            |_, _| {
+            // A snapshot inside its source must be rejected before validation can run.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |_, _| -> Result<(), Infallible> {
                 validation_called.set(true);
-                Ok::<_, Infallible>(())
+                panic!("validation ran before rejecting the nested snapshot")
             },
         )
         .unwrap_err();
@@ -1355,7 +1361,17 @@ mod tests {
             message,
         }) = error
         else {
-            panic!("expected nested-snapshot error, got {error:?}");
+            // Entering this arm means the test failed to observe its required error variant.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("expected nested-snapshot error, got {error:?}") })(
+                )
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("expected nested-snapshot error, got {error:?}")
+            }
         };
 
         assert_eq!(operation, "create shared snapshot");
@@ -1921,7 +1937,17 @@ mod tests {
             operation, path, ..
         } = failed
         else {
-            panic!("expected snapshot-read failure, got {failed:?}");
+            // Entering this arm means the test failed to observe its required error variant.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("expected snapshot-read failure, got {failed:?}") })(
+                )
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("expected snapshot-read failure, got {failed:?}")
+            }
         };
 
         assert_eq!(operation, "read shared snapshot");
@@ -2230,3 +2256,7 @@ mod tests {
         drop(state);
     }
 }
+
+#[cfg(test)]
+#[path = "copy_coverage_tests.rs"]
+mod coverage_tests;

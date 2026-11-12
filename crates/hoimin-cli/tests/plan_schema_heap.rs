@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 //! Exercise the private production decoder without changing its visibility.
 use std::sync::Mutex;
 

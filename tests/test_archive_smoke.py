@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import io
+import json
 import os
 import subprocess
 import sys
@@ -10,6 +12,7 @@ import zipfile
 from collections.abc import Callable
 from pathlib import Path
 
+import archive_smoke
 import pytest
 from archive_smoke import extract_binary
 from pytest_mock import MockerFixture
@@ -173,3 +176,46 @@ def test_venv_interpreter_symlink_keeps_its_environment(
 
     assert python.is_symlink()
     assert command.call_args.args[0][-4] == str(python.absolute())
+
+
+@pytest.mark.parametrize("system", ["darwin", "linux"])
+def test_archive_smoke_report_binds_archive_and_extracted_binary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, system: str
+) -> None:
+    archive = tmp_path / "release.zip"
+    write_zip(archive)
+    report = tmp_path / "report.json"
+    monkeypatch.setenv("ARCHIVE", str(archive))
+    monkeypatch.setenv("VERSION", "1.2.3")
+    monkeypatch.setenv("SMOKE_REPORT", str(report))
+    monkeypatch.setattr(sys, "platform", system)
+    extracted: list[Path] = []
+
+    def exercise(binary: Path, python: Path, project: Path, version: str) -> None:
+        assert binary.read_bytes() == ARCHIVE_MEMBERS["hoimin"]
+        assert python == Path(sys.executable)
+        assert version == "1.2.3"
+        assert project.parent == binary.parent.parent
+        extracted.append(binary)
+
+    monkeypatch.setattr(archive_smoke, "exercise_cli", exercise)
+    monkeypatch.setattr(
+        archive_smoke,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            [], 0, "GLIBC_2.17 GLIBC_2.35", ""
+        ),
+    )
+    assert archive_smoke.main() == 0
+    evidence = json.loads(report.read_text(encoding="utf-8"))
+    assert evidence["archive"] == archive.name
+    assert evidence["version"] == "1.2.3"
+    assert evidence["sha256"] == hashlib.sha256(archive.read_bytes()).hexdigest()
+    assert (
+        evidence["binary_sha256"]
+        == hashlib.sha256(ARCHIVE_MEMBERS["hoimin"]).hexdigest()
+    )
+    if system == "linux":
+        assert evidence["glibc_symbols"] == [[2, 17], [2, 35]]
+    assert extracted
+    assert not extracted[0].exists()

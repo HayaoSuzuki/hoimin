@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute, stmt_expr_attributes))]
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
 use collecting_writer::CollectingWriter;
@@ -328,7 +329,18 @@ fn validate_case(item: &OracleCase) -> Result<(), String> {
                 && item.expected_destination_target == "builtin"
                 && item.source.contains("ValueError")
         }
-        _ => false,
+        _ => {
+            // Earlier validation returned for every unsupported operator/observation kind.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || false)()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                false
+            }
+        }
     };
     if !premise_matches {
         return Err(format!("{} does not establish its family premise", item.id));
@@ -392,11 +404,9 @@ fn observe_manifest(item: &OracleCase, manifest: &PlanManifest) -> Result<Observ
             marker_offsets.len()
         ));
     };
-    let marker_start = u64::try_from(*marker_start)
-        .map_err(|_| format!("infrastructure-error: {} marker offset overflow", item.id))?;
-    let marker_end = marker_start
-        + u64::try_from(item.site_marker.len())
-            .map_err(|_| format!("infrastructure-error: {} marker length overflow", item.id))?;
+    let marker_start = u64::try_from(*marker_start).expect("source index fits u64");
+    let marker_end =
+        marker_start + u64::try_from(item.site_marker.len()).expect("source length fits u64");
     let matching = manifest
         .candidates
         .iter()
@@ -442,7 +452,14 @@ struct Fixture {
 
 impl Fixture {
     fn new(source: &str) -> Result<Self, String> {
-        let directory = tempfile::tempdir().map_err(|error| error.to_string())?;
+        Self::from_tempdir(source, tempfile::tempdir())
+    }
+
+    fn from_tempdir(
+        source: &str,
+        directory: std::io::Result<tempfile::TempDir>,
+    ) -> Result<Self, String> {
+        let directory = directory.map_err(|error| error.to_string())?;
         let root = directory.path().join("project");
         std::fs::create_dir_all(root.join("src")).map_err(|error| error.to_string())?;
         std::fs::write(root.join("src/case.py"), source).map_err(|error| error.to_string())?;
@@ -468,9 +485,12 @@ fn repo_root() -> PathBuf {
 }
 
 fn python_executable() -> PathBuf {
-    if cfg!(windows) {
+    #[cfg(windows)]
+    {
         repo_root().join(".venv/Scripts/python.exe")
-    } else {
+    }
+    #[cfg(not(windows))]
+    {
         repo_root().join(".venv/bin/python")
     }
 }
@@ -501,7 +521,7 @@ async fn public_plan(item: &OracleCase) -> Result<PlanManifest, String> {
     let fixture = Fixture::new(&item.source)?;
     let stdout = CollectingWriter::default();
     let stderr = CollectingWriter::default();
-    let code = tokio::time::timeout(
+    let outcome = tokio::time::timeout(
         Duration::from_secs(10),
         hoimin_cli::run_with_writers(
             plan_args(&fixture, &item.operator),
@@ -509,16 +529,26 @@ async fn public_plan(item: &OracleCase) -> Result<PlanManifest, String> {
             stderr.clone(),
         ),
     )
-    .await
-    .map_err(|_| format!("infrastructure-error: {} public plan timed out", item.id))?;
+    .await;
+    decode_public_plan(item, outcome, &stdout.snapshot(), &stderr.snapshot())
+}
+
+fn decode_public_plan(
+    item: &OracleCase,
+    outcome: Result<i32, tokio::time::error::Elapsed>,
+    stdout: &[u8],
+    stderr: &[u8],
+) -> Result<PlanManifest, String> {
+    let code =
+        outcome.map_err(|_| format!("infrastructure-error: {} public plan timed out", item.id))?;
     if code != 0 || !stderr.is_empty() {
         return Err(format!(
             "infrastructure-error: {} public plan exit={code}, stderr={}",
             item.id,
-            String::from_utf8_lossy(&stderr.snapshot())
+            String::from_utf8_lossy(stderr)
         ));
     }
-    serde_json::from_slice(&stdout.snapshot())
+    serde_json::from_slice(stdout)
         .map_err(|error| format!("infrastructure-error: {} malformed plan: {error}", item.id))
 }
 
@@ -526,11 +556,16 @@ async fn public_plan(item: &OracleCase) -> Result<PlanManifest, String> {
 async fn strict_public_plan_observations_match_lean() {
     let cases = parse_corpus(CORPUS).expect("valid Lean corpus");
     for item in cases.iter().filter(|item| item.mode == "strict") {
-        let manifest = public_plan(item)
-            .await
-            .unwrap_or_else(|error| panic!("{error}\nsource:\n{}", item.source));
-        let actual = observe_manifest(item, &manifest)
-            .unwrap_or_else(|error| panic!("{error}\nsource:\n{}", item.source));
+        let manifest = public_plan(item).await.unwrap_or_else(
+            // Diagnostic only: fixed valid corpus correspondence asserts successful normalization.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |error| panic!("{error}\nsource:\n{}", item.source),
+        );
+        let actual = observe_manifest(item, &manifest).unwrap_or_else(
+            // Diagnostic only: fixed valid corpus correspondence asserts successful normalization.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |error| panic!("{error}\nsource:\n{}", item.source),
+        );
         let expected = expected_observation(item);
         assert_eq!(
             actual, expected,
@@ -597,3 +632,6 @@ fn corpus_rejects_operator_family_and_premise_mismatches() {
     wrong_scenario["site_marker"] = serde_json::json!("list[str]");
     assert!(parse_corpus(&format!("{wrong_scenario}\n")).is_err());
 }
+
+#[path = "support/binding_flow_validation_tests.rs"]
+mod validation_tests;

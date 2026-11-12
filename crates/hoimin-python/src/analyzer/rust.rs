@@ -8962,10 +8962,28 @@ mod performance_cost_tests {
         assert!(parsed.has_valid_syntax());
         let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
         let Stmt::Assign(assign) = &parsed.syntax().body[0] else {
-            panic!("fixture assignment");
+            // The literal `value = [0]` parses as an assignment.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || panic!("fixture assignment"))()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("fixture assignment")
+            }
         };
         let Expr::List(list) = assign.value.as_ref() else {
-            panic!("fixture list");
+            // The fixed assignment RHS is the literal list `[0]`.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || panic!("fixture list"))()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("fixture list")
+            }
         };
         COLLECTION_REPLACEMENT_BUILDS.set(0);
         COLLECTION_REPLACEMENT_BYTES.set(0);
@@ -9223,7 +9241,18 @@ mod performance_cost_tests {
                 };
                 assert_eq!(case.source, expected_source, "{} source fixture", case.id);
             }
-            Family::Binding => unreachable!("binding uses history adapter"),
+            Family::Binding => {
+                // Binding cases return through the history adapter before this match.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || unreachable!("binding uses history adapter"))()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    unreachable!("binding uses history adapter")
+                }
+            }
         }
         let _guard = BrokenGuard;
         BROKEN_RECORD_CLONE.set(broken && matches!(case.family, Family::Annotation));
@@ -9309,7 +9338,18 @@ mod performance_cost_tests {
                         case.id
                     );
                 }
-                Family::Binding => unreachable!(),
+                Family::Binding => {
+                    // The history adapter already returned for every Binding case.
+                    #[cfg(coverage_nightly)]
+                    {
+                        (#[coverage(off)]
+                        || unreachable!())()
+                    }
+                    #[cfg(not(coverage_nightly))]
+                    {
+                        unreachable!()
+                    }
+                }
             }
             assert_eq!(
                 candidate.operator.as_str(),
@@ -9513,3 +9553,7 @@ mod whole_expression_selection_tests;
 #[cfg(test)]
 #[path = "rust/optional_keyword_selection_tests.rs"]
 mod optional_keyword_selection_tests;
+
+#[cfg(test)]
+#[path = "rust/coverage_tests.rs"]
+mod coverage_tests;

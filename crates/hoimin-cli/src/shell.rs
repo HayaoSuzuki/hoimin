@@ -275,6 +275,10 @@ pub struct RunControl {
     max_process_tasks: Arc<AtomicUsize>,
     max_completion_in_flight: Arc<AtomicUsize>,
     #[cfg(test)]
+    process_completion_panic: Arc<AtomicBool>,
+    #[cfg(test)]
+    io_completion_panic: Arc<AtomicBool>,
+    #[cfg(test)]
     materialization_pause: Option<MaterializationPause>,
     #[cfg(test)]
     cancel_before_run_finished: Arc<AtomicBool>,
@@ -417,6 +421,10 @@ impl RunControl {
             cancelled_at: Arc::new(std::sync::Mutex::new(None)),
             max_process_tasks: Arc::new(AtomicUsize::new(0)),
             max_completion_in_flight: Arc::new(AtomicUsize::new(0)),
+            #[cfg(test)]
+            process_completion_panic: Arc::new(AtomicBool::new(false)),
+            #[cfg(test)]
+            io_completion_panic: Arc::new(AtomicBool::new(false)),
             #[cfg(test)]
             materialization_pause: None,
             #[cfg(test)]
@@ -3154,6 +3162,8 @@ async fn run_loop_context(
                                     completion_tx.clone(),
                                     &mut process_tasks,
                                     dispatch,
+                                    #[cfg(test)]
+                                    control.process_completion_panic.swap(false, Ordering::AcqRel),
                                 );
                             }
                             Err(error) => {
@@ -3205,6 +3215,8 @@ async fn run_loop_context(
                                     completion_tx.clone(),
                                     &mut process_tasks,
                                     dispatch,
+                                    #[cfg(test)]
+                                    control.process_completion_panic.swap(false, Ordering::AcqRel),
                                 );
                             }
                             Err(error) => {
@@ -3224,7 +3236,11 @@ async fn run_loop_context(
                     effect if is_blocking_io_effect(&effect) => {
                         match prepare_blocking_effect(&mut context, effect) {
                             Ok(task) => {
-                                spawn_blocking_effect(task, completion_tx.clone(), &mut io_tasks);
+                                spawn_blocking_effect(
+                                    task, completion_tx.clone(), &mut io_tasks,
+                                    #[cfg(test)]
+                                    control.io_completion_panic.swap(false, Ordering::AcqRel),
+                                );
                                 in_flight += 1;
                                 io_in_flight += 1;
                                 debug_assert!(io_in_flight <= max_jobs);
@@ -3355,6 +3371,8 @@ async fn run_loop_context(
                                         );
                                     }
                                     signal = interrupts.first(), if !stop_signalled => {
+                                        #[cfg(test)]
+                                        control.observe_finalization_event("interrupt_observed");
                                         cancellation.cancel();
                                         stop_signalled = true;
                                         let event = first_interrupt_event(signal)?;
@@ -3577,6 +3595,8 @@ async fn run_loop_context(
                                     }
                                 }
                                 () = control.cancelled() => {
+                                    #[cfg(test)]
+                                    control.observe_finalization_event("serial_stop_observed");
                                     cancellation.cancel();
                                     stop_signalled = true;
                                     let event = RunEvent::CancellationRequested;
@@ -3613,6 +3633,8 @@ async fn run_loop_context(
                                     }
                                 }
                                 signal = interrupts.first() => {
+                                    #[cfg(test)]
+                                    control.observe_finalization_event("interrupt_observed");
                                     cancellation.cancel();
                                     stop_signalled = true;
                                     match first_interrupt_event(signal) {
@@ -3843,6 +3865,8 @@ async fn run_loop_context(
                         ShellCompletion::Serial(event)
                     }
                     signal = interrupts.first() => {
+                                    #[cfg(test)]
+                                    control.observe_finalization_event("interrupt_observed");
                         cancellation.cancel();
                         stop_signalled = true;
                         match first_interrupt_event(signal) {
@@ -4647,35 +4671,34 @@ async fn run_loop_context(
                 MetricsDestination::Disabled => None,
             };
             if let Some(path) = path {
-                match (shutdown_budget.as_ref(), shutdown_expiry_reported) {
-                    (Some(budget), false) => {
-                        let finalized = finalize_metrics_with_shutdown(
-                            path,
-                            metrics,
-                            run_result.as_ref().err().cloned(),
-                            discovered,
-                            executed,
-                            metrics_warnings,
-                            budget,
-                            Box::new(|| {}),
-                        )
-                        .await;
-                        metrics_warnings = finalized.warnings;
-                        if let Some(expiry) = finalized.expiry {
-                            run_result = match run_result {
-                                Ok(_) => Err(expiry),
-                                Err(primary) => Err(combine_shutdown_errors(primary, Some(expiry))),
-                            };
-                        }
-                    }
-                    (Some(_), true) => skip_expired_metrics_finalization(
+                if shutdown_expiry_reported {
+                    skip_expired_metrics_finalization(
                         metrics,
                         run_result.as_ref().err().map(String::as_str),
                         &mut metrics_warnings,
-                    ),
-                    (None, _) => unreachable!("outer finalization always has a shutdown budget"),
+                    );
+                } else {
+                    let finalized = finalize_metrics_with_shutdown(
+                        path,
+                        metrics,
+                        run_result.as_ref().err().cloned(),
+                        discovered,
+                        executed,
+                        metrics_warnings,
+                        budget,
+                        Box::new(|| {}),
+                    )
+                    .await;
+                    metrics_warnings = finalized.warnings;
+                    if let Some(expiry) = finalized.expiry {
+                        run_result = match run_result {
+                            Ok(_) => Err(expiry),
+                            Err(primary) => Err(combine_shutdown_errors(primary, Some(expiry))),
+                        };
+                    }
                 }
             }
+
             for (code, message) in metrics_warnings {
                 if tokio::time::Instant::now() >= budget.deadline()
                     || !context.report.is_quiescent()
@@ -4901,6 +4924,7 @@ fn spawn_process(
     sender: mpsc::Sender<ShellCompletion>,
     tasks: &mut JoinSet<()>,
     _dispatch: std::sync::MutexGuard<'_, ()>,
+    #[cfg(test)] completion_panic: bool,
 ) {
     tasks.spawn(
         async move {
@@ -4915,6 +4939,9 @@ fn spawn_process(
             let _ = sender
                 .send(ShellCompletion::Process { event, context })
                 .await;
+            // Test-only one-shot fault: the completion is delivered before its owner fails to join.
+            #[cfg(test)]
+            assert!(!completion_panic, "injected process post-delivery panic");
         }
         .in_current_span(),
     );
@@ -4924,6 +4951,7 @@ fn spawn_blocking_effect(
     task: BlockingEffect,
     sender: mpsc::Sender<ShellCompletion>,
     tasks: &mut JoinSet<()>,
+    #[cfg(test)] completion_panic: bool,
 ) {
     tasks.spawn(
         async move {
@@ -4932,6 +4960,9 @@ fn spawn_blocking_effect(
                 .await
                 .map(Box::new);
             let _ = sender.send(ShellCompletion::Blocking(result)).await;
+            // The owned payload has returned; this fault isolates the outer task join policy.
+            #[cfg(test)]
+            assert!(!completion_panic, "injected I/O post-delivery panic");
         }
         .in_current_span(),
     );
@@ -6337,17 +6368,21 @@ mod tests {
             let _ = probe_request_rx.await.map(|()| probe_observed_tx.send(()));
         });
         let observer = std::thread::spawn(move || {
-            pause
-                .wait_until_entered()
-                .map_err(|error| format!("wait for final measurement pause: {error}"))?;
+            pause.wait_until_entered().map_err(
+                // Only evaluated when the fixture fails to synchronize.
+                #[cfg_attr(coverage_nightly, coverage(off))]
+                |error| format!("wait for final measurement pause: {error}"),
+            )?;
             let request_sent = probe_request_tx.send(()).is_ok();
             let runtime_was_responsive = request_sent
                 && probe_observed_rx
                     .recv_timeout(Duration::from_millis(500))
                     .is_ok();
-            pause
-                .release()
-                .map_err(|error| format!("release final measurement pause: {error}"))?;
+            pause.release().map_err(
+                // Only evaluated when the fixture fails to synchronize.
+                #[cfg_attr(coverage_nightly, coverage(off))]
+                |error| format!("release final measurement pause: {error}"),
+            )?;
             Ok::<bool, String>(runtime_was_responsive)
         });
 
@@ -6392,13 +6427,17 @@ mod tests {
         let observed = control.clone();
         let stdout = CollectingWriter::default();
         let release = std::thread::spawn(move || {
-            pause
-                .wait_until_entered()
-                .map_err(|error| format!("wait for final measurement pause: {error}"))?;
+            pause.wait_until_entered().map_err(
+                // Only evaluated when the fixture fails to synchronize.
+                #[cfg_attr(coverage_nightly, coverage(off))]
+                |error| format!("wait for final measurement pause: {error}"),
+            )?;
             std::thread::sleep(Duration::from_millis(100));
-            pause
-                .release()
-                .map_err(|error| format!("release final measurement pause: {error}"))
+            pause.release().map_err(
+                // Only evaluated when the fixture fails to synchronize.
+                #[cfg_attr(coverage_nightly, coverage(off))]
+                |error| format!("release final measurement pause: {error}"),
+            )
         });
 
         let error = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
@@ -7001,6 +7040,8 @@ mod tests {
 
         let error = run_cleanup_thread_with_spawner(
             &budget,
+            // A rejected spawn must never invoke the operation; this is a failure sentinel.
+            #[cfg_attr(coverage_nightly, coverage(off))]
             move || {
                 observed_operation.store(true, Ordering::Release);
             },
@@ -7368,8 +7409,9 @@ mod tests {
         entered: Option<tokio::sync::oneshot::Sender<()>>,
         release: std::sync::mpsc::Receiver<()>,
         pause_flush: bool,
+        marker: &'static [u8],
         record: Vec<u8>,
-        terminal: bool,
+        target_seen: bool,
     }
 
     impl PausedReportWriter {
@@ -7387,18 +7429,18 @@ mod tests {
     impl Write for PausedReportWriter {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
             self.record.extend_from_slice(bytes);
-            self.terminal |= self
+            self.target_seen |= self
                 .record
-                .windows(b"run_finished".len())
-                .any(|part| part == b"run_finished");
-            if !self.pause_flush && self.terminal {
+                .windows(self.marker.len())
+                .any(|part| part == self.marker);
+            if !self.pause_flush && self.target_seen {
                 self.pause()?;
             }
             Ok(bytes.len())
         }
 
         fn flush(&mut self) -> std::io::Result<()> {
-            if self.pause_flush && self.terminal {
+            if self.pause_flush && self.target_seen {
                 self.pause()?;
             }
             self.record.clear();
@@ -7424,8 +7466,9 @@ mod tests {
             entered: Some(entered_tx),
             release: release_rx,
             pause_flush,
+            marker: b"run_finished",
             record: Vec::new(),
-            terminal: false,
+            target_seen: false,
         };
         let diagnostics = SharedDiagnosticCapture::default();
         let captured = diagnostics.clone();
@@ -7701,7 +7744,17 @@ mod tests {
         let result =
             prepare_shell_setup(config, Box::new(|| panic!("controlled shell setup panic"))).await;
         let Err(error) = result else {
-            panic!("controlled setup panic unexpectedly succeeded");
+            // This branch only reports that the fixture failed its required shape or outcome.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("controlled setup panic unexpectedly succeeded") })(
+                )
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("controlled setup panic unexpectedly succeeded")
+            }
         };
 
         assert!(error.starts_with("shell setup task failed:"), "{error}");
@@ -7739,7 +7792,16 @@ mod tests {
             Some(&timing),
         );
         let Err(error) = stopped else {
-            panic!("marker failure fixture must stop setup");
+            // This branch only reports that the fixture failed its required shape or outcome.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("marker failure fixture must stop setup") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("marker failure fixture must stop setup")
+            }
         };
         let result = timing.report(error, Vec::new()).await;
 
@@ -8890,7 +8952,7 @@ mod tests {
         .unwrap();
         let (sender, mut receiver) = mpsc::channel(1);
         let mut io_tasks = JoinSet::new();
-        spawn_blocking_effect(task, sender, &mut io_tasks);
+        spawn_blocking_effect(task, sender, &mut io_tasks, false);
         let mut process_tasks = JoinSet::new();
         let mut in_flight = 1;
         let mut metrics = None;
@@ -9004,7 +9066,17 @@ mod tests {
         assert_eq!(close.await.unwrap(), Some(17));
 
         let OwnedBlockingError::Expired(error) = error else {
-            panic!("blocking close returned a join failure instead of expiry")
+            // This branch only reports that the fixture failed its required shape or outcome.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("blocking close returned a join failure instead of expiry") })(
+                )
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("blocking close returned a join failure instead of expiry")
+            }
         };
         assert!(error.starts_with("cancellation: shutdown grace expired"));
         assert!(error.contains("blocking I/O tasks: 1"));
@@ -9502,14 +9574,24 @@ mod tests {
                 entered_tx.send(()).unwrap();
                 release_rx.recv().unwrap();
                 let BlockingEffect::Workspace(task) = task else {
-                    unreachable!("prepared apply task was not a workspace task");
+                    // This branch only reports that the fixture failed its required shape or outcome.
+                    #[cfg(coverage_nightly)]
+                    {
+                        (#[coverage(off)]
+                        || -> ! { unreachable!("prepared apply task was not a workspace task") })(
+                        )
+                    }
+                    #[cfg(not(coverage_nightly))]
+                    {
+                        unreachable!("prepared apply task was not a workspace task")
+                    }
                 };
                 BlockingEffectCompletion::Workspace(Box::new(task.execute()))
             }),
         };
         let (sender, mut receiver) = mpsc::channel(1);
         let mut io_tasks = JoinSet::new();
-        spawn_blocking_effect(task, sender, &mut io_tasks);
+        spawn_blocking_effect(task, sender, &mut io_tasks, false);
         entered_rx.await.unwrap();
         let mut process_tasks = JoinSet::new();
         let mut in_flight = 1;
@@ -9762,7 +9844,16 @@ mod tests {
             "preflight blocked the runtime until its filesystem work was released"
         );
         let RunEvent::PreflightCompleted(completed) = event else {
-            panic!("preflight failed: {event:?}")
+            // This branch only reports that the fixture failed its required shape or outcome.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("preflight failed: {event:?}") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("preflight failed: {event:?}")
+            }
         };
         assert_eq!(completed.id, EffectId(17));
         assert_eq!(completed.fingerprint, Some(expected_fingerprint));
@@ -9930,6 +10021,7 @@ mod tests {
             },
             sender,
             &mut io_tasks,
+            false,
         );
         let mut in_flight = 1;
         let mut expiry_reported = false;
@@ -9951,6 +10043,8 @@ mod tests {
             &mut expiry_reported,
             &mut metrics,
             &mut warnings,
+            // The task panics before publishing a completion, so any callback violates this test.
+            #[cfg_attr(coverage_nightly, coverage(off))]
             |completion| returned_ownership.push(completion),
         )
         .await;
@@ -9996,6 +10090,7 @@ mod tests {
             },
             completion_tx.clone(),
             &mut tasks,
+            false,
         );
         spawn_blocking_effect(
             BlockingEffect::TestOperation {
@@ -10008,6 +10103,7 @@ mod tests {
             },
             completion_tx,
             &mut tasks,
+            false,
         );
 
         let mut entered = [
@@ -10137,10 +10233,24 @@ mod tests {
         let result = tokio::time::timeout(Duration::from_millis(500), &mut run).await;
         release_tx.send(()).unwrap();
         controller.await.unwrap();
-        let Ok(result) = result else {
+        // This handler only drains and reports a failed timing assertion; successful checks stay measured.
+        #[cfg(coverage_nightly)]
+        {
+            (#[coverage(off)]
+            async |failed: bool| {
+                if failed {
+                    let _ = tokio::time::timeout(Duration::from_secs(3), &mut run).await;
+                    panic!("paused materialization outlived the first shutdown deadline");
+                }
+            })(result.is_err())
+            .await;
+        }
+        #[cfg(not(coverage_nightly))]
+        if result.is_err() {
             let _ = tokio::time::timeout(Duration::from_secs(3), &mut run).await;
             panic!("paused materialization outlived the first shutdown deadline");
-        };
+        }
+        let result = result.unwrap();
         let error = result.unwrap_err();
 
         assert!(
@@ -10193,10 +10303,24 @@ mod tests {
         let result = tokio::time::timeout(Duration::from_millis(180), &mut run).await;
         release_tx.send(()).unwrap();
         controller.await.unwrap();
-        let Ok(result) = result else {
+        // This handler only drains and reports a failed timing assertion; successful checks stay measured.
+        #[cfg(coverage_nightly)]
+        {
+            (#[coverage(off)]
+            async |failed: bool| {
+                if failed {
+                    let _ = tokio::time::timeout(Duration::from_secs(3), &mut run).await;
+                    panic!("a later cancellation extended the first shutdown deadline");
+                }
+            })(result.is_err())
+            .await;
+        }
+        #[cfg(not(coverage_nightly))]
+        if result.is_err() {
             let _ = tokio::time::timeout(Duration::from_secs(3), &mut run).await;
             panic!("a later cancellation extended the first shutdown deadline");
-        };
+        }
+        let result = result.unwrap();
         let error = result.unwrap_err();
 
         assert!(
@@ -10279,6 +10403,7 @@ mod tests {
                 },
                 completion_tx.clone(),
                 &mut tasks,
+                false,
             );
             io_in_flight += 1;
             max_io_in_flight = max_io_in_flight.max(io_in_flight);
@@ -10602,7 +10727,16 @@ mod tests {
         let pending_id = pending.id();
         let mut obsolete_effect = process_effect(7);
         let RunEffect::RunMutant(request) = &mut obsolete_effect else {
-            unreachable!()
+            // This branch only reports that the fixture failed its required shape or outcome.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
         };
         request.id = EffectId(999);
 
@@ -10920,7 +11054,7 @@ mod tests {
         let (sender, mut receiver) = mpsc::channel(1);
         let mut tasks = JoinSet::new();
 
-        spawn_process(process, request, sender, &mut tasks, dispatch);
+        spawn_process(process, request, sender, &mut tasks, dispatch, false);
         let completion = tokio::time::timeout(Duration::from_secs(10), receiver.recv())
             .await
             .expect("spawned process must complete")
@@ -11148,4 +11282,5 @@ mod tests {
 
         assert_eq!(error, "install Ctrl+C handler: fixture");
     }
+    include!("shell_coverage_tests.rs");
 }

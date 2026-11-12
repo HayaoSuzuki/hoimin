@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use hoimin_core::{
     ChangedSelection, CommandArg, ConfigError, MAX_CHANGED_CONTEXT, OutputConfig, PlanConfig,
     RawRunConfig, RunConfig,

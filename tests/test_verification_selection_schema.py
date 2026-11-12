@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 from jsonschema import Draft202012Validator
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover -- Imports used only by static type checking.
     from jsonschema.protocols import Validator
 
 ROOT = Path(__file__).resolve().parents[1]

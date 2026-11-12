@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use std::collections::BTreeSet;
 
 use hoimin_core::{ExitPolicy, MutationStatus, exit_code_for, summarize};

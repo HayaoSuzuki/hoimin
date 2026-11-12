@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #[path = "support/jsonl_report.rs"]
 mod jsonl_report;
 use std::collections::HashSet;
@@ -255,8 +256,14 @@ struct FixturePaths {
 #[cfg(unix)]
 impl FixturePaths {
     fn create() -> Result<Self, String> {
-        let project_guard = tempfile::tempdir().map_err(|error| error.to_string())?;
-        let coordinator_guard = tempfile::tempdir().map_err(|error| error.to_string())?;
+        Self::with_tempdirs(&mut tempfile::tempdir)
+    }
+
+    fn with_tempdirs(
+        directory: &mut dyn FnMut() -> std::io::Result<tempfile::TempDir>,
+    ) -> Result<Self, String> {
+        let project_guard = directory().map_err(|error| error.to_string())?;
+        let coordinator_guard = directory().map_err(|error| error.to_string())?;
         write_parallel_project(project_guard.path())?;
         let active = coordinator_guard.path().join("active");
         std::fs::create_dir(&active).map_err(|error| error.to_string())?;
@@ -314,6 +321,15 @@ fn spawn_scenario(
     case: &OracleCase,
     paths: &FixturePaths,
 ) -> Result<tokio::process::Child, String> {
+    spawn_scenario_with_executable(case, paths, Path::new(env!("CARGO_BIN_EXE_hoimin")))
+}
+
+#[cfg(unix)]
+fn spawn_scenario_with_executable(
+    case: &OracleCase,
+    paths: &FixturePaths,
+    executable: &Path,
+) -> Result<tokio::process::Child, String> {
     let original = "return a + b + c + d + e";
     let test_command = if case.scenario == "normal_completion" {
         "from src.calc import total; assert total(1,2,3,4,5) == 15".to_owned()
@@ -333,7 +349,7 @@ fn spawn_scenario(
             "from pathlib import Path; source=Path('src/calc.py').read_text(); exec({mutant:?}) if {original:?} not in source else exec('from src.calc import total; assert total(1,2,3,4,5) == 15')"
         )
     };
-    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
+    let mut command = tokio::process::Command::new(executable);
     command
         .arg("run")
         .arg("--root")
@@ -403,34 +419,54 @@ async fn wait_for_readiness(
 }
 
 #[cfg(unix)]
-fn send_first_interrupt(child: &mut tokio::process::Child) -> Result<(), String> {
-    let pid = child
-        .id()
-        .ok_or_else(|| "hoimin exited before SIGINT".to_owned())?;
-    let pid = i32::try_from(pid).map_err(|error| error.to_string())?;
-    if unsafe { libc::kill(pid, libc::SIGINT) } == 0 {
+fn native_pid(pid: u32) -> Result<i32, String> {
+    i32::try_from(pid).map_err(|error| error.to_string())
+}
+
+#[cfg(unix)]
+fn signal_process(pid: i32, signal: i32) -> std::io::Result<()> {
+    // SAFETY: callers identify retained fixture processes with checked native PIDs.
+    if unsafe { libc::kill(pid, signal) } == 0 {
         Ok(())
     } else {
-        Err(format!(
-            "SIGINT failed: {}",
-            std::io::Error::last_os_error()
-        ))
+        Err(std::io::Error::last_os_error())
     }
 }
 
 #[cfg(unix)]
+fn send_first_interrupt(child: &mut tokio::process::Child) -> Result<(), String> {
+    send_first_interrupt_with_signal(child, signal_process)
+}
+
+#[cfg(unix)]
+fn send_first_interrupt_with_signal(
+    child: &mut tokio::process::Child,
+    signal: fn(i32, i32) -> std::io::Result<()>,
+) -> Result<(), String> {
+    let pid = child
+        .id()
+        .ok_or_else(|| "hoimin exited before SIGINT".to_owned())?;
+    let pid = native_pid(pid)?;
+    signal(pid, libc::SIGINT).map_err(|error| format!("SIGINT failed: {error}"))
+}
+
+#[cfg(unix)]
 async fn reap_fixture_processes(processes: &FixtureProcesses) -> Result<(), String> {
+    reap_fixture_processes_with_signal(processes, signal_process).await
+}
+
+#[cfg(unix)]
+async fn reap_fixture_processes_with_signal(
+    processes: &FixtureProcesses,
+    signal: fn(i32, i32) -> std::io::Result<()>,
+) -> Result<(), String> {
     for &pid in &processes.pids {
         if !process_is_alive(pid) {
             continue;
         }
-        let native = i32::try_from(pid).map_err(|error| error.to_string())?;
-        if unsafe { libc::kill(native, libc::SIGKILL) } != 0 {
-            return Err(format!(
-                "failed to kill fixture process {pid}: {}",
-                std::io::Error::last_os_error()
-            ));
-        }
+        let native = native_pid(pid)?;
+        signal(native, libc::SIGKILL)
+            .map_err(|error| format!("failed to kill fixture process {pid}: {error}"))?;
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         while process_is_alive(pid) && tokio::time::Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(20)).await;
@@ -470,9 +506,62 @@ fn observe_session(path: &Path) -> Result<String, String> {
 }
 
 #[cfg(unix)]
-async fn execute_strict_case(case: &OracleCase) -> Result<CliObservation, String> {
+async fn read_output(
+    reader: &mut (dyn tokio::io::AsyncRead + Unpin + Send),
+) -> std::io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    reader.read_to_end(&mut bytes).await?;
+    Ok(bytes)
+}
+
+#[cfg(unix)]
+fn bounded_exit_status(
+    outcome: Result<std::io::Result<std::process::ExitStatus>, tokio::time::error::Elapsed>,
+) -> Result<std::process::ExitStatus, String> {
+    outcome
+        .map_err(|_| "hoimin exceeded bounded exit".to_owned())?
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(unix)]
+async fn collect_output(
+    stdout: tokio::task::JoinHandle<std::io::Result<Vec<u8>>>,
+    stderr: tokio::task::JoinHandle<std::io::Result<Vec<u8>>>,
+) -> Result<(Vec<u8>, Vec<u8>), String> {
+    let stdout = stdout
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())?;
+    let stderr = stderr
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())?;
+    Ok((stdout, stderr))
+}
+
+#[cfg(unix)]
+async fn execute_strict_case(case: OracleCase) -> Result<CliObservation, String> {
     let paths = FixturePaths::create()?;
-    let mut child = spawn_scenario(case, &paths)?;
+    let child = spawn_scenario(&case, &paths)?;
+    execute_fixture(case, paths, child).await
+}
+
+#[cfg(unix)]
+async fn execute_fixture(
+    case: OracleCase,
+    paths: FixturePaths,
+    child: tokio::process::Child,
+) -> Result<CliObservation, String> {
+    execute_fixture_with_kill(case, paths, child, tokio::process::Child::start_kill).await
+}
+
+#[cfg(unix)]
+async fn execute_fixture_with_kill(
+    case: OracleCase,
+    paths: FixturePaths,
+    mut child: tokio::process::Child,
+    kill: fn(&mut tokio::process::Child) -> std::io::Result<()>,
+) -> Result<CliObservation, String> {
     let mut stdout_pipe = child
         .stdout
         .take()
@@ -481,14 +570,8 @@ async fn execute_strict_case(case: &OracleCase) -> Result<CliObservation, String
         .stderr
         .take()
         .ok_or_else(|| "missing stderr pipe".to_owned())?;
-    let stdout_task = tokio::spawn(async move {
-        let mut bytes = Vec::new();
-        stdout_pipe.read_to_end(&mut bytes).await.map(|_| bytes)
-    });
-    let stderr_task = tokio::spawn(async move {
-        let mut bytes = Vec::new();
-        stderr_pipe.read_to_end(&mut bytes).await.map(|_| bytes)
-    });
+    let stdout_task = tokio::spawn(async move { read_output(&mut stdout_pipe).await });
+    let stderr_task = tokio::spawn(async move { read_output(&mut stderr_pipe).await });
     let started = Instant::now();
     let mut processes = None;
     let outcome: Result<_, String> = async {
@@ -498,10 +581,8 @@ async fn execute_strict_case(case: &OracleCase) -> Result<CliObservation, String
         if case.scenario == "first_interrupt_running" {
             send_first_interrupt(&mut child)?;
         }
-        let status = tokio::time::timeout(Duration::from_secs(12), child.wait())
-            .await
-            .map_err(|_| "hoimin exceeded bounded exit".to_owned())?
-            .map_err(|error| error.to_string())?;
+        let status =
+            bounded_exit_status(tokio::time::timeout(Duration::from_secs(12), child.wait()).await)?;
         Ok(status)
     }
     .await;
@@ -510,20 +591,13 @@ async fn execute_strict_case(case: &OracleCase) -> Result<CliObservation, String
         .map_err(|error| error.to_string())?
         .is_none()
     {
-        child.start_kill().map_err(|error| error.to_string())?;
+        kill(&mut child).map_err(|error| error.to_string())?;
         let _ = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
     }
     if let Some(processes) = &processes {
         reap_fixture_processes(processes).await?;
     }
-    let stdout = stdout_task
-        .await
-        .map_err(|error| error.to_string())?
-        .map_err(|error| error.to_string())?;
-    let stderr = stderr_task
-        .await
-        .map_err(|error| error.to_string())?
-        .map_err(|error| error.to_string())?;
+    let (stdout, stderr) = collect_output(stdout_task, stderr_task).await?;
     let status =
         outcome.map_err(|error| format!("{error}; stderr={}", String::from_utf8_lossy(&stderr)))?;
     let descendant_running = processes
@@ -540,6 +614,27 @@ async fn execute_strict_case(case: &OracleCase) -> Result<CliObservation, String
 
 #[cfg(unix)]
 async fn run_strict_case(case: &OracleCase) -> CaseResult {
+    run_strict_case_with_execution(case, execute_strict_case).await
+}
+
+#[cfg(unix)]
+async fn run_strict_case_with_execution<F, Fut>(case: &OracleCase, execute: F) -> CaseResult
+where
+    F: FnOnce(OracleCase) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = Result<CliObservation, String>> + Send + 'static,
+{
+    run_strict_case_erased(case, Box::new(move |owned| Box::pin(execute(owned)))).await
+}
+
+#[cfg(unix)]
+type CaseExecution =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<CliObservation, String>> + Send>>;
+
+#[cfg(unix)]
+async fn run_strict_case_erased(
+    case: &OracleCase,
+    execute: Box<dyn FnOnce(OracleCase) -> CaseExecution + Send>,
+) -> CaseResult {
     let expected = match project_strict(case) {
         Ok(expected) => expected,
         Err(error) => {
@@ -559,7 +654,7 @@ async fn run_strict_case(case: &OracleCase) -> CaseResult {
         }
     };
     let owned = case.clone();
-    let execution = tokio::spawn(async move { execute_strict_case(&owned).await }).await;
+    let execution = tokio::spawn(execute(owned)).await;
     let actual = match execution {
         Ok(Ok(actual)) => actual,
         Ok(Err(error)) => {
@@ -686,6 +781,11 @@ async fn oracle_correspondence() {
     {
         results.push(run_strict_case(case).await);
     }
+    assert_correspondence_results(&results);
+}
+
+#[cfg(unix)]
+fn assert_correspondence_results(results: &[CaseResult]) {
     let infrastructure = results
         .iter()
         .filter(|result| result.class == CaseClass::InfrastructureError)
@@ -718,3 +818,6 @@ async fn oracle_correspondence() {
         .collect::<Vec<_>>();
     assert_eq!(mismatches, REVIEWED_MISMATCHES, "{mismatch_detail:?}");
 }
+
+#[path = "support/shutdown_validation_tests.rs"]
+mod validation_tests;

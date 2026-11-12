@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 //! Public correspondence for the Lean prepared-namespace policy. Expected
 //! identity and candidate eligibility come only from the generated corpus.
 

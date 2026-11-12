@@ -1,9 +1,12 @@
 """Small filesystem fixtures for the knowledge reference inventory."""
 
+import json
+import sys
 from pathlib import Path
 
 import pytest
 
+from tools import knowledge_references
 from tools.knowledge_references import inventory
 
 
@@ -73,3 +76,56 @@ def test_used_references_and_footnotes_create_navigation(tmp_path: Path) -> None
 
     assert result["unreachable_pages"] == ["hidden.md"]
     assert result["missing_markdown"] == []
+
+
+def test_fragment_only_links_refer_to_current_page(tmp_path: Path) -> None:
+    (tmp_path / "index.md").write_text("[section](#details)\n", encoding="utf-8")
+    result = inventory(tmp_path)
+    assert result["missing_markdown"] == []
+    assert result["unreachable_pages"] == []
+    assert result["markdown"] == [
+        {"page": "index.md", "target": "#details", "local": True, "exists": True}
+    ]
+
+
+def test_multiline_footnote_links_are_reachable(tmp_path: Path) -> None:
+    (tmp_path / "index.md").write_text(
+        "See [^note].\n\n[^note]: First paragraph.\n\n    [continued](child.md)\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "child.md").write_text("Child", encoding="utf-8")
+    result = inventory(tmp_path)
+    assert result["unreachable_pages"] == []
+    assert result["missing_markdown"] == []
+
+
+@pytest.mark.parametrize("broken", [False, True])
+def test_inventory_cli_reports_navigation_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    broken: bool,
+) -> None:
+    (tmp_path / "index.md").write_text(
+        "[missing](missing.md)" if broken else "Entry", encoding="utf-8"
+    )
+    monkeypatch.setattr(sys, "argv", ["knowledge-references", "--root", str(tmp_path)])
+    assert knowledge_references.main() == int(broken)
+    result = json.loads(capsys.readouterr().out)
+    assert result["page_count"] == 1
+    assert bool(result["missing_markdown"]) is broken
+
+
+def test_cyclic_navigation_and_repeated_references_terminate(tmp_path: Path) -> None:
+    (tmp_path / "index.md").write_text("[a](a.md) [b](b.md)\n", encoding="utf-8")
+    (tmp_path / "a.md").write_text(
+        "[b][B] [b][B] [^n] [^n]\n[B]: b.md\n[^n]: [^n]\n", encoding="utf-8"
+    )
+    (tmp_path / "b.md").write_text("[a](a.md)\n", encoding="utf-8")
+    assert inventory(tmp_path)["unreachable_pages"] == []
+
+
+def test_mismatched_fence_markers_do_not_end_code() -> None:
+    body = "````\n~~~\n```\n[hidden](missing.md)\n````\n[shown](shown.md)"
+    assert list(knowledge_references.markdown_targets(body)) == ["shown.md"]

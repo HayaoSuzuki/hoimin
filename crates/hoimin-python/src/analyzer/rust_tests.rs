@@ -163,7 +163,11 @@ fn bounded_discovery_case(id: &str) -> BoundedDiscoveryCase {
         .lines()
         .map(|line| serde_json::from_str::<BoundedDiscoveryCase>(line).expect("valid Lean row"))
         .find(|item| item.id == id)
-        .unwrap_or_else(|| panic!("missing Lean bounded-discovery case {id}"))
+        .unwrap_or_else(
+            // Fixed test literals and checked-in corpus IDs cannot reach this diagnostic.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            || panic!("missing Lean bounded-discovery case {id}"),
+        )
 }
 
 #[derive(serde::Deserialize)]
@@ -5513,7 +5517,23 @@ fn benchmark_adversarial_ast_fact_indexes() {
             "stats={index:?}",
         );
     }
-    assert_eq!(output.candidates.len(), FUNCTIONS * 5);
+    let mut operator_counts = std::collections::BTreeMap::new();
+    for candidate in &output.candidates {
+        *operator_counts
+            .entry(candidate.operator.as_str())
+            .or_insert(0) += 1;
+    }
+    // Integer-neighbor mutations became default after this benchmark was added:
+    // the terminal `+ 1` now contributes replacements `0` and `2` per function.
+    assert_eq!(
+        operator_counts.get("integer_literal_neighbor"),
+        Some(&(FUNCTIONS * 2))
+    );
+    assert_eq!(
+        output.candidates.len(),
+        FUNCTIONS * 7,
+        "{operator_counts:?}"
+    );
     assert_eq!(
         output.candidates.first().map(|candidate| (
             candidate.original.as_str(),
@@ -5528,7 +5548,7 @@ fn benchmark_adversarial_ast_fact_indexes() {
             candidate.operator.as_str(),
             candidate.symbol.as_deref(),
         )),
-        Some(("+", "binary_add_sub", Some("scope_0511"))),
+        Some(("1", "integer_literal_neighbor", Some("scope_0511"))),
     );
     println!(
         "source_bytes={} candidates={} elapsed_ms={} stats={stats:?}",
@@ -7318,10 +7338,11 @@ fn binding_flow_internal_corpus_projects_categorized_exit_facts() {
     assert_eq!(actual_ids, expected_sorted);
 
     for id in expected_ids {
-        let item = items
-            .iter()
-            .find(|item| item.id == id)
-            .unwrap_or_else(|| panic!("missing internal-fixture case {id}"));
+        let item = items.iter().find(|item| item.id == id).unwrap_or_else(
+            // Fixed test literals and checked-in corpus IDs cannot reach this diagnostic.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            || panic!("missing internal-fixture case {id}"),
+        );
         assert_eq!(item.mode, "internal-fixture", "case={id}");
         let expected = BindingFlowTestSnapshot {
             fallthrough: item.expected_fallthrough.clone(),
@@ -8255,8 +8276,11 @@ fn loop_back_edge_boundaries_preserve_definite_builtin_resolution() {
 
 fn assert_name_resolution_cases(cases: &[(&str, &str, &str, &str)]) {
     for (case, source, marker, expected) in cases {
-        let snapshot = name_resolution_test_snapshot(source, marker, "list")
-            .unwrap_or_else(|error| panic!("{error}; case={case}"));
+        let snapshot = name_resolution_test_snapshot(source, marker, "list").unwrap_or_else(
+            // Fixed test literals and checked-in corpus IDs cannot reach this diagnostic.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |error| panic!("{error}; case={case}"),
+        );
         assert_eq!(snapshot.resolution, *expected, "case={case}");
     }
 }
@@ -8305,8 +8329,11 @@ fn annotation_scope_private_correspondence_matches_lean() {
         .iter()
         .filter(|item| item.observation_kind == "annotation")
     {
-        let snapshot = annotation_site_test_snapshot(&item.source, &item.marker)
-            .unwrap_or_else(|error| panic!("{error}; case={}", item.id));
+        let snapshot = annotation_site_test_snapshot(&item.source, &item.marker).unwrap_or_else(
+            // Fixed test literals and checked-in corpus IDs cannot reach this diagnostic.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |error| panic!("{error}; case={}", item.id),
+        );
         let marker_start = item.source.find(&item.marker).unwrap();
         let marker_end = marker_start + item.marker.len();
         assert!(snapshot.start <= marker_start, "{}", item.id);
@@ -8331,7 +8358,11 @@ fn annotation_scope_private_correspondence_matches_lean() {
         .filter(|item| item.observation_kind == "resolution")
     {
         let snapshot = name_resolution_test_snapshot(&item.source, &item.marker, "list")
-            .unwrap_or_else(|error| panic!("{error}; case={}", item.id));
+            .unwrap_or_else(
+                // Fixed test literals and checked-in corpus IDs cannot reach this diagnostic.
+                #[cfg_attr(coverage_nightly, coverage(off))]
+                |error| panic!("{error}; case={}", item.id),
+            );
         let marker_start = item.source.find(&item.marker).unwrap();
         let name_start = marker_start + item.marker.find("list").unwrap();
         assert_eq!(snapshot.start, name_start, "{}", item.id);
@@ -8447,8 +8478,11 @@ fn exception_match_binding_internal_corpus() {
         }) {
             assert!(item.expected_resolution.is_none(), "{}", item.id);
             assert!(item.expected_exit_category.is_none(), "{}", item.id);
-            let actual_facts = observe(&item.source, &item.marker)
-                .unwrap_or_else(|error| panic!("{error}; case={}", item.id));
+            let actual_facts = observe(&item.source, &item.marker).unwrap_or_else(
+                // Fixed test literals and checked-in corpus IDs cannot reach this diagnostic.
+                #[cfg_attr(coverage_nightly, coverage(off))]
+                |error| panic!("{error}; case={}", item.id),
+            );
             assert_eq!(actual_facts, item.expected_facts, "{}", item.id);
             assert_eq!(
                 !actual_facts.is_empty(),
@@ -8463,7 +8497,11 @@ fn exception_match_binding_internal_corpus() {
         let category = item.expected_exit_category.as_deref().unwrap();
         assert!(["fallthrough", "break", "continue", "terminate"].contains(&category));
         let actual_facts = binding_flow_handler_exit_snapshot(&item.source, &item.marker, category)
-            .unwrap_or_else(|error| panic!("{error}; case={}", item.id));
+            .unwrap_or_else(
+                // Fixed test literals and checked-in corpus IDs cannot reach this diagnostic.
+                #[cfg_attr(coverage_nightly, coverage(off))]
+                |error| panic!("{error}; case={}", item.id),
+            );
         assert_eq!(actual_facts, item.expected_facts, "{}", item.id);
         assert_eq!(
             !actual_facts.is_empty(),
@@ -8481,10 +8519,11 @@ fn exception_match_binding_private_projection_detects_broken_transitions() {
         .map(|line| serde_json::from_str::<ExceptionMatchBindingCorpusCase>(line).unwrap())
         .collect::<Vec<_>>();
     let case = |id: &str| {
-        cases
-            .iter()
-            .find(|item| item.id == id)
-            .unwrap_or_else(|| panic!("missing sensitivity case {id}"))
+        cases.iter().find(|item| item.id == id).unwrap_or_else(
+            // Fixed test literals and checked-in corpus IDs cannot reach this diagnostic.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            || panic!("missing sensitivity case {id}"),
+        )
     };
 
     let handler_type = case("handler_type_before_target");
@@ -8573,7 +8612,11 @@ fn exception_match_binding_handler_cleanup_rows_observe_post_cleanup_state(
     {
         assert_eq!(
             binding_flow_handler_exit_snapshot(&item.source, &item.marker, category)
-                .unwrap_or_else(|error| panic!("{}: {error}", item.id)),
+                .unwrap_or_else(
+                    // Fixed test literals and checked-in corpus IDs cannot reach this diagnostic.
+                    #[cfg_attr(coverage_nightly, coverage(off))]
+                    |error| panic!("{}: {error}", item.id)
+                ),
             item.expected_facts,
             "{} must observe the categorized exit after handler cleanup",
             item.id
@@ -8585,7 +8628,11 @@ fn exception_match_binding_handler_cleanup_rows_observe_post_cleanup_state(
                 category,
                 mutation,
             )
-            .unwrap_or_else(|error| panic!("{}: {error}", item.id)),
+            .unwrap_or_else(
+                // Fixed test literals and checked-in corpus IDs cannot reach this diagnostic.
+                #[cfg_attr(coverage_nightly, coverage(off))]
+                |error| panic!("{}: {error}", item.id)
+            ),
             vec!["direct:Sequence=typing.Sequence"],
             "{} must detect omitted {category} cleanup",
             item.id

@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 //! Identity-only transitions must not allocate copies of candidate source text.
 use std::collections::VecDeque;
 use std::sync::Mutex;

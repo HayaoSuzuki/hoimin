@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use std::collections::BTreeSet;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Duration;
@@ -925,3 +926,6 @@ fn test_resource_control() -> hoimin_core::ResourceControl {
         mechanism: "test_supplied_hard".into(),
     }
 }
+
+#[path = "support/lean_oracle_coverage.rs"]
+mod coverage_tests;

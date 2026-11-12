@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use hoimin_core::{
     ByteSpan, CandidateDescriptor, PythonSourceEncoding, decode_python_source, validate_candidate,
 };

@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use hoimin_core::ResumeFreshReason;
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;

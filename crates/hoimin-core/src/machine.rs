@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod coverage_tests;
 mod selection;
 #[cfg(test)]
 mod stop_tests;
@@ -521,7 +523,19 @@ impl RunState {
         contract_ensure!(
             "machine.effect.once",
             self.pending.len() == self.pending.keys().collect::<BTreeSet<_>>().len(),
-            (&self.pending, self.completed_floor, &self.completed_gaps)
+            {
+                // HashMap keys are unique; this value only formats an impossible duplicate-key postcondition failure.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || (&self.pending, self.completed_floor, &self.completed_gaps))(
+                    )
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    (&self.pending, self.completed_floor, &self.completed_gaps)
+                }
+            }
         );
         Ok(())
     }
@@ -643,8 +657,11 @@ impl RunState {
     }
 
     fn create_worker_effects(&mut self) -> Result<Vec<RunEffect>, MachineError> {
-        let count = u32::try_from(self.config.limits.jobs.get())
-            .map_err(|_| MachineError::WorkerCountOverflow)?;
+        let count = u32::try_from(self.config.limits.jobs.get()).map_err(
+            // RunConfig validation bounds jobs by MAX_JOBS (256), below u32::MAX.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |_| MachineError::WorkerCountOverflow,
+        )?;
         let grant = self
             .copy_grant
             .ok_or(MachineError::WrongPhase { phase: self.phase })?;
@@ -905,7 +922,17 @@ impl RunState {
                     .ordered_state_mut()
                     .expect("ordered collection requires ordered state");
                 let OrderedCandidatePhase::Collecting { discovered } = &mut ordered.phase else {
-                    unreachable!("ordered collection requires the collecting phase");
+                    // The phase/candidate check immediately above excludes this arm.
+                    #[cfg(coverage_nightly)]
+                    {
+                        (#[coverage(off)]
+                        || unreachable!("ordered collection requires the collecting phase"))(
+                        )
+                    }
+                    #[cfg(not(coverage_nightly))]
+                    {
+                        unreachable!("ordered collection requires the collecting phase")
+                    }
                 };
                 discovered.insert(candidate.id);
             }
@@ -953,7 +980,17 @@ impl RunState {
             | WorkerState::SyntheticFinishing(candidate, _) => candidate,
             WorkerState::Persisting(result) | WorkerState::Finishing(result) => result.candidate,
             WorkerState::Idle | WorkerState::Reading(_) | WorkerState::Resetting => {
-                unreachable!("candidate ownership was validated before taking the worker")
+                // The phase/candidate check immediately above excludes this arm.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || unreachable!("candidate ownership was validated before taking the worker"))(
+                    )
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    unreachable!("candidate ownership was validated before taking the worker")
+                }
             }
         };
         Ok(candidate)
@@ -1006,8 +1043,11 @@ impl RunState {
     }
 
     fn max_processes(&self) -> Result<u32, MachineError> {
-        u32::try_from(self.config.limits.max_processes.get())
-            .map_err(|_| MachineError::ProcessCountOverflow)
+        u32::try_from(self.config.limits.max_processes.get()).map_err(
+            // RunConfig validation already requires max_processes to fit u32.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |_| MachineError::ProcessCountOverflow,
+        )
     }
     fn mutant_process(&mut self, worker: u32) -> Result<Vec<RunEffect>, MachineError> {
         let candidate = self.take_candidate(worker)?;
@@ -1972,7 +2012,18 @@ pub fn transition(
         effects
             .iter()
             .all(|effect| state.pending.contains_key(&effect.id())),
-        (&state.phase, &effects, &state.pending)
+        {
+            // register has returned successfully for every effect; this value only formats a failed registration postcondition.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || (&state.phase, &effects, &state.pending))()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                (&state.phase, &effects, &state.pending)
+            }
+        }
     );
     contract_ensure!(
         "machine.worker.invariant",
@@ -2242,11 +2293,29 @@ mod tests {
         // Act.
         let requests = state.mutant_process(0).unwrap();
         let [RunEffect::RunMutant(process)] = requests.as_slice() else {
-            panic!("mutant request");
+            // This arm only diagnoses a failed test expectation about the emitted effect.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("mutant request") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("mutant request")
+            }
         };
         let output = state.final_report_effects().unwrap();
         let RunEffect::EmitOutput(report) = &output[0] else {
-            panic!("final report");
+            // This arm only diagnoses a failed test expectation about the emitted effect.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("final report") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("final report")
+            }
         };
         let report = serde_json::to_value(&report.event).unwrap();
         // Assert: literal boundary and the actual requested cap agree with the wire.
@@ -2290,7 +2359,16 @@ mod tests {
         let mut state = timeout_report_state(super::MutantTimeout::Auto, Duration::from_secs(10));
         let output = state.final_report_effects().unwrap();
         let RunEffect::EmitOutput(report) = &output[0] else {
-            panic!("final report");
+            // This arm only diagnoses a failed test expectation about the emitted effect.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("final report") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("final report")
+            }
         };
         let report = serde_json::to_value(&report.event).unwrap();
         assert_eq!(
@@ -2388,6 +2466,37 @@ mod tests {
         score.numerator as f64 / score.denominator as f64
     }
 
+    fn finished_report(state: &mut RunState) -> crate::RunSummary {
+        let effects = state.final_report_effects().unwrap();
+        let RunEffect::EmitOutput(output) = &effects[0] else {
+            // This arm only diagnoses a failed test expectation about the emitted effect.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("expected final output effect") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("expected final output effect")
+            }
+        };
+        let encoded = serde_json::to_string(&output.event).unwrap();
+        let decoded: OutputEvent = serde_json::from_str(&encoded).unwrap();
+        let OutputEvent::RunFinished(finished) = decoded else {
+            // This arm only diagnoses a failed test expectation about the emitted effect.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("expected public RunFinished event") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("expected public RunFinished event")
+            }
+        };
+        finished
+    }
+
     #[test]
     fn lean_composed_rows_drive_run_state_and_public_run_finished() {
         let cases = MUTATION_SCORE_POLICY_CORPUS
@@ -2426,15 +2535,7 @@ mod tests {
             let policy = state.exit_policy();
             let complete = state.complete();
             let exit_code = state.exit_code();
-            let effects = state.final_report_effects().unwrap();
-            let RunEffect::EmitOutput(output) = &effects[0] else {
-                panic!("expected final output effect");
-            };
-            let encoded = serde_json::to_string(&output.event).unwrap();
-            let decoded: OutputEvent = serde_json::from_str(&encoded).unwrap();
-            let OutputEvent::RunFinished(finished) = decoded else {
-                panic!("expected public RunFinished event");
-            };
+            let finished = finished_report(&mut state);
 
             assert_eq!(policy, expected_policy, "{}", case.id);
             assert_eq!(complete, case.expected_complete, "{}", case.id);
@@ -2533,15 +2634,7 @@ mod tests {
                             let policy = state.exit_policy();
                             let exit_code = state.exit_code();
                             let complete = state.complete();
-                            let effects = state.final_report_effects().unwrap();
-                            let RunEffect::EmitOutput(output) = &effects[0] else {
-                                panic!("expected final output effect");
-                            };
-                            let encoded = serde_json::to_string(&output.event).unwrap();
-                            let decoded: OutputEvent = serde_json::from_str(&encoded).unwrap();
-                            let OutputEvent::RunFinished(finished) = decoded else {
-                                panic!("expected public RunFinished event");
-                            };
+                            let finished = finished_report(&mut state);
 
                             assert_eq!(policy, expected);
                             assert_eq!(exit_code, exit_code_for(expected));
@@ -2560,5 +2653,10 @@ mod tests {
                 }
             }
         }
+    }
+    #[test]
+    fn audit_status_includes_not_run_and_rejects_unknown_names() {
+        assert_eq!(audit_status("not_run"), MutationStatus::NotRun);
+        assert!(std::panic::catch_unwind(|| audit_status("unknown")).is_err());
     }
 }

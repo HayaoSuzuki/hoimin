@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use hoimin_cli::plan::{
     PLAN_SCHEMA_VERSION, PlanManifest, RankedPlanCandidate, RankingReason, RankingReasonCode,
 };

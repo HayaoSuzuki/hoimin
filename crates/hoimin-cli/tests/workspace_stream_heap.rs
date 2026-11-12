@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::time::Instant;

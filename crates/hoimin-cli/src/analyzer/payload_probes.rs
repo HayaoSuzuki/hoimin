@@ -15,6 +15,42 @@ const GENERATED: (&str, &str) = (
     "6e0ed0bde15d87b67a13fbbe24e81f91c5c0a143abf0a2d567c172f351750495",
 );
 
+// The fixtures and original operator results remain fixed; defaults added
+// since the original probe commit (5dd992af) account for the larger totals.
+const ADDED_DEFAULTS: &[&str] = &[
+    "async_iterator_stop_insert",
+    "base_order_shuffle",
+    "binary_div_floor",
+    "bisect_boundary_swap",
+    "comparison_not_implemented",
+    "continue_remove",
+    "dataclass_factory_share",
+    "deepcopy_to_copy",
+    "deque_popleft_to_pop",
+    "encoding_errors_ignore",
+    "exception_cause_remove",
+    "fstring_conversion_swap",
+    "gather_return_exceptions",
+    "generator_empty",
+    "generator_return_insert",
+    "generator_skip_first",
+    "iterator_stop_insert",
+    "itertools_take_drop_swap",
+    "lambda_capture_late",
+    "list_comprehension_to_generator",
+    "loop_break_insert",
+    "mapping_setdefault_to_get",
+    "mutable_default_share",
+    "none_truthiness",
+    "nonlocal_remove",
+    "override_method_delete",
+    "sort_key_swap",
+    "structure_slice_bound_move",
+    "structure_slice_bound_omit",
+    "super_call_move",
+    "yield_from_to_yield",
+];
+
 fn check_fixture((name, expected): (&str, &str)) {
     let source = Utf8Path::new(INPUT_ROOT).join(name).join("source.py");
     assert!(source.is_file(), "missing pinned payload fixture: {source}");
@@ -76,7 +112,33 @@ fn observe(
     let elapsed = started.elapsed();
     let stats = budget.snapshot();
 
-    assert_eq!(output.candidates.len(), expected_count);
+    let mut operator_counts = std::collections::BTreeMap::<&str, usize>::new();
+    for candidate in &output.candidates {
+        *operator_counts.entry(&candidate.operator).or_default() += 1;
+    }
+    assert_eq!(
+        output.candidates.len(),
+        expected_count,
+        "operators={operator_counts:?}"
+    );
+    let original_count = match name {
+        "proofreadtools_full" | "proofreadtools_focused" => Some(31),
+        "django_full" => Some(1309),
+        "django_focused" => Some(1289),
+        "normal_three_file_plan" => Some(10_340),
+        _ => None,
+    };
+    if let Some(expected) = original_count {
+        let retained = output
+            .candidates
+            .iter()
+            .filter(|candidate| !ADDED_DEFAULTS.contains(&candidate.operator.as_str()))
+            .count();
+        assert_eq!(
+            retained, expected,
+            "original catalog results changed: {operator_counts:?}"
+        );
+    }
     assert!(!output.truncated);
     assert_eq!(
         stats.used, 0,
@@ -84,7 +146,7 @@ fn observe(
     );
     eprintln!(
         "PAYLOAD_PROBE {}",
-        serde_json::json!({"name":name,"operators":operators.names(),
+        serde_json::json!({"name":name,"operators":operators.names(),"operator_counts":operator_counts,
         "profile":format!("{profile:?}"),"candidates":output.candidates.len(),"charged_peak":stats.peak,
         "terminal_used":stats.used,"reservations":stats.reservations,"releases":stats.releases,
         "admissions":stats.admissions,"generated":stats.generated,"analysis_seconds":elapsed.as_secs_f64(),
@@ -117,14 +179,14 @@ normal_probe!(
     PROOFREADTOOLS,
     MutationOperatorSelection::default(),
     Full,
-    31
+    43
 );
 normal_probe!(
     proofreadtools_focused,
     PROOFREADTOOLS,
     MutationOperatorSelection::default(),
     Focused,
-    31
+    43
 );
 normal_probe!(
     proofreadtools_boolean,
@@ -138,14 +200,14 @@ normal_probe!(
     DJANGO,
     MutationOperatorSelection::default(),
     Full,
-    1309
+    1549
 );
 normal_probe!(
     django_focused,
     DJANGO,
     MutationOperatorSelection::default(),
     Focused,
-    1289
+    1528
 );
 normal_probe!(
     django_boolean,
@@ -193,6 +255,6 @@ fn normal_three_file_plan() {
         ],
         &MutationOperatorSelection::default(),
         MutationProfile::Full,
-        10_340,
+        10_592,
     );
 }

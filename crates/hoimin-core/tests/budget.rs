@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use hoimin_core::{
     BudgetError, BudgetKind, BudgetLedger, CleanupFinished, ContractInvariant, EffectId,
     PreflightCompleted, ReserveError, RunBudgets, release_workspace_copy, reserve_workspace_copy,

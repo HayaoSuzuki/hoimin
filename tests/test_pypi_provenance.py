@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import subprocess
+import sys
 import urllib.error
 from collections.abc import Callable
 from email.message import Message
@@ -870,3 +871,164 @@ def test_index_verification_rejects_invalid_publication(
         match=r"differs|publisher|attestation|non-zero|host",
     ):
         pypi_provenance.verify_index("testpypi", "v1.2.3", "a" * 40, tmp_path)
+
+
+def test_statement_requires_encoded_text() -> None:
+    with pytest.raises(TypeError, match="Invalid encoded"):
+        pypi_provenance.statement_of({"envelope": {"statement": 1}})
+
+
+def test_statement_requires_predicate_type() -> None:
+    statement = {"subject": [{"name": "wheel", "digest": {"sha256": "digest"}}]}
+    value: dict[str, object] = {
+        "envelope": {
+            "statement": base64.b64encode(json.dumps(statement).encode()).decode()
+        }
+    }
+    with pytest.raises(TypeError, match="Missing predicate"):
+        pypi_provenance.statement_types([value], "wheel", "digest")
+
+
+def test_inventory_requires_file_list() -> None:
+    with pytest.raises(TypeError, match="Missing index file inventory"):
+        pypi_provenance.check_inventory({}, [])
+
+
+def test_stage_refuses_existing_output(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="Output already exists"):
+        pypi_provenance.stage(
+            "v1.2.3", "a" * 40, tmp_path, tmp_path / "release", tmp_path
+        )
+
+
+def test_index_requires_stable_tag_and_complete_staging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(ValueError, match="stable release tag"):
+        pypi_provenance.verify_index("pypi", "main", "a" * 40, tmp_path)
+    monkeypatch.setattr(pypi_provenance, "fetch_json", lambda _: {})
+    with pytest.raises(ValueError, match="staged wheels"):
+        pypi_provenance.verify_index("pypi", "v1.2.3", "a" * 40, tmp_path)
+
+
+def test_fetch_json_reads_index_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        pypi_provenance.urllib.request,
+        "urlopen",
+        lambda _url, **_kwargs: io.BytesIO(b'{"urls": []}'),
+    )
+    assert pypi_provenance.fetch_json("https://pypi.org/example") == {"urls": []}
+
+
+def test_run_gh_requires_cli_and_passes_working_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pypi_provenance.shutil, "which", lambda _: None)
+    with pytest.raises(FileNotFoundError, match="GitHub CLI"):
+        pypi_provenance.run_gh(["attestation"])
+    calls = []
+    monkeypatch.setattr(pypi_provenance.shutil, "which", lambda _: "/bin/gh")
+    monkeypatch.setattr(
+        pypi_provenance.subprocess,
+        "run",
+        lambda args, **kwargs: calls.append((args, kwargs)),
+    )
+    pypi_provenance.run_gh(["attestation"], cwd=tmp_path)
+    assert calls[0][0] == ["/bin/gh", "attestation"]
+    assert calls[0][1]["cwd"] == tmp_path
+    assert calls[0][1]["check"] is True
+
+
+@pytest.mark.parametrize("mode", ["stage", "inspect", "verify"])
+def test_provenance_cli_dispatches_modes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+
+    output = tmp_path / "github-output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    arguments = [
+        "provenance",
+        mode,
+        "--tag",
+        "v1.2.3",
+        "--commit",
+        "a" * 40,
+        "--directory",
+        str(tmp_path),
+    ]
+    calls = []
+    if mode == "stage":
+        arguments += [
+            "--output",
+            str(tmp_path / "dist"),
+            "--release-json",
+            str(tmp_path / "release.json"),
+        ]
+        monkeypatch.setattr(pypi_provenance, "stage", lambda *args: calls.append(args))
+    else:
+        arguments += ["--index", "testpypi"]
+        monkeypatch.setattr(
+            pypi_provenance,
+            "verify_with_propagation",
+            lambda *args, **kwargs: calls.append((args, kwargs)) or True,
+        )
+    monkeypatch.setattr(sys, "argv", arguments)
+    pypi_provenance.main()
+    assert len(calls) == 1
+    if mode == "inspect":
+        assert output.read_text() == "published=true\n"
+    elif mode == "verify":
+        assert calls[0][1] == {"allow_missing": False}
+
+
+@pytest.mark.parametrize("mode", ["stage", "inspect"])
+def test_provenance_cli_requires_mode_specific_arguments(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "provenance",
+            mode,
+            "--tag",
+            "v1.2.3",
+            "--commit",
+            "a" * 40,
+            "--directory",
+            str(tmp_path),
+        ],
+    )
+    with pytest.raises(SystemExit) as error:
+        pypi_provenance.main()
+    assert error.value.code == 2
+
+
+@pytest.mark.parametrize("damage", ["bundles", "attestations"])
+@pytest.mark.parametrize("verified_index", ["valid"], indirect=True)
+def test_index_rejects_malformed_provenance_containers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    verified_index: list[str],
+    damage: str,
+) -> None:
+    original = pypi_provenance.fetch_json
+
+    def fetch(url: str) -> dict[str, object]:
+        value = original(url)
+        if not url.endswith("/json"):
+            if damage == "bundles":
+                value["attestation_bundles"] = []
+            else:
+                bundles = value["attestation_bundles"]
+                assert isinstance(bundles, list)
+                container = object_mapping(bundles[0])
+                container["attestations"] = None
+                value["attestation_bundles"] = [container]
+        return value
+
+    monkeypatch.setattr(pypi_provenance, "fetch_json", fetch)
+    with pytest.raises((TypeError, ValueError), match=r"bundle|Missing attestations"):
+        pypi_provenance.verify_index("testpypi", "v1.2.3", "a" * 40, tmp_path)
+    assert verified_index == []

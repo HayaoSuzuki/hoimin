@@ -1077,3 +1077,74 @@ def test_release_lock_bytes_match_with_windows_default_newlines(
 
     assert b'version = "1.2.3"' in lock
     assert b"\r\n" not in lock
+
+
+def test_package_rejects_unknown_platform_before_creating_output(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "dist"
+    with pytest.raises(ValueError, match="unsupported platform"):
+        automation.package(
+            tmp_path, tmp_path / "missing", "unsupported", "1.2.3", output
+        )
+    assert not output.exists()
+
+
+def test_package_rejects_empty_binary_before_creating_output(tmp_path: Path) -> None:
+    binary = tmp_path / "hoimin"
+    binary.touch()
+    output = tmp_path / "dist"
+    with pytest.raises(ValueError, match="empty executable"):
+        automation.package(tmp_path, binary, "linux-x86_64", "1.2.3", output)
+    assert not output.exists()
+
+
+def test_checksums_rejects_inconsistent_sbom_lock_digests(tmp_path: Path) -> None:
+    assets = release_assets(tmp_path)
+    documents = attach_sboms(assets)
+    document = documents[0]
+    data = json.loads(document.read_text(encoding="utf-8"))
+    for prop in data["metadata"]["properties"]:
+        if prop["name"] == "hoimin:lock:sha256":
+            prop["value"] = "f" * 64
+    document.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"different Cargo\.lock files"):
+        automation.checksums(tmp_path, "1.2.3", "a" * 40)
+    assert not (tmp_path / "SHA256SUMS").exists()
+
+
+def test_checksums_rejects_empty_asset_with_matching_sbom(tmp_path: Path) -> None:
+    assets = release_assets(tmp_path)
+    assets[0].write_bytes(b"")
+    attach_sboms(assets)
+    with pytest.raises(ValueError, match="empty or non-file release asset"):
+        automation.checksums(tmp_path, "1.2.3", "a" * 40)
+    assert not (tmp_path / "SHA256SUMS").exists()
+
+
+@pytest.mark.parametrize("commit", ["abc", "A" * 40])
+def test_reservation_rejects_noncanonical_sha_before_git(
+    tmp_path: Path, commit: str
+) -> None:
+    with pytest.raises(ValueError, match="full commit SHA"):
+        automation.reserve_tag(tmp_path, commit)
+
+
+def test_exhausted_reservation_recovers_remote_tag(
+    repository: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    commit = git(repository, "rev-parse", "HEAD")
+    git(repository, "tag", "v1.2.3")
+    git(repository, "push", "origin", "--tags")
+    monkeypatch.setattr(automation, "TAG_ATTEMPTS", 0)
+    assert automation.reserve_tag(repository, commit) == "v1.2.3"
+
+
+def test_packaging_copies_built_wheels(tmp_path: Path) -> None:
+    wheels = tmp_path / "target/wheels"
+    wheels.mkdir(parents=True)
+    wheel = wheels / "hoimin.whl"
+    wheel.write_bytes(b"wheel payload")
+    _, _, result = package_inputs(tmp_path, "linux-x86_64", "hoimin")
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "dist" / wheel.name).read_bytes() == wheel.read_bytes()

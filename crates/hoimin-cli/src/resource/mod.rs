@@ -172,6 +172,13 @@ impl ResourceBackend {
     /// Returns an error when the active platform backend cannot release its resources.
     pub fn close(&self) -> Result<(), ResourceError> {
         match self {
+            #[cfg(all(test, unix))]
+            Self::Portable(backend) if backend.take_close_failure_for_tests() => {
+                Err(ResourceError::io(
+                    "close portable backend",
+                    std::io::Error::other("injected portable close failure"),
+                ))
+            }
             Self::Portable(_) => Ok(()),
             #[cfg(target_os = "linux")]
             Self::LinuxHard(backend) => backend.close(),

@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #[path = "support/jsonl_report.rs"]
 mod jsonl_report;
 use hoimin_python::AnalyzerCandidate;

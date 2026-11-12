@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #[path = "support/candidate_identity.rs"]
 mod candidate_identity;
 #[path = "support/jsonl_report.rs"]

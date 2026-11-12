@@ -17,7 +17,7 @@ license = "Elastic-2.0"
 repository = "https://github.com/HayaoSuzuki/hoimin"
 
 [workspace.lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(creusot)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(creusot)', 'cfg(coverage_nightly)'] }
 
 [workspace.lints.clippy]
 all = "deny"

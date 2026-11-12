@@ -427,3 +427,49 @@ def test_observations_preserve_additional_evidence() -> None:
     )
 
     assert observations_result == [value]
+
+
+def test_failed_process_start_is_an_infrastructure_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case = load_registry()["cases"][0]
+
+    def cannot_start(*_args: object, **_kwargs: object) -> None:
+        msg = "process unavailable"
+        raise OSError(msg)
+
+    monkeypatch.setattr(subprocess, "Popen", cannot_start)
+    row = execute(case, tmp_path)
+    assert row["status"] == BoundaryStatus.INFRASTRUCTURE_ERROR.value
+    assert row["reason"] == "process unavailable"
+
+
+def test_registry_rejects_non_mapping_case(tmp_path: Path) -> None:
+    source = tmp_path / "registry.json"
+    source.write_text(json.dumps({"schema": 1, "cases": [None]}), encoding="utf-8")
+    with pytest.raises(AssertionError):
+        load_registry(source)
+
+
+def test_report_rejects_non_mapping_document(tmp_path: Path) -> None:
+    source = tmp_path / "report-input.json"
+    source.write_text("null", encoding="utf-8")
+    with pytest.raises(SystemExit) as error:
+        main(["report", "--from-results", str(source), "--output", str(tmp_path)])
+    assert error.value.code == 2
+    assert not (tmp_path / "report.json").exists()
+
+
+@pytest.mark.parametrize("status", ["match", "mismatch"])
+def test_strict_cli_fails_for_semantic_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: str
+) -> None:
+    def result(case: dict[str, object], _directory: Path) -> dict[str, object]:
+        return {"id": case["id"], "mode": case["mode"], "status": status}
+
+    monkeypatch.setattr("tools.boundary_contracts.execute", result)
+    exit_code = main(["strict", "--output", str(tmp_path)])
+    assert exit_code == int(status == "mismatch")
+    report = json.loads((tmp_path / "strict.json").read_text(encoding="utf-8"))
+    assert report["rows"]
+    assert all(row["status"] == status for row in report["rows"])

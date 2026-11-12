@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use std::io::Write;
 
 #[path = "support/heap_tracking.rs"]

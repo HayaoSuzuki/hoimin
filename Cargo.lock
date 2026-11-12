@@ -581,6 +581,7 @@ dependencies = [
  "ruff_python_parser",
  "rusqlite",
  "rustix",
+ "rustix-linux-procfs",
  "serde",
  "serde_json",
  "tempfile",

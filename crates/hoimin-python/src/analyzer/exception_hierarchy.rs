@@ -1859,3 +1859,7 @@ mod exception_import_graph_tests;
 #[cfg(test)]
 #[path = "exception_lookup_tests.rs"]
 mod lookup_tests;
+
+#[cfg(test)]
+#[path = "exception_coverage_tests.rs"]
+mod coverage_tests;

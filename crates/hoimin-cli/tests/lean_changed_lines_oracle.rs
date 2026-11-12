@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 //! Issue 612 correspondence uses real Git, `CPython`, and public plan/run/verify.
 
 #[path = "support/collecting_writer.rs"]

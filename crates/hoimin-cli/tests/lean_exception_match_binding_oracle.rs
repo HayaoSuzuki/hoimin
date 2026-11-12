@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -251,13 +252,6 @@ fn parse_corpus(input: &str) -> Result<Vec<OracleCase>, String> {
 }
 
 fn validate_case(item: &OracleCase) -> Result<(), String> {
-    let facts_are_normalized = item.expected_facts.windows(2).all(|pair| pair[0] < pair[1])
-        && item.expected_facts.iter().all(|fact| {
-            matches!(
-                fact.as_str(),
-                "direct:Sequence=typing.Sequence" | "direct:Mapping=typing.Mapping"
-            )
-        });
     if item.schema != 1
         || item.id.is_empty()
         || item.source.is_empty()
@@ -287,11 +281,21 @@ fn validate_case(item: &OracleCase) -> Result<(), String> {
             item.id, item.observation_kind
         ));
     }
-    if !facts_are_normalized {
+    if !facts_are_normalized(&item.expected_facts) {
         return Err(format!("{} has invalid normalized facts", item.id));
     }
 
-    let fields_match = match item.observation_kind.as_str() {
+    if !fields_match(item) {
+        return Err(format!(
+            "{} has fields incompatible with its mode and observation kind",
+            item.id
+        ));
+    }
+    Ok(())
+}
+
+fn fields_match(item: &OracleCase) -> bool {
+    match item.observation_kind.as_str() {
         "annotation" => {
             item.mode == "internal-fixture"
                 && item.expected_resolution.is_none()
@@ -342,14 +346,17 @@ fn validate_case(item: &OracleCase) -> Result<(), String> {
                 && item.symbol.is_none()
         }
         _ => false,
-    };
-    if !fields_match {
-        return Err(format!(
-            "{} has fields incompatible with its mode and observation kind",
-            item.id
-        ));
     }
-    Ok(())
+}
+
+fn facts_are_normalized(facts: &[String]) -> bool {
+    facts.windows(2).all(|pair| pair[0] < pair[1])
+        && facts.iter().all(|fact| {
+            matches!(
+                fact.as_str(),
+                "direct:Sequence=typing.Sequence" | "direct:Mapping=typing.Mapping"
+            )
+        })
 }
 
 #[derive(Clone, Debug)]
@@ -400,8 +407,17 @@ async fn run_bounded_command(
     let child = command
         .spawn()
         .map_err(|error| format!("infrastructure-error: {case_id} spawn failed: {error}"))?;
-    tokio::time::timeout(deadline, child.wait_with_output())
-        .await
+    decode_wait(
+        case_id,
+        tokio::time::timeout(deadline, child.wait_with_output()).await,
+    )
+}
+
+fn decode_wait(
+    case_id: &str,
+    outcome: Result<std::io::Result<Output>, tokio::time::error::Elapsed>,
+) -> Result<Output, String> {
+    outcome
         .map_err(|_| format!("infrastructure-error: {case_id} public plan timed out"))?
         .map_err(|error| format!("infrastructure-error: {case_id} wait failed: {error}"))
 }
@@ -498,14 +514,10 @@ fn normalize_manifest(
             marker_offsets.len()
         ));
     };
-    let marker_start = u64::try_from(*marker_start)
-        .map_err(|_| format!("infrastructure-error: {} marker offset overflow", item.id))?;
-    let marker_end = marker_start
-        .checked_add(
-            u64::try_from(item.marker.len())
-                .map_err(|_| format!("infrastructure-error: {} marker length overflow", item.id))?,
-        )
-        .ok_or_else(|| format!("infrastructure-error: {} marker range overflow", item.id))?;
+    let marker_start = u64::try_from(*marker_start).expect("source index fits u64");
+    // A complete marker occurrence lies within its source, so its end cannot overflow.
+    let marker_end =
+        marker_start + u64::try_from(item.marker.len()).expect("source length fits u64");
 
     let mut matching = Vec::new();
     for candidate in &manifest.candidates {
@@ -564,7 +576,14 @@ struct Fixture {
 
 impl Fixture {
     fn new(item: &OracleCase) -> Result<Self, String> {
-        let directory = tempfile::tempdir().map_err(|error| {
+        Self::from_tempdir(item, tempfile::tempdir())
+    }
+
+    fn from_tempdir(
+        item: &OracleCase,
+        directory: std::io::Result<tempfile::TempDir>,
+    ) -> Result<Self, String> {
+        let directory = directory.map_err(|error| {
             format!("infrastructure-error: {} fixture tempdir: {error}", item.id)
         })?;
         let root = directory.path().join("project");
@@ -586,9 +605,12 @@ fn repo_root() -> PathBuf {
 }
 
 fn python_executable() -> PathBuf {
-    if cfg!(windows) {
+    #[cfg(windows)]
+    {
         repo_root().join(".venv/Scripts/python.exe")
-    } else {
+    }
+    #[cfg(not(windows))]
+    {
         repo_root().join(".venv/bin/python")
     }
 }
@@ -846,11 +868,16 @@ async fn spawn_timeout_and_fixture_failures_are_infrastructure_errors() {
 async fn strict_public_exception_match_observations_match_lean() {
     let cases = parse_corpus(CORPUS).expect("valid Lean corpus");
     for item in cases.iter().filter(|item| item.mode == "strict") {
-        let manifest = public_plan(item)
-            .await
-            .unwrap_or_else(|error| panic!("{error}\nsource:\n{}", item.source));
-        let actual = normalize_manifest(item, &manifest)
-            .unwrap_or_else(|error| panic!("{error}\nsource:\n{}", item.source));
+        let manifest = public_plan(item).await.unwrap_or_else(
+            // Diagnostic only: fixed valid corpus correspondence asserts successful normalization.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |error| panic!("{error}\nsource:\n{}", item.source),
+        );
+        let actual = normalize_manifest(item, &manifest).unwrap_or_else(
+            // Diagnostic only: fixed valid corpus correspondence asserts successful normalization.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |error| panic!("{error}\nsource:\n{}", item.source),
+        );
         assert_eq!(
             actual,
             expected_public_observation(item),
@@ -887,3 +914,6 @@ async fn overlapping_multiple_candidates_are_a_semantic_mismatch() {
     let marker_error = normalize_manifest(&item, &manifest).unwrap_err();
     assert!(marker_error.starts_with("infrastructure-error:"));
 }
+
+#[path = "support/exception_match_validation_tests.rs"]
+mod validation_tests;

@@ -143,6 +143,19 @@ testpaths = ["tests"]
 norecursedirs = ["fixtures", ".hypothesis"]
 pythonpath = [".", "tests"]
 
+[tool.coverage.run]
+branch = true
+source = ["tools", "tests", "formal/HoiminOracle/tools", "crates/hoimin-cli/tests/support"]
+patch = ["subprocess"]
+
+[tool.coverage.paths]
+repository = [".", "/work"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+precision = 2
+
 [tool.ty.environment]
 python-version = "3.14"
 python-platform = "all"

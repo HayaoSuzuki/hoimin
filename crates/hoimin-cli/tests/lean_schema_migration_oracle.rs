@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::{Arc, Barrier, mpsc};
@@ -200,14 +201,23 @@ fn rollback_model_fixture_is_rejected_before_public_initialization() {
 fn public_session_open_matches_strict_schema_migration_cases() {
     let cases = parse_corpus(CORPUS).expect("valid Lean schema migration corpus");
     for item in cases.iter().filter(|item| item.mode == "strict") {
-        run_strict_case(item).unwrap_or_else(|error| {
-            panic!("infrastructure error for schema case {}: {error}", item.id)
-        });
+        run_strict_case(item).unwrap_or_else(
+            // The fixed corpus correspondence asserts successful execution.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |error| panic!("infrastructure error for schema case {}: {error}", item.id),
+        );
     }
 }
 
 fn run_strict_case(item: &OracleCase) -> Result<(), String> {
-    let directory = tempfile::tempdir().map_err(|error| error.to_string())?;
+    run_strict_case_from(item, tempfile::tempdir())
+}
+
+fn run_strict_case_from(
+    item: &OracleCase,
+    directory: std::io::Result<tempfile::TempDir>,
+) -> Result<(), String> {
+    let directory = directory.map_err(|error| error.to_string())?;
     let path = directory.path().join("session.sqlite3");
     prepare_fixture(item, &path)?;
 
@@ -231,7 +241,7 @@ fn run_strict_case(item: &OracleCase) -> Result<(), String> {
         ));
     }
 
-    let connection = Connection::open(&path).map_err(|error| error.to_string())?;
+    let connection = open_observation_connection(&path)?;
     let actual_version = user_version(&connection)?;
     if actual_version != expected_version_number(&item.expected_version)? {
         return Err(format!(
@@ -302,11 +312,19 @@ fn open_concurrently(path: &Path) -> Result<Vec<String>, String> {
     drop(sender);
     start.wait();
 
+    collect_open_results(&receiver, handles, Duration::from_secs(10))
+}
+
+fn collect_open_results(
+    receiver: &mpsc::Receiver<String>,
+    handles: Vec<thread::JoinHandle<()>>,
+    deadline: Duration,
+) -> Result<Vec<String>, String> {
     let mut results = Vec::with_capacity(2);
     for _ in 0..2 {
         results.push(
             receiver
-                .recv_timeout(Duration::from_secs(10))
+                .recv_timeout(deadline)
                 .map_err(|error| format!("concurrent open timed out: {error}"))?,
         );
     }
@@ -370,3 +388,9 @@ fn observe_marker(item: &OracleCase, connection: &Connection) -> Result<bool, St
         .map(|count| count > 0)
         .map_err(|error| error.to_string())
 }
+
+fn open_observation_connection(path: &Path) -> Result<Connection, String> {
+    Connection::open(path).map_err(|error| error.to_string())
+}
+#[path = "support/schema_migration_validation_tests.rs"]
+mod validation_tests;

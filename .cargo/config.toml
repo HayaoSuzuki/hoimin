@@ -1,0 +1,13 @@
+[alias]
+# Include test files: cargo-llvm-cov excludes them from reports by default.
+# Run with `cargo +nightly-2026-10-08 coverage` for native inline exclusions.
+# Dependency macro sources and generated build output are outside this workspace's
+# source/test scope; workspace test files remain included.
+coverage = [
+    "llvm-cov", "--workspace", "--all-targets", "--all-features",
+    "--no-default-ignore-filename-regex",
+    "--ignore-filename-regex", "/\\.cargo/(registry|git)/|/\\.rustup/toolchains/|/target/",
+    "--fail-under-lines", "100",
+    "--fail-under-functions", "100",
+    "--fail-under-regions", "100",
+]

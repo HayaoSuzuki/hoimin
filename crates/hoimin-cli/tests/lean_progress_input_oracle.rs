@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #[path = "support/candidate_identity.rs"]
 mod candidate_identity;
 #[path = "support/jsonl_report.rs"]
@@ -146,11 +147,24 @@ async fn observe_cli_self_comparison(case: &LeanOracleCase) -> Result<CliObserva
 }
 
 async fn observe_cli_encoding(case: &LeanOracleCase) -> Result<CliObservation, String> {
-    let fixture = tempfile::tempdir().map_err(|error| error.to_string())?;
+    observe_cli_encoding_from(
+        case,
+        tempfile::tempdir(),
+        std::path::Path::new(env!("CARGO_BIN_EXE_hoimin")),
+    )
+    .await
+}
+
+async fn observe_cli_encoding_from(
+    case: &LeanOracleCase,
+    fixture: std::io::Result<tempfile::TempDir>,
+    executable: &std::path::Path,
+) -> Result<CliObservation, String> {
+    let fixture = fixture.map_err(|error| error.to_string())?;
     let path = fixture.path().join(format!("{}.report", case.id));
     std::fs::write(&path, encode_report(&report_json_from_lean_case(case)))
         .map_err(|error| error.to_string())?;
-    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
+    let mut command = tokio::process::Command::new(executable);
     command
         .args(["progress", "--patience", "1"])
         .arg(&path)
@@ -158,10 +172,23 @@ async fn observe_cli_encoding(case: &LeanOracleCase) -> Result<CliObservation, S
         .kill_on_drop(true)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let output = tokio::time::timeout(Duration::from_secs(10), command.output())
-        .await
+    let output =
+        decode_cli_wait(tokio::time::timeout(Duration::from_secs(10), command.output()).await)?;
+    decode_cli_output(&path, &output)
+}
+
+fn decode_cli_wait(
+    outcome: Result<std::io::Result<std::process::Output>, tokio::time::error::Elapsed>,
+) -> Result<std::process::Output, String> {
+    outcome
         .map_err(|_| "CLI timeout".to_owned())?
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.to_string())
+}
+
+fn decode_cli_output(
+    path: &std::path::Path,
+    output: &std::process::Output,
+) -> Result<CliObservation, String> {
     let stderr = String::from_utf8_lossy(&output.stderr);
     match output.status.code() {
         Some(2)
@@ -221,9 +248,11 @@ async fn current_summaries_follow_lean_before_entering_stall_history() {
     let mut mismatches = Vec::new();
     for case in parse_lean_oracle_cases() {
         let schema = hoimin_core::REPORT_SCHEMA_VERSION;
-        let observed = observe_cli_self_comparison(&case)
-            .await
-            .unwrap_or_else(|error| panic!("{} v{schema} infrastructure-error: {error}", case.id));
+        let observed = observe_cli_self_comparison(&case).await.unwrap_or_else(
+            // Fixed minimal regression witness asserts successful infrastructure execution.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |error| panic!("{} v{schema} infrastructure-error: {error}", case.id),
+        );
         mismatches.extend(
             (observed.disposition != case.expected_disposition
                 || observed.history != case.expected_history)
@@ -250,9 +279,11 @@ async fn killed_exit_zero_minimal_regression_follows_lean() {
         .find(|case| case.id == "result_killed_exit_zero_complete")
         .expect("retain the minimal result-validation witness");
     let schema = hoimin_core::REPORT_SCHEMA_VERSION;
-    let observed = observe_cli_self_comparison(&case)
-        .await
-        .unwrap_or_else(|error| panic!("v{schema} infrastructure-error: {error}"));
+    let observed = observe_cli_self_comparison(&case).await.unwrap_or_else(
+        // Fixed minimal regression witness asserts successful infrastructure execution.
+        #[cfg_attr(coverage_nightly, coverage(off))]
+        |error| panic!("v{schema} infrastructure-error: {error}"),
+    );
     assert_eq!(observed.disposition, case.expected_disposition, "v{schema}");
     assert_eq!(observed.history, case.expected_history, "v{schema}");
 }
@@ -310,19 +341,12 @@ async fn shared_reader_progress_formats_follow_lean() {
     let mut selected_cases = 0;
     for case in parse_lean_oracle_cases()
         .into_iter()
-        .filter(|case| selected.as_ref().is_none_or(|id| *id == case.id))
+        .filter(|case| selected_boundary_case(case, selected.as_deref()))
     {
         for gap in std::iter::once(&case)
             .filter(|case| case.baseline == "missing" && !case.statuses.is_empty())
         {
-            println!(
-                "BOUNDARY_OBSERVATION {}",
-                json!({
-                    "fixture": gap.id, "encoding": "jsonl-v6", "boundary": "reader-progress",
-                    "mode": "report", "evidence": "real-cli", "status": "unexecuted",
-                    "reason": "document permits missing baseline with mutant projections; full JSONL lifecycle requires preceding baseline"
-                })
-            );
+            print_unexecuted_gap(gap);
         }
         selected_cases += 1;
         if case.baseline != "missing" || case.statuses.is_empty() {
@@ -337,8 +361,7 @@ async fn shared_reader_progress_formats_follow_lean() {
                     "expected_disposition": case.expected_disposition
                 })
             );
-            failures
-                .extend((status != "match").then(|| format!("{} {encoding}: {reason:?}", case.id)));
+            failures.extend(failure_message(&case, encoding, status, reason.as_deref()));
         }
     }
     assert!(selected_cases > 0, "unknown HOIMIN_BOUNDARY_CASE");
@@ -382,4 +405,30 @@ fn shared_reader_fixture_encodings_preserve_fields_and_projection_premises() {
         projection_gaps, 0,
         "current Lean missing-baseline cases have no mutants"
     );
+}
+
+#[path = "support/progress_input_validation_tests.rs"]
+mod validation_tests;
+
+fn print_unexecuted_gap(gap: &LeanOracleCase) {
+    println!(
+        "BOUNDARY_OBSERVATION {}",
+        json!({
+            "fixture": gap.id, "encoding": "jsonl-v6", "boundary": "reader-progress",
+            "mode": "report", "evidence": "real-cli", "status": "unexecuted",
+            "reason": "document permits missing baseline with mutant projections; full JSONL lifecycle requires preceding baseline"
+        })
+    );
+}
+
+fn selected_boundary_case(case: &LeanOracleCase, selected: Option<&str>) -> bool {
+    selected.is_none_or(|id| id == case.id)
+}
+fn failure_message(
+    case: &LeanOracleCase,
+    encoding: &str,
+    status: &str,
+    reason: Option<&str>,
+) -> Option<String> {
+    (status != "match").then(|| format!("{} {encoding}: {reason:?}", case.id))
 }
