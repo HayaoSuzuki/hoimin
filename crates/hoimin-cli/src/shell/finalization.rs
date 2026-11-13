@@ -53,11 +53,13 @@ pub(super) struct ExecutionFinalization {
 
 impl ExecutionFinalization {
     pub(super) fn new() -> Result<Self, DiskLifecycleError> {
-        Ok(Self {
-            lifecycle: ShellDiskLifecycle::new([DiskRootId::Execution, DiskRootId::Delivery])?,
-            measurement: FinalMeasurement::Quiescent(None),
-            cleanup: ExecutionCleanup::NotAttempted(None),
-            end_available: EndAvailable::NotObserved,
+        ShellDiskLifecycle::new([DiskRootId::Execution, DiskRootId::Delivery]).map(|lifecycle| {
+            Self {
+                lifecycle,
+                measurement: FinalMeasurement::Quiescent(None),
+                cleanup: ExecutionCleanup::NotAttempted(None),
+                end_available: EndAvailable::NotObserved,
+            }
         })
     }
 
@@ -148,11 +150,14 @@ impl ExecutionFinalization {
             snapshot.monitor_join,
         ];
         for ((event, component), state) in Self::drain_events(evidence).into_iter().zip(states) {
-            if state == DiskComponentState::Pending && !self.apply(event) {
-                errors.push(format!(
-                    "disk lifecycle rejected outer {component} completion"
-                ));
-            }
+            errors.extend(
+                (state == DiskComponentState::Pending && !self.apply(event)).then(
+                    // Pending components accept their completion; FinishRequested requires all
+                    // components settled. Keep this diagnostic if those lifecycle rules change.
+                    #[cfg_attr(coverage_nightly, coverage(off))]
+                    || format!("disk lifecycle rejected outer {component} completion"),
+                ),
+            );
         }
         cleanup_quiescence_proven([
             evidence.process_reaped,
@@ -190,16 +195,15 @@ impl ExecutionFinalization {
     }
 
     fn begin_cleanup_attempt(&mut self) -> bool {
-        if self.cleanup_attempted() {
-            return false;
+        match &mut self.cleanup {
+            ExecutionCleanup::NotAttempted(record) => {
+                let record = record.take();
+                // Move retained evidence into the attempt before admission can fail.
+                self.cleanup = ExecutionCleanup::Attempted(record);
+                true
+            }
+            ExecutionCleanup::Attempted(_) | ExecutionCleanup::Completed(_) => false,
         }
-        // Move the evidence with the attempt before admission can fail.
-        let cleanup = std::mem::replace(&mut self.cleanup, ExecutionCleanup::Attempted(None));
-        self.cleanup = match cleanup {
-            ExecutionCleanup::NotAttempted(record) => ExecutionCleanup::Attempted(record),
-            other => other,
-        };
-        true
     }
 
     /// Admit actual removal only after every owned source of I/O is quiescent.
@@ -339,29 +343,29 @@ mod tests {
         }
     }
 
-    #[test]
-    fn inner_and_outer_observations_require_each_drain() {
-        for flags in 0..8 {
-            let evidence = DrainEvidence {
-                process_reaped: flags & 1 != 0,
-                output_drained: flags & 2 != 0,
-                monitor_joined: flags & 4 != 0,
-            };
-            let mut inner = ExecutionFinalization::new().unwrap();
-            let mut outer = ExecutionFinalization::new().unwrap();
-            let mut errors = Vec::new();
+    #[rstest::rstest]
+    fn inner_and_outer_observations_require_each_drain(
+        #[values(0_u8, 1, 2, 3, 4, 5, 6, 7)] flags: u8,
+    ) {
+        let evidence = DrainEvidence {
+            process_reaped: flags & 1 != 0,
+            output_drained: flags & 2 != 0,
+            monitor_joined: flags & 4 != 0,
+        };
+        let mut inner = ExecutionFinalization::new().unwrap();
+        let mut outer = ExecutionFinalization::new().unwrap();
+        let mut errors = Vec::new();
 
-            assert_eq!(inner.observe_inner_drains(evidence).unwrap(), flags == 7);
-            assert_eq!(
-                outer.observe_outer_drains(evidence, &mut errors),
-                flags == 7
-            );
-            assert_eq!(errors, Vec::<String>::new());
-            assert_eq!(inner.snapshot(), outer.snapshot());
-            // A later successful retry cannot erase an accepted failure.
-            assert_eq!(inner.observe_outer_drains(JOINED, &mut errors), flags == 7);
-            assert_eq!(errors, Vec::<String>::new());
-        }
+        assert_eq!(inner.observe_inner_drains(evidence).unwrap(), flags == 7);
+        assert_eq!(
+            outer.observe_outer_drains(evidence, &mut errors),
+            flags == 7
+        );
+        assert_eq!(errors, Vec::<String>::new());
+        assert_eq!(inner.snapshot(), outer.snapshot());
+        // A later successful retry cannot erase an accepted failure.
+        assert_eq!(inner.observe_outer_drains(JOINED, &mut errors), flags == 7);
+        assert_eq!(errors, Vec::<String>::new());
     }
 
     #[test]
@@ -502,19 +506,84 @@ mod tests {
     fn failed_free_space_observation_is_not_retried_or_reported_as_zero() {
         let mut owner = ExecutionFinalization::new().unwrap();
         let calls = Cell::new(0);
-        let first = owner.observe_end_available(|| {
+        let first = observe_test_free_space(&mut owner, &mut || {
             calls.set(calls.get() + 1);
             Err(io::Error::other("free space unavailable"))
         });
 
         assert!(first.is_err());
-        owner
-            .observe_end_available(|| {
-                calls.set(calls.get() + 1);
-                Ok(BTreeMap::from([(FilesystemKey(1), 0)]))
-            })
-            .unwrap();
+        // Once an unavailable reading is recorded, a second query must never run.
+        let mut unexpected_query = Box::new(
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            || panic!("free space observation was retried"),
+        );
+        observe_test_free_space(&mut owner, &mut unexpected_query).unwrap();
         assert_eq!(calls.get(), 1);
         assert_eq!(owner.end_available_bytes(FilesystemKey(1)), None);
+    }
+
+    #[test]
+    fn repeated_inner_drain_completion_reports_the_rejected_component() {
+        let mut owner = ExecutionFinalization::new().unwrap();
+        assert!(owner.observe_inner_drains(JOINED).unwrap());
+        let previous = owner.snapshot();
+        let error = owner.observe_inner_drains(JOINED).unwrap_err();
+        assert_eq!(error, "disk lifecycle rejected process drain completion");
+        assert_eq!(owner.snapshot(), previous);
+    }
+
+    #[test]
+    fn an_unjoined_measurement_after_cleanup_cannot_claim_removed_bytes() {
+        let mut owner = cleanup_after_drains(inner_drains);
+        let error = owner
+            .observe_measurement(Err(CleanupThreadFailure::TimedOut))
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        let mut summary = summary();
+        owner.project_summary(&mut summary);
+        assert!(owner.cleaned());
+        assert_eq!(summary.disk.removed_logical_bytes, None);
+    }
+
+    #[test]
+    fn summary_projection_preserves_the_other_root_evidence() {
+        let owner = cleanup_after_drains(inner_drains);
+        let mut summary = summary();
+        let mut other = summary.disk.cleanup[0].clone();
+        other.root_id = "delivery".to_owned();
+        other.details = vec!["preserve unrelated evidence".to_owned()];
+        summary.disk.cleanup.insert(0, other.clone());
+        owner.project_summary(&mut summary);
+        assert_eq!(summary.disk.cleanup[0], other);
+        assert_eq!(summary.disk.cleanup[1].examined_entries, 7);
+        assert_eq!(summary.disk.removed_logical_bytes, Some(123));
+    }
+
+    #[test]
+    fn summary_projection_handles_a_report_without_execution_cleanup() {
+        let owner = cleanup_after_drains(inner_drains);
+        let mut summary = summary();
+        summary.disk.cleanup.clear();
+        owner.project_summary(&mut summary);
+        assert_eq!(summary.disk.cleanup, Vec::new());
+        assert_eq!(summary.disk.removed_logical_bytes, Some(123));
+    }
+
+    fn observe_test_free_space(
+        owner: &mut ExecutionFinalization,
+        query: &mut dyn FnMut() -> io::Result<BTreeMap<FilesystemKey, u64>>,
+    ) -> io::Result<()> {
+        owner.observe_end_available(query)
+    }
+
+    #[test]
+    fn a_successful_free_space_observation_preserves_an_actual_zero_reading() {
+        let mut owner = ExecutionFinalization::new().unwrap();
+        observe_test_free_space(&mut owner, &mut || {
+            Ok(BTreeMap::from([(FilesystemKey(1), 0)]))
+        })
+        .unwrap();
+        assert_eq!(owner.end_available_bytes(FilesystemKey(1)), Some(0));
+        assert_eq!(owner.end_available_bytes(FilesystemKey(2)), None);
     }
 }

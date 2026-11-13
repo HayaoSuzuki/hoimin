@@ -6,22 +6,77 @@ import ast
 import contextlib
 import json
 import os
+import runpy
 import shutil
 import signal
 import subprocess
 import sys
 import threading
 import time
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, chdir
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, BinaryIO
+from unittest.mock import create_autospec
 
 import pytest
+from pytest_mock import MockerFixture
 
 from tools import verify_creusot
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = ROOT / "tests/fixtures/creusot" / "x86_64-unknown-linux-gnu/first"
+
+
+def wait_for_process_exit(state_file: Path, *, attempts: int = 500) -> str | None:
+    """Allow asynchronous SIGKILL delivery before checking the final state."""
+    state = None
+    for _ in range(attempts):
+        try:
+            state = state_file.read_text().split(") ", 1)[1][0]
+        except FileNotFoundError:
+            return None
+        if state == "Z":
+            return state
+        time.sleep(0.01)
+    return state
+
+
+def test_process_exit_wait_accepts_absent_process(tmp_path: Path) -> None:
+    assert wait_for_process_exit(tmp_path / "missing-stat") is None
+
+
+def test_process_exit_wait_accepts_zombie(tmp_path: Path) -> None:
+    state_file = tmp_path / "stat"
+    state_file.write_text("123 (child) Z remaining fields")
+    assert wait_for_process_exit(state_file) == "Z"
+
+
+def test_process_exit_wait_polls_until_delivery(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    state_file = tmp_path / "stat"
+    state_file.write_text("123 (child) D remaining fields")
+    sleep = create_autospec(
+        time.sleep,
+        side_effect=lambda _: state_file.write_text("123 (child) Z remaining fields"),
+    )
+    mocker.patch.object(time, "sleep", sleep)
+
+    assert wait_for_process_exit(state_file, attempts=2) == "Z"
+    sleep.assert_called_once_with(0.01)
+
+
+def test_process_exit_wait_reports_state_after_bounded_attempts(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    state_file = tmp_path / "stat"
+    state_file.write_text("123 (child) D remaining fields")
+    sleep = create_autospec(time.sleep, return_value=None)
+    mocker.patch.object(time, "sleep", sleep)
+
+    assert wait_for_process_exit(state_file, attempts=2) == "D"
+    assert sleep.call_args_list == [((0.01,),), ((0.01,),)]
 
 
 class InterruptingWaitLock:
@@ -32,7 +87,9 @@ class InterruptingWaitLock:
         self.fired = False
 
     def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:  # noqa: FBT001, FBT002 -- Match Lock.acquire.
-        if self.fired and self.lock.locked():
+        if (
+            self.fired and self.lock.locked()
+        ):  # pragma: no cover -- Fails only when the wait-lock regression recurs.
             message = "SIGTERM escaped while the subprocess wait lock was held"
             raise AssertionError(message)
         acquired = self.lock.acquire(blocking, timeout)
@@ -239,8 +296,6 @@ def test_saved_strategies_attach_only_to_current_generated_files(
     target = "x86_64-unknown-linux-gnu"
     strategy_root = Path(manifest["strategy_roots"][target])
     shutil.copytree(ROOT / strategy_root, root / strategy_root)
-    for prior in (root / "verif").rglob("proof.json"):
-        prior.unlink()
 
     count = verify_creusot.install_strategies(root, manifest, target)
 
@@ -310,14 +365,14 @@ def test_command_rejects_failed_or_missing_tool(tmp_path: Path, failure: str) ->
 
 
 def test_mismatched_environment_preflight_stops_before_generation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, mocker: MockerFixture
 ) -> None:
     checker = tmp_path / "checker.py"
     checker.write_text("raise SystemExit('tool hash mismatch')\n")
     manifest = tmp_path / "toolchain.json"
     manifest.write_text("{}")
-    monkeypatch.setattr(verify_creusot, "ENVIRONMENT", checker)
-    monkeypatch.setattr(verify_creusot, "TOOLCHAIN", manifest)
+    mocker.patch.object(verify_creusot, "ENVIRONMENT", checker)
+    mocker.patch.object(verify_creusot, "TOOLCHAIN", manifest)
 
     with pytest.raises(verify_creusot.ProofError, match="command failed"):
         verify_creusot.proof_preflight(
@@ -356,7 +411,8 @@ def test_deadline_kills_child_in_separate_process_group(tmp_path: Path) -> None:
     child = int(pid_file.read_text())
     state_file = Path(f"/proc/{child}/stat")
 
-    assert not state_file.exists() or state_file.read_text().split(") ", 1)[1][0] == "Z"
+    state = wait_for_process_exit(state_file)
+    assert state in (None, "Z"), f"child {child} remained in process state {state}"
 
 
 @pytest.mark.skipif(
@@ -364,7 +420,9 @@ def test_deadline_kills_child_in_separate_process_group(tmp_path: Path) -> None:
 )
 def test_sigterm_kills_child_in_separate_process_group(tmp_path: Path) -> None:
     def cleanup_child(pid: int | None) -> None:
-        if pid is not None:
+        if (
+            pid is not None
+        ):  # pragma: no branch -- None occurs only if child startup assertions fail.
             with contextlib.suppress(ProcessLookupError):
                 getattr(os, "killpg")(pid, getattr(signal, "SIGKILL"))  # noqa: B009
 
@@ -391,7 +449,9 @@ def test_sigterm_kills_child_in_separate_process_group(tmp_path: Path) -> None:
     )
     child_pid = None
     try:
-        for _ in range(500):
+        for _ in range(
+            500
+        ):  # pragma: no branch -- Exhaustion fails the child-start assertion.
             if pid_file.exists():
                 child_pid = int(pid_file.read_text())
                 break
@@ -408,7 +468,9 @@ def test_sigterm_kills_child_in_separate_process_group(tmp_path: Path) -> None:
             state_file.read_text().split(") ", 1)[1][0] == "Z"
         )
     finally:
-        if process.poll() is None:
+        if (
+            process.poll() is None
+        ):  # pragma: no cover -- Emergency cleanup after a failing test.
             process.kill()
             process.wait(timeout=10)
         cleanup_child(child_pid)
@@ -419,7 +481,9 @@ def test_sigterm_kills_child_in_separate_process_group(tmp_path: Path) -> None:
 )
 def test_command_child_receives_sigterm(tmp_path: Path) -> None:
     def cleanup_child(pid: int | None) -> None:
-        if pid is not None:
+        if (
+            pid is not None
+        ):  # pragma: no branch -- None occurs only if child startup assertions fail.
             with contextlib.suppress(ProcessLookupError):
                 getattr(os, "killpg")(pid, getattr(signal, "SIGKILL"))  # noqa: B009
 
@@ -453,7 +517,9 @@ def test_command_child_receives_sigterm(tmp_path: Path) -> None:
     )
     child_pid = None
     try:
-        for _ in range(500):
+        for _ in range(
+            500
+        ):  # pragma: no branch -- Exhaustion fails the child-start assertion.
             if pid_file.exists():
                 child_pid = int(pid_file.read_text())
                 break
@@ -467,7 +533,9 @@ def test_command_child_receives_sigterm(tmp_path: Path) -> None:
         assert exit_code == 0
         assert received.read_text() == "received"
     finally:
-        if process.poll() is None:
+        if (
+            process.poll() is None
+        ):  # pragma: no cover -- Emergency cleanup after a failing test.
             process.kill()
             process.wait(timeout=10)
         cleanup_child(child_pid)
@@ -476,8 +544,9 @@ def test_command_child_receives_sigterm(tmp_path: Path) -> None:
 @pytest.mark.skipif(sys.platform != "linux", reason="POSIX subprocess wait lock")
 def test_sigterm_during_wait_lock_acquisition_does_not_deadlock(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
 ) -> None:
+    original_popen_spec = verify_creusot.subprocess.Popen
     original_popen = subprocess.Popen
     spawned: list[tuple[subprocess.Popen[bytes], threading.Lock]] = []
 
@@ -500,12 +569,30 @@ def test_sigterm_during_wait_lock_acquisition_does_not_deadlock(
         )
         # The CPython wait implementation takes this lock before its try/finally.
         lock = getattr(process, "_waitpid_lock")  # noqa: B009 -- POSIX implementation detail
-        assert isinstance(lock, threading.Lock)
+        assert isinstance(lock, type(threading.Lock()))
         spawned.append((process, lock))
-        monkeypatch.setattr(process, "_waitpid_lock", InterruptingWaitLock(lock))
+        mocker.patch.object(process, "_waitpid_lock", InterruptingWaitLock(lock))
+        # Python 3.15 waits with pidfd/kqueue before taking the legacy lock.
+        # Exercise the lock path this regression test specifically protects.
+        mocker.patch.object(
+            process,
+            "_wait_pidfd",
+            create_autospec(lambda _: False, side_effect=lambda _: False),
+            create=True,
+        )
+        mocker.patch.object(
+            process,
+            "_wait_kqueue",
+            create_autospec(lambda _: False, side_effect=lambda _: False),
+            create=True,
+        )
         return process
 
-    monkeypatch.setattr(verify_creusot.subprocess, "Popen", start)
+    mocker.patch.object(
+        verify_creusot.subprocess,
+        "Popen",
+        create_autospec(original_popen_spec, side_effect=start),
+    )
     try:
         with pytest.raises(verify_creusot.ProofError, match="SIGTERM"):
             verify_creusot.run_command(
@@ -518,10 +605,12 @@ def test_sigterm_during_wait_lock_acquisition_does_not_deadlock(
         assert all(process.returncode is not None for process, _ in spawned)
     finally:
         for process, lock in spawned:
-            if lock.locked():
+            if lock.locked():  # pragma: no cover -- Only for a stranded test lock.
                 lock.release()
-            monkeypatch.setattr(process, "_waitpid_lock", lock)
-            if process.poll() is None:
+            mocker.patch.object(process, "_waitpid_lock", lock)
+            if (
+                process.poll() is None
+            ):  # pragma: no cover -- Emergency cleanup after a failing test.
                 verify_creusot.terminate_session(process.pid)
                 process.wait(timeout=5)
 
@@ -534,10 +623,12 @@ def test_sigterm_during_wait_lock_acquisition_does_not_deadlock(
 )
 def test_sigterm_cleanup_respects_command_lifecycle(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
     when: str,
     expected_cleaned: list[int],
 ) -> None:
+    original_popen_spec = verify_creusot.subprocess.Popen
+    original_terminate_session_spec = verify_creusot.terminate_session
     cleaned: list[int] = []
 
     class Command:
@@ -556,8 +647,16 @@ def test_sigterm_cleanup_respects_command_lifecycle(
             os.kill(os.getpid(), signal.SIGTERM)
         return Command()
 
-    monkeypatch.setattr(verify_creusot.subprocess, "Popen", start)
-    monkeypatch.setattr(verify_creusot, "terminate_session", cleaned.append)
+    mocker.patch.object(
+        verify_creusot.subprocess,
+        "Popen",
+        create_autospec(original_popen_spec, side_effect=start),
+    )
+    mocker.patch.object(
+        verify_creusot,
+        "terminate_session",
+        create_autospec(original_terminate_session_spec, side_effect=cleaned.append),
+    )
 
     with pytest.raises(verify_creusot.ProofError, match="SIGTERM"):
         verify_creusot.run_command(
@@ -572,14 +671,31 @@ def test_sigterm_cleanup_respects_command_lifecycle(
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Linux session ownership required")
 def test_session_cleanup_stops_command_group_before_solver_groups(
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
 ) -> None:
+    original_getsid_spec = getattr(verify_creusot.os, "getsid")  # noqa: B009 -- Platform API may be unavailable.
+    original_owned_session_groups_spec = verify_creusot.owned_session_groups
+    original_killpg_spec = getattr(verify_creusot.os, "killpg")  # noqa: B009 -- Platform API may be unavailable.
     calls: list[int] = []
-    monkeypatch.setattr(verify_creusot.sys, "platform", "linux")
-    monkeypatch.setattr(verify_creusot.os, "getsid", lambda _: 999)
-    monkeypatch.setattr(verify_creusot, "owned_session_groups", lambda _: {100, 101})
-    monkeypatch.setattr(
-        verify_creusot.os, "killpg", lambda group, _: calls.append(group)
+    mocker.patch.object(verify_creusot.sys, "platform", "linux")
+    mocker.patch.object(
+        verify_creusot.os,
+        "getsid",
+        create_autospec(original_getsid_spec, side_effect=lambda _: 999),
+    )
+    mocker.patch.object(
+        verify_creusot,
+        "owned_session_groups",
+        create_autospec(
+            original_owned_session_groups_spec, side_effect=lambda _: {100, 101}
+        ),
+    )
+    mocker.patch.object(
+        verify_creusot.os,
+        "killpg",
+        create_autospec(
+            original_killpg_spec, side_effect=lambda group, _: calls.append(group)
+        ),
     )
 
     verify_creusot.terminate_session(100)
@@ -605,13 +721,18 @@ def test_session_cleanup_stops_command_group_before_solver_groups(
         ),
     ],
 )
-def test_runner_requires_three_fresh_target_results(
+@pytest.mark.parametrize("existing_generated", [False, True])
+def test_runner_requires_three_fresh_target_results(  # noqa: PLR0913 -- Proof outcome and initial-state matrix.
     proof_project: tuple[Path, dict[str, Any]],
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
     unresolved_target: str | None,
     expectation: AbstractContextManager[object],
     expected_results: tuple[list[str], list[dict[str, int]]],
+    *,
+    existing_generated: bool,
 ) -> None:
+    original_install_strategies_spec = verify_creusot.install_strategies
+    original_run_command_spec = verify_creusot.run_command
     root, manifest = proof_project
     for name in (
         "Cargo.toml",
@@ -627,9 +748,13 @@ def test_runner_requires_three_fresh_target_results(
     environment.write_text("# preflight fixture\n")
     toolchain = root / "toolchain.json"
     toolchain.write_text("{}")
-    monkeypatch.setattr(verify_creusot, "ENVIRONMENT", environment)
-    monkeypatch.setattr(verify_creusot, "TOOLCHAIN", toolchain)
-    monkeypatch.setattr(verify_creusot, "install_strategies", lambda *_: 25)
+    mocker.patch.object(verify_creusot, "ENVIRONMENT", environment)
+    mocker.patch.object(verify_creusot, "TOOLCHAIN", toolchain)
+    mocker.patch.object(
+        verify_creusot,
+        "install_strategies",
+        create_autospec(original_install_strategies_spec, side_effect=lambda *_: 25),
+    )
     calls: list[list[str]] = []
 
     def fixture_command(
@@ -641,7 +766,10 @@ def test_runner_requires_three_fresh_target_results(
         if "--only=coma" in command:
             shutil.copytree(EVIDENCE / "verif", cwd / "verif", dirs_exist_ok=True)
             for path in (cwd / "verif").rglob("*.coma"):
-                os.utime(path, None)
+                # Assign nanoseconds explicitly: filesystem "now" can lag the
+                # clock used to mark generation in a container.
+                modified_ns = time.time_ns()
+                os.utime(path, ns=(modified_ns, modified_ns))
         elif "--only=prove" in command:
             text = (EVIDENCE.parents[1] / target / "first" / "proof.log").read_text(
                 encoding="utf-8"
@@ -657,7 +785,13 @@ def test_runner_requires_three_fresh_target_results(
             log_path.write_text("fixture subprocess completed\n")
         return {"command": command, "elapsed_seconds": 0.01, "log": str(log_path)}
 
-    monkeypatch.setattr(verify_creusot, "run_command", fixture_command)
+    mocker.patch.object(
+        verify_creusot,
+        "run_command",
+        create_autospec(original_run_command_spec, side_effect=fixture_command),
+    )
+    if not existing_generated:
+        shutil.rmtree(root / verify_creusot.GENERATED)
     output = root / "report"
     output.mkdir()
 
@@ -741,3 +875,255 @@ def damaged_proof_log(log: str, damage: str) -> str:
     else:
         log = ""
     return log
+
+
+def test_nested_trailing_block_comment_is_skipped() -> None:
+    source = "/* outer /* inner */ outer */"
+    assert verify_creusot.trailing_comment_start(source, len(source)) == 0
+
+
+@pytest.mark.parametrize("success", [True, False])
+def test_main_publishes_success_and_failure_reports(
+    tmp_path: Path, mocker: MockerFixture, *, success: bool
+) -> None:
+    original_verify_spec = verify_creusot.verify
+    output = tmp_path / "report"
+    mocker.patch.object(sys, "argv", ["verify", "--output", str(output)])
+    with chdir(ROOT):
+
+        def verify(*_args: object) -> list[dict[str, str]]:
+            if not success:
+                message = "rejected proof"
+                raise verify_creusot.ProofError(message)
+            (output / "nested").mkdir()
+            (output / "nested" / "evidence").write_text("proof")
+            return [{"target": "verified"}]
+
+        mocker.patch.object(
+            verify_creusot,
+            "verify",
+            create_autospec(original_verify_spec, side_effect=verify),
+        )
+        assert verify_creusot.main() == int(not success)
+        summary = json.loads((output / "summary.json").read_text())
+        assert summary["status"] == ("passed" if success else "failed")
+        assert summary["output_disk_bytes"] == (5 if success else 0)
+        if not success:
+            assert summary["error"] == "rejected proof"
+
+
+def test_linux_session_inventory_ignores_unrelated_and_vanished_processes(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    original_iterdir_spec = Path.iterdir
+    proc = tmp_path / "proc"
+    proc.mkdir()
+    for name, content in {
+        "self": "ignored",
+        "1": "1 (name with spaces) S 0 11 77",
+        "2": "2 (zombie) Z 0 12 77",
+        "3": "3 (other) S 0 13 88",
+        "4": "malformed",
+        "5": "5 (bad) S 0 x 77",
+    }.items():
+        directory = proc / name
+        directory.mkdir()
+        (directory / "stat").write_text(content)
+    (proc / "6").mkdir()
+    original = Path.iterdir
+    mocker.patch.object(
+        Path,
+        "iterdir",
+        create_autospec(
+            original_iterdir_spec,
+            side_effect=lambda path: original(proc if path == Path("/proc") else path),
+        ),
+    )
+    assert verify_creusot.owned_session_groups(77) == {11}
+
+
+def test_proof_report_rejects_goal_before_theory(
+    proof_project: tuple[Path, dict[str, Any]],
+) -> None:
+    root, manifest = proof_project
+    with pytest.raises(verify_creusot.ProofError, match="goal without theory"):
+        verify_creusot.check_proof_status(root, manifest, "  Goal orphan: ✔ (1)")
+
+
+def test_source_scope_rejects_missing_structural_model(
+    proof_project: tuple[Path, dict[str, Any]],
+) -> None:
+    root, manifest = proof_project
+    model = manifest["structural_models"][0]
+    source = root / model["source"]
+    source.write_text(
+        source.read_text()
+        .replace(f"enum {model['type']}", f"enum Changed{model['type']}")
+        .replace(f"struct {model['type']}", f"struct Changed{model['type']}")
+    )
+    with pytest.raises(
+        verify_creusot.ProofError, match="structural model type missing"
+    ):
+        verify_creusot.check_source_scope(root, manifest)
+
+
+@pytest.mark.parametrize(
+    "measurement", ["Maximum resident set size (kbytes): 123", "missing"]
+)
+def test_command_requires_linux_memory_measurement(
+    tmp_path: Path, mocker: MockerFixture, measurement: str
+) -> None:
+
+    original_is_file_spec = Path.is_file
+    original_popen_spec = subprocess.Popen
+    mocker.patch.object(sys, "platform", "linux")
+    mocker.patch.object(
+        Path,
+        "is_file",
+        create_autospec(original_is_file_spec, side_effect=lambda _: True),
+    )
+
+    def spawn(*_args: object, **_kwargs: object) -> SimpleNamespace:
+        (tmp_path / "command.time").write_text(measurement)
+        return SimpleNamespace(returncode=0, wait=lambda **_kw: 0)
+
+    mocker.patch.object(
+        subprocess, "Popen", create_autospec(original_popen_spec, side_effect=spawn)
+    )
+    if measurement == "missing":
+        with pytest.raises(
+            verify_creusot.ProofError, match="missing per-command memory"
+        ):
+            verify_creusot.run_command(
+                ["proof"],
+                cwd=tmp_path,
+                log_path=tmp_path / "command.log",
+                deadline=time.monotonic() + 10,
+            )
+    else:
+        result = verify_creusot.run_command(
+            ["proof"],
+            cwd=tmp_path,
+            log_path=tmp_path / "command.log",
+            deadline=time.monotonic() + 10,
+        )
+        assert result["peak_process_or_child_rss_kib"] == 123
+
+
+def test_session_cleanup_stops_scanning_after_groups_exit(
+    mocker: MockerFixture,
+) -> None:
+    original_getsid_spec = getattr(os, "getsid", lambda _: 999)
+    original_kill_group_spec = verify_creusot.kill_group
+    original_owned_session_groups_spec = verify_creusot.owned_session_groups
+    calls = []
+    mocker.patch.object(sys, "platform", "linux")
+    mocker.patch.object(
+        os,
+        "getsid",
+        create_autospec(original_getsid_spec, side_effect=lambda _: 999),
+        create=True,
+    )
+    mocker.patch.object(
+        verify_creusot,
+        "kill_group",
+        create_autospec(original_kill_group_spec, side_effect=calls.append),
+    )
+    mocker.patch.object(
+        verify_creusot,
+        "owned_session_groups",
+        create_autospec(
+            original_owned_session_groups_spec, side_effect=lambda _: set()
+        ),
+    )
+    verify_creusot.terminate_session(100)
+    assert calls == [100]
+
+
+def test_cli_entry_publishes_failure_when_manifest_is_missing(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    with chdir(tmp_path):
+        mocker.patch.object(
+            sys, "argv", ["verify", "--output", str(tmp_path / "report")]
+        )
+        with pytest.raises(SystemExit, match="1"):
+            runpy.run_path(str(ROOT / "tools/verify_creusot.py"), run_name="__main__")
+        assert (
+            json.loads((tmp_path / "report/summary.json").read_text())["status"]
+            == "failed"
+        )
+
+
+def test_attached_attributes_handles_nested_arrays_and_rejects_missing_opening() -> (
+    None
+):
+    assert verify_creusot.attached_attributes(
+        "#[custom([1, 2])]\nfn proof() {}", "proof", None
+    ) == ["#[custom([1, 2])]"]
+    with pytest.raises(verify_creusot.ProofError, match="malformed attached attribute"):
+        verify_creusot.attached_attributes("]\nfn proof() {}", "proof", None)
+
+
+def test_repeated_sigterm_during_cleanup_preserves_deadline_error(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    original_popen_spec = subprocess.Popen
+    original_wait_for_command_spec = verify_creusot.wait_for_command
+    original_terminate_session_spec = verify_creusot.terminate_session
+    events: list[str] = []
+    process = SimpleNamespace(
+        pid=123, returncode=None, wait=lambda: events.append("reaped")
+    )
+
+    def deadline(*_args: object, **_kwargs: object) -> None:
+        command = "proof"
+        raise subprocess.TimeoutExpired(command, 1)
+
+    def cleanup(_pid: int) -> None:
+        os.kill(os.getpid(), signal.SIGTERM)
+        events.append("cleaned")
+
+    mocker.patch.object(
+        subprocess,
+        "Popen",
+        create_autospec(
+            original_popen_spec, side_effect=lambda *_args, **_kwargs: process
+        ),
+    )
+    mocker.patch.object(
+        verify_creusot,
+        "wait_for_command",
+        create_autospec(original_wait_for_command_spec, side_effect=deadline),
+    )
+    mocker.patch.object(
+        verify_creusot,
+        "terminate_session",
+        create_autospec(original_terminate_session_spec, side_effect=cleanup),
+    )
+    with pytest.raises(verify_creusot.ProofError, match="overall proof deadline"):
+        verify_creusot.run_command(
+            ["proof"],
+            cwd=tmp_path,
+            log_path=tmp_path / "proof.log",
+            deadline=time.monotonic() + 1,
+        )
+    assert events == ["cleaned", "reaped"]
+
+
+def test_successful_command_without_optional_memory_tool(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    original_is_file_spec = Path.is_file
+    mocker.patch.object(
+        Path,
+        "is_file",
+        create_autospec(original_is_file_spec, side_effect=lambda _: False),
+    )
+    result = verify_creusot.run_command(
+        [sys.executable, "-c", "pass"],
+        cwd=tmp_path,
+        log_path=tmp_path / "proof.log",
+        deadline=time.monotonic() + 5,
+    )
+    assert result["peak_process_or_child_rss_kib"] is None

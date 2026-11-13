@@ -101,6 +101,13 @@ impl ProcessStartGate {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn cancel_under_held_spawn_gate_for_tests(&self) {
+        assert!(self.state.spawn_gate.try_lock().is_err());
+        self.state.cancelled.store(true, Ordering::Release);
+        self.state.notify.notify_waiters();
+    }
+
     pub(crate) async fn cancelled(&self) {
         loop {
             let notified = self.state.notify.notified();
@@ -286,6 +293,15 @@ pub struct ProcessHandler {
     active_output_drains: Arc<AtomicUsize>,
     process_reap_failed: Arc<AtomicBool>,
     output_drain_failed: Arc<AtomicBool>,
+    #[cfg(test)]
+    collector_pause: Option<Arc<CollectorPause>>,
+}
+
+#[cfg(test)]
+#[derive(Debug, Default)]
+struct CollectorPause {
+    entered: Notify,
+    release: Notify,
 }
 
 /// Shutdown evidence observed by [`ProcessHandler::drain_for_shutdown`].
@@ -365,6 +381,8 @@ impl ProcessHandler {
             active_output_drains: Arc::new(AtomicUsize::new(0)),
             process_reap_failed: Arc::new(AtomicBool::new(false)),
             output_drain_failed: Arc::new(AtomicBool::new(false)),
+            #[cfg(test)]
+            collector_pause: None,
         }
     }
 
@@ -539,11 +557,26 @@ impl ProcessHandler {
         }
         let argv = self.backend.wrap_argv(argv);
         let Some((program, arguments)) = argv.split_first() else {
-            return Err(EffectFailed::other(
-                id,
-                "process.argv.backend_invalid",
-                "resource backend produced an empty argv",
-            ));
+            // argv was checked nonempty; Portable/Windows preserve it and Linux prepends its launcher.
+            #[cfg(coverage_nightly)]
+            {
+                return (#[coverage(off)]
+                || {
+                    Err(EffectFailed::other(
+                        id,
+                        "process.argv.backend_invalid",
+                        "resource backend produced an empty argv",
+                    ))
+                })();
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                return Err(EffectFailed::other(
+                    id,
+                    "process.argv.backend_invalid",
+                    "resource backend produced an empty argv",
+                ));
+            }
         };
         tokio::fs::create_dir_all(&self.output_dir)
             .await
@@ -573,17 +606,18 @@ impl ProcessHandler {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let supervisor = self
-            .backend
-            .prepare(&mut command, process.limits)
-            .map_err(|error| {
+        let supervisor = self.backend.prepare(&mut command, process.limits).map_err(
+            // macOS has only the Portable backend: command configuration and supervisor construction are infallible.
+            #[cfg_attr(all(coverage_nightly, target_os = "macos"), coverage(off))]
+            |error| {
                 resource_failure(
                     id,
                     "process.resource.setup",
                     "prepare resource supervisor",
                     &error,
                 )
-            })?;
+            },
+        )?;
         let mut supervisor = BlockingOwner::new(supervisor);
         let started = Instant::now();
         let deadline = tokio::time::Instant::now() + process.limits.timeout;
@@ -625,39 +659,34 @@ impl ProcessHandler {
             let terminate_error = child.start_kill().err();
             drop(spawn_guard);
             drop(start_guard);
-            let cleanup_error = match terminate_error {
-                Some(error) => Some(error),
-                None => match tokio::time::timeout(POST_TERMINATION_GRACE, child.wait()).await {
-                    Ok(Ok(_)) => None,
-                    Ok(Err(error)) => Some(error),
-                    Err(_) => Some(std::io::Error::new(
-                        std::io::ErrorKind::TimedOut,
-                        "timed out waiting for unattached child termination",
-                    )),
-                },
-            };
+            let cleanup_error = reap_unattached_root(&mut child, terminate_error).await;
             if cleanup_error.is_none() {
                 supervisor.value_mut(id)?.record_root_reaped();
             }
-            let supervisor_cleanup = supervisor.finish(id).await;
-            if cleanup_error.is_none() && supervisor_cleanup.is_ok() {
+            let (primary, reaped) = failed_attachment_outcome(
+                id,
+                &error,
+                cleanup_error.as_ref(),
+                supervisor.finish(id).await,
+            );
+            if reaped {
                 active_process.complete();
-            }
-            let mut primary = attach_failure(id, &error, cleanup_error.as_ref());
-            if let Err(cleanup) = supervisor_cleanup {
-                append_cleanup_failure(&mut primary, "supervisor destruction failed", &cleanup);
             }
             return Err(primary);
         }
         drop(spawn_guard);
         drop(start_guard);
 
-        let stdout = child.stdout.take().ok_or_else(|| {
-            EffectFailed::other(id, "process.stdout.missing", "stdout pipe was not created")
-        })?;
-        let stderr = child.stderr.take().ok_or_else(|| {
-            EffectFailed::other(id, "process.stderr.missing", "stderr pipe was not created")
-        })?;
+        // Backends configure supervision without changing stdio; this freshly spawned
+        // child has not exposed either pipe to another owner.
+        let stdout = child
+            .stdout
+            .take()
+            .expect("fresh command configured with piped stdout");
+        let stderr = child
+            .stderr
+            .take()
+            .expect("fresh command configured with piped stderr");
         let token = Uuid::new_v4().to_string();
         let output_ref = OutputSpoolRef {
             token: token.clone(),
@@ -666,18 +695,24 @@ impl ProcessHandler {
         };
         let spool_path = self
             .spool_path(&output_ref)
-            .map_err(|error| EffectFailed::other(id, "process.output.token", error.to_string()))?;
+            .expect("spool reference contains the UUID generated immediately above");
         let (sender, receiver) = output::pipe_channel();
         let mut active_output_drain =
             CompletionGuard::enter(&self.active_output_drains, &self.output_drain_failed);
         let stdout_task = tokio::spawn(output::drain_pipe(stdout, sender.clone()));
         let stderr_task = tokio::spawn(output::drain_pipe(stderr, sender));
-        let collector_task = tokio::spawn(output::collect_output(
-            spool_path,
-            token,
-            process.limits.max_output_bytes,
-            receiver,
-        ));
+        #[cfg(test)]
+        let collector_pause = self.collector_pause.clone();
+        let collector_task = tokio::spawn(async move {
+            // A per-handler fixture gates the real collector before filesystem I/O.
+            #[cfg(test)]
+            if let Some(pause) = collector_pause {
+                pause.entered.notify_one();
+                pause.release.notified().await;
+            }
+            output::collect_output(spool_path, token, process.limits.max_output_bytes, receiver)
+                .await
+        });
 
         let (mut process_result, mut process_reaped) = match select_process_result(
             child.wait(),
@@ -716,15 +751,11 @@ impl ProcessHandler {
             }
         };
 
-        if let Err(cleanup) = supervisor.finish(id).await {
-            process_reaped = false;
-            match &mut process_result {
-                Err(primary) => {
-                    append_cleanup_failure(primary, "supervisor destruction failed", &cleanup);
-                }
-                Ok(_) => process_result = Err(cleanup),
-            }
-        }
+        apply_supervisor_cleanup(
+            &mut process_result,
+            &mut process_reaped,
+            supervisor.finish(id).await,
+        );
         if process_reaped {
             active_process.complete();
         }
@@ -888,12 +919,71 @@ async fn abort_and_join<T>(task: &mut tokio::task::JoinHandle<T>) {
     let _ = task.await;
 }
 
+// The reap policy owns deadlines and error precedence; this boundary owns only root I/O.
+trait TerminatingRoot: Send {
+    fn wait_root(&mut self) -> impl Future<Output = std::io::Result<()>> + Send;
+    fn kill_root(&mut self) -> std::io::Result<()>;
+}
+
+impl TerminatingRoot for Child {
+    async fn wait_root(&mut self) -> std::io::Result<()> {
+        self.wait().await.map(|_| ())
+    }
+
+    fn kill_root(&mut self) -> std::io::Result<()> {
+        self.start_kill()
+    }
+}
+
+async fn reap_unattached_root(
+    child: &mut impl TerminatingRoot,
+    terminate_error: Option<std::io::Error>,
+) -> Option<std::io::Error> {
+    match terminate_error {
+        Some(error) => Some(error),
+        None => match tokio::time::timeout(POST_TERMINATION_GRACE, child.wait_root()).await {
+            Ok(Ok(())) => None,
+            Ok(Err(error)) => Some(error),
+            Err(_) => Some(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "timed out waiting for unattached child termination",
+            )),
+        },
+    }
+}
+
+#[cfg(test)]
 pub(crate) async fn wait_after_termination(
     id: EffectId,
     child: &mut Child,
 ) -> Result<(), EffectFailed> {
-    if let Ok(result) = tokio::time::timeout(POST_TERMINATION_GRACE, child.wait()).await {
-        return result.map(|_| ()).map_err(|error| {
+    wait_after_termination_for(id, child).await
+}
+
+type RootWaitResult = Result<std::io::Result<()>, tokio::time::error::Elapsed>;
+
+async fn wait_after_termination_for(
+    id: EffectId,
+    child: &mut impl TerminatingRoot,
+) -> Result<(), EffectFailed> {
+    if let Some(completed) = classify_initial_root_wait(
+        id,
+        tokio::time::timeout(POST_TERMINATION_GRACE, child.wait_root()).await,
+    ) {
+        return completed;
+    }
+    let kill_result = child.kill_root();
+    let wait_result = tokio::time::timeout(POST_TERMINATION_GRACE, child.wait_root()).await;
+    classify_final_root_wait(id, kill_result, wait_result)
+}
+
+// Keep response classification independent of the root I/O implementation.
+fn classify_initial_root_wait(
+    id: EffectId,
+    result: RootWaitResult,
+) -> Option<Result<(), EffectFailed>> {
+    match result {
+        Ok(result) => Some(result.map_err(|error| {
             io_failure(
                 id,
                 "process.wait",
@@ -901,10 +991,17 @@ pub(crate) async fn wait_after_termination(
                 None,
                 &error,
             )
-        });
+        })),
+        Err(_) => None,
     }
+}
 
-    let kill_failure = child.start_kill().err().map(|error| {
+fn classify_final_root_wait(
+    id: EffectId,
+    kill_result: std::io::Result<()>,
+    wait_result: RootWaitResult,
+) -> Result<(), EffectFailed> {
+    let kill_failure = kill_result.err().map(|error| {
         io_failure(
             id,
             "process.kill",
@@ -913,9 +1010,8 @@ pub(crate) async fn wait_after_termination(
             &error,
         )
     });
-    let wait_result = tokio::time::timeout(POST_TERMINATION_GRACE, child.wait()).await;
     let wait_failure = match wait_result {
-        Ok(Ok(_)) => None,
+        Ok(Ok(())) => None,
         Ok(Err(error)) => Some(io_failure(
             id,
             "process.wait",
@@ -1040,44 +1136,56 @@ async fn classify_and_terminate(
 async fn terminate_and_reap(
     id: EffectId,
     supervisor: &mut BlockingOwner<ProcessSupervisor>,
-    child: &mut Child,
+    child: &mut impl TerminatingRoot,
 ) -> Result<bool, EffectFailed> {
     match terminate_supervised(id, supervisor, true).await {
         Ok(_) => {
-            wait_after_termination(id, child).await?;
+            wait_after_termination_for(id, child).await?;
             supervisor.value_mut(id)?.record_root_reaped();
             await_tree_quiescence_after_root_reap(id, supervisor).await
         }
-        Err(mut primary) => {
-            let root_kill = child.start_kill().err().map(|error| {
-                io_failure(
-                    id,
-                    "process.kill",
-                    "kill root after supervisor termination failure",
-                    None,
-                    &error,
-                )
-            });
-            let tree_retry = terminate_supervised(id, supervisor, true).await.err();
-            let root_wait = wait_after_termination(id, child).await.err();
-            if root_wait.is_none()
+        Err(primary) => {
+            let root_kill = child.kill_root();
+            let tree_retry = terminate_supervised(id, supervisor, true).await;
+            let root_wait = wait_after_termination_for(id, child).await;
+            if root_wait.is_ok()
                 && let Ok(supervisor) = supervisor.value_mut(id)
             {
                 supervisor.record_root_reaped();
             }
-
-            for (label, cleanup) in [
-                ("direct root kill failed", root_kill),
-                ("supervisor termination retry failed", tree_retry),
-                ("root reap failed", root_wait),
-            ] {
-                if let Some(cleanup) = cleanup {
-                    append_cleanup_failure(&mut primary, label, &cleanup);
-                }
-            }
-            Err(primary)
+            Err(combine_termination_cleanup_failures(
+                id, primary, root_kill, tree_retry, root_wait,
+            ))
         }
     }
+}
+
+fn combine_termination_cleanup_failures(
+    id: EffectId,
+    mut primary: EffectFailed,
+    root_kill: std::io::Result<()>,
+    tree_retry: Result<bool, EffectFailed>,
+    root_wait: Result<(), EffectFailed>,
+) -> EffectFailed {
+    let root_kill = root_kill.err().map(|error| {
+        io_failure(
+            id,
+            "process.kill",
+            "kill root after supervisor termination failure",
+            None,
+            &error,
+        )
+    });
+    for (label, cleanup) in [
+        ("direct root kill failed", root_kill),
+        ("supervisor termination retry failed", tree_retry.err()),
+        ("root reap failed", root_wait.err()),
+    ] {
+        if let Some(cleanup) = cleanup {
+            append_cleanup_failure(&mut primary, label, &cleanup);
+        }
+    }
+    primary
 }
 
 async fn await_tree_quiescence_after_root_reap(
@@ -1110,6 +1218,23 @@ async fn await_tree_quiescence_after_root_reap(
             return Ok(false);
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+// Destruction failure invalidates the completion proof, while preserving the first process error.
+fn apply_supervisor_cleanup(
+    process: &mut Result<ProcessTermination, EffectFailed>,
+    reaped: &mut bool,
+    cleanup: Result<(), EffectFailed>,
+) {
+    if let Err(cleanup) = cleanup {
+        *reaped = false;
+        match process {
+            Err(primary) => {
+                append_cleanup_failure(primary, "supervisor destruction failed", &cleanup);
+            }
+            Ok(_) => *process = Err(cleanup),
+        }
     }
 }
 
@@ -1157,6 +1282,20 @@ fn attach_failure(
             message,
         },
     }
+}
+
+fn failed_attachment_outcome(
+    id: EffectId,
+    attach: &ResourceError,
+    root_cleanup: Option<&std::io::Error>,
+    supervisor_cleanup: Result<(), EffectFailed>,
+) -> (EffectFailed, bool) {
+    let reaped = root_cleanup.is_none() && supervisor_cleanup.is_ok();
+    let mut primary = attach_failure(id, attach, root_cleanup);
+    if let Err(cleanup) = supervisor_cleanup {
+        append_cleanup_failure(&mut primary, "supervisor destruction failed", &cleanup);
+    }
+    (primary, reaped)
 }
 
 async fn terminate_supervised(
@@ -1381,12 +1520,26 @@ mod tests {
         let dropped = Arc::new(AtomicBool::new(false));
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let task_dropped = Arc::clone(&dropped);
-        let mut task = tokio::spawn(async move {
-            let _drop = DropFlag(task_dropped);
-            started_tx.send(()).unwrap();
-            std::future::pending::<()>().await;
-        });
+        let drop_flag = DropFlag(task_dropped);
+        let mut started_tx = Some(started_tx);
+        let (polled_twice_tx, polled_twice_rx) = tokio::sync::oneshot::channel();
+        let mut polled_twice_tx = Some(polled_twice_tx);
+        let mut task = tokio::spawn(std::future::poll_fn(move |context| {
+            let _guard = &drop_flag;
+            if let Some(started_tx) = started_tx.take() {
+                started_tx.send(()).unwrap();
+                context.waker().wake_by_ref();
+            } else {
+                polled_twice_tx
+                    .take()
+                    .expect("fixture schedules one repoll")
+                    .send(())
+                    .unwrap();
+            }
+            std::task::Poll::<()>::Pending
+        }));
         started_rx.await.unwrap();
+        polled_twice_rx.await.unwrap();
 
         abort_and_join(&mut task).await;
 
@@ -2071,7 +2224,19 @@ mod tests {
         let timed_out = select_process_result(ready(7_u8), pending::<()>(), ready(())).await;
         assert_eq!(timed_out, ProcessSelection::Timeout);
     }
+    #[test]
+    fn coverage_tests_oracle_decoder_rejects_unknown_wire_values() {
+        assert!(std::panic::catch_unwind(|| named_termination("unknown")).is_err());
+        assert!(std::panic::catch_unwind(|| named_status("unknown")).is_err());
+        assert!(std::panic::catch_unwind(|| execution_context("unknown")).is_err());
+        let mut case = process_output_cases().into_iter().next().unwrap();
+        case.output = "unknown".to_owned();
+        assert!(std::panic::catch_unwind(|| combine_process_output_case(&case)).is_err());
+    }
 }
 
 #[cfg(test)]
 mod context_tests;
+
+#[cfg(test)]
+mod coverage_tests;

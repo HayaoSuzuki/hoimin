@@ -16,6 +16,8 @@ pub(super) fn configuration_present(
     }
     impl<'ast, F: Fn() -> bool> Visitor<'ast> for Scan<'_, F> {
         fn visit_body(&mut self, body: &'ast [Stmt]) {
+            // The pinned walker dispatches every statement through visit_body,
+            // so this loop also guards statements in nested suites.
             for statement in body {
                 if self.stopped || self.found {
                     break;
@@ -25,9 +27,6 @@ pub(super) fn configuration_present(
         }
 
         fn visit_stmt(&mut self, statement: &'ast Stmt) {
-            if self.stopped || self.found {
-                return;
-            }
             self.stopped = (self.cancelled)();
             if self.stopped {
                 return;
@@ -40,9 +39,10 @@ pub(super) fn configuration_present(
                         .iter()
                         .any(|a| matches!(a.name.as_str(), "set_lazy_imports" | "*"));
             }
-            if !self.found {
-                visitor::walk_stmt(self, statement);
+            if self.found {
+                return;
             }
+            visitor::walk_stmt(self, statement);
         }
         fn visit_expr(&mut self, expression: &'ast Expr) {
             if self.stopped || self.found {
@@ -72,5 +72,57 @@ pub(super) fn configuration_present(
         Err(AnalysisCancelled)
     } else {
         Ok(scan.found)
+    }
+}
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[rstest::rstest]
+    #[case("from sys import set_lazy_imports\nlater = 1\n", 1)]
+    #[case(
+        "if flag:\n from sys import set_lazy_imports\nelse:\n action()\nlater = 1\n",
+        3
+    )]
+    fn finding_configuration_stops_before_later_statements(
+        #[case] source: &str,
+        #[case] expected_polls: usize,
+    ) {
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let polls = Cell::new(0);
+        assert_eq!(
+            configuration_present(parsed.syntax(), &|| {
+                let current = polls.get();
+                polls.set(current + 1);
+                current >= expected_polls
+            }),
+            Ok(true)
+        );
+        assert_eq!(polls.get(), expected_polls);
+    }
+    #[rstest::rstest]
+    #[case(0, Err(AnalysisCancelled))]
+    #[case(1, Err(AnalysisCancelled))]
+    #[case(2, Err(AnalysisCancelled))]
+    #[case(3, Err(AnalysisCancelled))]
+    #[case(4, Ok(true))]
+    fn cancellation_before_configuration_is_reported(
+        #[case] checkpoint: usize,
+        #[case] expected: Result<bool, AnalysisCancelled>,
+    ) {
+        let parsed =
+            ruff_python_parser::parse_module("value = 1\nfrom sys import set_lazy_imports\n")
+                .unwrap();
+        let polls = Cell::new(0);
+        assert_eq!(
+            configuration_present(parsed.syntax(), &|| {
+                let current = polls.get();
+                polls.set(current + 1);
+                current >= checkpoint
+            }),
+            expected
+        );
     }
 }

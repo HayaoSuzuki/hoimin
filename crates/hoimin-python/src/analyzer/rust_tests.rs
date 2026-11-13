@@ -163,7 +163,11 @@ fn bounded_discovery_case(id: &str) -> BoundedDiscoveryCase {
         .lines()
         .map(|line| serde_json::from_str::<BoundedDiscoveryCase>(line).expect("valid Lean row"))
         .find(|item| item.id == id)
-        .unwrap_or_else(|| panic!("missing Lean bounded-discovery case {id}"))
+        .unwrap_or_else(
+            // Fixed test literals and checked-in corpus IDs cannot reach this diagnostic.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            || panic!("missing Lean bounded-discovery case {id}"),
+        )
 }
 
 #[derive(serde::Deserialize)]
@@ -694,13 +698,7 @@ fn operator_function_uncertain_bindings_and_namespaces_are_excluded_table_1(
     "from operator import add as plus\ndef f(__import__): return plus(a, b)\n"
 )]
 fn operator_function_uncertain_bindings_and_namespaces_are_excluded_table_2(#[case] source: &str) {
-    assert!(
-        analyze(source)
-            .candidates
-            .iter()
-            .all(|c| c.operator.as_str() != "operator_function"),
-        "{source}"
-    );
+    assert!(analyze(source).candidates.is_empty(), "{source}");
 }
 
 #[rstest::rstest]
@@ -735,13 +733,7 @@ fn operator_function_helpers_and_undocumented_dunders_are_excluded(#[case] name:
     "import operator as op\nx: op.add\ndef f(x: op.mul) -> op.sub: pass\ntype Alias = op.pow\n"
 )]
 fn operator_function_source_order_selection_profiles_and_annotations_table_1(#[case] source: &str) {
-    assert!(
-        analyze(source)
-            .candidates
-            .iter()
-            .all(|c| c.operator.as_str() != "operator_function"),
-        "{source}"
-    );
+    assert!(analyze(source).candidates.is_empty(), "{source}");
 }
 
 #[rstest::rstest]
@@ -1248,15 +1240,9 @@ fn operator_function_lambda_replacements_exclude_pattern_values_table_1(#[case] 
     let source = format!("import operator as op\nmatch value:\n    case op.{name}: pass\n");
 
     let output = analyze(&source);
-    for candidate in &output.candidates {
-        apply_candidate_and_reparse(&source, candidate);
-    }
-
-    assert!(
-        output
-            .candidates
-            .iter()
-            .all(|c| c.operator.as_str() != "operator_function")
+    assert_eq!(
+        output.candidates,
+        Vec::<super::payload::Charged<AnalyzerCandidate>>::new()
     );
 }
 
@@ -1268,13 +1254,7 @@ fn operator_function_lambda_replacements_exclude_pattern_values_table_1(#[case] 
     "import operator as op\nmatch value:\n    case op.call(): pass\n"
 )]
 fn operator_function_lambda_replacements_exclude_pattern_values_table_2(#[case] source: &str) {
-    assert!(
-        analyze(source)
-            .candidates
-            .iter()
-            .all(|c| c.operator.as_str() != "operator_function"),
-        "{source}"
-    );
+    assert!(analyze(source).candidates.is_empty(), "{source}");
 }
 
 #[test]
@@ -1309,6 +1289,15 @@ fn apply_candidate_and_reparse(source: &str, candidate: &AnalyzerCandidate) -> S
     mutated
 }
 
+fn assert_candidates_reparse(
+    source: &str,
+    candidates: &[super::payload::Charged<AnalyzerCandidate>],
+) {
+    for candidate in candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
 fn assert_type_list_sequence_sites(source: &str, expected: &[(u64, u64, u32, Option<&str>, &str)]) {
     let output = analyze_types(source);
     let actual: Vec<_> = output
@@ -1326,9 +1315,7 @@ fn assert_type_list_sequence_sites(source: &str, expected: &[(u64, u64, u32, Opt
         })
         .collect();
     assert_eq!(actual, expected);
-    for candidate in &output.candidates {
-        apply_candidate_and_reparse(source, candidate);
-    }
+    assert_candidates_reparse(source, &output.candidates);
 }
 
 fn prefix_candidate(
@@ -2598,9 +2585,7 @@ fn raise_exception_type_pairs_preserve_normal_primary_and_cause_candidates() {
         .map(|candidate| (candidate.original.as_str(), candidate.replacement.as_str()))
         .collect::<Vec<_>>();
     assert_eq!(ordinary_pairs, [("any", "all"), ("all", "any")]);
-    for candidate in &output.candidates {
-        apply_candidate_and_reparse(source, candidate);
-    }
+    assert_candidates_reparse(source, &output.candidates);
 }
 
 #[test]
@@ -2705,11 +2690,9 @@ fn raise_exception_type_pairs_keep_shared_selection_and_profile_behavior() {
         },
         source,
     );
-    assert!(
-        excluded
-            .candidates
-            .iter()
-            .all(|candidate| candidate.operator.as_str() != "exception_type_pair")
+    assert_eq!(
+        excluded.candidates,
+        Vec::<super::payload::Charged<AnalyzerCandidate>>::new()
     );
 }
 
@@ -2769,290 +2752,7 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse_scenario_1(
 fn exception_risky_candidates_require_explicit_selection_and_reparse_scenario_2(
     #[case] scenario_index: usize,
 ) {
-    let source = concat!(
-        "before_list = [before]\n",
-        "try:\n    work()\n",
-        "except:\n    pass\n",
-        "try:\n    work()\n",
-        "except Exception:\n    pass\n",
-        "try:\n    work()\n",
-        "except BaseException:\n    pass\n",
-        "try:\n    work()\n",
-        "except (ValueError,):\n    pass\n",
-        "try:\n    work()\n",
-        "except (ValueError, TypeError,):\n    pass\n",
-        "try:\n    work()\n",
-        "except (ValueError, # keep this comment\n",
-        "        TypeError,):\n    pass\n",
-        "after_tuple = (after,)\n",
-    );
-    let default_output = analyze(source);
-
-    assert!(default_output.candidates.iter().all(|candidate| {
-        !matches!(
-            candidate.operator.as_str(),
-            "exception_bare_to_exception"
-                | "exception_exception_to_bare"
-                | "exception_base_boundary"
-                | "exception_tuple_add_pair"
-                | "exception_tuple_remove_member"
-        )
-    }));
-
     let operators = explicitly_selected_risky_exception_operators();
-
-    let output = analyze_source(
-        &AnalyzeRequest {
-            payload: super::payload::PayloadBudget::default(),
-            path: Utf8Path::new("pkg/sample.py"),
-            lines: &[],
-            symbols: &[],
-            operators: &operators,
-            profile: MutationProfile::Full,
-            max_candidates: 10_000,
-        },
-        source,
-    );
-    let risky_candidates: Vec<_> = output
-        .candidates
-        .iter()
-        .filter(|candidate| candidate.operator.as_str().starts_with("exception_"))
-        .map(|candidate| {
-            (
-                candidate.original.as_str(),
-                candidate.replacement.as_str(),
-                candidate.operator.as_str(),
-                candidate.span,
-            )
-        })
-        .collect();
-
-    assert_eq!(
-        risky_candidates,
-        vec![
-            (
-                "except",
-                "except Exception",
-                "exception_bare_to_exception",
-                ByteSpan {
-                    start: 39,
-                    length: 6,
-                },
-            ),
-            (
-                "Exception",
-                "BaseException",
-                "exception_base_boundary",
-                ByteSpan {
-                    start: 79,
-                    length: 9,
-                },
-            ),
-            (
-                "Exception",
-                "",
-                "exception_exception_to_bare",
-                ByteSpan {
-                    start: 79,
-                    length: 9,
-                },
-            ),
-            (
-                "BaseException",
-                "Exception",
-                "exception_base_boundary",
-                ByteSpan {
-                    start: 122,
-                    length: 13,
-                },
-            ),
-            (
-                "(ValueError,)",
-                "(ValueError, TypeError)",
-                "exception_tuple_add_pair",
-                ByteSpan {
-                    start: 169,
-                    length: 13,
-                },
-            ),
-            (
-                "(ValueError, TypeError,)",
-                "( TypeError,)",
-                "exception_tuple_remove_member",
-                ByteSpan {
-                    start: 216,
-                    length: 24,
-                },
-            ),
-            (
-                "(ValueError, TypeError,)",
-                "(ValueError, )",
-                "exception_tuple_remove_member",
-                ByteSpan {
-                    start: 216,
-                    length: 24,
-                },
-            ),
-            (
-                "(ValueError, # keep this comment\n        TypeError,)",
-                "( # keep this comment\n        TypeError,)",
-                "exception_tuple_remove_member",
-                ByteSpan {
-                    start: 274,
-                    length: 52,
-                },
-            ),
-            (
-                "(ValueError, # keep this comment\n        TypeError,)",
-                "(ValueError, # keep this comment\n        )",
-                "exception_tuple_remove_member",
-                ByteSpan {
-                    start: 274,
-                    length: 52,
-                },
-            ),
-        ]
-    );
-    assert!(output.candidates.iter().any(|candidate| {
-        candidate.operator.as_str() == "exception_bare_to_exception"
-            && candidate.original == "except"
-            && candidate.replacement == "except Exception"
-    }));
-    assert!(output.candidates.iter().any(|candidate| {
-        candidate.operator.as_str() == "exception_exception_to_bare"
-            && candidate.original == "Exception"
-            && candidate.replacement.is_empty()
-    }));
-    assert!(output.candidates.iter().any(|candidate| {
-        candidate.operator.as_str() == "exception_base_boundary"
-            && candidate.original == "Exception"
-            && candidate.replacement == "BaseException"
-    }));
-    assert!(output.candidates.iter().any(|candidate| {
-        candidate.operator.as_str() == "exception_base_boundary"
-            && candidate.original == "BaseException"
-            && candidate.replacement == "Exception"
-    }));
-    assert!(output.candidates.iter().any(|candidate| {
-        candidate.operator.as_str() == "exception_tuple_add_pair"
-            && candidate.original == "(ValueError,)"
-            && candidate.replacement == "(ValueError, TypeError)"
-    }));
-    assert!(output.candidates.iter().any(|candidate| {
-        candidate.operator.as_str() == "exception_tuple_remove_member"
-            && candidate.original == "(ValueError, TypeError,)"
-    }));
-    assert!(output.candidates.iter().any(|candidate| {
-        candidate.operator.as_str() == "exception_tuple_remove_member"
-            && candidate.original.contains("# keep this comment")
-    }));
-    for candidate in output
-        .candidates
-        .iter()
-        .filter(|candidate| candidate.operator.as_str().starts_with("exception_"))
-    {
-        apply_candidate_and_reparse(source, candidate);
-    }
-    for candidate in output.candidates.iter().filter(|candidate| {
-        candidate.operator.as_str().starts_with("exception_")
-            && candidate.original.contains("# keep this comment")
-    }) {
-        let mutated = apply_candidate_and_reparse(source, candidate);
-
-        assert!(mutated.contains("# keep this comment"));
-    }
-
-    let unsupported = concat!(
-        "ValueError = Custom\n",
-        "try:\n    work()\n",
-        "except ValueError:\n    pass\n",
-        "except module.Error:\n    pass\n",
-        "except make_error():\n    pass\n",
-        "except (ValueError, module.Error):\n    pass\n",
-        "except* BaseException:\n    pass\n",
-    );
-    assert!(
-        analyze_source(
-            &AnalyzeRequest {
-                payload: super::payload::PayloadBudget::default(),
-                path: Utf8Path::new("pkg/sample.py"),
-                lines: &[],
-                symbols: &[],
-                operators: &operators,
-                profile: MutationProfile::Full,
-                max_candidates: 10_000,
-            },
-            unsupported,
-        )
-        .candidates
-        .iter()
-        .all(|candidate| !candidate.operator.as_str().starts_with("exception_"))
-    );
-
-    let shadowed = concat!(
-        "TypeError = CustomError\n",
-        "Exception = CustomException\n",
-        "BaseException = CustomBaseException\n",
-        "try:\n    work()\n",
-        "except ValueError:\n    pass\n",
-        "try:\n    work()\n",
-        "except:\n    pass\n",
-        "try:\n    work()\n",
-        "except Exception:\n    pass\n",
-        "try:\n    work()\n",
-        "except (ValueError,):\n    pass\n",
-    );
-    let shadowed_output = analyze_source(
-        &AnalyzeRequest {
-            payload: super::payload::PayloadBudget::default(),
-            path: Utf8Path::new("pkg/sample.py"),
-            lines: &[],
-            symbols: &[],
-            operators: &operators,
-            profile: MutationProfile::Full,
-            max_candidates: 10_000,
-        },
-        shadowed,
-    );
-    assert!(
-        shadowed_output
-            .candidates
-            .iter()
-            .all(|candidate| !candidate.operator.as_str().starts_with("exception_")),
-        "unexpected shadowed exception candidates: {:#?}",
-        shadowed_output.candidates
-    );
-
-    let handler_position = concat!(
-        "try:\n    work()\n",
-        "except Exception as error:\n    pass\n",
-        "try:\n    work()\n",
-        "except Exception:\n    pass\n",
-        "except TypeError:\n    pass\n",
-        "try:\n    work()\n",
-        "except TypeError:\n    pass\n",
-        "except Exception:\n    pass\n",
-    );
-    let positioned_output = analyze_source(
-        &AnalyzeRequest {
-            payload: super::payload::PayloadBudget::default(),
-            path: Utf8Path::new("pkg/sample.py"),
-            lines: &[],
-            symbols: &[],
-            operators: &operators,
-            profile: MutationProfile::Full,
-            max_candidates: 10_000,
-        },
-        handler_position,
-    );
-    assert_eq!(
-        positioned_output
-            .candidates
-            .iter()
-            .filter(|candidate| candidate.operator.as_str() == "exception_exception_to_bare")
-            .count(),
-        1
-    );
 
     let termination = ["SystemExit", "KeyboardInterrupt", "GeneratorExit"]
         .into_iter()
@@ -3073,18 +2773,17 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse_scenario_2(
         },
         &source,
     );
-    for candidate in output
+    let removals = output
         .candidates
         .iter()
         .filter(|candidate| candidate.operator.as_str() == "exception_tuple_remove_member")
-    {
-        let mutated = apply_candidate_and_reparse(&source, candidate);
-
-        assert!(
-            !mutated.contains(&format!("except ({termination}")),
-            "tuple removal generated an individual termination handler: {mutated}"
-        );
-    }
+        .collect::<Vec<_>>();
+    assert_eq!(removals.len(), 1);
+    let mutated = apply_candidate_and_reparse(&source, removals[0]);
+    assert!(
+        !mutated.contains(&format!("except ({termination}")),
+        "tuple removal generated an individual termination handler: {mutated}"
+    );
 }
 
 #[test]
@@ -3295,7 +2994,7 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
         "except (ValueError, module.Error):\n    pass\n",
         "except* BaseException:\n    pass\n",
     );
-    assert!(
+    assert_eq!(
         analyze_source(
             &AnalyzeRequest {
                 payload: super::payload::PayloadBudget::default(),
@@ -3308,9 +3007,8 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
             },
             unsupported,
         )
-        .candidates
-        .iter()
-        .all(|candidate| !candidate.operator.as_str().starts_with("exception_"))
+        .candidates,
+        Vec::<super::payload::Charged<AnalyzerCandidate>>::new()
     );
 
     let shadowed = concat!(
@@ -3442,10 +3140,7 @@ fn type_alias_and_match_capture_bindings_shadow_collection_builtins(#[case] sour
     let output = analyze(source);
 
     assert!(
-        output
-            .candidates
-            .iter()
-            .all(|candidate| candidate.operator.as_str() != "collection_list_tuple"),
+        output.candidates.is_empty(),
         "unexpected list candidate for {source:?}: {:#?}",
         output.candidates
     );
@@ -3491,20 +3186,16 @@ fn annotations_and_star_imports_suppress_collection_candidates() {
         "from typing import Callable\nhandler: Callable[[Left, Right], Result]\nvalue: tuple[Left, Right]\n",
     );
 
-    assert!(
-        annotation_output
-            .candidates
-            .iter()
-            .all(|candidate| candidate.operator.as_str() != "collection_list_tuple")
+    assert_eq!(
+        annotation_output.candidates,
+        Vec::<super::payload::Charged<AnalyzerCandidate>>::new()
     );
 
     let star_import_output =
         analyze("from helpers import *\nresult = list(items)\nvalue = tuple(items)\n");
-    assert!(
-        star_import_output
-            .candidates
-            .iter()
-            .all(|candidate| candidate.operator.as_str() != "collection_list_tuple")
+    assert_eq!(
+        star_import_output.candidates,
+        Vec::<super::payload::Charged<AnalyzerCandidate>>::new()
     );
 }
 
@@ -3808,11 +3499,9 @@ fn comprehension_exception_target_and_wildcard_boundaries_are_conservative() {
     );
 
     let wildcard = analyze("from helpers import *\nresult = list(items)\n");
-    assert!(
-        wildcard
-            .candidates
-            .iter()
-            .all(|candidate| candidate.operator.as_str() != "collection_list_tuple")
+    assert_eq!(
+        wildcard.candidates,
+        Vec::<super::payload::Charged<AnalyzerCandidate>>::new()
     );
 }
 
@@ -4851,9 +4540,7 @@ fn collection_literals_and_inner_token_candidates_remain_individually_parseable(
             ("==", "!=", "compare_eq_ne"),
         ]
     );
-    for candidate in &output.candidates {
-        apply_candidate_and_reparse(source, candidate);
-    }
+    assert_candidates_reparse(source, &output.candidates);
 }
 
 #[test]
@@ -5190,9 +4877,7 @@ fn match_boolean_patterns_mutate_without_admitting_other_pattern_tokens() {
             ("False", "True", 5, 11, 20, Some("classify")),
         ]
     );
-    for candidate in &output.candidates {
-        apply_candidate_and_reparse(source, candidate);
-    }
+    assert_candidates_reparse(source, &output.candidates);
 }
 
 #[test]
@@ -5513,7 +5198,23 @@ fn benchmark_adversarial_ast_fact_indexes() {
             "stats={index:?}",
         );
     }
-    assert_eq!(output.candidates.len(), FUNCTIONS * 5);
+    let mut operator_counts = std::collections::BTreeMap::new();
+    for candidate in &output.candidates {
+        *operator_counts
+            .entry(candidate.operator.as_str())
+            .or_insert(0) += 1;
+    }
+    // Integer-neighbor mutations became default after this benchmark was added:
+    // the terminal `+ 1` now contributes replacements `0` and `2` per function.
+    assert_eq!(
+        operator_counts.get("integer_literal_neighbor"),
+        Some(&(FUNCTIONS * 2))
+    );
+    assert_eq!(
+        output.candidates.len(),
+        FUNCTIONS * 7,
+        "{operator_counts:?}"
+    );
     assert_eq!(
         output.candidates.first().map(|candidate| (
             candidate.original.as_str(),
@@ -5528,7 +5229,7 @@ fn benchmark_adversarial_ast_fact_indexes() {
             candidate.operator.as_str(),
             candidate.symbol.as_deref(),
         )),
-        Some(("+", "binary_add_sub", Some("scope_0511"))),
+        Some(("1", "integer_literal_neighbor", Some("scope_0511"))),
     );
     println!(
         "source_bytes={} candidates={} elapsed_ms={} stats={stats:?}",
@@ -6185,9 +5886,7 @@ fn pep_695_type_positions_suppress_runtime_mutations() {
         .collect::<Vec<_>>();
 
     assert_eq!(observed, [("|", 2), ("+", 4)]);
-    for candidate in &output.candidates {
-        apply_candidate_and_reparse(source, candidate);
-    }
+    assert_candidates_reparse(source, &output.candidates);
 }
 
 #[test]
@@ -6226,9 +5925,7 @@ fn pep_695_type_positions_emit_type_candidates() {
             ("list[bytes]", "Sequence[bytes]", 4, Some("Outer.Nested")),
         ]
     );
-    for candidate in &output.candidates {
-        apply_candidate_and_reparse(source, candidate);
-    }
+    assert_candidates_reparse(source, &output.candidates);
 }
 
 #[test]
@@ -6425,9 +6122,7 @@ fn typing_import_rebinding_linear(#[case] scenario_index: usize) {
         .collect();
 
     assert_eq!(actual, expected, "{name}");
-    for candidate in &output.candidates {
-        apply_candidate_and_reparse(source, candidate);
-    }
+    assert_candidates_reparse(source, &output.candidates);
 }
 
 #[rstest::rstest]
@@ -6472,9 +6167,7 @@ fn typing_module_alias_rebinding_linear(#[case] scenario_index: usize) {
         .collect();
 
     assert_eq!(actual, expected, "{name}");
-    for candidate in &output.candidates {
-        apply_candidate_and_reparse(source, candidate);
-    }
+    assert_candidates_reparse(source, &output.candidates);
 }
 
 const TYPING_IMPORT_REBINDING_SCOPE_SOURCE: &str = concat!(
@@ -6657,9 +6350,7 @@ fn typing_import_rebinding_scope() {
             ),
         ]
     );
-    for candidate in &output.candidates {
-        apply_candidate_and_reparse(source, candidate);
-    }
+    assert_candidates_reparse(source, &output.candidates);
 
     let alias_source = concat!(
         "import typing as t\n",
@@ -6697,6 +6388,147 @@ fn typing_import_rebinding_scope() {
     }
 }
 
+type TypingRebindingCase = (
+    &'static str,
+    &'static str,
+    &'static [(u64, u32, Option<&'static str>, &'static str)],
+);
+
+const TYPING_REBINDING_CASES: &[TypingRebindingCase] = &[
+    (
+        "if joins optional and identical branches",
+        concat!(
+            "from typing import Sequence\n",
+            "before: list[str]\n",
+            "if condition:\n",
+            "    Sequence = local_sequence\n",
+            "after_optional: list[str]\n",
+            "Sequence = local_sequence\n",
+            "if condition:\n",
+            "    from typing import Sequence\n",
+            "else:\n",
+            "    from typing import Sequence\n",
+            "after_identical: list[str]\n",
+        ),
+        &[(243, 11, None, "Sequence[str]")],
+    ),
+    (
+        "returning branch is not a continuation exit",
+        concat!(
+            "from typing import Sequence\n",
+            "def reachable(flag):\n",
+            "    from typing import Sequence\n",
+            "    if flag:\n",
+            "        Sequence = local_sequence\n",
+            "        return\n",
+            "    after_return: list[str]\n",
+            "untouched: list[str]\n",
+        ),
+        &[
+            (161, 7, Some("reachable"), "Sequence[str]"),
+            (182, 8, None, "Sequence[str]"),
+        ],
+    ),
+    (
+        "loops include their zero iteration exits",
+        concat!(
+            "Sequence = local_sequence\n",
+            "for item in items:\n",
+            "    from typing import Sequence\n",
+            "    inside_for: list[str]\n",
+            "after_for: list[str]\n",
+            "from typing import Sequence\n",
+            "while condition:\n",
+            "    Sequence = local_sequence\n",
+            "after_while: list[str]\n",
+            "from typing import Sequence\n",
+            "untouched: list[str]\n",
+        ),
+        &[(261, 11, None, "Sequence[str]")],
+    ),
+    (
+        "try joins normal handlers else and applies finally",
+        concat!(
+            "from typing import Sequence\n",
+            "try:\n",
+            "    Sequence = local_sequence\n",
+            "except Error:\n",
+            "    from typing import Sequence\n",
+            "after_ambiguous: list[str]\n",
+            "Sequence = local_sequence\n",
+            "try:\n",
+            "    from typing import Sequence\n",
+            "except Error:\n",
+            "    from typing import Sequence\n",
+            "else:\n",
+            "    from typing import Sequence\n",
+            "after_identical: list[str]\n",
+            "Sequence = local_sequence\n",
+            "try:\n",
+            "    Sequence = local_sequence\n",
+            "except Error:\n",
+            "    Sequence = local_sequence\n",
+            "finally:\n",
+            "    from typing import Sequence\n",
+            "after_finally: list[str]\n",
+        ),
+        &[(471, 22, None, "Sequence[str]")],
+    ),
+    (
+        "with and except targets bind before their suites",
+        concat!(
+            "from typing import Sequence\n",
+            "with manager as Sequence:\n",
+            "    hidden_with: list[str]\n",
+            "after_with: list[str]\n",
+            "from typing import Sequence\n",
+            "try:\n",
+            "    work()\n",
+            "except Error as Sequence:\n",
+            "    hidden_except: list[str]\n",
+            "after_except: list[str]\n",
+            "from typing import Sequence\n",
+            "untouched: list[str]\n",
+        ),
+        &[(265, 12, None, "Sequence[str]")],
+    ),
+    (
+        "match includes unmatched flow unless irrefutable",
+        concat!(
+            "from typing import Sequence\n",
+            "match value:\n",
+            "    case {\"item\": Sequence}:\n",
+            "        hidden_case: list[str]\n",
+            "after_optional: list[str]\n",
+            "Sequence = local_sequence\n",
+            "match value:\n",
+            "    case _:\n",
+            "        from typing import Sequence\n",
+            "after_irrefutable: list[str]\n",
+            "from typing import Sequence\n",
+            "match value:\n",
+            "    case Sequence if guard:\n",
+            "        from typing import Sequence\n",
+            "after_guarded: list[str]\n",
+            "from typing import Sequence\n",
+            "untouched: list[str]\n",
+        ),
+        &[(412, 17, None, "Sequence[str]")],
+    ),
+    (
+        "named expression binding precedes branch suites",
+        concat!(
+            "from typing import Sequence\n",
+            "if (Sequence := local_sequence):\n",
+            "    hidden_named: list[str]\n",
+            "after_named: list[str]\n",
+            "from typing import Sequence\n",
+            "untouched: list[str]\n",
+        ),
+        &[(151, 6, None, "Sequence[str]")],
+    ),
+];
+
 #[rstest::rstest]
 #[case::if_joins_optional_and_identical_branches_1(0)]
 #[case::returning_branch_is_not_a_continuation_exit_2(1)]
@@ -6705,145 +6537,8 @@ fn typing_import_rebinding_scope() {
 #[case::with_and_except_targets_bind_before_their_suites_5(4)]
 #[case::match_includes_unmatched_flow_unless_irrefutable_6(5)]
 #[case::named_expression_binding_precedes_branch_suites_7(6)]
-#[allow(clippy::too_many_lines)]
 fn typing_import_rebinding_control_flow(#[case] scenario_index: usize) {
-    let (name, source, expected) = [
-        (
-            "if joins optional and identical branches",
-            concat!(
-                "from typing import Sequence\n",
-                "before: list[str]\n",
-                "if condition:\n",
-                "    Sequence = local_sequence\n",
-                "after_optional: list[str]\n",
-                "Sequence = local_sequence\n",
-                "if condition:\n",
-                "    from typing import Sequence\n",
-                "else:\n",
-                "    from typing import Sequence\n",
-                "after_identical: list[str]\n",
-            ),
-            vec![(243, 11, None, "Sequence[str]")],
-        ),
-        (
-            "returning branch is not a continuation exit",
-            concat!(
-                "from typing import Sequence\n",
-                "def reachable(flag):\n",
-                "    from typing import Sequence\n",
-                "    if flag:\n",
-                "        Sequence = local_sequence\n",
-                "        return\n",
-                "    after_return: list[str]\n",
-                "untouched: list[str]\n",
-            ),
-            vec![
-                (161, 7, Some("reachable"), "Sequence[str]"),
-                (182, 8, None, "Sequence[str]"),
-            ],
-        ),
-        (
-            "loops include their zero iteration exits",
-            concat!(
-                "Sequence = local_sequence\n",
-                "for item in items:\n",
-                "    from typing import Sequence\n",
-                "    inside_for: list[str]\n",
-                "after_for: list[str]\n",
-                "from typing import Sequence\n",
-                "while condition:\n",
-                "    Sequence = local_sequence\n",
-                "after_while: list[str]\n",
-                "from typing import Sequence\n",
-                "untouched: list[str]\n",
-            ),
-            vec![(261, 11, None, "Sequence[str]")],
-        ),
-        (
-            "try joins normal handlers else and applies finally",
-            concat!(
-                "from typing import Sequence\n",
-                "try:\n",
-                "    Sequence = local_sequence\n",
-                "except Error:\n",
-                "    from typing import Sequence\n",
-                "after_ambiguous: list[str]\n",
-                "Sequence = local_sequence\n",
-                "try:\n",
-                "    from typing import Sequence\n",
-                "except Error:\n",
-                "    from typing import Sequence\n",
-                "else:\n",
-                "    from typing import Sequence\n",
-                "after_identical: list[str]\n",
-                "Sequence = local_sequence\n",
-                "try:\n",
-                "    Sequence = local_sequence\n",
-                "except Error:\n",
-                "    Sequence = local_sequence\n",
-                "finally:\n",
-                "    from typing import Sequence\n",
-                "after_finally: list[str]\n",
-            ),
-            vec![(471, 22, None, "Sequence[str]")],
-        ),
-        (
-            "with and except targets bind before their suites",
-            concat!(
-                "from typing import Sequence\n",
-                "with manager as Sequence:\n",
-                "    hidden_with: list[str]\n",
-                "after_with: list[str]\n",
-                "from typing import Sequence\n",
-                "try:\n",
-                "    work()\n",
-                "except Error as Sequence:\n",
-                "    hidden_except: list[str]\n",
-                "after_except: list[str]\n",
-                "from typing import Sequence\n",
-                "untouched: list[str]\n",
-            ),
-            vec![(265, 12, None, "Sequence[str]")],
-        ),
-        (
-            "match includes unmatched flow unless irrefutable",
-            concat!(
-                "from typing import Sequence\n",
-                "match value:\n",
-                "    case {\"item\": Sequence}:\n",
-                "        hidden_case: list[str]\n",
-                "after_optional: list[str]\n",
-                "Sequence = local_sequence\n",
-                "match value:\n",
-                "    case _:\n",
-                "        from typing import Sequence\n",
-                "after_irrefutable: list[str]\n",
-                "from typing import Sequence\n",
-                "match value:\n",
-                "    case Sequence if guard:\n",
-                "        from typing import Sequence\n",
-                "after_guarded: list[str]\n",
-                "from typing import Sequence\n",
-                "untouched: list[str]\n",
-            ),
-            vec![(412, 17, None, "Sequence[str]")],
-        ),
-        (
-            "named expression binding precedes branch suites",
-            concat!(
-                "from typing import Sequence\n",
-                "if (Sequence := local_sequence):\n",
-                "    hidden_named: list[str]\n",
-                "after_named: list[str]\n",
-                "from typing import Sequence\n",
-                "untouched: list[str]\n",
-            ),
-            vec![(151, 6, None, "Sequence[str]")],
-        ),
-    ]
-    .into_iter()
-    .nth(scenario_index)
-    .unwrap();
+    let (name, source, expected) = TYPING_REBINDING_CASES[scenario_index];
 
     let output = analyze_types(source);
 
@@ -6862,9 +6557,7 @@ fn typing_import_rebinding_control_flow(#[case] scenario_index: usize) {
         .collect();
 
     assert_eq!(actual, expected, "{name}");
-    for candidate in &output.candidates {
-        apply_candidate_and_reparse(source, candidate);
-    }
+    assert_candidates_reparse(source, &output.candidates);
 }
 
 #[test]
@@ -7318,10 +7011,11 @@ fn binding_flow_internal_corpus_projects_categorized_exit_facts() {
     assert_eq!(actual_ids, expected_sorted);
 
     for id in expected_ids {
-        let item = items
-            .iter()
-            .find(|item| item.id == id)
-            .unwrap_or_else(|| panic!("missing internal-fixture case {id}"));
+        let item = items.iter().find(|item| item.id == id).unwrap_or_else(
+            // Fixed test literals and checked-in corpus IDs cannot reach this diagnostic.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            || panic!("missing internal-fixture case {id}"),
+        );
         assert_eq!(item.mode, "internal-fixture", "case={id}");
         let expected = BindingFlowTestSnapshot {
             fallthrough: item.expected_fallthrough.clone(),
@@ -8255,8 +7949,11 @@ fn loop_back_edge_boundaries_preserve_definite_builtin_resolution() {
 
 fn assert_name_resolution_cases(cases: &[(&str, &str, &str, &str)]) {
     for (case, source, marker, expected) in cases {
-        let snapshot = name_resolution_test_snapshot(source, marker, "list")
-            .unwrap_or_else(|error| panic!("{error}; case={case}"));
+        let snapshot = name_resolution_test_snapshot(source, marker, "list").unwrap_or_else(
+            // Fixed test literals and checked-in corpus IDs cannot reach this diagnostic.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |error| panic!("{error}; case={case}"),
+        );
         assert_eq!(snapshot.resolution, *expected, "case={case}");
     }
 }
@@ -8305,8 +8002,11 @@ fn annotation_scope_private_correspondence_matches_lean() {
         .iter()
         .filter(|item| item.observation_kind == "annotation")
     {
-        let snapshot = annotation_site_test_snapshot(&item.source, &item.marker)
-            .unwrap_or_else(|error| panic!("{error}; case={}", item.id));
+        let snapshot = annotation_site_test_snapshot(&item.source, &item.marker).unwrap_or_else(
+            // Fixed test literals and checked-in corpus IDs cannot reach this diagnostic.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |error| panic!("{error}; case={}", item.id),
+        );
         let marker_start = item.source.find(&item.marker).unwrap();
         let marker_end = marker_start + item.marker.len();
         assert!(snapshot.start <= marker_start, "{}", item.id);
@@ -8331,7 +8031,11 @@ fn annotation_scope_private_correspondence_matches_lean() {
         .filter(|item| item.observation_kind == "resolution")
     {
         let snapshot = name_resolution_test_snapshot(&item.source, &item.marker, "list")
-            .unwrap_or_else(|error| panic!("{error}; case={}", item.id));
+            .unwrap_or_else(
+                // Fixed test literals and checked-in corpus IDs cannot reach this diagnostic.
+                #[cfg_attr(coverage_nightly, coverage(off))]
+                |error| panic!("{error}; case={}", item.id),
+            );
         let marker_start = item.source.find(&item.marker).unwrap();
         let name_start = marker_start + item.marker.find("list").unwrap();
         assert_eq!(snapshot.start, name_start, "{}", item.id);
@@ -8447,8 +8151,11 @@ fn exception_match_binding_internal_corpus() {
         }) {
             assert!(item.expected_resolution.is_none(), "{}", item.id);
             assert!(item.expected_exit_category.is_none(), "{}", item.id);
-            let actual_facts = observe(&item.source, &item.marker)
-                .unwrap_or_else(|error| panic!("{error}; case={}", item.id));
+            let actual_facts = observe(&item.source, &item.marker).unwrap_or_else(
+                // Fixed test literals and checked-in corpus IDs cannot reach this diagnostic.
+                #[cfg_attr(coverage_nightly, coverage(off))]
+                |error| panic!("{error}; case={}", item.id),
+            );
             assert_eq!(actual_facts, item.expected_facts, "{}", item.id);
             assert_eq!(
                 !actual_facts.is_empty(),
@@ -8463,7 +8170,11 @@ fn exception_match_binding_internal_corpus() {
         let category = item.expected_exit_category.as_deref().unwrap();
         assert!(["fallthrough", "break", "continue", "terminate"].contains(&category));
         let actual_facts = binding_flow_handler_exit_snapshot(&item.source, &item.marker, category)
-            .unwrap_or_else(|error| panic!("{error}; case={}", item.id));
+            .unwrap_or_else(
+                // Fixed test literals and checked-in corpus IDs cannot reach this diagnostic.
+                #[cfg_attr(coverage_nightly, coverage(off))]
+                |error| panic!("{error}; case={}", item.id),
+            );
         assert_eq!(actual_facts, item.expected_facts, "{}", item.id);
         assert_eq!(
             !actual_facts.is_empty(),
@@ -8481,10 +8192,11 @@ fn exception_match_binding_private_projection_detects_broken_transitions() {
         .map(|line| serde_json::from_str::<ExceptionMatchBindingCorpusCase>(line).unwrap())
         .collect::<Vec<_>>();
     let case = |id: &str| {
-        cases
-            .iter()
-            .find(|item| item.id == id)
-            .unwrap_or_else(|| panic!("missing sensitivity case {id}"))
+        cases.iter().find(|item| item.id == id).unwrap_or_else(
+            // Fixed test literals and checked-in corpus IDs cannot reach this diagnostic.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            || panic!("missing sensitivity case {id}"),
+        )
     };
 
     let handler_type = case("handler_type_before_target");
@@ -8573,7 +8285,11 @@ fn exception_match_binding_handler_cleanup_rows_observe_post_cleanup_state(
     {
         assert_eq!(
             binding_flow_handler_exit_snapshot(&item.source, &item.marker, category)
-                .unwrap_or_else(|error| panic!("{}: {error}", item.id)),
+                .unwrap_or_else(
+                    // Fixed test literals and checked-in corpus IDs cannot reach this diagnostic.
+                    #[cfg_attr(coverage_nightly, coverage(off))]
+                    |error| panic!("{}: {error}", item.id)
+                ),
             item.expected_facts,
             "{} must observe the categorized exit after handler cleanup",
             item.id
@@ -8585,7 +8301,11 @@ fn exception_match_binding_handler_cleanup_rows_observe_post_cleanup_state(
                 category,
                 mutation,
             )
-            .unwrap_or_else(|error| panic!("{}: {error}", item.id)),
+            .unwrap_or_else(
+                // Fixed test literals and checked-in corpus IDs cannot reach this diagnostic.
+                #[cfg_attr(coverage_nightly, coverage(off))]
+                |error| panic!("{}: {error}", item.id)
+            ),
             vec!["direct:Sequence=typing.Sequence"],
             "{} must detect omitted {category} cleanup",
             item.id
@@ -10291,13 +10011,7 @@ fn prepared_namespace_blocks_direct_builtin_pairs_and_exceptions(#[case] header:
     let source = format!(
         "class Subject{header}:\n    try: pass\n    except ValueError: pass\n    raise TypeError()\n"
     );
-    assert!(
-        analyze(&source)
-            .candidates
-            .iter()
-            .all(|c| c.operator.as_str() != "exception_type_pair"),
-        "{source}"
-    );
+    assert!(analyze(&source).candidates.is_empty(), "{source}");
 }
 
 #[rstest::rstest]
@@ -10620,13 +10334,7 @@ fn private_annotation_import_parameter_bindings_shadow_canonical_roots() {
 
     let output = analyze_types(source);
 
-    assert!(
-        output
-            .candidates
-            .iter()
-            .all(|c| c.operator.as_str() != "type_sequence_iterable"),
-        "{source}"
-    );
+    assert!(output.candidates.is_empty(), "{source}");
 }
 
 #[rstest::rstest]
@@ -10696,9 +10404,7 @@ fn hierarchy_candidates(source: &str) -> Vec<(String, String)> {
         },
         source,
     );
-    for candidate in &output.candidates {
-        apply_candidate_and_reparse(source, candidate);
-    }
+    assert_candidates_reparse(source, &output.candidates);
     output
         .candidates
         .into_iter()
@@ -10817,7 +10523,9 @@ fn exception_hierarchy_preserves_alias_identity_and_scope() {
 #[case::from_errors_import_child_def_f_raise_child("from .errors import Child\ndef f():\n    raise Child()\n", vec![])]
 fn exception_hierarchy_cross_module_and_relative_imports(
     #[case] source: &str,
-    #[case] expected: Vec<(&str, &str)>,
+    #[case]
+    #[by_ref]
+    expected: &[(&str, &str)],
 ) {
     use super::exception_hierarchy::ExceptionIndex;
     let errors =
@@ -10997,10 +10705,14 @@ fn exception_hierarchy_respects_candidate_prefix_selection_and_cancellation() {
 }
 
 #[rstest::rstest]
-#[case::vec_a_py_from_b_import_child_class_root_exception_pass_def_f_rais_1(0)]
-#[case::vec_a_py_import_pkg_def_f_raise_pkg_errors_child_pkg_errors_py_cl_2(1)]
-fn exception_hierarchy_rejects_import_cycles_and_unloaded_submodules(
+#[case::import_cycle(0, vec![])]
+#[case::unloaded_submodule(1, vec![])]
+#[case::loaded_submodule(2, vec!["pkg.errors.Root"])]
+fn exception_hierarchy_requires_acyclic_imports_and_loaded_submodules(
     #[case] scenario_index: usize,
+    #[case]
+    #[by_ref]
+    expected: &[&str],
 ) {
     use super::exception_hierarchy::ExceptionIndex;
     let cases = [
@@ -11015,6 +10727,17 @@ fn exception_hierarchy_rejects_import_cycles_and_unloaded_submodules(
             (
                 "a.py",
                 "import pkg\ndef f():\n    raise pkg.errors.Child()\n",
+            ),
+            (
+                "pkg/errors.py",
+                "class Root(Exception): pass\nclass Child(Root): pass\n",
+            ),
+            ("pkg/__init__.py", ""),
+        ],
+        vec![
+            (
+                "a.py",
+                "import pkg.errors\ndef f():\n    raise pkg.errors.Child()\n",
             ),
             (
                 "pkg/errors.py",
@@ -11047,7 +10770,7 @@ fn exception_hierarchy_rejects_import_cycles_and_unloaded_submodules(
         )
         .unwrap();
 
-    assert!(output.is_empty(), "{sources:?}");
+    assert_eq!(output, expected, "{sources:?}");
 }
 
 #[rstest::rstest]

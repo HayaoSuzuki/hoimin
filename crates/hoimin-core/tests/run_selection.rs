@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute, stmt_expr_attributes))]
 use hoimin_core::{
     RunSelection, RunSelectionError, VerificationSampling, VerificationSelection,
     VerificationTopPolicy,
@@ -14,7 +15,18 @@ fn metadata(mode: &str, selected: usize) -> VerificationSelection {
             VerificationSampling::new(10, 42, vec!["b".into(), "a".into()]).unwrap(),
         )
         .unwrap(),
-        _ => unreachable!(),
+        _ => {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     }
 }
 

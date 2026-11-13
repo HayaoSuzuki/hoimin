@@ -199,9 +199,9 @@ impl Index {
         let body = &method.body;
         let first = usize::from(body.first().is_some_and(is_docstring));
         let statements = &body[first..];
-        if statements.len() < 2 {
+        let [first_statement, .., last_statement] = statements else {
             return None;
-        }
+        };
         let mut calls = ExpressionCheck {
             safe: true,
             super_calls: 0,
@@ -244,7 +244,7 @@ impl Index {
             return None;
         }
         Some((
-            TextRange::new(statements.first()?.start(), statements.last()?.end()),
+            TextRange::new(first_statement.start(), last_statement.end()),
             first,
             index,
         ))
@@ -579,6 +579,7 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for Hazards<'_, F> {
 }
 
 /// Substitute fragments into unchanged separator slots, including grouping parentheses.
+/// The range, first slot and delegation index come from `Index::move_span`.
 pub(super) fn move_replacement(
     method: &StmtFunctionDef,
     range: TextRange,
@@ -608,8 +609,298 @@ pub(super) fn move_replacement(
         result.push_str(source_text(source, statements[order[slot]].range())?);
         cursor = statement.end();
     }
-    result.push_str(source_text(source, TextRange::new(cursor, range.end()))?);
+    // move_span ends the range at the last original statement, so cursor equals
+    // range.end() here and there is no trailing fragment to append.
     #[cfg(test)]
     record(2);
     Some(result)
+}
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+
+    const PAIR: &str = "class Parent:\n def run(self): pass\nclass Child(Parent):\n def run(self):\n  super().run()\n  action()\n";
+
+    fn run_build(
+        module: &ModModule,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<Index, AnalysisCancelled> {
+        Index::build(module, &cancelled)
+    }
+    fn method(module: &ModModule) -> &StmtFunctionDef {
+        module
+            .body
+            .last()
+            .unwrap()
+            .as_class_def_stmt()
+            .unwrap()
+            .body[0]
+            .as_function_def_stmt()
+            .unwrap()
+    }
+    fn run_span(
+        index: &Index,
+        method: &StmtFunctionDef,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Option<(TextRange, usize, usize)> {
+        index.move_span(method, &cancelled)
+    }
+    fn run_move(
+        method: &StmtFunctionDef,
+        span: (TextRange, usize, usize),
+        source: &str,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Option<String> {
+        move_replacement(method, span.0, span.1, span.2, source, &cancelled)
+    }
+
+    #[rstest::rstest]
+    #[case("  super().run()\n  action()", Some(("super().run()\n  action()", 0, 0)))]
+    #[case("  action()\n  super().run()", Some(("action()\n  super().run()", 0, 1)))]
+    #[case("  'documentation'\n  super().run()\n  action()", Some(("super().run()\n  action()", 1, 0)))]
+    #[case("  super().run()", None)]
+    #[case("  pass", None)]
+    #[case("  value = 1\n  super().run()", None)]
+    #[case("  super().other()\n  action()", None)]
+    #[case("  super().run()\n  super().run()", None)]
+    #[case("  super().run()\n  'would become documentation'", None)]
+    #[case("  super().run(**options)\n  action()", None)]
+    #[case("  [item for item in values]\n  super().run()", None)]
+    fn super_move_span_requires_one_delegation_and_preserves_docstring_boundaries(
+        #[case] body: &str,
+        #[case] expected: Option<(&str, usize, usize)>,
+    ) {
+        let source = format!(
+            "class Parent:\n def run(self): pass\nclass Child(Parent):\n def run(self):\n{body}\n"
+        );
+        let parsed = ruff_python_parser::parse_module(&source).unwrap();
+        let index = run_build(parsed.syntax(), &|| false).unwrap();
+        let method = method(parsed.syntax());
+        assert!(index.contains(method));
+        let actual = run_span(&index, method, &|| false).map(|(range, first, delegation)| {
+            (
+                source_text(&source, range).unwrap().to_owned(),
+                first,
+                delegation,
+            )
+        });
+        assert_eq!(
+            actual,
+            expected.map(|(text, first, delegation)| (text.to_owned(), first, delegation))
+        );
+    }
+
+    #[rstest::rstest]
+    fn super_move_span_stops_during_statement_or_expression_validation(
+        #[values(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)] checkpoint: usize,
+    ) {
+        let parsed = ruff_python_parser::parse_module(PAIR).unwrap();
+        let index = run_build(parsed.syntax(), &|| false).unwrap();
+        let method = method(parsed.syntax());
+        let total = std::cell::Cell::new(0);
+        assert!(
+            run_span(&index, method, &|| {
+                total.set(total.get() + 1);
+                false
+            })
+            .is_some()
+        );
+        let polls = std::cell::Cell::new(0);
+        let span = run_span(&index, method, &|| {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= checkpoint
+        });
+        assert_eq!(span.is_some(), checkpoint >= total.get());
+    }
+
+    #[rstest::rstest]
+    fn inheritance_identity_index_stops_during_inventory_hazards_or_eligibility(
+        #[values(
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63
+        )]
+        checkpoint: usize,
+    ) {
+        let parsed = ruff_python_parser::parse_module(PAIR).unwrap();
+        let total = std::cell::Cell::new(0);
+        assert!(
+            run_build(parsed.syntax(), &|| {
+                total.set(total.get() + 1);
+                false
+            })
+            .unwrap()
+            .contains(method(parsed.syntax()))
+        );
+        let polls = std::cell::Cell::new(0);
+        let index = run_build(parsed.syntax(), &|| {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= checkpoint
+        });
+        assert_eq!(index.is_err(), checkpoint < total.get());
+    }
+
+    #[rstest::rstest]
+    #[case(PAIR, 0, None)]
+    #[case(PAIR, 1, None)]
+    #[case(PAIR, 2, Some("action()\n  super().run()"))]
+    #[case(
+        "class Parent:\n def run(self): pass\nclass Child(Parent):\n def run(self):\n  action()\n  super().run()\n",
+        2,
+        Some("super().run()\n  action()")
+    )]
+    fn moving_delegation_requires_complete_source_fragments(
+        #[case] source: &str,
+        #[case] source_prefix: usize,
+        #[case] expected: Option<&str>,
+    ) {
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let index = run_build(parsed.syntax(), &|| false).unwrap();
+        let method = method(parsed.syntax());
+        let span = run_span(&index, method, &|| false).unwrap();
+        let end = [0, usize::from(span.0.start()), source.len()][source_prefix];
+        assert_eq!(
+            run_move(method, span, &source[..end], &|| false).as_deref(),
+            expected
+        );
+    }
+
+    #[rstest::rstest]
+    fn moving_delegation_stops_before_reading_another_fragment(#[values(0, 1)] checkpoint: usize) {
+        let parsed = ruff_python_parser::parse_module(PAIR).unwrap();
+        let index = run_build(parsed.syntax(), &|| false).unwrap();
+        let method = method(parsed.syntax());
+        let span = run_span(&index, method, &|| false).unwrap();
+        let polls = std::cell::Cell::new(0);
+        assert_eq!(
+            run_move(method, span, PAIR, &|| {
+                let current = polls.get();
+                polls.set(current + 1);
+                current >= checkpoint
+            }),
+            None
+        );
+        assert_eq!(polls.get(), checkpoint + 1);
+    }
+    #[rstest::rstest]
+    #[case("class Other():\n def run(self): pass", true)]
+    #[case("class Other(factory.Base):\n def run(self): pass", true)]
+    #[case("class Other(object):\n def run(self): pass", true)]
+    #[case("@decorate\nclass Other:\n def run(self): pass", true)]
+    #[case("class Other[T]:\n def run(self): pass", true)]
+    #[case("class Other(metaclass=Meta):\n def run(self): pass", true)]
+    #[case("class Other(Parent):\n def run(other): pass", true)]
+    #[case("class Other(Parent):\n def run(self, extra): pass", true)]
+    #[case(
+        "class Other(Later):\n def run(self): pass\nclass Later:\n def run(self): pass",
+        true
+    )]
+    #[case(
+        "class Intermediate(Unknown):\n def run(self): pass\nclass Other(Intermediate):\n def run(self): pass",
+        true
+    )]
+    #[case("class Other:\n def run(self): pass\n (first, second) = 1", true)]
+    #[case("class Other:\n def run(self): pass\n value = 1\n value = 2", true)]
+    #[case("exec('pass')\nclass Other:\n def run(self): pass", false)]
+    #[case("from unrelated import *\nclass Other:\n def run(self): pass", false)]
+    #[case("class Other:\n def run(self): pass\nalias = Parent", false)]
+    #[case(
+        "helper.__setattr__('x', value)\nclass Other:\n def run(self): pass",
+        false
+    )]
+    fn inheritance_index_separates_ineligible_headers_from_module_wide_hazards(
+        #[case] extra: &str,
+        #[case] child_eligible: bool,
+    ) {
+        let source = format!("{PAIR}\n{extra}\n");
+        let parsed = ruff_python_parser::parse_module(&source).unwrap();
+        let index = run_build(parsed.syntax(), &|| false).unwrap();
+        let child = parsed.syntax().body[1].as_class_def_stmt().unwrap().body[0]
+            .as_function_def_stmt()
+            .unwrap();
+        let other = parsed
+            .syntax()
+            .body
+            .iter()
+            .filter_map(Stmt::as_class_def_stmt)
+            .find(|class| class.name.as_str() == "Other")
+            .unwrap()
+            .body[0]
+            .as_function_def_stmt()
+            .unwrap();
+        assert_eq!(index.contains(child), child_eligible);
+        assert!(!index.contains(other));
+    }
+    fn run_methods<'a>(
+        class: &'a StmtClassDef,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Option<HashMap<&'a str, &'a StmtFunctionDef>> {
+        class_methods(class, &cancelled)
+    }
+
+    #[test]
+    fn unrelated_method_cannot_supply_an_override_move_span() {
+        let source =
+            format!("{PAIR}\nclass Other:\n def run(self):\n  super().run()\n  action()\n");
+        let parsed = ruff_python_parser::parse_module(&source).unwrap();
+        let index = run_build(parsed.syntax(), &|| false).unwrap();
+        let other = method(parsed.syntax());
+        assert!(!index.contains(other));
+        assert_eq!(run_span(&index, other, &|| false), None);
+    }
+
+    #[test]
+    fn module_without_inheritance_has_no_override_methods() {
+        let parsed = ruff_python_parser::parse_module("class C:\n def run(self): pass\n").unwrap();
+        let index = run_build(parsed.syntax(), &|| false).unwrap();
+        assert!(index.methods.is_empty());
+    }
+
+    #[rstest::rstest]
+    #[case("class C:\n def run(self): pass", Some(&["run"][..]))]
+    #[case("class C:\n pass", Some(&[][..]))]
+    #[case("class C:\n 'documentation'\n value = 1\n def run(self): pass", Some(&["run"][..]))]
+    #[case("class C:\n def first(self): pass\n def run(self): pass", Some(&["first", "run"][..]))]
+    #[case("@decorate\nclass C:\n def run(self): pass", None)]
+    #[case("class C[T]:\n def run(self): pass", None)]
+    #[case("class C(metaclass=Meta):\n def run(self): pass", None)]
+    #[case("class C:\n @decorate\n def run(self): pass", None)]
+    #[case("class C:\n def __getattr__(self): pass", None)]
+    #[case("class C:\n __setattr__ = None\n def run(self): pass", None)]
+    #[case(
+        "class C:\n def first(self): pass\n def run(self, callback=first): pass",
+        None
+    )]
+    #[case("class C:\n def run(self): pass\n def run(self): pass", None)]
+    #[case("class C:\n value = 1\n value = 2", None)]
+    #[case("class C:\n holder.value = 1", None)]
+    #[case("class C:\n value = factory()", None)]
+    #[case("class C:\n def run[T](self): pass", Some(&[][..]))]
+    #[case(
+        "class C:\n def first(self): pass\n def run[T: first](self): pass",
+        None
+    )]
+    #[case("class C:\n async def run(self): pass", Some(&[][..]))]
+    #[case("class C:\n def run(self) -> int: pass", Some(&[][..]))]
+    #[case("class C:\n def run(self, *args): pass", Some(&[][..]))]
+    #[case("class C:\n def run(): pass", Some(&[][..]))]
+    #[case("class C:\n def run(self, *, flag): pass", Some(&["run"][..]))]
+    #[case("class C:\n def run(self): yield 1", Some(&[][..]))]
+    #[case("class C:\n def run(self): return lambda: 1", Some(&[][..]))]
+    fn class_inventory_distinguishes_opaque_classes_from_safe_nonordinary_methods(
+        #[case] source: &str,
+        #[case] expected: Option<&[&str]>,
+    ) {
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let class = parsed.syntax().body[0].as_class_def_stmt().unwrap();
+        let actual = run_methods(class, &|| false).map(|methods| {
+            let mut names = methods.keys().copied().collect::<Vec<_>>();
+            names.sort_unstable();
+            names
+        });
+        assert_eq!(actual.as_deref(), expected);
+    }
 }

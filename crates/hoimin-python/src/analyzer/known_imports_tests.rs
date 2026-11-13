@@ -3,7 +3,6 @@ use super::{
     normalize_binding_flow_imports,
 };
 use proptest::prelude::*;
-use ruff_python_ast::Stmt;
 use ruff_python_parser::parse_module;
 
 const BINDINGS: [(&str, &str); 4] = [
@@ -102,7 +101,9 @@ fn copying_a_name_replaces_or_removes_its_previous_binding() {
 #[case::typing_4(".typing", vec![])]
 fn wildcard_retains_only_modules_for_known_providers(
     #[case] provider: &str,
-    #[case] expected: Vec<&str>,
+    #[case]
+    #[by_ref]
+    expected: &[&str],
 ) {
     // Arrange.
     let source = format!(
@@ -166,9 +167,7 @@ fn type_variables_with_scalar_names_are_disallowed_annotations(#[case] name: &st
         offset: 0,
     };
     let parsed = parse_module(&format!("value: {name}\n")).unwrap();
-    let Stmt::AnnAssign(statement) = &parsed.syntax().body[0] else {
-        panic!("annotation fixture");
-    };
+    let statement = parsed.syntax().body[0].as_ann_assign_stmt().unwrap();
 
     // Act.
     let actual = contains_disallowed_annotation(&statement.annotation, &annotation_imports);
@@ -342,5 +341,84 @@ fn qualified_spelling_preserves_provider_prefix_and_shadowing(#[case] scenario_i
     assert_eq!(
         imports.spelling_for_where(spelling, &targets, |_| false),
         None
+    );
+}
+
+#[test]
+fn qualified_replacement_cannot_use_a_direct_type_import_as_a_module() {
+    let imports = imports_from("from typing import Sequence as t\n");
+    assert_eq!(
+        imports.bindings.get("t"),
+        Some(&super::KnownBinding::Direct("typing.Sequence".to_owned()))
+    );
+    assert_eq!(imports.spelling_for("t.List", &["typing.Sequence"]), None);
+}
+
+fn constrained_provider_spelling(
+    imports: &KnownImports,
+    source: &str,
+    target: &str,
+    allowed: &dyn Fn(&str) -> bool,
+) -> Option<String> {
+    imports.spelling_for_where(source, &[target], allowed)
+}
+
+#[rstest::rstest]
+#[case(
+    "import typing as t",
+    "t.List",
+    "typing.Sequence",
+    "t",
+    Some("t.Sequence")
+)]
+#[case("import typing as t", "t.List", "typing.Sequence", "other", None)]
+#[case("import typing as t", "t.List", "Sequence", "t", None)]
+#[case(
+    "from typing import Sequence as t",
+    "t.List",
+    "typing.Sequence",
+    "t",
+    None
+)]
+#[case(
+    "import collections.abc",
+    "collections.abc.List",
+    "collections.abc.Sequence",
+    "collections",
+    Some("collections.abc.Sequence")
+)]
+#[case(
+    "import collections.abc as abc",
+    "abc.List",
+    "typing.Sequence",
+    "abc",
+    None
+)]
+#[case(
+    "from typing import Sequence as S",
+    "list",
+    "typing.Sequence",
+    "S",
+    Some("S")
+)]
+#[case(
+    "from typing import Sequence as S",
+    "list",
+    "typing.Sequence",
+    "other",
+    None
+)]
+fn provider_spelling_requires_a_qualified_target_and_allowed_local_root(
+    #[case] source: &str,
+    #[case] spelling: &str,
+    #[case] target: &str,
+    #[case] allowed_root: &str,
+    #[case] expected: Option<&str>,
+) {
+    let imports = imports_from(source);
+    assert_eq!(
+        constrained_provider_spelling(&imports, spelling, target, &|local| local == allowed_root)
+            .as_deref(),
+        expected
     );
 }

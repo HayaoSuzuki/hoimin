@@ -29,6 +29,10 @@ pub struct PortableBackend {
     termination_failures: Arc<AtomicU8>,
     #[cfg(all(windows, test))]
     attach_fault: AttachFault,
+    #[cfg(all(test, unix))]
+    attachment_failures: Arc<AtomicU8>,
+    #[cfg(all(test, unix))]
+    close_failures: Arc<AtomicU8>,
 }
 
 impl PortableBackend {
@@ -48,6 +52,10 @@ impl PortableBackend {
                 diagnostic: None,
                 classification_failures: Arc::new(AtomicU8::new(0)),
                 termination_failures: Arc::new(AtomicU8::new(0)),
+                #[cfg(all(test, unix))]
+                attachment_failures: Arc::default(),
+                #[cfg(all(test, unix))]
+                close_failures: Arc::default(),
                 #[cfg(all(windows, test))]
                 attach_fault: AttachFault::None,
             })
@@ -68,6 +76,10 @@ impl PortableBackend {
                 diagnostic: None,
                 classification_failures: Arc::new(AtomicU8::new(0)),
                 termination_failures: Arc::new(AtomicU8::new(0)),
+                #[cfg(all(test, unix))]
+                attachment_failures: Arc::default(),
+                #[cfg(all(test, unix))]
+                close_failures: Arc::default(),
                 #[cfg(all(windows, test))]
                 attach_fault: AttachFault::None,
             })
@@ -79,6 +91,40 @@ impl PortableBackend {
         Self::default()
     }
 
+    #[cfg(all(test, unix))]
+    pub(crate) fn for_tests_with_attachment_failure() -> Self {
+        Self {
+            attachment_failures: Arc::new(AtomicU8::new(1)),
+            ..Self::default()
+        }
+    }
+
+    #[cfg(all(test, unix))]
+    pub(crate) fn for_tests_with_attachment_failure_after_external_reap() -> Self {
+        Self {
+            // Mode 2 reaps the finite fixture child before exposing the attach error.
+            attachment_failures: Arc::new(AtomicU8::new(2)),
+            ..Self::default()
+        }
+    }
+
+    #[cfg(all(test, unix))]
+    pub(crate) fn for_tests_with_close_failure() -> Self {
+        Self {
+            close_failures: Arc::new(AtomicU8::new(1)),
+            ..Self::default()
+        }
+    }
+
+    #[cfg(all(test, unix))]
+    pub(crate) fn take_close_failure_for_tests(&self) -> bool {
+        self.close_failures
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |remaining| {
+                remaining.checked_sub(1)
+            })
+            .is_ok()
+    }
+
     #[doc(hidden)]
     #[must_use]
     pub fn for_tests_with_termination_failure() -> Self {
@@ -86,6 +132,10 @@ impl PortableBackend {
             diagnostic: None,
             classification_failures: Arc::new(AtomicU8::new(0)),
             termination_failures: Arc::new(AtomicU8::new(1)),
+            #[cfg(all(test, unix))]
+            attachment_failures: Arc::default(),
+            #[cfg(all(test, unix))]
+            close_failures: Arc::default(),
             #[cfg(all(windows, test))]
             attach_fault: AttachFault::None,
         }
@@ -98,6 +148,10 @@ impl PortableBackend {
             diagnostic: None,
             classification_failures: Arc::new(AtomicU8::new(1)),
             termination_failures: Arc::new(AtomicU8::new(0)),
+            #[cfg(all(test, unix))]
+            attachment_failures: Arc::default(),
+            #[cfg(all(test, unix))]
+            close_failures: Arc::default(),
             #[cfg(all(windows, test))]
             attach_fault: AttachFault::None,
         }
@@ -110,6 +164,10 @@ impl PortableBackend {
             diagnostic: None,
             classification_failures: Arc::new(AtomicU8::new(1)),
             termination_failures: Arc::new(AtomicU8::new(2)),
+            #[cfg(all(test, unix))]
+            attachment_failures: Arc::default(),
+            #[cfg(all(test, unix))]
+            close_failures: Arc::default(),
             #[cfg(all(windows, test))]
             attach_fault: AttachFault::None,
         }
@@ -120,6 +178,10 @@ impl PortableBackend {
             diagnostic: Some(diagnostic),
             classification_failures: Arc::new(AtomicU8::new(0)),
             termination_failures: Arc::new(AtomicU8::new(0)),
+            #[cfg(all(test, unix))]
+            attachment_failures: Arc::default(),
+            #[cfg(all(test, unix))]
+            close_failures: Arc::default(),
             #[cfg(all(windows, test))]
             attach_fault: AttachFault::None,
         }
@@ -131,6 +193,10 @@ impl PortableBackend {
             diagnostic: None,
             classification_failures: Arc::new(AtomicU8::new(0)),
             termination_failures: Arc::new(AtomicU8::new(0)),
+            #[cfg(all(test, unix))]
+            attachment_failures: Arc::default(),
+            #[cfg(all(test, unix))]
+            close_failures: Arc::default(),
             attach_fault: AttachFault::AssignAfterDelay,
         }
     }
@@ -151,12 +217,20 @@ impl PortableBackend {
         limits: ProcessLimits,
     ) -> Result<ProcessSupervisor, ResourceError> {
         configure_command(command, limits)?;
-        Ok(ProcessSupervisor::Portable(PortableSupervisor::new(
+        let supervisor = PortableSupervisor::new(
             Arc::clone(&self.classification_failures),
             Arc::clone(&self.termination_failures),
             #[cfg(all(windows, test))]
             self.attach_fault,
-        )?))
+        )?;
+        #[cfg(all(test, unix))]
+        let supervisor = {
+            let mut supervisor = supervisor;
+            let attachment_failure = self.attachment_failures.swap(0, Ordering::AcqRel);
+            supervisor.attachment_failure = attachment_failure;
+            supervisor
+        };
+        Ok(ProcessSupervisor::Portable(supervisor))
     }
 }
 
@@ -209,6 +283,10 @@ pub(crate) struct PortableSupervisor {
     tree_quiescent: bool,
     classification_failures: Arc<AtomicU8>,
     termination_failures: Arc<AtomicU8>,
+    #[cfg(all(test, unix))]
+    quiescence_failure: Option<io::Error>,
+    #[cfg(all(test, unix))]
+    attachment_failure: u8,
 }
 
 impl PortableSupervisor {
@@ -234,6 +312,10 @@ impl PortableSupervisor {
             tree_quiescent: false,
             classification_failures,
             termination_failures,
+            #[cfg(all(test, unix))]
+            quiescence_failure: None,
+            #[cfg(all(test, unix))]
+            attachment_failure: 0,
         })
     }
 
@@ -269,6 +351,20 @@ impl PortableSupervisor {
     }
 
     pub(crate) fn attach(&mut self, child: &Child) -> Result<(), ResourceError> {
+        #[cfg(all(test, unix))]
+        if let mode @ 1..=2 = std::mem::take(&mut self.attachment_failure) {
+            if mode == 2 {
+                let pid = i32::try_from(child.id().expect("live fixture child")).unwrap();
+                let mut status = 0;
+                // SAFETY: this test-only fault models another owner reaping this
+                // exact finite child; status is live writable storage.
+                assert_eq!(unsafe { libc::waitpid(pid, &raw mut status, 0) }, pid);
+            }
+            return Err(ResourceError::io(
+                "attach portable supervisor",
+                io::Error::other("injected portable attachment failure"),
+            ));
+        }
         #[cfg(unix)]
         {
             let pid = child.id().ok_or(ResourceError::MissingProcessId)?;
@@ -348,6 +444,11 @@ impl PortableSupervisor {
         Ok(self.tree_quiescent)
     }
 
+    #[cfg(all(test, unix))]
+    pub(crate) fn inject_quiescence_failure_for_tests(&mut self, error: io::Error) {
+        self.quiescence_failure = Some(error);
+    }
+
     #[cfg_attr(
         not(unix),
         allow(
@@ -360,6 +461,10 @@ impl PortableSupervisor {
     ) -> Result<bool, ResourceError> {
         if self.tree_quiescent {
             return Ok(true);
+        }
+        #[cfg(all(test, unix))]
+        if let Some(error) = self.quiescence_failure.take() {
+            return Err(ResourceError::io("probe portable process group", error));
         }
         #[cfg(unix)]
         {
@@ -431,6 +536,66 @@ mod unix_tests {
 
     const EXPECTED_CPU_SOFT: &str = "HOIMIN_TEST_EXPECTED_CPU_SOFT";
     const EXPECTED_CPU_HARD: &str = "HOIMIN_TEST_EXPECTED_CPU_HARD";
+
+    #[test]
+    fn portable_classification_failure_is_consumed_once_across_backend_clones() {
+        let backend = PortableBackend::for_tests_with_classification_failure();
+        let clone = backend.clone();
+        let mut first = super::PortableSupervisor::new(
+            backend.classification_failures,
+            backend.termination_failures,
+        )
+        .unwrap();
+        let mut second = super::PortableSupervisor::new(
+            clone.classification_failures,
+            clone.termination_failures,
+        )
+        .unwrap();
+
+        let error = first
+            .classify(hoimin_core::ProcessTermination::Exit(7))
+            .unwrap_err();
+
+        assert!(
+            matches!(error, super::ResourceError::Io { operation: "classify portable process", source } if source.to_string() == "injected portable classification failure")
+        );
+        assert_eq!(
+            second
+                .classify(hoimin_core::ProcessTermination::Exit(7))
+                .unwrap(),
+            hoimin_core::ProcessTermination::Exit(7)
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::absent(PortableBackend::for_tests(), None)]
+    #[case::present(PortableBackend::with_diagnostic("test diagnostic".into()), Some("test diagnostic"))]
+    fn portable_backend_preserves_its_diagnostic(
+        #[case]
+        #[by_ref]
+        backend: &PortableBackend,
+        #[case] expected: Option<&str>,
+    ) {
+        assert_eq!(backend.diagnostic(), expected);
+    }
+
+    #[tokio::test]
+    async fn portable_attachment_rejects_a_child_already_reaped_by_its_owner() {
+        let mut supervisor =
+            super::PortableSupervisor::new(std::sync::Arc::default(), std::sync::Arc::default())
+                .unwrap();
+        let mut child = Command::new("sh")
+            .args(["-c", "exit 0"])
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        assert!(child.wait().await.unwrap().success());
+
+        let error = supervisor.attach(&child).unwrap_err();
+
+        assert!(matches!(error, super::ResourceError::MissingProcessId));
+        assert!(matches!(supervisor.process_group, ProcessGroup::None));
+    }
 
     #[test]
     fn recording_root_reap_disarms_signaling_before_cleanup_can_yield() {

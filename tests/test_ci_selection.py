@@ -6,8 +6,10 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import create_autospec
 
 import pytest
+from pytest_mock import MockerFixture
 
 from tools import ci_selection
 
@@ -327,3 +329,52 @@ def test_aggregate_cli_rejects_malformed_json(payload: str) -> None:
     )
 
     assert result.returncode == 1
+
+
+def test_creusot_test_selects_proof_validation() -> None:
+    assert ci_selection.categories_for("tests/test_verify_creusot.py") == (
+        "python",
+        "formal",
+        "creusot",
+    )
+
+
+@pytest.mark.parametrize(("base", "head"), [("", "head"), ("base", "-flag")])
+def test_diff_rejects_invalid_revision_arguments(
+    tmp_path: Path, base: str, head: str
+) -> None:
+    with pytest.raises(ValueError, match="Missing or invalid revision"):
+        ci_selection.changed_paths(tmp_path, base, head, merge_base=False)
+
+
+def test_diff_requires_git(tmp_path: Path, mocker: MockerFixture) -> None:
+    original_which_spec = ci_selection.shutil.which
+    mocker.patch.object(
+        ci_selection.shutil,
+        "which",
+        create_autospec(original_which_spec, side_effect=lambda _: None),
+    )
+    with pytest.raises(FileNotFoundError, match="Git is required"):
+        ci_selection.changed_paths(tmp_path, "base", "head", merge_base=False)
+
+
+def test_revision_requires_string() -> None:
+    with pytest.raises(TypeError):
+        ci_selection.revision(None)
+
+
+def test_aggregate_rejects_nonobject_needs() -> None:
+    assert ci_selection.aggregate({"changes": []}) == ["Malformed CI results"]
+
+
+def test_plan_cli_missing_event_file_selects_all(
+    mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mocker.patch.object(sys, "argv", ["ci-selection", "plan"])
+    mocker.patch.dict(os.environ)
+    os.environ.pop("GITHUB_EVENT_PATH", None)
+    mocker.patch.dict(os.environ)
+    os.environ.pop("GITHUB_OUTPUT", None)
+    assert ci_selection.main() == 0
+    outputs = json.loads(capsys.readouterr().out)
+    assert all(outputs.get(key) for key in ci_selection.CATEGORIES)

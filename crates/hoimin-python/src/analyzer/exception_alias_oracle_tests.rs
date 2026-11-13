@@ -12,8 +12,8 @@ fn lean_exception_hierarchy_alias_extraction_correspondence() {
             .find(|(path, _)| path == "patcher.py")
             .unwrap()
             .1;
-        let parsed = ruff_python_parser::parse_module(source)
-            .unwrap_or_else(|error| panic!("infrastructure-error {}: {error}", case.id));
+        let context = format!("infrastructure-error {}", case.id);
+        let parsed = ruff_python_parser::parse_module(source).expect(&context);
         let mut extracted = Escapes::default();
         extracted.visit_body(&parsed.syntax().body);
         assert!(

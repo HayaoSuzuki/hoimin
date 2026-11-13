@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 //! Public subprocess regressions: a native stack overflow must not kill the test runner.
 #[path = "support/jsonl_report.rs"]
 mod jsonl_report;

@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #[cfg(windows)]
 use std::collections::BTreeMap;
 #[cfg(windows)]

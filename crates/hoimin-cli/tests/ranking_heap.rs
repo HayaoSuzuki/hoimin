@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 //! Measure the actual private ranking module; public plan creation and all
 //! candidate conversion happen before the allocator window.
 use std::ffi::OsString;

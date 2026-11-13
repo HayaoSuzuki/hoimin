@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
 #[path = "support/jsonl_report.rs"]
@@ -7,7 +8,6 @@ use collecting_writer::CollectingWriter;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_cli::analyzer::{CandidateCursor, CandidateStore};
@@ -16,10 +16,15 @@ use hoimin_cli::workspace::{CopyOptions, WorkerWorkspace, WorkspaceError, Worksp
 use hoimin_core::{
     ApplyMutation, BeginSession, BudgetLedger, ByteSpan, CANDIDATE_SCHEMA_VERSION,
     CandidateDescriptor, CandidateIdentity, CandidateValidationError, EffectId, LookupStoredResult,
-    MutantResult, MutationCandidate, MutationStatus, PersistResult, ResourceMode, RunBudgets,
-    RunFingerprint, reserve_workspace_copy, stable_mutant_id, validate_candidate,
+    MutantResult, MutationCandidate, PersistResult, ResourceMode, RunBudgets, RunFingerprint,
+    reserve_workspace_copy, stable_mutant_id, validate_candidate,
 };
 use serde::Deserialize;
+
+#[cfg(windows)]
+const VENV_PYTHON_PATH: &str = ".venv/Scripts/python.exe";
+#[cfg(not(windows))]
+const VENV_PYTHON_PATH: &str = ".venv/bin/python";
 
 const CORPUS: &str =
     include_str!("../../../formal/HoiminOracle/corpus/candidate-span-preservation.jsonl");
@@ -337,42 +342,8 @@ fn serde_spool_machine_and_session_preserve_the_lean_identity_projection() {
             result: MutantResult {
                 run_id: "candidate-span".to_owned(),
                 candidate: candidate.clone(),
-                outcome: match MutationStatus::Killed {
-                    hoimin_core::MutationStatus::Killed => hoimin_core::MutationOutcome::Reused {
-                        status: hoimin_core::ReusedMutationStatus::Killed,
-                    },
-                    hoimin_core::MutationStatus::Survived => hoimin_core::MutationOutcome::Reused {
-                        status: hoimin_core::ReusedMutationStatus::Survived,
-                    },
-                    hoimin_core::MutationStatus::NotRun => hoimin_core::MutationOutcome::NotRun,
-                    status => hoimin_core::MutationOutcome::Executed {
-                        termination: match status {
-                            hoimin_core::MutationStatus::Timeout => {
-                                hoimin_core::ProcessTermination::Timeout
-                            }
-                            hoimin_core::MutationStatus::OutOfMemory => {
-                                hoimin_core::ProcessTermination::OutOfMemory
-                            }
-                            hoimin_core::MutationStatus::ProcessLimit => {
-                                hoimin_core::ProcessTermination::ProcessLimit
-                            }
-                            hoimin_core::MutationStatus::Error => {
-                                hoimin_core::ProcessTermination::Exit(1)
-                            }
-                            _ => unreachable!(),
-                        },
-                        output_state: if status == hoimin_core::MutationStatus::Error {
-                            hoimin_core::ProcessOutputState::CloseTimedOut
-                        } else {
-                            hoimin_core::ProcessOutputState::Complete
-                        },
-                        output: hoimin_core::OutputSpoolRef {
-                            token: "fixture-output".into(),
-                            retained: 0,
-                            observed: 0,
-                        },
-                        elapsed: Duration::from_millis(1),
-                    },
+                outcome: hoimin_core::MutationOutcome::Reused {
+                    status: hoimin_core::ReusedMutationStatus::Killed,
                 },
                 resource_mode: ResourceMode::Hard,
                 diagnostics: Vec::new(),
@@ -500,11 +471,7 @@ fn repo_root() -> PathBuf {
 }
 
 fn python_executable() -> PathBuf {
-    if cfg!(windows) {
-        repo_root().join(".venv/Scripts/python.exe")
-    } else {
-        repo_root().join(".venv/bin/python")
-    }
+    repo_root().join(VENV_PYTHON_PATH)
 }
 
 #[tokio::test]
@@ -562,7 +529,11 @@ async fn public_plan_and_verify_preserve_all_strict_candidate_fields() {
                     && candidate["span"]["length"] == case.candidate.length
                     && candidate["operator"] == case.candidate.operator
             })
-            .unwrap_or_else(|| panic!("missing strict candidate {}", case.id));
+            .unwrap_or_else(
+                // Absence of the required production candidate is a test failure.
+                #[cfg_attr(coverage_nightly, coverage(off))]
+                || panic!("missing strict candidate {}", case.id),
+            );
         assert_public_candidate(actual, case);
         selected_ids.push(actual["id"].as_str().unwrap().to_owned());
     }
@@ -736,4 +707,30 @@ fn workspace_rejects_invalid_locations_as_invalid_spans() {
         ));
         worker.reset().unwrap();
     }
+}
+
+#[test]
+#[should_panic(expected = "source is not UTF-8")]
+fn span_shape_rejects_non_utf8_source() {
+    let mut case = parse_corpus(CORPUS).remove(0);
+    case.source[0] = 255;
+    validate_case_shape(&case);
+}
+
+#[test]
+#[should_panic(expected = "crossed mode/scenario")]
+fn span_shape_rejects_an_unowned_scenario() {
+    let mut case = parse_corpus(CORPUS).remove(0);
+    case.scenario = "unowned".to_owned();
+    validate_case_shape(&case);
+}
+
+#[rstest::rstest]
+#[case::original(|case: &mut OracleCase| case.candidate.original = vec![255])]
+#[case::replacement(|case: &mut OracleCase| case.candidate.replacement = vec![255])]
+fn candidate_projection_rejects_non_utf8_evidence(#[case] corrupt: fn(&mut OracleCase)) {
+    let mut case = parse_corpus(CORPUS).remove(0);
+    corrupt(&mut case);
+    assert!(descriptor(&case).is_none());
+    assert!(mutation_candidate(&case).is_none());
 }

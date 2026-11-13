@@ -1,6 +1,7 @@
 mod telemetry;
 
 fn main() {
+    #[cfg(target_os = "linux")]
     if let Some(exit_code) = hoimin_cli::resource::run_linux_launcher_from(std::env::args_os()) {
         std::process::exit(exit_code);
     }

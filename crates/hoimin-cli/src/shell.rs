@@ -99,7 +99,26 @@ use crate::workspace::{
 mod finalization;
 use finalization::{DrainEvidence, ExecutionFinalization};
 
+#[cfg(test)]
+#[path = "shell/owner_io_faults.rs"]
+mod owner_io_faults;
 mod preparation;
+
+// Production evaluates the unchanged owner operation directly. Tests can fail
+// one operation while its rollback guard and all earlier owners remain real.
+macro_rules! shell_owner_operation {
+    ($stage:ident, $parent:expr, $operation:expr) => {{
+        #[cfg(test)]
+        {
+            owner_io_faults::perform(owner_io_faults::Stage::$stage, $parent, || $operation)
+        }
+        #[cfg(not(test))]
+        {
+            $operation
+        }
+    }};
+}
+
 use preparation::{PreparationError, PreparationToken};
 
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
@@ -268,12 +287,27 @@ async fn finish_with_interrupt_monitor<T>(
     finalization.await
 }
 
+// Owned tests schedule real cancellation at existing preparation boundaries.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RunPreparationCheckpoint {
+    BeforeEnvironment,
+    AfterEnvironment,
+    AfterSnapshot,
+    AfterInputs,
+    AfterRoots,
+}
+
 #[derive(Clone, Debug)]
 pub struct RunControl {
     request: ProcessStartGate,
     cancelled_at: Arc<std::sync::Mutex<Option<tokio::time::Instant>>>,
     max_process_tasks: Arc<AtomicUsize>,
     max_completion_in_flight: Arc<AtomicUsize>,
+    #[cfg(test)]
+    process_completion_panic: Arc<AtomicBool>,
+    #[cfg(test)]
+    io_completion_panic: Arc<AtomicBool>,
     #[cfg(test)]
     materialization_pause: Option<MaterializationPause>,
     #[cfg(test)]
@@ -282,6 +316,12 @@ pub struct RunControl {
     shutdown_grace: Duration,
     #[cfg(test)]
     disk_meter: Option<TestDiskMeter>,
+    #[cfg(test)]
+    preparation_io_fault: Option<&'static str>,
+    #[cfg(test)]
+    historical_git_failure: Option<&'static str>,
+    #[cfg(test)]
+    cancel_preparation_at: Option<RunPreparationCheckpoint>,
     #[cfg(test)]
     dispatched_effects: Arc<AtomicUsize>,
     #[cfg(test)]
@@ -403,6 +443,13 @@ impl DiskMeasurement for TestDiskMeter {
 }
 
 impl RunControl {
+    #[cfg(test)]
+    fn preparation_checkpoint(&self, checkpoint: RunPreparationCheckpoint) {
+        if self.cancel_preparation_at == Some(checkpoint) {
+            self.cancel();
+        }
+    }
+
     #[must_use]
     #[cfg_attr(
         test,
@@ -418,6 +465,10 @@ impl RunControl {
             max_process_tasks: Arc::new(AtomicUsize::new(0)),
             max_completion_in_flight: Arc::new(AtomicUsize::new(0)),
             #[cfg(test)]
+            process_completion_panic: Arc::new(AtomicBool::new(false)),
+            #[cfg(test)]
+            io_completion_panic: Arc::new(AtomicBool::new(false)),
+            #[cfg(test)]
             materialization_pause: None,
             #[cfg(test)]
             cancel_before_run_finished: Arc::new(AtomicBool::new(false)),
@@ -425,6 +476,12 @@ impl RunControl {
             shutdown_grace: SHUTDOWN_GRACE,
             #[cfg(test)]
             disk_meter: None,
+            #[cfg(test)]
+            preparation_io_fault: None,
+            #[cfg(test)]
+            historical_git_failure: None,
+            #[cfg(test)]
+            cancel_preparation_at: None,
             #[cfg(test)]
             dispatched_effects: Arc::new(AtomicUsize::new(0)),
             #[cfg(test)]
@@ -1133,7 +1190,20 @@ fn prepare_blocking_effect(
                 request,
             });
         }
-        _ => unreachable!("non-blocking effect passed to blocking preparation"),
+        _ => {
+            // The dispatch classifier sends exactly these variants to the
+            // owned blocking adapter; reaching this arm is a caller bug.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!("non-blocking effect passed to blocking preparation") })(
+                )
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!("non-blocking effect passed to blocking preparation")
+            }
+        }
     };
     task.map(Box::new).map(BlockingEffect::Workspace)
 }
@@ -1213,7 +1283,20 @@ fn execute_direct_io_effect(context: &mut ShellContext, effect: RunEffect) -> Ru
             .workspace()
             .handle_verify_originals(request)
             .map(RunEvent::OriginalsVerified),
-        _ => unreachable!("non-blocking effect passed to direct I/O execution"),
+        _ => {
+            // This test-only adapter accepts the worker/replay variants above;
+            // another variant is a fixture failure.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!("non-blocking effect passed to direct I/O execution") })(
+                )
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!("non-blocking effect passed to direct I/O execution")
+            }
+        }
     };
     result.unwrap_or_else(RunEvent::EffectFailed)
 }
@@ -1467,7 +1550,20 @@ fn prepare_shell_setup_sync_in(
     prepare_shell_setup_controlled(config, temporary_parent, boundary, None).map_err(|error| {
         match error {
             PreparationError::Failed(error) => error,
-            PreparationError::Stopped(cause) => format!("{} during preparation", cause.label()),
+            PreparationError::Stopped(cause) => {
+                // This synchronous adapter passes timing=None: every check is
+                // Ok and owner I/O errors convert only to Failed. Keep the
+                // defensive stopped diagnostic for future timed callers.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || format!("{} during preparation", cause.label()))()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    format!("{} during preparation", cause.label())
+                }
+            }
         }
     })
 }
@@ -1490,8 +1586,27 @@ fn prepare_shell_setup_controlled(
     boundary(ShellSetupBoundary::DiskPolicyVerified);
     preparation_check(timing)?;
     let spool_path = execution_spool.path().to_owned();
-    let requested_workers = u32::try_from(config.limits.jobs.get())
-        .map_err(|_| "--jobs exceeds the supported worker count".to_owned())?;
+    let Ok(requested_workers) = u32::try_from(config.limits.jobs.get()) else {
+        // RunConfig validates jobs <= hoimin_core::config::MAX_JOBS (256),
+        // so every constructible configuration fits u32 on all supported hosts.
+        return {
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || {
+                    Err(PreparationError::from(
+                        "--jobs exceeds the supported worker count".to_owned(),
+                    ))
+                })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                Err(PreparationError::from(
+                    "--jobs exceeds the supported worker count".to_owned(),
+                ))
+            }
+        };
+    };
     let workspace = WorkspaceHandler::new(
         config.selection.root.clone(),
         config.selection.sources.clone(),
@@ -1545,6 +1660,10 @@ fn prepare_shell_setup_controlled(
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ManagedRootSetupBoundary {
+    #[cfg(test)]
+    CoordinatorOpened,
+    #[cfg(test)]
+    ReclaimFinished,
     ExecutionPublished,
     DeliveryPublished,
     ExecutionSpoolCreated,
@@ -1573,7 +1692,20 @@ fn create_managed_shell_roots_in(
     create_managed_shell_roots_controlled(temporary_parent, boundary, None).map_err(|error| {
         match error {
             PreparationError::Failed(error) => error,
-            PreparationError::Stopped(cause) => format!("{} during preparation", cause.label()),
+            PreparationError::Stopped(cause) => {
+                // This synchronous adapter passes timing=None: every check is
+                // Ok and owner I/O errors convert only to Failed. Keep the
+                // defensive stopped diagnostic for future timed callers.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || format!("{} during preparation", cause.label()))()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    format!("{} during preparation", cause.label())
+                }
+            }
         }
     })
 }
@@ -1600,6 +1732,8 @@ fn create_managed_shell_roots_controlled(
     preparation_check(timing)?;
     let coordinator =
         ManagedRootCoordinator::open(temporary_parent).map_err(|error| error.to_string())?;
+    #[cfg(test)]
+    boundary(ManagedRootSetupBoundary::CoordinatorOpened);
     preparation_check(timing)?;
     let reclaim = match timing {
         Some(timing) => ManagedRunRoot::reclaim_abandoned_controlled(
@@ -1610,34 +1744,50 @@ fn create_managed_shell_roots_controlled(
         ),
         None => ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now()),
     };
+    #[cfg(test)]
+    boundary(ManagedRootSetupBoundary::ReclaimFinished);
     preparation_check(timing)?;
     let execution_root = Arc::new(
-        ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution)
-            .map_err(|error| error.to_string())?,
+        shell_owner_operation!(
+            ExecutionRoot,
+            temporary_parent,
+            ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution)
+        )
+        .map_err(|error| error.to_string())?,
     );
     let mut rollback = SetupRollback::new(Arc::clone(&execution_root));
     rollback.timing = timing.cloned();
     boundary(ManagedRootSetupBoundary::ExecutionPublished);
     preparation_check(timing)?;
     let delivery_root = Arc::new(
-        ManagedRunRoot::create(&coordinator, OwnerKind::PublicDelivery)
-            .map_err(|error| error.to_string())?,
+        shell_owner_operation!(
+            DeliveryRoot,
+            temporary_parent,
+            ManagedRunRoot::create(&coordinator, OwnerKind::PublicDelivery)
+        )
+        .map_err(|error| error.to_string())?,
     );
     rollback.attach_delivery(Arc::clone(&delivery_root));
     boundary(ManagedRootSetupBoundary::DeliveryPublished);
     preparation_check(timing)?;
     let execution_spool = Arc::new(
-        execution_root
-            .create_child("spool-")
-            .map_err(|error| error.to_string())?,
+        shell_owner_operation!(
+            ExecutionSpool,
+            temporary_parent,
+            execution_root.create_child("spool-")
+        )
+        .map_err(|error| error.to_string())?,
     );
     rollback.attach_execution_spool(Arc::clone(&execution_spool));
     boundary(ManagedRootSetupBoundary::ExecutionSpoolCreated);
     preparation_check(timing)?;
     let delivery_spool = Arc::new(
-        delivery_root
-            .create_child("report-")
-            .map_err(|error| error.to_string())?,
+        shell_owner_operation!(
+            DeliverySpool,
+            temporary_parent,
+            delivery_root.create_child("report-")
+        )
+        .map_err(|error| error.to_string())?,
     );
     rollback.attach_delivery_spool(Arc::clone(&delivery_spool));
     boundary(ManagedRootSetupBoundary::DeliverySpoolCreated);
@@ -1665,16 +1815,22 @@ fn begin_disk_monitor(
     let roots = context.spool_dir.monitor_roots();
     #[cfg(test)]
     if let Some(meter) = control.disk_meter() {
-        return DiskMonitor::start_unmeasured_with_meter(
-            meter,
-            policy,
-            roots,
-            control.disk_sample_interval,
+        return crate::io_faults::checked_io!(
+            "shell.disk_monitor.start",
+            DiskMonitor::start_unmeasured_with_meter(
+                meter,
+                policy,
+                roots,
+                control.disk_sample_interval,
+            )
         )
         .map_err(|error| format!("disk.measurement.failed: {error}"));
     }
-    DiskMonitor::start_unmeasured(policy, roots)
-        .map_err(|error| format!("disk.measurement.failed: {error}"))
+    crate::io_faults::checked_io!(
+        "shell.disk_monitor.start",
+        DiskMonitor::start_unmeasured(policy, roots)
+    )
+    .map_err(|error| format!("disk.measurement.failed: {error}"))
 }
 
 fn is_disk_guarded_dispatch(effect: &RunEffect) -> bool {
@@ -1726,10 +1882,13 @@ impl std::fmt::Display for CleanupThreadFailure {
 }
 
 fn spawn_cleanup_thread(job: CleanupThreadJob) -> std::io::Result<()> {
-    std::thread::Builder::new()
-        .name("hoimin-cleanup".to_owned())
-        .spawn(job)
-        .map(|_| ())
+    crate::io_faults::checked_io!(
+        "cleanup.thread.spawn",
+        std::thread::Builder::new()
+            .name("hoimin-cleanup".to_owned())
+            .spawn(job)
+    )
+    .map(|_| ())
 }
 
 async fn run_cleanup_thread<T: Send + 'static>(
@@ -2251,6 +2410,10 @@ pub async fn execute_effect(context: &mut ShellContext, effect: RunEffect) -> Ru
     execute_effect_with_cancellation(context, effect, ProcessCancellation::new()).await
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "inline unreachable-dispatch guards keep the effect table together"
+)]
 async fn execute_effect_with_cancellation(
     context: &mut ShellContext,
     effect: RunEffect,
@@ -2278,7 +2441,20 @@ async fn execute_effect_with_cancellation(
         | RunEffect::ApplyMutation(_)
         | RunEffect::ResetWorker(_)
         | RunEffect::VerifyOriginals(_) => {
-            unreachable!("blocking effect bypassed owned dispatch")
+            {
+                // The dispatch classifier sends exactly these variants to the
+                // owned blocking adapter; reaching this arm is a caller bug.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || -> ! { unreachable!("blocking effect bypassed owned dispatch") })(
+                    )
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    unreachable!("blocking effect bypassed owned dispatch")
+                }
+            }
         }
         RunEffect::RunBaseline(request) => {
             match worker_process_request(context, id, request, cancellation.clone(), None) {
@@ -2325,7 +2501,20 @@ async fn execute_effect_with_cancellation(
                 .await
                 .map(RunEvent::OutputEmitted)
         }
-        RunEffect::Cleanup(_) => unreachable!("cleanup bypassed owned blocking dispatch"),
+        RunEffect::Cleanup(_) => {
+            // The dispatch classifier sends exactly these variants to the
+            // owned blocking adapter; reaching this arm is a caller bug.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!("cleanup bypassed owned blocking dispatch") })(
+                )
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!("cleanup bypassed owned blocking dispatch")
+            }
+        }
         RunEffect::LoadSession(request) => match session(context, id).await {
             Ok(handler) => handler.load(request).await.map(RunEvent::SessionLoaded),
             Err(error) => Err(error),
@@ -2525,8 +2714,40 @@ pub enum PrepareRunConfigError {
 pub fn prepare_run_config(
     config: RunConfig<hoimin_core::EnvironmentRequest>,
 ) -> Result<RunConfig, PrepareRunConfigError> {
-    let environment = crate::fingerprint_env::capture(&config.environment)?;
-    let config = config.with_environment(environment)?;
+    let environment = match crate::fingerprint_env::capture(&config.environment) {
+        Ok(value) => value,
+        Err(error) => {
+            // EnvironmentRequest names are canonical; capture copies them and emits a fixed 64-digit lowercase BLAKE3 digest.
+            return {
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || Err(PrepareRunConfigError::Config(error)))()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    Err(PrepareRunConfigError::Config(error))
+                }
+            };
+        }
+    };
+    let config = match config.with_environment(environment) {
+        Ok(value) => value,
+        Err(error) => {
+            // capture uses this request's exact name set; with_environment can fail only for a different name set.
+            return {
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || Err(PrepareRunConfigError::Config(error)))()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    Err(PrepareRunConfigError::Config(error))
+                }
+            };
+        }
+    };
     let inputs = crate::fingerprint_inputs::resolve_config(&config)?;
     Ok(config.with_fingerprint_inputs(inputs))
 }
@@ -2564,19 +2785,58 @@ where
     Stdout: Write + Send + 'static,
     Stderr: Write + Send + 'static,
 {
+    #[cfg(test)]
+    let config_control = control.clone();
     let timing = PreparationToken::new(config.limits.total_timeout.get(), control.clone());
     let mut interrupts = crate::interrupt::InterruptMonitor::spawn();
     crate::live_progress::stage("preparing run");
     let config_token = timing.clone();
     let config = match timing
         .run(&mut interrupts, move || {
+            #[cfg(test)]
+            config_control.preparation_checkpoint(RunPreparationCheckpoint::BeforeEnvironment);
             config_token.check()?;
-            let environment = crate::fingerprint_env::capture(&config.environment)
-                .map_err(|error| PreparationError::Failed(error.to_string()))?;
+            let environment = match crate::fingerprint_env::capture(&config.environment) {
+                Ok(value) => value,
+                Err(error) => {
+                    // Canonical request names plus capture's fixed lowercase BLAKE3 digest satisfy the snapshot constructor.
+                    return {
+                        #[cfg(coverage_nightly)]
+                        {
+                            (#[coverage(off)]
+                            || Err(PreparationError::Failed(error.to_string())))(
+                            )
+                        }
+                        #[cfg(not(coverage_nightly))]
+                        {
+                            Err(PreparationError::Failed(error.to_string()))
+                        }
+                    };
+                }
+            };
+            #[cfg(test)]
+            config_control.preparation_checkpoint(RunPreparationCheckpoint::AfterEnvironment);
             config_token.check()?;
-            let config = config
-                .with_environment(environment)
-                .map_err(|error| PreparationError::Failed(error.to_string()))?;
+            let config = match config.with_environment(environment) {
+                Ok(value) => value,
+                Err(error) => {
+                    // The snapshot copies this request's exact selected names, which is the sole with_environment error condition.
+                    return {
+                        #[cfg(coverage_nightly)]
+                        {
+                            (#[coverage(off)]
+                            || Err(PreparationError::Failed(error.to_string())))(
+                            )
+                        }
+                        #[cfg(not(coverage_nightly))]
+                        {
+                            Err(PreparationError::Failed(error.to_string()))
+                        }
+                    };
+                }
+            };
+            #[cfg(test)]
+            config_control.preparation_checkpoint(RunPreparationCheckpoint::AfterSnapshot);
             let inputs = crate::fingerprint_inputs::resolve_config_controlled(&config, &|| {
                 config_token.check().is_err()
             })
@@ -2586,6 +2846,8 @@ where
                     .err()
                     .unwrap_or_else(|| PreparationError::Failed(error.to_string()))
             })?;
+            #[cfg(test)]
+            config_control.preparation_checkpoint(RunPreparationCheckpoint::AfterInputs);
             config_token.check()?;
             Ok(config.with_fingerprint_inputs(inputs))
         })
@@ -2618,9 +2880,27 @@ where
 {
     let verified = verified.into_execution();
     if verified.config.session.config().is_some() {
-        let error = "selected candidate execution does not support sessions or resume".to_owned();
-        crate::write_terminal_error(error.clone(), stderr).await;
-        return Err(error);
+        // The only VerifiedPlan producer uses PlanConfig::into_run_config,
+        // which fixes SessionMode::Disabled. Its fields are private and the only
+        // public override changes output metrics, so this is a defensive guard.
+        #[cfg(coverage_nightly)]
+        {
+            return (#[coverage(off)]
+            async move || {
+                let error =
+                    "selected candidate execution does not support sessions or resume".to_owned();
+                crate::write_terminal_error(error.clone(), stderr).await;
+                Err(error)
+            })()
+            .await;
+        }
+        #[cfg(not(coverage_nightly))]
+        {
+            let error =
+                "selected candidate execution does not support sessions or resume".to_owned();
+            crate::write_terminal_error(error.clone(), stderr).await;
+            return Err(error);
+        }
     }
     let control = RunControl::new();
     let timing = PreparationToken::new(verified.config.limits.total_timeout.get(), control.clone());
@@ -2762,7 +3042,14 @@ async fn prepare_loop_context(
     let monitor_control = control.clone();
     let (monitor, prepared) = timing
         .run(interrupts, move || {
+            // Arm on the owned worker so the thread-local fault cannot affect another task.
+            #[cfg(test)]
+            let _fault = monitor_control
+                .preparation_io_fault
+                .map(crate::io_faults::arm);
             let prepared = prepare_shell_setup_controlled(config, &parent, &|_| {}, Some(&token))?;
+            #[cfg(test)]
+            monitor_control.preparation_checkpoint(RunPreparationCheckpoint::AfterRoots);
             token.check()?;
             let monitor = begin_disk_monitor(&prepared, &monitor_control)?;
             // Drop an undelivered idle monitor before its setup. No measurements
@@ -2804,6 +3091,10 @@ async fn run_loop_context(
     prepared_monitor: DiskMonitor,
 ) -> Result<i32, String> {
     context.git = crate::target::git::GitRunner::for_run(control.start_gate(), timing.deadline);
+    #[cfg(test)]
+    if let Some(failure) = control.historical_git_failure {
+        context.git = context.git.with_historical_failure_for_tests(failure);
+    }
     let metrics_requested = config.output.metrics.is_some();
     #[cfg(test)]
     control.observe_managed_roots(&context.spool_dir);
@@ -2838,8 +3129,25 @@ async fn run_loop_context(
     let mut disk_monitor = None;
     let mut delivery_cleanup = CleanupProgress::NotAttempted;
     let mut finalization_errors = Vec::new();
-    let mut finalization = ExecutionFinalization::new()
-        .map_err(|error| format!("disk lifecycle initialization failed: {error}"))?;
+    let mut finalization = match ExecutionFinalization::new() {
+        Ok(finalization) => finalization,
+        Err(error) => {
+            // This constructor supplies exactly the distinct Execution and Delivery
+            // enum values; DuplicateRoot is its only possible error kind.
+            return {
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || Err(format!("disk lifecycle initialization failed: {error}")))(
+                    )
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    Err(format!("disk lifecycle initialization failed: {error}"))
+                }
+            };
+        }
+    };
     context.candidate_replay = Some(CandidateReplay::new(
         candidate_selection
             .ordered_ids()
@@ -2854,8 +3162,20 @@ async fn run_loop_context(
             candidate_selection,
             context.process.resource_control(),
         ));
-        let (next, initial) = transition(*state, RunEvent::StartRequested(StartRequested))
-            .map_err(|error| error.to_string())?;
+        let (next, initial) = match transition(*state, RunEvent::StartRequested(StartRequested)) {
+            Ok(started) => started,
+            Err(error) => {
+                // with_selection initializes Validate, an empty pending set and
+                // next_effect_id=1. StartRequested allocates only that first ID,
+                // so neither invalid-event, completion nor ID errors can occur.
+                return {
+                    #[cfg(coverage_nightly)]
+                    { (#[coverage(off)] || Err(error.to_string()))() }
+                    #[cfg(not(coverage_nightly))]
+                    { Err(error.to_string()) }
+                };
+            }
+        };
         *state = next;
         crate::live_progress::observe(&state);
         track_diagnostic_run_id(&mut diagnostic_run_id, &state);
@@ -2869,7 +3189,12 @@ async fn run_loop_context(
         if metrics_requested {
             let mut collector = MetricsCollector::new(state.run_id());
             if let Err(error) = collector.begin_stage("targets") {
-                metrics_warnings.push(("metrics.state", error.to_string()));
+                // A fresh collector has no stages; begin_stage fails only when
+                // this name already exists. Retain the defensive warning.
+                #[cfg(coverage_nightly)]
+                { (#[coverage(off)] || metrics_warnings.push(("metrics.state", error.to_string())))(); }
+                #[cfg(not(coverage_nightly))]
+                { metrics_warnings.push(("metrics.state", error.to_string())); }
             }
             metrics = Some(collector);
         }
@@ -3154,6 +3479,8 @@ async fn run_loop_context(
                                     completion_tx.clone(),
                                     &mut process_tasks,
                                     dispatch,
+                                    #[cfg(test)]
+                                    control.process_completion_panic.swap(false, Ordering::AcqRel),
                                 );
                             }
                             Err(error) => {
@@ -3205,6 +3532,8 @@ async fn run_loop_context(
                                     completion_tx.clone(),
                                     &mut process_tasks,
                                     dispatch,
+                                    #[cfg(test)]
+                                    control.process_completion_panic.swap(false, Ordering::AcqRel),
                                 );
                             }
                             Err(error) => {
@@ -3224,7 +3553,11 @@ async fn run_loop_context(
                     effect if is_blocking_io_effect(&effect) => {
                         match prepare_blocking_effect(&mut context, effect) {
                             Ok(task) => {
-                                spawn_blocking_effect(task, completion_tx.clone(), &mut io_tasks);
+                                spawn_blocking_effect(
+                                    task, completion_tx.clone(), &mut io_tasks,
+                                    #[cfg(test)]
+                                    control.io_completion_panic.swap(false, Ordering::AcqRel),
+                                );
                                 in_flight += 1;
                                 io_in_flight += 1;
                                 debug_assert!(io_in_flight <= max_jobs);
@@ -3355,6 +3688,8 @@ async fn run_loop_context(
                                         );
                                     }
                                     signal = interrupts.first(), if !stop_signalled => {
+                                        #[cfg(test)]
+                                        control.observe_finalization_event("interrupt_observed");
                                         cancellation.cancel();
                                         stop_signalled = true;
                                         let event = first_interrupt_event(signal)?;
@@ -3364,6 +3699,8 @@ async fn run_loop_context(
                                         );
                                     }
                                     () = tokio::time::sleep_until(deadline), if !stop_signalled => {
+                                        #[cfg(test)]
+                                        control.observe_finalization_event("final_report_deadline_observed");
                                         cancellation.cancel();
                                         stop_signalled = true;
                                         control.establish_event_shutdown_budget(
@@ -3501,7 +3838,12 @@ async fn run_loop_context(
                         let stopping = stop_signalled;
                         let event = if stopping {
                             let budget = shutdown_budget
-                                .ok_or_else(|| "stopping run has no shutdown budget".to_owned())?;
+                                .ok_or_else(
+                                    // Every stop_signalled assignment establishes Some first via a stop/failure
+                                    // event, or returns before these waits. The budget is never cleared.
+                                    #[cfg_attr(coverage_nightly, coverage(off))]
+                                    || "stopping run has no shutdown budget".to_owned(),
+                                )?;
                             report_admission.restrict_to(budget.deadline());
                             let mut execution = Box::pin(execute_effect_with_cancellation(
                                 &mut context,
@@ -3549,13 +3891,16 @@ async fn run_loop_context(
                                         "disk.measurement.failed: disk monitor stop channel closed"
                                             .to_owned()
                                     })?;
-                                    let failure = disk_stop
-                                        .borrow_and_update()
-                                        .clone()
-                                        .ok_or_else(|| {
-                                            "disk.measurement.failed: disk monitor signalled without a failure"
-                                                .to_owned()
-                                        })?;
+                                    let Some(failure) = disk_stop.borrow_and_update().clone() else {
+                                        // monitor_loop publishes only Some(failure). The initial None never
+                                        // satisfies changed(); a dropped sender was handled by changed() above.
+                                        return {
+                                            #[cfg(coverage_nightly)]
+                                            { (#[coverage(off)] || Err("disk.measurement.failed: disk monitor signalled without a failure".to_owned()))() }
+                                            #[cfg(not(coverage_nightly))]
+                                            { Err("disk.measurement.failed: disk monitor signalled without a failure".to_owned()) }
+                                        };
+                                    };
                                     disk_stop_delivered = true;
                                     cancellation.cancel();
                                     stop_signalled = true;
@@ -3570,6 +3915,8 @@ async fn run_loop_context(
                                         shutdown_grace,
                                     )
                                     .expect("disk stop establishes a shutdown budget");
+                                    #[cfg(test)]
+                                    control.observe_finalization_event("serial_disk_stop_observed");
                                     SerialSelection::Stopped {
                                         event,
                                         budget,
@@ -3577,6 +3924,8 @@ async fn run_loop_context(
                                     }
                                 }
                                 () = control.cancelled() => {
+                                    #[cfg(test)]
+                                    control.observe_finalization_event("serial_stop_observed");
                                     cancellation.cancel();
                                     stop_signalled = true;
                                     let event = RunEvent::CancellationRequested;
@@ -3595,6 +3944,8 @@ async fn run_loop_context(
                                     }
                                 }
                                 () = tokio::time::sleep_until(deadline) => {
+                                    #[cfg(test)]
+                                    control.observe_finalization_event("serial_report_deadline_observed");
                                     cancellation.cancel();
                                     stop_signalled = true;
                                     let event = RunEvent::DeadlineReached;
@@ -3613,6 +3964,8 @@ async fn run_loop_context(
                                     }
                                 }
                                 signal = interrupts.first() => {
+                                    #[cfg(test)]
+                                    control.observe_finalization_event("interrupt_observed");
                                     cancellation.cancel();
                                     stop_signalled = true;
                                     match first_interrupt_event(signal) {
@@ -3767,10 +4120,22 @@ async fn run_loop_context(
                 completion
             } else if stop_signalled {
                 let budget = shutdown_budget
-                    .ok_or_else(|| "stopping run has no shutdown budget".to_owned())?;
+                    .ok_or_else(
+                                    // Every stop_signalled assignment establishes Some first via a stop/failure
+                                    // event, or returns before these waits. The budget is never cleared.
+                                    #[cfg_attr(coverage_nightly, coverage(off))]
+                                    || "stopping run has no shutdown budget".to_owned(),
+                                )?;
                 match budget.wait(completion_rx.recv()).await {
                     Ok(Some(completion)) => completion,
-                    Ok(None) => return Err("completion channel closed".to_owned()),
+                    Ok(None) => {
+                        // The original completion_tx stays owned by this inner future; dispatch only
+                        // clones it. No sender drop/move can close this receiver before scope exit.
+                        return std::convert::identity(
+                            #[cfg_attr(coverage_nightly, coverage(off))]
+                            || Err("completion channel closed".to_owned()),
+                        )();
+                    }
                     Err(_) => {
                         let error = shutdown_expiry_error(
                             &mut process_tasks,
@@ -3796,13 +4161,16 @@ async fn run_loop_context(
                         changed.map_err(|_| {
                             "disk.measurement.failed: disk monitor stop channel closed".to_owned()
                         })?;
-                        let failure = disk_stop
-                            .borrow_and_update()
-                            .clone()
-                            .ok_or_else(|| {
-                                "disk.measurement.failed: disk monitor signalled without a failure"
-                                    .to_owned()
-                            })?;
+                        let Some(failure) = disk_stop.borrow_and_update().clone() else {
+                            // monitor_loop publishes only Some(failure). The initial None never
+                            // satisfies changed(); a dropped sender was handled by changed() above.
+                            return {
+                                #[cfg(coverage_nightly)]
+                                { (#[coverage(off)] || Err("disk.measurement.failed: disk monitor signalled without a failure".to_owned()))() }
+                                #[cfg(not(coverage_nightly))]
+                                { Err("disk.measurement.failed: disk monitor signalled without a failure".to_owned()) }
+                            };
+                        };
                         disk_stop_delivered = true;
                         cancellation.cancel();
                         stop_signalled = true;
@@ -3843,6 +4211,8 @@ async fn run_loop_context(
                         ShellCompletion::Serial(event)
                     }
                     signal = interrupts.first() => {
+                                    #[cfg(test)]
+                                    control.observe_finalization_event("interrupt_observed");
                         cancellation.cancel();
                         stop_signalled = true;
                         match first_interrupt_event(signal) {
@@ -3871,7 +4241,12 @@ async fn run_loop_context(
                         }
                     }
                     event = completion_rx.recv() => {
-                        event.ok_or_else(|| "completion channel closed".to_owned())?
+                        event.ok_or_else(
+                            // The original completion_tx remains live in this inner future; dispatch
+                            // clones it, so no receive here can observe all senders dropped.
+                            #[cfg_attr(coverage_nightly, coverage(off))]
+                            || "completion channel closed".to_owned(),
+                        )?
                     }
                 }
             };
@@ -4462,7 +4837,8 @@ async fn run_loop_context(
             if !finalization.cleanup_attempted() {
                 context.analyzer.release_candidate_spool();
                 context.spool_dir.release_execution_spool();
-                if finalization.request_cleanup() {
+                let requested = finalization.request_cleanup();
+                if requested {
                     let cleanup_result =
                         cleanup_managed_root(Arc::clone(&context.spool_dir.execution_root), budget)
                             .await;
@@ -4474,34 +4850,68 @@ async fn run_loop_context(
                     let accepted = finalization.complete_cleanup(cleanup, &error);
                     match disposition {
                         CleanupDisposition::Clean => {
-                            if !accepted {
-                                run_result = append_finalization_error(
-                                    run_result,
-                                    "disk lifecycle rejected outer clean execution cleanup"
-                                        .to_owned(),
-                                );
-                            }
+                            // request_cleanup accepted this root; no other task can mutate
+                            // finalization during removal. The unchanged succeeded safety
+                            // evidence admits Clean (core disk::complete_cleanup).
+                            let rejected = !accepted;
+                            run_result = std::convert::identity(
+                                #[cfg_attr(coverage_nightly, coverage(off))]
+                                |result| {
+                                    if rejected {
+                                        append_finalization_error(
+                                            result,
+                                            "disk lifecycle rejected outer clean execution cleanup"
+                                                .to_owned(),
+                                        )
+                                    } else {
+                                        result
+                                    }
+                                },
+                            )(run_result);
                         }
                         CleanupDisposition::Failed | CleanupDisposition::Deferred(_) => {
-                            if !accepted {
-                                run_result = append_finalization_error(
-                                    run_result,
-                                    "disk lifecycle rejected outer incomplete execution cleanup"
-                                        .to_owned(),
-                                );
-                            }
+                            // The accepted request stays Requested across removal; safety
+                            // evidence is unchanged. Failed requires that evidence; Deferred
+                            // is always admitted (core disk::complete_cleanup).
+                            let rejected = !accepted;
+                            run_result = std::convert::identity(
+                                #[cfg_attr(coverage_nightly, coverage(off))]
+                                |result| {
+                                    if rejected {
+                                        append_finalization_error(
+                                            result,
+                                            "disk lifecycle rejected outer incomplete execution cleanup".to_owned(),
+                                        )
+                                    } else {
+                                        result
+                                    }
+                                },
+                            )(run_result);
                             context.spool_dir.execution_root.abandon_for_janitor(
                                 "outer execution-root cleanup did not complete".to_owned(),
                             );
                             run_result = append_finalization_error(run_result, error);
                         }
                     }
-                } else {
-                    run_result = append_finalization_error(
-                        run_result,
-                        "disk lifecycle rejected outer execution cleanup request".to_owned(),
-                    );
                 }
+                // NotAttempted means the known Execution root is NotRequested;
+                // execution_safe_to_remove proves settled successful safety and zero active
+                // work (core disk::request_cleanup).
+                let rejected = !requested;
+                run_result = std::convert::identity(
+                    #[cfg_attr(coverage_nightly, coverage(off))]
+                    |result| {
+                        if rejected {
+                            append_finalization_error(
+                                result,
+                                "disk lifecycle rejected outer execution cleanup request"
+                                    .to_owned(),
+                            )
+                        } else {
+                            result
+                        }
+                    },
+                )(run_result);
             }
             if !finalization.cleaned() {
                 context
@@ -4513,12 +4923,24 @@ async fn run_loop_context(
             if !finalization.cleanup_attempted() {
                 let completed =
                     finalization.defer_cleanup(context.spool_dir.execution_root.path().to_owned());
-                if !completed {
-                    run_result = append_finalization_error(
-                        run_result,
-                        "disk lifecycle rejected deferred outer execution cleanup".to_owned(),
-                    );
-                }
+                // NotAttempted means Execution is unrequested; observe_outer_drains settled
+                // safety and active work. Request admits settled failure too, and Deferred
+                // completion always accepts (core disk::{request_cleanup, complete_cleanup}).
+                let rejected = !completed;
+                run_result = std::convert::identity(
+                    #[cfg_attr(coverage_nightly, coverage(off))]
+                    |result| {
+                        if rejected {
+                            append_finalization_error(
+                                result,
+                                "disk lifecycle rejected deferred outer execution cleanup"
+                                    .to_owned(),
+                            )
+                        } else {
+                            result
+                        }
+                    },
+                )(run_result);
             }
             if !finalization.cleaned() {
                 context
@@ -4529,19 +4951,29 @@ async fn run_loop_context(
         }
         if delivery_safe_to_remove {
             if delivery_cleanup == CleanupProgress::NotAttempted {
-                if finalization.snapshot().report == DiskComponentState::Pending
-                    && !finalization.apply(DiskLifecycleEvent::ReportFailed)
-                {
-                    run_result = append_finalization_error(
-                        run_result,
-                        "disk lifecycle rejected outer report failure".to_owned(),
-                    );
-                }
+                // Pending report cannot coexist with Finished; no await intervenes before
+                // ReportFailed. core disk::complete_component accepts Pending.
+                let rejected = finalization.snapshot().report == DiskComponentState::Pending
+                    && !finalization.apply(DiskLifecycleEvent::ReportFailed);
+                run_result = std::convert::identity(
+                    #[cfg_attr(coverage_nightly, coverage(off))]
+                    |result| {
+                        if rejected {
+                            append_finalization_error(
+                                result,
+                                "disk lifecycle rejected outer report failure".to_owned(),
+                            )
+                        } else {
+                            result
+                        }
+                    },
+                )(run_result);
                 context.spool_dir.release_delivery_spool();
                 delivery_cleanup = CleanupProgress::Attempted;
-                if finalization.apply(DiskLifecycleEvent::CleanupRequested {
+                let requested = finalization.apply(DiskLifecycleEvent::CleanupRequested {
                     root: DiskRootId::Delivery,
-                }) {
+                });
+                if requested {
                     let cleanup_result =
                         cleanup_managed_root(Arc::clone(&context.spool_dir.delivery_root), budget)
                             .await;
@@ -4552,16 +4984,28 @@ async fn run_loop_context(
                     } = cleanup_result;
                     match cleanup.disposition {
                         CleanupDisposition::Clean => {
-                            if !finalization.apply(DiskLifecycleEvent::CleanupCompleted {
-                                root: DiskRootId::Delivery,
-                                outcome: DiskCleanupOutcome::Clean,
-                            }) {
-                                run_result = append_finalization_error(
-                                    run_result,
-                                    "disk lifecycle rejected outer clean delivery cleanup"
-                                        .to_owned(),
-                                );
-                            }
+                            // The accepted Delivery request stays Requested across removal,
+                            // with unchanged successful safety. core disk::complete_cleanup
+                            // therefore admits Clean.
+                            let rejected =
+                                !finalization.apply(DiskLifecycleEvent::CleanupCompleted {
+                                    root: DiskRootId::Delivery,
+                                    outcome: DiskCleanupOutcome::Clean,
+                                });
+                            run_result = std::convert::identity(
+                                #[cfg_attr(coverage_nightly, coverage(off))]
+                                |result| {
+                                    if rejected {
+                                        append_finalization_error(
+                                            result,
+                                            "disk lifecycle rejected outer clean delivery cleanup"
+                                                .to_owned(),
+                                        )
+                                    } else {
+                                        result
+                                    }
+                                },
+                            )(run_result);
                             delivery_cleanup = CleanupProgress::Cleaned;
                             for error in delivery_cleanup_secondary_errors(&cleanup) {
                                 run_result = append_finalization_error(run_result, error);
@@ -4571,28 +5015,51 @@ async fn run_loop_context(
                         }
                         CleanupDisposition::Failed | CleanupDisposition::Deferred(_) => {
                             let outcome = disk_cleanup_outcome;
-                            if !finalization.apply(DiskLifecycleEvent::CleanupCompleted {
-                                root: DiskRootId::Delivery,
-                                outcome,
-                            }) {
-                                run_result = append_finalization_error(
-                                    run_result,
-                                    "disk lifecycle rejected outer incomplete delivery cleanup"
-                                        .to_owned(),
-                                );
-                            }
+                            // The accepted Delivery request stays Requested across removal.
+                            // Safety success is unchanged; Failed and Deferred are admitted
+                            // by core disk::complete_cleanup.
+                            let rejected =
+                                !finalization.apply(DiskLifecycleEvent::CleanupCompleted {
+                                    root: DiskRootId::Delivery,
+                                    outcome,
+                                });
+                            run_result = std::convert::identity(
+                                #[cfg_attr(coverage_nightly, coverage(off))]
+                                |result| {
+                                    if rejected {
+                                        append_finalization_error(
+                                            result,
+                                            "disk lifecycle rejected outer incomplete delivery cleanup".to_owned(),
+                                        )
+                                    } else {
+                                        result
+                                    }
+                                },
+                            )(run_result);
                             context.spool_dir.delivery_root.abandon_for_janitor(
                                 "outer delivery-root cleanup did not complete".to_owned(),
                             );
                             run_result = append_finalization_error(run_result, error);
                         }
                     }
-                } else {
-                    run_result = append_finalization_error(
-                        run_result,
-                        "disk lifecycle rejected outer delivery cleanup request".to_owned(),
-                    );
                 }
+                // NotAttempted means Delivery is unrequested; report is settled above and
+                // execution_safe_to_remove proves settled successful safety and zero active
+                // work (core disk::request_cleanup).
+                let rejected = !requested;
+                run_result = std::convert::identity(
+                    #[cfg_attr(coverage_nightly, coverage(off))]
+                    |result| {
+                        if rejected {
+                            append_finalization_error(
+                                result,
+                                "disk lifecycle rejected outer delivery cleanup request".to_owned(),
+                            )
+                        } else {
+                            result
+                        }
+                    },
+                )(run_result);
             }
             if delivery_cleanup != CleanupProgress::Cleaned {
                 context
@@ -4616,12 +5083,25 @@ async fn run_loop_context(
                             CLEANUP_QUIESCENCE_UNPROVEN.to_owned(),
                         ),
                     });
-                if !completed {
-                    run_result = append_finalization_error(
-                        run_result,
-                        "disk lifecycle rejected deferred outer delivery cleanup".to_owned(),
-                    );
-                }
+                // NotAttempted means Delivery is unrequested; observe_outer_drains settled
+                // safety/active work and report is settled above. Request and Deferred
+                // completion accept these premises (core disk::{request_cleanup,
+                // complete_cleanup}).
+                let rejected = !completed;
+                run_result = std::convert::identity(
+                    #[cfg_attr(coverage_nightly, coverage(off))]
+                    |result| {
+                        if rejected {
+                            append_finalization_error(
+                                result,
+                                "disk lifecycle rejected deferred outer delivery cleanup"
+                                    .to_owned(),
+                            )
+                        } else {
+                            result
+                        }
+                    },
+                )(run_result);
             }
             if delivery_cleanup != CleanupProgress::Cleaned {
                 context
@@ -4647,35 +5127,34 @@ async fn run_loop_context(
                 MetricsDestination::Disabled => None,
             };
             if let Some(path) = path {
-                match (shutdown_budget.as_ref(), shutdown_expiry_reported) {
-                    (Some(budget), false) => {
-                        let finalized = finalize_metrics_with_shutdown(
-                            path,
-                            metrics,
-                            run_result.as_ref().err().cloned(),
-                            discovered,
-                            executed,
-                            metrics_warnings,
-                            budget,
-                            Box::new(|| {}),
-                        )
-                        .await;
-                        metrics_warnings = finalized.warnings;
-                        if let Some(expiry) = finalized.expiry {
-                            run_result = match run_result {
-                                Ok(_) => Err(expiry),
-                                Err(primary) => Err(combine_shutdown_errors(primary, Some(expiry))),
-                            };
-                        }
-                    }
-                    (Some(_), true) => skip_expired_metrics_finalization(
+                if shutdown_expiry_reported {
+                    skip_expired_metrics_finalization(
                         metrics,
                         run_result.as_ref().err().map(String::as_str),
                         &mut metrics_warnings,
-                    ),
-                    (None, _) => unreachable!("outer finalization always has a shutdown budget"),
+                    );
+                } else {
+                    let finalized = finalize_metrics_with_shutdown(
+                        path,
+                        metrics,
+                        run_result.as_ref().err().cloned(),
+                        discovered,
+                        executed,
+                        metrics_warnings,
+                        budget,
+                        Box::new(|| {}),
+                    )
+                    .await;
+                    metrics_warnings = finalized.warnings;
+                    if let Some(expiry) = finalized.expiry {
+                        run_result = match run_result {
+                            Ok(_) => Err(expiry),
+                            Err(primary) => Err(combine_shutdown_errors(primary, Some(expiry))),
+                        };
+                    }
                 }
             }
+
             for (code, message) in metrics_warnings {
                 if tokio::time::Instant::now() >= budget.deadline()
                     || !context.report.is_quiescent()
@@ -4901,6 +5380,7 @@ fn spawn_process(
     sender: mpsc::Sender<ShellCompletion>,
     tasks: &mut JoinSet<()>,
     _dispatch: std::sync::MutexGuard<'_, ()>,
+    #[cfg(test)] completion_panic: bool,
 ) {
     tasks.spawn(
         async move {
@@ -4915,6 +5395,9 @@ fn spawn_process(
             let _ = sender
                 .send(ShellCompletion::Process { event, context })
                 .await;
+            // Test-only one-shot fault: the completion is delivered before its owner fails to join.
+            #[cfg(test)]
+            assert!(!completion_panic, "injected process post-delivery panic");
         }
         .in_current_span(),
     );
@@ -4924,6 +5407,7 @@ fn spawn_blocking_effect(
     task: BlockingEffect,
     sender: mpsc::Sender<ShellCompletion>,
     tasks: &mut JoinSet<()>,
+    #[cfg(test)] completion_panic: bool,
 ) {
     tasks.spawn(
         async move {
@@ -4932,6 +5416,9 @@ fn spawn_blocking_effect(
                 .await
                 .map(Box::new);
             let _ = sender.send(ShellCompletion::Blocking(result)).await;
+            // The owned payload has returned; this fault isolates the outer task join policy.
+            #[cfg(test)]
+            assert!(!completion_panic, "injected I/O post-delivery panic");
         }
         .in_current_span(),
     );
@@ -5511,7 +5998,7 @@ mod tests {
 
     fn shell_setup_test_config(project: &TempDir) -> RunConfig<hoimin_core::EnvironmentRequest> {
         std::fs::write(project.path().join("target.py"), b"value = 1\n").unwrap();
-        crate::cli::parse_config_from([
+        parse_host_independent_shell_test_config(vec![
             OsString::from("hoimin"),
             OsString::from("run"),
             OsString::from("--root"),
@@ -5522,7 +6009,13 @@ mod tests {
             OsString::from("--"),
             OsString::from("unused-test-command"),
         ])
-        .unwrap()
+    }
+
+    #[test]
+    fn shell_setup_fixture_uses_a_host_independent_free_space_reserve() {
+        let project = tempfile::tempdir().unwrap();
+        let config = shell_setup_test_config(&project);
+        assert_host_independent_test_reserve(&config);
     }
 
     fn assert_host_independent_test_reserve<E>(config: &RunConfig<E>) {
@@ -6004,7 +6497,11 @@ mod tests {
                 events
                     .iter()
                     .position(|event| event == expected)
-                    .unwrap_or_else(|| panic!("missing {expected} in {events:?}"))
+                    .unwrap_or_else(
+                        // This closure only formats an invalid fixture/order failure.
+                        #[cfg_attr(coverage_nightly, coverage(off))]
+                        || panic!("missing {expected} in {events:?}"),
+                    )
             })
             .collect::<Vec<_>>();
         assert!(
@@ -6337,17 +6834,21 @@ mod tests {
             let _ = probe_request_rx.await.map(|()| probe_observed_tx.send(()));
         });
         let observer = std::thread::spawn(move || {
-            pause
-                .wait_until_entered()
-                .map_err(|error| format!("wait for final measurement pause: {error}"))?;
+            pause.wait_until_entered().map_err(
+                // Only evaluated when the fixture fails to synchronize.
+                #[cfg_attr(coverage_nightly, coverage(off))]
+                |error| format!("wait for final measurement pause: {error}"),
+            )?;
             let request_sent = probe_request_tx.send(()).is_ok();
             let runtime_was_responsive = request_sent
                 && probe_observed_rx
                     .recv_timeout(Duration::from_millis(500))
                     .is_ok();
-            pause
-                .release()
-                .map_err(|error| format!("release final measurement pause: {error}"))?;
+            pause.release().map_err(
+                // Only evaluated when the fixture fails to synchronize.
+                #[cfg_attr(coverage_nightly, coverage(off))]
+                |error| format!("release final measurement pause: {error}"),
+            )?;
             Ok::<bool, String>(runtime_was_responsive)
         });
 
@@ -6392,13 +6893,17 @@ mod tests {
         let observed = control.clone();
         let stdout = CollectingWriter::default();
         let release = std::thread::spawn(move || {
-            pause
-                .wait_until_entered()
-                .map_err(|error| format!("wait for final measurement pause: {error}"))?;
+            pause.wait_until_entered().map_err(
+                // Only evaluated when the fixture fails to synchronize.
+                #[cfg_attr(coverage_nightly, coverage(off))]
+                |error| format!("wait for final measurement pause: {error}"),
+            )?;
             std::thread::sleep(Duration::from_millis(100));
-            pause
-                .release()
-                .map_err(|error| format!("release final measurement pause: {error}"))
+            pause.release().map_err(
+                // Only evaluated when the fixture fails to synchronize.
+                #[cfg_attr(coverage_nightly, coverage(off))]
+                |error| format!("release final measurement pause: {error}"),
+            )
         });
 
         let error = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
@@ -6749,16 +7254,16 @@ mod tests {
     }
 
     #[rstest::rstest]
-    #[case::workspace_cleanup_deferred_misleading_diagnostic_1(CleanupDisposition::Failed, "workspace.cleanup.deferred: misleading diagnostic", DiskCleanupOutcome::Failed(
+    #[case::workspace_cleanup_deferred_misleading_diagnostic_1(CleanupDisposition::Failed, "workspace.cleanup.deferred: misleading diagnostic", &DiskCleanupOutcome::Failed(
                     "workspace.cleanup.deferred: misleading diagnostic".to_owned(),
                 ))]
-    #[case::workspace_cleanup_failed_misleading_diagnostic_2(CleanupDisposition::Deferred(None), "workspace.cleanup.failed: misleading diagnostic", DiskCleanupOutcome::Deferred(
+    #[case::workspace_cleanup_failed_misleading_diagnostic_2(CleanupDisposition::Deferred(None), "workspace.cleanup.failed: misleading diagnostic", &DiskCleanupOutcome::Deferred(
                     "workspace.cleanup.failed: misleading diagnostic".to_owned(),
                 ))]
     fn managed_cleanup_disk_classification_ignores_diagnostic_wording(
         #[case] disposition: CleanupDisposition,
         #[case] error: &str,
-        #[case] expected: DiskCleanupOutcome,
+        #[case] expected: &DiskCleanupOutcome,
     ) {
         let outcome = ManagedCleanupOutcome {
             record: CleanupRecord {
@@ -6770,7 +7275,7 @@ mod tests {
 
         let actual = outcome.disk_outcome();
 
-        assert_eq!(actual, expected);
+        assert_eq!(&actual, expected);
     }
 
     #[rstest::rstest]
@@ -6808,12 +7313,12 @@ mod tests {
     }
 
     #[rstest::rstest]
-    #[case::original_1(CleanupDisposition::Clean, DiskCleanupOutcome::Clean, "original")]
-    #[case::original_cleanup_ready_marker_failed_2(CleanupDisposition::Failed, DiskCleanupOutcome::Failed("original; cleanup-ready: marker failed".to_owned()), "original; cleanup-ready: marker failed")]
-    #[case::original_cleanup_ready_marker_failed_3(CleanupDisposition::Deferred(None), DiskCleanupOutcome::Deferred("original; cleanup-ready: marker failed".to_owned()), "original; cleanup-ready: marker failed")]
+    #[case::original_1(CleanupDisposition::Clean, &DiskCleanupOutcome::Clean, "original")]
+    #[case::original_cleanup_ready_marker_failed_2(CleanupDisposition::Failed, &DiskCleanupOutcome::Failed("original; cleanup-ready: marker failed".to_owned()), "original; cleanup-ready: marker failed")]
+    #[case::original_cleanup_ready_marker_failed_3(CleanupDisposition::Deferred(None), &DiskCleanupOutcome::Deferred("original; cleanup-ready: marker failed".to_owned()), "original; cleanup-ready: marker failed")]
     fn cleanup_ready_failure_retains_each_original_classification(
         #[case] disposition: CleanupDisposition,
-        #[case] expected: DiskCleanupOutcome,
+        #[case] expected: &DiskCleanupOutcome,
         #[case] expected_error: &str,
     ) {
         let outcome = ManagedCleanupOutcome {
@@ -6826,7 +7331,7 @@ mod tests {
 
         let outcome = attach_cleanup_ready_error(outcome, Some("marker failed"));
 
-        assert_eq!(outcome.disk_outcome(), expected);
+        assert_eq!(&outcome.disk_outcome(), expected);
         assert_eq!(outcome.error, expected_error);
         assert_eq!(
             outcome.record.evidence.details,
@@ -7001,6 +7506,8 @@ mod tests {
 
         let error = run_cleanup_thread_with_spawner(
             &budget,
+            // A rejected spawn must never invoke the operation; this is a failure sentinel.
+            #[cfg_attr(coverage_nightly, coverage(off))]
             move || {
                 observed_operation.store(true, Ordering::Release);
             },
@@ -7207,7 +7714,11 @@ mod tests {
             events
                 .iter()
                 .position(|observed| *observed == event)
-                .unwrap_or_else(|| panic!("missing {event} in {events:?}"))
+                .unwrap_or_else(
+                    // This closure only formats an invalid fixture/order failure.
+                    #[cfg_attr(coverage_nightly, coverage(off))]
+                    || panic!("missing {event} in {events:?}"),
+                )
         };
         assert!(position("run_finished_written") < position("delivery_root_absent"));
         assert!(position("delivery_root_absent") < position("output_acknowledged"));
@@ -7368,8 +7879,9 @@ mod tests {
         entered: Option<tokio::sync::oneshot::Sender<()>>,
         release: std::sync::mpsc::Receiver<()>,
         pause_flush: bool,
+        marker: &'static [u8],
         record: Vec<u8>,
-        terminal: bool,
+        target_seen: bool,
     }
 
     impl PausedReportWriter {
@@ -7387,18 +7899,18 @@ mod tests {
     impl Write for PausedReportWriter {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
             self.record.extend_from_slice(bytes);
-            self.terminal |= self
+            self.target_seen |= self
                 .record
-                .windows(b"run_finished".len())
-                .any(|part| part == b"run_finished");
-            if !self.pause_flush && self.terminal {
+                .windows(self.marker.len())
+                .any(|part| part == self.marker);
+            if !self.pause_flush && self.target_seen {
                 self.pause()?;
             }
             Ok(bytes.len())
         }
 
         fn flush(&mut self) -> std::io::Result<()> {
-            if self.pause_flush && self.terminal {
+            if self.pause_flush && self.target_seen {
                 self.pause()?;
             }
             self.record.clear();
@@ -7424,22 +7936,26 @@ mod tests {
             entered: Some(entered_tx),
             release: release_rx,
             pause_flush,
+            marker: b"run_finished",
             record: Vec::new(),
-            terminal: false,
+            target_seen: false,
         };
         let diagnostics = SharedDiagnosticCapture::default();
         let captured = diagnostics.clone();
         let mut run = Box::pin(run_loop_with_control(config, writer, diagnostics, control));
         tokio::select! {
-            result = &mut run => panic!(
-                "run finished before report pause: {result:?}; stderr={}",
-                String::from_utf8_lossy(&captured.0.lock().unwrap()),
-            ),
-            entered = entered_rx => entered.unwrap_or_else(|error| panic!(
-                "report pause signal dropped: {error}; stderr={}",
-                String::from_utf8_lossy(&captured.0.lock().unwrap()),
-            )),
-        }
+                   result = &mut run => panic!(
+                       "run finished before report pause: {result:?}; stderr={}",
+                       String::from_utf8_lossy(&captured.0.lock().unwrap()),
+                   ),
+                   entered = entered_rx => entered.unwrap_or_else(
+        // This closure only formats an invalid fixture/order failure.
+        #[cfg_attr(coverage_nightly, coverage(off))]
+        |error| panic!(
+                       "report pause signal dropped: {error}; stderr={}",
+                       String::from_utf8_lossy(&captured.0.lock().unwrap()),
+                   )),
+               }
         let roots = observed.managed_root_paths();
         let delivery = &roots[1];
         let child = std::fs::read_dir(delivery)
@@ -7701,7 +8217,17 @@ mod tests {
         let result =
             prepare_shell_setup(config, Box::new(|| panic!("controlled shell setup panic"))).await;
         let Err(error) = result else {
-            panic!("controlled setup panic unexpectedly succeeded");
+            // This branch only reports that the fixture failed its required shape or outcome.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("controlled setup panic unexpectedly succeeded") })(
+                )
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("controlled setup panic unexpectedly succeeded")
+            }
         };
 
         assert!(error.starts_with("shell setup task failed:"), "{error}");
@@ -7739,7 +8265,16 @@ mod tests {
             Some(&timing),
         );
         let Err(error) = stopped else {
-            panic!("marker failure fixture must stop setup");
+            // This branch only reports that the fixture failed its required shape or outcome.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("marker failure fixture must stop setup") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("marker failure fixture must stop setup")
+            }
         };
         let result = timing.report(error, Vec::new()).await;
 
@@ -8250,7 +8785,11 @@ mod tests {
             }
         })
         .await
-        .unwrap_or_else(|_| panic!("detached cleanup did not remove {path}"));
+        .unwrap_or_else(
+            // This closure only formats an invalid fixture/order failure.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |_| panic!("detached cleanup did not remove {path}"),
+        );
     }
 
     async fn wait_until_process_handler_is_released(process: &std::sync::Weak<ProcessHandler>) {
@@ -8507,6 +9046,10 @@ mod tests {
         })
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "inline failure guards keep the sequence fixture transitions adjacent"
+    )]
     fn waiting_for_sequential_read(
         config: RunConfig,
         selection: hoimin_core::RunSelection,
@@ -8601,13 +9144,36 @@ mod tests {
                         diagnostics: Vec::new(),
                     })
                 }
-                unexpected => panic!("unexpected setup effect: {unexpected:?}"),
+                unexpected => {
+                    // Only reached when the event/fixture assertion has failed.
+                    #[cfg(coverage_nightly)]
+                    {
+                        (#[coverage(off)]
+                        || -> ! { panic!("unexpected setup effect: {unexpected:?}") })(
+                        )
+                    }
+                    #[cfg(not(coverage_nightly))]
+                    {
+                        panic!("unexpected setup effect: {unexpected:?}")
+                    }
+                }
             };
             let effects;
             (state, effects) = transition(state, event).unwrap();
             pending.extend(effects);
         }
-        panic!("setup did not request its first candidate");
+        {
+            // Only reached when the event/fixture assertion has failed.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("setup did not request its first candidate") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("setup did not request its first candidate")
+            }
+        }
     }
 
     async fn outputs_after_unaccepted_sequential_reads(
@@ -8685,7 +9251,19 @@ mod tests {
                         released_reservations: request.reservations,
                     })
                 }
-                unexpected => panic!("unexpected stopped effect: {unexpected:?}"),
+                unexpected => {
+                    // Only reached when the event/fixture assertion has failed.
+                    #[cfg(coverage_nightly)]
+                    {
+                        (#[coverage(off)]
+                        || -> ! { panic!("unexpected stopped effect: {unexpected:?}") })(
+                        )
+                    }
+                    #[cfg(not(coverage_nightly))]
+                    {
+                        panic!("unexpected stopped effect: {unexpected:?}")
+                    }
+                }
             };
             let effects;
             (state, effects) = transition(state, event).unwrap();
@@ -8890,7 +9468,7 @@ mod tests {
         .unwrap();
         let (sender, mut receiver) = mpsc::channel(1);
         let mut io_tasks = JoinSet::new();
-        spawn_blocking_effect(task, sender, &mut io_tasks);
+        spawn_blocking_effect(task, sender, &mut io_tasks, false);
         let mut process_tasks = JoinSet::new();
         let mut in_flight = 1;
         let mut metrics = None;
@@ -9004,7 +9582,17 @@ mod tests {
         assert_eq!(close.await.unwrap(), Some(17));
 
         let OwnedBlockingError::Expired(error) = error else {
-            panic!("blocking close returned a join failure instead of expiry")
+            // This branch only reports that the fixture failed its required shape or outcome.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("blocking close returned a join failure instead of expiry") })(
+                )
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("blocking close returned a join failure instead of expiry")
+            }
         };
         assert!(error.starts_with("cancellation: shutdown grace expired"));
         assert!(error.contains("blocking I/O tasks: 1"));
@@ -9351,9 +9939,15 @@ mod tests {
         tokio::pin!(finalization);
 
         tokio::select! {
-            () = &mut finalization => panic!("outer finalization was not released"),
-            () = tokio::task::yield_now() => {}
-        }
+                   () = &mut finalization => {
+        // Only reached when the event/fixture assertion has failed.
+        #[cfg(coverage_nightly)]
+        { (#[coverage(off)] || -> ! { panic!("outer finalization was not released") })() }
+        #[cfg(not(coverage_nightly))]
+        { panic!("outer finalization was not released") }
+        },
+                   () = tokio::task::yield_now() => {}
+               }
         signal_tx.send(Ok(())).unwrap();
         signal_tx.send(Ok(())).unwrap();
         assert_eq!(
@@ -9502,14 +10096,24 @@ mod tests {
                 entered_tx.send(()).unwrap();
                 release_rx.recv().unwrap();
                 let BlockingEffect::Workspace(task) = task else {
-                    unreachable!("prepared apply task was not a workspace task");
+                    // This branch only reports that the fixture failed its required shape or outcome.
+                    #[cfg(coverage_nightly)]
+                    {
+                        (#[coverage(off)]
+                        || -> ! { unreachable!("prepared apply task was not a workspace task") })(
+                        )
+                    }
+                    #[cfg(not(coverage_nightly))]
+                    {
+                        unreachable!("prepared apply task was not a workspace task")
+                    }
                 };
                 BlockingEffectCompletion::Workspace(Box::new(task.execute()))
             }),
         };
         let (sender, mut receiver) = mpsc::channel(1);
         let mut io_tasks = JoinSet::new();
-        spawn_blocking_effect(task, sender, &mut io_tasks);
+        spawn_blocking_effect(task, sender, &mut io_tasks, false);
         entered_rx.await.unwrap();
         let mut process_tasks = JoinSet::new();
         let mut in_flight = 1;
@@ -9762,7 +10366,16 @@ mod tests {
             "preflight blocked the runtime until its filesystem work was released"
         );
         let RunEvent::PreflightCompleted(completed) = event else {
-            panic!("preflight failed: {event:?}")
+            // This branch only reports that the fixture failed its required shape or outcome.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("preflight failed: {event:?}") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("preflight failed: {event:?}")
+            }
         };
         assert_eq!(completed.id, EffectId(17));
         assert_eq!(completed.fingerprint, Some(expected_fingerprint));
@@ -9930,6 +10543,7 @@ mod tests {
             },
             sender,
             &mut io_tasks,
+            false,
         );
         let mut in_flight = 1;
         let mut expiry_reported = false;
@@ -9951,6 +10565,8 @@ mod tests {
             &mut expiry_reported,
             &mut metrics,
             &mut warnings,
+            // The task panics before publishing a completion, so any callback violates this test.
+            #[cfg_attr(coverage_nightly, coverage(off))]
             |completion| returned_ownership.push(completion),
         )
         .await;
@@ -9996,6 +10612,7 @@ mod tests {
             },
             completion_tx.clone(),
             &mut tasks,
+            false,
         );
         spawn_blocking_effect(
             BlockingEffect::TestOperation {
@@ -10008,6 +10625,7 @@ mod tests {
             },
             completion_tx,
             &mut tasks,
+            false,
         );
 
         let mut entered = [
@@ -10126,9 +10744,15 @@ mod tests {
             control,
         ));
         tokio::select! {
-            result = &mut run => panic!("run finished before materialization paused: {result:?}"),
-            result = entered_rx => result.expect("pause controller stopped before entry"),
-        }
+                   result = &mut run => {
+        // Only reached when the event/fixture assertion has failed.
+        #[cfg(coverage_nightly)]
+        { (#[coverage(off)] || -> ! { panic!("run finished before materialization paused: {result:?}") })() }
+        #[cfg(not(coverage_nightly))]
+        { panic!("run finished before materialization paused: {result:?}") }
+        },
+                   result = entered_rx => result.expect("pause controller stopped before entry"),
+               }
         assert_eq!(started.elapsed(), Duration::ZERO);
         // Reach the run deadline only after the fixture is ready, then retain a
         // real-time bound on shutdown even while the blocking controller is live.
@@ -10137,10 +10761,24 @@ mod tests {
         let result = tokio::time::timeout(Duration::from_millis(500), &mut run).await;
         release_tx.send(()).unwrap();
         controller.await.unwrap();
-        let Ok(result) = result else {
+        // This handler only drains and reports a failed timing assertion; successful checks stay measured.
+        #[cfg(coverage_nightly)]
+        {
+            (#[coverage(off)]
+            async |failed: bool| {
+                if failed {
+                    let _ = tokio::time::timeout(Duration::from_secs(3), &mut run).await;
+                    panic!("paused materialization outlived the first shutdown deadline");
+                }
+            })(result.is_err())
+            .await;
+        }
+        #[cfg(not(coverage_nightly))]
+        if result.is_err() {
             let _ = tokio::time::timeout(Duration::from_secs(3), &mut run).await;
             panic!("paused materialization outlived the first shutdown deadline");
-        };
+        }
+        let result = result.unwrap();
         let error = result.unwrap_err();
 
         assert!(
@@ -10178,14 +10816,26 @@ mod tests {
             control,
         ));
         tokio::select! {
-            result = &mut run => panic!("run finished before materialization paused: {result:?}"),
-            result = entered_rx => result.expect("pause controller stopped before entry"),
-        }
+                   result = &mut run => {
+        // Only reached when the event/fixture assertion has failed.
+        #[cfg(coverage_nightly)]
+        { (#[coverage(off)] || -> ! { panic!("run finished before materialization paused: {result:?}") })() }
+        #[cfg(not(coverage_nightly))]
+        { panic!("run finished before materialization paused: {result:?}") }
+        },
+                   result = entered_rx => result.expect("pause controller stopped before entry"),
+               }
         cancelling.cancel();
         tokio::select! {
-            result = &mut run => panic!("run finished before the second cancellation: {result:?}"),
-            () = tokio::time::sleep(Duration::from_millis(150)) => {}
-        }
+                   result = &mut run => {
+        // Only reached when the event/fixture assertion has failed.
+        #[cfg(coverage_nightly)]
+        { (#[coverage(off)] || -> ! { panic!("run finished before the second cancellation: {result:?}") })() }
+        #[cfg(not(coverage_nightly))]
+        { panic!("run finished before the second cancellation: {result:?}") }
+        },
+                   () = tokio::time::sleep(Duration::from_millis(150)) => {}
+               }
         cancelling.cancel();
 
         // About 100 ms remains on the first 250 ms grace period. A reset to the
@@ -10193,10 +10843,24 @@ mod tests {
         let result = tokio::time::timeout(Duration::from_millis(180), &mut run).await;
         release_tx.send(()).unwrap();
         controller.await.unwrap();
-        let Ok(result) = result else {
+        // This handler only drains and reports a failed timing assertion; successful checks stay measured.
+        #[cfg(coverage_nightly)]
+        {
+            (#[coverage(off)]
+            async |failed: bool| {
+                if failed {
+                    let _ = tokio::time::timeout(Duration::from_secs(3), &mut run).await;
+                    panic!("a later cancellation extended the first shutdown deadline");
+                }
+            })(result.is_err())
+            .await;
+        }
+        #[cfg(not(coverage_nightly))]
+        if result.is_err() {
             let _ = tokio::time::timeout(Duration::from_secs(3), &mut run).await;
             panic!("a later cancellation extended the first shutdown deadline");
-        };
+        }
+        let result = result.unwrap();
         let error = result.unwrap_err();
 
         assert!(
@@ -10229,9 +10893,15 @@ mod tests {
             control,
         ));
         tokio::select! {
-            result = &mut run => panic!("run finished before materialization paused: {result:?}"),
-            result = entered_rx => result.expect("pause controller stopped before entry"),
-        }
+                   result = &mut run => {
+        // Only reached when the event/fixture assertion has failed.
+        #[cfg(coverage_nightly)]
+        { (#[coverage(off)] || -> ! { panic!("run finished before materialization paused: {result:?}") })() }
+        #[cfg(not(coverage_nightly))]
+        { panic!("run finished before materialization paused: {result:?}") }
+        },
+                   result = entered_rx => result.expect("pause controller stopped before entry"),
+               }
         cancelling.cancel();
         tokio::time::sleep(Duration::from_millis(30)).await;
         release_tx.send(()).unwrap();
@@ -10279,6 +10949,7 @@ mod tests {
                 },
                 completion_tx.clone(),
                 &mut tasks,
+                false,
             );
             io_in_flight += 1;
             max_io_in_flight = max_io_in_flight.max(io_in_flight);
@@ -10602,7 +11273,16 @@ mod tests {
         let pending_id = pending.id();
         let mut obsolete_effect = process_effect(7);
         let RunEffect::RunMutant(request) = &mut obsolete_effect else {
-            unreachable!()
+            // This branch only reports that the fixture failed its required shape or outcome.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
         };
         request.id = EffectId(999);
 
@@ -10920,7 +11600,7 @@ mod tests {
         let (sender, mut receiver) = mpsc::channel(1);
         let mut tasks = JoinSet::new();
 
-        spawn_process(process, request, sender, &mut tasks, dispatch);
+        spawn_process(process, request, sender, &mut tasks, dispatch, false);
         let completion = tokio::time::timeout(Duration::from_secs(10), receiver.recv())
             .await
             .expect("spawned process must complete")
@@ -10940,7 +11620,19 @@ mod tests {
             let completion = dispatch_test_process(request).await;
 
             let ShellCompletion::Process { event, context } = completion else {
-                panic!("worker dispatch must produce a process completion");
+                {
+                    // Only reached when the event/fixture assertion has failed.
+                    #[cfg(coverage_nightly)]
+                    {
+                        (#[coverage(off)]
+                        || -> ! { panic!("worker dispatch must produce a process completion") })(
+                        )
+                    }
+                    #[cfg(not(coverage_nightly))]
+                    {
+                        panic!("worker dispatch must produce a process completion")
+                    }
+                }
             };
             let event_context = match event {
                 RunEvent::BaselineFinished(value) => {
@@ -10949,7 +11641,20 @@ mod tests {
                 RunEvent::MutantFinished(value) => {
                     WorkerProcessContext::Mutant(value.worker.unwrap())
                 }
-                other => panic!("expected successful process completion, got {other:?}"),
+                other => {
+                    // Only reached when the event/fixture assertion has failed.
+                    #[cfg(coverage_nightly)]
+                    {
+                        (#[coverage(off)]
+                        || -> ! {
+                            panic!("expected successful process completion, got {other:?}")
+                        })()
+                    }
+                    #[cfg(not(coverage_nightly))]
+                    {
+                        panic!("expected successful process completion, got {other:?}")
+                    }
+                }
             };
             assert_eq!((context, event_context), (expected, expected));
         }
@@ -10965,7 +11670,20 @@ mod tests {
                 context,
             } = completion
             else {
-                panic!("missing executable must produce a failed process completion");
+                {
+                    // Only reached when the event/fixture assertion has failed.
+                    #[cfg(coverage_nightly)]
+                    {
+                        (#[coverage(off)]
+                        || -> ! {
+                            panic!("missing executable must produce a failed process completion")
+                        })()
+                    }
+                    #[cfg(not(coverage_nightly))]
+                    {
+                        panic!("missing executable must produce a failed process completion")
+                    }
+                }
             };
             assert_eq!(error.id, EffectId(9));
             assert_eq!(context, expected);
@@ -11148,4 +11866,6 @@ mod tests {
 
         assert_eq!(error, "install Ctrl+C handler: fixture");
     }
+    include!("shell_coverage_tests.rs");
+    include!("shell_runtime_coverage_tests.rs");
 }

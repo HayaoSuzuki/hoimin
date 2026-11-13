@@ -92,7 +92,11 @@ fn inspect_existing_database(path: &Path) -> Result<bool, SchemaError> {
         )
         .into());
     }
-    let mut file = std::fs::File::open(path)?;
+    inspect_database_file(std::fs::File::open(path)?)
+}
+
+// Inspect the opened capability again: the path may have changed after the preliminary metadata.
+fn inspect_database_file(mut file: std::fs::File) -> Result<bool, SchemaError> {
     if !file.metadata()?.is_file() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -831,7 +835,11 @@ mod tests {
 
             let result = super::super::SessionHandler::open(&path)
                 .map(|_| ())
-                .map_err(|error| error.to_string());
+                .map_err(
+                    // This callback only formats an unexpected failure of the waiting fixture opener.
+                    #[cfg_attr(coverage_nightly, coverage(off))]
+                    |error| error.to_string(),
+                );
             result_tx.send(result).unwrap();
         });
         started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
@@ -842,13 +850,38 @@ mod tests {
 
         let result = match premature {
             Ok(result) => {
-                worker.join().unwrap();
-                panic!("admission bypassed initializer lock: {result:?}");
+                // This branch only joins and diagnoses a failed initializer-lock assertion.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || -> ! {
+                        worker.join().unwrap();
+                        panic!("admission bypassed initializer lock: {result:?}");
+                    })()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    worker.join().unwrap();
+                    panic!("admission bypassed initializer lock: {result:?}");
+                }
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 result_rx.recv_timeout(Duration::from_secs(5)).unwrap()
             }
-            Err(error) => panic!("initializer worker disconnected: {error}"),
+            Err(error) => {
+                // Disconnection means the fixture worker failed before publishing its result.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || -> ! {
+                        panic!("initializer worker disconnected: {error}");
+                    })()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    panic!("initializer worker disconnected: {error}");
+                }
+            }
         };
         worker.join().unwrap();
 
@@ -946,8 +979,11 @@ mod tests {
                 snapshot.extend(
                     rows.query_map([], |row| {
                         let values = (0..count)
-                            .map(|i| row.get::<_, rusqlite::types::Value>(i))
-                            .collect::<Result<Vec<_>, _>>()?;
+                            .map(|i| {
+                                row.get::<_, rusqlite::types::Value>(i)
+                                    .expect("column index is below count and Value accepts every SQLite type")
+                            })
+                            .collect::<Vec<_>>();
                         Ok(format!("{values:?}"))
                     })
                     .unwrap()
@@ -1170,7 +1206,11 @@ mod tests {
                     configure_observed(&mut connection, || {
                         initialization.arrive_and_wait();
                     })
-                    .map_err(|error| error.to_string())
+                    .map_err(
+                        // A failed concurrent initializer is reported by the fixture assertions below.
+                        #[cfg_attr(coverage_nightly, coverage(off))]
+                        |error| error.to_string(),
+                    )
                 })
             })
             .collect();
@@ -1193,6 +1233,7 @@ mod tests {
     struct InitializationRendezvous {
         state: Mutex<RendezvousState>,
         changed: Condvar,
+        timeout: Option<Duration>,
     }
 
     #[derive(Default)]
@@ -1209,7 +1250,11 @@ mod tests {
             self.changed.notify_all();
             let (mut state, timeout) = self
                 .changed
-                .wait_timeout_while(state, Duration::from_secs(5), |state| !state.released)
+                .wait_timeout_while(
+                    state,
+                    self.timeout.unwrap_or(Duration::from_secs(5)),
+                    |state| !state.released,
+                )
                 .unwrap_or_else(PoisonError::into_inner);
             if timeout.timed_out() && !state.released {
                 state.failure.get_or_insert("participant timed out");
@@ -1220,7 +1265,11 @@ mod tests {
             let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
             let (mut state, timeout) = self
                 .changed
-                .wait_timeout_while(state, Duration::from_secs(5), |state| state.arrived < 2)
+                .wait_timeout_while(
+                    state,
+                    self.timeout.unwrap_or(Duration::from_secs(5)),
+                    |state| state.arrived < 2,
+                )
                 .unwrap_or_else(PoisonError::into_inner);
             if timeout.timed_out() && state.arrived < 2 {
                 state.failure.get_or_insert("coordinator timed out");
@@ -1235,6 +1284,26 @@ mod tests {
                 .unwrap_or_else(PoisonError::into_inner)
                 .failure
         }
+    }
+
+    #[test]
+    fn initialization_rendezvous_reports_each_timeout_and_retains_the_first_failure() {
+        let participant = InitializationRendezvous {
+            timeout: Some(Duration::ZERO),
+            ..Default::default()
+        };
+        participant.arrive_and_wait();
+        assert_eq!(participant.failure(), Some("participant timed out"));
+        participant.release_when_ready();
+        assert_eq!(participant.failure(), Some("participant timed out"));
+        let coordinator = InitializationRendezvous {
+            timeout: Some(Duration::ZERO),
+            ..Default::default()
+        };
+        coordinator.release_when_ready();
+        assert_eq!(coordinator.failure(), Some("coordinator timed out"));
+        coordinator.arrive_and_wait();
+        assert_eq!(coordinator.failure(), Some("coordinator timed out"));
     }
 
     fn query_plan(connection: &Connection, sql: &str) -> Vec<String> {
@@ -1252,5 +1321,135 @@ mod tests {
         connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap()
+    }
+}
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+
+    #[test]
+    fn lock_contention_classification_rejects_unrelated_sqlite_errors() {
+        for code in [rusqlite::ffi::SQLITE_BUSY, rusqlite::ffi::SQLITE_LOCKED] {
+            assert!(is_lock_contention(&rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(code),
+                None
+            )));
+        }
+        assert!(!is_lock_contention(&rusqlite::Error::InvalidQuery));
+        assert!(!is_lock_contention(&rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_IOERR),
+            None
+        )));
+    }
+
+    #[test]
+    fn wal_refusal_in_a_temporary_database_is_reported() {
+        let connection = Connection::open("").unwrap();
+        assert!(
+            matches!(enable_wal(&connection, Duration::ZERO), Err(SchemaError::JournalMode(mode)) if mode == "delete")
+        );
+    }
+
+    #[test]
+    fn wal_lock_retry_expires_without_changing_the_competing_transaction() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("session.sqlite3");
+        let owner = Connection::open(&path).unwrap();
+        owner
+            .execute_batch(
+                "CREATE TABLE original(value); BEGIN EXCLUSIVE; INSERT INTO original VALUES(1);",
+            )
+            .unwrap();
+        let contender = Connection::open(&path).unwrap();
+        contender.busy_timeout(Duration::ZERO).unwrap();
+        let error = enable_wal(&contender, Duration::from_millis(15)).unwrap_err();
+        assert!(matches!(error, SchemaError::Database(error) if is_lock_contention(&error)));
+        assert_eq!(
+            owner
+                .query_row("SELECT count(*) FROM original", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        owner.execute_batch("ROLLBACK").unwrap();
+        enable_wal(&contender, Duration::from_millis(15)).unwrap();
+    }
+
+    #[test]
+    fn readonly_wal_conversion_reports_a_database_error() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("session.sqlite3");
+        let connection = Connection::open(&path).unwrap();
+        connection
+            .execute_batch("CREATE TABLE original(value)")
+            .unwrap();
+        drop(connection);
+        let readonly =
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        assert!(matches!(
+            enable_wal(&readonly, Duration::ZERO),
+            Err(SchemaError::Database(_))
+        ));
+    }
+    #[test]
+    fn database_inspection_rejects_a_directory_before_reading_its_header() {
+        let directory = tempfile::tempdir().unwrap();
+        assert!(
+            matches!(inspect_existing_database(directory.path()), Err(SchemaError::Inspect(error)) if error.kind() == std::io::ErrorKind::InvalidInput)
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn database_header_read_errors_preserve_the_original_io_error() {
+        assert!(
+            matches!(inspect_existing_database(Path::new("/proc/self/mem")), Err(SchemaError::Inspect(error)) if error.raw_os_error() == Some(libc::EIO))
+        );
+    }
+    #[cfg(unix)]
+    #[test]
+    fn database_inspection_rejects_a_directory_opened_after_the_path_check() {
+        let directory = tempfile::tempdir().unwrap();
+        let opened = std::fs::File::open(directory.path()).unwrap();
+        assert!(
+            matches!(inspect_database_file(opened), Err(SchemaError::Inspect(error)) if error.kind() == std::io::ErrorKind::InvalidInput)
+        );
+    }
+    #[test]
+    fn database_inspection_preserves_a_write_only_capability_read_failure() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("session.sqlite3");
+        let opened = std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(path)
+            .unwrap();
+        let error = inspect_database_file(opened).unwrap_err();
+        assert!(
+            matches!(error, SchemaError::Inspect(error) if error.kind() != std::io::ErrorKind::UnexpectedEof)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn companion_metadata_permission_errors_stop_admission_before_database_creation() {
+        use std::os::unix::fs::PermissionsExt;
+        // SAFETY: geteuid has no arguments or memory preconditions.
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let parent = directory.path().join("inaccessible");
+        std::fs::create_dir(&parent).unwrap();
+        let database = parent.join("session.sqlite3");
+        let permissions = std::fs::metadata(&parent).unwrap().permissions();
+        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let result = inspect_existing_companions(&database);
+        std::fs::set_permissions(&parent, permissions).unwrap();
+        assert!(
+            matches!(result, Err(SchemaError::Inspect(error)) if error.kind() == std::io::ErrorKind::PermissionDenied)
+        );
+        assert!(!database.exists());
     }
 }

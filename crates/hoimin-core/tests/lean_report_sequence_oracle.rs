@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
@@ -483,11 +484,15 @@ mod correspondence {
         let mut exercised = 0;
         for item in cases
             .iter()
-            .filter(|item| selected.as_ref().is_none_or(|id| id == &item.id))
+            .filter(|item| selected_case(item, selected.as_deref()))
         {
             exercised += 1;
             let result = catch_unwind(AssertUnwindSafe(|| replay(item)))
-                .map_err(|_| format!("{} panicked: infrastructure-error", item.id))
+                .map_err(
+                    // Only a broken runtime/test invariant panics after corpus validation.
+                    #[cfg_attr(coverage_nightly, coverage(off))]
+                    |_| format!("{} panicked: infrastructure-error", item.id),
+                )
                 .and_then(|result| result);
             assert!(
                 result.is_ok(),
@@ -497,6 +502,178 @@ mod correspondence {
             );
         }
         assert!(exercised > 0, "case filter selected no corpus row");
+    }
+
+    fn selected_case(item: &OracleCase, selected: Option<&str>) -> bool {
+        selected.is_none_or(|id| id == item.id)
+    }
+
+    #[rstest::rstest]
+    #[case::all(None, true)]
+    #[case::same(Some("requires_run_start"), true)]
+    #[case::unknown(Some("absent"), false)]
+    fn selection_matches_one_closed_case_identity(
+        #[case] selected: Option<&str>,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(
+            selected_case(&parse_corpus(CORPUS).unwrap().remove(0), selected),
+            expected
+        );
+    }
+
+    fn projection_event(kind: &str) -> OracleEvent {
+        OracleEvent {
+            kind: kind.into(),
+            run_id: "first".into(),
+            sequence: 1,
+            mutant_id: matches!(kind, "mutant_started" | "mutant_finished").then(|| "alpha".into()),
+            mutant_sequence: matches!(kind, "mutant_started" | "mutant_finished").then_some(1),
+            outcome: (kind == "mutant_finished").then_some(OracleOutcome::NotRun),
+        }
+    }
+
+    #[rstest::rstest]
+    #[case::run("mutant_started", |event: &mut OracleEvent| event.run_id = "unknown".into(), "unknown run role")]
+    #[case::kind("unknown", |_: &mut OracleEvent| {}, "unknown event kind")]
+    #[case::started_id_absent("mutant_started", |event: &mut OracleEvent| event.mutant_id = None, "missing mutant_id")]
+    #[case::started_id_unknown("mutant_started", |event: &mut OracleEvent| event.mutant_id = Some("unknown".into()), "unknown mutant role")]
+    #[case::started_sequence("mutant_started", |event: &mut OracleEvent| event.mutant_sequence = None, "missing mutant_sequence")]
+    #[case::finished_id_absent("mutant_finished", |event: &mut OracleEvent| event.mutant_id = None, "missing mutant_id")]
+    #[case::finished_id_unknown("mutant_finished", |event: &mut OracleEvent| event.mutant_id = Some("unknown".into()), "unknown mutant role")]
+    #[case::finished_sequence("mutant_finished", |event: &mut OracleEvent| event.mutant_sequence = None, "missing mutant_sequence")]
+    #[case::finished_outcome("mutant_finished", |event: &mut OracleEvent| event.outcome = None, "missing outcome")]
+    #[case::finished_termination("mutant_finished", |event: &mut OracleEvent| event.outcome = Some(OracleOutcome::Executed { termination: "unknown".into(), output_state: hoimin_core::ProcessOutputState::Complete }), "unknown termination")]
+    fn event_projection_rejects_missing_or_unknown_roles(
+        #[case] kind: &str,
+        #[case] corrupt: fn(&mut OracleEvent),
+        #[case] diagnostic: &str,
+    ) {
+        let mut event = projection_event(kind);
+        corrupt(&mut event);
+        assert!(to_output_event(&event).unwrap_err().contains(diagnostic));
+    }
+
+    #[rstest::rstest]
+    #[case::started(ReportSequenceError::RunAlreadyStarted { run_id: "unknown".into() })]
+    #[case::finished(ReportSequenceError::RunAlreadyFinished { run_id: "unknown".into() })]
+    #[case::expected_run(ReportSequenceError::RunIdMismatch { expected: "unknown".into(), received: "run-first".into() })]
+    #[case::received_run(ReportSequenceError::RunIdMismatch { expected: "run-first".into(), received: "unknown".into() })]
+    #[case::already_started(ReportSequenceError::MutantAlreadyStarted { mutant_id: "unknown".into(), mutant_sequence: 1 })]
+    #[case::duplicate(ReportSequenceError::DuplicateMutantIdentity { mutant_id: "unknown".into(), mutant_sequence: 1 })]
+    #[case::identity_mismatch(ReportSequenceError::MutantIdentitySequenceMismatch { mutant_id: "unknown".into(), expected_sequence: 1, received_sequence: 2 })]
+    #[case::not_started(ReportSequenceError::MutantNotStarted { mutant_id: "unknown".into(), mutant_sequence: 1 })]
+    fn error_projection_rejects_out_of_domain_runtime_identities(
+        #[case] error: ReportSequenceError,
+    ) {
+        assert!(
+            observed_error(&error)
+                .unwrap_err()
+                .contains("unknown observed")
+        );
+    }
+
+    #[test]
+    fn mutant_field_projection_preserves_the_second_role() {
+        assert_eq!(
+            mutant_fields("mutant-beta", 7).unwrap(),
+            vec![
+                ("mutant_id", "beta".into()),
+                ("mutant_sequence", "7".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn observation_propagates_unprojectable_event_error() {
+        let mut event = projection_event("diagnostic");
+        event.run_id = "unknown".into();
+        assert!(
+            observe(&mut ReportSequence::new(), &event)
+                .unwrap_err()
+                .contains("unknown run role")
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::prefix_projection(|case: &mut OracleCase| { let mut event = projection_event("diagnostic"); event.run_id = "unknown".into(); case.prefix = vec![event]; }, "unknown run role")]
+    #[case::prefix_rejection(|case: &mut OracleCase| case.prefix = vec![projection_event("diagnostic")], "prefix rejected")]
+    #[case::target_projection(|case: &mut OracleCase| case.target.kind = "unknown".into(), "unknown event kind")]
+    #[case::target_mismatch(|case: &mut OracleCase| case.expected.accepted = true, "target mismatch")]
+    #[case::probe_projection(|case: &mut OracleCase| case.probe.as_mut().unwrap().kind = "unknown".into(), "unknown event kind")]
+    #[case::probe_mismatch(|case: &mut OracleCase| case.probe_expected.as_mut().unwrap().accepted = false, "probe mismatch")]
+    fn replay_reports_the_correspondence_failure_stage(
+        #[case] corrupt: fn(&mut OracleCase),
+        #[case] diagnostic: &str,
+    ) {
+        let mut item = parse_corpus(CORPUS).unwrap().remove(0);
+        corrupt(&mut item);
+        assert!(replay(&item).unwrap_err().contains(diagnostic));
+    }
+
+    fn sequence_with_active_alpha() -> ReportSequence {
+        let mut sequence = ReportSequence::new();
+        sequence
+            .observe(&to_output_event(&projection_event("run_started")).unwrap())
+            .unwrap();
+        let mut started = projection_event("mutant_started");
+        started.sequence = 2;
+        sequence
+            .observe(&to_output_event(&started).unwrap())
+            .unwrap();
+        sequence
+    }
+
+    #[test]
+    fn runtime_sequence_rejects_an_already_active_start() {
+        let mut sequence = sequence_with_active_alpha();
+        let mut repeated = projection_event("mutant_started");
+        repeated.sequence = 3;
+        let error = sequence
+            .observe(&to_output_event(&repeated).unwrap())
+            .unwrap_err();
+        let observation = observed_error(&error).unwrap();
+        assert_eq!(
+            observation.error_code.as_deref(),
+            Some("report.sequence.mutant_already_started")
+        );
+        assert_eq!(observation.error_fields["mutant_id"], "alpha");
+        assert_eq!(observation.error_fields["mutant_sequence"], "1");
+    }
+
+    #[test]
+    fn runtime_sequence_rejects_finish_with_different_identity_sequence() {
+        let mut sequence = sequence_with_active_alpha();
+        let mut finished = projection_event("mutant_finished");
+        finished.sequence = 3;
+        finished.mutant_sequence = Some(0);
+        let error = sequence
+            .observe(&to_output_event(&finished).unwrap())
+            .unwrap_err();
+        let observation = observed_error(&error).unwrap();
+        assert_eq!(
+            observation.error_code.as_deref(),
+            Some("report.sequence.mutant_identity_sequence_mismatch")
+        );
+        assert_eq!(observation.error_fields["mutant_id"], "alpha");
+        assert_eq!(observation.error_fields["expected_sequence"], "1");
+        assert_eq!(observation.error_fields["received_sequence"], "0");
+    }
+
+    #[rstest::rstest]
+    #[case::run_started("run_started")]
+    #[case::diagnostic("diagnostic")]
+    #[case::mutant_started("mutant_started")]
+    #[case::mutant_finished("mutant_finished")]
+    #[case::run_finished("run_finished")]
+    fn projected_output_accessors_preserve_schema_and_run_identity(#[case] kind: &str) {
+        let mut value =
+            serde_json::to_value(to_output_event(&projection_event(kind)).unwrap()).unwrap();
+        value["schema_version"] = json!(91);
+        value["run_id"] = json!("sentinel-run-id");
+        let event: OutputEvent = serde_json::from_value(value).unwrap();
+        assert_eq!(event.schema_version(), 91);
+        assert_eq!(event.run_id(), "sentinel-run-id");
     }
 }
 
@@ -523,4 +700,34 @@ fn corpus_rejects_unknown_executed_termination_role() {
     let result = parse_corpus(&format!("{row}\n"));
     // Assert
     assert!(result.is_err());
+}
+
+#[test]
+fn sequence_parser_ignores_blank_lines() {
+    assert_eq!(parse_corpus(&format!("\n{CORPUS}\n")).unwrap().len(), 24);
+}
+
+#[test]
+fn sequence_parser_rejects_empty_input() {
+    assert_eq!(parse_corpus("").unwrap_err(), "corpus contains no cases");
+}
+
+#[rstest::rstest]
+#[case::run_id("/target/run_id", json!("unknown"), "invalid run identity or sequence")]
+#[case::sequence("/target/sequence", json!(5), "invalid run identity or sequence")]
+#[case::kind("/target/kind", json!("unknown"), "invalid event")]
+#[case::expected("/expected/error_code", json!("unknown"), "inconsistent expected result")]
+#[case::probe_expected("/probe_expected/error_code", json!("unknown"), "inconsistent expected result")]
+fn sequence_parser_rejects_one_invalid_coordinate(
+    #[case] pointer: &str,
+    #[case] value: serde_json::Value,
+    #[case] diagnostic: &str,
+) {
+    let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
+    *row.pointer_mut(pointer).unwrap() = value;
+    assert!(
+        parse_corpus(&row.to_string())
+            .unwrap_err()
+            .contains(diagnostic)
+    );
 }

@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 //! Issue 612 correspondence uses real Git, `CPython`, and public plan/run/verify.
 
 #[path = "support/collecting_writer.rs"]
@@ -15,6 +16,16 @@ use std::time::Duration;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::process::Command;
+
+#[cfg(windows)]
+const VENV_PYTHON_PATH: &str = "../../.venv/Scripts/python.exe";
+#[cfg(not(windows))]
+const VENV_PYTHON_PATH: &str = "../../.venv/bin/python";
+
+#[cfg(windows)]
+const GLOBAL_GIT_CONFIG: &str = "NUL";
+#[cfg(not(windows))]
+const GLOBAL_GIT_CONFIG: &str = "/dev/null";
 
 const CORPUS: &str = include_str!("../../../formal/HoiminOracle/corpus/changed-lines.jsonl");
 
@@ -80,11 +91,7 @@ fn cases(input: &str) -> Vec<Case> {
 }
 
 fn python() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(if cfg!(windows) {
-        "../../.venv/Scripts/python.exe"
-    } else {
-        "../../.venv/bin/python"
-    })
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(VENV_PYTHON_PATH)
 }
 
 async fn output(command: &mut Command) -> Output {
@@ -103,10 +110,7 @@ async fn git(root: &Path, args: &[&str]) -> String {
     }
     command
         .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env(
-            "GIT_CONFIG_GLOBAL",
-            if cfg!(windows) { "NUL" } else { "/dev/null" },
-        )
+        .env("GIT_CONFIG_GLOBAL", GLOBAL_GIT_CONFIG)
         .args([
             "-c",
             "user.name=Hoimin audit",

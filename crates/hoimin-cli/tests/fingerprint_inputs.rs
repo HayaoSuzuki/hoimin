@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use camino::Utf8PathBuf;
 use hoimin_cli::fingerprint_inputs::{FingerprintInputError, resolve};
 
@@ -449,22 +450,22 @@ fn exact_missing_file_beneath_symlinked_parent_does_not_probe_outside() {
 }
 
 #[rstest::rstest]
-#[case::input_0_1_binary_dat_1(0, vec![], vec!["binary.dat".into()])]
-#[case::input_0_1_dat_2(0, vec!["*.dat".into()], vec![])]
-#[case::input_1_2_binary_dat_1(1, vec![], vec!["binary.dat".into()])]
-#[case::input_1_2_dat_2(1, vec!["*.dat".into()], vec![])]
-#[case::input_65_535_3_binary_dat_1(65_535, vec![], vec!["binary.dat".into()])]
-#[case::input_65_535_3_dat_2(65_535, vec!["*.dat".into()], vec![])]
-#[case::input_65_536_4_binary_dat_1(65_536, vec![], vec!["binary.dat".into()])]
-#[case::input_65_536_4_dat_2(65_536, vec!["*.dat".into()], vec![])]
-#[case::input_65_537_5_binary_dat_1(65_537, vec![], vec!["binary.dat".into()])]
-#[case::input_65_537_5_dat_2(65_537, vec!["*.dat".into()], vec![])]
-#[case::input_131_079_6_binary_dat_1(131_079, vec![], vec!["binary.dat".into()])]
-#[case::input_131_079_6_dat_2(131_079, vec!["*.dat".into()], vec![])]
+#[case::input_0_1_binary_dat_1(0, &[], &["binary.dat".into()])]
+#[case::input_0_1_dat_2(0, &["*.dat".into()], &[])]
+#[case::input_1_2_binary_dat_1(1, &[], &["binary.dat".into()])]
+#[case::input_1_2_dat_2(1, &["*.dat".into()], &[])]
+#[case::input_65_535_3_binary_dat_1(65_535, &[], &["binary.dat".into()])]
+#[case::input_65_535_3_dat_2(65_535, &["*.dat".into()], &[])]
+#[case::input_65_536_4_binary_dat_1(65_536, &[], &["binary.dat".into()])]
+#[case::input_65_536_4_dat_2(65_536, &["*.dat".into()], &[])]
+#[case::input_65_537_5_binary_dat_1(65_537, &[], &["binary.dat".into()])]
+#[case::input_65_537_5_dat_2(65_537, &["*.dat".into()], &[])]
+#[case::input_131_079_6_binary_dat_1(131_079, &[], &["binary.dat".into()])]
+#[case::input_131_079_6_dat_2(131_079, &["*.dat".into()], &[])]
 fn binary_hashes_cover_empty_and_stream_buffer_boundaries(
     #[case] size: usize,
-    #[case] patterns: Vec<String>,
-    #[case] files: Vec<String>,
+    #[case] patterns: &[String],
+    #[case] files: &[String],
 ) {
     let fixture = fixture_root(&[]);
 
@@ -472,7 +473,7 @@ fn binary_hashes_cover_empty_and_stream_buffer_boundaries(
     std::fs::write(fixture.root.join("binary.dat"), &bytes).unwrap();
     let expected = blake3::hash(&bytes).to_hex().to_string();
 
-    let records = resolve(&fixture.root, &patterns, &files).unwrap();
+    let records = resolve(&fixture.root, patterns, files).unwrap();
 
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].path, "binary.dat");

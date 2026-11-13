@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
 #[path = "support/jsonl_report.rs"]
@@ -541,14 +542,14 @@ fn oracle_accepts_the_complete_owned_case_set() {
 }
 
 #[rstest::rstest]
-#[case::missing_case(ORACLE.lines().skip(1).collect::<Vec<_>>().join("\n"))]
-#[case::duplicate_case(format!("{ORACLE}{}\n",ORACLE.lines().next().unwrap()))]
-#[case::unknown_mode(ORACLE.replacen("strict","relaxed",1))]
-#[case::unknown_schema(ORACLE.replacen("\"schema\":1","\"schema\":2",1))]
-#[case::unknown_field(ORACLE.replacen('{',"{\"extra\":true,",1))]
-#[case::malformed_json("not json".to_owned())]
-fn oracle_rejects_missing_duplicate_unknown_or_malformed_rows(#[case] input: String) {
-    let result = oracle_cases(&input);
+#[case::missing_case(&ORACLE.lines().skip(1).collect::<Vec<_>>().join("\n"))]
+#[case::duplicate_case(&format!("{ORACLE}{}\n",ORACLE.lines().next().unwrap()))]
+#[case::unknown_mode(&ORACLE.replacen("strict","relaxed",1))]
+#[case::unknown_schema(&ORACLE.replacen("\"schema\":1","\"schema\":2",1))]
+#[case::unknown_field(&ORACLE.replacen('{',"{\"extra\":true,",1))]
+#[case::malformed_json(&"not json".to_owned())]
+fn oracle_rejects_missing_duplicate_unknown_or_malformed_rows(#[case] input: &str) {
+    let result = oracle_cases(input);
 
     assert!(result.is_err());
 }

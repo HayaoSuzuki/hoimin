@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute, stmt_expr_attributes))]
 //! Lean generates expected order; this adapter only maps public manifest IDs
 //! to file/line identities and observes public plan/verify dry-run behavior.
 
@@ -87,17 +88,17 @@ fn corpus_accepts_the_complete_strict_matrix() {
 }
 
 #[rstest::rstest]
-#[case::empty(String::new())]
-#[case::missing_row(CORPUS.lines().skip(1).collect::<Vec<_>>().join("\n"))]
-#[case::duplicate_row(format!("{CORPUS}{}\n",CORPUS.lines().next().unwrap()))]
-#[case::schema_1(invalid_corpus_field("schema", serde_json::json!(2)))]
-#[case::mode_2(invalid_corpus_field("mode", serde_json::json!("model-only")))]
-#[case::policy_3(invalid_corpus_field("policy", serde_json::json!("unknown")))]
-#[case::full_order_4(invalid_corpus_field("full_order", serde_json::json!(["a1"])))]
-#[case::expected_ids_5(invalid_corpus_field("expected_ids", serde_json::json!(["unknown"])))]
-#[case::exit_6(invalid_corpus_field("exit", serde_json::json!(7)))]
-fn corpus_rejects_invalid_rows(#[case] invalid: String) {
-    let result = parse(&invalid);
+#[case::empty(&String::new())]
+#[case::missing_row(&CORPUS.lines().skip(1).collect::<Vec<_>>().join("\n"))]
+#[case::duplicate_row(&format!("{CORPUS}{}\n",CORPUS.lines().next().unwrap()))]
+#[case::schema_1(&invalid_corpus_field("schema", serde_json::json!(2)))]
+#[case::mode_2(&invalid_corpus_field("mode", serde_json::json!("model-only")))]
+#[case::policy_3(&invalid_corpus_field("policy", serde_json::json!("unknown")))]
+#[case::full_order_4(&invalid_corpus_field("full_order", serde_json::json!(["a1"])))]
+#[case::expected_ids_5(&invalid_corpus_field("expected_ids", serde_json::json!(["unknown"])))]
+#[case::exit_6(&invalid_corpus_field("exit", serde_json::json!(7)))]
+fn corpus_rejects_invalid_rows(#[case] invalid: &str) {
+    let result = parse(invalid);
 
     assert!(result.is_err(), "accepted invalid corpus");
 }
@@ -279,7 +280,18 @@ fn assert_case(
             "strict" => "strict",
             "diverse" => "file_round_robin_v1",
             "line-diverse" => "line_round_robin_v1",
-            _ => unreachable!(),
+            _ => {
+                // parse already rejected every policy outside this closed set.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || unreachable!())()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    unreachable!()
+                }
+            }
         };
         assert_eq!(preview["verification_selection"]["policy"], reported_policy);
         assert_eq!(preview["retained_candidates"], 8);
@@ -311,4 +323,9 @@ fn assert_case(
             );
         }
     }
+}
+
+#[test]
+fn parser_reports_malformed_json() {
+    assert!(parse("{").unwrap_err().contains("EOF"));
 }

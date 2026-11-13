@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 
@@ -116,7 +117,7 @@ fn parse_corpus(input: &str) -> Result<Vec<OracleCase>, String> {
 }
 
 struct StrictFixture {
-    _project: tempfile::TempDir,
+    project: tempfile::TempDir,
     handler: WorkspaceHandler,
     grant: Option<WorkspaceCopyGrant>,
     generations: BTreeMap<Utf8PathBuf, String>,
@@ -126,16 +127,18 @@ struct StrictFixture {
 
 impl StrictFixture {
     fn new() -> Result<Self, String> {
-        let project = tempfile::tempdir().map_err(|error| error.to_string())?;
+        Self::from_tempdir(tempfile::tempdir())
+    }
+
+    fn from_tempdir(project: std::io::Result<tempfile::TempDir>) -> Result<Self, String> {
+        let project = project.map_err(|error| error.to_string())?;
         let package = project.path().join("pkg");
         fs::create_dir(&package).map_err(|error| error.to_string())?;
-        fs::write(package.join("a.py"), b"original\n").map_err(|error| error.to_string())?;
-        let root = Utf8Path::from_path(project.path())
-            .ok_or_else(|| "temporary project path is not UTF-8".to_owned())?
-            .to_owned();
+        writeproject_source(&package)?;
+        let root = utf8project_root(project.path())?;
         Ok(Self {
             handler: WorkspaceHandler::new(root, Vec::new(), 1, CopyOptions::default()),
-            _project: project,
+            project,
             grant: None,
             generations: BTreeMap::new(),
             next_id: 1,
@@ -164,9 +167,7 @@ impl StrictFixture {
             copy: completed.aggregate_logical_bytes,
             processes: 1,
         });
-        self.grant = Some(
-            reserve_workspace_copy(&mut ledger, &completed).map_err(|error| error.to_string())?,
-        );
+        self.grant = Some(reserve_grant(&mut ledger, &completed)?);
         self.released = false;
         Ok(())
     }
@@ -181,12 +182,7 @@ impl StrictFixture {
         self.handler
             .handle_create_worker(request)
             .map_err(|error| Self::failure_code(&error))?;
-        let root = self
-            .handler
-            .worker(0)
-            .ok_or_else(|| "successful create returned no active worker".to_owned())?
-            .root()
-            .to_owned();
+        let root = created_worker_root(&self.handler)?;
         self.generations.insert(root, generation.to_owned());
         Ok(())
     }
@@ -325,11 +321,14 @@ fn lean_workspace_strict_oracle_matches_public_handler() {
     let mut matched = false;
     for case in cases
         .iter()
-        .filter(|case| case.mode == "strict" && selected.as_ref().is_none_or(|id| id == &case.id))
+        .filter(|case| case.mode == "strict" && selected_workspace_case(case, selected.as_deref()))
     {
         matched = true;
-        let actual = replay_strict(case)
-            .unwrap_or_else(|error| panic!("{} infrastructure-error: {error}", case.id));
+        let actual = replay_strict(case).unwrap_or_else(
+            // Fixed corpus correspondence asserts successful adapter execution.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |error| panic!("{} infrastructure-error: {error}", case.id),
+        );
         assert_eq!(actual, case.expected, "{} strict mismatch", case.id);
     }
     assert!(
@@ -353,4 +352,32 @@ fn lean_workspace_corpus_rejects_unknown_fields_and_duplicate_ids() {
             .unwrap_err()
             .contains("duplicate case id")
     );
+}
+
+#[path = "support/workspace_validation_tests.rs"]
+mod validation_tests;
+
+fn writeproject_source(package: &std::path::Path) -> Result<(), String> {
+    fs::write(package.join("a.py"), b"original\n").map_err(|error| error.to_string())
+}
+fn utf8project_root(path: &std::path::Path) -> Result<Utf8PathBuf, String> {
+    Utf8Path::from_path(path)
+        .ok_or_else(|| "temporary project path is not UTF-8".to_owned())
+        .map(Utf8Path::to_owned)
+}
+
+fn reserve_grant(
+    ledger: &mut BudgetLedger,
+    completed: &hoimin_core::PreflightCompleted,
+) -> Result<WorkspaceCopyGrant, String> {
+    reserve_workspace_copy(ledger, completed).map_err(|error| error.to_string())
+}
+fn created_worker_root(handler: &WorkspaceHandler) -> Result<Utf8PathBuf, String> {
+    handler
+        .worker(0)
+        .ok_or_else(|| "successful create returned no active worker".to_owned())
+        .map(|worker| worker.root().to_owned())
+}
+fn selected_workspace_case(case: &OracleCase, selected: Option<&str>) -> bool {
+    selected.is_none_or(|id| id == case.id)
 }

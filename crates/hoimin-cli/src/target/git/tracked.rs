@@ -185,20 +185,20 @@ mod tests {
     }
 
     #[rstest::rstest]
-    #[case::unselected_rename(b"M\0selected.py\0R099\0old.py\0other.py\0".as_slice(), DiffPlan::Scoped(vec![vec!["selected.py".into()]]))]
-    #[case::unselected_literal_backslash(b"M\0literal\\bad.py\0".as_slice(), DiffPlan::Scoped(vec![]))]
-    #[case::legacy_0(b"R099\0old.py\0selected.py\0".as_slice(), DiffPlan::Legacy)]
-    #[case::legacy_1(b"C100\0old.py\0selected.py\0", DiffPlan::Legacy)]
-    #[case::legacy_2(b"U\0selected.py\0", DiffPlan::Legacy)]
+    #[case::unselected_rename(b"M\0selected.py\0R099\0old.py\0other.py\0".as_slice(), &DiffPlan::Scoped(vec![vec!["selected.py".into()]]))]
+    #[case::unselected_literal_backslash(b"M\0literal\\bad.py\0".as_slice(), &DiffPlan::Scoped(vec![]))]
+    #[case::legacy_0(b"R099\0old.py\0selected.py\0".as_slice(), &DiffPlan::Legacy)]
+    #[case::legacy_1(b"C100\0old.py\0selected.py\0", &DiffPlan::Legacy)]
+    #[case::legacy_2(b"U\0selected.py\0", &DiffPlan::Legacy)]
     fn inventory_preserves_global_rename_membership(
         #[case] output: &[u8],
-        #[case] expected: DiffPlan,
+        #[case] expected: &DiffPlan,
     ) {
         let selected = scope(&["selected.py"]);
 
         let actual = inventory_plan(output, &selected).unwrap();
 
-        assert_eq!(actual, expected);
+        assert_eq!(&actual, expected);
     }
 
     #[rstest::rstest]
@@ -259,5 +259,39 @@ mod tests {
         let actual = inventory_plan(output.as_bytes(), &selected).unwrap();
 
         assert_eq!(actual, DiffPlan::Legacy);
+    }
+}
+
+#[cfg(test)]
+mod rejection_coverage {
+    use super::*;
+    use hoimin_core::TargetSlice;
+
+    #[rstest::rstest]
+    #[case::empty_status(b"\0".as_slice(), "invalid Git name-status inventory")]
+    #[case::missing_old(b"M\0".as_slice(), "invalid Git name-status inventory")]
+    #[case::missing_new(b"R100\0old.py\0".as_slice(), "invalid Git name-status inventory")]
+    #[case::invalid_old(b"M\0\xff.py\0".as_slice(), "Git path is not valid UTF-8")]
+    #[case::invalid_new(b"R100\0old.py\0\xff.py\0".as_slice(), "Git path is not valid UTF-8")]
+    fn malformed_inventory_records_preserve_the_typed_diagnostic(
+        #[case] input: &[u8],
+        #[case] expected: &str,
+    ) {
+        let error = inventory_plan(input, &GitPathScope::default()).unwrap_err();
+        assert!(matches!(error, TargetError::GitFailed(message) if message == expected));
+    }
+
+    #[rstest::rstest]
+    #[case::outside(b"M\0outside.py\0".as_slice())]
+    #[case::separator_alias(b"M\0selected\\app.py\0".as_slice())]
+    fn scoped_inventory_omits_records_outside_the_selected_portable_paths(#[case] input: &[u8]) {
+        let targets = [TargetSlice {
+            path: "selected/app.py".into(),
+            lines: Vec::new(),
+            symbols: Vec::new(),
+        }];
+        let scope = GitPathScope::new(Some(&targets));
+        let plan = inventory_plan(input, &scope).unwrap();
+        assert_eq!(plan, DiffPlan::Scoped(Vec::new()));
     }
 }

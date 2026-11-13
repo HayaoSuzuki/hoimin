@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -2271,14 +2272,18 @@ fn new_session_rejects_null_budgets_even_when_checks_are_disabled(
 #[case::value_integer_1_4(Value::Integer(1))]
 #[case::input_100_5(Value::Text("100".into()))]
 #[case::value_real_1_5_6(Value::Real(1.5))]
-fn new_session_rejects_malformed_non_null_budget_storage(#[case] malformed: Value) {
+fn new_session_rejects_malformed_non_null_budget_storage(
+    #[case]
+    #[by_ref]
+    malformed: &Value,
+) {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("constrained-budget.sqlite");
     let mut handler = SessionHandler::open(&path).unwrap();
     handler.begin(begin_request(1, "budget")).unwrap();
     let observer = Connection::open(&path).unwrap();
 
-    let result = observer.execute("UPDATE runs SET max_mutants=?1", [&malformed]);
+    let result = observer.execute("UPDATE runs SET max_mutants=?1", [malformed]);
     let rusqlite::Error::SqliteFailure(error, _) = result.unwrap_err() else {
         panic!("expected SQLite constraint violation");
     };
@@ -2396,7 +2401,11 @@ proptest::proptest! {
 #[case::value_integer_1_7(Value::Integer(1))]
 #[case::input_100_8(Value::Text("100".into()))]
 #[case::value_real_1_5_9(Value::Real(1.5))]
-fn corrupt_persisted_budget_is_rejected_without_repair(#[case] malformed: Value) {
+fn corrupt_persisted_budget_is_rejected_without_repair(
+    #[case]
+    #[by_ref]
+    malformed: &Value,
+) {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("corrupt-budget.sqlite");
     let mut handler = SessionHandler::open(&path).unwrap();
@@ -2406,7 +2415,7 @@ fn corrupt_persisted_budget_is_rejected_without_repair(#[case] malformed: Value)
         .execute_batch("PRAGMA ignore_check_constraints=ON")
         .unwrap();
     connection
-        .execute("UPDATE runs SET max_mutants=?1", [&malformed])
+        .execute("UPDATE runs SET max_mutants=?1", [malformed])
         .unwrap();
     let request = LoadSession {
         id: EffectId(2),
@@ -2421,7 +2430,7 @@ fn corrupt_persisted_budget_is_rejected_without_repair(#[case] malformed: Value)
     let after: Value = connection
         .query_row("SELECT max_mutants FROM runs", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(after, malformed);
+    assert_eq!(&after, malformed);
 }
 
 #[test]

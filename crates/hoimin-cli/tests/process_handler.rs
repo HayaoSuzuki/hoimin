@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use std::ffi::OsStr;
 use std::fs;
 use std::time::{Duration, Instant};

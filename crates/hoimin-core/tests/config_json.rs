@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use std::time::Duration;
 
 use hoimin_budget_math::{MutantTimeout, NonZeroDuration};
@@ -179,9 +180,9 @@ fn test_resource_control() -> hoimin_core::ResourceControl {
 }
 
 #[rstest::rstest]
-#[case::serde_json_json_auto(serde_json::json!("Auto"))]
-#[case::serde_json_json_fixed_secs_7_nanos_0(serde_json::json!({"Fixed": {"secs": 7, "nanos": 0}}))]
-fn saved_enum_names_reject_legacy_aliases_table_1(#[case] value: serde_json::Value) {
+#[case::serde_json_json_auto(&serde_json::json!("Auto"))]
+#[case::serde_json_json_fixed_secs_7_nanos_0(&serde_json::json!({"Fixed": {"secs": 7, "nanos": 0}}))]
+fn saved_enum_names_reject_legacy_aliases_table_1(#[case] value: &serde_json::Value) {
     assert!(
         serde_json::from_value::<MutantTimeout>(value.clone()).is_err(),
         "{value}"
@@ -189,9 +190,9 @@ fn saved_enum_names_reject_legacy_aliases_table_1(#[case] value: serde_json::Val
 }
 
 #[rstest::rstest]
-#[case::serde_json_json_unix_112_121(serde_json::json!({"Unix": [112, 121]}))]
-#[case::serde_json_json_windows_112_121(serde_json::json!({"Windows": [112, 121]}))]
-fn saved_enum_names_reject_legacy_aliases_table_2(#[case] value: serde_json::Value) {
+#[case::serde_json_json_unix_112_121(&serde_json::json!({"Unix": [112, 121]}))]
+#[case::serde_json_json_windows_112_121(&serde_json::json!({"Windows": [112, 121]}))]
+fn saved_enum_names_reject_legacy_aliases_table_2(#[case] value: &serde_json::Value) {
     assert!(
         serde_json::from_value::<CommandArg>(value.clone()).is_err(),
         "{value}"
@@ -242,11 +243,11 @@ fn nonzero_duration_preserves_positive_duration_representation(#[case] scenario_
 }
 
 #[rstest::rstest]
-#[case::serde_json_json_secs_1_nanos_0(serde_json::json!({"secs": -1, "nanos": 0}))]
-#[case::serde_json_json_secs_1(serde_json::json!({"secs": 1}))]
-#[case::serde_json_json_secs_1_nanos_invalid(serde_json::json!({"secs": 1, "nanos": "invalid"}))]
-#[case::serde_json_json_secs_u64_max_nanos_1_000_000_000_u64(serde_json::json!({"secs": u64::MAX, "nanos": 1_000_000_000_u64}))]
-fn nonzero_duration_rejects_invalid_duration_representation(#[case] value: serde_json::Value) {
+#[case::serde_json_json_secs_1_nanos_0(&serde_json::json!({"secs": -1, "nanos": 0}))]
+#[case::serde_json_json_secs_1(&serde_json::json!({"secs": 1}))]
+#[case::serde_json_json_secs_1_nanos_invalid(&serde_json::json!({"secs": 1, "nanos": "invalid"}))]
+#[case::serde_json_json_secs_u64_max_nanos_1_000_000_000_u64(&serde_json::json!({"secs": u64::MAX, "nanos": 1_000_000_000_u64}))]
+fn nonzero_duration_rejects_invalid_duration_representation(#[case] value: &serde_json::Value) {
     assert!(
         serde_json::from_value::<NonZeroDuration>(value.clone()).is_err(),
         "{value}"

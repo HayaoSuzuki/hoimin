@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 //! Isolated allocator binary: fixture construction and expected IDs are outside
 //! measurement. Compile the real private selection source with production types.
 use std::alloc::{GlobalAlloc, Layout};

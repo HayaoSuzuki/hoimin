@@ -8,9 +8,11 @@ from collections.abc import Callable
 from operator import setitem
 from pathlib import Path
 from typing import Any
+from unittest.mock import create_autospec
 
 import pytest
 import yaml
+from pytest_mock import MockerFixture
 from sbom_fixtures import COMMIT, capture_file, raw_bom, source_tree
 from test_release import release_assets
 
@@ -18,9 +20,14 @@ from tools import capture_sbom, release, sbom
 
 
 @pytest.fixture
-def utf8_child(monkeypatch: pytest.MonkeyPatch) -> str:
+def utf8_child(mocker: MockerFixture) -> str:
     # Model Windows' default codec while executing a real child process.
-    monkeypatch.setattr(subprocess, "_text_encoding", lambda: "cp1252")
+    original_text_encoding_spec = getattr(subprocess, "_text_encoding")  # noqa: B009 -- CPython encoding boundary.
+    mocker.patch.object(
+        subprocess,
+        "_text_encoding",
+        create_autospec(original_text_encoding_spec, side_effect=lambda: "cp1252"),
+    )
     return (
         "import sys; "
         "sys.stdout.buffer.write('裏側\\n'.encode('utf-8')); "
@@ -226,7 +233,9 @@ def test_corrupt_sbom_is_rejected(
 
 
 @pytest.fixture
-def cargo_capture(monkeypatch: pytest.MonkeyPatch) -> Callable[[Path, bytes], None]:
+def cargo_capture(mocker: MockerFixture) -> Callable[[Path, bytes], None]:
+    original_run_spec = capture_sbom.run
+
     def install(root: Path, lock_contents: bytes) -> None:
         def metadata(*args: str) -> str:
             assert "--locked" in args
@@ -258,7 +267,9 @@ def cargo_capture(monkeypatch: pytest.MonkeyPatch) -> Callable[[Path, bytes], No
             )
             return handler(*args)
 
-        monkeypatch.setattr(capture_sbom, "run", command)
+        mocker.patch.object(
+            capture_sbom, "run", create_autospec(original_run_spec, side_effect=command)
+        )
 
     return install
 
@@ -454,3 +465,131 @@ def test_macos_sbom_environment_matches_actual_build_runner(kind: str) -> None:
     actual = sbom.environment("macos-aarch64", kind)
 
     assert actual == expected
+
+
+def test_capture_rejects_unpinned_generator_and_cleans_stale_sidecars(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    original_run_spec = capture_sbom.run
+    source_tree(tmp_path)
+    before = (tmp_path / "Cargo.lock").read_bytes()
+    stale = tmp_path / "crates/hoimin-cli/hoimin-release-sbom.json"
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    stale.write_text("stale", encoding="utf-8")
+    mocker.patch.object(
+        capture_sbom,
+        "run",
+        create_autospec(
+            original_run_spec, side_effect=lambda *_args: "unexpected version"
+        ),
+    )
+    output = tmp_path / "result.json"
+
+    with pytest.raises(ValueError, match="unexpected SBOM generator"):
+        capture_sbom.capture(tmp_path, "x86_64-unknown-linux-gnu", output)
+
+    assert not output.exists()
+    assert not stale.exists()
+    assert (tmp_path / "Cargo.lock").read_bytes() == before
+
+
+def test_capture_restores_deleted_lock_after_generator_failure(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    original_run_spec = capture_sbom.run
+    source_tree(tmp_path)
+    lock = tmp_path / "Cargo.lock"
+    before = lock.read_bytes()
+
+    def command(_root: Path, *args: str) -> str:
+        if args == ("cargo", "cyclonedx", "--version"):
+            return f"cargo-cyclonedx-cyclonedx {capture_sbom.GENERATOR_VERSION}"
+        lock.unlink()
+        msg = "generator failed"
+        raise OSError(msg)
+
+    mocker.patch.object(
+        capture_sbom, "run", create_autospec(original_run_spec, side_effect=command)
+    )
+    output = tmp_path / "result.json"
+    with pytest.raises(OSError, match="generator failed"):
+        capture_sbom.capture(tmp_path, "x86_64-unknown-linux-gnu", output)
+
+    assert lock.read_bytes() == before
+    assert not output.exists()
+
+
+def test_duplicate_sbom_properties_are_rejected() -> None:
+    with pytest.raises(ValueError, match="duplicate SBOM property"):
+        sbom.properties(
+            [{"name": "key", "value": "one"}, {"name": "key", "value": "two"}]
+        )
+
+
+@pytest.mark.parametrize("kind", ["standalone", "wheel"])
+def test_sbom_cli_binds_selected_asset(
+    tmp_path: Path, mocker: MockerFixture, kind: str
+) -> None:
+    source_tree(tmp_path)
+    name = (
+        "hoimin-1.2.3-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"
+        if kind == "wheel"
+        else "hoimin-v1.2.3-linux-x86_64.tar.gz"
+    )
+    asset = tmp_path / name
+    asset.write_bytes(b"release asset")
+    raw = capture_file(tmp_path, "x86_64-unknown-linux-gnu")
+    mocker.patch.object(
+        sys,
+        "argv",
+        [
+            "sbom",
+            "--root",
+            str(tmp_path),
+            "--raw",
+            str(raw),
+            "--directory",
+            str(tmp_path),
+            "--platform",
+            "linux-x86_64",
+            "--kind",
+            kind,
+            "--version",
+            "1.2.3",
+            "--commit",
+            COMMIT,
+        ],
+    )
+    sbom.main()
+    output = tmp_path / sbom.filename("1.2.3", "linux-x86_64", kind)
+    sbom.validate(output, asset, "linux-x86_64", kind, "1.2.3", COMMIT)
+    assert not output.with_suffix(".tmp").exists()
+
+
+def test_capture_cli_writes_validated_generator_output(
+    tmp_path: Path,
+    cargo_capture: Callable[[Path, bytes], None],
+    mocker: MockerFixture,
+) -> None:
+    source_tree(tmp_path)
+    before = (tmp_path / "Cargo.lock").read_bytes()
+    cargo_capture(tmp_path, before)
+    output = tmp_path / "nested/result.json"
+    mocker.patch.object(
+        sys,
+        "argv",
+        [
+            "capture-sbom",
+            "--root",
+            str(tmp_path),
+            "--target",
+            "x86_64-unknown-linux-gnu",
+            "--output",
+            str(output),
+        ],
+    )
+    capture_sbom.main()
+    result = json.loads(output.read_text(encoding="utf-8"))
+    assert result["lock_sha256"] == hashlib.sha256(before).hexdigest()
+    assert result["bom"] == raw_bom()
+    assert (tmp_path / "Cargo.lock").read_bytes() == before

@@ -17,7 +17,7 @@ pub(crate) struct SnapshotReader<R = File> {
 
 impl SnapshotReader {
     pub(crate) fn new(file: File) -> std::io::Result<Self> {
-        let remaining = file.metadata()?.len();
+        let remaining = crate::io_faults::checked_io!("snapshot.metadata", file.metadata())?.len();
         Ok(Self { file, remaining })
     }
 }
@@ -151,5 +151,39 @@ mod tests {
         let actual = is_snapshot_length_change(&error);
 
         assert!(!actual);
+    }
+
+    #[rstest::rstest]
+    #[case::before_eof(b"null".as_slice())]
+    #[case::at_eof(b"".as_slice())]
+    fn an_empty_read_never_reads_or_probes_the_underlying_file(#[case] payload: &[u8]) {
+        use std::io::Seek;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("input");
+        std::fs::write(&path, payload).unwrap();
+        let file = File::options().write(true).open(path).unwrap();
+        let mut reader = SnapshotReader::new(file).unwrap();
+        assert_eq!(reader.read(&mut []).unwrap(), 0);
+        assert_eq!(reader.remaining, u64::try_from(payload.len()).unwrap());
+        assert_eq!(reader.file.stream_position().unwrap(), 0);
+    }
+
+    #[rstest::rstest]
+    #[case::payload(b"null".as_slice())]
+    #[case::eof_probe(b"".as_slice())]
+    fn underlying_read_errors_preserve_the_budget_and_io_cause(#[case] payload: &[u8]) {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("input");
+        std::fs::write(&path, payload).unwrap();
+        let file = File::options().write(true).open(path).unwrap();
+        let expected = file.try_clone().unwrap().read(&mut [7]).unwrap_err();
+        let mut reader = SnapshotReader::new(file).unwrap();
+        let mut bytes = [7];
+        let error = reader.read(&mut bytes).unwrap_err();
+        assert_eq!(error.kind(), expected.kind());
+        assert_eq!(error.raw_os_error(), expected.raw_os_error());
+        assert!(!is_snapshot_length_change(&error));
+        assert_eq!(bytes, [7]);
+        assert_eq!(reader.remaining, u64::try_from(payload.len()).unwrap());
     }
 }

@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use camino::Utf8Path;
 use hoimin_core::{MutationOperatorSelection, MutationProfile};
 use hoimin_python::{AnalyzeRequest, analyze_source_cancellable, payload::PayloadBudget};

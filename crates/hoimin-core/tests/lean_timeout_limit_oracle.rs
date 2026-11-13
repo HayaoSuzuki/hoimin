@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute, stmt_expr_attributes))]
 use std::collections::BTreeSet;
 use std::time::Duration;
 
@@ -37,9 +38,13 @@ fn parse_duration(id: &str, field: &str, value: &str) -> Result<Duration, String
 }
 
 fn parse_corpus() -> Result<Vec<OracleCase>, String> {
+    parse_corpus_text(CORPUS)
+}
+
+fn parse_corpus_text(input: &str) -> Result<Vec<OracleCase>, String> {
     let mut ids = BTreeSet::new();
     let mut cases = Vec::new();
-    for (index, line) in CORPUS.lines().enumerate() {
+    for (index, line) in input.lines().enumerate() {
         if line.is_empty() {
             continue;
         }
@@ -137,7 +142,18 @@ fn expected_result(item: &OracleCase) -> Result<(), ConfigError> {
                 "baseline_timeout" => "baseline_timeout",
                 "mutant_timeout" => "mutant_timeout",
                 "total_timeout" => "total_timeout",
-                _ => unreachable!("validated field"),
+                _ => {
+                    // Test failure reporting only; a passing scenario cannot execute this expression.
+                    #[cfg(coverage_nightly)]
+                    {
+                        (#[coverage(off)]
+                        || -> ! { unreachable!("validated field") })()
+                    }
+                    #[cfg(not(coverage_nightly))]
+                    {
+                        unreachable!("validated field")
+                    }
+                }
             };
             Err(ConfigError::InvalidLimit(field))
         })
@@ -218,7 +234,18 @@ fn accepted_auto_timeout_cases_stay_within_the_maximum() {
             .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
             .unwrap();
         let MutantTimeout::Auto = config.limits.mutant_timeout else {
-            panic!("expected auto timeout: {}", item.id)
+            {
+                // Test failure reporting only; a passing scenario cannot execute this expression.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || -> ! { panic!("expected auto timeout: {}", item.id) })()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    panic!("expected auto timeout: {}", item.id)
+                }
+            }
         };
 
         assert!(
@@ -241,9 +268,90 @@ fn accepted_fixed_timeout_cases_stay_within_the_maximum() {
             .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
             .unwrap();
         let MutantTimeout::Fixed(duration) = config.limits.mutant_timeout else {
-            panic!("expected fixed timeout: {}", item.id)
+            {
+                // Test failure reporting only; a passing scenario cannot execute this expression.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || -> ! { panic!("expected fixed timeout: {}", item.id) })()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    panic!("expected fixed timeout: {}", item.id)
+                }
+            }
         };
 
         assert!(duration.get() <= MAX_TIMEOUT, "case={}", item.id);
     }
+}
+
+#[rstest::rstest]
+#[case("schema", serde_json::json!(2), "invalid identity or mode")]
+#[case("mode", serde_json::json!("unknown"), "invalid identity or mode")]
+#[case("id", serde_json::json!(""), "invalid identity or mode")]
+#[case("maximum_ns", serde_json::json!("invalid"), "invalid maximum_ns")]
+#[case("maximum_ns", serde_json::json!("0"), "wrong maximum")]
+#[case("mutant_mode", serde_json::json!("unknown"), "inconsistent mutant mode")]
+#[case("expected_accepted", serde_json::json!(false), "inconsistent expected acceptance")]
+fn timeout_corpus_rejects_invalid_metadata(
+    #[case] field: &str,
+    #[case] value: serde_json::Value,
+    #[case] expected: &str,
+) {
+    let mut item: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
+    item[field] = value;
+    assert!(
+        parse_corpus_text(&item.to_string())
+            .unwrap_err()
+            .contains(expected)
+    );
+}
+
+#[test]
+fn timeout_corpus_rejects_unknown_invalid_field() {
+    let mut item: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
+    item["expected_accepted"] = serde_json::json!(false);
+    item["expected_invalid_field"] = serde_json::json!("unknown");
+    assert!(
+        parse_corpus_text(&item.to_string())
+            .unwrap_err()
+            .contains("unknown invalid field unknown")
+    );
+}
+
+#[test]
+fn timeout_corpus_rejects_empty_input() {
+    assert_eq!(
+        parse_corpus_text("\n\n").unwrap_err(),
+        "corpus contains no cases"
+    );
+}
+
+#[test]
+fn timeout_corpus_reports_invalid_json_line() {
+    assert!(
+        parse_corpus_text("{")
+            .unwrap_err()
+            .contains("line 1 is invalid JSON")
+    );
+}
+
+#[test]
+fn timeout_corpus_rejects_duplicate_ids() {
+    let line = CORPUS.lines().next().unwrap();
+    assert!(
+        parse_corpus_text(&format!("{line}\n{line}"))
+            .unwrap_err()
+            .contains("duplicate case id")
+    );
+}
+
+#[test]
+fn duration_parser_names_the_invalid_field() {
+    assert!(
+        parse_duration("case", "baseline_ns", "bad")
+            .unwrap_err()
+            .contains("case has invalid baseline_ns")
+    );
 }

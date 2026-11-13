@@ -232,6 +232,24 @@ mod tests {
     use super::{ContainmentIndex, NotOperandIndex, ScopeIndex, ScopeInterval};
     use proptest::prelude::*;
 
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "duplicate unary-not operator start")]
+    fn duplicate_not_operator_start_violates_the_unique_fact_contract() {
+        let _index = NotOperandIndex::new(vec![(1, 2, 3), (1, 4, 5)]);
+    }
+
+    #[rstest::rstest]
+    #[case(5, 5)]
+    #[case(8, 5)]
+    fn empty_or_reversed_scope_intervals_do_not_claim_an_offset(
+        #[case] start: usize,
+        #[case] end: usize,
+    ) {
+        let index = ScopeIndex::new(vec![ScopeInterval::new(start, end, "invalid")]);
+        assert_eq!(index.symbol_at(5), None);
+    }
+
     fn linear_contains(ranges: &[(usize, usize)], start: usize, end: usize) -> bool {
         ranges
             .iter()

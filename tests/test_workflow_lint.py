@@ -4,9 +4,12 @@ import os
 import shutil
 import subprocess
 import sys
+from contextlib import chdir
 from pathlib import Path
+from unittest.mock import create_autospec
 
 import pytest
+from pytest_mock import MockerFixture
 
 from tools import workflow_lint
 
@@ -124,3 +127,68 @@ def test_shellcheck_does_not_suppress_actionlint_default_exclusions(
     check_shells_result = workflow_lint.check_shells([path], executable)
 
     assert check_shells_result == 1
+
+
+@pytest.mark.parametrize(
+    ("scope", "fallback", "expected"),
+    [
+        ({}, "bash", "bash"),
+        ({"defaults": {"run": {"shell": "sh -e"}}}, "bash", "sh"),
+    ],
+)
+def test_default_shell_uses_explicit_shell_or_fallback(
+    scope: dict[str, object], fallback: str, expected: str
+) -> None:
+    assert workflow_lint.default_shell(scope, fallback) == expected
+
+
+def test_runner_rejects_empty_workflow_directory(tmp_path: Path) -> None:
+    (tmp_path / ".github/workflows").mkdir(parents=True)
+    with chdir(tmp_path), pytest.raises(RuntimeError, match="No workflows found"):
+        workflow_lint.main()
+
+
+@pytest.mark.parametrize("missing", ["actionlint", "shellcheck", "zizmor"])
+def test_runner_reports_missing_dependency(
+    tmp_path: Path, mocker: MockerFixture, missing: str
+) -> None:
+    original_which_spec = shutil.which
+    directory = tmp_path / ".github/workflows"
+    directory.mkdir(parents=True)
+    (directory / "ci.yml").write_text("jobs: {}", encoding="utf-8")
+    with chdir(tmp_path):
+        mocker.patch.object(
+            shutil,
+            "which",
+            create_autospec(
+                original_which_spec,
+                side_effect=lambda tool: None if tool == missing else tool,
+            ),
+        )
+        with pytest.raises(RuntimeError, match=f"Missing {missing};"):
+            workflow_lint.main()
+
+
+def test_shell_checker_rejects_non_list_steps(tmp_path: Path) -> None:
+    path = tmp_path / "invalid.yml"
+    path.write_text("jobs:\n  test:\n    steps: {}\n", encoding="utf-8")
+    with pytest.raises(TypeError):
+        workflow_lint.check_shells([path], "unused-shellcheck")
+
+
+def test_shell_checker_skips_non_shell_steps(tmp_path: Path) -> None:
+    path = tmp_path / "windows.yml"
+    path.write_text(
+        "jobs:\n  test:\n    runs-on: windows-latest\n    steps:\n"
+        "      - uses: actions/checkout@v4\n      - run: Write-Host hello\n",
+        encoding="utf-8",
+    )
+    assert workflow_lint.check_shells([path], "unused-shellcheck") == 0
+
+
+def test_missing_linter_fixture_reports_skip(mocker: MockerFixture) -> None:
+    request = mocker.Mock(spec=pytest.FixtureRequest)
+    request.param = "missing-linter"
+    mocker.patch.object(shutil, "which", return_value=None)
+    with pytest.raises(pytest.skip.Exception, match="Install the workflow dependency"):
+        executable._get_wrapped_function()(request)  # noqa: SLF001 -- Test the fixture's skip diagnostic.

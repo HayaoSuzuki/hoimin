@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import re
 import sys
+from unittest.mock import create_autospec
 
 import deal
 import pytest
 from hypothesis import example, given
 from hypothesis import strategies as st
+from pytest_mock import MockerFixture
 from returns.result import Failure, Success
 
 from tools import release
@@ -196,8 +198,15 @@ def test_large_components_remain_syntactically_valid() -> None:
     assert validated == Success(None)
 
 
-def test_contract_detects_incorrect_components(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(release, "_version_components", lambda *_: (1, 2, 4))
+def test_contract_detects_incorrect_components(mocker: MockerFixture) -> None:
+    original_version_components_spec = release._version_components  # noqa: SLF001 -- Match the patched callable signature.
+    mocker.patch.object(
+        release,
+        "_version_components",
+        create_autospec(
+            original_version_components_spec, side_effect=lambda *_: (1, 2, 4)
+        ),
+    )
 
     with pytest.raises(deal.PostContractError):
         release.parse_stable_version("1.2.3")

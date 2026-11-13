@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #[path = "support/candidate_identity.rs"]
 mod candidate_identity;
 #[path = "support/collecting_writer.rs"]
@@ -896,13 +897,13 @@ fn compare_three_adjacent_stalls_are_saturated() {
 }
 
 #[rstest::rstest]
-#[case::improvement(vec![survived(), killed()], ProgressState::Improving)]
-#[case::regression(vec![killed(), killed(), survived()], ProgressState::Regressing)]
+#[case::improvement(&[survived(), killed()], ProgressState::Improving)]
+#[case::regression(&[killed(), killed(), survived()], ProgressState::Regressing)]
 fn compare_improvement_and_regression_break_the_stall_chain(
-    #[case] reports: Vec<InputReport>,
+    #[case] reports: &[InputReport],
     #[case] expected: ProgressState,
 ) {
-    let result = compare_reports(&reports, nz(3));
+    let result = compare_reports(reports, nz(3));
 
     assert_eq!(result.consecutive_stalls, 0);
     assert_eq!(result.latest, expected);
@@ -2557,13 +2558,8 @@ async fn join_reader_with_timeout(
             .map_err(|error| format!("read real CLI {name}: {error}"))
     } else {
         reader.abort();
-        let join_error = match tokio::time::timeout(Duration::from_secs(1), &mut reader).await {
-            Ok(Err(error)) if error.is_cancelled() => None,
-            Ok(Ok(Ok(_))) => Some("reader completed after its abort request".to_owned()),
-            Ok(Ok(Err(error))) => Some(format!("reader failed after abort: {error}")),
-            Ok(Err(error)) => Some(format!("join reader after abort: {error}")),
-            Err(_) => Some("timed out joining reader after abort".to_owned()),
-        };
+        let joined = tokio::time::timeout(Duration::from_secs(1), &mut reader).await;
+        let join_error = aborted_reader_diagnostic(joined);
         let mut message = format!(
             "timed out draining real CLI {name}; reader aborted and bounded join attempted"
         );
@@ -4823,4 +4819,182 @@ proptest! {
 
         prop_assert!(matches!(actual, Ok(InputReport::Usable(_))));
     }
+}
+
+#[path = "support/schema_validator_cases.rs"]
+mod schema_validator_cases;
+
+#[test]
+fn schema_validator_rejects_malformed_progress_shapes() {
+    schema_validator_cases::check_invalid_schema_instances(validate_schema);
+}
+
+#[test]
+fn schema_validator_supports_union_types_and_numeric_bounds() {
+    for (schema, value, valid) in [
+        (json!({"type":[7,"integer","string"]}), json!("text"), true),
+        (json!({"type":[null,"integer"]}), json!("text"), false),
+        (json!({"type":true}), json!(null), false),
+        (json!({"maximum":1}), json!(2), false),
+        (json!({"maximum":1}), json!(1), true),
+        (
+            json!({"properties":{},"additionalProperties":true}),
+            json!({"extra":1}),
+            true,
+        ),
+    ] {
+        assert_eq!(
+            validate_schema(&schema, &value, &schema, "$test").is_ok(),
+            valid
+        );
+    }
+}
+
+fn aborted_reader_diagnostic(
+    joined: Result<
+        Result<std::io::Result<Vec<u8>>, tokio::task::JoinError>,
+        tokio::time::error::Elapsed,
+    >,
+) -> Option<String> {
+    match joined {
+        Ok(Err(error)) if error.is_cancelled() => None,
+        Ok(Ok(Ok(_))) => Some("reader completed after its abort request".to_owned()),
+        Ok(Ok(Err(error))) => Some(format!("reader failed after abort: {error}")),
+        Ok(Err(error)) => Some(format!("join reader after abort: {error}")),
+        Err(_) => Some("timed out joining reader after abort".to_owned()),
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn aborted_reader_classifies_all_completion_kinds() {
+    assert!(
+        aborted_reader_diagnostic(Ok(Ok(Ok(Vec::new()))))
+            .unwrap()
+            .contains("completed after its abort")
+    );
+    assert!(
+        aborted_reader_diagnostic(Ok(Ok(Err(std::io::Error::other("read failure")))))
+            .unwrap()
+            .contains("read failure")
+    );
+    let task = tokio::spawn(std::future::pending::<std::io::Result<Vec<u8>>>());
+    task.abort();
+    assert!(aborted_reader_diagnostic(Ok(task.await)).is_none());
+    let reader: tokio::task::JoinHandle<std::io::Result<Vec<u8>>> = tokio::spawn(async {
+        tokio::task::yield_now().await;
+        panic!("reader panic")
+    });
+    let panic = reader.await;
+    assert!(
+        aborted_reader_diagnostic(Ok(panic))
+            .unwrap()
+            .contains("join reader after abort")
+    );
+    let pending =
+        std::future::pending::<Result<std::io::Result<Vec<u8>>, tokio::task::JoinError>>();
+    let timeout = tokio::time::timeout(Duration::from_secs(1), pending).await;
+    assert!(
+        aborted_reader_diagnostic(timeout)
+            .unwrap()
+            .contains("timed out joining reader")
+    );
+}
+
+#[tokio::test]
+async fn completed_reader_propagates_io_and_task_failures() {
+    let reader = tokio::spawn(async { Err(std::io::Error::other("reader IO")) });
+    assert!(
+        join_reader(reader, "stdout")
+            .await
+            .unwrap_err()
+            .contains("reader IO")
+    );
+    let reader: tokio::task::JoinHandle<std::io::Result<Vec<u8>>> = tokio::spawn(async {
+        tokio::task::yield_now().await;
+        panic!("reader panic")
+    });
+    assert!(
+        join_reader(reader, "stderr")
+            .await
+            .unwrap_err()
+            .contains("join real CLI stderr")
+    );
+}
+
+#[test]
+fn cleanup_diagnostics_preserve_primary_and_all_secondary_errors() {
+    let mut cleanup = CleanupOutcome::default();
+    cleanup.record(Ok(()));
+    cleanup.record(Err("cleanup failed".into()));
+    assert_eq!(cleanup.diagnostics, ["cleanup failed"]);
+    let message = cleanup_diagnostic(
+        "primary",
+        cleanup,
+        Err("stdout failed".into()),
+        Err("stderr failed".into()),
+    );
+    for expected in [
+        "primary",
+        "unreaped",
+        "cleanup failed",
+        "stdout failed",
+        "stderr failed",
+    ] {
+        assert!(message.contains(expected), "{message}");
+    }
+    assert_eq!(
+        reader_diagnostic(Err("stdout".into()), Err("stderr".into())),
+        "stdout; stderr"
+    );
+    assert_eq!(
+        reader_diagnostic(Ok(Vec::new()), Err("stderr".into())),
+        "stderr"
+    );
+    let message = cleanup_diagnostic(
+        "primary",
+        CleanupOutcome::default(),
+        Ok(b"out".to_vec()),
+        Ok(vec![0xff]),
+    );
+    assert!(message.contains("stdout=out"));
+    assert!(message.contains("stderr=\u{fffd}"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn reader_timeout_bounds_the_join_of_an_unabortable_blocking_reader() {
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let (finished_tx, finished_rx) = std::sync::mpsc::channel();
+    let reader = tokio::task::spawn_blocking(move || {
+        started_tx.send(()).unwrap();
+        let _ = release_rx.recv();
+        finished_tx.send(()).unwrap();
+        Ok(Vec::new())
+    });
+    started_rx.await.unwrap();
+    let joined = tokio::spawn(join_reader_with_timeout(
+        reader,
+        "stdout",
+        Duration::from_secs(1),
+    ));
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_secs(1)).await;
+        if joined.is_finished() {
+            break;
+        }
+    }
+    let bounded = joined.is_finished();
+    release_tx.send(()).unwrap();
+    finished_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    let message = joined.await.unwrap().unwrap_err();
+    assert!(bounded);
+    assert!(
+        message.contains("timed out draining real CLI stdout"),
+        "{message}"
+    );
+    assert!(
+        message.contains("timed out joining reader after abort"),
+        "{message}"
+    );
 }

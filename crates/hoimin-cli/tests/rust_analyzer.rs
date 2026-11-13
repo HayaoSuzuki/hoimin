@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use hoimin_python::AnalyzerDiagnosticCode;
 
 use camino::Utf8Path;

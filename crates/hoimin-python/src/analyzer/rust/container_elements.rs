@@ -96,3 +96,139 @@ pub(super) fn emit(
         }
     }
 }
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+
+    fn run(
+        expression: &Expr,
+        source: &str,
+        limit: usize,
+        cancelled: &dyn Fn() -> bool,
+        sink: &mut dyn FnMut(String) -> bool,
+    ) {
+        emit(expression, source, limit, &cancelled, sink);
+    }
+
+    fn collecting(replacements: &mut Vec<String>) -> impl FnMut(String) -> bool + '_ {
+        |replacement| {
+            replacements.push(replacement);
+            true
+        }
+    }
+
+    #[rstest::rstest]
+    #[case("[value]", "")]
+    #[case("{key: value}", "{key: ")]
+    #[case("{key: value}", "{")]
+    #[case("{ab: value}", "{aé:xxxxx}")]
+    fn incomplete_source_never_emits_a_partial_literal(
+        #[case] original: &str,
+        #[case] source: &str,
+    ) {
+        let parsed = ruff_python_parser::parse_expression(original).unwrap();
+        let mut replacements = Vec::new();
+        run(
+            &parsed.syntax().body,
+            source,
+            100,
+            &|| false,
+            &mut collecting(&mut replacements),
+        );
+        assert_eq!(replacements, Vec::<String>::new());
+    }
+
+    #[test]
+    fn zero_candidate_limit_retains_only_the_first_overflow_witness() {
+        let source = "[first, second, third]";
+        let parsed = ruff_python_parser::parse_expression(source).unwrap();
+        let mut replacements = Vec::new();
+        run(
+            &parsed.syntax().body,
+            source,
+            0,
+            &|| false,
+            &mut collecting(&mut replacements),
+        );
+        assert_eq!(replacements, ["[(second),(third),]"]);
+    }
+
+    #[test]
+    fn rejected_literal_stops_before_its_next_deletion() {
+        let source = "[first, second]";
+        let parsed = ruff_python_parser::parse_expression(source).unwrap();
+        let mut replacements = Vec::new();
+        run(
+            &parsed.syntax().body,
+            source,
+            100,
+            &|| false,
+            &mut |replacement| {
+                replacements.push(replacement);
+                false
+            },
+        );
+        assert_eq!(replacements, ["[(second),]"]);
+    }
+    #[rstest::rstest]
+    #[case("(first, second)", vec!["((second),)", "((first),)"])]
+    #[case("{first: value, second: other}", vec!["{(second): (other),}", "{(first): (value),}"])]
+    #[case("[same, same]", vec!["[(same),]"])]
+    #[case("[]", vec![])]
+    #[case("[*items]", vec![])]
+    #[case("{**items}", vec![])]
+    #[case("items", vec![])]
+    fn literal_deletion_preserves_entry_spelling_and_omits_duplicate_edits(
+        #[case] source: &str,
+        #[case]
+        #[by_ref]
+        expected: &[&str],
+    ) {
+        let parsed = ruff_python_parser::parse_expression(source).unwrap();
+        let mut replacements = Vec::new();
+        run(
+            &parsed.syntax().body,
+            source,
+            100,
+            &|| false,
+            &mut collecting(&mut replacements),
+        );
+        assert_eq!(replacements, expected);
+    }
+
+    #[rstest::rstest]
+    fn cancellation_stops_deletion_before_any_extra_poll_or_emission(
+        #[values(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)] checkpoint: usize,
+    ) {
+        let source = "[first, second, third]";
+        let parsed = ruff_python_parser::parse_expression(source).unwrap();
+        let total = std::cell::Cell::new(0);
+        let mut complete = Vec::new();
+        run(
+            &parsed.syntax().body,
+            source,
+            100,
+            &|| {
+                total.set(total.get() + 1);
+                false
+            },
+            &mut collecting(&mut complete),
+        );
+        let polls = std::cell::Cell::new(0);
+        let mut partial = Vec::new();
+        run(
+            &parsed.syntax().body,
+            source,
+            100,
+            &|| {
+                let current = polls.get();
+                polls.set(current + 1);
+                current >= checkpoint
+            },
+            &mut collecting(&mut partial),
+        );
+        assert_eq!(polls.get(), total.get().min(checkpoint + 1));
+        assert!(complete.starts_with(&partial));
+    }
+}

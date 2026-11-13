@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #[path = "support/jsonl_report.rs"]
 mod jsonl_report;
 #[path = "support/mutation_outcome.rs"]
@@ -383,7 +384,14 @@ fn sorted(mut values: Vec<ResultObservation>) -> Vec<ResultObservation> {
 
 impl Fixture {
     fn new(two_mutants: bool) -> Result<Self, String> {
-        let temp = tempfile::tempdir().map_err(|error| format!("create temp dir: {error}"))?;
+        Self::from_tempdir(tempfile::tempdir(), two_mutants)
+    }
+
+    fn from_tempdir(
+        directory: std::io::Result<tempfile::TempDir>,
+        two_mutants: bool,
+    ) -> Result<Self, String> {
+        let temp = directory.map_err(|error| format!("create temp dir: {error}"))?;
         let root = temp.path().join("project");
         let source = root.join("src");
         std::fs::create_dir_all(&source).map_err(|error| format!("create source: {error}"))?;
@@ -489,14 +497,17 @@ fn repo_root() -> PathBuf {
 }
 
 fn python_executable() -> Result<PathBuf, String> {
-    let executable = if cfg!(windows) {
-        repo_root().join(".venv/Scripts/python.exe")
-    } else {
-        repo_root().join(".venv/bin/python")
-    };
+    #[cfg(windows)]
+    let executable = repo_root().join(".venv/Scripts/python.exe");
+    #[cfg(not(windows))]
+    let executable = repo_root().join(".venv/bin/python");
+    require_python(&executable)
+}
+
+fn require_python(executable: &Path) -> Result<PathBuf, String> {
     executable
         .is_file()
-        .then_some(executable.clone())
+        .then_some(executable.to_owned())
         .ok_or_else(|| {
             format!(
                 "missing controlled Python interpreter: {}",
@@ -621,8 +632,10 @@ async fn wait_for_first_durable_kill(
             && Connection::open_with_flags(session, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
                 .and_then(|connection| {
                     let mut statement = connection.prepare("SELECT outcome_json FROM results")?;
+                    // This freshly prepared SELECT has no parameters to bind.
                     let outcomes = statement
-                        .query_map([], |row| row.get::<_, String>(0))?
+                        .raw_query()
+                        .mapped(|row| row.get::<_, String>(0))
                         .collect::<Result<Vec<_>, _>>()?;
                     Ok(outcomes.len() == 1
                         && serde_json::from_str::<hoimin_core::MutationOutcome>(&outcomes[0])
@@ -646,28 +659,29 @@ async fn run_cli_with_durable_timeout_premise(
     metrics_path: &Path,
 ) -> Result<FixtureRun, String> {
     let total_timeout = format!("{}s", TIMEOUT_FIXTURE_RUN_LIMIT.as_secs());
-    let mut command = build_cli_command(fixture, true, false, metrics_path, Some(&total_timeout))?;
+    let command = build_cli_command(fixture, true, false, metrics_path, Some(&total_timeout))?;
+    run_durable_timeout_command(command, &fixture.session).await
+}
+
+async fn run_durable_timeout_command(
+    mut command: tokio::process::Command,
+    session: &Path,
+) -> Result<FixtureRun, String> {
     let mut child = command
         .spawn()
         .map_err(|error| format!("spawn hoimin CLI: {error}"))?;
-    let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
+    let (Some(mut stdout), Some(mut stderr)) = (child.stdout.take(), child.stderr.take()) else {
         let cleanup = cleanup_cli_process_tree(&mut child).await;
         return Err(format!(
             "hoimin CLI output was not piped; cleanup: {cleanup}"
         ));
     };
-    let stdout = tokio::spawn(read_output(stdout));
-    let stderr = tokio::spawn(read_output(stderr));
+    let stdout = tokio::spawn(async move { read_output(&mut stdout).await });
+    let stderr = tokio::spawn(async move { read_output(&mut stderr).await });
 
     let trigger = async {
-        wait_for_first_durable_kill(&mut child, &fixture.session, Duration::from_secs(8)).await?;
-        tokio::time::timeout(TIMEOUT_FIXTURE_EXIT_WAIT, child.wait())
-            .await
-            .map_err(|_| {
-                "hoimin CLI exceeded its total timeout plus shutdown and telemetry budgets"
-                    .to_owned()
-            })?
-            .map_err(|error| format!("wait for hoimin CLI total timeout: {error}"))
+        wait_for_first_durable_kill(&mut child, session, Duration::from_secs(8)).await?;
+        durable_timeout_status(tokio::time::timeout(TIMEOUT_FIXTURE_EXIT_WAIT, child.wait()).await)
     }
     .await;
 
@@ -692,6 +706,16 @@ async fn run_cli_with_durable_timeout_premise(
     }
 }
 
+fn durable_timeout_status(
+    outcome: Result<std::io::Result<std::process::ExitStatus>, tokio::time::error::Elapsed>,
+) -> Result<std::process::ExitStatus, String> {
+    outcome
+        .map_err(|_| {
+            "hoimin CLI exceeded its total timeout plus shutdown and telemetry budgets".to_owned()
+        })?
+        .map_err(|error| format!("wait for hoimin CLI total timeout: {error}"))
+}
+
 async fn bounded_cli_output(
     command: &mut tokio::process::Command,
     timeout: Duration,
@@ -699,21 +723,32 @@ async fn bounded_cli_output(
     let mut child = command
         .spawn()
         .map_err(|error| format!("spawn hoimin CLI: {error}"))?;
-    let stdout = child
+    let mut stdout = child
         .stdout
         .take()
         .ok_or_else(|| "hoimin CLI stdout was not piped".to_owned())?;
-    let stderr = child
+    let mut stderr = child
         .stderr
         .take()
         .ok_or_else(|| "hoimin CLI stderr was not piped".to_owned())?;
-    let stdout = tokio::spawn(read_output(stdout));
-    let stderr = tokio::spawn(read_output(stderr));
+    let stdout = tokio::spawn(async move { read_output(&mut stdout).await });
+    let stderr = tokio::spawn(async move { read_output(&mut stderr).await });
 
-    let status = match tokio::time::timeout(timeout, child.wait()).await {
+    let outcome = tokio::time::timeout(timeout, child.wait()).await;
+    finish_cli_output(&mut child, timeout, outcome, stdout, stderr).await
+}
+
+async fn finish_cli_output(
+    child: &mut tokio::process::Child,
+    timeout: Duration,
+    outcome: Result<std::io::Result<std::process::ExitStatus>, tokio::time::error::Elapsed>,
+    stdout: tokio::task::JoinHandle<std::io::Result<Vec<u8>>>,
+    stderr: tokio::task::JoinHandle<std::io::Result<Vec<u8>>>,
+) -> Result<Output, String> {
+    let status = match outcome {
         Ok(Ok(status)) => status,
         Ok(Err(error)) => {
-            let cleanup = cleanup_cli_process_tree(&mut child).await;
+            let cleanup = cleanup_cli_process_tree(child).await;
             let stdout = join_output(stdout, "stdout").await;
             let stderr = join_output(stderr, "stderr").await;
             return Err(format!(
@@ -721,7 +756,7 @@ async fn bounded_cli_output(
             ));
         }
         Err(_) => {
-            let cleanup = cleanup_cli_process_tree(&mut child).await;
+            let cleanup = cleanup_cli_process_tree(child).await;
             let stdout = join_output(stdout, "stdout").await;
             let stderr = join_output(stderr, "stderr").await;
             return Err(format!(
@@ -739,7 +774,9 @@ async fn bounded_cli_output(
     })
 }
 
-async fn read_output<R: tokio::io::AsyncRead + Unpin>(mut reader: R) -> std::io::Result<Vec<u8>> {
+async fn read_output(
+    reader: &mut (dyn tokio::io::AsyncRead + Unpin + Send),
+) -> std::io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     reader.read_to_end(&mut bytes).await?;
     Ok(bytes)
@@ -760,28 +797,40 @@ async fn join_output(
 }
 
 #[cfg(unix)]
+fn signal_process(pid: i32, signal: i32) -> std::io::Result<()> {
+    // SAFETY: callers identify retained fixture children or their process groups.
+    if unsafe { libc::kill(pid, signal) } == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(unix)]
 async fn cleanup_cli_process_tree(child: &mut tokio::process::Child) -> String {
+    cleanup_cli_process_tree_with_signal(child, signal_process).await
+}
+
+#[cfg(unix)]
+async fn cleanup_cli_process_tree_with_signal(
+    child: &mut tokio::process::Child,
+    signal: fn(i32, i32) -> std::io::Result<()>,
+) -> String {
     let Some(pid) = child.id().and_then(|pid| i32::try_from(pid).ok()) else {
         return "child already exited".to_owned();
     };
     let mut diagnostics = Vec::new();
-    // SAFETY: pid identifies the retained child; SIGINT lets hoimin run its own tree cleanup.
-    if unsafe { libc::kill(pid, libc::SIGINT) } != 0 {
-        diagnostics.push(format!(
-            "SIGINT failed: {}",
-            std::io::Error::last_os_error()
-        ));
+    if let Err(error) = signal(pid, libc::SIGINT) {
+        diagnostics.push(format!("SIGINT failed: {error}"));
     }
     let reaped = matches!(
         tokio::time::timeout(Duration::from_secs(4), child.wait()).await,
         Ok(Ok(_))
     );
-    // SAFETY: run_cli placed the child in a process group whose id is the positive child pid.
-    if unsafe { libc::kill(-pid, libc::SIGKILL) } != 0 {
-        let error = std::io::Error::last_os_error();
-        if error.raw_os_error() != Some(libc::ESRCH) {
-            diagnostics.push(format!("process-group SIGKILL failed: {error}"));
-        }
+    if let Err(error) = signal(-pid, libc::SIGKILL)
+        && error.raw_os_error() != Some(libc::ESRCH)
+    {
+        diagnostics.push(format!("process-group SIGKILL failed: {error}"));
     }
     if !reaped
         && !matches!(
@@ -855,6 +904,37 @@ fn reopen_incomplete(fixture: &Fixture, fail_persist: bool) -> Result<(), String
     Ok(())
 }
 
+fn metrics_destination(fixture: &Fixture, fail_write: bool) -> Result<PathBuf, String> {
+    if fail_write {
+        let directory = fixture.temp.path().join("metrics-target");
+        std::fs::create_dir(&directory)
+            .map_err(|error| format!("create metrics failure target: {error}"))?;
+        Ok(directory)
+    } else {
+        Ok(fixture.metrics.clone())
+    }
+}
+
+fn validate_seed(seed: &FixtureRun) -> Result<(), String> {
+    if seed.exit_code != 0 {
+        return Err(format!(
+            "seed run failed: exit={} stderr={} stdout={}",
+            seed.exit_code, seed.stderr, seed.stdout
+        ));
+    }
+    Ok(())
+}
+
+fn validate_resumed_persistence_failure(scenario: &str, run: &FixtureRun) -> Result<(), String> {
+    if scenario == "session_persistence_failure" && !run.stderr.contains("injected save failure") {
+        return Err(format!(
+            "resumed run did not reach injected SQLite ABORT: {}",
+            run.stderr
+        ));
+    }
+    Ok(())
+}
+
 async fn execute_strict(case: &OracleCase) -> Result<(ImplementationObservation, bool), String> {
     let two_mutants = case.scenario == "stop_preserves_accepted";
     let fixture = Fixture::new(two_mutants)?;
@@ -862,44 +942,25 @@ async fn execute_strict(case: &OracleCase) -> Result<(ImplementationObservation,
     if has_session {
         enable_session(&fixture)?;
     }
-    let metrics_directory = fixture.temp.path().join("metrics-target");
-    let metrics_path = if case.scenario == "metrics_write_failure" {
-        std::fs::create_dir(&metrics_directory)
-            .map_err(|error| format!("create metrics failure target: {error}"))?;
-        metrics_directory.as_path()
-    } else {
-        fixture.metrics.as_path()
-    };
+    let metrics_path = metrics_destination(&fixture, case.scenario == "metrics_write_failure")?;
 
     let run = match case.scenario.as_str() {
         "resume_reuses_determinate" | "session_persistence_failure" => {
             let seed = run_cli(&fixture, false, false, &fixture.metrics).await?;
-            if seed.exit_code != 0 {
-                return Err(format!(
-                    "seed run failed: exit={} stderr={} stdout={}",
-                    seed.exit_code, seed.stderr, seed.stdout
-                ));
-            }
+            validate_seed(&seed)?;
             reopen_incomplete(&fixture, case.scenario == "session_persistence_failure")?;
             fixture.clear_outputs()?;
             let run = run_cli(&fixture, false, true, &fixture.metrics).await?;
-            if case.scenario == "session_persistence_failure"
-                && !run.stderr.contains("injected save failure")
-            {
-                return Err(format!(
-                    "resumed run did not reach injected SQLite ABORT: {}",
-                    run.stderr
-                ));
-            }
+            validate_resumed_persistence_failure(&case.scenario, &run)?;
             run
         }
         "stop_preserves_accepted" => {
             // The oracle starts after one accepted result is durable on every OS.
             // If setup cannot reach that premise, report infrastructure failure.
-            run_cli_with_durable_timeout_premise(&fixture, metrics_path).await?
+            run_cli_with_durable_timeout_premise(&fixture, &metrics_path).await?
         }
         "sessionless_complete" | "session_complete" | "metrics_write_failure" => {
-            run_cli(&fixture, false, false, metrics_path).await?
+            run_cli(&fixture, false, false, &metrics_path).await?
         }
         scenario => {
             return Err(format!(
@@ -907,7 +968,7 @@ async fn execute_strict(case: &OracleCase) -> Result<(ImplementationObservation,
             ));
         }
     };
-    observe_run(&fixture, &run, has_session, metrics_path)
+    observe_run(&fixture, &run, has_session, &metrics_path)
 }
 
 fn report_results(
@@ -931,11 +992,7 @@ fn report_results(
         let id = mutant["candidate"]["id"]
             .as_str()
             .ok_or_else(|| format!("mutant {role} has no candidate id"))?;
-        let status_value = mutation_outcome::status(mutant);
-        let status = status_value
-            .as_str()
-            .filter(|status| known_status(status))
-            .ok_or_else(|| format!("mutant {role} has unknown status"))?;
+        let status = mutation_outcome::outcome(mutant).status().as_str();
         if roles.insert(id.to_owned(), role.clone()).is_some()
             || results
                 .iter()
@@ -976,21 +1033,13 @@ fn session_observation(
     let mut statement = connection
         .prepare("SELECT mutant_id, outcome_json FROM results WHERE run_id=?1 ORDER BY mutant_id")
         .map_err(|error| format!("prepare result query: {error}"))?;
-    let rows = statement
-        .query_map([&run_id], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })
-        .map_err(|error| format!("query results: {error}"))?;
+    let rows = query_result_rows(&mut statement, &run_id)?;
     let mut durable = Vec::new();
     for row in rows {
         let (id, outcome_json) = row.map_err(|error| format!("read result: {error}"))?;
         let outcome: hoimin_core::MutationOutcome = serde_json::from_str(&outcome_json)
             .map_err(|error| format!("decode durable mutation outcome: {error}"))?;
-        let status = serde_json::to_value(outcome.status())
-            .map_err(|error| format!("encode derived status: {error}"))?
-            .as_str()
-            .ok_or_else(|| "derived status must be a string".to_owned())?
-            .to_owned();
+        let status = outcome.status().as_str().to_owned();
         let role = roles
             .get(&id)
             .ok_or_else(|| format!("durable result {id} is absent from report"))?
@@ -1002,6 +1051,15 @@ fn session_observation(
         });
     }
     Ok((sorted(durable), finished, complete, Some(run_id)))
+}
+
+fn query_result_rows<'statement>(
+    statement: &'statement mut rusqlite::Statement<'_>,
+    run_id: &str,
+) -> Result<impl Iterator<Item = rusqlite::Result<(String, String)>> + 'statement, String> {
+    statement
+        .query_map([run_id], |row| Ok((row.get(0)?, row.get(1)?)))
+        .map_err(|error| format!("query results: {error}"))
 }
 
 fn diagnostics(stderr: &str) -> Vec<String> {
@@ -1088,9 +1146,30 @@ fn observe_run(
 }
 
 async fn run_case(case: &OracleCase) -> CaseResult {
+    run_case_with_execution(case, |owned| async move { execute_strict(&owned).await }).await
+}
+
+async fn run_case_with_execution<F, Fut>(case: &OracleCase, execute: F) -> CaseResult
+where
+    F: FnOnce(OracleCase) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = Result<(ImplementationObservation, bool), String>>
+        + Send
+        + 'static,
+{
+    run_case_erased(case, Box::new(move |owned| Box::pin(execute(owned)))).await
+}
+
+type CaseExecution = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<(ImplementationObservation, bool), String>> + Send>,
+>;
+
+async fn run_case_erased(
+    case: &OracleCase,
+    execute: Box<dyn FnOnce(OracleCase) -> CaseExecution + Send>,
+) -> CaseResult {
     let expected = expected_observation(case);
     let owned = case.clone();
-    let execution = tokio::spawn(async move { execute_strict(&owned).await })
+    let execution = tokio::spawn(execute(owned))
         .await
         .map_err(|error| format!("case task panicked: {error}"));
     match execution {
@@ -1218,7 +1297,17 @@ async fn bounded_cli_timeout_terminates_descendants() {
         .trim()
         .parse::<i32>()
         .unwrap();
-    let stopped = tokio::time::timeout(Duration::from_secs(2), async {
+    assert!(
+        wait_for_descendant_exit(pid, Duration::from_secs(2)).await,
+        "fixture descendant {pid} survived cleanup"
+    );
+}
+
+// Each case describes a valid exit after a fast first durable result: the run
+// reaches its 12-second timeout, then uses shutdown grace or telemetry flushing.
+#[cfg(unix)]
+async fn wait_for_descendant_exit(pid: i32, timeout: Duration) -> bool {
+    tokio::time::timeout(timeout, async {
         loop {
             // SAFETY: signal zero only checks the fixture descendant recorded above.
             if unsafe { libc::kill(pid, 0) } != 0
@@ -1229,12 +1318,10 @@ async fn bounded_cli_timeout_terminates_descendants() {
             tokio::task::yield_now().await;
         }
     })
-    .await;
-    assert!(stopped.is_ok(), "fixture descendant {pid} survived cleanup");
+    .await
+    .is_ok()
 }
 
-// Each case describes a valid exit after a fast first durable result: the run
-// reaches its 12-second timeout, then uses shutdown grace or telemetry flushing.
 macro_rules! timeout_fixture_accepts_bounded_shutdown {
     ($name:ident, $elapsed:expr) => {
         #[tokio::test(start_paused = true)]
@@ -1269,6 +1356,26 @@ async fn timeout_fixture_rejects_a_process_that_never_exits() {
 
     assert!(outcome.is_err());
     assert_eq!(started.elapsed(), Duration::from_millis(14_250));
+}
+
+fn classification_consistent(result: &CaseResult) -> bool {
+    match (&result.class, &result.expected, &result.actual) {
+        (CaseClass::Match, Some(expected), Some(actual)) => expected == actual,
+        (CaseClass::Mismatch, Some(expected), Some(actual)) => expected != actual,
+        (CaseClass::InfrastructureError, Some(_), None) => result.detail.is_some(),
+        _ => false,
+    }
+}
+
+fn record_case_result(result: CaseResult, failures: &mut Vec<String>) {
+    eprintln!("result-lifecycle {}: {:?}", result.id, result.class);
+    let classification_consistent = classification_consistent(&result);
+    if result.class != CaseClass::Match || !classification_consistent {
+        eprintln!("  expected={:#?}", result.expected);
+        eprintln!("  actual={:#?}", result.actual);
+        eprintln!("  detail={:#?}", result.detail);
+        failures.push(result.id);
+    }
 }
 
 #[tokio::test]
@@ -1311,19 +1418,7 @@ async fn result_lifecycle_oracle_correspondence() {
     let mut failures = Vec::new();
     for case in strict {
         let result = run_case(case).await;
-        eprintln!("result-lifecycle {}: {:?}", result.id, result.class);
-        let classification_consistent = match (&result.class, &result.expected, &result.actual) {
-            (CaseClass::Match, Some(expected), Some(actual)) => expected == actual,
-            (CaseClass::Mismatch, Some(expected), Some(actual)) => expected != actual,
-            (CaseClass::InfrastructureError, Some(_), None) => result.detail.is_some(),
-            _ => false,
-        };
-        if result.class != CaseClass::Match || !classification_consistent {
-            eprintln!("  expected={:#?}", result.expected);
-            eprintln!("  actual={:#?}", result.actual);
-            eprintln!("  detail={:#?}", result.detail);
-            failures.push(result.id);
-        }
+        record_case_result(result, &mut failures);
     }
     if mode == "report" {
         for case in selected_cases.iter().filter(|case| case.mode != "strict") {
@@ -1341,3 +1436,6 @@ async fn result_lifecycle_oracle_correspondence() {
         );
     }
 }
+
+#[path = "support/result_lifecycle_validation_tests.rs"]
+mod validation_tests;

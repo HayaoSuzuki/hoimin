@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #![cfg(unix)]
 
 #[path = "support/jsonl_report.rs"]

@@ -36,3 +36,36 @@ impl Write for CollectingWriter {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clones_share_buffer_and_clear_state() {
+        let mut writer = CollectingWriter::default();
+        let clone = writer.clone();
+        writer.write_all(b"abc").unwrap();
+        assert_eq!(clone.len(), 3);
+        assert_eq!(clone.snapshot(), b"abc");
+        clone.clear();
+        assert!(writer.is_empty());
+    }
+
+    #[test]
+    fn snapshots_remain_owned_after_clear() {
+        let mut writer = CollectingWriter::default();
+        writer.write_all(b"snapshot").unwrap();
+        let snapshot = writer.snapshot();
+        writer.clear();
+        assert_eq!(snapshot, b"snapshot");
+    }
+
+    #[test]
+    fn flush_preserves_collected_bytes() {
+        let mut writer = CollectingWriter::default();
+        writer.write_all(b"kept").unwrap();
+        writer.flush().unwrap();
+        assert_eq!(writer.snapshot(), b"kept");
+    }
+}

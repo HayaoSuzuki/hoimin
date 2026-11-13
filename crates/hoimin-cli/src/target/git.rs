@@ -955,3 +955,60 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod rejection_coverage {
+    use super::*;
+
+    #[rstest::rstest]
+    #[case::missing_new_range("@@ -1,1 @@", "invalid Git hunk header")]
+    #[case::invalid_start("@@ -1,1 +invalid @@", "invalid Git hunk start")]
+    #[case::invalid_count("@@ -1,1 +1,invalid @@", "invalid Git hunk count")]
+    #[case::range_overflow("@@ -1,1 +4294967295,2 @@", "Git hunk line range overflow")]
+    fn malformed_hunk_ranges_preserve_the_typed_diagnostic(
+        #[case] input: &str,
+        #[case] expected: &str,
+    ) {
+        let error = parse_hunk_range(input).unwrap_err();
+        assert!(matches!(error, TargetError::GitFailed(message) if message == expected));
+    }
+
+    #[rstest::rstest]
+    #[case::missing_path(b"-\t-".as_slice(), "invalid Git numstat binary record")]
+    #[case::missing_old(b"-\t-\t".as_slice(), "invalid Git numstat rename record")]
+    #[case::missing_new(b"-\t-\t\0old.py".as_slice(), "invalid Git numstat rename record")]
+    #[case::invalid_old(b"-\t-\t\0\xff.py\0new.py\0".as_slice(), "Git numstat path is not valid UTF-8")]
+    #[case::invalid_new(b"-\t-\t\0old.py\0\xff.py\0".as_slice(), "Git numstat path is not valid UTF-8")]
+    fn malformed_numstat_records_are_rejected(#[case] input: &[u8], #[case] expected: &str) {
+        let mut excluded = BTreeSet::new();
+        let error =
+            parse_binary_numstat(input, &mut excluded, &GitPathScope::default()).unwrap_err();
+        assert!(matches!(error, TargetError::GitFailed(message) if message == expected));
+    }
+
+    #[rstest::rstest]
+    #[case::missing_closing_quote("\"target.py", "invalid quoted Git path")]
+    #[case::short_octal(r#""\12""#, "invalid octal Git path escape")]
+    #[case::non_octal(r#""\1x3""#, "invalid octal Git path escape")]
+    fn malformed_quoted_paths_preserve_the_typed_diagnostic(
+        #[case] input: &str,
+        #[case] expected: &str,
+    ) {
+        let error = decode_git_quoted(input).unwrap_err();
+        assert!(matches!(error, TargetError::GitFailed(message) if message == expected));
+    }
+
+    #[rstest::rstest]
+    #[case::old_utf8(b"diff --git a/x.py b/x.py\n--- a/\xff.py\n".as_slice(), "Git diff path is not valid UTF-8")]
+    #[case::new_utf8(b"diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/\xff.py\n".as_slice(), "Git diff path is not valid UTF-8")]
+    #[case::hunk_utf8(b"diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/x.py\n@@ -1 +\xff @@\n".as_slice(), "invalid Git hunk header")]
+    #[case::new_quote(b"diff --git a/x.py b/x.py\n--- a/x.py\n+++ \"unterminated\n".as_slice(), "invalid quoted Git path")]
+    #[case::hunk_range(b"diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/x.py\n@@ -1 +invalid @@\n".as_slice(), "invalid Git hunk start")]
+    fn malformed_patch_sections_are_rejected(#[case] input: &[u8], #[case] expected: &str) {
+        let mut changed = BTreeMap::new();
+        let mut excluded = BTreeSet::new();
+        let error =
+            parse_diff(input, &mut changed, &mut excluded, &GitPathScope::default()).unwrap_err();
+        assert!(matches!(error, TargetError::GitFailed(message) if message == expected));
+    }
+}

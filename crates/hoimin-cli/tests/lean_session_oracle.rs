@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute, stmt_expr_attributes))]
 use std::collections::{BTreeSet, HashMap};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
@@ -352,7 +353,18 @@ fn persist_request(
                         hoimin_core::MutationStatus::Error => {
                             hoimin_core::ProcessTermination::Exit(1)
                         }
-                        _ => unreachable!(),
+                        _ => {
+                            // The outer match already consumed Killed, Survived and NotRun.
+                            #[cfg(coverage_nightly)]
+                            {
+                                (#[coverage(off)]
+                                || unreachable!())()
+                            }
+                            #[cfg(not(coverage_nightly))]
+                            {
+                                unreachable!()
+                            }
+                        }
                     },
                     output_state: if status == hoimin_core::MutationStatus::Error {
                         hoimin_core::ProcessOutputState::CloseTimedOut
@@ -405,7 +417,11 @@ struct PersistEvent<'a> {
 
 impl Driver {
     fn new() -> Result<Self, String> {
-        let temp = tempfile::tempdir().map_err(|error| format!("create temp dir: {error}"))?;
+        Self::from_tempdir(tempfile::tempdir())
+    }
+
+    fn from_tempdir(temp: std::io::Result<tempfile::TempDir>) -> Result<Self, String> {
+        let temp = temp.map_err(|error| format!("create temp dir: {error}"))?;
         let path = temp.path().join("session.sqlite3");
         Ok(Self {
             _temp: temp,
@@ -659,7 +675,8 @@ fn observe_database(path: &Path) -> Result<(Vec<RunObservation>, Vec<ResultObser
         .prepare("SELECT id, run_id, fingerprint, finished, complete FROM runs ORDER BY id")
         .map_err(|error| format!("prepare run observation: {error}"))?;
     let runs = run_statement
-        .query_map([], |row| {
+        .raw_query()
+        .mapped(|row| {
             Ok((
                 row.get::<_, i64>(0)?,
                 row.get::<_, String>(1)?,
@@ -668,7 +685,6 @@ fn observe_database(path: &Path) -> Result<(Vec<RunObservation>, Vec<ResultObser
                 row.get::<_, bool>(4)?,
             ))
         })
-        .map_err(|error| format!("query run observation: {error}"))?
         .map(|row| {
             let (ordinal, run, fingerprint, finished, complete) =
                 row.map_err(|error| format!("read run observation: {error}"))?;
@@ -692,7 +708,8 @@ fn observe_database(path: &Path) -> Result<(Vec<RunObservation>, Vec<ResultObser
         )
         .map_err(|error| format!("prepare result observation: {error}"))?;
     let results = result_statement
-        .query_map([], |row| {
+        .raw_query()
+        .mapped(|row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
@@ -700,7 +717,6 @@ fn observe_database(path: &Path) -> Result<(Vec<RunObservation>, Vec<ResultObser
                 row.get::<_, String>(3)?,
             ))
         })
-        .map_err(|error| format!("query result observation: {error}"))?
         .map(|row| {
             let (run, mutant, status, replacement) =
                 row.map_err(|error| format!("read result observation: {error}"))?;
@@ -737,7 +753,14 @@ fn classify_case(
     case: &OracleCase,
     execute: impl FnOnce() -> Result<Vec<Observation>, String>,
 ) -> CaseResult {
-    match catch_unwind(AssertUnwindSafe(execute)) {
+    classify_execution(case, catch_unwind(AssertUnwindSafe(execute)))
+}
+
+fn classify_execution(
+    case: &OracleCase,
+    execution: Result<Result<Vec<Observation>, String>, Box<dyn std::any::Any + Send>>,
+) -> CaseResult {
+    match execution {
         Ok(Ok(actual)) => CaseResult {
             id: case.id.clone(),
             class: if actual == case.expected {
@@ -795,16 +818,16 @@ fn corpus_is_well_formed() {
 }
 
 #[rstest::rstest]
-#[case::schema(corpus_text().lines().next().unwrap().replacen("\"schema\":1", "\"schema\":2", 1), "unsupported schema")]
-#[case::model_only_mode(unknown_mode_row("model-only"), "unknown mode")]
-#[case::internal_fixture_mode(unknown_mode_row("internal-fixture"), "unknown mode")]
-#[case::infrastructure_mode(unknown_mode_row("infrastructure-error"), "unknown mode")]
-#[case::report_mode(unknown_mode_row("report"), "unknown mode")]
-#[case::event(corpus_text().lines().next().unwrap().replacen("open:h0","crash:h0",2),"unknown event")]
-#[case::status(corpus_text().lines().find(|line|line.contains("\"status\":" )).unwrap().replacen("\"status\":\"killed\"", "\"status\":\"unknown\"",1),"unknown result role")]
-#[case::short_schedule(corpus_text().lines().next().unwrap().replacen("\"schedule\":[","\"schedule\":[],\"ignored\":[",1),"")]
-fn corpus_rejects_unknown_schema_mode_and_event(#[case] input: String, #[case] fragment: &str) {
-    let error = parse_corpus(&input).unwrap_err();
+#[case::schema(&corpus_text().lines().next().unwrap().replacen("\"schema\":1", "\"schema\":2", 1), "unsupported schema")]
+#[case::model_only_mode(&unknown_mode_row("model-only"), "unknown mode")]
+#[case::internal_fixture_mode(&unknown_mode_row("internal-fixture"), "unknown mode")]
+#[case::infrastructure_mode(&unknown_mode_row("infrastructure-error"), "unknown mode")]
+#[case::report_mode(&unknown_mode_row("report"), "unknown mode")]
+#[case::event(&corpus_text().lines().next().unwrap().replacen("open:h0","crash:h0",2),"unknown event")]
+#[case::status(&corpus_text().lines().find(|line|line.contains("\"status\":" )).unwrap().replacen("\"status\":\"killed\"", "\"status\":\"unknown\"",1),"unknown result role")]
+#[case::short_schedule(&corpus_text().lines().next().unwrap().replacen("\"schedule\":[","\"schedule\":[],\"ignored\":[",1),"")]
+fn corpus_rejects_unknown_schema_mode_and_event(#[case] input: &str, #[case] fragment: &str) {
+    let error = parse_corpus(input).unwrap_err();
 
     assert!(error.contains(fragment), "{error}");
 }
@@ -839,15 +862,24 @@ fn case_panics_are_infrastructure_errors() {
 fn oracle_correspondence() {
     let cases = parse_corpus(corpus_text()).unwrap();
     let selected = std::env::var("HOIMIN_SESSION_ORACLE_CASE").ok();
+    let selected_cases = select_cases(&cases, selected.as_deref());
+    let results = selected_cases.into_iter().map(run_case).collect::<Vec<_>>();
+    assert_correspondence(&results);
+}
+
+fn select_cases<'a>(cases: &'a [OracleCase], selected: Option<&str>) -> Vec<&'a OracleCase> {
     let selected_cases = cases
         .iter()
-        .filter(|case| selected.as_ref().is_none_or(|id| id == &case.id))
+        .filter(|case| selected.is_none_or(|id| id == case.id))
         .collect::<Vec<_>>();
     assert!(
         selected.is_none() || !selected_cases.is_empty(),
         "unknown oracle case {selected:?}"
     );
-    let results = selected_cases.into_iter().map(run_case).collect::<Vec<_>>();
+    selected_cases
+}
+
+fn assert_correspondence(results: &[CaseResult]) {
     let failures = results
         .iter()
         .filter(|result| result.class != CaseClass::Match)
@@ -861,3 +893,6 @@ fn oracle_correspondence() {
         .collect::<Vec<_>>();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+#[path = "support/session_validation_tests.rs"]
+mod validation_tests;

@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
 use collecting_writer::CollectingWriter;
@@ -8,6 +9,11 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::Deserialize;
+
+#[cfg(windows)]
+const VENV_PYTHON_PATH: &str = ".venv/Scripts/python.exe";
+#[cfg(not(windows))]
+const VENV_PYTHON_PATH: &str = ".venv/bin/python";
 
 const CORPUS: &str = include_str!("../../../formal/HoiminOracle/corpus/candidate-ranking.jsonl");
 const TEST_MIN_FREE_SPACE: &str = "1B";
@@ -105,9 +111,12 @@ fn validate_case(item: &OracleCase) -> Result<(), String> {
             candidate.changed_line,
         );
     }
-    let expected_selection_len = usize::try_from(item.limit)
-        .map_err(|_| format!("{} has a limit too large for this platform", item.id))?
-        .min(roles.len());
+    #[cfg(target_pointer_width = "32")]
+    let limit = usize::try_from(item.limit)
+        .map_err(|_| format!("{} has a limit too large for this platform", item.id))?;
+    #[cfg(target_pointer_width = "64")]
+    let limit = usize::try_from(item.limit).expect("u64 fits 64-bit usize");
+    let expected_selection_len = limit.min(roles.len());
     if item.expected_ranking.len() != item.candidates.len()
         || item
             .expected_ranking
@@ -218,7 +227,11 @@ async fn public_plan_and_verify_match_the_lean_diverse_tier_case(#[case] scenari
 
     let run = run_cli(verify_args(&plan_path, item.limit, policy))
         .await
-        .unwrap_or_else(|error| panic!("public verify {policy}: {error}"));
+        .unwrap_or_else(
+            // A failed public CLI invocation fails the correspondence test.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |error| panic!("public verify {policy}: {error}"),
+        );
     assert_eq!(run.code, 0, "policy={policy}; stderr={}", run.stderr);
 
     let actual = selected_roles(&run.stdout, &id_roles).expect("selected role order");
@@ -282,7 +295,11 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Result<Self, String> {
-        let directory = tempfile::tempdir().map_err(|error| error.to_string())?;
+        Self::from_directory(tempfile::tempdir())
+    }
+
+    fn from_directory(directory: std::io::Result<tempfile::TempDir>) -> Result<Self, String> {
+        let directory = directory.map_err(|error| error.to_string())?;
         let root = directory.path().join("project");
         let source = root.join("src");
         std::fs::create_dir_all(&source).map_err(|error| error.to_string())?;
@@ -318,11 +335,7 @@ fn repo_root() -> PathBuf {
 }
 
 fn python_executable() -> PathBuf {
-    if cfg!(windows) {
-        repo_root().join(".venv/Scripts/python.exe")
-    } else {
-        repo_root().join(".venv/bin/python")
-    }
+    repo_root().join(VENV_PYTHON_PATH)
 }
 
 fn plan_args(fixture: &Fixture) -> Vec<OsString> {
@@ -372,15 +385,140 @@ struct CliOutput {
 async fn run_cli(args: Vec<OsString>) -> Result<CliOutput, String> {
     let stdout = CollectingWriter::default();
     let stderr = CollectingWriter::default();
-    let code = tokio::time::timeout(
+    let result = tokio::time::timeout(
         Duration::from_secs(10),
         hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()),
     )
-    .await
-    .map_err(|_| "Hoimin public CLI timed out after 10 seconds".to_owned())?;
+    .await;
+    decode_cli_output(result, stdout.snapshot(), stderr.snapshot())
+}
+
+fn decode_cli_output(
+    result: Result<i32, tokio::time::error::Elapsed>,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+) -> Result<CliOutput, String> {
+    let code = result.map_err(|_| "Hoimin public CLI timed out after 10 seconds".to_owned())?;
     Ok(CliOutput {
         code,
-        stdout: String::from_utf8(stdout.snapshot()).map_err(|error| error.to_string())?,
-        stderr: String::from_utf8(stderr.snapshot()).map_err(|error| error.to_string())?,
+        stdout: String::from_utf8(stdout).map_err(|error| error.to_string())?,
+        stderr: String::from_utf8(stderr).map_err(|error| error.to_string())?,
     })
+}
+
+#[rstest::rstest]
+#[case::schema("/schema", serde_json::json!(2), "unsupported schema")]
+#[case::mode("/mode", serde_json::json!("unknown"), "unknown mode")]
+#[case::scenario("/scenario", serde_json::json!("unknown"), "invalid identity or scenario")]
+#[case::identity("/id", serde_json::json!(""), "invalid identity or scenario")]
+#[case::empty_candidates("/candidates", serde_json::json!([]), "invalid identity or scenario")]
+#[case::duplicate_role("/candidates/1/id", serde_json::json!("selector"), "invalid candidate")]
+#[case::path("/candidates/0/path", serde_json::json!("other.py"), "invalid candidate")]
+#[case::line("/candidates/0/line", serde_json::json!(0), "invalid candidate")]
+#[case::operator_class("/candidates/0/operator_class", serde_json::json!("unknown"), "invalid candidate")]
+#[case::operator("/candidates/0/operator", serde_json::json!(""), "invalid candidate")]
+#[case::ranking_count("/expected_ranking", serde_json::json!([]), "inconsistent expected projection")]
+#[case::rank("/expected_ranking/0/rank", serde_json::json!(2), "inconsistent expected projection")]
+#[case::ranking_role("/expected_ranking/0/id", serde_json::json!("absent"), "inconsistent expected projection")]
+#[case::reasons("/expected_ranking/0/reasons", serde_json::json!([]), "inconsistent expected projection")]
+#[case::reason("/expected_ranking/0/reasons/0", serde_json::json!("unknown"), "inconsistent expected projection")]
+#[case::strict_role("/expected_strict/0", serde_json::json!("absent"), "inconsistent expected projection")]
+#[case::diverse_role("/expected_diverse/0", serde_json::json!("absent"), "inconsistent expected projection")]
+#[case::strict_count("/expected_strict", serde_json::json!([]), "inconsistent expected projection")]
+#[case::diverse_count("/expected_diverse", serde_json::json!([]), "inconsistent expected projection")]
+fn ranking_schema_rejects_one_invalid_coordinate(
+    #[case] pointer: &str,
+    #[case] value: serde_json::Value,
+    #[case] diagnostic: &str,
+) {
+    let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
+    *row.pointer_mut(pointer).unwrap() = value;
+    assert!(
+        parse_corpus(&row.to_string())
+            .unwrap_err()
+            .contains(diagnostic)
+    );
+}
+
+#[rstest::rstest]
+#[case::empty(&String::new(), "corpus contains no cases")]
+#[case::invalid(&"{".to_owned(), "line 1 is invalid JSON")]
+#[case::duplicate(&format!("{CORPUS}\n{}", CORPUS.lines().next().unwrap()), "duplicate case id")]
+fn ranking_parser_reports_invalid_corpus(#[case] input: &str, #[case] diagnostic: &str) {
+    assert!(parse_corpus(input).unwrap_err().contains(diagnostic));
+}
+
+#[test]
+fn ranking_parser_ignores_blank_lines() {
+    assert_eq!(parse_corpus(&format!("\n{CORPUS}\n")).unwrap().len(), 4);
+}
+
+#[rstest::rstest]
+#[case::json("{", "EOF")]
+#[case::missing_id(r#"{"kind":"mutant_started"}"#, "lacks mutant_id")]
+#[case::unknown_id(
+    r#"{"kind":"mutant_started","mutant_id":"unknown"}"#,
+    "unknown selected candidate"
+)]
+fn ranking_projection_rejects_invalid_started_events(
+    #[case] input: &str,
+    #[case] diagnostic: &str,
+) {
+    assert!(
+        selected_roles(input, &BTreeMap::new())
+            .unwrap_err()
+            .contains(diagnostic)
+    );
+}
+
+#[test]
+fn ranking_fixture_reports_tempdir_failure() {
+    assert_eq!(
+        Fixture::from_directory(Err(std::io::Error::other("denied")))
+            .err()
+            .unwrap(),
+        "denied"
+    );
+}
+
+#[test]
+fn ranking_fixture_reports_source_directory_failure() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::create_dir(directory.path().join("project")).unwrap();
+    std::fs::write(directory.path().join("project/src"), "obstruction").unwrap();
+    assert!(Fixture::from_directory(Ok(directory)).is_err());
+}
+
+#[rstest::rstest]
+#[case::init("__init__.py")]
+#[case::alpha("alpha.py")]
+#[case::beta("beta.py")]
+fn ranking_fixture_reports_unwritable_source(#[case] path: &str) {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(directory.path().join("project/src").join(path)).unwrap();
+    assert!(Fixture::from_directory(Ok(directory)).is_err());
+}
+
+#[rstest::rstest]
+#[case::stdout(vec![255], vec![])]
+#[case::stderr(vec![], vec![255])]
+fn ranking_cli_output_rejects_invalid_utf8(#[case] stdout: Vec<u8>, #[case] stderr: Vec<u8>) {
+    assert!(
+        decode_cli_output(Ok(0), stdout, stderr)
+            .err()
+            .unwrap()
+            .contains("invalid utf-8")
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn ranking_cli_output_reports_timeout() {
+    let result =
+        tokio::time::timeout(Duration::from_millis(1), std::future::pending::<i32>()).await;
+    assert!(
+        decode_cli_output(result, vec![], vec![])
+            .err()
+            .unwrap()
+            .contains("timed out")
+    );
 }

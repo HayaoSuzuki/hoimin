@@ -204,3 +204,98 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for Roles<'_, F> {
         }
     }
 }
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+
+    fn run_build(
+        module: &ModModule,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<Exclusions, AnalysisCancelled> {
+        Exclusions::build(module, &cancelled)
+    }
+
+    #[rstest::rstest]
+    #[case("from typing import *\nAlias: TypeAlias = 'value'", "'value'", (true, true, true))]
+    #[case("Alias: TypeAlias = 'value'", "'value'", (false, false, false))]
+    #[case("from typing import TypeAlias as Marker\nAlias: Marker = 'value'", "'value'", (true, true, true))]
+    #[case("from typing import TypeAlias\nAlias: 'TypeAlias' = 'value'", "'value'", (true, true, true))]
+    #[case("import typing as t\nAlias: 't.TypeAlias' = 'value'", "'value'", (true, true, true))]
+    #[case("import typing_extensions as t\nAlias: '''(\n t.TypeAlias # marker\n)''' = 'value'", "'value'", (true, true, true))]
+    #[case("import typing as t\nAlias: other.TypeAlias = 'value'", "'value'", (false, false, false))]
+    #[case("import typing as t\nAlias: wrapper.t.TypeAlias = 'value'", "'value'", (false, false, false))]
+    #[case("Alias: int = 'value'", "'value'", (false, false, false))]
+    #[case("import unrelated\nvalue = 'value'", "'value'", (false, false, false))]
+    #[case("'value'", "'value'", (true, false, true))]
+    #[case("def function():\n 'value'", "'value'", (true, false, true))]
+    #[case("class C:\n 'value'", "'value'", (true, false, true))]
+    #[case("value = f\"prefix {'value'}\"", "prefix", (true, false, false))]
+    #[case("value = f\"prefix {'value'}\"", "'value'", (true, false, true))]
+    #[case("value = t\"'value'\"", "'value'", (true, false, true))]
+    #[case("import typing as t\nAlias: t.TypeAlias = 'value'", "'value'", (true, true, true))]
+    #[case("Alias: list[int] = 'value'", "'value'", (false, false, false))]
+    #[case("from .typing import TypeAlias\nAlias: TypeAlias = 'value'", "'value'", (false, false, false))]
+    #[case("from typing import Optional\nAlias: Optional = 'value'", "'value'", (false, false, false))]
+    fn string_role_index_separates_aliases_docstrings_fields_and_runtime_segments(
+        #[case] source: &str,
+        #[case] marker: &str,
+        #[case] expected: (bool, bool, bool),
+    ) {
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let index = run_build(parsed.syntax(), &|| false).unwrap();
+        let start = source.find(marker).unwrap();
+        let range = TextRange::new(
+            start.try_into().unwrap(),
+            (start + marker.len()).try_into().unwrap(),
+        );
+        assert_eq!(
+            (
+                index.contains(range),
+                index.contains_alias(range),
+                index.excludes_segment(range)
+            ),
+            expected
+        );
+    }
+
+    #[test]
+    fn a_type_alias_declaration_without_a_value_adds_no_literal_exclusion() {
+        let source = "from typing import TypeAlias\nAlias: TypeAlias";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let index = run_build(parsed.syntax(), &|| false).unwrap();
+        let annotation = &parsed.syntax().body[1]
+            .as_ann_assign_stmt()
+            .unwrap()
+            .annotation;
+        assert!(!index.contains_alias(annotation.range()));
+    }
+
+    #[rstest::rstest]
+    fn string_roles_cancel_during_marker_collection_or_formatted_fields(
+        #[values(
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63
+        )]
+        checkpoint: usize,
+    ) {
+        let source = "from typing import TypeAlias\nimport typing as t\nAlias: TypeAlias = 'value'\ndef function():\n 'documentation'\n return f'prefix {item!r} and {other}'\n";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let total = std::cell::Cell::new(0);
+        assert!(
+            run_build(parsed.syntax(), &|| {
+                total.set(total.get() + 1);
+                false
+            })
+            .is_ok()
+        );
+        let polls = std::cell::Cell::new(0);
+        let result = run_build(parsed.syntax(), &|| {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= checkpoint
+        });
+        assert_eq!(result.is_err(), checkpoint < total.get());
+    }
+}

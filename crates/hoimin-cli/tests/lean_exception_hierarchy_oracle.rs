@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #[path = "support/exception_hierarchy_config.rs"]
 mod configuration;
 #[path = "../../hoimin-python/tests/support/exception_hierarchy_oracle.rs"]

@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute, stmt_expr_attributes))]
 use std::ffi::OsString;
 
 pub mod analyzer;
@@ -11,6 +12,7 @@ pub mod fingerprint_inputs;
 mod finite_file;
 mod human_text;
 mod interrupt;
+pub(crate) mod io_faults;
 mod live_progress;
 mod metrics;
 mod metrics_destination;

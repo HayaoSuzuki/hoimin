@@ -123,6 +123,18 @@ impl Drop for CancelOnDrop {
 }
 
 impl GitRunner {
+    /// Retain a valid completed lifecycle failure for shell composition tests.
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) fn with_historical_failure_for_tests(self, message: &str) -> Self {
+        self.state
+            .failures
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(message.to_owned());
+        self
+    }
+
     pub(crate) fn for_run(start_gate: ProcessStartGate, deadline: tokio::time::Instant) -> Self {
         Self {
             state: Arc::default(),
@@ -548,9 +560,15 @@ mod tests {
             &marker,
         );
 
-        let result = runner.run_command(command, &cancellation).await;
+        let error = runner
+            .run_command(command, &cancellation)
+            .await
+            .unwrap_err();
 
-        assert!(matches!(result, Err(GitError::Cancelled)));
+        assert!(matches!(&error, GitError::Cancelled));
+        assert!(
+            matches!(error.into_target(), TargetError::GitFailed(message) if message == "target Git command cancelled")
+        );
         assert!(!marker.exists());
         runner
             .drain_for_shutdown(Duration::from_secs(1))
@@ -910,5 +928,78 @@ mod tests {
     #[tokio::test]
     async fn simultaneous_kill_and_reap_failures_are_both_preserved() {
         failed_reap_case(true).await;
+    }
+}
+
+#[cfg(test)]
+mod failure_coverage {
+    use super::*;
+
+    struct FailedPipe;
+
+    impl AsyncRead for FailedPipe {
+        fn poll_read(
+            self: std::pin::Pin<&mut Self>,
+            _context: &mut std::task::Context<'_>,
+            _output: &mut tokio::io::ReadBuf<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Err(std::io::Error::other("owned pipe read failure")))
+        }
+    }
+
+    #[rstest::rstest]
+    #[case::stdout(false)]
+    #[case::stderr(true)]
+    #[tokio::test]
+    async fn pipe_read_failure_preserves_its_io_diagnostic(#[case] diagnostic: bool) {
+        let error = read_pipe(FailedPipe, 8, diagnostic).await.unwrap_err();
+        assert!(
+            matches!(&error, CaptureError::Io(cause) if cause.kind() == std::io::ErrorKind::Other)
+        );
+        assert_eq!(error.to_string(), "owned pipe read failure");
+    }
+
+    #[tokio::test]
+    async fn missing_executable_preserves_spawn_failure_without_an_active_owner() {
+        let directory = tempfile::tempdir().unwrap();
+        let executable = directory.path().join("missing-git.exe");
+        let expected = std::process::Command::new(&executable)
+            .output()
+            .unwrap_err();
+        let runner = GitRunner::default();
+        let error = runner
+            .run_command(Command::new(&executable), &ProcessCancellation::new())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error.into_target(), TargetError::GitFailed(message) if message == expected.to_string())
+        );
+        assert_eq!(runner.state.active.load(Ordering::Acquire), 0);
+        assert_eq!(
+            runner.drain_for_shutdown(Duration::from_secs(5)).await,
+            Ok(())
+        );
+    }
+
+    #[tokio::test]
+    async fn dropping_an_unsettled_owner_wakes_the_drain_with_missing_reap_evidence() {
+        let runner = GitRunner::default();
+        runner.state.active.fetch_add(1, Ordering::AcqRel);
+        let lifecycle = ActiveLifecycle {
+            state: Arc::clone(&runner.state),
+            settled: false,
+        };
+        let mut drain = Box::pin(runner.drain_for_shutdown(Duration::from_secs(5)));
+        let first_poll =
+            std::future::poll_fn(|context| std::task::Poll::Ready(drain.as_mut().poll(context)))
+                .await;
+        assert!(first_poll.is_pending());
+        drop(lifecycle);
+        let error = drain.await.unwrap_err();
+        assert_eq!(runner.state.active.load(Ordering::Acquire), 0);
+        assert_eq!(
+            error,
+            "target.git.lifecycle: owned Git lifecycle ended without reap/pipe proof"
+        );
     }
 }

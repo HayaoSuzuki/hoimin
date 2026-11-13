@@ -3,8 +3,10 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import create_autospec
 
 import pytest
+from pytest_mock import MockerFixture
 
 from tools import hypothesmith_corpus as corpus
 
@@ -267,3 +269,52 @@ def test_python315_generator_compiles_bounded_sources(tmp_path: Path) -> None:
 
     assert counts["written"] > 0
     assert counts["invalid"] == 0
+
+
+@pytest.mark.parametrize(("examples", "max_bytes"), [(0, 4096), (1, 0), (1, 4097)])
+def test_generation_rejects_invalid_direct_limits(
+    tmp_path: Path, examples: int, max_bytes: int
+) -> None:
+    with pytest.raises(ValueError, match="examples must be positive"):
+        corpus.generate(
+            tmp_path / "output",
+            examples=examples,
+            random_seed=1,
+            strategy="grammar",
+            max_bytes=max_bytes,
+        )
+    assert not (tmp_path / "output").exists()
+
+
+def test_generation_rejects_unknown_strategy(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="strategy must be"):
+        corpus.generate(
+            tmp_path / "output",
+            examples=1,
+            random_seed=1,
+            strategy="unknown",
+            max_bytes=4096,
+        )
+    assert not (tmp_path / "output").exists()
+
+
+def test_cli_reports_missing_optional_generator(
+    tmp_path: Path,
+    mocker: MockerFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    original_generate_spec = corpus.generate
+
+    def unavailable(*_args: object, **_kwargs: object) -> None:
+        raise ModuleNotFoundError
+
+    mocker.patch.object(
+        corpus,
+        "generate",
+        create_autospec(original_generate_spec, side_effect=unavailable),
+    )
+    mocker.patch.object(sys, "argv", ["corpus", "--output", str(tmp_path)])
+    with pytest.raises(SystemExit) as error:
+        corpus.main()
+    assert error.value.code == 2
+    assert "install fuzz dependencies" in capsys.readouterr().err

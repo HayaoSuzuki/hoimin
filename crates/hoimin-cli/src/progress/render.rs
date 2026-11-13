@@ -232,3 +232,217 @@ impl From<&Comparison> for ComparisonDocument {
         }
     }
 }
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::super::duplicate::{DuplicateInput, DuplicateReason};
+    use super::*;
+    use std::io;
+
+    #[derive(Clone, Copy)]
+    enum Warning {
+        Unusable,
+        Different,
+        Duplicate,
+        Ambiguous,
+        Repeated(DuplicateReason),
+        Quiet,
+    }
+
+    fn warning_fixture(
+        warning: Warning,
+    ) -> (
+        Vec<InputDisposition>,
+        Vec<CandidateSetEligibility>,
+        ProgressResult,
+    ) {
+        let mut inputs = vec![InputDisposition {
+            source: "first.json".into(),
+            reason: None,
+            duplicate: None,
+        }];
+        let mut eligibilities = vec![CandidateSetEligibility::Matching];
+        let mut result =
+            super::super::compare_reports(&[], std::num::NonZeroUsize::new(2).unwrap());
+        result.comparisons.push(Comparison {
+            common: 0,
+            added: 0,
+            removed: 0,
+            ambiguous: 0,
+            inconclusive: 0,
+            improvements: 0,
+            regressions: 0,
+            carried_survivors: 0,
+            previous_score: None,
+            current_score: None,
+            score_delta: None,
+            state: ProgressState::Indeterminate,
+        });
+        match warning {
+            Warning::Unusable => inputs[0].reason = Some(UnusableReason::MissingBaseline),
+            Warning::Different => eligibilities[0] = CandidateSetEligibility::Different,
+            Warning::Duplicate => eligibilities[0] = CandidateSetEligibility::Duplicate,
+            Warning::Ambiguous => result.comparisons[0].ambiguous = 1,
+            Warning::Repeated(reason) => inputs.push(InputDisposition {
+                source: "repeated.json".into(),
+                reason: None,
+                duplicate: Some(DuplicateInput {
+                    previous: 0,
+                    reason,
+                }),
+            }),
+            Warning::Quiet => {}
+        }
+        (inputs, eligibilities, result)
+    }
+
+    #[derive(Default)]
+    struct DiagnosticWriter {
+        fail: bool,
+        fail_newline: bool,
+        bytes: Vec<u8>,
+    }
+
+    impl Write for DiagnosticWriter {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            if self.fail || (self.fail_newline && bytes == b"\n") {
+                return Err(io::Error::other("progress diagnostic failed"));
+            }
+            self.bytes.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[rstest::rstest]
+    #[case::unusable(
+        Warning::Unusable,
+        "unusable progress report first.json: missing baseline"
+    )]
+    #[case::different(Warning::Different, "different candidate ID sets")]
+    #[case::duplicate(Warning::Duplicate, "duplicate candidate IDs")]
+    #[case::ambiguous(Warning::Ambiguous, "1 ambiguous mutant key(s)")]
+    #[case::same_path(
+        Warning::Repeated(DuplicateReason::SamePath),
+        "same path; comparisons are unchanged"
+    )]
+    #[case::identical(
+        Warning::Repeated(DuplicateReason::IdenticalBytes),
+        "identical bytes; comparisons are unchanged"
+    )]
+    fn diagnostic_output_explains_the_observed_warning(
+        #[case] warning: Warning,
+        #[case] expected: &str,
+    ) {
+        let (inputs, eligibilities, result) = warning_fixture(warning);
+        let mut output = DiagnosticWriter::default();
+        let mut stdout = DiagnosticWriter::default();
+        render(
+            &inputs,
+            &eligibilities,
+            &result,
+            None,
+            &mut stdout,
+            &mut output,
+        )
+        .unwrap();
+        output.flush().unwrap();
+        let actual = String::from_utf8(output.bytes).unwrap();
+        assert!(actual.contains(expected), "{actual}");
+        assert_eq!(actual.lines().count(), 1);
+        let document: serde_json::Value = serde_json::from_slice(&stdout.bytes).unwrap();
+        assert_eq!(document["schema_version"], 3);
+        assert_eq!(document["comparisons"].as_array().unwrap().len(), 1);
+    }
+
+    #[rstest::rstest]
+    #[case::unusable(Warning::Unusable)]
+    #[case::different(Warning::Different)]
+    #[case::duplicate(Warning::Duplicate)]
+    #[case::ambiguous(Warning::Ambiguous)]
+    #[case::same_path(Warning::Repeated(DuplicateReason::SamePath))]
+    #[case::identical(Warning::Repeated(DuplicateReason::IdenticalBytes))]
+    fn diagnostic_write_failure_preserves_the_io_cause(#[case] warning: Warning) {
+        let (inputs, eligibilities, result) = warning_fixture(warning);
+        let mut output = DiagnosticWriter {
+            fail: true,
+            ..DiagnosticWriter::default()
+        };
+        let mut stdout = DiagnosticWriter::default();
+        let error = render(
+            &inputs,
+            &eligibilities,
+            &result,
+            None,
+            &mut stdout,
+            &mut output,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, ProgressError::Write { source } if source.kind() == io::ErrorKind::Other && source.to_string() == "progress diagnostic failed")
+        );
+        assert_eq!(output.bytes, Vec::<u8>::new());
+        assert_eq!(stdout.bytes, Vec::<u8>::new());
+    }
+
+    #[test]
+    fn matching_usable_inputs_without_ambiguity_produce_no_warning() {
+        let (inputs, eligibilities, result) = warning_fixture(Warning::Quiet);
+        let mut output = DiagnosticWriter::default();
+        write_diagnostics(&inputs, &eligibilities, &result, &mut output).unwrap();
+        assert_eq!(output.bytes, Vec::<u8>::new());
+    }
+
+    #[test]
+    fn json_output_failure_preserves_the_serializers_io_cause() {
+        let (inputs, eligibilities, result) = warning_fixture(Warning::Quiet);
+        let mut stdout = DiagnosticWriter {
+            fail: true,
+            ..DiagnosticWriter::default()
+        };
+        let mut stderr = DiagnosticWriter::default();
+        let error = render(
+            &inputs,
+            &eligibilities,
+            &result,
+            None,
+            &mut stdout,
+            &mut stderr,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, ProgressError::Serialize { source } if source.io_error_kind() == Some(io::ErrorKind::Other) && source.to_string().contains("progress diagnostic failed"))
+        );
+        assert_eq!(stdout.bytes, Vec::<u8>::new());
+        assert_eq!(stderr.bytes, Vec::<u8>::new());
+    }
+
+    #[test]
+    fn trailing_newline_failure_preserves_the_completed_json_document() {
+        let (inputs, eligibilities, result) = warning_fixture(Warning::Quiet);
+        let mut stdout = DiagnosticWriter {
+            fail_newline: true,
+            ..DiagnosticWriter::default()
+        };
+        let mut stderr = DiagnosticWriter::default();
+        let error = render(
+            &inputs,
+            &eligibilities,
+            &result,
+            None,
+            &mut stdout,
+            &mut stderr,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, ProgressError::Write { source } if source.kind() == io::ErrorKind::Other)
+        );
+        let document: serde_json::Value = serde_json::from_slice(&stdout.bytes).unwrap();
+        assert_eq!(document["schema_version"], 3);
+        assert_ne!(stdout.bytes.last(), Some(&b'\n'));
+        assert_eq!(stderr.bytes, Vec::<u8>::new());
+    }
+}

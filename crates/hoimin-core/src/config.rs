@@ -923,7 +923,7 @@ impl TryFrom<&RawRunLimits> for RunLimits {
             });
         }
         let limits = Self {
-            jobs: nonzero_usize(raw.jobs, "jobs")?,
+            jobs: NonZeroUsize::new(raw.jobs).expect("zero jobs were rejected above"),
             max_mutants: nonzero_usize(raw.max_mutants, "max_mutants")?,
             max_candidates: nonzero_usize(raw.max_candidates, "max_candidates")?,
             baseline_timeout: NonZeroDuration::new(raw.baseline_timeout)
@@ -947,7 +947,8 @@ impl TryFrom<&RawRunLimits> for RunLimits {
                 .ok_or(ConfigError::InvalidLimit("max_workspace_size"))?,
             min_free_space: NonZeroU64::new(raw.min_free_space)
                 .ok_or(ConfigError::InvalidLimit("min_free_space"))?,
-            max_processes: nonzero_usize(raw.max_processes, "max_processes")?,
+            max_processes: NonZeroUsize::new(raw.max_processes)
+                .expect("zero process limits were rejected above"),
         };
         validate_limits(&limits)?;
         Ok(limits)
@@ -1131,8 +1132,8 @@ impl TryFrom<RawRunConfig> for RunConfig<crate::EnvironmentRequest> {
             }
         }
         validate_operators(&operators)?;
+        // RunLimits::try_from already validated every resource limit.
         let limits = RunLimits::try_from(&raw.limits)?;
-        validate_limits(&limits)?;
         Self::try_from(RunConfigData {
             selection,
             import_roots: normalize_import_roots(&raw.import_roots)?,

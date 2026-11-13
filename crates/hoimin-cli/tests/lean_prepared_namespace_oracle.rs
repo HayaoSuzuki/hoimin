@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 //! Public correspondence for the Lean prepared-namespace policy. Expected
 //! identity and candidate eligibility come only from the generated corpus.
 
@@ -14,6 +15,11 @@ use std::time::Duration;
 
 use hoimin_cli::plan::PlanManifest;
 use serde::Deserialize;
+
+#[cfg(windows)]
+const VENV_PYTHON_PATH: &str = "../../.venv/Scripts/python.exe";
+#[cfg(not(windows))]
+const VENV_PYTHON_PATH: &str = "../../.venv/bin/python";
 
 const CORPUS: &str = include_str!("../../../formal/HoiminOracle/corpus/prepared-namespace.jsonl");
 
@@ -99,18 +105,13 @@ fn parse_cases(input: &str) -> Result<Vec<Case>, String> {
     if ids.into_iter().map(str::to_owned).collect::<BTreeSet<_>>() != expected_ids {
         return Err("unexpected prepared namespace case identities".into());
     }
-    if cases.len() != 39 {
-        return Err("incomplete prepared namespace corpus".into());
-    }
+    // Unique identities equal the closed schema set, fixing the row count.
+    assert_eq!(cases.len(), 39);
     Ok(cases)
 }
 
 fn python() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(if cfg!(windows) {
-        "../../.venv/Scripts/python.exe"
-    } else {
-        "../../.venv/bin/python"
-    })
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(VENV_PYTHON_PATH)
 }
 
 fn command(root: &Path, case: &Case, mode: &str) -> Vec<OsString> {
@@ -153,14 +154,14 @@ fn prepared_namespace_corpus_rejects_schema_drift_and_missing_cases_accepts_comp
 }
 
 #[rstest::rstest]
-#[case::input_1(CORPUS.replacen("\"schema\":1", "\"schema\":2", 1))]
-#[case::module_false_false_2(CORPUS.replacen("module-false-false", "unknown-case", 1))]
-#[case::input_3(CORPUS.replacen("\"mode\":\"strict\"", "\"mode\":\"model-only\"", 1))]
-#[case::input_4(CORPUS.replacen("\"schema\":1", "\"extra\":true,\"schema\":1", 1))]
-#[case::input_5(CORPUS.lines().skip(1).collect::<Vec<_>>().join("\n"))]
-#[case::corpus_6(format!("{CORPUS}{}\n", CORPUS.lines().next().unwrap()))]
-fn prepared_namespace_corpus_rejects_schema_drift_and_missing_cases(#[case] bad: String) {
-    assert!(parse_cases(&bad).is_err());
+#[case::input_1(&CORPUS.replacen("\"schema\":1", "\"schema\":2", 1))]
+#[case::module_false_false_2(&CORPUS.replacen("module-false-false", "unknown-case", 1))]
+#[case::input_3(&CORPUS.replacen("\"mode\":\"strict\"", "\"mode\":\"model-only\"", 1))]
+#[case::input_4(&CORPUS.replacen("\"schema\":1", "\"extra\":true,\"schema\":1", 1))]
+#[case::input_5(&CORPUS.lines().skip(1).collect::<Vec<_>>().join("\n"))]
+#[case::corpus_6(&format!("{CORPUS}{}\n", CORPUS.lines().next().unwrap()))]
+fn prepared_namespace_corpus_rejects_schema_drift_and_missing_cases(#[case] bad: &str) {
+    assert!(parse_cases(bad).is_err());
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -302,4 +303,9 @@ async fn prepared_namespace_public_run_does_not_count_custom_pairs() {
             case.id
         );
     }
+}
+
+#[test]
+fn parser_rejects_missing_case_identities() {
+    assert!(parse_cases("").err().unwrap().contains("unexpected"));
 }

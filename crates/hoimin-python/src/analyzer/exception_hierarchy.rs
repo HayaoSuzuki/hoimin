@@ -188,11 +188,6 @@ impl ChildClasses {
     fn has_constructible(&self) -> bool {
         self.constructible > 0
     }
-
-    // The source belongs to this parent's child group.
-    fn has_constructible_sibling(&self, source: &Class) -> bool {
-        self.constructible > usize::from(source.constructible)
-    }
 }
 
 /// Only compact summaries survive project parsing. No target module is executed.
@@ -462,9 +457,11 @@ struct Escapes {
 }
 impl Escapes {
     fn comprehension(&mut self, generators: &[ruff_python_ast::Comprehension], elements: &[&Expr]) {
-        let Some(first) = generators.first() else {
-            return;
-        };
+        // Every comprehension admitted by the checked parser, including unpacking
+        // comprehensions, has at least one for-clause.
+        let first = generators
+            .first()
+            .expect("parsed comprehension has a for-clause");
         self.visit_expr(&first.iter);
         let mut declarations = Declarations::default();
         declarations.targets(generators);
@@ -1225,14 +1222,14 @@ impl ExceptionIndex {
     }
 
     fn binding_id(&self, path: &Utf8Path, name: &str, before: usize) -> Option<ClassId> {
-        let module = self.modules.get(path)?;
-        if module.dynamic {
+        let source_module = self.modules.get(path)?;
+        if source_module.dynamic {
             return None;
         }
         let (root, attr) = name
             .split_once('.')
             .map_or((name, None), |(r, a)| (r, Some(a)));
-        let binding = module.bindings.get(root)?;
+        let binding = source_module.bindings.get(root)?;
         if binding.end > before {
             return None;
         }
@@ -1253,9 +1250,7 @@ impl ExceptionIndex {
                     return None;
                 }
                 if attr.is_some()
-                    && self
-                        .modules
-                        .get(path)?
+                    && source_module
                         .loaded
                         .get(&module)
                         .is_none_or(|end| *end > before)
@@ -1435,7 +1430,6 @@ impl ExceptionIndex {
         &self,
         class: &Class,
         site: ExceptionSite,
-        siblings: Option<&ChildClasses>,
         children: Option<&ChildClasses>,
     ) -> RelatedEligibility {
         if class.parent.is_none() && children.is_none_or(ChildClasses::is_empty) {
@@ -1446,8 +1440,7 @@ impl ExceptionIndex {
             ExceptionSite::Raise
                 if class.parent.as_ref().is_some_and(|parent| {
                     self.classes.get(parent).is_some_and(|c| c.constructible)
-                }) || siblings.is_some_and(|s| s.has_constructible_sibling(class))
-                    || children.is_some_and(ChildClasses::has_constructible) =>
+                }) || children.is_some_and(ChildClasses::has_constructible) =>
             {
                 RelatedEligibility::Eligible
             }
@@ -1488,7 +1481,10 @@ impl ExceptionIndex {
         // Parent, siblings (excluding self), and children are disjoint in the
         // resolved single-parent acyclic graph. Counts retain eligibility facts
         // even when none of those identities is visible in this module.
-        let eligibility = self.related_eligibility(class, site, siblings, children);
+        // Constructibility includes every ancestor. A constructible sibling
+        // therefore implies a constructible common parent, already considered
+        // by eligibility; sibling enumeration below still provides candidates.
+        let eligibility = self.related_eligibility(class, site, children);
         let related_count = usize::from(class.parent.is_some())
             + siblings.map_or(0, |s| s.len().saturating_sub(1))
             + children.map_or(0, ChildClasses::len);
@@ -1859,3 +1855,7 @@ mod exception_import_graph_tests;
 #[cfg(test)]
 #[path = "exception_lookup_tests.rs"]
 mod lookup_tests;
+
+#[cfg(test)]
+#[path = "exception_coverage_tests.rs"]
+mod coverage_tests;

@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use std::collections::BTreeSet;
 
 use hoimin_cli::shell::ShellDiskLifecycle;
@@ -509,4 +510,82 @@ fn typed_root_projection_rejects_unrequested_outcome() {
 
     // Assert
     assert!(result.is_err());
+}
+
+#[rstest::rstest]
+#[case::deferred(&Event::CleanupDeferred { root: "execution".into() }, DiskCleanupOutcome::Deferred("oracle fixture".into()))]
+#[case::retained(&Event::CleanupRetained { root: "execution".into() }, DiskCleanupOutcome::Retained)]
+fn cleanup_event_projection_preserves_non_clean_outcome(
+    #[case] event: &Event,
+    #[case] outcome: DiskCleanupOutcome,
+) {
+    assert_eq!(
+        runtime_event(event, "diagnostic case"),
+        DiskLifecycleEvent::CleanupCompleted {
+            root: DiskRootId::Execution,
+            outcome
+        }
+    );
+}
+
+#[test]
+#[should_panic(expected = "unsupported runtime event")]
+fn runtime_event_rejects_unknown_protocol_variant() {
+    let _ = runtime_event(&Event::Unsupported, "unsupported case");
+}
+
+#[test]
+#[should_panic(expected = "unknown root unexpected")]
+fn root_projection_rejects_unknown_identity() {
+    let _ = parse_root("unexpected", "invalid root");
+}
+
+#[rstest::rstest]
+#[case::workspace(DiskStopReason::WorkspaceSizeExceeded, "workspace_size_exceeded")]
+#[case::reserve(DiskStopReason::FilesystemReserveReached, "filesystem_reserve_reached")]
+#[case::measurement(DiskStopReason::MeasurementFailed, "measurement_failed")]
+fn stop_projection_retains_disk_failure_reason(
+    #[case] reason: DiskStopReason,
+    #[case] expected: &str,
+) {
+    assert_eq!(stop_name(reason), expected);
+}
+
+#[rstest::rstest]
+#[case::workspace(DiskStopReason::WorkspaceSizeExceeded, "workspace_size_exceeded")]
+#[case::measurement(DiskStopReason::MeasurementFailed, "measurement_failed")]
+fn secondary_observation_projection_retains_diagnostic_order(
+    #[case] reason: DiskStopReason,
+    #[case] expected_reason: &str,
+) {
+    let mut expected = parse_corpus()
+        .into_iter()
+        .find(is_rust_runtime)
+        .unwrap()
+        .initial;
+    expected.secondary_stops = vec![expected_reason.into(), "process_failed".into()];
+    let mut snapshot =
+        ShellDiskLifecycle::new(parse_roots(&expected.owned_roots, "secondary fixture"))
+            .unwrap()
+            .snapshot();
+    snapshot.secondary = vec![
+        DiskSecondary::Observation {
+            reason,
+            value: hoimin_core::disk::DiskObservation {
+                owned_bytes: 0,
+                available_bytes: 0,
+                measured_in: std::time::Duration::ZERO,
+            },
+        },
+        DiskSecondary::Error {
+            code: hoimin_core::PROCESS_LIFECYCLE_FAILED.into(),
+            message: "drain failed".into(),
+        },
+    ];
+    let expected = Expected {
+        state: expected,
+        accepted: true,
+        rejected_at: None,
+    };
+    assert_terminal_observation(&snapshot, &expected, 0, true, None, "secondary fixture");
 }

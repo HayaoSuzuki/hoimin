@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
 #[path = "support/jsonl_report.rs"]
@@ -5138,4 +5139,12 @@ async fn baseline_restoration_preserves_shared_inode_mutation_rejection() {
         std::fs::read_to_string(project.path().join("src/calc.py")).unwrap(),
         source
     );
+}
+
+#[path = "support/schema_validator_cases.rs"]
+mod schema_validator_cases;
+
+#[test]
+fn schema_validator_rejects_malformed_report_shapes() {
+    schema_validator_cases::check_invalid_schema_instances(validate_schema);
 }

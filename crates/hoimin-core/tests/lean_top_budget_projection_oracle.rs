@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use std::collections::BTreeSet;
 use std::num::NonZeroUsize;
 use std::time::Duration;
@@ -105,10 +106,11 @@ fn duration_from_nanos(value: u128) -> Result<Duration, String> {
     if value > Duration::MAX.as_nanos() {
         return Err(format!("duration {value} exceeds Duration::MAX"));
     }
-    let seconds = u64::try_from(value / NANOS_PER_SECOND)
-        .map_err(|error| format!("duration {value} has invalid seconds: {error}"))?;
-    let nanos = u32::try_from(value % NANOS_PER_SECOND)
-        .map_err(|error| format!("duration {value} has invalid nanoseconds: {error}"))?;
+    // The maximum-duration check above bounds seconds by u64::MAX.
+    let seconds =
+        u64::try_from(value / NANOS_PER_SECOND).expect("bounded duration seconds fit u64");
+    // A nanosecond remainder is strictly below one billion.
+    let nanos = u32::try_from(value % NANOS_PER_SECOND).expect("nanosecond remainder fits u32");
     Ok(Duration::new(seconds, nanos))
 }
 
@@ -150,6 +152,10 @@ fn public_projection_matches_every_strict_lean_case() {
     let mut compared = 0;
     for item in cases.iter().filter(|item| item.mode == "strict") {
         let selected_u128 = parse_u128(&item.id, "selected", &item.selected).unwrap();
+        // All corpus counts fit u64; only 32-bit hosts need to skip an unrepresentable case.
+        #[cfg(not(target_pointer_width = "32"))]
+        let selected = usize::try_from(selected_u128).expect("corpus counts fit a 64-bit usize");
+        #[cfg(target_pointer_width = "32")]
         let Ok(selected) = usize::try_from(selected_u128) else {
             eprintln!(
                 "infrastructure-error: {} selected={} is not configurable on this platform",
@@ -220,4 +226,113 @@ fn public_projection_matches_every_strict_lean_case() {
         compared += 1;
     }
     assert!(compared >= 7, "too few strict cases were comparable");
+}
+
+#[rstest::rstest]
+#[case(|item: &mut OracleCase| item.schema = 2, "unsupported schema")]
+#[case(|item: &mut OracleCase| item.id.clear(), "invalid identity or mode")]
+#[case(|item: &mut OracleCase| item.mode = "unknown".into(), "invalid identity or mode")]
+#[case(|item: &mut OracleCase| item.jobs = "0".into(), "zero jobs")]
+#[case(|item: &mut OracleCase| item.jobs = "invalid".into(), "invalid jobs")]
+#[case(|item: &mut OracleCase| item.duration_max_ns = "0".into(), "wrong Duration::MAX")]
+#[case(|item: &mut OracleCase| item.duration_max_ns = "invalid".into(), "invalid duration_max_ns")]
+#[case(|item: &mut OracleCase| item.selected = "invalid".into(), "invalid selected")]
+#[case(|item: &mut OracleCase| item.baseline_ns = u128::MAX.to_string(), "beyond Duration::MAX")]
+#[case(|item: &mut OracleCase| { item.timeout_mode = "fixed".into(); item.fixed_timeout_ns = Some("0".into()); }, "inconsistent timeout mode")]
+#[case(|item: &mut OracleCase| { item.timeout_mode = "fixed".into(); item.fixed_timeout_ns = Some("invalid".into()); }, "invalid fixed_timeout_ns")]
+fn projection_adapter_rejects_invalid_case_metadata(
+    #[case] mutate: fn(&mut OracleCase),
+    #[case] expected: &str,
+) {
+    let mut item = parse_corpus(CORPUS).unwrap().remove(0);
+    mutate(&mut item);
+    assert!(validate_case(&item).unwrap_err().contains(expected));
+}
+
+#[test]
+fn projection_adapter_rejects_empty_input() {
+    assert_eq!(
+        parse_corpus("\n\n").unwrap_err(),
+        "corpus contains no cases"
+    );
+}
+
+#[test]
+fn projection_adapter_rejects_invalid_json() {
+    assert!(
+        parse_corpus("{")
+            .unwrap_err()
+            .contains("line 1 is invalid JSON")
+    );
+}
+
+#[test]
+fn projection_adapter_rejects_duplicate_ids() {
+    let line = CORPUS.lines().next().unwrap();
+    assert!(
+        parse_corpus(&format!("{line}\n{line}"))
+            .unwrap_err()
+            .contains("duplicate case id")
+    );
+}
+
+#[test]
+fn projection_adapter_rejects_duration_above_maximum() {
+    assert!(
+        duration_from_nanos(Duration::MAX.as_nanos() + 1)
+            .unwrap_err()
+            .contains("exceeds Duration::MAX")
+    );
+}
+
+#[test]
+fn projection_adapter_rejects_zero_fixed_timeout() {
+    assert!(
+        fixed_timeout(Duration::ZERO)
+            .unwrap_err()
+            .contains("cannot construct fixed timeout")
+    );
+}
+
+#[test]
+fn projection_execution_rejects_inconsistent_timeout_mode() {
+    let mut item = parse_corpus(CORPUS).unwrap().remove(0);
+    item.timeout_mode = "unknown".into();
+    assert!(
+        timeout(&item)
+            .unwrap_err()
+            .contains("inconsistent timeout mode")
+    );
+}
+
+#[test]
+fn projection_corpus_propagates_invalid_case_metadata() {
+    let invalid = CORPUS.replacen("\"schema\":1", "\"schema\":2", 1);
+    assert!(
+        parse_corpus(&invalid)
+            .unwrap_err()
+            .contains("unsupported schema")
+    );
+}
+
+#[test]
+fn projection_duration_field_reports_invalid_numbers() {
+    let item = parse_corpus(CORPUS).unwrap().remove(0);
+    assert!(
+        duration_field(&item, "remaining_ns", "invalid")
+            .unwrap_err()
+            .contains("invalid remaining_ns")
+    );
+}
+
+#[test]
+fn projection_timeout_reports_invalid_fixed_timeout_text() {
+    let mut item = parse_corpus(CORPUS).unwrap().remove(0);
+    item.timeout_mode = "fixed".into();
+    item.fixed_timeout_ns = Some("invalid".into());
+    assert!(
+        timeout(&item)
+            .unwrap_err()
+            .contains("invalid fixed_timeout_ns")
+    );
 }

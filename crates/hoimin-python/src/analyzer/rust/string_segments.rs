@@ -62,3 +62,67 @@ fn empty_token(range: TextRange, empty: &str, source: &str) -> (TextRange, Strin
         ),
     )
 }
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    fn run(
+        expression: &Expr,
+        source: &str,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Option<(TextRange, String)> {
+        replacement(expression, source, &cancelled)
+    }
+
+    #[rstest::rstest]
+    #[case("'a''b'", Some("\"\" 'b'"))]
+    #[case("'' 'b'", Some("'' \"\""))]
+    #[case("'a'", None)]
+    #[case("f'a''b'", Some("f\"\" 'b'"))]
+    #[case("''f'a{x}b'", Some("''f'{x}b'"))]
+    #[case("f'{x}b'", Some("f'{x}'"))]
+    #[case("f'{x}'", None)]
+    #[case("f'' 'a'", Some("f'' \"\""))]
+    #[case("'' 'a''b'", Some("'' \"\" 'b'"))]
+    #[case("''f'a'", Some("'' f\"\""))]
+    fn empties_the_first_nonempty_literal_without_merging_quote_tokens(
+        #[case] source: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        let parsed = ruff_python_parser::parse_expression(source).unwrap();
+        let result = run(&parsed.syntax().body, source, &|| false).map(|(range, replacement)| {
+            let mut output = source.to_owned();
+            output.replace_range(
+                usize::from(range.start())..usize::from(range.end()),
+                &replacement,
+            );
+            output
+        });
+        assert_eq!(result.as_deref(), expected);
+    }
+
+    #[rstest::rstest]
+    #[case("'' 'a'", 0)]
+    #[case("'' 'a'", 1)]
+    #[case("''f'{x}a'", 0)]
+    #[case("''f'{x}a'", 1)]
+    #[case("''f'{x}a'", 2)]
+    fn cancellation_stops_before_selecting_a_segment(
+        #[case] source: &str,
+        #[case] checkpoint: usize,
+    ) {
+        let parsed = ruff_python_parser::parse_expression(source).unwrap();
+        let polls = Cell::new(0);
+        assert_eq!(
+            run(&parsed.syntax().body, source, &|| {
+                let current = polls.get();
+                polls.set(current + 1);
+                current >= checkpoint
+            }),
+            None
+        );
+        assert_eq!(polls.get(), checkpoint + 1);
+    }
+}

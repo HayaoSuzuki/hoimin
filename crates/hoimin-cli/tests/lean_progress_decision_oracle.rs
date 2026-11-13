@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute, stmt_expr_attributes))]
 #[path = "support/candidate_identity.rs"]
 mod candidate_identity;
 #[path = "support/jsonl_report.rs"]
@@ -110,9 +111,13 @@ struct ExpectedDelta {
 }
 
 fn parse_corpus() -> Result<Vec<OracleCase>, String> {
+    parse_corpus_from(CORPUS)
+}
+
+fn parse_corpus_from(input: &str) -> Result<Vec<OracleCase>, String> {
     let mut ids = BTreeSet::new();
     let mut cases = Vec::new();
-    for (index, line) in CORPUS.lines().enumerate() {
+    for (index, line) in input.lines().enumerate() {
         if line.is_empty() {
             continue;
         }
@@ -381,14 +386,31 @@ async fn public_output(
     details: bool,
     malformed_suffix: bool,
 ) -> Result<std::process::Output, String> {
-    let fixture = tempfile::tempdir().map_err(|error| error.to_string())?;
+    public_output_from(
+        item,
+        details,
+        malformed_suffix,
+        tempfile::tempdir(),
+        std::path::Path::new(env!("CARGO_BIN_EXE_hoimin")),
+    )
+    .await
+}
+
+async fn public_output_from(
+    item: &OracleCase,
+    details: bool,
+    malformed_suffix: bool,
+    fixture: std::io::Result<tempfile::TempDir>,
+    executable: &std::path::Path,
+) -> Result<std::process::Output, String> {
+    let fixture = fixture.map_err(|error| error.to_string())?;
     let mut reports = write_reports(&fixture, item);
     if malformed_suffix {
         let path = fixture.path().join("malformed.json");
         std::fs::write(&path, "{").map_err(|error| error.to_string())?;
         reports.push(path);
     }
-    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
+    let mut command = tokio::process::Command::new(executable);
     command
         .args(["progress", "--patience"])
         .arg(item.patience.to_string())
@@ -397,8 +419,17 @@ async fn public_output(
     if details {
         command.args(["--details", "--details-limit", "1"]);
     }
-    tokio::time::timeout(Duration::from_secs(30), command.output())
-        .await
+    decode_output(
+        item,
+        tokio::time::timeout(Duration::from_secs(30), command.output()).await,
+    )
+}
+
+fn decode_output(
+    item: &OracleCase,
+    outcome: Result<std::io::Result<std::process::Output>, tokio::time::error::Elapsed>,
+) -> Result<std::process::Output, String> {
+    outcome
         .map_err(|_| format!("infrastructure-error case={}: CLI timed out", item.id))?
         .map_err(|error| {
             format!(
@@ -409,7 +440,10 @@ async fn public_output(
 }
 
 async fn public_progress(item: &OracleCase, details: bool) -> Result<Value, String> {
-    let output = public_output(item, details, false).await?;
+    decode_progress(item, &public_output(item, details, false).await?)
+}
+
+fn decode_progress(item: &OracleCase, output: &std::process::Output) -> Result<Value, String> {
     if !output.status.success() {
         return Err(format!(
             "infrastructure-error case={}: exit={:?} stderr={}",
@@ -589,9 +623,11 @@ fn lean_progress_decision_corpus_is_valid() {
 async fn public_progress_matches_every_strict_lean_case() {
     let cases = parse_corpus().expect("valid Lean corpus");
     for item in cases.iter().filter(|item| item.mode == "strict") {
-        let actual = public_progress(item, false)
-            .await
-            .unwrap_or_else(|error| panic!("{error}"));
+        let actual = public_progress(item, false).await.unwrap_or_else(
+            // Diagnostic only: the fixed corpus asserts successful public execution and normalization.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |error| panic!("{error}"),
+        );
         assert_case_matches(item, &actual);
     }
 }
@@ -626,7 +662,16 @@ fn inject_usable_reports_without_reader_validation(item: &OracleCase) -> Vec<Inp
                         let hoimin_core::OutputEvent::MutantFinished(result) =
                             serde_json::from_value(event.clone()).unwrap()
                         else {
-                            unreachable!()
+                            // build_report emits only literal mutant_finished events before this deserialization.
+                            #[cfg(coverage_nightly)]
+                            {
+                                (#[coverage(off)]
+                                || unreachable!())()
+                            }
+                            #[cfg(not(coverage_nightly))]
+                            {
+                                unreachable!()
+                            }
                         };
                         result
                     })
@@ -691,9 +736,11 @@ async fn public_progress_details_match_generated_latest_pair_expectations() {
         .iter()
         .filter(|item| item.mode == "strict")
     {
-        let actual = public_progress(item, true)
-            .await
-            .unwrap_or_else(|error| panic!("{error}"));
+        let actual = public_progress(item, true).await.unwrap_or_else(
+            // Diagnostic only: the fixed corpus asserts successful public execution and normalization.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |error| panic!("{error}"),
+        );
         assert_case_matches(item, &actual);
         assert_eq!(actual["schema_version"], 3);
         let detail = &actual["details"];
@@ -768,3 +815,6 @@ async fn public_completion_and_error_exits_match_lean() {
         }
     }
 }
+
+#[path = "support/progress_decision_validation_tests.rs"]
+mod validation_tests;

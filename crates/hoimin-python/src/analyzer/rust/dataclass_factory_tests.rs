@@ -235,19 +235,12 @@ fn dataclass_factory_share_uses_shared_caps_and_line_selection() {
 #[test]
 fn dataclass_guard_does_not_relax_ordinary_callable_resolution() {
     use super::super::callable_imports::CallableImports;
-    use ruff_python_ast::{Expr, Stmt};
     let source = "from dataclasses import dataclass, field\n@dataclass\nclass Example:\n values: list = field(default_factory=list)\n";
     let parsed = ruff_python_parser::parse_module(source).unwrap();
     let imports = CallableImports::build(parsed.syntax(), &|| false, &["dataclasses"]).unwrap();
-    let Stmt::ClassDef(class) = &parsed.syntax().body[1] else {
-        panic!("class");
-    };
-    let Stmt::AnnAssign(field) = &class.body[0] else {
-        panic!("field");
-    };
-    let Expr::Call(call) = field.value.as_deref().unwrap() else {
-        panic!("call");
-    };
+    let class = parsed.syntax().body[1].as_class_def_stmt().unwrap();
+    let field = class.body[0].as_ann_assign_stmt().unwrap();
+    let call = field.value.as_deref().unwrap().as_call_expr().unwrap();
 
     assert!(imports.resolve(&call.func).is_none());
     let guard = imports
@@ -265,27 +258,48 @@ fn dataclass_guard_does_not_relax_ordinary_callable_resolution() {
 }
 
 #[test]
-fn dataclass_factory_share_build_and_emission_observe_cancellation() {
-    use super::super::{NameResolutionIndex, dataclass_factory::DataclassFactories};
+fn dataclass_factory_share_build_observes_cancellation() {
+    use super::super::dataclass_factory::DataclassFactories;
     use hoimin_core::MutationOperatorSelection;
-    use ruff_python_ast::Stmt;
     let source = "from dataclasses import dataclass, field\n@dataclass\nclass Example:\n values: list = field(default_factory=list)\n";
     let parsed = ruff_python_parser::parse_module(source).unwrap();
-    let operators = MutationOperatorSelection::default();
-
-    assert!(DataclassFactories::build(parsed.syntax(), &operators, &|| true).is_err());
-    let factories = DataclassFactories::build(parsed.syntax(), &operators, &|| false).unwrap();
-    let resolution = NameResolutionIndex::from_module(parsed.syntax());
-    let Stmt::ClassDef(class) = &parsed.syntax().body[1] else {
-        panic!("class");
-    };
     assert!(
-        factories
-            .emit_class(class, &resolution, &|| true, |_, _, _| panic!(
-                "cancelled emission"
-            ))
-            .is_err()
+        DataclassFactories::build(
+            parsed.syntax(),
+            &MutationOperatorSelection::default(),
+            &|| true
+        )
+        .is_err()
     );
+}
+
+#[rstest::rstest]
+#[case(true, 0)]
+#[case(false, 1)]
+fn dataclass_factory_share_emission_observes_cancellation(
+    #[case] cancelled: bool,
+    #[case] expected_count: usize,
+) {
+    use super::super::{NameResolutionIndex, dataclass_factory::DataclassFactories};
+    use hoimin_core::MutationOperatorSelection;
+    let source = "from dataclasses import dataclass, field\n@dataclass\nclass Example:\n values: list = field(default_factory=list)\n";
+    let parsed = ruff_python_parser::parse_module(source).unwrap();
+    let factories = DataclassFactories::build(
+        parsed.syntax(),
+        &MutationOperatorSelection::default(),
+        &|| false,
+    )
+    .unwrap();
+    let resolution = NameResolutionIndex::from_module(parsed.syntax());
+    let class = parsed.syntax().body[1].as_class_def_stmt().unwrap();
+    let mut replacements = Vec::new();
+    let result = factories.emit_class(class, &resolution, &|| cancelled, |_, replacement, _| {
+        replacements.push(replacement);
+        true
+    });
+    assert_eq!(result.is_err(), cancelled);
+    assert_eq!(replacements.len(), expected_count);
+    assert_eq!(replacements, ["lambda shared=[]: shared"][..expected_count]);
 }
 
 #[test]
@@ -320,4 +334,17 @@ fn dataclass_factory_share_allows_module_rebinding_after_class_evaluation() {
     assert_eq!(candidates[0].original, "list");
     assert_eq!(candidates[0].replacement, "lambda shared=[]: shared");
     apply_candidate_and_reparse(source, candidates[0]);
+}
+
+#[rstest::rstest]
+#[case("default_factory=list, default_factory=dict")]
+#[case("default_factory=list, default_factory=list")]
+fn repeated_factory_keywords_never_produce_a_shared_default(#[case] keywords: &str) {
+    let source = format!(
+        "from dataclasses import dataclass, field\n@dataclass\nclass C:\n values: list = field({keywords})\n"
+    );
+    ruff_python_parser::parse_module(&source).unwrap();
+    let output = super::analyze_selected(&["dataclass_factory_share"], &source);
+    assert_eq!(output.diagnostics, Vec::new());
+    assert_eq!(output.candidates, Vec::new());
 }

@@ -55,7 +55,7 @@ pub(super) fn translate(
 ) -> Result<Vec<LineRange>, TargetError> {
     let mut cursor = LineCursor::new(source);
     let mut translated = Vec::with_capacity(ranges.len());
-    for range in ranges {
+    ranges.iter().try_for_each(|range| {
         if range.start == 0 || range.end < range.start {
             return Err(TargetError::GitFailed("invalid Git line range".into()));
         }
@@ -77,11 +77,8 @@ pub(super) fn translate(
         if last_git != end {
             return Err(outside_source());
         }
-        translated.push(LineRange {
-            start: row(first)?,
-            end: row(last)?,
-        });
-    }
+        row(first).and_then(|start| row(last).map(|end| translated.push(LineRange { start, end })))
+    })?;
     Ok(translated)
 }
 

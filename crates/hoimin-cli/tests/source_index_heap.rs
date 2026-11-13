@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 //! One test owns the allocator windows; discovery reads its real source inside them.
 use camino::Utf8PathBuf;
 use hoimin_core::{

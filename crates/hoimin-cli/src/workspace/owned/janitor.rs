@@ -123,6 +123,35 @@ impl ReclaimLedger {
 mod tests {
     use super::*;
 
+    #[rstest::rstest]
+    #[case(JanitorReason::MarkerInvalid, 1, 0)]
+    #[case(JanitorReason::Young, 0, 1)]
+    fn detail_at_issue_only_capacity_counts_its_omitted_class(
+        #[case] reason: JanitorReason,
+        #[case] issues: u64,
+        #[case] normal: u64,
+    ) {
+        let mut ledger = ReclaimLedger::default();
+        ledger.report.details = vec![
+            JanitorDetail {
+                reason: JanitorReason::DeleteFailed,
+                message: "existing issue".into()
+            };
+            MAX_DIAGNOSTIC_DETAILS
+        ];
+        ledger.detail(reason, "omitted detail".into());
+        let report = ledger.finish();
+        assert_eq!(report.details.len(), MAX_DIAGNOSTIC_DETAILS);
+        assert!(
+            report
+                .details
+                .iter()
+                .all(|detail| detail.message == "existing issue")
+        );
+        assert_eq!(report.detail_omissions.issue_details, issues);
+        assert_eq!(report.detail_omissions.normal_details, normal);
+    }
+
     #[test]
     fn late_failure_evicts_an_ordinary_detail_at_capacity() {
         // Arrange.

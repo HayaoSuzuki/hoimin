@@ -84,8 +84,7 @@ impl WorkerWorkspace {
                 {
                     return Ok(());
                 }
-                reader
-                    .rewind()
+                crate::io_faults::checked_io!("reset.snapshot.rewind", reader.rewind())
                     .map_err(|error| WorkspaceError::io("rewind shared snapshot", path, error))?;
                 self.root
                     .restore_from(path, reader, snapshot.permissions.clone())
@@ -100,12 +99,6 @@ impl WorkerWorkspace {
                 matches,
                 self.root.path().as_str(),
             );
-            if !matches {
-                return Err(WorkspaceError::WorkspaceRestore {
-                    path: self.root.path().to_owned(),
-                    message: "post-reset manifest comparison failed".to_owned(),
-                });
-            }
         }
         Ok(())
     }
@@ -257,6 +250,250 @@ mod tests {
         let snapshot_permissions = permission_fingerprint(&worker.root().join("swap/target.py"));
         worker.write("swap/target.py", b"mutated!\n").unwrap();
         (project, worker, snapshot_permissions)
+    }
+
+    #[rstest::rstest]
+    #[case::enumeration("worker.walk.open")]
+    #[case::compare_existing("worker.snapshot.inspect_entry")]
+    #[case::rewind("reset.snapshot.rewind")]
+    fn reset_io_failure_preserves_the_changed_file_and_allows_retry(#[case] point: &'static str) {
+        let (_project, mut worker, _permissions) = changed_worker();
+        let root = worker.root().to_owned();
+        let fault = crate::io_faults::arm(point);
+        let result = worker.reset();
+        assert!(
+            fault.triggered(),
+            "reset I/O boundary was not checked: {point}"
+        );
+        assert!(
+            matches!(result, Err(WorkspaceError::WorkspaceRestore { path, message }) if path == root && message.contains(point))
+        );
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"mutated!\n");
+        worker.reset().unwrap();
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
+    }
+
+    #[test]
+    fn required_directory_recreation_failure_leaves_the_missing_directory_absent() {
+        let (_project, mut worker, _permissions) = changed_worker();
+        let root = worker.root().to_owned();
+        fs::remove_dir_all(root.join("swap")).unwrap();
+        let fault = crate::io_faults::arm("worker.directory.inspect");
+        let result = worker.reset();
+        assert!(fault.triggered());
+        assert!(
+            matches!(result, Err(WorkspaceError::WorkspaceRestore { path, message }) if path == root && message.contains("worker.directory.inspect"))
+        );
+        assert!(!root.join("swap").exists());
+        worker.reset().unwrap();
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
+    }
+
+    #[test]
+    fn reset_preserves_the_tree_depth_error_and_does_not_start_restoration() {
+        let (_project, mut worker, _permissions) = changed_worker();
+        let limit = super::super::MAX_WORKER_TREE_DEPTH;
+        fs::create_dir_all(worker.root().join("d/".repeat(limit + 1))).unwrap();
+        let result = worker.reset();
+        fs::remove_dir_all(worker.root().join("d")).unwrap();
+        assert!(
+            matches!(result, Err(WorkspaceError::TreeDepthExceeded { limit: actual, .. }) if actual == limit)
+        );
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"mutated!\n");
+        worker.reset().unwrap();
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
+    }
+
+    #[rstest::rstest]
+    #[case::unchanged(|_: &Utf8Path| {}, true)]
+    #[case::extra_directory(|root: &Utf8Path| fs::create_dir(root.join("extra")).unwrap(), false)]
+    #[case::extra_file(|root: &Utf8Path| fs::write(root.join("extra"), b"extra").unwrap(), false)]
+    #[case::missing_file(|root: &Utf8Path| fs::remove_file(root.join("swap/target.py")).unwrap(), false)]
+    #[case::changed_contents(|root: &Utf8Path| fs::write(root.join("swap/target.py"), b"different").unwrap(), false)]
+    fn snapshot_comparison_checks_directory_file_and_content_equality(
+        #[case] change: fn(&Utf8Path),
+        #[case] expected: bool,
+    ) {
+        let (_project, mut worker, _permissions) = changed_worker();
+        worker.reset().unwrap();
+        change(worker.root());
+        assert_eq!(worker.matches_snapshot().unwrap(), expected);
+    }
+
+    #[cfg(feature = "contracts")]
+    #[test]
+    fn a_concurrent_post_reset_change_triggers_the_restoration_contract() {
+        let (_project, mut worker, _permissions) = changed_worker();
+        let root = worker.root().to_owned();
+        let changed_root = root.clone();
+        let fault = crate::io_faults::arm_action("worker.walk.open", 1, move || {
+            fs::write(changed_root.join("concurrent"), b"concurrent change").unwrap();
+            Ok(())
+        });
+        let panic =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| worker.reset())).unwrap_err();
+        assert!(fault.triggered());
+        let message = panic
+            .downcast::<String>()
+            .expect("formatted contract panic has a String payload");
+        assert!(message.contains("workspace.reset.post"));
+        assert_eq!(
+            fs::read(root.join("concurrent")).unwrap(),
+            b"concurrent change"
+        );
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
+    }
+
+    #[cfg(feature = "contracts")]
+    #[test]
+    fn a_post_reset_comparison_error_preserves_the_successful_restoration() {
+        let (_project, mut worker, _permissions) = changed_worker();
+        let root = worker.root().to_owned();
+        let fault = crate::io_faults::arm_after("worker.snapshot.inspect_entry", 1);
+        let result = worker.reset();
+        assert!(fault.triggered());
+        assert!(
+            matches!(result, Err(WorkspaceError::WorkspaceRestore { path, message }) if path == root && message.contains("worker.snapshot.inspect_entry"))
+        );
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
+        worker.reset().unwrap();
+        assert!(worker.matches_snapshot().unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unavailable_snapshot_is_reported_before_the_changed_worker_file_is_removed() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_project, mut worker, _permissions) = changed_worker();
+        let snapshot = worker.snapshot.root.join("swap/target.py");
+        let parent = snapshot.parent().unwrap();
+        let permissions = fs::metadata(parent).unwrap().permissions();
+        fs::set_permissions(parent, fs::Permissions::from_mode(0o700)).unwrap();
+        let held = parent.join("held-snapshot");
+        fs::rename(&snapshot, &held).unwrap();
+        let result = worker.reset();
+        let restored = fs::rename(&held, &snapshot);
+        let secured = fs::set_permissions(parent, permissions);
+        restored.unwrap();
+        secured.unwrap();
+        assert!(
+            matches!(result, Err(WorkspaceError::WorkspaceRestore { message, .. }) if message.contains("read shared snapshot"))
+        );
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"mutated!\n");
+        worker.reset().unwrap();
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
+    }
+
+    #[cfg(unix)]
+    #[rstest::rstest]
+    #[case::file("worker.cleanup.open_file", |root: &Utf8Path| fs::write(root.join("extra"), b"protected").unwrap())]
+    #[case::directory("worker.removal.rmdir", |root: &Utf8Path| fs::create_dir(root.join("extra")).unwrap())]
+    fn removal_failure_preserves_the_extra_entry_before_retry(
+        #[case] point: &'static str,
+        #[case] create: fn(&Utf8Path),
+    ) {
+        let (_project, mut worker, _permissions) = changed_worker();
+        let root = worker.root().to_owned();
+        create(&root);
+        let fault = crate::io_faults::arm(point);
+        let result = worker.reset();
+        assert!(fault.triggered());
+        assert!(
+            matches!(result, Err(WorkspaceError::WorkspaceRestore { path, message }) if path == root && message.contains(point))
+        );
+        assert!(root.join("extra").exists());
+        worker.reset().unwrap();
+        assert!(!root.join("extra").exists());
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_removal_failure_never_touches_the_outside_target() {
+        let (_project, mut worker, _permissions) = changed_worker();
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("protected"), b"outside sentinel").unwrap();
+        let link = worker.root().join("extra");
+        std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+        let fault = crate::io_faults::arm("worker.link.remove");
+        let result = worker.reset();
+        assert!(fault.triggered());
+        assert!(
+            matches!(result, Err(WorkspaceError::WorkspaceRestore { message, .. }) if message.contains("worker.link.remove"))
+        );
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(
+            fs::read(outside.path().join("protected")).unwrap(),
+            b"outside sentinel"
+        );
+        worker.reset().unwrap();
+        assert!(fs::symlink_metadata(&link).is_err());
+        assert_eq!(
+            fs::read(outside.path().join("protected")).unwrap(),
+            b"outside sentinel"
+        );
+    }
+
+    #[test]
+    fn snapshot_comparison_preserves_a_directory_enumeration_error() {
+        let (_project, worker, _permissions) = changed_worker();
+        let fault = crate::io_faults::arm("worker.walk.open");
+        let result = worker.matches_snapshot();
+        assert!(fault.triggered());
+        assert!(
+            matches!(result, Err(WorkspaceError::Io { operation: "enumerate worker directory", message, .. }) if message.contains("worker.walk.open"))
+        );
+    }
+
+    #[test]
+    fn an_unrelated_operation_does_not_pause_reset_or_consume_its_gate() {
+        let (opened, receiver) = sync_channel(0);
+        let (_resume, resumed) = sync_channel(0);
+        let hook = ResetPause {
+            fired: AtomicBool::new(false),
+            opened,
+            resume: Mutex::new(resumed),
+        };
+        hook.parent_opened("snapshot", Utf8Path::new("swap/target.py"));
+        assert!(!hook.fired.load(Ordering::SeqCst));
+        assert_eq!(
+            receiver.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        );
+    }
+
+    #[test]
+    fn a_missing_parent_replacement_reports_the_original_location() {
+        let root = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(root.path()).unwrap();
+        let (target, permissions, error) = replace_paused_parent(root);
+        assert_eq!(target, root.join("swap/target.py"));
+        assert_eq!(permissions, Vec::<TestPermissionFingerprint>::new());
+        assert_eq!(error.unwrap().kind(), std::io::ErrorKind::NotFound);
+    }
+
+    // APFS rejects these native names; Linux must exercise descriptor-relative removal.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn reset_rejects_and_removes_a_non_utf8_extra_file_by_its_native_name() {
+        use std::os::unix::ffi::OsStringExt;
+        let (_project, mut worker, _permissions) = changed_worker();
+        worker.reset().unwrap();
+        let extra = worker
+            .root()
+            .as_std_path()
+            .join(std::ffi::OsString::from_vec(b"native-\xff".to_vec()));
+        fs::write(&extra, b"extra").unwrap();
+        assert!(!worker.matches_snapshot().unwrap());
+        worker.reset().unwrap();
+        assert!(!extra.exists());
+        assert!(worker.matches_snapshot().unwrap());
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
     }
 
     #[test]
@@ -441,10 +678,13 @@ mod tests {
         resume_tx.send(()).unwrap();
         let (worker, result) = operation.join().unwrap();
 
+        #[cfg(windows)]
         assert!(
             result.is_ok() || matches!(result, Err(WorkspaceError::WorkspaceRestore { .. })),
             "{result:?}"
         );
+        #[cfg(not(windows))]
+        result.unwrap();
         assert_eq!(fs::read(operated_target.clone()).unwrap(), b"original\n");
         assert_eq!(
             permission_fingerprint(&operated_target.clone()),

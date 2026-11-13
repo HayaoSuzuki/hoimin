@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 //! Serialized tests own allocator windows around real worker mutation applications.
 use camino::Utf8Path;
 use hoimin_cli::workspace::{CopyOptions, WorkspacePlan};

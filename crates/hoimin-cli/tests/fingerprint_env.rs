@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #[path = "support/environment.rs"]
 mod environment;
 #[path = "support/mutation_outcome.rs"]

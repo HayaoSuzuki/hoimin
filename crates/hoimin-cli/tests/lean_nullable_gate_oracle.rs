@@ -1,8 +1,14 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use serde::Deserialize;
+
+#[cfg(windows)]
+const VENV_PYTHON_PATH: &str = "../../.venv/Scripts/python.exe";
+#[cfg(not(windows))]
+const VENV_PYTHON_PATH: &str = "../../.venv/bin/python";
 
 const CORPUS: &str = include_str!("../../../formal/HoiminOracle/corpus/nullable-gate.jsonl");
 
@@ -48,13 +54,7 @@ fn cases() -> Vec<Case> {
 
 fn python() -> PathBuf {
     std::env::var_os("HOIMIN_OPERATOR_TEST_PYTHON").map_or_else(
-        || {
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(if cfg!(windows) {
-                "../../.venv/Scripts/python.exe"
-            } else {
-                "../../.venv/bin/python"
-            })
-        },
+        || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(VENV_PYTHON_PATH),
         PathBuf::from,
     )
 }

@@ -308,45 +308,70 @@ fn followup_calls_honor_selection_profiles_and_candidate_limit() {
 }
 
 #[rstest::rstest]
-#[case::sort_key_swap("sort_key_swap", "sorted(rows, key=lambda row: (row.a, row.b))\n")]
-#[case::encoding_errors_ignore("encoding_errors_ignore", "data.decode(errors='surrogateescape')\n")]
+#[case(
+    "sort_key_swap",
+    "sorted(rows, key=lambda row: (row.a, row.b))\n",
+    0,
+    true,
+    0
+)]
+#[case(
+    "sort_key_swap",
+    "sorted(rows, key=lambda row: (row.a, row.b))\n",
+    2,
+    true,
+    0
+)]
+#[case(
+    "sort_key_swap",
+    "sorted(rows, key=lambda row: (row.a, row.b))\n",
+    usize::MAX,
+    false,
+    1
+)]
+#[case(
+    "encoding_errors_ignore",
+    "data.decode(errors='surrogateescape')\n",
+    0,
+    true,
+    0
+)]
+#[case(
+    "encoding_errors_ignore",
+    "data.decode(errors='surrogateescape')\n",
+    2,
+    true,
+    0
+)]
+#[case(
+    "encoding_errors_ignore",
+    "data.decode(errors='surrogateescape')\n",
+    usize::MAX,
+    false,
+    1
+)]
 fn followup_call_builders_honor_cancellation_and_emit_stop(
     #[case] operator: &str,
     #[case] source: &str,
+    #[case] cancel_after: usize,
+    #[case] accept: bool,
+    #[case] expected_emissions: usize,
 ) {
     use super::super::followup_calls::Imports;
     use hoimin_core::MutationOperatorSelection;
-    use ruff_python_ast::{Expr, Stmt};
     use std::cell::Cell;
-
     let operators: MutationOperatorSelection =
         serde_json::from_value(serde_json::json!([operator])).unwrap();
     let parsed = super::parse_module(source).unwrap();
     let imports = Imports::build(parsed.syntax(), &operators, &|| false).unwrap();
-
-    assert!(Imports::build(parsed.syntax(), &operators, &|| true).is_err());
-    let Stmt::Expr(statement) = &parsed.syntax().body[0] else {
-        panic!("expression statement")
-    };
-    let Expr::Call(call) = statement.value.as_ref() else {
-        panic!("call")
-    };
+    let call = parsed.syntax().body[0]
+        .as_expr_stmt()
+        .unwrap()
+        .value
+        .as_call_expr()
+        .unwrap();
     let emitted = Cell::new(0);
-    assert!(!imports.emit(
-        call,
-        source,
-        parsed.tokens(),
-        &operators,
-        true,
-        &|| true,
-        |_| true,
-        |_, _, _| {
-            emitted.set(emitted.get() + 1);
-            true
-        }
-    ));
-    assert_eq!(emitted.get(), 0);
-    let checks = Cell::new(0);
+    let polls = Cell::new(0);
     assert!(!imports.emit(
         call,
         source,
@@ -354,30 +379,28 @@ fn followup_call_builders_honor_cancellation_and_emit_stop(
         &operators,
         true,
         &|| {
-            checks.set(checks.get() + 1);
-            checks.get() >= 3
+            polls.set(polls.get() + 1);
+            polls.get() > cancel_after
         },
         |_| true,
         |_, _, _| {
             emitted.set(emitted.get() + 1);
-            true
+            accept
         }
     ));
-    assert_eq!(emitted.get(), 0);
-    assert!(!imports.emit(
-        call,
-        source,
-        parsed.tokens(),
-        &operators,
-        true,
-        &|| false,
-        |_| true,
-        |_, _, _| {
-            emitted.set(emitted.get() + 1);
-            false
-        }
-    ));
-    assert_eq!(emitted.get(), 1);
+    assert_eq!(emitted.get(), expected_emissions);
+}
+
+#[rstest::rstest]
+#[case("sort_key_swap", "sorted(rows, key=lambda row: (row.a, row.b))\n")]
+#[case("encoding_errors_ignore", "data.decode(errors='surrogateescape')\n")]
+fn followup_call_index_build_rejects_cancellation(#[case] operator: &str, #[case] source: &str) {
+    use super::super::followup_calls::Imports;
+    use hoimin_core::MutationOperatorSelection;
+    let operators: MutationOperatorSelection =
+        serde_json::from_value(serde_json::json!([operator])).unwrap();
+    let parsed = super::parse_module(source).unwrap();
+    assert!(Imports::build(parsed.syntax(), &operators, &|| true).is_err());
 }
 
 fn assert_multiline_edit_selection(operator: &str, source: &str, line: u32) {

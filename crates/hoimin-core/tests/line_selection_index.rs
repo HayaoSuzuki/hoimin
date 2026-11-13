@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{
     LineRange, LineSelection, LineSelectionIndex, logical_paths_equal, normalize_logical_path,

@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #[path = "support/jsonl_report.rs"]
 mod jsonl_report;
 #[path = "support/mutation_outcome.rs"]
@@ -9,6 +10,11 @@ use std::process::Command;
 
 use serde::Deserialize;
 use serde_json::Value;
+
+#[cfg(windows)]
+const VENV_PYTHON_PATH: &str = ".venv/Scripts/python.exe";
+#[cfg(not(windows))]
+const VENV_PYTHON_PATH: &str = ".venv/bin/python";
 
 const CORPUS: &str = include_str!("../../../formal/HoiminOracle/corpus/source-order.jsonl");
 
@@ -72,11 +78,7 @@ impl Fixture {
             .unwrap()
             .parent()
             .unwrap()
-            .join(if cfg!(windows) {
-                ".venv/Scripts/python.exe"
-            } else {
-                ".venv/bin/python"
-            });
+            .join(VENV_PYTHON_PATH);
         let mut command = Command::new(env!("CARGO_BIN_EXE_hoimin"));
         command.args(["run", "--root"]).arg(&self.root);
         let default_order = vec!["a".to_owned(), "b".to_owned()];

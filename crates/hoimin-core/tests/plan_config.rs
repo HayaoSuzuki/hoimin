@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use hoimin_core::{
     CommandArg, ConfigError, FingerprintInputFile, MAX_JOBS, MAX_TIMEOUT, MutationOperator,
     MutationProfile, OutputConfig, PlanConfig, RawRunConfig, RawRunLimits, RunConfig,
@@ -121,9 +122,9 @@ fn plan_config_rejects_absent_required_arrays(
 }
 
 #[rstest::rstest]
-#[case::vec(vec![])]
-#[case::vec_vendor_src(vec!["vendor", "src"])]
-fn plan_config_preserves_explicit_required_arrays(#[case] paths: Vec<&str>) {
+#[case::vec(&[])]
+#[case::vec_vendor_src(&["vendor", "src"])]
+fn plan_config_preserves_explicit_required_arrays(#[case] paths: &[&str]) {
     // Arrange
     let mut value = plan_value();
     value["import_roots"] = serde_json::json!(paths);
@@ -488,9 +489,9 @@ fn run_config_rejects_absent_required_arrays(
 }
 
 #[rstest::rstest]
-#[case::vec(vec![])]
-#[case::vec_vendor_src(vec!["vendor", "src"])]
-fn run_config_preserves_explicit_required_arrays(#[case] paths: Vec<&str>) {
+#[case::vec(&[])]
+#[case::vec_vendor_src(&["vendor", "src"])]
+fn run_config_preserves_explicit_required_arrays(#[case] paths: &[&str]) {
     // Arrange
     let mut value = serde_json::to_value(fixture_run_config()).unwrap();
     value["import_roots"] = serde_json::json!(paths);

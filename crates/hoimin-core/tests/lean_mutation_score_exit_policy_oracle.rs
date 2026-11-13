@@ -1,7 +1,9 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use std::collections::BTreeSet;
 
 use hoimin_core::{ExitPolicy, MutationStatus, exit_code_for, summarize};
 use serde::Deserialize;
+use serde_json::json as json_value;
 
 const CORPUS: &str =
     include_str!("../../../formal/HoiminOracle/corpus/mutation-score-exit-policy.jsonl");
@@ -364,4 +366,52 @@ fn corpus_rejects_unknown_fields_modes_and_statuses() {
         .collect::<Vec<_>>()
         .join("\n");
     assert!(parse_corpus(&renamed).is_err());
+}
+
+#[rstest::rstest]
+#[case::schema("summary_empty", "/schema", json_value!(2), "unsupported schema")]
+#[case::denominator("summary_empty", "/expected_score", json_value!({"numerator": 1, "denominator": 0}), "zero score denominator")]
+#[case::exit_policy("policy_0000", "/statuses", json_value!(["killed"]), "exit policy row has unrelated premises")]
+#[case::composed("composed_summary_error", "/direct_policy/incomplete", json_value!(true), "composed row has unrelated premises")]
+#[case::exact_fraction("exact_fraction_beyond_binary64", "/run_flags/incomplete", json_value!(true), "exact fraction row has unrelated premises")]
+fn score_parser_rejects_crossed_premise_coordinate(
+    #[case] id: &str,
+    #[case] pointer: &str,
+    #[case] value: serde_json::Value,
+    #[case] diagnostic: &str,
+) {
+    let mut row: serde_json::Value = CORPUS
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|row| row["id"] == id)
+        .unwrap();
+    *row.pointer_mut(pointer).unwrap() = value;
+    assert!(
+        parse_corpus(&row.to_string())
+            .unwrap_err()
+            .contains(diagnostic)
+    );
+}
+
+#[test]
+fn score_parser_rejects_a_missing_boolean_policy_assignment() {
+    let mut rows = CORPUS
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    let duplicate = rows
+        .iter_mut()
+        .find(|row| row["id"] == "policy_0001")
+        .unwrap();
+    duplicate["direct_policy"] = serde_json::to_value(serde_json::json!({"infrastructure_error": false, "baseline_failed": false, "incomplete": false, "interrupted": false})).unwrap();
+    let source = rows
+        .iter()
+        .map(serde_json::Value::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        parse_corpus(&source)
+            .unwrap_err()
+            .contains("16 unique assignments")
+    );
 }

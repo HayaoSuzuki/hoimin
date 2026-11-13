@@ -1,9 +1,10 @@
 use proptest::prelude::*;
 
-use super::Graph;
+use super::{AnalysisCancelled, Graph};
 
 fn graph(edges: &[Vec<usize>]) -> Graph {
-    let mut graph = Graph::new(edges.len(), &|| false).unwrap();
+    let no_cancel: &dyn Fn() -> bool = &|| false;
+    let mut graph = Graph::new(edges.len(), &no_cancel).unwrap();
     for (from, destinations) in edges.iter().enumerate() {
         for &to in destinations {
             graph.edge(from, to);
@@ -126,7 +127,7 @@ proptest! {
         // Arrange.
         let expected = reference(&edges, limit);
         // Act.
-        let actual = graph(&edges).excluded(limit, &||false).unwrap();
+        let actual = run_excluded(&graph(&edges), limit, &|| false).unwrap();
         // Assert.
         prop_assert_eq!(actual, expected);
     }
@@ -138,7 +139,7 @@ proptest! {
         if reversed { for destinations in &mut ordered { destinations.reverse(); } }
         let old = old_exclusions(&ordered, limit);
         // Act.
-        let actual = graph(&ordered).excluded(limit, &||false).unwrap();
+        let actual = run_excluded(&graph(&ordered), limit, &|| false).unwrap();
         // Assert.
         prop_assert!(old.iter().zip(actual).all(|(&before, after)| !before || after));
     }
@@ -152,9 +153,9 @@ proptest! {
         for (from, destinations) in edges.iter().enumerate() {
             renamed[order[from]] = destinations.iter().rev().map(|&to|order[to]).collect();
         }
-        let expected = graph(&edges).excluded(limit, &||false).unwrap();
+        let expected = run_excluded(&graph(&edges), limit, &|| false).unwrap();
         // Act.
-        let actual = graph(&renamed).excluded(limit, &||false).unwrap();
+        let actual = run_excluded(&graph(&renamed), limit, &|| false).unwrap();
         // Assert.
         prop_assert!((0..edges.len()).all(|v|expected[v] == actual[order[v]]));
     }
@@ -175,7 +176,7 @@ proptest! {
             longest >= limit
         }).collect::<Vec<_>>();
         // Act.
-        let actual = graph(&edges).excluded(limit, &||false).unwrap();
+        let actual = run_excluded(&graph(&edges), limit, &|| false).unwrap();
         // Assert.
         prop_assert_eq!(actual, expected);
     }
@@ -188,7 +189,7 @@ macro_rules! graph_case {
             // Arrange.
             let input: Vec<Vec<usize>> = $edges;
             // Act.
-            let excluded = graph(&input).excluded($limit, &|| false).unwrap();
+            let excluded = run_excluded(&graph(&input), $limit, &|| false).unwrap();
             // Assert: literal expected vertices, independent of any oracle helper.
             assert_eq!(excluded, $expected);
         }
@@ -238,7 +239,7 @@ macro_rules! chain_case {
                 .map(|v| if v < $length { vec![v + 1] } else { vec![] })
                 .collect::<Vec<_>>();
             // Act.
-            let actual = graph(&edges).excluded(256, &|| false).unwrap();
+            let actual = run_excluded(&graph(&edges), 256, &|| false).unwrap();
             // Assert: exactly vertices at least 256 edges from the end are rejected.
             let expected = (0..=$length).map(|v| v < $rejected).collect::<Vec<_>>();
             assert_eq!(actual, expected);
@@ -257,7 +258,7 @@ macro_rules! prefix_cycle_case {
             let mut edges = vec![vec![1]];
             edges.extend((1..=$size).map(|v| vec![if v == $size { 1 } else { v + 1 }]));
             // Act.
-            let actual = graph(&edges).excluded(256, &|| false).unwrap();
+            let actual = run_excluded(&graph(&edges), 256, &|| false).unwrap();
             // Assert.
             assert_eq!(actual[0], $prefix_rejected);
             assert!(actual[1..].iter().all(|&rejected| rejected));
@@ -274,8 +275,16 @@ fn branching_large_component_can_conservatively_exclude_prefix() {
     edges.extend((2..=255).map(|_| vec![1]));
     let old = old_exclusions(&edges, 256);
     // Act.
-    let actual = graph(&edges).excluded(256, &|| false).unwrap();
+    let actual = run_excluded(&graph(&edges), 256, &|| false).unwrap();
     // Assert: an explicit permitted extra exclusion, not a restored candidate.
     assert!(!old[0]);
     assert!(actual.iter().all(|&rejected| rejected));
+}
+
+fn run_excluded(
+    graph: &Graph,
+    limit: usize,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<Vec<bool>, AnalysisCancelled> {
+    graph.excluded(limit, &cancelled)
 }

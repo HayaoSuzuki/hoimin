@@ -25,7 +25,8 @@ pub(super) fn replacement<F: Fn() -> bool>(
         }
     }
     let first = usize::from(body.first()?.start());
-    let last = body.last()?;
+    // The successful first lookup proves this suite is nonempty.
+    let last = body.last().expect("nonempty loop suite");
     let end = usize::from(last.end());
     let line_start = source[..first].rfind(['\r', '\n']).map_or(0, |i| i + 1);
     let indentation = &source[line_start..first];
@@ -34,9 +35,16 @@ pub(super) fn replacement<F: Fn() -> bool>(
         .all(|byte| matches!(byte, b' ' | b'\t' | 0x0c))
     {
         // Inline suites keep their existing trailing semicolon/comment on the line.
-        let (start, _) = source[..end].char_indices().next_back()?;
+        // A parsed statement has a nonempty range within the parsed source.
+        let (start, _) = source[..end]
+            .char_indices()
+            .next_back()
+            .expect("statement has source text");
         return Some((
-            TextRange::new(TextSize::try_from(start).ok()?, last.end()),
+            TextRange::new(
+                TextSize::try_from(start).expect("offset is bounded by the parsed statement end"),
+                last.end(),
+            ),
             format!("{}; break", &source[start..end]),
         ));
     }
@@ -58,7 +66,10 @@ pub(super) fn replacement<F: Fn() -> bool>(
             let anchor = &source[usize::from(range.start())..usize::from(range.end())];
             (usize::from(range.start()), usize::from(range.end()), anchor)
         } else {
-            let (start, _) = source.char_indices().next_back()?;
+            let (start, _) = source
+                .char_indices()
+                .next_back()
+                .expect("source contains the loop suite");
             let newline = if line_start >= 2 && source.as_bytes()[line_start - 2] == b'\r' {
                 "\r\n"
             } else if line_start > 0 && source.as_bytes()[line_start - 1] == b'\r' {
@@ -76,9 +87,98 @@ pub(super) fn replacement<F: Fn() -> bool>(
     };
     Some((
         TextRange::new(
-            TextSize::try_from(start).ok()?,
-            TextSize::try_from(anchor_end).ok()?,
+            TextSize::try_from(start).expect("parsed source offsets fit TextSize"),
+            TextSize::try_from(anchor_end).expect("parsed source offsets fit TextSize"),
         ),
         text,
     ))
+}
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+
+    fn run(
+        statement: &Stmt,
+        source: &str,
+        tokens: &Tokens,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Option<(TextRange, String)> {
+        replacement(statement, source, tokens, &cancelled)
+    }
+
+    #[rstest::rstest]
+    #[case(
+        "while condition:\n action()",
+        Some("while condition:\n action()\n break")
+    )]
+    #[case(
+        "while condition:\r\n action()",
+        Some("while condition:\r\n action()\r\n break")
+    )]
+    #[case(
+        "while condition:\r action()",
+        Some("while condition:\r action()\r break")
+    )]
+    #[case("while condition: action()", Some("while condition: action(); break"))]
+    #[case("while condition: é", Some("while condition: é; break"))]
+    #[case("while condition:\n é", Some("while condition:\n é\n break"))]
+    #[case(
+        "for item in values:\n action()\n",
+        Some("for item in values:\n action()\n break\n")
+    )]
+    #[case("pass", None)]
+    #[case("while condition:\n break", None)]
+    #[case("while condition:\n continue", None)]
+    #[case("while condition:\n return", None)]
+    #[case("while condition:\n raise", None)]
+    fn loop_break_anchor_preserves_line_endings_and_rejects_terminal_suites(
+        #[case] source: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let result = run(&parsed.syntax().body[0], source, parsed.tokens(), &|| false).map(
+            |(range, replacement)| {
+                let mut result = source.to_owned();
+                result.replace_range(
+                    usize::from(range.start())..usize::from(range.end()),
+                    &replacement,
+                );
+                result
+            },
+        );
+        assert_eq!(result.as_deref(), expected);
+    }
+
+    #[rstest::rstest]
+    fn cancellation_stops_during_suite_or_trailing_token_scan(
+        #[values(0, 1, 2)] checkpoint: usize,
+    ) {
+        let source = "while condition:\n action() # retained comment\n";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let polls = std::cell::Cell::new(0);
+        assert_eq!(
+            run(&parsed.syntax().body[0], source, parsed.tokens(), &|| {
+                let current = polls.get();
+                polls.set(current + 1);
+                current >= checkpoint
+            }),
+            None
+        );
+        assert_eq!(polls.get(), checkpoint + 1);
+    }
+
+    #[test]
+    fn empty_loop_suite_has_no_source_anchor() {
+        let source = "while condition:\n pass";
+        let mut parsed = ruff_python_parser::parse_module(source)
+            .unwrap()
+            .into_syntax();
+        parsed.body[0].as_while_stmt_mut().unwrap().body.clear();
+        let tokens = ruff_python_parser::parse_module(source).unwrap();
+        assert_eq!(
+            run(&parsed.body[0], source, tokens.tokens(), &|| false),
+            None
+        );
+    }
 }

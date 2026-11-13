@@ -282,3 +282,119 @@ impl Scopes {
         }
     }
 }
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+    use ruff_python_parser::parse_module;
+
+    #[rstest::rstest]
+    #[case("@(deco := identity)\ndef function[T: (bound := object)](arg: (annotation := int) = (default := 1)) -> (result := int):\n    body_only = 1\n", &["deco", "function", "bound", "annotation", "default", "result"])]
+    #[case("@(class_deco := identity)\nclass Child[T: (class_bound := object)]((base := Parent), metaclass=(meta := type)):\n    body_only = 1\n", &["class_deco", "Child", "class_bound", "base", "meta"])]
+    fn declarations_collect_definition_headers_without_entering_bodies(
+        #[case] source: &str,
+        #[case] expected: &[&str],
+    ) {
+        let parsed = parse_module(source).unwrap();
+        let mut declarations = Declarations::default();
+        declarations.visit_body(&parsed.syntax().body);
+        assert_eq!(
+            declarations.locals,
+            expected.iter().map(|name| (*name).to_owned()).collect()
+        );
+    }
+
+    #[rstest::rstest]
+    #[case("global")]
+    #[case("nonlocal")]
+    fn declaration_limits_stop_later_statements_and_expressions(#[case] declaration: &str) {
+        let names = (0..MAX_SUMMARY_ENTRIES + 2)
+            .map(|index| format!("name_{index}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let source = format!("{declaration} {names}\nlater = (walrus := 1)\n");
+        let parsed = parse_module(&source).unwrap();
+        let mut declarations = Declarations::default();
+        declarations.visit_body(&parsed.syntax().body);
+        assert!(declarations.exceeded);
+        assert_eq!(
+            declarations.globals.len() + declarations.nonlocals.len(),
+            MAX_SUMMARY_ENTRIES + 1
+        );
+        assert!(declarations.locals.is_empty());
+        let later_expression = ruff_python_parser::parse_expression("(after_limit := 1)").unwrap();
+        declarations.visit_expr(&later_expression.syntax().body);
+        assert!(declarations.locals.is_empty());
+    }
+    #[test]
+    fn enclosing_global_declaration_overrides_an_outer_local_binding() {
+        let mut scopes = Scopes::default();
+        scopes.enter(Kind::Module, None, Declarations::default());
+        let mut outer = Declarations::default();
+        outer.add("name");
+        scopes.enter(Kind::Function, None, outer);
+        let mut middle = Declarations::default();
+        middle.globals.insert("name".into());
+        scopes.enter(Kind::Function, None, middle);
+        scopes.enter(Kind::Function, None, Declarations::default());
+        assert_eq!(
+            scopes.resolve("name", false, false),
+            vec![BindingKey {
+                scope: 0,
+                name: "name".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn declarations_stop_adding_names_at_the_summary_limit() {
+        let mut declarations = Declarations {
+            locals: (0..MAX_SUMMARY_ENTRIES)
+                .map(|index| format!("name_{index}"))
+                .collect(),
+            ..Declarations::default()
+        };
+        declarations.add("overflow");
+        declarations.add("ignored");
+        assert!(declarations.exceeded);
+        assert_eq!(declarations.locals.len(), MAX_SUMMARY_ENTRIES + 1);
+        assert!(declarations.locals.contains("overflow"));
+        assert!(!declarations.locals.contains("ignored"));
+    }
+
+    #[rstest::rstest]
+    #[case("match value:\n    case [head, *tail] as whole: pass\n", &["head", "tail", "whole"])]
+    #[case("match value:\n    case {'key': item, **rest}: pass\n", &["item", "rest"])]
+    #[case("try:\n    pass\nexcept Exception as error:\n    pass\n", &["error"])]
+    fn declarations_collect_pattern_and_handler_bindings(
+        #[case] source: &str,
+        #[case] expected: &[&str],
+    ) {
+        let parsed = parse_module(source).unwrap();
+        let mut declarations = Declarations::default();
+        declarations.visit_body(&parsed.syntax().body);
+        assert_eq!(
+            declarations.locals,
+            expected.iter().map(|name| (*name).to_owned()).collect()
+        );
+        assert!(!declarations.exceeded);
+    }
+    #[test]
+    fn comprehension_conditions_bind_walruses_in_the_enclosing_scope() {
+        let parsed =
+            parse_module("result = [item for item in values if (condition := item)]\n").unwrap();
+        let mut declarations = Declarations::default();
+        declarations.visit_body(&parsed.syntax().body);
+        assert_eq!(
+            declarations.locals,
+            BTreeSet::from(["result", "condition"].map(str::to_owned))
+        );
+    }
+    #[test]
+    fn non_definition_statement_has_no_definition_time_bindings() {
+        let parsed = parse_module("pass\n").unwrap();
+        let mut declarations = Declarations::default();
+        headers(&mut declarations, &parsed.syntax().body[0]);
+        assert!(declarations.locals.is_empty());
+    }
+}

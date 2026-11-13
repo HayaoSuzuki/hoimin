@@ -10,12 +10,15 @@ import tomllib
 from fnmatch import fnmatchcase
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from typing import TypedDict, TypeGuard
+from unittest.mock import create_autospec
 
 import pytest
 import yaml
 from hypothesis import example, given, settings
 from hypothesis import strategies as st
+from pytest_mock import MockerFixture
 
 from formal.HoiminOracle.tools import lean_resource_guard
 
@@ -2548,7 +2551,7 @@ def test_github_release_policy_rejects_disguised_publication_paths(
 
 
 def test_release_sbom_proof_step_supplies_valid_guard_arguments(
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
 ) -> None:
     workflow = workflow_document(CI_WORKFLOW.read_text(encoding="utf-8"))
     step = named_step(
@@ -2556,7 +2559,7 @@ def test_release_sbom_proof_step_supplies_valid_guard_arguments(
     )
     command = string(step["run"]).replace("\\\n", "").split(">", 1)[0]
     argv = shlex.split(command)
-    monkeypatch.setattr(sys, "argv", argv[1:])
+    mocker.patch.object(sys, "argv", argv[1:])
     arguments = lean_resource_guard.parse_arguments()
 
     assert arguments.timeout_seconds == 20
@@ -2649,3 +2652,96 @@ def test_packaged_macos_archive_runs_on_older_supported_os() -> None:
     runner = macos["os"]
 
     assert runner == "macos-15"
+
+
+@pytest.mark.parametrize("git_available", [True, False])
+@pytest.mark.parametrize("bundled_bash", [True, False])
+def test_windows_bash_resolution_prefers_git_installation(
+    tmp_path: Path,
+    mocker: MockerFixture,
+    *,
+    git_available: bool,
+    bundled_bash: bool,
+) -> None:
+    original_which_spec = shutil.which
+    git = tmp_path / "git" / "cmd" / "git.exe"
+    git.parent.mkdir(parents=True)
+    bash = tmp_path / "git" / "bin" / "bash.exe"
+    if bundled_bash:
+        bash.parent.mkdir()
+        bash.touch()
+    mocker.patch.dict(globals(), {"os": SimpleNamespace(name="nt")})
+    mocker.patch.object(
+        shutil,
+        "which",
+        create_autospec(
+            original_which_spec,
+            side_effect=lambda name: (
+                str(git) if name == "git" and git_available else "fallback-bash"
+            ),
+        ),
+    )
+    # An absent git executable must fall through to the independently found bash.
+    if not git_available:
+        mocker.patch.object(
+            shutil,
+            "which",
+            create_autospec(
+                original_which_spec,
+                side_effect=lambda name: None if name == "git" else "fallback-bash",
+            ),
+        )
+    assert bash_executable() == (
+        str(bash) if git_available and bundled_bash else "fallback-bash"
+    )
+
+
+def test_windows_bash_resolution_requires_available_shell(
+    mocker: MockerFixture,
+) -> None:
+    original_which_spec = shutil.which
+    mocker.patch.dict(globals(), {"os": SimpleNamespace(name="nt")})
+    mocker.patch.object(
+        shutil,
+        "which",
+        create_autospec(original_which_spec, side_effect=lambda _: None),
+    )
+    with pytest.raises(AssertionError, match="Git Bash is required"):
+        bash_executable()
+
+
+@pytest.mark.parametrize("drive", ["C:", ""])
+def test_windows_git_bash_paths_require_drive_and_normalize_separators(
+    tmp_path: Path, mocker: MockerFixture, drive: str
+) -> None:
+    mocker.patch.dict(
+        globals(),
+        {
+            "os": SimpleNamespace(
+                name="nt",
+                sep="\\",
+                path=SimpleNamespace(splitdrive=lambda _: (drive, r"\work\project")),
+            )
+        },
+    )
+    if drive:
+        assert git_bash_path(tmp_path) == "/c/work/project"
+    else:
+        with pytest.raises(AssertionError, match="must be on a drive"):
+            git_bash_path(tmp_path)
+
+
+def test_missing_lean_invocation_record_means_no_calls(tmp_path: Path) -> None:
+    assert lean_calls(tmp_path / "absent") == []
+
+
+def test_multiline_job_condition_can_end_at_end_of_workflow() -> None:
+    workflow = (
+        "jobs:\n"
+        "  example:\n"
+        "    if: >-\n"
+        "      github.event_name == 'push' ||\n"
+        "\n"
+        '      github.event_name == "workflow_dispatch"\n'
+    )
+    assert job_event_conditions(workflow) == {"push", "workflow_dispatch"}

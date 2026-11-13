@@ -1,5 +1,8 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/public_oracle_fixture.rs"]
+mod public_oracle_fixture;
 use collecting_writer::CollectingWriter;
 
 use std::ffi::OsString;
@@ -175,7 +178,14 @@ fn strict_parser_rejects_unknown_modes_sources_and_spans() {
 }
 
 fn selected_cases(cases: Vec<OracleCase>) -> Result<Vec<OracleCase>, String> {
-    let Some(selected) = std::env::var_os("HOIMIN_MULTIPLE_HANDLER_CASE") else {
+    selected_cases_from(cases, std::env::var_os("HOIMIN_MULTIPLE_HANDLER_CASE"))
+}
+
+fn selected_cases_from(
+    cases: Vec<OracleCase>,
+    selected: Option<OsString>,
+) -> Result<Vec<OracleCase>, String> {
+    let Some(selected) = selected else {
         return Ok(cases);
     };
     let selected = selected
@@ -213,15 +223,8 @@ struct Fixture {
 
 impl Fixture {
     fn new(item: &OracleCase) -> Result<Self, String> {
-        let directory = tempfile::tempdir().map_err(|error| {
-            format!("infrastructure-error: {} fixture tempdir: {error}", item.id)
-        })?;
-        let root = directory.path().join("project");
-        std::fs::create_dir_all(&root)
-            .map_err(|error| format!("infrastructure-error: {} fixture root: {error}", item.id))?;
-        std::fs::write(root.join("target.py"), &item.source).map_err(|error| {
-            format!("infrastructure-error: {} fixture source: {error}", item.id)
-        })?;
+        let (directory, root) =
+            public_oracle_fixture::create(tempfile::tempdir(), &item.id, &item.source)?;
         Ok(Self {
             _directory: directory,
             root,
@@ -239,9 +242,12 @@ fn repo_root() -> PathBuf {
 }
 
 fn python_executable() -> PathBuf {
-    if cfg!(windows) {
+    #[cfg(windows)]
+    {
         repo_root().join(".venv/Scripts/python.exe")
-    } else {
+    }
+    #[cfg(not(windows))]
+    {
         repo_root().join(".venv/bin/python")
     }
 }
@@ -270,20 +276,30 @@ async fn public_plan(item: &OracleCase) -> Result<PlanManifest, String> {
     let fixture = Fixture::new(item)?;
     let stdout = CollectingWriter::default();
     let stderr = CollectingWriter::default();
-    let code = tokio::time::timeout(
+    let outcome = tokio::time::timeout(
         Duration::from_secs(10),
         hoimin_cli::run_with_writers(plan_args(&fixture), stdout.clone(), stderr.clone()),
     )
-    .await
-    .map_err(|_| format!("infrastructure-error: {} public plan timed out", item.id))?;
+    .await;
+    decode_public_plan(item, outcome, &stdout.snapshot(), &stderr.snapshot())
+}
+
+fn decode_public_plan(
+    item: &OracleCase,
+    outcome: Result<i32, tokio::time::error::Elapsed>,
+    stdout: &[u8],
+    stderr: &[u8],
+) -> Result<PlanManifest, String> {
+    let code =
+        outcome.map_err(|_| format!("infrastructure-error: {} public plan timed out", item.id))?;
     if code != 0 || !stderr.is_empty() {
         return Err(format!(
             "infrastructure-error: {} public plan exit={code}, stderr={}",
             item.id,
-            String::from_utf8_lossy(&stderr.snapshot())
+            String::from_utf8_lossy(stderr)
         ));
     }
-    serde_json::from_slice(&stdout.snapshot())
+    serde_json::from_slice(stdout)
         .map_err(|error| format!("infrastructure-error: {} malformed plan: {error}", item.id))
 }
 
@@ -295,11 +311,14 @@ fn normalize_manifest(
         .source
         .find(&item.marker)
         .ok_or_else(|| format!("infrastructure-error: {} marker missing", item.id))?;
-    let marker_end = marker_start
-        .checked_add(item.marker.len())
-        .ok_or_else(|| format!("infrastructure-error: {} marker range overflow", item.id))?;
+    // `find` proves this complete marker ends within the source string.
+    let marker_end = marker_start + item.marker.len();
     let mut matching = Vec::new();
     for candidate in &manifest.candidates {
+        // Every u64 is representable on a 64-bit host; narrower hosts retain fallible validation.
+        #[cfg(target_pointer_width = "64")]
+        let start = usize::try_from(candidate.span.start).expect("u64 fits 64-bit usize");
+        #[cfg(not(target_pointer_width = "64"))]
         let start = usize::try_from(candidate.span.start)
             .map_err(|_| format!("infrastructure-error: {} span start overflow", item.id))?;
         let end = candidate
@@ -310,7 +329,7 @@ fn normalize_manifest(
             .ok_or_else(|| format!("infrastructure-error: {} span end overflow", item.id))?;
         if item.source.get(start..end) != Some(candidate.original.as_str()) {
             return Err(format!(
-                "infrastructure-error: {} candidate span disagrees with original",
+                "infrastructure-error: {} candidate span disagrees with source",
                 item.id
             ));
         }
@@ -368,11 +387,16 @@ async fn strict_public_multiple_handler_rows_match_complete_candidate_observatio
     let cases = selected_cases(strict_cases().expect("valid strict multiple-handler corpus"))
         .expect("single-case filter must select a strict identity");
     for item in cases {
-        let manifest = public_plan(&item)
-            .await
-            .unwrap_or_else(|error| panic!("{error}\nsource:\n{}", item.source));
-        let actual = normalize_manifest(&item, &manifest)
-            .unwrap_or_else(|error| panic!("{error}\nsource:\n{}", item.source));
+        let manifest = public_plan(&item).await.unwrap_or_else(
+            // Diagnostic only: the fixed corpus asserts successful public execution and normalization.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |error| panic!("{error}\nsource:\n{}", item.source),
+        );
+        let actual = normalize_manifest(&item, &manifest).unwrap_or_else(
+            // Diagnostic only: the fixed corpus asserts successful public execution and normalization.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |error| panic!("{error}\nsource:\n{}", item.source),
+        );
         assert_eq!(
             actual,
             expected_public(&item),
@@ -381,4 +405,53 @@ async fn strict_public_multiple_handler_rows_match_complete_candidate_observatio
             item.source
         );
     }
+}
+
+#[path = "support/public_oracle_validation_tests.rs"]
+mod validation_tests;
+
+#[test]
+fn parser_checks_invalid_public_fixture_and_owned_identity() {
+    assert_eq!(strict_cases_from(&format!("\n{CORPUS}")).unwrap().len(), 2);
+    let rows = CORPUS
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    let index = rows.iter().position(|row| row["mode"] == "strict").unwrap();
+    for (field, value, expected) in [
+        ("schema", serde_json::json!(2), "invalid public fixture"),
+        (
+            "marker",
+            serde_json::json!("missing"),
+            "invalid public fixture",
+        ),
+        (
+            "expected_exits",
+            serde_json::json!([]),
+            "invalid public fixture",
+        ),
+        (
+            "id",
+            serde_json::json!("unknown"),
+            "not an owned strict fixture",
+        ),
+        (
+            "family",
+            serde_json::json!("unknown"),
+            "not an owned strict fixture",
+        ),
+    ] {
+        let mut changed = rows.clone();
+        changed[index][field] = value;
+        let input = changed
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(strict_cases_from(&input).unwrap_err().contains(expected));
+    }
+    let mut item = strict_cases().unwrap().remove(0);
+    item.candidate = CandidateExpectation::NotObserved;
+    assert!(std::panic::catch_unwind(|| expected_public(&item)).is_err());
 }

@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 //! The finite oracle's escaped-glob semantics are specific to Unix.
 
 #![cfg(unix)]
@@ -206,9 +207,14 @@ async fn missing_glob_targets_fail_core_resolution_and_public_plan() {
         let directory = glob_fixture(&case);
         let selected = selection(directory.path(), &case);
         let discovered = hoimin_cli::target::fs::discover_explicit(&selected).unwrap();
-        let paths: BTreeSet<_> = discovered.iter().map(|file| file.path.as_str()).collect();
-        let expected: BTreeSet<_> = case.expected_paths.iter().map(String::as_str).collect();
-        assert_eq!(paths, expected, "{case:?}");
+        assert!(
+            discovered.is_empty(),
+            "a missing glob must discover no files"
+        );
+        assert!(
+            case.expected_paths.is_empty(),
+            "missing-glob corpus premise"
+        );
         let resolved = resolve_explicit(&selected, &discovered);
         assert!(
             matches!(resolved, Err(TargetError::MissingOrNonPythonFile(_))),
@@ -231,4 +237,22 @@ async fn missing_glob_targets_fail_core_resolution_and_public_plan() {
         );
         assert_eq!(stdout.snapshot(), Vec::<u8>::new());
     }
+}
+
+#[test]
+#[should_panic(expected = "internal error")]
+fn selection_projection_rejects_unknown_selector() {
+    let mut case = cases().remove(0);
+    case.selector = "unknown".into();
+    let directory = tempfile::tempdir().unwrap();
+    let _ = selection(directory.path(), &case);
+}
+
+#[test]
+#[should_panic(expected = "internal error")]
+fn argument_projection_rejects_unknown_selector() {
+    let mut case = cases().remove(0);
+    case.selector = "unknown".into();
+    let directory = tempfile::tempdir().unwrap();
+    let _ = arguments(directory.path(), &case, "plan");
 }

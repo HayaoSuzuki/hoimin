@@ -104,7 +104,8 @@ pub(super) fn constant_returns<F: Fn() -> bool>(
         replacements.retain(|replacement| !same_literal(value, replacement));
     }
     Some((
-        TextRange::new(first.start(), body.last()?.end()),
+        // The first statement above established that this suffix is nonempty.
+        TextRange::new(first.start(), body.last().expect("nonempty body").end()),
         replacements,
     ))
 }
@@ -201,5 +202,231 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for OwnScope<'_, F> {
             }
             _ => visitor::walk_expr(self, expression),
         }
+    }
+}
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+
+    fn run_erased(definition: &StmtFunctionDef, cancelled: &dyn Fn() -> bool) -> Option<TextRange> {
+        erased_range(definition, &cancelled)
+    }
+
+    fn run_constants(
+        definition: &StmtFunctionDef,
+        annotation: &str,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Option<(TextRange, Vec<&'static str>)> {
+        constant_returns(definition, annotation, &cancelled)
+    }
+
+    #[rstest::rstest]
+    #[case("def outer():\n    @decorate\n    def inner():\n        return 1\n")]
+    #[case("def outer():\n    @decorate\n    class Inner:\n        pass\n")]
+    fn body_erasure_removes_the_complete_first_decorated_declaration(#[case] source: &str) {
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
+        let range = run_erased(definition, &|| false).unwrap();
+        let mut mutated = source.to_owned();
+        mutated.replace_range(usize::from(range.start())..usize::from(range.end()), "pass");
+        assert!(
+            ruff_python_parser::parse_module(&mutated).is_ok(),
+            "{mutated}"
+        );
+        assert_eq!(mutated, "def outer():\n    pass\n");
+    }
+
+    #[rstest::rstest]
+    #[case("def outer() -> int:\n    @decorate\n    def inner():\n        pass\n    return 1\n")]
+    #[case("def outer() -> int:\n    @decorate\n    class Inner:\n        pass\n    return 1\n")]
+    fn constant_body_replacement_removes_the_complete_first_decorated_declaration(
+        #[case] source: &str,
+    ) {
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
+        let (range, replacements) = run_constants(definition, "int", &|| false).unwrap();
+        let mut mutated = source.to_owned();
+        mutated.replace_range(
+            usize::from(range.start())..usize::from(range.end()),
+            replacements[0],
+        );
+        assert!(
+            ruff_python_parser::parse_module(&mutated).is_ok(),
+            "{mutated}"
+        );
+        assert_eq!(mutated, "def outer() -> int:\n    return 0\n");
+    }
+    fn run_plain(definition: &StmtFunctionDef, cancelled: &dyn Fn() -> bool) -> bool {
+        plain_synchronous(definition, &cancelled)
+    }
+
+    #[rstest::rstest]
+    #[case("def function(): act()\n", true)]
+    #[case("def function(): pass\n", false)]
+    #[case("def function(): return\n", false)]
+    #[case("def function(): return None\n", false)]
+    #[case("def function(): None\n", false)]
+    #[case("def function(): ...\n", false)]
+    #[case("def function(): \"documentation\"\n", false)]
+    #[case("def function(): \"documentation\"; \"another string\"\n", false)]
+    #[case("def function(): return 1\n", false)]
+    #[case("async def function(): act()\n", false)]
+    #[case("def __special__(): act()\n", false)]
+    #[case("def function(): yield 1\n", false)]
+    #[case("def function(): yield from values\n", false)]
+    #[case("def function():\n def inner(value: int) -> str: return value\n", true)]
+    #[case("def function(): callback = lambda: (yield 1)\n", true)]
+    #[case("def function(): callback = lambda value=(yield 1): value\n", false)]
+    #[case("def function(): type Alias = int\n", true)]
+    #[case("def function():\n if condition:\n  yield 1\n else:\n  act()\n", false)]
+    #[case("def function(): value = ((yield 1), 2)\n", false)]
+    #[case("def function():\n class Inner(Parent): pass\n", true)]
+    #[case("def function():\n class Inner((yield base)): pass\n", false)]
+    fn body_erasure_requires_meaningful_work_without_own_scope_value_returns_or_yields(
+        #[case] source: &str,
+        #[case] eligible: bool,
+    ) {
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
+        assert_eq!(run_erased(definition, &|| false).is_some(), eligible);
+    }
+
+    #[rstest::rstest]
+    #[case("def function(): return 1\n", true)]
+    #[case("def function(): yield 1\n", false)]
+    #[case("def function(): yield from values\n", false)]
+    #[case("async def function(): return 1\n", false)]
+    #[case("def function(): callback = lambda: (yield 1)\n", true)]
+    #[case("def function():\n def inner(value: int): yield value\n", true)]
+    fn synchronous_scope_check_allows_value_returns_but_not_own_scope_yields(
+        #[case] source: &str,
+        #[case] synchronous: bool,
+    ) {
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
+        assert_eq!(run_plain(definition, &|| false), synchronous);
+    }
+
+    #[rstest::rstest]
+    #[case("bool", " return False", Some(&["return True"][..]))]
+    #[case("bool", " return True", Some(&["return False"][..]))]
+    #[case("bool", " return value", Some(&["return False", "return True"][..]))]
+    #[case("int", " return 0", Some(&["return 1"][..]))]
+    #[case("int", " return 1", Some(&["return 0"][..]))]
+    #[case("int", " return 2", Some(&["return 0", "return 1"][..]))]
+    #[case("int", " return 0.0", Some(&["return 0", "return 1"][..]))]
+    #[case("int", " return True", Some(&["return 0", "return 1"][..]))]
+    #[case("str", " return \"\"", Some(&["return \"A\""][..]))]
+    #[case("str", " return \"A\"", Some(&["return \"\""][..]))]
+    #[case("str", " return \"B\"", Some(&["return \"\"", "return \"A\""][..]))]
+    #[case("int", " \"documentation\"\n return 0", Some(&["return 1"][..]))]
+    #[case("int", " \"documentation\"", None)]
+    #[case("int", " pass", None)]
+    #[case("int", " return", None)]
+    #[case("int", " return None", None)]
+    #[case("int", " if flag:\n  return value\n return None", Some(&["return 0", "return 1"][..]))]
+    #[case("float", " return 0", None)]
+    #[case("int", " yield 1", None)]
+    fn constant_returns_follow_the_annotation_and_remove_only_identical_literals(
+        #[case] annotation: &str,
+        #[case] body: &str,
+        #[case] expected: Option<&[&str]>,
+    ) {
+        let source = format!("def function() -> {annotation}:\n{body}\n");
+        let parsed = ruff_python_parser::parse_module(&source).unwrap();
+        let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
+        assert_eq!(
+            run_constants(definition, annotation, &|| false)
+                .map(|(_, replacements)| replacements)
+                .as_deref(),
+            expected
+        );
+    }
+
+    #[rstest::rstest]
+    #[case("async def function() -> int: return 2\n", None)]
+    #[case("def __special__() -> int: return 2\n", None)]
+    #[case("def function() -> int: return 2\n", Some(&["return 0", "return 1"][..]))]
+    fn constant_returns_skip_async_and_protocol_definitions(
+        #[case] source: &str,
+        #[case] expected: Option<&[&str]>,
+    ) {
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
+        assert_eq!(
+            run_constants(definition, "int", &|| false)
+                .map(|(_, replacements)| replacements)
+                .as_deref(),
+            expected
+        );
+    }
+
+    #[rstest::rstest]
+    #[case(0, false)]
+    #[case(1, false)]
+    #[case(2, false)]
+    #[case(3, false)]
+    #[case(4, false)]
+    #[case(64, true)]
+    fn cancellation_does_not_return_partial_erasure_eligibility(
+        #[case] checkpoint: usize,
+        #[case] completed: bool,
+    ) {
+        let parsed = ruff_python_parser::parse_module("def function(): value = 1\n").unwrap();
+        let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
+        let polls = std::cell::Cell::new(0);
+        let cancelled = || {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= checkpoint
+        };
+        assert_eq!(run_erased(definition, &cancelled).is_some(), completed);
+    }
+
+    #[rstest::rstest]
+    #[case(0, false)]
+    #[case(1, false)]
+    #[case(2, false)]
+    #[case(3, false)]
+    #[case(4, false)]
+    #[case(64, true)]
+    fn cancellation_does_not_return_partial_synchronous_eligibility(
+        #[case] checkpoint: usize,
+        #[case] completed: bool,
+    ) {
+        let parsed = ruff_python_parser::parse_module("def function(): value = 1\n").unwrap();
+        let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
+        let polls = std::cell::Cell::new(0);
+        let cancelled = || {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= checkpoint
+        };
+        assert_eq!(run_plain(definition, &cancelled), completed);
+    }
+
+    #[rstest::rstest]
+    #[case(0, false)]
+    #[case(1, false)]
+    #[case(2, false)]
+    #[case(3, false)]
+    #[case(64, true)]
+    fn cancellation_does_not_return_partial_constant_eligibility(
+        #[case] checkpoint: usize,
+        #[case] completed: bool,
+    ) {
+        let parsed = ruff_python_parser::parse_module("def function() -> int: return 2\n").unwrap();
+        let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
+        let polls = std::cell::Cell::new(0);
+        let cancelled = || {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= checkpoint
+        };
+        assert_eq!(
+            run_constants(definition, "int", &cancelled).is_some(),
+            completed
+        );
     }
 }

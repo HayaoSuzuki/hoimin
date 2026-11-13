@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 //! Measure the production plan source phase through its public stage events.
 //! The analyzer runs after the allocation window has closed.
 use std::sync::{Arc, Mutex};

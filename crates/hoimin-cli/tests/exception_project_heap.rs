@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 //! One test owns the allocator windows, including discovery's blocking worker.
 use camino::Utf8PathBuf;
 use hoimin_core::{MutationOperatorSelection, MutationProfile, TargetSlice};

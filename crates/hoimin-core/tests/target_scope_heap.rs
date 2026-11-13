@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute, stmt_expr_attributes))]
 //! Small production resolver allocation observations, with fixture bytes excluded.
 use hoimin_core::{DiscoveredFile, Selection, resolve_explicit};
 

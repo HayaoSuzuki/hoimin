@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use hoimin_core::{
     METRICS_SCHEMA_VERSION, MetricsValidationError, RunMetrics, StageMetric, WorkerMetric,
 };
@@ -165,16 +166,16 @@ fn metrics_allow_parallel_workers_to_share_the_same_run_interval() {
 }
 
 #[rstest::rstest]
-#[case::unsupported_version(RunMetrics { schema_version: 2, ..RunMetrics::empty("run-1") }, "unsupported metrics schema version 2")]
-#[case::empty_identity(RunMetrics::empty(""), "run ID must not be empty")]
-#[case::duplicate_stages(RunMetrics { elapsed_ms: 10, stages: vec![StageMetric { name: "analysis".into(), elapsed_ms: 5 }, StageMetric { name: "analysis".into(), elapsed_ms: 6 }], ..RunMetrics::empty("run-1") }, "duplicate stage metric analysis")]
-#[case::stage_exceeds_elapsed(RunMetrics { elapsed_ms: 10, stages: vec![StageMetric { name: "analysis".into(), elapsed_ms: 11 }], ..RunMetrics::empty("run-1") }, "stage analysis elapsed time exceeds run elapsed time")]
-#[case::queue_exceeds_elapsed(RunMetrics { elapsed_ms: 10, workers: vec![WorkerMetric { queue_wait_ms: 11, ..WorkerMetric::new(0) }], ..RunMetrics::empty("run-1") }, "worker 0 queue wait time exceeds run elapsed time")]
+#[case::unsupported_version(&RunMetrics { schema_version: 2, ..RunMetrics::empty("run-1") }, "unsupported metrics schema version 2")]
+#[case::empty_identity(&RunMetrics::empty(""), "run ID must not be empty")]
+#[case::duplicate_stages(&RunMetrics { elapsed_ms: 10, stages: vec![StageMetric { name: "analysis".into(), elapsed_ms: 5 }, StageMetric { name: "analysis".into(), elapsed_ms: 6 }], ..RunMetrics::empty("run-1") }, "duplicate stage metric analysis")]
+#[case::stage_exceeds_elapsed(&RunMetrics { elapsed_ms: 10, stages: vec![StageMetric { name: "analysis".into(), elapsed_ms: 11 }], ..RunMetrics::empty("run-1") }, "stage analysis elapsed time exceeds run elapsed time")]
+#[case::queue_exceeds_elapsed(&RunMetrics { elapsed_ms: 10, workers: vec![WorkerMetric { queue_wait_ms: 11, ..WorkerMetric::new(0) }], ..RunMetrics::empty("run-1") }, "worker 0 queue wait time exceeds run elapsed time")]
 fn metrics_validate_version_identity_names_and_duration_bounds(
-    #[case] metrics: RunMetrics,
+    #[case] metrics: &RunMetrics,
     #[case] expected: &str,
 ) {
-    let message = validation_message(&metrics);
+    let message = validation_message(metrics);
 
     assert_eq!(message, expected);
 }

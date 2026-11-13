@@ -150,8 +150,14 @@ fn selected_method_families_only_enter_their_own_helpers(
     assert_eq!(work(), (entries, 1), "{source}");
 }
 
-#[test]
-fn counters_observe_direct_helper_entries_and_allocation_boundaries() {
+#[rstest::rstest]
+#[case(0)]
+#[case(1)]
+#[case(2)]
+#[case(3)]
+#[case(4)]
+#[case(5)]
+fn counters_observe_direct_helper_entries_and_allocation_boundaries(#[case] index: usize) {
     type Replacement = fn(&str, &ExprCall, &AstFacts) -> Option<String>;
     let cases: [(&str, &str, Replacement); 6] = [
         (
@@ -183,26 +189,21 @@ fn counters_observe_direct_helper_entries_and_allocation_boundaries() {
             renamed_method_call_replacement(source, call, "reverse")
         }),
     ];
-    for (index, (source, expected, replace)) in cases.into_iter().enumerate() {
-        let parsed = parse_unchecked_source(source, ruff_python_ast::PySourceType::Python);
+    let (source, expected, replace) = cases.into_iter().nth(index).unwrap();
+    let parsed = parse_unchecked_source(source, ruff_python_ast::PySourceType::Python);
 
-        assert!(parsed.has_valid_syntax());
-        let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
-        let Stmt::Expr(statement) = &parsed.syntax().body[0] else {
-            panic!("expression fixture")
-        };
-        let Expr::Call(call) = statement.value.as_ref() else {
-            panic!("call fixture")
-        };
-        let mut entries = [0; 7];
-        entries[index] = 1;
-        reset();
+    assert!(parsed.has_valid_syntax());
+    let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
+    let statement = parsed.syntax().body[0].as_expr_stmt().unwrap();
+    let call = statement.value.as_call_expr().unwrap();
+    let mut entries = [0; 7];
+    entries[index] = 1;
+    reset();
 
-        let replacement = replace(source, call, &facts);
+    let replacement = replace(source, call, &facts);
 
-        assert_eq!(replacement.as_deref(), Some(expected));
-        assert_eq!(work(), (entries, 1));
-    }
+    assert_eq!(replacement.as_deref(), Some(expected));
+    assert_eq!(work(), (entries, 1));
 }
 
 #[test]
@@ -212,12 +213,8 @@ fn counters_observe_direct_subscript_helper_entry_and_allocation() {
 
     assert!(parsed.has_valid_syntax());
     let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
-    let Stmt::Expr(statement) = &parsed.syntax().body[0] else {
-        panic!("expression fixture")
-    };
-    let Expr::Subscript(subscript) = statement.value.as_ref() else {
-        panic!("subscript fixture")
-    };
+    let statement = parsed.syntax().body[0].as_expr_stmt().unwrap();
+    let subscript = statement.value.as_subscript_expr().unwrap();
     reset();
 
     let replacement = subscript_to_mapping_get_replacement(source, subscript, &facts);
@@ -284,12 +281,8 @@ fn rejected_helper_entry_does_not_count_a_string_construction() {
     let source = "obj.extend(items)";
     let parsed = parse_unchecked_source(source, ruff_python_ast::PySourceType::Python);
     let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
-    let Stmt::Expr(statement) = &parsed.syntax().body[0] else {
-        panic!("expression fixture")
-    };
-    let Expr::Call(call) = statement.value.as_ref() else {
-        panic!("call fixture")
-    };
+    let statement = parsed.syntax().body[0].as_expr_stmt().unwrap();
+    let call = statement.value.as_call_expr().unwrap();
     reset();
 
     assert!(extend_to_append_replacement(source, call, &facts).is_none());
@@ -312,4 +305,220 @@ fn unselected_mapping_helper_preserves_slice_neighbors() {
         [("1", "2"), ("1", "0"), ("3", "4"), ("3", "2")]
     );
     assert_eq!(work(), ([0; 7], 0));
+}
+
+type BoundaryReplacement = fn(&str, &ExprCall, &AstFacts) -> Option<String>;
+fn boundary_append_to_extend(source: &str, call: &ExprCall, _: &AstFacts) -> Option<String> {
+    append_to_extend_replacement(source, call)
+}
+
+#[rstest::rstest]
+#[case("function(item)", append_to_insert_replacement)]
+#[case("obj.append()", append_to_insert_replacement)]
+#[case("function(0, item)", insert_to_append_replacement)]
+#[case("obj.insert(0)", insert_to_append_replacement)]
+#[case("obj.insert(0, (yield item))", insert_to_append_replacement)]
+#[case("obj.insert(0, (yield from items))", insert_to_append_replacement)]
+#[case("function(item)", boundary_append_to_extend)]
+#[case("function([item])", extend_to_append_replacement)]
+#[case("obj.extend()", extend_to_append_replacement)]
+#[case("obj.extend(items)", extend_to_append_replacement)]
+#[case("obj.extend([])", extend_to_append_replacement)]
+#[case("obj.extend([first, second])", extend_to_append_replacement)]
+#[case("obj.extend([*items])", extend_to_append_replacement)]
+#[case("function(key)", mapping_get_to_subscript_replacement)]
+fn method_edit_helpers_reject_unsupported_call_shapes(
+    #[case] source: &str,
+    #[case] helper: BoundaryReplacement,
+) {
+    let parsed = parse_module(source).unwrap();
+    let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
+    let call = parsed.syntax().body[0]
+        .as_expr_stmt()
+        .unwrap()
+        .value
+        .as_call_expr()
+        .unwrap();
+    assert_eq!(helper(source, call, &facts), None);
+}
+
+#[rstest::rstest]
+#[case("", TextRange::new(0.into(), 0.into()))]
+#[case("prefix; obj.call()", TextRange::new(0.into(), 1.into()))]
+#[case("prefix; obj.call()", TextRange::new(8.into(), 99.into()))]
+fn call_replacement_rejects_source_or_edits_outside_the_call(
+    #[case] source: &str,
+    #[case] edit: TextRange,
+) {
+    let original = "prefix; obj.call()";
+    let parsed = parse_module(original).unwrap();
+    let call = parsed.syntax().body[1]
+        .as_expr_stmt()
+        .unwrap()
+        .value
+        .as_call_expr()
+        .unwrap();
+    assert_eq!(
+        replace_within_call(source, call, [(edit, "replacement")]),
+        None
+    );
+}
+
+type LiteralReplacement = fn(&str, &Expr, &AstFacts) -> Option<String>;
+fn rewrite_list_literal(source: &str, expression: &Expr, facts: &AstFacts) -> Option<String> {
+    list_to_tuple_replacement(source, expression.as_list_expr().unwrap(), facts)
+}
+fn rewrite_tuple_literal(source: &str, expression: &Expr, _: &AstFacts) -> Option<String> {
+    tuple_to_list_replacement(source, expression.as_tuple_expr().unwrap())
+}
+fn add_exception_member(source: &str, expression: &Expr, facts: &AstFacts) -> Option<String> {
+    tuple_add_replacement(
+        source,
+        expression.as_tuple_expr().unwrap(),
+        facts,
+        "TypeError",
+    )
+}
+
+#[rstest::rstest]
+#[case("[item]", "", rewrite_list_literal, None)]
+#[case("[item]", "(item)", rewrite_list_literal, None)]
+#[case("[item]", "[item)", rewrite_list_literal, None)]
+#[case("[item]", "[item]", rewrite_list_literal, Some("(item,)"))]
+#[case("(item,)", "", rewrite_tuple_literal, None)]
+#[case("(item,)", "[item,]", rewrite_tuple_literal, None)]
+#[case("(item,)", "(item,]", rewrite_tuple_literal, None)]
+#[case("(item,)", "(item,)", rewrite_tuple_literal, Some("[item,]"))]
+#[case("(ValueError,)", "", add_exception_member, None)]
+#[case("(ValueError,)", "[ValueError,]", add_exception_member, None)]
+#[case("(ValueError,)", "(ValueError,]", add_exception_member, None)]
+#[case(
+    "(ValueError,)",
+    "(ValueError,)",
+    add_exception_member,
+    Some("(ValueError, TypeError)")
+)]
+#[case(
+    "(ValueError, RuntimeError)",
+    "(ValueError, RuntimeError)",
+    add_exception_member,
+    Some("(ValueError, RuntimeError, TypeError)")
+)]
+fn literal_rewrites_require_complete_matching_delimiters(
+    #[case] original: &str,
+    #[case] source: &str,
+    #[case] rewrite: LiteralReplacement,
+    #[case] expected: Option<&str>,
+) {
+    let parsed = parse_module(original).unwrap();
+    let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), original);
+    let expression = &parsed.syntax().body[0].as_expr_stmt().unwrap().value;
+    assert_eq!(rewrite(source, expression, &facts).as_deref(), expected);
+}
+
+#[rstest::rstest]
+#[case("1", Some((1, false)))]
+#[case("-1", Some((-1, true)))]
+#[case("-0", Some((0, true)))]
+#[case("-(1)", Some((-1, true)))]
+#[case("0x1", None)]
+#[case("1_0", None)]
+#[case("+1", None)]
+#[case("1.0", None)]
+#[case("18446744073709551616", None)]
+#[case("'1'", None)]
+fn integer_neighbors_accept_only_supported_decimal_spelling_and_magnitude(
+    #[case] source: &str,
+    #[case] expected: Option<(i128, bool)>,
+) {
+    let parsed = ruff_python_parser::parse_expression(source).unwrap();
+    assert_eq!(
+        decimal_literal_value(source, &parsed.syntax().body),
+        expected
+    );
+}
+
+fn boundary_rename_ordering(source: &str, call: &ExprCall, _: &AstFacts) -> Option<String> {
+    renamed_method_call_replacement(source, call, "reverse")
+}
+
+#[rstest::rstest]
+#[case("obj.insert(0, item)", vec![TokenKind::Comma], 19, insert_to_append_replacement)]
+#[case("obj.extend([item])", vec![TokenKind::Lsqb], 18, extend_to_append_replacement)]
+#[case("obj.extend([item])", vec![TokenKind::Rsqb], 18, extend_to_append_replacement)]
+#[case("obj.get(key)", vec![], 0, mapping_get_to_subscript_replacement)]
+#[case("obj.get(key)", vec![], 3, mapping_get_to_subscript_replacement)]
+#[case("function()", vec![], 10, boundary_rename_ordering)]
+fn call_edit_helpers_reject_missing_metadata_or_unavailable_fragments(
+    #[case] source: &str,
+    #[case]
+    #[by_ref]
+    omitted: &[TokenKind],
+    #[case] available_len: usize,
+    #[case] helper: BoundaryReplacement,
+) {
+    let parsed = parse_module(source).unwrap();
+    let tokens = ruff_python_ast::token::Tokens::new(
+        parsed
+            .tokens()
+            .iter()
+            .filter(|token| !omitted.contains(&token.kind()))
+            .copied()
+            .collect(),
+    );
+    let mut facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
+    facts.tokens = Some(&tokens);
+    let call = parsed.syntax().body[0]
+        .as_expr_stmt()
+        .unwrap()
+        .value
+        .as_call_expr()
+        .unwrap();
+    assert_eq!(
+        helper(&source[..available_len.min(source.len())], call, &facts),
+        None
+    );
+}
+
+fn boundary_subscript_to_get(source: &str, expression: &Expr, facts: &AstFacts) -> Option<String> {
+    subscript_to_mapping_get_replacement(source, expression.as_subscript_expr().unwrap(), facts)
+}
+
+#[rstest::rstest]
+#[case(vec![], 0)]
+#[case(vec![], 3)]
+#[case(vec![TokenKind::Lsqb], 8)]
+#[case(vec![TokenKind::Rsqb], 8)]
+fn subscript_edit_requires_bracket_metadata_and_available_key_source(
+    #[case]
+    #[by_ref]
+    omitted: &[TokenKind],
+    #[case] available_len: usize,
+) {
+    let source = "obj[key]";
+    let parsed = parse_module(source).unwrap();
+    let tokens = ruff_python_ast::token::Tokens::new(
+        parsed
+            .tokens()
+            .iter()
+            .filter(|token| !omitted.contains(&token.kind()))
+            .copied()
+            .collect(),
+    );
+    let mut facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
+    facts.tokens = Some(&tokens);
+    let expression = &parsed.syntax().body[0].as_expr_stmt().unwrap().value;
+    assert_eq!(
+        boundary_subscript_to_get(&source[..available_len], expression, &facts),
+        None
+    );
+}
+
+#[rstest::rstest]
+#[case("1")]
+#[case("-1")]
+fn decimal_literal_decoder_rejects_unavailable_operand_source(#[case] source: &str) {
+    let parsed = parse_module(source).unwrap();
+    let expression = &parsed.syntax().body[0].as_expr_stmt().unwrap().value;
+    assert_eq!(decimal_literal_value("", expression), None);
 }

@@ -770,8 +770,10 @@ fn insert_candidate(transaction: &Transaction<'_>, result: &MutantResult) -> rus
 }
 
 fn insert_result(transaction: &Transaction<'_>, result: &MutantResult) -> rusqlite::Result<()> {
+    // Derived strings, integers, enums and Duration have no custom fallible
+    // serializer or unsupported JSON map keys; the owned string writer is infallible.
     let outcome_json = serde_json::to_string(&result.outcome)
-        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        .expect("MutationOutcome contains only JSON-serializable derived values");
     transaction.execute(
         "INSERT INTO results(run_id,mutant_id,outcome_json,resource_mode) VALUES (?1,?2,?3,?4)",
         params![
@@ -1052,42 +1054,8 @@ mod dispatch_tests {
                     symbol: None,
                     file_hash: "hash".to_owned(),
                 },
-                outcome: match MutationStatus::Killed {
-                    hoimin_core::MutationStatus::Killed => hoimin_core::MutationOutcome::Reused {
-                        status: hoimin_core::ReusedMutationStatus::Killed,
-                    },
-                    hoimin_core::MutationStatus::Survived => hoimin_core::MutationOutcome::Reused {
-                        status: hoimin_core::ReusedMutationStatus::Survived,
-                    },
-                    hoimin_core::MutationStatus::NotRun => hoimin_core::MutationOutcome::NotRun,
-                    status => hoimin_core::MutationOutcome::Executed {
-                        termination: match status {
-                            hoimin_core::MutationStatus::Timeout => {
-                                hoimin_core::ProcessTermination::Timeout
-                            }
-                            hoimin_core::MutationStatus::OutOfMemory => {
-                                hoimin_core::ProcessTermination::OutOfMemory
-                            }
-                            hoimin_core::MutationStatus::ProcessLimit => {
-                                hoimin_core::ProcessTermination::ProcessLimit
-                            }
-                            hoimin_core::MutationStatus::Error => {
-                                hoimin_core::ProcessTermination::Exit(1)
-                            }
-                            _ => unreachable!(),
-                        },
-                        output_state: if status == hoimin_core::MutationStatus::Error {
-                            hoimin_core::ProcessOutputState::CloseTimedOut
-                        } else {
-                            hoimin_core::ProcessOutputState::Complete
-                        },
-                        output: hoimin_core::OutputSpoolRef {
-                            token: "fixture-output".into(),
-                            retained: 0,
-                            observed: 0,
-                        },
-                        elapsed: Duration::from_millis(5),
-                    },
+                outcome: hoimin_core::MutationOutcome::Reused {
+                    status: hoimin_core::ReusedMutationStatus::Killed,
                 },
                 resource_mode: ResourceMode::Hard,
                 diagnostics: Vec::new(),
@@ -1167,3 +1135,6 @@ mod resume_history_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod coverage_tests;

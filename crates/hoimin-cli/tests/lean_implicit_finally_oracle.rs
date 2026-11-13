@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
 #[path = "support/jsonl_report.rs"]
@@ -8,6 +9,11 @@ use hoimin_cli::plan::PlanManifest;
 use serde::Deserialize;
 use std::ffi::OsString;
 use std::time::Duration;
+
+#[cfg(windows)]
+const VENV_PYTHON_PATH: &str = "../../.venv/Scripts/python.exe";
+#[cfg(not(windows))]
+const VENV_PYTHON_PATH: &str = "../../.venv/bin/python";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -81,11 +87,7 @@ fn cases() -> Vec<Case> {
 }
 
 fn python() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(if cfg!(windows) {
-        "../../.venv/Scripts/python.exe"
-    } else {
-        "../../.venv/bin/python"
-    })
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(VENV_PYTHON_PATH)
 }
 
 #[tokio::test(flavor = "current_thread")]

@@ -285,10 +285,9 @@ fn sort_swap(
     }
     let first_text = super::source_text(source, first_range)?;
     let second_text = super::source_text(source, second_range)?;
-    let separator = super::source_text(
-        source,
-        TextRange::new(first_range.end(), second_range.start()),
-    )?;
+    // Both neighboring slices validated these UTF-8 endpoints; parser tuple
+    // ordering places the separator between them within the same source.
+    let separator = &source[usize::from(first_range.end())..usize::from(second_range.start())];
     Some((range, format!("{second_text}{separator}{first_text}")))
 }
 
@@ -366,5 +365,307 @@ mod tests {
         .unwrap();
 
         assert_eq!(imports.codecs.is_some(), expected, "{source}");
+    }
+}
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+
+    fn run_encoding(
+        imports: &Imports,
+        call: &ExprCall,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Option<TextRange> {
+        imports.encoding_literal(call, &cancelled)
+    }
+
+    #[rstest::rstest]
+    #[case("decode(errors='surrogateescape')")]
+    #[case("data.other(errors='surrogateescape')")]
+    #[case("data.decode('utf8', 'extra', errors='surrogateescape')")]
+    #[case("data.decode(encoding='utf8')")]
+    #[case("data.decode(**options)")]
+    #[case("data.decode(errors=policy)")]
+    #[case("data.decode(errors='surrogate' 'escape')")]
+    fn encoding_policy_requires_a_simple_method_and_explicit_single_literal(#[case] source: &str) {
+        let parsed = ruff_python_parser::parse_expression(source).unwrap();
+        assert_eq!(
+            run_encoding(
+                &Imports::default(),
+                parsed.syntax().body.as_call_expr().unwrap(),
+                &|| false
+            ),
+            None
+        );
+    }
+
+    fn run_same(first: &Expr, second: &Expr, cancelled: &dyn Fn() -> bool) -> bool {
+        same_read(first, second, &cancelled)
+    }
+
+    #[rstest::rstest]
+    #[case("first", "first", false, true)]
+    #[case("first", "second", false, false)]
+    #[case("item.key", "item.key", false, true)]
+    #[case("item.key", "item.other", false, false)]
+    #[case("item['key']", "item['key']", false, true)]
+    #[case("item[1]", "item[1]", false, true)]
+    #[case("item[1]", "item['1']", false, false)]
+    #[case("item", "item.key", false, false)]
+    #[case("item", "item", true, false)]
+    fn sorting_read_identity_preserves_access_shape_and_literal_type(
+        #[case] first: &str,
+        #[case] second: &str,
+        #[case] cancelled: bool,
+        #[case] expected: bool,
+    ) {
+        let first = ruff_python_parser::parse_expression(first).unwrap();
+        let second = ruff_python_parser::parse_expression(second).unwrap();
+        assert_eq!(
+            run_same(&first.syntax().body, &second.syntax().body, &|| cancelled),
+            expected
+        );
+    }
+
+    fn run_sort(
+        call: &ExprCall,
+        source: &str,
+        tokens: &Tokens,
+        cancelled: &dyn Fn() -> bool,
+        mut selected: &mut dyn FnMut(TextRange) -> bool,
+    ) -> Option<(TextRange, String)> {
+        sort_swap(call, source, tokens, &cancelled, &mut selected)
+    }
+
+    #[rstest::rstest]
+    #[case("", true, false)]
+    #[case("sorted(items, key=lambda item: (item.a,", true, false)]
+    #[case("sorted(items, key=lambda item: (item.a, item.b))", false, false)]
+    #[case("sorted(items, key=lambda item: (item.a, item.b))", true, true)]
+    fn sorting_key_edits_require_available_source_and_selected_span(
+        #[case] source: &str,
+        #[case] selected: bool,
+        #[case] expected: bool,
+    ) {
+        let parsed =
+            ruff_python_parser::parse_module("sorted(items, key=lambda item: (item.a, item.b))")
+                .unwrap();
+        let call = parsed.syntax().body[0]
+            .as_expr_stmt()
+            .unwrap()
+            .value
+            .as_call_expr()
+            .unwrap();
+        assert_eq!(
+            run_sort(call, source, parsed.tokens(), &|| false, &mut |_| selected).is_some(),
+            expected
+        );
+    }
+    #[rstest::rstest]
+    #[case("data.decode(errors='surrogateescape')")]
+    #[case("holder.data.decode(encoding='utf8', errors='surrogateescape')")]
+    fn encoding_policy_retains_the_explicit_error_literal_span(#[case] source: &str) {
+        let parsed = ruff_python_parser::parse_expression(source).unwrap();
+        let range = run_encoding(
+            &Imports::default(),
+            parsed.syntax().body.as_call_expr().unwrap(),
+            &|| false,
+        )
+        .unwrap();
+        assert_eq!(
+            super::super::source_text(source, range),
+            Some("'surrogateescape'")
+        );
+    }
+
+    #[rstest::rstest]
+    fn encoding_policy_stops_during_receiver_or_keyword_checks(
+        #[values(0, 1, 2, 3)] checkpoint: usize,
+    ) {
+        let source = "holder.data.decode(encoding='utf8', errors='surrogateescape')";
+        let parsed = ruff_python_parser::parse_expression(source).unwrap();
+        let polls = std::cell::Cell::new(0);
+        assert_eq!(
+            run_encoding(
+                &Imports::default(),
+                parsed.syntax().body.as_call_expr().unwrap(),
+                &|| {
+                    let current = polls.get();
+                    polls.set(current + 1);
+                    current >= checkpoint
+                }
+            ),
+            None
+        );
+        assert_eq!(polls.get(), checkpoint + 1);
+    }
+
+    #[rstest::rstest]
+    #[case("sorted(items, **options)", false)]
+    #[case("sorted(first, second, key=lambda item: (item.a, item.b))", false)]
+    #[case("sorted(items, key=lambda item: item.a)", false)]
+    #[case("sorted(items, key=lambda item: (item.a, item.b, item.c))", false)]
+    #[case("sorted(items, key=lambda item: (item[dynamic], item.b))", false)]
+    #[case("sorted(items, key=lambda item: (item[1], item['a']))", true)]
+    fn sorting_keys_reject_dynamic_contracts_but_allow_distinct_literal_reads(
+        #[case] source: &str,
+        #[case] expected: bool,
+    ) {
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let call = parsed.syntax().body[0]
+            .as_expr_stmt()
+            .unwrap()
+            .value
+            .as_call_expr()
+            .unwrap();
+        let result = run_sort(call, source, parsed.tokens(), &|| false, &mut |_| true);
+        assert_eq!(result.is_some(), expected);
+    }
+
+    #[rstest::rstest]
+    fn sorting_key_stops_at_each_receiver_and_identity_phase(
+        #[values(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)] checkpoint: usize,
+    ) {
+        let source = "sorted(items, key=lambda item: (item.a, item[1]))";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let call = parsed.syntax().body[0]
+            .as_expr_stmt()
+            .unwrap()
+            .value
+            .as_call_expr()
+            .unwrap();
+        let total = std::cell::Cell::new(0);
+        assert!(
+            run_sort(
+                call,
+                source,
+                parsed.tokens(),
+                &|| {
+                    total.set(total.get() + 1);
+                    false
+                },
+                &mut |_| true
+            )
+            .is_some()
+        );
+        let polls = std::cell::Cell::new(0);
+        let result = run_sort(
+            call,
+            source,
+            parsed.tokens(),
+            &|| {
+                let current = polls.get();
+                polls.set(current + 1);
+                current >= checkpoint
+            },
+            &mut |_| true,
+        );
+        assert_eq!(result.is_some(), checkpoint >= total.get());
+    }
+    fn run_import_build(
+        module: &ModModule,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<Imports, AnalysisCancelled> {
+        let operators = serde_json::from_str("[\"encoding_errors_ignore\"]").unwrap();
+        Imports::build(module, &operators, &cancelled)
+    }
+
+    #[rstest::rstest]
+    fn codecs_import_index_stops_across_alias_and_identity_scans(
+        #[values(
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64
+        )]
+        checkpoint: usize,
+    ) {
+        let source = "import codecs as codec_module\nfrom codecs import decode\ndef function(value):\n return codec_module.decode(value, errors='surrogateescape')\n";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let total = std::cell::Cell::new(0);
+        assert!(
+            run_import_build(parsed.syntax(), &|| {
+                total.set(total.get() + 1);
+                false
+            })
+            .is_ok()
+        );
+        let polls = std::cell::Cell::new(0);
+        let result = run_import_build(parsed.syntax(), &|| {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= checkpoint
+        });
+        assert_eq!(result.is_err(), checkpoint < total.get());
+    }
+    fn run_call(
+        imports: &Imports,
+        call: &ExprCall,
+        source: &str,
+        tokens: &Tokens,
+        cancelled: &dyn Fn() -> bool,
+        selected: &mut dyn FnMut(TextRange) -> bool,
+        sink: &mut dyn FnMut(TextRange, String, MutationOperator) -> bool,
+    ) -> bool {
+        let operators = serde_json::from_value(serde_json::json!([
+            "sort_key_swap",
+            "encoding_errors_ignore"
+        ]))
+        .unwrap();
+        imports.emit(
+            call, source, tokens, &operators, true, &cancelled, selected, sink,
+        )
+    }
+    fn collecting(
+        replacements: &mut Vec<String>,
+        accepted: bool,
+    ) -> impl FnMut(TextRange, String, MutationOperator) -> bool + '_ {
+        move |_, replacement, _| {
+            replacements.push(replacement);
+            accepted
+        }
+    }
+
+    #[rstest::rstest]
+    #[case("data.decode(errors='surrogateescape')", true, true, vec!["'ignore'"], true)]
+    #[case("data.decode(errors='surrogateescape')", true, false, vec!["'ignore'"], false)]
+    #[case("data.decode(errors='surrogateescape')", false, true, vec![], true)]
+    #[case("data.decode(errors='surrogateescape', errors='strict')", true, true, vec![], true)]
+    #[case("data.decode('utf8', errors='surrogateescape')", true, true, vec!["'ignore'"], true)]
+    #[case("data.decode(*arguments, errors='surrogateescape')", true, true, vec![], true)]
+    #[case("sorted(items, key=lambda item: (item.a, item.b))", true, true, vec!["item.b, item.a"], true)]
+    #[case("sorted(items, key=lambda item: (item.a, item.b), key=other)", true, true, vec![], true)]
+    #[case("other(items)", true, true, vec![], true)]
+    fn followup_call_contracts_reject_duplicate_or_expanded_arguments_and_stop_on_sink_rejection(
+        #[case] source: &str,
+        #[case] selected: bool,
+        #[case] accepted: bool,
+        #[case]
+        #[by_ref]
+        expected: &[&str],
+        #[case] completed: bool,
+    ) {
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let imports = run_import_build(parsed.syntax(), &|| false).unwrap();
+        let call = parsed.syntax().body[0]
+            .as_expr_stmt()
+            .unwrap()
+            .value
+            .as_call_expr()
+            .unwrap();
+        let mut replacements = Vec::new();
+        assert_eq!(
+            run_call(
+                &imports,
+                call,
+                source,
+                parsed.tokens(),
+                &|| false,
+                &mut |_| selected,
+                &mut collecting(&mut replacements, accepted)
+            ),
+            completed
+        );
+        assert_eq!(replacements, expected);
     }
 }

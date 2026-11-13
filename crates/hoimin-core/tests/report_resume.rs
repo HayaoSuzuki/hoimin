@@ -1,14 +1,15 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use hoimin_core::{
     EffectId, ResumeFreshReason, ResumeOutcome, SessionLoadOutcome, SessionLoaded, SessionResumeRef,
 };
 use serde_json::json;
 
 #[rstest::rstest]
-#[case::json_id_1_resume_null(json!({"id":1,"resume":null}))]
-#[case::json_id_1_resume_run_id_saved(json!({"id":1,"resume":{"run_id":"saved"}}))]
-#[case::json_id_1_resume_null_fresh_reason_no_prior_run(json!({"id":1,"resume":null,"fresh_reason":"no_prior_run"}))]
-#[case::json_id_1(json!({"id":1}))]
-fn session_loaded_rejects_legacy_or_missing_outcomes(#[case] value: serde_json::Value) {
+#[case::json_id_1_resume_null(&json!({"id":1,"resume":null}))]
+#[case::json_id_1_resume_run_id_saved(&json!({"id":1,"resume":{"run_id":"saved"}}))]
+#[case::json_id_1_resume_null_fresh_reason_no_prior_run(&json!({"id":1,"resume":null,"fresh_reason":"no_prior_run"}))]
+#[case::json_id_1(&json!({"id":1}))]
+fn session_loaded_rejects_legacy_or_missing_outcomes(#[case] value: &serde_json::Value) {
     assert!(
         serde_json::from_value::<SessionLoaded>(value.clone()).is_err(),
         "{value}"
@@ -94,15 +95,15 @@ fn session_loaded_round_trips_every_outcome_and_preserves_effect_and_run_ids(
 }
 
 #[rstest::rstest]
-#[case::json_id_1_outcome_null(json!({"id":1,"outcome":null}))]
-#[case::json_id_1_outcome_fresh_null(json!({"id":1,"outcome":{"Fresh":null}}))]
-#[case::json_id_1_outcome_fresh_no_compatible_run(json!({"id":1,"outcome":{"Fresh":"no_compatible_run"}}))]
-#[case::json_id_1_outcome_resumed(json!({"id":1,"outcome":{"Resumed":{}}}))]
-#[case::json_id_1_outcome_fresh_no_prior_run_resumed_run_id_saved(json!({"id":1,"outcome":{"Fresh":"no_prior_run","Resumed":{"run_id":"saved"}}}))]
-#[case::json_id_1_outcome_fresh_no_prior_run_resume_null(json!({"id":1,"outcome":{"Fresh":"no_prior_run"},"resume":null}))]
-#[case::json_id_1_outcome_resumed_run_id_saved_fresh_reason_no_prior_run(json!({"id":1,"outcome":{"Resumed":{"run_id":"saved"}},"fresh_reason":"no_prior_run"}))]
+#[case::json_id_1_outcome_null(&json!({"id":1,"outcome":null}))]
+#[case::json_id_1_outcome_fresh_null(&json!({"id":1,"outcome":{"Fresh":null}}))]
+#[case::json_id_1_outcome_fresh_no_compatible_run(&json!({"id":1,"outcome":{"Fresh":"no_compatible_run"}}))]
+#[case::json_id_1_outcome_resumed(&json!({"id":1,"outcome":{"Resumed":{}}}))]
+#[case::json_id_1_outcome_fresh_no_prior_run_resumed_run_id_saved(&json!({"id":1,"outcome":{"Fresh":"no_prior_run","Resumed":{"run_id":"saved"}}}))]
+#[case::json_id_1_outcome_fresh_no_prior_run_resume_null(&json!({"id":1,"outcome":{"Fresh":"no_prior_run"},"resume":null}))]
+#[case::json_id_1_outcome_resumed_run_id_saved_fresh_reason_no_prior_run(&json!({"id":1,"outcome":{"Resumed":{"run_id":"saved"}},"fresh_reason":"no_prior_run"}))]
 fn session_loaded_rejects_ambiguous_or_incomplete_payloads_table_1(
-    #[case] value: serde_json::Value,
+    #[case] value: &serde_json::Value,
 ) {
     assert!(
         serde_json::from_value::<SessionLoaded>(value.clone()).is_err(),

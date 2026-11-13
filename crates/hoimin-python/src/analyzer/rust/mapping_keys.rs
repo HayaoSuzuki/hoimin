@@ -47,7 +47,8 @@ fn complex_real(expr: &Expr) -> Option<f64> {
             Number::Float(value) => Some(*value),
             Number::Int(value) => {
                 let result = if let Some(value) = value.as_u64() {
-                    value.to_f64()?
+                    // Every u64 magnitude converts to a finite f64.
+                    value.to_f64().expect("u64 converts to finite f64")
                 } else {
                     let text = value.to_string().replace('_', "");
                     let (digits, radix) = match text.get(..2) {
@@ -68,7 +69,16 @@ fn complex_real(expr: &Expr) -> Option<f64> {
                     if digits.len() > max_digits {
                         return None;
                     }
-                    BigUint::parse_bytes(digits.as_bytes(), radix)?.to_f64()?
+                    // Ruff's Int preserves a validated integer token; removing
+                    // its radix prefix, underscores and leading zeroes leaves
+                    // nonempty valid digits because this magnitude exceeds u64.
+                    let integer = BigUint::parse_bytes(digits.as_bytes(), radix)
+                        .expect("parsed integer has valid digits");
+                    // BigUint's ToPrimitive returns Some, using infinity for an
+                    // overflowing conversion. The finite check below rejects it.
+                    integer
+                        .to_f64()
+                        .expect("BigUint converts to f64 or infinity")
                 };
                 result.is_finite().then_some(result)
             }
@@ -145,7 +155,9 @@ pub(super) fn colliding_edits(keys: &[Expr]) -> Vec<TextRange> {
                         return None;
                     }
                     (
-                        identity(real, -imag)?,
+                        // Negation preserves the nonzero imaginary component,
+                        // which always has a complex identity.
+                        identity(real, -imag).expect("nonzero imaginary identity"),
                         TextRange::new(binary.left.end(), binary.right.start()),
                     )
                 }
@@ -159,7 +171,6 @@ pub(super) fn colliding_edits(keys: &[Expr]) -> Vec<TextRange> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ruff_python_ast::Stmt;
     use ruff_python_parser::parse_module;
 
     #[rstest::rstest]
@@ -180,10 +191,87 @@ mod tests {
 
         let source = format!("{digits}+1j");
         let parsed = parse_module(&source).unwrap();
-        let Stmt::Expr(statement) = &parsed.syntax().body[0] else {
-            panic!("expression")
-        };
+        let statement = parsed.syntax().body[0].as_expr_stmt().unwrap();
 
         assert!(complex(&statement.value).is_none());
+    }
+}
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+
+    #[rstest::rstest]
+    #[case("1.5", Some(1.5))]
+    #[case("18446744073709551616", Some(18_446_744_073_709_551_616.0))]
+    #[case("0x1_0000_0000_0000_0000", Some(18_446_744_073_709_551_616.0))]
+    #[case("-18446744073709551616", Some(-18_446_744_073_709_551_616.0))]
+    #[case("-3", Some(-3.0))]
+    #[case("1j", None)]
+    #[case("-'value'", None)]
+    #[case("'value'", None)]
+    fn complex_real_part_requires_a_real_numeric_literal(
+        #[case] source: &str,
+        #[case] expected: Option<f64>,
+    ) {
+        let parsed = ruff_python_parser::parse_expression(source).unwrap();
+        assert_eq!(
+            complex_real(&parsed.syntax().body).map(f64::to_bits),
+            expected.map(f64::to_bits)
+        );
+    }
+
+    #[test]
+    fn conjugation_detects_a_collision_with_a_pure_imaginary_key() {
+        let source = "(0 - 1j, 1j)";
+        let parsed = ruff_python_parser::parse_expression(source).unwrap();
+        let keys = &parsed.syntax().body.as_tuple_expr().unwrap().elts;
+        let collisions = colliding_edits(keys);
+        assert_eq!(collisions.len(), 1);
+        assert_eq!(
+            &source[usize::from(collisions[0].start())..usize::from(collisions[0].end())],
+            " - "
+        );
+    }
+    #[test]
+    fn real_integer_within_the_digit_bound_must_still_be_finite() {
+        let source = "9".repeat(309);
+        let parsed = ruff_python_parser::parse_expression(&source).unwrap();
+        assert_eq!(complex_real(&parsed.syntax().body), None);
+    }
+
+    #[rstest::rstest]
+    #[case("(1 + 2, True)")]
+    #[case("(1 + 0j, True)")]
+    fn real_only_and_noncomplex_binary_keys_do_not_gain_a_conjugate_edit(#[case] source: &str) {
+        let parsed = ruff_python_parser::parse_expression(source).unwrap();
+        let keys = &parsed.syntax().body.as_tuple_expr().unwrap().elts;
+        assert_eq!(colliding_edits(keys), Vec::<TextRange>::new());
+    }
+    #[rstest::rstest]
+    #[case("True", Some(Identity::Boolean(true)))]
+    #[case("False", Some(Identity::Boolean(false)))]
+    #[case("0", Some(Identity::Boolean(false)))]
+    #[case("1", Some(Identity::Boolean(true)))]
+    #[case("2", None)]
+    #[case("18446744073709551616", None)]
+    #[case("0.0", Some(Identity::Boolean(false)))]
+    #[case("1.0", Some(Identity::Boolean(true)))]
+    #[case("2.0", None)]
+    #[case("-0", Some(Identity::Boolean(false)))]
+    #[case("-1", None)]
+    #[case("-0.0", Some(Identity::Boolean(false)))]
+    #[case("-2.0", None)]
+    #[case("1j", Some(Identity::Complex(0, 1.0_f64.to_bits())))]
+    #[case("-2j", Some(Identity::Complex(0, (-2.0_f64).to_bits())))]
+    #[case("1+2j", Some(Identity::Complex(1.0_f64.to_bits(), 2.0_f64.to_bits())))]
+    #[case("None", None)]
+    #[case("-'value'", None)]
+    fn mapping_key_identity_matches_python_numeric_equality(
+        #[case] source: &str,
+        #[case] expected: Option<Identity>,
+    ) {
+        let parsed = ruff_python_parser::parse_expression(source).unwrap();
+        assert!(key_identity(&parsed.syntax().body) == expected, "{source}");
     }
 }

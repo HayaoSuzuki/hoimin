@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #[path = "support/mutation_outcome.rs"]
 mod mutation_outcome;
 use std::num::NonZeroUsize;

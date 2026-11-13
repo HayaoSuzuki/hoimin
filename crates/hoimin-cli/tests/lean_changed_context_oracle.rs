@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 //! Lean owns the expected line sets; the adapter executes real Git and public plan.
 
 #[path = "support/collecting_writer.rs"]

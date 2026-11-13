@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
 use collecting_writer::CollectingWriter;
@@ -11,6 +12,11 @@ use std::time::Duration;
 use hoimin_cli::analyzer::{AnalyzerHandler, CandidateCursor, CandidateStore};
 use hoimin_core::{AnalyzeFile, EffectId, MutationOperatorSelection, MutationProfile, TargetSlice};
 use serde::Deserialize;
+
+#[cfg(windows)]
+const VENV_PYTHON_PATH: &str = ".venv/Scripts/python.exe";
+#[cfg(not(windows))]
+const VENV_PYTHON_PATH: &str = ".venv/bin/python";
 
 const CORPUS: &str =
     include_str!("../../../formal/HoiminOracle/corpus/bounded-candidate-discovery.jsonl");
@@ -105,7 +111,7 @@ fn validate_case(item: &OracleCase) -> Result<(), String> {
         || item.expected_identities.len() > usize::try_from(item.limit).unwrap_or(usize::MAX)
         || item.expected_sequences
             != (1..=u64::try_from(item.expected_identities.len())
-                .map_err(|_| format!("{} expectation length overflows u64", item.id))?)
+                .expect("usize fits u64 on supported targets"))
                 .collect::<Vec<_>>()
     {
         return Err(format!("{} violates its closed expectation shape", item.id));
@@ -330,7 +336,14 @@ struct TargetFixture {
 
 impl TargetFixture {
     fn new(case_id: &str) -> Result<Self, String> {
-        let directory = tempfile::tempdir().map_err(|error| error.to_string())?;
+        Self::from_directory(tempfile::tempdir(), case_id)
+    }
+
+    fn from_directory(
+        directory: std::io::Result<tempfile::TempDir>,
+        case_id: &str,
+    ) -> Result<Self, String> {
+        let directory = directory.map_err(|error| error.to_string())?;
         let root = directory.path().join("project");
         let source = root.join("src");
         std::fs::create_dir_all(&source).map_err(|error| error.to_string())?;
@@ -352,7 +365,11 @@ impl TargetFixture {
 
 impl Fixture {
     fn new() -> Result<Self, String> {
-        let directory = tempfile::tempdir().map_err(|error| error.to_string())?;
+        Self::from_directory(tempfile::tempdir())
+    }
+
+    fn from_directory(directory: std::io::Result<tempfile::TempDir>) -> Result<Self, String> {
+        let directory = directory.map_err(|error| error.to_string())?;
         let root = directory.path().join("project");
         let source = root.join("src");
         std::fs::create_dir_all(&source).map_err(|error| error.to_string())?;
@@ -377,11 +394,7 @@ fn repo_root() -> PathBuf {
 }
 
 fn python_executable() -> PathBuf {
-    if cfg!(windows) {
-        repo_root().join(".venv/Scripts/python.exe")
-    } else {
-        repo_root().join(".venv/bin/python")
-    }
+    repo_root().join(VENV_PYTHON_PATH)
 }
 
 fn plan_args(fixture: &Fixture, limit: u64) -> Vec<OsString> {
@@ -406,4 +419,97 @@ fn plan_args(fixture: &Fixture, limit: u64) -> Vec<OsString> {
         "-c".into(),
         "pass".into(),
     ]
+}
+
+#[rstest::rstest]
+#[case::identity("/id", serde_json::json!("unknown"), "unknown case id")]
+#[case::producer("/token/0/producer", serde_json::json!("unknown"), "unknown producer")]
+#[case::path("/token/0/path", serde_json::json!(""), "incomplete candidate descriptor")]
+#[case::original("/token/0/original", serde_json::json!(""), "incomplete candidate descriptor")]
+#[case::replacement("/token/0/replacement", serde_json::json!(""), "incomplete candidate descriptor")]
+#[case::operator("/token/0/operator", serde_json::json!(""), "incomplete candidate descriptor")]
+#[case::target_count("/expected_targets_read", serde_json::json!(1), "crosses target and producer premises")]
+#[case::completion("/expected_exit_code", serde_json::json!(1), "invalid completion projection")]
+fn bounded_schema_rejects_one_invalid_coordinate(
+    #[case] pointer: &str,
+    #[case] value: serde_json::Value,
+    #[case] diagnostic: &str,
+) {
+    let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
+    *row.pointer_mut(pointer).unwrap() = value;
+    assert!(
+        parse_corpus(&row.to_string())
+            .unwrap_err()
+            .contains(diagnostic)
+    );
+}
+
+#[test]
+fn bounded_parser_rejects_missing_case_set() {
+    assert!(
+        parse_corpus("")
+            .unwrap_err()
+            .contains("exact closed case set")
+    );
+}
+
+#[test]
+fn bounded_parser_ignores_blank_lines() {
+    assert_eq!(parse_corpus(&format!("\n{CORPUS}\n")).unwrap().len(), 8);
+}
+
+#[rstest::rstest]
+#[case::targets("/targets", serde_json::json!([]))]
+#[case::spool("/expected_spool_finished", serde_json::json!(false))]
+#[case::read_count("/expected_targets_read", serde_json::json!(0))]
+fn bounded_schema_rejects_invalid_ordered_target_projection(
+    #[case] pointer: &str,
+    #[case] value: serde_json::Value,
+) {
+    let mut row: serde_json::Value = CORPUS
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|row| row["id"] == "complete_two_targets")
+        .unwrap();
+    *row.pointer_mut(pointer).unwrap() = value;
+    assert!(
+        parse_corpus(&row.to_string())
+            .unwrap_err()
+            .contains("invalid target projection")
+    );
+}
+
+#[rstest::rstest]
+#[case::regular(|directory| Fixture::from_directory(directory).err().unwrap())]
+#[case::targets(|directory| TargetFixture::from_directory(directory, "complete_two_targets").err().unwrap())]
+fn bounded_fixture_reports_tempdir_failure(
+    #[case] diagnostic: fn(std::io::Result<tempfile::TempDir>) -> String,
+) {
+    assert_eq!(diagnostic(Err(std::io::Error::other("denied"))), "denied");
+}
+
+#[rstest::rstest]
+#[case::regular(|directory| Fixture::from_directory(Ok(directory)).is_err())]
+#[case::targets(|directory| TargetFixture::from_directory(Ok(directory), "complete_two_targets").is_err())]
+fn bounded_fixture_reports_source_directory_failure(
+    #[case] rejected: fn(tempfile::TempDir) -> bool,
+) {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::create_dir(directory.path().join("project")).unwrap();
+    std::fs::write(directory.path().join("project/src"), "obstruction").unwrap();
+    assert!(rejected(directory));
+}
+
+#[rstest::rstest]
+#[case::alpha(|directory| Fixture::from_directory(Ok(directory)).is_err(), "alpha.py")]
+#[case::beta(|directory| Fixture::from_directory(Ok(directory)).is_err(), "beta.py")]
+#[case::first(|directory| TargetFixture::from_directory(Ok(directory), "complete_two_targets").is_err(), "first.py")]
+#[case::second(|directory| TargetFixture::from_directory(Ok(directory), "complete_two_targets").is_err(), "second.py")]
+fn bounded_fixture_reports_unwritable_source(
+    #[case] rejected: fn(tempfile::TempDir) -> bool,
+    #[case] path: &str,
+) {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(directory.path().join("project/src").join(path)).unwrap();
+    assert!(rejected(directory));
 }

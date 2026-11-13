@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import io
+import json
 import os
 import subprocess
 import sys
@@ -9,7 +11,9 @@ import venv
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
+from unittest.mock import create_autospec
 
+import archive_smoke
 import pytest
 from archive_smoke import extract_binary
 from pytest_mock import MockerFixture
@@ -173,3 +177,55 @@ def test_venv_interpreter_symlink_keeps_its_environment(
 
     assert python.is_symlink()
     assert command.call_args.args[0][-4] == str(python.absolute())
+
+
+@pytest.mark.parametrize("system", ["darwin", "linux"])
+def test_archive_smoke_report_binds_archive_and_extracted_binary(
+    tmp_path: Path, mocker: MockerFixture, system: str
+) -> None:
+    original_exercise_cli_spec = archive_smoke.exercise_cli
+    original_run_spec = archive_smoke.run
+    archive = tmp_path / "release.zip"
+    write_zip(archive)
+    report = tmp_path / "report.json"
+    mocker.patch.dict(os.environ, {"ARCHIVE": str(archive)})
+    mocker.patch.dict(os.environ, {"VERSION": "1.2.3"})
+    mocker.patch.dict(os.environ, {"SMOKE_REPORT": str(report)})
+    mocker.patch.object(sys, "platform", system)
+    extracted: list[Path] = []
+
+    def exercise(binary: Path, python: Path, project: Path, version: str) -> None:
+        assert binary.read_bytes() == ARCHIVE_MEMBERS["hoimin"]
+        assert python == Path(sys.executable)
+        assert version == "1.2.3"
+        assert project.parent == binary.parent.parent
+        extracted.append(binary)
+
+    mocker.patch.object(
+        archive_smoke,
+        "exercise_cli",
+        create_autospec(original_exercise_cli_spec, side_effect=exercise),
+    )
+    mocker.patch.object(
+        archive_smoke,
+        "run",
+        create_autospec(
+            original_run_spec,
+            side_effect=lambda *_args, **_kwargs: subprocess.CompletedProcess(
+                [], 0, "GLIBC_2.17 GLIBC_2.35", ""
+            ),
+        ),
+    )
+    assert archive_smoke.main() == 0
+    evidence = json.loads(report.read_text(encoding="utf-8"))
+    assert evidence["archive"] == archive.name
+    assert evidence["version"] == "1.2.3"
+    assert evidence["sha256"] == hashlib.sha256(archive.read_bytes()).hexdigest()
+    assert (
+        evidence["binary_sha256"]
+        == hashlib.sha256(ARCHIVE_MEMBERS["hoimin"]).hexdigest()
+    )
+    if system == "linux":
+        assert evidence["glibc_symbols"] == [[2, 17], [2, 35]]
+    assert extracted
+    assert not extracted[0].exists()

@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
 #[path = "support/jsonl_report.rs"]
@@ -199,11 +200,8 @@ async fn adjacent_patterns_and_dictionary_expressions_keep_candidates() {
 #[case::true_a_false_b_1("True: a, False: b", 0)]
 #[case::input_1_2j_a_1_2j_b_2("1+2j: a, 1-2j: b", 0)]
 #[case::false_a_2_b_3("False: a, 2: b", 1)]
-#[tokio::test]
-async fn import_only_run_does_not_count_duplicate_key_kills(
-    #[case] keys: &str,
-    #[case] survived: usize,
-) {
+#[test]
+fn import_only_run_does_not_count_duplicate_key_kills(#[case] keys: &str, #[case] survived: usize) {
     let dir = tempfile::tempdir().unwrap();
 
     let source =

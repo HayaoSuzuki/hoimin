@@ -163,7 +163,19 @@ fn validate_case(item: &OracleCase) -> Result<(), String> {
         ),
         "nested_continue_suppresses_public_candidate" => strict_identity(item, "loop-back-edge"),
         "post_loop_meets_break_and_natural_exit" => strict_identity(item, "loop-consumption"),
-        _ => false,
+        _ => {
+            // expected_source above accepts only the IDs enumerated in this match.
+            // Retain a fail-closed fallback for future corpus edits.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || false)()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                false
+            }
+        }
     };
     if !identity_matches {
         return Err(format!("{} has inconsistent closed identity", item.id));
@@ -188,7 +200,14 @@ fn strict_identity(item: &OracleCase, family: &str) -> bool {
 }
 
 fn selected_cases(cases: &[OracleCase]) -> Result<Vec<&OracleCase>, String> {
-    let Some(selected) = std::env::var_os("HOIMIN_NESTED_MATCH_EXIT_CASE") else {
+    apply_case_filter(cases, std::env::var_os("HOIMIN_NESTED_MATCH_EXIT_CASE"))
+}
+
+fn apply_case_filter(
+    cases: &[OracleCase],
+    filter: Option<std::ffi::OsString>,
+) -> Result<Vec<&OracleCase>, String> {
+    let Some(selected) = filter else {
         return Ok(cases.iter().collect());
     };
     let selected = selected
@@ -315,8 +334,7 @@ fn internal_rows_match_complete_production_observations() {
     for item in selected.iter().filter(|item| {
         item.mode == "internal-fixture" && matches!(item.observation_kind, ObservationKind::TryExit)
     }) {
-        let actual = binding_flow_try_exit_snapshot(&item.source, &item.marker)
-            .unwrap_or_else(|error| panic!("{}: {error}", item.id));
+        let actual = binding_flow_try_exit_snapshot(&item.source, &item.marker).expect(&item.id);
         assert_eq!(
             actual.fallthrough, item.expected_exits.fallthrough,
             "{}",
@@ -339,7 +357,7 @@ fn internal_rows_match_complete_production_observations() {
             && matches!(item.observation_kind, ObservationKind::LoopHead)
     }) {
         let actual = binding_flow_loop_head_snapshot_at_marker(&item.source, &item.marker, None)
-            .unwrap_or_else(|error| panic!("{}: {error}", item.id));
+            .expect(&item.id);
         assert_eq!(actual, item.expected_facts, "{}", item.id);
     }
 }
@@ -371,4 +389,101 @@ fn fixtures_detect_flattened_match_categories_and_omitted_continue_edges() {
     )
     .expect("mutation premise must remain observable");
     assert_ne!(omitted, loop_item.expected_facts);
+}
+
+#[rstest::rstest]
+#[case("schema", serde_json::json!(0), "unsupported schema")]
+#[case("mode", serde_json::json!("unknown"), "unknown mode")]
+#[case("marker", serde_json::json!(""), "one unique marker")]
+#[case("candidate_count", serde_json::json!(999), "inconsistent public observation")]
+#[case("id", serde_json::json!("unknown"), "changed source premises")]
+#[case("family", serde_json::json!("unknown"), "inconsistent closed identity")]
+fn oracle_validation_rejects_inconsistent_case_fields(
+    #[case] field: &str,
+    #[case] replacement: serde_json::Value,
+    #[case] expected: &str,
+) {
+    let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
+    row[field] = replacement;
+    let item: OracleCase = serde_json::from_value(row).unwrap();
+    assert!(validate_case(&item).unwrap_err().contains(expected));
+}
+
+#[rstest::rstest]
+#[case("{", "invalid JSON")]
+#[case("", "no cases")]
+fn oracle_validation_rejects_invalid_corpus_structure(#[case] input: &str, #[case] expected: &str) {
+    assert!(parse_corpus(input).unwrap_err().contains(expected));
+}
+
+#[test]
+fn oracle_validation_rejects_duplicate_case_id() {
+    let duplicated = format!("{CORPUS}\n{CORPUS}");
+    assert!(
+        parse_corpus(&duplicated)
+            .unwrap_err()
+            .contains("duplicate case id")
+    );
+}
+
+#[test]
+fn oracle_validation_accepts_blank_lines_between_valid_rows() {
+    let with_blanks = format!("\n{CORPUS}\n\n");
+    assert_eq!(
+        parse_corpus(&with_blanks).unwrap().len(),
+        parse_corpus(CORPUS).unwrap().len()
+    );
+}
+
+#[test]
+fn oracle_validation_rejects_field_with_wrong_json_type() {
+    let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
+    row["schema"] = serde_json::json!(false);
+    assert!(
+        parse_corpus(&row.to_string())
+            .unwrap_err()
+            .contains("invalid JSON")
+    );
+}
+
+#[test]
+fn oracle_case_filter_selects_the_requested_fixture() {
+    let cases = parse_corpus(CORPUS).unwrap();
+    let id = cases[0].id.clone();
+    let selected = apply_case_filter(&cases, Some(id.clone().into())).unwrap();
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].id, id);
+}
+
+#[test]
+fn oracle_case_filter_rejects_an_unknown_fixture() {
+    let cases = parse_corpus(CORPUS).unwrap();
+    let error = apply_case_filter(&cases, Some("unknown-fixture".into())).unwrap_err();
+    assert!(error.contains("selected 0"));
+}
+
+#[cfg(unix)]
+#[test]
+fn oracle_case_filter_rejects_non_utf8_fixture_names() {
+    use std::os::unix::ffi::OsStringExt as _;
+    let cases = parse_corpus(CORPUS).unwrap();
+    let error =
+        apply_case_filter(&cases, Some(std::ffi::OsString::from_vec(vec![0xff]))).unwrap_err();
+    assert!(error.contains("not UTF-8"));
+}
+
+#[test]
+fn oracle_validation_rejects_a_well_formed_candidate_for_an_absent_candidate_identity() {
+    let mut item: OracleCase = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
+    item.candidate = CandidateExpectation::Present;
+    item.candidate_count = 1;
+    item.candidate_path = Some("target.py".into());
+    item.candidate_operator = Some("type_list_sequence".into());
+    item.candidate_original = Some("Sequence[int]".into());
+    item.candidate_replacement = Some("list[int]".into());
+    assert!(
+        validate_case(&item)
+            .unwrap_err()
+            .contains("inconsistent closed identity")
+    );
 }

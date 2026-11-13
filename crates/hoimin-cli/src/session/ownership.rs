@@ -124,3 +124,33 @@ fn unlock(file: &File) {
         );
     }
 }
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+
+    #[test]
+    fn lock_file_collision_is_an_io_error_and_preserves_the_directory() {
+        let directory = tempfile::tempdir().unwrap();
+        let lock = directory
+            .path()
+            .join(format!("{}.lock", blake3::hash(b"run").to_hex()));
+        std::fs::create_dir(&lock).unwrap();
+        assert!(matches!(
+            RunOwnership::acquire(directory.path(), "run"),
+            Err(AcquireError::Io(_))
+        ));
+        assert!(lock.is_dir());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn unsupported_descriptor_lock_is_an_io_error_instead_of_active_ownership() {
+        let (socket, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
+        let descriptor: std::os::fd::OwnedFd = socket.into();
+        let file = File::from(descriptor);
+        assert!(
+            matches!(try_lock(&file), Err(AcquireError::Io(error)) if error.raw_os_error() == Some(libc::ENOTSUP))
+        );
+    }
+}

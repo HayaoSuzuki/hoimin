@@ -61,3 +61,59 @@ pub fn to_vec(document: &serde_json::Value) -> Vec<u8> {
         .collect::<String>()
         .into_bytes()
 }
+
+#[cfg(test)]
+mod tests {
+    #[rstest::rstest]
+    #[case::missing_kind(b"{\"schema_version\":1,\"run\":null}")]
+    #[case::retired_aggregate(b"{\"kind\":\"retired_report\",\"run\":null}")]
+    #[case::unknown_kind(b"{\"kind\":\"unknown_event\"}")]
+    #[should_panic(expected = "unexpected report event")]
+    fn rejects_events_outside_the_jsonl_protocol(#[case] bytes: &[u8]) {
+        let _: serde_json::Value = super::from_slice(bytes).unwrap();
+    }
+}
+
+#[cfg(test)]
+#[rstest::rstest]
+#[case::empty(b"")]
+#[case::malformed(b"{")]
+fn malformed_input_is_a_json_error(#[case] input: &[u8]) {
+    assert!(from_slice::<serde_json::Value>(input).is_err());
+}
+
+#[cfg(test)]
+#[rstest::rstest]
+#[case::without_baseline(&serde_json::Value::Null, 3, 4)]
+#[case::with_baseline(&serde_json::json!({"kind": "baseline_finished"}), 4, 5)]
+fn serialized_lifecycle_roundtrips_with_ordered_sequences(
+    #[case] baseline: &serde_json::Value,
+    #[case] mutant_sequence: u64,
+    #[case] summary_sequence: u64,
+) {
+    let document = serde_json::json!({
+        "run": {"kind": "run_started", "schema_version": 6, "run_id": "r"},
+        "baseline": baseline,
+        "mutants": [{"kind": "mutant_finished", "schema_version": 6, "run_id": "r", "candidate": {"id": "m", "sequence": 1}}],
+        "summary": {"kind": "run_finished", "run_id": "r"},
+    });
+    let decoded: serde_json::Value = from_slice(&to_vec(&document)).unwrap();
+    assert_eq!(decoded["run"]["sequence"], 1);
+    assert_eq!(decoded["run"]["run_id"], "r");
+    assert_eq!(
+        decoded["baseline"].is_null(),
+        document["baseline"].is_null()
+    );
+    assert_eq!(decoded["mutants"][0]["sequence"], mutant_sequence);
+    assert_eq!(decoded["summary"]["sequence"], summary_sequence);
+}
+
+#[cfg(test)]
+#[rstest::rstest]
+#[case::plain(&serde_json::json!({"answer": 1}))]
+#[case::plan(&serde_json::json!({"kind": "plan"}))]
+#[case::preview(&serde_json::json!({"kind": "verify_preview"}))]
+fn standalone_documents_retain_their_original_shape(#[case] document: &serde_json::Value) {
+    let decoded: serde_json::Value = from_slice(&serde_json::to_vec(document).unwrap()).unwrap();
+    assert_eq!(&decoded, document);
+}

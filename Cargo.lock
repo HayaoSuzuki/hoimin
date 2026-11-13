@@ -581,6 +581,7 @@ dependencies = [
  "ruff_python_parser",
  "rusqlite",
  "rustix",
+ "rustix-linux-procfs",
  "serde",
  "serde_json",
  "tempfile",
@@ -1099,8 +1100,6 @@ dependencies = [
 [[package]]
 name = "rstest_macros"
 version = "0.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88512dbfb5b73a0dfa38aef7bc73b5657035fce477b923faf12d332dd83051ea"
 dependencies = [
  "cfg-if",
  "glob",

@@ -60,7 +60,7 @@ macro_rules! layered_case {
             let sources = layered_sources($n, $missing);
             let vertices = 3 * $n + 1;
             let dependencies = 2 * $n * $n;
-            let edges = if $missing { 0 } else { dependencies };
+            let edges = usize::from(!$missing) * dependencies;
             assert_eq!(sources.len(), vertices);
             assert_eq!(sources.iter().map(|(_, s)| s.len()).sum::<usize>(), $bytes);
             reset_work();
@@ -139,7 +139,8 @@ fn source_index(sources: &[(&str, &str)]) -> ExceptionIndex {
         .iter()
         .map(|(path, source)| (Utf8PathBuf::from(*path), (*source).to_owned()))
         .collect::<Vec<_>>();
-    ExceptionIndex::from_sources(&sources, &[".".into()], &|| false).unwrap()
+    let no_cancel: &dyn Fn() -> bool = &|| false;
+    ExceptionIndex::from_sources(&sources, &[".".into()], &no_cancel).unwrap()
 }
 
 macro_rules! source_case {
@@ -169,12 +170,7 @@ macro_rules! source_case {
             let expected: &[&str] = $expected;
             assert_eq!(replacements, expected);
             let expected_reason: Option<&str> = $reason;
-            if let Some(reason) = expected_reason {
-                assert!(report.diagnostic().unwrap().1.contains(reason));
-            } else {
-                assert!(report.diagnostic().is_none());
-                assert_eq!(index.visible[Utf8Path::new($target)].len(), 2);
-            }
+            assert_source_diagnostic(&index, Utf8Path::new($target), &report, expected_reason);
         }
     };
 }
@@ -409,9 +405,9 @@ macro_rules! cancellation_case {
             let sources = $sources;
             reset_work();
             // Act.
-            let result = ExceptionIndex::from_sources(&sources, &[".".into()], &|| {
-                WORK.with(Cell::get)[Phase::$phase as usize] >= 16
-            });
+            let cancelled: &dyn Fn() -> bool =
+                &|| WORK.with(Cell::get)[Phase::$phase as usize] >= 16;
+            let result = ExceptionIndex::from_sources(&sources, &[".".into()], &cancelled);
             // Assert: no successful partial index escapes, at the exact work boundary.
             assert!(matches!(result, Err(AnalysisError::Cancelled)));
             assert_eq!(WORK.with(Cell::get)[Phase::$phase as usize], 16);
@@ -475,14 +471,24 @@ cancellation_case!(
     )]
 );
 
-#[test]
-fn already_cancelled_empty_graph_returns_error() {
-    // Arrange.
+#[rstest::rstest]
+#[case(0, Err(AnalysisCancelled))]
+#[case(1, Err(AnalysisCancelled))]
+#[case(2, Err(AnalysisCancelled))]
+#[case(3, Err(AnalysisCancelled))]
+#[case(4, Ok(()))]
+fn empty_graph_observes_cancellation_between_every_stage(
+    #[case] checkpoint: usize,
+    #[case] expected: Result<(), AnalysisCancelled>,
+) {
     let mut index = ExceptionIndex::default();
-    // Act.
-    let result = index.exclude_import_cycles(&|| true);
-    // Assert.
-    assert!(matches!(result, Err(AnalysisCancelled)));
+    let polls = Cell::new(0);
+    let cancelled: &dyn Fn() -> bool = &|| {
+        let current = polls.get();
+        polls.set(current + 1);
+        current >= checkpoint
+    };
+    assert_eq!(index.exclude_import_cycles(&cancelled), expected);
 }
 
 fn source_boundary(size: usize, cyclic: bool) -> Vec<(Utf8PathBuf, String)> {
@@ -522,19 +528,7 @@ macro_rules! source_boundary_case {
                 )
                 .unwrap();
             // Assert: real depth boundaries affect candidates and the existing reason.
-            if $excluded {
-                assert!(replacements.is_empty());
-                assert!(
-                    report
-                        .diagnostic()
-                        .unwrap()
-                        .1
-                        .contains("untrusted_module=1")
-                );
-            } else {
-                assert_eq!(replacements, ["Root"]);
-                assert!(report.diagnostic().is_none());
-            }
+            assert_source_boundary(&report, &replacements, $excluded);
         }
     };
 }
@@ -573,4 +567,34 @@ fn normalized_relative_cycle_excludes_only_its_members() {
         .collect::<Vec<_>>();
 
     assert_eq!(excluded, ["pkg/a.py", "pkg/b.py"]);
+}
+
+fn assert_source_diagnostic(
+    index: &ExceptionIndex,
+    target: &Utf8Path,
+    report: &HierarchyReport,
+    expected_reason: Option<&str>,
+) {
+    if let Some(reason) = expected_reason {
+        assert!(report.diagnostic().unwrap().1.contains(reason));
+    } else {
+        assert!(report.diagnostic().is_none());
+        assert_eq!(index.visible[target].len(), 2);
+    }
+}
+
+fn assert_source_boundary(report: &HierarchyReport, replacements: &[String], excluded: bool) {
+    if excluded {
+        assert_eq!(replacements, &[] as &[String]);
+        assert!(
+            report
+                .diagnostic()
+                .unwrap()
+                .1
+                .contains("untrusted_module=1")
+        );
+    } else {
+        assert_eq!(replacements, ["Root"]);
+        assert!(report.diagnostic().is_none());
+    }
 }

@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
@@ -199,4 +200,37 @@ proptest! {
 
         prop_assert_eq!(result, capacity.as_nanos() > remaining.as_nanos());
     }
+}
+
+#[test]
+fn independently_computed_projections_with_equal_fields_are_equal() {
+    let original = project(3, 2, Duration::from_secs(1));
+    let repeated = project(3, 2, Duration::from_secs(1));
+    assert_eq!(original, repeated);
+}
+
+#[rstest::rstest]
+#[case(|value: &mut TopBudgetProjection| value.selected += 1)]
+#[case(|value: &mut TopBudgetProjection| value.jobs += 1)]
+#[case(|value: &mut TopBudgetProjection| value.planned_total_timeout = Duration::ZERO)]
+#[case(|value: &mut TopBudgetProjection| value.baseline = Duration::from_nanos(1))]
+#[case(|value: &mut TopBudgetProjection| value.effective_mutant_timeout += Duration::from_nanos(1))]
+#[case(|value: &mut TopBudgetProjection| value.remaining = Duration::from_nanos(1))]
+#[case(|value: &mut TopBudgetProjection| value.waves += 1)]
+#[case(|value: &mut TopBudgetProjection| value.projected_capacity += Duration::from_nanos(1))]
+fn projection_equality_compares_every_field(#[case] mutate: fn(&mut TopBudgetProjection)) {
+    let original = project(3, 2, Duration::from_secs(1));
+    let mut changed = original;
+    mutate(&mut changed);
+    assert_ne!(original, changed);
+}
+
+#[rstest::rstest]
+#[case(MutantTimeout::Auto, MutantTimeout::Fixed(NonZeroDuration::new(Duration::from_secs(5)).unwrap()))]
+#[case(MutantTimeout::Fixed(NonZeroDuration::new(Duration::from_secs(5)).unwrap()), MutantTimeout::Auto)]
+fn timeout_modes_are_distinct_even_at_the_automatic_floor(
+    #[case] left: MutantTimeout,
+    #[case] right: MutantTimeout,
+) {
+    assert_ne!(left, right);
 }

@@ -301,3 +301,17 @@ fn generator_candidates_preserve_every_prefix_selection_and_payload_limit() {
     assert!(analyze_source_cancellable(&request, source, || true).is_err());
     assert!(analyze_source_cancellable(&request, source, || false).is_err());
 }
+
+#[rstest::rstest]
+#[case("next", 0)]
+#[case("unrelated", 1)]
+fn generator_skip_first_respects_temporary_exception_handler_bindings(
+    #[case] handler_name: &str,
+    #[case] expected_count: usize,
+) {
+    let source = format!(
+        "try:\n action()\nexcept Exception as {handler_name}:\n result = (item for item in values)\n"
+    );
+    let output = analyze_selected(&["generator_skip_first"], &source);
+    assert_eq!(output.candidates.len(), expected_count);
+}

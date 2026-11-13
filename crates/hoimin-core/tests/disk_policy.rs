@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute, stmt_expr_attributes))]
 use std::num::NonZeroU64;
 use std::time::Duration;
 
@@ -27,7 +28,18 @@ fn inclusive_boundaries_prefer_reserve_and_retain_size_as_secondary() {
     let decision = policy(10, 10).evaluate(observation(10, 10));
 
     let DiskDecision::Stop(failure) = decision else {
-        panic!("both inclusive boundaries must stop");
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("both inclusive boundaries must stop") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("both inclusive boundaries must stop")
+            }
+        }
     };
 
     assert_eq!(failure.code(), FILESYSTEM_RESERVE_REACHED);

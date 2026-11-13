@@ -30,6 +30,13 @@ bindings = "bin"
 manifest-path = "crates/hoimin-cli/Cargo.toml"
 # Keep the vendored build/provenance inputs explicit; exclude caches and outputs.
 include = [
+    { path = "vendor/rstest_macros/Cargo.toml", format = "sdist" },
+    { path = "vendor/rstest_macros/build.rs", format = "sdist" },
+    { path = "vendor/rstest_macros/LICENSE-APACHE", format = "sdist" },
+    { path = "vendor/rstest_macros/LICENSE-MIT", format = "sdist" },
+    { path = "vendor/rstest_macros/HOIMIN_PATCH.md", format = "sdist" },
+    { path = "vendor/rstest_macros/README.md", format = "sdist" },
+    { path = "vendor/rstest_macros/src/**", format = "sdist" },
     { path = "vendor/ruff_python_parser/Cargo.toml", format = "sdist" },
     { path = "vendor/ruff_python_parser/LICENSE", format = "sdist" },
     { path = "vendor/ruff_python_parser/README.hoimin.md", format = "sdist" },
@@ -97,6 +104,7 @@ docs = [
     "mkdocs>=1.6.1,<2",
     "mkdocs-material>=9.7.7,<10",
     "pytest>=9,<10",
+    "pytest-mock>=3.15.1,<4",
 ]
 
 [tool.ruff]
@@ -142,6 +150,19 @@ empty_parameter_set_mark = "fail_at_collect"
 testpaths = ["tests"]
 norecursedirs = ["fixtures", ".hypothesis"]
 pythonpath = [".", "tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["tools", "tests", "formal/HoiminOracle/tools", "crates/hoimin-cli/tests/support"]
+patch = ["subprocess"]
+
+[tool.coverage.paths]
+repository = [".", "/work"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+precision = 2
 
 [tool.ty.environment]
 python-version = "3.14"

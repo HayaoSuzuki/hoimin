@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute, stmt_expr_attributes))]
 //! Identity-only transitions must not allocate copies of candidate source text.
 use std::collections::VecDeque;
 use std::sync::Mutex;
@@ -7,9 +8,8 @@ use hoimin_core::{
     AnalysisFinished, ByteSpan, CandidateLoaded, CandidateSpoolRef, CommandArg,
     EnvironmentSnapshot, MutationCandidate, OriginalsVerified, OutputEmitted, OutputSpoolRef,
     PreflightCompleted, ProcessFinished, ProcessOutputState, ProcessTermination, RawRunConfig,
-    RawRunLimits, ReadCandidate, RemainingBudgetObserved, ResourceControl, ResourceMode, RunConfig,
-    RunEffect, RunEvent, RunState, StartRequested, TargetSlice, TargetsResolved, WorkerCreated,
-    WorkerReset, transition,
+    RawRunLimits, ReadCandidate, ResourceControl, ResourceMode, RunConfig, RunEffect, RunEvent,
+    RunState, StartRequested, TargetSlice, TargetsResolved, WorkerCreated, WorkerReset, transition,
 };
 
 #[path = "support/worker_heap.rs"]
@@ -122,12 +122,6 @@ fn waiting_for_first_read(jobs: u32, session: bool) -> (RunState, ReadCandidate)
                 id: request.id,
                 worker: request.worker,
             }),
-            RunEffect::ObserveRemainingBudget(request) => {
-                RunEvent::RemainingBudgetObserved(RemainingBudgetObserved {
-                    id: request.id,
-                    remaining: Duration::from_hours(24),
-                })
-            }
             RunEffect::BeginSession(request) => {
                 RunEvent::SessionStarted(hoimin_core::SessionStarted {
                     id: request.id,
@@ -143,13 +137,36 @@ fn waiting_for_first_read(jobs: u32, session: bool) -> (RunState, ReadCandidate)
                 truncated: false,
                 diagnostics: Vec::new(),
             }),
-            unexpected => panic!("unexpected setup effect: {unexpected:?}"),
+            unexpected => {
+                // Test failure reporting only; a passing scenario cannot execute this expression.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || -> ! { panic!("unexpected setup effect: {unexpected:?}") })(
+                    )
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    panic!("unexpected setup effect: {unexpected:?}")
+                }
+            }
         };
         let effects;
         (state, effects) = transition(state, event).unwrap();
         pending.extend(effects);
     }
-    panic!("setup did not request its first candidate");
+    {
+        // Test failure reporting only; a passing scenario cannot execute this expression.
+        #[cfg(coverage_nightly)]
+        {
+            (#[coverage(off)]
+            || -> ! { panic!("setup did not request its first candidate") })()
+        }
+        #[cfg(not(coverage_nightly))]
+        {
+            panic!("setup did not request its first candidate")
+        }
+    }
 }
 
 fn observed(
@@ -347,4 +364,21 @@ fn worker_identity_executed_transitions_do_not_copy_candidate_bodies(
         within_bound,
         "identity transitions allocated candidate-sized temporary bodies"
     );
+}
+
+#[rstest::rstest]
+#[case(32 * 1024, 0, false)]
+#[case(0, 32 * 1024, false)]
+#[case(32 * 1024 - 1, 32 * 1024 - 1, true)]
+fn heap_window_enforces_exclusive_allocation_and_peak_bounds(
+    #[case] allocated: usize,
+    #[case] peak_delta: usize,
+    #[case] expected: bool,
+) {
+    let measured = worker_heap::Measurement {
+        retained_delta: 0,
+        peak_delta,
+        allocated,
+    };
+    assert_eq!(check_window("boundary-probe", &measured), expected);
 }

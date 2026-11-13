@@ -440,20 +440,12 @@ fn selection_old_linear_control_exceeds_exact_work_budget() {
     // the same one-lookup-per-top-level-symbol gate even at its smallest size.
     // These control counters count comparisons and format! calls, not allocator events.
     let selectors: Vec<_> = (0..32).map(|i| format!("chosen_{i}")).collect();
-    let mut comparisons = 0;
-    let mut prefix_constructions = 0;
-    for _ in 0..32 {
-        let selected = selectors.iter().any(|selector| {
-            comparisons += 1;
-            if selector == "missing" {
-                return true;
-            }
-            prefix_constructions += 1;
-            "missing".starts_with(&format!("{selector}."))
-        });
-
-        assert!(!selected);
-    }
+    let observations = (0..32)
+        .map(|_| old_linear_lookup(&selectors, "missing"))
+        .collect::<Vec<_>>();
+    assert_eq!(observations, vec![(false, 32, 32); 32]);
+    let comparisons = observations.iter().map(|entry| entry.1).sum::<usize>();
+    let prefix_constructions = observations.iter().map(|entry| entry.2).sum::<usize>();
     assert_eq!(comparisons, 1024);
     assert_eq!(prefix_constructions, 1024);
     assert!(comparisons > 32);
@@ -565,4 +557,29 @@ fn selection_distinct_symbols_keep_candidate_values_order_and_truncation() {
     assert_eq!(limited.diagnostics[0].column, None);
     assert_eq!(limited.diagnostics[0].message, None);
     assert!(limited.truncated);
+}
+
+fn old_linear_lookup(selectors: &[String], symbol: &str) -> (bool, usize, usize) {
+    let mut comparisons = 0;
+    let mut prefix_constructions = 0;
+    let selected = selectors.iter().any(|selector| {
+        comparisons += 1;
+        if selector == symbol {
+            return true;
+        }
+        prefix_constructions += 1;
+        symbol.starts_with(&format!("{selector}."))
+    });
+    (selected, comparisons, prefix_constructions)
+}
+
+#[rstest::rstest]
+#[case("chosen", (true, 1, 0))]
+#[case("chosen.child", (true, 1, 1))]
+#[case("unrelated", (false, 1, 1))]
+fn linear_sensitivity_control_preserves_exact_and_descendant_semantics(
+    #[case] symbol: &str,
+    #[case] expected: (bool, usize, usize),
+) {
+    assert_eq!(old_linear_lookup(&["chosen".to_owned()], symbol), expected);
 }

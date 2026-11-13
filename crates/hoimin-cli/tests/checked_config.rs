@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use hoimin_core::{CommandArg, EnvironmentRequest, RawRunConfig, RunConfig};
 use serde_json::{Value, json};
 

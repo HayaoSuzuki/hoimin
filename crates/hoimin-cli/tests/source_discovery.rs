@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 use std::fs;
 
 use camino::Utf8PathBuf;
@@ -50,20 +51,20 @@ fn assert_broad_correspondence(
 }
 
 #[rstest::rstest]
-#[case::alpha_1(vec!["alpha"], vec!["alpha/mod.py", "alpha/nested/deep.py"])]
+#[case::alpha_1(vec!["alpha"], &["alpha/mod.py", "alpha/nested/deep.py"])]
 #[case::alpha_2(
             vec!["alpha", "alpha/nested"],
-            vec!["alpha/mod.py", "alpha/nested/deep.py"],
+            &["alpha/mod.py", "alpha/nested/deep.py"],
         )]
 #[case::alpha_unused_3(
             vec!["./alpha/unused/..", "beta"],
-            vec!["alpha/mod.py", "alpha/nested/deep.py", "beta/mod.py"],
+            &["alpha/mod.py", "alpha/nested/deep.py", "beta/mod.py"],
         )]
-#[case::alpha_mod_py_4(vec!["alpha/mod.py"], vec!["alpha/mod.py"])]
-#[case::empty_5(vec!["empty"], vec![])]
+#[case::alpha_mod_py_4(vec!["alpha/mod.py"], &["alpha/mod.py"])]
+#[case::empty_5(vec!["empty"], &[])]
 fn source_unions_normalization_match_broad_discovery(
     #[case] sources: Vec<&str>,
-    #[case] expected: Vec<&str>,
+    #[case] expected: &[&str],
 ) {
     let (_temp, base) = fixture();
 
@@ -76,7 +77,8 @@ fn source_unions_normalization_match_broad_discovery(
         targets
             .iter()
             .map(|target| target.path.as_str())
-            .collect::<Vec<_>>(),
+            .collect::<Vec<_>>()
+            .as_slice(),
         expected
     );
 }
@@ -200,14 +202,14 @@ fn source_subtree_case_rules_match_the_platform() {
 
 #[cfg(unix)]
 #[rstest::rstest]
-#[case::selected_backslash(std::ffi::OsString::from(r"bad\name.py"), "selected", Err(()))]
-#[case::unrelated_backslash(std::ffi::OsString::from(r"bad\name.py"), "unrelated", Ok(vec![hoimin_core::DiscoveredFile::python("selected/app.py")]))]
-#[cfg_attr(not(target_os="macos"), case::selected_invalid_utf8(invalid_utf8_source_name(), "selected", Err(())))]
-#[cfg_attr(not(target_os="macos"), case::unrelated_invalid_utf8(invalid_utf8_source_name(), "unrelated", Ok(vec![hoimin_core::DiscoveredFile::python("selected/app.py")])))]
+#[case::selected_backslash(std::ffi::OsString::from(r"bad\name.py"), "selected", &Err(()))]
+#[case::unrelated_backslash(std::ffi::OsString::from(r"bad\name.py"), "unrelated", &Ok(vec![hoimin_core::DiscoveredFile::python("selected/app.py")]))]
+#[cfg_attr(not(target_os="macos"), case::selected_invalid_utf8(invalid_utf8_source_name(), "selected", &Err(())))]
+#[cfg_attr(not(target_os="macos"), case::unrelated_invalid_utf8(invalid_utf8_source_name(), "unrelated", &Ok(vec![hoimin_core::DiscoveredFile::python("selected/app.py")])))]
 fn malformed_paths_are_diagnosed_only_in_the_selected_source_scope(
     #[case] name: std::ffi::OsString,
     #[case] parent: &str,
-    #[case] expected: Result<Vec<hoimin_core::DiscoveredFile>, ()>,
+    #[case] expected: &Result<Vec<hoimin_core::DiscoveredFile>, ()>,
 ) {
     let temp = tempfile::tempdir().unwrap();
     fs::create_dir_all(temp.path().join("selected")).unwrap();
@@ -227,7 +229,7 @@ fn malformed_paths_are_diagnosed_only_in_the_selected_source_scope(
     let result = discover_explicit(&selection);
     let broad_result = discover_explicit(&broad);
 
-    assert_eq!(result.map_err(|_| ()), expected);
+    assert_eq!(&result.map_err(|_| ()), expected);
     assert!(broad_result.is_err());
 }
 

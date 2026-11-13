@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute, stmt_expr_attributes))]
 //! Ordered waiting queues must not retain selected candidate bodies.
 //! Exercise public transitions with candidate allocation inside the meter window;
 //! only external setup completions are supplied by this driver.
@@ -149,15 +150,42 @@ fn waiting_for_first_read(jobs: u32) -> (RunState, ReadCandidate) {
                 truncated: false,
                 diagnostics: Vec::new(),
             }),
-            unexpected => panic!("unexpected setup effect: {unexpected:?}"),
+            unexpected => {
+                // Test failure reporting only; a passing scenario cannot execute this expression.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || -> ! { panic!("unexpected setup effect: {unexpected:?}") })(
+                    )
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    panic!("unexpected setup effect: {unexpected:?}")
+                }
+            }
         };
         let effects;
         (state, effects) = transition(state, event).unwrap();
         pending.extend(effects);
     }
-    panic!("setup did not request its first candidate");
+    {
+        // Test failure reporting only; a passing scenario cannot execute this expression.
+        #[cfg(coverage_nightly)]
+        {
+            (#[coverage(off)]
+            || -> ! { panic!("setup did not request its first candidate") })()
+        }
+        #[cfg(not(coverage_nightly))]
+        {
+            panic!("setup did not request its first candidate")
+        }
+    }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "stable/nightly failure-only fallbacks keep coverage exclusions local to assertions"
+)]
 fn measure_waiting_state(jobs: u32, complete_scan: bool) -> requested_heap::Measurement {
     let _observation = OBSERVATION.lock().unwrap();
     requested_heap::self_check();
@@ -179,7 +207,19 @@ fn measure_waiting_state(jobs: u32, complete_scan: bool) -> requested_heap::Meas
         )
         .unwrap();
         let [RunEffect::ReadCandidate(next)] = effects.as_slice() else {
-            panic!("ordered discovery must finish before dispatch");
+            {
+                // Test failure reporting only; a passing scenario cannot execute this expression.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || -> ! { panic!("ordered discovery must finish before dispatch") })(
+                    )
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    panic!("ordered discovery must finish before dispatch")
+                }
+            }
         };
         read = next.clone();
     }
@@ -203,7 +243,20 @@ fn measure_waiting_state(jobs: u32, complete_scan: bool) -> requested_heap::Meas
             match effect {
                 RunEffect::ReadCandidate(request) => {
                     let CandidateReadTarget::Id(id) = request.target else {
-                        panic!("completed ordered discovery must use indexed reads");
+                        {
+                            // Test failure reporting only; a passing scenario cannot execute this expression.
+                            #[cfg(coverage_nightly)]
+                            {
+                                (#[coverage(off)]
+                                || -> ! {
+                                    panic!("completed ordered discovery must use indexed reads")
+                                })()
+                            }
+                            #[cfg(not(coverage_nightly))]
+                            {
+                                panic!("completed ordered discovery must use indexed reads")
+                            }
+                        }
                     };
                     let sequence = SELECTED as u64 - u64::from(loaded);
                     assert_eq!(id, format!("{sequence:064x}"));
@@ -221,7 +274,19 @@ fn measure_waiting_state(jobs: u32, complete_scan: bool) -> requested_heap::Meas
                     pending.extend(effects);
                 }
                 effect @ RunEffect::ApplyMutation(_) => applying.push(effect),
-                unexpected => panic!("unexpected dispatch effect: {unexpected:?}"),
+                unexpected => {
+                    // Test failure reporting only; a passing scenario cannot execute this expression.
+                    #[cfg(coverage_nightly)]
+                    {
+                        (#[coverage(off)]
+                        || -> ! { panic!("unexpected dispatch effect: {unexpected:?}") })(
+                        )
+                    }
+                    #[cfg(not(coverage_nightly))]
+                    {
+                        panic!("unexpected dispatch effect: {unexpected:?}")
+                    }
+                }
             }
         }
         assert_eq!(loaded, jobs);

@@ -538,7 +538,8 @@ def make_fixture(name: str, size: int, root: Path) -> Fixture:  # noqa: C901, PL
     elif name == "workspace-bytes":
         mode = "run"
         (root / "data.bin").write_bytes(b"x" * (size * 65536))
-    elif name == "workspace-workers":
+    # Validation above restricts name to SHAPES; all other names are handled above.
+    elif name == "workspace-workers":  # pragma: no branch
         source, mode, count, jobs = "value = 1 + 2\n" * 4, "run", 4, size
         (root / "data.bin").write_bytes(b"x" * 65536)
     (root / "case.py").write_text(source, encoding="utf-8", newline="\n")

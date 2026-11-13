@@ -65,12 +65,9 @@ impl TargetHandler {
             cancellation,
         )
         .await?;
-        if explicit.is_empty()
-            && (!selection.sources.is_empty()
-                || !selection.files.is_empty()
-                || !selection.lines.is_empty()
-                || !selection.symbols.is_empty())
-        {
+        // Successful explicit file/line/symbol selectors retain at least one
+        // target; only a source selector can resolve successfully to an empty set.
+        if explicit.is_empty() && !selection.sources.is_empty() {
             return Ok(Vec::new());
         }
         Ok(intersect_changed(&explicit, &changed))
@@ -161,4 +158,91 @@ fn validate_symbols(selection: &Selection, targets: &[TargetSlice]) -> Result<()
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod rejection_coverage {
+    use super::*;
+    use camino::Utf8PathBuf;
+    use hoimin_core::SymbolSelection;
+
+    fn symbol_selection(root: Utf8PathBuf) -> Selection {
+        Selection {
+            root,
+            symbols: vec![SymbolSelection {
+                module: "app".to_owned(),
+                qualname: "selected".to_owned(),
+            }],
+            ..Selection::default()
+        }
+    }
+
+    fn selected_target() -> TargetSlice {
+        TargetSlice {
+            path: "app.py".into(),
+            lines: Vec::new(),
+            symbols: vec!["selected".to_owned()],
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_path_outside_root_preserves_the_normalization_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let selection = Selection {
+            root: Utf8PathBuf::from_path_buf(temp.path().to_owned()).unwrap(),
+            files: vec!["../outside.py".into()],
+            ..Selection::default()
+        };
+        let error = TargetHandler::resolve(&selection).await.unwrap_err();
+        assert!(matches!(error, TargetError::PathOutsideRoot(_)));
+    }
+
+    #[test]
+    fn source_beneath_a_regular_file_preserves_the_metadata_error() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(temp.path().join("parent"), b"regular file").unwrap();
+        let selection = Selection {
+            root: Utf8PathBuf::from_path_buf(temp.path().to_owned()).unwrap(),
+            sources: vec!["parent/child".into()],
+            ..Selection::default()
+        };
+        let error = validate_sources(&selection).unwrap_err();
+        assert!(
+            matches!(error, TargetError::DiscoveryFailed(message) if message.starts_with("cannot inspect source \"parent/child\": "))
+        );
+    }
+
+    #[test]
+    fn missing_symbol_root_preserves_the_reader_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let selection =
+            symbol_selection(Utf8PathBuf::from_path_buf(temp.path().join("missing")).unwrap());
+        let error = validate_symbols(&selection, &[selected_target()]).unwrap_err();
+        assert!(
+            matches!(error, TargetError::DiscoveryFailed(message) if message.contains("missing"))
+        );
+    }
+
+    #[test]
+    fn removed_symbol_source_prefixes_the_read_error_with_its_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let selection =
+            symbol_selection(Utf8PathBuf::from_path_buf(temp.path().to_owned()).unwrap());
+        let error = validate_symbols(&selection, &[selected_target()]).unwrap_err();
+        assert!(
+            matches!(error, TargetError::DiscoveryFailed(message) if message.starts_with("app.py: "))
+        );
+    }
+
+    #[test]
+    fn invalid_symbol_source_encoding_prefixes_the_decode_error_with_its_path() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(temp.path().join("app.py"), b"# coding: utf-8\n\xff").unwrap();
+        let selection =
+            symbol_selection(Utf8PathBuf::from_path_buf(temp.path().to_owned()).unwrap());
+        let error = validate_symbols(&selection, &[selected_target()]).unwrap_err();
+        assert!(
+            matches!(error, TargetError::DiscoveryFailed(message) if message.starts_with("app.py: ") && message.contains("UTF-8"))
+        );
+    }
 }
