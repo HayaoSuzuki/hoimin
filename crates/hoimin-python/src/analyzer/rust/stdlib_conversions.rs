@@ -6,7 +6,7 @@
 //! external monkey patching and import-path shadowing remain outside the model.
 use super::{AnalysisCancelled, callable_imports::CallableImports};
 use crate::visitor::{self, Visitor};
-use ruff_python_ast::{Expr, ExprContext, ModModule, Stmt};
+use ruff_python_ast::{Expr, ExprCall, ModModule, Stmt};
 
 const MODULES: &[&str] = &[
     "decimal",
@@ -49,13 +49,12 @@ fn is_constructor(module: &str, member: &str) -> bool {
     )
 }
 
-fn factory_class(imports: &CallableImports, expression: &Expr) -> Option<usize> {
-    let Expr::Attribute(attribute) = expression else {
+fn factory_class(imports: &CallableImports, call: &ExprCall) -> Option<usize> {
+    let Expr::Attribute(attribute) = call.func.as_ref() else {
         return None;
     };
-    if attribute.ctx != ExprContext::Load {
-        return None;
-    }
+    // Parsed call callees are load expressions; restricting this helper to a
+    // call carries that invariant through both identity checks and safety scans.
     let class = imports.resolve(&attribute.value)?;
     let index = FACTORY_CLASSES
         .iter()
@@ -94,12 +93,11 @@ impl ConversionImports {
         })
     }
 
-    pub(super) fn is_conversion(&self, expression: &Expr) -> bool {
+    pub(super) fn is_conversion(&self, call: &ExprCall) -> bool {
         self.imports
-            .resolve(expression)
+            .resolve(&call.func)
             .is_some_and(|callable| is_constructor(callable.module, callable.member))
-            || factory_class(&self.imports, expression)
-                .is_some_and(|class| !self.escaped_classes[class])
+            || factory_class(&self.imports, call).is_some_and(|class| !self.escaped_classes[class])
     }
 }
 
@@ -131,7 +129,7 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for FactorySafetyScan<'_, F> {
             return;
         }
         if let Expr::Call(call) = expression
-            && (factory_class(self.imports, &call.func).is_some()
+            && (factory_class(self.imports, call).is_some()
                 || self.imports.resolve(&call.func).is_some_and(|callable| {
                     FACTORY_CLASSES.contains(&(callable.module, callable.member))
                 }))
@@ -178,5 +176,80 @@ mod tests {
         // Four suite statements and four expressions (including unary not).
         assert_eq!(calls.get(), 8);
         assert!(!scan.cancelled_observed);
+    }
+}
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+
+    fn run_build(
+        module: &ModModule,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<ConversionImports, AnalysisCancelled> {
+        ConversionImports::build(module, &cancelled)
+    }
+
+    #[rstest::rstest]
+    #[case("from decimal import Decimal\nDecimal(value)", true)]
+    #[case("from fractions import Fraction\nFraction(value)", true)]
+    #[case("from decimal import Decimal\nDecimal.from_float(value)", true)]
+    #[case("from fractions import Fraction\nFraction.from_decimal(value)", true)]
+    #[case("import decimal\ndecimal.Decimal.from_number(value)", true)]
+    #[case("import decimal\ndecimal.Context.from_float(value)", false)]
+    #[case(
+        "from decimal import Decimal\nalias = Decimal\nDecimal.from_float(value)",
+        false
+    )]
+    #[case(
+        "import decimal\nexec('pass')\ndecimal.Decimal.from_float(value)",
+        false
+    )]
+    #[case("custom(value)", false)]
+    fn standard_library_conversions_require_constructor_or_stable_factory_identity(
+        #[case] source: &str,
+        #[case] expected: bool,
+    ) {
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let imports = run_build(parsed.syntax(), &|| false).unwrap();
+        let call = parsed
+            .syntax()
+            .body
+            .last()
+            .unwrap()
+            .as_expr_stmt()
+            .unwrap()
+            .value
+            .as_call_expr()
+            .unwrap();
+        assert_eq!(imports.is_conversion(call), expected);
+    }
+
+    #[rstest::rstest]
+    fn conversion_identity_scan_stops_across_import_and_factory_phases(
+        #[values(
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64
+        )]
+        checkpoint: usize,
+    ) {
+        let source = "from decimal import Decimal\nresult = Decimal.from_float(value)\n";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let total = std::cell::Cell::new(0);
+        assert!(
+            run_build(parsed.syntax(), &|| {
+                total.set(total.get() + 1);
+                false
+            })
+            .is_ok()
+        );
+        let polls = std::cell::Cell::new(0);
+        let result = run_build(parsed.syntax(), &|| {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= checkpoint
+        });
+        assert_eq!(result.is_err(), checkpoint < total.get());
     }
 }

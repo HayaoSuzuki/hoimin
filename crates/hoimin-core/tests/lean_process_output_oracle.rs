@@ -1,4 +1,4 @@
-#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+#![cfg_attr(coverage_nightly, feature(coverage_attribute, stmt_expr_attributes))]
 use std::collections::BTreeSet;
 use std::time::Duration;
 
@@ -151,4 +151,22 @@ fn legacy_process_completion_without_output_state_is_rejected() {
 
     // Assert
     assert!(result.is_err());
+}
+
+#[test]
+fn adapter_rejects_unknown_termination() {
+    let panic = std::panic::catch_unwind(|| termination("unknown")).unwrap_err();
+    assert_eq!(
+        panic.downcast_ref::<String>().unwrap(),
+        "unknown termination unknown"
+    );
+}
+
+#[test]
+fn adapter_rejects_unknown_status() {
+    let panic = std::panic::catch_unwind(|| status("unknown")).unwrap_err();
+    assert_eq!(
+        panic.downcast_ref::<String>().unwrap(),
+        "unknown status unknown"
+    );
 }

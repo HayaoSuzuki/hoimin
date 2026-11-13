@@ -52,9 +52,7 @@ mod tests {
     #[test]
     fn cancellation_during_nested_arguments_rejects_removal() {
         let parsed = ruff_python_parser::parse_module("f(g(h(1)))").unwrap();
-        let ruff_python_ast::Stmt::Expr(statement) = &parsed.syntax().body[0] else {
-            panic!()
-        };
+        let statement = parsed.syntax().body[0].as_expr_stmt().unwrap();
         let visits = std::cell::Cell::new(0);
 
         assert!(!can_remove(&statement.value, &|| {

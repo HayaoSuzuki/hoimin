@@ -1,4 +1,4 @@
-#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+#![cfg_attr(coverage_nightly, feature(coverage_attribute, stmt_expr_attributes))]
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
 use collecting_writer::CollectingWriter;
@@ -10,6 +10,11 @@ use std::time::Duration;
 
 use hoimin_cli::plan::PlanManifest;
 use serde::Deserialize;
+
+#[cfg(windows)]
+const VENV_PYTHON_PATH: &str = ".venv/Scripts/python.exe";
+#[cfg(not(windows))]
+const VENV_PYTHON_PATH: &str = ".venv/bin/python";
 
 const CORPUS: &str =
     include_str!("../../../formal/HoiminOracle/corpus/annotation-scope-correspondence.jsonl");
@@ -363,7 +368,18 @@ fn validate_case(item: &OracleCase) -> Result<(), String> {
                 && item.expected_replacement.is_some()
                 && item.expected_present == item.expected_symbol.is_some()
         }
-        _ => false,
+        _ => {
+            // common_fields_are_valid already rejected every other observation kind.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || false)()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                false
+            }
+        }
     };
     if !fields_match {
         return Err(format!("{} has fields incompatible with its mode", item.id));
@@ -411,7 +427,14 @@ struct Fixture {
 
 impl Fixture {
     fn new(source: &str) -> Result<Self, String> {
-        let directory = tempfile::tempdir().map_err(|error| error.to_string())?;
+        Self::from_directory(tempfile::tempdir(), source)
+    }
+
+    fn from_directory(
+        directory: std::io::Result<tempfile::TempDir>,
+        source: &str,
+    ) -> Result<Self, String> {
+        let directory = directory.map_err(|error| error.to_string())?;
         let root = directory.path().join("project");
         std::fs::create_dir_all(root.join("src")).map_err(|error| error.to_string())?;
         std::fs::write(root.join("src/case.py"), source).map_err(|error| error.to_string())?;
@@ -437,11 +460,7 @@ fn repo_root() -> PathBuf {
 }
 
 fn python_executable() -> PathBuf {
-    if cfg!(windows) {
-        repo_root().join(".venv/Scripts/python.exe")
-    } else {
-        repo_root().join(".venv/bin/python")
-    }
+    repo_root().join(VENV_PYTHON_PATH)
 }
 
 fn plan_args(fixture: &Fixture, operator: &str) -> Vec<OsString> {
@@ -467,14 +486,25 @@ fn plan_args(fixture: &Fixture, operator: &str) -> Vec<OsString> {
 }
 
 async fn public_plan_observation(item: &OracleCase) -> Result<PublicObservation, String> {
-    let fixture = Fixture::new(&item.source)?;
+    normalize_manifest(item, &public_plan(item).await?)
+}
+
+async fn public_plan(item: &OracleCase) -> Result<PlanManifest, String> {
+    public_plan_from_fixture(item, Fixture::new(&item.source)).await
+}
+
+async fn public_plan_from_fixture(
+    item: &OracleCase,
+    fixture: Result<Fixture, String>,
+) -> Result<PlanManifest, String> {
+    let fixture = fixture?;
     let operator = item
         .expected_operator
         .as_deref()
         .ok_or_else(|| format!("infrastructure-error: {} operator missing", item.id))?;
     let stdout = CollectingWriter::default();
     let stderr = CollectingWriter::default();
-    let code = tokio::time::timeout(
+    let result = tokio::time::timeout(
         Duration::from_secs(10),
         hoimin_cli::run_with_writers(
             plan_args(&fixture, operator),
@@ -482,17 +512,33 @@ async fn public_plan_observation(item: &OracleCase) -> Result<PublicObservation,
             stderr.clone(),
         ),
     )
-    .await
-    .map_err(|_| format!("infrastructure-error: {} public plan timed out", item.id))?;
+    .await;
+    decode_public_plan(item, result, &stdout.snapshot(), &stderr.snapshot())
+}
+
+fn decode_public_plan(
+    item: &OracleCase,
+    result: Result<i32, tokio::time::error::Elapsed>,
+    stdout: &[u8],
+    stderr: &[u8],
+) -> Result<PlanManifest, String> {
+    let code =
+        result.map_err(|_| format!("infrastructure-error: {} public plan timed out", item.id))?;
     if code != 0 || !stderr.is_empty() {
         return Err(format!(
             "infrastructure-error: {} public plan exit={code}, stderr={}",
             item.id,
-            String::from_utf8_lossy(&stderr.snapshot())
+            String::from_utf8_lossy(stderr)
         ));
     }
-    let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot())
-        .map_err(|error| format!("infrastructure-error: {} malformed plan: {error}", item.id))?;
+    serde_json::from_slice(stdout)
+        .map_err(|error| format!("infrastructure-error: {} malformed plan: {error}", item.id))
+}
+
+fn normalize_manifest(
+    item: &OracleCase,
+    manifest: &PlanManifest,
+) -> Result<PublicObservation, String> {
     let marker_start = item
         .source
         .find(&item.marker)
@@ -502,15 +548,21 @@ async fn public_plan_observation(item: &OracleCase) -> Result<PublicObservation,
         .candidates
         .iter()
         .filter(|candidate| {
+            #[cfg(target_pointer_width = "32")]
             let Ok(start) = usize::try_from(candidate.span.start) else {
                 return false;
             };
+            #[cfg(target_pointer_width = "64")]
+            let start = usize::try_from(candidate.span.start).expect("u64 fits 64-bit usize");
             let Some(end_u64) = candidate.span.start.checked_add(candidate.span.length) else {
                 return false;
             };
+            #[cfg(target_pointer_width = "32")]
             let Ok(end) = usize::try_from(end_u64) else {
                 return false;
             };
+            #[cfg(target_pointer_width = "64")]
+            let end = usize::try_from(end_u64).expect("u64 fits 64-bit usize");
             start < marker_end && marker_start < end
         })
         .collect::<Vec<_>>();
@@ -582,9 +634,11 @@ fn annotation_scope_corpus_rejects_crossed_scenarios_and_expectations() {
 async fn strict_public_annotation_scope_observations_match_lean() {
     let cases = parse_corpus(CORPUS).expect("valid Lean corpus");
     for item in cases.iter().filter(|item| item.mode == "strict") {
-        let actual = public_plan_observation(item)
-            .await
-            .unwrap_or_else(|error| panic!("{error}\nsource:\n{}", item.source));
+        let actual = public_plan_observation(item).await.unwrap_or_else(
+            // Missing public observations abort the correspondence assertion.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            |error| panic!("{error}\nsource:\n{}", item.source),
+        );
         assert_eq!(
             actual,
             expected_public_observation(item),
@@ -609,4 +663,153 @@ async fn negative_observation_cannot_hide_a_candidate_with_unexpected_identity()
     let actual = public_plan_observation(&item).await.unwrap();
     assert!(actual.present);
     assert_ne!(actual, expected_public_observation(&item));
+}
+
+#[rstest::rstest]
+#[case::schema("/schema", serde_json::json!(2))]
+#[case::identity("/id", serde_json::json!(""))]
+#[case::source("/source", serde_json::json!(""))]
+#[case::marker("/marker", serde_json::json!(""))]
+#[case::scenario("/scenario", serde_json::json!("unknown"))]
+#[case::mode("/mode", serde_json::json!("unknown"))]
+#[case::observation("/observation_kind", serde_json::json!("unknown"))]
+#[case::facts("/expected_facts", serde_json::json!(["unowned-fact"]))]
+fn annotation_schema_rejects_one_invalid_coordinate(
+    #[case] pointer: &str,
+    #[case] value: serde_json::Value,
+) {
+    let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
+    *row.pointer_mut(pointer).unwrap() = value;
+    assert!(
+        parse_corpus(&row.to_string())
+            .unwrap_err()
+            .contains("violates the closed corpus schema")
+    );
+}
+
+#[rstest::rstest]
+#[case::empty(&String::new(), "corpus contains no cases")]
+#[case::invalid(&"{".to_owned(), "line 1 is invalid")]
+#[case::duplicate(&format!("{CORPUS}\n{}", CORPUS.lines().next().unwrap()), "duplicate case id")]
+fn annotation_parser_reports_invalid_corpus(#[case] input: &str, #[case] diagnostic: &str) {
+    assert!(parse_corpus(input).unwrap_err().contains(diagnostic));
+}
+
+#[test]
+fn annotation_parser_ignores_blank_lines() {
+    assert_eq!(parse_corpus(&format!("\n{CORPUS}\n")).unwrap().len(), 29);
+}
+
+#[tokio::test]
+async fn annotation_public_plan_reports_missing_operator() {
+    let item = parse_corpus(CORPUS).unwrap().remove(0);
+    assert!(
+        public_plan_observation(&item)
+            .await
+            .unwrap_err()
+            .contains("operator missing")
+    );
+}
+
+#[test]
+fn annotation_fixture_reports_tempdir_failure() {
+    let result = Fixture::from_directory(Err(std::io::Error::other("denied")), "pass");
+    assert_eq!(result.err().unwrap(), "denied");
+}
+
+#[test]
+fn annotation_fixture_reports_source_directory_failure() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::create_dir(directory.path().join("project")).unwrap();
+    std::fs::write(directory.path().join("project/src"), "obstruction").unwrap();
+    assert!(Fixture::from_directory(Ok(directory), "pass").is_err());
+}
+
+#[rstest::rstest]
+#[case::source("src/case.py")]
+#[case::metadata("pyproject.toml")]
+fn annotation_fixture_reports_unwritable_file(#[case] path: &str) {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(directory.path().join("project").join(path)).unwrap();
+    assert!(Fixture::from_directory(Ok(directory), "pass").is_err());
+}
+
+#[rstest::rstest]
+#[case::exit(2, b"failed", "exit=2, stderr=failed")]
+#[case::stderr(0, b"warning", "exit=0, stderr=warning")]
+#[case::malformed(0, b"", "malformed plan")]
+fn annotation_decoder_reports_invalid_public_plan(
+    #[case] code: i32,
+    #[case] stderr: &[u8],
+    #[case] diagnostic: &str,
+) {
+    let item = parse_corpus(CORPUS).unwrap().remove(0);
+    assert!(
+        decode_public_plan(&item, Ok(code), b"{", stderr)
+            .unwrap_err()
+            .contains(diagnostic)
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn annotation_decoder_reports_timeout() {
+    let item = parse_corpus(CORPUS).unwrap().remove(0);
+    let result =
+        tokio::time::timeout(Duration::from_millis(1), std::future::pending::<i32>()).await;
+    assert!(
+        decode_public_plan(&item, result, b"", b"")
+            .unwrap_err()
+            .contains("public plan timed out")
+    );
+}
+
+fn strict_annotation_case() -> OracleCase {
+    parse_corpus(CORPUS)
+        .unwrap()
+        .into_iter()
+        .find(|item| item.id == "global_before_public")
+        .unwrap()
+}
+
+#[tokio::test]
+async fn annotation_normalizer_reports_missing_marker() {
+    let mut item = strict_annotation_case();
+    let manifest = public_plan(&item).await.unwrap();
+    item.marker = "absent marker".to_owned();
+    assert!(
+        normalize_manifest(&item, &manifest)
+            .unwrap_err()
+            .contains("marker missing")
+    );
+}
+
+#[tokio::test]
+async fn annotation_normalizer_retains_overlapping_candidate_count() {
+    let item = strict_annotation_case();
+    let mut manifest = public_plan(&item).await.unwrap();
+    manifest.candidates.push(manifest.candidates[0].clone());
+    let observation = normalize_manifest(&item, &manifest).unwrap();
+    assert_eq!(observation.count, 2);
+    assert!(observation.present);
+    assert_eq!(observation.original, None);
+}
+
+#[tokio::test]
+async fn annotation_normalizer_excludes_overflowing_candidate_span() {
+    let item = strict_annotation_case();
+    let mut manifest = public_plan(&item).await.unwrap();
+    manifest.candidates[0].candidate.span.start = u64::MAX;
+    manifest.candidates[0].candidate.span.length = 1;
+    assert!(!normalize_manifest(&item, &manifest).unwrap().present);
+}
+
+#[tokio::test]
+async fn annotation_public_plan_preserves_fixture_failure() {
+    let item = strict_annotation_case();
+    assert_eq!(
+        public_plan_from_fixture(&item, Err("fixture denied".into()))
+            .await
+            .unwrap_err(),
+        "fixture denied"
+    );
 }

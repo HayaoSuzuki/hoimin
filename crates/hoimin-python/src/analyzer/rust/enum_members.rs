@@ -78,16 +78,17 @@ impl EnumIndex {
             let Some(base) = args.args.first() else {
                 continue;
             };
-            let Some(kind) = imported_member(base, &imports) else {
+            let Some(imported) = imported_member(base, &imports) else {
                 continue;
             };
+            let kind = imported.member;
             if !matches!(kind, "Enum" | "IntEnum" | "StrEnum" | "Flag" | "IntFlag") {
                 continue;
             }
             let result = if hazards.unsafe_namespace {
                 Err("dynamic namespace operation or attribute write")
             } else if !index.unique_module_binding(class.name.as_str())
-                || !index.trusted_import(base, &imports)
+                || !index.trusted_import(&imported)
             {
                 Err("ambiguous enum or import binding")
             } else {
@@ -144,19 +145,9 @@ impl EnumIndex {
     fn resolves_module(&self, expression: &Expr, name: &str) -> bool {
         self.resolution.resolves_unique_module(expression, name)
     }
-    fn trusted_import(&self, expression: &Expr, imports: &HashMap<String, Import>) -> bool {
-        let root = match expression {
-            Expr::Name(_) => expression,
-            Expr::Attribute(a) => a.value.as_ref(),
-            _ => return false,
-        };
-        let Expr::Name(name) = root else {
-            return false;
-        };
-        imports
-            .get(name.id.as_str())
-            .is_some_and(|i| !i.is_lazy && root.start() >= i.end)
-            && self.resolves_module(root, name.id.as_str())
+    fn trusted_import(&self, imported: &ImportedMember<'_>) -> bool {
+        imported.root.start() >= imported.binding.end
+            && self.resolves_module(imported.root, imported.name)
     }
 
     fn members(
@@ -215,10 +206,15 @@ impl EnumIndex {
                 // In a class body the normal resolver deliberately rejects class
                 // namespaces. Resolve auto's module binding separately and reject
                 // any class-local binding of its root name, even if later.
-                if imported_member(&call.func, imports) != Some("auto")
+                let imported = imported_member(&call.func, imports);
+                if imported
+                    .as_ref()
+                    .is_none_or(|member| member.member != "auto")
                     || !call.arguments.args.is_empty()
                     || !call.arguments.keywords.is_empty()
-                    || !self.auto_is_trusted(&call.func, class, imports)
+                    || imported
+                        .as_ref()
+                        .is_none_or(|member| !self.auto_is_trusted(member, class))
                 {
                     return Err("unsupported or shadowed auto call");
                 }
@@ -248,34 +244,19 @@ impl EnumIndex {
         }
         Ok(members)
     }
-    fn auto_is_trusted(
-        &self,
-        expression: &Expr,
-        class: &StmtClassDef,
-        imports: &HashMap<String, Import>,
-    ) -> bool {
-        let root = match expression {
-            Expr::Name(_) => expression,
-            Expr::Attribute(a) => a.value.as_ref(),
-            _ => return false,
-        };
-        let Expr::Name(name) = root else {
-            return false;
-        };
-        if !self.unique_module_binding(name.id.as_str())
-            || imports
-                .get(name.id.as_str())
-                .is_none_or(|i| i.end > class.start())
-        {
+    fn auto_is_trusted(&self, imported: &ImportedMember<'_>, class: &StmtClassDef) -> bool {
+        if !self.unique_module_binding(imported.name) || imported.binding.end > class.start() {
             return false;
         }
-        let Some(site) = self.resolution.occurrences.get(&usize::from(root.start())) else {
-            return false;
-        };
-        let scope = &self.resolution.scopes[site.scope.0];
-        scope.kind == NameScopeKind::Class
-            && !scope.possible_bindings.contains(name.id.as_str())
-            && !scope.wildcard
+        self.resolution
+            .occurrences
+            .get(&usize::from(imported.root.start()))
+            .is_some_and(|site| {
+                let scope = &self.resolution.scopes[site.scope.0];
+                scope.kind == NameScopeKind::Class
+                    && !scope.possible_bindings.contains(imported.name)
+                    && !scope.wildcard
+            })
     }
     pub(super) fn destinations(
         &self,
@@ -314,34 +295,48 @@ impl EnumIndex {
         Some((attribute.attr.range(), result))
     }
 }
-fn imported_member<'a>(expression: &Expr, imports: &'a HashMap<String, Import>) -> Option<&'a str> {
-    match expression {
-        Expr::Name(name) => imports
-            .get(name.id.as_str())
-            .filter(|i| !i.is_lazy)?
-            .member
-            .as_deref(),
-        Expr::Attribute(a) => {
-            let Expr::Name(name) = a.value.as_ref() else {
-                return None;
-            };
-            let binding = imports.get(name.id.as_str())?;
-            if binding.is_lazy || binding.member.is_some() {
-                return None;
-            }
-            // Attribute's lifetime differs; return known static names.
-            match a.attr.as_str() {
-                "Enum" => Some("Enum"),
-                "IntEnum" => Some("IntEnum"),
-                "StrEnum" => Some("StrEnum"),
-                "Flag" => Some("Flag"),
-                "IntFlag" => Some("IntFlag"),
-                "auto" => Some("auto"),
-                _ => None,
-            }
-        }
-        _ => None,
-    }
+// Carries the eager import and name root established by import recognition, so
+// resolution checks cannot accidentally repeat only part of that validation.
+struct ImportedMember<'a> {
+    root: &'a Expr,
+    name: &'a str,
+    member: &'a str,
+    binding: &'a Import,
+}
+fn imported_member<'a>(
+    expression: &'a Expr,
+    imports: &'a HashMap<String, Import>,
+) -> Option<ImportedMember<'a>> {
+    let root = match expression {
+        Expr::Name(_) => expression,
+        Expr::Attribute(attribute) => attribute.value.as_ref(),
+        _ => return None,
+    };
+    let Expr::Name(name) = root else {
+        return None;
+    };
+    let binding = imports
+        .get(name.id.as_str())
+        .filter(|binding| !binding.is_lazy)?;
+    let member = match expression {
+        Expr::Name(_) => binding.member.as_deref()?,
+        Expr::Attribute(attribute) if binding.member.is_none() => match attribute.attr.as_str() {
+            "Enum" => "Enum",
+            "IntEnum" => "IntEnum",
+            "StrEnum" => "StrEnum",
+            "Flag" => "Flag",
+            "IntFlag" => "IntFlag",
+            "auto" => "auto",
+            _ => return None,
+        },
+        _ => return None,
+    };
+    Some(ImportedMember {
+        root,
+        name: name.id.as_str(),
+        member,
+        binding,
+    })
 }
 fn literal_value(expression: &Expr) -> Option<Value> {
     match expression {
@@ -499,4 +494,462 @@ fn module_bindings(
     }
     names.extend(imports.keys().cloned());
     Ok((imports, names))
+}
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    fn run_build(
+        module: &ModModule,
+        source: &str,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<EnumIndex, AnalysisCancelled> {
+        EnumIndex::build(module, source, &cancelled)
+    }
+
+    fn run_destinations<'a>(
+        index: &'a EnumIndex,
+        expression: &Expr,
+        limit: usize,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Option<(TextRange, Vec<&'a str>)> {
+        index.destinations(expression, limit, &cancelled)
+    }
+
+    #[rstest::rstest]
+    #[case("Enum", "    pass\n    FIRST = 1\n    SECOND = 2", Some(&["SECOND"][..]))]
+    #[case("IntEnum", "    FIRST = -1\n    SECOND = +2", Some(&["SECOND"][..]))]
+    #[case("StrEnum", "    FIRST = 'one'\n    SECOND = 'two'", Some(&["SECOND"][..]))]
+    #[case("Enum", "    FIRST = auto()\n    SECOND = auto()", Some(&["SECOND"][..]))]
+    #[case("IntEnum", "    FIRST = auto()\n    SECOND = auto()", Some(&["SECOND"][..]))]
+    #[case("StrEnum", "    FIRST = auto()\n    SECOND = auto()", Some(&["SECOND"][..]))]
+    #[case("Enum", "    FIRST = 1\n    ALIAS = 1\n    SECOND = 2", Some(&["SECOND"][..]))]
+    #[case("Enum", "    'documentation'\n    FIRST = 1\n    def method(self): pass\n    SECOND = 2", Some(&["SECOND"][..]))]
+    #[case("Enum", "    FIRST = 1\n    SECOND = 'two'", None)]
+    #[case("IntEnum", "    FIRST = 'one'\n    SECOND = 'two'", None)]
+    #[case("StrEnum", "    FIRST = 1\n    SECOND = 2", None)]
+    #[case("Flag", "    FIRST = 1\n    SECOND = 2", None)]
+    #[case("IntFlag", "    FIRST = 1\n    SECOND = 2", None)]
+    #[case("Enum", "    FIRST = 1\n    _private = 2", None)]
+    #[case("Enum", "    FIRST = 1\n    FIRST = 2", None)]
+    #[case("Enum", "    [FIRST] = [1]\n    SECOND = 2", None)]
+    #[case("Enum", "    FIRST: int = 1\n    SECOND = 2", None)]
+    #[case("Enum", "    FIRST = factory()\n    SECOND = 2", None)]
+    #[case("Enum", "    FIRST = auto(1)\n    SECOND = auto()", None)]
+    #[case("Enum", "    FIRST = auto(value=1)\n    SECOND = auto()", None)]
+    #[case("Enum", "    FIRST = auto()\n    auto = replacement", None)]
+    #[case("Enum", "    FIRST = 1\n    SECOND = auto()", None)]
+    #[case("StrEnum", "    FÍRST = auto()\n    SECOND = auto()", None)]
+    #[case("Enum", "    FIRST = 1.5\n    SECOND = 2", None)]
+    #[case("Enum", "    FIRST = -18446744073709551616\n    SECOND = 2", None)]
+    #[case("Enum", "    FIRST = 18446744073709551615\n    SECOND = 2", Some(&["SECOND"][..]))]
+    #[case("Enum", "    FIRST = 18446744073709551616\n    SECOND = 2", None)]
+    #[case("Enum", "    FIRST = -1.5\n    SECOND = 2", None)]
+    #[case("Enum", "    FIRST = -value\n    SECOND = 2", None)]
+    #[case("Enum", "    FIRST = 1 + 2\n    SECOND = 3", None)]
+    #[case("Enum", "    FIRST = '\\ufffd'\n    SECOND = 'two'", None)]
+    fn enum_destinations_require_consistent_static_member_values(
+        #[case] kind: &str,
+        #[case] body: &str,
+        #[case] expected: Option<&[&str]>,
+    ) {
+        let source =
+            format!("from enum import {kind}, auto\nclass Choice({kind}):\n{body}\nChoice.FIRST\n");
+        let parsed = ruff_python_parser::parse_module(&source).unwrap();
+        let index = run_build(parsed.syntax(), &source, &|| false).unwrap();
+        let expression = &parsed
+            .syntax()
+            .body
+            .last()
+            .unwrap()
+            .as_expr_stmt()
+            .unwrap()
+            .value;
+        assert_eq!(
+            index
+                .destinations(expression, 100, &|| false)
+                .map(|(_, names)| names)
+                .as_deref(),
+            expected
+        );
+    }
+
+    #[rstest::rstest]
+    #[case(0, vec!["SECOND"])]
+    #[case(1, vec!["SECOND", "THIRD"])]
+    #[case(2, vec!["SECOND", "THIRD", "FOURTH"])]
+    fn enum_destination_prefix_retains_one_extra_for_truncation(
+        #[case] limit: usize,
+        #[case]
+        #[by_ref]
+        expected: &[&str],
+    ) {
+        let source = "from enum import Enum\nclass Choice(Enum):\n FIRST = 1\n SECOND = 2\n THIRD = 3\n FOURTH = 4\nChoice.FIRST\n";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let index = run_build(parsed.syntax(), source, &|| false).unwrap();
+        let expression = &parsed
+            .syntax()
+            .body
+            .last()
+            .unwrap()
+            .as_expr_stmt()
+            .unwrap()
+            .value;
+        assert_eq!(
+            run_destinations(&index, expression, limit, &|| false)
+                .unwrap()
+                .1,
+            expected
+        );
+    }
+
+    #[test]
+    fn cancelled_member_collection_rejects_partial_definitions() {
+        let source = "from enum import Enum\nclass Choice(Enum):\n FIRST = 1\n SECOND = 2\n";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let index = run_build(parsed.syntax(), source, &|| false).unwrap();
+        let no_cancel: &dyn Fn() -> bool = &|| false;
+        let (imports, _) = module_bindings(parsed.syntax(), &no_cancel).unwrap();
+        let class = parsed.syntax().body[1].as_class_def_stmt().unwrap();
+        let cancelled: &dyn Fn() -> bool = &|| true;
+        assert!(matches!(
+            index.members(class, "Enum", &imports, &cancelled),
+            Err("analysis cancelled")
+        ));
+    }
+    #[rstest::rstest]
+    #[case("import enum", "class Choice(enum.Enum):", " FIRST = enum.auto()\n SECOND = enum.auto()", Some(&["SECOND"][..]))]
+    #[case("import enum", "class Choice(enum.IntEnum):", " FIRST = 1\n SECOND = 2", Some(&["SECOND"][..]))]
+    #[case("import enum", "class Choice(enum.StrEnum):", " FIRST = 'one'\n SECOND = 'two'", Some(&["SECOND"][..]))]
+    #[case(
+        "import enum",
+        "class Choice(enum.Flag):",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case(
+        "import enum",
+        "class Choice(enum.IntFlag):",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case(
+        "import enum",
+        "class Choice(enum.Unknown):",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case(
+        "from enum import Enum",
+        "class Choice(Unknown):",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case(
+        "from enum import Enum",
+        "class Choice(factory()):",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case(
+        "from enum import Enum",
+        "class Choice(holder.Enum):",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case(
+        "from enum import Enum",
+        "class Choice(holder.inner.Enum):",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case(
+        "from enum import Enum\n@decorator",
+        "class Choice(Enum):",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case(
+        "from enum import Enum",
+        "class Choice(Enum, object):",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case(
+        "from enum import Enum",
+        "class Choice(Enum, metaclass=meta):",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case(
+        "from enum import Enum",
+        "class Choice[T](Enum):",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case(
+        "__lazy_modules__ = ['enum']\nfrom enum import Enum",
+        "class Choice(Enum):",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case(
+        "from enum import Enum",
+        "class Choice:",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case(
+        "from enum import Enum",
+        "class Choice():",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case(
+        "import enum",
+        "class Choice(enum.auto):",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case(
+        "lazy import enum",
+        "class Choice(enum.Enum):",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case(
+        "from enum import Enum",
+        "class Choice(Enum.Enum):",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case(
+        "",
+        "class Choice(Enum):",
+        " FIRST = 1\n SECOND = 2\nfrom enum import Enum",
+        None
+    )]
+    #[case(
+        "from enum import Enum",
+        "class Choice(Enum):",
+        " FIRST = auto()\n SECOND = auto()\nfrom enum import auto",
+        None
+    )]
+    #[case(
+        "from enum import Enum",
+        "class Choice(Enum):",
+        " FIRST = 1\n SECOND = 2\nChoice = replacement",
+        None
+    )]
+    #[case(
+        "import enum\ncached = enum",
+        "class Choice(enum.Enum):",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case(
+        "import enum\ncached: object = enum",
+        "class Choice(enum.Enum):",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case(
+        "import enum\ncached = (saved := enum)",
+        "class Choice(enum.Enum):",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case(
+        "from enum import Enum",
+        "class Choice(Enum):",
+        " FIRST = 1\n SECOND = 2\nglobal Choice",
+        None
+    )]
+    #[case(
+        "lazy from enum import Enum",
+        "class Choice(Enum):",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case("import unrelated\nfrom enum import Enum", "class Choice(Enum):", " FIRST = 1\n SECOND = 2", Some(&["SECOND"][..]))]
+    #[case(
+        "from enum import Enum\nexec(\"pass\")",
+        "class Choice(Enum):",
+        " FIRST = 1\n SECOND = 2",
+        None
+    )]
+    #[case(
+        "from enum import Enum",
+        "class Choice(Enum):",
+        " FIRST = 1\n SECOND = 2\nChoice.method.extra = 3",
+        None
+    )]
+    #[case("from enum import Enum", "class Choice(Enum):", " FIRST = 1\n SECOND = 2\nfactory().attribute = 3", Some(&["SECOND"][..]))]
+    #[case("import enum", "class Choice(enum):", " FIRST = 1\n SECOND = 2", None)]
+    fn enum_identity_requires_a_supported_eager_import_and_simple_class_header(
+        #[case] prefix: &str,
+        #[case] header: &str,
+        #[case] body: &str,
+        #[case] expected: Option<&[&str]>,
+    ) {
+        let source = format!("{prefix}\n{header}\n{body}\nChoice.FIRST\n");
+        let parsed = ruff_python_parser::parse_module(&source).unwrap();
+        let index = run_build(parsed.syntax(), &source, &|| false).unwrap();
+        let expression = &parsed
+            .syntax()
+            .body
+            .last()
+            .unwrap()
+            .as_expr_stmt()
+            .unwrap()
+            .value;
+        assert_eq!(
+            run_destinations(&index, expression, 100, &|| false)
+                .map(|(_, names)| names)
+                .as_deref(),
+            expected
+        );
+    }
+
+    #[rstest::rstest]
+    fn enum_index_obeys_cancellation_at_each_polled_checkpoint(
+        #[values(
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64
+        )]
+        checkpoint: usize,
+    ) {
+        let source =
+            "from enum import Enum\nclass Choice(Enum):\n FIRST = 1\n SECOND = 2\nChoice.FIRST\n";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let complete_polls = Cell::new(0);
+        let _complete = run_build(parsed.syntax(), source, &|| {
+            complete_polls.set(complete_polls.get() + 1);
+            false
+        })
+        .unwrap();
+        assert!(complete_polls.get() > 0);
+        let polls = Cell::new(0);
+        let result = run_build(parsed.syntax(), source, &|| {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= checkpoint
+        });
+        assert_eq!(result.is_err(), checkpoint < complete_polls.get());
+    }
+    #[rstest::rstest]
+    #[case("value", None)]
+    #[case("holder.Choice.FIRST", None)]
+    #[case("Missing.FIRST", None)]
+    #[case("Choice.MISSING", None)]
+    #[case("Choice.FIRST", Some(&["SECOND"][..]))]
+    fn enum_destinations_require_a_known_direct_class_member(
+        #[case] expression: &str,
+        #[case] expected: Option<&[&str]>,
+    ) {
+        let source = format!(
+            "from enum import Enum\nclass Choice(Enum):\n FIRST = 1\n SECOND = 2\n{expression}\n"
+        );
+        let parsed = ruff_python_parser::parse_module(&source).unwrap();
+        let index = run_build(parsed.syntax(), &source, &|| false).unwrap();
+        let expression = &parsed
+            .syntax()
+            .body
+            .last()
+            .unwrap()
+            .as_expr_stmt()
+            .unwrap()
+            .value;
+        assert_eq!(
+            run_destinations(&index, expression, 100, &|| false)
+                .map(|(_, names)| names)
+                .as_deref(),
+            expected
+        );
+    }
+
+    #[test]
+    fn enum_member_store_is_not_a_load_destination() {
+        let source = "from enum import Enum\nclass Choice(Enum):\n FIRST = 1\n SECOND = 2\nChoice.FIRST = 3\n";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let index = run_build(parsed.syntax(), source, &|| false).unwrap();
+        let target = &parsed
+            .syntax()
+            .body
+            .last()
+            .unwrap()
+            .as_assign_stmt()
+            .unwrap()
+            .targets[0];
+        assert_eq!(run_destinations(&index, target, 100, &|| false), None);
+    }
+
+    #[test]
+    fn enum_member_reference_inside_its_definition_is_not_yet_available() {
+        let source = "from enum import Enum\nclass Choice(Enum):\n FIRST = 1\n SECOND = 2\n def method(self): return Choice.FIRST\n";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let index = run_build(parsed.syntax(), source, &|| false).unwrap();
+        assert_eq!(index.definitions.len(), 1);
+        let class = parsed.syntax().body[1].as_class_def_stmt().unwrap();
+        let method = class.body[2].as_function_def_stmt().unwrap();
+        let expression = method.body[0]
+            .as_return_stmt()
+            .unwrap()
+            .value
+            .as_ref()
+            .unwrap();
+        assert_eq!(run_destinations(&index, expression, 100, &|| false), None);
+    }
+
+    #[test]
+    fn enum_member_lookup_does_not_resolve_a_shadowing_parameter_as_the_class() {
+        let source = "from enum import Enum\nclass Choice(Enum):\n FIRST = 1\n SECOND = 2\ndef function(Choice): return Choice.FIRST\n";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let index = run_build(parsed.syntax(), source, &|| false).unwrap();
+        assert_eq!(index.definitions.len(), 1);
+        let function = parsed.syntax().body[2].as_function_def_stmt().unwrap();
+        let expression = function.body[0]
+            .as_return_stmt()
+            .unwrap()
+            .value
+            .as_ref()
+            .unwrap();
+        assert_eq!(run_destinations(&index, expression, 100, &|| false), None);
+    }
+
+    #[rstest::rstest]
+    #[case(0, None)]
+    #[case(1, None)]
+    #[case(2, None)]
+    #[case(4, Some(&["SECOND", "THIRD", "FOURTH"][..]))]
+    fn cancelled_destination_collection_discards_partial_results(
+        #[case] checkpoint: usize,
+        #[case] expected: Option<&[&str]>,
+    ) {
+        let source = "from enum import Enum\nclass Choice(Enum):\n FIRST = 1\n SECOND = 2\n THIRD = 3\n FOURTH = 4\nChoice.FIRST\n";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let index = run_build(parsed.syntax(), source, &|| false).unwrap();
+        let expression = &parsed
+            .syntax()
+            .body
+            .last()
+            .unwrap()
+            .as_expr_stmt()
+            .unwrap()
+            .value;
+        let polls = Cell::new(0);
+        assert_eq!(
+            run_destinations(&index, expression, 100, &|| {
+                let current = polls.get();
+                polls.set(current + 1);
+                current >= checkpoint
+            })
+            .map(|(_, names)| names)
+            .as_deref(),
+            expected
+        );
+    }
 }

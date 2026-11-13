@@ -5,6 +5,7 @@ import copy
 import hashlib
 import io
 import json
+import os
 import subprocess
 import sys
 import urllib.error
@@ -12,7 +13,7 @@ from collections.abc import Callable
 from email.message import Message
 from operator import setitem
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import create_autospec, patch
 
 import pytest
 import yaml
@@ -24,12 +25,14 @@ from pypi_attestations import (
     GitHubPublisher,
     VerificationError,
 )
+from pytest_mock import MockerFixture
 from sigstore.models import Bundle
 from sigstore.verify import policy
 from test_pypi_release import PLATFORMS, write_checksums, write_wheel
 
 from tools import pypi_provenance
 from tools.ci_selection import object_mapping
+from tools.pypi_provenance import fetch_json as fetch_json_spec
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -546,14 +549,20 @@ def test_real_signature_rejects_wrong_identity(
 
 
 @pytest.fixture
-def unavailable_index(monkeypatch: pytest.MonkeyPatch) -> Callable[[int], None]:
+def unavailable_index(mocker: MockerFixture) -> Callable[[int], None]:
+    original_fetch_json_spec = fetch_json_spec
+
     def install(status: int) -> None:
         def unavailable(_url: str) -> dict[str, object]:
             url = "https://pypi.org/"
             message = "fixture"
             raise urllib.error.HTTPError(url, status, message, Message(), None)
 
-        monkeypatch.setattr(pypi_provenance, "fetch_json", unavailable)
+        mocker.patch.object(
+            pypi_provenance,
+            "fetch_json",
+            create_autospec(original_fetch_json_spec, side_effect=unavailable),
+        )
 
     return install
 
@@ -612,8 +621,10 @@ def accept_signature(_arguments: list[str]) -> None:
 
 @pytest.fixture
 def stage_environment(
-    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    request: pytest.FixtureRequest, mocker: MockerFixture, tmp_path: Path
 ) -> tuple[Path, Path, dict[str, bytes]]:
+    original_run_gh_spec = pypi_provenance.run_gh
+    original_verify_spec = Attestation.verify
     assert isinstance(request.param, str)
     mode = request.param
     # Only GitHub/TUF signature services are doubled here. The recorded bundle
@@ -700,8 +711,16 @@ def stage_environment(
     ) -> tuple[str, None]:
         return "https://slsa.dev/provenance/v1", None
 
-    monkeypatch.setattr(pypi_provenance, "run_gh", github)
-    monkeypatch.setattr(Attestation, "verify", authenticated)
+    mocker.patch.object(
+        pypi_provenance,
+        "run_gh",
+        create_autospec(original_run_gh_spec, side_effect=github),
+    )
+    mocker.patch.object(
+        Attestation,
+        "verify",
+        create_autospec(original_verify_spec, side_effect=authenticated),
+    )
     return assets, release_json, source_statements
 
 
@@ -787,8 +806,12 @@ def index_data(
 
 @pytest.fixture
 def verified_index(
-    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    request: pytest.FixtureRequest, mocker: MockerFixture, tmp_path: Path
 ) -> list[str]:
+    original_fetch_json_spec = fetch_json_spec
+    original_urlopen_spec = pypi_provenance.urllib.request.urlopen
+    original_verify_spec = Attestation.verify
+    original_verify_build_spec = pypi_provenance.verify_build
     assert isinstance(request.param, str)
     damage = request.param
     # External index and cryptographic services are controlled at their boundaries;
@@ -835,14 +858,29 @@ def verified_index(
         assert commit == "a" * 40
         {"source": reject_signature}.get(damage, accept_signature)(["gh"])
 
-    monkeypatch.setattr(
+    mocker.patch.object(
         pypi_provenance,
         "fetch_json",
-        lambda url: index_data(url, records, template, damage),
+        create_autospec(
+            original_fetch_json_spec,
+            side_effect=lambda url: index_data(url, records, template, damage),
+        ),
     )
-    monkeypatch.setattr(pypi_provenance.urllib.request, "urlopen", download)
-    monkeypatch.setattr(Attestation, "verify", signature)
-    monkeypatch.setattr(pypi_provenance, "verify_build", build)
+    mocker.patch.object(
+        pypi_provenance.urllib.request,
+        "urlopen",
+        create_autospec(original_urlopen_spec, side_effect=download),
+    )
+    mocker.patch.object(
+        Attestation,
+        "verify",
+        create_autospec(original_verify_spec, side_effect=signature),
+    )
+    mocker.patch.object(
+        pypi_provenance,
+        "verify_build",
+        create_autospec(original_verify_build_spec, side_effect=build),
+    )
     return verified
 
 
@@ -902,36 +940,58 @@ def test_stage_refuses_existing_output(tmp_path: Path) -> None:
 
 
 def test_index_requires_stable_tag_and_complete_staging(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, mocker: MockerFixture
 ) -> None:
+    original_fetch_json_spec = fetch_json_spec
     with pytest.raises(ValueError, match="stable release tag"):
         pypi_provenance.verify_index("pypi", "main", "a" * 40, tmp_path)
-    monkeypatch.setattr(pypi_provenance, "fetch_json", lambda _: {})
+    mocker.patch.object(
+        pypi_provenance,
+        "fetch_json",
+        create_autospec(original_fetch_json_spec, side_effect=lambda _: {}),
+    )
     with pytest.raises(ValueError, match="staged wheels"):
         pypi_provenance.verify_index("pypi", "v1.2.3", "a" * 40, tmp_path)
 
 
-def test_fetch_json_reads_index_response(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
+def test_fetch_json_reads_index_response(mocker: MockerFixture) -> None:
+    original_urlopen_spec = pypi_provenance.urllib.request.urlopen
+    mocker.patch.object(
         pypi_provenance.urllib.request,
         "urlopen",
-        lambda _url, **_kwargs: io.BytesIO(b'{"urls": []}'),
+        create_autospec(
+            original_urlopen_spec,
+            side_effect=lambda _url, **_kwargs: io.BytesIO(b'{"urls": []}'),
+        ),
     )
     assert pypi_provenance.fetch_json("https://pypi.org/example") == {"urls": []}
 
 
 def test_run_gh_requires_cli_and_passes_working_directory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, mocker: MockerFixture
 ) -> None:
-    monkeypatch.setattr(pypi_provenance.shutil, "which", lambda _: None)
+    original_which_spec = pypi_provenance.shutil.which
+    original_run_spec = pypi_provenance.subprocess.run
+    mocker.patch.object(
+        pypi_provenance.shutil,
+        "which",
+        create_autospec(original_which_spec, side_effect=lambda _: None),
+    )
     with pytest.raises(FileNotFoundError, match="GitHub CLI"):
         pypi_provenance.run_gh(["attestation"])
     calls = []
-    monkeypatch.setattr(pypi_provenance.shutil, "which", lambda _: "/bin/gh")
-    monkeypatch.setattr(
+    mocker.patch.object(
+        pypi_provenance.shutil,
+        "which",
+        create_autospec(original_which_spec, side_effect=lambda _: "/bin/gh"),
+    )
+    mocker.patch.object(
         pypi_provenance.subprocess,
         "run",
-        lambda args, **kwargs: calls.append((args, kwargs)),
+        create_autospec(
+            original_run_spec,
+            side_effect=lambda args, **kwargs: calls.append((args, kwargs)),
+        ),
     )
     pypi_provenance.run_gh(["attestation"], cwd=tmp_path)
     assert calls[0][0] == ["/bin/gh", "attestation"]
@@ -941,11 +1001,13 @@ def test_run_gh_requires_cli_and_passes_working_directory(
 
 @pytest.mark.parametrize("mode", ["stage", "inspect", "verify"])
 def test_provenance_cli_dispatches_modes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+    tmp_path: Path, mocker: MockerFixture, mode: str
 ) -> None:
 
+    original_stage_spec = pypi_provenance.stage
+    original_verify_with_propagation_spec = pypi_provenance.verify_with_propagation
     output = tmp_path / "github-output"
-    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    mocker.patch.dict(os.environ, {"GITHUB_OUTPUT": str(output)})
     arguments = [
         "provenance",
         mode,
@@ -964,15 +1026,26 @@ def test_provenance_cli_dispatches_modes(
             "--release-json",
             str(tmp_path / "release.json"),
         ]
-        monkeypatch.setattr(pypi_provenance, "stage", lambda *args: calls.append(args))
+        mocker.patch.object(
+            pypi_provenance,
+            "stage",
+            create_autospec(
+                original_stage_spec, side_effect=lambda *args: calls.append(args)
+            ),
+        )
     else:
         arguments += ["--index", "testpypi"]
-        monkeypatch.setattr(
+        mocker.patch.object(
             pypi_provenance,
             "verify_with_propagation",
-            lambda *args, **kwargs: calls.append((args, kwargs)) or True,
+            create_autospec(
+                original_verify_with_propagation_spec,
+                side_effect=lambda *args, **kwargs: (
+                    calls.append((args, kwargs)) or True
+                ),
+            ),
         )
-    monkeypatch.setattr(sys, "argv", arguments)
+    mocker.patch.object(sys, "argv", arguments)
     pypi_provenance.main()
     assert len(calls) == 1
     if mode == "inspect":
@@ -983,10 +1056,10 @@ def test_provenance_cli_dispatches_modes(
 
 @pytest.mark.parametrize("mode", ["stage", "inspect"])
 def test_provenance_cli_requires_mode_specific_arguments(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+    tmp_path: Path, mocker: MockerFixture, mode: str
 ) -> None:
 
-    monkeypatch.setattr(
+    mocker.patch.object(
         sys,
         "argv",
         [
@@ -1009,10 +1082,11 @@ def test_provenance_cli_requires_mode_specific_arguments(
 @pytest.mark.parametrize("verified_index", ["valid"], indirect=True)
 def test_index_rejects_malformed_provenance_containers(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
     verified_index: list[str],
     damage: str,
 ) -> None:
+    original_fetch_json_spec = fetch_json_spec
     original = pypi_provenance.fetch_json
 
     def fetch(url: str) -> dict[str, object]:
@@ -1028,7 +1102,11 @@ def test_index_rejects_malformed_provenance_containers(
                 value["attestation_bundles"] = [container]
         return value
 
-    monkeypatch.setattr(pypi_provenance, "fetch_json", fetch)
+    mocker.patch.object(
+        pypi_provenance,
+        "fetch_json",
+        create_autospec(original_fetch_json_spec, side_effect=fetch),
+    )
     with pytest.raises((TypeError, ValueError), match=r"bundle|Missing attestations"):
         pypi_provenance.verify_index("testpypi", "v1.2.3", "a" * 40, tmp_path)
     assert verified_index == []

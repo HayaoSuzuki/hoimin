@@ -5,9 +5,11 @@ import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import create_autospec
 
 import markdown
 import pytest
+from pytest_mock import MockerFixture
 
 from tools import docs_site
 from tools.docs_site import RepositoryLinks, rewrite_url
@@ -41,7 +43,7 @@ def test_site_renders_code_inside_numbered_steps() -> None:
 
 
 def test_site_preparation_copies_only_allowlisted_theme_assets(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, mocker: MockerFixture
 ) -> None:
     root = tmp_path / "repository"
     styles = root / "docs" / "assets" / "stylesheets"
@@ -49,7 +51,7 @@ def test_site_preparation_copies_only_allowlisted_theme_assets(
     (styles / "extra.css").write_bytes(b".md-sidebar--secondary { display: none; }")
     (styles / "private.css").write_bytes(b"unpublished")
     destination = tmp_path / "sources"
-    monkeypatch.setattr(docs_site, "PUBLIC_PAGES", ())
+    mocker.patch.object(docs_site, "PUBLIC_PAGES", ())
 
     docs_site.prepare_sources(root, destination, REVISION)
 
@@ -246,11 +248,16 @@ def test_built_link_cannot_escape_output(tmp_path: Path) -> None:
 
 
 def test_build_rejects_unsafe_output_and_missing_git(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, mocker: MockerFixture
 ) -> None:
+    original_which_spec = docs_site.shutil.which
     with pytest.raises(ValueError, match="repository's site directory"):
         docs_site.build_site(tmp_path, tmp_path / "other")
-    monkeypatch.setattr(docs_site.shutil, "which", lambda _: None)
+    mocker.patch.object(
+        docs_site.shutil,
+        "which",
+        create_autospec(original_which_spec, side_effect=lambda _: None),
+    )
     with pytest.raises(FileNotFoundError, match="Git is required"):
         docs_site.build_site(tmp_path, tmp_path / "site")
 
@@ -309,33 +316,59 @@ def test_full_documentation_build(tmp_path: Path) -> None:
 
 
 def test_build_rejects_mismatched_public_site_url(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, mocker: MockerFixture
 ) -> None:
 
-    monkeypatch.setattr(docs_site.shutil, "which", lambda _: "/bin/git")
-    monkeypatch.setattr(
+    original_which_spec = docs_site.shutil.which
+    original_run_spec = docs_site.subprocess.run
+    original_prepare_sources_spec = docs_site.prepare_sources
+    original_load_config_spec = docs_site.load_config
+    mocker.patch.object(
+        docs_site.shutil,
+        "which",
+        create_autospec(original_which_spec, side_effect=lambda _: "/bin/git"),
+    )
+    mocker.patch.object(
         docs_site.subprocess,
         "run",
-        lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, stdout=REVISION),
+        create_autospec(
+            original_run_spec,
+            side_effect=lambda *_args, **_kwargs: subprocess.CompletedProcess(
+                [], 0, stdout=REVISION
+            ),
+        ),
     )
-    monkeypatch.setattr(docs_site, "prepare_sources", lambda *_: None)
-    monkeypatch.setattr(
+    mocker.patch.object(
+        docs_site,
+        "prepare_sources",
+        create_autospec(original_prepare_sources_spec, side_effect=lambda *_: None),
+    )
+    mocker.patch.object(
         docs_site,
         "load_config",
-        lambda *_args, **_kwargs: SimpleNamespace(site_url="https://example.test/"),
+        create_autospec(
+            original_load_config_spec,
+            side_effect=lambda *_args, **_kwargs: SimpleNamespace(
+                site_url="https://example.test/"
+            ),
+        ),
     )
     with pytest.raises(ValueError, match="site_url must match"):
         docs_site.build_site(tmp_path, tmp_path / "site")
 
 
-def test_main_passes_output_to_builder(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_main_passes_output_to_builder(tmp_path: Path, mocker: MockerFixture) -> None:
 
+    original_build_site_spec = docs_site.build_site
     calls = []
-    monkeypatch.setattr(sys, "argv", ["docs", "--output", str(tmp_path / "site")])
-    monkeypatch.setattr(
-        docs_site, "build_site", lambda root, output: calls.append((root, output))
+    mocker.patch.object(sys, "argv", ["docs", "--output", str(tmp_path / "site")])
+    mocker.patch.object(
+        docs_site,
+        "build_site",
+        create_autospec(
+            original_build_site_spec,
+            side_effect=lambda root, output: calls.append((root, output)),
+        ),
     )
     docs_site.main()
     assert calls == [(Path(docs_site.__file__).resolve().parents[1], tmp_path / "site")]

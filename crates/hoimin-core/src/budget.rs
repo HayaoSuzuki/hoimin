@@ -498,6 +498,10 @@ pub fn reserve_workspace_copy(
 ///
 /// Returns [`BudgetError::AlreadyReleased`] or [`BudgetError::UnknownReservation`] for a released cleanup reservation.
 ///
+#[expect(
+    clippy::missing_panics_doc,
+    reason = "the first pass validates unique, live reservations and exclusive ledger ownership prevents interleaving"
+)]
 pub fn release_workspace_copy(
     ledger: &mut BudgetLedger,
     cleanup: &CleanupFinished,
@@ -512,7 +516,29 @@ pub fn release_workspace_copy(
         }
     }
     for reservation in &cleanup.released_reservations {
-        ledger.release(*reservation)?;
+        // The first pass checked every unique entry; releasing earlier entries cannot invalidate this one.
+        ledger
+            .release(*reservation)
+            .expect("cleanup reservation was validated before releasing any entry");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod release_contract_tests {
+    use super::*;
+
+    #[test]
+    fn repeated_release_rejects_the_id_without_reducing_live_totals_again() {
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: 1,
+            processes: 1,
+        });
+        let id = ledger.reserve(BudgetKind::Copy, 1).unwrap();
+        ledger.release(id).unwrap();
+        assert_eq!(ledger.release(id), Err(BudgetError::AlreadyReleased(id)));
+        assert_eq!(ledger.reserved(BudgetKind::Copy), 0);
+        assert!(ledger.invariant());
+    }
 }

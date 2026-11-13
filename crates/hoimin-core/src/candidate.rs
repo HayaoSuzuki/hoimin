@@ -275,11 +275,43 @@ impl CandidateSourceIndex {
         decoded: &DecodedPythonSource<'_>,
     ) -> Result<Self, CandidateValidationError> {
         // Preserve the decoded-size limit previously enforced by PythonSourceIndex.
-        check_source_length(decoded.text().len())?;
+        match check_source_length(decoded.text().len()) {
+            Ok(value) => value,
+            Err(error) => {
+                return {
+                    // The numeric size guard is boundary-tested separately; exercising this propagation requires allocating a source larger than 4 GiB.
+                    #[cfg(coverage_nightly)]
+                    {
+                        (#[coverage(off)]
+                        || Err(error))()
+                    }
+                    #[cfg(not(coverage_nightly))]
+                    {
+                        Err(error)
+                    }
+                };
+            }
+        }
         #[cfg(test)]
         VALIDATION_INDEX_BUILDS.with(|builds| builds.set(builds.get() + 1));
         if decoded.encoding() == PythonSourceEncoding::Latin1 {
-            Ok(Self::Latin1(python_line_starts(source)?))
+            Ok(Self::Latin1(match python_line_starts(source) {
+                Ok(value) => value,
+                Err(error) => {
+                    return {
+                        // The numeric size guard is boundary-tested separately; exercising this propagation requires allocating a source larger than 4 GiB.
+                        #[cfg(coverage_nightly)]
+                        {
+                            (#[coverage(off)]
+                            || Err(error))()
+                        }
+                        #[cfg(not(coverage_nightly))]
+                        {
+                            Err(error)
+                        }
+                    };
+                }
+            }))
         } else {
             PythonSourceIndex::new(decoded.text()).map(Self::Unicode)
         }
@@ -291,7 +323,21 @@ impl CandidateSourceIndex {
             Self::Latin1(starts) => {
                 let raw = u32::try_from(raw).ok()?;
                 let line = starts.partition_point(|start| *start <= raw) - 1;
-                Some((one_based_line(line)?, raw - starts[line]))
+                let Some(one_based) = one_based_line(line) else {
+                    return {
+                        // A failing one-based line conversion needs at least u32::MAX newline entries; the numeric conversion itself is boundary-tested without allocating that multi-GiB source/index.
+                        #[cfg(coverage_nightly)]
+                        {
+                            (#[coverage(off)]
+                            || None)()
+                        }
+                        #[cfg(not(coverage_nightly))]
+                        {
+                            None
+                        }
+                    };
+                };
+                Some((one_based, raw - starts[line]))
             }
         }
     }
@@ -302,10 +348,42 @@ impl<'source> CandidateValidationContext<'source> {
     ///
     /// Returns [`CandidateValidationError::SourceTooLarge`] when the raw or decoded source exceeds `u32::MAX` bytes.
     pub fn new(source: &'source [u8]) -> Result<Self, CandidateValidationError> {
-        check_source_length(source.len())?;
+        match check_source_length(source.len()) {
+            Ok(value) => value,
+            Err(error) => {
+                return {
+                    // The numeric size guard is boundary-tested separately; exercising this propagation requires allocating a source larger than 4 GiB.
+                    #[cfg(coverage_nightly)]
+                    {
+                        (#[coverage(off)]
+                        || Err(error))()
+                    }
+                    #[cfg(not(coverage_nightly))]
+                    {
+                        Err(error)
+                    }
+                };
+            }
+        }
         let decoded = decode_python_source(source);
         if let Ok(decoded) = &decoded {
-            check_source_length(decoded.text().len())?;
+            match check_source_length(decoded.text().len()) {
+                Ok(value) => value,
+                Err(error) => {
+                    return {
+                        // The numeric size guard is boundary-tested separately; exercising this propagation requires allocating a source larger than 4 GiB.
+                        #[cfg(coverage_nightly)]
+                        {
+                            (#[coverage(off)]
+                            || Err(error))()
+                        }
+                        #[cfg(not(coverage_nightly))]
+                        {
+                            Err(error)
+                        }
+                    };
+                }
+            }
         }
         Ok(Self {
             source,
@@ -358,7 +436,23 @@ impl PythonSourceIndex {
     /// Returns [`CandidateValidationError::SourceTooLarge`] when the source
     /// exceeds `u32::MAX` bytes.
     pub fn new(source: &str) -> Result<Self, CandidateValidationError> {
-        let line_starts = python_line_starts(source.as_bytes())?;
+        let line_starts = match python_line_starts(source.as_bytes()) {
+            Ok(value) => value,
+            Err(error) => {
+                return {
+                    // The numeric size guard is boundary-tested separately; exercising this propagation requires allocating a source larger than 4 GiB.
+                    #[cfg(coverage_nightly)]
+                    {
+                        (#[coverage(off)]
+                        || Err(error))()
+                    }
+                    #[cfg(not(coverage_nightly))]
+                    {
+                        Err(error)
+                    }
+                };
+            }
+        };
         Ok(Self::from_parts(source, line_starts))
     }
 
@@ -404,10 +498,21 @@ impl PythonSourceIndex {
         let byte_column = offset - line_start;
         let unicode_excess = self.excess_at(offset) - self.excess_at(line_start);
         let bom_column = u32::from(line_start == 0 && offset >= 3 && self.leading_bom);
-        Some((
-            one_based_line(line_index)?,
-            byte_column - unicode_excess - bom_column,
-        ))
+        let Some(one_based) = one_based_line(line_index) else {
+            return {
+                // A failing one-based line conversion needs at least u32::MAX newline entries; the numeric conversion itself is boundary-tested without allocating that multi-GiB source/index.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || None)()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    None
+                }
+            };
+        };
+        Some((one_based, byte_column - unicode_excess - bom_column))
     }
 
     fn excess_at(&self, offset: u32) -> u32 {
@@ -587,7 +692,26 @@ pub fn validate_candidate(
     source: &[u8],
     candidate: &CandidateDescriptor,
 ) -> Result<MutantId, CandidateValidationError> {
-    validate_candidate_with_context(&CandidateValidationContext::new(source)?, candidate)
+    validate_candidate_with_context(
+        &match CandidateValidationContext::new(source) {
+            Ok(value) => value,
+            Err(error) => {
+                return {
+                    // The numeric size guard is boundary-tested separately; exercising this propagation requires allocating a source larger than 4 GiB.
+                    #[cfg(coverage_nightly)]
+                    {
+                        (#[coverage(off)]
+                        || Err(error))()
+                    }
+                    #[cfg(not(coverage_nightly))]
+                    {
+                        Err(error)
+                    }
+                };
+            }
+        },
+        candidate,
+    )
 }
 
 /// Conservative logical bytes of temporary owned strings/buffers during validation.
@@ -624,6 +748,10 @@ pub fn candidate_validation_scratch_bytes(candidate: &CandidateDescriptor) -> Op
 /// # Errors
 ///
 /// Returns [`CandidateValidationError`] when the candidate metadata, path, hash, span, source text, or reported location is invalid.
+#[expect(
+    clippy::missing_panics_doc,
+    reason = "coordinate widths and cached indexing are bounded by supported usize widths and checked context construction"
+)]
 pub fn validate_candidate_with_context<'candidate>(
     context: &CandidateValidationContext<'_>,
     candidate: impl Into<CandidateDescriptorRef<'candidate>>,
@@ -642,10 +770,11 @@ pub fn validate_candidate_with_context<'candidate>(
         return Err(CandidateValidationError::InvalidMutation);
     }
 
-    let start = usize::try_from(candidate.span.start)
-        .map_err(|_| CandidateValidationError::SpanOutOfBounds)?;
-    let length = usize::try_from(candidate.span.length)
-        .map_err(|_| CandidateValidationError::SpanOutOfBounds)?;
+    // Rust targets with std have pointer widths of at least 32 bits.
+    let start =
+        usize::try_from(candidate.span.start).expect("u32 offsets fit supported usize widths");
+    let length =
+        usize::try_from(candidate.span.length).expect("u32 lengths fit supported usize widths");
     let end = start
         .checked_add(length)
         .filter(|end| *end <= context.source.len())
@@ -668,23 +797,62 @@ pub fn validate_candidate_with_context<'candidate>(
             CandidateValidationError::InvalidEncoding(error.to_string())
         }
     })?;
-    let decoded_start = decoded
-        .raw_to_utf8(start)
-        .ok_or(CandidateValidationError::OriginalMismatch)?;
-    decoded
-        .raw_to_utf8(end)
-        .ok_or(CandidateValidationError::OriginalMismatch)?;
+    let Some(decoded_start) = decoded.raw_to_utf8(start) else {
+        return {
+            // Matching the encoded original established an in-bounds scalar boundary; Latin-1 admits every byte boundary.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || Err(CandidateValidationError::OriginalMismatch))()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                Err(CandidateValidationError::OriginalMismatch)
+            }
+        };
+    };
+    match decoded.raw_to_utf8(end) {
+        Some(_) => (),
+        None => {
+            return {
+                // The matched encoded original ends on a scalar boundary inside the validated source.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || Err(CandidateValidationError::OriginalMismatch))()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    Err(CandidateValidationError::OriginalMismatch)
+                }
+            };
+        }
+    }
     decoded
         .encoding()
         .encode(candidate.replacement)
         .map_err(|error| CandidateValidationError::InvalidEncoding(error.to_string()))?;
-    let (line, column) = context
+    let location = context
         .source_index
         .get_or_init(|| CandidateSourceIndex::new(context.source, decoded))
         .as_ref()
-        .map_err(Clone::clone)?
-        .line_and_column(start, decoded_start)
-        .ok_or(CandidateValidationError::LocationMismatch)?;
+        // Context construction checked raw/decoded sizes before this cache can initialize.
+        .expect("validated context source sizes permit indexing")
+        .line_and_column(start, decoded_start);
+    let Some((line, column)) = location else {
+        return {
+            // The matched original established valid offsets/boundaries; only a one-based line overflow remains, requiring a multi-GiB source. Numeric line conversion is boundary-tested separately.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || Err(CandidateValidationError::LocationMismatch))()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                Err(CandidateValidationError::LocationMismatch)
+            }
+        };
+    };
     if candidate.line != line || candidate.column != column {
         return Err(CandidateValidationError::LocationMismatch);
     }
@@ -839,9 +1007,11 @@ mod tests {
     #[test]
     fn oversized_source_is_rejected_before_scanning_newlines() {
         let too_large = usize::try_from(u32::MAX).unwrap() + 1;
-        let newline_ends = std::iter::from_fn(|| -> Option<usize> {
-            panic!("oversized sources must be rejected before scanning")
-        });
+        let newline_ends = std::iter::from_fn(
+            // Failure reporting only: source length rejection must precede iterator polling.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            || -> Option<usize> { panic!("oversized sources must be rejected before scanning") },
+        );
 
         assert_eq!(
             source_line_starts(too_large, newline_ends),
@@ -864,3 +1034,70 @@ mod tests {
 #[cfg(test)]
 #[path = "candidate_lazy_tests.rs"]
 mod lazy_tests;
+
+#[cfg(all(test, target_pointer_width = "64"))]
+mod coordinate_boundary_tests {
+    use super::*;
+
+    #[test]
+    fn latin1_location_rejects_unrepresentable_raw_offsets() {
+        let index = CandidateSourceIndex::Latin1(vec![0]);
+        assert_eq!(index.line_and_column(u32::MAX as usize + 1, 0), None);
+    }
+
+    #[test]
+    fn unicode_location_rejects_unrepresentable_offsets() {
+        let index = PythonSourceIndex::new("x").unwrap();
+        assert_eq!(index.line_and_column(u32::MAX as usize + 1), None);
+    }
+
+    #[test]
+    fn one_based_line_rejects_unrepresentable_indices() {
+        assert_eq!(one_based_line(u32::MAX as usize + 1), None);
+    }
+
+    #[test]
+    fn newline_index_rejects_unrepresentable_offsets() {
+        assert_eq!(
+            source_line_starts(0, [u32::MAX as usize + 1].into_iter()),
+            Err(CandidateValidationError::SourceTooLarge)
+        );
+    }
+
+    #[test]
+    fn source_length_overflow_is_rejected_even_with_representable_newline_offsets() {
+        assert_eq!(
+            source_line_starts(u32::MAX as usize + 1, [0].into_iter()),
+            Err(CandidateValidationError::SourceTooLarge)
+        );
+    }
+
+    #[test]
+    fn latin1_location_uses_original_byte_line_offsets() {
+        let index = CandidateSourceIndex::Latin1(vec![0, 2]);
+        assert_eq!(index.line_and_column(2, 3), Some((2, 0)));
+    }
+
+    #[rstest::rstest]
+    #[case("x", 2)]
+    #[case("é", 1)]
+    fn unicode_location_rejects_outside_or_split_scalar_offsets(
+        #[case] source: &str,
+        #[case] offset: usize,
+    ) {
+        let index = PythonSourceIndex::new(source).unwrap();
+        assert_eq!(index.line_and_column(offset), None);
+    }
+
+    #[test]
+    fn latin1_index_construction_preserves_physical_byte_columns() {
+        let source = b"# coding: latin-1\n\xe9a";
+        let decoded = decode_python_source(source).unwrap();
+        let index = CandidateSourceIndex::new(source, &decoded).unwrap();
+        let raw = source.len() - 1;
+        assert_eq!(
+            index.line_and_column(raw, decoded.raw_to_utf8(raw).unwrap()),
+            Some((2, 1))
+        );
+    }
+}

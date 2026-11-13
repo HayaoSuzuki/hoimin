@@ -164,7 +164,7 @@ fn rejected_samples_preserve_all_successful_statistics(
     .unwrap();
 
     let samples = Samples::new();
-    for capacities in initial.clone() {
+    for capacities in initial {
         samples.accept(capacities, 1);
     }
     let rejected = if reading_fails {

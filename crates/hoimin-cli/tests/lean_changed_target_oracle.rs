@@ -1,4 +1,4 @@
-#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+#![cfg_attr(coverage_nightly, feature(coverage_attribute, stmt_expr_attributes))]
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
 use collecting_writer::CollectingWriter;
@@ -14,6 +14,11 @@ use hoimin_cli::target::git::{ResolveGitChanges, handle_git};
 use hoimin_core::EffectId;
 use hoimin_core::{ByteSpan, CANDIDATE_SCHEMA_VERSION, CandidateIdentity, stable_mutant_id};
 use serde::Deserialize;
+
+#[cfg(windows)]
+const VENV_PYTHON_PATH: &str = ".venv/Scripts/python.exe";
+#[cfg(not(windows))]
+const VENV_PYTHON_PATH: &str = ".venv/bin/python";
 
 const CORPUS: &str =
     include_str!("../../../formal/HoiminOracle/corpus/changed-target-composition.jsonl");
@@ -85,7 +90,18 @@ fn parse_corpus(input: &str) -> Vec<OracleCase> {
             "internal-fixture" => assert_eq!(case.scenario, "parser_isolation"),
             "model-only" => assert_eq!(case.scenario, "non_utf8_path"),
             "infrastructure-error" => assert_eq!(case.scenario, "git_failure"),
-            mode => panic!("unknown mode {mode}"),
+            mode => {
+                // The exact schema-owned contract above already validated every mode.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || panic!("unknown mode {mode}"))()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    panic!("unknown mode {mode}")
+                }
+            }
         }
     }
     cases
@@ -193,11 +209,7 @@ fn repo_root() -> PathBuf {
 }
 
 fn python_executable() -> PathBuf {
-    if cfg!(windows) {
-        repo_root().join(".venv/Scripts/python.exe")
-    } else {
-        repo_root().join(".venv/bin/python")
-    }
+    repo_root().join(VENV_PYTHON_PATH)
 }
 
 async fn plan(repo: &Repo, extra: &[&str]) -> serde_json::Value {
@@ -445,4 +457,10 @@ async fn public_plan_diff_base_composes_head_and_worktree_destination_lines() {
         expected_lines(&case)
     );
     assert_candidate_correspondence(&repo, candidates(&manifest));
+}
+
+#[test]
+#[should_panic(expected = "missing Lean oracle case absent")]
+fn oracle_case_lookup_reports_unknown_identity() {
+    let _ = oracle_case("absent");
 }

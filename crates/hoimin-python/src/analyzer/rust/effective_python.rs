@@ -376,3 +376,398 @@ fn gather_replacement(
     }
     None
 }
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    fn run_shared(
+        function: &StmtFunctionDef,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Option<(TextRange, &'static str)> {
+        shared_default(function, &cancelled)
+    }
+
+    #[rstest::rstest]
+    #[case("def f(x=None):\n if x is None:\n  x = []", Some("[]"))]
+    #[case("def f(x=None):\n if None is x:\n  x = {}", Some("{}"))]
+    #[case("@decorate\ndef f(x=None):\n if x is None:\n  x = []", None)]
+    #[case("def f[T](x=None):\n if x is None:\n  x = []", None)]
+    #[case("def f(x=None):\n pass", None)]
+    #[case("def f(x=None):\n if x is None:\n  x = []\n else:\n  pass", None)]
+    #[case("def f(x=None):\n if x is None:\n  x = []\n  pass", None)]
+    #[case("def f(x=None):\n if x:\n  x = []", None)]
+    #[case("def f(x=None):\n if x is not None:\n  x = []", None)]
+    #[case("def f(x=None):\n if x.attr is None:\n  x = []", None)]
+    #[case("def f(x=None):\n if x is None:\n  pass", None)]
+    #[case("def f(x=None):\n if x is None:\n  x.attr = []", None)]
+    #[case("def f(x=None):\n if x is None:\n  y = []", None)]
+    #[case("def f(x=None):\n if x is None:\n  x = [1]", None)]
+    #[case("def f(x=None):\n if x is None:\n  x = {'a': 1}", None)]
+    #[case("def f(x=None):\n if x is None:\n  x = set()", None)]
+    #[case("def f(x):\n if x is None:\n  x = []", None)]
+    #[case("def f(x=1):\n if x is None:\n  x = []", None)]
+    #[case("def f(y=None):\n if x is None:\n  x = []", None)]
+    #[case("def f(x=None):\n 'documentation'", None)]
+    #[case("def f(x=None):\n if x == None:\n  x = []", None)]
+    fn shared_default_requires_a_simple_parameter_none_initializer(
+        #[case] source: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let function = parsed.syntax().body[0].as_function_def_stmt().unwrap();
+        assert_eq!(
+            run_shared(function, &|| false).map(|(_, replacement)| replacement),
+            expected
+        );
+    }
+
+    #[rstest::rstest]
+    fn shared_default_stops_during_parameter_lookup(#[values(0, 1)] checkpoint: usize) {
+        let parsed =
+            ruff_python_parser::parse_module("def f(y=None, x=None):\n if x is None:\n  x = []")
+                .unwrap();
+        let function = parsed.syntax().body[0].as_function_def_stmt().unwrap();
+        let polls = Cell::new(0);
+        assert_eq!(
+            run_shared(function, &|| {
+                let current = polls.get();
+                polls.set(current + 1);
+                current >= checkpoint
+            }),
+            None
+        );
+        assert_eq!(polls.get(), checkpoint + 1);
+    }
+
+    fn run_none(
+        compare: &ExprCompare,
+        source: &str,
+        tokens: &Tokens,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Option<String> {
+        none_replacement(compare, source, tokens, &cancelled)
+    }
+
+    #[rstest::rstest]
+    #[case("None is value", Some("(not (  value))"))]
+    #[case("value is not None", Some("(not not (value   ))"))]
+    #[case("None is None", None)]
+    #[case("first is second", None)]
+    #[case("value == None", None)]
+    #[case("first is None is second", None)]
+    fn none_truthiness_requires_exactly_one_identity_none_operand(
+        #[case] source: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let compare = parsed.syntax().body[0]
+            .as_expr_stmt()
+            .unwrap()
+            .value
+            .as_compare_expr()
+            .unwrap();
+        assert_eq!(
+            run_none(compare, source, parsed.tokens(), &|| false).as_deref(),
+            expected
+        );
+    }
+
+    #[rstest::rstest]
+    fn none_truthiness_stops_at_each_edit_phase(
+        #[values(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)] checkpoint: usize,
+    ) {
+        let source = "value is not ((None))";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let compare = parsed.syntax().body[0]
+            .as_expr_stmt()
+            .unwrap()
+            .value
+            .as_compare_expr()
+            .unwrap();
+        let polls = Cell::new(0);
+        assert_eq!(
+            run_none(compare, source, parsed.tokens(), &|| {
+                let current = polls.get();
+                polls.set(current + 1);
+                current >= checkpoint
+            }),
+            None
+        );
+        assert_eq!(polls.get(), checkpoint + 1);
+    }
+    fn run_gather(
+        call: &ExprCall,
+        tokens: &Tokens,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Option<(TextRange, String)> {
+        gather_replacement(call, tokens, &cancelled)
+    }
+
+    #[rstest::rstest]
+    #[case(vec![], None)]
+    #[case(vec![TokenKind::Lpar, TokenKind::Identifier], None)]
+    #[case(vec![TokenKind::Rpar], None)]
+    #[case(vec![TokenKind::Lpar, TokenKind::Identifier, TokenKind::Rpar], Some(", return_exceptions=True)"))]
+    fn gather_edit_requires_a_complete_argument_token_boundary(
+        #[case]
+        #[by_ref]
+        kinds: &[TokenKind],
+        #[case] expected: Option<&str>,
+    ) {
+        let parsed = ruff_python_parser::parse_module("gather(task)").unwrap();
+        let call = parsed.syntax().body[0]
+            .as_expr_stmt()
+            .unwrap()
+            .value
+            .as_call_expr()
+            .unwrap();
+        let tokens = Tokens::new(
+            parsed
+                .tokens()
+                .iter()
+                .filter(|token| kinds.contains(&token.kind()))
+                .copied()
+                .collect(),
+        );
+        assert_eq!(
+            run_gather(call, &tokens, &|| false)
+                .as_ref()
+                .map(|(_, replacement)| replacement.as_str()),
+            expected
+        );
+    }
+
+    #[test]
+    fn gather_edit_stops_before_choosing_an_insertion_point() {
+        let parsed = ruff_python_parser::parse_module("gather(task)").unwrap();
+        let call = parsed.syntax().body[0]
+            .as_expr_stmt()
+            .unwrap()
+            .value
+            .as_call_expr()
+            .unwrap();
+        assert_eq!(run_gather(call, parsed.tokens(), &|| true), None);
+    }
+
+    #[rstest::rstest]
+    #[case("None is value")]
+    #[case("value is None")]
+    fn none_edit_rejects_missing_identity_operator_tokens(#[case] source: &str) {
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let compare = parsed.syntax().body[0]
+            .as_expr_stmt()
+            .unwrap()
+            .value
+            .as_compare_expr()
+            .unwrap();
+        assert_eq!(
+            run_none(compare, source, &Tokens::new(vec![]), &|| false),
+            None
+        );
+    }
+
+    #[rstest::rstest]
+    fn yield_from_removal_stops_during_keyword_scan(#[values(0, 1, 2)] checkpoint: usize) {
+        let source = "yield from values";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let expression = &parsed.syntax().body[0].as_expr_stmt().unwrap().value;
+        let polls = Cell::new(0);
+        let cancelled: &dyn Fn() -> bool = &|| {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= checkpoint
+        };
+        let mut replacements = Vec::new();
+        expression_emit(
+            expression,
+            source,
+            parsed.tokens(),
+            cancelled,
+            &mut replacements,
+        );
+        assert_eq!(replacements, [] as [String; 0]);
+        assert_eq!(polls.get(), checkpoint + 1);
+    }
+
+    #[test]
+    fn yield_from_removal_changes_only_the_delegating_keyword() {
+        let source = "yield from values";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let expression = &parsed.syntax().body[0].as_expr_stmt().unwrap().value;
+        let mut replacements = Vec::new();
+        expression_emit(
+            expression,
+            source,
+            parsed.tokens(),
+            &|| false,
+            &mut replacements,
+        );
+        assert_eq!(replacements, [String::new()]);
+    }
+
+    fn expression_emit(
+        expression_node: &Expr,
+        source: &str,
+        tokens: &Tokens,
+        cancelled: &dyn Fn() -> bool,
+        replacements: &mut Vec<String>,
+    ) {
+        expression(
+            expression_node,
+            source,
+            tokens,
+            &MutationOperatorSelection::default(),
+            &cancelled,
+            |_, replacement, _| {
+                replacements.push(replacement);
+                true
+            },
+        );
+    }
+    #[rstest::rstest]
+    #[case("gather()", None)]
+    #[case("gather(task, return_exceptions=False)", None)]
+    #[case("gather(*tasks)", None)]
+    #[case("gather(task for task in tasks)", None)]
+    #[case("gather(task,)", Some("return_exceptions=True)"))]
+    #[case("gather(task, # keep\n)", Some("return_exceptions=True)"))]
+    fn gather_edit_preserves_explicit_argument_boundaries(
+        #[case] source: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let call = parsed.syntax().body[0]
+            .as_expr_stmt()
+            .unwrap()
+            .value
+            .as_call_expr()
+            .unwrap();
+        assert_eq!(
+            run_gather(call, parsed.tokens(), &|| false)
+                .as_ref()
+                .map(|(_, replacement)| replacement.as_str()),
+            expected
+        );
+    }
+
+    #[rstest::rstest]
+    #[case("None is value", vec!["(not (  value))"])]
+    #[case("first is second", vec![])]
+    #[case("f'{value!s}'", vec!["r"])]
+    #[case("receiver.popleft()", vec!["pop"])]
+    #[case("receiver.setdefault(key)", vec!["get"])]
+    #[case("receiver.setdefault(*keys)", vec![])]
+    #[case("receiver.setdefault(key, default=0)", vec![])]
+    #[case("factory().popleft()", vec![])]
+    #[case("receiver.popleft(value)", vec![])]
+    #[case("function()", vec![])]
+    #[case("value", vec![])]
+    fn local_expression_edits_require_supported_shapes(
+        #[case] source: &str,
+        #[case]
+        #[by_ref]
+        expected: &[&str],
+    ) {
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let expression = &parsed.syntax().body[0].as_expr_stmt().unwrap().value;
+        let mut replacements = Vec::new();
+        expression_emit(
+            expression,
+            source,
+            parsed.tokens(),
+            &|| false,
+            &mut replacements,
+        );
+        assert_eq!(replacements, expected);
+    }
+
+    fn statement_emit(
+        statement_node: &Stmt,
+        cancelled: &dyn Fn() -> bool,
+        replacements: &mut Vec<String>,
+    ) {
+        statement(
+            statement_node,
+            &MutationOperatorSelection::default(),
+            &cancelled,
+            |_, replacement, _| {
+                replacements.push(replacement);
+                true
+            },
+        );
+    }
+
+    #[rstest::rstest]
+    #[case("continue", false, vec!["pass"])]
+    #[case("continue", true, vec![])]
+    #[case("raise error from cause", false, vec!["None"])]
+    #[case("raise error from None", false, vec![])]
+    #[case("nonlocal captured", false, vec!["pass"])]
+    #[case("def f(x=None):\n if x is None:\n  x = []", false, vec!["[]"])]
+    #[case("def f(x=None): pass", false, vec![])]
+    #[case("pass", false, vec![])]
+    fn local_statement_edits_preserve_unsupported_or_cancelled_statements(
+        #[case] source: &str,
+        #[case] cancelled: bool,
+        #[case]
+        #[by_ref]
+        expected: &[&str],
+    ) {
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let mut replacements = Vec::new();
+        statement_emit(&parsed.syntax().body[0], &|| cancelled, &mut replacements);
+        assert_eq!(replacements, expected);
+    }
+    fn run_import_build(
+        module: &ModModule,
+        operators: &MutationOperatorSelection,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<Imports, AnalysisCancelled> {
+        Imports::build(module, operators, &cancelled)
+    }
+
+    #[rstest::rstest]
+    #[case(vec!["deepcopy_to_copy"], false, false, Some("copy"))]
+    #[case(vec![], false, false, None)]
+    #[case(vec!["deepcopy_to_copy"], true, true, None)]
+    fn callable_import_index_is_built_only_when_selected_and_not_cancelled(
+        #[case]
+        #[by_ref]
+        selected: &[&str],
+        #[case] cancelled: bool,
+        #[case] expected_error: bool,
+        #[case] expected_replacement: Option<&str>,
+    ) {
+        let parsed = ruff_python_parser::parse_module("import copy\ncopy.deepcopy(value)").unwrap();
+        let operators = serde_json::from_value(serde_json::json!(selected)).unwrap();
+        let result = run_import_build(parsed.syntax(), &operators, &|| cancelled);
+        assert_eq!(result.is_err(), expected_error);
+        let expression = &parsed.syntax().body[1].as_expr_stmt().unwrap().value;
+        let replacement = result.as_ref().ok().and_then(|imports| {
+            imports.replacement(expression, &operators, parsed.tokens(), &|| false)
+        });
+        assert_eq!(
+            replacement.as_ref().map(|(_, text, _)| text.as_str()),
+            expected_replacement
+        );
+    }
+    #[test]
+    fn yield_from_removal_requires_the_delegating_keyword_token() {
+        let source = "yield from values";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let expression = &parsed.syntax().body[0].as_expr_stmt().unwrap().value;
+        let tokens = Tokens::new(
+            parsed
+                .tokens()
+                .iter()
+                .filter(|token| token.kind() != TokenKind::From)
+                .copied()
+                .collect(),
+        );
+        let mut replacements = Vec::new();
+        expression_emit(expression, source, &tokens, &|| false, &mut replacements);
+        assert_eq!(replacements, [] as [String; 0]);
+    }
+}

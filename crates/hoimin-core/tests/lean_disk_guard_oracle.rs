@@ -1,4 +1,4 @@
-#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+#![cfg_attr(coverage_nightly, feature(coverage_attribute, stmt_expr_attributes))]
 use std::collections::BTreeSet;
 use std::num::NonZeroU64;
 use std::time::Duration;
@@ -389,4 +389,84 @@ fn broken_policy_mismatches(case: &CorpusCase, family: BrokenFamily) -> bool {
         || dispatched != case.expected.state.dispatched
         || accepted != case.expected.accepted
         || rejected_at != case.expected.rejected_at
+}
+
+#[rstest::rstest]
+#[case(|case: &mut CorpusCase| case.schema = 2, "invalid schema or id")]
+#[case(|case: &mut CorpusCase| case.id.clear(), "invalid schema or id")]
+#[case(|case: &mut CorpusCase| case.layer = "unknown".into(), "unknown layer")]
+#[case(|case: &mut CorpusCase| case.mode = "unknown".into(), "unknown mode")]
+fn corpus_contract_rejects_invalid_identity(
+    #[case] mutate: fn(&mut CorpusCase),
+    #[case] expected: &str,
+) {
+    let mut case = parse_corpus().remove(0);
+    mutate(&mut case);
+    assert_eq!(validate_contract(&case).unwrap_err(), expected);
+}
+
+#[test]
+fn policy_adapter_rejects_unsupported_events() {
+    let mut case = parse_corpus()
+        .into_iter()
+        .find(|case| case.layer == "policy")
+        .unwrap();
+    case.events = vec![Event::Unsupported];
+    let panic = std::panic::catch_unwind(|| assert_policy_case(&case)).unwrap_err();
+    assert_eq!(
+        panic.downcast_ref::<String>().unwrap(),
+        &format!("unsupported policy event in {}", case.id)
+    );
+}
+
+#[test]
+fn process_failure_has_the_process_stop_name() {
+    assert_eq!(reason_name(DiskStopReason::ProcessFailed), "process_failed");
+}
+
+fn sequential_failure_case() -> CorpusCase {
+    let mut case = parse_corpus()
+        .into_iter()
+        .find(|case| case.layer == "policy")
+        .unwrap();
+    case.id = "size_then_measurement_failure".into();
+    case.events = vec![
+        Event::Observe {
+            owned: 1,
+            max_owned: 1,
+            free: 2,
+            min_free: 1,
+        },
+        Event::MeterFailed,
+    ];
+    case.expected.state.stop = Some("workspace_size_exceeded".into());
+    case.expected.state.secondary_stops = vec!["measurement_failed".into()];
+    case.expected.state.active = 0;
+    case.expected.state.dispatched = 0;
+    case.expected.accepted = true;
+    case.expected.rejected_at = None;
+    case
+}
+
+#[test]
+fn policy_adapter_retains_measurement_failure_secondary_to_size_limit() {
+    assert_policy_case(&sequential_failure_case());
+}
+
+#[test]
+fn simultaneous_secondary_mutant_agrees_on_sequential_failures() {
+    assert!(!broken_policy_mismatches(
+        &sequential_failure_case(),
+        BrokenFamily::DropSimultaneousSecondary
+    ));
+}
+
+#[test]
+fn broken_policy_comparison_ignores_unsupported_events() {
+    let mut case = sequential_failure_case();
+    case.events = vec![Event::Unsupported];
+    assert!(!broken_policy_mismatches(
+        &case,
+        BrokenFamily::ExclusiveSize
+    ));
 }

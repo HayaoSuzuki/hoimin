@@ -6,6 +6,11 @@ use std::time::Duration;
 
 use serde_json::Value;
 
+#[cfg(windows)]
+const VENV_PYTHON_PATH: &str = ".venv/Scripts/python.exe";
+#[cfg(not(windows))]
+const VENV_PYTHON_PATH: &str = ".venv/bin/python";
+
 pub const FLAG: &str = "HOIMIN_AUDIT_ENV_FLAG";
 
 pub struct Fixture {
@@ -40,11 +45,7 @@ impl Fixture {
             .unwrap()
             .parent()
             .unwrap()
-            .join(if cfg!(windows) {
-                ".venv/Scripts/python.exe"
-            } else {
-                ".venv/bin/python"
-            });
+            .join(VENV_PYTHON_PATH);
         let metrics = self.directory.path().join("metrics.json");
         let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
         command

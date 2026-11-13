@@ -15,13 +15,13 @@ static ALLOCATOR: TrackingAllocator = TrackingAllocator;
 static ALLOCATION_WINDOW: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[rstest::rstest]
-#[case::exact("exact", vec![], vec!["input.bin".into()])]
-#[case::glob("glob", vec!["*.bin".into()], vec![])]
-#[case::overlap("overlap", vec!["*.bin".into()], vec!["input.bin".into()])]
+#[case::exact("exact", &[], &["input.bin".into()])]
+#[case::glob("glob", &["*.bin".into()], &[])]
+#[case::overlap("overlap", &["*.bin".into()], &["input.bin".into()])]
 fn auxiliary_hashing_heap_is_independent_of_largest_input(
     #[case] mode: &str,
-    #[case] patterns: Vec<String>,
-    #[case] files: Vec<String>,
+    #[case] patterns: &[String],
+    #[case] files: &[String],
     #[values(1usize, 16usize, 64usize)] mib: usize,
 ) {
     let _window = ALLOCATION_WINDOW.lock().unwrap();
@@ -38,7 +38,7 @@ fn auxiliary_hashing_heap_is_independent_of_largest_input(
     for repeat in 0..3 {
         heap_tracking::begin();
 
-        let result = resolve(&root, &patterns, &files);
+        let result = resolve(&root, patterns, files);
         let peak = heap_tracking::finish();
 
         assert_eq!(result.unwrap(), expected);

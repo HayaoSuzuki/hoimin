@@ -225,3 +225,141 @@ impl<'a, F: Fn() -> bool, S: FnMut(TextRange) -> bool, E: FnMut(TextRange, Strin
         }
     }
 }
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+
+    fn run_binds(
+        target: &Expr,
+        name: &str,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<bool, AnalysisCancelled> {
+        binds(target, name, &cancelled)
+    }
+
+    #[rstest::rstest]
+    #[case("first", "first", true)]
+    #[case("first", "missing", false)]
+    #[case("(first, second)", "second", true)]
+    #[case("[first, second]", "missing", false)]
+    #[case("(first, [second, *rest])", "rest", true)]
+    #[case("holder.attribute", "holder", false)]
+    fn loop_target_binding_follows_destructuring_without_treating_receivers_as_locals(
+        #[case] target: &str,
+        #[case] name: &str,
+        #[case] expected: bool,
+    ) {
+        let source = format!("for {target} in values:\n pass");
+        let parsed = ruff_python_parser::parse_module(&source).unwrap();
+        let target = &parsed.syntax().body[0].as_for_stmt().unwrap().target;
+        assert_eq!(run_binds(target, name, &|| false), Ok(expected));
+    }
+
+    #[rstest::rstest]
+    fn loop_target_binding_propagates_cancellation_through_nested_unpacking(
+        #[values(0, 1, 2, 3, 4, 5)] checkpoint: usize,
+    ) {
+        let parsed =
+            ruff_python_parser::parse_module("for first, [second, *rest] in values:\n pass")
+                .unwrap();
+        let target = &parsed.syntax().body[0].as_for_stmt().unwrap().target;
+        let polls = std::cell::Cell::new(0);
+        assert_eq!(
+            run_binds(target, "rest", &|| {
+                let current = polls.get();
+                polls.set(current + 1);
+                current >= checkpoint
+            }),
+            Err(AnalysisCancelled)
+        );
+        assert_eq!(polls.get(), checkpoint + 1);
+    }
+    const CAPTURES: &str = "for value in values:\n first = lambda value=value: value\n second = lambda value=value: value\n";
+    const REPLACEMENT: &str = "(lambda _hoimin_get, _hoimin_missing: lambda value=_hoimin_missing: (_hoimin_get() if value is _hoimin_missing else value))(lambda: value, [])";
+
+    fn run_emit(
+        module: &ModModule,
+        source: &str,
+        cancelled: &dyn Fn() -> bool,
+        selected: &mut dyn FnMut(TextRange) -> bool,
+        sink: &mut dyn FnMut(TextRange, String) -> bool,
+    ) -> Result<(), AnalysisCancelled> {
+        emit(module, source, &cancelled, selected, sink)
+    }
+    fn recording(
+        mutations: &mut Vec<String>,
+        accepted: bool,
+    ) -> impl FnMut(TextRange, String) -> bool + '_ {
+        move |_, mutation| {
+            mutations.push(mutation);
+            accepted
+        }
+    }
+    fn all_selected(_: TextRange) -> bool {
+        true
+    }
+
+    #[rstest::rstest]
+    #[case(true, true, 2)]
+    #[case(true, false, 1)]
+    #[case(false, true, 0)]
+    fn capture_generation_stops_on_selection_or_sink_rejection(
+        #[case] selected: bool,
+        #[case] accepted: bool,
+        #[case] count: usize,
+    ) {
+        let parsed = ruff_python_parser::parse_module(CAPTURES).unwrap();
+        let mut mutations = Vec::new();
+        run_emit(
+            parsed.syntax(),
+            CAPTURES,
+            &|| false,
+            &mut |_| selected,
+            &mut recording(&mut mutations, accepted),
+        )
+        .unwrap();
+        assert_eq!(mutations, vec![REPLACEMENT; count]);
+    }
+
+    #[rstest::rstest]
+    fn capture_generation_stops_at_each_binding_selection_and_edit_phase(
+        #[values(
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32
+        )]
+        checkpoint: usize,
+    ) {
+        let parsed = ruff_python_parser::parse_module(CAPTURES).unwrap();
+        let total = std::cell::Cell::new(0);
+        let mut complete = Vec::new();
+        run_emit(
+            parsed.syntax(),
+            CAPTURES,
+            &|| {
+                total.set(total.get() + 1);
+                false
+            },
+            &mut all_selected,
+            &mut recording(&mut complete, true),
+        )
+        .unwrap();
+        assert_eq!(complete, [REPLACEMENT, REPLACEMENT]);
+        let polls = std::cell::Cell::new(0);
+        let mut partial = Vec::new();
+        let result = run_emit(
+            parsed.syntax(),
+            CAPTURES,
+            &|| {
+                let current = polls.get();
+                polls.set(current + 1);
+                current >= checkpoint
+            },
+            &mut all_selected,
+            &mut recording(&mut partial, true),
+        );
+        assert_eq!(result.is_err(), checkpoint < total.get());
+        assert_eq!(polls.get(), total.get().min(checkpoint + 1));
+        assert!(complete.starts_with(&partial));
+    }
+}

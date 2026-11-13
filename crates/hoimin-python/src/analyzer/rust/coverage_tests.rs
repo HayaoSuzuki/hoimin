@@ -393,18 +393,7 @@ fn star_pattern_flow_preserves_only_uncaptured_imports(
     #[case] preserved: bool,
 ) {
     let parsed = parse_module(source).unwrap();
-    let Stmt::Match(statement) = &parsed.syntax().body[0] else {
-        // Each parameterized literal starts with a match statement.
-        #[cfg(coverage_nightly)]
-        {
-            (#[coverage(off)]
-            || panic!("expected match fixture"))()
-        }
-        #[cfg(not(coverage_nightly))]
-        {
-            panic!("expected match fixture")
-        }
-    };
+    let statement = parsed.syntax().body[0].as_match_stmt().unwrap();
     let mut imports = KnownImports::default();
     imports
         .bindings
@@ -440,59 +429,15 @@ fn module_identity_queries_reject_class_namespace_and_unrecorded_expression() {
         parsed.syntax(),
         HashSet::from(["alias".to_owned()]),
     );
-    let Stmt::Expr(module_load) = &parsed.syntax().body[1] else {
-        // The selected fixed alias statement is an expression.
-        #[cfg(coverage_nightly)]
-        {
-            (#[coverage(off)]
-            || panic!("expected expression fixture"))()
-        }
-        #[cfg(not(coverage_nightly))]
-        {
-            panic!("expected expression fixture")
-        }
-    };
+    let module_load = parsed.syntax().body[1].as_expr_stmt().unwrap();
     assert!(index.resolves_unique_module(&module_load.value, "alias"));
     assert!(!index.resolves_unique_module(&module_load.value, "missing"));
-    let Stmt::ClassDef(class) = &parsed.syntax().body[2] else {
-        // The third fixed statement is the literal class definition.
-        #[cfg(coverage_nightly)]
-        {
-            (#[coverage(off)]
-            || panic!("expected class fixture"))()
-        }
-        #[cfg(not(coverage_nightly))]
-        {
-            panic!("expected class fixture")
-        }
-    };
-    let Stmt::Expr(class_load) = &class.body[0] else {
-        // The selected fixed alias statement is an expression.
-        #[cfg(coverage_nightly)]
-        {
-            (#[coverage(off)]
-            || panic!("expected expression fixture"))()
-        }
-        #[cfg(not(coverage_nightly))]
-        {
-            panic!("expected expression fixture")
-        }
-    };
+    let class = parsed.syntax().body[2].as_class_def_stmt().unwrap();
+    let class_load = class.body[0].as_expr_stmt().unwrap();
     assert!(!index.resolves_unique_module(&class_load.value, "alias"));
     assert!(!index.annotation_import_stable(usize::MAX, "alias", true));
     let another = parse_module("alias = 1\n").unwrap();
-    let Stmt::Assign(assignment) = &another.syntax().body[0] else {
-        // The separate literal `alias = 1` is an assignment.
-        #[cfg(coverage_nightly)]
-        {
-            (#[coverage(off)]
-            || panic!("expected assignment fixture"))()
-        }
-        #[cfg(not(coverage_nightly))]
-        {
-            panic!("expected assignment fixture")
-        }
-    };
+    let assignment = another.syntax().body[0].as_assign_stmt().unwrap();
     assert!(!index.resolves_unique_module(&assignment.targets[0], "alias"));
 }
 
@@ -507,4 +452,502 @@ fn annotation_nonlocal_import_finds_owner_across_intermediate_function_scope() {
     let offset = source.find("O[int]").unwrap();
     assert!(index.annotation_import_stable(offset, "O", true));
     assert!(!index.annotation_import_stable(offset, "O", false));
+}
+
+#[test]
+fn name_resolution_snapshot_rejects_an_untracked_name() {
+    assert_eq!(
+        name_resolution_test_snapshot("custom", "custom", "custom").unwrap_err(),
+        "infrastructure-error: name is not tracked for resolution"
+    );
+}
+
+#[test]
+fn prefix_eviction_preserves_other_replacements_with_the_same_identity_key() {
+    let mut prefix = CandidatePrefix::new(1, payload::PayloadBudget::default());
+    let candidate = |start, replacement: &str| AnalyzerCandidate {
+        path: "sample.py".into(),
+        span: ByteSpan { start, length: 1 },
+        original: "1".into(),
+        replacement: replacement.into(),
+        operator: MutationOperator::IntegerLiteralNeighbor,
+        line: 1,
+        column: 1,
+        symbol: None,
+    };
+    prefix.push(candidate(10, "2")).unwrap();
+    prefix.push(candidate(10, "3")).unwrap();
+    prefix.push(candidate(0, "4")).unwrap();
+    assert!(
+        prefix
+            .identities
+            .get(&(10, MutationOperator::IntegerLiteralNeighbor))
+            .unwrap()
+            .contains_key("2")
+    );
+    assert!(
+        !prefix
+            .identities
+            .get(&(10, MutationOperator::IntegerLiteralNeighbor))
+            .unwrap()
+            .contains_key("3")
+    );
+    assert_eq!(prefix.entries.len(), 2);
+}
+
+fn module_identity_for_last_root_load(source: &str) -> bool {
+    struct LastRoot<'ast>(Option<&'ast Expr>);
+    impl<'ast> Visitor<'ast> for LastRoot<'ast> {
+        fn visit_expr(&mut self, expression: &'ast Expr) {
+            if matches!(expression, Expr::Name(name) if name.ctx == ExprContext::Load && name.id.as_str() == "root")
+            {
+                self.0 = Some(expression);
+            }
+            visitor::walk_expr(self, expression);
+        }
+    }
+    let parsed = parse_module(source).unwrap();
+    let index = NameResolutionIndex::from_module_with_names(
+        parsed.syntax(),
+        HashSet::from(["root".to_owned()]),
+    );
+    let mut root = LastRoot(None);
+    root.visit_body(&parsed.syntax().body);
+    index.resolves_unique_module(root.0.unwrap(), "root")
+}
+
+#[rstest::rstest]
+#[case("import package as root\ndef function():\n return root.member", true)]
+#[case("import package as root\nclass C:\n value = root.member", false)]
+#[case(
+    "import package as root\ndef function():\n try:\n  pass\n except Exception as root:\n  root.member",
+    false
+)]
+#[case(
+    "import package as root\ndef outer():\n root = other\n def inner():\n  return root.member",
+    false
+)]
+#[case(
+    "import package as root\ndef outer():\n root = other\n def inner():\n  nonlocal root\n  return root.member",
+    false
+)]
+#[case(
+    "import package as root\nclass C:\n def method(self):\n  return root.member",
+    true
+)]
+fn module_identity_respects_temporary_lexical_and_class_namespaces(
+    #[case] source: &str,
+    #[case] expected: bool,
+) {
+    assert_eq!(module_identity_for_last_root_load(source), expected);
+}
+
+#[test]
+fn every_nested_name_resolution_scope_has_an_enclosing_scope() {
+    let parsed = parse_module("import package as root\nclass C[T]:\n def method[U](self, arg: list[U]):\n  return [root.member for item in values]\n").unwrap();
+    let index = NameResolutionIndex::from_module(parsed.syntax());
+    assert!(index.scopes.len() > 4);
+    assert!(
+        index
+            .scopes
+            .iter()
+            .enumerate()
+            .skip(1)
+            .all(|(id, scope)| scope.parent.is_some_and(|parent| parent.0 < id))
+    );
+}
+
+#[rstest::rstest]
+#[case(0..2, 1, None)]
+#[case(0..0, 1, None)]
+#[case(0..99, 1, None)]
+#[case(0..4, 2, None)]
+#[case(0..4, 1, Some("'é'"))]
+fn candidate_admission_validates_byte_ends_source_bounds_and_selected_lines(
+    #[case] range: Range<usize>,
+    #[case] selected_line: u32,
+    #[case] expected: Option<&str>,
+) {
+    let source = "'é'";
+    let operators = serde_json::from_value(serde_json::json!(["string_literal_empty"])).unwrap();
+    let lines = [LineRange {
+        start: selected_line,
+        end: selected_line,
+    }];
+    let request = AnalyzeRequest {
+        payload: PayloadBudget::default(),
+        path: Utf8Path::new("sample.py"),
+        lines: &lines,
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 100,
+    };
+    let selection = CandidateSelection::new(&request, &|| false).unwrap();
+    assert_eq!(
+        make_candidate(
+            &selection,
+            &request,
+            source,
+            &LineIndex::new(source),
+            range,
+            "''".to_owned(),
+            MutationOperator::StringLiteralEmpty,
+            None
+        )
+        .map(|candidate| candidate.original)
+        .as_deref(),
+        expected
+    );
+}
+
+#[rstest::rstest]
+#[case("", "list[[int, str]]", Some("list[[int, str]] | None"))]
+#[case("int = custom", "list[[int, str]]", None)]
+#[case("", "dict[*(str, int)]", Some("dict[*(str, int)] | None"))]
+#[case("int = custom", "dict[*(str, int)]", None)]
+#[case("", "list[int | str]", Some("list[int | str] | None"))]
+#[case("str = custom", "list[int | str]", None)]
+fn nullable_add_checks_builtin_provenance_inside_nested_annotation_forms(
+    #[case] prefix: &str,
+    #[case] annotation: &str,
+    #[case] expected: Option<&str>,
+) {
+    let source = format!("{prefix}\nvalue: {annotation}\n");
+    let operators = serde_json::from_value(serde_json::json!(["type_nullable_add"])).unwrap();
+    let request = AnalyzeRequest {
+        payload: PayloadBudget::default(),
+        path: Utf8Path::new("sample.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 100,
+    };
+    let output = analyze_source(&request, &source);
+    assert_eq!(
+        output
+            .candidates
+            .iter()
+            .map(|candidate| candidate.replacement.as_str())
+            .collect::<Vec<_>>(),
+        expected.into_iter().collect::<Vec<_>>()
+    );
+}
+
+#[rstest::rstest]
+#[case("[list() for [list] in rows]", NameResolution::Shadowed)]
+#[case("[list() for (head, list) in rows]", NameResolution::Shadowed)]
+#[case("[list() for [head, *list] in rows]", NameResolution::Shadowed)]
+#[case(
+    "[list() for first in rows for list in others if list]",
+    NameResolution::Shadowed
+)]
+#[case("list = custom\ndel [list]\nlist()", NameResolution::Unknown)]
+#[case(
+    "def f():\n from elsewhere import *\n return list()",
+    NameResolution::Unknown
+)]
+#[case("def f():\n nonlocal list\n return list()", NameResolution::Unknown)]
+#[case(
+    "for list in rows:\n def f():\n  class C:\n   value = list()",
+    NameResolution::Unknown
+)]
+fn destructuring_targets_and_deletions_preserve_builtin_lookup_rules(
+    #[case] source: &str,
+    #[case] expected: NameResolution,
+) {
+    let parsed = ruff_python_parser::parse_module(source).unwrap();
+    let index = NameResolutionIndex::from_module(parsed.syntax());
+    assert_eq!(
+        index.resolution(source.find("list()").unwrap(), "list"),
+        expected
+    );
+}
+
+#[rstest::rstest]
+#[case("(first, second)", 0, false, Some("( second)"))]
+#[case("(first, second)", 1, false, Some("(first )"))]
+#[case("(first,)", 0, false, Some("()"))]
+#[case("()", 0, false, None)]
+#[case("(first, second)", 2, false, None)]
+#[case("(first, second)", 0, true, None)]
+fn tuple_member_removal_requires_a_present_element_and_complete_source(
+    #[case] source: &str,
+    #[case] index: usize,
+    #[case] truncate_source: bool,
+    #[case] expected: Option<&str>,
+) {
+    let parsed = ruff_python_parser::parse_module(source).unwrap();
+    let tuple = parsed.syntax().body[0]
+        .as_expr_stmt()
+        .unwrap()
+        .value
+        .as_tuple_expr()
+        .unwrap();
+    let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
+    let available = &source[..source.len() * usize::from(!truncate_source)];
+    assert_eq!(
+        tuple_remove_replacement(available, tuple, &facts, index).as_deref(),
+        expected
+    );
+}
+
+#[rstest::rstest]
+#[case(vec![TokenKind::Lsqb], false, None)]
+#[case(vec![TokenKind::Rsqb], false, None)]
+#[case(vec![], true, None)]
+#[case(vec![], false, Some("int"))]
+fn optional_removal_requires_both_brackets_and_available_source(
+    #[case]
+    #[by_ref]
+    omitted: &[TokenKind],
+    #[case] truncate_source: bool,
+    #[case] expected: Option<&str>,
+) {
+    let source = "Optional[int]";
+    let parsed = ruff_python_parser::parse_module(source).unwrap();
+    let optional = parsed.syntax().body[0]
+        .as_expr_stmt()
+        .unwrap()
+        .value
+        .as_subscript_expr()
+        .unwrap();
+    let tokens = ruff_python_ast::token::Tokens::new(
+        parsed
+            .tokens()
+            .iter()
+            .filter(|token| !omitted.contains(&token.kind()))
+            .copied()
+            .collect(),
+    );
+    let facts = AstFacts {
+        tokens: Some(&tokens),
+        source,
+        ..AstFacts::default()
+    };
+    let available = &source[..source.len() * usize::from(!truncate_source)];
+    assert_eq!(
+        nullable_optional_inner_source(optional, available, &facts).as_deref(),
+        expected
+    );
+}
+
+#[rstest::rstest]
+#[case(false, Some("(list[\n int\n])"))]
+#[case(true, None)]
+fn nullable_union_removal_preserves_retained_multiline_grouping(
+    #[case] truncate_source: bool,
+    #[case] expected: Option<&str>,
+) {
+    let source = "(list[\n int\n] | None)";
+    let parsed = ruff_python_parser::parse_module(source).unwrap();
+    let binary = parsed.syntax().body[0]
+        .as_expr_stmt()
+        .unwrap()
+        .value
+        .as_bin_op_expr()
+        .unwrap();
+    let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
+    let available = &source[..source.len() * usize::from(!truncate_source)];
+    assert_eq!(
+        nullable_union_operand_source(&binary.left, binary, available, &facts).as_deref(),
+        expected
+    );
+}
+
+#[test]
+fn wildcard_function_scope_cannot_prove_annotation_builtins() {
+    let source = "def f():\n from elsewhere import *\n value: list\n";
+    let parsed = ruff_python_parser::parse_module(source).unwrap();
+    let index = NameResolutionIndex::from_module(parsed.syntax());
+    assert_eq!(
+        index.annotation_resolution(source.find("list").unwrap(), "list"),
+        NameResolution::Unknown
+    );
+}
+
+#[test]
+fn type_parameter_bounds_preserve_uncertain_module_loop_bindings() {
+    let source = "for list in items:\n def f[T: list](): pass\n";
+    let parsed = parse_module(source).unwrap();
+    let index = NameResolutionIndex::from_module(parsed.syntax());
+    assert_eq!(
+        index.resolution(source.rfind("list").unwrap(), "list"),
+        NameResolution::Unknown
+    );
+}
+
+#[test]
+fn empty_resolution_index_cannot_prove_a_module_builtin() {
+    assert_eq!(
+        NameResolutionIndex::default().resolve_module("list"),
+        NameResolution::Unknown
+    );
+}
+
+#[rstest::rstest]
+#[case(
+    "class Outer:\n class Inner:\n  value = list()",
+    NameResolution::DefinitelyBuiltin
+)]
+#[case(
+    "def outer():\n list = custom\n class Inner:\n  value = list()",
+    NameResolution::Shadowed
+)]
+#[case(
+    "class Outer[list]:\n class Inner:\n  value = list()",
+    NameResolution::Shadowed
+)]
+#[case(
+    "class Outer[T]:\n class Inner:\n  value = list()",
+    NameResolution::DefinitelyBuiltin
+)]
+fn nested_class_ancestors_resolve_module_function_and_type_parameter_bindings(
+    #[case] source: &str,
+    #[case] expected: NameResolution,
+) {
+    let parsed = parse_module(source).unwrap();
+    let index = NameResolutionIndex::from_module(parsed.syntax());
+    assert_eq!(
+        index.resolution(source.rfind("list()").unwrap(), "list"),
+        expected
+    );
+}
+
+#[rstest::rstest]
+#[case("del *list")]
+#[case("del [head, (*list,)]")]
+fn starred_delete_targets_are_parse_errors_not_admitted_semantic_errors(#[case] source: &str) {
+    let error = parse_module(source).err().unwrap();
+    assert_eq!(
+        error.error(),
+        ruff_python_parser::ParseErrorType::InvalidDeleteTarget
+    );
+}
+
+#[rstest::rstest]
+#[case("del list", NameResolution::Unknown)]
+#[case("del [list]", NameResolution::Unknown)]
+#[case("del (head, list)", NameResolution::Unknown)]
+#[case("del obj.list", NameResolution::Shadowed)]
+#[case("del obj[list]", NameResolution::Shadowed)]
+fn deletion_preserves_lookup_effects_of_all_admitted_target_shapes(
+    #[case] deletion: &str,
+    #[case] expected: NameResolution,
+) {
+    let source = format!("list = custom\n{deletion}\nlist()\n");
+    let parsed = parse_module(&source).unwrap();
+    let index = NameResolutionIndex::from_module(parsed.syntax());
+    assert_eq!(
+        index.resolution(source.rfind("list()").unwrap(), "list"),
+        expected
+    );
+}
+
+#[rstest::rstest]
+#[case(
+    "value: list[factory()]",
+    MutationOperator::TypeNullableAdd,
+    Some("list[factory()] | None")
+)]
+#[case(
+    "flag = True\nvalue: int if flag else str",
+    MutationOperator::TypeNullableAdd,
+    None
+)]
+#[case(
+    "from typing import AbstractSet\nvalue: AbstractSet[int]",
+    MutationOperator::TypeSetAbstractSet,
+    Some("set[int]")
+)]
+#[case("value: factory().List[int]", MutationOperator::TypeListSequence, None)]
+#[case(
+    "from typing import Sequence\ntype Alias[T: int] = list[int]",
+    MutationOperator::TypeListSequence,
+    Some("Sequence[int]")
+)]
+#[case(
+    "from typing import Sequence\ntype Alias[list] = list[int]",
+    MutationOperator::TypeListSequence,
+    None
+)]
+fn annotation_rewrites_require_statically_resolved_supported_shapes(
+    #[case] source: &str,
+    #[case] operator: MutationOperator,
+    #[case] expected: Option<&str>,
+) {
+    let operators = serde_json::from_value(serde_json::json!([operator.as_str()])).unwrap();
+    let request = AnalyzeRequest {
+        payload: PayloadBudget::default(),
+        path: Utf8Path::new("sample.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 100,
+    };
+    let output = analyze_source(&request, source);
+    assert_eq!(output.diagnostics, Vec::new());
+    assert_eq!(
+        output
+            .candidates
+            .iter()
+            .map(|candidate| candidate.replacement.as_str())
+            .collect::<Vec<_>>(),
+        expected.into_iter().collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn nonlocal_import_write_invalidates_the_owner_across_an_intermediate_scope() {
+    let source = "def outer():\n from typing import Optional as O\n def middle():\n  def inner():\n   nonlocal O\n   O = custom\n def target(value: O[int]): pass\n";
+    let parsed = parse_module(source).unwrap();
+    let index = NameResolutionIndex::from_module_with_names(
+        parsed.syntax(),
+        HashSet::from(["O".to_owned()]),
+    );
+    let offset = source.find("O[int]").unwrap();
+    assert!(index.imported_names.contains("O"));
+    assert!(index.occurrences.contains_key(&offset));
+    assert!(!index.annotation_import_stable(offset, "O", true));
+}
+
+#[test]
+fn deleting_a_function_local_does_not_restore_builtin_provenance() {
+    let source = "def f():\n del list\n return list()\n";
+    let parsed = parse_module(source).unwrap();
+    let index = NameResolutionIndex::from_module(parsed.syntax());
+    assert_eq!(
+        index.resolution(source.rfind("list()").unwrap(), "list"),
+        NameResolution::Shadowed
+    );
+}
+
+#[test]
+fn handler_raise_projection_ignores_other_handlers_and_return_bindings() {
+    let source = "def f():\n try:\n  action()\n except ValueError:\n  from typing import Sequence as ignored\n except TypeError:\n  if flag:\n   from typing import Sequence as returning\n   return\n  from typing import Iterable as raising\n  raise Error\n";
+    let parsed = parse_module(source).unwrap();
+    let marker = unique_marker_range(source, "raising").unwrap();
+    let line_start = source[..marker.start]
+        .rfind('\n')
+        .map_or(0, |newline| newline + 1);
+    let mut collector = AnnotationCollector::empty();
+    collector.record_annotations = false;
+    collector.handler_exit_projection = Some(BindingFlowHandlerExitProjection {
+        source: source.to_owned(),
+        marker,
+        line_start,
+        category: ExitCategory::Raise,
+        matching_handlers: 0,
+        matched_handler: None,
+        states: Vec::new(),
+    });
+    let _ = collector.visit_suite_flow(&parsed.syntax().body);
+    let projection = collector.handler_exit_projection.unwrap();
+    assert_eq!(projection.matching_handlers, 1);
+    assert_eq!(
+        normalize_binding_flow_states(&projection.states),
+        [vec!["direct:raising=typing.Iterable".to_owned()]]
+    );
 }

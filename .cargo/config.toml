@@ -1,3 +1,17 @@
+[build]
+# Canonicalize coverage names for modules reused through #[path].
+# file!(), diagnostics and debugger paths keep their original spelling.
+rustflags = [
+    "--remap-path-prefix=crates/hoimin-cli/src/../tests=crates/hoimin-cli/tests",
+    "--remap-path-prefix=crates/hoimin-cli/src/analyzer/../../../hoimin-python=crates/hoimin-python",
+    "--remap-path-prefix=crates/hoimin-cli/src/analyzer/../../tests=crates/hoimin-cli/tests",
+    "--remap-path-prefix=crates/hoimin-cli/src/plan/../../tests=crates/hoimin-cli/tests",
+    "--remap-path-prefix=crates/hoimin-cli/tests/../..=crates",
+    "--remap-path-prefix=crates/hoimin-cli/tests/../src=crates/hoimin-cli/src",
+    "--remap-path-prefix=crates/hoimin-python/src/analyzer/../../tests=crates/hoimin-python/tests",
+    "--remap-path-scope=coverage",
+]
+
 [alias]
 # Include test files: cargo-llvm-cov excludes them from reports by default.
 # Run with `cargo +nightly-2026-10-08 coverage` for native inline exclusions.
@@ -6,7 +20,7 @@
 coverage = [
     "llvm-cov", "--workspace", "--all-targets", "--all-features",
     "--no-default-ignore-filename-regex",
-    "--ignore-filename-regex", "/\\.cargo/(registry|git)/|/\\.rustup/toolchains/|/target/",
+    "--ignore-filename-regex", "/\\.cargo/(registry|git)/|/\\.rustup/toolchains/|/target/(llvm-cov-target/)?([^/]+/)?(debug|release)/",
     "--fail-under-lines", "100",
     "--fail-under-functions", "100",
     "--fail-under-regions", "100",

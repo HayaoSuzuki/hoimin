@@ -1,4 +1,4 @@
-#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+#![cfg_attr(coverage_nightly, feature(coverage_attribute, stmt_expr_attributes))]
 use std::collections::BTreeSet;
 use std::num::NonZeroUsize;
 
@@ -169,12 +169,11 @@ struct Observation {
     reason: Option<String>,
 }
 
-fn execute(case: &Case) -> Result<Observation, String> {
-    let temporary = tempfile::tempdir().map_err(|error| format!("tempdir: {error}"))?;
+fn execute(case: &Case) -> Observation {
+    let temporary = tempfile::tempdir().expect("tempdir");
     let database = temporary.path().join("session.sqlite");
     for row in &case.rows {
-        let mut writer =
-            SessionHandler::open(&database).map_err(|error| format!("fixture open: {error:?}"))?;
+        let mut writer = SessionHandler::open(&database).expect("fixture open");
         writer
             .begin(BeginSession {
                 id: EffectId(1),
@@ -182,28 +181,29 @@ fn execute(case: &Case) -> Result<Observation, String> {
                 fingerprint: fingerprint(row.compatible),
                 max_mutants: NonZeroUsize::new(row.budget).unwrap(),
             })
-            .map_err(|error| format!("fixture begin: {error:?}"))?;
+            .expect("fixture begin");
         writer
             .finish(FinishSession {
                 id: EffectId(2),
                 run_id: row.name.clone(),
                 complete: row.complete,
             })
-            .map_err(|error| format!("fixture finish: {error:?}"))?;
+            .expect("fixture finish");
     }
-    let mut reader =
-        SessionHandler::open(&database).map_err(|error| format!("reader open: {error:?}"))?;
+    let mut reader = SessionHandler::open(&database).expect("reader open");
     let loaded = reader
         .load(&LoadSession {
             id: EffectId(3),
             fingerprint: fingerprint(true),
             max_mutants: NonZeroUsize::new(2).unwrap(),
         })
-        .map_err(|error| format!("reader load: {error:?}"))?;
-    if loaded.id != EffectId(3) {
-        return Err("reader returned unexpected effect id".into());
-    }
-    Ok(match loaded.outcome {
+        .expect("reader load");
+    assert_eq!(
+        loaded.id,
+        EffectId(3),
+        "reader returned unexpected effect id"
+    );
+    match loaded.outcome {
         SessionLoadOutcome::Resumed(resume) => Observation {
             selected_run: Some(resume.run_id),
             reason: None,
@@ -212,7 +212,7 @@ fn execute(case: &Case) -> Result<Observation, String> {
             selected_run: None,
             reason: Some(reason.code().to_owned()),
         },
-    })
+    }
 }
 
 #[test]
@@ -257,11 +257,11 @@ fn generated_corpus_rejects_invalid_metadata(
 }
 
 #[rstest::rstest]
-#[case::duplicate_id(format!("{CORPUS}{}\n",CORPUS.lines().next().unwrap()))]
-#[case::duplicate_coordinate(duplicate_coordinate_corpus())]
-#[case::missing_case(CORPUS.lines().skip(1).collect::<Vec<_>>().join("\n"))]
-fn generated_corpus_rejects_inexact_case_sets(#[case] input: String) {
-    let result = parse(&input);
+#[case::duplicate_id(&format!("{CORPUS}{}\n",CORPUS.lines().next().unwrap()))]
+#[case::duplicate_coordinate(&duplicate_coordinate_corpus())]
+#[case::missing_case(&CORPUS.lines().skip(1).collect::<Vec<_>>().join("\n"))]
+fn generated_corpus_rejects_inexact_case_sets(#[case] input: &str) {
+    let result = parse(input);
 
     assert!(result.is_err());
 }
@@ -324,15 +324,10 @@ fn fixture_case_flags_must_match_declared_categories_and_order(#[case] field: &s
 fn real_session_history_matches_lean_diagnostics() {
     let cases = parse(CORPUS).unwrap();
     let selected = std::env::var("HOIMIN_RESUME_DIAGNOSTIC_ORACLE_CASE").ok();
-    let strict = cases
-        .iter()
-        .filter(|case| case.mode == "strict")
-        .filter(|case| selected.as_ref().is_none_or(|id| *id == case.id))
-        .collect::<Vec<_>>();
+    let strict = selected_strict_cases(&cases, selected.as_deref());
     assert!(!strict.is_empty(), "unknown or model-only selected case");
     for case in strict {
-        let actual = execute(case)
-            .unwrap_or_else(|detail| panic!("{} infrastructure error: {detail}", case.id));
+        let actual = execute(case);
         let expected = Observation {
             selected_run: case.selected_run.clone(),
             reason: case.reason.clone(),
@@ -358,4 +353,58 @@ fn fixture_rows_must_preserve_count_and_order(#[case] mutate: fn(&mut Vec<serde_
     let result = validate(&case);
 
     assert!(result.is_err());
+}
+
+#[rstest::rstest]
+#[case::missing_row(serde_json::json!("missing"), serde_json::json!(null))]
+#[case::no_outcome(serde_json::json!(null), serde_json::json!(null))]
+#[case::two_outcomes(serde_json::json!("missing"), serde_json::json!("no_prior_run"))]
+fn resume_schema_rejects_invalid_outcome_shapes(
+    #[case] selected: serde_json::Value,
+    #[case] reason: serde_json::Value,
+) {
+    let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
+    row["selected_run"] = selected;
+    row["reason"] = reason;
+    assert_eq!(
+        validate(&serde_json::from_value::<Case>(row).unwrap()).unwrap_err(),
+        "invalid outcome shape"
+    );
+}
+
+fn selected_strict_cases<'a>(cases: &'a [Case], selected: Option<&str>) -> Vec<&'a Case> {
+    cases
+        .iter()
+        .filter(|case| case.mode == "strict")
+        .filter(|case| selected.is_none_or(|id| id == case.id))
+        .collect()
+}
+
+#[rstest::rstest]
+#[case::all(None, 64)]
+#[case::one(Some("normal-false-false-false-false-false-false"), 1)]
+#[case::missing(Some("absent"), 0)]
+fn resume_selector_preserves_closed_strict_case_identity(
+    #[case] selected: Option<&str>,
+    #[case] count: usize,
+) {
+    assert_eq!(
+        selected_strict_cases(&parse(CORPUS).unwrap(), selected).len(),
+        count
+    );
+}
+
+#[test]
+fn resume_parser_reports_malformed_json() {
+    assert!(parse("{").unwrap_err().contains("EOF"));
+}
+
+#[test]
+fn resume_parser_propagates_schema_validation_failure() {
+    let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
+    row["schema"] = serde_json::json!(2);
+    assert_eq!(
+        parse(&row.to_string()).unwrap_err(),
+        "unknown schema or empty id"
+    );
 }

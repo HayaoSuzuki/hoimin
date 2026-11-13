@@ -103,13 +103,13 @@ fn constructor_reports_context_bound() {
 }
 
 #[rstest::rstest]
-#[case::serde_json_json_true(serde_json::json!(true))]
-#[case::serde_json_json_false(serde_json::json!(false))]
-#[case::serde_json_json_diff_base_main(serde_json::json!({"diff_base": "main"}))]
-#[case::serde_json_json_context_0_changed_context_1(serde_json::json!({"context": 0, "changed_context": 1}))]
-#[case::serde_json_json_context_1(serde_json::json!({"context": -1}))]
-#[case::serde_json_json_context_4_294_967_296_u64(serde_json::json!({"context": 4_294_967_296_u64}))]
-fn saved_changed_value_rejects_malformed_representation(#[case] value: serde_json::Value) {
+#[case::serde_json_json_true(&serde_json::json!(true))]
+#[case::serde_json_json_false(&serde_json::json!(false))]
+#[case::serde_json_json_diff_base_main(&serde_json::json!({"diff_base": "main"}))]
+#[case::serde_json_json_context_0_changed_context_1(&serde_json::json!({"context": 0, "changed_context": 1}))]
+#[case::serde_json_json_context_1(&serde_json::json!({"context": -1}))]
+#[case::serde_json_json_context_4_294_967_296_u64(&serde_json::json!({"context": 4_294_967_296_u64}))]
+fn saved_changed_value_rejects_malformed_representation(#[case] value: &serde_json::Value) {
     // Arrange: each value would lose or invent part of the requested scope.
 
     // Act.

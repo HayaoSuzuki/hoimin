@@ -259,10 +259,11 @@ fn observe(source: &str, old: bool) -> FlowObservation {
     let mut collector = AnnotationCollector::empty();
     collector.annotation_callback = Some(&mut callback);
     let exits = collector.visit_suite_flow(&parsed.syntax().body);
-    let fallback = collector
-        .class_context
-        .as_ref()
-        .map(|context| normalize_binding_flow_imports(&context.fallback));
+    assert!(
+        collector.class_context.is_none(),
+        "module suite must restore its enclosing class context"
+    );
+    let fallback = None;
     let mut observation = FlowObservation {
         annotations,
         explicit: normalize_binding_flow_exits(&exits),
@@ -330,27 +331,20 @@ fn shadowed_finally_routing_removes_import_provenance_from_first_callback() {
 
     let observation = observe(source, false);
 
-    assert!(
-        !observation.annotations[0]
-            .2
-            .iter()
-            .any(|fact| fact == "direct:Sequence=typing.Sequence")
-    );
+    assert_eq!(observation.annotations[0].2, Vec::<String>::new());
 }
 
 #[rstest::rstest]
-#[case::breaks("break", true, false, false, false)]
-#[case::continues("continue", false, true, false, false)]
-#[case::returns("return", false, false, false, true)]
-#[case::raises("raise Error", false, false, true, true)]
+#[case::breaks("break", (true, false, false, false))]
+#[case::continues("continue", (false, true, false, false))]
+#[case::returns("return", (false, false, false, true))]
+#[case::raises("raise Error", (false, false, true, true))]
 fn nested_abrupt_finally_overrides_pending_exit(
     #[values("pass", "break", "continue", "return", "raise Error", "hazard()")] pending: &str,
     #[case] replacement: &str,
-    #[case] breaks: bool,
-    #[case] continues: bool,
-    #[case] raises: bool,
-    #[case] terminates: bool,
+    #[case] expected: (bool, bool, bool, bool),
 ) {
+    let (breaks, continues, raises, terminates) = expected;
     let source = format!("try:\n {pending}\nfinally:\n try:\n  pass\n finally:\n  {replacement}\n");
 
     let current = observe(&source, false);
@@ -466,9 +460,7 @@ fn multi_exit_transfer_vectors_and_misses_are_bounded(#[case] depth: usize) {
     // Arrange: inspect the function body exits instead of swallowing them at def.
     let source = multi_exit_source(depth, "x: int");
     let parsed = parse_module(&source).unwrap();
-    let Stmt::FunctionDef(definition) = &parsed.syntax().body[0] else {
-        panic!()
-    };
+    let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
     let mut collector = AnnotationCollector::empty();
     collector.record_annotations = false;
     reset_finally_work();
@@ -529,28 +521,56 @@ fn membership(exits: &ControlFlowExits) -> [bool; 6] {
     ]
 }
 
-fn pending_exit(category: usize) -> ControlFlowExits {
+#[derive(Clone, Copy)]
+enum PendingCompletion {
+    Fallthrough,
+    Break,
+    Continue,
+    Return,
+    Raise,
+    ImplicitRaise,
+}
+
+const PENDING_COMPLETIONS: [PendingCompletion; 6] = [
+    PendingCompletion::Fallthrough,
+    PendingCompletion::Break,
+    PendingCompletion::Continue,
+    PendingCompletion::Return,
+    PendingCompletion::Raise,
+    PendingCompletion::ImplicitRaise,
+];
+
+fn pending_exit(category: PendingCompletion) -> ControlFlowExits {
     let mut exits = ControlFlowExits::default();
     let imports = KnownImports::default();
     match category {
-        0 => exits.fallthrough = Some(imports),
-        1 => exits.breaks.push(imports),
-        2 => exits.continues.push(imports),
-        3 => exits.terminates.push(imports),
-        4 => exits.raises.push(imports),
-        5 => exits.implicit_raises = Some(imports),
-        _ => unreachable!(),
+        PendingCompletion::Fallthrough => exits.fallthrough = Some(imports),
+        PendingCompletion::Break => exits.breaks.push(imports),
+        PendingCompletion::Continue => exits.continues.push(imports),
+        PendingCompletion::Return => exits.terminates.push(imports),
+        PendingCompletion::Raise => exits.raises.push(imports),
+        PendingCompletion::ImplicitRaise => exits.implicit_raises = Some(imports),
     }
     exits
 }
 
 #[rstest::rstest]
-fn normal_finally_preserves_pending_completion(#[values(0, 1, 2, 3, 4, 5)] pending: usize) {
+fn normal_finally_preserves_pending_completion(
+    #[values(
+        PendingCompletion::Fallthrough,
+        PendingCompletion::Break,
+        PendingCompletion::Continue,
+        PendingCompletion::Return,
+        PendingCompletion::Raise,
+        PendingCompletion::ImplicitRaise
+    )]
+    pending: PendingCompletion,
+) {
     let parsed = parse_module("pass").unwrap();
     let mut collector = AnnotationCollector::empty();
     collector.record_annotations = false;
     let mut expected = [false; 6];
-    expected[pending] = true;
+    expected[pending as usize] = true;
 
     let actual = collector.apply_finally(pending_exit(pending), &parsed.syntax().body);
 
@@ -563,7 +583,15 @@ fn normal_finally_preserves_pending_completion(#[values(0, 1, 2, 3, 4, 5)] pendi
 #[case::returns("return", 3)]
 #[case::raises("raise", 4)]
 fn abrupt_finally_overrides_pending_completion(
-    #[values(0, 1, 2, 3, 4, 5)] pending: usize,
+    #[values(
+        PendingCompletion::Fallthrough,
+        PendingCompletion::Break,
+        PendingCompletion::Continue,
+        PendingCompletion::Return,
+        PendingCompletion::Raise,
+        PendingCompletion::ImplicitRaise
+    )]
+    pending: PendingCompletion,
     #[case] body: &str,
     #[case] replacement: usize,
 ) {
@@ -582,10 +610,13 @@ fn abrupt_finally_overrides_pending_completion(
 fn identical_imports_hit_across_all_pending_categories_without_flattening() {
     // Arrange.
     let parsed = parse_module("pass").unwrap();
-    let mut entries = pending_exit(0);
-    for category in 1..6 {
-        entries.merge_abrupt(pending_exit(category));
-    }
+    let entries = PENDING_COMPLETIONS[1..].iter().copied().fold(
+        pending_exit(PendingCompletion::Fallthrough),
+        |mut entries, category| {
+            entries.merge_abrupt(pending_exit(category));
+            entries
+        },
+    );
     let mut collector = AnnotationCollector::empty();
     collector.record_annotations = false;
     reset_finally_work();
@@ -1119,8 +1150,12 @@ fn assert_residual_order_normalization(word: &[usize]) {
 #[case::aba(vec![0, 1, 0])]
 #[case::abcba(vec![0, 1, 2, 1, 0])]
 #[case::repeated(vec![2; 5])]
-fn residual_order_normalization_preserves_each_last_category_contributor(#[case] word: Vec<usize>) {
-    assert_residual_order_normalization(&word);
+fn residual_order_normalization_preserves_each_last_category_contributor(
+    #[case]
+    #[by_ref]
+    word: &[usize],
+) {
+    assert_residual_order_normalization(word);
 }
 
 proptest::proptest! {
@@ -1196,10 +1231,12 @@ fn assert_residual_order_handlers(word: &[usize], nested: bool) {
 #[case::mapping_aba(vec![2, 1, 2])]
 #[case::four_handlers(vec![0, 1, 2, 0])]
 fn residual_order_generated_handlers_preserve_callbacks_and_full_candidates(
-    #[case] word: Vec<usize>,
+    #[case]
+    #[by_ref]
+    word: &[usize],
     #[values(false, true)] nested: bool,
 ) {
-    assert_residual_order_handlers(&word, nested);
+    assert_residual_order_handlers(word, nested);
 }
 
 proptest::proptest! {

@@ -30,6 +30,13 @@ bindings = "bin"
 manifest-path = "crates/hoimin-cli/Cargo.toml"
 # Keep the vendored build/provenance inputs explicit; exclude caches and outputs.
 include = [
+    { path = "vendor/rstest_macros/Cargo.toml", format = "sdist" },
+    { path = "vendor/rstest_macros/build.rs", format = "sdist" },
+    { path = "vendor/rstest_macros/LICENSE-APACHE", format = "sdist" },
+    { path = "vendor/rstest_macros/LICENSE-MIT", format = "sdist" },
+    { path = "vendor/rstest_macros/HOIMIN_PATCH.md", format = "sdist" },
+    { path = "vendor/rstest_macros/README.md", format = "sdist" },
+    { path = "vendor/rstest_macros/src/**", format = "sdist" },
     { path = "vendor/ruff_python_parser/Cargo.toml", format = "sdist" },
     { path = "vendor/ruff_python_parser/LICENSE", format = "sdist" },
     { path = "vendor/ruff_python_parser/README.hoimin.md", format = "sdist" },

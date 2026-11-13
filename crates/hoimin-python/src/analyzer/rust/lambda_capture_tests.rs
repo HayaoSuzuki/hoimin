@@ -98,61 +98,63 @@ fn lambda_capture_rejects_nonmatching_scopes_and_shapes(#[case] source: &str) {
     );
 }
 
+const OUTER_LOOP_CAPTURES: &str = "def build(values):\n for value in values:\n  first=lambda value=value:value\n  for other in values:\n   second=lambda value=value:value\n";
+
 #[test]
-fn lambda_capture_supports_outer_loop_and_respects_selection_caps_and_cancellation() {
-    let source = "def build(values):\n for value in values:\n  first=lambda value=value:value\n  for other in values:\n   second=lambda value=value:value\n";
-
-    let output = analyze_selected(&["lambda_capture_late"], source);
-
+fn lambda_capture_supports_outer_loop() {
+    let output = analyze_selected(&["lambda_capture_late"], OUTER_LOOP_CAPTURES);
     assert_eq!(output.candidates.len(), 2);
-    let limited = analyze_selected_with(
+}
+
+#[test]
+fn lambda_capture_respects_candidate_caps() {
+    let output = analyze_selected_with(
         &["lambda_capture_late"],
         camino::Utf8Path::new("a.py"),
         &[],
         &[],
         1,
-        source,
+        OUTER_LOOP_CAPTURES,
     );
-    assert_eq!(limited.candidates.len(), 1);
-    assert!(limited.truncated);
-    let selected = analyze_selected_with(
+    assert_eq!(output.candidates.len(), 1);
+    assert!(output.truncated);
+}
+
+#[test]
+fn lambda_capture_respects_line_and_symbol_selection() {
+    let output = analyze_selected_with(
         &["lambda_capture_late"],
         camino::Utf8Path::new("a.py"),
         &[hoimin_core::LineRange { start: 5, end: 5 }],
         &["build".to_owned()],
         10,
-        source,
+        OUTER_LOOP_CAPTURES,
     );
-    assert_eq!(selected.candidates.len(), 1);
-    assert_eq!(selected.candidates[0].line, 5);
-    let parsed = ruff_python_parser::parse_module(source).unwrap();
+    assert_eq!(output.candidates.len(), 1);
+    assert_eq!(output.candidates[0].line, 5);
+}
+
+#[rstest::rstest]
+#[case(true, 0)]
+#[case(false, 1)]
+fn lambda_capture_stops_on_cancellation_or_callback_rejection(
+    #[case] cancelled: bool,
+    #[case] expected_count: usize,
+) {
+    let parsed = ruff_python_parser::parse_module(OUTER_LOOP_CAPTURES).unwrap();
     let mut count = 0;
-    assert!(
-        super::super::lambda_capture::emit(
-            parsed.syntax(),
-            source,
-            &|| true,
-            |_| true,
-            |_, _| {
-                count += 1;
-                true
-            }
-        )
-        .is_err()
-    );
-    assert_eq!(count, 0);
-    super::super::lambda_capture::emit(
+    let result = super::super::lambda_capture::emit(
         parsed.syntax(),
-        source,
-        &|| false,
+        OUTER_LOOP_CAPTURES,
+        &|| cancelled,
         |_| true,
         |_, _| {
             count += 1;
             false
         },
-    )
-    .unwrap();
-    assert_eq!(count, 1);
+    );
+    assert_eq!(result.is_err(), cancelled);
+    assert_eq!(count, expected_count);
 }
 
 #[test]

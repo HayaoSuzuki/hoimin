@@ -185,7 +185,19 @@ fn validate_case(item: &OracleCase) -> Result<(), String> {
                 && item.marker == "# handler_meet"
                 && item.candidate == CandidateExpectation::NotObserved
         }
-        _ => false,
+        _ => {
+            // expected_source above accepts only the IDs enumerated in this match.
+            // Retain a fail-closed fallback for future corpus edits.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || false)()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                false
+            }
+        }
     };
     if !identity_matches {
         return Err(format!("{} has inconsistent closed identity", item.id));
@@ -202,7 +214,14 @@ fn internal_identity(item: &OracleCase, family: &str, marker: &str, category: &s
 }
 
 fn selected_cases(cases: &[OracleCase]) -> Result<Vec<&OracleCase>, String> {
-    let Some(selected) = std::env::var_os("HOIMIN_NESTED_TRY_CASE") else {
+    apply_case_filter(cases, std::env::var_os("HOIMIN_NESTED_TRY_CASE"))
+}
+
+fn apply_case_filter(
+    cases: &[OracleCase],
+    filter: Option<std::ffi::OsString>,
+) -> Result<Vec<&OracleCase>, String> {
+    let Some(selected) = filter else {
         return Ok(cases.iter().collect());
     };
     let selected = selected
@@ -218,6 +237,12 @@ fn selected_cases(cases: &[OracleCase]) -> Result<Vec<&OracleCase>, String> {
             matches.len()
         ));
     }
+    if matches[0].mode != "internal-fixture" {
+        return Err(format!(
+            "single-case internal adapter cannot execute mode {}",
+            matches[0].mode
+        ));
+    }
     Ok(matches)
 }
 
@@ -226,18 +251,11 @@ fn nested_try_internal_rows_match_post_finally_production_exits() {
     let cases = parse_corpus(CORPUS).expect("Lean corpus must satisfy the adapter schema");
     let selected =
         selected_cases(&cases).expect("single-case filter must select a closed identity");
-    assert!(
-        std::env::var_os("HOIMIN_NESTED_TRY_CASE").is_none()
-            || selected[0].mode == "internal-fixture",
-        "single-case internal adapter cannot execute mode {}",
-        selected[0].mode
-    );
     for item in selected
         .into_iter()
         .filter(|item| item.mode == "internal-fixture")
     {
-        let actual = binding_flow_try_exit_snapshot(&item.source, &item.marker)
-            .unwrap_or_else(|error| panic!("{}: {error}", item.id));
+        let actual = binding_flow_try_exit_snapshot(&item.source, &item.marker).expect(&item.id);
         assert_eq!(
             actual.fallthrough, item.expected.fallthrough,
             "case={}",
@@ -366,5 +384,108 @@ fn nested_try_corpus_rejects_inexact_and_crossed_rows() {
         parse_corpus(&format!("{duplicate_marker}\n"))
             .unwrap_err()
             .contains("one unique marker")
+    );
+}
+
+#[rstest::rstest]
+#[case("schema", serde_json::json!(0), "unsupported schema")]
+#[case("mode", serde_json::json!("unknown"), "unknown mode")]
+#[case("marker", serde_json::json!(""), "one unique marker")]
+#[case("candidate_count", serde_json::json!(999), "inconsistent public observation")]
+#[case("entry_category", serde_json::json!("unknown"), "unknown entry category")]
+#[case("id", serde_json::json!("unknown"), "changed source premises")]
+#[case("family", serde_json::json!("unknown"), "inconsistent closed identity")]
+fn oracle_validation_rejects_inconsistent_case_fields(
+    #[case] field: &str,
+    #[case] replacement: serde_json::Value,
+    #[case] expected: &str,
+) {
+    let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
+    row[field] = replacement;
+    let item: OracleCase = serde_json::from_value(row).unwrap();
+    assert!(validate_case(&item).unwrap_err().contains(expected));
+}
+
+#[rstest::rstest]
+#[case("{", "invalid JSON")]
+#[case("", "no cases")]
+fn oracle_validation_rejects_invalid_corpus_structure(#[case] input: &str, #[case] expected: &str) {
+    assert!(parse_corpus(input).unwrap_err().contains(expected));
+}
+
+#[test]
+fn oracle_validation_rejects_duplicate_case_id() {
+    let duplicated = format!("{CORPUS}\n{CORPUS}");
+    assert!(
+        parse_corpus(&duplicated)
+            .unwrap_err()
+            .contains("duplicate case id")
+    );
+}
+
+#[test]
+fn oracle_validation_accepts_blank_lines_between_valid_rows() {
+    let with_blanks = format!("\n{CORPUS}\n\n");
+    assert_eq!(
+        parse_corpus(&with_blanks).unwrap().len(),
+        parse_corpus(CORPUS).unwrap().len()
+    );
+}
+
+#[test]
+fn oracle_validation_rejects_field_with_wrong_json_type() {
+    let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
+    row["schema"] = serde_json::json!(false);
+    assert!(
+        parse_corpus(&row.to_string())
+            .unwrap_err()
+            .contains("invalid JSON")
+    );
+}
+
+#[test]
+fn oracle_case_filter_selects_the_requested_fixture() {
+    let cases = parse_corpus(CORPUS).unwrap();
+    let id = cases
+        .iter()
+        .find(|case| case.mode == "internal-fixture")
+        .unwrap()
+        .id
+        .clone();
+    let selected = apply_case_filter(&cases, Some(id.clone().into())).unwrap();
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].id, id);
+}
+
+#[test]
+fn oracle_case_filter_rejects_an_unknown_fixture() {
+    let cases = parse_corpus(CORPUS).unwrap();
+    let error = apply_case_filter(&cases, Some("unknown-fixture".into())).unwrap_err();
+    assert!(error.contains("selected 0"));
+}
+
+#[cfg(unix)]
+#[test]
+fn oracle_case_filter_rejects_non_utf8_fixture_names() {
+    use std::os::unix::ffi::OsStringExt as _;
+    let cases = parse_corpus(CORPUS).unwrap();
+    let error =
+        apply_case_filter(&cases, Some(std::ffi::OsString::from_vec(vec![0xff]))).unwrap_err();
+    assert!(error.contains("not UTF-8"));
+}
+
+#[test]
+fn oracle_case_filter_rejects_production_only_case_in_internal_adapter() {
+    let cases = parse_corpus(CORPUS).unwrap();
+    let id = cases
+        .iter()
+        .find(|case| case.mode == "strict")
+        .unwrap()
+        .id
+        .clone();
+    assert!(
+        apply_case_filter(&cases, Some(id.into()))
+            .unwrap_err()
+            .contains("cannot execute mode strict")
     );
 }

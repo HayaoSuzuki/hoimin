@@ -538,6 +538,66 @@ mod unix_tests {
     const EXPECTED_CPU_HARD: &str = "HOIMIN_TEST_EXPECTED_CPU_HARD";
 
     #[test]
+    fn portable_classification_failure_is_consumed_once_across_backend_clones() {
+        let backend = PortableBackend::for_tests_with_classification_failure();
+        let clone = backend.clone();
+        let mut first = super::PortableSupervisor::new(
+            backend.classification_failures,
+            backend.termination_failures,
+        )
+        .unwrap();
+        let mut second = super::PortableSupervisor::new(
+            clone.classification_failures,
+            clone.termination_failures,
+        )
+        .unwrap();
+
+        let error = first
+            .classify(hoimin_core::ProcessTermination::Exit(7))
+            .unwrap_err();
+
+        assert!(
+            matches!(error, super::ResourceError::Io { operation: "classify portable process", source } if source.to_string() == "injected portable classification failure")
+        );
+        assert_eq!(
+            second
+                .classify(hoimin_core::ProcessTermination::Exit(7))
+                .unwrap(),
+            hoimin_core::ProcessTermination::Exit(7)
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::absent(PortableBackend::for_tests(), None)]
+    #[case::present(PortableBackend::with_diagnostic("test diagnostic".into()), Some("test diagnostic"))]
+    fn portable_backend_preserves_its_diagnostic(
+        #[case]
+        #[by_ref]
+        backend: &PortableBackend,
+        #[case] expected: Option<&str>,
+    ) {
+        assert_eq!(backend.diagnostic(), expected);
+    }
+
+    #[tokio::test]
+    async fn portable_attachment_rejects_a_child_already_reaped_by_its_owner() {
+        let mut supervisor =
+            super::PortableSupervisor::new(std::sync::Arc::default(), std::sync::Arc::default())
+                .unwrap();
+        let mut child = Command::new("sh")
+            .args(["-c", "exit 0"])
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        assert!(child.wait().await.unwrap().success());
+
+        let error = supervisor.attach(&child).unwrap_err();
+
+        assert!(matches!(error, super::ResourceError::MissingProcessId));
+        assert!(matches!(supervisor.process_group, ProcessGroup::None));
+    }
+
+    #[test]
     fn recording_root_reap_disarms_signaling_before_cleanup_can_yield() {
         let mut supervisor =
             super::PortableSupervisor::new(std::sync::Arc::default(), std::sync::Arc::default())

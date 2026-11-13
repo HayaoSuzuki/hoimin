@@ -7,6 +7,7 @@ import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import create_autospec
 
 import pytest
 from pytest_mock import MockerFixture
@@ -163,9 +164,9 @@ def test_rejects_root_exit_that_leaves_a_descendant(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("command", [[], ["--"]])
 def test_argument_parser_requires_command(
-    monkeypatch: pytest.MonkeyPatch, command: list[str]
+    mocker: MockerFixture, command: list[str]
 ) -> None:
-    monkeypatch.setattr(
+    mocker.patch.object(
         sys,
         "argv",
         [
@@ -189,11 +190,11 @@ def test_argument_parser_requires_command(
     "option", ["--timeout-seconds", "--rss-limit-mib", "--sample-ms"]
 )
 def test_argument_parser_rejects_nonpositive_limits(
-    monkeypatch: pytest.MonkeyPatch, option: str
+    mocker: MockerFixture, option: str
 ) -> None:
     options = {"--timeout-seconds": "1", "--rss-limit-mib": "1", "--sample-ms": "1"}
     options[option] = "0"
-    monkeypatch.setattr(
+    mocker.patch.object(
         sys,
         "argv",
         [
@@ -209,18 +210,27 @@ def test_argument_parser_rejects_nonpositive_limits(
 
 
 def test_process_table_ignores_incomplete_rows_and_rejects_ps_failure(
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
 ) -> None:
-    monkeypatch.setattr(
+    original_run_spec = guard.subprocess.run
+    mocker.patch.object(
         guard.subprocess,
         "run",
-        lambda *_a, **_k: SimpleNamespace(
-            returncode=0, stdout="1 0 1 10\nincomplete\n2 1 1 20\n"
+        create_autospec(
+            original_run_spec,
+            side_effect=lambda *_a, **_k: SimpleNamespace(
+                returncode=0, stdout="1 0 1 10\nincomplete\n2 1 1 20\n"
+            ),
         ),
     )
     assert guard.process_table() == {1: (0, 1, 10), 2: (1, 1, 20)}
-    monkeypatch.setattr(
-        guard.subprocess, "run", lambda *_a, **_k: SimpleNamespace(returncode=3)
+    mocker.patch.object(
+        guard.subprocess,
+        "run",
+        create_autospec(
+            original_run_spec,
+            side_effect=lambda *_a, **_k: SimpleNamespace(returncode=3),
+        ),
     )
     with pytest.raises(RuntimeError, match="exit code 3"):
         guard.process_table()
@@ -239,24 +249,48 @@ def test_process_tree_handles_cycles_and_missing_root() -> None:
     [(ProcessLookupError, False), (PermissionError, True), (None, True)],
 )
 def test_group_existence_distinguishes_missing_and_inaccessible(
-    monkeypatch: pytest.MonkeyPatch, error: type[Exception] | None, *, exists: bool
+    mocker: MockerFixture, error: type[Exception] | None, *, exists: bool
 ) -> None:
+    original_killpg_spec = getattr(guard.os, "killpg", os.kill)
+
     def killpg(*_: object) -> None:
         if error:
             raise error
 
-    monkeypatch.setattr(guard.os, "killpg", killpg, raising=False)
+    mocker.patch.object(
+        guard.os,
+        "killpg",
+        create_autospec(original_killpg_spec, side_effect=killpg),
+        create=True,
+    )
     assert guard.process_group_exists(1) is exists
 
 
 @pytest.mark.parametrize("exits", [True, False])
 def test_group_wait_reports_final_existence(
-    monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture, *, exits: bool
+    mocker: MockerFixture, *, exits: bool
 ) -> None:
+    original_monotonic_spec = guard.time.monotonic
+    original_sleep_spec = guard.time.sleep
+    original_process_group_exists_spec = guard.process_group_exists
     clock = iter([0, 0.5, 2])
-    monkeypatch.setattr(guard.time, "monotonic", lambda: next(clock))
-    monkeypatch.setattr(guard.time, "sleep", lambda _: None)
-    monkeypatch.setattr(guard, "process_group_exists", lambda _: not exits)
+    mocker.patch.object(
+        guard.time,
+        "monotonic",
+        create_autospec(original_monotonic_spec, side_effect=lambda: next(clock)),
+    )
+    mocker.patch.object(
+        guard.time,
+        "sleep",
+        create_autospec(original_sleep_spec, side_effect=lambda _: None),
+    )
+    mocker.patch.object(
+        guard,
+        "process_group_exists",
+        create_autospec(
+            original_process_group_exists_spec, side_effect=lambda _: not exits
+        ),
+    )
     process = mocker.Mock(spec=subprocess.Popen, pid=1, poll=lambda: None)
     assert guard.wait_for_process_group_exit(process, 1) is exits
 
@@ -264,39 +298,68 @@ def test_group_wait_reports_final_existence(
 @pytest.mark.parametrize("unsupported", [True, False])
 def test_stats_failure_reports_monitor_error(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
     capsys: pytest.CaptureFixture[str],
     *,
     unsupported: bool,
 ) -> None:
+    original_write_stats_spec = guard.write_stats
+    original_popen_spec = guard.subprocess.Popen
     if unsupported:
-        monkeypatch.setattr(guard, "os", SimpleNamespace(name="unsupported"))
+        mocker.patch.object(guard, "os", SimpleNamespace(name="unsupported"))
     else:
-        monkeypatch.setattr(
+        mocker.patch.object(
             guard.subprocess,
             "Popen",
-            lambda *_a, **_k: (_ for _ in ()).throw(OSError("spawn failed")),
+            create_autospec(
+                original_popen_spec,
+                side_effect=lambda *_a, **_k: (_ for _ in ()).throw(
+                    OSError("spawn failed")
+                ),
+            ),
         )
 
     def fail_write(*_: object) -> None:
         msg = "disk full"
         raise OSError(msg)
 
-    monkeypatch.setattr(guard, "write_stats", fail_write)
+    mocker.patch.object(
+        guard,
+        "write_stats",
+        create_autospec(original_write_stats_spec, side_effect=fail_write),
+    )
     assert guard.run(guard.Arguments(stats=tmp_path / "stats")) == 126
     assert "disk full" in capsys.readouterr().err
 
 
 def test_monitor_failure_cleans_up_spawned_process(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, mocker: MockerFixture
 ) -> None:
+    original_popen_spec = guard.subprocess.Popen
+    original_process_table_spec = guard.process_table
+    original_terminate_process_group_spec = guard.terminate_process_group
     process = SimpleNamespace(pid=1, poll=lambda: None)
-    monkeypatch.setattr(guard.subprocess, "Popen", lambda *_a, **_k: process)
-    monkeypatch.setattr(
-        guard, "process_table", lambda: (_ for _ in ()).throw(RuntimeError("ps failed"))
+    mocker.patch.object(
+        guard.subprocess,
+        "Popen",
+        create_autospec(original_popen_spec, side_effect=lambda *_a, **_k: process),
+    )
+    mocker.patch.object(
+        guard,
+        "process_table",
+        create_autospec(
+            original_process_table_spec,
+            side_effect=lambda: (_ for _ in ()).throw(RuntimeError("ps failed")),
+        ),
     )
     cleaned = []
-    monkeypatch.setattr(guard, "terminate_process_group", cleaned.append)
+    mocker.patch.object(
+        guard,
+        "terminate_process_group",
+        create_autospec(
+            original_terminate_process_group_spec, side_effect=cleaned.append
+        ),
+    )
     assert (
         guard.run(guard.Arguments(timeout_seconds=10, stats=tmp_path / "stats")) == 126
     )
@@ -305,9 +368,9 @@ def test_monitor_failure_cleans_up_spawned_process(
 
 
 def test_argument_parser_accepts_direct_command(
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
 ) -> None:
-    monkeypatch.setattr(
+    mocker.patch.object(
         sys,
         "argv",
         [
@@ -329,13 +392,27 @@ def test_argument_parser_accepts_direct_command(
 @requires_posix_guard
 @pytest.mark.parametrize("escalates", [True, False])
 def test_termination_waits_and_escalates_only_when_needed(
-    monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture, *, escalates: bool
+    mocker: MockerFixture, *, escalates: bool
 ) -> None:
+    original_killpg_spec = getattr(guard.os, "killpg")  # noqa: B009 -- Platform API may be unavailable.
+    original_wait_for_process_group_exit_spec = guard.wait_for_process_group_exit
     signals = []
-    monkeypatch.setattr(
-        guard.os, "killpg", lambda pid, signum: signals.append((pid, signum))
+    mocker.patch.object(
+        guard.os,
+        "killpg",
+        create_autospec(
+            original_killpg_spec,
+            side_effect=lambda pid, signum: signals.append((pid, signum)),
+        ),
     )
-    monkeypatch.setattr(guard, "wait_for_process_group_exit", lambda *_: not escalates)
+    mocker.patch.object(
+        guard,
+        "wait_for_process_group_exit",
+        create_autospec(
+            original_wait_for_process_group_exit_spec,
+            side_effect=lambda *_: not escalates,
+        ),
+    )
     waits = []
     process = mocker.Mock(
         spec=subprocess.Popen, pid=123, wait=lambda: waits.append(True)

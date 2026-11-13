@@ -1,4 +1,4 @@
-#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+#![cfg_attr(coverage_nightly, feature(coverage_attribute, stmt_expr_attributes))]
 use hoimin_core::{
     ByteSpan, DiskFilesystemReport, ExitPolicy, MutantFinished, MutantStarted, MutationCandidate,
     MutationOutcome, MutationStatus, OutputEvent, ProcessOutputState, ProcessTermination,
@@ -771,7 +771,18 @@ fn output_close_timeout_event(diagnostics: Vec<hoimin_core::SessionDiagnostic>) 
         ),
     );
     let OutputEvent::MutantFinished(finished) = &mut event else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     finished.diagnostics = diagnostics;
     event
@@ -1010,4 +1021,65 @@ fn test_resource_control() -> hoimin_core::ResourceControl {
         mode: hoimin_core::ResourceMode::Hard,
         mechanism: "test_supplied_hard".into(),
     }
+}
+
+fn empty_filesystem_report() -> serde_json::Value {
+    serde_json::json!({"key":"root", "start_available_bytes":null, "minimum_available_bytes":null, "end_available_bytes":null, "available_bytes_change":null})
+}
+
+#[test]
+fn filesystem_report_accepts_absent_endpoints() {
+    let report: hoimin_core::DiskFilesystemReport =
+        serde_json::from_value(empty_filesystem_report()).unwrap();
+    assert_eq!(report.start_available_bytes, None);
+    assert_eq!(report.end_available_bytes, None);
+}
+
+#[rstest::rstest]
+#[case("start_available_bytes")]
+#[case("minimum_available_bytes")]
+#[case("end_available_bytes")]
+fn filesystem_report_rejects_invalid_observation_type(#[case] field: &str) {
+    let mut invalid = empty_filesystem_report();
+    invalid[field] = serde_json::json!("invalid");
+    assert!(
+        serde_json::from_value::<hoimin_core::DiskFilesystemReport>(invalid)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid type")
+    );
+}
+
+#[test]
+fn filesystem_report_change_requires_both_endpoints() {
+    let mut invalid = empty_filesystem_report();
+    invalid["available_bytes_change"] = serde_json::json!(1);
+    assert!(
+        serde_json::from_value::<hoimin_core::DiskFilesystemReport>(invalid)
+            .unwrap_err()
+            .to_string()
+            .contains("requires both endpoints")
+    );
+}
+
+#[test]
+fn direct_filesystem_report_decoding_preserves_valid_endpoint_arithmetic() {
+    let wire = json!({"key":"workspace", "start_available_bytes":1024, "minimum_available_bytes":512, "end_available_bytes":768, "available_bytes_change":-256});
+    let decoded = serde_json::from_value::<DiskFilesystemReport>(wire).unwrap();
+    assert_eq!(
+        decoded,
+        DiskFilesystemReport {
+            key: "workspace".into(),
+            start_available_bytes: Some(1024),
+            minimum_available_bytes: Some(512),
+            end_available_bytes: Some(768),
+            available_bytes_change: Some(-256)
+        }
+    );
+}
+
+#[test]
+fn direct_filesystem_report_decoding_requires_its_wire_fields() {
+    let error = serde_json::from_value::<DiskFilesystemReport>(json!({})).unwrap_err();
+    assert!(error.to_string().contains("missing field `key`"));
 }

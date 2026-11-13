@@ -8,9 +8,11 @@ from collections.abc import Callable
 from operator import setitem
 from pathlib import Path
 from typing import Any
+from unittest.mock import create_autospec
 
 import pytest
 import yaml
+from pytest_mock import MockerFixture
 from sbom_fixtures import COMMIT, capture_file, raw_bom, source_tree
 from test_release import release_assets
 
@@ -18,9 +20,14 @@ from tools import capture_sbom, release, sbom
 
 
 @pytest.fixture
-def utf8_child(monkeypatch: pytest.MonkeyPatch) -> str:
+def utf8_child(mocker: MockerFixture) -> str:
     # Model Windows' default codec while executing a real child process.
-    monkeypatch.setattr(subprocess, "_text_encoding", lambda: "cp1252")
+    original_text_encoding_spec = getattr(subprocess, "_text_encoding")  # noqa: B009 -- CPython encoding boundary.
+    mocker.patch.object(
+        subprocess,
+        "_text_encoding",
+        create_autospec(original_text_encoding_spec, side_effect=lambda: "cp1252"),
+    )
     return (
         "import sys; "
         "sys.stdout.buffer.write('裏側\\n'.encode('utf-8')); "
@@ -226,7 +233,9 @@ def test_corrupt_sbom_is_rejected(
 
 
 @pytest.fixture
-def cargo_capture(monkeypatch: pytest.MonkeyPatch) -> Callable[[Path, bytes], None]:
+def cargo_capture(mocker: MockerFixture) -> Callable[[Path, bytes], None]:
+    original_run_spec = capture_sbom.run
+
     def install(root: Path, lock_contents: bytes) -> None:
         def metadata(*args: str) -> str:
             assert "--locked" in args
@@ -258,7 +267,9 @@ def cargo_capture(monkeypatch: pytest.MonkeyPatch) -> Callable[[Path, bytes], No
             )
             return handler(*args)
 
-        monkeypatch.setattr(capture_sbom, "run", command)
+        mocker.patch.object(
+            capture_sbom, "run", create_autospec(original_run_spec, side_effect=command)
+        )
 
     return install
 
@@ -457,14 +468,21 @@ def test_macos_sbom_environment_matches_actual_build_runner(kind: str) -> None:
 
 
 def test_capture_rejects_unpinned_generator_and_cleans_stale_sidecars(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, mocker: MockerFixture
 ) -> None:
+    original_run_spec = capture_sbom.run
     source_tree(tmp_path)
     before = (tmp_path / "Cargo.lock").read_bytes()
     stale = tmp_path / "crates/hoimin-cli/hoimin-release-sbom.json"
     stale.parent.mkdir(parents=True, exist_ok=True)
     stale.write_text("stale", encoding="utf-8")
-    monkeypatch.setattr(capture_sbom, "run", lambda *_args: "unexpected version")
+    mocker.patch.object(
+        capture_sbom,
+        "run",
+        create_autospec(
+            original_run_spec, side_effect=lambda *_args: "unexpected version"
+        ),
+    )
     output = tmp_path / "result.json"
 
     with pytest.raises(ValueError, match="unexpected SBOM generator"):
@@ -476,8 +494,9 @@ def test_capture_rejects_unpinned_generator_and_cleans_stale_sidecars(
 
 
 def test_capture_restores_deleted_lock_after_generator_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, mocker: MockerFixture
 ) -> None:
+    original_run_spec = capture_sbom.run
     source_tree(tmp_path)
     lock = tmp_path / "Cargo.lock"
     before = lock.read_bytes()
@@ -489,7 +508,9 @@ def test_capture_restores_deleted_lock_after_generator_failure(
         msg = "generator failed"
         raise OSError(msg)
 
-    monkeypatch.setattr(capture_sbom, "run", command)
+    mocker.patch.object(
+        capture_sbom, "run", create_autospec(original_run_spec, side_effect=command)
+    )
     output = tmp_path / "result.json"
     with pytest.raises(OSError, match="generator failed"):
         capture_sbom.capture(tmp_path, "x86_64-unknown-linux-gnu", output)
@@ -507,7 +528,7 @@ def test_duplicate_sbom_properties_are_rejected() -> None:
 
 @pytest.mark.parametrize("kind", ["standalone", "wheel"])
 def test_sbom_cli_binds_selected_asset(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str
+    tmp_path: Path, mocker: MockerFixture, kind: str
 ) -> None:
     source_tree(tmp_path)
     name = (
@@ -518,7 +539,7 @@ def test_sbom_cli_binds_selected_asset(
     asset = tmp_path / name
     asset.write_bytes(b"release asset")
     raw = capture_file(tmp_path, "x86_64-unknown-linux-gnu")
-    monkeypatch.setattr(
+    mocker.patch.object(
         sys,
         "argv",
         [
@@ -548,13 +569,13 @@ def test_sbom_cli_binds_selected_asset(
 def test_capture_cli_writes_validated_generator_output(
     tmp_path: Path,
     cargo_capture: Callable[[Path, bytes], None],
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
 ) -> None:
     source_tree(tmp_path)
     before = (tmp_path / "Cargo.lock").read_bytes()
     cargo_capture(tmp_path, before)
     output = tmp_path / "nested/result.json"
-    monkeypatch.setattr(
+    mocker.patch.object(
         sys,
         "argv",
         [

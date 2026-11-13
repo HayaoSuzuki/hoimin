@@ -268,8 +268,8 @@ fn find_unified_mounts(mountinfo: &[u8]) -> Result<Vec<UnifiedMount>, ResourceEr
             .next()
             .ok_or_else(|| ResourceError::InvalidCgroupData("mountinfo mount point".into()))?;
         mounts.push(UnifiedMount {
-            root: path_from_bytes(unescape_mount_field(root)?)?,
-            mountpoint: path_from_bytes(unescape_mount_field(mountpoint)?)?,
+            root: unescape_mount_field(root).and_then(path_from_bytes)?,
+            mountpoint: unescape_mount_field(mountpoint).and_then(path_from_bytes)?,
         });
     }
     Ok(mounts)
@@ -401,6 +401,7 @@ fn unescape_mount_field(input: &[u8]) -> Result<Vec<u8>, ResourceError> {
             continue;
         }
         if index + 3 >= input.len()
+            || input[index + 1] > b'3'
             || !input[index + 1..=index + 3]
                 .iter()
                 .all(|byte| matches!(byte, b'0'..=b'7'))
@@ -2349,6 +2350,7 @@ fn path_from_bytes(bytes: Vec<u8>) -> Result<PathBuf, ResourceError> {
 mod tests {
     use std::cell::Cell;
     use std::ffi::OsString;
+    use std::path::PathBuf;
 
     use hoimin_core::ProcessTermination;
 
@@ -2359,6 +2361,199 @@ mod tests {
         normalized_memory_limit, remove_cgroup_dir, resolve_unified_cgroup,
         run_cleanup_after_accounting, violations_since, wrap_launcher_argv,
     };
+
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn cgroup_probe_reports_that_hard_limits_require_linux() {
+        let limits =
+            hoimin_core::RunLimits::try_from(&hoimin_core::RawRunLimits::default()).unwrap();
+        let capabilities = super::probe_linux_cgroup(&limits);
+
+        assert!(
+            matches!(capabilities, super::CgroupCapabilities::Unavailable(reason) if reason == "cgroup v2 hard limits require Linux")
+        );
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn linux_launcher_leaves_arguments_unhandled_on_other_platforms() {
+        assert_eq!(super::run_linux_launcher_from(["hoimin", "--help"]), None);
+    }
+
+    #[rstest::rstest]
+    #[case::missing_value(b"max")]
+    #[case::empty_name(b" 1")]
+    #[case::extra_field(b"max 1 extra")]
+    #[case::invalid_utf8(b"max \xff")]
+    #[case::invalid_number(b"max nope")]
+    #[case::overflow(b"max 18446744073709551616")]
+    fn cgroup_counter_parser_rejects_a_malformed_memory_event(#[case] input: &[u8]) {
+        let error = super::parse_cgroup_event_counters(input, b"max 0").unwrap_err();
+
+        assert!(
+            matches!(error, ResourceError::InvalidCgroupData(message) if message == String::from_utf8_lossy(input))
+        );
+    }
+
+    #[test]
+    fn cgroup_counter_parser_rejects_a_malformed_process_event() {
+        let error = super::parse_cgroup_event_counters(b"max 0", b"max nope").unwrap_err();
+
+        assert!(
+            matches!(error, ResourceError::InvalidCgroupData(message) if message == "max nope")
+        );
+    }
+
+    #[test]
+    fn unavailable_cgroups_require_explicit_best_effort_permission() {
+        let error = super::select_linux_backend(
+            super::CgroupCapabilities::Unavailable("test diagnostic".into()),
+            false,
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(error, ResourceError::BestEffortNotAllowed(message) if message == "test diagnostic")
+        );
+    }
+
+    #[test]
+    fn unavailable_cgroups_preserve_the_diagnostic_in_the_permitted_fallback() {
+        let backend = super::select_linux_backend(
+            super::CgroupCapabilities::Unavailable("test diagnostic".into()),
+            true,
+        )
+        .unwrap();
+
+        assert!(
+            matches!(backend, super::ResourceBackend::Portable(backend) if backend.diagnostic() == Some("test diagnostic"))
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::all_counters(
+        b"max 1\noom 2\noom_kill 3\noom_group_kill 4\n",
+        b"max 5\n",
+        CgroupEventCounters { memory_max: 1, oom: 2, oom_kill: 3, oom_group_kill: 4, pids_max: 5 }
+    )]
+    #[case::missing_counters(b"", b"", CgroupEventCounters::default())]
+    #[case::unknown_counters(
+        b"future_memory_counter 11\n",
+        b"future_process_counter 12\n",
+        CgroupEventCounters::default()
+    )]
+    fn cgroup_counter_parser_extracts_known_values_and_defaults_missing_values(
+        #[case] memory: &[u8],
+        #[case] processes: &[u8],
+        #[case] expected: CgroupEventCounters,
+    ) {
+        assert_eq!(
+            super::parse_cgroup_event_counters(memory, processes).unwrap(),
+            expected
+        );
+    }
+
+    #[test]
+    fn memory_limit_normalization_rejects_a_finite_byte_limit_overflow() {
+        let error = normalized_memory_limit(u64::MAX, u64::MAX, 3).unwrap_err();
+
+        assert!(
+            matches!(error, ResourceError::InvalidCgroupData(message) if message == "finite cgroup memory limit overflowed u64")
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::truncated(br"\04")]
+    #[case::non_octal(br"\08x")]
+    #[case::overflow_first_byte(br"\400")]
+    #[case::overflow_last_byte(br"\777")]
+    fn mount_field_parser_rejects_an_invalid_escape(#[case] input: &[u8]) {
+        let error = super::unescape_mount_field(input).unwrap_err();
+
+        assert!(
+            matches!(error, ResourceError::InvalidCgroupData(message) if message == "invalid mountinfo escape")
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::lowest(br"\000", 0)]
+    #[case::highest(br"\377", 255)]
+    fn mount_field_parser_accepts_the_byte_boundaries(#[case] input: &[u8], #[case] byte: u8) {
+        assert_eq!(super::unescape_mount_field(input).unwrap(), [byte]);
+    }
+
+    #[rstest::rstest]
+    #[case::root(b"1 2 3 - cgroup2 cgroup rw", "mountinfo root")]
+    #[case::mountpoint(b"1 2 3 / - cgroup2 cgroup rw", "mountinfo mount point")]
+    fn cgroup_mount_parser_rejects_a_missing_field(#[case] input: &[u8], #[case] message: &str) {
+        let error = find_unified_mounts(input).unwrap_err();
+
+        assert!(matches!(error, ResourceError::InvalidCgroupData(actual) if actual == message));
+    }
+
+    #[rstest::rstest]
+    #[case::root(br"1 2 3 /bad\04 /sys/fs/cgroup - cgroup2 cgroup rw")]
+    #[case::mountpoint(br"1 2 3 / /bad\04 - cgroup2 cgroup rw")]
+    fn cgroup_mount_parser_preserves_an_invalid_path_escape(#[case] input: &[u8]) {
+        let error = find_unified_mounts(input).unwrap_err();
+
+        assert!(
+            matches!(error, ResourceError::InvalidCgroupData(message) if message == "invalid mountinfo escape")
+        );
+    }
+
+    #[test]
+    fn cgroup_mount_parser_reports_the_absence_of_a_unified_mount() {
+        let error = find_unified_mount(b"1 2 3 / /tmp rw - tmpfs tmpfs rw").unwrap_err();
+
+        assert!(
+            matches!(error, ResourceError::InvalidCgroupData(message) if message == "no cgroup2 mount in /proc/self/mountinfo")
+        );
+    }
+
+    #[test]
+    fn first_cgroup_mount_lookup_preserves_a_malformed_mount_error() {
+        let error = find_unified_mount(b"1 2 3 - cgroup2 cgroup rw").unwrap_err();
+
+        assert!(
+            matches!(error, ResourceError::InvalidCgroupData(message) if message == "mountinfo root")
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::root("/unsafe/../root", "/", "/")]
+    #[case::mountpoint("/", "/unsafe/../root", "/")]
+    #[case::membership("/", "/", "/unsafe/../root")]
+    fn cgroup_resolution_rejects_parent_navigation(
+        #[case] root: &str,
+        #[case] mountpoint: &str,
+        #[case] current: &str,
+    ) {
+        let mount = super::UnifiedMount {
+            root: PathBuf::from(root),
+            mountpoint: PathBuf::from(mountpoint),
+        };
+
+        let error = resolve_unified_cgroup(&mount, std::path::Path::new(current)).unwrap_err();
+
+        assert!(
+            matches!(error, ResourceError::InvalidCgroupData(message) if message == "unsafe cgroup path /unsafe/../root")
+        );
+    }
+
+    #[test]
+    fn cgroup_resolution_rejects_membership_outside_the_mounted_root() {
+        let mount = super::UnifiedMount {
+            root: PathBuf::from("/delegated"),
+            mountpoint: PathBuf::from("/sys/fs/cgroup"),
+        };
+
+        let error = resolve_unified_cgroup(&mount, std::path::Path::new("/other")).unwrap_err();
+
+        assert!(
+            matches!(error, ResourceError::InvalidCgroupData(message) if message == "current cgroup /other is outside mounted root /delegated")
+        );
+    }
 
     #[derive(Default)]
     struct CleanupSignalRecorder {
@@ -2391,9 +2586,9 @@ mod tests {
     }
 
     impl KernelGroupKillRecorder {
-        fn kill(&self) -> bool {
+        fn kill(&self, succeeds: bool) -> bool {
             self.kill_calls.set(self.kill_calls.get() + 1);
-            true
+            succeeds
         }
 
         fn kill_calls(&self) -> usize {
@@ -2672,16 +2867,33 @@ mod tests {
         assert!(!cgroup.exists());
     }
 
-    #[test]
-    fn successful_kernel_kill_never_signals_a_numeric_pid_or_group() {
+    #[rstest::rstest]
+    #[case::kernel_without_root(true, None, 0, 0, CleanupStrategy::KernelRecursiveKill)]
+    #[case::kernel_with_root(true, Some(41), 0, 0, CleanupStrategy::KernelRecursiveKill)]
+    #[case::membership_fallback(false, None, 2, 0, CleanupStrategy::VerifiedMembershipPidLoop)]
+    #[case::live_group_fallback(
+        false,
+        Some(41),
+        2,
+        1,
+        CleanupStrategy::VerifiedLiveGroupThenMembershipPidLoop
+    )]
+    fn cgroup_member_cleanup_uses_only_the_selected_signaling_strategy(
+        #[case] kernel_succeeds: bool,
+        #[case] live_root: Option<i32>,
+        #[case] numeric_calls: usize,
+        #[case] group_calls: usize,
+        #[case] expected_strategy: CleanupStrategy,
+    ) {
         let signals = CleanupSignalRecorder::default();
         let kernel_group = KernelGroupKillRecorder::default();
         let emptiness_checks = Cell::new(0);
 
         let strategy = begin_cgroup_member_cleanup(
-            None,
-            || kernel_group.kill(),
+            live_root,
+            || kernel_group.kill(kernel_succeeds),
             |pid| {
+                assert_eq!(Some(pid), live_root);
                 signals.signal_process_group(pid);
                 Ok(())
             },
@@ -2706,20 +2918,93 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(signals.numeric_pid_calls(), 0);
-        assert_eq!(signals.process_group_calls(), 0);
+        assert_eq!(strategy, expected_strategy);
+        assert_eq!(signals.numeric_pid_calls(), numeric_calls);
+        assert_eq!(signals.process_group_calls(), group_calls);
         assert_eq!(kernel_group.kill_calls(), 1);
+        assert_eq!(emptiness_checks.get(), 2);
     }
 
-    #[test]
-    fn failed_kernel_kill_uses_only_verified_fallbacks() {
+    #[rstest::rstest]
+    #[case::without_live_root(false, CleanupStrategy::VerifiedMembershipPidLoop)]
+    #[case::with_live_root(true, CleanupStrategy::VerifiedLiveGroupThenMembershipPidLoop)]
+    fn failed_kernel_kill_uses_only_verified_fallbacks(
+        #[case] has_live_root: bool,
+        #[case] expected: CleanupStrategy,
+    ) {
+        assert_eq!(cleanup_strategy(false, has_live_root), expected);
+    }
+
+    #[rstest::rstest]
+    #[case::group_failure(Err("group"), Ok(()), Err("invalid cgroup event data: group"), 0)]
+    #[case::membership_failure(Ok(()), Err("membership"), Err("invalid cgroup event data: membership"), 1)]
+    #[case::success(Ok(()), Ok(()), Ok(()), 1)]
+    fn cgroup_member_cleanup_preserves_the_first_signal_error(
+        #[case] group_result: Result<(), &str>,
+        #[case] numeric_result: Result<(), &str>,
+        #[case] expected: Result<(), &str>,
+        #[case] numeric_calls: usize,
+    ) {
+        let calls = Cell::new(0);
+
+        let result = begin_cgroup_member_cleanup(
+            Some(41),
+            || false,
+            |_| group_result.map_err(|message| ResourceError::InvalidCgroupData(message.into())),
+            || {
+                calls.set(calls.get() + 1);
+                numeric_result.map_err(|message| ResourceError::InvalidCgroupData(message.into()))
+            },
+        );
+
         assert_eq!(
-            cleanup_strategy(false, false),
-            CleanupStrategy::VerifiedMembershipPidLoop
+            result.map(|_| ()).map_err(|error| error.to_string()),
+            expected.map_err(str::to_owned)
+        );
+        assert_eq!(calls.get(), numeric_calls);
+    }
+
+    #[rstest::rstest]
+    #[case::tree_error(Err("tree"), Ok(()), Ok(()), Err("invalid cgroup event data: tree"), (1, 0, 0))]
+    #[case::signal_error(Ok(()), Err("signal"), Ok(()), Err("invalid cgroup event data: signal"), (1, 1, 0))]
+    #[case::wait_error(Ok(()), Ok(()), Err("wait"), Err("invalid cgroup event data: wait"), (1, 1, 1))]
+    #[case::success(Ok(()), Ok(()), Ok(()), Ok(()), (2, 1, 1))]
+    fn cgroup_cleanup_wait_preserves_the_first_failure(
+        #[case] tree_result: Result<(), &str>,
+        #[case] signal_result: Result<(), &str>,
+        #[case] wait_result: Result<(), &str>,
+        #[case] expected: Result<(), &str>,
+        #[case] expected_calls: (usize, usize, usize),
+    ) {
+        let tree_calls = Cell::new(0);
+        let signal_calls = Cell::new(0);
+        let wait_calls = Cell::new(0);
+
+        let result = finish_cgroup_member_cleanup(
+            CleanupStrategy::VerifiedMembershipPidLoop,
+            || {
+                signal_calls.set(signal_calls.get() + 1);
+                signal_result.map_err(|message| ResourceError::InvalidCgroupData(message.into()))
+            },
+            || {
+                tree_calls.set(tree_calls.get() + 1);
+                tree_result
+                    .map(|()| tree_calls.get() > 1)
+                    .map_err(|message| ResourceError::InvalidCgroupData(message.into()))
+            },
+            || {
+                wait_calls.set(wait_calls.get() + 1);
+                wait_result.map_err(|message| ResourceError::InvalidCgroupData(message.into()))
+            },
+        );
+
+        assert_eq!(
+            result.map_err(|error| error.to_string()),
+            expected.map_err(str::to_owned)
         );
         assert_eq!(
-            cleanup_strategy(false, true),
-            CleanupStrategy::VerifiedLiveGroupThenMembershipPidLoop
+            (tree_calls.get(), signal_calls.get(), wait_calls.get()),
+            expected_calls
         );
     }
 
@@ -2736,6 +3021,36 @@ mod tests {
 
         assert!(cleaned);
         assert!(matches!(error, ResourceError::InvalidCgroupData(_)));
+    }
+
+    #[rstest::rstest]
+    #[case::success(Ok(()))]
+    #[case::failure(Err("cleanup"))]
+    fn cleanup_without_an_accounting_error_preserves_its_outcome(
+        #[case] outcome: Result<(), &str>,
+    ) {
+        let called = Cell::new(false);
+
+        let result = run_cleanup_after_accounting(None, || {
+            called.set(true);
+            outcome.map_err(|message| ResourceError::InvalidCgroupData(message.into()))
+        });
+
+        assert!(called.get());
+        assert_eq!(
+            result.map_err(|error| error.to_string()),
+            outcome.map_err(|message| format!("invalid cgroup event data: {message}"))
+        );
+    }
+
+    #[test]
+    fn removing_an_absent_cgroup_is_idempotent() {
+        let parent = tempfile::tempdir().unwrap();
+        let cgroup = parent.path().join("absent");
+
+        remove_cgroup_dir(&cgroup).unwrap();
+
+        assert_eq!(std::fs::read_dir(parent.path()).unwrap().count(), 0);
     }
 
     #[test]

@@ -4,12 +4,13 @@ mod tests {
     #[cfg(unix)]
     use camino::Utf8PathBuf;
 
+    use super::{
+        ACTIVE_PREFIX, COORDINATOR_FILE, ChildCreationBoundary, LEASE_FILE, MANAGED_DIR,
+        MAX_MANAGED_CHILDREN, ManagedRootCoordinator, ManagedRunRoot, OwnerKind, PublishBoundary,
+        STAGING_PREFIX, ensure_direct_child_capacity,
+    };
     #[cfg(windows)]
     use super::{CLEANUP_READY_FILE, RETAIN_FILE};
-    use super::{
-        COORDINATOR_FILE, MANAGED_DIR, MAX_MANAGED_CHILDREN, ManagedRootCoordinator,
-        ManagedRunRoot, OwnerKind, ensure_direct_child_capacity,
-    };
 
     #[test]
     fn janitor_counts_active_holds_without_claiming_remaining_population() {
@@ -438,27 +439,16 @@ mod tests {
     }
 
     #[rstest::rstest]
-    #[case::super_publishboundary_stagingcreated_1(0)]
-    #[case::super_publishboundary_stagingopened_2(1)]
-    #[case::super_publishboundary_renamedactive_3(2)]
-    #[case::super_publishboundary_activeopened_4(3)]
-    #[case::super_publishboundary_coordinatoropened_5(4)]
-    #[case::super_publishboundary_coordinatorcloned_6(5)]
+    #[case(PublishBoundary::StagingCreated, |observed| inject_publish_failure(PublishBoundary::StagingCreated, observed))]
+    #[case(PublishBoundary::StagingOpened, |observed| inject_publish_failure(PublishBoundary::StagingOpened, observed))]
+    #[case(PublishBoundary::RenamedActive, |observed| inject_publish_failure(PublishBoundary::RenamedActive, observed))]
+    #[case(PublishBoundary::ActiveOpened, |observed| inject_publish_failure(PublishBoundary::ActiveOpened, observed))]
+    #[case(PublishBoundary::CoordinatorOpened, |observed| inject_publish_failure(PublishBoundary::CoordinatorOpened, observed))]
+    #[case(PublishBoundary::CoordinatorCloned, |observed| inject_publish_failure(PublishBoundary::CoordinatorCloned, observed))]
     fn every_root_constructor_failure_rolls_back_or_is_immediately_reclaimable(
-        #[case] scenario_index: usize,
+        #[case] selected: super::PublishBoundary,
+        #[case] hook: fn(super::PublishBoundary) -> Result<(), super::WorkspaceError>,
     ) {
-        let selected = [
-            super::PublishBoundary::StagingCreated,
-            super::PublishBoundary::StagingOpened,
-            super::PublishBoundary::RenamedActive,
-            super::PublishBoundary::ActiveOpened,
-            super::PublishBoundary::CoordinatorOpened,
-            super::PublishBoundary::CoordinatorCloned,
-        ]
-        .into_iter()
-        .nth(scenario_index)
-        .unwrap();
-
         let parent = tempfile::tempdir().unwrap();
         let parent = Utf8Path::from_path(parent.path()).unwrap();
         let coordinator = ManagedRootCoordinator::open(parent).unwrap();
@@ -466,10 +456,13 @@ mod tests {
         let result = ManagedRunRoot::create_with_publish_hook(
             &coordinator,
             OwnerKind::PublicExecution,
-            &|observed| inject_publish_failure(selected, observed),
+            &hook,
         );
 
-        assert!(result.is_err(), "boundary {selected:?} did not fail");
+        let error = result.unwrap_err();
+        assert!(
+            matches!(&error, super::WorkspaceError::Io { operation: "inject publish failure", message, .. } if message == &format!("injected at {selected:?}"))
+        );
         let _ = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
         let residual = std::fs::read_dir(parent.join(MANAGED_DIR))
             .unwrap()
@@ -483,27 +476,23 @@ mod tests {
     }
 
     #[rstest::rstest]
-    #[case::super_childcreationboundary_created_1(0)]
-    #[case::super_childcreationboundary_opened_2(1)]
-    fn every_child_constructor_failure_removes_the_new_directory(#[case] scenario_index: usize) {
-        let selected = [
-            super::ChildCreationBoundary::Created,
-            super::ChildCreationBoundary::Opened,
-        ]
-        .into_iter()
-        .nth(scenario_index)
-        .unwrap();
-
+    #[case(ChildCreationBoundary::Created, |observed| inject_child_failure(ChildCreationBoundary::Created, observed))]
+    #[case(ChildCreationBoundary::Opened, |observed| inject_child_failure(ChildCreationBoundary::Opened, observed))]
+    fn every_child_constructor_failure_removes_the_new_directory(
+        #[case] selected: super::ChildCreationBoundary,
+        #[case] hook: fn(super::ChildCreationBoundary) -> Result<(), super::WorkspaceError>,
+    ) {
         let parent = tempfile::tempdir().unwrap();
         let parent = Utf8Path::from_path(parent.path()).unwrap();
         let coordinator = ManagedRootCoordinator::open(parent).unwrap();
         let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
 
-        let result = root.create_child_with_hook("worker-", &|observed| {
-            inject_child_failure(selected, observed)
-        });
+        let result = root.create_child_with_hook("worker-", &hook);
 
-        assert!(result.is_err(), "boundary {selected:?} did not fail");
+        let error = result.unwrap_err();
+        assert!(
+            matches!(&error, super::WorkspaceError::Io { operation: "inject child creation failure", message, .. } if message == &format!("injected at {selected:?}"))
+        );
         let residual = std::fs::read_dir(root.path())
             .unwrap()
             .map(|entry| entry.unwrap().file_name())
@@ -528,7 +517,7 @@ mod tests {
         let error = ManagedRunRoot::create_with_hooks(
             &coordinator,
             OwnerKind::PublicExecution,
-            &|_| Ok(()),
+            &super::ALLOW_PUBLICATION,
             &|_| {
                 let staging_name =
                     only_test_entry_with_prefix(&coordinator.path, super::STAGING_PREFIX);
@@ -538,8 +527,10 @@ mod tests {
                 original_identity.set(Some(original));
                 coordinator
                     .dir
-                    .rename(&staging_name, &coordinator.dir, parked_name)?;
-                create_test_owned_directory_entry(&coordinator.dir, &staging_name)?;
+                    .rename(&staging_name, &coordinator.dir, parked_name)
+                    .expect("park the original staging directory before replacement");
+                create_test_owned_directory_entry(&coordinator.dir, &staging_name)
+                    .expect("create the replacement staging entry");
                 let replacement = super::metadata_identity(
                     &coordinator.dir.symlink_metadata(&staging_name).unwrap(),
                 );
@@ -579,13 +570,16 @@ mod tests {
         let replacement_identity = std::cell::Cell::new(None);
 
         let error = root
-            .create_child_with_hooks("round-five-", &|_| Ok(()), &|_| {
+            .create_child_with_hooks("round-five-", &super::ALLOW_CHILD_CREATION, &|_| {
                 let child_name = only_test_entry_with_prefix(&root.path, "round-five-");
                 let original =
                     super::metadata_identity(&root.dir.symlink_metadata(&child_name).unwrap());
                 original_identity.set(Some(original));
-                root.dir.rename(&child_name, &root.dir, parked_name)?;
-                create_test_owned_directory_entry(&root.dir, &child_name)?;
+                root.dir
+                    .rename(&child_name, &root.dir, parked_name)
+                    .expect("park the original child before replacement");
+                create_test_owned_directory_entry(&root.dir, &child_name)
+                    .expect("create the replacement child entry");
                 let replacement =
                     super::metadata_identity(&root.dir.symlink_metadata(&child_name).unwrap());
 
@@ -655,7 +649,7 @@ mod tests {
         let error = ManagedRunRoot::create_with_hooks(
             &coordinator,
             OwnerKind::PublicExecution,
-            &|_| Ok(()),
+            &super::ALLOW_PUBLICATION,
             &|_| {
                 let staging_name =
                     only_test_entry_with_prefix(&coordinator.path, super::STAGING_PREFIX);
@@ -692,7 +686,7 @@ mod tests {
         let replacement_was_blocked = std::cell::Cell::new(false);
 
         let error = root
-            .create_child_with_hooks("round-five-", &|_| Ok(()), &|_| {
+            .create_child_with_hooks("round-five-", &super::ALLOW_CHILD_CREATION, &|_| {
                 let child_name = only_test_entry_with_prefix(&root.path, "round-five-");
                 let source = root.path.join(&child_name);
                 let destination = root.path.join("round-five-child-replacement");
@@ -1114,8 +1108,11 @@ mod tests {
             |parent, name| {
                 let original = super::metadata_identity(&parent.symlink_metadata(name).unwrap());
                 original_identity.set(Some(original));
-                parent.rename(name, parent, "parked-created-directory")?;
-                create_test_owned_directory_entry(parent, name)?;
+                parent
+                    .rename(name, parent, "parked-created-directory")
+                    .expect("park the original directory before the injected metadata failure");
+                create_test_owned_directory_entry(parent, name)
+                    .expect("install the post-failure replacement directory fixture");
                 let replacement = super::metadata_identity(&parent.symlink_metadata(name).unwrap());
 
                 assert_ne!(replacement, original);
@@ -2887,67 +2884,39 @@ mod tests {
         assert!(super::inspect_empty_directory(&candidate).unwrap());
     }
 
-    macro_rules! invalid_pre_lease_case {
-        ($name:ident, $prefix:expr, $entry:expr, $hours:expr) => {
-            #[test]
-            fn $name() {
-                // Arrange: absent or malformed lease outside the recognized empty staging state.
-                let parent = tempfile::tempdir().unwrap();
-                let coordinator =
-                    ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap())
-                        .unwrap();
-                let name = format!("{}{}", $prefix, uuid::Uuid::new_v4());
-                let candidate = super::create_owned_directory(&coordinator.dir, &name).unwrap();
-                if let Some(entry) = $entry {
-                    candidate.create_dir(entry).unwrap();
-                }
-                drop(candidate);
-                let now = std::time::SystemTime::now() + std::time::Duration::from_hours($hours);
-
-                // Act.
-                let report = ManagedRunRoot::reclaim_abandoned(&coordinator, now);
-
-                // Assert: still unresolved and visible by default; no deletion.
-                assert_eq!(report.inspected_roots, 1);
-                assert_eq!(report.preserved_roots, 0);
-                assert_eq!(report.unresolved_roots, 1, "{report:?}");
-                assert_eq!(
-                    report.unresolved_by_reason[&hoimin_core::JanitorReason::LeaseInvalid],
-                    1
-                );
-                assert_eq!(report.reclaimed_roots, 0);
-                assert_eq!(report.removed_entries, 0);
-                assert!(report.details.iter().any(|detail| detail.reason
-                    == hoimin_core::JanitorReason::LeaseInvalid
-                    && detail.message.contains(&name)));
-                assert!(coordinator.dir.symlink_metadata(&name).is_ok());
-            }
-        };
+    #[rstest::rstest]
+    #[case::young_nonempty_staging(STAGING_PREFIX, 0, |candidate: &cap_std::fs::Dir| candidate.create_dir("payload").unwrap())]
+    #[case::stale_nonempty_staging(STAGING_PREFIX, 25, |candidate: &cap_std::fs::Dir| candidate.create_dir("payload").unwrap())]
+    #[case::empty_active(ACTIVE_PREFIX, 0, |_: &cap_std::fs::Dir| {})]
+    #[case::directory_lease(STAGING_PREFIX, 0, |candidate: &cap_std::fs::Dir| candidate.create_dir(LEASE_FILE).unwrap())]
+    fn invalid_pre_lease_root_is_unresolved(
+        #[case] prefix: &str,
+        #[case] hours: u64,
+        #[case] configure: fn(&cap_std::fs::Dir),
+    ) {
+        let parent = tempfile::tempdir().unwrap();
+        let coordinator =
+            ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap()).unwrap();
+        let name = format!("{prefix}{}", uuid::Uuid::new_v4());
+        let candidate = super::create_owned_directory(&coordinator.dir, &name).unwrap();
+        configure(&candidate);
+        drop(candidate);
+        let now = std::time::SystemTime::now() + std::time::Duration::from_hours(hours);
+        let report = ManagedRunRoot::reclaim_abandoned(&coordinator, now);
+        assert_eq!(report.inspected_roots, 1);
+        assert_eq!(report.preserved_roots, 0);
+        assert_eq!(report.unresolved_roots, 1, "{report:?}");
+        assert_eq!(
+            report.unresolved_by_reason[&hoimin_core::JanitorReason::LeaseInvalid],
+            1
+        );
+        assert_eq!(report.reclaimed_roots, 0);
+        assert_eq!(report.removed_entries, 0);
+        assert!(report.details.iter().any(|detail| detail.reason
+            == hoimin_core::JanitorReason::LeaseInvalid
+            && detail.message.contains(&name)));
+        assert!(coordinator.dir.symlink_metadata(&name).is_ok());
     }
-    invalid_pre_lease_case!(
-        young_nonempty_staging_without_lease_is_unresolved,
-        super::STAGING_PREFIX,
-        Some("payload"),
-        0
-    );
-    invalid_pre_lease_case!(
-        stale_nonempty_staging_without_lease_is_unresolved,
-        super::STAGING_PREFIX,
-        Some("payload"),
-        25
-    );
-    invalid_pre_lease_case!(
-        empty_active_root_without_lease_is_unresolved,
-        super::ACTIVE_PREFIX,
-        None::<&str>,
-        0
-    );
-    invalid_pre_lease_case!(
-        young_staging_with_directory_lease_is_unresolved,
-        super::STAGING_PREFIX,
-        Some(super::LEASE_FILE),
-        0
-    );
 
     #[cfg(unix)]
     #[test]
@@ -3155,43 +3124,16 @@ mod janitor;
 use janitor::{DeletionProgress, ReclaimLedger};
 
 #[cfg(test)]
-#[path = "owned_io_faults.rs"]
-mod io_faults;
-
-// Test builds can fail one named syscall boundary; release calls preserve the
-// original expression and its evaluation order without a runtime dispatcher.
-macro_rules! owned_io {
-    ($point:literal, $operation:expr) => {{
-        #[cfg(test)]
-        {
-            io_faults::check($point).and_then(|()| $operation)
-        }
-        #[cfg(not(test))]
-        {
-            $operation
-        }
-    }};
-    ($point:literal, $operation:expr, $error:path) => {{
-        #[cfg(test)]
-        {
-            io_faults::check($point)
-                .map_err($error)
-                .and_then(|()| $operation)
-        }
-        #[cfg(not(test))]
-        {
-            $operation
-        }
-    }};
-}
+pub(super) use crate::io_faults;
+pub(super) use crate::io_faults::checked_io as owned_io;
 
 macro_rules! owned_json {
     ($point:literal, $file:expr, $marker:expr) => {{
-        #[cfg(test)]
+        #[cfg(any(test, coverage_nightly))]
         {
-            serde_json::to_writer(io_faults::Writer::new($file, $point), $marker)
+            serde_json::to_writer($crate::io_faults::Writer::new($file, $point), $marker)
         }
-        #[cfg(not(test))]
+        #[cfg(not(any(test, coverage_nightly)))]
         {
             serde_json::to_writer($file, $marker)
         }
@@ -3199,6 +3141,8 @@ macro_rules! owned_json {
 }
 
 pub(crate) type ReclaimReport = hoimin_core::JanitorSummary;
+// Cursor persistence errors retain a usable selection alongside their diagnostic.
+type ReclaimSelection = Result<(Vec<String>, Option<String>), WorkspaceError>;
 
 #[cfg(unix)]
 struct OwnedDirectoryEntries(rustix::fs::Dir);
@@ -3215,7 +3159,11 @@ impl Iterator for OwnedDirectoryEntries {
             use std::os::unix::ffi::OsStringExt;
 
             loop {
-                let entry = self.0.next()?;
+                let entry = owned_io!(
+                    "owned.entries_next",
+                    self.0.next().transpose().map_err(std::io::Error::from)
+                )
+                .transpose()?;
                 match entry {
                     Ok(entry) => {
                         let name = entry.file_name().to_bytes();
@@ -3223,7 +3171,7 @@ impl Iterator for OwnedDirectoryEntries {
                             return Some(Ok(OsString::from_vec(name.to_vec())));
                         }
                     }
-                    Err(error) => return Some(Err(std::io::Error::from(error))),
+                    Err(error) => return Some(Err(error)),
                 }
             }
         }
@@ -3237,35 +3185,37 @@ impl Iterator for OwnedDirectoryEntries {
 }
 
 fn owned_directory_entries(dir: &cap_std::fs::Dir) -> std::io::Result<OwnedDirectoryEntries> {
-    #[cfg(target_os = "linux")]
-    {
-        use rustix::fs::{Mode, OFlags, ResolveFlags};
+    owned_io!("owned.entries_open", {
+        #[cfg(target_os = "linux")]
+        {
+            use rustix::fs::{Mode, OFlags, ResolveFlags};
 
-        let readable = rustix::fs::openat2(
-            dir,
-            c".",
-            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
-            Mode::empty(),
-            ResolveFlags::BENEATH | ResolveFlags::NO_SYMLINKS | ResolveFlags::NO_XDEV,
-        )
-        .map_err(std::io::Error::from)?;
-        rustix::fs::Dir::new(readable)
-            .map(OwnedDirectoryEntries)
-            .map_err(std::io::Error::from)
-    }
-    #[cfg(all(unix, not(target_os = "linux")))]
-    {
-        rustix::fs::Dir::read_from(dir)
-            .map(OwnedDirectoryEntries)
-            .map_err(std::io::Error::from)
-    }
-    #[cfg(windows)]
-    {
-        let directory = dir.try_clone()?.into_std_file();
-        Ok(OwnedDirectoryEntries(
-            super::root::windows::DirectoryEntries::open(directory),
-        ))
-    }
+            let readable = rustix::fs::openat2(
+                dir,
+                c".",
+                OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+                Mode::empty(),
+                ResolveFlags::BENEATH | ResolveFlags::NO_SYMLINKS | ResolveFlags::NO_XDEV,
+            )
+            .map_err(std::io::Error::from)?;
+            rustix::fs::Dir::new(readable)
+                .map(OwnedDirectoryEntries)
+                .map_err(std::io::Error::from)
+        }
+        #[cfg(all(unix, not(target_os = "linux")))]
+        {
+            rustix::fs::Dir::read_from(dir)
+                .map(OwnedDirectoryEntries)
+                .map_err(std::io::Error::from)
+        }
+        #[cfg(windows)]
+        {
+            let directory = dir.try_clone()?.into_std_file();
+            Ok(OwnedDirectoryEntries(
+                super::root::windows::DirectoryEntries::open(directory),
+            ))
+        }
+    })
 }
 
 const MANAGED_DIR: &str = "hoimin-workspaces-v2";
@@ -3399,7 +3349,11 @@ impl<'a> CoordinatorLockGuard<'a> {
         loop {
             ensure_bootstrap_deadline(deadline, &coordinator.path, "lock coordinator")?;
             match coordinator.local_lock.try_lock() {
-                Ok(local) => match File::try_lock(&coordinator.file) {
+                Ok(local) => match owned_io!(
+                    "coordinator.acquire_try_lock",
+                    File::try_lock(&coordinator.file),
+                    std::fs::TryLockError::Error
+                ) {
                     Ok(()) => {
                         if let Err(error) = ensure_bootstrap_deadline(
                             deadline,
@@ -3585,8 +3539,8 @@ fn create_owned_directory(
             rustix::fs::mkdirat(parent, name, rustix::fs::Mode::from_raw_mode(0o700))
                 .map_err(std::io::Error::from)
         },
-        |parent, name| parent.symlink_metadata(name),
-        |parent, name| open_owned_directory(parent, name),
+        |parent, name| owned_io!("directory.inspect_created", parent.symlink_metadata(name)),
+        |parent, name| owned_io!("directory.open_created", open_owned_directory(parent, name)),
         rollback_new_owned_directory,
     )
 }
@@ -4122,8 +4076,7 @@ fn open_initialized_coordinator_until(
 ) -> Result<File, WorkspaceError> {
     loop {
         ensure_bootstrap_deadline(deadline, coordinator_path, "open coordinator")?;
-        let metadata = dir
-            .symlink_metadata(COORDINATOR_FILE)
+        let metadata = owned_io!("reopen.stat", dir.symlink_metadata(COORDINATOR_FILE))
             .map_err(|error| WorkspaceError::io("inspect coordinator", coordinator_path, error))?;
         ensure_bootstrap_deadline(deadline, coordinator_path, "inspect coordinator")?;
         if !metadata.is_file() || metadata.file_type().is_symlink() {
@@ -4135,12 +4088,11 @@ fn open_initialized_coordinator_until(
         let mut open = cap_std::fs::OpenOptions::new();
         open.read(true).write(true);
         configure_no_follow(&mut open);
-        let file = dir
-            .open_with(COORDINATOR_FILE, &open)
+        let file = owned_io!("reopen.open", dir.open_with(COORDINATOR_FILE, &open))
             .map_err(|error| WorkspaceError::io("open coordinator", coordinator_path, error))?;
         ensure_bootstrap_deadline(deadline, coordinator_path, "open coordinator")?;
         let mut file = file.into_std();
-        if file_identity(&file)
+        if owned_io!("reopen.identity", file_identity(&file))
             .map_err(|error| WorkspaceError::io("identify coordinator", coordinator_path, error))?
             != expected_identity
         {
@@ -4151,14 +4103,13 @@ fn open_initialized_coordinator_until(
         ensure_bootstrap_deadline(deadline, coordinator_path, "identify coordinator")?;
         lock_file_until(&file, deadline, coordinator_path)?;
         ensure_bootstrap_deadline(deadline, coordinator_path, "lock coordinator")?;
-        let is_uninitialized = file
-            .metadata()
+        let is_uninitialized = owned_io!("reopen.metadata", file.metadata())
             .map_err(|error| WorkspaceError::io("inspect coordinator", coordinator_path, error))?
             .len()
             == 0;
         ensure_bootstrap_deadline(deadline, coordinator_path, "inspect coordinator")?;
         if is_uninitialized {
-            File::unlock(&file).map_err(|error| {
+            owned_io!("reopen.unlock_empty", File::unlock(&file)).map_err(|error| {
                 WorkspaceError::io("unlock coordinator", coordinator_path, error)
             })?;
             if std::time::Instant::now() >= deadline {
@@ -4178,7 +4129,7 @@ fn open_initialized_coordinator_until(
         ensure_bootstrap_deadline(deadline, coordinator_path, "secure coordinator")?;
         validate_coordinator_file(&mut file, coordinator_path)?;
         ensure_bootstrap_deadline(deadline, coordinator_path, "validate coordinator")?;
-        File::unlock(&file)
+        owned_io!("reopen.unlock_valid", File::unlock(&file))
             .map_err(|error| WorkspaceError::io("unlock coordinator", coordinator_path, error))?;
         ensure_bootstrap_deadline(deadline, coordinator_path, "unlock coordinator")?;
         return Ok(file);
@@ -4231,7 +4182,11 @@ fn lock_file_until(
 ) -> Result<(), WorkspaceError> {
     loop {
         ensure_bootstrap_deadline(deadline, path, "lock coordinator bootstrap")?;
-        match File::try_lock(file) {
+        match owned_io!(
+            "coordinator.bootstrap_try_lock",
+            File::try_lock(file),
+            std::fs::TryLockError::Error
+        ) {
             Ok(()) => {
                 if let Err(error) =
                     ensure_bootstrap_deadline(deadline, path, "lock coordinator bootstrap")
@@ -4688,12 +4643,16 @@ impl CleanupEvidence {
     }
 }
 
+// Default callbacks implement the same protocol as injectable constructor hooks.
+const ALLOW_PUBLICATION: fn(PublishBoundary) -> Result<(), WorkspaceError> = |_| Ok(());
+const ALLOW_CHILD_CREATION: fn(ChildCreationBoundary) -> Result<(), WorkspaceError> = |_| Ok(());
+
 impl ManagedRunRoot {
     pub(crate) fn create(
         coordinator: &ManagedRootCoordinator,
         owner: OwnerKind,
     ) -> Result<Self, WorkspaceError> {
-        Self::create_with_publish_hook(coordinator, owner, &|_| Ok(()))
+        Self::create_with_publish_hook(coordinator, owner, &ALLOW_PUBLICATION)
     }
 
     fn create_with_publish_hook(
@@ -4717,8 +4676,11 @@ impl ManagedRunRoot {
         let run_id = uuid::Uuid::new_v4().to_string();
         let staging_name = format!("{STAGING_PREFIX}{run_id}");
         let staging_path = coordinator.path.join(&staging_name);
-        let staging_dir = create_owned_directory(&coordinator.dir, &staging_name)
-            .map_err(|error| WorkspaceError::io("create staging root", &coordinator.path, error))?;
+        let staging_dir = owned_io!(
+            "staging.create_directory",
+            create_owned_directory(&coordinator.dir, &staging_name)
+        )
+        .map_err(|error| WorkspaceError::io("create staging root", &coordinator.path, error))?;
         let rollback_deadline = std::time::Instant::now() + OWNER_CLEANUP_BUDGET;
         let mut staging_identity = None;
         #[cfg(windows)]
@@ -4825,10 +4787,14 @@ impl ManagedRunRoot {
             let marker = LeaseMarker {
                 schema: LEASE_SCHEMA,
                 run_id: run_id.to_owned(),
-                created_unix_seconds: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .map_err(|error| WorkspaceError::io("read system time", staging_path, error))?
-                    .as_secs(),
+                created_unix_seconds: owned_io!(
+                    "lease.time",
+                    SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map_err(std::io::Error::other)
+                )
+                .map_err(|error| WorkspaceError::io("read system time", staging_path, error))?
+                .as_secs(),
                 owner,
             };
             let lease_path = staging_path.join(LEASE_FILE);
@@ -5215,12 +5181,11 @@ impl ManagedRunRoot {
                 path: destination.to_owned(),
             });
         }
+        // Construction appends ACTIVE_PREFIX plus a generated UUID; this private path never changes.
         let current_name = self
             .path
             .file_name()
-            .ok_or_else(|| WorkspaceError::InvalidPath {
-                path: self.path.clone(),
-            })?;
+            .expect("managed root has its constructed basename");
         let destination_name =
             destination
                 .file_name()
@@ -5232,15 +5197,18 @@ impl ManagedRunRoot {
         })?;
         File::try_lock(&self.coordinator_file)
             .map_err(|error| WorkspaceError::io("lock coordinator", &self.path, error))?;
+        let guard = CoordinatorLockGuard {
+            file: &self.coordinator_file,
+            _local: local_guard,
+            locked: true,
+        };
         let claim = self.claim_with_handle_handoff(
             &self.coordinator_dir,
             current_name,
             destination_name,
             &|| Ok(()),
         );
-        let unlock = File::unlock(&self.coordinator_file)
-            .map_err(|error| WorkspaceError::io("unlock coordinator", &self.path, error));
-        drop(local_guard);
+        let unlock = guard.unlock(&self.path);
         match (claim, unlock) {
             (Ok(ClaimResult::Claimed), Ok(())) => Ok(()),
             (Ok(ClaimResult::Absent), Ok(())) => Err(WorkspaceError::InvalidPath {
@@ -5255,7 +5223,7 @@ impl ManagedRunRoot {
     }
 
     pub(crate) fn create_child(&self, prefix: &str) -> Result<ManagedChild, WorkspaceError> {
-        self.create_child_with_hook(prefix, &|_| Ok(()))
+        self.create_child_with_hook(prefix, &ALLOW_CHILD_CREATION)
     }
 
     fn create_child_with_hook(
@@ -5302,9 +5270,9 @@ impl ManagedRunRoot {
         {
             entry
                 .map_err(|error| WorkspaceError::io("count managed children", &self.path, error))?;
-            child_count = child_count
-                .checked_add(1)
-                .ok_or(WorkspaceError::CopySizeOverflow)?;
+            // Every preceding iteration passed the 100,000-entry cap below;
+            // one further entry fits every supported usize.
+            child_count += 1;
             ensure_direct_child_capacity(child_count)?;
         }
         let name = format!("{prefix}{}", uuid::Uuid::new_v4());
@@ -5320,9 +5288,7 @@ impl ManagedRunRoot {
                 .map_err(|error| WorkspaceError::io("identify managed child", &path, error))?;
             child_identity = Some(identity);
             creation_hook(ChildCreationBoundary::Created)?;
-            let child_metadata = self
-                .dir
-                .symlink_metadata(&name)
+            let child_metadata = owned_io!("child.inspect", self.dir.symlink_metadata(&name))
                 .map_err(|error| WorkspaceError::io("inspect managed child", &path, error))?;
             if !child_metadata.is_dir() || child_metadata.file_type().is_symlink() {
                 return Err(WorkspaceError::InvalidPath { path: path.clone() });
@@ -5445,10 +5411,14 @@ impl ManagedRunRoot {
         let marker = LeaseMarker {
             schema: LEASE_SCHEMA,
             run_id: self.run_id.clone(),
-            created_unix_seconds: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_err(|error| WorkspaceError::io("read system time", &self.path, error))?
-                .as_secs(),
+            created_unix_seconds: owned_io!(
+                "control.time",
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map_err(std::io::Error::other)
+            )
+            .map_err(|error| WorkspaceError::io("read system time", &self.path, error))?
+            .as_secs(),
             owner: self.owner,
         };
         self.write_json_marker(name, &marker)
@@ -5810,6 +5780,12 @@ impl ManagedRunRoot {
                     .push_detail(format!("coordinator lock failed: {error}"));
                 return record;
             }
+            // Drop retries a failed OS unlock before releasing the local mutex.
+            let coordinator_guard = CoordinatorLockGuard {
+                file: &self.coordinator_file,
+                _local: local_guard,
+                locked: true,
+            };
             let claim_deadline_expired = std::cell::Cell::new(false);
             let claim = self.claim_with_handle_handoff(
                 &self.coordinator_dir,
@@ -5831,7 +5807,11 @@ impl ManagedRunRoot {
                     }
                 },
             );
-            let unlock = File::unlock(&self.coordinator_file);
+            let unlock = coordinator_guard.unlock(
+                self.path
+                    .parent()
+                    .expect("managed root has a coordinator parent"),
+            );
             if let Err(error) = unlock {
                 if NamespaceLifecycle::load(&self.namespace) == NamespaceLifecycle::Deleting {
                     record.evidence.remaining_root = Some(
@@ -5846,7 +5826,6 @@ impl ManagedRunRoot {
                     .push_detail(format!("coordinator unlock failed: {error}"));
                 return record;
             }
-            drop(local_guard);
             match claim {
                 Ok(ClaimResult::Absent) => {
                     NamespaceLifecycle::Complete.store(&self.namespace);
@@ -5859,6 +5838,9 @@ impl ManagedRunRoot {
                     if claim_deadline_expired.get() {
                         record.disposition = CleanupDisposition::Deferred(None);
                     }
+                    // Windows may fail reopening the lease after rename; Unix
+                    // has no fallible claim operation after the namespace changes.
+                    #[cfg(windows)]
                     if NamespaceLifecycle::load(&self.namespace) == NamespaceLifecycle::Deleting {
                         record.evidence.remaining_root = Some(
                             self.path
@@ -5965,10 +5947,11 @@ impl ManagedRunRoot {
     fn verified_remaining_root(&self) -> Result<Option<Utf8PathBuf>, String> {
         let expected_identity = owned_io!("remaining.root_identity", directory_identity(&self.dir))
             .map_err(|error| format!("inspect interrupted cleanup root identity: {error}"))?;
+        // The sole constructor joins a managed basename to its coordinator; the private path is immutable.
         let parent = self
             .path
             .parent()
-            .ok_or_else(|| "managed root has no parent".to_owned())?;
+            .expect("managed root retains its coordinator parent");
         for name in [
             format!("{ACTIVE_PREFIX}{}", self.run_id),
             format!("{DELETING_PREFIX}{}", self.run_id),
@@ -6124,12 +6107,14 @@ impl ManagedRunRoot {
         clippy::too_many_lines,
         reason = "janitor validation and claim order stays explicit"
     )]
+    // Selection runs once; elapsed is observed at cleanup checkpoints. Borrowing callbacks
+    // keeps their captures with the caller and shares this cleanup body across startup hooks.
     fn reclaim_abandoned_with_clock_and_selection(
         coordinator: &ManagedRootCoordinator,
         now: SystemTime,
         cleanup_started: std::time::Instant,
-        elapsed: &impl Fn(std::time::Instant) -> Duration,
-        select: &impl Fn(&mut JanitorScan) -> Result<(Vec<String>, Option<String>), WorkspaceError>,
+        elapsed: &dyn Fn(std::time::Instant) -> Duration,
+        select: &dyn Fn(&mut JanitorScan) -> ReclaimSelection,
     ) -> ReclaimReport {
         let mut report = ReclaimLedger::default();
         let mut pending_cleanup = VecDeque::new();
@@ -6523,17 +6508,8 @@ impl ManagedRunRoot {
                     continue;
                 }
             }
-            let Some(lease) = lease else {
-                report.hold(
-                    index,
-                    JanitorReason::ClaimedLeaseUnavailable,
-                    format!(
-                        "claimed root lease could not be reopened: {}",
-                        coordinator.path.join(&deleting_name)
-                    ),
-                );
-                continue;
-            };
+            // Claimed preserves Some on Unix and reopens Some on Windows; errors and absence continued above.
+            let lease = lease.expect("a successful claim retains its lease capability");
             #[cfg(windows)]
             let capabilities = CleanupCapabilities::claimed(candidate, lease);
             #[cfg(unix)]
@@ -6550,7 +6526,7 @@ impl ManagedRunRoot {
                 capabilities,
                 cleanup_started,
                 index,
-                elapsed,
+                &elapsed,
             );
         }
         while !pending_cleanup.is_empty() && elapsed(cleanup_started) < JANITOR_CLEANUP_BUDGET {
@@ -6560,16 +6536,17 @@ impl ManagedRunRoot {
                 if elapsed(cleanup_started) >= JANITOR_CLEANUP_BUDGET {
                     break;
                 }
-                let Some(mut pending) = pending_cleanup.pop_front() else {
-                    break;
-                };
+                // Each iteration pops once and only optionally pushes back; round_len is the initial queue length.
+                let mut pending = pending_cleanup
+                    .pop_front()
+                    .expect("a round retains its unvisited entries");
                 match reclaim_removal(
                     coordinator,
                     &pending.deleting_name,
                     pending.expected_identity,
                     cleanup_started,
                     &mut pending.capabilities,
-                    elapsed,
+                    &elapsed,
                 ) {
                     ReclaimRemoval::Complete => {
                         report.removal(pending.index, pending.capabilities.progress, true);
@@ -7016,28 +6993,30 @@ fn select_reclaim_candidates_locked_with_hooks(
     )
 }
 
+// Entry notification follows each yielded entry; enumeration notification follows EOF.
+// Borrowed hooks preserve caller-owned captures and share the scan implementation.
 fn select_reclaim_candidates_locked_until_with_hooks(
     coordinator: &ManagedRootCoordinator,
     scan: &mut JanitorScan,
     deadline: std::time::Instant,
-    now: &impl Fn() -> std::time::Instant,
-    after_enumeration: &impl Fn(),
-    after_entry: &impl Fn(),
+    now: &dyn Fn() -> std::time::Instant,
+    after_enumeration: &dyn Fn(),
+    after_entry: &dyn Fn(),
 ) -> Result<(Vec<String>, Option<String>), WorkspaceError> {
-    ensure_selection_deadline(coordinator, scan, deadline, now)?;
+    ensure_selection_deadline(coordinator, scan, deadline, &now)?;
     let coordinator_path = coordinator.path.join(COORDINATOR_FILE);
     let (active_slot, state) = read_coordinator_state(&coordinator.file, &coordinator_path)?;
-    ensure_selection_deadline(coordinator, scan, deadline, now)?;
+    ensure_selection_deadline(coordinator, scan, deadline, &now)?;
     let mut entries = owned_directory_entries(&coordinator.dir)
         .map_err(|error| WorkspaceError::io("enumerate managed roots", &coordinator.path, error))?;
-    ensure_selection_deadline(coordinator, scan, deadline, now)?;
+    ensure_selection_deadline(coordinator, scan, deadline, &now)?;
     let mut examined = 0_usize;
     let mut after = BTreeSet::new();
     let mut wrapped = BTreeSet::new();
     loop {
-        ensure_selection_deadline(coordinator, scan, deadline, now)?;
+        ensure_selection_deadline(coordinator, scan, deadline, &now)?;
         let entry = entries.next();
-        ensure_selection_deadline(coordinator, scan, deadline, now)?;
+        ensure_selection_deadline(coordinator, scan, deadline, &now)?;
         let Some(entry) = entry else {
             break;
         };
@@ -7045,10 +7024,10 @@ fn select_reclaim_candidates_locked_until_with_hooks(
             WorkspaceError::io("enumerate managed roots", &coordinator.path, error)
         })?;
         after_entry();
-        ensure_selection_deadline(coordinator, scan, deadline, now)?;
-        examined = examined
-            .checked_add(1)
-            .ok_or(WorkspaceError::CopySizeOverflow)?;
+        ensure_selection_deadline(coordinator, scan, deadline, &now)?;
+        // The preceding iteration returned if its count exceeded 100,000,
+        // so this increment cannot overflow any supported usize.
+        examined += 1;
         if examined > MAX_MANAGED_CHILDREN {
             scan.stop_reason = Some(JanitorReason::SelectionChildLimit);
             return Err(WorkspaceError::io(
@@ -7078,12 +7057,12 @@ fn select_reclaim_candidates_locked_until_with_hooks(
     }
     scan.directory_scan_complete = true;
     after_enumeration();
-    ensure_selection_deadline(coordinator, scan, deadline, now)?;
+    ensure_selection_deadline(coordinator, scan, deadline, &now)?;
     scan.cursor_deferred = !after.is_empty() && !wrapped.is_empty();
     let candidates = if after.is_empty() { wrapped } else { after }
         .into_iter()
         .collect::<Vec<_>>();
-    ensure_selection_deadline(coordinator, scan, deadline, now)?;
+    ensure_selection_deadline(coordinator, scan, deadline, &now)?;
     let cursor_error = candidates.last().and_then(|cursor| {
         persist_coordinator_cursor(
             &coordinator.file,
@@ -7217,6 +7196,8 @@ fn remove_empty_unmarked_directory<'a>(
     clippy::too_many_lines,
     reason = "claim keeps expected directory, lease, marker, deadline, and rollback adjacent"
 )]
+// Namespace notification follows a successful rename or an existing destination.
+// Both callbacks borrow caller captures while sharing the validation and lease-handoff body.
 fn claim_managed_child(
     parent: &cap_std::fs::Dir,
     current_name: &str,
@@ -7226,8 +7207,8 @@ fn claim_managed_child(
     expected_dir: &cap_std::fs::Dir,
     #[cfg(windows)] rename_handle: &cap_std::fs::Dir,
     expected_lease: &mut Option<File>,
-    on_deleting: &impl Fn(),
-    before_next_operation: &impl Fn() -> Result<(), WorkspaceError>,
+    on_deleting: &dyn Fn(),
+    before_next_operation: &dyn Fn() -> Result<(), WorkspaceError>,
 ) -> Result<ClaimResult, WorkspaceError> {
     before_next_operation()?;
     let lease_path = Utf8PathBuf::from(current_name).join(LEASE_FILE);
@@ -7329,7 +7310,7 @@ fn claim_managed_child(
             claimed_name,
             deleting_name,
             candidate_identity,
-            before_next_operation,
+            &before_next_operation,
         )
         .map_err(|error| {
             WorkspaceError::io(
@@ -7344,7 +7325,7 @@ fn claim_managed_child(
             rename_handle,
             deleting_name,
             candidate_identity,
-            before_next_operation,
+            &before_next_operation,
         )
         .map_err(|error| {
             WorkspaceError::io(
@@ -7425,8 +7406,7 @@ fn candidate_is_stale(
     }
     let metadata = owned_io!("janitor.heartbeat_metadata", heartbeat.metadata())
         .map_err(|error| EligibilityFailure::new(JanitorReason::AgeUnverifiable, error))?;
-    let modified = metadata
-        .modified()
+    let modified = owned_io!("janitor.heartbeat_modified", metadata.modified())
         .map_err(|error| EligibilityFailure::new(JanitorReason::AgeUnverifiable, error))?;
     stale_timestamp(modified.checked_add(STALE_AFTER), now)
 }
@@ -7555,20 +7535,25 @@ fn staging_contents_are_safe(candidate: &cap_std::fs::Dir) -> Result<(), Eligibi
     )
     .map_err(|error| EligibilityFailure::new(JanitorReason::UnsafeStaging, error))?;
     for entry in entries {
-        let entry =
-            entry.map_err(|error| EligibilityFailure::new(JanitorReason::UnsafeStaging, error))?;
-        let Some(name) = entry.to_str().map(str::to_owned) else {
-            return Err(EligibilityFailure::new(
-                JanitorReason::UnsafeStaging,
-                "non-UTF8 staging entry",
-            ));
-        };
-        if name != LEASE_FILE && name != HEARTBEAT_FILE {
-            return Err(EligibilityFailure::new(
-                JanitorReason::UnsafeStaging,
-                format!("unexpected staging entry {name}"),
-            ));
-        }
+        let entry = owned_io!("janitor.staging_entry", entry)
+            .map_err(|error| EligibilityFailure::new(JanitorReason::UnsafeStaging, error))?;
+        validate_staging_entry(&entry)?;
+    }
+    Ok(())
+}
+
+fn validate_staging_entry(entry: &std::ffi::OsStr) -> Result<(), EligibilityFailure> {
+    let Some(name) = entry.to_str() else {
+        return Err(EligibilityFailure::new(
+            JanitorReason::UnsafeStaging,
+            "non-UTF8 staging entry",
+        ));
+    };
+    if name != LEASE_FILE && name != HEARTBEAT_FILE {
+        return Err(EligibilityFailure::new(
+            JanitorReason::UnsafeStaging,
+            format!("unexpected staging entry {name}"),
+        ));
     }
     Ok(())
 }
@@ -7577,8 +7562,7 @@ fn inspect_empty_directory(candidate: &cap_std::fs::Dir) -> std::io::Result<bool
     let mut entries = owned_io!("janitor.empty_entries", owned_directory_entries(candidate))?;
     match entries.next() {
         None => Ok(true),
-        Some(Ok(_)) => Ok(false),
-        Some(Err(error)) => Err(error),
+        Some(entry) => owned_io!("janitor.empty_entry", entry).map(|_| false),
     }
 }
 
@@ -7610,8 +7594,10 @@ fn inspect_deleting_contents(candidate: &cap_std::fs::Dir) -> std::io::Result<bo
         "janitor.deleting_entries",
         owned_directory_entries(candidate)
     )?;
-    match entries.next().transpose()? {
-        Some(name) if name == LEASE_FILE => Ok(entries.next().transpose()?.is_none()),
+    match owned_io!("janitor.deleting_first", entries.next().transpose())? {
+        Some(name) if name == LEASE_FILE => {
+            Ok(owned_io!("janitor.deleting_second", entries.next().transpose())?.is_none())
+        }
         _ => Ok(false),
     }
 }
@@ -7700,10 +7686,13 @@ fn read_json_file<T: serde::de::DeserializeOwned>(file: &File) -> Option<T> {
 }
 
 fn read_json_file_checked<T: serde::de::DeserializeOwned>(file: &File) -> std::io::Result<T> {
-    let mut file = file.try_clone()?;
-    file.seek(SeekFrom::Start(0))?;
+    let mut file = owned_io!("marker.clone", file.try_clone())?;
+    owned_io!("marker.seek", file.seek(SeekFrom::Start(0)))?;
     let mut bytes = Vec::new();
-    file.take(MAX_MARKER_BYTES + 1).read_to_end(&mut bytes)?;
+    owned_io!(
+        "marker.read",
+        file.take(MAX_MARKER_BYTES + 1).read_to_end(&mut bytes)
+    )?;
     if bytes.len() as u64 > MAX_MARKER_BYTES {
         return Err(std::io::Error::other("marker exceeds 64 KiB"));
     }
@@ -7788,7 +7777,7 @@ fn verify_current_user_owned_file(file: &File) -> std::io::Result<()> {
     use std::os::unix::fs::MetadataExt;
 
     let current_uid = unsafe { libc::geteuid() };
-    if file.metadata()?.uid() == current_uid {
+    if owned_io!("file.owner_metadata", file.metadata())?.uid() == current_uid {
         Ok(())
     } else {
         Err(std::io::Error::new(
@@ -7807,7 +7796,7 @@ fn verify_current_user_owned_file(file: &File) -> std::io::Result<()> {
 fn directory_identity(dir: &cap_std::fs::Dir) -> std::io::Result<(u64, u64)> {
     use cap_fs_ext::MetadataExt;
 
-    dir.metadata(".")
+    owned_io!("directory.identity_metadata", dir.metadata("."))
         .map(|metadata| (metadata.dev(), metadata.ino()))
 }
 
@@ -7828,7 +7817,7 @@ fn read_bounded_json<T: serde::de::DeserializeOwned>(
 fn file_identity(file: &File) -> std::io::Result<(u64, u64)> {
     use cap_fs_ext::MetadataExt;
 
-    file.metadata()
+    owned_io!("file.identity_metadata", file.metadata())
         .map(|metadata| (metadata.dev(), metadata.ino()))
 }
 
@@ -8025,9 +8014,9 @@ fn remove_claimed_tree_slice_with_capabilities<'a>(
             }
             Err(error) => return Err(error),
         };
-        examined = examined
-            .checked_add(progress.examined)
-            .ok_or_else(|| std::io::Error::other("cleanup entry count overflow"))?;
+        // remove_one receives only this slice's remaining entry allowance and
+        // never returns more examined entries than that allowance.
+        examined += progress.examined;
         removed = removed
             .checked_add(progress.removed)
             .ok_or_else(|| std::io::Error::other("cleanup removal count overflow"))?;
@@ -8125,9 +8114,8 @@ fn remove_one_claimed_entry_with_capabilities<'a>(
             match entries.next() {
                 Some(Ok(entry)) => {
                     capabilities.progress.examined_entries += 1;
-                    examined = examined
-                        .checked_add(1)
-                        .ok_or_else(|| std::io::Error::other("cleanup entry count overflow"))?;
+                    // The loop checked examined < max_examined immediately above.
+                    examined += 1;
                     if components.is_empty() && is_root_control_marker(&entry) {
                         ensure_cleanup_deadline(started, budget)?;
                         continue;
@@ -8220,10 +8208,8 @@ fn remove_one_claimed_entry_with_capabilities<'a>(
                     "cleanup refuses to cross a filesystem boundary",
                 ));
             }
-            let depth = components
-                .len()
-                .checked_add(1)
-                .ok_or_else(|| std::io::Error::other("cleanup directory depth overflow"))?;
+            // Every preceding push passed the 4,096-level cursor depth cap.
+            let depth = components.len() + 1;
             cursor_bytes =
                 advance_cleanup_cursor(depth, cursor_bytes, cleanup_component_bytes(&child_name))?;
             let child =
@@ -8560,7 +8546,7 @@ fn open_cleanup_directory<'a>(
             ensure_cleanup_deadline(started, budget)?;
             make_cleanup_child_accessible(parent, name, &metadata, started, budget)?;
             ensure_cleanup_deadline(started, budget)?;
-            let verified = parent.symlink_metadata(name)?;
+            let verified = owned_io!("cleanup.repair_metadata", parent.symlink_metadata(name))?;
             ensure_cleanup_deadline(started, budget)?;
             if metadata_identity(&verified) != identity
                 || !verified.is_dir()
@@ -8571,7 +8557,10 @@ fn open_cleanup_directory<'a>(
                 ));
             }
             ensure_cleanup_deadline(started, budget)?;
-            let reopened = open_owned_directory(parent, name)?;
+            let reopened = owned_io!(
+                "cleanup.reopen_repaired",
+                open_owned_directory(parent, name)
+            )?;
             ensure_cleanup_deadline(started, budget)?;
             reopened
         }
@@ -8630,6 +8619,12 @@ fn make_cleanup_child_accessible<'a>(
     ensure_cleanup_deadline(started, budget)?;
     let parent = parent.try_clone()?.into_std_file();
     ensure_cleanup_deadline(started, budget)?;
+    // On macOS cap-std widens the native mode_t stored in this OS metadata;
+    // setting three low permission bits still fits that same native type.
+    #[cfg(target_os = "macos")]
+    let mode = libc::mode_t::try_from(metadata.permissions().mode() | 0o700)
+        .expect("native metadata mode and owner permission bits fit mode_t");
+    #[cfg(not(target_os = "macos"))]
     let mode = libc::mode_t::try_from(metadata.permissions().mode() | 0o700)
         .map_err(|_| std::io::Error::other("cleanup mode conversion overflow"))?;
     // SAFETY: parent and name remain valid for the call; AT_SYMLINK_NOFOLLOW prevents escape.
@@ -9105,7 +9100,7 @@ impl ManagedChild {
                 "cleanup budget exhausted",
             ));
         }
-        match parent.symlink_metadata(&self.name) {
+        match owned_io!("child.verify_removal", parent.symlink_metadata(&self.name)) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(error) => Err(WorkspaceError::io(
                 "verify managed child removal",

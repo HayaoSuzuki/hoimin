@@ -135,3 +135,64 @@ impl DataclassFactories {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+
+    #[rstest::rstest]
+    #[case("", " list: object = custom\n", true, "list", vec![])]
+    #[case("list = custom\n", "", false, "list", vec![])]
+    #[case("", "", false, "list", vec!["lambda shared=[]: shared"])]
+    #[case("", "", false, "Exception", vec![])]
+    fn admitted_dataclass_requires_an_unshadowed_builtin_factory(
+        #[case] module_binding: &str,
+        #[case] class_binding: &str,
+        #[case] class_binds_factory: bool,
+        #[case] factory_name: &str,
+        #[case]
+        #[by_ref]
+        expected: &[&str],
+    ) {
+        let source = format!(
+            "from dataclasses import dataclass, field\n{module_binding}@dataclass\nclass Example:\n{class_binding} values: object = field(default_factory={factory_name})\n"
+        );
+        let parsed = ruff_python_parser::parse_module(&source).unwrap();
+        let factories = DataclassFactories::build(
+            parsed.syntax(),
+            &MutationOperatorSelection::default(),
+            &|| false,
+        )
+        .unwrap();
+        let class = parsed
+            .syntax()
+            .body
+            .last()
+            .unwrap()
+            .as_class_def_stmt()
+            .unwrap();
+        let namespace = factories
+            .imports
+            .ordinary_dataclass_namespace(class, &|| false)
+            .unwrap()
+            .unwrap();
+        assert_eq!(namespace.binds("list"), class_binds_factory);
+        let assignment = class.body.last().unwrap().as_ann_assign_stmt().unwrap();
+        let call = assignment.value.as_deref().unwrap().as_call_expr().unwrap();
+        assert!(
+            factories
+                .imports
+                .resolve_in_ordinary_dataclass(&call.func, &namespace)
+                .is_some()
+        );
+        let resolution = NameResolutionIndex::from_module(parsed.syntax());
+        let mut replacements = Vec::new();
+        factories
+            .emit_class(class, &resolution, &|| false, |_, replacement, _| {
+                replacements.push(replacement);
+                true
+            })
+            .unwrap();
+        assert_eq!(replacements, expected);
+    }
+}

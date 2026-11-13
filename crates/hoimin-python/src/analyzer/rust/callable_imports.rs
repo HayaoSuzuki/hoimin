@@ -342,9 +342,11 @@ impl<F: Fn() -> bool> ClassLookupScan<'_, F> {
         generators: &'ast [Comprehension],
         produced: impl IntoIterator<Item = &'ast Expr>,
     ) {
-        let Some((first, remaining)) = generators.split_first() else {
-            return;
-        };
+        // Only syntax-checked parser comprehensions reach this visitor; Python
+        // requires at least one for-clause in every comprehension form.
+        let (first, remaining) = generators
+            .split_first()
+            .expect("parsed comprehension has a for-clause");
         self.visit_expr(&first.iter);
         let outer = self.scope;
         self.scope = LookupScope::Function;
@@ -713,5 +715,172 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for ImportScan<'_, F> {
                 break;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    fn run_build(
+        module: &ModModule,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<CallableImports, AnalysisCancelled> {
+        CallableImports::build(module, &cancelled, &["dataclasses", "copy"])
+    }
+
+    #[rstest::rstest]
+    fn import_scan_stops_across_declaration_and_pattern_nodes(
+        #[values(
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90, 91, 92, 93, 94, 95
+        )]
+        checkpoint: usize,
+    ) {
+        let source = "from dataclasses import dataclass, field\nimport copy\ndef f[T, *Ts, **P](argument: T):\n match argument:\n  case {'key': first, **rest}: pass\n  case [head, *tail]: pass\n return copy.deepcopy(argument)\n";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let total = Cell::new(0);
+        let _index = run_build(parsed.syntax(), &|| {
+            total.set(total.get() + 1);
+            false
+        })
+        .unwrap();
+        let polls = Cell::new(0);
+        let result = run_build(parsed.syntax(), &|| {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= checkpoint
+        });
+        assert_eq!(result.is_err(), checkpoint < total.get());
+        assert_eq!(polls.get(), total.get().min(checkpoint + 1));
+    }
+
+    fn run_namespace(
+        imports: &CallableImports,
+        class: &StmtClassDef,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<Option<OrdinaryDataclassNamespace>, AnalysisCancelled> {
+        imports.ordinary_dataclass_namespace(class, &cancelled)
+    }
+
+    #[rstest::rstest]
+    #[case("@dataclass\nclass C:\n value: int", true)]
+    #[case("@dataclass(frozen=True)\nclass C:\n value: int", true)]
+    #[case("@dataclass(1)\nclass C:\n value: int", false)]
+    #[case("@dataclass(**options)\nclass C:\n value: int", false)]
+    #[case("@dataclass\nclass C:\n object.value: int", false)]
+    #[case("@dataclass\nclass C:\n __private: int", false)]
+    #[case("@dataclass\nclass C:\n value: int\n value: str", false)]
+    fn ordinary_dataclass_namespace_rejects_ambiguous_fields_and_decorators(
+        #[case] definition: &str,
+        #[case] expected: bool,
+    ) {
+        let source = format!("from dataclasses import dataclass, field\n{definition}");
+        let parsed = ruff_python_parser::parse_module(&source).unwrap();
+        let imports = run_build(parsed.syntax(), &|| false).unwrap();
+        let class = parsed.syntax().body[1].as_class_def_stmt().unwrap();
+        assert_eq!(
+            run_namespace(&imports, class, &|| false).unwrap().is_some(),
+            expected
+        );
+    }
+
+    #[rstest::rstest]
+    fn ordinary_dataclass_namespace_stops_during_keywords_or_fields(
+        #[values(0, 1, 2, 3)] checkpoint: usize,
+    ) {
+        let source = "from dataclasses import dataclass\n@dataclass(frozen=True)\nclass C:\n first: int\n second: str\n";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let imports = run_build(parsed.syntax(), &|| false).unwrap();
+        let class = parsed.syntax().body[1].as_class_def_stmt().unwrap();
+        let polls = Cell::new(0);
+        assert!(
+            run_namespace(&imports, class, &|| {
+                let current = polls.get();
+                polls.set(current + 1);
+                current >= checkpoint
+            })
+            .is_err()
+        );
+        assert_eq!(polls.get(), checkpoint + 1);
+    }
+    #[rstest::rstest]
+    #[case("value: int = dc.child.field()")]
+    #[case("value: int = field.field()")]
+    #[case("field: int = field()")]
+    #[case("value: int = unknown()")]
+    #[case("value: int = __dc()")]
+    #[case("value: int = 1()")]
+    fn ordinary_dataclass_resolution_rejects_nested_shadowed_and_nonmember_calls(
+        #[case] body: &str,
+    ) {
+        let source = format!(
+            "import dataclasses as dc\nfrom dataclasses import dataclass, field\n@dataclass\nclass C:\n {body}\n"
+        );
+        let parsed = ruff_python_parser::parse_module(&source).unwrap();
+        let imports = run_build(parsed.syntax(), &|| false).unwrap();
+        let class = parsed.syntax().body[2].as_class_def_stmt().unwrap();
+        let namespace = run_namespace(&imports, class, &|| false).unwrap().unwrap();
+        let function = &class.body[0]
+            .as_ann_assign_stmt()
+            .unwrap()
+            .value
+            .as_ref()
+            .unwrap()
+            .as_call_expr()
+            .unwrap()
+            .func;
+        assert!(
+            imports
+                .resolve_in_ordinary_dataclass(function, &namespace)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn ordinary_dataclass_resolution_rejects_an_expression_outside_the_class() {
+        let source = "import dataclasses as dc\nfrom dataclasses import dataclass\n@dataclass\nclass C:\n value: int\ndc.field()";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let imports = run_build(parsed.syntax(), &|| false).unwrap();
+        let class = parsed.syntax().body[2].as_class_def_stmt().unwrap();
+        let namespace = run_namespace(&imports, class, &|| false).unwrap().unwrap();
+        let function = &parsed.syntax().body[3]
+            .as_expr_stmt()
+            .unwrap()
+            .value
+            .as_call_expr()
+            .unwrap()
+            .func;
+        assert!(
+            imports
+                .resolve_in_ordinary_dataclass(function, &namespace)
+                .is_none()
+        );
+    }
+    #[test]
+    fn ordinary_dataclass_resolution_rejects_a_field_import_after_the_class() {
+        let source = "from dataclasses import dataclass\n@dataclass\nclass C:\n value: int = field()\nfrom dataclasses import field";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let imports = run_build(parsed.syntax(), &|| false).unwrap();
+        let class = parsed.syntax().body[1].as_class_def_stmt().unwrap();
+        let namespace = run_namespace(&imports, class, &|| false).unwrap().unwrap();
+        let function = &class.body[0]
+            .as_ann_assign_stmt()
+            .unwrap()
+            .value
+            .as_ref()
+            .unwrap()
+            .as_call_expr()
+            .unwrap()
+            .func;
+        assert!(
+            imports
+                .resolve_in_ordinary_dataclass(function, &namespace)
+                .is_none()
+        );
     }
 }

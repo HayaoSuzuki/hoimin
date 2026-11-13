@@ -140,6 +140,16 @@ impl ExceptionProject {
     }
 }
 
+// A single cancellation adapter instantiation lets parameterized boundary fixtures
+// exercise the same generic loading implementation across all callback behaviors.
+#[cfg(test)]
+fn test_load(
+    project: &ExceptionProject,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<Arc<ExceptionIndex>, String> {
+    project.load(&|| cancelled())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,17 +163,20 @@ mod tests {
         std::fs::write(root.join("z.py"), b"# coding: ascii\n# \xff\n").unwrap();
         let project = ExceptionProject::new(root);
 
-        let error = project.load(&|| false).err().unwrap();
+        let error = test_load(&project, &|| false).err().unwrap();
 
         assert!(error.starts_with("z.py:"), "{error}");
         std::fs::write(root.join("z.py"), "").unwrap();
 
-        let error = project.load(&|| false).err().unwrap();
+        let error = test_load(&project, &|| false).err().unwrap();
 
         assert!(error.contains("analysis depth"), "{error}");
         std::fs::write(root.join("a.py"), "class Root(Exception): pass\n").unwrap();
-        let first = project.load(&|| false).unwrap();
-        assert!(Arc::ptr_eq(&first, &project.load(&|| false).unwrap()));
+        let first = test_load(&project, &|| false).unwrap();
+        assert!(Arc::ptr_eq(
+            &first,
+            &test_load(&project, &|| false).unwrap()
+        ));
     }
 
     #[test]
@@ -182,14 +195,14 @@ mod tests {
         );
         project.prepared_inputs = Some(Arc::new(inputs));
 
-        let error = project.load(&|| false).err().unwrap();
+        let error = test_load(&project, &|| false).err().unwrap();
 
         assert!(error.starts_with("source.py:"), "{error}");
         std::fs::write(root.join("source.py"), "").unwrap();
         Arc::make_mut(project.prepared_inputs.as_mut().unwrap())
             .insert("source.py".into(), blake3::hash(b"").to_hex().to_string());
 
-        let error = project.load(&|| false).err().unwrap();
+        let error = test_load(&project, &|| false).err().unwrap();
 
         assert!(error.contains("prepared input limit"), "{error}");
     }
@@ -205,16 +218,15 @@ mod tests {
         let project = ExceptionProject::new(&root);
 
         assert!(
-            project
-                .load(&|| false)
+            test_load(&project, &|| false)
                 .err()
                 .unwrap()
                 .contains("byte limit")
         );
         std::fs::write(path, "class Root(Exception): pass\n").unwrap();
-        assert!(project.load(&|| true).is_err());
-        let first = project.load(&|| false).unwrap();
-        let second = project.load(&|| false).unwrap();
+        assert!(test_load(&project, &|| true).is_err());
+        let first = test_load(&project, &|| false).unwrap();
+        let second = test_load(&project, &|| false).unwrap();
         assert!(Arc::ptr_eq(&first, &second));
     }
     #[test]
@@ -256,7 +268,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = project.load(&|| false);
+        let result = test_load(&project, &|| false);
         // Restoring A makes a later workspace recheck pass, but cannot make an
         // index built from B correspond to the prepared input fingerprint.
         std::fs::write(&path, original).unwrap();
@@ -267,7 +279,7 @@ mod tests {
             "index accepted bytes outside its prepared fingerprint"
         );
         assert!(
-            project.load(&|| false).is_ok(),
+            test_load(&project, &|| false).is_ok(),
             "failed snapshot must not be cached"
         );
     }
@@ -304,10 +316,10 @@ mod tests {
         let project = ExceptionProject::from_config(&config).unwrap();
         std::fs::remove_file(&path).unwrap();
 
-        let result = project.load(&|| false);
+        let result = test_load(&project, &|| false);
         std::fs::write(&path, original).unwrap();
         crate::fingerprint_inputs::recheck_config(&config, &config.selection.root).unwrap();
-        let replacements = result
+        let candidates = result
             .map(|index| {
                 let operators = serde_json::from_str("[\"exception_hierarchy\"]").unwrap();
                 hoimin_python::analyze_source_with_exceptions(
@@ -326,15 +338,13 @@ mod tests {
                 )
                 .unwrap()
                 .candidates
-                .into_iter()
-                .map(|candidate| candidate.value.replacement)
-                .collect::<Vec<_>>()
             })
             .unwrap_or_default();
 
         assert!(
-            replacements.is_empty(),
-            "missing snapshot module exposed {replacements:?}"
+            candidates.is_empty(),
+            "missing snapshot module exposed {} candidates",
+            candidates.len()
         );
     }
 }
@@ -342,3 +352,166 @@ mod tests {
 #[cfg(test)]
 #[path = "exception_project_oracle_tests.rs"]
 mod oracle_tests;
+
+#[cfg(test)]
+mod coverage_regressions {
+    use super::*;
+    use std::cell::Cell;
+
+    fn poison_cache(project: &ExceptionProject) {
+        let result = std::panic::catch_unwind(|| {
+            let _guard = project.index.lock().unwrap();
+            panic!("poison test-owned exception index");
+        });
+        assert!(result.is_err());
+    }
+
+    fn poison_after_initial_check(project: &ExceptionProject, calls: &Cell<usize>) -> bool {
+        let call = calls.replace(calls.get() + 1);
+        if call == 1 {
+            poison_cache(project);
+        }
+        false
+    }
+
+    #[test]
+    fn poisoned_cache_is_reported_before_project_acquisition() {
+        let directory = tempfile::tempdir().unwrap();
+        let project = ExceptionProject::new(Utf8Path::from_path(directory.path()).unwrap());
+        poison_cache(&project);
+        assert!(
+            test_load(&project, &|| false)
+                .err()
+                .unwrap()
+                .contains("poison")
+        );
+    }
+
+    #[test]
+    fn cache_poisoned_after_discovery_is_reported_when_storing_the_index() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(
+            directory.path().join("source.py"),
+            "class Root(Exception): pass\n",
+        )
+        .unwrap();
+        let project = ExceptionProject::new(Utf8Path::from_path(directory.path()).unwrap());
+        let calls = Cell::new(0);
+        let error = test_load(&project, &|| poison_after_initial_check(&project, &calls))
+            .err()
+            .unwrap();
+        assert!(error.contains("poison"));
+        assert!(calls.get() > 1);
+    }
+
+    #[test]
+    fn missing_project_root_reports_acquisition_failure() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = Utf8PathBuf::from_path_buf(directory.path().join("absent")).unwrap();
+        let project = ExceptionProject::new(&root);
+        assert!(test_load(&project, &|| false).is_err());
+    }
+
+    #[test]
+    fn decoded_text_must_fit_the_per_file_bound() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut source = b"# coding: latin-1\n# ".to_vec();
+        source.resize(MAX_FILE_BYTES / 2 + 128, 255);
+        std::fs::write(directory.path().join("source.py"), source).unwrap();
+        let project = ExceptionProject::new(Utf8Path::from_path(directory.path()).unwrap());
+        assert!(
+            test_load(&project, &|| false)
+                .err()
+                .unwrap()
+                .contains("decoded source byte limit")
+        );
+    }
+
+    fn count_poll(calls: &Cell<usize>) -> bool {
+        calls.set(calls.get() + 1);
+        false
+    }
+
+    fn cancel_after(calls: &Cell<usize>, allowed: usize) -> bool {
+        calls.replace(calls.get() + 1) >= allowed
+    }
+
+    #[test]
+    fn cancellation_during_file_discovery_propagates_without_caching() {
+        let directory = tempfile::tempdir().unwrap();
+        let project = ExceptionProject::new(Utf8Path::from_path(directory.path()).unwrap());
+        let calls = Cell::new(0);
+        let error = test_load(&project, &|| cancel_after(&calls, 1))
+            .err()
+            .unwrap();
+        assert!(error.contains("cancel"));
+        assert!(project.index.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn cancellation_after_file_discovery_prevents_source_acquisition() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(
+            directory.path().join("source.py"),
+            "class Root(Exception): pass\n",
+        )
+        .unwrap();
+        let project = ExceptionProject::new(Utf8Path::from_path(directory.path()).unwrap());
+        let discovery_polls = Cell::new(0);
+        project.files(&|| count_poll(&discovery_polls)).unwrap();
+        let calls = Cell::new(0);
+        let error = test_load(&project, &|| {
+            cancel_after(&calls, discovery_polls.get() + 1)
+        })
+        .err()
+        .unwrap();
+        assert_eq!(error, "analyzer.cancelled");
+        assert!(project.index.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn aggregate_decoded_bytes_must_fit_the_project_bound() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut source = b"# coding: latin-1\n# ".to_vec();
+        source.resize(MAX_FILE_BYTES / 2 - 1024, 255);
+        std::fs::write(directory.path().join("a.py"), &source).unwrap();
+        std::fs::write(directory.path().join("b.py"), &source).unwrap();
+        std::fs::write(directory.path().join("c.py"), &source).unwrap();
+        std::fs::write(directory.path().join("d.py"), &source).unwrap();
+        source.truncate(6144);
+        std::fs::write(directory.path().join("z.py"), source).unwrap();
+        let project = ExceptionProject::new(Utf8Path::from_path(directory.path()).unwrap());
+        assert!(
+            test_load(&project, &|| false)
+                .err()
+                .unwrap()
+                .contains("total decoded source byte limit")
+        );
+        assert!(project.index.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn configuration_deduplicates_the_root_across_import_and_source_paths() {
+        let directory = tempfile::tempdir().unwrap();
+        let config = crate::cli::parse_config_from([
+            "hoimin",
+            "run",
+            "--root",
+            directory.path().to_str().unwrap(),
+            "--source",
+            ".",
+            "--import-root",
+            ".",
+            "--operators",
+            "exception_hierarchy",
+            "--",
+            "unused-test-command",
+        ])
+        .unwrap();
+        let config = crate::shell::prepare_run_config(config).unwrap();
+        assert_eq!(
+            ExceptionProject::from_config(&config).unwrap().roots,
+            vec![Utf8PathBuf::new()]
+        );
+    }
+}

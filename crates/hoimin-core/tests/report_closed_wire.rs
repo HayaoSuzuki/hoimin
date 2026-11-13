@@ -1,4 +1,4 @@
-#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+#![cfg_attr(coverage_nightly, feature(coverage_attribute, stmt_expr_attributes))]
 use hoimin_core::OutputEvent;
 
 fn event(index: usize) -> String {
@@ -253,7 +253,18 @@ fn tagged_summary_preserves_raw_filesystem_integer_above_i64() {
     let result = serde_json::from_str::<OutputEvent>(&wire);
 
     let OutputEvent::RunFinished(summary) = result.unwrap() else {
-        panic!("expected summary")
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("expected summary") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("expected summary")
+            }
+        }
     };
 
     assert_eq!(
@@ -398,4 +409,10 @@ fn every_event_kind_requires_a_string(
         result.is_err(),
         "event {kind} accepted a non-string discriminator"
     );
+}
+
+#[test]
+fn report_event_rejects_incomplete_raw_json_before_reading_its_discriminator() {
+    let error = serde_json::from_str::<hoimin_core::OutputEvent>("{").unwrap_err();
+    assert!(error.to_string().contains("EOF while parsing an object"));
 }

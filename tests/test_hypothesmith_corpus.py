@@ -3,8 +3,10 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import create_autospec
 
 import pytest
+from pytest_mock import MockerFixture
 
 from tools import hypothesmith_corpus as corpus
 
@@ -298,14 +300,20 @@ def test_generation_rejects_unknown_strategy(tmp_path: Path) -> None:
 
 def test_cli_reports_missing_optional_generator(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    original_generate_spec = corpus.generate
+
     def unavailable(*_args: object, **_kwargs: object) -> None:
         raise ModuleNotFoundError
 
-    monkeypatch.setattr(corpus, "generate", unavailable)
-    monkeypatch.setattr(sys, "argv", ["corpus", "--output", str(tmp_path)])
+    mocker.patch.object(
+        corpus,
+        "generate",
+        create_autospec(original_generate_spec, side_effect=unavailable),
+    )
+    mocker.patch.object(sys, "argv", ["corpus", "--output", str(tmp_path)])
     with pytest.raises(SystemExit) as error:
         corpus.main()
     assert error.value.code == 2

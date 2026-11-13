@@ -231,3 +231,20 @@ async fn tracked_environment_resume_matches_fresh_status() {
         );
     }
 }
+
+#[rstest::rstest]
+#[case::initial_status("/initial/status", serde_json::json!("unknown"), "invalid observation domain")]
+#[case::initial_termination("/initial/termination_exit", serde_json::json!(2), "invalid observation domain")]
+#[case::initial_count("/initial/executed", serde_json::json!(2), "invalid observation domain")]
+#[case::initial_exit("/initial/exit", serde_json::json!(5), "invalid observation domain")]
+#[case::initial_other("/initial/other_status", serde_json::json!("killed"), "invalid observation domain")]
+#[case::fresh("/fresh_status", serde_json::json!("unknown"), "invalid fresh verdict")]
+fn environment_parser_rejects_invalid_observations(
+    #[case] pointer: &str,
+    #[case] value: serde_json::Value,
+    #[case] diagnostic: &str,
+) {
+    let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
+    *row.pointer_mut(pointer).unwrap() = value;
+    assert_eq!(cases(&row.to_string()).err().unwrap(), diagnostic);
+}

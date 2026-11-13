@@ -71,7 +71,7 @@ impl ExceptionIndex {
         before: usize,
         raised: bool,
         excluded: &BTreeSet<String>,
-        budget: (usize, &dyn Fn() -> bool),
+        limit: usize,
     ) -> SiteOutcome<'_> {
         if excluded.contains(name.split('.').next().unwrap()) {
             return SiteOutcome::Skipped(SkipReason::UnresolvedBinding);
@@ -103,9 +103,6 @@ impl ExceptionIndex {
         let mut has_related = false;
         let mut compatible = false;
         for destination in related {
-            if (budget.1)() {
-                break;
-            }
             if *destination == id {
                 continue;
             }
@@ -125,7 +122,7 @@ impl ExceptionIndex {
                 })
             {
                 result.insert(name.as_str());
-                if result.len() > budget.0.saturating_add(1) {
+                if result.len() > limit.saturating_add(1) {
                     result.pop_last();
                 }
             }
@@ -215,12 +212,7 @@ fn related_lookup_matches_exhaustive_outcomes() {
                                     (limit, &|| false),
                                 );
                                 let expected = index.exhaustive_replacements(
-                                    path,
-                                    name,
-                                    before,
-                                    raised,
-                                    &excluded,
-                                    (limit, &|| false),
+                                    path, name, before, raised, &excluded, limit,
                                 );
 
                                 assert_eq!(
@@ -237,20 +229,26 @@ fn related_lookup_matches_exhaustive_outcomes() {
 }
 
 #[test]
-fn child_summary_does_not_invent_a_constructible_sibling_on_duplicate_insert() {
-    let source = Class {
-        parent: None,
-        constructible: true,
-    };
-    let mut group = ChildClasses::default();
-    let id = (Utf8PathBuf::from("errors.py"), "Source".to_owned());
-    group.insert(id.clone(), true);
-    group.insert(id, true);
-    group.insert(("errors.py".into(), "Blocked".into()), false);
-
-    assert!(!group.has_constructible_sibling(&source));
-    group.insert(("errors.py".into(), "Allowed".into()), true);
-    assert!(group.has_constructible_sibling(&source));
+fn duplicate_child_summary_insertion_preserves_constructible_replacements() {
+    let path = Utf8Path::new("errors.py");
+    let source = "class Parent(Exception): pass\nclass Source(Parent): pass\nclass Blocked(Parent):\n def __init__(self): pass\nclass Allowed(Parent): pass\nraise Source()\n";
+    let mut index =
+        ExceptionIndex::from_sources(&[(path.to_owned(), source.into())], &[], &|| false).unwrap();
+    let source_id = (path.to_owned(), "Source".to_owned());
+    let parent_id = (path.to_owned(), "Parent".to_owned());
+    let constructible = index.classes.get(&source_id).unwrap().constructible;
+    let group = index.children.get_mut(&parent_id).unwrap();
+    group.insert(source_id, constructible);
+    assert_eq!(group.constructible, 2);
+    let parsed = ruff_python_parser::parse_module(source).unwrap();
+    let mut replacements = Vec::new();
+    index
+        .collect(path, parsed.syntax(), 100, &|| false, |_, replacement| {
+            replacements.push(replacement);
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(replacements, ["Allowed", "Parent"]);
 }
 
 #[rstest::rstest]
@@ -302,7 +300,9 @@ fn hierarchy_site_eligibility_preserves_distinct_empty_reasons(
     #[case] path: &str,
     #[case] name: &str,
     #[case] raised: bool,
-    #[case] expected: SiteOutcome,
+    #[case]
+    #[by_ref]
+    expected: &SiteOutcome,
 ) {
     let sources = vec![
         ("errors.py".into(), "class Lonely(Exception): pass\nclass Root(Exception): pass\nclass Blocked(Root):\n def __init__(self, required): pass\nclass Parent(Exception): pass\nclass Child(Parent): pass\n".into()),
@@ -312,7 +312,7 @@ fn hierarchy_site_eligibility_preserves_distinct_empty_reasons(
     let index = ExceptionIndex::from_sources(&sources, &[".".into()], &|| false).unwrap();
 
     assert_eq!(
-        index.replacements(
+        &index.replacements(
             Utf8Path::new(path),
             name,
             usize::MAX,
@@ -327,4 +327,50 @@ fn hierarchy_site_eligibility_preserves_distinct_empty_reasons(
         expected,
         "{path} {name} raised={raised}"
     );
+}
+
+#[rstest::rstest]
+#[case(
+    "exec(code)\n",
+    "Root",
+    SiteOutcome::Skipped(SkipReason::UntrustedModule)
+)]
+#[case(
+    "pass\n",
+    "Exception",
+    SiteOutcome::Ineligible(IneligibleReason::NoUserDefinedClass)
+)]
+#[case(
+    "class Root(object): pass\n",
+    "Root",
+    SiteOutcome::Skipped(SkipReason::UnresolvedBinding)
+)]
+#[case(
+    "class Root(Exception): pass\nclass Child(Root):\n def __init__(self, required): pass\n",
+    "Root",
+    SiteOutcome::Ineligible(IneligibleReason::ConstructorPolicy)
+)]
+fn exhaustive_lookup_oracle_preserves_rejection_reasons(
+    #[case] source: &str,
+    #[case] name: &str,
+    #[case]
+    #[by_ref]
+    expected: &SiteOutcome<'static>,
+) {
+    let path = Utf8Path::new("sample.py");
+    let index =
+        ExceptionIndex::from_sources(&[(path.to_owned(), source.to_owned())], &[], &|| false)
+            .unwrap();
+    let excluded = BTreeSet::new();
+    let oracle = index.exhaustive_replacements(path, name, usize::MAX, true, &excluded, 10);
+    let actual = index.replacements(
+        path,
+        name,
+        usize::MAX,
+        ExceptionSite::Raise,
+        &excluded,
+        (10, &|| false),
+    );
+    assert_eq!(&oracle, expected);
+    assert_eq!(&actual, expected);
 }

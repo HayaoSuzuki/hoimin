@@ -12,9 +12,11 @@ import zipfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, NamedTuple
+from unittest.mock import create_autospec
 
 import pytest
 import yaml
+from pytest_mock import MockerFixture
 from sbom_fixtures import attach_sboms
 
 from tools import release as automation
@@ -69,9 +71,9 @@ def git(root: Path, *args: str) -> str:
 
 
 @pytest.fixture
-def repository(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
-    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+def repository(tmp_path: Path, mocker: MockerFixture) -> Path:
+    mocker.patch.dict(os.environ, {"GIT_CONFIG_NOSYSTEM": "1"})
+    mocker.patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": os.devnull})
     root = tmp_path / "checkout"
     root.mkdir()
     for name in VERSION_FILES:
@@ -140,8 +142,10 @@ def test_failed_tag_push_cannot_claim_success(repository: Path) -> None:
 
 @pytest.fixture
 def push_competitor(
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
 ) -> Callable[[Callable[[], None]], None]:
+    original_git_spec = automation.git
+
     def install(compete: Callable[[], None]) -> None:
         original_git = automation.git
         effects = iter([compete])
@@ -159,7 +163,11 @@ def push_competitor(
             effects_for_command.get(args[0], no_competition)()
             return original_git(root, *args, check=check)
 
-        monkeypatch.setattr(automation, "git", competing_git)
+        mocker.patch.object(
+            automation,
+            "git",
+            create_autospec(original_git_spec, side_effect=competing_git),
+        )
 
     return install
 
@@ -368,8 +376,9 @@ def test_tag_ancestry_fetches_new_remote_objects(
 
 
 def test_ancestry_errors_are_not_reported_as_successful_skips(
-    repository: Path, monkeypatch: pytest.MonkeyPatch
+    repository: Path, mocker: MockerFixture
 ) -> None:
+    original_git_spec = automation.git
     tag = automation.reserve_tag(repository, git(repository, "rev-parse", "HEAD"))
 
     git(repository, "commit", "--allow-empty", "-m", "next")
@@ -385,7 +394,11 @@ def test_ancestry_errors_are_not_reported_as_successful_skips(
         }
         return commands.get(args[0], lambda: original_git(root, *args, check=check))()
 
-    monkeypatch.setattr(automation, "git", broken_ancestry)
+    mocker.patch.object(
+        automation,
+        "git",
+        create_autospec(original_git_spec, side_effect=broken_ancestry),
+    )
 
     with pytest.raises(subprocess.CalledProcessError):
         automation.reserve_tag(repository, git(repository, "rev-parse", "HEAD"))
@@ -428,7 +441,7 @@ def test_shallow_checkout_is_deepened_before_ancestry_check(
 
 
 @pytest.fixture
-def prepare_workflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+def prepare_workflow(tmp_path: Path, mocker: MockerFixture) -> dict[str, Any]:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     (fake_bin / "python").symlink_to(sys.executable)
@@ -440,10 +453,12 @@ def prepare_workflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[st
         "if mode == 'error': sys.exit(23)\n"
     )
     (tmp_path / "Cargo.toml").write_text('[workspace.package]\nversion = "0.1.0"\n')
-    monkeypatch.setenv("PATH", str(fake_bin) + os.pathsep + os.environ["PATH"])
-    monkeypatch.setenv("PUBLISH", "true")
-    monkeypatch.setenv("COMMIT", "a" * 40)
-    monkeypatch.setenv("GITHUB_RUN_ID", "123")
+    mocker.patch.dict(
+        os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}
+    )
+    mocker.patch.dict(os.environ, {"PUBLISH": "true"})
+    mocker.patch.dict(os.environ, {"COMMIT": "a" * 40})
+    mocker.patch.dict(os.environ, {"GITHUB_RUN_ID": "123"})
     return yaml.safe_load(
         (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
     )
@@ -473,11 +488,11 @@ def prepare_script(prepare_workflow: dict[str, Any]) -> str:
 
 @pytest.mark.skipif(os.name != "posix", reason="GitHub prepare job uses Ubuntu bash")
 def test_reservation_error_stops_before_preparation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reserve_script: str
+    tmp_path: Path, mocker: MockerFixture, reserve_script: str
 ) -> None:
-    monkeypatch.setenv("RELEASE_TEST_MODE", "error")
+    mocker.patch.dict(os.environ, {"RELEASE_TEST_MODE": "error"})
     reserve_output = tmp_path / "reserve-output"
-    monkeypatch.setenv("GITHUB_OUTPUT", str(reserve_output))
+    mocker.patch.dict(os.environ, {"GITHUB_OUTPUT": str(reserve_output)})
 
     result = command("bash", "-e", "-o", "pipefail", "-c", reserve_script, cwd=tmp_path)
 
@@ -489,13 +504,13 @@ def test_reservation_error_stops_before_preparation(
 @pytest.mark.skipif(os.name != "posix", reason="GitHub prepare job uses Ubuntu bash")
 def test_skipped_reservation_prevents_preparation(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
     prepare_workflow: dict[str, Any],
     reserve_script: str,
 ) -> None:
-    monkeypatch.setenv("RELEASE_TEST_MODE", "skip")
+    mocker.patch.dict(os.environ, {"RELEASE_TEST_MODE": "skip"})
     reserve_output = tmp_path / "reserve-output"
-    monkeypatch.setenv("GITHUB_OUTPUT", str(reserve_output))
+    mocker.patch.dict(os.environ, {"GITHUB_OUTPUT": str(reserve_output)})
 
     result = command("bash", "-e", "-o", "pipefail", "-c", reserve_script, cwd=tmp_path)
 
@@ -514,13 +529,13 @@ def test_skipped_reservation_prevents_preparation(
 @pytest.mark.skipif(os.name != "posix", reason="GitHub prepare job uses Ubuntu bash")
 def test_release_preparation_uses_reserved_tag(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
     reserve_script: str,
     prepare_script: str,
 ) -> None:
-    monkeypatch.setenv("RELEASE_TEST_MODE", "release")
+    mocker.patch.dict(os.environ, {"RELEASE_TEST_MODE": "release"})
     reserve_output = tmp_path / "reserve-output"
-    monkeypatch.setenv("GITHUB_OUTPUT", str(reserve_output))
+    mocker.patch.dict(os.environ, {"GITHUB_OUTPUT": str(reserve_output)})
 
     reserved = command(
         "bash", "-e", "-o", "pipefail", "-c", reserve_script, cwd=tmp_path
@@ -529,9 +544,9 @@ def test_release_preparation_uses_reserved_tag(
     reserved_tag = dict(
         line.split("=", 1) for line in reserve_output.read_text().splitlines()
     )["tag"]
-    monkeypatch.setenv("RESERVED_TAG", reserved_tag)
+    mocker.patch.dict(os.environ, {"RESERVED_TAG": reserved_tag})
     output = tmp_path / "output"
-    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    mocker.patch.dict(os.environ, {"GITHUB_OUTPUT": str(output)})
 
     result = command("bash", "-e", "-o", "pipefail", "-c", prepare_script, cwd=tmp_path)
 
@@ -548,13 +563,13 @@ def test_release_preparation_uses_reserved_tag(
 
 @pytest.mark.skipif(os.name != "posix", reason="GitHub prepare job uses Ubuntu bash")
 def test_preview_preparation_uses_run_version(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, prepare_script: str
+    tmp_path: Path, mocker: MockerFixture, prepare_script: str
 ) -> None:
-    monkeypatch.setenv("RELEASE_TEST_MODE", "preview")
-    monkeypatch.setenv("PUBLISH", "false")
-    monkeypatch.setenv("RESERVED_TAG", "")
+    mocker.patch.dict(os.environ, {"RELEASE_TEST_MODE": "preview"})
+    mocker.patch.dict(os.environ, {"PUBLISH": "false"})
+    mocker.patch.dict(os.environ, {"RESERVED_TAG": ""})
     output = tmp_path / "output"
-    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    mocker.patch.dict(os.environ, {"GITHUB_OUTPUT": str(output)})
 
     result = command("bash", "-e", "-o", "pipefail", "-c", prepare_script, cwd=tmp_path)
 
@@ -568,8 +583,9 @@ def test_preview_preparation_uses_run_version(
 
 
 def test_tag_push_with_lost_response_is_recovered(
-    repository: Path, monkeypatch: pytest.MonkeyPatch
+    repository: Path, mocker: MockerFixture
 ) -> None:
+    original_git_spec = automation.git
     commit = git(repository, "rev-parse", "HEAD")
     original_git = automation.git
 
@@ -582,7 +598,9 @@ def test_tag_push_with_lost_response_is_recovered(
         }
         return responses.get(args[0], result)
 
-    monkeypatch.setattr(automation, "git", lost_response)
+    mocker.patch.object(
+        automation, "git", create_autospec(original_git_spec, side_effect=lost_response)
+    )
 
     tag = automation.reserve_tag(repository, commit)
 
@@ -888,7 +906,7 @@ def test_incomplete_or_mixed_assets_cannot_be_published(
 
 @pytest.fixture
 def publication(
-    request: pytest.FixtureRequest, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    request: pytest.FixtureRequest, tmp_path: Path, mocker: MockerFixture
 ) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
     assert isinstance(request.param, str)
     state = request.param
@@ -911,10 +929,12 @@ def publication(
         "    sys.exit(1)\n"
     )
     gh.chmod(0o755)
-    monkeypatch.setenv("PATH", str(fake_bin) + os.pathsep + os.environ["PATH"])
-    monkeypatch.setenv("RELEASE_TEST_STATE", state)
-    monkeypatch.setenv("TAG", "v1.2.3")
-    monkeypatch.setenv("GH_REPO", "owner/project")
+    mocker.patch.dict(
+        os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}
+    )
+    mocker.patch.dict(os.environ, {"RELEASE_TEST_STATE": state})
+    mocker.patch.dict(os.environ, {"TAG": "v1.2.3"})
+    mocker.patch.dict(os.environ, {"GH_REPO": "owner/project"})
     dist = tmp_path / "dist"
     dist.mkdir()
     (dist / "payload.zip").write_bytes(b"archive")
@@ -992,7 +1012,7 @@ def test_publishing_resumes_drafts(
 @pytest.mark.skipif(os.name != "posix", reason="GitHub publish job uses Ubuntu bash")
 @pytest.mark.parametrize("order", [("v1.2.3", "v1.2.4"), ("v1.2.4", "v1.2.3")])
 def test_publication_uses_server_version_selection_in_both_finish_orders(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, order: tuple[str, str]
+    tmp_path: Path, mocker: MockerFixture, order: tuple[str, str]
 ) -> None:
     # This double models the documented API contract, not GitHub internals.
     # Its default promotes the last publisher; legacy selects by version.
@@ -1019,8 +1039,10 @@ def test_publication_uses_server_version_selection_in_both_finish_orders(
         "    path.write_text(json.dumps(state))\n"
     )
     gh.chmod(0o755)
-    monkeypatch.setenv("PATH", str(fake_bin) + os.pathsep + os.environ["PATH"])
-    monkeypatch.setenv("GH_REPO", "owner/project")
+    mocker.patch.dict(
+        os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}
+    )
+    mocker.patch.dict(os.environ, {"GH_REPO": "owner/project"})
     (tmp_path / "server.json").write_text('{"published": [], "latest": null}')
     (tmp_path / "dist").mkdir()
     (tmp_path / "dist/payload.zip").write_bytes(b"archive")
@@ -1032,7 +1054,7 @@ def test_publication_uses_server_version_selection_in_both_finish_orders(
     )
     results = []
     for tag in order:
-        monkeypatch.setenv("TAG", tag)
+        mocker.patch.dict(os.environ, {"TAG": tag})
         result = command(
             "bash", "-e", "-o", "pipefail", "-c", step["run"], cwd=tmp_path
         )
@@ -1049,8 +1071,9 @@ def test_publication_uses_server_version_selection_in_both_finish_orders(
 
 def test_release_lock_bytes_match_with_windows_default_newlines(
     repository: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
 ) -> None:
+    original_write_text_spec = Path.write_text
     original = Path.write_text
 
     def windows_write(
@@ -1070,7 +1093,11 @@ def test_release_lock_bytes_match_with_windows_default_newlines(
             newline={None: "\r\n"}.get(newline, newline),
         )
 
-    monkeypatch.setattr(Path, "write_text", windows_write)
+    mocker.patch.object(
+        Path,
+        "write_text",
+        create_autospec(original_write_text_spec, side_effect=windows_write),
+    )
 
     automation.set_version(repository, "1.2.3")
     lock = (repository / "Cargo.lock").read_bytes()
@@ -1131,12 +1158,12 @@ def test_reservation_rejects_noncanonical_sha_before_git(
 
 
 def test_exhausted_reservation_recovers_remote_tag(
-    repository: Path, monkeypatch: pytest.MonkeyPatch
+    repository: Path, mocker: MockerFixture
 ) -> None:
     commit = git(repository, "rev-parse", "HEAD")
     git(repository, "tag", "v1.2.3")
     git(repository, "push", "origin", "--tags")
-    monkeypatch.setattr(automation, "TAG_ATTEMPTS", 0)
+    mocker.patch.object(automation, "TAG_ATTEMPTS", 0)
     assert automation.reserve_tag(repository, commit) == "v1.2.3"
 
 

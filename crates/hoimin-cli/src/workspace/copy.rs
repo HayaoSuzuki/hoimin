@@ -12,6 +12,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, SyncSender, channel};
 #[cfg(test)]
 use std::time::Duration;
 
+use crate::io_faults::checked_io;
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{CreateWorker, EffectId, PreflightCompleted, ReservationId};
 
@@ -637,29 +638,32 @@ impl WorkspacePlan {
         self.materialize_worker_with_root_opener(worker, WorkerRoot::open)
     }
 
+    fn create_worker_owner(&self) -> Result<PendingOwnedWorkspace, WorkspaceError> {
+        let temp = if let Some(managed) = &self.managed_root {
+            OwnedWorkspaceDirectory::Managed(managed.create_child("worker-")?)
+        } else {
+            OwnedWorkspaceDirectory::Temporary(
+                checked_io!(
+                    "copy.worker.temp",
+                    tempfile::Builder::new().prefix("hoimin-worker-").tempdir()
+                )
+                .map_err(|error| WorkspaceError::io("create worker", &self.original_root, error))?,
+            )
+        };
+        Ok(PendingOwnedWorkspace::new(temp))
+    }
+
     fn materialize_worker_with_root_opener(
         &self,
         worker: u32,
         open_root: impl FnOnce(Utf8PathBuf) -> Result<WorkerRoot, WorkspaceError>,
     ) -> Result<WorkerWorkspace, WorkspaceError> {
-        let temp = if let Some(managed) = &self.managed_root {
-            OwnedWorkspaceDirectory::Managed(managed.create_child("worker-")?)
-        } else {
-            OwnedWorkspaceDirectory::Temporary(
-                tempfile::Builder::new()
-                    .prefix("hoimin-worker-")
-                    .tempdir()
-                    .map_err(|error| {
-                        WorkspaceError::io("create worker", &self.original_root, error)
-                    })?,
-            )
-        };
-        let temp = PendingOwnedWorkspace::new(temp);
+        let temp = self.create_worker_owner()?;
         // Declare the retained wrapper after its pending owner so reverse local-drop order closes
         // this handle before TempDir attempts cleanup on every materialization failure path.
         let cleanup_wrapper = temp.open_cleanup_handle()?;
         let root_path = temp.path().join("workspace");
-        fs::create_dir(&root_path).map_err(|error| {
+        checked_io!("copy.worker.root", fs::create_dir(&root_path)).map_err(|error| {
             WorkspaceError::io("create worker root", &self.original_root, error)
         })?;
         let root_path =
@@ -706,9 +710,11 @@ impl WorkspacePlan {
                                     self.materialization_metrics
                                         .record_snapshot_hash(bytes.len());
                                 }
-                                output.write_all(bytes).map_err(|error| {
-                                    WorkspaceError::io("copy worker file", &entry.path, error)
-                                })
+                                checked_io!("copy.worker.write", output.write_all(bytes)).map_err(
+                                    |error| {
+                                        WorkspaceError::io("copy worker file", &entry.path, error)
+                                    },
+                                )
                             },
                         )?;
                         #[cfg(feature = "contracts")]
@@ -720,11 +726,13 @@ impl WorkspacePlan {
                         }
                         #[cfg(not(feature = "contracts"))]
                         let _ = amount;
-                        output
-                            .set_permissions(snapshot.permissions.clone())
-                            .map_err(|error| {
-                                WorkspaceError::io("copy worker permissions", &entry.path, error)
-                            })
+                        checked_io!(
+                            "copy.worker.permissions",
+                            output.set_permissions(snapshot.permissions.clone())
+                        )
+                        .map_err(|error| {
+                            WorkspaceError::io("copy worker permissions", &entry.path, error)
+                        })
                     })
                 })?;
             }
@@ -804,8 +812,7 @@ impl<'a> SnapshotWriter<'a> {
         path: &Utf8Path,
         source: fs::File,
     ) -> Result<super::ManifestEntry, WorkspaceError> {
-        let metadata = source
-            .metadata()
+        let metadata = checked_io!("copy.original.metadata", source.metadata())
             .map_err(|error| WorkspaceError::io("read original metadata", path, error))?;
         let mut source = crate::finite_file::SnapshotReader::new(source)
             .map_err(|error| WorkspaceError::io("read original metadata", path, error))?;
@@ -839,31 +846,33 @@ impl<'a> SnapshotWriter<'a> {
         self.limits.check(planned, self.requested_workers)?;
         let destination = self.snapshot_root.join(path);
         if let Some(parent) = destination.parent() {
-            fs::create_dir_all(parent).map_err(|error| {
+            checked_io!("copy.snapshot.parent", fs::create_dir_all(parent)).map_err(|error| {
                 WorkspaceError::io("create shared snapshot directory", parent, error)
             })?;
         }
-        let mut output = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&destination)
-            .map_err(|error| {
-                if error.kind() == std::io::ErrorKind::AlreadyExists {
-                    WorkspaceError::SnapshotPathCollision {
-                        path: path.to_owned(),
-                    }
-                } else {
-                    WorkspaceError::io("write shared snapshot", path, error)
+        let mut output = checked_io!(
+            "copy.snapshot.open",
+            fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&destination)
+        )
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                WorkspaceError::SnapshotPathCollision {
+                    path: path.to_owned(),
                 }
-            })?;
+            } else {
+                WorkspaceError::io("write shared snapshot", path, error)
+            }
+        })?;
         let mut next_bytes = self.logical_bytes;
         let entry = super::manifest::hash_contents(path, reader, |bytes| {
             next_bytes = next_bytes
                 .checked_add(bytes.len() as u64)
                 .ok_or(WorkspaceError::CopySizeOverflow)?;
             self.limits.check(next_bytes, self.requested_workers)?;
-            output
-                .write_all(bytes)
+            checked_io!("copy.snapshot.write", output.write_all(bytes))
                 .map_err(|error| WorkspaceError::io("write shared snapshot", path, error))?;
             #[cfg(test)]
             SNAPSHOT_WRITE_METRICS.with(|metrics| {
@@ -916,23 +925,28 @@ fn create_pending_disk_snapshot(
         OwnedWorkspaceDirectory::Managed(managed.create_child("snapshot-")?)
     } else {
         OwnedWorkspaceDirectory::Temporary(
-            tempfile::Builder::new()
-                .prefix("hoimin-snapshot-")
-                .tempdir()
-                .map_err(|error| {
-                    WorkspaceError::io("create shared snapshot", original_root, error)
-                })?,
+            checked_io!(
+                "copy.snapshot.temp",
+                tempfile::Builder::new()
+                    .prefix("hoimin-snapshot-")
+                    .tempdir()
+            )
+            .map_err(|error| WorkspaceError::io("create shared snapshot", original_root, error))?,
         )
     };
     let temp = PendingOwnedWorkspace::new(temp);
     let root_path = temp.path().join("workspace");
-    fs::create_dir(&root_path)
+    checked_io!("copy.snapshot.root", fs::create_dir(&root_path))
         .map_err(|error| WorkspaceError::io("create shared snapshot root", original_root, error))?;
-    let canonical_original = fs::canonicalize(original_root)
-        .map_err(|error| WorkspaceError::io("canonicalize root", original_root, error))?;
-    let canonical_root = fs::canonicalize(&root_path).map_err(|error| {
-        WorkspaceError::io("canonicalize shared snapshot", original_root, error)
-    })?;
+    let canonical_original = checked_io!(
+        "copy.snapshot.canonical_source",
+        fs::canonicalize(original_root)
+    )
+    .map_err(|error| WorkspaceError::io("canonicalize root", original_root, error))?;
+    let canonical_root = checked_io!("copy.snapshot.canonical_root", fs::canonicalize(&root_path))
+        .map_err(|error| {
+            WorkspaceError::io("canonicalize shared snapshot", original_root, error)
+        })?;
     if super::relative_inside(&canonical_root, &canonical_original).is_some() {
         return Err(WorkspaceError::io(
             "create shared snapshot",
@@ -950,7 +964,11 @@ fn create_pending_disk_snapshot(
         })?;
     let (logical_bytes, files) = writer.finish();
     for directory in manifest.directories() {
-        fs::create_dir_all(root.join(directory)).map_err(|error| {
+        checked_io!(
+            "copy.snapshot.directory",
+            fs::create_dir_all(root.join(directory))
+        )
+        .map_err(|error| {
             WorkspaceError::io("create shared snapshot directory", directory, error)
         })?;
     }
@@ -1478,6 +1496,174 @@ mod tests {
             grant,
             u64::try_from(padding_bytes + b"original\n".len()).unwrap(),
         )
+    }
+
+    #[rstest::rstest]
+    #[case::temporary_owner("copy.worker.temp", "create worker")]
+    #[case::root_directory("copy.worker.root", "create worker root")]
+    #[case::bytes("copy.worker.write", "copy worker file")]
+    #[case::permissions("copy.worker.permissions", "copy worker permissions")]
+    fn worker_creation_io_failure_releases_charge_and_allows_the_same_request_to_retry(
+        #[case] point: &'static str,
+        #[case] operation: &str,
+    ) {
+        let (_source, plan, grant, bytes) = plan_with_padding(1, 0);
+        let request = grant.create_worker(EffectId(8), 0).unwrap();
+        let fault = crate::io_faults::arm(point);
+        let result = plan.create_worker(&request);
+        assert!(
+            fault.triggered(),
+            "worker materialization boundary was not checked: {point}"
+        );
+        assert!(
+            matches!(result, Err(WorkspaceError::Io { operation: actual, message, .. }) if actual == operation && message.contains(point))
+        );
+        assert_eq!(plan.observed_copy_bytes(), 0);
+        let worker = plan.create_worker(&request).unwrap();
+        assert_eq!(worker.read("target.py").unwrap(), b"original\n");
+        assert_eq!(plan.observed_copy_bytes(), bytes);
+    }
+
+    #[rstest::rstest]
+    #[case::temporary_owner("copy.snapshot.temp", "create shared snapshot")]
+    #[case::root_directory("copy.snapshot.root", "create shared snapshot root")]
+    #[case::canonical_source("copy.snapshot.canonical_source", "canonicalize root")]
+    #[case::canonical_snapshot("copy.snapshot.canonical_root", "canonicalize shared snapshot")]
+    #[case::nested_directory("copy.snapshot.parent", "create shared snapshot directory")]
+    #[case::output_open("copy.snapshot.open", "write shared snapshot")]
+    #[case::output_bytes("copy.snapshot.write", "write shared snapshot")]
+    #[case::source_metadata("copy.original.metadata", "read original metadata")]
+    #[case::snapshot_reader("snapshot.metadata", "read original metadata")]
+    #[case::empty_directory("copy.snapshot.directory", "create shared snapshot directory")]
+    fn snapshot_creation_io_failure_preserves_the_source_and_allows_retry(
+        #[case] point: &'static str,
+        #[case] operation: &str,
+    ) {
+        let source = tempfile::tempdir().unwrap();
+        fs::create_dir_all(source.path().join("nested/empty")).unwrap();
+        fs::write(source.path().join("nested/target.py"), b"original\n").unwrap();
+        let root = Utf8Path::from_path(source.path()).unwrap();
+        let fault = crate::io_faults::arm(point);
+        let result = WorkspacePlan::preflight(root, EffectId(7), 1, CopyOptions::default());
+        assert!(
+            fault.triggered(),
+            "snapshot creation boundary was not checked: {point}"
+        );
+        assert!(
+            matches!(result, Err(WorkspaceError::Io { operation: actual, message, .. }) if actual == operation && message.contains(point))
+        );
+        assert_eq!(
+            fs::read(root.join("nested/target.py")).unwrap(),
+            b"original\n"
+        );
+        let plan = WorkspacePlan::preflight(root, EffectId(7), 1, CopyOptions::default()).unwrap();
+        assert_eq!(plan.manifest().logical_bytes(), 9);
+    }
+
+    #[test]
+    fn snapshot_creation_rejects_a_managed_owner_whose_cleanup_has_started() {
+        let source = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(source.path()).unwrap();
+        fs::write(root.join("target.py"), b"original\n").unwrap();
+        let parent = tempfile::tempdir().unwrap();
+        let coordinator =
+            ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap()).unwrap();
+        let owner =
+            Arc::new(ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
+        owner.cleanup(Duration::from_secs(1));
+
+        let result = create_pending_disk_snapshot(
+            root,
+            &CopyOptions::default(),
+            1,
+            PreflightLimits::default(),
+            Some(&owner),
+        );
+
+        assert!(
+            matches!(result, Err(WorkspaceError::Io { operation: "create managed child", message, .. }) if message == "managed root cleanup has started")
+        );
+        assert_eq!(fs::read(root.join("target.py")).unwrap(), b"original\n");
+    }
+
+    #[test]
+    fn worker_creation_rejects_a_managed_owner_whose_cleanup_has_started() {
+        let source = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(source.path()).unwrap();
+        fs::write(root.join("target.py"), b"original\n").unwrap();
+        let parent = tempfile::tempdir().unwrap();
+        let coordinator =
+            ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap()).unwrap();
+        let owner =
+            Arc::new(ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
+        let plan = WorkspacePlan::preflight_validated_in(
+            root,
+            EffectId(7),
+            1,
+            CopyOptions::default(),
+            Some(Arc::clone(&owner)),
+            PreflightLimits::default(),
+            |_, _| Ok::<(), Infallible>(()),
+        )
+        .unwrap();
+        owner.cleanup(Duration::from_secs(1));
+
+        let result = plan.materialize_worker(0);
+
+        assert!(
+            matches!(result, Err(WorkspaceError::Io { operation: "create managed child", message, .. }) if message == "managed root cleanup has started")
+        );
+        assert_eq!(plan.observed_copy_bytes(), 0);
+        assert_eq!(fs::read(root.join("target.py")).unwrap(), b"original\n");
+    }
+
+    #[test]
+    fn a_snapshot_owner_inside_the_source_is_rejected_and_rolled_back() {
+        let source = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(source.path()).unwrap();
+        fs::write(root.join("target.py"), b"original\n").unwrap();
+        let coordinator = ManagedRootCoordinator::open(root).unwrap();
+        let owner =
+            Arc::new(ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
+        let result = WorkspacePlan::preflight_validated_in(
+            root,
+            EffectId(7),
+            1,
+            CopyOptions::default(),
+            Some(Arc::clone(&owner)),
+            PreflightLimits::default(),
+            |_, _| Ok::<(), Infallible>(()),
+        );
+        assert!(
+            matches!(result, Err(ValidatedPreflightError::Workspace(WorkspaceError::Io { operation: "create shared snapshot", message, .. })) if message.contains("snapshot directory resolves inside original workspace"))
+        );
+        assert_eq!(fs::read(root.join("target.py")).unwrap(), b"original\n");
+        assert!(
+            !fs::read_dir(owner.path())
+                .unwrap()
+                .map(Result::unwrap)
+                .any(|entry| entry.file_name().to_string_lossy().starts_with("snapshot-"))
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::validate(WorkspacePlan::validate_grant)]
+    #[case::accept(WorkspacePlan::accept_grant)]
+    fn poisoned_worker_state_rejects_grants_without_charging_copy_bytes(
+        #[case] action: fn(&WorkspacePlan, &CreateWorker) -> Result<(), WorkspaceError>,
+    ) {
+        let (_source, plan, grant, _bytes) = plan_with_padding(1, 0);
+        let request = grant.create_worker(EffectId(8), 0).unwrap();
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = plan.state.lock().unwrap();
+            panic!("poison worker state");
+        }));
+        assert!(panic.is_err());
+        assert!(matches!(
+            action(&plan, &request),
+            Err(WorkspaceError::StatePoisoned)
+        ));
+        assert_eq!(plan.observed_copy_bytes(), 0);
     }
 
     #[test]

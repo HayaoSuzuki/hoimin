@@ -77,16 +77,16 @@ fn summary_requires_object_complete_keys_and_numeric_score() {
 }
 
 #[rstest::rstest]
-#[case(json!({}), "not an array")]
-#[case(json!({"mutants":[{}]}), "no symbol")]
-#[case(json!({"mutants":[{"candidate":{"symbol":"other"}}]}), "unsupported candidate symbol")]
-#[case(json!({"mutants":[{"candidate":{"symbol":"first"}}]}), "no candidate id")]
+#[case(&json!({}), "not an array")]
+#[case(&json!({"mutants":[{}]}), "no symbol")]
+#[case(&json!({"mutants":[{"candidate":{"symbol":"other"}}]}), "unsupported candidate symbol")]
+#[case(&json!({"mutants":[{"candidate":{"symbol":"first"}}]}), "no candidate id")]
 fn report_rejects_invalid_mutant_records(
-    #[case] document: serde_json::Value,
+    #[case] document: &serde_json::Value,
     #[case] message: &str,
 ) {
     assert!(
-        report_results(&document, &BTreeSet::new())
+        report_results(document, &BTreeSet::new())
             .unwrap_err()
             .contains(message)
     );

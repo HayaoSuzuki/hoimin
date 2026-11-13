@@ -591,11 +591,11 @@ fn verify_top_accepts_explicit_selection_policy(
 
     let parsed = parse_from(argv).unwrap();
 
-    let ParsedCommand::Verify(args) = parsed else {
+    let ParsedCommand::Verify(verification) = parsed else {
         panic!("expected verify")
     };
     assert_eq!(
-        args.selection,
+        verification.selection,
         VerifySelection::Top {
             count: NonZeroUsize::new(30).unwrap(),
             policy: expected,
@@ -2123,10 +2123,15 @@ fn plan_rejects_oversized_discovery_timeout_with_flag_attribution() {
 #[case::hoimin_2(vec!["hoimin", "run", "--help"], false)]
 #[case::hoimin_3(vec!["hoimin", "plan", "--help"], true)]
 #[case::hoimin_4(vec!["hoimin", "verify", "--help"], false)]
-fn help_limits_discovery_timeout_to_plan(#[case] argv: Vec<&str>, #[case] advertised: bool) {
+fn help_limits_discovery_timeout_to_plan(
+    #[case]
+    #[by_ref]
+    argv: &[&str],
+    #[case] advertised: bool,
+) {
     // Arrange: root describes run, while verify inherits the saved plan.
 
-    let help = parse_from(argv.clone()).unwrap_err().to_string();
+    let help = parse_from(argv.iter().copied()).unwrap_err().to_string();
     assert_eq!(help.contains("--analyzer-timeout"), advertised, "{argv:?}");
 }
 
@@ -2266,4 +2271,23 @@ fn import_root_does_not_replace_target_selection(#[case] command: &str) {
     let result = parse_from(argv);
 
     assert!(result.is_err());
+}
+
+#[rstest::rstest]
+#[case::missing_separator("pkg/a.py")]
+#[case::nonnumeric_start("pkg/a.py:first-3")]
+#[case::start_overflow("pkg/a.py:4294967296-4294967296")]
+#[case::nonnumeric_end("pkg/a.py:1-last")]
+#[case::end_overflow("pkg/a.py:1-4294967296")]
+fn line_selector_rejects_malformed_numeric_ranges(#[case] selector: &str) {
+    assert_invalid_line_selector(selector);
+}
+
+#[test]
+fn symbol_selector_requires_a_module_qualname_separator() {
+    let error =
+        parse_config_from(["hoimin", "run", "--symbol", "pkg.target", "--", "python"]).unwrap_err();
+    assert!(matches!(error, hoimin_cli::cli::CliError::InvalidValue {
+        name: "--symbol", value,
+    } if value == "pkg.target"));
 }

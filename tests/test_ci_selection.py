@@ -6,8 +6,10 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import create_autospec
 
 import pytest
+from pytest_mock import MockerFixture
 
 from tools import ci_selection
 
@@ -345,8 +347,13 @@ def test_diff_rejects_invalid_revision_arguments(
         ci_selection.changed_paths(tmp_path, base, head, merge_base=False)
 
 
-def test_diff_requires_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(ci_selection.shutil, "which", lambda _: None)
+def test_diff_requires_git(tmp_path: Path, mocker: MockerFixture) -> None:
+    original_which_spec = ci_selection.shutil.which
+    mocker.patch.object(
+        ci_selection.shutil,
+        "which",
+        create_autospec(original_which_spec, side_effect=lambda _: None),
+    )
     with pytest.raises(FileNotFoundError, match="Git is required"):
         ci_selection.changed_paths(tmp_path, "base", "head", merge_base=False)
 
@@ -361,11 +368,13 @@ def test_aggregate_rejects_nonobject_needs() -> None:
 
 
 def test_plan_cli_missing_event_file_selects_all(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(sys, "argv", ["ci-selection", "plan"])
-    monkeypatch.delenv("GITHUB_EVENT_PATH", raising=False)
-    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+    mocker.patch.object(sys, "argv", ["ci-selection", "plan"])
+    mocker.patch.dict(os.environ)
+    os.environ.pop("GITHUB_EVENT_PATH", None)
+    mocker.patch.dict(os.environ)
+    os.environ.pop("GITHUB_OUTPUT", None)
     assert ci_selection.main() == 0
     outputs = json.loads(capsys.readouterr().out)
     assert all(outputs.get(key) for key in ci_selection.CATEGORIES)

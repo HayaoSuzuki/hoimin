@@ -1,7 +1,6 @@
 use super::{AnalyzeRequest, analyze_selected, analyze_source, analyze_source_cancellable};
 use camino::Utf8Path;
 use hoimin_core::{LineRange, MutationOperator, MutationOperatorSelection, MutationProfile};
-use ruff_python_ast::{Expr, Stmt};
 use ruff_python_parser::parse_module;
 
 const OP: &str = "base_order_shuffle";
@@ -61,45 +60,52 @@ fn base_order_swaps_names_and_preserves_every_source_separator(
     );
 }
 
+fn observed_base_order(count: usize, padding: usize) -> Vec<String> {
+    let original = (0..count)
+        .map(|index| format!("Base{index}"))
+        .collect::<Vec<_>>();
+    let separator = format!(",{}", " ".repeat(padding));
+    let source = format!("class C({}): pass\n", original.join(&separator));
+    let output = analyze_selected(&[OP], &source);
+    assert_eq!(output.candidates.len(), 1);
+    let mutant = apply(&source, &output.candidates[0]);
+    let parsed = parse_module(&mutant).unwrap();
+    let class = parsed.syntax().body[0].as_class_def_stmt().unwrap();
+    class
+        .arguments
+        .as_ref()
+        .unwrap()
+        .args
+        .iter()
+        .map(|base| base.as_name_expr().unwrap().id.to_string())
+        .collect()
+}
+
+#[rstest::rstest]
+fn base_order_multi_base_shuffle_changes_order_without_losing_bases(
+    #[values(3, 4, 5, 6, 7, 8, 9, 10, 11, 12)] count: usize,
+    #[values(
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23
+    )]
+    padding: usize,
+) {
+    let changed = observed_base_order(count, padding);
+    let original = (0..count)
+        .map(|index| format!("Base{index}"))
+        .collect::<Vec<_>>();
+    assert_ne!(changed, original);
+    let mut sorted = changed;
+    sorted.sort();
+    let mut expected = original;
+    expected.sort();
+    assert_eq!(sorted, expected);
+}
+
 #[test]
-fn base_order_multi_base_shuffle_changes_order_without_losing_bases() {
-    let mut observed = std::collections::BTreeSet::new();
-    for count in 3..=12 {
-        let original: Vec<_> = (0..count).map(|i| format!("Base{i}")).collect();
-        for padding in 0..24 {
-            let separator = format!(",{}", " ".repeat(padding));
-            let source = format!("class C({}): pass\n", original.join(&separator));
-
-            let output = analyze_selected(&[OP], &source);
-
-            assert_eq!(output.candidates.len(), 1);
-            let mutant = apply(&source, &output.candidates[0]);
-            let parsed = parse_module(&mutant).unwrap();
-            let Stmt::ClassDef(class) = &parsed.syntax().body[0] else {
-                panic!()
-            };
-            let changed: Vec<_> = class
-                .arguments
-                .as_ref()
-                .unwrap()
-                .args
-                .iter()
-                .map(|base| {
-                    let Expr::Name(name) = base else { panic!() };
-                    name.id.to_string()
-                })
-                .collect();
-            assert_ne!(changed, original);
-            let mut sorted = changed.clone();
-            sorted.sort();
-            let mut expected = original.clone();
-            expected.sort();
-            assert_eq!(sorted, expected);
-            if count == 3 {
-                observed.insert(changed);
-            }
-        }
-    }
+fn base_order_seeded_layouts_have_more_than_one_three_base_permutation() {
+    let observed = (0..24)
+        .map(|padding| observed_base_order(3, padding))
+        .collect::<std::collections::BTreeSet<_>>();
     assert!(observed.len() > 1);
 }
 

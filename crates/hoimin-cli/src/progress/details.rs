@@ -140,3 +140,31 @@ impl<'a> Collector<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+
+    #[rstest::rstest]
+    #[case::matching(Some(CandidateSetEligibility::Matching), Some("matching"))]
+    #[case::different(Some(CandidateSetEligibility::Different), Some("different"))]
+    #[case::duplicate(Some(CandidateSetEligibility::Duplicate), Some("duplicate"))]
+    #[case::unavailable(None, None)]
+    fn serialized_details_preserve_the_pair_eligibility(
+        #[case] eligibility: Option<CandidateSetEligibility>,
+        #[case] expected: Option<&str>,
+    ) {
+        let details = Details::new(3, 5, eligibility, Changes::default());
+        let value = serde_json::to_value(details).unwrap();
+        assert_eq!(value["scope"], "latest_pair");
+        assert_eq!(value["previous_input"], 2);
+        assert_eq!(value["current_input"], 3);
+        assert_eq!(value["limit"], 5);
+        assert_eq!(value["available"], expected.is_some());
+        assert_eq!(
+            value["eligibility"],
+            serde_json::to_value(expected).unwrap()
+        );
+        assert_eq!(value["transitions"], serde_json::json!([]));
+    }
+}

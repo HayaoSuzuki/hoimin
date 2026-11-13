@@ -1859,7 +1859,7 @@ fn reference_content_rejects_malformed_hash(#[case] hash: String, #[case] report
     let mut value = draft();
     let reference = ArtifactReference {
         path: "plan.json".into(),
-        content_hash: hash.clone(),
+        content_hash: hash,
     };
     if report_reference {
         value.report = Some(ReportReference {

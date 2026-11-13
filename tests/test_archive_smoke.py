@@ -11,6 +11,7 @@ import venv
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
+from unittest.mock import create_autospec
 
 import archive_smoke
 import pytest
@@ -180,15 +181,17 @@ def test_venv_interpreter_symlink_keeps_its_environment(
 
 @pytest.mark.parametrize("system", ["darwin", "linux"])
 def test_archive_smoke_report_binds_archive_and_extracted_binary(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, system: str
+    tmp_path: Path, mocker: MockerFixture, system: str
 ) -> None:
+    original_exercise_cli_spec = archive_smoke.exercise_cli
+    original_run_spec = archive_smoke.run
     archive = tmp_path / "release.zip"
     write_zip(archive)
     report = tmp_path / "report.json"
-    monkeypatch.setenv("ARCHIVE", str(archive))
-    monkeypatch.setenv("VERSION", "1.2.3")
-    monkeypatch.setenv("SMOKE_REPORT", str(report))
-    monkeypatch.setattr(sys, "platform", system)
+    mocker.patch.dict(os.environ, {"ARCHIVE": str(archive)})
+    mocker.patch.dict(os.environ, {"VERSION": "1.2.3"})
+    mocker.patch.dict(os.environ, {"SMOKE_REPORT": str(report)})
+    mocker.patch.object(sys, "platform", system)
     extracted: list[Path] = []
 
     def exercise(binary: Path, python: Path, project: Path, version: str) -> None:
@@ -198,12 +201,19 @@ def test_archive_smoke_report_binds_archive_and_extracted_binary(
         assert project.parent == binary.parent.parent
         extracted.append(binary)
 
-    monkeypatch.setattr(archive_smoke, "exercise_cli", exercise)
-    monkeypatch.setattr(
+    mocker.patch.object(
+        archive_smoke,
+        "exercise_cli",
+        create_autospec(original_exercise_cli_spec, side_effect=exercise),
+    )
+    mocker.patch.object(
         archive_smoke,
         "run",
-        lambda *_args, **_kwargs: subprocess.CompletedProcess(
-            [], 0, "GLIBC_2.17 GLIBC_2.35", ""
+        create_autospec(
+            original_run_spec,
+            side_effect=lambda *_args, **_kwargs: subprocess.CompletedProcess(
+                [], 0, "GLIBC_2.17 GLIBC_2.35", ""
+            ),
         ),
     )
     assert archive_smoke.main() == 0

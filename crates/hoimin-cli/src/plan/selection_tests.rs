@@ -109,7 +109,9 @@ fn diverse_keeps_round_robin_progress_until_count_is_reached() {
 #[case::a1_3(20, vec!["A1", "B1", "C1", "D1", "D2", "D3", "D4"])]
 fn diverse_keeps_selecting_the_dense_file_after_singleton_files_exhaust(
     #[case] count: usize,
-    #[case] expected: Vec<&str>,
+    #[case]
+    #[by_ref]
+    expected: &[&str],
 ) {
     let candidates = vec![
         candidate("A1", "src/a.py", 1, 100),
@@ -169,7 +171,9 @@ fn diverse_is_deterministic_and_selects_each_retained_candidate_once() {
 fn fixed_batch_diverse_slices_the_global_order_across_files_and_tiers(
     #[case] offset: usize,
     #[case] count: usize,
-    #[case] expected: Vec<&str>,
+    #[case]
+    #[by_ref]
+    expected: &[&str],
 ) {
     let candidates = vec![
         candidate("A1", "a.py", 1, 100),

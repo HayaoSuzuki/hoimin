@@ -403,3 +403,51 @@ fn visibility_cancels_while_visiting_loaded_modules_with_no_members() {
     assert!(matches!(result, Err(AnalysisError::Cancelled)));
     assert_eq!(MODULE_VISITS.with(Cell::get), 16);
 }
+
+#[test]
+fn qualified_visibility_keeps_similar_module_prefixes_distinct() {
+    let sources = [
+        (
+            "pkg/__init__.py".into(),
+            "class Root(Exception): pass\n".into(),
+        ),
+        (
+            "pkgextra.py".into(),
+            "class Other(Exception): pass\n".into(),
+        ),
+        ("service.py".into(), "import pkg\nimport pkgextra\n".into()),
+    ];
+    let index = ExceptionIndex::from_sources(&sources, &[".".into()], &|| false).unwrap();
+    assert_eq!(index.visible, exhaustive_visibility(&index));
+    let service = &index.visible[Utf8Path::new("service.py")];
+    assert_eq!(
+        service[&(Utf8PathBuf::from("pkg/__init__.py"), "Root".into())][0].0,
+        "pkg.Root"
+    );
+    assert_eq!(
+        service[&(Utf8PathBuf::from("pkgextra.py"), "Other".into())][0].0,
+        "pkgextra.Other"
+    );
+}
+
+#[test]
+fn mapped_syntax_error_does_not_create_qualified_visibility() {
+    let sources = [
+        ("broken.py".into(), "class (\n".into()),
+        ("service.py".into(), "import broken\n".into()),
+    ];
+    let index = ExceptionIndex::from_sources(&sources, &[".".into()], &|| false).unwrap();
+    assert!(!index.modules.contains_key(Utf8Path::new("broken.py")));
+    assert_eq!(index.visible, exhaustive_visibility(&index));
+    assert_eq!(index.visible[Utf8Path::new("service.py")], BTreeMap::new());
+}
+
+#[test]
+fn local_spellings_share_the_limit_with_earlier_qualified_aliases() {
+    let mut sources = alias_sources(0, 256, 256);
+    // Qualified aliases exhaust the allowance before the defining module's
+    // local class spellings are visited in path order.
+    sources[1].0 = "a_service.py".into();
+    let result = ExceptionIndex::from_sources(&sources, &[".".into()], &|| false);
+    assert!(matches!(result, Err(AnalysisError::HierarchyLimit)));
+}

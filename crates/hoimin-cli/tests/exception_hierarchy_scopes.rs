@@ -42,10 +42,14 @@ fn config(root: &std::path::Path) -> hoimin_core::RunConfig<hoimin_core::Environ
 #[case::comprehension_first_iterable_21(20)]
 #[case::comprehension_walrus_22(21)]
 #[tokio::test]
-#[allow(clippy::too_many_lines)] // Paired syntax fixtures form one acceptance matrix.
 async fn hierarchy_scoped_writes_distinguish_local_bindings_and_escaping_aliases(
     #[case] scenario_index: usize,
 ) {
+    assert_hierarchy_scoped_write_case(scenario_index).await;
+}
+
+#[allow(clippy::too_many_lines)] // Paired syntax fixtures form one acceptance matrix.
+async fn assert_hierarchy_scoped_write_case(scenario_index: usize) {
     let cases = [
         (
             "parameter",

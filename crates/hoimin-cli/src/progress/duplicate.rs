@@ -126,14 +126,16 @@ mod tests {
         });
     }
 
-    #[test]
-    fn confirmation_rejects_append_after_readers_are_prepared() {
+    #[rstest::rstest]
+    #[case::left(0)]
+    #[case::right(1)]
+    fn confirmation_rejects_append_after_readers_are_prepared(#[case] side: usize) {
         let fixture = tempfile::tempdir().unwrap();
         let first = fixture.path().join("first");
         let second = fixture.path().join("second");
         std::fs::write(&first, b"same").unwrap();
         std::fs::write(&second, b"same").unwrap();
-        append_after_readers_prepared(vec![first.clone(), second.clone()]);
+        append_after_readers_prepared(vec![[first.clone(), second.clone()][side].clone()]);
 
         assert_eq!(
             identical_regular_files(&first, &second).unwrap_err().kind(),
@@ -157,18 +159,18 @@ mod tests {
         assert!(tracker.observe(&second, fingerprint, &inputs).is_none());
     }
 
-    #[test]
-    fn confirmation_rejects_truncate_after_readers_are_prepared() {
+    #[rstest::rstest]
+    #[case::left(0)]
+    #[case::right(1)]
+    fn confirmation_rejects_truncate_after_readers_are_prepared(#[case] side: usize) {
         let fixture = tempfile::tempdir().unwrap();
         let first = fixture.path().join("first");
         let second = fixture.path().join("second");
         std::fs::write(&first, b"same").unwrap();
         std::fs::write(&second, b"same").unwrap();
-        let paths = [first.clone(), second.clone()];
+        let path = [first.clone(), second.clone()][side].clone();
         on_readers_prepared(move || {
-            for path in paths {
-                std::fs::write(path, b"").unwrap();
-            }
+            std::fs::write(path, b"").unwrap();
         });
 
         assert_eq!(
@@ -223,14 +225,19 @@ mod tests {
         let result = receiver.recv_timeout(Duration::from_secs(1));
         // Release a broken blocking opener before failing, leaving no stuck
         // thread or FIFO behind in the test process.
-        let _rescue = result.is_err().then(|| {
-            std::fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .custom_flags(libc::O_NONBLOCK)
-                .open(&fifo)
-                .unwrap()
-        });
+        let _rescue = result.is_err().then(
+            // Only a broken blocking opener reaches this watchdog rescue; a passing test
+            // must reject the FIFO without waiting for a writer.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            || {
+                std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .custom_flags(libc::O_NONBLOCK)
+                    .open(&fifo)
+                    .unwrap()
+            },
+        );
         worker.join().unwrap();
 
         assert_eq!(
@@ -266,23 +273,68 @@ mod tests {
         assert_eq!(duplicate.reason, DuplicateReason::IdenticalBytes);
     }
 
-    #[test]
-    fn exact_comparison_checks_late_bytes_and_length() {
+    #[rstest::rstest]
+    #[case::same(|bytes: &[u8]| bytes.to_vec(), true)]
+    #[case::last_byte(|bytes: &[u8]| { let mut changed = bytes.to_vec(); *changed.last_mut().unwrap() = b'y'; changed }, false)]
+    #[case::shortened(|bytes: &[u8]| bytes[..bytes.len() - 1].to_vec(), false)]
+    fn exact_comparison_checks_the_entire_file(
+        #[case] other_bytes: fn(&[u8]) -> Vec<u8>,
+        #[case] expected: bool,
+    ) {
         let fixture = tempfile::tempdir().unwrap();
         let first = fixture.path().join("first");
         let other = fixture.path().join("other");
         let bytes = vec![b'x'; 32 * 1024 + 1];
         std::fs::write(&first, &bytes).unwrap();
-        std::fs::write(&other, &bytes).unwrap();
+        std::fs::write(&other, other_bytes(&bytes)).unwrap();
+        assert_eq!(identical_regular_files(&first, &other).unwrap(), expected);
+    }
 
-        assert!(identical_regular_files(&first, &other).unwrap());
-        let mut different = bytes.clone();
-        *different.last_mut().unwrap() = b'y';
-        std::fs::write(&other, &different).unwrap();
-        assert!(!identical_regular_files(&first, &other).unwrap());
-        std::fs::write(&other, &bytes[..bytes.len() - 1]).unwrap();
-        assert!(!identical_regular_files(&first, &other).unwrap());
-        assert!(!identical_regular_files(&first, fixture.path()).unwrap_or(false));
+    #[test]
+    fn a_directory_is_not_identical_to_a_regular_file() {
+        let fixture = tempfile::tempdir().unwrap();
+        let file = fixture.path().join("file");
+        std::fs::write(&file, b"payload").unwrap();
+        assert!(!identical_regular_files(&file, fixture.path()).unwrap());
+    }
+
+    #[rstest::rstest]
+    #[case::left(0)]
+    #[case::right(1)]
+    fn exact_comparison_preserves_an_input_open_failure(#[case] side: usize) {
+        let fixture = tempfile::tempdir().unwrap();
+        let first = fixture.path().join("first");
+        let second = fixture.path().join("second");
+        std::fs::write(&first, b"same").unwrap();
+        std::fs::write(&second, b"same").unwrap();
+        std::fs::remove_file([&first, &second][side]).unwrap();
+        assert_eq!(
+            identical_regular_files(&first, &second).unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::left(0)]
+    #[case::right(1)]
+    fn snapshot_initialization_failure_preserves_both_input_files(#[case] side: usize) {
+        let fixture = tempfile::tempdir().unwrap();
+        let first = fixture.path().join("first");
+        let second = fixture.path().join("second");
+        std::fs::write(&first, b"same").unwrap();
+        std::fs::write(&second, b"same").unwrap();
+        let fault = crate::io_faults::arm_after("snapshot.metadata", side);
+        let result = identical_regular_files(&first, &second);
+        assert!(
+            fault.triggered(),
+            "snapshot metadata boundary was not checked"
+        );
+        assert!(
+            matches!(result, Err(error) if error.kind() == io::ErrorKind::Other && error.to_string().contains("snapshot.metadata"))
+        );
+        assert_eq!(std::fs::read(&first).unwrap(), b"same");
+        assert_eq!(std::fs::read(&second).unwrap(), b"same");
+        assert!(identical_regular_files(&first, &second).unwrap());
     }
 
     #[test]

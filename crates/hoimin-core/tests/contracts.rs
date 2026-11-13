@@ -79,15 +79,27 @@ fn disabled_ensure_does_not_call_invariant() {
 
 #[cfg(feature = "contracts")]
 #[test]
-#[should_panic(expected = "contract violation [require:test.enabled]")]
 fn enabled_contract_panics_with_stable_id() {
-    contract_require!("test.enabled", false, 7_u8);
+    let failure =
+        std::panic::catch_unwind(|| contract_require!("test.enabled", false, 7_u8)).unwrap_err();
+    assert!(
+        failure
+            .downcast_ref::<String>()
+            .unwrap()
+            .contains("contract violation [require:test.enabled]")
+    );
 }
 
 #[cfg(feature = "contracts")]
 #[test]
-#[should_panic(expected = "contract violation [ensure:test.enabled.invariant]")]
 fn enabled_ensure_calls_invariant() {
     let value = Invalid;
-    contract_ensure!("test.enabled.invariant", value.invariant(), &value);
+    let check = || contract_ensure!("test.enabled.invariant", value.invariant(), &value);
+    let failure = std::panic::catch_unwind(check).unwrap_err();
+    assert!(
+        failure
+            .downcast_ref::<String>()
+            .unwrap()
+            .contains("contract violation [ensure:test.enabled.invariant]")
+    );
 }

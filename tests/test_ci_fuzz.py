@@ -4,6 +4,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from unittest.mock import create_autospec
 
 import pytest
 import yaml
@@ -44,7 +45,7 @@ def test_fuzz_workflows_install_and_cache_the_runner_toolchain(name: str) -> Non
 
 
 @pytest.fixture
-def fake_fuzz_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def fake_fuzz_root(tmp_path: Path, mocker: MockerFixture) -> Path:
     # Cargo and uv are the expensive/external boundary. Execute lightweight
     # stand-ins while retaining the real orchestration and process management.
     fake_bin = tmp_path / "bin"
@@ -61,10 +62,10 @@ def fake_fuzz_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             "    sys.exit(23)\n"
         )
         executable.chmod(0o755)
-    monkeypatch.setenv("PATH", str(fake_bin))
+    mocker.patch.dict(os.environ, {"PATH": str(fake_bin)})
     (tmp_path / "fuzz").mkdir()
     (tmp_path / "fuzz/Cargo.toml").write_bytes((ROOT / "fuzz/Cargo.toml").read_bytes())
-    monkeypatch.setattr(ci_fuzz, "ROOT", tmp_path)
+    mocker.patch.object(ci_fuzz, "ROOT", tmp_path)
     return tmp_path
 
 
@@ -179,10 +180,8 @@ def test_budget_uses_monotonic_time_after_initial_setup(
 
 
 @pytest.mark.skipif(os.name != "posix", reason="Fuzz CI runs on Linux")
-def test_campaign_stops_at_failure(
-    fake_fuzz_root: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("FAKE_FUZZ_FAIL_TARGET", "source_index")
+def test_campaign_stops_at_failure(fake_fuzz_root: Path, mocker: MockerFixture) -> None:
+    mocker.patch.dict(os.environ, {"FAKE_FUZZ_FAIL_TARGET": "source_index"})
     report_dir = fake_fuzz_root / "report"
 
     campaign = ci_fuzz.Campaign(time.time() + 120, report_dir, seed=123)
@@ -195,9 +194,9 @@ def test_campaign_stops_at_failure(
 
 @pytest.mark.skipif(os.name != "posix", reason="Fuzz CI runs on Linux")
 def test_campaign_reports_all_targets(
-    fake_fuzz_root: Path, monkeypatch: pytest.MonkeyPatch
+    fake_fuzz_root: Path, mocker: MockerFixture
 ) -> None:
-    monkeypatch.setenv("FAKE_FUZZ_FAIL_TARGET", "")
+    mocker.patch.dict(os.environ, {"FAKE_FUZZ_FAIL_TARGET": ""})
     report_dir = fake_fuzz_root / "report"
 
     campaign = ci_fuzz.Campaign(time.time() + 120, report_dir, seed=123)
@@ -371,9 +370,9 @@ def test_workflow_runs_fuzz_in_parallel_with_bounded_total_time() -> None:
 
 
 def test_campaign_generates_with_both_interpreters_before_one_fuzz_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+    tmp_path: Path, mocker: MockerFixture
 ) -> None:
-    monkeypatch.setattr(ci_fuzz, "ROOT", tmp_path)
+    mocker.patch.object(ci_fuzz, "ROOT", tmp_path)
     (tmp_path / "fuzz").mkdir()
     (tmp_path / "fuzz/Cargo.toml").write_bytes((ROOT / "fuzz/Cargo.toml").read_bytes())
 
@@ -451,9 +450,9 @@ def test_campaign_generates_with_both_interpreters_before_one_fuzz_run(
 
 
 def test_child_environment_overlay_does_not_change_parent(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, mocker: MockerFixture
 ) -> None:
-    monkeypatch.setenv("HOIMIN_FUZZ_OVERLAY", "parent")
+    mocker.patch.dict(os.environ, {"HOIMIN_FUZZ_OVERLAY": "parent"})
 
     campaign = ci_fuzz.Campaign(time.time() + 10, tmp_path, seed=1)
     campaign.run(
@@ -469,14 +468,20 @@ def test_child_environment_overlay_does_not_change_parent(
 
 
 def test_successful_campaign_cli_writes_success_report(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, mocker: MockerFixture
 ) -> None:
+    original_run_campaign_spec = ci_fuzz.run_campaign
+
     def campaign(campaign: ci_fuzz.Campaign, *, seconds_per_target: int | None) -> None:
         assert seconds_per_target == 1
         campaign.completed_targets.append("completed-fixture")
 
-    monkeypatch.setattr(ci_fuzz, "run_campaign", campaign)
-    monkeypatch.setattr(
+    mocker.patch.object(
+        ci_fuzz,
+        "run_campaign",
+        create_autospec(original_run_campaign_spec, side_effect=campaign),
+    )
+    mocker.patch.object(
         sys,
         "argv",
         [

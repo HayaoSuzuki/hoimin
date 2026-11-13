@@ -162,7 +162,18 @@ fn assert_rank_work(candidate_count: usize, repeated: bool) {
     assert_eq!(work.requested_id_visits, candidate_count);
     assert!(work.rank_queries <= 4 * candidate_count);
     let RunEffect::EmitOutput(output) = &effects[0] else {
-        panic!("expected started output")
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("expected started output") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("expected started output")
+            }
+        }
     };
     assert!(
         matches!(&output.event, OutputEvent::MutantStarted(started) if started.mutant_id == "0".repeat(64))
@@ -170,7 +181,18 @@ fn assert_rank_work(candidate_count: usize, repeated: bool) {
     assert_eq!(state.stopped_candidates.len(), candidate_count - 1);
     for (rank, stopped) in state.stopped_candidates.iter().enumerate() {
         let StoppedCandidate::Unloaded(id) = stopped else {
-            panic!("expected queued candidate ID")
+            {
+                // Test failure reporting only; a passing scenario cannot execute this expression.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || -> ! { panic!("expected queued candidate ID") })()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    panic!("expected queued candidate ID")
+                }
+            }
         };
         assert_eq!(*id, format!("{:064x}", rank + 1));
     }
@@ -217,7 +239,19 @@ fn drain_outputs(
         let event = match effects.pop().unwrap() {
             RunEffect::ReadCandidate(read) => {
                 let CandidateReadTarget::Id(id) = read.target else {
-                    panic!("stopped ordered drain must not resume discovery")
+                    {
+                        // Test failure reporting only; a passing scenario cannot execute this expression.
+                        #[cfg(coverage_nightly)]
+                        {
+                            (#[coverage(off)]
+                            || -> ! { panic!("stopped ordered drain must not resume discovery") })(
+                            )
+                        }
+                        #[cfg(not(coverage_nightly))]
+                        {
+                            panic!("stopped ordered drain must not resume discovery")
+                        }
+                    }
                 };
                 RunEvent::CandidateLoaded(CandidateLoaded {
                     id: read.id,
@@ -245,11 +279,34 @@ fn drain_outputs(
                 id: cleanup.id,
                 released_reservations: cleanup.reservations,
             }),
-            effect => panic!("unexpected stopped effect: {effect:?}"),
+            effect => {
+                // Test failure reporting only; a passing scenario cannot execute this expression.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || -> ! { panic!("unexpected stopped effect: {effect:?}") })(
+                    )
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    panic!("unexpected stopped effect: {effect:?}")
+                }
+            }
         };
         (state, effects) = transition(state, event).unwrap();
     }
-    panic!("stopped drain did not finish");
+    {
+        // Test failure reporting only; a passing scenario cannot execute this expression.
+        #[cfg(coverage_nightly)]
+        {
+            (#[coverage(off)]
+            || -> ! { panic!("stopped drain did not finish") })()
+        }
+        #[cfg(not(coverage_nightly))]
+        {
+            panic!("stopped drain did not finish")
+        }
+    }
 }
 
 fn assert_disordered_stop(event: RunEvent, exit: i32, repeated: bool) {

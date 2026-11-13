@@ -182,6 +182,10 @@ pub enum TargetError {
 ///
 /// Returns [`TargetError`] when a requested path, line range, or symbol cannot
 /// be resolved to a discovered Python file within the configured roots.
+#[expect(
+    clippy::missing_panics_doc,
+    reason = "symbol resolution only returns discovered Python files pre-admitted by the source-root pass"
+)]
 pub fn resolve_explicit(
     selection: &Selection,
     discovered: &[DiscoveredFile],
@@ -239,11 +243,11 @@ pub fn resolve_explicit(
 
     for symbol in &selection.symbols {
         let path = resolve_symbol_path(symbol, &sources, &available_python)?;
-        let entry = targets.entry(path.clone()).or_insert_with(|| TargetSlice {
-            path,
-            lines: Vec::new(),
-            symbols: Vec::new(),
-        });
+        // Symbol resolution only returns discovered Python files under a source root,
+        // which the whole-file admission pass inserted before explicit selectors.
+        let entry = targets
+            .get_mut(&path)
+            .expect("resolved symbol file was admitted from its source root");
         entry.symbols.push(symbol.qualname.clone());
     }
 
@@ -315,8 +319,36 @@ fn normalize_logical(root: &Utf8Path, path: &Utf8Path) -> Result<Utf8PathBuf, Ta
                     return Err(TargetError::PathOutsideRoot(original));
                 }
             }
-            Utf8Component::Prefix(_) | Utf8Component::RootDir => {
-                return Err(TargetError::PathOutsideRoot(original));
+            #[cfg(windows)]
+            Utf8Component::Prefix(_) => return Err(TargetError::PathOutsideRoot(original)),
+            #[cfg(not(windows))]
+            Utf8Component::Prefix(_) => {
+                return {
+                    // Unix path components cannot contain Windows prefixes; keep the defensive rejection for platform-independent exhaustiveness.
+                    #[cfg(coverage_nightly)]
+                    {
+                        (#[coverage(off)]
+                        || Err(TargetError::PathOutsideRoot(original)))()
+                    }
+                    #[cfg(not(coverage_nightly))]
+                    {
+                        Err(TargetError::PathOutsideRoot(original))
+                    }
+                };
+            }
+            Utf8Component::RootDir => {
+                return {
+                    // Absolute paths were stripped against the root above; strip_root returns only relative components.
+                    #[cfg(coverage_nightly)]
+                    {
+                        (#[coverage(off)]
+                        || Err(TargetError::PathOutsideRoot(original)))()
+                    }
+                    #[cfg(not(coverage_nightly))]
+                    {
+                        Err(TargetError::PathOutsideRoot(original))
+                    }
+                };
             }
         }
     }
@@ -338,22 +370,27 @@ pub fn normalize_logical_path(
 }
 
 fn strip_root(root: &Utf8Path, path: &Utf8Path) -> Option<Utf8PathBuf> {
-    if !cfg!(windows) {
-        return path.strip_prefix(root).ok().map(Utf8Path::to_owned);
-    }
-    let root = root.as_str().replace('\\', "/");
-    let path = path.as_str().replace('\\', "/");
-    let root_parts: Vec<_> = root.split('/').filter(|part| !part.is_empty()).collect();
-    let path_parts: Vec<_> = path.split('/').filter(|part| !part.is_empty()).collect();
-    if path_parts.len() < root_parts.len()
-        || !root_parts
-            .iter()
-            .zip(&path_parts)
-            .all(|(root, path)| windows_case_key(root) == windows_case_key(path))
+    // Root comparison follows the host platform; Windows case folding is not a Unix path rule.
+    #[cfg(not(windows))]
     {
-        return None;
+        path.strip_prefix(root).ok().map(Utf8Path::to_owned)
     }
-    Some(Utf8PathBuf::from(path_parts[root_parts.len()..].join("/")))
+    #[cfg(windows)]
+    {
+        let root = root.as_str().replace('\\', "/");
+        let path = path.as_str().replace('\\', "/");
+        let root_parts: Vec<_> = root.split('/').filter(|part| !part.is_empty()).collect();
+        let path_parts: Vec<_> = path.split('/').filter(|part| !part.is_empty()).collect();
+        if path_parts.len() < root_parts.len()
+            || !root_parts
+                .iter()
+                .zip(&path_parts)
+                .all(|(root, path)| windows_case_key(root) == windows_case_key(path))
+        {
+            return None;
+        }
+        Some(Utf8PathBuf::from(path_parts[root_parts.len()..].join("/")))
+    }
 }
 
 /// Prepared whole-file admission. Unspecified sources admit no whole files,
@@ -426,9 +463,12 @@ thread_local! {
 fn path_equality_key(path: &Utf8Path) -> Cow<'_, str> {
     #[cfg(test)]
     PATH_KEY_DERIVATIONS.with(|count| count.set(count.get() + 1));
-    if cfg!(windows) {
+    #[cfg(windows)]
+    {
         Cow::Owned(path_key(path.as_str()))
-    } else {
+    }
+    #[cfg(not(windows))]
+    {
         Cow::Borrowed(path.as_str())
     }
 }
@@ -447,19 +487,25 @@ pub fn logical_path_equality_key(path: &Utf8Path) -> Cow<'_, str> {
     path_equality_key(path)
 }
 
+#[cfg(any(windows, test))]
 fn path_key(value: &str) -> String {
     let value = value.replace('\\', "/");
-    if cfg!(windows) {
+    #[cfg(windows)]
+    {
         windows_case_key(&value)
-    } else {
+    }
+    #[cfg(not(windows))]
+    {
         value
     }
 }
 
+#[cfg(any(windows, test))]
 fn windows_case_key(value: &str) -> String {
     value.chars().map(simple_uppercase).collect()
 }
 
+#[cfg(any(windows, test))]
 fn simple_uppercase(value: char) -> char {
     let mut uppercase = value.to_uppercase();
     let first = uppercase.next().unwrap_or(value);
@@ -707,11 +753,14 @@ mod tests {
             if root.as_str().is_empty() {
                 return true;
             }
-            if cfg!(windows) {
+            #[cfg(windows)]
+            {
                 let path = path_key(path.as_str());
                 let root = path_key(root.as_str());
                 path == root || path.starts_with(&format!("{root}/"))
-            } else {
+            }
+            #[cfg(not(windows))]
+            {
                 path == root || path.starts_with(root.as_str().to_owned() + "/")
             }
         })
@@ -796,13 +845,13 @@ mod tests {
     }
 
     #[rstest::rstest]
-    #[case::vec(vec![], vec![])]
-    #[case::vec_2(vec!["."], vec!["src/a.py", "src/nested/b.py", "src2/c.py"])]
-    #[case::vec_src(vec!["src"], vec!["src/a.py", "src/nested/b.py"])]
-    #[case::vec_src_nested_src(vec!["src/nested", "src"], vec!["src/a.py", "src/nested/b.py"])]
+    #[case::vec(vec![], &[])]
+    #[case::vec_2(vec!["."], &["src/a.py", "src/nested/b.py", "src2/c.py"])]
+    #[case::vec_src(vec!["src"], &["src/a.py", "src/nested/b.py"])]
+    #[case::vec_src_nested_src(vec!["src/nested", "src"], &["src/a.py", "src/nested/b.py"])]
     fn source_membership_preserves_absent_root_and_component_boundaries_scenario_1(
         #[case] sources: Vec<&str>,
-        #[case] expected: Vec<&str>,
+        #[case] expected: &[&str],
     ) {
         let inventory = [
             DiscoveredFile::python("src/a.py"),
@@ -1169,5 +1218,62 @@ mod tests {
         }
         samples.sort_unstable();
         println!("sparse_ranges={count} median={:?}", samples[2]);
+    }
+
+    #[test]
+    fn windows_case_normalization_preserves_multi_character_expansions() {
+        assert_eq!(
+            windows_case_key("sRc/école/straße.py"),
+            "SRC/ÉCOLE/STRAßE.PY"
+        );
+    }
+
+    #[rstest::rstest]
+    #[case('ß', 'ß')]
+    #[case('é', 'É')]
+    #[case('Z', 'Z')]
+    fn simple_uppercase_preserves_single_character_path_mapping(
+        #[case] value: char,
+        #[case] expected: char,
+    ) {
+        assert_eq!(simple_uppercase(value), expected);
+    }
+
+    #[test]
+    fn path_key_normalizes_separators() {
+        #[cfg(windows)]
+        assert_eq!(path_key("src\\file.py"), "SRC/FILE.PY");
+        #[cfg(not(windows))]
+        assert_eq!(path_key("src\\file.py"), "src/file.py");
+    }
+
+    #[test]
+    fn symbol_resolution_requires_a_discovered_module_inside_its_source_root() {
+        let selection = Selection {
+            root: "/project".into(),
+            sources: vec!["src".into()],
+            symbols: vec![SymbolSelection {
+                module: "missing".into(),
+                qualname: "f".into(),
+            }],
+            ..Selection::default()
+        };
+        assert_eq!(
+            resolve_explicit(&selection, &[]),
+            Err(TargetError::SymbolModuleNotFound("missing".into()))
+        );
+    }
+    #[rstest::rstest]
+    #[case(&Selection { root: "/project".into(), sources: vec!["../escape".into()], ..Selection::default() }, TargetError::PathOutsideRoot("../escape".into()))]
+    #[case(&Selection { root: "/project".into(), files: vec!["../escape.py".into()], ..Selection::default() }, TargetError::PathOutsideRoot("../escape.py".into()))]
+    #[case(&Selection { root: "/project".into(), lines: vec![LineSelection { path: "calc.py".into(), range: LineRange { start: 0, end: 1 } }], ..Selection::default() }, TargetError::InvalidLineRange(LineRange { start: 0, end: 1 }))]
+    #[case(&Selection { root: "/project".into(), lines: vec![LineSelection { path: "../escape.py".into(), range: LineRange { start: 1, end: 1 } }], ..Selection::default() }, TargetError::PathOutsideRoot("../escape.py".into()))]
+    #[case(&Selection { root: "/project".into(), lines: vec![LineSelection { path: "missing.py".into(), range: LineRange { start: 1, end: 1 } }], ..Selection::default() }, TargetError::MissingOrNonPythonFile("missing.py".into()))]
+    #[case(&Selection { root: "/project".into(), files: vec!["missing.py".into()], ..Selection::default() }, TargetError::MissingOrNonPythonFile("missing.py".into()))]
+    fn explicit_resolution_rejects_invalid_paths_and_ranges(
+        #[case] selection: &Selection,
+        #[case] error: TargetError,
+    ) {
+        assert_eq!(resolve_explicit(selection, &[]), Err(error));
     }
 }

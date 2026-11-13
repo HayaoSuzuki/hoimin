@@ -58,29 +58,17 @@ impl ProgressAccumulator {
 
         let eligibility = candidate_set_eligibility(previous, current);
         let (comparison, changes) = compare_usable_reports(previous, current, eligibility, limit);
-        match comparison.state {
-            ProgressState::Improving => {
-                self.result.consecutive_stalls = 0;
-                self.result.latest = ProgressState::Improving;
-            }
-            ProgressState::Regressing => {
-                self.result.consecutive_stalls = 0;
-                self.result.latest = ProgressState::Regressing;
-            }
-            ProgressState::Stalled => {
-                self.result.consecutive_stalls += 1;
-                self.result.latest = if self.result.consecutive_stalls >= self.result.patience.get()
-                {
-                    ProgressState::Saturated
-                } else {
-                    ProgressState::Stalled
-                };
-            }
-            ProgressState::Indeterminate => {
-                self.result.consecutive_stalls = 0;
-                self.result.latest = ProgressState::Indeterminate;
-            }
-            ProgressState::Saturated => unreachable!("individual comparisons cannot saturate"),
+        // Individual comparisons never saturate; saturation counts consecutive stalls here.
+        if comparison.state == ProgressState::Stalled {
+            self.result.consecutive_stalls += 1;
+            self.result.latest = if self.result.consecutive_stalls >= self.result.patience.get() {
+                ProgressState::Saturated
+            } else {
+                ProgressState::Stalled
+            };
+        } else {
+            self.result.consecutive_stalls = 0;
+            self.result.latest = comparison.state;
         }
         self.result.comparisons.push(comparison);
         (Some(eligibility), changes)
@@ -154,10 +142,8 @@ pub fn compare_reports(reports: &[InputReport], patience: NonZeroUsize) -> Progr
     let mut accumulator = ProgressAccumulator::new(patience);
 
     for pair in reports.windows(2) {
-        let [previous, current] = pair else {
-            unreachable!("windows(2) always yields two elements");
-        };
-        accumulator.advance(previous, current);
+        // windows(2) yields exactly two entries.
+        accumulator.advance(&pair[0], &pair[1]);
     }
 
     accumulator.into_result()
@@ -223,12 +209,15 @@ fn compare_usable_reports(
         {
             details.observe(mutant, next);
         }
-        match (mutant.outcome.status(), next.outcome.status()) {
-            (MutationStatus::Survived, MutationStatus::Killed) => improvements += 1,
-            (MutationStatus::Killed, MutationStatus::Survived) => regressions += 1,
-            (MutationStatus::Survived, MutationStatus::Survived) => carried_survivors += 1,
-            (MutationStatus::Killed, MutationStatus::Killed) => {}
-            _ => unreachable!("inconclusive mutants are excluded above"),
+        // Inconclusive statuses were excluded above; a non-survivor here was killed.
+        match (
+            mutant.outcome.status() == MutationStatus::Survived,
+            next.outcome.status() == MutationStatus::Survived,
+        ) {
+            (true, false) => improvements += 1,
+            (false, true) => regressions += 1,
+            (true, true) => carried_survivors += 1,
+            (false, false) => {}
         }
     }
 
@@ -374,11 +363,12 @@ mod detail_tests {
     fn report(entries: &[(&str, &str, MutationStatus)]) -> UsableReport {
         let value: serde_json::Value =
             crate::artifacts::run_report::test_support::current_report_view();
-        let hoimin_core::OutputEvent::MutantFinished(template) =
-            serde_json::from_value(value["mutants"][0].clone()).unwrap()
-        else {
-            unreachable!()
-        };
+        let mut event = value["mutants"][0].clone();
+        assert_eq!(
+            event.as_object_mut().unwrap().remove("kind"),
+            Some("mutant_finished".into())
+        );
+        let template: MutantFinished = serde_json::from_value(event).unwrap();
         UsableReport {
             source: "internal.json".into(),
             mutants: entries
@@ -426,20 +416,13 @@ mod detail_tests {
     }
 
     #[rstest::rstest]
-    #[case::timeout_1(0)]
-    #[case::error_2(1)]
-    #[case::notrun_3(2)]
-    #[case::outofmemory_4(3)]
-    #[case::processlimit_5(4)]
-    fn detail_exclusions_follow_real_ambiguous_and_inconclusive_comparison_paths_scenario_1(
-        #[case] scenario_index: usize,
-    ) {
-        use MutationStatus::{Error, NotRun, OutOfMemory, ProcessLimit, Survived, Timeout};
-
-        let status = [Timeout, Error, NotRun, OutOfMemory, ProcessLimit]
-            .into_iter()
-            .nth(scenario_index)
-            .unwrap();
+    #[case::timeout(MutationStatus::Timeout)]
+    #[case::error(MutationStatus::Error)]
+    #[case::not_run(MutationStatus::NotRun)]
+    #[case::out_of_memory(MutationStatus::OutOfMemory)]
+    #[case::process_limit(MutationStatus::ProcessLimit)]
+    fn inconclusive_outcomes_do_not_identify_a_transition(#[case] status: MutationStatus) {
+        use MutationStatus::Survived;
 
         let before = report(&[("a", "body", Survived)]);
         let after = report(&[("a", "body", status)]);
@@ -456,7 +439,7 @@ mod detail_tests {
     }
 
     #[test]
-    fn detail_exclusions_follow_real_ambiguous_and_inconclusive_comparison_paths() {
+    fn ambiguous_content_fallback_does_not_identify_a_transition() {
         use MutationStatus::{Killed, Survived};
 
         // Content fallback is ambiguous, including the otherwise identical ID.
@@ -470,6 +453,11 @@ mod detail_tests {
         );
         assert_eq!(comparison.ambiguous, 1);
         assert!(changes.transitions.is_empty());
+    }
+
+    #[test]
+    fn duplicated_candidate_ids_do_not_identify_a_regression() {
+        use MutationStatus::{Killed, Survived};
         // Duplicate IDs with distinct content can count a change but cannot identify it.
         let before = report(&[("a", "body1", Killed), ("a", "body2", Killed)]);
         let after = report(&[("a", "body1", Survived)]);
@@ -484,71 +472,63 @@ mod detail_tests {
         assert!(changes.transitions.is_empty());
     }
 
-    #[test]
-    fn internal_details_match_lean_generated_inconclusive_and_duplicate_cases() {
+    #[rstest::rstest]
+    #[case::stalls("inconclusive_resets_stalls")]
+    #[case::timeout("inconclusive_timeout")]
+    #[case::memory("inconclusive_out_of_memory")]
+    #[case::process_limit("inconclusive_process_limit")]
+    #[case::error("inconclusive_error")]
+    #[case::not_run("inconclusive_not_run")]
+    #[case::duplicate("duplicate_candidate_id_model_only")]
+    fn internal_details_match_lean_generated_inconclusive_and_duplicate_cases(
+        #[case] case_id: &str,
+    ) {
         let corpus = include_str!("../../../../formal/HoiminOracle/corpus/progress-decision.jsonl");
-        for case in corpus
+        let case = corpus
             .lines()
             .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
-            .filter(|case| case["mode"] != "strict")
-        {
-            let reports = case["reports"].as_array().unwrap();
-            let build = |value: &serde_json::Value| {
-                let owned: Vec<_> = value["mutants"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|entry| {
-                        (
-                            format!("candidate-{}", entry["candidate_id"].as_u64().unwrap()),
-                            format!("body-{}", entry["content_key"].as_u64().unwrap()),
-                            serde_json::from_value::<MutationStatus>(entry["status"].clone())
-                                .unwrap(),
-                        )
-                    })
-                    .collect();
-                let borrowed: Vec<_> = owned
-                    .iter()
-                    .map(|(id, body, status)| (id.as_str(), body.as_str(), *status))
-                    .collect();
-                report(&borrowed)
-            };
-            let previous = build(&reports[reports.len() - 2]);
-            let current = build(&reports[reports.len() - 1]);
-            let (_, changes) = compare_usable_reports(
-                &previous,
-                &current,
-                candidate_set_eligibility(&previous, &current),
-                Some(1),
-            );
-
-            let actual = serde_json::to_value(changes).unwrap();
-            let expected = &case["expected"]["details"];
-
-            assert_eq!(actual["omitted"], expected["omitted"], "{}", case["id"]);
-            assert_eq!(
-                actual["unidentified"], expected["unidentified"],
-                "{}",
-                case["id"]
-            );
-            assert_eq!(
-                actual["transitions"].as_array().unwrap().len(),
-                expected["transitions"].as_array().unwrap().len()
-            );
-            for (actual, expected) in actual["transitions"]
+            .find(|case| case["id"] == case_id)
+            .expect("selected generated oracle case exists");
+        assert_ne!(case["mode"], "strict");
+        let reports = case["reports"].as_array().unwrap();
+        let build = |value: &serde_json::Value| {
+            let owned: Vec<_> = value["mutants"]
                 .as_array()
                 .unwrap()
                 .iter()
-                .zip(expected["transitions"].as_array().unwrap())
-            {
-                assert_eq!(
-                    actual["id"],
-                    format!("candidate-{}", expected["candidate_id"].as_u64().unwrap())
-                );
-                for field in ["previous_status", "current_status", "classification"] {
-                    assert_eq!(actual[field], expected[field]);
-                }
-            }
-        }
+                .map(|entry| {
+                    (
+                        format!("candidate-{}", entry["candidate_id"].as_u64().unwrap()),
+                        format!("body-{}", entry["content_key"].as_u64().unwrap()),
+                        serde_json::from_value::<MutationStatus>(entry["status"].clone()).unwrap(),
+                    )
+                })
+                .collect();
+            let borrowed: Vec<_> = owned
+                .iter()
+                .map(|(id, body, status)| (id.as_str(), body.as_str(), *status))
+                .collect();
+            report(&borrowed)
+        };
+        let previous = build(&reports[reports.len() - 2]);
+        let current = build(&reports[reports.len() - 1]);
+        let (_, changes) = compare_usable_reports(
+            &previous,
+            &current,
+            candidate_set_eligibility(&previous, &current),
+            Some(1),
+        );
+
+        let actual = serde_json::to_value(changes).unwrap();
+        let expected = &case["expected"]["details"];
+
+        assert_eq!(actual["omitted"], expected["omitted"], "{}", case["id"]);
+        assert_eq!(
+            actual["unidentified"], expected["unidentified"],
+            "{}",
+            case["id"]
+        );
+        assert_eq!(expected["transitions"], serde_json::json!([]));
+        assert_eq!(actual["transitions"], expected["transitions"]);
     }
 }

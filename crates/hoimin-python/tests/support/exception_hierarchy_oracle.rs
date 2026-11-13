@@ -62,7 +62,11 @@ where
 }
 
 pub fn cases() -> Vec<Case> {
-    let mut rows: Vec<Case> = CORPUS
+    parse_cases(CORPUS)
+}
+
+fn parse_cases(input: &str) -> Vec<Case> {
+    let mut rows: Vec<Case> = input
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
@@ -146,9 +150,13 @@ pub fn selected(mode: &str) -> Vec<Case> {
 
 pub fn selected_kind(mode: &str, kind: Option<&str>) -> Vec<Case> {
     let filter = std::env::var("HOIMIN_ORACLE_CASE").ok();
+    filtered_cases(mode, kind, filter.as_deref())
+}
+
+fn filtered_cases(mode: &str, kind: Option<&str>, filter: Option<&str>) -> Vec<Case> {
     let selected: Vec<_> = cases()
         .into_iter()
-        .filter(|case| case.mode == mode && filter.as_ref().is_none_or(|id| id == &case.id))
+        .filter(|case| case.mode == mode && filter.is_none_or(|id| id == case.id))
         .filter(|case| kind.is_none_or(|kind| case.kind == kind))
         .collect();
     assert!(!selected.is_empty(), "no selected {mode} cases: {filter:?}");
@@ -162,5 +170,138 @@ pub fn compare(case: &Case, mut actual: Observation, mismatches: &mut Vec<String
             "mode={} case={} expected={:?} actual={actual:?}",
             case.mode, case.id, case.expected
         ));
+    }
+}
+
+#[cfg(test)]
+mod helper_tests {
+    use super::*;
+
+    #[test]
+    fn comparison_sorts_observations_and_preserves_duplicate_pairs() {
+        let mut case = cases().remove(0);
+        case.expected = Observation {
+            pairs: vec![
+                ("A".into(), "B".into()),
+                ("A".into(), "B".into()),
+                ("C".into(), "D".into()),
+            ],
+            error: Some(false),
+            truncated: Some(false),
+            load: None,
+            fingerprint_matches: None,
+        };
+        let actual = Observation {
+            pairs: vec![
+                ("C".into(), "D".into()),
+                ("A".into(), "B".into()),
+                ("A".into(), "B".into()),
+            ],
+            error: Some(false),
+            truncated: Some(false),
+            load: None,
+            fingerprint_matches: None,
+        };
+        let mut mismatches = Vec::new();
+        compare(&case, actual, &mut mismatches);
+        assert_eq!(mismatches, Vec::<String>::new());
+    }
+
+    #[test]
+    fn comparison_reports_missing_duplicate_pairs() {
+        let mut case = cases().remove(0);
+        case.expected = Observation {
+            pairs: vec![
+                ("A".into(), "B".into()),
+                ("A".into(), "B".into()),
+                ("C".into(), "D".into()),
+            ],
+            error: Some(false),
+            truncated: Some(false),
+            load: None,
+            fingerprint_matches: None,
+        };
+        let mut mismatches = Vec::new();
+        let actual = Observation {
+            pairs: vec![("A".into(), "B".into()), ("C".into(), "D".into())],
+            error: Some(false),
+            truncated: Some(false),
+            load: None,
+            fingerprint_matches: None,
+        };
+        compare(&case, actual, &mut mismatches);
+        assert_eq!(mismatches.len(), 1);
+        assert!(mismatches[0].contains(&format!("mode={} case={}", case.mode, case.id)));
+        assert!(mismatches[0].contains("expected="));
+        assert!(mismatches[0].contains("actual="));
+    }
+
+    #[test]
+    fn source_writer_materializes_nested_valid_python_fixtures() {
+        let mut case = cases().remove(0);
+        case.files = vec![
+            (
+                "service.py".into(),
+                "from package.errors import Failure\n".into(),
+            ),
+            (
+                "package/errors.py".into(),
+                "class Failure(Exception): pass\n".into(),
+            ),
+        ];
+        let root = tempfile::tempdir().unwrap();
+        write_sources(&case, root.path());
+        assert_eq!(
+            case.files
+                .iter()
+                .map(|(path, _)| std::fs::read_to_string(root.path().join(path)).unwrap())
+                .collect::<Vec<_>>(),
+            case.files
+                .iter()
+                .map(|(_, source)| source.clone())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid corpus Python")]
+    fn source_writer_rejects_invalid_python_before_writing_it() {
+        let mut case = cases().remove(0);
+        case.files = vec![("service.py".into(), "class (".into())];
+        let root = tempfile::tempdir().unwrap();
+        write_sources(&case, root.path());
+    }
+    #[test]
+    fn selected_wrapper_preserves_the_requested_mode() {
+        let rows = selected("strict");
+        assert!(!rows.is_empty());
+        assert!(rows.iter().all(|case| case.mode == "strict"));
+        assert!(rows.iter().all(|case| case.expected_alias_facts.is_none()));
+    }
+    #[test]
+    fn single_case_filter_selects_the_requested_identity() {
+        let id = cases()
+            .into_iter()
+            .find(|case| case.mode == "strict")
+            .unwrap()
+            .id;
+        let selected = filtered_cases("strict", None, Some(&id));
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].id, id);
+    }
+
+    #[test]
+    #[should_panic(expected = "no selected strict cases")]
+    fn single_case_filter_rejects_unknown_identity() {
+        filtered_cases("strict", None, Some("unknown-fixture"));
+    }
+    #[test]
+    #[should_panic(expected = "unsupported correspondence mode")]
+    fn corpus_validator_rejects_unknown_correspondence_mode() {
+        let mut rows = CORPUS.lines().map(str::to_owned).collect::<Vec<_>>();
+        let mut row: serde_json::Value = serde_json::from_str(&rows[0]).unwrap();
+        row["mode"] = serde_json::json!("unsupported");
+        rows[0] = row.to_string();
+        parse_cases(&rows.join("\n"));
     }
 }

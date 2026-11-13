@@ -3,6 +3,25 @@ use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+#[cfg(test)]
+type TestOwnershipGate = (
+    Arc<tokio::sync::Notify>,
+    Mutex<std::sync::mpsc::Receiver<()>>,
+);
+
+// Only tests can hold an owned result before delivery or its destructor.
+#[cfg(test)]
+fn wait_for_test_gate(gate: Option<&TestOwnershipGate>) {
+    if let Some(gate) = gate {
+        gate.0.notify_one();
+        gate.1
+            .lock()
+            .unwrap()
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap();
+    }
+}
+
 /// The run deadline is established once, before any measured preparation.
 /// Blocking owners retain this capability through rollback, even after the waiter exits.
 #[derive(Clone, Debug)]
@@ -11,6 +30,10 @@ pub(super) struct PreparationToken {
     control: RunControl,
     shutdown: Arc<Mutex<Option<ShutdownBudget>>>,
     failures: Arc<Mutex<Vec<String>>>,
+    #[cfg(test)]
+    delivery_gate: Option<Arc<TestOwnershipGate>>,
+    #[cfg(test)]
+    disposal_gate: Option<Arc<TestOwnershipGate>>,
 }
 
 #[derive(Debug)]
@@ -32,7 +55,31 @@ impl PreparationToken {
             control,
             shutdown: Arc::new(Mutex::new(None)),
             failures: Arc::new(Mutex::new(Vec::new())),
+            #[cfg(test)]
+            delivery_gate: None,
+            #[cfg(test)]
+            disposal_gate: None,
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_delivery_gate(
+        mut self,
+        ready: Arc<tokio::sync::Notify>,
+        release: std::sync::mpsc::Receiver<()>,
+    ) -> Self {
+        self.delivery_gate = Some(Arc::new((ready, Mutex::new(release))));
+        self
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_disposal_gate(
+        mut self,
+        ready: Arc<tokio::sync::Notify>,
+        release: std::sync::mpsc::Receiver<()>,
+    ) -> Self {
+        self.disposal_gate = Some(Arc::new((ready, Mutex::new(release))));
+        self
     }
 
     pub(super) fn check(&self) -> Result<(), PreparationError> {
@@ -63,7 +110,19 @@ impl PreparationToken {
         if let Some(budget) = self.shutdown() {
             return Err(match budget.cause() {
                 ShutdownCause::Failure => PreparationError::Failed("preparation failed".into()),
-                cause => PreparationError::Stopped(cause),
+                cause => {
+                    // Cancellation timestamps and the elapsed deadline persist;
+                    // either stopped cause is therefore handled above on every check.
+                    #[cfg(coverage_nightly)]
+                    {
+                        (#[coverage(off)]
+                        || PreparationError::Stopped(cause))()
+                    }
+                    #[cfg(not(coverage_nightly))]
+                    {
+                        PreparationError::Stopped(cause)
+                    }
+                }
             });
         }
         Ok(())
@@ -130,6 +189,10 @@ impl PreparationToken {
                 },
                 Ok(()) => result,
             };
+            // Only tests can hold an already-checked, still-owned result at
+            // the delivery boundary; production delivery remains immediate.
+            #[cfg(test)]
+            wait_for_test_gate(token.delivery_gate.as_deref());
             // A receiver that has stopped cannot cause the result's resources to
             // be dropped by an async task, or certify that this worker quiesced.
             let _ = sender.send(result);
@@ -182,6 +245,16 @@ impl PreparationToken {
         result
     }
 
+    // Drive the receive/cancellation boundary with already-owned results without
+    // relying on scheduler races or changing production result acceptance.
+    #[cfg(test)]
+    pub(super) async fn accept_test_result<T: Send + 'static>(
+        &self,
+        result: Result<T, PreparationError>,
+    ) -> Result<T, PreparationError> {
+        self.accept_result(result).await
+    }
+
     pub(super) async fn admit<F: std::future::Future>(
         &self,
         interrupts: &mut crate::interrupt::InterruptMonitor,
@@ -207,7 +280,13 @@ impl PreparationToken {
         owner: T,
     ) -> Result<(), PreparationError> {
         let budget = self.failure_budget();
-        let disposal = tokio::task::spawn_blocking(move || drop(owner));
+        #[cfg(test)]
+        let gate = self.disposal_gate.clone();
+        let disposal = tokio::task::spawn_blocking(move || {
+            #[cfg(test)]
+            wait_for_test_gate(gate.as_deref());
+            drop(owner);
+        });
         match budget.wait(disposal).await {
             Ok(Ok(())) => Ok(()),
             Ok(Err(error)) => Err(PreparationError::Failed(format!(
@@ -362,7 +441,12 @@ mod tests {
         let error = timing.check().unwrap_err();
 
         // Act.
-        let result = timing.report(error, Vec::new()).await;
+        let result = timing
+            .report(
+                error,
+                Box::new(Vec::new()) as Box<dyn std::io::Write + Send>,
+            )
+            .await;
 
         // Assert.
         assert_eq!(result, Ok(4));
@@ -493,7 +577,10 @@ mod tests {
 
         // Act.
         let result = timing
-            .report(timing.check().unwrap_err(), FailedFlushWriter)
+            .report(
+                timing.check().unwrap_err(),
+                Box::new(FailedFlushWriter) as Box<dyn std::io::Write + Send>,
+            )
             .await;
 
         // Assert.
@@ -522,9 +609,11 @@ mod tests {
         }
         impl Drop for BlockedWriter {
             fn drop(&mut self) {
-                if let Some(dropped) = self.dropped.take() {
-                    let _ = dropped.send(());
-                }
+                let dropped = self
+                    .dropped
+                    .take()
+                    .expect("owned drop notification is used once");
+                let _ = dropped.send(());
             }
         }
         let control = RunControl::new();
@@ -538,8 +627,14 @@ mod tests {
             release: release_rx,
             dropped: Some(dropped_tx),
         };
-        let task =
-            tokio::spawn(async move { timing.report(timing.check().unwrap_err(), writer).await });
+        let task = tokio::spawn(async move {
+            timing
+                .report(
+                    timing.check().unwrap_err(),
+                    Box::new(writer) as Box<dyn std::io::Write + Send>,
+                )
+                .await
+        });
         entered_rx.await.unwrap();
 
         // Act.
@@ -565,8 +660,10 @@ mod tests {
         fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
             Err(std::io::Error::other("fixture diagnostic failure"))
         }
+        // A failed write must prevent report from attempting its flush.
+        #[cfg_attr(coverage_nightly, coverage(off))]
         fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
+            panic!("diagnostic flush followed a failed write")
         }
     }
 
@@ -579,7 +676,10 @@ mod tests {
 
         // Act.
         let result = timing
-            .report(timing.check().unwrap_err(), FailedWriter)
+            .report(
+                timing.check().unwrap_err(),
+                Box::new(FailedWriter) as Box<dyn std::io::Write + Send>,
+            )
             .await;
 
         // Assert.

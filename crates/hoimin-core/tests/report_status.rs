@@ -56,6 +56,13 @@ fn wire_for(result: &MutantFinished, status: &str) -> serde_json::Value {
     wire
 }
 
+fn contradictory_status(expected: &str) -> &'static str {
+    match expected {
+        "killed" => "survived",
+        _ => "killed",
+    }
+}
+
 macro_rules! projection_case {
     ($name:ident, $outcome:expr, $expected:literal) => {
         mod $name {
@@ -108,11 +115,7 @@ macro_rules! projection_case {
             fn contradictory_direct_rejection() {
                 // Arrange: change only the projection to a known incorrect status.
                 let result = finished($outcome);
-                let wrong = if $expected == "killed" {
-                    "survived"
-                } else {
-                    "killed"
-                };
+                let wrong = contradictory_status($expected);
                 let wire = wire_for(&result, wrong);
                 // Act.
                 let error = serde_json::from_value::<MutantFinished>(wire).unwrap_err();
@@ -127,11 +130,7 @@ macro_rules! projection_case {
             fn contradictory_tagged_rejection() {
                 // Arrange.
                 let result = finished($outcome);
-                let wrong = if $expected == "killed" {
-                    "survived"
-                } else {
-                    "killed"
-                };
+                let wrong = contradictory_status($expected);
                 let mut wire = wire_for(&result, wrong);
                 wire["kind"] = json!("mutant_finished");
                 // Act.

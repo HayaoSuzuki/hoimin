@@ -6,7 +6,7 @@ import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import TextIO
-from unittest.mock import Mock
+from unittest.mock import Mock, create_autospec
 
 import pytest
 from pytest_mock import MockerFixture
@@ -252,8 +252,9 @@ def test_report_rejects_duplicate_or_unknown_status_rows(
 
 
 def test_strict_execution_removes_inherited_corpus_filters(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+    tmp_path: Path, mocker: MockerFixture
 ) -> None:
+    original_killpg_spec = getattr(os, "killpg", Mock())
     case = load_registry()["cases"][0]
 
     assert case["mode"] == "strict"
@@ -272,11 +273,15 @@ def test_strict_execution_removes_inherited_corpus_filters(
         stdout.flush()
         return Mock(wait=Mock(return_value=0))
 
-    monkeypatch.setenv("HOIMIN_BOUNDARY_CASE", "one")
-    monkeypatch.setenv("HOIMIN_SESSION_ORACLE_CASE", "one")
-    monkeypatch.setattr("tools.boundary_contracts.sys.platform", case["platforms"][0])
-    monkeypatch.setattr("tools.boundary_contracts.os.killpg", Mock(), raising=False)
-    monkeypatch.setattr("tools.boundary_contracts.signal.SIGKILL", 9, raising=False)
+    mocker.patch.dict(os.environ, {"HOIMIN_BOUNDARY_CASE": "one"})
+    mocker.patch.dict(os.environ, {"HOIMIN_SESSION_ORACLE_CASE": "one"})
+    mocker.patch("tools.boundary_contracts.sys.platform", case["platforms"][0])
+    mocker.patch(
+        "tools.boundary_contracts.os.killpg",
+        create_autospec(original_killpg_spec, side_effect=Mock()),
+        create=True,
+    )
+    mocker.patch("tools.boundary_contracts.signal.SIGKILL", 9, create=True)
     mocker.patch("tools.boundary_contracts.subprocess.Popen", side_effect=spawn)
 
     execute_result = execute(case, tmp_path)
@@ -285,8 +290,9 @@ def test_strict_execution_removes_inherited_corpus_filters(
 
 
 def test_strict_execution_includes_every_parameterized_case(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+    tmp_path: Path, mocker: MockerFixture
 ) -> None:
+    original_killpg_spec = getattr(os, "killpg", Mock())
     case = load_registry()["cases"][0]
     assert case["mode"] == "strict"
     calls: list[list[str]] = []
@@ -301,9 +307,13 @@ def test_strict_execution_includes_every_parameterized_case(
         stdout.flush()
         return Mock(wait=Mock(return_value=0))
 
-    monkeypatch.setattr("tools.boundary_contracts.sys.platform", case["platforms"][0])
-    monkeypatch.setattr("tools.boundary_contracts.os.killpg", Mock(), raising=False)
-    monkeypatch.setattr("tools.boundary_contracts.signal.SIGKILL", 9, raising=False)
+    mocker.patch("tools.boundary_contracts.sys.platform", case["platforms"][0])
+    mocker.patch(
+        "tools.boundary_contracts.os.killpg",
+        create_autospec(original_killpg_spec, side_effect=Mock()),
+        create=True,
+    )
+    mocker.patch("tools.boundary_contracts.signal.SIGKILL", 9, create=True)
     mocker.patch("tools.boundary_contracts.subprocess.Popen", side_effect=spawn)
 
     row = execute(case, tmp_path)
@@ -399,10 +409,11 @@ def test_timeout_kills_process_group_and_reports_infrastructure_error(
 
 
 def test_execution_without_process_group_support_is_unexecuted(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+    tmp_path: Path, mocker: MockerFixture
 ) -> None:
     case = load_registry()["cases"][0]
-    monkeypatch.delattr("tools.boundary_contracts.os.killpg", raising=False)
+    mocker.patch("tools.boundary_contracts.os.killpg", create=True)
+    delattr(os, "killpg")
     spawn = mocker.patch("tools.boundary_contracts.subprocess.Popen")
 
     row = execute(case, tmp_path)
@@ -430,15 +441,20 @@ def test_observations_preserve_additional_evidence() -> None:
 
 
 def test_failed_process_start_is_an_infrastructure_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, mocker: MockerFixture
 ) -> None:
+    original_popen_spec = subprocess.Popen
     case = load_registry()["cases"][0]
 
     def cannot_start(*_args: object, **_kwargs: object) -> None:
         msg = "process unavailable"
         raise OSError(msg)
 
-    monkeypatch.setattr(subprocess, "Popen", cannot_start)
+    mocker.patch.object(
+        subprocess,
+        "Popen",
+        create_autospec(original_popen_spec, side_effect=cannot_start),
+    )
     row = execute(case, tmp_path)
     assert row["status"] == BoundaryStatus.INFRASTRUCTURE_ERROR.value
     assert row["reason"] == "process unavailable"
@@ -462,12 +478,17 @@ def test_report_rejects_non_mapping_document(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("status", ["match", "mismatch"])
 def test_strict_cli_fails_for_semantic_mismatch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: str
+    tmp_path: Path, mocker: MockerFixture, status: str
 ) -> None:
+    original_execute_spec = execute
+
     def result(case: dict[str, object], _directory: Path) -> dict[str, object]:
         return {"id": case["id"], "mode": case["mode"], "status": status}
 
-    monkeypatch.setattr("tools.boundary_contracts.execute", result)
+    mocker.patch(
+        "tools.boundary_contracts.execute",
+        create_autospec(original_execute_spec, side_effect=result),
+    )
     exit_code = main(["strict", "--output", str(tmp_path)])
     assert exit_code == int(status == "mismatch")
     report = json.loads((tmp_path / "strict.json").read_text(encoding="utf-8"))

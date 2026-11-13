@@ -1,4 +1,4 @@
-#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+#![cfg_attr(coverage_nightly, feature(coverage_attribute, stmt_expr_attributes))]
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
@@ -193,7 +193,19 @@ fn all_workers_are_verified_once_before_baseline() {
 
     assert_eq!(state.phase(), RunPhase::MaterializationVerification);
     let [RunEffect::VerifyOriginals(verify)] = effects.as_slice() else {
-        panic!("expected one original verification, got {effects:?}");
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("expected one original verification, got {effects:?}") })(
+                )
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("expected one original verification, got {effects:?}")
+            }
+        }
     };
     assert_eq!(verify.checkpoint, IntegrityCheckpoint::PostMaterialization);
     let verify_id = verify.id;
@@ -209,7 +221,18 @@ fn all_workers_are_verified_once_before_baseline() {
 
     assert_eq!(state.phase(), RunPhase::Baseline);
     let [RunEffect::RunBaseline(baseline)] = effects.as_slice() else {
-        panic!("expected one baseline, got {effects:?}");
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("expected one baseline, got {effects:?}") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("expected one baseline, got {effects:?}")
+            }
+        }
     };
     assert_eq!(baseline.limits.max_processes, 1);
 }
@@ -218,7 +241,19 @@ fn all_workers_are_verified_once_before_baseline() {
 fn materialization_verification_rejects_a_mismatched_checkpoint() {
     let (state, effects) = waiting_for_materialization_verification_with(fixture_config());
     let [RunEffect::VerifyOriginals(verify)] = effects.as_slice() else {
-        panic!("expected one original verification, got {effects:?}");
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("expected one original verification, got {effects:?}") })(
+                )
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("expected one original verification, got {effects:?}")
+            }
+        }
     };
     let verify_id = verify.id;
 
@@ -413,10 +448,32 @@ fn top_budget_shortfall_warns_before_requesting_analysis() {
     .unwrap();
 
     let RunEffect::EmitOutput(output) = effects.first().unwrap() else {
-        panic!("shortfall must emit a diagnostic first")
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("shortfall must emit a diagnostic first") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("shortfall must emit a diagnostic first")
+            }
+        }
     };
     let OutputEvent::Diagnostic(diagnostic) = &output.event else {
-        panic!("shortfall output must be diagnostic")
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("shortfall output must be diagnostic") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("shortfall output must be diagnostic")
+            }
+        }
     };
 
     assert_eq!(diagnostic.code, "budget.projected_shortfall");
@@ -475,16 +532,7 @@ fn sufficient_top_budget_proceeds_directly_to_analysis() {
     )
     .unwrap();
 
-    assert!(!effects.iter().any(|effect| matches!(
-        effect,
-        RunEffect::EmitOutput(output)
-            if matches!(&output.event, OutputEvent::Diagnostic(_))
-    )));
-    assert!(
-        effects
-            .iter()
-            .any(|effect| matches!(effect, RunEffect::AnalyzeFile(_)))
-    );
+    assert!(matches!(effects.as_slice(), [RunEffect::AnalyzeFile(_)]));
     assert_eq!(state.phase(), RunPhase::Analyze);
     assert_eq!(state.exit_code(), previous_exit);
 }
@@ -524,10 +572,32 @@ fn run_started_emits_normalized_focused_profile() {
     .unwrap();
 
     let RunEffect::EmitOutput(output) = effects.first().unwrap() else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     let OutputEvent::RunStarted(run_started) = &output.event else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
 
     assert_eq!(
@@ -588,6 +658,10 @@ fn empty_candidate_spool_finishes_with_null_score() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "stable/nightly failure-only fallbacks keep coverage exclusions local to assertions"
+)]
 fn analyzer_diagnostic_is_emitted_before_incomplete_finalization() {
     let (state, effects) = waiting_for_analysis();
     let analysis_id = effect_id(find_effect(&effects, |effect| {
@@ -619,10 +693,33 @@ fn analyzer_diagnostic_is_emitted_before_incomplete_finalization() {
 
     assert_eq!(effects.len(), 1);
     let RunEffect::EmitOutput(output) = &effects[0] else {
-        panic!("analyzer warning must be emitted before finalization")
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("analyzer warning must be emitted before finalization") })(
+                )
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("analyzer warning must be emitted before finalization")
+            }
+        }
     };
     let OutputEvent::Diagnostic(diagnostic) = &output.event else {
-        panic!("analyzer warning must use diagnostic output")
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("analyzer warning must use diagnostic output") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("analyzer warning must use diagnostic output")
+            }
+        }
     };
     assert_eq!(diagnostic.level, "warning");
     assert_eq!(diagnostic.code, "analyzer.invalid_syntax");
@@ -641,10 +738,34 @@ fn analyzer_diagnostic_is_emitted_before_incomplete_finalization() {
 
     assert_eq!(effects.len(), 1);
     let RunEffect::EmitOutput(output) = &effects[0] else {
-        panic!("the next analyzer warning must precede finalization")
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("the next analyzer warning must precede finalization") })(
+                )
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("the next analyzer warning must precede finalization")
+            }
+        }
     };
     let OutputEvent::Diagnostic(diagnostic) = &output.event else {
-        panic!("the next analyzer warning must use diagnostic output")
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("the next analyzer warning must use diagnostic output") })(
+                )
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("the next analyzer warning must use diagnostic output")
+            }
+        }
     };
     assert_eq!(diagnostic.level, "warning");
     assert_eq!(diagnostic.code, "analyzer.unsupported_syntax");
@@ -1482,7 +1603,18 @@ fn ordered_candidate_filter_rejects_missing_after_partial_match() {
     let RunEffect::ReadCandidate(read) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::ReadCandidate(_))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     let (state, effects) = transition(
         state,
@@ -1496,7 +1628,18 @@ fn ordered_candidate_filter_rejects_missing_after_partial_match() {
     let RunEffect::ReadCandidate(eof) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::ReadCandidate(_))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
 
     let error = transition(
@@ -1851,7 +1994,18 @@ fn assert_ordered_mid_collection_stop(stop: RunEvent, expected_exit_code: i32) {
         let RunEffect::ReadCandidate(read) = find_effect(&effects, |effect| {
             matches!(effect, RunEffect::ReadCandidate(_))
         }) else {
-            unreachable!()
+            {
+                // Test failure reporting only; a passing scenario cannot execute this expression.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || -> ! { unreachable!() })()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    unreachable!()
+                }
+            }
         };
         (state, effects) = transition(
             state,
@@ -1866,7 +2020,18 @@ fn assert_ordered_mid_collection_stop(stop: RunEvent, expected_exit_code: i32) {
     let RunEffect::ReadCandidate(in_flight_read) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::ReadCandidate(_))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     let in_flight_read = in_flight_read.clone();
 
@@ -1899,10 +2064,32 @@ fn assert_ordered_mid_collection_stop(stop: RunEvent, expected_exit_code: i32) {
                 if matches!(&value.event, OutputEvent::MutantFinished(event)
                     if event.outcome.status() == MutationStatus::NotRun))
         }) else {
-            unreachable!()
+            {
+                // Test failure reporting only; a passing scenario cannot execute this expression.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || -> ! { unreachable!() })()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    unreachable!()
+                }
+            }
         };
         let OutputEvent::MutantFinished(result) = &finished.event else {
-            unreachable!()
+            {
+                // Test failure reporting only; a passing scenario cannot execute this expression.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || -> ! { unreachable!() })()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    unreachable!()
+                }
+            }
         };
         assert_eq!(result.candidate.id, expected.id);
         reported.push(result.candidate.id.clone());
@@ -1924,7 +2111,18 @@ fn assert_ordered_mid_collection_stop(stop: RunEvent, expected_exit_code: i32) {
     let RunEffect::VerifyOriginals(verify) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::VerifyOriginals(_))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     let (state, effects) = transition(
         state,
@@ -1937,7 +2135,18 @@ fn assert_ordered_mid_collection_stop(stop: RunEvent, expected_exit_code: i32) {
     let RunEffect::Cleanup(cleanup) =
         find_effect(&effects, |effect| matches!(effect, RunEffect::Cleanup(_)))
     else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     let (state, effects) = transition(
         state,
@@ -1947,16 +2156,7 @@ fn assert_ordered_mid_collection_stop(stop: RunEvent, expected_exit_code: i32) {
         }),
     )
     .unwrap();
-    let reports: Vec<_> = effects
-        .iter()
-        .filter_map(|effect| match effect {
-            RunEffect::EmitOutput(output) => match &output.event {
-                OutputEvent::RunFinished(summary) => Some((output.id, summary)),
-                _ => None,
-            },
-            _ => None,
-        })
-        .collect();
+    let reports: Vec<_> = effects.iter().filter_map(run_finished_effect).collect();
     assert_eq!(reports.len(), 1);
     let (report_id, summary) = reports[0];
     assert!(!summary.complete);
@@ -2064,7 +2264,18 @@ fn ordered_duplicate_discovery_dispatches_once_with_the_indexed_body() {
         let RunEffect::ReadCandidate(read) = find_effect(&effects, |effect| {
             matches!(effect, RunEffect::ReadCandidate(_))
         }) else {
-            unreachable!()
+            {
+                // Test failure reporting only; a passing scenario cannot execute this expression.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || -> ! { unreachable!() })()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    unreachable!()
+                }
+            }
         };
 
         assert_eq!(read.target, CandidateReadTarget::Next);
@@ -2083,7 +2294,18 @@ fn ordered_duplicate_discovery_dispatches_once_with_the_indexed_body() {
         }));
     }
     let RunEffect::ReadCandidate(read) = &effects[0] else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     (state, effects) = transition(
         state,
@@ -2100,7 +2322,19 @@ fn ordered_duplicate_discovery_dispatches_once_with_the_indexed_body() {
 
     // core uses the fetched body once instead of a body retained during discovery.
     let RunEffect::ApplyMutation(apply) = &effects[0] else {
-        panic!("expected the selected indexed body to be applied")
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("expected the selected indexed body to be applied") })(
+                )
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("expected the selected indexed body to be applied")
+            }
+        }
     };
     assert_eq!(apply.candidate, latest);
     let (state, effects) = complete_killed_candidate(state, &effects, "m1");
@@ -2134,7 +2368,18 @@ fn complete_indexed_candidate(
     let RunEffect::ReadCandidate(read) = find_effect(effects, |effect| {
         matches!(effect, RunEffect::ReadCandidate(_))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     assert_eq!(read.target, CandidateReadTarget::Id(candidate.id.clone()));
     transition(
@@ -2146,6 +2391,35 @@ fn complete_indexed_candidate(
         }),
     )
     .unwrap()
+}
+
+fn four_parallel_jobs_after_analysis() -> (RunState, Vec<RunEffect>) {
+    let mut raw = fixture_raw_config();
+    raw.limits.jobs = 4;
+    raw.limits.max_processes = 1;
+    let (state, effects) = waiting_for_analysis_with(
+        RunConfig::try_from(raw)
+            .unwrap()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap(),
+    );
+    let analysis_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::AnalyzeFile(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::AnalysisFinished(AnalysisFinished {
+            id: analysis_id,
+            spool: Some(CandidateSpoolRef {
+                token: "parallel".to_owned(),
+                records: 4,
+            }),
+            truncated: false,
+            diagnostics: Vec::new(),
+        }),
+    )
+    .unwrap();
+    (state, effects)
 }
 
 #[rstest::rstest]
@@ -2176,31 +2450,7 @@ fn complete_indexed_candidate(
 fn four_jobs_fill_four_independent_worker_chains_in_every_completion_order(
     #[case] order: [u32; 4],
 ) {
-    let mut raw = fixture_raw_config();
-    raw.limits.jobs = 4;
-    raw.limits.max_processes = 1;
-    let (state, effects) = waiting_for_analysis_with(
-        RunConfig::try_from(raw)
-            .unwrap()
-            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
-            .unwrap(),
-    );
-    let analysis_id = effect_id(find_effect(&effects, |effect| {
-        matches!(effect, RunEffect::AnalyzeFile(_))
-    }));
-    let (mut state, mut effects) = transition(
-        state,
-        RunEvent::AnalysisFinished(AnalysisFinished {
-            id: analysis_id,
-            spool: Some(CandidateSpoolRef {
-                token: "parallel".to_owned(),
-                records: 4,
-            }),
-            truncated: false,
-            diagnostics: Vec::new(),
-        }),
-    )
-    .unwrap();
+    let (mut state, mut effects) = four_parallel_jobs_after_analysis();
     let mut running_workers = BTreeSet::new();
     let mut running_ids = BTreeMap::new();
     for sequence in 1..=4 {
@@ -2372,10 +2622,32 @@ fn cleanup_failure_terminates_without_reemitting_cleanup() {
             if matches!(&value.event, OutputEvent::RunFinished(_)))
     });
     let RunEffect::EmitOutput(report) = report else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     let OutputEvent::RunFinished(summary) = &report.event else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
 
     assert_eq!(summary.exit_code, 2);
@@ -2525,10 +2797,32 @@ fn deferred_cleanup_failure_is_reported_as_deferred() {
             if matches!(&value.event, OutputEvent::RunFinished(_)))
     });
     let RunEffect::EmitOutput(report) = report else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     let OutputEvent::RunFinished(summary) = &report.event else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
 
     assert_eq!(summary.disk.cleanup.len(), 1);
@@ -2539,20 +2833,12 @@ fn deferred_cleanup_failure_is_reported_as_deferred() {
 }
 
 fn assert_failed_cleanup_delivery_order(state: RunState, effects: &[RunEffect]) {
-    let output = effects.iter().find_map(|effect| match effect {
-        RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::RunFinished(_)) => {
-            Some(value)
-        }
-        _ => None,
-    });
+    let output = effects.iter().find_map(run_finished_effect);
     assert!(
         output.is_some(),
         "cleanup must be followed by RunFinished output"
     );
-    let output = output.unwrap();
-    let OutputEvent::RunFinished(summary) = &output.event else {
-        unreachable!()
-    };
+    let (output_id, summary) = output.unwrap();
     assert!(!summary.complete);
     assert_eq!(summary.disk.cleanup.len(), 1);
     assert_eq!(
@@ -2562,7 +2848,7 @@ fn assert_failed_cleanup_delivery_order(state: RunState, effects: &[RunEffect]) 
     let (report_failed, failed_effects) = transition(
         state.clone(),
         RunEvent::EffectFailed(EffectFailed {
-            id: output.id,
+            id: output_id,
             failure: EffectFailure::ReportIo {
                 operation: "write RunFinished".into(),
                 message: "disk full".into(),
@@ -2580,7 +2866,7 @@ fn assert_failed_cleanup_delivery_order(state: RunState, effects: &[RunEffect]) 
 
     let (state, effects) = transition(
         state,
-        RunEvent::OutputEmitted(OutputEmitted { id: output.id }),
+        RunEvent::OutputEmitted(OutputEmitted { id: output_id }),
     )
     .unwrap();
     assert!(effects.iter().any(|effect| matches!(
@@ -2938,10 +3224,32 @@ fn resumed_session_load_preserves_run_id_and_completion_identity() {
     let RunEffect::EmitOutput(output) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::EmitOutput(_))
     }) else {
-        panic!("expected run started output")
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("expected run started output") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("expected run started output")
+            }
+        }
     };
     let OutputEvent::RunStarted(started) = &output.event else {
-        panic!("expected run started header")
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("expected run started header") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("expected run started header")
+            }
+        }
     };
 
     assert_eq!(duplicate.code(), "machine.effect.duplicate");
@@ -3024,6 +3332,10 @@ fn original_modification_is_fatal_before_the_final_report() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "stable/nightly failure-only fallbacks keep coverage exclusions local to assertions"
+)]
 fn session_result_is_persisted_before_finished_output_and_reset() {
     let (state, effects) = waiting_for_session_candidate(false);
     let read_id = effect_id(find_effect(&effects, |effect| {
@@ -3086,7 +3398,18 @@ fn session_result_is_persisted_before_finished_output_and_reset() {
         matches!(effect, RunEffect::PersistResult(_))
     }) {
         RunEffect::PersistResult(value) => &value.result,
-        _ => unreachable!(),
+        _ => {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     assert!(matches!(
         persisted_result.outcome,
@@ -3114,9 +3437,31 @@ fn session_result_is_persisted_before_finished_output_and_reset() {
     }) {
         RunEffect::EmitOutput(value) => match &value.event {
             OutputEvent::MutantFinished(value) => value,
-            _ => unreachable!(),
+            _ => {
+                // Test failure reporting only; a passing scenario cannot execute this expression.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || -> ! { unreachable!() })()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    unreachable!()
+                }
+            }
         },
-        _ => unreachable!(),
+        _ => {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     assert!(matches!(
         finished.outcome,
@@ -3138,7 +3483,18 @@ fn assert_close_timeout_public_result(effects: &[RunEffect]) {
             if matches!(&value.event, OutputEvent::MutantFinished(_)))
     }) {
         RunEffect::EmitOutput(value) => serde_json::to_value(&value.event).unwrap(),
-        _ => unreachable!(),
+        _ => {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     assert_eq!(
         public_result["outcome"]["executed"]["output_state"],
@@ -3151,6 +3507,10 @@ fn assert_close_timeout_public_result(effects: &[RunEffect]) {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "stable/nightly failure-only fallbacks keep coverage exclusions local to assertions"
+)]
 fn output_close_timeout_becomes_an_error_and_the_worker_continues() {
     let (state, effects) = waiting_for_session_candidate(false);
     let read_id = effect_id(find_effect(&effects, |effect| {
@@ -3200,7 +3560,18 @@ fn output_close_timeout_becomes_an_error_and_the_worker_continues() {
     let RunEffect::PersistResult(persist) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::PersistResult(_))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
 
     let result = &persist.result;
@@ -3305,10 +3676,32 @@ fn cancellation_during_mutant_execution_still_reports_not_run() {
         matches!(effect, RunEffect::EmitOutput(value)
             if matches!(&value.event, OutputEvent::MutantFinished(_)))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     let OutputEvent::MutantFinished(result) = &finished.event else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     assert_eq!(result.candidate, candidate);
     assert_eq!(result.outcome.status(), MutationStatus::NotRun);
@@ -3374,7 +3767,18 @@ fn assert_persisting_stop_preserves_result(stop: RunEvent, expected_exit_code: i
     let RunEffect::PersistResult(persist) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::PersistResult(_))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     let persist = persist.clone();
 
@@ -3395,10 +3799,32 @@ fn assert_persisting_stop_preserves_result(stop: RunEvent, expected_exit_code: i
         matches!(effect, RunEffect::EmitOutput(value)
             if matches!(&value.event, OutputEvent::MutantFinished(_)))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     let OutputEvent::MutantFinished(result) = &finished.event else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     assert_eq!(result.candidate, candidate);
     assert_eq!(result.outcome.status(), MutationStatus::Killed);
@@ -3426,7 +3852,18 @@ fn assert_persisting_stop_preserves_result(stop: RunEvent, expected_exit_code: i
     let RunEffect::ReadCandidate(read) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::ReadCandidate(_))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     let (state, effects) = transition(
         state,
@@ -3440,7 +3877,18 @@ fn assert_persisting_stop_preserves_result(stop: RunEvent, expected_exit_code: i
     let RunEffect::VerifyOriginals(verify) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::VerifyOriginals(_))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     let (state, effects) = transition(
         state,
@@ -3453,7 +3901,18 @@ fn assert_persisting_stop_preserves_result(stop: RunEvent, expected_exit_code: i
     let RunEffect::Cleanup(cleanup) =
         find_effect(&effects, |effect| matches!(effect, RunEffect::Cleanup(_)))
     else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     let (state, effects) = transition(
         state,
@@ -3467,10 +3926,32 @@ fn assert_persisting_stop_preserves_result(stop: RunEvent, expected_exit_code: i
         matches!(effect, RunEffect::EmitOutput(value)
             if matches!(&value.event, OutputEvent::RunFinished(_)))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     let OutputEvent::RunFinished(summary) = &output.event else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     assert!(!summary.complete);
     assert_eq!(summary.exit_code, expected_exit_code);
@@ -3484,7 +3965,18 @@ fn assert_persisting_stop_preserves_result(stop: RunEvent, expected_exit_code: i
     let RunEffect::FinishSession(finish) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::FinishSession(_))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     assert!(!finish.complete);
     let (state, effects) = transition(
@@ -3600,7 +4092,18 @@ fn timeout_marks_the_session_and_final_report_incomplete() {
     let RunEffect::VerifyOriginals(verify) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::VerifyOriginals(_))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     let (state, effects) = transition(
         state,
@@ -3613,7 +4116,18 @@ fn timeout_marks_the_session_and_final_report_incomplete() {
     let RunEffect::Cleanup(cleanup) =
         find_effect(&effects, |effect| matches!(effect, RunEffect::Cleanup(_)))
     else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     let (state, effects) = transition(
         state,
@@ -3627,10 +4141,32 @@ fn timeout_marks_the_session_and_final_report_incomplete() {
         matches!(effect, RunEffect::EmitOutput(value)
             if matches!(&value.event, OutputEvent::RunFinished(_)))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     let OutputEvent::RunFinished(summary) = &output.event else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
 
     assert!(!summary.complete);
@@ -3644,7 +4180,18 @@ fn timeout_marks_the_session_and_final_report_incomplete() {
     let RunEffect::FinishSession(finish) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::FinishSession(_))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     assert!(!finish.complete);
     let (_, effects) = transition(
@@ -3848,10 +4395,32 @@ fn synthetic_output_retry_keeps_outcome_uncommitted_until_finished_ack(
 
 fn synthetic_finished(effects: &[RunEffect]) -> &hoimin_core::MutantFinished {
     let RunEffect::EmitOutput(output) = &effects[0] else {
-        panic!("expected synthetic output")
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("expected synthetic output") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("expected synthetic output")
+            }
+        }
     };
     let OutputEvent::MutantFinished(finished) = &output.event else {
-        panic!("expected finished output")
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("expected finished output") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("expected finished output")
+            }
+        }
     };
     finished
 }
@@ -4242,7 +4811,18 @@ fn multiple_target_files_are_analyzed_in_order_before_candidate_replay() {
     let RunEffect::AnalyzeFile(first) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::AnalyzeFile(_))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
 
     assert_eq!(first.target.path, camino::Utf8PathBuf::from("src/a.py"));
@@ -4260,7 +4840,18 @@ fn multiple_target_files_are_analyzed_in_order_before_candidate_replay() {
     let RunEffect::AnalyzeFile(second) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::AnalyzeFile(_))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     assert_eq!(second.target.path, camino::Utf8PathBuf::from("src/b.py"));
     assert!(second.final_target);
@@ -4360,7 +4951,18 @@ fn filtered_analysis_advances_across_nonfinal_targets_before_receiving_a_spool()
     let RunEffect::AnalyzeFile(first) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::AnalyzeFile(_))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
 
     assert!(!first.final_target);
@@ -4961,10 +5563,22 @@ impl ScheduleHarness {
             }
             self.complete(0);
         }
-        panic!("target effect was not produced within the completion cap");
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("target effect was not produced within the completion cap") })(
+                )
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("target effect was not produced within the completion cap")
+            }
+        }
     }
 
-    fn fail_where(&mut self, predicate: impl Fn(&RunEffect) -> bool) {
+    fn fail_where(&mut self, predicate: fn(&RunEffect) -> bool) {
         let eligible: Vec<_> = self
             .pending
             .iter()
@@ -5091,7 +5705,7 @@ impl ScheduleHarness {
                     .parse::<usize>()
                     .unwrap();
                 let class =
-                    self.completion_classes[(sequence - 1) % self.completion_classes.len()] % 6;
+                    self.completion_classes[(sequence - 1) % self.completion_classes.len()] % 7;
                 let (status, termination) = match class {
                     0 => (MutationStatus::Killed, ProcessTermination::Exit(1)),
                     1 => (MutationStatus::Survived, ProcessTermination::Exit(0)),
@@ -5101,14 +5715,17 @@ impl ScheduleHarness {
                         MutationStatus::ProcessLimit,
                         ProcessTermination::ProcessLimit,
                     ),
-                    _ => (MutationStatus::NotRun, ProcessTermination::Cancelled),
+                    5 => (MutationStatus::NotRun, ProcessTermination::Cancelled),
+                    _ => (MutationStatus::Error, ProcessTermination::Exit(0)),
                 };
                 self.ledger.insert(mutant_id.clone(), status);
-                RunEvent::MutantFinished(schedule_process_finished(
-                    process.id,
-                    process.context.worker,
-                    termination,
-                ))
+                let mut finished =
+                    schedule_process_finished(process.id, process.context.worker, termination);
+                // Class six models incomplete output, whose error status must agree with the ledger.
+                if class == 6 {
+                    finished.output_state = hoimin_core::ProcessOutputState::CloseTimedOut;
+                }
+                RunEvent::MutantFinished(finished)
             }
             RunEffect::ResetWorker(reset) => RunEvent::WorkerReset(WorkerReset {
                 id: reset.id,
@@ -5333,10 +5950,7 @@ proptest! {
             .with_environment(hoimin_core::EnvironmentSnapshot::Untracked).unwrap();
         let (state, effects) = waiting_for_preflight_with(config);
         let (mut state, effects) = complete_run_started(state, &effects);
-        let creates: Vec<_> = effects.iter().filter_map(|effect| match effect {
-            RunEffect::CreateWorker(value) => Some((value.id(), value.worker(), value.reservation_id())),
-            _ => None,
-        }).collect();
+        let creates: Vec<_> = effects.iter().filter_map(created_worker_request).collect();
 
         prop_assert_eq!(creates.len(), priorities.len());
         let mut order: Vec<_> = (0..priorities.len()).collect();
@@ -5369,7 +5983,7 @@ proptest! {
         jobs in 1usize..4,
         filter in 0u8..3,
         session in any::<bool>(),
-        completion_classes in prop::collection::vec(0u8..6, 1..7),
+        completion_classes in prop::collection::vec(0u8..7, 1..7),
         actions in prop::collection::vec(schedule_action_strategy(), 0..65),
     ) {
         let filter = [ScheduleFilter::All, ScheduleFilter::Explicit, ScheduleFilter::Ordered][usize::from(filter)];
@@ -5452,7 +6066,18 @@ fn ordered_collection_with_pending_read(
         .unwrap()
         .clone();
     let RunEffect::ReadCandidate(read) = read else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     let late_completion = RunEvent::CandidateLoaded(CandidateLoaded {
         id: read.id,
@@ -5474,12 +6099,12 @@ fn reported_candidate_ids(harness: &ScheduleHarness) -> Vec<String> {
 }
 
 #[rstest::rstest]
-#[case::value_0(0, vec![])]
-#[case::value_1(1, vec!["m1"])]
-#[case::value_3(3, vec!["m3", "m2", "m1"])]
+#[case::value_0(0, &[])]
+#[case::value_1(1, &["m1"])]
+#[case::value_3(3, &["m3", "m2", "m1"])]
 fn ordered_collection_stop_reports_discovered_boundary_prefix(
     #[case] discovered: usize,
-    #[case] expected: Vec<&str>,
+    #[case] expected: &[&str],
 ) {
     let (harness, _) = ordered_collection_with_pending_read(3, discovered, 3);
 
@@ -5520,7 +6145,18 @@ fn assert_stop_during_indexed_read(stop: RunEvent, repeated: bool, expected_exit
     let RunEffect::ReadCandidate(read) = find_effect(&harness.pending, |effect| {
         matches!(effect, RunEffect::ReadCandidate(_))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     retired_completions.push(CandidateLoaded {
         id: read.id,
@@ -5534,7 +6170,18 @@ fn assert_stop_during_indexed_read(stop: RunEvent, repeated: bool, expected_exit
         let RunEffect::ReadCandidate(read) = find_effect(&harness.pending, |effect| {
             matches!(effect, RunEffect::ReadCandidate(_))
         }) else {
-            unreachable!()
+            {
+                // Test failure reporting only; a passing scenario cannot execute this expression.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || -> ! { unreachable!() })()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    unreachable!()
+                }
+            }
         };
         retired_completions.push(CandidateLoaded {
             id: read.id,
@@ -5630,7 +6277,18 @@ fn assert_indexed_read_identity_rejected(candidate: Option<MutationCandidate>) {
     let RunEffect::ReadCandidate(read) = find_effect(&harness.pending, |effect| {
         matches!(effect, RunEffect::ReadCandidate(_))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     let received = candidate.as_ref().map(|candidate| candidate.id.clone());
 
@@ -5893,7 +6551,18 @@ fn waiting_for_cleanup() -> (RunState, hoimin_core::Cleanup) {
     let RunEffect::Cleanup(cleanup) =
         find_effect(&effects, |effect| matches!(effect, RunEffect::Cleanup(_)))
     else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     (state, cleanup.clone())
 }
@@ -6078,15 +6747,7 @@ fn waiting_for_materialization_verification_with(config: RunConfig) -> (RunState
         }
     }
     (state, effects) = complete_run_started(state, &effects);
-    let creates: Vec<_> = effects
-        .iter()
-        .filter_map(|effect| match effect {
-            RunEffect::CreateWorker(value) => {
-                Some((value.id(), value.worker(), value.reservation_id()))
-            }
-            _ => None,
-        })
-        .collect();
+    let creates: Vec<_> = effects.iter().filter_map(created_worker_request).collect();
     let mut produced = Vec::new();
     for (id, worker, reservation_id) in creates {
         (state, produced) = transition(
@@ -6121,7 +6782,18 @@ fn complete_materialization_verification(
     let RunEffect::VerifyOriginals(verify) = find_effect(effects, |effect| {
         matches!(effect, RunEffect::VerifyOriginals(_))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     transition(
         state,
@@ -6153,7 +6825,18 @@ fn complete_killed_candidate(
     let RunEffect::ApplyMutation(apply) = find_effect(effects, |effect| {
         matches!(effect, RunEffect::ApplyMutation(_))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     assert_eq!(apply.candidate.id, expected_candidate_id);
     let (state, effects) = transition(
@@ -6256,7 +6939,18 @@ fn waiting_for_successful_cleanup() -> (RunState, hoimin_core::Cleanup) {
     let RunEffect::VerifyOriginals(verify) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::VerifyOriginals(_))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     let (state, effects) = transition(
         state,
@@ -6269,7 +6963,18 @@ fn waiting_for_successful_cleanup() -> (RunState, hoimin_core::Cleanup) {
     let RunEffect::Cleanup(cleanup) =
         find_effect(&effects, |effect| matches!(effect, RunEffect::Cleanup(_)))
     else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     (state, cleanup.clone())
 }
@@ -6348,15 +7053,7 @@ fn waiting_for_selected_analysis(
     )
     .unwrap();
     let (state, effects) = complete_run_started(state, &effects);
-    let creates: Vec<_> = effects
-        .iter()
-        .filter_map(|effect| match effect {
-            RunEffect::CreateWorker(create) => {
-                Some((create.id(), create.worker(), create.reservation_id()))
-            }
-            _ => None,
-        })
-        .collect();
+    let creates: Vec<_> = effects.iter().filter_map(created_worker_request).collect();
     let (mut state, mut effects) = (state, effects);
     for (id, worker, reservation_id) in creates {
         (state, effects) = transition(
@@ -6594,7 +7291,18 @@ fn effect_id(effect: &RunEffect) -> EffectId {
 fn reservation_id(effect: &RunEffect) -> ReservationId {
     match effect {
         RunEffect::CreateWorker(value) => value.reservation_id(),
-        _ => panic!("expected create worker"),
+        _ => {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { panic!("expected create worker") })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                panic!("expected create worker")
+            }
+        }
     }
 }
 
@@ -6617,7 +7325,18 @@ fn resource_policy_scenarios() -> [ResourcePolicyScenario; 4] {
                     .position(|effect| matches!(effect, RunEffect::LookupStoredResult(_)))
                     .unwrap();
                 let RunEffect::LookupStoredResult(lookup) = harness.pending.remove(index) else {
-                    unreachable!()
+                    {
+                        // Test failure reporting only; a passing scenario cannot execute this expression.
+                        #[cfg(coverage_nightly)]
+                        {
+                            (#[coverage(off)]
+                            || -> ! { unreachable!() })()
+                        }
+                        #[cfg(not(coverage_nightly))]
+                        {
+                            unreachable!()
+                        }
+                    }
                 };
                 let (state, effects) = transition(
                     harness.state.clone(),
@@ -6778,6 +7497,7 @@ macro_rules! sample_stop_provenance {
             let started = harness
                 .output_events
                 .iter()
+                .rev()
                 .find_map(|(_, event)| match event {
                     OutputEvent::RunStarted(started) => Some(started),
                     _ => None,
@@ -6816,7 +7536,18 @@ fn complete_baseline_restoration(
     let RunEffect::ResetWorker(reset) = find_effect(effects, |effect| {
         matches!(effect, RunEffect::ResetWorker(_))
     }) else {
-        unreachable!()
+        {
+            // Test failure reporting only; a passing scenario cannot execute this expression.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || -> ! { unreachable!() })()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                unreachable!()
+            }
+        }
     };
     transition(
         state,
@@ -7083,6 +7814,7 @@ macro_rules! completed_selection_provenance {
             let started = harness
                 .output_events
                 .iter()
+                .rev()
                 .find_map(|(_, event)| match event {
                     OutputEvent::RunStarted(started) => Some(&started.verification_selection),
                     _ => None,
@@ -7196,4 +7928,71 @@ fn sample_observes_budget_only_after_baseline_restoration() {
             .iter()
             .any(|effect| matches!(effect, RunEffect::AnalyzeFile(_)))
     );
+}
+
+#[test]
+fn schedule_harness_accounts_for_incomplete_output_as_an_error() {
+    let harness = ScheduleHarness::new(1, 1, ScheduleFilter::All, false, vec![6]).finish(&[]);
+    assert_eq!(harness.ledger.get("m1"), Some(&MutationStatus::Error));
+    assert_eq!(harness.state.exit_code(), 2);
+    let summary = harness
+        .output_events
+        .iter()
+        .find_map(|(_, event)| match event {
+            OutputEvent::RunFinished(summary) => Some(summary),
+            _ => None,
+        })
+        .unwrap();
+    assert!(!summary.complete);
+}
+
+#[test]
+fn schedule_harness_loads_a_fresh_session_when_no_prior_run_exists() {
+    let mut harness = ScheduleHarness::new(0, 1, ScheduleFilter::All, true, vec![0]);
+    let effect = RunEffect::LoadSession(hoimin_core::LoadSession {
+        id: EffectId(123),
+        fingerprint: RunFingerprint::from_bytes([7; 32]),
+        max_mutants: std::num::NonZeroUsize::new(1).unwrap(),
+    });
+    assert!(matches!(
+        harness.completion_for(&effect),
+        RunEvent::SessionLoaded(SessionLoaded {
+            id: EffectId(123),
+            outcome: SessionLoadOutcome::Fresh(hoimin_core::ResumeFreshReason::NoPriorRun)
+        })
+    ));
+}
+
+fn created_worker_request(
+    effect: &RunEffect,
+) -> Option<(EffectId, u32, hoimin_core::ReservationId)> {
+    match effect {
+        RunEffect::CreateWorker(value) => {
+            Some((value.id(), value.worker(), value.reservation_id()))
+        }
+        _ => None,
+    }
+}
+
+fn run_finished_effect(effect: &RunEffect) -> Option<(EffectId, &hoimin_core::RunSummary)> {
+    match effect {
+        RunEffect::EmitOutput(output) => match &output.event {
+            OutputEvent::RunFinished(summary) => Some((output.id, summary)),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+#[test]
+fn worker_request_projection_skips_unrelated_effects() {
+    let effect = RunEffect::Preflight(hoimin_core::Preflight { id: EffectId(1) });
+    assert_eq!(created_worker_request(&effect), None);
+}
+
+#[rstest::rstest]
+#[case(&RunEffect::Preflight(hoimin_core::Preflight { id: EffectId(1) }))]
+#[case(&RunEffect::EmitOutput(hoimin_core::EmitOutput { id: EffectId(1), event: OutputEvent::Diagnostic(hoimin_core::Diagnostic::new("coverage", 1, "warning", "test", "test")) }))]
+fn final_report_projection_skips_unrelated_effects(#[case] effect: &RunEffect) {
+    assert_eq!(run_finished_effect(effect), None);
 }

@@ -1,9 +1,9 @@
 //! Bound recursive analysis independently of candidate retention, and dispose rejected trees.
 
+#[cfg(test)]
+use ruff_python_ast::AtomicNodeIndex;
 use ruff_python_ast::visitor::source_order::{SourceOrderVisitor, TraversalSignal};
 use ruff_python_ast::{AnyNodeRef, ModModule};
-#[cfg(test)]
-use ruff_python_ast::{AtomicNodeIndex, Expr, InterpolatedStringElement, Stmt};
 
 #[cfg(test)]
 use ruff_text_size::TextRange;
@@ -92,6 +92,24 @@ mod tests {
     use super::*;
     use camino::Utf8Path;
     use hoimin_core::{MutationOperatorSelection, MutationProfile};
+
+    fn run_check(module: &ModModule, cancelled: &dyn Fn() -> bool) -> Result<(), AnalysisError> {
+        check(module, &cancelled)
+    }
+
+    #[rstest::rstest]
+    #[case(1, false, Ok(()))]
+    #[case(1, true, Err(AnalysisError::Cancelled))]
+    #[case(128, false, Err(AnalysisError::DepthExceeded { limit: 128 }))]
+    fn depth_checker_distinguishes_normal_cancelled_and_deep_trees(
+        #[case] terms: usize,
+        #[case] cancelled: bool,
+        #[case] expected: Result<(), AnalysisError>,
+    ) {
+        let source = format!("value = {}", expression(terms));
+        let parsed = ruff_python_parser::parse_module(&source).unwrap();
+        assert_eq!(run_check(parsed.syntax(), &|| cancelled), expected);
+    }
 
     fn expression(terms: usize) -> String {
         vec!["1"; terms].join("+")
@@ -396,28 +414,35 @@ match value:
         let mut module = ruff_python_parser::parse_module(source)
             .unwrap()
             .into_syntax();
-        let Stmt::Assign(assign) = &mut module.body[0] else {
-            panic!("assignment fixture")
-        };
+        let assign = module.body[0].as_assign_stmt_mut().unwrap();
         let elements = match assign.value.as_mut() {
-            Expr::FString(expr) => {
-                let ruff_python_ast::FStringPartMut::FString(part) =
-                    expr.value.iter_mut().next().unwrap()
-                else {
-                    panic!("f-string fixture")
-                };
-                &mut part.elements
+            ruff_python_ast::Expr::FString(expr) => {
+                &mut expr
+                    .value
+                    .iter_mut()
+                    .find_map(|part| match part {
+                        ruff_python_ast::FStringPartMut::Literal(_) => None,
+                        ruff_python_ast::FStringPartMut::FString(part) => Some(part),
+                    })
+                    .unwrap()
+                    .elements
             }
-            Expr::TString(expr) => &mut expr.value.iter_mut().next().unwrap().elements,
-            _ => panic!("interpolated string fixture"),
+            expression => {
+                &mut expression
+                    .as_t_string_expr_mut()
+                    .unwrap()
+                    .value
+                    .iter_mut()
+                    .next()
+                    .unwrap()
+                    .elements
+            }
         };
         let template = elements.iter().next().unwrap().clone();
         let mut nested = template.clone();
         for _ in 0..25_000 {
             let mut parent = template.clone();
-            let InterpolatedStringElement::Interpolation(interpolation) = &mut parent else {
-                panic!("interpolation fixture")
-            };
+            let interpolation = parent.as_interpolation_mut().unwrap();
             interpolation.format_spec =
                 Some(Box::new(ruff_python_ast::InterpolatedStringFormatSpec {
                     range: TextRange::default(),
@@ -430,21 +455,20 @@ match value:
         module
     }
 
-    #[test]
-    fn disposal_cuts_nested_format_specification_ownership() {
+    #[rstest::rstest]
+    #[case("value = 'prefix' f'{x}'")]
+    #[case("value = t'{x}'")]
+    fn disposal_cuts_nested_format_specification_ownership(#[case] source: &'static str) {
         // Synthetic ownership stress, not a claim about Python's format grammar.
         std::thread::Builder::new()
             .stack_size(2 * 1024 * 1024)
-            .spawn(|| {
-                for source in ["value = f'{x}'", "value = t'{x}'"] {
-                    let module = nested_format_specification_module(source);
-
-                    assert_eq!(
-                        check(&module, &|| false),
-                        Err(AnalysisError::DepthExceeded { limit: 128 })
-                    );
-                    dispose(module);
-                }
+            .spawn(move || {
+                let module = nested_format_specification_module(source);
+                assert_eq!(
+                    check(&module, &|| false),
+                    Err(AnalysisError::DepthExceeded { limit: 128 })
+                );
+                dispose(module);
             })
             .unwrap()
             .join()

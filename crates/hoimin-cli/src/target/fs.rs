@@ -277,13 +277,24 @@ fn portable_relative(path: &Path, root: &Path) -> Option<Utf8PathBuf> {
     Some(Utf8PathBuf::from(relative.into_owned()))
 }
 
+fn discovered_path(path: &Path, root: &Path) -> Result<Utf8PathBuf, FsTargetError> {
+    let relative = path
+        .strip_prefix(root)
+        .map_err(|_| FsTargetError::OutsideRoot)?;
+    let relative = relative.to_str().ok_or(FsTargetError::NonUtf8Path)?;
+    let relative = portable_path::from_native(relative)
+        .map_err(|error| FsTargetError::UnsupportedPath(error.into_value()))?;
+    Ok(Utf8PathBuf::from(relative.into_owned()))
+}
+
 fn build_overrides(
     root: &Path,
     includes: &[String],
     excludes: &[String],
 ) -> Result<ignore::overrides::Override, FsTargetError> {
     let mut builder = OverrideBuilder::new(root);
-    if cfg!(windows) {
+    #[cfg(windows)]
+    {
         builder
             .case_insensitive(true)
             .map_err(FsTargetError::InvalidGlob)?;
@@ -322,14 +333,7 @@ fn collect(
         {
             #[cfg(test)]
             stats.collected_records.fetch_add(1, Ordering::Relaxed);
-            let relative = entry
-                .path()
-                .strip_prefix(root)
-                .map_err(|_| FsTargetError::OutsideRoot)?;
-            let relative = relative.to_str().ok_or(FsTargetError::NonUtf8Path)?;
-            let relative = portable_path::from_native(relative)
-                .map_err(|error| FsTargetError::UnsupportedPath(error.into_value()))?;
-            let path = Utf8PathBuf::from(relative.into_owned());
+            let path = discovered_path(entry.path(), root)?;
             if control.is_some_and(|(limit, _)| files.len() >= limit && !files.contains_key(&path))
             {
                 return Err(FsTargetError::AnalysisLimit);
@@ -567,5 +571,235 @@ mod tests {
         }
         samples.sort_unstable();
         println!("unrelated={count} median={:?}", samples[2]);
+    }
+    #[rstest::rstest]
+    #[case::include(vec!["[".to_owned()], Vec::new())]
+    #[case::exclude(Vec::new(), vec!["[".to_owned()])]
+    fn invalid_glob_selection_preserves_its_discovery_diagnostic(
+        #[case] includes: Vec<String>,
+        #[case] excludes: Vec<String>,
+    ) {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("app.py"), b"pass\n").unwrap();
+        let selection = Selection {
+            root: Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap(),
+            includes,
+            excludes,
+            ..Selection::default()
+        };
+        let error = discover_explicit(&selection).unwrap_err();
+        assert!(matches!(&error, FsTargetError::InvalidGlob(_)));
+        assert!(
+            error
+                .to_string()
+                .starts_with("invalid include/exclude glob:")
+        );
+    }
+
+    #[test]
+    fn a_missing_discovery_root_preserves_its_walk_diagnostic() {
+        let directory = tempfile::tempdir().unwrap();
+        let selection = Selection {
+            root: Utf8PathBuf::from_path_buf(directory.path().join("absent")).unwrap(),
+            ..Selection::default()
+        };
+        let error = discover_explicit(&selection).unwrap_err();
+        assert!(matches!(&error, FsTargetError::Walk(_)));
+        assert!(error.to_string().starts_with("target discovery failed:"));
+    }
+
+    #[rstest::rstest]
+    #[case::source(vec![Utf8PathBuf::from("../outside")], Vec::new())]
+    #[case::file(Vec::new(), vec![Utf8PathBuf::from("../outside.py")])]
+    fn invalid_normalized_selectors_do_not_construct_a_pruning_scope(
+        #[case] sources: Vec<Utf8PathBuf>,
+        #[case] files: Vec<Utf8PathBuf>,
+    ) {
+        let directory = tempfile::tempdir().unwrap();
+        let selection = Selection {
+            root: Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap(),
+            sources,
+            files,
+            ..Selection::default()
+        };
+        assert!(DiscoveryScope::new(&selection).is_none());
+    }
+
+    #[test]
+    fn symbol_only_selection_keeps_discovery_unpruned() {
+        let directory = tempfile::tempdir().unwrap();
+        let selection = Selection {
+            root: Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap(),
+            symbols: vec![hoimin_core::SymbolSelection {
+                module: "package".into(),
+                qualname: "compute".into(),
+            }],
+            ..Selection::default()
+        };
+        assert!(DiscoveryScope::new(&selection).is_none());
+    }
+
+    #[cfg(unix)]
+    #[rstest::rstest]
+    #[case::source(vec![Utf8PathBuf::from("selected")], Vec::new())]
+    #[case::file(Vec::new(), vec![Utf8PathBuf::from("selected/odd\\part/app.py")])]
+    fn selected_native_paths_are_validated_instead_of_silently_pruned(
+        #[case] sources: Vec<Utf8PathBuf>,
+        #[case] files: Vec<Utf8PathBuf>,
+    ) {
+        let directory = tempfile::tempdir().unwrap();
+        fs::create_dir_all(directory.path().join("selected/odd\\part")).unwrap();
+        fs::write(
+            directory.path().join("selected/odd\\part/app.py"),
+            b"pass\n",
+        )
+        .unwrap();
+        let selection = Selection {
+            root: Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap(),
+            sources,
+            files,
+            ..Selection::default()
+        };
+        let error = discover_explicit(&selection).unwrap_err();
+        assert!(
+            matches!(error, FsTargetError::UnsupportedPath(path) if path == "selected/odd\\part/app.py")
+        );
+    }
+
+    #[test]
+    fn a_scoped_walk_rejects_entries_from_a_different_declared_root() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("app.py"), b"pass\n").unwrap();
+        let selection = Selection {
+            root: Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap(),
+            files: vec!["app.py".into()],
+            ..Selection::default()
+        };
+        let scope = DiscoveryScope::new(&selection).unwrap();
+        let entry = WalkBuilder::new(directory.path())
+            .build()
+            .map(Result::unwrap)
+            .find(|entry| entry.depth() == 1)
+            .unwrap();
+        assert!(!scope.keeps(
+            &entry,
+            &directory.path().join("different"),
+            &DiscoveryStats::default()
+        ));
+    }
+    #[test]
+    fn a_discovered_path_preserves_its_relative_portable_spelling() {
+        let path =
+            discovered_path(Path::new("workspace/nested/app.py"), Path::new("workspace")).unwrap();
+        assert_eq!(path, Utf8PathBuf::from("nested/app.py"));
+    }
+
+    #[test]
+    fn a_discovered_path_outside_its_root_has_a_typed_diagnostic() {
+        let error =
+            discovered_path(Path::new("elsewhere/app.py"), Path::new("workspace")).unwrap_err();
+        assert!(matches!(&error, FsTargetError::OutsideRoot));
+        assert_eq!(error.to_string(), "discovered path is outside root");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_discovered_non_utf8_native_path_has_a_typed_diagnostic() {
+        use std::os::unix::ffi::OsStringExt;
+        let root = Path::new("workspace");
+        let path = root.join(std::ffi::OsString::from_vec(vec![0xff]));
+        let error = discovered_path(&path, root).unwrap_err();
+        assert!(matches!(&error, FsTargetError::NonUtf8Path));
+        assert_eq!(error.to_string(), "target path must be valid UTF-8");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_discovered_literal_backslash_is_not_a_portable_separator_alias() {
+        let error = discovered_path(Path::new("workspace/odd\\name.py"), Path::new("workspace"))
+            .unwrap_err();
+        assert!(matches!(error, FsTargetError::UnsupportedPath(path) if path == "odd\\name.py"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unsupported_discovered_path_formats_its_rejected_spelling() {
+        let error = discovered_path(Path::new("workspace/odd\\name.py"), Path::new("workspace"))
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "target path cannot be represented portably: odd\\name.py"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn portable_relative_rejects_non_utf8_native_names() {
+        use std::os::unix::ffi::OsStringExt;
+        let root = Path::new("workspace");
+        let path = root.join(std::ffi::OsString::from_vec(vec![0xff]));
+        assert_eq!(portable_relative(&path, root), None);
+    }
+
+    #[test]
+    fn restored_include_walk_reports_root_removal_after_the_normal_walk() {
+        let directory = tempfile::tempdir().unwrap();
+        let selection = Selection {
+            root: Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap(),
+            includes: vec!["*.py".to_owned()],
+            ..Selection::default()
+        };
+        let removed = std::sync::Once::new();
+        let cancelled = || {
+            removed.call_once(|| fs::remove_dir(directory.path()).unwrap());
+            false
+        };
+        let error = discover_python_bounded(&selection, 1, &cancelled).unwrap_err();
+        assert!(matches!(error, FsTargetError::Walk(_)));
+    }
+
+    #[test]
+    fn bounded_discovery_reports_cancellation_before_processing_an_entry() {
+        let directory = tempfile::tempdir().unwrap();
+        let selection = Selection {
+            root: Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap(),
+            ..Selection::default()
+        };
+        let error = discover_python_bounded(&selection, 1, &|| true).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "exception hierarchy input discovery cancelled or exceeded its file limit"
+        );
+    }
+
+    #[test]
+    fn bounded_discovery_rejects_a_new_file_above_its_limit() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("app.py"), b"pass\n").unwrap();
+        let selection = Selection {
+            root: Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap(),
+            ..Selection::default()
+        };
+        let error = discover_python_bounded(&selection, 0, &|| false).unwrap_err();
+        assert!(matches!(error, FsTargetError::AnalysisLimit));
+    }
+
+    #[test]
+    fn bounded_discovery_does_not_count_an_include_walk_duplicate_twice() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("app.py"), b"pass\n").unwrap();
+        let selection = Selection {
+            root: Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap(),
+            includes: vec!["*.py".to_owned()],
+            ..Selection::default()
+        };
+        let files = discover_python_bounded(&selection, 1, &|| false).unwrap();
+        assert_eq!(
+            files,
+            vec![hoimin_core::DiscoveredFile {
+                path: "app.py".into(),
+                is_python: true,
+            }]
+        );
     }
 }

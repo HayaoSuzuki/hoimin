@@ -4,8 +4,10 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import create_autospec
 
 import pytest
+from pytest_mock import MockerFixture
 
 from tools import ci_metrics
 
@@ -61,15 +63,20 @@ def test_total_preserves_missing_measurements() -> None:
     assert ci_metrics.total([]) == 0
 
 
-def test_api_pagination_uses_json_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_api_pagination_uses_json_pages(mocker: MockerFixture) -> None:
 
+    original_run_spec = ci_metrics.subprocess.run
     calls = []
 
     def run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append((args, kwargs))
         return subprocess.CompletedProcess(args, 0, stdout='[{"jobs": []}]')
 
-    monkeypatch.setattr(ci_metrics.subprocess, "run", run)
+    mocker.patch.object(
+        ci_metrics.subprocess,
+        "run",
+        create_autospec(original_run_spec, side_effect=run),
+    )
     assert ci_metrics.api("/bin/gh", "repos/example/actions", pages=True) == [
         {"jobs": []}
     ]
@@ -84,16 +91,22 @@ def test_api_pagination_uses_json_pages(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_main_writes_attempt_specific_metrics(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, mocker: MockerFixture
 ) -> None:
 
+    original_which_spec = ci_metrics.shutil.which
+    original_api_spec = ci_metrics.api
     output = tmp_path / "nested" / "report.json"
-    monkeypatch.setattr(
+    mocker.patch.object(
         sys,
         "argv",
         ["metrics", "--run", "123", "--repo", "owner/repo", "--output", str(output)],
     )
-    monkeypatch.setattr(ci_metrics.shutil, "which", lambda _: "/bin/gh")
+    mocker.patch.object(
+        ci_metrics.shutil,
+        "which",
+        create_autospec(original_which_spec, side_effect=lambda _: "/bin/gh"),
+    )
     run = {
         "id": 123,
         "run_attempt": 2,
@@ -109,7 +122,9 @@ def test_main_writes_attempt_specific_metrics(
         calls.append((gh, endpoint, pages))
         return [{"jobs": []}, {"jobs": []}] if pages else run
 
-    monkeypatch.setattr(ci_metrics, "api", api)
+    mocker.patch.object(
+        ci_metrics, "api", create_autospec(original_api_spec, side_effect=api)
+    )
     ci_metrics.main()
     report = json.loads(output.read_text())
     assert report["repository"] == "owner/repo"
@@ -124,32 +139,44 @@ def test_main_writes_attempt_specific_metrics(
     )
 
 
-def test_main_requires_github_cli(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_main_requires_github_cli(tmp_path: Path, mocker: MockerFixture) -> None:
 
-    monkeypatch.setattr(
+    original_which_spec = ci_metrics.shutil.which
+    mocker.patch.object(
         sys, "argv", ["metrics", "--run", "1", "--output", str(tmp_path / "report")]
     )
-    monkeypatch.setattr(ci_metrics.shutil, "which", lambda _: None)
+    mocker.patch.object(
+        ci_metrics.shutil,
+        "which",
+        create_autospec(original_which_spec, side_effect=lambda _: None),
+    )
     with pytest.raises(FileNotFoundError, match="GitHub CLI is required"):
         ci_metrics.main()
 
 
 def test_main_rejects_invalid_job_page_shapes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, mocker: MockerFixture
 ) -> None:
 
-    monkeypatch.setattr(
+    original_which_spec = ci_metrics.shutil.which
+    original_api_spec = ci_metrics.api
+    mocker.patch.object(
         sys, "argv", ["metrics", "--run", "1", "--output", str(tmp_path / "report")]
     )
-    monkeypatch.setattr(ci_metrics.shutil, "which", lambda _: "/bin/gh")
+    mocker.patch.object(
+        ci_metrics.shutil,
+        "which",
+        create_autospec(original_which_spec, side_effect=lambda _: "/bin/gh"),
+    )
     for pages in ({}, [{"jobs": {}}]):
-        monkeypatch.setattr(
+        mocker.patch.object(
             ci_metrics,
             "api",
-            lambda _gh, _endpoint, *, pages=False, payload=pages: (
-                payload if pages else {"run_attempt": 1}
+            create_autospec(
+                original_api_spec,
+                side_effect=lambda _gh, _endpoint, *, pages=False, payload=pages: (
+                    payload if pages else {"run_attempt": 1}
+                ),
             ),
         )
         with pytest.raises(TypeError):
@@ -170,13 +197,18 @@ def test_tool_module_help_entrypoints(module: str) -> None:
     assert "usage:" in result.stdout
 
 
-def test_api_without_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_api_without_pagination(mocker: MockerFixture) -> None:
+    original_run_spec = ci_metrics.subprocess.run
     calls = []
 
     def run(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append(args)
         return subprocess.CompletedProcess(args, 0, stdout='{"id": 1}')
 
-    monkeypatch.setattr(ci_metrics.subprocess, "run", run)
+    mocker.patch.object(
+        ci_metrics.subprocess,
+        "run",
+        create_autospec(original_run_spec, side_effect=run),
+    )
     assert ci_metrics.api("/bin/gh", "run") == {"id": 1}
     assert calls == [["/bin/gh", "api", "run"]]

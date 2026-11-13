@@ -466,22 +466,22 @@ fn operator_and_family_names_reject_unknown_case_and_whitespace(#[case] case_ind
 }
 
 #[rstest::rstest]
-#[case::type_nullable("type_nullable", vec![
+#[case::type_nullable("type_nullable", &[
                 MutationOperator::TypeNullableRemove,
                 MutationOperator::TypeNullableAdd,
             ])]
-#[case::type_collections("type_collections", vec![
+#[case::type_collections("type_collections", &[
                 MutationOperator::TypeListSequence,
                 MutationOperator::TypeSetAbstractSet,
                 MutationOperator::TypeMapping,
             ])]
-#[case::type_iterables("type_iterables", vec![
+#[case::type_iterables("type_iterables", &[
                 MutationOperator::TypeIterableIterator,
                 MutationOperator::TypeSequenceIterable,
             ])]
 fn type_families_expand_in_the_existing_order(
     #[case] name: &str,
-    #[case] expected: Vec<MutationOperator>,
+    #[case] expected: &[MutationOperator],
 ) {
     assert_eq!(
         MutationOperatorSelection::parse_selector(name).unwrap(),

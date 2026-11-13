@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from pytest_mock import MockerFixture
 
 from tools import knowledge_references
 from tools.knowledge_references import inventory
@@ -102,7 +103,7 @@ def test_multiline_footnote_links_are_reachable(tmp_path: Path) -> None:
 @pytest.mark.parametrize("broken", [False, True])
 def test_inventory_cli_reports_navigation_failures(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
     capsys: pytest.CaptureFixture[str],
     *,
     broken: bool,
@@ -110,7 +111,7 @@ def test_inventory_cli_reports_navigation_failures(
     (tmp_path / "index.md").write_text(
         "[missing](missing.md)" if broken else "Entry", encoding="utf-8"
     )
-    monkeypatch.setattr(sys, "argv", ["knowledge-references", "--root", str(tmp_path)])
+    mocker.patch.object(sys, "argv", ["knowledge-references", "--root", str(tmp_path)])
     assert knowledge_references.main() == int(broken)
     result = json.loads(capsys.readouterr().out)
     assert result["page_count"] == 1

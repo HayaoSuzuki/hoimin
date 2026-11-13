@@ -61,12 +61,21 @@ fn source_args(command: &str, root: &Path, limit: usize) -> Vec<String> {
 #[case::overflow_retained_prefix(1, 4, true, 0)]
 #[case::all_candidates_fit(2, 0, false, 2)]
 #[tokio::test]
-#[allow(clippy::too_many_lines)] // One fixture traces the same candidates across three commands.
 async fn literal_selector_fixture_respects_run_overflow_and_partial_verify(
     #[case] limit: usize,
     #[case] exit_code: i32,
     #[case] truncated: bool,
     #[case] executed_count: usize,
+) {
+    assert_literal_selector_boundary(limit, exit_code, truncated, executed_count).await;
+}
+
+#[allow(clippy::too_many_lines)] // One fixture traces the same candidates across three commands.
+async fn assert_literal_selector_boundary(
+    limit: usize,
+    exit_code: i32,
+    truncated: bool,
+    executed_count: usize,
 ) {
     let project = tempfile::tempdir().unwrap();
     let reports = tempfile::tempdir().unwrap();

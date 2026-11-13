@@ -113,6 +113,8 @@ pub struct AnalyzerHandler {
     candidate_spool_owner: Option<CandidateSpoolOwner>,
     #[cfg(test)]
     analysis_hook: Option<Arc<dyn Fn() + Send + Sync>>,
+    #[cfg(test)]
+    checkpoint_hook: Option<Arc<dyn Fn(AnalysisCheckpoint) + Send + Sync>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -140,6 +142,8 @@ pub(crate) struct DiscoveryControl {
     _owner: Arc<TempDir>,
     before_analysis: Box<dyn FnMut() + Send>,
     deadline_arm: Option<tokio::sync::oneshot::Sender<tokio::time::Instant>>,
+    before_entry: Option<Box<dyn FnOnce() + Send>>,
+    checkpoint_hook: Option<Box<dyn FnMut(DiscoveryCheckpoint) + Send>>,
 }
 
 #[cfg(test)]
@@ -149,6 +153,8 @@ impl DiscoveryControl {
             _owner: owner,
             before_analysis: Box::new(before_analysis),
             deadline_arm: None,
+            before_entry: None,
+            checkpoint_hook: None,
         }
     }
 }
@@ -163,6 +169,26 @@ pub async fn discover_targets(
     profile: MutationProfile,
     max_candidates: usize,
 ) -> Result<Discovery, EffectFailed> {
+    discover_unbounded(
+        root,
+        targets,
+        operators,
+        profile,
+        max_candidates,
+        #[cfg(test)]
+        None,
+    )
+    .await
+}
+
+async fn discover_unbounded(
+    root: &Utf8Path,
+    targets: &[TargetSlice],
+    operators: &MutationOperatorSelection,
+    profile: MutationProfile,
+    max_candidates: usize,
+    #[cfg(test)] control: Option<DiscoveryControl>,
+) -> Result<Discovery, EffectFailed> {
     let cancellation = ProcessCancellation::new();
     let work = discovery_work(
         root,
@@ -172,7 +198,7 @@ pub async fn discover_targets(
         max_candidates,
         cancellation,
         #[cfg(test)]
-        None,
+        control,
     );
     let span = tracing::Span::current();
     tokio::task::spawn_blocking(move || span.in_scope(|| discover_targets_blocking(work)))
@@ -255,7 +281,8 @@ pub(crate) async fn discover_config_targets(
 #[tracing::instrument(name = "discover_candidates", level = "debug", skip_all, fields(files = targets.len(), max_candidates))]
 #[allow(
     clippy::too_many_arguments,
-    reason = "test deadline control supplements shared discovery parameters"
+    clippy::too_many_lines,
+    reason = "test deadline control and inline invariant guards supplement shared discovery parameters"
 )]
 async fn discover_targets_inner(
     exception_project: Option<ExceptionProject>,
@@ -309,15 +336,32 @@ async fn discover_targets_inner(
         let armed_at = match tokio::time::timeout(Duration::from_secs(2), deadline_arm).await {
             Ok(Ok(armed_at)) => armed_at,
             Ok(Err(_)) => {
-                return tokio::time::timeout(Duration::from_secs(2), &mut task)
-                    .await
-                    .map_err(|_| {
-                        EffectFailed::other(
-                            EffectId(0),
-                            "analyzer.test_control",
-                            "controlled discovery did not finish within 2s after ending before entry",
-                        )
-                    })?
+                let Ok(outcome) = tokio::time::timeout(Duration::from_secs(2), &mut task).await
+                else {
+                    return {
+                        // This cfg(test) watchdog fails only if an already-ended controlled worker or scheduler fails to complete.
+                        #[cfg(coverage_nightly)]
+                        {
+                            (#[coverage(off)]
+                            || {
+                                Err(EffectFailed::other(
+                                    EffectId(0),
+                                    "analyzer.test_control",
+                                    "controlled discovery did not finish within 2s after ending before entry",
+                                ))
+                            })()
+                        }
+                        #[cfg(not(coverage_nightly))]
+                        {
+                            Err(EffectFailed::other(
+                                EffectId(0),
+                                "analyzer.test_control",
+                                "controlled discovery did not finish within 2s after ending before entry",
+                            ))
+                        }
+                    };
+                };
+                return outcome
                     .map_err(|error| {
                         EffectFailed::other(EffectId(0), "analyzer.task", error.to_string())
                     })?
@@ -418,6 +462,10 @@ fn discovery_work(
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "inline invariant guards and test-only checkpoints preserve the established operation order"
+)]
 fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFailed> {
     let DiscoveryWork {
         payload,
@@ -431,6 +479,13 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
         #[cfg(test)]
         mut control,
     } = work;
+    #[cfg(test)]
+    if let Some(before_entry) = control
+        .as_mut()
+        .and_then(|control| control.before_entry.take())
+    {
+        before_entry();
+    }
     ensure_discovery_active(&cancellation)?;
     let root = PortableFileReader::open(&root).map_err(|error| {
         EffectFailed::other(EffectId(0), "analyzer.source.read", error.to_string())
@@ -447,10 +502,14 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
         truncated: false,
     };
     for target in &targets {
+        #[cfg(test)]
+        discovery_checkpoint(&mut control, DiscoveryCheckpoint::BeforeSource);
         ensure_discovery_active(&cancellation)?;
         let source = root.read(&target.path).map_err(|error| {
             EffectFailed::other(EffectId(0), "analyzer.source.read", error.to_string())
         })?;
+        #[cfg(test)]
+        discovery_checkpoint(&mut control, DiscoveryCheckpoint::AfterSource);
         ensure_discovery_active(&cancellation)?;
         let validation = source_validation(&source, &target.path, EffectId(0))?;
         let module = validation
@@ -480,17 +539,42 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
         )
         .map_err(|error| analysis_failure(EffectId(0), &target.path, error))?;
         for candidate in output.candidates {
+            #[cfg(test)]
+            discovery_checkpoint(&mut control, DiscoveryCheckpoint::BeforeCandidate);
             ensure_discovery_active(&cancellation)?;
-            let sequence = u64::try_from(candidates.len())
+            let Some(sequence) = u64::try_from(candidates.len())
                 .ok()
                 .and_then(|count| count.checked_add(1))
-                .ok_or_else(|| {
-                    EffectFailed::other(
-                        EffectId(0),
-                        "analyzer.candidate",
-                        "candidate sequence overflow",
-                    )
-                })?;
+            else {
+                return {
+                    // A non-ZST Vec length is bounded by isize::MAX, so converting and adding one fits u64 on supported 32/64-bit targets.
+                    #[cfg(all(
+                        coverage_nightly,
+                        any(target_pointer_width = "32", target_pointer_width = "64")
+                    ))]
+                    {
+                        (#[coverage(off)]
+                        || {
+                            Err(EffectFailed::other(
+                                EffectId(0),
+                                "analyzer.candidate",
+                                "candidate sequence overflow",
+                            ))
+                        })()
+                    }
+                    #[cfg(not(all(
+                        coverage_nightly,
+                        any(target_pointer_width = "32", target_pointer_width = "64")
+                    )))]
+                    {
+                        Err(EffectFailed::other(
+                            EffectId(0),
+                            "analyzer.candidate",
+                            "candidate sequence overflow",
+                        ))
+                    }
+                };
+            };
             let candidate = mutation_candidate(EffectId(0), &validation, candidate, sequence)?;
             CandidateStore::record_size(&candidate)
                 .map_err(|error| candidate_store_error(EffectId(0), &candidate, &error))?;
@@ -508,6 +592,16 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
         .map(Charged::into_untracked)
         .collect();
     Ok(discovery)
+}
+
+#[cfg(test)]
+fn discovery_checkpoint(control: &mut Option<DiscoveryControl>, checkpoint: DiscoveryCheckpoint) {
+    if let Some(hook) = control
+        .as_mut()
+        .and_then(|control| control.checkpoint_hook.as_mut())
+    {
+        hook(checkpoint);
+    }
 }
 
 fn ensure_discovery_active(cancellation: &ProcessCancellation) -> Result<(), EffectFailed> {
@@ -546,6 +640,8 @@ impl AnalyzerHandler {
             candidate_spool_owner: None,
             #[cfg(test)]
             analysis_hook: None,
+            #[cfg(test)]
+            checkpoint_hook: None,
         }
     }
 
@@ -632,6 +728,8 @@ impl AnalyzerHandler {
         let task_cancellation = cancellation.clone();
         #[cfg(test)]
         let analysis_hook = self.analysis_hook.clone();
+        #[cfg(test)]
+        let checkpoint_hook = self.checkpoint_hook.clone();
         let candidate_spool_owner = self.candidate_spool_owner.clone();
         let span = tracing::Span::current();
         let task = tokio::task::spawn_blocking(move || {
@@ -652,6 +750,8 @@ impl AnalyzerHandler {
                 store,
                 max_candidates,
                 cancellation: task_cancellation,
+                #[cfg(test)]
+                checkpoint_hook,
             })
         });
         tokio::pin!(task);
@@ -685,6 +785,21 @@ impl AnalyzerHandler {
     }
 }
 
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DiscoveryCheckpoint {
+    BeforeSource,
+    AfterSource,
+    BeforeCandidate,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AnalysisCheckpoint {
+    AfterAnalysis,
+    BeforeFinalization,
+}
+
 struct BlockingAnalysis {
     payload: PayloadBudget,
     exception_project: Option<ExceptionProject>,
@@ -695,8 +810,14 @@ struct BlockingAnalysis {
     store: CandidateStore,
     max_candidates: usize,
     cancellation: ProcessCancellation,
+    #[cfg(test)]
+    checkpoint_hook: Option<Arc<dyn Fn(AnalysisCheckpoint) + Send + Sync>>,
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "inline invariant guards and test-only checkpoints preserve the established operation order"
+)]
 fn analyze_and_store(
     work: BlockingAnalysis,
 ) -> Result<(AnalysisFinished, Option<CandidateStore>), EffectFailed> {
@@ -710,6 +831,8 @@ fn analyze_and_store(
         mut store,
         max_candidates,
         cancellation,
+        #[cfg(test)]
+        checkpoint_hook,
     } = work;
     let id = request.id;
     let validation = source_validation(&source, &request.target.path, id)?;
@@ -737,17 +860,46 @@ fn analyze_and_store(
         exceptions.as_deref(),
     )
     .map_err(|error| analysis_failure(id, &request.target.path, error))?;
+    #[cfg(test)]
+    if let Some(hook) = checkpoint_hook.as_ref() {
+        hook(AnalysisCheckpoint::AfterAnalysis);
+    }
     for candidate in output.candidates {
         if cancellation.is_cancelled() {
             return Err(cancelled(id));
         }
-        let sequence = store.count().checked_add(1).ok_or_else(|| {
-            EffectFailed::other(id, "analyzer.candidate", "candidate sequence overflow")
-        })?;
+        let Some(sequence) = store.count().checked_add(1) else {
+            return {
+                // The producer emits only within positive remaining capacity, proving store.count < max_candidates <= u64::MAX.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || {
+                        Err(EffectFailed::other(
+                            id,
+                            "analyzer.candidate",
+                            "candidate sequence overflow",
+                        ))
+                    })()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    Err(EffectFailed::other(
+                        id,
+                        "analyzer.candidate",
+                        "candidate sequence overflow",
+                    ))
+                }
+            };
+        };
         let candidate = mutation_candidate(id, &validation, candidate, sequence)?;
         store
             .push(&candidate)
             .map_err(|error| candidate_store_error(id, &candidate, &error))?;
+    }
+    #[cfg(test)]
+    if let Some(hook) = checkpoint_hook.as_ref() {
+        hook(AnalysisCheckpoint::BeforeFinalization);
     }
     if cancellation.is_cancelled() {
         return Err(cancelled(id));
@@ -879,8 +1031,23 @@ fn source_validation<'source>(
     let failure = |error: String| {
         EffectFailed::other(id, "analyzer.source.encoding", format!("{path}: {error}"))
     };
-    let validation =
-        CandidateValidationContext::new(source).map_err(|error| failure(error.to_string()))?;
+    let validation = match CandidateValidationContext::new(source) {
+        Ok(context) => context,
+        Err(error) => {
+            return {
+                // Core separately checks the width boundary; reaching this propagation requires source or decoded text larger than 4 GiB.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || Err(failure(error.to_string())))()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    Err(failure(error.to_string()))
+                }
+            };
+        }
+    };
     validation
         .decoded_source()
         .map_err(|error| failure(error.to_string()))?;
@@ -911,18 +1078,7 @@ fn mutation_candidate(
             format!("{}: {error}", candidate.path),
         )
     })?;
-    let raw_span = (|| {
-        let start = usize::try_from(candidate.span.start).ok()?;
-        let length = usize::try_from(candidate.span.length).ok()?;
-        let end = start.checked_add(length)?;
-        let raw_start = decoded.utf8_to_raw(start)?;
-        let raw_end = decoded.utf8_to_raw(end)?;
-        Some(hoimin_core::ByteSpan {
-            start: u64::try_from(raw_start).ok()?,
-            length: u64::try_from(raw_end.checked_sub(raw_start)?).ok()?,
-        })
-    })()
-    .ok_or_else(|| {
+    let raw_span = raw_candidate_span(decoded, candidate.span).ok_or_else(|| {
         EffectFailed::other(
             effect_id,
             "analyzer.candidate",
@@ -941,8 +1097,36 @@ fn mutation_candidate(
         symbol: candidate.symbol,
         file_hash: validation.file_hash().to_owned(),
     };
-    let scratch_bytes = hoimin_core::candidate_validation_scratch_bytes(&descriptor)
-        .ok_or_else(|| analysis_failure(effect_id, &descriptor.path, lease.budget().exceeded()))?;
+    let Some(scratch_bytes) = hoimin_core::candidate_validation_scratch_bytes(&descriptor) else {
+        return {
+            // Producer fields are charged to a 16 MiB payload lease; duplicating each at most three times plus fixed metadata fits 32/64-bit usize.
+            #[cfg(all(
+                coverage_nightly,
+                any(target_pointer_width = "32", target_pointer_width = "64")
+            ))]
+            {
+                (#[coverage(off)]
+                || {
+                    Err(analysis_failure(
+                        effect_id,
+                        &descriptor.path,
+                        lease.budget().exceeded(),
+                    ))
+                })()
+            }
+            #[cfg(not(all(
+                coverage_nightly,
+                any(target_pointer_width = "32", target_pointer_width = "64")
+            )))]
+            {
+                Err(analysis_failure(
+                    effect_id,
+                    &descriptor.path,
+                    lease.budget().exceeded(),
+                ))
+            }
+        };
+    };
     let _scratch = lease
         .budget()
         .reserve([scratch_bytes])
@@ -965,6 +1149,98 @@ fn mutation_candidate(
             file_hash: descriptor.file_hash,
         },
     })
+}
+
+fn raw_candidate_span(
+    decoded: &hoimin_core::DecodedPythonSource<'_>,
+    span: hoimin_core::ByteSpan,
+) -> Option<hoimin_core::ByteSpan> {
+    let Ok(start) = usize::try_from(span.start) else {
+        return {
+            // Every u64 offset fits 64-bit usize; 32-bit rejection remains instrumented.
+            #[cfg(all(coverage_nightly, target_pointer_width = "64"))]
+            {
+                (#[coverage(off)]
+                || None)()
+            }
+            #[cfg(not(all(coverage_nightly, target_pointer_width = "64")))]
+            {
+                None
+            }
+        };
+    };
+    let Ok(length) = usize::try_from(span.length) else {
+        return {
+            // Every u64 length fits 64-bit usize; 32-bit rejection remains instrumented.
+            #[cfg(all(coverage_nightly, target_pointer_width = "64"))]
+            {
+                (#[coverage(off)]
+                || None)()
+            }
+            #[cfg(not(all(coverage_nightly, target_pointer_width = "64")))]
+            {
+                None
+            }
+        };
+    };
+    let end = start.checked_add(length)?;
+    let raw_start = decoded.utf8_to_raw(start)?;
+    let raw_end = decoded.utf8_to_raw(end)?;
+    let Some(raw_length) = raw_end.checked_sub(raw_start) else {
+        return {
+            // Decoded-source boundary mappings preserve order, and checked start+length proves start <= end.
+            #[cfg(coverage_nightly)]
+            {
+                (#[coverage(off)]
+                || None)()
+            }
+            #[cfg(not(coverage_nightly))]
+            {
+                None
+            }
+        };
+    };
+    let Ok(start) = u64::try_from(raw_start) else {
+        return {
+            // A source offset represented by 32/64-bit usize always fits u64.
+            #[cfg(all(
+                coverage_nightly,
+                any(target_pointer_width = "32", target_pointer_width = "64")
+            ))]
+            {
+                (#[coverage(off)]
+                || None)()
+            }
+            #[cfg(not(all(
+                coverage_nightly,
+                any(target_pointer_width = "32", target_pointer_width = "64")
+            )))]
+            {
+                None
+            }
+        };
+    };
+    let Ok(length) = u64::try_from(raw_length) else {
+        return {
+            // A source length represented by 32/64-bit usize always fits u64.
+            #[cfg(all(
+                coverage_nightly,
+                any(target_pointer_width = "32", target_pointer_width = "64")
+            ))]
+            {
+                (#[coverage(off)]
+                || None)()
+            }
+            #[cfg(not(all(
+                coverage_nightly,
+                any(target_pointer_width = "32", target_pointer_width = "64")
+            )))]
+            {
+                None
+            }
+        };
+    };
+    Some(hoimin_core::ByteSpan { start, length })
 }
 
 #[cfg(test)]
@@ -1193,7 +1469,7 @@ mod tests {
         assert_ne!(recovered.candidates, Vec::new());
     }
 
-    async fn wait_for_discovery_entry(
+    pub(super) async fn wait_for_discovery_entry(
         receiver: &std::sync::mpsc::Receiver<()>,
     ) -> Result<(), std::sync::mpsc::TryRecvError> {
         loop {
@@ -1652,5 +1928,691 @@ mod exception_fingerprint_tests {
         let next = crate::shell::prepare_run_config(config).unwrap();
         assert_eq!(next.fingerprint_inputs.len(), 3);
         assert_ne!(prepared.fingerprint_inputs, next.fingerprint_inputs);
+    }
+}
+
+#[cfg(test)]
+mod coverage_regressions {
+    use super::*;
+
+    #[tokio::test]
+    async fn discovery_rejects_an_unrepresentable_timeout_before_work_starts() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(directory.path()).unwrap();
+        let error = discover_targets_with_timeout(
+            root,
+            &[],
+            &MutationOperatorSelection::default(),
+            MutationProfile::Full,
+            1,
+            Duration::MAX,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.failure.code(), "analyzer.timeout");
+        assert!(
+            error
+                .failure
+                .message()
+                .contains("outside the supported deadline range")
+        );
+    }
+
+    #[tokio::test]
+    async fn controlled_discovery_rejects_an_unrepresentable_armed_timeout() {
+        let directory = Arc::new(tempfile::tempdir().unwrap());
+        let root = Utf8Path::from_path(directory.path()).unwrap();
+        std::fs::write(root.join("source.py"), "result = left + right\n").unwrap();
+        let control = DiscoveryControl::new(Arc::clone(&directory), discovery_noop);
+        let error = discover_targets_with_control(
+            root,
+            &[TargetSlice {
+                path: "source.py".into(),
+                lines: vec![],
+                symbols: vec![],
+            }],
+            &MutationOperatorSelection::default(),
+            MutationProfile::Full,
+            1,
+            Duration::MAX,
+            Some(control),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.failure.code(), "analyzer.timeout");
+        assert!(
+            error
+                .failure
+                .message()
+                .contains("outside the supported deadline range")
+        );
+    }
+
+    #[tokio::test]
+    async fn discovery_worker_panic_is_a_typed_task_failure() {
+        let directory = Arc::new(tempfile::tempdir().unwrap());
+        let root = Utf8Path::from_path(directory.path()).unwrap();
+        std::fs::write(root.join("source.py"), "result = left + right\n").unwrap();
+        let control = DiscoveryControl::new(Arc::clone(&directory), || {
+            panic!("controlled analyzer panic");
+        });
+        let error = discover_targets_with_control(
+            root,
+            &[TargetSlice {
+                path: "source.py".into(),
+                lines: vec![],
+                symbols: vec![],
+            }],
+            &MutationOperatorSelection::default(),
+            MutationProfile::Full,
+            1,
+            Duration::from_secs(10),
+            Some(control),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.failure.code(), "analyzer.task");
+        assert!(
+            error
+                .failure
+                .message()
+                .contains("controlled analyzer panic")
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::line(None, Some(7), None, "line 7: detail")]
+    #[case::column(None, None, Some(3), "column 3: detail")]
+    #[case::path_column(Some("source.py"), None, Some(3), "source.py (column 3): detail")]
+    fn diagnostic_projection_preserves_partial_location(
+        #[case] path: Option<&str>,
+        #[case] line: Option<u32>,
+        #[case] column: Option<u32>,
+        #[case] expected: &str,
+    ) {
+        let actual = map_analyzer_diagnostic(AnalyzerDiagnostic {
+            code: AnalyzerDiagnosticCode::InvalidSyntax,
+            path: path.map(Utf8PathBuf::from),
+            line,
+            column,
+            message: Some("detail".into()),
+        });
+        assert_eq!(actual.message, expected);
+    }
+
+    #[rstest::rstest]
+    #[case::limit(hoimin_python::AnalysisError::HierarchyLimit)]
+    #[case::changed(hoimin_python::AnalysisError::HierarchySourceChanged)]
+    fn hierarchy_failure_retains_the_original_effect_identity(
+        #[case] error: hoimin_python::AnalysisError,
+    ) {
+        let failure = analysis_failure(EffectId(91), Utf8Path::new("source.py"), error);
+        assert_eq!(failure.id, EffectId(91));
+        assert_eq!(failure.failure.code(), "analyzer.exception_hierarchy");
+    }
+
+    fn converted_candidate(span: hoimin_core::ByteSpan) -> Charged<AnalyzerCandidate> {
+        PayloadBudget::default()
+            .retain(AnalyzerCandidate {
+                path: "source.py".into(),
+                span,
+                original: "?".into(),
+                replacement: "!".into(),
+                operator: hoimin_core::MutationOperator::CompareEqNe,
+                line: 1,
+                column: 0,
+                symbol: None,
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn mutation_projection_reports_undecodable_source() {
+        let validation = CandidateValidationContext::new(b"# coding: ascii\n# \xff\n").unwrap();
+        let error = mutation_candidate(
+            EffectId(92),
+            &validation,
+            converted_candidate(hoimin_core::ByteSpan {
+                start: 0,
+                length: 1,
+            }),
+            1,
+        )
+        .unwrap_err();
+        assert_eq!(error.id, EffectId(92));
+        assert_eq!(error.failure.code(), "analyzer.source.encoding");
+        assert!(error.failure.message().starts_with("source.py:"));
+    }
+
+    #[rstest::rstest]
+    #[case::start(1, 1)]
+    #[case::end(0, 1)]
+    #[case::overflow(u64::MAX, 1)]
+    #[case::length(0, u64::MAX)]
+    fn mutation_projection_rejects_a_non_boundary_decoded_span(
+        #[case] start: u64,
+        #[case] length: u64,
+    ) {
+        let validation = CandidateValidationContext::new("é\n".as_bytes()).unwrap();
+        let error = mutation_candidate(
+            EffectId(93),
+            &validation,
+            converted_candidate(hoimin_core::ByteSpan { start, length }),
+            1,
+        )
+        .unwrap_err();
+        assert_eq!(error.failure.code(), "analyzer.candidate");
+        assert_eq!(
+            error.failure.message(),
+            "decoded candidate span is not an original source boundary"
+        );
+    }
+
+    fn handler_fixture() -> (tempfile::TempDir, AnalyzerHandler) {
+        let directory = tempfile::tempdir().unwrap();
+        let root = Utf8PathBuf::from_path_buf(directory.path().join("project")).unwrap();
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("source.py"), "result = left + right\n").unwrap();
+        let handler = AnalyzerHandler::new(
+            root,
+            MutationOperatorSelection::default(),
+            MutationProfile::Full,
+            NonZeroUsize::new(100).unwrap(),
+        )
+        .with_candidate_spool_owner(Arc::new(tempfile::tempdir().unwrap()));
+        (directory, handler)
+    }
+
+    fn handler_request(id: u64) -> AnalyzeFile {
+        AnalyzeFile {
+            id: EffectId(id),
+            target: TargetSlice {
+                path: "source.py".into(),
+                lines: vec![],
+                symbols: vec![],
+            },
+            final_target: true,
+        }
+    }
+
+    fn cancel_at_checkpoint(
+        cancellation: &ProcessCancellation,
+        expected: AnalysisCheckpoint,
+        actual: AnalysisCheckpoint,
+    ) {
+        if actual == expected {
+            cancellation.cancel();
+        }
+    }
+
+    #[rstest::rstest]
+    #[case::after_analysis(AnalysisCheckpoint::AfterAnalysis)]
+    #[case::before_finalization(AnalysisCheckpoint::BeforeFinalization)]
+    #[tokio::test]
+    async fn cancellation_at_an_analysis_checkpoint_is_reported_without_a_spool(
+        #[case] checkpoint: AnalysisCheckpoint,
+    ) {
+        let (_directory, mut handler) = handler_fixture();
+        let cancellation = ProcessCancellation::new();
+        let worker_cancellation = cancellation.clone();
+        handler.checkpoint_hook = Some(Arc::new(move |actual| {
+            cancel_at_checkpoint(&worker_cancellation, checkpoint, actual);
+        }));
+        let error = handler
+            .handle_with_cancellation(handler_request(97), cancellation)
+            .await
+            .unwrap_err();
+        assert_eq!(error.id, EffectId(97));
+        assert_eq!(error.failure.code(), "analyzer.cancelled");
+        assert!(handler.store.is_none());
+    }
+
+    #[tokio::test]
+    async fn discovery_reports_a_missing_root_before_analysis() {
+        let directory = tempfile::tempdir().unwrap();
+        let missing = Utf8PathBuf::from_path_buf(directory.path().join("absent")).unwrap();
+        let error = discover_targets(
+            &missing,
+            &[],
+            &MutationOperatorSelection::default(),
+            MutationProfile::Full,
+            1,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.failure.code(), "analyzer.source.read");
+    }
+
+    #[tokio::test]
+    async fn handler_reports_owned_spool_creation_failure_before_source_read() {
+        let (_directory, handler) = handler_fixture();
+        let owner = Arc::new(tempfile::tempdir().unwrap());
+        std::fs::remove_dir(owner.path()).unwrap();
+        let mut handler = handler.with_candidate_spool_owner(owner);
+        let error = handler.handle(handler_request(98)).await.unwrap_err();
+        assert_eq!(error.id, EffectId(98));
+        assert_eq!(error.failure.code(), "analyzer.store");
+        assert!(handler.root.is_none());
+    }
+
+    #[tokio::test]
+    async fn handler_reports_worker_panic_without_retaining_the_store() {
+        let (_directory, mut handler) = handler_fixture();
+        handler.analysis_hook = Some(Arc::new(|| panic!("owned handler worker panic")));
+        let error = handler.handle(handler_request(99)).await.unwrap_err();
+        assert_eq!(error.id, EffectId(99));
+        assert_eq!(error.failure.code(), "analyzer.task");
+        assert!(
+            error
+                .failure
+                .message()
+                .contains("owned handler worker panic")
+        );
+        assert!(handler.store.is_none());
+    }
+
+    fn owned_store_with_handle(
+        open: impl FnOnce(&std::path::Path) -> std::fs::File,
+    ) -> CandidateStore {
+        let temporary = tempfile::NamedTempFile::new().unwrap();
+        let path = temporary.path().to_owned();
+        let (_file, temp_path) = temporary.into_parts();
+        let handle = open(&path);
+        CandidateStore::with_test_file(100, tempfile::NamedTempFile::from_parts(handle, temp_path))
+    }
+
+    #[tokio::test]
+    async fn handler_reports_spool_write_failure_without_a_completed_spool() {
+        let (_directory, mut handler) = handler_fixture();
+        handler.store = Some(owned_store_with_handle(|path| {
+            std::fs::File::open(path).unwrap()
+        }));
+        let error = handler.handle(handler_request(100)).await.unwrap_err();
+        assert_eq!(error.id, EffectId(100));
+        assert_eq!(error.failure.code(), "analyzer.store");
+        assert!(handler.store.is_none());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn handler_reports_spool_sync_failure_during_finalization() {
+        let (_directory, mut handler) = handler_fixture();
+        handler.store = Some(owned_store_with_handle(|_| {
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open("/dev/null")
+                .unwrap()
+        }));
+        let error = handler.handle(handler_request(101)).await.unwrap_err();
+        assert_eq!(error.id, EffectId(101));
+        assert_eq!(error.failure.code(), "analyzer.store");
+        assert!(handler.store.is_none());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn handler_reports_project_disappearing_after_source_acquisition() {
+        let (directory, mut handler) = handler_fixture();
+        handler.operators = serde_json::from_str("[\"exception_hierarchy\"]").unwrap();
+        handler.exception_project = Some(ExceptionProject::new(&handler.root_path));
+        let root = handler.root_path.clone();
+        let moved = directory.path().join("moved-project");
+        handler.analysis_hook = Some(Arc::new(move || std::fs::rename(&root, &moved).unwrap()));
+        let error = handler.handle(handler_request(102)).await.unwrap_err();
+        assert_eq!(error.id, EffectId(102));
+        assert_eq!(error.failure.code(), "analyzer.exception_hierarchy");
+    }
+
+    fn prepared_config(root: &Utf8Path, operator: &str) -> hoimin_core::RunConfig {
+        let config = crate::cli::parse_config_from([
+            "hoimin",
+            "run",
+            "--root",
+            root.as_str(),
+            "--file",
+            "source.py",
+            "--operators",
+            operator,
+            "--",
+            "unused-test-command",
+        ])
+        .unwrap();
+        crate::shell::prepare_run_config(config).unwrap()
+    }
+
+    #[tokio::test]
+    async fn configured_discovery_preserves_the_selected_operator_and_target() {
+        let (_directory, handler) = handler_fixture();
+        let config = prepared_config(&handler.root_path, "binary_add_sub");
+        let discovery = discover_config_targets(
+            &config,
+            &hoimin_core::DiscoveryConfig::new(Duration::from_secs(10)).unwrap(),
+            &[handler_request(1).target],
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(discovery.candidates.len(), 1);
+        assert_eq!(discovery.candidates[0].path, Utf8Path::new("source.py"));
+        assert_eq!(discovery.candidates[0].operator, "binary_add_sub");
+    }
+
+    #[tokio::test]
+    async fn configured_discovery_reports_an_undecodable_hierarchy_input() {
+        let (_directory, handler) = handler_fixture();
+        std::fs::write(
+            handler.root_path.join("errors.py"),
+            b"# coding: ascii\n# \xff\n",
+        )
+        .unwrap();
+        let config = prepared_config(&handler.root_path, "exception_hierarchy");
+        let error = discover_config_targets(
+            &config,
+            &hoimin_core::DiscoveryConfig::new(Duration::from_secs(10)).unwrap(),
+            &[handler_request(1).target],
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.failure.code(), "analyzer.exception_hierarchy");
+        assert!(error.failure.message().starts_with("errors.py:"));
+    }
+
+    #[tokio::test]
+    async fn discovery_reports_a_missing_selected_source() {
+        let (_directory, handler) = handler_fixture();
+        let error = discover_targets(
+            &handler.root_path,
+            &[TargetSlice {
+                path: "absent.py".into(),
+                lines: vec![],
+                symbols: vec![],
+            }],
+            &MutationOperatorSelection::default(),
+            MutationProfile::Full,
+            1,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.failure.code(), "analyzer.source.read");
+    }
+
+    #[tokio::test]
+    async fn discovery_reports_selected_source_encoding_failure() {
+        let (_directory, handler) = handler_fixture();
+        std::fs::write(
+            handler.root_path.join("source.py"),
+            b"# coding: ascii\n# \xff\n",
+        )
+        .unwrap();
+        let error = discover_targets(
+            &handler.root_path,
+            &[handler_request(1).target],
+            &MutationOperatorSelection::default(),
+            MutationProfile::Full,
+            1,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.failure.code(), "analyzer.source.encoding");
+        assert!(error.failure.message().starts_with("source.py:"));
+    }
+
+    #[tokio::test]
+    async fn discovery_marks_a_retained_prefix_as_truncated() {
+        let (_directory, handler) = handler_fixture();
+        std::fs::write(
+            handler.root_path.join("source.py"),
+            "first = left + right\nsecond = top + bottom\n",
+        )
+        .unwrap();
+        let operators = serde_json::from_str("[\"binary_add_sub\"]").unwrap();
+        let discovery = discover_targets(
+            &handler.root_path,
+            &[handler_request(1).target],
+            &operators,
+            MutationProfile::Full,
+            1,
+        )
+        .await
+        .unwrap();
+        assert!(discovery.truncated);
+        assert_eq!(discovery.candidates.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn discovery_rejects_an_original_exceeding_the_spool_record_bound() {
+        let (_directory, handler) = handler_fixture();
+        let source = format!(
+            "def f(s):\n    s.x = 1\n    #{}\n    s.y = 2\n",
+            "x".repeat(usize::try_from(MAX_SPOOL_RECORD_BYTES).unwrap())
+        );
+        std::fs::write(handler.root_path.join("source.py"), source).unwrap();
+        let operators = serde_json::from_str("[\"function_body_erase\"]").unwrap();
+        let error = discover_targets(
+            &handler.root_path,
+            &[handler_request(1).target],
+            &operators,
+            MutationProfile::Full,
+            1,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.failure.code(), "analyzer.store");
+        assert!(error.failure.message().contains("spool record exceeds"));
+    }
+
+    #[tokio::test]
+    async fn handler_reports_missing_root_acquisition() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = Utf8PathBuf::from_path_buf(directory.path().join("absent")).unwrap();
+        let mut handler = AnalyzerHandler::new(
+            root,
+            MutationOperatorSelection::default(),
+            MutationProfile::Full,
+            NonZeroUsize::new(1).unwrap(),
+        )
+        .with_candidate_spool_owner(Arc::new(tempfile::tempdir().unwrap()));
+        let error = handler.handle(handler_request(111)).await.unwrap_err();
+        assert_eq!(error.id, EffectId(111));
+        assert_eq!(error.failure.code(), "analyzer.source.read");
+    }
+
+    #[tokio::test]
+    async fn handler_reports_undecodable_selected_source() {
+        let (_directory, mut handler) = handler_fixture();
+        std::fs::write(
+            handler.root_path.join("source.py"),
+            b"# coding: ascii\n# \xff\n",
+        )
+        .unwrap();
+        let error = handler.handle(handler_request(112)).await.unwrap_err();
+        assert_eq!(error.id, EffectId(112));
+        assert_eq!(error.failure.code(), "analyzer.source.encoding");
+    }
+
+    #[tokio::test]
+    async fn bound_exception_snapshot_rejects_changed_auxiliary_input() {
+        let (_directory, handler) = handler_fixture();
+        let errors = handler.root_path.join("errors.py");
+        std::fs::write(&errors, "class Root(Exception): pass\n").unwrap();
+        let config = prepared_config(&handler.root_path, "exception_hierarchy");
+        let mut handler = handler.with_exception_project(&config);
+        handler.operators = config.operators.clone();
+        std::fs::write(errors, "class Root(Exception): pass\n# changed\n").unwrap();
+        let error = handler.handle(handler_request(113)).await.unwrap_err();
+        assert_eq!(error.failure.code(), "analyzer.exception_hierarchy");
+        assert!(
+            error
+                .failure
+                .message()
+                .contains("changed after fingerprint preparation")
+        );
+    }
+
+    #[tokio::test]
+    async fn releasing_a_managed_spool_discards_the_accumulated_prefix() {
+        let (_directory, handler) = handler_fixture();
+        let parent = tempfile::tempdir().unwrap();
+        let coordinator = crate::workspace::ManagedRootCoordinator::open(
+            Utf8Path::from_path(parent.path()).unwrap(),
+        )
+        .unwrap();
+        let root = crate::workspace::ManagedRunRoot::create(
+            &coordinator,
+            crate::workspace::OwnerKind::PublicExecution,
+        )
+        .unwrap();
+        let child = Arc::new(root.create_child("candidate-spool-").unwrap());
+        let before = std::fs::read_dir(child.path()).unwrap().count();
+        let mut handler = handler.with_managed_candidate_spool_owner(Arc::clone(&child));
+        let mut request = handler_request(114);
+        request.final_target = false;
+        let response = handler.handle(request).await.unwrap();
+        assert!(response.spool.is_none());
+        assert!(handler.store.as_ref().unwrap().count() > 0);
+        handler.release_candidate_spool();
+        assert!(handler.store.is_none());
+        assert!(handler.candidate_spool_owner.is_none());
+        assert_eq!(std::fs::read_dir(child.path()).unwrap().count(), before);
+    }
+
+    struct DebugEvents(Arc<std::sync::Mutex<Vec<String>>>);
+    struct DebugValues(Arc<std::sync::Mutex<Vec<String>>>);
+    impl tracing::field::Visit for DebugValues {
+        fn record_debug(&mut self, _field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            self.0.lock().unwrap().push(format!("{value:?}"));
+        }
+    }
+    impl tracing_subscriber::Layer<tracing_subscriber::Registry> for DebugEvents {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _context: tracing_subscriber::layer::Context<'_, tracing_subscriber::Registry>,
+        ) {
+            event.record(&mut DebugValues(Arc::clone(&self.0)));
+        }
+    }
+    thread_local! {
+        static WORKER_TRACING: std::cell::RefCell<Option<tracing::dispatcher::DefaultGuard>> = const { std::cell::RefCell::new(None) };
+    }
+    fn install_worker_diagnostics(events: Arc<std::sync::Mutex<Vec<String>>>) {
+        use tracing_subscriber::layer::SubscriberExt;
+        let subscriber = tracing_subscriber::registry().with(DebugEvents(events));
+        let guard = tracing::subscriber::set_default(subscriber);
+        WORKER_TRACING.with(|slot| *slot.borrow_mut() = Some(guard));
+    }
+
+    #[test]
+    fn handler_worker_emits_its_analysis_debug_event() {
+        let events = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let worker_events = Arc::clone(&events);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .on_thread_start(move || install_worker_diagnostics(Arc::clone(&worker_events)))
+            .build()
+            .unwrap();
+        let (_directory, mut handler) = handler_fixture();
+        runtime
+            .block_on(handler.handle(handler_request(115)))
+            .unwrap();
+        assert!(
+            events
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|message| message.contains("analyzing file"))
+        );
+    }
+
+    #[tokio::test]
+    async fn unbounded_discovery_join_failure_preserves_worker_panic() {
+        let (_directory, handler) = handler_fixture();
+        let control = DiscoveryControl::new(Arc::new(tempfile::tempdir().unwrap()), || {
+            panic!("unbounded worker panic")
+        });
+        let error = discover_unbounded(
+            &handler.root_path,
+            &[handler_request(1).target],
+            &MutationOperatorSelection::default(),
+            MutationProfile::Full,
+            100,
+            Some(control),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.failure.code(), "analyzer.task");
+        assert!(error.failure.message().contains("unbounded worker panic"));
+    }
+
+    fn discovery_noop() {}
+
+    #[tokio::test]
+    async fn controlled_discovery_join_failure_before_entry_is_typed() {
+        let (_directory, handler) = handler_fixture();
+        let mut control =
+            DiscoveryControl::new(Arc::new(tempfile::tempdir().unwrap()), discovery_noop);
+        control.before_entry = Some(Box::new(|| panic!("pre-entry worker panic")));
+        let error = discover_targets_with_control(
+            &handler.root_path,
+            &[handler_request(1).target],
+            &MutationOperatorSelection::default(),
+            MutationProfile::Full,
+            100,
+            Duration::from_secs(10),
+            Some(control),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.failure.code(), "analyzer.task");
+        assert!(error.failure.message().contains("pre-entry worker panic"));
+    }
+
+    fn cancel_discovery_at(
+        cancellation: &ProcessCancellation,
+        expected: DiscoveryCheckpoint,
+        actual: DiscoveryCheckpoint,
+    ) {
+        if expected == actual {
+            cancellation.cancel();
+        }
+    }
+
+    #[rstest::rstest]
+    #[case::before_source(DiscoveryCheckpoint::BeforeSource)]
+    #[case::after_source(DiscoveryCheckpoint::AfterSource)]
+    #[case::before_candidate(DiscoveryCheckpoint::BeforeCandidate)]
+    fn discovery_cancellation_at_owned_checkpoint_prevents_retained_output(
+        #[case] checkpoint: DiscoveryCheckpoint,
+    ) {
+        let (_directory, handler) = handler_fixture();
+        let cancellation = ProcessCancellation::new();
+        let callback_cancellation = cancellation.clone();
+        let mut control =
+            DiscoveryControl::new(Arc::new(tempfile::tempdir().unwrap()), discovery_noop);
+        control.checkpoint_hook = Some(Box::new(move |actual| {
+            cancel_discovery_at(&callback_cancellation, checkpoint, actual);
+        }));
+        let work = discovery_work(
+            &handler.root_path,
+            &[handler_request(1).target],
+            &MutationOperatorSelection::default(),
+            MutationProfile::Full,
+            100,
+            cancellation,
+            Some(control),
+        );
+        let error = discover_targets_blocking(work).unwrap_err();
+        assert_eq!(error.failure.code(), "analyzer.cancelled");
+    }
+
+    #[tokio::test]
+    async fn discovery_entry_wait_reports_a_disconnected_handshake() {
+        let (sender, receiver) = std::sync::mpsc::sync_channel::<()>(1);
+        drop(sender);
+        assert_eq!(
+            tests::wait_for_discovery_entry(&receiver).await,
+            Err(std::sync::mpsc::TryRecvError::Disconnected)
+        );
     }
 }

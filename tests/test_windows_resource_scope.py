@@ -9,12 +9,18 @@ from ctypes import wintypes
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import cast
+from unittest.mock import create_autospec
 
 import pytest
+from pytest_mock import MockerFixture
 
 
 @pytest.fixture
-def probe(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
+def probe(mocker: MockerFixture) -> ModuleType:
+    original_windll_spec = getattr(ctypes, "WinDLL", ctypes.CDLL)
+    original_winerror_spec = getattr(ctypes, "WinError", OSError)
+    original_get_last_error_spec = getattr(ctypes, "get_last_error", ctypes.get_errno)
+
     def query(
         _job: object,
         kind: int,
@@ -41,19 +47,32 @@ def probe(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
             accounting.ActiveProcesses = 2
         return True
 
-    monkeypatch.setattr(
+    mocker.patch.object(
         ctypes,
         "WinDLL",
-        lambda *_a, **_k: SimpleNamespace(QueryInformationJobObject=query),
-        raising=False,
+        create_autospec(
+            original_windll_spec,
+            side_effect=lambda *_a, **_k: SimpleNamespace(
+                QueryInformationJobObject=query
+            ),
+        ),
+        create=True,
     )
-    monkeypatch.setattr(
+    mocker.patch.object(
         ctypes,
         "WinError",
-        lambda code: OSError(code, "job query failed"),
-        raising=False,
+        create_autospec(
+            original_winerror_spec,
+            side_effect=lambda code: OSError(code, "job query failed"),
+        ),
+        create=True,
     )
-    monkeypatch.setattr(ctypes, "get_last_error", lambda: 5, raising=False)
+    mocker.patch.object(
+        ctypes,
+        "get_last_error",
+        create_autospec(original_get_last_error_spec, side_effect=lambda: 5),
+        create=True,
+    )
     path = (
         Path(__file__).resolve().parents[1]
         / "crates/hoimin-cli/tests/support/windows_resource_scope.py"
@@ -73,18 +92,31 @@ def test_read_job_returns_typed_information(probe: ModuleType) -> None:
 
 @pytest.mark.parametrize("failure", ["api", "size"])
 def test_read_job_rejects_failed_or_truncated_information(
-    probe: ModuleType, monkeypatch: pytest.MonkeyPatch, failure: str
+    probe: ModuleType, mocker: MockerFixture, failure: str
 ) -> None:
-    monkeypatch.setattr(probe, "query", lambda *_args: failure != "api")
+    original_query_spec = probe.query
+    mocker.patch.object(
+        probe,
+        "query",
+        create_autospec(
+            original_query_spec, side_effect=lambda *_args: failure != "api"
+        ),
+    )
     with pytest.raises(OSError if failure == "api" else AssertionError):
         probe.read_job(1, probe.Accounting)
 
 
 def test_baseline_does_not_spawn_descendants(
-    probe: ModuleType, monkeypatch: pytest.MonkeyPatch
+    probe: ModuleType, mocker: MockerFixture
 ) -> None:
-    monkeypatch.setattr(
-        probe, "import_module", lambda _: SimpleNamespace(first=11, second=22)
+    original_import_module_spec = probe.import_module
+    mocker.patch.object(
+        probe,
+        "import_module",
+        create_autospec(
+            original_import_module_spec,
+            side_effect=lambda _: SimpleNamespace(first=11, second=22),
+        ),
     )
     probe.main()
 
@@ -100,23 +132,46 @@ def test_baseline_does_not_spawn_descendants(
 )
 def test_mutant_publishes_job_observation_and_waits_for_controller(  # noqa: PLR0913, PLR0917 -- Protocol scenarios vary independently.
     probe: ModuleType,
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
     tmp_path: Path,
     mode: str,
     first: int,
     release: str,
 ) -> None:
-    monkeypatch.setattr(
-        probe, "import_module", lambda _: SimpleNamespace(first=first, second=23)
+    original_import_module_spec = probe.import_module
+    original_popen_spec = probe.subprocess.Popen
+    original_monotonic_spec = probe.time.monotonic
+    original_sleep_spec = probe.time.sleep
+    mocker.patch.object(
+        probe,
+        "import_module",
+        create_autospec(
+            original_import_module_spec,
+            side_effect=lambda _: SimpleNamespace(first=first, second=23),
+        ),
     )
-    monkeypatch.setattr(sys, "argv", ["probe", mode, str(tmp_path)])
+    mocker.patch.object(sys, "argv", ["probe", mode, str(tmp_path)])
     child = SimpleNamespace(
         pid=123, poll=lambda: 0 if release == "child_exit" else None
     )
-    monkeypatch.setattr(probe.subprocess, "Popen", lambda *_args: child)
+    mocker.patch.object(
+        probe.subprocess,
+        "Popen",
+        create_autospec(original_popen_spec, side_effect=lambda *_args: child),
+    )
     clock = iter([0, 31])
-    monkeypatch.setattr(probe.time, "monotonic", lambda: next(clock))
-    monkeypatch.setattr(probe.time, "sleep", lambda _: (tmp_path / "release").touch())
+    mocker.patch.object(
+        probe.time,
+        "monotonic",
+        create_autospec(original_monotonic_spec, side_effect=lambda: next(clock)),
+    )
+    mocker.patch.object(
+        probe.time,
+        "sleep",
+        create_autospec(
+            original_sleep_spec, side_effect=lambda _: (tmp_path / "release").touch()
+        ),
+    )
     if release == "immediate":
         (tmp_path / "release").touch()
     if release in {"child_exit", "timeout"}:
@@ -124,7 +179,11 @@ def test_mutant_publishes_job_observation_and_waits_for_controller(  # noqa: PLR
             probe.main()
     else:
         if release == "delayed":
-            monkeypatch.setattr(probe.time, "monotonic", lambda: 0)
+            mocker.patch.object(
+                probe.time,
+                "monotonic",
+                create_autospec(original_monotonic_spec, side_effect=lambda: 0),
+            )
         probe.main()
     identity = "first" if first != 11 else "second"
     observation = json.loads((tmp_path / f"{identity}.json").read_text())
@@ -135,9 +194,9 @@ def test_mutant_publishes_job_observation_and_waits_for_controller(  # noqa: PLR
 
 
 def test_script_entry_runs_sequential_baseline(
-    probe: ModuleType, monkeypatch: pytest.MonkeyPatch
+    probe: ModuleType, mocker: MockerFixture
 ) -> None:
 
-    monkeypatch.setitem(sys.modules, "target", SimpleNamespace(first=11, second=22))
+    mocker.patch.dict(sys.modules, {"target": SimpleNamespace(first=11, second=22)})
     assert probe.__file__ is not None
     runpy.run_path(probe.__file__, run_name="__main__")

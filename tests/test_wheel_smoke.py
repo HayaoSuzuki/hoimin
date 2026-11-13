@@ -301,11 +301,11 @@ def test_rejects_ambiguous_current_compatible_wheels() -> None:
 
 
 @pytest.fixture
-def wheel_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def wheel_project(tmp_path: Path, mocker: MockerFixture) -> None:
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "hoimin"\nversion = "0.1.0"\n', encoding="utf-8"
     )
-    monkeypatch.setattr("wheel_smoke.REPOSITORY_ROOT", tmp_path)
+    mocker.patch("wheel_smoke.REPOSITORY_ROOT", tmp_path)
 
 
 @pytest.mark.usefixtures("wheel_project")
@@ -787,7 +787,6 @@ def test_distribution_supports_only_python_314_and_315(
 def test_distribution_smoke_uses_the_running_python(
     tmp_path: Path,
     mocker: MockerFixture,
-    monkeypatch: pytest.MonkeyPatch,
     *,
     write_report: bool,
 ) -> None:
@@ -795,9 +794,10 @@ def test_distribution_smoke_uses_the_running_python(
     wheel.write_bytes(b"wheel contents")
     report = tmp_path / "report.json"
     if write_report:
-        monkeypatch.setenv("HOIMIN_SMOKE_REPORT", str(report))
+        mocker.patch.dict(os.environ, {"HOIMIN_SMOKE_REPORT": str(report)})
     else:
-        monkeypatch.delenv("HOIMIN_SMOKE_REPORT", raising=False)
+        mocker.patch.dict(os.environ)
+        os.environ.pop("HOIMIN_SMOKE_REPORT", None)
     mocker.patch.object(wheel_smoke, "wheel_path", return_value=wheel)
     mocker.patch.object(
         wheel_smoke, "wheel_metadata", return_value=wheel_smoke.EXPECTED_WHEEL_METADATA

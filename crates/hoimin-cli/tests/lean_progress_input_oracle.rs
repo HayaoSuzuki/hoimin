@@ -253,16 +253,7 @@ async fn current_summaries_follow_lean_before_entering_stall_history() {
             #[cfg_attr(coverage_nightly, coverage(off))]
             |error| panic!("{} v{schema} infrastructure-error: {error}", case.id),
         );
-        mismatches.extend(
-            (observed.disposition != case.expected_disposition
-                || observed.history != case.expected_history)
-                .then(|| {
-                    format!(
-                        "{} v{schema}: expected {:?}/{:?}, observed {observed:?}",
-                        case.id, case.expected_disposition, case.expected_history
-                    )
-                }),
-        );
+        mismatches.extend(self_comparison_mismatch(&case, &observed, schema));
     }
     assert!(
         mismatches.is_empty(),
@@ -343,13 +334,11 @@ async fn shared_reader_progress_formats_follow_lean() {
         .into_iter()
         .filter(|case| selected_boundary_case(case, selected.as_deref()))
     {
-        for gap in std::iter::once(&case)
-            .filter(|case| case.baseline == "missing" && !case.statuses.is_empty())
-        {
-            print_unexecuted_gap(gap);
-        }
+        // The closed corpus has no missing-baseline mutant projections. Reject
+        // drift instead of silently skipping a selected correspondence case.
+        assert!(case.baseline != "missing" || case.statuses.is_empty());
         selected_cases += 1;
-        if case.baseline != "missing" || case.statuses.is_empty() {
+        {
             let encoding = "jsonl-v6";
             let observed = observe_cli_encoding(&case).await;
             let (status, reason) = classify_observation(&case, &observed);
@@ -410,15 +399,14 @@ fn shared_reader_fixture_encodings_preserve_fields_and_projection_premises() {
 #[path = "support/progress_input_validation_tests.rs"]
 mod validation_tests;
 
-fn print_unexecuted_gap(gap: &LeanOracleCase) {
-    println!(
-        "BOUNDARY_OBSERVATION {}",
-        json!({
-            "fixture": gap.id, "encoding": "jsonl-v6", "boundary": "reader-progress",
-            "mode": "report", "evidence": "real-cli", "status": "unexecuted",
-            "reason": "document permits missing baseline with mutant projections; full JSONL lifecycle requires preceding baseline"
-        })
-    );
+fn print_unexecuted_gap(gap: &LeanOracleCase) -> Value {
+    let observation = json!({
+        "fixture": gap.id, "encoding": "jsonl-v6", "boundary": "reader-progress",
+        "mode": "report", "evidence": "real-cli", "status": "unexecuted",
+        "reason": "document permits missing baseline with mutant projections; full JSONL lifecycle requires preceding baseline"
+    });
+    println!("BOUNDARY_OBSERVATION {observation}");
+    observation
 }
 
 fn selected_boundary_case(case: &LeanOracleCase, selected: Option<&str>) -> bool {
@@ -431,4 +419,49 @@ fn failure_message(
     reason: Option<&str>,
 ) -> Option<String> {
     (status != "match").then(|| format!("{} {encoding}: {reason:?}", case.id))
+}
+
+#[test]
+fn missing_baseline_diagnostic_is_explicitly_unexecuted() {
+    let mut gap = parse_lean_oracle_cases().remove(0);
+    gap.baseline = "missing".to_owned();
+    gap.statuses = vec!["killed".to_owned()];
+    let observation = print_unexecuted_gap(&gap);
+    assert_eq!(observation["fixture"], gap.id);
+    assert_eq!(observation["status"], "unexecuted");
+    assert_eq!(observation["mode"], "report");
+    assert!(
+        observation["reason"]
+            .as_str()
+            .unwrap()
+            .contains("preceding baseline")
+    );
+}
+
+fn self_comparison_mismatch(
+    case: &LeanOracleCase,
+    observed: &CliObservation,
+    schema: u32,
+) -> Option<String> {
+    (observed.disposition != case.expected_disposition || observed.history != case.expected_history)
+        .then(|| {
+            format!(
+                "{} v{schema}: expected {:?}/{:?}, observed {observed:?}",
+                case.id, case.expected_disposition, case.expected_history
+            )
+        })
+}
+
+#[test]
+fn self_comparison_mismatch_reports_fixture_and_observed_disposition() {
+    let case = parse_lean_oracle_cases().remove(0);
+    let observed = CliObservation {
+        disposition: "unrecognized".into(),
+        history: None,
+    };
+    let diagnostic =
+        self_comparison_mismatch(&case, &observed, hoimin_core::REPORT_SCHEMA_VERSION).unwrap();
+    assert!(diagnostic.contains(&case.id));
+    assert!(diagnostic.contains("unrecognized"));
+    assert!(diagnostic.contains(&case.expected_disposition));
 }

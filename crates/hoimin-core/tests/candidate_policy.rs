@@ -549,16 +549,16 @@ fn validates_python_physical_lines_without_normalizing_source_bytes(
 }
 
 #[rstest::rstest]
-#[case::value("", vec![0])]
-#[case::value_2("\r", vec![0, 1])]
-#[case::value_3("\n", vec![0, 1])]
-#[case::value_4("\r\n", vec![0, 2])]
-#[case::value_5("\r\r\n\n", vec![0, 1, 3, 4])]
-#[case::a_b_c("a\r\nb\rc\n", vec![0, 3, 5, 7])]
-#[case::a_b("a\rb", vec![0, 2])]
+#[case::value("", &[0])]
+#[case::value_2("\r", &[0, 1])]
+#[case::value_3("\n", &[0, 1])]
+#[case::value_4("\r\n", &[0, 2])]
+#[case::value_5("\r\r\n\n", &[0, 1, 3, 4])]
+#[case::a_b_c("a\r\nb\rc\n", &[0, 3, 5, 7])]
+#[case::a_b("a\rb", &[0, 2])]
 fn python_physical_line_starts_count_crlf_once_and_keep_empty_lines(
     #[case] source: &str,
-    #[case] expected: Vec<u32>,
+    #[case] expected: &[u32],
 ) {
     assert_eq!(
         hoimin_core::python_line_starts(source.as_bytes()).unwrap(),
@@ -684,4 +684,50 @@ proptest! {
 
         prop_assert_eq!(actual, expected_position);
     }
+}
+
+#[rstest::rstest]
+#[case(b"# coding: ascii\nx = 1\n".as_slice(), "é")]
+#[case(b"# coding: latin-1\nx = 1\n".as_slice(), "λ")]
+fn unencodable_original_is_an_original_mismatch(#[case] source: &[u8], #[case] original: &str) {
+    let mut candidate = descriptor(source);
+    candidate.original = original.into();
+    assert_eq!(
+        validate_candidate(source, &candidate),
+        Err(CandidateValidationError::OriginalMismatch)
+    );
+}
+
+#[test]
+fn validation_scratch_bound_counts_owned_temporary_text() {
+    let source = b"x = 1\nvalue == 2\n";
+    let candidate = descriptor(source);
+    let expected = candidate.original.len()
+        + 2 * candidate.replacement.len()
+        + 3 * candidate.path.as_str().len()
+        + candidate.operator.len()
+        + 2 * candidate.file_hash.len()
+        + 67;
+    assert_eq!(
+        hoimin_core::candidate_validation_scratch_bytes(&candidate),
+        Some(expected)
+    );
+}
+
+#[test]
+fn displayed_mutant_id_preserves_its_stable_wire_identity() {
+    let source = b"x = 1\nvalue == 2\n";
+    let id = validate_candidate(source, &descriptor(source)).unwrap();
+    assert_eq!(id.to_string(), id.as_str());
+}
+
+#[test]
+fn reusable_context_exposes_decoded_source_without_rebuilding_it() {
+    let context = CandidateValidationContext::new(b"# coding: latin-1\n\xe9").unwrap();
+    let decoded = context.decoded_source().unwrap();
+    assert_eq!(decoded.text(), "# coding: latin-1\né");
+    assert_eq!(
+        decoded.encoding(),
+        hoimin_core::PythonSourceEncoding::Latin1
+    );
 }

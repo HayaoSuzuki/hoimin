@@ -160,28 +160,28 @@ fn disk_filesystem_schema_requires_a_delta_for_two_endpoints() {
 }
 
 #[rstest::rstest]
-#[case::state_1(serde_json::json!({"state":"untracked"}))]
-#[case::state_2(serde_json::json!({"state":"captured","names":["FLAG"],"digest":"a".repeat(64)}))]
-fn environment_snapshot_schema_accepts_closed_state(#[case] valid: serde_json::Value) {
+#[case::state_1(&serde_json::json!({"state":"untracked"}))]
+#[case::state_2(&serde_json::json!({"state":"captured","names":["FLAG"],"digest":"a".repeat(64)}))]
+fn environment_snapshot_schema_accepts_closed_state(#[case] valid: &serde_json::Value) {
     let root = repo_root();
     let event_schema =
         read_schema(&root.join("docs/user/reference/json-schema/run-event.schema.json"));
     let snapshot_schema = &event_schema["$defs"]["environmentSnapshot"];
 
-    assert_schema_valid(snapshot_schema, &valid, &event_schema);
+    assert_schema_valid(snapshot_schema, valid, &event_schema);
 }
 
 #[rstest::rstest]
-#[case::state_1(serde_json::json!({"state":"untracked","names":[]}))]
-#[case::state_2(serde_json::json!({"state":"captured","names":["FLAG"]}))]
-#[case::state_3(serde_json::json!({"state":"captured","names":["FLAG"],"digest":"a".repeat(64),"value":"private"}))]
-fn environment_snapshot_schema_rejects_closed_state(#[case] invalid: serde_json::Value) {
+#[case::state_1(&serde_json::json!({"state":"untracked","names":[]}))]
+#[case::state_2(&serde_json::json!({"state":"captured","names":["FLAG"]}))]
+#[case::state_3(&serde_json::json!({"state":"captured","names":["FLAG"],"digest":"a".repeat(64),"value":"private"}))]
+fn environment_snapshot_schema_rejects_closed_state(#[case] invalid: &serde_json::Value) {
     let root = repo_root();
     let event_schema =
         read_schema(&root.join("docs/user/reference/json-schema/run-event.schema.json"));
     let snapshot_schema = &event_schema["$defs"]["environmentSnapshot"];
 
-    assert_schema_invalid(snapshot_schema, &invalid, &event_schema);
+    assert_schema_invalid(snapshot_schema, invalid, &event_schema);
 }
 
 #[rstest::rstest]

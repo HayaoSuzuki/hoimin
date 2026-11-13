@@ -657,11 +657,8 @@ impl RunState {
     }
 
     fn create_worker_effects(&mut self) -> Result<Vec<RunEffect>, MachineError> {
-        let count = u32::try_from(self.config.limits.jobs.get()).map_err(
-            // RunConfig validation bounds jobs by MAX_JOBS (256), below u32::MAX.
-            #[cfg_attr(coverage_nightly, coverage(off))]
-            |_| MachineError::WorkerCountOverflow,
-        )?;
+        // RunConfig bounds jobs by MAX_JOBS (256), below u32::MAX.
+        let count = u32::try_from(self.config.limits.jobs.get()).expect("validated jobs fit u32");
         let grant = self
             .copy_grant
             .ok_or(MachineError::WrongPhase { phase: self.phase })?;
@@ -677,7 +674,8 @@ impl RunState {
             effects.push(RunEffect::CreateWorker(
                 grant
                     .create_worker(id, worker)
-                    .map_err(|error| MachineError::Budget(error.to_string()))?,
+                    // The grant count matched configuration and the loop supplies 0..count.
+                    .expect("worker index is within the validated grant"),
             ));
         }
         self.phase = RunPhase::Copy;
@@ -706,7 +704,7 @@ impl RunState {
                 timeout: self.config.limits.baseline_timeout.get(),
                 max_output_bytes: self.config.limits.max_output.get(),
                 max_memory_bytes: self.config.limits.max_memory.get(),
-                max_processes: self.max_processes()?,
+                max_processes: self.max_processes(),
             },
         })])
     }
@@ -744,7 +742,11 @@ impl RunState {
 
     fn apply_worker_effects(&mut self, worker: u32) -> Result<Vec<RunEffect>, MachineError> {
         let candidate = self.take_candidate(worker)?;
-        *self.worker_mut(worker)? = WorkerState::Applying(candidate.clone());
+        // Candidate validation succeeded above; moving ownership never removes the worker entry.
+        *self
+            .worker_mut(worker)
+            .expect("candidate validation established worker membership") =
+            WorkerState::Applying(candidate.clone());
         let id = self.allocate_id()?;
         Ok(vec![RunEffect::ApplyMutation(ApplyMutation {
             id,
@@ -757,7 +759,11 @@ impl RunState {
         if let Some(run_id) = self.identity.session_id().map(str::to_owned) {
             let candidate = self.take_candidate(worker)?;
             let mutant_id = candidate.id.clone();
-            *self.worker_mut(worker)? = WorkerState::Lookup(candidate);
+            // take_candidate validated membership; changing the value keeps its map entry.
+            *self
+                .worker_mut(worker)
+                .expect("candidate validation established worker membership") =
+                WorkerState::Lookup(candidate);
             let id = self.allocate_id()?;
             Ok(vec![RunEffect::LookupStoredResult(LookupStoredResult {
                 id,
@@ -865,7 +871,18 @@ impl RunState {
                 && let Some(id) = self.selection.ordered_state_mut().and_then(|ordered| {
                     match &mut ordered.phase {
                         OrderedCandidatePhase::Ready { remaining } => remaining.pop_front(),
-                        OrderedCandidatePhase::Collecting { .. } => None,
+                        OrderedCandidatePhase::Collecting { .. } => {
+                            // Collecting returned above before reaching this ready-phase lookup.
+                            #[cfg(coverage_nightly)]
+                            {
+                                (#[coverage(off)]
+                                || None)()
+                            }
+                            #[cfg(not(coverage_nightly))]
+                            {
+                                None
+                            }
+                        }
                     }
                 })
             {
@@ -970,7 +987,11 @@ impl RunState {
     fn take_candidate(&mut self, worker: u32) -> Result<MutationCandidate, MachineError> {
         // Validate before taking so an invalid transition preserves its worker.
         self.candidate(worker)?;
-        let candidate = match std::mem::take(self.worker_mut(worker)?) {
+        // Candidate validation succeeded above; moving ownership never removes the worker entry.
+        let candidate = match std::mem::take(
+            self.worker_mut(worker)
+                .expect("candidate validation established worker membership"),
+        ) {
             WorkerState::Ready(candidate)
             | WorkerState::Lookup(candidate)
             | WorkerState::Applying(candidate)
@@ -1000,7 +1021,11 @@ impl RunState {
         let candidate = self.take_candidate(worker)?;
         let mutant_id = candidate.id.clone();
         let candidate_sequence = candidate.sequence;
-        *self.worker_mut(worker)? = WorkerState::Starting(candidate);
+        // Candidate validation succeeded above; moving ownership never removes the worker entry.
+        *self
+            .worker_mut(worker)
+            .expect("candidate validation established worker membership") =
+            WorkerState::Starting(candidate);
         let id = self.allocate_id()?;
         let output = EmitOutput {
             id,
@@ -1025,7 +1050,11 @@ impl RunState {
         let candidate = self.take_candidate(worker)?;
         let mutant_id = candidate.id.clone();
         let candidate_sequence = candidate.sequence;
-        *self.worker_mut(worker)? = WorkerState::SyntheticStarting(candidate, outcome);
+        // Candidate validation succeeded above; moving ownership never removes the worker entry.
+        *self
+            .worker_mut(worker)
+            .expect("candidate validation established worker membership") =
+            WorkerState::SyntheticStarting(candidate, outcome);
         let id = self.allocate_id()?;
         let output = EmitOutput {
             id,
@@ -1042,17 +1071,20 @@ impl RunState {
         )])
     }
 
-    fn max_processes(&self) -> Result<u32, MachineError> {
-        u32::try_from(self.config.limits.max_processes.get()).map_err(
-            // RunConfig validation already requires max_processes to fit u32.
-            #[cfg_attr(coverage_nightly, coverage(off))]
-            |_| MachineError::ProcessCountOverflow,
-        )
+    fn max_processes(&self) -> u32 {
+        // RunConfig rejects process limits that cannot fit the execution request.
+        u32::try_from(self.config.limits.max_processes.get())
+            .expect("validated process limit fits u32")
     }
+
     fn mutant_process(&mut self, worker: u32) -> Result<Vec<RunEffect>, MachineError> {
         let candidate = self.take_candidate(worker)?;
         let mutant_id = candidate.id.clone();
-        *self.worker_mut(worker)? = WorkerState::Running(candidate);
+        // Candidate validation succeeded above; moving ownership never removes the worker entry.
+        *self
+            .worker_mut(worker)
+            .expect("candidate validation established worker membership") =
+            WorkerState::Running(candidate);
         let id = self.allocate_id()?;
         let timeout = *self.resolved_mutant_timeout.get_or_insert_with(|| {
             match self.config.limits.mutant_timeout {
@@ -1073,7 +1105,7 @@ impl RunState {
                 timeout,
                 max_output_bytes: self.config.limits.max_output.get(),
                 max_memory_bytes: self.config.limits.max_memory.get(),
-                max_processes: self.max_processes()?,
+                max_processes: self.max_processes(),
             },
         })])
     }
@@ -1109,7 +1141,11 @@ impl RunState {
         outcome: SyntheticOutcome,
     ) -> Result<Vec<RunEffect>, MachineError> {
         let candidate = self.take_candidate(worker)?;
-        *self.worker_mut(worker)? = WorkerState::SyntheticFinishing(candidate.clone(), outcome);
+        // Candidate validation succeeded above; moving ownership never removes the worker entry.
+        *self
+            .worker_mut(worker)
+            .expect("candidate validation established worker membership") =
+            WorkerState::SyntheticFinishing(candidate.clone(), outcome);
         let id = self.allocate_id()?;
         let output = EmitOutput {
             id,
@@ -1233,26 +1269,39 @@ impl RunState {
             .keys()
             .next()
             .ok_or(MachineError::WrongPhase { phase: self.phase })?;
+        // The worker key came from this map; dispatch only changes values, never membership.
         if let Some(candidate) = self.stopped_candidates.pop_front() {
             match candidate {
                 StoppedCandidate::Unloaded(id) => {
                     self.read_candidate(worker, CandidateReadTarget::Id(id))
                 }
                 StoppedCandidate::NotStarted(candidate) => {
-                    *self.worker_mut(worker)? = WorkerState::Ready(candidate);
+                    *self
+                        .worker_mut(worker)
+                        .expect("worker key remains present during stopped dispatch") =
+                        WorkerState::Ready(candidate);
                     self.synthetic_started_output(worker, SyntheticOutcome::NotRun)
                 }
                 StoppedCandidate::SyntheticNotStarted(candidate, outcome) => {
-                    *self.worker_mut(worker)? = WorkerState::Ready(candidate);
+                    *self
+                        .worker_mut(worker)
+                        .expect("worker key remains present during stopped dispatch") =
+                        WorkerState::Ready(candidate);
                     self.synthetic_started_output(worker, outcome)
                 }
                 StoppedCandidate::StartedNotRun(candidate) => {
-                    *self.worker_mut(worker)? = WorkerState::Ready(candidate);
+                    *self
+                        .worker_mut(worker)
+                        .expect("worker key remains present during stopped dispatch") =
+                        WorkerState::Ready(candidate);
                     self.synthetic_finished_output(worker, SyntheticOutcome::NotRun)
                 }
                 StoppedCandidate::Finished(result) => self.finished_output(worker, result),
                 StoppedCandidate::SyntheticFinished(candidate, outcome) => {
-                    *self.worker_mut(worker)? = WorkerState::Ready(candidate);
+                    *self
+                        .worker_mut(worker)
+                        .expect("worker key remains present during stopped dispatch") =
+                        WorkerState::Ready(candidate);
                     self.synthetic_finished_output(worker, outcome)
                 }
             }
@@ -1423,6 +1472,10 @@ impl MachineError {
 /// # Errors
 ///
 /// Returns [`MachineError`] when the event does not complete a pending effect or is invalid for the current state.
+///
+/// # Panics
+/// Panics if an internal ownership invariant or an enabled contract check fails.
+/// Worker entries remain present between their checked lookup and subsequent use.
 #[allow(
     clippy::too_many_lines,
     reason = "the transition table is kept together to make state-machine cases auditable"
@@ -1460,15 +1513,10 @@ pub fn transition(
     if let RunEvent::EffectFailed(failed) = &event
         && let Some(stop) = &mut state.disk_summary.stop
     {
-        let secondary = crate::DiskSecondary::Error {
-            code: failed.failure.code().to_owned(),
-            message: failed.failure.message(),
-        };
-        let matches_primary = matches!(
-            &secondary,
-            crate::DiskSecondary::Error { code, message }
-                if stop.code == *code && stop.message.as_ref() == Some(message)
-        );
+        let code = failed.failure.code().to_owned();
+        let message = failed.failure.message();
+        let matches_primary = stop.code == code && stop.message.as_ref() == Some(&message);
+        let secondary = crate::DiskSecondary::Error { code, message };
         if !matches_primary && !stop.secondary.contains(&secondary) {
             stop.secondary.push(secondary);
         }
@@ -1639,6 +1687,7 @@ pub fn transition(
                     received: value.candidate.map(|candidate| candidate.id),
                 });
             }
+            // The lookup above validated membership; all remaining operations preserve map entries.
             if state.selection.ordered_state().is_some_and(|ordered| {
                 matches!(ordered.phase, OrderedCandidatePhase::Collecting { .. })
             }) {
@@ -1653,14 +1702,22 @@ pub fn transition(
                         .as_ref()
                         .is_none_or(|candidate| state.selection.select_streamed(&candidate.id));
                 if !selected {
-                    *state.worker_mut(worker)? = WorkerState::default();
+                    *state
+                        .worker_mut(worker)
+                        .expect("candidate completion validated worker membership") =
+                        WorkerState::default();
                     state.schedule_read_or_finalize()?
                 } else if state.flags.scheduling.stop_requested {
                     if let Some(candidate) = value.candidate {
-                        *state.worker_mut(worker)? = WorkerState::Ready(candidate);
+                        *state
+                            .worker_mut(worker)
+                            .expect("candidate completion validated worker membership") =
+                            WorkerState::Ready(candidate);
                         state.synthetic_started_output(worker, SyntheticOutcome::NotRun)?
                     } else {
-                        let worker_state = state.worker_mut(worker)?;
+                        let worker_state = state
+                            .worker_mut(worker)
+                            .expect("candidate completion validated worker membership");
                         *worker_state = WorkerState::default();
                         state.flags.scheduling.candidate_exhausted = true;
                         state.next_stopped_candidate_effects()?
@@ -1669,10 +1726,18 @@ pub fn transition(
                     let mut effects = if let Some(candidate) = value.candidate {
                         contract_ensure!(
                             "machine.worker.candidate.pre",
-                            matches!(state.worker_mut(worker)?, WorkerState::Reading(_)),
+                            matches!(
+                                state
+                                    .worker_mut(worker)
+                                    .expect("candidate completion validated worker membership"),
+                                WorkerState::Reading(_)
+                            ),
                             (worker, &candidate)
                         );
-                        *state.worker_mut(worker)? = WorkerState::Ready(candidate);
+                        *state
+                            .worker_mut(worker)
+                            .expect("candidate completion validated worker membership") =
+                            WorkerState::Ready(candidate);
                         if state.scheduled_mutants >= state.config.limits.max_mutants.get() as u64 {
                             state.flags.outcome.incomplete = true;
                             state.synthetic_started_output(worker, SyntheticOutcome::NotRun)?
@@ -1681,7 +1746,10 @@ pub fn transition(
                             state.candidate_effects(worker)?
                         }
                     } else {
-                        *state.worker_mut(worker)? = WorkerState::Idle;
+                        *state
+                            .worker_mut(worker)
+                            .expect("candidate completion validated worker membership") =
+                            WorkerState::Idle;
                         state.flags.scheduling.candidate_exhausted = true;
                         Vec::new()
                     };
@@ -1756,7 +1824,11 @@ pub fn transition(
             };
             let status = result.outcome.status();
             if state.identity.session_id().is_some() {
-                *state.worker_mut(worker)? = WorkerState::Persisting(result.clone());
+                // take_candidate validated membership and retained the worker entry.
+                *state
+                    .worker_mut(worker)
+                    .expect("completed candidate retains its worker entry") =
+                    WorkerState::Persisting(result.clone());
                 let id = state.allocate_id()?;
                 vec![RunEffect::PersistResult(PersistResult {
                     id,
@@ -1855,7 +1927,11 @@ pub fn transition(
                     };
                     let status = outcome.report_outcome().status();
                     state.summary.record(status);
-                    *state.worker_mut(worker)? = WorkerState::Idle;
+                    // The synthetic-state lookup above validated this unchanged map entry.
+                    *state
+                        .worker_mut(worker)
+                        .expect("synthetic completion retains its worker entry") =
+                        WorkerState::Idle;
                     if state.flags.scheduling.stop_requested {
                         state.next_stopped_candidate_effects()?
                     } else {
@@ -2658,5 +2734,16 @@ mod tests {
     fn audit_status_includes_not_run_and_rejects_unknown_names() {
         assert_eq!(audit_status("not_run"), MutationStatus::NotRun);
         assert!(std::panic::catch_unwind(|| audit_status("unknown")).is_err());
+    }
+
+    #[rstest::rstest]
+    #[case("killed", MutationStatus::Killed)]
+    #[case("out_of_memory", MutationStatus::OutOfMemory)]
+    #[case("process_limit", MutationStatus::ProcessLimit)]
+    fn audit_status_decodes_resource_and_kill_outcomes(
+        #[case] name: &str,
+        #[case] expected: MutationStatus,
+    ) {
+        assert_eq!(audit_status(name), expected);
     }
 }

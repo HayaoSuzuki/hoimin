@@ -222,3 +222,83 @@ impl OrderedCandidateState {
         }
     }
 }
+
+#[cfg(test)]
+mod state_tests {
+    use super::*;
+
+    fn ordered() -> RunSelection {
+        RunSelection::ordered(
+            vec!["m1".into()],
+            VerificationSelection::top(1, 1, crate::VerificationTopPolicy::Strict, false).unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn ready_ordered_selection_has_no_missing_discovery_id() {
+        let mut selection = ordered();
+        selection.ordered_state_mut().unwrap().phase = OrderedCandidatePhase::Ready {
+            remaining: VecDeque::from(["m1".into()]),
+        };
+        assert_eq!(selection.missing_id(), None);
+    }
+
+    #[test]
+    fn ordered_selection_rejects_streaming_dispatch() {
+        let mut selection = ordered();
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            selection.select_streamed("m1")
+        }))
+        .unwrap_err();
+        assert_eq!(
+            panic.downcast_ref::<&str>().unwrap(),
+            &"internal error: entered unreachable code: ordered selection collects before dispatch"
+        );
+    }
+
+    #[rstest::rstest]
+    #[case("other", false, Some("m1"))]
+    #[case("m1", true, None)]
+    fn explicit_streaming_dispatch_checks_membership(
+        #[case] id: &str,
+        #[case] selected: bool,
+        #[case] missing: Option<&str>,
+    ) {
+        let mut selection = RunSelection::explicit(
+            ["m1".into()],
+            VerificationSelection::candidate_ids(1, 1, false).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(selection.select_streamed(id), selected);
+        assert_eq!(selection.missing_id().map(String::as_str), missing);
+    }
+
+    #[test]
+    fn repeated_explicit_member_does_not_mutate_selection() {
+        let mut selection = RunSelection::explicit(
+            ["m1".into()],
+            VerificationSelection::candidate_ids(1, 1, false).unwrap(),
+        )
+        .unwrap();
+        assert!(selection.select_streamed("m1"));
+        let before = selection.clone();
+        assert!(!selection.select_streamed("m1"));
+        assert_eq!(selection, before);
+    }
+
+    #[test]
+    fn ordered_collection_has_no_missing_id_after_every_member_is_discovered() {
+        let mut selection = ordered();
+        assert_eq!(selection.missing_id().map(String::as_str), Some("m1"));
+        selection.ordered_state_mut().unwrap().phase = OrderedCandidatePhase::Collecting {
+            discovered: BTreeSet::from(["m1".into()]),
+        };
+        assert_eq!(selection.missing_id(), None);
+    }
+
+    #[test]
+    fn unrestricted_selection_has_no_missing_explicit_id() {
+        assert_eq!(RunSelection::all().missing_id(), None);
+    }
+}

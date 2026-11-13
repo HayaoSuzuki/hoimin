@@ -52,3 +52,61 @@ fn atomic(expression: &Expr) -> bool {
         _ => false,
     }
 }
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+
+    #[rstest::rstest]
+    #[case("", None)]
+    #[case("(first", None)]
+    #[case("(first, second)", Some("(second, first)"))]
+    fn swapping_requires_both_original_element_source_ranges(
+        #[case] source: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        let parsed = ruff_python_parser::parse_expression("(first, second)").unwrap();
+        let tuple = parsed.syntax().body.as_tuple_expr().unwrap();
+        assert_eq!(replacement(tuple, source), expected.map(str::to_owned));
+    }
+    #[rstest::rstest]
+    #[case("(same, same)", None)]
+    #[case("(1, 1)", None)]
+    #[case("(-1, second)", Some("(second, -1)"))]
+    #[case("(+1, second)", Some("(second, +1)"))]
+    #[case("(-value, second)", None)]
+    #[case("(not value, second)", None)]
+    #[case("('one' 'two', second)", None)]
+    #[case("(call(), second)", None)]
+    #[case("(None, True)", Some("(True, None)"))]
+    #[case("('one', second)", Some("(second, 'one')"))]
+    fn tuple_swapping_preserves_atomicity_and_rejects_unchanged_elements(
+        #[case] source: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        let parsed = ruff_python_parser::parse_expression(source).unwrap();
+        let tuple = parsed.syntax().body.as_tuple_expr().unwrap();
+        assert_eq!(replacement(tuple, source), expected.map(str::to_owned));
+    }
+
+    #[rstest::rstest]
+    #[case("return'x', name", "(name, 'x')")]
+    #[case("return 'x', name", "name, 'x'")]
+    fn unparenthesized_return_swap_cannot_merge_with_the_return_keyword(
+        #[case] statement: &str,
+        #[case] expected: &str,
+    ) {
+        let source = format!("def function(): {statement}\n");
+        let parsed = ruff_python_parser::parse_module(&source).unwrap();
+        let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
+        let tuple = definition.body[0]
+            .as_return_stmt()
+            .unwrap()
+            .value
+            .as_ref()
+            .unwrap()
+            .as_tuple_expr()
+            .unwrap();
+        assert_eq!(replacement(tuple, &source).unwrap(), expected);
+    }
+}

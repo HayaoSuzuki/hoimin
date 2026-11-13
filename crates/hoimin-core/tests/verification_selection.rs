@@ -308,3 +308,81 @@ proptest! {
         prop_assert_eq!(encoded, value);
     }
 }
+
+#[rstest::rstest]
+#[case("mode")]
+#[case("policy")]
+#[case("requested")]
+#[case("selected")]
+#[case("scope")]
+#[case("plan_truncated")]
+#[case("sampling")]
+fn selection_serialization_propagates_field_write_failure(#[case] field: &str) {
+    let selection: VerificationSelection = serde_json::from_value(sample()).unwrap();
+    let encoded = serde_json::to_string(&selection).unwrap();
+    let limit = encoded.find(&format!("\"{field}\"")).unwrap();
+    let mut storage = vec![0; limit];
+    let output = std::io::Cursor::new(storage.as_mut_slice());
+    let error = serde_json::to_writer(output, &selection).unwrap_err();
+    assert!(error.is_io());
+}
+
+#[test]
+fn selection_serialization_propagates_struct_start_failure() {
+    let selection: VerificationSelection = serde_json::from_value(sample()).unwrap();
+    let error = serde_json::to_writer(std::io::Cursor::new(&mut [][..]), &selection).unwrap_err();
+    assert!(error.is_io());
+}
+
+#[test]
+fn selection_serialization_propagates_struct_end_failure() {
+    let selection: VerificationSelection = serde_json::from_value(sample()).unwrap();
+    let mut storage = vec![0; serde_json::to_vec(&selection).unwrap().len() - 1];
+    let error = serde_json::to_writer(std::io::Cursor::new(storage.as_mut_slice()), &selection)
+        .unwrap_err();
+    assert!(error.is_io());
+}
+
+#[test]
+fn explicit_selection_wire_rejects_zero_requested_count() {
+    let mut value = selection(
+        "candidate_ids",
+        "explicit_candidates",
+        "explicit_candidates",
+    );
+    value["requested"] = json!(0);
+    assert!(
+        serde_json::from_value::<VerificationSelection>(value)
+            .unwrap_err()
+            .to_string()
+            .contains("requested must be positive")
+    );
+}
+
+#[test]
+fn sample_wire_rejects_more_ids_than_requested() {
+    let mut value = sample();
+    value["requested"] = json!(1);
+    assert!(
+        serde_json::from_value::<VerificationSelection>(value)
+            .unwrap_err()
+            .to_string()
+            .contains("selected exceeds requested")
+    );
+}
+
+#[test]
+fn explicit_selection_can_fill_an_exact_capacity_writer_without_sampling() {
+    let selected = VerificationSelection::candidate_ids(3, 2, false).unwrap();
+    let mut storage = vec![0; serde_json::to_vec(&selected).unwrap().len()];
+    serde_json::to_writer(std::io::Cursor::new(storage.as_mut_slice()), &selected).unwrap();
+    let actual: Value = serde_json::from_slice(&storage).unwrap();
+    assert_eq!(
+        actual,
+        selection(
+            "candidate_ids",
+            "explicit_candidates",
+            "explicit_candidates"
+        )
+    );
+}

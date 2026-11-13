@@ -283,11 +283,19 @@ fn parse_corpus(input: &str) -> Result<Vec<OracleCase>, String> {
 }
 
 fn selected_internal_cases() -> Result<Vec<OracleCase>, String> {
-    let cases = parse_corpus(CORPUS)?
+    let cases = parse_corpus(CORPUS)
+        .expect("checked-in corpus passes schema validation")
         .into_iter()
         .filter(|item| item.mode == "internal-fixture")
         .collect::<Vec<_>>();
-    let Some(selected) = std::env::var_os("HOIMIN_EXCEPT_STAR_CASE") else {
+    apply_case_filter(cases, std::env::var_os("HOIMIN_EXCEPT_STAR_CASE"))
+}
+
+fn apply_case_filter(
+    cases: Vec<OracleCase>,
+    filter: Option<std::ffi::OsString>,
+) -> Result<Vec<OracleCase>, String> {
+    let Some(selected) = filter else {
         return Ok(cases);
     };
     let selected = selected
@@ -350,8 +358,7 @@ fn internal_rows_match_complete_production_try_exits() {
     let cases = selected_internal_cases().expect("valid single-case filter");
     assert!(!cases.is_empty());
     for item in cases {
-        let actual = binding_flow_try_exit_snapshot(&item.source, &item.marker)
-            .unwrap_or_else(|error| panic!("{error}\ncase={}\nsource:\n{}", item.id, item.source));
+        let actual = binding_flow_try_exit_snapshot(&item.source, &item.marker).expect(&item.id);
         assert_eq!(
             actual,
             expected_snapshot(&item),
@@ -391,4 +398,101 @@ fn internal_rows_detect_production_transfer_mutations_scenario_1(
         expected_snapshot(item),
         "{id} must detect {mutation:?}"
     );
+}
+
+#[rstest::rstest]
+#[case("schema", serde_json::json!(0), "invalid identity fields")]
+#[case("mode", serde_json::json!("unknown"), "unknown mode")]
+#[case("marker", serde_json::json!(""), "marker is not unique")]
+#[case("candidate_count", serde_json::json!(999), "inconsistent candidate fields")]
+#[case("id", serde_json::json!("unknown"), "changed source premises")]
+#[case("mode", serde_json::json!("model-only"), "production-backed model witness")]
+#[case("candidate", serde_json::json!("unknown"), "inconsistent candidate fields")]
+#[case("observation_kind", serde_json::json!("unknown"), "unknown observation kind")]
+fn oracle_validation_rejects_inconsistent_case_fields(
+    #[case] field: &str,
+    #[case] replacement: serde_json::Value,
+    #[case] expected: &str,
+) {
+    let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
+    row[field] = replacement;
+    let item: OracleCase = serde_json::from_value(row).unwrap();
+    assert!(validate_case(&item).unwrap_err().contains(expected));
+}
+
+#[rstest::rstest]
+#[case("{", "invalid JSON")]
+#[case("[]", "not an object")]
+#[case("{}", "inexact field set")]
+#[case("", "exact owned case set")]
+fn oracle_validation_rejects_invalid_corpus_structure(#[case] input: &str, #[case] expected: &str) {
+    assert!(parse_corpus(input).unwrap_err().contains(expected));
+}
+
+#[test]
+fn oracle_validation_rejects_duplicate_case_id() {
+    let duplicated = format!("{CORPUS}\n{CORPUS}");
+    assert!(
+        parse_corpus(&duplicated)
+            .unwrap_err()
+            .contains("duplicate case id")
+    );
+}
+
+#[test]
+fn oracle_validation_accepts_blank_lines_between_valid_rows() {
+    let with_blanks = format!("\n{CORPUS}\n\n");
+    assert_eq!(
+        parse_corpus(&with_blanks).unwrap().len(),
+        parse_corpus(CORPUS).unwrap().len()
+    );
+}
+
+#[test]
+fn oracle_validation_rejects_field_with_wrong_json_type() {
+    let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
+    row["schema"] = serde_json::json!(false);
+    assert!(
+        parse_corpus(&row.to_string())
+            .unwrap_err()
+            .contains("violates schema")
+    );
+}
+
+#[test]
+fn oracle_case_filter_selects_the_requested_fixture() {
+    let cases = parse_corpus(CORPUS)
+        .unwrap()
+        .into_iter()
+        .filter(|case| case.mode == "internal-fixture")
+        .collect::<Vec<_>>();
+    let id = cases[0].id.clone();
+    let selected = apply_case_filter(cases, Some(id.clone().into())).unwrap();
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].id, id);
+}
+
+#[test]
+fn oracle_case_filter_rejects_an_unknown_fixture() {
+    let cases = parse_corpus(CORPUS)
+        .unwrap()
+        .into_iter()
+        .filter(|case| case.mode == "internal-fixture")
+        .collect::<Vec<_>>();
+    let error = apply_case_filter(cases, Some("unknown-fixture".into())).unwrap_err();
+    assert!(error.contains("selected 0"));
+}
+
+#[cfg(unix)]
+#[test]
+fn oracle_case_filter_rejects_non_utf8_fixture_names() {
+    use std::os::unix::ffi::OsStringExt as _;
+    let cases = parse_corpus(CORPUS)
+        .unwrap()
+        .into_iter()
+        .filter(|case| case.mode == "internal-fixture")
+        .collect::<Vec<_>>();
+    let error =
+        apply_case_filter(cases, Some(std::ffi::OsString::from_vec(vec![0xff]))).unwrap_err();
+    assert!(error.contains("not UTF-8"));
 }

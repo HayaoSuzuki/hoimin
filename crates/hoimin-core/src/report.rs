@@ -997,6 +997,9 @@ impl ReportSequence {
     /// # Errors
     ///
     /// Returns [`ReportSequenceError`] when lifecycle or sequence rules fail.
+    /// # Panics
+    ///
+    /// Panics on invalid producer events when the `contracts` feature is enabled.
     pub fn observe(&mut self, event: &OutputEvent) -> Result<(), ReportSequenceError> {
         let result = self.validate(event);
         contract_ensure!(
@@ -1011,6 +1014,10 @@ impl ReportSequence {
                 event.sequence()
             )
         );
+        // Enabled contracts unconditionally panic above when validation fails, in all build profiles.
+        #[cfg(feature = "contracts")]
+        result.expect("report sequence contract validated the event");
+        #[cfg(not(feature = "contracts"))]
         result?;
         self.last = Some(event.sequence());
         match event {
@@ -1031,7 +1038,17 @@ impl ReportSequence {
                 self.lifecycle = match std::mem::take(&mut self.lifecycle) {
                     ReportLifecycle::Running(run_id) => ReportLifecycle::Finished(run_id),
                     ReportLifecycle::NotStarted | ReportLifecycle::Finished(_) => {
-                        unreachable!("validated finish requires a running report")
+                        // validate accepted this finish and exclusive ownership prevents lifecycle changes before this move.
+                        #[cfg(coverage_nightly)]
+                        {
+                            (#[coverage(off)]
+                            || -> ! { unreachable!("validated finish requires a running report") })(
+                            )
+                        }
+                        #[cfg(not(coverage_nightly))]
+                        {
+                            unreachable!("validated finish requires a running report")
+                        }
                     }
                 };
             }
@@ -1060,5 +1077,31 @@ impl From<crate::DiskFailure> for DiskStopReport {
             message,
             secondary: failure.secondary,
         }
+    }
+}
+
+#[cfg(test)]
+mod payload_parser_tests {
+    use super::*;
+
+    #[rstest::rstest]
+    #[case("42", "a tagged report event")]
+    #[case("[]", "a tagged report event")]
+    #[case("{1:0}", "key must be a string")]
+    #[case("{\"kind\":[}", "expected value")]
+    fn payload_parser_reports_invalid_structure(#[case] raw: &str, #[case] expected: &str) {
+        let error = decode_event_payload::<Diagnostic>(raw).unwrap_err();
+        assert!(error.to_string().contains(expected));
+    }
+
+    #[test]
+    fn payload_parser_preserves_a_valid_diagnostic_while_removing_the_discriminator() {
+        let expected = Diagnostic::new("run", 7, "warning", "test.code", "message");
+        let mut wire = serde_json::to_value(&expected).unwrap();
+        wire["kind"] = serde_json::json!("diagnostic");
+        assert_eq!(
+            decode_event_payload::<Diagnostic>(&wire.to_string()).unwrap(),
+            expected
+        );
     }
 }

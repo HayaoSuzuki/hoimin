@@ -794,22 +794,22 @@ fn command_and_manifest_failures_are_infrastructure_errors() {
 }
 
 #[rstest::rstest]
-#[case::exit_125_1(ProcessTermination::Exit(125), "exit=125")]
+#[case::exit_125_1(&ProcessTermination::Exit(125), "exit=125")]
 #[case::signal_2(
-            ProcessTermination::Signal {
+            &ProcessTermination::Signal {
                 signal: 6,
                 core_dumped: true,
             },
             "signal=",
         )]
-#[case::abnormal_termination_3(ProcessTermination::Abnormal, "abnormal termination")]
+#[case::abnormal_termination_3(&ProcessTermination::Abnormal, "abnormal termination")]
 fn abnormal_process_outcomes_are_infrastructure_errors(
-    #[case] termination: ProcessTermination,
+    #[case] termination: &ProcessTermination,
     #[case] expected: &str,
 ) {
     let error = decode_captured_plan(
         "process-case",
-        &termination,
+        termination,
         b"",
         b"resource.rss_limit or panic-abort",
     )

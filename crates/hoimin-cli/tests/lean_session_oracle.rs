@@ -818,16 +818,16 @@ fn corpus_is_well_formed() {
 }
 
 #[rstest::rstest]
-#[case::schema(corpus_text().lines().next().unwrap().replacen("\"schema\":1", "\"schema\":2", 1), "unsupported schema")]
-#[case::model_only_mode(unknown_mode_row("model-only"), "unknown mode")]
-#[case::internal_fixture_mode(unknown_mode_row("internal-fixture"), "unknown mode")]
-#[case::infrastructure_mode(unknown_mode_row("infrastructure-error"), "unknown mode")]
-#[case::report_mode(unknown_mode_row("report"), "unknown mode")]
-#[case::event(corpus_text().lines().next().unwrap().replacen("open:h0","crash:h0",2),"unknown event")]
-#[case::status(corpus_text().lines().find(|line|line.contains("\"status\":" )).unwrap().replacen("\"status\":\"killed\"", "\"status\":\"unknown\"",1),"unknown result role")]
-#[case::short_schedule(corpus_text().lines().next().unwrap().replacen("\"schedule\":[","\"schedule\":[],\"ignored\":[",1),"")]
-fn corpus_rejects_unknown_schema_mode_and_event(#[case] input: String, #[case] fragment: &str) {
-    let error = parse_corpus(&input).unwrap_err();
+#[case::schema(&corpus_text().lines().next().unwrap().replacen("\"schema\":1", "\"schema\":2", 1), "unsupported schema")]
+#[case::model_only_mode(&unknown_mode_row("model-only"), "unknown mode")]
+#[case::internal_fixture_mode(&unknown_mode_row("internal-fixture"), "unknown mode")]
+#[case::infrastructure_mode(&unknown_mode_row("infrastructure-error"), "unknown mode")]
+#[case::report_mode(&unknown_mode_row("report"), "unknown mode")]
+#[case::event(&corpus_text().lines().next().unwrap().replacen("open:h0","crash:h0",2),"unknown event")]
+#[case::status(&corpus_text().lines().find(|line|line.contains("\"status\":" )).unwrap().replacen("\"status\":\"killed\"", "\"status\":\"unknown\"",1),"unknown result role")]
+#[case::short_schedule(&corpus_text().lines().next().unwrap().replacen("\"schedule\":[","\"schedule\":[],\"ignored\":[",1),"")]
+fn corpus_rejects_unknown_schema_mode_and_event(#[case] input: &str, #[case] fragment: &str) {
+    let error = parse_corpus(input).unwrap_err();
 
     assert!(error.contains(fragment), "{error}");
 }

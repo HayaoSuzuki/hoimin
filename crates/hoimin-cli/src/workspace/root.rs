@@ -11,6 +11,7 @@ use cap_primitives::fs::FollowSymlinks;
 #[cfg(unix)]
 use cap_primitives::fs::OpenOptionsExt;
 
+use super::owned::owned_io;
 use super::{MAX_WORKER_TREE_DEPTH, WorkspaceError};
 #[cfg(unix)]
 use crate::source_file::open_readable_directory;
@@ -126,15 +127,19 @@ pub(crate) struct MutationFile {
 }
 
 impl MutationFile {
+    fn reserve_contents(contents: &mut Vec<u8>, capacity: usize) -> io::Result<()> {
+        contents
+            .try_reserve_exact(capacity)
+            .map_err(io::Error::other)
+    }
+
     pub(crate) fn read_to_end(
         &mut self,
         contents: &mut Vec<u8>,
         expected_size: u64,
         path: &Utf8Path,
     ) -> Result<(), WorkspaceError> {
-        let observed_size = self
-            .file
-            .metadata()
+        let observed_size = owned_io!("worker.mutation.inspect", self.file.metadata())
             .map_err(|error| WorkspaceError::io("inspect mutation target", path, error))?
             .len();
         if observed_size != expected_size {
@@ -142,14 +147,17 @@ impl MutationFile {
                 path: path.to_owned(),
             });
         }
-        // Every u64 fits usize on 64-bit targets; retain instrumentation on 32-bit targets.
-        let capacity = usize::try_from(observed_size).map_err(
-            #[cfg_attr(all(coverage_nightly, target_pointer_width = "64"), coverage(off))]
-            |error| WorkspaceError::io("read mutation target", path, io::Error::other(error)),
-        )?;
-        contents.try_reserve_exact(capacity).map_err(|error| {
+        #[cfg(target_pointer_width = "64")]
+        let capacity = usize::try_from(observed_size).expect("every u64 fits a 64-bit usize");
+        #[cfg(not(target_pointer_width = "64"))]
+        let capacity = usize::try_from(observed_size).map_err(|error| {
             WorkspaceError::io("read mutation target", path, io::Error::other(error))
         })?;
+        owned_io!(
+            "worker.mutation.reserve",
+            Self::reserve_contents(contents, capacity)
+        )
+        .map_err(|error| WorkspaceError::io("read mutation target", path, error))?;
         let mut reader =
             crate::finite_file::SnapshotReader::borrowed(&mut self.file, observed_size);
         #[cfg(test)]
@@ -183,10 +191,11 @@ impl MutationFile {
         if let Some((parent, name)) = self.reopen {
             use std::os::unix::fs::MetadataExt;
 
-            let inspected_metadata = self
-                .file
-                .metadata()
-                .map_err(|error| WorkspaceError::io("inspect mutation target", path, error))?;
+            let inspected_metadata = owned_io!(
+                "worker.mutation.reopen.inspect_original",
+                self.file.metadata()
+            )
+            .map_err(|error| WorkspaceError::io("inspect mutation target", path, error))?;
             let mut options = cap_primitives::fs::OpenOptions::new();
             options
                 .read(true)
@@ -197,8 +206,7 @@ impl MutationFile {
                 cap_primitives::fs::open(&parent, Path::new(&name), &options).map_err(|error| {
                     WorkerRoot::map_entry_error("open mutation target", path, error)
                 })?;
-            let metadata = file
-                .metadata()
+            let metadata = owned_io!("worker.mutation.reopen.inspect_writable", file.metadata())
                 .map_err(|error| WorkspaceError::io("inspect mutation target", path, error))?;
             if !metadata.is_file()
                 || metadata.dev() != inspected_metadata.dev()
@@ -216,8 +224,11 @@ impl MutationFile {
 }
 
 fn reject_shared_mutation_target(file: &File, path: &Utf8Path) -> Result<(), WorkspaceError> {
-    let links = crate::file_links::file_link_count(file)
-        .map_err(|error| WorkspaceError::io("inspect mutation target links", path, error))?;
+    let links = owned_io!(
+        "worker.mutation.links",
+        crate::file_links::file_link_count(file)
+    )
+    .map_err(|error| WorkspaceError::io("inspect mutation target links", path, error))?;
 
     if links > 1 {
         return Err(WorkspaceError::MutationTargetShared {
@@ -347,8 +358,7 @@ impl WorkerRoot {
                     return Err(Self::map_entry_error("open mutation target", path, error));
                 }
             };
-            let metadata = file
-                .metadata()
+            let metadata = owned_io!("worker.mutation.open.inspect", file.metadata())
                 .map_err(|error| WorkspaceError::io("inspect mutation target", path, error))?;
             if !metadata.is_file() {
                 return Err(WorkspaceError::InvalidPath {
@@ -373,7 +383,7 @@ impl WorkerRoot {
         contents: &[u8],
     ) -> Result<(), WorkspaceError> {
         Self::write_entry_with(parent, name, path, |file| {
-            file.write_all(contents)
+            owned_io!("worker.write.bytes", file.write_all(contents))
                 .map_err(|error| WorkspaceError::io("write worker file", path, error))
         })
     }
@@ -408,10 +418,12 @@ impl WorkerRoot {
                     .read(true)
                     .follow(FollowSymlinks::No)
                     .custom_flags(libc::O_NONBLOCK);
-                let file = cap_primitives::fs::open(parent, Path::new(name), &inspect_options)
-                    .map_err(|error| Self::map_entry_error("open worker file", path, error))?;
-                if !file
-                    .metadata()
+                let file = owned_io!(
+                    "worker.write.open_existing",
+                    cap_primitives::fs::open(parent, Path::new(name), &inspect_options)
+                )
+                .map_err(|error| Self::map_entry_error("open worker file", path, error))?;
+                if !owned_io!("worker.write.inspect_existing", file.metadata())
                     .map_err(|error| WorkspaceError::io("inspect worker file", path, error))?
                     .is_file()
                 {
@@ -428,10 +440,12 @@ impl WorkerRoot {
                 .truncate(true)
                 .follow(FollowSymlinks::No)
                 .custom_flags(libc::O_NONBLOCK);
-            let mut file = cap_primitives::fs::open(parent, Path::new(name), &options)
-                .map_err(|error| Self::map_entry_error("write worker file", path, error))?;
-            if !file
-                .metadata()
+            let mut file = owned_io!(
+                "worker.write.open_output",
+                cap_primitives::fs::open(parent, Path::new(name), &options)
+            )
+            .map_err(|error| Self::map_entry_error("write worker file", path, error))?;
+            if !owned_io!("worker.write.inspect_created", file.metadata())
                 .map_err(|error| WorkspaceError::io("inspect worker file", path, error))?
                 .is_file()
             {
@@ -464,10 +478,12 @@ impl WorkerRoot {
                 .read(true)
                 .follow(FollowSymlinks::No)
                 .custom_flags(libc::O_NONBLOCK);
-            let file = cap_primitives::fs::open(&parent, Path::new(&name), &options)
-                .map_err(|error| Self::map_entry_error("remove worker file", path, error))?;
-            let metadata = file
-                .metadata()
+            let file = owned_io!(
+                "worker.remove.open_file",
+                cap_primitives::fs::open(&parent, Path::new(&name), &options)
+            )
+            .map_err(|error| Self::map_entry_error("remove worker file", path, error))?;
+            let metadata = owned_io!("worker.remove.inspect", file.metadata())
                 .map_err(|error| WorkspaceError::io("inspect worker file", path, error))?;
             if !metadata.is_file() {
                 return Err(WorkspaceError::InvalidPath {
@@ -479,8 +495,11 @@ impl WorkerRoot {
                 make_file_writable(&file, path)?;
             }
             drop(file);
-            cap_primitives::fs::remove_file(&parent, Path::new(&name))
-                .map_err(|error| Self::map_entry_error("remove worker file", path, error))
+            owned_io!(
+                "worker.remove.unlink_file",
+                cap_primitives::fs::remove_file(&parent, Path::new(&name))
+            )
+            .map_err(|error| Self::map_entry_error("remove worker file", path, error))
         }
     }
 
@@ -529,12 +548,13 @@ impl WorkerRoot {
         worker_root: &Utf8Path,
         entries: &mut Vec<WorkerEntry>,
     ) -> Result<(), WorkspaceError> {
-        let directory = directory
-            .try_clone()
+        let directory = owned_io!("worker.walk.clone", directory.try_clone())
             .map_err(|error| WorkspaceError::io("clone worker directory", worker_root, error))?;
-        let read_dir = cap_primitives::fs::read_base_dir(&directory).map_err(|error| {
-            WorkspaceError::io("enumerate worker directory", worker_root, error)
-        })?;
+        let read_dir = owned_io!(
+            "worker.walk.open",
+            cap_primitives::fs::read_base_dir(&directory)
+        )
+        .map_err(|error| WorkspaceError::io("enumerate worker directory", worker_root, error))?;
         let mut stack = vec![CollectionFrame {
             directory,
             entries: read_dir,
@@ -547,7 +567,7 @@ impl WorkerRoot {
             let entry = {
                 let frame = stack.last_mut().expect("checked nonempty stack");
                 match frame.entries.next() {
-                    Some(entry) => Some(entry.map_err(|error| {
+                    Some(entry) => Some(owned_io!("worker.walk.next", entry).map_err(|error| {
                         WorkspaceError::io("enumerate worker directory", &frame.error_path, error)
                     })?),
                     None => None,
@@ -563,9 +583,7 @@ impl WorkerRoot {
             let native_path = Self::native_child_path(&frame.native_prefix, &name);
             let logical_path =
                 Self::logical_child_path_if_utf8(frame.logical_prefix.as_deref(), &name);
-            let error_path = logical_path
-                .clone()
-                .unwrap_or_else(|| worker_root.to_owned());
+            let error_path = logical_path.as_deref().unwrap_or(worker_root).to_owned();
             let depth = frame.depth + 1;
             if depth > MAX_WORKER_TREE_DEPTH {
                 return Err(WorkspaceError::TreeDepthExceeded {
@@ -573,11 +591,11 @@ impl WorkerRoot {
                     limit: MAX_WORKER_TREE_DEPTH,
                 });
             }
-            let metadata =
+            let metadata = owned_io!(
+                "worker.walk.stat_entry",
                 cap_primitives::fs::stat(&frame.directory, Path::new(&name), FollowSymlinks::No)
-                    .map_err(|error| {
-                        Self::map_entry_error("inspect worker entry", &error_path, error)
-                    })?;
+            )
+            .map_err(|error| Self::map_entry_error("inspect worker entry", &error_path, error))?;
             let kind = if is_link_or_reparse(&metadata) {
                 WorkerEntryKind::LinkOrReparse
             } else if metadata.is_dir() {
@@ -597,12 +615,18 @@ impl WorkerRoot {
                 depth,
             });
             if kind == WorkerEntryKind::Directory {
-                let child =
+                let child = owned_io!(
+                    "worker.walk.open_child",
                     cap_primitives::fs::open_dir_nofollow(&frame.directory, Path::new(&name))
-                        .map_err(|error| {
-                            Self::map_entry_error("open worker directory", &error_path, error)
-                        })?;
-                let child_entries = cap_primitives::fs::read_base_dir(&child).map_err(|error| {
+                )
+                .map_err(|error| {
+                    Self::map_entry_error("open worker directory", &error_path, error)
+                })?;
+                let child_entries = owned_io!(
+                    "worker.walk.read_child",
+                    cap_primitives::fs::read_base_dir(&child)
+                )
+                .map_err(|error| {
                     WorkspaceError::io("enumerate worker directory", &error_path, error)
                 })?;
                 stack.push(CollectionFrame {
@@ -624,18 +648,20 @@ impl WorkerRoot {
 
     pub(crate) fn clear_for_cleanup(&self) -> Result<(), WorkspaceError> {
         make_directory_writable(self.handle(), self.path())?;
-        let directory = self
-            .handle()
-            .try_clone()
+        let directory = owned_io!("worker.clear.clone", self.handle().try_clone())
             .map_err(|error| WorkspaceError::io("clone worker root", self.path(), error))?;
-        let entries = cap_primitives::fs::read_base_dir(&directory).map_err(|error| {
-            WorkspaceError::io("enumerate worker directory", self.path(), error)
-        })?;
+        let entries = owned_io!(
+            "worker.clear.open",
+            cap_primitives::fs::read_base_dir(&directory)
+        )
+        .map_err(|error| WorkspaceError::io("enumerate worker directory", self.path(), error))?;
         let names = entries
             .map(|entry| {
-                entry.map(|entry| entry.file_name()).map_err(|error| {
-                    WorkspaceError::io("enumerate worker directory", self.path(), error)
-                })
+                owned_io!("worker.clear.next", entry)
+                    .map(|entry| entry.file_name())
+                    .map_err(|error| {
+                        WorkspaceError::io("enumerate worker directory", self.path(), error)
+                    })
             })
             .collect::<Result<Vec<_>, _>>()?;
         for name in names {
@@ -719,8 +745,11 @@ impl WorkerRoot {
     ) -> Result<(), WorkspaceError> {
         let directory = open_removal_directory(parent, name, error_path, metadata)?;
         make_directory_writable(&directory, error_path)?;
-        let read_dir = cap_primitives::fs::read_base_dir(&directory)
-            .map_err(|error| WorkspaceError::io("enumerate worker directory", error_path, error))?;
+        let read_dir = owned_io!(
+            "worker.removal.read_root",
+            cap_primitives::fs::read_base_dir(&directory)
+        )
+        .map_err(|error| WorkspaceError::io("enumerate worker directory", error_path, error))?;
         let mut stack = vec![RemovalFrame {
             name: name.clone(),
             logical_path: logical_path.map(Utf8Path::to_owned),
@@ -734,9 +763,15 @@ impl WorkerRoot {
             let child = {
                 let frame = stack.last_mut().expect("checked nonempty stack");
                 match frame.entries.next() {
-                    Some(entry) => Some(entry.map_err(|error| {
-                        WorkspaceError::io("enumerate worker directory", &frame.error_path, error)
-                    })?),
+                    Some(entry) => {
+                        Some(owned_io!("worker.removal.next", entry).map_err(|error| {
+                            WorkspaceError::io(
+                                "enumerate worker directory",
+                                &frame.error_path,
+                                error,
+                            )
+                        })?)
+                    }
                     None => None,
                 }
             };
@@ -768,11 +803,11 @@ impl WorkerRoot {
                 limit: MAX_WORKER_TREE_DEPTH,
             });
         }
-        let child_metadata =
+        let child_metadata = owned_io!(
+            "worker.removal.stat_child",
             cap_primitives::fs::stat(&frame.directory, Path::new(&child_name), FollowSymlinks::No)
-                .map_err(|error| {
-                    Self::map_entry_error("inspect worker entry", &child_error_path, error)
-                })?;
+        )
+        .map_err(|error| Self::map_entry_error("inspect worker entry", &child_error_path, error))?;
         if is_link_or_reparse(&child_metadata) {
             return remove_link_or_reparse(
                 &frame.directory,
@@ -797,7 +832,11 @@ impl WorkerRoot {
             &child_metadata,
         )?;
         make_directory_writable(&directory, &child_error_path)?;
-        let entries = cap_primitives::fs::read_base_dir(&directory).map_err(|error| {
+        let entries = owned_io!(
+            "worker.removal.read_child",
+            cap_primitives::fs::read_base_dir(&directory)
+        )
+        .map_err(|error| {
             WorkspaceError::io("enumerate worker directory", &child_error_path, error)
         })?;
         stack.push(RemovalFrame {
@@ -822,7 +861,11 @@ impl WorkerRoot {
         #[cfg(windows)]
         windows::remove_entry(parent, &frame.name, &frame.error_path)?;
         #[cfg(unix)]
-        cap_primitives::fs::remove_dir(parent, Path::new(&frame.name)).map_err(|error| {
+        owned_io!(
+            "worker.removal.rmdir",
+            cap_primitives::fs::remove_dir(parent, Path::new(&frame.name))
+        )
+        .map_err(|error| {
             Self::map_entry_error("remove worker directory", &frame.error_path, error)
         })?;
         Ok(())
@@ -851,13 +894,17 @@ impl WorkerRoot {
                     .read(true)
                     .follow(FollowSymlinks::No)
                     .custom_flags(libc::O_NONBLOCK);
-                match cap_primitives::fs::open(parent, Path::new(name), &options) {
+                match owned_io!(
+                    "worker.cleanup.open_file",
+                    cap_primitives::fs::open(parent, Path::new(name), &options)
+                ) {
                     Ok(file) => {
                         use std::os::unix::fs::MetadataExt;
 
-                        let opened = file.metadata().map_err(|error| {
-                            WorkspaceError::io("inspect worker file", logical_path, error)
-                        })?;
+                        let opened = owned_io!("worker.cleanup.inspect_file", file.metadata())
+                            .map_err(|error| {
+                                WorkspaceError::io("inspect worker file", logical_path, error)
+                            })?;
                         if !opened.is_file()
                             || opened.dev() != expected_identity.0
                             || opened.ino() != expected_identity.1
@@ -897,8 +944,11 @@ impl WorkerRoot {
             } else {
                 "remove worker special entry"
             };
-            cap_primitives::fs::remove_file(parent, Path::new(name))
-                .map_err(|error| Self::map_entry_error(operation, logical_path, error))
+            owned_io!(
+                "worker.cleanup.unlink_file",
+                cap_primitives::fs::remove_file(parent, Path::new(name))
+            )
+            .map_err(|error| Self::map_entry_error(operation, logical_path, error))
         }
     }
 
@@ -931,11 +981,14 @@ impl WorkerRoot {
         )?;
         Self::write_entry_with(&parent, &name, path, |file| {
             super::stream::chunks(reader, path, "read shared snapshot", |bytes| {
-                file.write_all(bytes)
+                owned_io!("worker.restore.write", file.write_all(bytes))
                     .map_err(|error| WorkspaceError::io("write worker file", path, error))
             })?;
-            file.set_permissions(permissions)
-                .map_err(|error| WorkspaceError::io("restore worker permissions", path, error))
+            owned_io!(
+                "worker.restore.permissions",
+                file.set_permissions(permissions)
+            )
+            .map_err(|error| WorkspaceError::io("restore worker permissions", path, error))
         })
     }
 
@@ -962,8 +1015,10 @@ impl WorkerRoot {
         expected_permissions: super::PermissionFingerprint,
     ) -> Result<bool, WorkspaceError> {
         let (parent, name) = self.open_parent(path, false)?;
-        let metadata = match cap_primitives::fs::stat(&parent, Path::new(&name), FollowSymlinks::No)
-        {
+        let metadata = match owned_io!(
+            "worker.snapshot.inspect_entry",
+            cap_primitives::fs::stat(&parent, Path::new(&name), FollowSymlinks::No)
+        ) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
             Err(error) => {
@@ -987,21 +1042,26 @@ impl WorkerRoot {
                 .read(true)
                 .follow(FollowSymlinks::No)
                 .custom_flags(libc::O_NONBLOCK);
-            cap_primitives::fs::open(&parent, Path::new(&name), &options)
-                .map_err(|error| Self::map_entry_error("verify restored file", path, error))?
+            owned_io!(
+                "worker.snapshot.open",
+                cap_primitives::fs::open(&parent, Path::new(&name), &options)
+            )
+            .map_err(|error| Self::map_entry_error("verify restored file", path, error))?
         };
-        let file_metadata = file
-            .metadata()
+        let file_metadata = owned_io!("worker.snapshot.inspect_opened", file.metadata())
             .map_err(|error| WorkspaceError::io("verify restored file", path, error))?;
         if !file_metadata.is_file() || file_metadata.len() != expected_size {
             return Ok(false);
         }
-        let equal = super::stream::equal(expected, &mut file, |_, count| {
-            #[cfg(test)]
-            super::record_reset_worker_bytes(count);
-            #[cfg(not(test))]
-            let _ = count;
-        })
+        let equal = owned_io!(
+            "worker.snapshot.compare",
+            super::stream::equal(expected, &mut file, |_, count| {
+                #[cfg(test)]
+                super::record_reset_worker_bytes(count);
+                #[cfg(not(test))]
+                let _ = count;
+            })
+        )
         .map_err(|error| WorkspaceError::io("verify restored file", path, error))?;
         Ok(equal
             && super::permission_fingerprint(&file_metadata.permissions()) == expected_permissions)
@@ -1053,9 +1113,7 @@ impl WorkerRoot {
                 .ok_or_else(|| WorkspaceError::InvalidPath {
                     path: self.path.clone(),
                 })?;
-        let mut parent = self
-            .handle()
-            .try_clone()
+        let mut parent = owned_io!("worker.native_parent.clone", self.handle().try_clone())
             .map_err(|error| WorkspaceError::io("clone worker root", self.path(), error))?;
         for component in parents {
             let component = Path::new(component);
@@ -1076,8 +1134,7 @@ impl WorkerRoot {
         parent: &File,
         logical_path: &Utf8Path,
     ) -> Result<(), WorkspaceError> {
-        let metadata = parent
-            .metadata()
+        let metadata = owned_io!("worker.parent.inspect_missing", parent.metadata())
             .map_err(|error| WorkspaceError::io("inspect worker parent", logical_path, error))?;
         if metadata.is_dir() {
             Ok(())
@@ -1100,10 +1157,13 @@ impl WorkerRoot {
     ) -> Result<(File, OsString), WorkspaceError> {
         let mut create_directory = |parent: &File, component: &Path| {
             make_directory_writable(parent, path)?;
-            cap_primitives::fs::create_dir(
-                parent,
-                component,
-                &cap_primitives::fs::DirOptions::new(),
+            owned_io!(
+                "worker.parent.mkdir",
+                cap_primitives::fs::create_dir(
+                    parent,
+                    component,
+                    &cap_primitives::fs::DirOptions::new(),
+                )
             )
             .map_err(|error| Self::map_parent_error(path, error))
         };
@@ -1152,7 +1212,10 @@ impl WorkerRoot {
         logical_path: &Utf8Path,
         operation: &'static str,
     ) -> Result<(), WorkspaceError> {
-        match cap_primitives::fs::stat(parent, Path::new(name), FollowSymlinks::No) {
+        match owned_io!(
+            "worker.write.stat_existing",
+            cap_primitives::fs::stat(parent, Path::new(name), FollowSymlinks::No)
+        ) {
             Ok(metadata) if is_link_or_reparse(&metadata) => Err(WorkspaceError::InvalidPath {
                 path: logical_path.to_owned(),
             }),
@@ -1218,16 +1281,22 @@ fn open_removal_directory(
         cap_fs_ext::MetadataExt::dev(metadata),
         cap_fs_ext::MetadataExt::ino(metadata),
     );
-    let directory = match open_readable_directory(parent, Path::new(name)) {
+    let directory = match owned_io!(
+        "worker.removal.open",
+        open_readable_directory(parent, Path::new(name))
+    ) {
         Ok(directory) => directory,
         Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
             #[cfg(test)]
             parent_opened("cleanup-inaccessible-directory", path);
             make_inaccessible_directory_accessible(parent, name, metadata, path)?;
-            let verified = cap_primitives::fs::stat(parent, Path::new(name), FollowSymlinks::No)
-                .map_err(|error| {
-                    WorkerRoot::map_entry_error("inspect worker directory", path, error)
-                })?;
+            let verified = owned_io!(
+                "worker.removal.inspect_repaired",
+                cap_primitives::fs::stat(parent, Path::new(name), FollowSymlinks::No)
+            )
+            .map_err(|error| {
+                WorkerRoot::map_entry_error("inspect worker directory", path, error)
+            })?;
             if is_link_or_reparse(&verified)
                 || !verified.is_dir()
                 || cap_fs_ext::MetadataExt::dev(&verified) != expected_identity.0
@@ -1237,9 +1306,11 @@ fn open_removal_directory(
                     path: path.to_owned(),
                 });
             }
-            open_readable_directory(parent, Path::new(name)).map_err(|error| {
-                WorkerRoot::map_entry_error("open worker directory", path, error)
-            })?
+            owned_io!(
+                "worker.removal.open_repaired",
+                open_readable_directory(parent, Path::new(name))
+            )
+            .map_err(|error| WorkerRoot::map_entry_error("open worker directory", path, error))?
         }
         Err(error) => {
             return Err(WorkerRoot::map_entry_error(
@@ -1249,8 +1320,7 @@ fn open_removal_directory(
             ));
         }
     };
-    let opened_metadata = directory
-        .metadata()
+    let opened_metadata = owned_io!("worker.removal.inspect", directory.metadata())
         .map_err(|error| WorkspaceError::io("inspect worker directory", path, error))?;
     if !opened_metadata.is_dir()
         || std::os::unix::fs::MetadataExt::dev(&opened_metadata) != expected_identity.0
@@ -1328,13 +1398,12 @@ fn open_removal_directory(
 fn make_file_writable(file: &File, path: &Utf8Path) -> Result<(), WorkspaceError> {
     use std::os::unix::fs::PermissionsExt;
 
-    let metadata = file
-        .metadata()
+    let metadata = owned_io!("worker.file.inspect", file.metadata())
         .map_err(|error| WorkspaceError::io("inspect worker file", path, error))?;
     let mut permissions = metadata.permissions();
     if permissions.mode() & 0o200 == 0 {
         permissions.set_mode(permissions.mode() | 0o200);
-        file.set_permissions(permissions)
+        owned_io!("worker.file.chmod", file.set_permissions(permissions))
             .map_err(|error| WorkspaceError::io("prepare worker file", path, error))?;
     }
     Ok(())
@@ -1356,8 +1425,7 @@ fn make_file_writable(file: &File, path: &Utf8Path) -> Result<(), WorkspaceError
 }
 
 fn make_directory_writable(directory: &File, path: &Utf8Path) -> Result<(), WorkspaceError> {
-    let metadata = directory
-        .metadata()
+    let metadata = owned_io!("worker.directory.inspect", directory.metadata())
         .map_err(|error| WorkspaceError::io("inspect worker directory", path, error))?;
     let mut permissions = metadata.permissions();
     #[cfg(unix)]
@@ -1365,9 +1433,11 @@ fn make_directory_writable(directory: &File, path: &Utf8Path) -> Result<(), Work
         use std::os::unix::fs::PermissionsExt;
         if permissions.mode() & 0o700 != 0o700 {
             permissions.set_mode(permissions.mode() | 0o700);
-            directory
-                .set_permissions(permissions)
-                .map_err(|error| WorkspaceError::io("prepare worker directory", path, error))?;
+            owned_io!(
+                "worker.directory.chmod",
+                directory.set_permissions(permissions)
+            )
+            .map_err(|error| WorkspaceError::io("prepare worker directory", path, error))?;
         }
     }
     #[cfg(windows)]
@@ -1393,12 +1463,13 @@ fn remove_link_or_reparse(
         windows::remove_entry(parent, name, path)
     }
     #[cfg(unix)]
-    let is_directory = metadata.is_dir();
-    #[cfg(unix)]
-    let result = if is_directory {
-        cap_primitives::fs::remove_dir(parent, Path::new(name))
-    } else {
-        cap_primitives::fs::remove_file(parent, Path::new(name))
+    let result = {
+        // Both callers verified no-follow symlink metadata; Unix symlinks are unlinked as files.
+        let _ = metadata;
+        owned_io!(
+            "worker.link.remove",
+            cap_primitives::fs::remove_file(parent, Path::new(name))
+        )
     };
     #[cfg(unix)]
     result.map_err(|error| WorkerRoot::map_entry_error("remove worker link", path, error))
@@ -2227,19 +2298,30 @@ mod tests {
     }
 
     #[test]
-    fn missing_removal_is_a_noop_and_link_guards_reject_links() {
+    fn missing_removal_is_a_noop() {
         let fixture = RootFixture::new();
         let root = WorkerRoot::open(fixture.worker_path()).unwrap();
-
         assert!(root.remove_any_if_exists(Utf8Path::new("missing")).is_ok());
+    }
 
-        let link = fixture.worker.join("linked");
+    #[test]
+    fn required_entry_guard_rejects_a_directory_link() {
+        let fixture = RootFixture::new();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
         fixture.link_dir("outside", "linked").unwrap();
         let (parent, name) = root.open_parent(Utf8Path::new("linked"), false).unwrap();
         assert!(matches!(
             WorkerRoot::reject_link(&parent, &name, Utf8Path::new("linked"), "test link",),
             Err(WorkspaceError::InvalidPath { .. })
         ));
+    }
+
+    #[test]
+    fn optional_entry_guard_rejects_a_directory_link() {
+        let fixture = RootFixture::new();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+        fixture.link_dir("outside", "linked").unwrap();
+        let (parent, name) = root.open_parent(Utf8Path::new("linked"), false).unwrap();
         assert!(matches!(
             WorkerRoot::reject_link_if_present(
                 &parent,
@@ -2249,14 +2331,18 @@ mod tests {
             ),
             Err(WorkspaceError::InvalidPath { .. })
         ));
-        fs::remove_file(link)
-            .or_else(|_| fs::remove_dir(fixture.worker.join("linked")))
-            .unwrap();
+    }
+
+    #[test]
+    fn optional_entry_guard_accepts_an_absent_entry() {
+        let fixture = RootFixture::new();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+        let (parent, name) = root.open_parent(Utf8Path::new("missing"), false).unwrap();
         assert!(
             WorkerRoot::reject_link_if_present(
                 &parent,
                 &name,
-                Utf8Path::new("linked"),
+                Utf8Path::new("missing"),
                 "test link",
             )
             .is_ok()

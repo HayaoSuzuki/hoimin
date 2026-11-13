@@ -351,3 +351,25 @@ fn candidate_validation_rejects_incorrect_column() {
 
     assert_eq!(actual, Err(CandidateValidationError::LocationMismatch));
 }
+
+#[test]
+fn ascii_mutation_text_rejects_non_ascii_characters() {
+    let error = PythonSourceEncoding::Ascii.encode("é").unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "source encoding 'ascii': mutation text contains a non-ASCII character"
+    );
+}
+
+#[test]
+fn ascii_encoding_preserves_representable_text() {
+    let encoded = PythonSourceEncoding::Ascii.encode("value = 1\r\n").unwrap();
+    assert_eq!(encoded.as_ref(), b"value = 1\r\n");
+}
+
+#[test]
+fn an_empty_encoding_label_does_not_hide_a_valid_second_line_cookie() {
+    let decoded = decode_python_source(b"# coding: \n# coding: latin-1\n\xe9").unwrap();
+    assert_eq!(decoded.encoding(), PythonSourceEncoding::Latin1);
+    assert_eq!(decoded.text(), "# coding: \n# coding: latin-1\né");
+}

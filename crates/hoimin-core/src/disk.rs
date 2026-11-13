@@ -604,3 +604,168 @@ mod tests {
         assert_eq!(snapshot.dispatched, 0);
     }
 }
+
+#[cfg(test)]
+mod counter_boundary_tests {
+    use super::*;
+
+    #[rstest::rstest]
+    #[case(u64::MAX, 0)]
+    #[case(0, u64::MAX)]
+    fn dispatch_overflow_does_not_partially_increment_counters(
+        #[case] active: u64,
+        #[case] dispatched: u64,
+    ) {
+        let mut lifecycle = DiskLifecycle::new([]).unwrap();
+        lifecycle.active = active;
+        lifecycle.dispatched = dispatched;
+        let before = lifecycle.snapshot();
+        assert!(!lifecycle.apply(DiskLifecycleEvent::DispatchRequested));
+        assert_eq!(lifecycle.snapshot(), before);
+    }
+
+    #[test]
+    fn finished_lifecycle_rejects_dispatch_without_mutating_the_terminal_snapshot() {
+        let mut lifecycle = DiskLifecycle::new([]).unwrap();
+        assert!(!lifecycle.safety_succeeded());
+        assert!(lifecycle.apply(DiskLifecycleEvent::ProcessDrainSucceeded));
+        assert!(lifecycle.apply(DiskLifecycleEvent::OutputDrainSucceeded));
+        assert!(lifecycle.apply(DiskLifecycleEvent::MonitorJoinSucceeded));
+        assert!(lifecycle.safety_succeeded());
+        assert!(lifecycle.apply(DiskLifecycleEvent::ReportSucceeded));
+        assert!(lifecycle.apply(DiskLifecycleEvent::FinishRequested));
+        let before = lifecycle.snapshot();
+        assert!(!lifecycle.apply(DiskLifecycleEvent::DispatchRequested));
+        assert_eq!(lifecycle.snapshot(), before);
+    }
+
+    #[rstest::rstest]
+    #[case(
+        DiskLifecycleEvent::ProcessDrainSucceeded,
+        DiskLifecycleEvent::ProcessDrainSucceeded
+    )]
+    #[case(
+        DiskLifecycleEvent::ProcessDrainSucceeded,
+        DiskLifecycleEvent::ProcessDrainFailed
+    )]
+    #[case(
+        DiskLifecycleEvent::OutputDrainSucceeded,
+        DiskLifecycleEvent::OutputDrainFailed
+    )]
+    #[case(
+        DiskLifecycleEvent::MonitorJoinSucceeded,
+        DiskLifecycleEvent::MonitorJoinFailed
+    )]
+    #[case(DiskLifecycleEvent::ReportSucceeded, DiskLifecycleEvent::ReportFailed)]
+    fn settled_components_reject_duplicate_terminal_events(
+        #[case] first: DiskLifecycleEvent,
+        #[case] duplicate: DiskLifecycleEvent,
+    ) {
+        let mut lifecycle = DiskLifecycle::new([]).unwrap();
+        assert!(lifecycle.apply(first));
+        let before = lifecycle.snapshot();
+        assert!(!lifecycle.apply(duplicate));
+        assert_eq!(lifecycle.snapshot(), before);
+    }
+
+    #[test]
+    fn repeated_error_evidence_does_not_duplicate_the_primary_failure() {
+        let mut lifecycle = DiskLifecycle::new([]).unwrap();
+        assert!(lifecycle.apply(DiskLifecycleEvent::MeasurementFailed {
+            message: "unavailable".into()
+        }));
+        let before = lifecycle.snapshot();
+        add_error(
+            &mut lifecycle,
+            DISK_MEASUREMENT_FAILED,
+            "unavailable".into(),
+        );
+        assert_eq!(lifecycle.snapshot(), before);
+    }
+
+    #[test]
+    fn repeated_cleanup_error_evidence_is_retained_once() {
+        let mut lifecycle = DiskLifecycle::new([]).unwrap();
+        add_error(&mut lifecycle, WORKSPACE_CLEANUP_FAILED, "denied".into());
+        let before = lifecycle.snapshot();
+        add_error(&mut lifecycle, WORKSPACE_CLEANUP_FAILED, "denied".into());
+        assert_eq!(lifecycle.snapshot(), before);
+        assert_eq!(lifecycle.secondary.len(), 1);
+    }
+
+    #[rstest::rstest]
+    #[case(0, None)]
+    #[case(1, Some(WORKSPACE_SIZE_EXCEEDED))]
+    fn observation_preserves_the_policy_decision(
+        #[case] owned_bytes: u64,
+        #[case] code: Option<&str>,
+    ) {
+        let mut lifecycle = DiskLifecycle::new([]).unwrap();
+        let policy = DiskPolicy {
+            max_owned_bytes: std::num::NonZeroU64::new(1).unwrap(),
+            min_free_bytes: std::num::NonZeroU64::new(1).unwrap(),
+        };
+        assert!(lifecycle.apply(DiskLifecycleEvent::Observation {
+            policy,
+            value: DiskObservation {
+                owned_bytes,
+                available_bytes: 2,
+                measured_in: std::time::Duration::ZERO
+            }
+        }));
+        assert_eq!(lifecycle.stop.as_ref().map(DiskFailure::code), code);
+    }
+
+    #[test]
+    fn process_drain_failure_settles_processes_and_records_the_failure() {
+        let mut lifecycle = DiskLifecycle::new([]).unwrap();
+        assert!(lifecycle.apply(DiskLifecycleEvent::DispatchRequested));
+        assert!(lifecycle.apply(DiskLifecycleEvent::ProcessDrainFailed));
+        assert_eq!(lifecycle.active, 0);
+        assert_eq!(lifecycle.process_drain, DiskComponentState::Failed);
+        assert_eq!(
+            lifecycle.stop.as_ref().unwrap().code(),
+            PROCESS_LIFECYCLE_FAILED
+        );
+    }
+
+    #[rstest::rstest]
+    #[case(DiskLifecycleEvent::MonitorJoinFailed, |state: &DiskLifecycle| state.monitor_join)]
+    #[case(DiskLifecycleEvent::ReportFailed, |state: &DiskLifecycle| state.report)]
+    fn failed_components_are_settled_once(
+        #[case] event: DiskLifecycleEvent,
+        #[case] component: fn(&DiskLifecycle) -> DiskComponentState,
+    ) {
+        let mut lifecycle = DiskLifecycle::new([]).unwrap();
+        assert!(lifecycle.apply(event.clone()));
+        assert_eq!(component(&lifecycle), DiskComponentState::Failed);
+        assert!(!lifecycle.apply(event));
+    }
+
+    #[test]
+    fn cleanup_events_record_the_registered_root_completion() {
+        let mut lifecycle = DiskLifecycle::new([DiskRootId::Execution]).unwrap();
+        assert!(lifecycle.apply(DiskLifecycleEvent::ProcessDrainSucceeded));
+        assert!(lifecycle.apply(DiskLifecycleEvent::OutputDrainSucceeded));
+        assert!(lifecycle.apply(DiskLifecycleEvent::MonitorJoinSucceeded));
+        assert!(lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
+            root: DiskRootId::Execution
+        }));
+        assert_eq!(lifecycle.roots[0].cleanup, DiskCleanupState::Requested);
+        assert!(lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+            root: DiskRootId::Execution,
+            outcome: DiskCleanupOutcome::Clean
+        }));
+        assert_eq!(
+            lifecycle.roots[0].cleanup,
+            DiskCleanupState::Completed(DiskCleanupOutcome::Clean)
+        );
+    }
+
+    #[test]
+    fn finish_requires_the_safety_components_to_settle() {
+        let mut lifecycle = DiskLifecycle::new([]).unwrap();
+        assert!(!lifecycle.apply(DiskLifecycleEvent::FinishRequested));
+        assert!(!lifecycle.finished);
+    }
+}

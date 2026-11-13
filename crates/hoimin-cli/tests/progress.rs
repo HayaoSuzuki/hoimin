@@ -897,13 +897,13 @@ fn compare_three_adjacent_stalls_are_saturated() {
 }
 
 #[rstest::rstest]
-#[case::improvement(vec![survived(), killed()], ProgressState::Improving)]
-#[case::regression(vec![killed(), killed(), survived()], ProgressState::Regressing)]
+#[case::improvement(&[survived(), killed()], ProgressState::Improving)]
+#[case::regression(&[killed(), killed(), survived()], ProgressState::Regressing)]
 fn compare_improvement_and_regression_break_the_stall_chain(
-    #[case] reports: Vec<InputReport>,
+    #[case] reports: &[InputReport],
     #[case] expected: ProgressState,
 ) {
-    let result = compare_reports(&reports, nz(3));
+    let result = compare_reports(reports, nz(3));
 
     assert_eq!(result.consecutive_stalls, 0);
     assert_eq!(result.latest, expected);

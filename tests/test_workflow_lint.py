@@ -4,7 +4,9 @@ import os
 import shutil
 import subprocess
 import sys
+from contextlib import chdir
 from pathlib import Path
+from unittest.mock import create_autospec
 
 import pytest
 from pytest_mock import MockerFixture
@@ -140,26 +142,31 @@ def test_default_shell_uses_explicit_shell_or_fallback(
     assert workflow_lint.default_shell(scope, fallback) == expected
 
 
-def test_runner_rejects_empty_workflow_directory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_runner_rejects_empty_workflow_directory(tmp_path: Path) -> None:
     (tmp_path / ".github/workflows").mkdir(parents=True)
-    monkeypatch.chdir(tmp_path)
-    with pytest.raises(RuntimeError, match="No workflows found"):
+    with chdir(tmp_path), pytest.raises(RuntimeError, match="No workflows found"):
         workflow_lint.main()
 
 
 @pytest.mark.parametrize("missing", ["actionlint", "shellcheck", "zizmor"])
 def test_runner_reports_missing_dependency(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: str
+    tmp_path: Path, mocker: MockerFixture, missing: str
 ) -> None:
+    original_which_spec = shutil.which
     directory = tmp_path / ".github/workflows"
     directory.mkdir(parents=True)
     (directory / "ci.yml").write_text("jobs: {}", encoding="utf-8")
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(shutil, "which", lambda tool: None if tool == missing else tool)
-    with pytest.raises(RuntimeError, match=f"Missing {missing};"):
-        workflow_lint.main()
+    with chdir(tmp_path):
+        mocker.patch.object(
+            shutil,
+            "which",
+            create_autospec(
+                original_which_spec,
+                side_effect=lambda tool: None if tool == missing else tool,
+            ),
+        )
+        with pytest.raises(RuntimeError, match=f"Missing {missing};"):
+            workflow_lint.main()
 
 
 def test_shell_checker_rejects_non_list_steps(tmp_path: Path) -> None:

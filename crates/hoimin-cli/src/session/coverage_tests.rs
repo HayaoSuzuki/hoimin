@@ -529,6 +529,7 @@ fn finish_rejects_an_externally_completed_owned_run_and_keeps_ownership_for_retr
     assert!(handler.ownerships.is_empty());
 }
 
+#[cfg(feature = "contracts")]
 unsafe extern "C" fn restrict_diagnostic_bindings(
     database: *mut std::ffi::c_void,
     action: std::ffi::c_int,
@@ -555,6 +556,8 @@ unsafe extern "C" fn restrict_diagnostic_bindings(
     rusqlite::ffi::SQLITE_OK
 }
 
+// read_result is the contracts-only database readback used by persistence checks.
+#[cfg(feature = "contracts")]
 #[test]
 fn diagnostic_query_binding_errors_are_returned_without_partial_readback() {
     let (_directory, mut handler) = fixture();

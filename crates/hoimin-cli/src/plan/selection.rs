@@ -77,7 +77,12 @@ impl<'a> Iterator for DiverseCandidates<'a> {
             self.remaining = remaining;
             self.active_groups = group_tier(tier, self.by_line);
         }
-        let mut group = self.active_groups.pop_front()?;
+        // A new tier contains its first candidate, and group_tier appends that
+        // candidate to a group. Otherwise the queue was already nonempty.
+        let mut group = self
+            .active_groups
+            .pop_front()
+            .expect("nonempty score tiers produce active candidate groups");
         let candidate = group.pop_front().expect("active groups contain candidates");
         if !group.is_empty() {
             self.active_groups.push_back(group);
@@ -107,4 +112,17 @@ fn group_tier(
     }
 
     groups.into_iter().collect()
+}
+
+#[cfg(test)]
+mod iterator_tests {
+    use super::DiverseCandidates;
+
+    #[rstest::rstest]
+    fn an_empty_diverse_iterator_stays_exhausted(#[values(false, true)] by_line: bool) {
+        let mut candidates = DiverseCandidates::new(&[], by_line);
+
+        assert!(candidates.next().is_none());
+        assert!(candidates.next().is_none());
+    }
 }

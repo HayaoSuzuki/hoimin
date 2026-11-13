@@ -4,6 +4,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::io_faults::checked_io;
 use crate::metrics::MetricsOutput;
 use cap_std::fs::Dir;
 
@@ -202,12 +203,12 @@ impl EntryInspector {
         reject_unsupported_windows_names(path)?;
         // Preserve errors in the original spelling, e.g. a regular file followed by `/`.
         // Stripping that separator first could authorize a different rename operation.
-        if let Err(error) = std::fs::symlink_metadata(path)
+        if let Err(error) = checked_io!("metrics.entry.metadata", std::fs::symlink_metadata(path))
             && error.kind() != io::ErrorKind::NotFound
         {
             return Err(error);
         }
-        let absolute = std::path::absolute(path)?;
+        let absolute = checked_io!("metrics.entry.absolute", std::path::absolute(path))?;
         let Some(name) = absolute.file_name() else {
             return Ok(Entry {
                 path: std::fs::canonicalize(absolute)?,
@@ -223,7 +224,10 @@ impl EntryInspector {
         let path = parent.join(name);
         // Retain the actual parent before inspecting the leaf. A canonical path
         // is display/prospective-comparison data, never the write capability.
-        let directory = match Dir::open_ambient_dir(&parent, cap_std::ambient_authority()) {
+        let directory = match checked_io!(
+            "metrics.entry.open",
+            Dir::open_ambient_dir(&parent, cap_std::ambient_authority())
+        ) {
             Ok(directory) => Arc::new(directory),
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 return Ok(Entry {
@@ -234,7 +238,7 @@ impl EntryInspector {
             }
             Err(error) => return Err(error),
         };
-        match directory.symlink_metadata(name) {
+        match checked_io!("metrics.entry.leaf", directory.symlink_metadata(name)) {
             Ok(metadata) => {
                 let path = self.existing_entry(&path, &directory, &metadata)?;
                 Ok(Entry {
@@ -254,7 +258,7 @@ impl EntryInspector {
 }
 
 fn prospective_parent(path: &Path) -> io::Result<PathBuf> {
-    match std::fs::canonicalize(path) {
+    match checked_io!("metrics.parent.canonicalize", std::fs::canonicalize(path)) {
         Ok(path) => Ok(path),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             // A missing ancestor followed by `..` is not a usable rename path.
@@ -360,15 +364,17 @@ impl EntryInspector {
         use cap_std::fs::MetadataExt;
         use std::collections::btree_map::Entry as MapEntry;
         let parent = path.parent().ok_or_else(|| unknown("missing parent"))?;
-        let parent_metadata = directory.dir_metadata()?;
+        let parent_metadata = checked_io!("metrics.index.metadata", directory.dir_metadata())?;
         let key = (parent_metadata.dev(), parent_metadata.ino());
         let index = match self.directories.entry(key) {
             MapEntry::Occupied(value) => value.into_mut(),
             MapEntry::Vacant(value) => value.insert(DirectoryEntries {
-                names: directory
-                    .entries()?
-                    .map(|item| item.map(|item| item.file_name()))
-                    .collect::<io::Result<_>>()?,
+                names: checked_io!(
+                    "metrics.index.collect",
+                    checked_io!("metrics.index.entries", directory.entries())?
+                        .map(|item| item.map(|item| item.file_name()))
+                        .collect::<io::Result<_>>()
+                )?,
                 aliases: None,
             }),
         };
@@ -531,6 +537,245 @@ mod tests {
 
     fn entry(path: &Path) -> io::Result<Entry> {
         EntryInspector::default().entry(path)
+    }
+
+    fn inspection_config(root: &Path, session: Option<&Path>) -> RunConfig {
+        RunConfig::try_from(hoimin_core::RawRunConfig {
+            root: camino::Utf8PathBuf::from_path_buf(root.to_owned()).unwrap(),
+            files: vec!["source.py".into()],
+            test_argv: vec![hoimin_core::CommandArg::Unix(b"test".to_vec())],
+            session: session.map(|path| hoimin_core::SessionConfig {
+                path: camino::Utf8PathBuf::from_path_buf(path.to_owned()).unwrap(),
+            }),
+            output: hoimin_core::OutputConfig {
+                metrics: Some(
+                    camino::Utf8PathBuf::from_path_buf(root.join("metrics.json")).unwrap(),
+                ),
+            },
+            ..hoimin_core::RawRunConfig::default()
+        })
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+        .unwrap()
+    }
+
+    #[test]
+    fn an_unresolved_session_prevents_authorizing_a_metrics_destination() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = inspection_config(temp.path(), Some(&temp.path().join("missing/session.db")));
+
+        let error = inspect(&config, &[], &[], &temp.path().join("metrics.json"))
+            .err()
+            .unwrap();
+
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn a_confirmed_collision_takes_precedence_over_an_unresolved_session() {
+        let temp = tempfile::tempdir().unwrap();
+        let output = temp.path().join("metrics.json");
+        std::fs::write(&output, b"protected").unwrap();
+        let config = inspection_config(temp.path(), Some(&temp.path().join("missing/session.db")));
+
+        let collision = inspect(&config, &[], std::slice::from_ref(&output), &output)
+            .unwrap()
+            .err()
+            .unwrap();
+
+        assert_eq!(collision, output);
+        assert_eq!(std::fs::read(output).unwrap(), b"protected");
+    }
+
+    #[test]
+    fn a_confirmed_collision_takes_precedence_over_an_uninspectable_input() {
+        let temp = tempfile::tempdir().unwrap();
+        let output = temp.path().join("metrics.json");
+        let blocked = temp.path().join("file");
+        std::fs::write(&output, b"protected").unwrap();
+        std::fs::write(&blocked, b"obstruction").unwrap();
+        let config = inspection_config(temp.path(), None);
+
+        let collision = inspect(
+            &config,
+            &[],
+            &[blocked.join("child"), output.clone()],
+            &output,
+        )
+        .unwrap()
+        .err()
+        .unwrap();
+
+        assert_eq!(collision, output);
+        assert_eq!(std::fs::read(output).unwrap(), b"protected");
+        assert_eq!(std::fs::read(blocked).unwrap(), b"obstruction");
+    }
+
+    #[rstest::rstest]
+    #[case::initial_metadata("metrics.entry.metadata")]
+    #[case::absolute_path("metrics.entry.absolute")]
+    #[case::canonical_parent("metrics.parent.canonicalize")]
+    #[case::open_parent("metrics.entry.open")]
+    #[case::leaf_metadata("metrics.entry.leaf")]
+    #[case::index_metadata("metrics.index.metadata")]
+    #[case::index_open("metrics.index.entries")]
+    #[case::index_iteration("metrics.index.collect")]
+    fn entry_io_errors_preserve_the_source_and_allow_retry(#[case] point: &'static str) {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("metrics.json");
+        std::fs::write(&path, b"original").unwrap();
+        let fault = crate::io_faults::arm(point);
+
+        let result = entry(&path);
+
+        assert!(fault.triggered(), "unchecked metrics I/O boundary: {point}");
+        let error = result.err().unwrap();
+        assert_eq!(error.kind(), io::ErrorKind::Other);
+        assert!(error.to_string().contains(point));
+        assert_eq!(std::fs::read(&path).unwrap(), b"original");
+        assert!(entry(&path).unwrap().exists);
+        assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cached_directory_index_rejects_an_entry_created_after_inspection() {
+        let temp = tempfile::tempdir().unwrap();
+        let original = temp.path().join("original");
+        let added = temp.path().join("added");
+        std::fs::write(&original, b"original").unwrap();
+        let mut inspector = EntryInspector::default();
+        assert!(inspector.entry(&original).unwrap().exists);
+        std::fs::write(&added, b"added").unwrap();
+
+        let error = inspector.entry(&added).err().unwrap();
+
+        assert_eq!(error.kind(), io::ErrorKind::Other);
+        assert_eq!(
+            error.to_string(),
+            "final entry disappeared during inspection"
+        );
+        assert_eq!(std::fs::read(original).unwrap(), b"original");
+        assert_eq!(std::fs::read(added).unwrap(), b"added");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cached_directory_index_preserves_a_removed_entry_lookup_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let original = temp.path().join("original");
+        let added = temp.path().join("added");
+        std::fs::write(&original, b"original").unwrap();
+        let mut inspector = EntryInspector::default();
+        assert!(inspector.entry(&original).unwrap().exists);
+        std::fs::remove_file(&original).unwrap();
+        std::fs::write(&added, b"added").unwrap();
+
+        let error = inspector.entry(&added).err().unwrap();
+
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        assert_eq!(std::fs::read(added).unwrap(), b"added");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cached_directory_index_rejects_an_ambiguous_new_hardlink() {
+        let temp = tempfile::tempdir().unwrap();
+        let original = temp.path().join("original");
+        let alias = temp.path().join("alias");
+        let added = temp.path().join("added");
+        std::fs::write(&original, b"original").unwrap();
+        std::fs::hard_link(&original, &alias).unwrap();
+        let mut inspector = EntryInspector::default();
+        assert!(inspector.entry(&original).unwrap().exists);
+        std::fs::hard_link(&original, &added).unwrap();
+
+        let error = inspector.entry(&added).err().unwrap();
+
+        assert_eq!(error.kind(), io::ErrorKind::Other);
+        assert_eq!(error.to_string(), "ambiguous final entry alias");
+        assert_eq!(std::fs::read(original).unwrap(), b"original");
+        assert_eq!(std::fs::read(alias).unwrap(), b"original");
+        assert_eq!(std::fs::read(added).unwrap(), b"original");
+    }
+
+    #[rstest::rstest]
+    #[case::left("\u{00e9}.json", "metrics.json")]
+    #[case::right("metrics.json", "\u{00e9}.json")]
+    fn prospective_non_ascii_names_preserve_uncertainty(#[case] left: &str, #[case] right: &str) {
+        let temp = tempfile::tempdir().unwrap();
+        let left = entry(&temp.path().join(left)).unwrap();
+        let right = entry(&temp.path().join(right)).unwrap();
+
+        let error = same_entry(&left, &right).unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::Other);
+        assert_eq!(
+            error.to_string(),
+            "cannot compare prospective non-ASCII entry names"
+        );
+        assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn prospective_parent_rejects_a_missing_component_followed_by_parent_navigation() {
+        let temp = tempfile::tempdir().unwrap();
+
+        let error = prospective_parent(&temp.path().join("missing/..")).unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        assert!(!temp.path().join("missing").exists());
+    }
+
+    #[test]
+    fn entry_inspection_preserves_a_non_directory_parent_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let parent = temp.path().join("file");
+        std::fs::write(&parent, b"original").unwrap();
+
+        let error = entry(&parent.join("metrics.json")).err().unwrap();
+
+        assert_eq!(error.kind(), io::ErrorKind::NotADirectory);
+        assert_eq!(std::fs::read(parent).unwrap(), b"original");
+    }
+
+    #[test]
+    fn root_entry_inspection_preserves_the_absence_of_a_parent() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().ancestors().last().unwrap();
+
+        let inspected = entry(root).unwrap();
+
+        assert!(inspected.exists);
+        assert!(inspected.parent.is_none());
+        assert_eq!(inspected.path, std::fs::canonicalize(root).unwrap());
+    }
+
+    #[test]
+    fn prospective_case_aliases_with_a_missing_parent_preserve_uncertainty() {
+        let temp = tempfile::tempdir().unwrap();
+        let left = entry(&temp.path().join("missing/metrics.json")).unwrap();
+        let right = entry(&temp.path().join("missing/METRICS.JSON")).unwrap();
+
+        let error = same_entry(&left, &right).unwrap_err();
+
+        assert_eq!(error.to_string(), "missing parent");
+        assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 0);
+    }
+
+    #[rstest::rstest]
+    #[case::left_missing("missing/metrics.json", "metrics.json")]
+    #[case::right_missing("metrics.json", "missing/metrics.json")]
+    #[case::different_missing_parents("missing/metrics.json", "other/metrics.json")]
+    fn missing_parents_do_not_alias_a_distinct_parent(#[case] left: &str, #[case] right: &str) {
+        let temp = tempfile::tempdir().unwrap();
+        let left = entry(&temp.path().join(left)).unwrap();
+        let right = entry(&temp.path().join(right)).unwrap();
+
+        assert!(!same_parent(&left, &right).unwrap());
+        assert!(!same_entry(&left, &right).unwrap());
+        assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 0);
     }
 
     #[rstest::rstest]

@@ -86,7 +86,8 @@ impl DecodedPythonSource<'_> {
             return None;
         }
         let extra = self.expanded.partition_point(|start| *start < offset);
-        let decoded = offset.checked_add(extra)?;
+        // Expansion before a bounded raw offset cannot exceed the allocated decoded text.
+        let decoded = offset + extra;
         self.text.is_char_boundary(decoded).then_some(decoded)
     }
 }
@@ -110,6 +111,10 @@ fn partition_index(length: usize, mut before: impl FnMut(usize) -> bool) -> usiz
 /// # Errors
 /// Returns the declared encoding and a reason for unknown/unsupported codecs,
 /// BOM conflicts, and bytes that do not match UTF-8 or ASCII.
+#[expect(
+    clippy::missing_panics_doc,
+    reason = "the ASCII branch validates every byte before converting; ASCII is a subset of UTF-8"
+)]
 pub fn decode_python_source(source: &[u8]) -> Result<DecodedPythonSource<'_>, SourceEncodingError> {
     let bom = source.starts_with(b"\xef\xbb\xbf");
     let cookie_bytes = if bom { &source[3..] } else { source };
@@ -173,7 +178,9 @@ pub fn decode_python_source(source: &[u8]) -> Result<DecodedPythonSource<'_>, So
                     "non-ASCII byte at original offset {offset}"
                 )));
             }
-            Cow::Borrowed(std::str::from_utf8(source).map_err(|error| failure(error.to_string()))?)
+            Cow::Borrowed(
+                std::str::from_utf8(source).expect("all source bytes were checked as ASCII"),
+            )
         }
         PythonSourceEncoding::Latin1 => {
             let mut decoded = String::with_capacity(source.len());

@@ -9,6 +9,57 @@ use hoimin_core::{
 use tempfile::NamedTempFile;
 use thiserror::Error;
 
+// Production expands each boundary directly, preserving evaluation order.
+#[cfg(not(test))]
+macro_rules! store_io {
+    ($stage:ident, $operation:expr) => {
+        $operation
+    };
+}
+#[cfg(test)]
+macro_rules! store_io {
+    ($stage:ident, $operation:expr) => {
+        io_faults::perform(io_faults::Stage::$stage, || $operation)
+    };
+}
+
+#[cfg(test)]
+mod io_faults {
+    use std::cell::Cell;
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub(super) enum Stage {
+        CreateDefault,
+        Metadata,
+        SeekPrevious,
+        ReadPrevious,
+        SeekRecord,
+        ReadRecord,
+    }
+    thread_local! {
+        static ACTIVE: Cell<Option<Stage>> = const { Cell::new(None) };
+    }
+    pub(super) struct Guard(Option<Stage>);
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            ACTIVE.set(self.0);
+        }
+    }
+    pub(super) fn arm(stage: Stage) -> Guard {
+        Guard(ACTIVE.replace(Some(stage)))
+    }
+    pub(super) fn perform<T>(
+        stage: Stage,
+        operation: impl FnOnce() -> std::io::Result<T>,
+    ) -> std::io::Result<T> {
+        if ACTIVE.get() == Some(stage) {
+            ACTIVE.set(None);
+            return Err(std::io::Error::other(format!("injected {stage:?}")));
+        }
+        operation()
+    }
+}
+
 pub const MAX_SPOOL_RECORD_BYTES: u64 = 2 * 1024 * 1024;
 
 /// A physical JSONL record position, owned by the I/O replay layer.
@@ -116,8 +167,20 @@ impl CandidateReplay {
                     .copied()
                     .flatten()
                     .ok_or_else(missing)?;
-                let (candidate, _) =
-                    CandidateStore::replay_one(spool, cursor)?.ok_or_else(missing)?;
+                let Some((candidate, _)) = CandidateStore::replay_one(spool, cursor)? else {
+                    return {
+                        // Only a successful sequential read indexes a cursor, so its sequence precedes EOF in the unchanged bound spool.
+                        #[cfg(coverage_nightly)]
+                        {
+                            (#[coverage(off)]
+                            || Err(missing()))()
+                        }
+                        #[cfg(not(coverage_nightly))]
+                        {
+                            Err(missing())
+                        }
+                    };
+                };
                 if candidate.id != *id {
                     return Err(StoreError::CandidateIdMismatch {
                         expected: id.clone(),
@@ -155,7 +218,8 @@ impl CandidateStore {
         if max_candidates == 0 {
             return Err(StoreError::LimitExceeded { limit: 0 });
         }
-        let file = NamedTempFile::new().map_err(|error| io_error(&error))?;
+        let file =
+            store_io!(CreateDefault, NamedTempFile::new()).map_err(|error| io_error(&error))?;
         Ok(Self::with_file(max_candidates, file))
     }
 
@@ -187,6 +251,12 @@ impl CandidateStore {
         self
     }
 
+    /// Supplies an owned file handle for deterministic I/O boundary tests only.
+    #[cfg(test)]
+    pub(super) fn with_test_file(max_candidates: u64, file: NamedTempFile) -> Self {
+        Self::with_file(max_candidates, file)
+    }
+
     #[must_use]
     pub fn count(&self) -> u64 {
         self.count
@@ -195,22 +265,76 @@ impl CandidateStore {
     /// Validates compact JSON plus one newline without allocating the encoded payload.
     pub(crate) fn record_size(candidate: &MutationCandidate) -> Result<usize, StoreError> {
         let mut counter = CountingWriter::default();
-        serde_json::to_writer(&mut counter, candidate)
-            .map_err(|error| StoreError::CorruptRecord(error.to_string()))?;
+        match serde_json::to_writer(&mut counter, candidate) {
+            Ok(()) => {}
+            Err(error) => {
+                return {
+                    // The closed candidate schema has infallible primitive serializers; a fresh counter cannot overflow for resident bounded fields.
+                    #[cfg(coverage_nightly)]
+                    {
+                        (#[coverage(off)]
+                        || Err(StoreError::CorruptRecord(error.to_string())))(
+                        )
+                    }
+                    #[cfg(not(coverage_nightly))]
+                    {
+                        Err(StoreError::CorruptRecord(error.to_string()))
+                    }
+                };
+            }
+        }
         if counter.bytes >= MAX_SPOOL_RECORD_BYTES {
             return Err(StoreError::RecordTooLarge {
                 limit: MAX_SPOOL_RECORD_BYTES,
             });
         }
-        let record_size = counter
-            .bytes
-            .checked_add(1)
-            .ok_or(StoreError::RecordTooLarge {
-                limit: MAX_SPOOL_RECORD_BYTES,
-            })?;
-        usize::try_from(record_size).map_err(|_| StoreError::RecordTooLarge {
-            limit: MAX_SPOOL_RECORD_BYTES,
-        })
+        let Some(record_size) = counter.bytes.checked_add(1) else {
+            return {
+                // The preceding check proves counter.bytes < 2 MiB, so adding one cannot overflow u64.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || {
+                        Err(StoreError::RecordTooLarge {
+                            limit: MAX_SPOOL_RECORD_BYTES,
+                        })
+                    })()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    Err(StoreError::RecordTooLarge {
+                        limit: MAX_SPOOL_RECORD_BYTES,
+                    })
+                }
+            };
+        };
+        match usize::try_from(record_size) {
+            Ok(bytes) => Ok(bytes),
+            Err(_) => {
+                // The record is at most 2 MiB, which fits every supported 32/64-bit usize.
+                #[cfg(all(
+                    coverage_nightly,
+                    any(target_pointer_width = "32", target_pointer_width = "64")
+                ))]
+                {
+                    (#[coverage(off)]
+                    || {
+                        Err(StoreError::RecordTooLarge {
+                            limit: MAX_SPOOL_RECORD_BYTES,
+                        })
+                    })()
+                }
+                #[cfg(not(all(
+                    coverage_nightly,
+                    any(target_pointer_width = "32", target_pointer_width = "64")
+                )))]
+                {
+                    Err(StoreError::RecordTooLarge {
+                        limit: MAX_SPOOL_RECORD_BYTES,
+                    })
+                }
+            }
+        }
     }
 
     /// # Errors
@@ -223,9 +347,26 @@ impl CandidateStore {
                 limit: self.max_candidates,
             });
         }
-        let expected = self.count.checked_add(1).ok_or(StoreError::LimitExceeded {
-            limit: self.max_candidates,
-        })?;
+        let Some(expected) = self.count.checked_add(1) else {
+            return {
+                // The capacity check above proves count < max_candidates <= u64::MAX.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || {
+                        Err(StoreError::LimitExceeded {
+                            limit: self.max_candidates,
+                        })
+                    })()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    Err(StoreError::LimitExceeded {
+                        limit: self.max_candidates,
+                    })
+                }
+            };
+        };
         if candidate.sequence != expected {
             return Err(StoreError::InvalidSequence {
                 expected,
@@ -235,13 +376,38 @@ impl CandidateStore {
         let record_size = Self::record_size(candidate)?;
         let _encoded = self.payload.reserve([record_size]).map_err(|error| {
             let hoimin_python::AnalysisError::PayloadLimit { limit } = error else {
-                unreachable!()
+                // PayloadBudget::reserve returns only AnalysisError::PayloadLimit.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || unreachable!())()
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    unreachable!()
+                }
             };
             StoreError::PayloadLimit { limit }
         })?;
         let mut record = Vec::with_capacity(record_size);
-        serde_json::to_writer(&mut record, candidate)
-            .map_err(|error| StoreError::CorruptRecord(error.to_string()))?;
+        match serde_json::to_writer(&mut record, candidate) {
+            Ok(()) => {}
+            Err(error) => {
+                return {
+                    // MutationCandidate has only infallible primitive serializers and Vec writes cannot return an I/O error; allocation failure aborts.
+                    #[cfg(coverage_nightly)]
+                    {
+                        (#[coverage(off)]
+                        || Err(StoreError::CorruptRecord(error.to_string())))(
+                        )
+                    }
+                    #[cfg(not(coverage_nightly))]
+                    {
+                        Err(StoreError::CorruptRecord(error.to_string()))
+                    }
+                };
+            }
+        }
         record.push(b'\n');
         self.file
             .as_file_mut()
@@ -260,16 +426,45 @@ impl CandidateStore {
     ///
     /// Returns an error when flushing, syncing, or preserving the spool file fails.
     pub fn finish(mut self) -> Result<CandidateSpoolRef, StoreError> {
-        self.file
-            .as_file_mut()
-            .flush()
-            .map_err(|error| io_error(&error))?;
+        match self.file.as_file_mut().flush() {
+            Ok(()) => {}
+            Err(error) => {
+                return {
+                    // std::fs::File has no userspace buffer; its documented flush is a no-op on Unix and Windows.
+                    #[cfg(all(coverage_nightly, any(unix, windows)))]
+                    {
+                        (#[coverage(off)]
+                        || Err(io_error(&error)))()
+                    }
+                    #[cfg(not(all(coverage_nightly, any(unix, windows))))]
+                    {
+                        Err(io_error(&error))
+                    }
+                };
+            }
+        }
         self.file
             .as_file()
             .sync_all()
             .map_err(|error| io_error(&error))?;
         let records = self.count;
-        let (_file, path) = self.file.keep().map_err(|error| io_error(&error.error))?;
+        let (_file, path) = match self.file.keep() {
+            Ok(parts) => parts,
+            Err(error) => {
+                return {
+                    // The pinned tempfile Unix implementation of keep returns Ok unconditionally; Windows retains its fallible path.
+                    #[cfg(all(coverage_nightly, unix))]
+                    {
+                        (#[coverage(off)]
+                        || Err(io_error(&error.error)))()
+                    }
+                    #[cfg(not(all(coverage_nightly, unix)))]
+                    {
+                        Err(io_error(&error.error))
+                    }
+                };
+            }
+        };
         Ok(CandidateSpoolRef {
             token: path.to_string_lossy().into_owned(),
             records,
@@ -294,17 +489,19 @@ impl CandidateStore {
             .read(true)
             .open(&reference.token)
             .map_err(|error| io_error(&error))?;
-        let length = file.metadata().map_err(|error| io_error(&error))?.len();
+        let length = store_io!(Metadata, file.metadata())
+            .map_err(|error| io_error(&error))?
+            .len();
         if cursor.offset > length {
             return Err(StoreError::InvalidOffset {
                 offset: cursor.offset,
             });
         }
         if cursor.offset != 0 {
-            file.seek(SeekFrom::Start(cursor.offset - 1))
+            store_io!(SeekPrevious, file.seek(SeekFrom::Start(cursor.offset - 1)))
                 .map_err(|error| io_error(&error))?;
             let mut previous = [0_u8; 1];
-            file.read_exact(&mut previous)
+            store_io!(ReadPrevious, file.read_exact(&mut previous))
                 .map_err(|error| io_error(&error))?;
             if previous[0] != b'\n' {
                 return Err(StoreError::InvalidOffset {
@@ -326,7 +523,7 @@ impl CandidateStore {
                 }),
             };
         }
-        file.seek(SeekFrom::Start(cursor.offset))
+        store_io!(SeekRecord, file.seek(SeekFrom::Start(cursor.offset)))
             .map_err(|error| io_error(&error))?;
         read_one_bounded(file, reference, cursor)
     }
@@ -345,8 +542,7 @@ fn read_one_bounded(
 ) -> Result<Option<(MutationCandidate, CandidateCursor)>, StoreError> {
     let mut line = Vec::new();
     let mut reader = BufReader::new(file).take(MAX_SPOOL_RECORD_BYTES + 1);
-    let read = reader
-        .read_until(b'\n', &mut line)
+    let read = store_io!(ReadRecord, reader.read_until(b'\n', &mut line))
         .map_err(|error| io_error(&error))?;
     #[cfg(test)]
     if read > 0 {
@@ -826,7 +1022,17 @@ mod tests {
         let result = CandidateStore::record_size(&candidate);
         let actual_size = result.map_err(|error| {
             let StoreError::RecordTooLarge { limit } = error else {
-                panic!("record-size failure lost its typed limit: {error}")
+                // Reached only when the checked error-classification assertion fails.
+                #[cfg(coverage_nightly)]
+                {
+                    (#[coverage(off)]
+                    || panic!("record-size failure lost its typed limit: {error}"))(
+                    )
+                }
+                #[cfg(not(coverage_nightly))]
+                {
+                    panic!("record-size failure lost its typed limit: {error}")
+                }
             };
             limit
         });
@@ -866,5 +1072,284 @@ mod tests {
     fn serialized_len(candidate: &MutationCandidate) -> u64 {
         u64::try_from(serde_json::to_vec(candidate).unwrap().len())
             .expect("serialized boundary fixture length fits u64")
+    }
+
+    #[rstest::rstest]
+    #[case::temporary(|| CandidateStore::new(0))]
+    #[case::owned_directory(|| CandidateStore::new_in(0, Path::new("unopened-directory")))]
+    fn zero_capacity_is_rejected_before_spool_creation(
+        #[case] build: fn() -> Result<CandidateStore, StoreError>,
+    ) {
+        assert!(matches!(
+            build(),
+            Err(StoreError::LimitExceeded { limit: 0 })
+        ));
+    }
+
+    #[test]
+    fn counting_writer_rejects_overflow_without_changing_the_count() {
+        let mut writer = CountingWriter { bytes: u64::MAX };
+        assert_eq!(
+            writer.write(b"x").unwrap_err().kind(),
+            std::io::ErrorKind::Other
+        );
+        assert_eq!(writer.bytes, u64::MAX);
+    }
+
+    #[test]
+    fn counting_writer_flush_preserves_the_count() {
+        let mut writer = CountingWriter { bytes: 17 };
+        writer.flush().unwrap();
+        assert_eq!(writer.bytes, 17);
+    }
+
+    #[test]
+    fn bounded_reader_rejects_eof_before_the_declared_record() {
+        let file = NamedTempFile::new().unwrap();
+        let reference = CandidateSpoolRef {
+            token: file.path().to_string_lossy().into_owned(),
+            records: 1,
+        };
+        let reader = File::open(file.path()).unwrap();
+        assert!(matches!(
+            read_one_bounded(reader, &reference, CandidateCursor::START),
+            Err(StoreError::UnexpectedEof {
+                expected_records: 1,
+                actual_records: 0
+            })
+        ));
+    }
+
+    #[test]
+    fn bounded_reader_rejects_a_record_above_the_physical_limit() {
+        let file = NamedTempFile::new().unwrap();
+        std::fs::write(
+            file.path(),
+            vec![b'x'; usize::try_from(MAX_SPOOL_RECORD_BYTES + 1).unwrap()],
+        )
+        .unwrap();
+        let reference = CandidateSpoolRef {
+            token: file.path().to_string_lossy().into_owned(),
+            records: 1,
+        };
+        let reader = File::open(file.path()).unwrap();
+        assert!(matches!(
+            read_one_bounded(reader, &reference, CandidateCursor::START),
+            Err(StoreError::RecordTooLarge {
+                limit: MAX_SPOOL_RECORD_BYTES
+            })
+        ));
+    }
+
+    #[test]
+    fn bounded_reader_rejects_a_sequence_above_the_declared_record_count() {
+        let file = NamedTempFile::new().unwrap();
+        let mut bytes = serde_json::to_vec(&candidate_with_payload_len(512)).unwrap();
+        bytes.push(b'\n');
+        std::fs::write(file.path(), bytes).unwrap();
+        let reference = CandidateSpoolRef {
+            token: file.path().to_string_lossy().into_owned(),
+            records: 0,
+        };
+        let reader = File::open(file.path()).unwrap();
+        assert!(matches!(
+            read_one_bounded(reader, &reference, CandidateCursor::START),
+            Err(StoreError::InvalidSequence {
+                expected: 0,
+                actual: 1
+            })
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bounded_reader_reports_directory_read_failure() {
+        let directory = tempfile::tempdir().unwrap();
+        let reader = File::open(directory.path()).unwrap();
+        let reference = CandidateSpoolRef {
+            token: directory.path().to_string_lossy().into_owned(),
+            records: 1,
+        };
+        assert!(matches!(
+            read_one_bounded(reader, &reference, CandidateCursor::START),
+            Err(StoreError::Io(_))
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn finish_reports_unsyncable_owned_handle_and_cleans_the_temp_path() {
+        let temporary = NamedTempFile::new().unwrap();
+        let path = temporary.path().to_owned();
+        let (_file, temp_path) = temporary.into_parts();
+        let device = OpenOptions::new().write(true).open("/dev/null").unwrap();
+        let store = CandidateStore::with_file(1, NamedTempFile::from_parts(device, temp_path));
+        assert!(matches!(store.finish(), Err(StoreError::Io(_))));
+        assert!(!path.exists());
+    }
+
+    #[rstest::rstest]
+    #[case::zero_sequence(0, 0, "candidate sequence mismatch")]
+    #[case::after_end(u64::MAX, 1, "invalid candidate spool offset")]
+    #[case::inside_record(1, 1, "invalid candidate spool offset")]
+    #[case::too_many_records(513, 3, "candidate sequence mismatch")]
+    fn replay_rejects_invalid_physical_cursor_coordinates(
+        #[case] offset: u64,
+        #[case] expected_sequence: u64,
+        #[case] diagnostic: &str,
+    ) {
+        let spool = finish_candidates(&[candidate_with_payload_len(512)]);
+        let error = CandidateStore::replay_one(
+            &spool.0,
+            CandidateCursor {
+                offset,
+                expected_sequence,
+            },
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains(diagnostic));
+    }
+
+    #[rstest::rstest]
+    #[case::malformed_json(b"{\n", "record is corrupt")]
+    #[case::unterminated(b"{", "ended before all records")]
+    fn replay_rejects_malformed_physical_record(#[case] bytes: &[u8], #[case] diagnostic: &str) {
+        let file = NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), bytes).unwrap();
+        let reference = CandidateSpoolRef {
+            token: file.path().to_string_lossy().into_owned(),
+            records: 1,
+        };
+        assert!(
+            CandidateStore::replay_one(&reference, CandidateCursor::START)
+                .unwrap_err()
+                .to_string()
+                .contains(diagnostic)
+        );
+    }
+
+    #[test]
+    fn replay_reports_missing_spool_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let reference = CandidateSpoolRef {
+            token: directory
+                .path()
+                .join("absent")
+                .to_string_lossy()
+                .into_owned(),
+            records: 1,
+        };
+        assert!(matches!(
+            CandidateStore::replay_one(&reference, CandidateCursor::START),
+            Err(StoreError::Io(_))
+        ));
+    }
+
+    #[test]
+    fn bounded_reader_rejects_a_wrong_expected_sequence() {
+        let file = NamedTempFile::new().unwrap();
+        let mut candidate = candidate_with_payload_len(512);
+        candidate.sequence = 2;
+        let mut bytes = serde_json::to_vec(&candidate).unwrap();
+        bytes.push(b'\n');
+        std::fs::write(file.path(), bytes).unwrap();
+        let reference = CandidateSpoolRef {
+            token: file.path().to_string_lossy().into_owned(),
+            records: 2,
+        };
+        assert!(matches!(
+            CandidateStore::replay_one(&reference, CandidateCursor::START),
+            Err(StoreError::InvalidSequence {
+                expected: 1,
+                actual: 2
+            })
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn replay_reports_failure_reading_the_previous_boundary_byte() {
+        let directory = tempfile::tempdir().unwrap();
+        let reference = CandidateSpoolRef {
+            token: directory.path().to_string_lossy().into_owned(),
+            records: 1,
+        };
+        assert!(matches!(
+            CandidateStore::replay_one(
+                &reference,
+                CandidateCursor {
+                    offset: 1,
+                    expected_sequence: 1
+                }
+            ),
+            Err(StoreError::Io(_))
+        ));
+    }
+
+    #[test]
+    fn injected_default_creation_failure_is_typed_and_scoped() {
+        let error = {
+            let _fault = io_faults::arm(io_faults::Stage::CreateDefault);
+            CandidateStore::new(1).err().unwrap()
+        };
+        assert!(error.to_string().contains("injected CreateDefault"));
+        assert!(CandidateStore::new(1).is_ok());
+    }
+
+    #[rstest::rstest]
+    #[case::metadata(io_faults::Stage::Metadata)]
+    #[case::previous_seek(io_faults::Stage::SeekPrevious)]
+    #[case::previous_read(io_faults::Stage::ReadPrevious)]
+    #[case::record_seek(io_faults::Stage::SeekRecord)]
+    #[case::record_read(io_faults::Stage::ReadRecord)]
+    fn injected_replay_failure_does_not_change_the_owned_spool(#[case] stage: io_faults::Stage) {
+        let first = candidate_with_payload_len(512);
+        let mut second = first.clone();
+        second.sequence = 2;
+        let spool = finish_candidates(&[first, second]);
+        let before = std::fs::read(&spool.0.token).unwrap();
+        let cursor = CandidateCursor {
+            offset: 513,
+            expected_sequence: 2,
+        };
+        let error = {
+            let _fault = io_faults::arm(stage);
+            CandidateStore::replay_one(&spool.0, cursor).unwrap_err()
+        };
+        assert!(error.to_string().contains(&format!("injected {stage:?}")));
+        assert_eq!(std::fs::read(&spool.0.token).unwrap(), before);
+        assert_eq!(
+            CandidateStore::replay_one(&spool.0, cursor)
+                .unwrap()
+                .unwrap()
+                .0
+                .sequence,
+            2
+        );
+    }
+
+    #[test]
+    fn replay_reports_sequence_overflow_without_allocating_a_large_spool() {
+        let file = NamedTempFile::new().unwrap();
+        let mut candidate = candidate_with_payload_len(512);
+        candidate.sequence = u64::MAX;
+        let mut bytes = serde_json::to_vec(&candidate).unwrap();
+        bytes.push(b'\n');
+        std::fs::write(file.path(), bytes).unwrap();
+        let reference = CandidateSpoolRef {
+            token: file.path().to_string_lossy().into_owned(),
+            records: u64::MAX,
+        };
+        let cursor = CandidateCursor {
+            offset: 0,
+            expected_sequence: u64::MAX,
+        };
+        assert!(matches!(
+            CandidateStore::replay_one(&reference, cursor),
+            Err(StoreError::InvalidSequence {
+                expected: u64::MAX,
+                actual: u64::MAX
+            })
+        ));
     }
 }

@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from pytest_mock import MockerFixture
 
 from tools import creusot_environment
 
@@ -33,8 +34,8 @@ POSIX_SHELL = pytest.mark.skipif(
 
 
 @pytest.fixture
-def environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    monkeypatch.setenv("CREUSOT_DATA_HOME", str(tmp_path))
+def environment(tmp_path: Path, mocker: MockerFixture) -> Path:
+    mocker.patch.dict(os.environ, {"CREUSOT_DATA_HOME": str(tmp_path)})
     tools = {}
     hashes = {}
     for name in NAMES:
@@ -329,9 +330,9 @@ def test_rejects_executable_absent_from_receipt(environment: Path) -> None:
 
 
 def test_rejects_environment_selecting_different_configuration(
-    environment: Path, monkeypatch: pytest.MonkeyPatch
+    environment: Path, mocker: MockerFixture
 ) -> None:
-    monkeypatch.setenv("CREUSOT_DATA_HOME", "/different/configuration")
+    mocker.patch.dict(os.environ, {"CREUSOT_DATA_HOME": "/different/configuration"})
 
     result = check(environment)
 

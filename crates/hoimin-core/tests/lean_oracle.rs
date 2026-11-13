@@ -1,4 +1,4 @@
-#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+#![cfg_attr(coverage_nightly, feature(coverage_attribute, stmt_expr_attributes))]
 use std::collections::BTreeSet;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Duration;
@@ -92,19 +92,17 @@ impl Driver {
             ..RawRunConfig::default()
         })
         .and_then(|config| config.with_environment(hoimin_core::EnvironmentSnapshot::Untracked))
-        .map_err(|error| format!("fixture config is invalid: {error}"))?;
+        .expect("fixed fixture configuration is valid");
         let (state, outstanding) = transition(
             RunState::new("lean-oracle", config, test_resource_control()),
             RunEvent::StartRequested(StartRequested),
         )
-        .map_err(|error| format!("cannot start fixture machine: {error}"))?;
-        let ordinary_id = outstanding
-            .iter()
-            .find_map(|effect| match effect {
-                RunEffect::ResolveTargets(value) => Some(value.id),
-                _ => None,
-            })
-            .ok_or_else(|| "fixture did not emit ResolveTargets".to_owned())?;
+        .expect("fixed fixture starts with StartRequested");
+        assert!(
+            matches!(outstanding.as_slice(), [RunEffect::ResolveTargets(_)]),
+            "fixture start must emit exactly one ResolveTargets"
+        );
+        let ordinary_id = outstanding[0].id();
         let mut driver = Self {
             state: Some(state),
             outstanding,
@@ -113,26 +111,39 @@ impl Driver {
         match scenario {
             "pending_resolve" => {}
             "post_baseline_restoration" => {
-                driver.advance_to_baseline()?;
-                driver.advance_to_restoration()?;
-                driver.ordinary_id = driver
-                    .outstanding
-                    .iter()
-                    .find_map(|effect| match effect {
-                        RunEffect::ResetWorker(reset) => Some(reset.id),
-                        _ => None,
-                    })
-                    .ok_or_else(|| "missing restoration effect".to_owned())?;
+                driver
+                    .advance_to_baseline()
+                    .expect("restoration fixture reaches baseline");
+                driver
+                    .advance_to_restoration()
+                    .expect("restoration fixture completes baseline");
+                assert!(
+                    matches!(driver.outstanding.as_slice(), [RunEffect::ResetWorker(_)]),
+                    "restoration fixture keeps exactly one ResetWorker pending"
+                );
+                driver.ordinary_id = driver.outstanding[0].id();
             }
-            "normal_cleaning_with_copy" => driver.advance_to_normal_cleanup()?,
+            "normal_cleaning_with_copy" => driver
+                .advance_to_normal_cleanup()
+                .expect("cleanup fixture completes setup"),
             "final_pending_without_copy" => {
-                driver.apply("cancel")?;
-                driver.apply("complete_cleanup")?;
+                driver
+                    .apply("cancel")
+                    .expect("fixture cancellation is executable");
+                driver
+                    .apply("complete_cleanup")
+                    .expect("fixture cleanup is executable");
             }
             "finished_without_copy" => {
-                driver.apply("cancel")?;
-                driver.apply("complete_cleanup")?;
-                driver.complete_final_output()?;
+                driver
+                    .apply("cancel")
+                    .expect("fixture cancellation is executable");
+                driver
+                    .apply("complete_cleanup")
+                    .expect("fixture cleanup is executable");
+                driver
+                    .complete_final_output()
+                    .expect("finished fixture acknowledges its terminal output");
             }
             other => return Err(format!("unknown scenario {other}")),
         }
@@ -159,21 +170,26 @@ impl Driver {
 
     fn advance_to_normal_cleanup(&mut self) -> Result<(), String> {
         self.advance_to_baseline()?;
-        self.advance_to_empty_analysis()?;
-        self.advance_to_pre_final_cleanup()?;
+        self.advance_to_empty_analysis()
+            .expect("baseline fixture restores before analysis");
+        self.advance_to_pre_final_cleanup()
+            .expect("empty analysis fixture reaches cleanup");
 
         let state = self
             .state
             .as_ref()
-            .ok_or_else(|| "setup state is unavailable".to_owned())?;
-        if state.phase() != RunPhase::Cleaning
-            || !self
-                .outstanding
+            .expect("successful cleanup setup preserves state");
+        assert_eq!(
+            state.phase(),
+            RunPhase::Cleaning,
+            "fixture must reach Cleaning"
+        );
+        assert!(
+            self.outstanding
                 .iter()
-                .any(|effect| matches!(effect, RunEffect::Cleanup(_)))
-        {
-            return Err("setup did not reach normal Cleaning".to_owned());
-        }
+                .any(|effect| matches!(effect, RunEffect::Cleanup(_))),
+            "fixture must request Cleanup"
+        );
         Ok(())
     }
 
@@ -197,7 +213,7 @@ impl Driver {
                 RunEffect::Preflight(value) => Some(value.id),
                 _ => None,
             })
-            .ok_or_else(|| "setup did not emit Preflight".to_owned())?;
+            .expect("setup must emit Preflight");
         self.apply_setup_completion(
             RunEvent::PreflightCompleted(PreflightCompleted {
                 id: preflight_id,
@@ -207,7 +223,8 @@ impl Driver {
                 fingerprint: None,
             }),
             preflight_id,
-        )?;
+        )
+        .expect("fixed fixture setup completion reaches its next stage");
 
         let run_started_id = self
             .outstanding
@@ -220,11 +237,12 @@ impl Driver {
                 }
                 _ => None,
             })
-            .ok_or_else(|| "setup did not emit RunStarted".to_owned())?;
+            .expect("setup must emit RunStarted");
         self.apply_setup_completion(
             RunEvent::OutputEmitted(OutputEmitted { id: run_started_id }),
             run_started_id,
-        )?;
+        )
+        .expect("fixed fixture setup completion reaches its next stage");
 
         let (create_id, worker, reservation_id) = self
             .outstanding
@@ -235,7 +253,7 @@ impl Driver {
                 }
                 _ => None,
             })
-            .ok_or_else(|| "setup did not emit CreateWorker".to_owned())?;
+            .expect("setup must emit CreateWorker");
         self.apply_setup_completion(
             RunEvent::WorkerCreated(WorkerCreated {
                 id: create_id,
@@ -243,16 +261,19 @@ impl Driver {
                 reservation_id,
             }),
             create_id,
-        )?;
+        )
+        .expect("fixed fixture setup completion reaches its next stage");
 
-        let (verify_id, checkpoint) = pending_verification(&self.outstanding)?;
+        let (verify_id, checkpoint) = pending_verification(&self.outstanding)
+            .expect("fixed setup emits original verification");
         self.apply_setup_completion(
             RunEvent::OriginalsVerified(OriginalsVerified {
                 id: verify_id,
                 checkpoint,
             }),
             verify_id,
-        )?;
+        )
+        .expect("fixed fixture setup completion reaches its next stage");
         Ok(())
     }
 
@@ -265,7 +286,7 @@ impl Driver {
                 RunEffect::ResetWorker(reset) => Some(reset.clone()),
                 _ => None,
             })
-            .ok_or_else(|| "missing restoration effect".to_owned())?;
+            .expect("successful baseline completion emitted restoration");
         self.apply_setup_completion(
             RunEvent::WorkerReset(WorkerReset {
                 id: reset.id,
@@ -287,7 +308,8 @@ impl Driver {
         self.apply_setup_completion(
             RunEvent::BaselineFinished(successful_process(baseline_id)),
             baseline_id,
-        )?;
+        )
+        .expect("fixed fixture setup completion reaches its next stage");
 
         let baseline_output_id = self
             .outstanding
@@ -296,13 +318,14 @@ impl Driver {
                 RunEffect::EmitOutput(value) => Some(value.id),
                 _ => None,
             })
-            .ok_or_else(|| "setup did not emit the baseline result".to_owned())?;
+            .expect("setup must emit the baseline result");
         self.apply_setup_completion(
             RunEvent::OutputEmitted(OutputEmitted {
                 id: baseline_output_id,
             }),
             baseline_output_id,
-        )?;
+        )
+        .expect("fixed fixture setup completion reaches its next stage");
         Ok(())
     }
 
@@ -326,16 +349,19 @@ impl Driver {
                 diagnostics: Vec::new(),
             }),
             analysis_id,
-        )?;
+        )
+        .expect("fixed fixture setup completion reaches its next stage");
 
-        let (verify_id, checkpoint) = pending_verification(&self.outstanding)?;
+        let (verify_id, checkpoint) = pending_verification(&self.outstanding)
+            .expect("fixed setup emits original verification");
         self.apply_setup_completion(
             RunEvent::OriginalsVerified(OriginalsVerified {
                 id: verify_id,
                 checkpoint,
             }),
             verify_id,
-        )?;
+        )
+        .expect("fixed fixture setup completion reaches its next stage");
         Ok(())
     }
 
@@ -456,7 +482,7 @@ impl Driver {
                         state,
                         RunEvent::OutputEmitted(OutputEmitted { id: run_started_id }),
                     )
-                    .map_err(|error| format!("cannot acknowledge RunStarted: {error}"))?;
+                    .expect("model abstraction acknowledges emitted RunStarted");
                     state = next;
                     visible = after_started.iter().filter_map(normalize_effect).collect();
                     self.outstanding
@@ -466,12 +492,13 @@ impl Driver {
                 // The model abstracts the integrity checkpoint preceding cleanup.
                 // Complete it explicitly: stopping after baseline still verifies originals.
                 if completion_id.is_none() && pre_phase == "restoring" {
-                    let (id, checkpoint) = pending_verification(&self.outstanding)?;
+                    let (id, checkpoint) = pending_verification(&self.outstanding)
+                        .expect("stopping from restoration emits integrity verification");
                     let (next, mut after_integrity) = transition(
                         state,
                         RunEvent::OriginalsVerified(OriginalsVerified { id, checkpoint }),
                     )
-                    .map_err(|error| format!("cannot verify originals before cleanup: {error}"))?;
+                    .expect("model abstraction acknowledges emitted integrity verification");
                     state = next;
                     visible = after_integrity
                         .iter()
@@ -515,11 +542,10 @@ impl Driver {
             RunEvent::OutputEmitted(OutputEmitted { id: final_id }),
         )
         .map_err(|error| format!("cannot acknowledge RunFinished: {error}"))?;
-        if !emitted.is_empty() {
-            return Err(format!(
-                "RunFinished acknowledgement emitted unexpected effects: {emitted:?}"
-            ));
-        }
+        assert!(
+            emitted.is_empty(),
+            "RunFinished acknowledgement emitted unexpected effects: {emitted:?}"
+        );
         self.outstanding.retain(|effect| effect.id() != final_id);
         self.state = Some(state);
         Ok(())

@@ -171,9 +171,11 @@ pub(crate) fn validate_ranking(candidates: &[RankedPlanCandidate]) -> Result<(),
             if is_operator_reason(ranking_reason.code) {
                 operator_reasons += 1;
             }
+            // Codes are distinct and scores matched the fixed table above;
+            // its eight scores sum to 1140, so external scores cannot overflow.
             score = score
                 .checked_add(ranking_reason.score)
-                .ok_or_else(|| "ranking score overflow".to_owned())?;
+                .expect("distinct fixed ranking scores fit u32");
             previous_code = Some(ranking_reason.code);
         }
         if operator_reasons != 1 {

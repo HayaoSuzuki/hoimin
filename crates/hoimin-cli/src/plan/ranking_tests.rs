@@ -296,7 +296,9 @@ fn assert_explicit_symbol_reason_once(entry: &RankedPlanCandidate) {
 fn ranking_keeps_explicit_symbol_paths_exact(
     #[case] selected_path: &str,
     #[case] expected_score: u32,
-    #[case] expected_reasons: Vec<RankingReason>,
+    #[case]
+    #[by_ref]
+    expected_reasons: &[RankingReason],
 ) {
     let selection = Selection::default();
     let targets = [TargetSlice {
@@ -906,6 +908,7 @@ fn ranking_breaks_score_ties_by_stable_candidate_fields() {
 #[case::wrong_score(increment_score, "score")]
 #[case::wrong_reason_score(increment_reason_score, "reason")]
 #[case::duplicate_reason(duplicate_reason, "reason")]
+#[case::reordered_rows(reverse_rows_preserving_ranks, "deterministic order")]
 fn ranking_validation_rejects_tampered_entries(
     #[case] mutate: fn(&mut [RankedPlanCandidate]),
     #[case] expected: &str,
@@ -953,6 +956,51 @@ fn duplicate_rank(entries: &mut [RankedPlanCandidate]) {
 
 fn increment_score(entries: &mut [RankedPlanCandidate]) {
     entries[0].score += 1;
+}
+
+fn reverse_rows_preserving_ranks(entries: &mut [RankedPlanCandidate]) {
+    entries.swap(0, 1);
+    entries[0].rank = 1;
+    entries[1].rank = 2;
+}
+
+#[test]
+fn ranking_validation_rejects_multiple_operator_reasons_after_bounded_score_accumulation() {
+    let ranked = RankedPlanCandidate {
+        candidate: candidate("candidate", "src/calc.py", 1, 0, "binary_add_sub", None),
+        rank: 1,
+        score: 1140,
+        ranking_reasons: vec![
+            reason(RankingReasonCode::ExplicitLine, 300),
+            reason(RankingReasonCode::ExplicitSymbol, 250),
+            reason(RankingReasonCode::ChangedLine, 200),
+            reason(RankingReasonCode::HighValueControl, 100),
+            reason(RankingReasonCode::ExceptionHandling, 90),
+            reason(RankingReasonCode::Behavioral, 80),
+            reason(RankingReasonCode::Arithmetic, 70),
+            reason(RankingReasonCode::TypeAnnotation, 50),
+        ],
+    };
+
+    assert_eq!(
+        validate_ranking(&[ranked]),
+        Err("candidate ranking must contain exactly one operator reason, got 5".to_owned())
+    );
+}
+
+#[test]
+fn ranking_validation_rejects_an_unbounded_external_reason_score_before_accumulation() {
+    let ranked = RankedPlanCandidate {
+        candidate: candidate("candidate", "src/calc.py", 1, 0, "binary_add_sub", None),
+        rank: 1,
+        score: u32::MAX,
+        ranking_reasons: vec![reason(RankingReasonCode::Arithmetic, u32::MAX)],
+    };
+
+    assert_eq!(
+        validate_ranking(&[ranked]),
+        Err("ranking reason Arithmetic has score 4294967295, expected 70".to_owned())
+    );
 }
 
 fn increment_reason_score(entries: &mut [RankedPlanCandidate]) {

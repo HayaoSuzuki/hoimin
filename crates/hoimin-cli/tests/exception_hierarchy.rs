@@ -820,8 +820,8 @@ async fn hierarchy_review_bounds_import_alias_correlations() {
 #[rstest::rstest]
 #[case::service_to_owned_1(0)]
 #[case::service_replace_raise_child_raise_root_2(1)]
-#[tokio::test]
-async fn hierarchy_assignment_alias_matches_runtime_rebinding(#[case] scenario_index: usize) {
+#[test]
+fn hierarchy_assignment_alias_matches_runtime_rebinding(#[case] scenario_index: usize) {
     let dir = fixture();
     let service = "from errors import Root, Child\ndef f():\n    raise Child('x')\n";
     std::fs::write(dir.path().join("service.py"), service).unwrap();
