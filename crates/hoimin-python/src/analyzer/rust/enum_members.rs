@@ -567,13 +567,12 @@ mod coverage_tests {
             .as_expr_stmt()
             .unwrap()
             .value;
-        assert_eq!(
-            index
-                .destinations(expression, 100, &|| false)
-                .map(|(_, names)| names)
-                .as_deref(),
-            expected
-        );
+
+        let actual = index
+            .destinations(expression, 100, &|| false)
+            .map(|(_, names)| names);
+
+        assert_eq!(actual.as_deref(), expected);
     }
 
     #[rstest::rstest]
@@ -597,12 +596,12 @@ mod coverage_tests {
             .as_expr_stmt()
             .unwrap()
             .value;
-        assert_eq!(
-            run_destinations(&index, expression, limit, &|| false)
-                .unwrap()
-                .1,
-            expected
-        );
+
+        let actual = run_destinations(&index, expression, limit, &|| false)
+            .unwrap()
+            .1;
+
+        assert_eq!(actual, expected);
     }
 
     #[test]
@@ -614,10 +613,13 @@ mod coverage_tests {
         let (imports, _) = module_bindings(parsed.syntax(), &no_cancel).unwrap();
         let class = parsed.syntax().body[1].as_class_def_stmt().unwrap();
         let cancelled: &dyn Fn() -> bool = &|| true;
-        assert!(matches!(
+
+        let actual = matches!(
             index.members(class, "Enum", &imports, &cancelled),
             Err("analysis cancelled")
-        ));
+        );
+
+        assert!(actual);
     }
     #[rstest::rstest]
     #[case("import enum", "class Choice(enum.Enum):", " FIRST = enum.auto()\n SECOND = enum.auto()", Some(&["SECOND"][..]))]
@@ -805,12 +807,10 @@ mod coverage_tests {
             .as_expr_stmt()
             .unwrap()
             .value;
-        assert_eq!(
-            run_destinations(&index, expression, 100, &|| false)
-                .map(|(_, names)| names)
-                .as_deref(),
-            expected
-        );
+
+        let actual = run_destinations(&index, expression, 100, &|| false).map(|(_, names)| names);
+
+        assert_eq!(actual.as_deref(), expected);
     }
 
     #[rstest::rstest]
@@ -831,14 +831,17 @@ mod coverage_tests {
             false
         })
         .unwrap();
-        assert!(complete_polls.get() > 0);
+        let baseline_polled = complete_polls.get() > 0;
         let polls = Cell::new(0);
         let result = run_build(parsed.syntax(), source, &|| {
             let current = polls.get();
             polls.set(current + 1);
             current >= checkpoint
         });
-        assert_eq!(result.is_err(), checkpoint < complete_polls.get());
+        let build_failed = result.is_err();
+
+        assert!(baseline_polled);
+        assert_eq!(build_failed, checkpoint < complete_polls.get());
     }
     #[rstest::rstest]
     #[case("value", None)]
@@ -863,12 +866,10 @@ mod coverage_tests {
             .as_expr_stmt()
             .unwrap()
             .value;
-        assert_eq!(
-            run_destinations(&index, expression, 100, &|| false)
-                .map(|(_, names)| names)
-                .as_deref(),
-            expected
-        );
+
+        let actual = run_destinations(&index, expression, 100, &|| false).map(|(_, names)| names);
+
+        assert_eq!(actual.as_deref(), expected);
     }
 
     #[test]
@@ -884,7 +885,10 @@ mod coverage_tests {
             .as_assign_stmt()
             .unwrap()
             .targets[0];
-        assert_eq!(run_destinations(&index, target, 100, &|| false), None);
+
+        let actual = run_destinations(&index, target, 100, &|| false);
+
+        assert_eq!(actual, None);
     }
 
     #[test]
@@ -892,7 +896,7 @@ mod coverage_tests {
         let source = "from enum import Enum\nclass Choice(Enum):\n FIRST = 1\n SECOND = 2\n def method(self): return Choice.FIRST\n";
         let parsed = ruff_python_parser::parse_module(source).unwrap();
         let index = run_build(parsed.syntax(), source, &|| false).unwrap();
-        assert_eq!(index.definitions.len(), 1);
+        let enum_definition_count = index.definitions.len();
         let class = parsed.syntax().body[1].as_class_def_stmt().unwrap();
         let method = class.body[2].as_function_def_stmt().unwrap();
         let expression = method.body[0]
@@ -901,7 +905,10 @@ mod coverage_tests {
             .value
             .as_ref()
             .unwrap();
-        assert_eq!(run_destinations(&index, expression, 100, &|| false), None);
+        let destinations = run_destinations(&index, expression, 100, &|| false);
+
+        assert_eq!(enum_definition_count, 1);
+        assert_eq!(destinations, None);
     }
 
     #[test]
@@ -909,7 +916,7 @@ mod coverage_tests {
         let source = "from enum import Enum\nclass Choice(Enum):\n FIRST = 1\n SECOND = 2\ndef function(Choice): return Choice.FIRST\n";
         let parsed = ruff_python_parser::parse_module(source).unwrap();
         let index = run_build(parsed.syntax(), source, &|| false).unwrap();
-        assert_eq!(index.definitions.len(), 1);
+        let enum_definition_count = index.definitions.len();
         let function = parsed.syntax().body[2].as_function_def_stmt().unwrap();
         let expression = function.body[0]
             .as_return_stmt()
@@ -917,7 +924,10 @@ mod coverage_tests {
             .value
             .as_ref()
             .unwrap();
-        assert_eq!(run_destinations(&index, expression, 100, &|| false), None);
+        let destinations = run_destinations(&index, expression, 100, &|| false);
+
+        assert_eq!(enum_definition_count, 1);
+        assert_eq!(destinations, None);
     }
 
     #[rstest::rstest]
@@ -941,15 +951,14 @@ mod coverage_tests {
             .unwrap()
             .value;
         let polls = Cell::new(0);
-        assert_eq!(
-            run_destinations(&index, expression, 100, &|| {
-                let current = polls.get();
-                polls.set(current + 1);
-                current >= checkpoint
-            })
-            .map(|(_, names)| names)
-            .as_deref(),
-            expected
-        );
+
+        let actual = run_destinations(&index, expression, 100, &|| {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= checkpoint
+        })
+        .map(|(_, names)| names);
+
+        assert_eq!(actual.as_deref(), expected);
     }
 }

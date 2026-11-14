@@ -67,15 +67,21 @@ fn public_error_codes_remain_specific_to_each_failure(
     #[case] error: &MachineError,
     #[case] expected: &str,
 ) {
-    assert_eq!(error.code(), expected);
+    let actual = error.code();
+
+    assert_eq!(actual, expected);
 }
 
 #[test]
 fn allocated_but_unregistered_completion_is_rejected() {
     let mut state = state();
+
     let id = state.allocate_id().unwrap();
     let error = state.accept_completion(&RunEvent::OutputEmitted(crate::OutputEmitted { id }));
-    assert!(matches!(error, Err(MachineError::EffectNotPending(found)) if found == id));
+
+    let actual = matches!(error, Err(MachineError::EffectNotPending(found)) if found == id);
+
+    assert!(actual);
 }
 
 #[test]
@@ -83,10 +89,12 @@ fn duplicate_registration_keeps_original_pending_effect() {
     let (mut state, effects) =
         transition(state(), RunEvent::StartRequested(StartRequested)).unwrap();
     let original = state.pending.clone();
-    assert!(matches!(
-        state.register(&effects),
-        Err(MachineError::DuplicateEffect(_))
-    ));
+
+    let registration = state.register(&effects);
+
+    let actual = matches!(registration, Err(MachineError::DuplicateEffect(_)));
+
+    assert!(actual);
     assert_eq!(state.pending, original);
 }
 
@@ -97,23 +105,30 @@ fn idle_and_resetting_workers_cannot_supply_candidates(#[case] phase: WorkerStat
     let mut state = state();
 
     state.workers.insert(0, phase);
-    assert!(matches!(
-        state.candidate(0),
-        Err(MachineError::WrongPhase { .. })
-    ));
-    assert!(matches!(
-        state.take_candidate(0),
-        Err(MachineError::WrongPhase { .. })
-    ));
-    assert!(state.workers[&0].candidate().is_none());
+
+    let candidate_error = state.candidate(0).unwrap_err();
+
+    let take_error = state.take_candidate(0).unwrap_err();
+
+    let actual = matches!(candidate_error, MachineError::WrongPhase { .. });
+    let actual_2 = matches!(take_error, MachineError::WrongPhase { .. });
+    let actual_3 = state.workers[&0].candidate().is_none();
+
+    assert!(actual);
+    assert!(actual_2);
+    assert!(actual_3);
 }
 
 #[test]
 fn stopping_after_report_start_without_copy_goes_directly_to_cleanup() {
     let mut state = state();
     state.flags.report.report_started = true;
+
     let effects = state.begin_stop().unwrap();
-    assert!(matches!(effects.as_slice(), [RunEffect::Cleanup(_)]));
+
+    let actual = matches!(effects.as_slice(), [RunEffect::Cleanup(_)]);
+
+    assert!(actual);
     assert!(state.flags.scheduling.stop_requested);
 }
 
@@ -181,10 +196,13 @@ fn completion_cannot_be_transferred_to_another_worker(
     #[case] event: RunEvent,
 ) {
     let (state, _) = pending_state(phase, kind);
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, event),
         Err(MachineError::UnknownWorker(1))
-    ));
+    );
+
+    assert!(actual);
 }
 
 fn process_finished(id: EffectId, worker: Option<u32>) -> ProcessFinished {
@@ -220,13 +238,16 @@ fn process_completion_worker_must_match_its_request(
     #[case] wrap: fn(ProcessFinished) -> RunEvent,
 ) {
     let (state, id) = pending_state(phase, kind);
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, wrap(process_finished(id, Some(1)))),
         Err(MachineError::ProcessWorkerMismatch {
             expected: Some(0),
             received: Some(1)
         })
-    ));
+    );
+
+    assert!(actual);
 }
 
 fn candidate() -> MutationCandidate {
@@ -263,9 +284,15 @@ fn persistence_and_output_keep_candidate_ownership_until_acknowledgement(
         diagnostics: Vec::new(),
     };
     state.workers.insert(0, own(result));
-    assert_eq!(state.candidate(0).unwrap().id, "m1");
-    assert_eq!(state.take_candidate(0).unwrap().id, "m1");
-    assert!(matches!(state.workers[&0], WorkerState::Idle));
+
+    let owned_candidate_id = state.candidate(0).unwrap().id.clone();
+
+    let released_candidate_id = state.take_candidate(0).unwrap().id;
+    let worker_idle_after_release = matches!(state.workers[&0], WorkerState::Idle);
+
+    assert_eq!(owned_candidate_id, "m1");
+    assert_eq!(released_candidate_id, "m1");
+    assert!(worker_idle_after_release);
 }
 
 #[test]
@@ -279,13 +306,16 @@ fn preflight_grant_must_match_configured_worker_count() {
         fingerprint: None,
     };
     state.copy_grant = Some(reserve_workspace_copy(&mut state.budgets, &preflight).unwrap());
-    assert!(matches!(
+
+    let actual = matches!(
         state.create_worker_effects(),
         Err(MachineError::WorkerCountMismatch {
             configured: 1,
             preflight: 2
         })
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -304,7 +334,10 @@ fn selected_execution_requires_a_candidate_spool(#[case] truncated: bool) {
         truncated,
         diagnostics: Vec::new(),
     });
-    assert!(matches!(result, Err(MachineError::MissingCandidateSpool)));
+
+    let actual = matches!(result, Err(MachineError::MissingCandidateSpool));
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -326,6 +359,7 @@ fn persistence_acknowledgement_must_match_owned_result_identity(
             diagnostics: Vec::new(),
         }),
     );
+
     let result = transition(
         state,
         RunEvent::ResultPersisted(crate::ResultPersisted {
@@ -335,14 +369,18 @@ fn persistence_acknowledgement_must_match_owned_result_identity(
             mutant_id: mutant_id.into(),
         }),
     );
-    assert!(matches!(result,
-        Err(MachineError::SessionIdentityMismatch { field, .. }) if field == expected_field));
+
+    let actual = matches!(result,
+        Err(MachineError::SessionIdentityMismatch { field, .. }) if field == expected_field);
+
+    assert!(actual);
 }
 
 #[test]
 fn persistence_acknowledgement_rejects_a_worker_without_owned_result() {
     let (mut state, id) = pending_state(RunPhase::Mutants, CompletionKind::ResultPersisted);
     state.workers.insert(0, WorkerState::Idle);
+
     let result = transition(
         state,
         RunEvent::ResultPersisted(crate::ResultPersisted {
@@ -352,12 +390,15 @@ fn persistence_acknowledgement_rejects_a_worker_without_owned_result() {
             mutant_id: "m1".into(),
         }),
     );
-    assert!(matches!(
+
+    let actual = matches!(
         result,
         Err(MachineError::WrongPhase {
             phase: RunPhase::Mutants
         })
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -369,6 +410,7 @@ fn synthetic_output_acknowledgements_require_the_owned_synthetic_phase(
     let mut state = state();
     state.phase = RunPhase::Mutants;
     state.workers.insert(0, WorkerState::Idle);
+
     let id = state.allocate_id().unwrap();
     state.register_output(
         EmitOutput {
@@ -379,12 +421,15 @@ fn synthetic_output_acknowledgements_require_the_owned_synthetic_phase(
         },
         continuation,
     );
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, RunEvent::OutputEmitted(crate::OutputEmitted { id })),
         Err(MachineError::WrongPhase {
             phase: RunPhase::Mutants
         })
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[test]
@@ -399,17 +444,27 @@ fn ordered_collection_waits_while_a_candidate_is_owned() {
     state
         .workers
         .insert(0, WorkerState::Reading(CandidateReadTarget::Next));
-    assert_eq!(state.schedule_read_or_finalize().unwrap(), []);
-    assert!(matches!(
+
+    let actual = state.schedule_read_or_finalize().unwrap();
+    let actual_2 = matches!(
         state.workers[&0],
         WorkerState::Reading(CandidateReadTarget::Next)
-    ));
+    );
+
+    assert_eq!(actual, []);
+    assert!(actual_2);
 }
 
-#[test]
-fn process_elapsed_milliseconds_saturate_without_overflow() {
-    assert_eq!(elapsed_millis(std::time::Duration::MAX), u64::MAX);
-    assert_eq!(elapsed_millis(std::time::Duration::from_nanos(1)), 0);
+#[rstest::rstest]
+#[case::saturated(std::time::Duration::MAX, u64::MAX)]
+#[case::submillisecond(std::time::Duration::from_nanos(1), 0)]
+fn process_elapsed_milliseconds_saturate_without_overflow(
+    #[case] elapsed: std::time::Duration,
+    #[case] expected: u64,
+) {
+    let actual = elapsed_millis(elapsed);
+
+    assert_eq!(actual, expected);
 }
 
 #[test]
@@ -418,7 +473,10 @@ fn output_effect_kind_is_an_output_acknowledgement() {
         id: EffectId(1),
         event: OutputEvent::Diagnostic(Diagnostic::new("coverage", 1, "warning", "test", "test")),
     });
-    assert_eq!(expected_completion(&effect), CompletionKind::OutputEmitted);
+
+    let actual = expected_completion(&effect);
+
+    assert_eq!(actual, CompletionKind::OutputEmitted);
 }
 
 #[cfg(feature = "contracts")]
@@ -501,22 +559,25 @@ fn contract_rejects_mutation_dispatch_from_a_fatal_state() {
 fn effect_id_exhaustion_does_not_wrap_or_advance_the_allocator() {
     let mut state = state();
     state.next_effect_id = u64::MAX;
-    assert!(matches!(
-        state.allocate_id(),
-        Err(MachineError::EffectIdOverflow)
-    ));
+
+    let actual = matches!(state.allocate_id(), Err(MachineError::EffectIdOverflow));
+
+    assert!(actual);
     assert_eq!(state.next_effect_id, u64::MAX);
 }
 
 #[test]
 fn worker_creation_requires_a_preflight_grant() {
     let mut state = state();
-    assert!(matches!(
+
+    let actual = matches!(
         state.create_worker_effects(),
         Err(MachineError::WrongPhase {
             phase: RunPhase::Validate
         })
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -532,7 +593,10 @@ fn effect_builders_propagate_identifier_exhaustion(
 ) {
     let mut state = state();
     state.next_effect_id = u64::MAX;
-    assert_eq!(build(&mut state), Err(MachineError::EffectIdOverflow));
+
+    let actual = build(&mut state);
+
+    assert_eq!(actual, Err(MachineError::EffectIdOverflow));
     assert_eq!(state.next_effect_id, u64::MAX);
 }
 
@@ -546,7 +610,10 @@ fn candidate_effect_builders_propagate_identifier_exhaustion(
     let mut state = state();
     state.workers.insert(0, WorkerState::Ready(candidate()));
     state.next_effect_id = u64::MAX;
-    assert_eq!(build(&mut state, 0), Err(MachineError::EffectIdOverflow));
+
+    let actual = build(&mut state, 0);
+
+    assert_eq!(actual, Err(MachineError::EffectIdOverflow));
     assert_eq!(state.next_effect_id, u64::MAX);
 }
 
@@ -558,8 +625,11 @@ fn candidate_effect_builders_require_an_owned_candidate(
     #[case] build: fn(&mut RunState, u32) -> Result<Vec<RunEffect>, MachineError>,
 ) {
     let mut state = state();
+
+    let actual = build(&mut state, 1);
+
     assert_eq!(
-        build(&mut state, 1),
+        actual,
         Err(MachineError::WrongPhase {
             phase: RunPhase::Validate
         })
@@ -569,8 +639,11 @@ fn candidate_effect_builders_require_an_owned_candidate(
 #[test]
 fn analysis_diagnostic_requires_an_owned_analysis() {
     let mut state = state();
+
+    let actual = state.analysis_diagnostic_effects();
+
     assert_eq!(
-        state.analysis_diagnostic_effects(),
+        actual,
         Err(MachineError::WrongPhase {
             phase: RunPhase::Validate
         })
@@ -606,20 +679,26 @@ fn completion_propagates_exhaustion_from_its_next_effect(
         records: 1,
     });
     state.next_effect_id = u64::MAX;
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, event(id)),
         Err(MachineError::EffectIdOverflow)
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[test]
 fn start_request_propagates_identifier_exhaustion() {
     let mut state = state();
     state.next_effect_id = u64::MAX;
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, RunEvent::StartRequested(StartRequested)),
         Err(MachineError::EffectIdOverflow)
-    ));
+    );
+
+    assert!(actual);
 }
 
 fn exhausted_effect_fixture() -> RunState {
@@ -685,7 +764,10 @@ fn owned_effect_builders_propagate_identifier_exhaustion(
     #[case] build: fn(&mut RunState) -> Result<Vec<RunEffect>, MachineError>,
 ) {
     let mut state = exhausted_effect_fixture();
-    assert_eq!(build(&mut state), Err(MachineError::EffectIdOverflow));
+
+    let actual = build(&mut state);
+
+    assert_eq!(actual, Err(MachineError::EffectIdOverflow));
 }
 
 #[rstest::rstest]
@@ -698,10 +780,13 @@ fn worker_completion_rejects_missing_worker_state(
     #[case] event: fn(EffectId) -> RunEvent,
 ) {
     let (state, id) = pending_state(phase, kind);
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, event(id)),
         Err(MachineError::UnknownWorker(0))
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -711,6 +796,7 @@ fn worker_completion_rejects_missing_worker_state(
 fn output_acknowledgement_rejects_missing_worker_state(#[case] continuation: OutputContinuation) {
     let mut state = state();
     state.phase = RunPhase::Mutants;
+
     let id = state.allocate_id().unwrap();
     state.register_output(
         EmitOutput {
@@ -721,10 +807,13 @@ fn output_acknowledgement_rejects_missing_worker_state(#[case] continuation: Out
         },
         continuation,
     );
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, RunEvent::OutputEmitted(crate::OutputEmitted { id })),
         Err(MachineError::UnknownWorker(0))
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -739,13 +828,17 @@ fn ownership_transfer_still_rejects_a_missing_candidate_before_mutating_state(
 ) {
     let mut state = state();
     state.identity = RunIdentity::Session("coverage".into());
+
+    let actual = build(&mut state);
+    let actual_2 = state.workers.is_empty();
+
     assert_eq!(
-        build(&mut state),
+        actual,
         Err(MachineError::WrongPhase {
             phase: RunPhase::Validate
         })
     );
-    assert!(state.workers.is_empty());
+    assert!(actual_2);
     assert_eq!(state.next_effect_id, 1);
 }
 
@@ -763,6 +856,7 @@ fn output_acknowledgement_propagates_next_effect_identifier_exhaustion(
     let mut state = exhausted_effect_fixture();
     state.phase = RunPhase::Mutants;
     state.next_effect_id = 1;
+
     let id = state.allocate_id().unwrap();
     state.register_output(
         EmitOutput {
@@ -774,10 +868,13 @@ fn output_acknowledgement_propagates_next_effect_identifier_exhaustion(
         continuation,
     );
     state.next_effect_id = u64::MAX;
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, RunEvent::OutputEmitted(crate::OutputEmitted { id })),
         Err(MachineError::EffectIdOverflow)
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -791,10 +888,13 @@ fn baseline_completion_propagates_exhaustion_after_emitting_baseline_output(
     state.next_effect_id = u64::MAX - 1;
     let mut finished = process_finished(id, Some(0));
     finished.termination = termination;
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, RunEvent::BaselineFinished(finished)),
         Err(MachineError::EffectIdOverflow)
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -808,8 +908,12 @@ fn ownership_transfer_keeps_the_candidate_when_identifier_allocation_fails(
     #[case] build: fn(&mut RunState) -> Result<Vec<RunEffect>, MachineError>,
 ) {
     let mut state = exhausted_effect_fixture();
-    assert_eq!(build(&mut state), Err(MachineError::EffectIdOverflow));
-    assert_eq!(state.candidate(0).unwrap(), &candidate());
+
+    let actual = build(&mut state);
+    let actual_2 = state.candidate(0).unwrap();
+
+    assert_eq!(actual, Err(MachineError::EffectIdOverflow));
+    assert_eq!(actual_2, &candidate());
     assert_eq!(state.next_effect_id, u64::MAX);
 }
 
@@ -817,15 +921,21 @@ fn ownership_transfer_keeps_the_candidate_when_identifier_allocation_fails(
 fn failed_report_delivery_finishes_without_requesting_another_output() {
     let mut state = state();
     state.flags.report.delivery = ReportDelivery::Failed;
-    assert_eq!(state.final_report_effects().unwrap(), []);
+
+    let actual = state.final_report_effects().unwrap();
+
+    assert_eq!(actual, []);
     assert_eq!(state.phase, RunPhase::Finished);
 }
 
 #[test]
 fn candidate_read_requires_an_owned_spool() {
     let mut state = state();
+
+    let actual = state.read_candidate(0, CandidateReadTarget::Next);
+
     assert_eq!(
-        state.read_candidate(0, CandidateReadTarget::Next),
+        actual,
         Err(MachineError::WrongPhase {
             phase: RunPhase::Validate
         })
@@ -839,27 +949,30 @@ fn candidate_read_rejects_unknown_worker_before_allocating_an_effect() {
         token: "candidates".into(),
         records: 1,
     });
-    assert_eq!(
-        state.read_candidate(0, CandidateReadTarget::Next),
-        Err(MachineError::UnknownWorker(0))
-    );
+
+    let actual = state.read_candidate(0, CandidateReadTarget::Next);
+
+    assert_eq!(actual, Err(MachineError::UnknownWorker(0)));
     assert_eq!(state.next_effect_id, 1);
 }
 
 #[test]
 fn finished_output_requires_a_live_worker_entry() {
     let mut state = state();
-    assert_eq!(
-        state.finished_output(0, result_fixture()),
-        Err(MachineError::UnknownWorker(0))
-    );
+
+    let actual = state.finished_output(0, result_fixture());
+
+    assert_eq!(actual, Err(MachineError::UnknownWorker(0)));
 }
 
 #[test]
 fn stopped_candidate_drain_requires_an_owned_worker() {
     let mut state = state();
+
+    let actual = state.next_stopped_candidate_effects();
+
     assert_eq!(
-        state.next_stopped_candidate_effects(),
+        actual,
         Err(MachineError::WrongPhase {
             phase: RunPhase::Validate
         })
@@ -877,33 +990,42 @@ fn transition_propagates_an_effect_identifier_collision() {
             cleanup_reservations: None,
         },
     );
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, RunEvent::StartRequested(StartRequested)),
         Err(MachineError::DuplicateEffect(EffectId(1)))
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[test]
 fn output_acknowledgement_requires_output_continuation_metadata() {
     let (state, id) = pending_state(RunPhase::Finalize, CompletionKind::OutputEmitted);
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, RunEvent::OutputEmitted(crate::OutputEmitted { id })),
         Err(MachineError::WrongPhase {
             phase: RunPhase::Finalize
         })
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[test]
 fn mutant_completion_requires_a_worker_even_when_the_pending_metadata_omits_one() {
     let (mut state, id) = pending_state(RunPhase::Mutants, CompletionKind::MutantFinished);
     state.pending.get_mut(&id).unwrap().worker = None;
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, RunEvent::MutantFinished(process_finished(id, None))),
         Err(MachineError::WrongPhase {
             phase: RunPhase::Mutants
         })
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[test]
@@ -912,7 +1034,8 @@ fn budget_observation_requires_verification_selection_metadata() {
         RunPhase::BudgetCheck,
         CompletionKind::RemainingBudgetObserved,
     );
-    assert!(matches!(
+
+    let actual = matches!(
         transition(
             state,
             RunEvent::RemainingBudgetObserved(crate::RemainingBudgetObserved {
@@ -923,7 +1046,9 @@ fn budget_observation_requires_verification_selection_metadata() {
         Err(MachineError::WrongPhase {
             phase: RunPhase::BudgetCheck
         })
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -942,10 +1067,13 @@ fn preflight_session_dispatch_propagates_identifier_exhaustion(#[case] mode: cra
         aggregate_logical_bytes: 1,
         fingerprint: Some(crate::RunFingerprint::from_bytes([0; 32])),
     });
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, event),
         Err(MachineError::EffectIdOverflow)
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[test]
@@ -958,9 +1086,10 @@ fn preflight_rejects_inconsistent_aggregate_copy_evidence() {
         aggregate_logical_bytes: 2,
         fingerprint: None,
     });
-    assert!(
-        matches!(transition(state, event), Err(MachineError::Budget(message)) if message.contains("aggregate mismatch"))
-    );
+
+    let actual = matches!(transition(state, event), Err(MachineError::Budget(message)) if message.contains("aggregate mismatch"));
+
+    assert!(actual);
 }
 
 #[test]
@@ -971,9 +1100,10 @@ fn cleanup_reports_a_reservation_missing_from_the_ledger() {
         id,
         released_reservations: vec![crate::ReservationId(99)],
     });
-    assert!(
-        matches!(transition(state, event), Err(MachineError::Budget(message)) if message.contains("unknown"))
-    );
+
+    let actual = matches!(transition(state, event), Err(MachineError::Budget(message)) if message.contains("unknown"));
+
+    assert!(actual);
 }
 
 #[test]
@@ -985,10 +1115,13 @@ fn persistence_acknowledgement_requires_an_existing_worker() {
         run_id: "coverage".into(),
         mutant_id: "m1".into(),
     });
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, event),
         Err(MachineError::UnknownWorker(0))
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[test]
@@ -1002,12 +1135,15 @@ fn reused_result_requires_a_candidate_owned_by_its_worker() {
             status: crate::MutationStatus::Killed,
         }),
     });
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, event),
         Err(MachineError::WrongPhase {
             phase: RunPhase::Mutants
         })
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -1015,13 +1151,16 @@ fn reused_result_requires_a_candidate_owned_by_its_worker() {
 #[case(RunPhase::BaselineRestoration)]
 fn worker_reset_completion_cannot_be_transferred_to_another_worker(#[case] phase: RunPhase) {
     let (state, id) = pending_state(phase, CompletionKind::WorkerReset);
-    assert!(matches!(
+
+    let actual = matches!(
         transition(
             state,
             RunEvent::WorkerReset(crate::WorkerReset { id, worker: 1 })
         ),
         Err(MachineError::UnknownWorker(1))
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -1031,10 +1170,13 @@ fn worker_reset_completion_cannot_be_transferred_to_another_worker(#[case] phase
 fn stop_events_propagate_identifier_exhaustion(#[case] event: RunEvent) {
     let mut state = state();
     state.next_effect_id = u64::MAX;
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, event),
         Err(MachineError::EffectIdOverflow)
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -1051,25 +1193,31 @@ fn effect_failure_propagates_identifier_exhaustion_from_its_recovery_effect(
     state.workers.insert(0, WorkerState::Idle);
     state.flags.report.report_started = report_started;
     state.next_effect_id = u64::MAX;
-    assert!(matches!(
+
+    let actual = matches!(
         transition(
             state,
             RunEvent::EffectFailed(EffectFailed::other(id, "test.io", "denied"))
         ),
         Err(MachineError::EffectIdOverflow)
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[test]
 fn failed_candidate_read_requires_its_worker_entry_for_recovery() {
     let (state, id) = pending_state(RunPhase::Mutants, CompletionKind::CandidateLoaded);
-    assert!(matches!(
+
+    let actual = matches!(
         transition(
             state,
             RunEvent::EffectFailed(EffectFailed::other(id, "test.io", "denied"))
         ),
         Err(MachineError::UnknownWorker(0))
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -1083,6 +1231,7 @@ fn output_failure_propagates_identifier_exhaustion_from_its_recovery_effect(
     let mut state = state();
     state.phase = RunPhase::Preflight;
     state.flags.cleanup.cleanup_done = cleanup_done;
+
     let id = state.allocate_id().unwrap();
     state.register_output(
         EmitOutput {
@@ -1094,13 +1243,16 @@ fn output_failure_propagates_identifier_exhaustion_from_its_recovery_effect(
         continuation,
     );
     state.next_effect_id = u64::MAX;
-    assert!(matches!(
+
+    let actual = matches!(
         transition(
             state,
             RunEvent::EffectFailed(EffectFailed::other(id, "test.io", "denied"))
         ),
         Err(MachineError::EffectIdOverflow)
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -1124,7 +1276,8 @@ fn candidate_completion_propagates_identifier_exhaustion_for_its_dispatch_path(
     });
     configure(&mut state);
     state.next_effect_id = u64::MAX;
-    assert!(matches!(
+
+    let actual = matches!(
         transition(
             state,
             RunEvent::CandidateLoaded(crate::CandidateLoaded {
@@ -1134,7 +1287,9 @@ fn candidate_completion_propagates_identifier_exhaustion_for_its_dispatch_path(
             })
         ),
         Err(MachineError::EffectIdOverflow)
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -1146,7 +1301,8 @@ fn stored_result_completion_propagates_identifier_exhaustion(
     let (mut state, id) = pending_state(RunPhase::Mutants, CompletionKind::StoredResultLoaded);
     state.workers.insert(0, WorkerState::Lookup(candidate()));
     state.next_effect_id = u64::MAX;
-    assert!(matches!(
+
+    let actual = matches!(
         transition(
             state,
             RunEvent::StoredResultLoaded(crate::StoredResultLoaded {
@@ -1156,7 +1312,9 @@ fn stored_result_completion_propagates_identifier_exhaustion(
             })
         ),
         Err(MachineError::EffectIdOverflow)
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -1193,6 +1351,7 @@ fn synthetic_and_stopped_output_completion_propagates_identifier_exhaustion(
         records: 1,
     });
     state.flags.scheduling.stop_requested = stop_requested;
+
     let id = state.allocate_id().unwrap();
     state.register_output(
         EmitOutput {
@@ -1204,22 +1363,28 @@ fn synthetic_and_stopped_output_completion_propagates_identifier_exhaustion(
         continuation,
     );
     state.next_effect_id = u64::MAX;
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, RunEvent::OutputEmitted(crate::OutputEmitted { id })),
         Err(MachineError::EffectIdOverflow)
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[test]
 fn baseline_completion_requires_the_created_worker_entry() {
     let (state, id) = pending_state(RunPhase::Baseline, CompletionKind::BaselineFinished);
-    assert!(matches!(
+
+    let actual = matches!(
         transition(
             state,
             RunEvent::BaselineFinished(process_finished(id, Some(0)))
         ),
         Err(MachineError::UnknownWorker(0))
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[test]
@@ -1235,10 +1400,13 @@ fn persisted_result_output_propagates_identifier_exhaustion() {
         run_id: "coverage".into(),
         mutant_id: "m1".into(),
     });
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, event),
         Err(MachineError::EffectIdOverflow)
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -1259,15 +1427,20 @@ fn effect_failure_retains_distinct_disk_evidence_without_repeating_the_primary(
         }
         .into(),
     );
+
     let (state, _) = transition(
         state,
         RunEvent::EffectFailed(EffectFailed::other(id, code, message)),
     )
     .unwrap();
     let stop = state.disk_summary.stop.as_ref().unwrap();
+
+    let actual = stop.message.as_deref();
+    let actual_2 = stop.secondary.as_slice();
+
     assert_eq!(stop.code, crate::DISK_MEASUREMENT_FAILED);
-    assert_eq!(stop.message.as_deref(), Some("primary"));
-    assert_eq!(stop.secondary.as_slice(), expected);
+    assert_eq!(actual, Some("primary"));
+    assert_eq!(actual_2, expected);
 }
 
 #[test]
@@ -1281,6 +1454,7 @@ fn repeated_effect_failure_does_not_repeat_the_secondary_disk_error() {
         }
         .into(),
     );
+
     let (state, effects) = transition(
         state,
         RunEvent::EffectFailed(EffectFailed::other(id, "test.io", "secondary")),
@@ -1292,8 +1466,11 @@ fn repeated_effect_failure_does_not_repeat_the_secondary_disk_error() {
         RunEvent::EffectFailed(EffectFailed::other(next_id, "test.io", "secondary")),
     )
     .unwrap();
+
+    let actual = state.disk_summary.stop.as_ref().unwrap().secondary.clone();
+
     assert_eq!(
-        state.disk_summary.stop.as_ref().unwrap().secondary,
+        actual,
         [crate::DiskSecondary::Error {
             code: "test.io".into(),
             message: "secondary".into()
@@ -1308,15 +1485,20 @@ fn baseline_success_emits_output_and_requires_worker_restoration() {
     state.workers.insert(0, WorkerState::Idle);
     state.flags.report.report_started = true;
     state.output_sequence = 1;
+
     let (state, effects) = transition(
         state,
         RunEvent::BaselineFinished(process_finished(id, Some(0))),
     )
     .unwrap();
+
+    let actual = matches!(state.workers[&0], WorkerState::Resetting);
+    let actual_2 = effects.iter().map(expected_completion).collect::<Vec<_>>();
+
     assert_eq!(state.phase, RunPhase::BaselineRestoration);
-    assert!(matches!(state.workers[&0], WorkerState::Resetting));
+    assert!(actual);
     assert_eq!(
-        effects.iter().map(expected_completion).collect::<Vec<_>>(),
+        actual_2,
         [CompletionKind::OutputEmitted, CompletionKind::WorkerReset]
     );
     assert_eq!(state.output_sequence, 2);
@@ -1341,6 +1523,7 @@ fn creating_one_of_two_workers_keeps_the_materialization_barrier_closed() {
     .unwrap();
     state.copy_grant = Some(grant);
     let requests = state.create_worker_effects().unwrap();
+
     state.register(&requests).unwrap();
     let (state, effects) = transition(
         state,
@@ -1351,10 +1534,14 @@ fn creating_one_of_two_workers_keeps_the_materialization_barrier_closed() {
         }),
     )
     .unwrap();
+
+    let actual = state.workers.len();
+    let actual_2 = state.is_effect_pending(requests[1].id());
+
     assert_eq!(effects, []);
     assert_eq!(state.phase, RunPhase::Copy);
-    assert_eq!(state.workers.len(), 1);
-    assert!(state.is_effect_pending(requests[1].id()));
+    assert_eq!(actual, 1);
+    assert!(actual_2);
 }
 
 #[rstest::rstest]
@@ -1376,12 +1563,18 @@ fn preflight_dispatches_the_requested_session_mode(
         aggregate_logical_bytes: 1,
         fingerprint: Some(fingerprint),
     });
+
     let (state, effects) = transition(state, event).unwrap();
-    assert_eq!(effects.len(), 1);
-    assert_eq!(expected_completion(&effects[0]), expected);
+
+    let actual = effects.len();
+    let actual_2 = expected_completion(&effects[0]);
+    let actual_3 = state.copy_grant.is_some();
+
+    assert_eq!(actual, 1);
+    assert_eq!(actual_2, expected);
     assert_eq!(state.phase, RunPhase::Preflight);
     assert_eq!(state.fingerprint, Some(fingerprint));
-    assert!(state.copy_grant.is_some());
+    assert!(actual_3);
 }
 
 fn budget_observation_fixture() -> (RunState, EffectId) {
@@ -1412,6 +1605,7 @@ fn budget_observation_fixture() -> (RunState, EffectId) {
 #[test]
 fn short_budget_observation_emits_a_warning_before_analysis() {
     let (state, id) = budget_observation_fixture();
+
     let (state, effects) = transition(
         state,
         RunEvent::RemainingBudgetObserved(crate::RemainingBudgetObserved {
@@ -1420,17 +1614,20 @@ fn short_budget_observation_emits_a_warning_before_analysis() {
         }),
     )
     .unwrap();
+
+    let actual = effects.len();
+    let actual_2 = matches!(&effects[0], RunEffect::EmitOutput(output) if matches!(&output.event, OutputEvent::Diagnostic(diagnostic) if diagnostic.code == "budget.projected_shortfall"));
+
     assert_eq!(state.phase, RunPhase::BudgetCheck);
-    assert_eq!(effects.len(), 1);
-    assert!(
-        matches!(&effects[0], RunEffect::EmitOutput(output) if matches!(&output.event, OutputEvent::Diagnostic(diagnostic) if diagnostic.code == "budget.projected_shortfall"))
-    );
+    assert_eq!(actual, 1);
+    assert!(actual_2);
     assert_eq!(state.output_sequence, 3);
 }
 
 #[test]
 fn sufficient_budget_observation_starts_analysis_without_an_output() {
     let (state, id) = budget_observation_fixture();
+
     let (state, effects) = transition(
         state,
         RunEvent::RemainingBudgetObserved(crate::RemainingBudgetObserved {
@@ -1439,11 +1636,13 @@ fn sufficient_budget_observation_starts_analysis_without_an_output() {
         }),
     )
     .unwrap();
+
+    let actual = effects.len();
+    let actual_2 = matches!(&effects[0], RunEffect::AnalyzeFile(analyze) if analyze.target.path == "src/calc.py");
+
     assert_eq!(state.phase, RunPhase::Analyze);
-    assert_eq!(effects.len(), 1);
-    assert!(
-        matches!(&effects[0], RunEffect::AnalyzeFile(analyze) if analyze.target.path == "src/calc.py")
-    );
+    assert_eq!(actual, 1);
+    assert!(actual_2);
     assert_eq!(state.output_sequence, 2);
 }
 
@@ -1460,11 +1659,16 @@ fn terminal_session_completion_finishes_without_reissuing_effects(
     state.flags.cleanup.cleanup_done = true;
     state.flags.cleanup.session_finish_attempted = true;
     state.flags.report.report_started = true;
+
     let (state, effects) = transition(state, event(id)).unwrap();
+
+    let actual = state.exit_code();
+    let actual_2 = !state.is_effect_pending(id);
+
     assert_eq!(effects, []);
     assert_eq!(state.phase, RunPhase::Finished);
-    assert_eq!(state.exit_code(), exit);
-    assert!(!state.is_effect_pending(id));
+    assert_eq!(actual, exit);
+    assert!(actual_2);
 }
 
 fn reserve_single_worker_fixture_workspace(state: &mut RunState) {
@@ -1494,9 +1698,10 @@ fn candidate_spool_eof_rejects_missing_explicit_selection() {
         crate::VerificationSelection::candidate_ids(1, 1, false).unwrap(),
     )
     .unwrap();
-    assert!(
-        matches!(transition(state, RunEvent::CandidateLoaded(crate::CandidateLoaded { id, worker: 0, candidate: None })), Err(MachineError::SelectedCandidateMissing(found)) if found == "m1")
-    );
+
+    let actual = matches!(transition(state, RunEvent::CandidateLoaded(crate::CandidateLoaded { id, worker: 0, candidate: None })), Err(MachineError::SelectedCandidateMissing(found)) if found == "m1");
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -1511,9 +1716,10 @@ fn indexed_candidate_completion_rejects_the_wrong_identity(
         0,
         WorkerState::Reading(CandidateReadTarget::Id("expected".into())),
     );
-    assert!(
-        matches!(transition(state, RunEvent::CandidateLoaded(crate::CandidateLoaded { id, worker: 0, candidate: loaded })), Err(MachineError::CandidateIdentityMismatch { worker: 0, expected, received: actual }) if expected == "expected" && actual.as_deref() == received)
-    );
+
+    let actual = matches!(transition(state, RunEvent::CandidateLoaded(crate::CandidateLoaded { id, worker: 0, candidate: loaded })), Err(MachineError::CandidateIdentityMismatch { worker: 0, expected, received: actual }) if expected == "expected" && actual.as_deref() == received);
+
+    assert!(actual);
 }
 
 #[test]
@@ -1528,9 +1734,10 @@ fn stored_result_completion_rejects_a_different_mutant_identity() {
             status: crate::MutationStatus::Killed,
         }),
     });
-    assert!(
-        matches!(transition(state, event), Err(MachineError::SessionIdentityMismatch { worker: 0, field: "mutant_id", expected, received }) if expected == "m1" && received == "different")
-    );
+
+    let actual = matches!(transition(state, event), Err(MachineError::SessionIdentityMismatch { worker: 0, field: "mutant_id", expected, received }) if expected == "m1" && received == "different");
+
+    assert!(actual);
 }
 
 #[test]
@@ -1548,37 +1755,46 @@ fn incomplete_mutant_output_is_persisted_before_finished_output_and_reset() {
     });
     let mut finished = process_finished(id, Some(0));
     finished.output_state = ProcessOutputState::CloseTimedOut;
-    let (state, effects) = transition(state, RunEvent::MutantFinished(finished)).unwrap();
-    assert_eq!(effects.len(), 1);
-    assert!(
-        matches!(&effects[0], RunEffect::PersistResult(persist) if persist.result.outcome.status() == crate::MutationStatus::Error && persist.result.candidate == candidate() && persist.result.diagnostics[0].code == PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE)
-    );
-    assert_eq!(state.summary.error, 0);
-    let (state, effects) = transition(
+
+    let (state, persist_effects) = transition(state, RunEvent::MutantFinished(finished)).unwrap();
+    let errors_before_persistence = state.summary.error;
+    let (state, output_effects) = transition(
         state,
         RunEvent::ResultPersisted(crate::ResultPersisted {
-            id: effects[0].id(),
+            id: persist_effects[0].id(),
             worker: 0,
             run_id: "coverage".into(),
             mutant_id: "m1".into(),
         }),
     )
     .unwrap();
-    assert_eq!(state.summary.error, 1);
-    assert_eq!(effects.len(), 1);
-    assert!(
-        matches!(&effects[0], RunEffect::EmitOutput(output) if matches!(&output.event, OutputEvent::MutantFinished(result) if result.candidate == candidate() && result.outcome.status() == crate::MutationStatus::Error && result.sequence == 4))
-    );
+    let errors_after_persistence = state.summary.error;
     let (state, effects) = transition(
         state,
         RunEvent::OutputEmitted(crate::OutputEmitted {
-            id: effects[0].id(),
+            id: output_effects[0].id(),
         }),
     )
     .unwrap();
-    assert_eq!(effects.len(), 1);
-    assert!(matches!(&effects[0], RunEffect::ResetWorker(reset) if reset.worker == 0));
-    assert!(matches!(state.workers[&0], WorkerState::Resetting));
+
+    let persistence_effect_count = persist_effects.len();
+    let error_result_persisted = matches!(&persist_effects[0], RunEffect::PersistResult(persist) if persist.result.outcome.status() == crate::MutationStatus::Error && persist.result.candidate == candidate() && persist.result.diagnostics[0].code == PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE);
+    let output_effect_count = output_effects.len();
+    let error_result_emitted = matches!(&output_effects[0], RunEffect::EmitOutput(output) if matches!(&output.event, OutputEvent::MutantFinished(result) if result.candidate == candidate() && result.outcome.status() == crate::MutationStatus::Error && result.sequence == 4));
+    let reset_effect_count = effects.len();
+    let worker_reset_requested =
+        matches!(&effects[0], RunEffect::ResetWorker(reset) if reset.worker == 0);
+    let worker_resetting = matches!(state.workers[&0], WorkerState::Resetting);
+
+    assert_eq!(persistence_effect_count, 1);
+    assert!(error_result_persisted);
+    assert_eq!(errors_before_persistence, 0);
+    assert_eq!(errors_after_persistence, 1);
+    assert_eq!(output_effect_count, 1);
+    assert!(error_result_emitted);
+    assert_eq!(reset_effect_count, 1);
+    assert!(worker_reset_requested);
+    assert!(worker_resetting);
 }
 
 fn ordered_restoration_fixture() -> (RunState, EffectId) {
@@ -1598,41 +1814,51 @@ fn ordered_restoration_fixture() -> (RunState, EffectId) {
 #[test]
 fn ordered_baseline_restoration_observes_remaining_budget_before_analysis() {
     let (state, id) = ordered_restoration_fixture();
+
     let (state, effects) = transition(
         state,
         RunEvent::WorkerReset(crate::WorkerReset { id, worker: 0 }),
     )
     .unwrap();
+
+    let actual = effects.len();
+    let actual_2 = expected_completion(&effects[0]);
+    let actual_3 = matches!(state.workers[&0], WorkerState::Idle);
+
     assert_eq!(state.phase, RunPhase::BudgetCheck);
-    assert_eq!(effects.len(), 1);
-    assert_eq!(
-        expected_completion(&effects[0]),
-        CompletionKind::RemainingBudgetObserved
-    );
-    assert!(matches!(state.workers[&0], WorkerState::Idle));
+    assert_eq!(actual, 1);
+    assert_eq!(actual_2, CompletionKind::RemainingBudgetObserved);
+    assert!(actual_3);
 }
 
 #[test]
 fn ordered_baseline_restoration_propagates_identifier_exhaustion() {
     let (mut state, id) = ordered_restoration_fixture();
     state.next_effect_id = u64::MAX;
-    assert!(matches!(
+
+    let actual = matches!(
         transition(
             state,
             RunEvent::WorkerReset(crate::WorkerReset { id, worker: 0 })
         ),
         Err(MachineError::EffectIdOverflow)
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[test]
 fn cancellation_during_cleanup_preserves_the_cleanup_request() {
     let (mut state, id) = pending_state(RunPhase::Cleaning, CompletionKind::CleanupFinished);
     state.pending.get_mut(&id).unwrap().worker = None;
+
     let (state, effects) = transition(state, RunEvent::CancellationRequested).unwrap();
+
+    let actual = state.is_effect_pending(id);
+
     assert_eq!(effects, []);
     assert_eq!(state.phase, RunPhase::Cleaning);
-    assert!(state.is_effect_pending(id));
+    assert!(actual);
     assert!(!state.flags.report.interrupted);
 }
 
@@ -1641,7 +1867,9 @@ fn cancellation_after_finish_does_not_allocate_or_change_outcome_flags() {
     let mut state = state();
     state.phase = RunPhase::Finished;
     let next = state.next_effect_id;
+
     let (state, effects) = transition(state, RunEvent::CancellationRequested).unwrap();
+
     assert_eq!(effects, []);
     assert_eq!(state.phase, RunPhase::Finished);
     assert_eq!(state.next_effect_id, next);
@@ -1656,10 +1884,14 @@ fn cancellation_preserves_a_terminal_session_finish_request() {
     state.flags.report.report_started = true;
     state.flags.cleanup.cleanup_done = true;
     state.flags.cleanup.session_finish_attempted = true;
+
     let (state, effects) = transition(state, RunEvent::CancellationRequested).unwrap();
+
+    let actual = state.is_effect_pending(id);
+
     assert_eq!(effects, []);
     assert_eq!(state.phase, RunPhase::Finalize);
-    assert!(state.is_effect_pending(id));
+    assert!(actual);
     assert!(!state.flags.report.interrupted);
 }
 
@@ -1671,9 +1903,13 @@ fn cancellation_preserves_a_pending_terminal_report() {
     state.output_sequence = 2;
     let terminal = state.final_report_effects().unwrap();
     let id = terminal[0].id();
+
     let (state, effects) = transition(state, RunEvent::CancellationRequested).unwrap();
+
+    let actual = state.is_effect_pending(id);
+
     assert_eq!(effects, []);
-    assert!(state.is_effect_pending(id));
+    assert!(actual);
     assert_eq!(state.output_sequence, 3);
     assert!(!state.flags.report.interrupted);
 }
@@ -1693,10 +1929,13 @@ fn resume_preflight_requires_a_fingerprint() {
         aggregate_logical_bytes: 1,
         fingerprint: None,
     });
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, event),
         Err(MachineError::MissingFingerprint)
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -1707,13 +1946,16 @@ fn budget_projection_continuation_propagates_identifier_exhaustion(
 ) {
     let (mut state, id) = budget_observation_fixture();
     state.next_effect_id = u64::MAX;
-    assert!(matches!(
+
+    let actual = matches!(
         transition(
             state,
             RunEvent::RemainingBudgetObserved(crate::RemainingBudgetObserved { id, remaining })
         ),
         Err(MachineError::EffectIdOverflow)
-    ));
+    );
+
+    assert!(actual);
 }
 
 fn ordered_collection_fixture() -> (RunState, EffectId) {
@@ -1739,7 +1981,8 @@ fn ordered_collection_fixture() -> (RunState, EffectId) {
 #[test]
 fn ordered_collection_requires_eof_before_requesting_an_indexed_candidate() {
     let (state, id) = ordered_collection_fixture();
-    let (state, effects) = transition(
+
+    let (state, next_effects) = transition(
         state,
         RunEvent::CandidateLoaded(crate::CandidateLoaded {
             id,
@@ -1748,24 +1991,27 @@ fn ordered_collection_requires_eof_before_requesting_an_indexed_candidate() {
         }),
     )
     .unwrap();
-    assert_eq!(effects.len(), 1);
-    assert!(
-        matches!(&effects[0], RunEffect::ReadCandidate(read) if read.target == CandidateReadTarget::Next)
-    );
-    assert_eq!(state.scheduled_mutants, 0);
+    let scheduled_before_eof = state.scheduled_mutants;
     let (state, effects) = transition(
         state,
         RunEvent::CandidateLoaded(crate::CandidateLoaded {
-            id: effects[0].id(),
+            id: next_effects[0].id(),
             worker: 0,
             candidate: None,
         }),
     )
     .unwrap();
-    assert_eq!(effects.len(), 1);
-    assert!(
-        matches!(&effects[0], RunEffect::ReadCandidate(read) if read.target == CandidateReadTarget::Id("m1".into()))
-    );
+
+    let next_read_effect_count = next_effects.len();
+    let next_read_requested = matches!(&next_effects[0], RunEffect::ReadCandidate(read) if read.target == CandidateReadTarget::Next);
+    let indexed_read_effect_count = effects.len();
+    let indexed_read_requested = matches!(&effects[0], RunEffect::ReadCandidate(read) if read.target == CandidateReadTarget::Id("m1".into()));
+
+    assert_eq!(next_read_effect_count, 1);
+    assert!(next_read_requested);
+    assert_eq!(scheduled_before_eof, 0);
+    assert_eq!(indexed_read_effect_count, 1);
+    assert!(indexed_read_requested);
     assert_eq!(state.scheduled_mutants, 0);
 }
 
@@ -1773,7 +2019,8 @@ fn ordered_collection_requires_eof_before_requesting_an_indexed_candidate() {
 fn ordered_collection_propagates_identifier_exhaustion() {
     let (mut state, id) = ordered_collection_fixture();
     state.next_effect_id = u64::MAX;
-    assert!(matches!(
+
+    let actual = matches!(
         transition(
             state,
             RunEvent::CandidateLoaded(crate::CandidateLoaded {
@@ -1783,7 +2030,9 @@ fn ordered_collection_propagates_identifier_exhaustion() {
             })
         ),
         Err(MachineError::EffectIdOverflow)
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[test]
@@ -1795,10 +2044,10 @@ fn collecting_an_ordered_candidate_requires_the_worker_entry() {
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(
-        state.collect_ordered_candidate(0, Some(candidate())),
-        Err(MachineError::UnknownWorker(0))
-    );
+
+    let actual = state.collect_ordered_candidate(0, Some(candidate()));
+
+    assert_eq!(actual, Err(MachineError::UnknownWorker(0)));
 }
 
 #[test]
@@ -1813,6 +2062,7 @@ fn an_ordinary_candidate_completion_dispatches_its_mutation() {
         token: "candidates".into(),
         records: 1,
     });
+
     let (state, effects) = transition(
         state,
         RunEvent::CandidateLoaded(crate::CandidateLoaded {
@@ -1822,19 +2072,24 @@ fn an_ordinary_candidate_completion_dispatches_its_mutation() {
         }),
     )
     .unwrap();
-    assert_eq!(effects.len(), 1);
-    assert!(
-        matches!(&effects[0], RunEffect::ApplyMutation(apply) if apply.worker == 0 && apply.candidate == candidate())
-    );
+
+    let actual = effects.len();
+    let actual_2 = matches!(&effects[0], RunEffect::ApplyMutation(apply) if apply.worker == 0 && apply.candidate == candidate());
+    let actual_3 =
+        matches!(&state.workers[&0], WorkerState::Applying(owned) if owned == &candidate());
+
+    assert_eq!(actual, 1);
+    assert!(actual_2);
     assert_eq!(state.scheduled_mutants, 1);
-    assert!(matches!(&state.workers[&0], WorkerState::Applying(owned) if owned == &candidate()));
+    assert!(actual_3);
 }
 
 #[test]
 fn mutant_completion_requires_an_owned_candidate() {
     let (mut state, id) = pending_state(RunPhase::Mutants, CompletionKind::MutantFinished);
     state.workers.insert(0, WorkerState::Idle);
-    assert!(matches!(
+
+    let actual = matches!(
         transition(
             state,
             RunEvent::MutantFinished(process_finished(id, Some(0)))
@@ -1842,7 +2097,9 @@ fn mutant_completion_requires_an_owned_candidate() {
         Err(MachineError::WrongPhase {
             phase: RunPhase::Mutants
         })
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[test]
@@ -1851,13 +2108,16 @@ fn mutant_persistence_propagates_identifier_exhaustion() {
     state.identity = RunIdentity::Session("coverage".into());
     state.workers.insert(0, WorkerState::Running(candidate()));
     state.next_effect_id = u64::MAX;
-    assert!(matches!(
+
+    let actual = matches!(
         transition(
             state,
             RunEvent::MutantFinished(process_finished(id, Some(0)))
         ),
         Err(MachineError::EffectIdOverflow)
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[test]
@@ -1867,6 +2127,7 @@ fn baseline_output_acknowledgement_keeps_restoration_pending() {
     state.phase = RunPhase::BaselineRestoration;
     state.flags.report.report_started = true;
     state.workers.insert(0, WorkerState::Resetting);
+
     let output_id = state.allocate_id().unwrap();
     let event = baseline_output(&mut state, &process_finished(EffectId(0), Some(0)));
     state.register_output(
@@ -1888,10 +2149,14 @@ fn baseline_output_acknowledgement_keeps_restoration_pending() {
         RunEvent::OutputEmitted(crate::OutputEmitted { id: output_id }),
     )
     .unwrap();
+
+    let reset_still_pending = state.is_effect_pending(reset_id);
+    let output_no_longer_pending = !state.is_effect_pending(output_id);
+
     assert_eq!(effects, []);
     assert_eq!(state.phase, RunPhase::BaselineRestoration);
-    assert!(state.is_effect_pending(reset_id));
-    assert!(!state.is_effect_pending(output_id));
+    assert!(reset_still_pending);
+    assert!(output_no_longer_pending);
 }
 
 fn run_started_output_fixture() -> (RunState, EffectId) {
@@ -1906,13 +2171,17 @@ fn run_started_acknowledgement_delivers_its_saved_failure_once() {
     let (mut state, id) = run_started_output_fixture();
     state.flags.outcome.infrastructure_error = true;
     state.pending_failure = Some(EffectFailed::other(EffectId(0), "test.io", "denied"));
+
     let (state, effects) =
         transition(state, RunEvent::OutputEmitted(crate::OutputEmitted { id })).unwrap();
-    assert_eq!(effects.len(), 1);
-    assert!(
-        matches!(&effects[0], RunEffect::EmitOutput(output) if matches!(&output.event, OutputEvent::Diagnostic(diagnostic) if diagnostic.code == "test.io" && diagnostic.message == "denied"))
-    );
-    assert!(state.pending_failure.is_none());
+
+    let actual = effects.len();
+    let actual_2 = matches!(&effects[0], RunEffect::EmitOutput(output) if matches!(&output.event, OutputEvent::Diagnostic(diagnostic) if diagnostic.code == "test.io" && diagnostic.message == "denied"));
+    let actual_3 = state.pending_failure.is_none();
+
+    assert_eq!(actual, 1);
+    assert!(actual_2);
+    assert!(actual_3);
     assert!(state.flags.report.report_started);
 }
 
@@ -1921,10 +2190,13 @@ fn run_started_failure_diagnostic_propagates_identifier_exhaustion() {
     let (mut state, id) = run_started_output_fixture();
     state.pending_failure = Some(EffectFailed::other(EffectId(0), "test.io", "denied"));
     state.next_effect_id = u64::MAX;
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, RunEvent::OutputEmitted(crate::OutputEmitted { id })),
         Err(MachineError::EffectIdOverflow)
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -1943,11 +2215,16 @@ fn stopping_before_run_started_acknowledgement_preserves_cleanup_order(
     configure(&mut state);
     state.flags.report.stop_after_run_started = true;
     state.flags.scheduling.stop_requested = true;
+
     let (state, effects) =
         transition(state, RunEvent::OutputEmitted(crate::OutputEmitted { id })).unwrap();
+
+    let actual = effects.len();
+    let actual_2 = expected_completion(&effects[0]);
+
     assert_eq!(state.phase, phase);
-    assert_eq!(effects.len(), 1);
-    assert_eq!(expected_completion(&effects[0]), completion);
+    assert_eq!(actual, 1);
+    assert_eq!(actual_2, completion);
     assert!(!state.flags.report.stop_after_run_started);
     assert!(state.flags.report.report_started);
 }
@@ -1955,12 +2232,15 @@ fn stopping_before_run_started_acknowledgement_preserves_cleanup_order(
 #[test]
 fn duplicate_start_request_is_rejected_in_preflight() {
     let (state, _) = transition(state(), RunEvent::StartRequested(StartRequested)).unwrap();
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, RunEvent::StartRequested(StartRequested)),
         Err(MachineError::WrongPhase {
             phase: RunPhase::Preflight
         })
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -1973,10 +2253,13 @@ fn stopping_before_header_acknowledgement_preserves_identifier_errors(
     configure(&mut state);
     state.flags.report.stop_after_run_started = true;
     state.next_effect_id = u64::MAX;
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, RunEvent::OutputEmitted(crate::OutputEmitted { id })),
         Err(MachineError::EffectIdOverflow)
-    ));
+    );
+
+    assert!(actual);
 }
 
 fn diagnostic_after_cleanup_fixture() -> (RunState, EffectId) {
@@ -1993,11 +2276,13 @@ fn diagnostic_after_cleanup_fixture() -> (RunState, EffectId) {
 #[test]
 fn diagnostic_acknowledgement_after_cleanup_emits_the_final_report() {
     let (state, id) = diagnostic_after_cleanup_fixture();
+
     let (state, effects) =
         transition(state, RunEvent::OutputEmitted(crate::OutputEmitted { id })).unwrap();
-    assert!(
-        matches!(&effects[..], [RunEffect::EmitOutput(output)] if matches!(output.event, OutputEvent::RunFinished(_)))
-    );
+
+    let actual = matches!(&effects[..], [RunEffect::EmitOutput(output)] if matches!(output.event, OutputEvent::RunFinished(_)));
+
+    assert!(actual);
     assert!(state.flags.cleanup.cleanup_done);
 }
 
@@ -2005,10 +2290,13 @@ fn diagnostic_acknowledgement_after_cleanup_emits_the_final_report() {
 fn diagnostic_acknowledgement_after_cleanup_preserves_identifier_errors() {
     let (mut state, id) = diagnostic_after_cleanup_fixture();
     state.next_effect_id = u64::MAX;
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, RunEvent::OutputEmitted(crate::OutputEmitted { id })),
         Err(MachineError::EffectIdOverflow)
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[test]
@@ -2016,7 +2304,8 @@ fn successful_cleanup_preserves_final_report_identifier_errors() {
     let (mut state, id) = pending_state(RunPhase::Cleaning, CompletionKind::CleanupFinished);
     state.flags.report.report_started = true;
     state.next_effect_id = u64::MAX;
-    assert!(matches!(
+
+    let actual = matches!(
         transition(
             state,
             RunEvent::CleanupFinished(crate::CleanupFinished {
@@ -2025,7 +2314,9 @@ fn successful_cleanup_preserves_final_report_identifier_errors() {
             })
         ),
         Err(MachineError::EffectIdOverflow)
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -2036,6 +2327,7 @@ fn failed_report_delivery_requests_cleanup_without_another_output(
 ) {
     let (mut state, id) = run_started_output_fixture();
     state.pending.get_mut(&id).unwrap().completion = PendingCompletion::Output(continuation);
+
     let (state, effects) = transition(
         state,
         RunEvent::EffectFailed(EffectFailed {
@@ -2047,7 +2339,10 @@ fn failed_report_delivery_requests_cleanup_without_another_output(
         }),
     )
     .unwrap();
-    assert!(matches!(&effects[..], [RunEffect::Cleanup(_)]));
+
+    let actual = matches!(&effects[..], [RunEffect::Cleanup(_)]);
+
+    assert!(actual);
     assert_eq!(state.flags.report.delivery, ReportDelivery::Failed);
     assert!(state.flags.outcome.infrastructure_error);
 }
@@ -2057,6 +2352,7 @@ fn failed_terminal_report_finishes_without_retrying_output() {
     let (mut state, id) = diagnostic_after_cleanup_fixture();
     state.pending.get_mut(&id).unwrap().completion =
         PendingCompletion::Output(OutputContinuation::RunFinished);
+
     let (state, effects) = transition(
         state,
         RunEvent::EffectFailed(EffectFailed {
@@ -2068,6 +2364,7 @@ fn failed_terminal_report_finishes_without_retrying_output() {
         }),
     )
     .unwrap();
+
     assert_eq!(effects, []);
     assert_eq!(state.phase, RunPhase::Finished);
     assert_eq!(state.flags.report.delivery, ReportDelivery::Failed);
@@ -2079,16 +2376,20 @@ fn stopped_mutant_acknowledgement_requires_the_worker_entry() {
     state.pending.get_mut(&id).unwrap().completion =
         PendingCompletion::Output(OutputContinuation::FinishMutant(0));
     state.flags.scheduling.stop_requested = true;
-    assert!(matches!(
+
+    let actual = matches!(
         transition(state, RunEvent::OutputEmitted(crate::OutputEmitted { id })),
         Err(MachineError::UnknownWorker(0))
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[test]
 fn deferred_cleanup_is_reported_as_deferred() {
     let (mut state, id) = pending_state(RunPhase::Cleaning, CompletionKind::CleanupFinished);
     state.flags.report.report_started = true;
+
     let (state, effects) = transition(
         state,
         RunEvent::EffectFailed(EffectFailed::other(
@@ -2098,13 +2399,14 @@ fn deferred_cleanup_is_reported_as_deferred() {
         )),
     )
     .unwrap();
+
+    let actual = matches!(&effects[..], [RunEffect::EmitOutput(output)] if matches!(&output.event, OutputEvent::Diagnostic(diagnostic) if diagnostic.code == crate::WORKSPACE_CLEANUP_DEFERRED));
+
     assert_eq!(
         state.disk_summary.cleanup[0].status,
         crate::DiskCleanupStatus::Deferred
     );
-    assert!(
-        matches!(&effects[..], [RunEffect::EmitOutput(output)] if matches!(&output.event, OutputEvent::Diagnostic(diagnostic) if diagnostic.code == crate::WORKSPACE_CLEANUP_DEFERRED))
-    );
+    assert!(actual);
     assert!(state.flags.cleanup.cleanup_done);
 }
 
@@ -2114,18 +2416,20 @@ fn failed_mutant_process_drains_its_owned_candidate_as_not_run() {
     reserve_single_worker_fixture_workspace(&mut state);
     state.flags.report.report_started = true;
     state.workers.insert(0, WorkerState::Running(candidate()));
+
     let (state, effects) = transition(
         state,
         RunEvent::EffectFailed(EffectFailed::other(id, "process.io", "denied")),
     )
     .unwrap();
-    assert!(
-        matches!(&effects[..], [RunEffect::EmitOutput(output)] if matches!(&output.event, OutputEvent::MutantFinished(finished) if finished.candidate.id == "m1" && finished.outcome == crate::MutationOutcome::NotRun))
-    );
-    assert!(
-        matches!(&state.workers[&0], WorkerState::SyntheticFinishing(owned, SyntheticOutcome::NotRun) if owned == &candidate())
-    );
-    assert_eq!(state.pending_failure.unwrap().failure.code(), "process.io");
+
+    let actual = matches!(&effects[..], [RunEffect::EmitOutput(output)] if matches!(&output.event, OutputEvent::MutantFinished(finished) if finished.candidate.id == "m1" && finished.outcome == crate::MutationOutcome::NotRun));
+    let actual_2 = matches!(&state.workers[&0], WorkerState::SyntheticFinishing(owned, SyntheticOutcome::NotRun) if owned == &candidate());
+    let actual_3 = state.pending_failure.unwrap().failure.code().to_owned();
+
+    assert!(actual);
+    assert!(actual_2);
+    assert_eq!(actual_3, "process.io");
 }
 
 #[rstest::rstest]
@@ -2141,36 +2445,45 @@ fn owned_worker_effects_emit_their_expected_completion(
     let mut state = exhausted_effect_fixture();
     state.next_effect_id = 1;
     state.workers.insert(0, WorkerState::Ready(candidate()));
+
     let effects = build(&mut state, 0).unwrap();
-    assert_eq!(effects.len(), 1);
-    assert_eq!(expected_completion(&effects[0]), expected);
+
+    let actual = effects.len();
+    let actual_2 = expected_completion(&effects[0]);
+
+    assert_eq!(actual, 1);
+    assert_eq!(actual_2, expected);
 }
 
 #[test]
 fn preflight_effects_preserve_identifier_exhaustion() {
     let mut state = state();
     state.next_effect_id = u64::MAX;
-    assert_eq!(
-        state.preflight_effects(),
-        Err(MachineError::EffectIdOverflow)
-    );
+
+    let actual = state.preflight_effects();
+
+    assert_eq!(actual, Err(MachineError::EffectIdOverflow));
 }
 
 #[test]
 fn beginning_a_session_requires_its_fingerprint() {
     let mut state = state();
-    assert_eq!(
-        state.begin_session_effects(),
-        Err(MachineError::MissingFingerprint)
-    );
+
+    let actual = state.begin_session_effects();
+
+    assert_eq!(actual, Err(MachineError::MissingFingerprint));
 }
 
 #[test]
 fn stopped_run_without_a_copy_grant_requests_cleanup() {
     let mut state = state();
     state.flags.report.report_started = true;
+
     let effects = state.begin_stop().unwrap();
-    assert!(matches!(&effects[..], [RunEffect::Cleanup(_)]));
+
+    let actual = matches!(&effects[..], [RunEffect::Cleanup(_)]);
+
+    assert!(actual);
     assert_eq!(state.phase, RunPhase::Cleaning);
 }
 
@@ -2179,8 +2492,13 @@ fn finishing_a_session_emits_its_persistence_effect_once() {
     let mut state = state();
     state.identity = RunIdentity::Session("saved".into());
     let effects = state.post_report_effects().unwrap();
+
     state.register(&effects).unwrap();
-    assert!(matches!(&effects[..], [RunEffect::FinishSession(finish)] if finish.run_id == "saved"));
+
+    let actual =
+        matches!(&effects[..], [RunEffect::FinishSession(finish)] if finish.run_id == "saved");
+
+    assert!(actual);
     assert!(state.flags.cleanup.session_finish_attempted);
 }
 
@@ -2188,19 +2506,22 @@ fn finishing_a_session_emits_its_persistence_effect_once() {
 fn accepting_a_missing_previously_allocated_effect_reports_not_pending() {
     let mut state = state();
     state.next_effect_id = 3;
-    assert_eq!(
-        state.accept_completion(&RunEvent::OutputEmitted(crate::OutputEmitted {
-            id: EffectId(2)
-        })),
-        Err(MachineError::EffectNotPending(EffectId(2)))
-    );
+
+    let actual = state.accept_completion(&RunEvent::OutputEmitted(crate::OutputEmitted {
+        id: EffectId(2),
+    }));
+
+    assert_eq!(actual, Err(MachineError::EffectNotPending(EffectId(2))));
 }
 
 #[test]
 fn stopped_candidate_dispatch_requires_an_available_worker() {
     let mut state = state();
+
+    let actual = state.next_stopped_candidate_effects();
+
     assert_eq!(
-        state.next_stopped_candidate_effects(),
+        actual,
         Err(MachineError::WrongPhase {
             phase: RunPhase::Validate
         })
@@ -2219,7 +2540,9 @@ fn machine_error_codes_identify_their_precise_failure(
     #[case] error: &MachineError,
     #[case] code: &str,
 ) {
-    assert_eq!(error.code(), code);
+    let actual = error.code();
+
+    assert_eq!(actual, code);
 }
 
 #[test]
@@ -2239,9 +2562,10 @@ fn selected_analysis_without_a_spool_advances_to_the_next_target() {
             diagnostics: vec![],
         })
         .unwrap();
-    assert!(
-        matches!(&effects[..], [RunEffect::AnalyzeFile(analyze)] if analyze.target.path == "calc.py")
-    );
+
+    let actual = matches!(&effects[..], [RunEffect::AnalyzeFile(analyze)] if analyze.target.path == "calc.py");
+
+    assert!(actual);
 }
 
 #[test]
@@ -2251,15 +2575,22 @@ fn ordered_collection_ignores_an_unselected_candidate() {
     let mut ignored = candidate();
     ignored.id = "unselected".into();
     let effects = state.collect_ordered_candidate(0, Some(ignored)).unwrap();
-    assert!(matches!(&effects[..], [RunEffect::ReadCandidate(_)]));
-    assert_eq!(state.selection.missing_id().map(String::as_str), Some("m1"));
+
+    let actual = matches!(&effects[..], [RunEffect::ReadCandidate(_)]);
+    let actual_2 = state.selection.missing_id().map(String::as_str);
+
+    assert!(actual);
+    assert_eq!(actual_2, Some("m1"));
 }
 
 #[test]
 fn ordered_collection_waits_when_every_worker_is_busy() {
     let (mut state, _) = ordered_collection_fixture();
     state.workers.insert(0, WorkerState::Resetting);
-    assert_eq!(state.schedule_read_or_finalize().unwrap(), []);
+
+    let actual = state.schedule_read_or_finalize().unwrap();
+
+    assert_eq!(actual, []);
 }
 
 #[test]
@@ -2272,9 +2603,10 @@ fn analysis_diagnostics_emit_their_original_code_and_message() {
             message: "specific warning".into(),
         });
     let effects = state.analysis_diagnostic_effects().unwrap();
-    assert!(
-        matches!(&effects[..], [RunEffect::EmitOutput(output)] if matches!(&output.event, OutputEvent::Diagnostic(diagnostic) if diagnostic.code == "analysis.warning" && diagnostic.message == "specific warning"))
-    );
+
+    let actual = matches!(&effects[..], [RunEffect::EmitOutput(output)] if matches!(&output.event, OutputEvent::Diagnostic(diagnostic) if diagnostic.code == "analysis.warning" && diagnostic.message == "specific warning"));
+
+    assert!(actual);
 }
 
 #[test]
@@ -2289,8 +2621,12 @@ fn pending_analysis_resumes_after_its_last_diagnostic() {
         diagnostics: vec![],
     });
     let effects = state.analysis_diagnostic_effects().unwrap();
-    assert!(matches!(&effects[..], [RunEffect::AnalyzeFile(_)]));
-    assert!(state.pending_analysis.is_none());
+
+    let actual = matches!(&effects[..], [RunEffect::AnalyzeFile(_)]);
+    let actual_2 = state.pending_analysis.is_none();
+
+    assert!(actual);
+    assert!(actual_2);
 }
 
 #[test]
@@ -2298,10 +2634,12 @@ fn stopping_with_a_copy_grant_verifies_originals_before_cleanup() {
     let mut state = state();
     reserve_single_worker_fixture_workspace(&mut state);
     state.flags.report.report_started = true;
+
     let effects = state.begin_stop().unwrap();
-    assert!(
-        matches!(&effects[..], [RunEffect::VerifyOriginals(verify)] if verify.checkpoint == IntegrityCheckpoint::PreFinalReport)
-    );
+
+    let actual = matches!(&effects[..], [RunEffect::VerifyOriginals(verify)] if verify.checkpoint == IntegrityCheckpoint::PreFinalReport);
+
+    assert!(actual);
     assert_eq!(state.phase, RunPhase::Finalize);
 }
 
@@ -2315,28 +2653,36 @@ fn draining_finished_results_preserves_candidate_sequence_order() {
     state.workers.insert(0, WorkerState::Finishing(second));
     state.workers.insert(1, WorkerState::Persisting(first));
     let effects = state.begin_stopped_mutant_drain().unwrap();
-    assert!(
-        matches!(&effects[..], [RunEffect::EmitOutput(output)] if matches!(&output.event, OutputEvent::MutantFinished(result) if result.candidate.id == "m1"))
-    );
+
+    let actual = matches!(&effects[..], [RunEffect::EmitOutput(output)] if matches!(&output.event, OutputEvent::MutantFinished(result) if result.candidate.id == "m1"));
+
+    assert!(actual);
 }
 
 #[test]
 fn preflight_builds_a_request_with_its_allocated_identifier() {
     let mut state = state();
     let effects = state.preflight_effects().unwrap();
+
     state.register(&effects).unwrap();
+
+    let actual = state.is_effect_pending(EffectId(1));
+
     assert_eq!(
         effects,
         [RunEffect::Preflight(Preflight { id: EffectId(1) })]
     );
-    assert!(state.is_effect_pending(EffectId(1)));
+    assert!(actual);
 }
 
 #[test]
 fn ordered_end_of_stream_requires_every_selected_candidate() {
     let (mut state, _) = ordered_collection_fixture();
+
+    let actual = state.collect_ordered_candidate(0, None);
+
     assert_eq!(
-        state.collect_ordered_candidate(0, None),
+        actual,
         Err(MachineError::SelectedCandidateMissing("m1".into()))
     );
 }
@@ -2352,9 +2698,10 @@ fn stopped_synthetic_finished_candidate_retains_its_outcome() {
             SyntheticOutcome::NotRun,
         ));
     let effects = state.next_stopped_candidate_effects().unwrap();
-    assert!(
-        matches!(&effects[..], [RunEffect::EmitOutput(output)] if matches!(&output.event, OutputEvent::MutantFinished(result) if result.outcome == MutationOutcome::NotRun))
-    );
+
+    let actual = matches!(&effects[..], [RunEffect::EmitOutput(output)] if matches!(&output.event, OutputEvent::MutantFinished(result) if result.outcome == MutationOutcome::NotRun));
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -2364,7 +2711,9 @@ fn identity_error_codes_identify_the_mismatched_owner(
     #[case] error: &MachineError,
     #[case] code: &str,
 ) {
-    assert_eq!(error.code(), code);
+    let actual = error.code();
+
+    assert_eq!(actual, code);
 }
 
 #[rstest::rstest]
@@ -2383,8 +2732,12 @@ fn ready_ordered_scheduler_observes_remaining_work_and_worker_availability(
         remaining: std::iter::repeat_n("m1".into(), remaining).collect(),
     };
     let effects = state.schedule_read_or_finalize().unwrap();
-    assert_eq!(effects.first().map(expected_completion), expected);
-    assert_eq!(effects.len(), usize::from(expected.is_some()));
+
+    let actual = effects.first().map(expected_completion);
+    let actual_2 = effects.len();
+
+    assert_eq!(actual, expected);
+    assert_eq!(actual_2, usize::from(expected.is_some()));
 }
 
 #[rstest::rstest]
@@ -2421,56 +2774,69 @@ fn analysis_spool_completion_dispatches_or_finalizes_its_selected_work(
             diagnostics: vec![],
         })
         .unwrap();
-    assert_eq!(expected_completion(&effects[0]), expected);
-    assert_eq!(state.candidate_spool.as_ref().unwrap().records, records);
+
+    let actual = expected_completion(&effects[0]);
+    let actual_2 = state.candidate_spool.as_ref().unwrap().records;
+
+    assert_eq!(actual, expected);
+    assert_eq!(actual_2, records);
 }
 
 #[test]
 fn accepting_an_unallocated_effect_reports_unknown_identifier() {
     let mut state = state();
-    assert_eq!(
-        state.accept_completion(&RunEvent::OutputEmitted(crate::OutputEmitted {
-            id: EffectId(1)
-        })),
-        Err(MachineError::UnknownEffect(EffectId(1)))
-    );
+
+    let actual = state.accept_completion(&RunEvent::OutputEmitted(crate::OutputEmitted {
+        id: EffectId(1),
+    }));
+
+    assert_eq!(actual, Err(MachineError::UnknownEffect(EffectId(1))));
 }
 
 #[test]
 fn accepting_a_wrong_completion_preserves_the_pending_request() {
     let (mut state, id) = pending_state(RunPhase::Preflight, CompletionKind::TargetsResolved);
+
+    let actual = state.accept_completion(&RunEvent::OutputEmitted(crate::OutputEmitted { id }));
+    let actual_2 = state.is_effect_pending(id);
+
     assert_eq!(
-        state.accept_completion(&RunEvent::OutputEmitted(crate::OutputEmitted { id })),
+        actual,
         Err(MachineError::WrongCompletion {
             id,
             expected: CompletionKind::TargetsResolved,
             received: CompletionKind::OutputEmitted
         })
     );
-    assert!(state.is_effect_pending(id));
+    assert!(actual_2);
 }
 
 #[test]
 fn accepting_cleanup_requires_the_requested_reservations() {
     let (mut state, id) = pending_state(RunPhase::Cleaning, CompletionKind::CleanupFinished);
     state.pending.get_mut(&id).unwrap().cleanup_reservations = Some(vec![crate::ReservationId(1)]);
+
+    let actual = state.accept_completion(&RunEvent::CleanupFinished(crate::CleanupFinished {
+        id,
+        released_reservations: vec![],
+    }));
+    let actual_2 = state.is_effect_pending(id);
+
     assert_eq!(
-        state.accept_completion(&RunEvent::CleanupFinished(crate::CleanupFinished {
-            id,
-            released_reservations: vec![]
-        })),
+        actual,
         Err(MachineError::CleanupReservationMismatch {
             id,
             expected: vec![crate::ReservationId(1)],
             received: vec![]
         })
     );
-    assert!(state.is_effect_pending(id));
+    assert!(actual_2);
 }
 
 #[test]
 fn out_of_order_completion_advances_the_floor_when_the_gap_closes() {
     let mut state = state();
+
     let effects = [
         RunEffect::Preflight(Preflight {
             id: state.allocate_id().unwrap(),
@@ -2487,7 +2853,7 @@ fn out_of_order_completion_advances_the_floor_when_the_gap_closes() {
             "second",
         )))
         .unwrap();
-    assert_eq!(state.completed_gaps, [EffectId(2)].into());
+    let gaps_before_first_completion = state.completed_gaps.clone();
     state
         .accept_completion(&RunEvent::EffectFailed(EffectFailed::other(
             EffectId(1),
@@ -2495,8 +2861,12 @@ fn out_of_order_completion_advances_the_floor_when_the_gap_closes() {
             "first",
         )))
         .unwrap();
+
+    let gaps_empty_after_closure = state.completed_gaps.is_empty();
+
+    assert_eq!(gaps_before_first_completion, [EffectId(2)].into());
     assert_eq!(state.completed_floor, 2);
-    assert!(state.completed_gaps.is_empty());
+    assert!(gaps_empty_after_closure);
 }
 
 #[test]
@@ -2507,16 +2877,19 @@ fn empty_selected_spool_requires_discovery_of_the_requested_candidate() {
         crate::VerificationSelection::candidate_ids(1, 1, false).unwrap(),
     )
     .unwrap();
-    assert_eq!(
-        state.apply_analysis_finished(AnalysisFinished {
-            id: EffectId(0),
-            spool: Some(crate::CandidateSpoolRef {
-                token: "empty".into(),
-                records: 0
-            }),
-            truncated: false,
-            diagnostics: vec![]
+
+    let actual = state.apply_analysis_finished(AnalysisFinished {
+        id: EffectId(0),
+        spool: Some(crate::CandidateSpoolRef {
+            token: "empty".into(),
+            records: 0,
         }),
+        truncated: false,
+        diagnostics: vec![],
+    });
+
+    assert_eq!(
+        actual,
         Err(MachineError::SelectedCandidateMissing("missing".into()))
     );
 }

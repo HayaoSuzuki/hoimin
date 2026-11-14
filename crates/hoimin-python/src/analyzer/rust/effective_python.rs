@@ -417,10 +417,10 @@ mod coverage_tests {
     ) {
         let parsed = ruff_python_parser::parse_module(source).unwrap();
         let function = parsed.syntax().body[0].as_function_def_stmt().unwrap();
-        assert_eq!(
-            run_shared(function, &|| false).map(|(_, replacement)| replacement),
-            expected
-        );
+
+        let actual = run_shared(function, &|| false).map(|(_, replacement)| replacement);
+
+        assert_eq!(actual, expected);
     }
 
     #[rstest::rstest]
@@ -430,15 +430,16 @@ mod coverage_tests {
                 .unwrap();
         let function = parsed.syntax().body[0].as_function_def_stmt().unwrap();
         let polls = Cell::new(0);
-        assert_eq!(
-            run_shared(function, &|| {
-                let current = polls.get();
-                polls.set(current + 1);
-                current >= checkpoint
-            }),
-            None
-        );
-        assert_eq!(polls.get(), checkpoint + 1);
+
+        let actual = run_shared(function, &|| {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= checkpoint
+        });
+        let actual_2 = polls.get();
+
+        assert_eq!(actual, None);
+        assert_eq!(actual_2, checkpoint + 1);
     }
 
     fn run_none(
@@ -468,10 +469,10 @@ mod coverage_tests {
             .value
             .as_compare_expr()
             .unwrap();
-        assert_eq!(
-            run_none(compare, source, parsed.tokens(), &|| false).as_deref(),
-            expected
-        );
+
+        let actual = run_none(compare, source, parsed.tokens(), &|| false);
+
+        assert_eq!(actual.as_deref(), expected);
     }
 
     #[rstest::rstest]
@@ -487,15 +488,16 @@ mod coverage_tests {
             .as_compare_expr()
             .unwrap();
         let polls = Cell::new(0);
-        assert_eq!(
-            run_none(compare, source, parsed.tokens(), &|| {
-                let current = polls.get();
-                polls.set(current + 1);
-                current >= checkpoint
-            }),
-            None
-        );
-        assert_eq!(polls.get(), checkpoint + 1);
+
+        let actual = run_none(compare, source, parsed.tokens(), &|| {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= checkpoint
+        });
+        let actual_2 = polls.get();
+
+        assert_eq!(actual, None);
+        assert_eq!(actual_2, checkpoint + 1);
     }
     fn run_gather(
         call: &ExprCall,
@@ -531,12 +533,13 @@ mod coverage_tests {
                 .copied()
                 .collect(),
         );
-        assert_eq!(
-            run_gather(call, &tokens, &|| false)
-                .as_ref()
-                .map(|(_, replacement)| replacement.as_str()),
-            expected
-        );
+
+        let gathered = run_gather(call, &tokens, &|| false);
+        let actual = gathered
+            .as_ref()
+            .map(|(_, replacement)| replacement.as_str());
+
+        assert_eq!(actual, expected);
     }
 
     #[test]
@@ -548,7 +551,10 @@ mod coverage_tests {
             .value
             .as_call_expr()
             .unwrap();
-        assert_eq!(run_gather(call, parsed.tokens(), &|| true), None);
+
+        let actual = run_gather(call, parsed.tokens(), &|| true);
+
+        assert_eq!(actual, None);
     }
 
     #[rstest::rstest]
@@ -562,10 +568,10 @@ mod coverage_tests {
             .value
             .as_compare_expr()
             .unwrap();
-        assert_eq!(
-            run_none(compare, source, &Tokens::new(vec![]), &|| false),
-            None
-        );
+
+        let actual = run_none(compare, source, &Tokens::new(vec![]), &|| false);
+
+        assert_eq!(actual, None);
     }
 
     #[rstest::rstest]
@@ -587,8 +593,11 @@ mod coverage_tests {
             cancelled,
             &mut replacements,
         );
+
+        let actual = polls.get();
+
         assert_eq!(replacements, [] as [String; 0]);
-        assert_eq!(polls.get(), checkpoint + 1);
+        assert_eq!(actual, checkpoint + 1);
     }
 
     #[test]
@@ -604,6 +613,7 @@ mod coverage_tests {
             &|| false,
             &mut replacements,
         );
+
         assert_eq!(replacements, [String::new()]);
     }
 
@@ -644,12 +654,13 @@ mod coverage_tests {
             .value
             .as_call_expr()
             .unwrap();
-        assert_eq!(
-            run_gather(call, parsed.tokens(), &|| false)
-                .as_ref()
-                .map(|(_, replacement)| replacement.as_str()),
-            expected
-        );
+
+        let gathered = run_gather(call, parsed.tokens(), &|| false);
+        let actual = gathered
+            .as_ref()
+            .map(|(_, replacement)| replacement.as_str());
+
+        assert_eq!(actual, expected);
     }
 
     #[rstest::rstest]
@@ -680,6 +691,7 @@ mod coverage_tests {
             &|| false,
             &mut replacements,
         );
+
         assert_eq!(replacements, expected);
     }
 
@@ -718,6 +730,7 @@ mod coverage_tests {
         let parsed = ruff_python_parser::parse_module(source).unwrap();
         let mut replacements = Vec::new();
         statement_emit(&parsed.syntax().body[0], &|| cancelled, &mut replacements);
+
         assert_eq!(replacements, expected);
     }
     fn run_import_build(
@@ -743,15 +756,15 @@ mod coverage_tests {
         let parsed = ruff_python_parser::parse_module("import copy\ncopy.deepcopy(value)").unwrap();
         let operators = serde_json::from_value(serde_json::json!(selected)).unwrap();
         let result = run_import_build(parsed.syntax(), &operators, &|| cancelled);
-        assert_eq!(result.is_err(), expected_error);
+        let build_failed = result.is_err();
         let expression = &parsed.syntax().body[1].as_expr_stmt().unwrap().value;
         let replacement = result.as_ref().ok().and_then(|imports| {
             imports.replacement(expression, &operators, parsed.tokens(), &|| false)
         });
-        assert_eq!(
-            replacement.as_ref().map(|(_, text, _)| text.as_str()),
-            expected_replacement
-        );
+        let replacement_text = replacement.as_ref().map(|(_, text, _)| text.as_str());
+
+        assert_eq!(build_failed, expected_error);
+        assert_eq!(replacement_text, expected_replacement);
     }
     #[test]
     fn yield_from_removal_requires_the_delegating_keyword_token() {
@@ -768,6 +781,7 @@ mod coverage_tests {
         );
         let mut replacements = Vec::new();
         expression_emit(expression, source, &tokens, &|| false, &mut replacements);
+
         assert_eq!(replacements, [] as [String; 0]);
     }
 }

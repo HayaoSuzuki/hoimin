@@ -147,7 +147,10 @@ mod coverage_tests {
                 result
             },
         );
-        assert_eq!(result.as_deref(), expected);
+
+        let actual = result.as_deref();
+
+        assert_eq!(actual, expected);
     }
 
     #[rstest::rstest]
@@ -157,15 +160,16 @@ mod coverage_tests {
         let source = "while condition:\n action() # retained comment\n";
         let parsed = ruff_python_parser::parse_module(source).unwrap();
         let polls = std::cell::Cell::new(0);
-        assert_eq!(
-            run(&parsed.syntax().body[0], source, parsed.tokens(), &|| {
-                let current = polls.get();
-                polls.set(current + 1);
-                current >= checkpoint
-            }),
-            None
-        );
-        assert_eq!(polls.get(), checkpoint + 1);
+
+        let actual = run(&parsed.syntax().body[0], source, parsed.tokens(), &|| {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= checkpoint
+        });
+        let actual_2 = polls.get();
+
+        assert_eq!(actual, None);
+        assert_eq!(actual_2, checkpoint + 1);
     }
 
     #[test]
@@ -176,9 +180,9 @@ mod coverage_tests {
             .into_syntax();
         parsed.body[0].as_while_stmt_mut().unwrap().body.clear();
         let tokens = ruff_python_parser::parse_module(source).unwrap();
-        assert_eq!(
-            run(&parsed.body[0], source, tokens.tokens(), &|| false),
-            None
-        );
+
+        let actual = run(&parsed.body[0], source, tokens.tokens(), &|| false);
+
+        assert_eq!(actual, None);
     }
 }

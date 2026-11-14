@@ -175,13 +175,15 @@ mod coverage_tests {
                 false
             },
         );
-        assert_eq!(mutations.len(), 1);
+
+        let actual = mutations.len();
+        let actual_2 = mutations[0]
+            .0
+            .contains("__hoimin_next(__hoimin_iterator, None)");
+
+        assert_eq!(actual, 1);
         assert_eq!(mutations[0].1, MutationOperator::GeneratorSkipFirst);
-        assert!(
-            mutations[0]
-                .0
-                .contains("__hoimin_next(__hoimin_iterator, None)")
-        );
+        assert!(actual_2);
     }
 
     #[rstest::rstest]
@@ -218,7 +220,10 @@ mod coverage_tests {
                 true
             },
         );
-        assert_eq!(emitted.len(), expected_count);
+
+        let actual = emitted.len();
+
+        assert_eq!(actual, expected_count);
         assert_eq!(
             emitted,
             [
@@ -249,6 +254,7 @@ mod coverage_tests {
             cancelled: &cancelled,
         };
         frame.visit_expr(&parsed.syntax().body);
+
         assert_eq!(frame.asynchronous, asynchronous);
         assert!(!frame.cancelled_observed);
     }
@@ -263,9 +269,12 @@ mod coverage_tests {
             cancelled: &cancelled,
         };
         frame.visit_expr(&parsed.syntax().body);
-        assert!(frame.cancelled_observed);
+        let cancelled_after_first_visit = frame.cancelled_observed;
         frame.visit_expr(&parsed.syntax().body);
-        assert!(!frame.asynchronous);
+        let synchronous_after_second_visit = !frame.asynchronous;
+
+        assert!(cancelled_after_first_visit);
+        assert!(synchronous_after_second_visit);
     }
     #[rstest::rstest]
     #[case("(await item for item in values)")]
@@ -274,7 +283,10 @@ mod coverage_tests {
         let parsed = ruff_python_parser::parse_expression(source).unwrap();
         let generator = parsed.syntax().body.as_generator_expr().unwrap();
         let cancelled: &dyn Fn() -> bool = &|| false;
-        assert!(!supported_generator(generator, &cancelled));
+
+        let actual = !supported_generator(generator, &cancelled);
+
+        assert!(actual);
     }
     #[rstest::rstest]
     #[case("[item for item in values]", "[item for item in values]", vec!["(item for item in values)"])]
@@ -306,6 +318,7 @@ mod coverage_tests {
                 true
             },
         );
+
         assert_eq!(replacements, expected);
     }
     #[rstest::rstest]
@@ -335,6 +348,7 @@ mod coverage_tests {
                 true
             },
         );
+
         assert_eq!(edits, expected);
     }
 }

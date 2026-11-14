@@ -677,7 +677,7 @@ mod coverage_tests {
         let parsed = ruff_python_parser::parse_module(&source).unwrap();
         let index = run_build(parsed.syntax(), &|| false).unwrap();
         let method = method(parsed.syntax());
-        assert!(index.contains(method));
+        let method_indexed = index.contains(method);
         let actual = run_span(&index, method, &|| false).map(|(range, first, delegation)| {
             (
                 source_text(&source, range).unwrap().to_owned(),
@@ -685,8 +685,11 @@ mod coverage_tests {
                 delegation,
             )
         });
+        let move_span = actual;
+
+        assert!(method_indexed);
         assert_eq!(
-            actual,
+            move_span,
             expected.map(|(text, first, delegation)| (text.to_owned(), first, delegation))
         );
     }
@@ -699,20 +702,21 @@ mod coverage_tests {
         let index = run_build(parsed.syntax(), &|| false).unwrap();
         let method = method(parsed.syntax());
         let total = std::cell::Cell::new(0);
-        assert!(
-            run_span(&index, method, &|| {
-                total.set(total.get() + 1);
-                false
-            })
-            .is_some()
-        );
+        let baseline_span_available = run_span(&index, method, &|| {
+            total.set(total.get() + 1);
+            false
+        })
+        .is_some();
         let polls = std::cell::Cell::new(0);
         let span = run_span(&index, method, &|| {
             let current = polls.get();
             polls.set(current + 1);
             current >= checkpoint
         });
-        assert_eq!(span.is_some(), checkpoint >= total.get());
+        let cancelled_span_available = span.is_some();
+
+        assert!(baseline_span_available);
+        assert_eq!(cancelled_span_available, checkpoint >= total.get());
     }
 
     #[rstest::rstest]
@@ -726,21 +730,22 @@ mod coverage_tests {
     ) {
         let parsed = ruff_python_parser::parse_module(PAIR).unwrap();
         let total = std::cell::Cell::new(0);
-        assert!(
-            run_build(parsed.syntax(), &|| {
-                total.set(total.get() + 1);
-                false
-            })
-            .unwrap()
-            .contains(method(parsed.syntax()))
-        );
+        let baseline_contains_method = run_build(parsed.syntax(), &|| {
+            total.set(total.get() + 1);
+            false
+        })
+        .unwrap()
+        .contains(method(parsed.syntax()));
         let polls = std::cell::Cell::new(0);
         let index = run_build(parsed.syntax(), &|| {
             let current = polls.get();
             polls.set(current + 1);
             current >= checkpoint
         });
-        assert_eq!(index.is_err(), checkpoint < total.get());
+        let cancelled_index_failed = index.is_err();
+
+        assert!(baseline_contains_method);
+        assert_eq!(cancelled_index_failed, checkpoint < total.get());
     }
 
     #[rstest::rstest]
@@ -762,10 +767,10 @@ mod coverage_tests {
         let method = method(parsed.syntax());
         let span = run_span(&index, method, &|| false).unwrap();
         let end = [0, usize::from(span.0.start()), source.len()][source_prefix];
-        assert_eq!(
-            run_move(method, span, &source[..end], &|| false).as_deref(),
-            expected
-        );
+
+        let actual = run_move(method, span, &source[..end], &|| false);
+
+        assert_eq!(actual.as_deref(), expected);
     }
 
     #[rstest::rstest]
@@ -775,15 +780,16 @@ mod coverage_tests {
         let method = method(parsed.syntax());
         let span = run_span(&index, method, &|| false).unwrap();
         let polls = std::cell::Cell::new(0);
-        assert_eq!(
-            run_move(method, span, PAIR, &|| {
-                let current = polls.get();
-                polls.set(current + 1);
-                current >= checkpoint
-            }),
-            None
-        );
-        assert_eq!(polls.get(), checkpoint + 1);
+
+        let actual = run_move(method, span, PAIR, &|| {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= checkpoint
+        });
+        let actual_2 = polls.get();
+
+        assert_eq!(actual, None);
+        assert_eq!(actual_2, checkpoint + 1);
     }
     #[rstest::rstest]
     #[case("class Other():\n def run(self): pass", true)]
@@ -831,8 +837,12 @@ mod coverage_tests {
             .body[0]
             .as_function_def_stmt()
             .unwrap();
-        assert_eq!(index.contains(child), child_eligible);
-        assert!(!index.contains(other));
+
+        let actual = index.contains(child);
+        let actual_2 = !index.contains(other);
+
+        assert_eq!(actual, child_eligible);
+        assert!(actual_2);
     }
     fn run_methods<'a>(
         class: &'a StmtClassDef,
@@ -848,15 +858,22 @@ mod coverage_tests {
         let parsed = ruff_python_parser::parse_module(&source).unwrap();
         let index = run_build(parsed.syntax(), &|| false).unwrap();
         let other = method(parsed.syntax());
-        assert!(!index.contains(other));
-        assert_eq!(run_span(&index, other, &|| false), None);
+
+        let actual = !index.contains(other);
+        let actual_2 = run_span(&index, other, &|| false);
+
+        assert!(actual);
+        assert_eq!(actual_2, None);
     }
 
     #[test]
     fn module_without_inheritance_has_no_override_methods() {
         let parsed = ruff_python_parser::parse_module("class C:\n def run(self): pass\n").unwrap();
         let index = run_build(parsed.syntax(), &|| false).unwrap();
-        assert!(index.methods.is_empty());
+
+        let actual = index.methods.is_empty();
+
+        assert!(actual);
     }
 
     #[rstest::rstest]
@@ -901,6 +918,9 @@ mod coverage_tests {
             names.sort_unstable();
             names
         });
-        assert_eq!(actual.as_deref(), expected);
+
+        let actual_ = actual.as_deref();
+
+        assert_eq!(actual_, expected);
     }
 }

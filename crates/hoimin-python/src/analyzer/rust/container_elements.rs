@@ -136,6 +136,7 @@ mod coverage_tests {
             &|| false,
             &mut collecting(&mut replacements),
         );
+
         assert_eq!(replacements, Vec::<String>::new());
     }
 
@@ -151,6 +152,7 @@ mod coverage_tests {
             &|| false,
             &mut collecting(&mut replacements),
         );
+
         assert_eq!(replacements, ["[(second),(third),]"]);
     }
 
@@ -169,6 +171,7 @@ mod coverage_tests {
                 false
             },
         );
+
         assert_eq!(replacements, ["[(second),]"]);
     }
     #[rstest::rstest]
@@ -194,6 +197,7 @@ mod coverage_tests {
             &|| false,
             &mut collecting(&mut replacements),
         );
+
         assert_eq!(replacements, expected);
     }
 
@@ -228,7 +232,11 @@ mod coverage_tests {
             },
             &mut collecting(&mut partial),
         );
-        assert_eq!(polls.get(), total.get().min(checkpoint + 1));
-        assert!(complete.starts_with(&partial));
+
+        let actual = polls.get();
+        let actual_2 = complete.starts_with(&partial);
+
+        assert_eq!(actual, total.get().min(checkpoint + 1));
+        assert!(actual_2);
     }
 }

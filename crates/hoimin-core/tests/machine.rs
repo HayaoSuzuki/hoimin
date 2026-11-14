@@ -7932,9 +7932,9 @@ fn sample_observes_budget_only_after_baseline_restoration() {
 
 #[test]
 fn schedule_harness_accounts_for_incomplete_output_as_an_error() {
-    let harness = ScheduleHarness::new(1, 1, ScheduleFilter::All, false, vec![6]).finish(&[]);
-    assert_eq!(harness.ledger.get("m1"), Some(&MutationStatus::Error));
-    assert_eq!(harness.state.exit_code(), 2);
+    let harness = ScheduleHarness::new(1, 1, ScheduleFilter::All, false, vec![6]);
+
+    let harness = harness.finish(&[]);
     let summary = harness
         .output_events
         .iter()
@@ -7943,6 +7943,12 @@ fn schedule_harness_accounts_for_incomplete_output_as_an_error() {
             _ => None,
         })
         .unwrap();
+
+    let actual = harness.ledger.get("m1");
+    let actual_2 = harness.state.exit_code();
+
+    assert_eq!(actual, Some(&MutationStatus::Error));
+    assert_eq!(actual_2, 2);
     assert!(!summary.complete);
 }
 
@@ -7954,13 +7960,16 @@ fn schedule_harness_loads_a_fresh_session_when_no_prior_run_exists() {
         fingerprint: RunFingerprint::from_bytes([7; 32]),
         max_mutants: std::num::NonZeroUsize::new(1).unwrap(),
     });
-    assert!(matches!(
+
+    let actual = matches!(
         harness.completion_for(&effect),
         RunEvent::SessionLoaded(SessionLoaded {
             id: EffectId(123),
             outcome: SessionLoadOutcome::Fresh(hoimin_core::ResumeFreshReason::NoPriorRun)
         })
-    ));
+    );
+
+    assert!(actual);
 }
 
 fn created_worker_request(
@@ -7987,12 +7996,17 @@ fn run_finished_effect(effect: &RunEffect) -> Option<(EffectId, &hoimin_core::Ru
 #[test]
 fn worker_request_projection_skips_unrelated_effects() {
     let effect = RunEffect::Preflight(hoimin_core::Preflight { id: EffectId(1) });
-    assert_eq!(created_worker_request(&effect), None);
+
+    let actual = created_worker_request(&effect);
+
+    assert_eq!(actual, None);
 }
 
 #[rstest::rstest]
 #[case(&RunEffect::Preflight(hoimin_core::Preflight { id: EffectId(1) }))]
 #[case(&RunEffect::EmitOutput(hoimin_core::EmitOutput { id: EffectId(1), event: OutputEvent::Diagnostic(hoimin_core::Diagnostic::new("coverage", 1, "warning", "test", "test")) }))]
 fn final_report_projection_skips_unrelated_effects(#[case] effect: &RunEffect) {
-    assert_eq!(run_finished_effect(effect), None);
+    let actual = run_finished_effect(effect);
+
+    assert_eq!(actual, None);
 }

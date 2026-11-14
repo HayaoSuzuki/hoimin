@@ -67,7 +67,10 @@ mod coverage_tests {
     ) {
         let parsed = ruff_python_parser::parse_expression("(first, second)").unwrap();
         let tuple = parsed.syntax().body.as_tuple_expr().unwrap();
-        assert_eq!(replacement(tuple, source), expected.map(str::to_owned));
+
+        let actual = replacement(tuple, source);
+
+        assert_eq!(actual, expected.map(str::to_owned));
     }
     #[rstest::rstest]
     #[case("(same, same)", None)]
@@ -86,7 +89,10 @@ mod coverage_tests {
     ) {
         let parsed = ruff_python_parser::parse_expression(source).unwrap();
         let tuple = parsed.syntax().body.as_tuple_expr().unwrap();
-        assert_eq!(replacement(tuple, source), expected.map(str::to_owned));
+
+        let actual = replacement(tuple, source);
+
+        assert_eq!(actual, expected.map(str::to_owned));
     }
 
     #[rstest::rstest]
@@ -107,6 +113,9 @@ mod coverage_tests {
             .unwrap()
             .as_tuple_expr()
             .unwrap();
-        assert_eq!(replacement(tuple, &source).unwrap(), expected);
+
+        let actual = replacement(tuple, &source).unwrap();
+
+        assert_eq!(actual, expected);
     }
 }

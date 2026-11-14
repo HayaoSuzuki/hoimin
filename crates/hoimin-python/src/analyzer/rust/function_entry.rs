@@ -205,11 +205,14 @@ mod coverage_tests {
             usize::from(range.start())..usize::from(range.end()),
             &replacement,
         );
+
+        let actual = ruff_python_parser::parse_module(&mutated).is_ok();
+
         assert_eq!(
             mutated,
             source.replacen(first, &format!("return\n    {first}"), 1)
         );
-        assert!(ruff_python_parser::parse_module(&mutated).is_ok());
+        assert!(actual);
     }
     #[rstest::rstest]
     #[case("    type Alias = int\n    return 0", false)]
@@ -233,6 +236,7 @@ mod coverage_tests {
         let parsed = ruff_python_parser::parse_module(&source).unwrap();
         let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
         let facts = run_inspect(definition, None, &|| false).unwrap();
+
         assert_eq!(facts.has_yield, has_yield);
         assert!(!facts.declares_global);
     }
@@ -242,10 +246,10 @@ mod coverage_tests {
         let source = "def outer():\n    pass\n";
         let parsed = ruff_python_parser::parse_module(source).unwrap();
         let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
-        assert_eq!(
-            run_insert(definition, source, parsed.tokens(), "return", &|| true),
-            None
-        );
+
+        let actual = run_insert(definition, source, parsed.tokens(), "return", &|| true);
+
+        assert_eq!(actual, None);
     }
     #[rstest::rstest]
     #[case(0, false)]
@@ -260,15 +264,15 @@ mod coverage_tests {
         let parsed = ruff_python_parser::parse_module("def function():\n    value = 1\n").unwrap();
         let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
         let polls = std::cell::Cell::new(0);
-        assert_eq!(
-            run_inspect(definition, None, &|| {
-                let current = polls.get();
-                polls.set(current + 1);
-                current >= checkpoint
-            })
-            .is_some(),
-            completed
-        );
+
+        let actual = run_inspect(definition, None, &|| {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= checkpoint
+        })
+        .is_some();
+
+        assert_eq!(actual, completed);
     }
 
     #[test]
@@ -276,10 +280,10 @@ mod coverage_tests {
         let parsed = ruff_python_parser::parse_module("def function():\n    pass\n").unwrap();
         let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
         let source = " ".repeat(usize::from(first_statement(definition).unwrap().start()));
-        assert_eq!(
-            run_insert(definition, &source, parsed.tokens(), "return", &|| false),
-            None
-        );
+
+        let actual = run_insert(definition, &source, parsed.tokens(), "return", &|| false);
+
+        assert_eq!(actual, None);
     }
     #[rstest::rstest]
     #[case("変数 = 1", 3)]
@@ -293,14 +297,17 @@ mod coverage_tests {
         let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
         let (range, replacement) =
             run_insert(definition, &source, parsed.tokens(), "return", &|| false).unwrap();
-        assert_eq!(usize::from(range.len()), width);
+        let replaced_scalar_width = usize::from(range.len());
         let mut mutated = source.clone();
         mutated.replace_range(
             usize::from(range.start())..usize::from(range.end()),
             &replacement,
         );
+        let mutated_source = mutated;
+
+        assert_eq!(replaced_scalar_width, width);
         assert_eq!(
-            mutated,
+            mutated_source,
             source.replacen(body, &format!("return\n    {body}"), 1)
         );
     }
@@ -309,10 +316,10 @@ mod coverage_tests {
         let source = "def function():\n    'documentation'\n";
         let parsed = ruff_python_parser::parse_module(source).unwrap();
         let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
-        assert_eq!(
-            run_insert(definition, source, parsed.tokens(), "return", &|| false),
-            None
-        );
+
+        let actual = run_insert(definition, source, parsed.tokens(), "return", &|| false);
+
+        assert_eq!(actual, None);
     }
     #[rstest::rstest]
     #[case("\n")]
@@ -329,6 +336,7 @@ mod coverage_tests {
             usize::from(range.start())..usize::from(range.end()),
             &replacement,
         );
+
         assert_eq!(
             mutated,
             format!("def function():{newline}    return{newline}    pass{newline}")
@@ -354,6 +362,7 @@ mod coverage_tests {
             usize::from(range.start())..usize::from(range.end()),
             &replacement,
         );
+
         assert_eq!(mutated, expected);
     }
 }

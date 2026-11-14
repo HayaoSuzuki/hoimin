@@ -156,17 +156,17 @@ fn legacy_process_completion_without_output_state_is_rejected() {
 #[test]
 fn adapter_rejects_unknown_termination() {
     let panic = std::panic::catch_unwind(|| termination("unknown")).unwrap_err();
-    assert_eq!(
-        panic.downcast_ref::<String>().unwrap(),
-        "unknown termination unknown"
-    );
+
+    let actual = panic.downcast_ref::<String>().unwrap();
+
+    assert_eq!(actual, "unknown termination unknown");
 }
 
 #[test]
 fn adapter_rejects_unknown_status() {
     let panic = std::panic::catch_unwind(|| status("unknown")).unwrap_err();
-    assert_eq!(
-        panic.downcast_ref::<String>().unwrap(),
-        "unknown status unknown"
-    );
+
+    let actual = panic.downcast_ref::<String>().unwrap();
+
+    assert_eq!(actual, "unknown status unknown");
 }

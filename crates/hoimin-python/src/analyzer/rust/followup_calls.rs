@@ -390,14 +390,14 @@ mod coverage_tests {
     #[case("data.decode(errors='surrogate' 'escape')")]
     fn encoding_policy_requires_a_simple_method_and_explicit_single_literal(#[case] source: &str) {
         let parsed = ruff_python_parser::parse_expression(source).unwrap();
-        assert_eq!(
-            run_encoding(
-                &Imports::default(),
-                parsed.syntax().body.as_call_expr().unwrap(),
-                &|| false
-            ),
-            None
+
+        let actual = run_encoding(
+            &Imports::default(),
+            parsed.syntax().body.as_call_expr().unwrap(),
+            &|| false,
         );
+
+        assert_eq!(actual, None);
     }
 
     fn run_same(first: &Expr, second: &Expr, cancelled: &dyn Fn() -> bool) -> bool {
@@ -422,10 +422,10 @@ mod coverage_tests {
     ) {
         let first = ruff_python_parser::parse_expression(first).unwrap();
         let second = ruff_python_parser::parse_expression(second).unwrap();
-        assert_eq!(
-            run_same(&first.syntax().body, &second.syntax().body, &|| cancelled),
-            expected
-        );
+
+        let actual = run_same(&first.syntax().body, &second.syntax().body, &|| cancelled);
+
+        assert_eq!(actual, expected);
     }
 
     fn run_sort(
@@ -457,10 +457,11 @@ mod coverage_tests {
             .value
             .as_call_expr()
             .unwrap();
-        assert_eq!(
-            run_sort(call, source, parsed.tokens(), &|| false, &mut |_| selected).is_some(),
-            expected
-        );
+
+        let actual =
+            run_sort(call, source, parsed.tokens(), &|| false, &mut |_| selected).is_some();
+
+        assert_eq!(actual, expected);
     }
     #[rstest::rstest]
     #[case("data.decode(errors='surrogateescape')")]
@@ -473,10 +474,10 @@ mod coverage_tests {
             &|| false,
         )
         .unwrap();
-        assert_eq!(
-            super::super::source_text(source, range),
-            Some("'surrogateescape'")
-        );
+
+        let actual = super::super::source_text(source, range);
+
+        assert_eq!(actual, Some("'surrogateescape'"));
     }
 
     #[rstest::rstest]
@@ -486,19 +487,20 @@ mod coverage_tests {
         let source = "holder.data.decode(encoding='utf8', errors='surrogateescape')";
         let parsed = ruff_python_parser::parse_expression(source).unwrap();
         let polls = std::cell::Cell::new(0);
-        assert_eq!(
-            run_encoding(
-                &Imports::default(),
-                parsed.syntax().body.as_call_expr().unwrap(),
-                &|| {
-                    let current = polls.get();
-                    polls.set(current + 1);
-                    current >= checkpoint
-                }
-            ),
-            None
+
+        let actual = run_encoding(
+            &Imports::default(),
+            parsed.syntax().body.as_call_expr().unwrap(),
+            &|| {
+                let current = polls.get();
+                polls.set(current + 1);
+                current >= checkpoint
+            },
         );
-        assert_eq!(polls.get(), checkpoint + 1);
+        let actual_2 = polls.get();
+
+        assert_eq!(actual, None);
+        assert_eq!(actual_2, checkpoint + 1);
     }
 
     #[rstest::rstest]
@@ -520,7 +522,10 @@ mod coverage_tests {
             .as_call_expr()
             .unwrap();
         let result = run_sort(call, source, parsed.tokens(), &|| false, &mut |_| true);
-        assert_eq!(result.is_some(), expected);
+
+        let actual = result.is_some();
+
+        assert_eq!(actual, expected);
     }
 
     #[rstest::rstest]
@@ -536,19 +541,17 @@ mod coverage_tests {
             .as_call_expr()
             .unwrap();
         let total = std::cell::Cell::new(0);
-        assert!(
-            run_sort(
-                call,
-                source,
-                parsed.tokens(),
-                &|| {
-                    total.set(total.get() + 1);
-                    false
-                },
-                &mut |_| true
-            )
-            .is_some()
-        );
+        let baseline_emitted = run_sort(
+            call,
+            source,
+            parsed.tokens(),
+            &|| {
+                total.set(total.get() + 1);
+                false
+            },
+            &mut |_| true,
+        )
+        .is_some();
         let polls = std::cell::Cell::new(0);
         let result = run_sort(
             call,
@@ -561,7 +564,10 @@ mod coverage_tests {
             },
             &mut |_| true,
         );
-        assert_eq!(result.is_some(), checkpoint >= total.get());
+        let cancelled_emitted = result.is_some();
+
+        assert!(baseline_emitted);
+        assert_eq!(cancelled_emitted, checkpoint >= total.get());
     }
     fn run_import_build(
         module: &ModModule,
@@ -583,20 +589,21 @@ mod coverage_tests {
         let source = "import codecs as codec_module\nfrom codecs import decode\ndef function(value):\n return codec_module.decode(value, errors='surrogateescape')\n";
         let parsed = ruff_python_parser::parse_module(source).unwrap();
         let total = std::cell::Cell::new(0);
-        assert!(
-            run_import_build(parsed.syntax(), &|| {
-                total.set(total.get() + 1);
-                false
-            })
-            .is_ok()
-        );
+        let baseline_built = run_import_build(parsed.syntax(), &|| {
+            total.set(total.get() + 1);
+            false
+        })
+        .is_ok();
         let polls = std::cell::Cell::new(0);
         let result = run_import_build(parsed.syntax(), &|| {
             let current = polls.get();
             polls.set(current + 1);
             current >= checkpoint
         });
-        assert_eq!(result.is_err(), checkpoint < total.get());
+        let cancelled_failed = result.is_err();
+
+        assert!(baseline_built);
+        assert_eq!(cancelled_failed, checkpoint < total.get());
     }
     fn run_call(
         imports: &Imports,
@@ -654,18 +661,18 @@ mod coverage_tests {
             .as_call_expr()
             .unwrap();
         let mut replacements = Vec::new();
-        assert_eq!(
-            run_call(
-                &imports,
-                call,
-                source,
-                parsed.tokens(),
-                &|| false,
-                &mut |_| selected,
-                &mut collecting(&mut replacements, accepted)
-            ),
-            completed
+
+        let actual = run_call(
+            &imports,
+            call,
+            source,
+            parsed.tokens(),
+            &|| false,
+            &mut |_| selected,
+            &mut collecting(&mut replacements, accepted),
         );
+
+        assert_eq!(actual, completed);
         assert_eq!(replacements, expected);
     }
 }

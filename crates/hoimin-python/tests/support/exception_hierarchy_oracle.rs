@@ -204,6 +204,7 @@ mod helper_tests {
         };
         let mut mismatches = Vec::new();
         compare(&case, actual, &mut mismatches);
+
         assert_eq!(mismatches, Vec::<String>::new());
     }
 
@@ -230,10 +231,16 @@ mod helper_tests {
             fingerprint_matches: None,
         };
         compare(&case, actual, &mut mismatches);
-        assert_eq!(mismatches.len(), 1);
-        assert!(mismatches[0].contains(&format!("mode={} case={}", case.mode, case.id)));
-        assert!(mismatches[0].contains("expected="));
-        assert!(mismatches[0].contains("actual="));
+
+        let actual_ = mismatches.len();
+        let actual_2 = mismatches[0].contains(&format!("mode={} case={}", case.mode, case.id));
+        let actual_3 = mismatches[0].contains("expected=");
+        let actual_4 = mismatches[0].contains("actual=");
+
+        assert_eq!(actual_, 1);
+        assert!(actual_2);
+        assert!(actual_3);
+        assert!(actual_4);
     }
 
     #[test]
@@ -251,11 +258,15 @@ mod helper_tests {
         ];
         let root = tempfile::tempdir().unwrap();
         write_sources(&case, root.path());
+
+        let actual = case
+            .files
+            .iter()
+            .map(|(path, _)| std::fs::read_to_string(root.path().join(path)).unwrap())
+            .collect::<Vec<_>>();
+
         assert_eq!(
-            case.files
-                .iter()
-                .map(|(path, _)| std::fs::read_to_string(root.path().join(path)).unwrap())
-                .collect::<Vec<_>>(),
+            actual,
             case.files
                 .iter()
                 .map(|(_, source)| source.clone())
@@ -274,9 +285,14 @@ mod helper_tests {
     #[test]
     fn selected_wrapper_preserves_the_requested_mode() {
         let rows = selected("strict");
-        assert!(!rows.is_empty());
-        assert!(rows.iter().all(|case| case.mode == "strict"));
-        assert!(rows.iter().all(|case| case.expected_alias_facts.is_none()));
+
+        let actual = !rows.is_empty();
+        let actual_2 = rows.iter().all(|case| case.mode == "strict");
+        let actual_3 = rows.iter().all(|case| case.expected_alias_facts.is_none());
+
+        assert!(actual);
+        assert!(actual_2);
+        assert!(actual_3);
     }
     #[test]
     fn single_case_filter_selects_the_requested_identity() {
@@ -286,7 +302,10 @@ mod helper_tests {
             .unwrap()
             .id;
         let selected = filtered_cases("strict", None, Some(&id));
-        assert_eq!(selected.len(), 1);
+
+        let actual = selected.len();
+
+        assert_eq!(actual, 1);
         assert_eq!(selected[0].id, id);
     }
 

@@ -301,11 +301,12 @@ fn timeout_corpus_rejects_invalid_metadata(
 ) {
     let mut item: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
     item[field] = value;
-    assert!(
-        parse_corpus_text(&item.to_string())
-            .unwrap_err()
-            .contains(expected)
-    );
+
+    let actual = parse_corpus_text(&item.to_string())
+        .unwrap_err()
+        .contains(expected);
+
+    assert!(actual);
 }
 
 #[test]
@@ -313,45 +314,46 @@ fn timeout_corpus_rejects_unknown_invalid_field() {
     let mut item: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
     item["expected_accepted"] = serde_json::json!(false);
     item["expected_invalid_field"] = serde_json::json!("unknown");
-    assert!(
-        parse_corpus_text(&item.to_string())
-            .unwrap_err()
-            .contains("unknown invalid field unknown")
-    );
+
+    let actual = parse_corpus_text(&item.to_string())
+        .unwrap_err()
+        .contains("unknown invalid field unknown");
+
+    assert!(actual);
 }
 
 #[test]
 fn timeout_corpus_rejects_empty_input() {
-    assert_eq!(
-        parse_corpus_text("\n\n").unwrap_err(),
-        "corpus contains no cases"
-    );
+    let actual = parse_corpus_text("\n\n").unwrap_err();
+
+    assert_eq!(actual, "corpus contains no cases");
 }
 
 #[test]
 fn timeout_corpus_reports_invalid_json_line() {
-    assert!(
-        parse_corpus_text("{")
-            .unwrap_err()
-            .contains("line 1 is invalid JSON")
-    );
+    let actual = parse_corpus_text("{")
+        .unwrap_err()
+        .contains("line 1 is invalid JSON");
+
+    assert!(actual);
 }
 
 #[test]
 fn timeout_corpus_rejects_duplicate_ids() {
     let line = CORPUS.lines().next().unwrap();
-    assert!(
-        parse_corpus_text(&format!("{line}\n{line}"))
-            .unwrap_err()
-            .contains("duplicate case id")
-    );
+
+    let actual = parse_corpus_text(&format!("{line}\n{line}"))
+        .unwrap_err()
+        .contains("duplicate case id");
+
+    assert!(actual);
 }
 
 #[test]
 fn duration_parser_names_the_invalid_field() {
-    assert!(
-        parse_duration("case", "baseline_ns", "bad")
-            .unwrap_err()
-            .contains("case has invalid baseline_ns")
-    );
+    let actual = parse_duration("case", "baseline_ns", "bad")
+        .unwrap_err()
+        .contains("case has invalid baseline_ns");
+
+    assert!(actual);
 }

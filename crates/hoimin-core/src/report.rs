@@ -1091,7 +1091,10 @@ mod payload_parser_tests {
     #[case("{\"kind\":[}", "expected value")]
     fn payload_parser_reports_invalid_structure(#[case] raw: &str, #[case] expected: &str) {
         let error = decode_event_payload::<Diagnostic>(raw).unwrap_err();
-        assert!(error.to_string().contains(expected));
+
+        let actual = error.to_string().contains(expected);
+
+        assert!(actual);
     }
 
     #[test]
@@ -1099,9 +1102,9 @@ mod payload_parser_tests {
         let expected = Diagnostic::new("run", 7, "warning", "test.code", "message");
         let mut wire = serde_json::to_value(&expected).unwrap();
         wire["kind"] = serde_json::json!("diagnostic");
-        assert_eq!(
-            decode_event_payload::<Diagnostic>(&wire.to_string()).unwrap(),
-            expected
-        );
+
+        let actual = decode_event_payload::<Diagnostic>(&wire.to_string()).unwrap();
+
+        assert_eq!(actual, expected);
     }
 }

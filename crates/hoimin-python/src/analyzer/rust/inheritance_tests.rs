@@ -501,5 +501,8 @@ fn override_deletion_checks_the_explicit_parent_header(
         "class Base{header}:\n def run(self): return 1\nclass Child(Base):\n def run(self): return 2\n"
     );
     let output = analyze_selected(&[DELETE], &source);
-    assert_eq!(output.candidates.len(), expected_count);
+
+    let actual = output.candidates.len();
+
+    assert_eq!(actual, expected_count);
 }

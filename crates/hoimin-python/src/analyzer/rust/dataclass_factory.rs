@@ -176,15 +176,13 @@ mod coverage_tests {
             .ordinary_dataclass_namespace(class, &|| false)
             .unwrap()
             .unwrap();
-        assert_eq!(namespace.binds("list"), class_binds_factory);
+        let factory_bound_in_class = namespace.binds("list");
         let assignment = class.body.last().unwrap().as_ann_assign_stmt().unwrap();
         let call = assignment.value.as_deref().unwrap().as_call_expr().unwrap();
-        assert!(
-            factories
-                .imports
-                .resolve_in_ordinary_dataclass(&call.func, &namespace)
-                .is_some()
-        );
+        let field_resolves_to_import = factories
+            .imports
+            .resolve_in_ordinary_dataclass(&call.func, &namespace)
+            .is_some();
         let resolution = NameResolutionIndex::from_module(parsed.syntax());
         let mut replacements = Vec::new();
         factories
@@ -193,6 +191,10 @@ mod coverage_tests {
                 true
             })
             .unwrap();
+        let replacements = replacements;
+
+        assert_eq!(factory_bound_in_class, class_binds_factory);
+        assert!(field_resolves_to_import);
         assert_eq!(replacements, expected);
     }
 }

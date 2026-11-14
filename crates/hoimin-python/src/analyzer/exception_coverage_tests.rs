@@ -14,23 +14,16 @@ fn report_retains_earliest_skipped_range_and_counts_repeated_reasons() {
         TextRange::new(2.into(), 5.into()),
     );
     let (range, diagnostic) = report.diagnostic().unwrap();
+
+    let actual = diagnostic.contains("unsupported_expression=2");
+
     assert_eq!(range, TextRange::new(2.into(), 5.into()));
-    assert!(diagnostic.contains("unsupported_expression=2"));
+    assert!(actual);
 }
 
-#[test]
-fn lexical_bindings_include_patterns_handlers_and_comprehension_walruses() {
-    let parsed = parse_module(
-        "import package.child\nfrom module import *\nglobal global_name\nnonlocal outer_name\n\
-         try:\n    action()\nexcept (kind := Exception) as error:\n    saved = error\n\
-         match value:\n    case {'key': item, **rest}: pass\n    case [head, *tail]: pass\n\
-         result = [(captured := item) for item in values if (condition := item)]\n\
-         callback = lambda x=(default := 1): x\nroot.attribute = 1\n",
-    )
-    .unwrap();
-    let mut bindings = Bindings::default();
-    bindings.visit_body(&parsed.syntax().body);
-    for name in [
+#[rstest::rstest]
+fn lexical_bindings_include_patterns_handlers_and_comprehension_walruses(
+    #[values(
         "package",
         "global_name",
         "outer_name",
@@ -44,127 +37,264 @@ fn lexical_bindings_include_patterns_handlers_and_comprehension_walruses() {
         "captured",
         "condition",
         "default",
-        "root",
-    ] {
-        assert!(bindings.names.contains(name), "missing {name}");
-    }
+        "root"
+    )]
+    name: &str,
+) {
+    let parsed = parse_module(
+        "import package.child\nfrom module import *\nglobal global_name\nnonlocal outer_name\n\
+         try:\n    action()\nexcept (kind := Exception) as error:\n    saved = error\n\
+         match value:\n    case {'key': item, **rest}: pass\n    case [head, *tail]: pass\n\
+         result = [(captured := item) for item in values if (condition := item)]\n\
+         callback = lambda x=(default := 1): x\nroot.attribute = 1\n",
+    )
+    .unwrap();
+    let mut bindings = Bindings::default();
+    bindings.visit_body(&parsed.syntax().body);
+    let contains_name = bindings.names.contains(name);
+
+    let actual = !bindings.names.contains("x");
+
+    assert!(contains_name, "missing {name}");
     assert!(bindings.dynamic);
-    assert!(!bindings.names.contains("x"));
+    assert!(actual);
 }
 
-#[test]
-fn definition_headers_bind_decorators_annotations_bases_and_keywords() {
+#[rstest::rstest]
+#[case::function(0, &["decorator", "annotation", "default", "result"], "body_only")]
+#[case::class(1, &["class_decorator", "base", "meta"], "class_body")]
+fn definition_headers_bind_decorators_annotations_bases_and_keywords(
+    #[case] statement: usize,
+    #[case] expected: &[&str],
+    #[case] excluded: &str,
+) {
     let parsed = parse_module(
         "@(decorator := identity)\ndef function(arg: (annotation := int) = (default := 1)) -> (result := int):\n    body_only = 1\n\
          @(class_decorator := identity)\nclass Child((base := Parent), metaclass=(meta := type)):\n    class_body = 1\n",
     ).unwrap();
-    let function = header_bindings(&parsed.syntax().body[0]);
-    for name in ["decorator", "annotation", "default", "result"] {
-        assert!(function.names.contains(name), "missing {name}");
-    }
-    assert!(!function.names.contains("body_only"));
-    let class = header_bindings(&parsed.syntax().body[1]);
-    for name in ["class_decorator", "base", "meta"] {
-        assert!(class.names.contains(name), "missing {name}");
-    }
-    assert!(!class.names.contains("class_body"));
-    let mut combined = Bindings::default();
-    combined.visit_body(&parsed.syntax().body);
-    assert!(combined.names.contains("function"));
-    assert!(combined.names.contains("Child"));
-    assert!(
-        header_bindings(&parse_module("pass\n").unwrap().syntax().body[0])
-            .names
-            .is_empty()
-    );
+
+    let bindings = header_bindings(&parsed.syntax().body[statement]);
+
+    let actual = expected.iter().all(|name| bindings.names.contains(*name));
+    let actual_2 = !bindings.names.contains(excluded);
+
+    assert!(actual);
+    assert!(actual_2);
 }
 
 #[test]
-fn relative_module_handles_absolute_and_above_root_imports() {
-    assert_eq!(
-        relative_module(Utf8Path::new("pkg/mod.py"), "pkg.mod", "external", 0),
-        Some("external".into())
-    );
-    assert_eq!(
-        relative_module(Utf8Path::new("pkg/mod.py"), "pkg.mod", "child", 1),
-        Some("pkg.child".into())
-    );
-    assert_eq!(
-        relative_module(Utf8Path::new("pkg/mod.py"), "pkg.mod", "child", 3),
-        None
-    );
+fn body_binding_collection_records_definition_names() {
+    let parsed = parse_module(
+        "@(decorator := identity)\ndef function(arg: (annotation := int) = (default := 1)) -> (result := int):\n    body_only = 1\n\
+         @(class_decorator := identity)\nclass Child((base := Parent), metaclass=(meta := type)):\n    class_body = 1\n",
+    ).unwrap();
+
+    let mut bindings = Bindings::default();
+    bindings.visit_body(&parsed.syntax().body);
+
+    let actual = bindings.names.contains("function");
+    let actual_2 = bindings.names.contains("Child");
+
+    assert!(actual);
+    assert!(actual_2);
 }
 
 #[test]
-fn hierarchy_collection_propagates_emission_failure_and_cancellation_at_each_checkpoint() {
+fn nondefinition_statement_has_no_header_bindings() {
+    let parsed = parse_module("pass\n").unwrap();
+
+    let bindings = header_bindings(&parsed.syntax().body[0]);
+
+    let actual = bindings.names.is_empty();
+
+    assert!(actual);
+}
+
+#[rstest::rstest]
+#[case("external", 0, Some("external"))]
+#[case("child", 1, Some("pkg.child"))]
+#[case("child", 3, None)]
+fn relative_module_handles_absolute_and_above_root_imports(
+    #[case] imported: &str,
+    #[case] level: u32,
+    #[case] expected: Option<&str>,
+) {
+    let actual = relative_module(Utf8Path::new("pkg/mod.py"), "pkg.mod", imported, level);
+
+    let actual_ = actual.as_deref();
+
+    assert_eq!(actual_, expected);
+}
+
+#[test]
+fn hierarchy_collection_propagates_emission_failure() {
     let path = Utf8Path::new("sample.py");
     let source = "class Root(Exception): pass\nclass Child(Root): pass\nclass Sibling(Root): pass\nclass Container:\n    def method(self):\n        raise Child()\ndef f():\n    try:\n        raise Child()\n    except Root:\n        pass\n";
     let index =
         ExceptionIndex::from_sources(&[(path.to_owned(), source.into())], &[], &|| false).unwrap();
     let parsed = parse_module(source).unwrap();
-    let failed = index.collect(path, parsed.syntax(), 100, &|| false, |_, _| {
+
+    let result = index.collect(path, parsed.syntax(), 100, &|| false, |_, _| {
         Err(AnalysisError::HierarchySourceChanged)
     });
-    assert!(matches!(failed, Err(AnalysisError::HierarchySourceChanged)));
-    let mut completed = false;
-    for checkpoint in 0..4096 {
-        let polls = std::cell::Cell::new(0);
-        let cancelled = || {
+
+    let actual = matches!(result, Err(AnalysisError::HierarchySourceChanged));
+
+    assert!(actual);
+}
+
+fn hierarchy_checkpoint_observation(
+    select: impl FnOnce(usize) -> usize,
+) -> (
+    usize,
+    usize,
+    usize,
+    usize,
+    Result<HierarchyReport, AnalysisError>,
+    usize,
+) {
+    let path = Utf8Path::new("sample.py");
+    let source = "class Root(Exception): pass\nclass Child(Root): pass\nclass Sibling(Root): pass\nclass Container:\n    def method(self):\n        raise Child()\ndef f():\n    try:\n        raise Child()\n    except Root:\n        pass\n";
+    let index =
+        ExceptionIndex::from_sources(&[(path.to_owned(), source.into())], &[], &|| false).unwrap();
+    let parsed = parse_module(source).unwrap();
+    let total = std::cell::Cell::new(0);
+    let mut baseline_emitted = 0;
+    let baseline = index
+        .collect(
+            path,
+            parsed.syntax(),
+            100,
+            &|| {
+                total.set(total.get() + 1);
+                false
+            },
+            |_, _| {
+                baseline_emitted += 1;
+                Ok(())
+            },
+        )
+        .unwrap();
+    let checkpoint = select(total.get());
+    let polls = std::cell::Cell::new(0);
+    let mut emitted = 0;
+    let result = index.collect(
+        path,
+        parsed.syntax(),
+        100,
+        &|| {
             let current = polls.get();
             polls.set(current + 1);
             current >= checkpoint
-        };
-        let mut emitted = 0;
-        let result = index.collect(path, parsed.syntax(), 100, &cancelled, |_, _| {
+        },
+        |_, _| {
             emitted += 1;
             Ok(())
-        });
-        match result {
-            Ok(report) => {
-                assert_eq!(report.emitted, emitted);
-                assert!(emitted > 0);
-                completed = true;
-            }
-            Err(error) => assert_eq!(error, AnalysisError::Cancelled),
-        }
-        if completed {
-            break;
-        }
-    }
-    assert!(completed);
+        },
+    );
+    (
+        checkpoint,
+        total.get(),
+        baseline.emitted,
+        baseline_emitted,
+        result,
+        emitted,
+    )
 }
 
-#[test]
-fn builtin_base_requires_visible_ordinary_builtin_import() {
+#[rstest::rstest]
+fn hierarchy_cancellation_preserves_start_final_and_completion_boundaries(
+    #[values(0, 1, 2)] boundary: usize,
+) {
+    let (checkpoint, total, baseline_count, baseline_emitted, result, emitted) =
+        hierarchy_checkpoint_observation(|total| [0, total - 1, total][boundary]);
+
+    let actual = result.is_err();
+    let actual_2 = result
+        .as_ref()
+        .err()
+        .is_none_or(|error| *error == AnalysisError::Cancelled);
+    let actual_3 = result
+        .as_ref()
+        .ok()
+        .is_none_or(|report| report.emitted == emitted && emitted > 0);
+    let actual_4 = result.is_err();
+
+    assert!(baseline_count > 0);
+    assert_eq!(baseline_count, baseline_emitted);
+    assert_eq!(actual, checkpoint < total);
+    assert!(actual_2);
+    assert!(actual_3);
+    assert_eq!(actual_4, boundary < 2);
+}
+
+proptest::proptest! {
+    #[test]
+    fn hierarchy_collection_propagates_cancellation_at_each_checkpoint(checkpoint in 0usize..4096) {
+        let (checkpoint, total, baseline_count, baseline_emitted, result, emitted) = hierarchy_checkpoint_observation(|_| checkpoint);
+
+        let actual = result.is_err();
+        let actual_2 = result.as_ref().err().is_none_or(|error| *error == AnalysisError::Cancelled);
+        let actual_3 = result.as_ref().ok().is_none_or(|report| report.emitted == emitted && emitted > 0);
+
+    assert!(baseline_count > 0);
+    assert_eq!(baseline_count, baseline_emitted);
+    assert_eq!(actual, checkpoint < total);
+    assert!(actual_2);
+    assert!(actual_3);
+    }
+}
+
+#[rstest::rstest]
+#[case("sample.py", "b.Exception", usize::MAX, Some("Exception"))]
+#[case("sample.py", "E", usize::MAX, Some("Exception"))]
+#[case("sample.py", "E", 0, None)]
+#[case("sample.py", "E.member", usize::MAX, None)]
+#[case("sample.py", "O", usize::MAX, None)]
+#[case("sample.py", "Root", usize::MAX, None)]
+#[case("missing.py", "Exception", usize::MAX, None)]
+fn builtin_base_requires_visible_ordinary_builtin_import(
+    #[case] query_path: &str,
+    #[case] name: &str,
+    #[case] before: usize,
+    #[case] expected: Option<&str>,
+) {
     let path = Utf8Path::new("sample.py");
     let source = "import builtins as b\nfrom builtins import Exception as E\nfrom builtins import object as O\nclass Root(E): pass\nAlias = Root\n";
     let index =
         ExceptionIndex::from_sources(&[(path.to_owned(), source.into())], &[], &|| false).unwrap();
-    assert_eq!(
-        index.builtin_base(path, "b.Exception", source.len()),
-        Some("Exception".into())
-    );
-    assert_eq!(
-        index.builtin_base(path, "E", source.len()),
-        Some("Exception".into())
-    );
-    assert_eq!(index.builtin_base(path, "E", 0), None);
-    assert_eq!(index.builtin_base(path, "E.member", source.len()), None);
-    assert_eq!(index.builtin_base(path, "O", source.len()), None);
-    assert_eq!(index.builtin_base(path, "Root", source.len()), None);
-    assert_eq!(
-        index.builtin_base(Utf8Path::new("missing.py"), "Exception", source.len()),
-        None
-    );
-    assert!(
-        index
-            .resolve_class(&(path.to_owned(), "Alias".into()))
-            .is_none()
-    );
+
+    let actual = index.builtin_base(Utf8Path::new(query_path), name, before.min(source.len()));
+
+    let actual_ = actual.as_deref();
+
+    assert_eq!(actual_, expected);
+}
+
+#[test]
+fn class_alias_does_not_resolve_as_a_declared_class() {
+    let path = Utf8Path::new("sample.py");
+    let source = "import builtins as b\nfrom builtins import Exception as E\nfrom builtins import object as O\nclass Root(E): pass\nAlias = Root\n";
+    let index =
+        ExceptionIndex::from_sources(&[(path.to_owned(), source.into())], &[], &|| false).unwrap();
+
+    let actual = index.resolve_class(&(path.to_owned(), "Alias".into()));
+
+    let actual_ = actual.is_none();
+
+    assert!(actual_);
+}
+
+#[test]
+fn dynamic_module_does_not_resolve_builtin_base() {
+    let path = Utf8Path::new("sample.py");
     let source = "exec(code)\n";
     let index =
         ExceptionIndex::from_sources(&[(path.to_owned(), source.into())], &[], &|| false).unwrap();
-    assert_eq!(index.builtin_base(path, "Exception", source.len()), None);
+
+    let actual = index.builtin_base(path, "Exception", source.len());
+
+    assert_eq!(actual, None);
 }
 
 #[rstest::rstest]
@@ -185,10 +315,10 @@ fn raised_exception_eligibility_checks_parent_constructibility(#[case] construct
         constructible: true,
     };
     let eligibility = index.related_eligibility(&child, ExceptionSite::Raise, None);
-    assert_eq!(
-        matches!(eligibility, RelatedEligibility::Eligible),
-        constructible
-    );
+
+    let actual = matches!(eligibility, RelatedEligibility::Eligible);
+
+    assert_eq!(actual, constructible);
 }
 
 #[test]
@@ -209,6 +339,7 @@ fn sparse_visible_aliases_do_not_substitute_unrelated_exception_classes() {
         &BTreeSet::new(),
         (100, &|| false),
     );
+
     assert_eq!(
         replacements,
         SiteOutcome::Ineligible(IneligibleReason::NoVisibleDestination)
@@ -230,14 +361,14 @@ fn lexical_binding_collection_handles_unnamed_or_computed_targets(
     let parsed = parse_module(source).unwrap();
     let mut bindings = Bindings::default();
     bindings.visit_body(&parsed.syntax().body);
-    assert_eq!(
-        bindings
-            .names
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>(),
-        expected
-    );
+
+    let actual = bindings
+        .names
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+
+    assert_eq!(actual, expected);
 }
 
 #[rstest::rstest]
@@ -266,10 +397,9 @@ fn relative_import_resolution_respects_package_and_root_boundaries(
     #[case] level: u32,
     #[case] expected: Option<&str>,
 ) {
-    assert_eq!(
-        relative_module(Utf8Path::new(path), current, imported, level).as_deref(),
-        expected
-    );
+    let actual = relative_module(Utf8Path::new(path), current, imported, level);
+
+    assert_eq!(actual.as_deref(), expected);
 }
 
 fn run_map(
@@ -296,10 +426,10 @@ fn module_mapping_keeps_duplicate_identity_and_rejects_children_of_other_package
     let paths = paths.into_iter().map(Utf8PathBuf::from).collect::<Vec<_>>();
     let roots = roots.into_iter().map(Utf8PathBuf::from).collect::<Vec<_>>();
     let modules = run_map(&paths, &roots, &|| false).unwrap();
-    assert_eq!(
-        modules.keys().map(String::as_str).collect::<Vec<_>>(),
-        expected
-    );
+
+    let actual = modules.keys().map(String::as_str).collect::<Vec<_>>();
+
+    assert_eq!(actual, expected);
 }
 
 #[rstest::rstest]
@@ -319,10 +449,13 @@ fn module_mapping_limits_both_individual_roots_and_total_claims(
             (0..per_root).map(move |index| path.join(format!("module{root}_{index}.py")))
         })
         .collect::<Vec<_>>();
-    assert!(matches!(
+
+    let actual = matches!(
         run_map(&paths, &roots, &|| false),
         Err(AnalysisError::HierarchyLimit)
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -330,15 +463,19 @@ fn module_mapping_honors_cancellation_during_path_collection(#[values(0, 1)] che
     let paths = ["src/first.py", "src/second.py"].map(Utf8PathBuf::from);
     let roots = [Utf8PathBuf::from("src")];
     let polls = std::cell::Cell::new(0);
-    assert!(matches!(
+
+    let actual = matches!(
         run_map(&paths, &roots, &|| {
             let current = polls.get();
             polls.set(current + 1);
             current >= checkpoint
         }),
         Err(AnalysisError::Cancelled)
-    ));
-    assert_eq!(polls.get(), checkpoint + 1);
+    );
+    let actual_2 = polls.get();
+
+    assert!(actual);
+    assert_eq!(actual_2, checkpoint + 1);
 }
 
 #[rstest::rstest]
@@ -356,10 +493,13 @@ fn project_summary_bounds_accumulate_across_individually_valid_modules(
         (Utf8PathBuf::from("first.py"), source.clone()),
         (Utf8PathBuf::from("second.py"), source),
     ];
-    assert!(matches!(
+
+    let actual = matches!(
         ExceptionIndex::from_sources(&sources, &[], &|| false),
         Err(AnalysisError::HierarchyLimit)
-    ));
+    );
+
+    assert!(actual);
 }
 
 fn run_collection(
@@ -394,12 +534,10 @@ fn private_module_exception_name_respects_class_name_mangling(
     let source = format!("class Parent(Exception): pass\nclass __Child(Parent): pass\n{site}\n");
     let index =
         ExceptionIndex::from_sources(&[(path.to_owned(), source.clone())], &[], &|| false).unwrap();
-    assert!(
-        index.visible[path]
-            .values()
-            .flatten()
-            .any(|(name, _)| name == "__Child")
-    );
+    let private_alias_visible = index.visible[path]
+        .values()
+        .flatten()
+        .any(|(name, _)| name == "__Child");
     let parsed = parse_module(&source).unwrap();
     let mut candidates = Vec::new();
     run_collection(
@@ -410,7 +548,10 @@ fn private_module_exception_name_respects_class_name_mangling(
         &mut recording(&mut candidates),
     )
     .unwrap();
-    assert_eq!(candidates, expected);
+    let replacements = candidates;
+
+    assert!(private_alias_visible);
+    assert_eq!(replacements, expected);
 }
 
 #[test]
@@ -427,11 +568,12 @@ fn exception_ancestry_lookup_is_bounded_for_a_long_acyclic_chain() {
         },
     );
     let index = ExceptionIndex::from_sources(&[(path.to_owned(), source)], &[], &|| false).unwrap();
-    assert!(
-        index
-            .resolve_class(&(path.to_owned(), format!("Child{MAX_STEPS}")))
-            .is_none()
-    );
+
+    let actual = index
+        .resolve_class(&(path.to_owned(), format!("Child{MAX_STEPS}")))
+        .is_none();
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -464,6 +606,7 @@ fn exception_collection_respects_generic_scopes_and_bare_handlers(
         &mut recording(&mut candidates),
     )
     .unwrap();
+
     assert_eq!(report.emitted, candidates.len());
     assert_eq!(candidates, expected);
 }
@@ -475,12 +618,15 @@ fn exception_collection_propagates_an_error_from_the_shared_sink() {
     let index =
         ExceptionIndex::from_sources(&[(path.to_owned(), source.into())], &[], &|| false).unwrap();
     let parsed = parse_module(source).unwrap();
-    assert!(matches!(
+
+    let actual = matches!(
         run_collection(&index, path, parsed.syntax(), &|| false, &mut |_, _| Err(
             AnalysisError::HierarchyLimit
         )),
         Err(AnalysisError::HierarchyLimit)
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -509,7 +655,7 @@ fn exception_collection_stops_during_private_alias_and_method_scans(
         &mut recording(&mut complete),
     )
     .unwrap();
-    assert_eq!(complete, ["Parent"]);
+    let complete_replacements = (complete).clone();
     let polls = std::cell::Cell::new(0);
     let mut partial = Vec::new();
     let result = run_collection(
@@ -523,8 +669,12 @@ fn exception_collection_stops_during_private_alias_and_method_scans(
         },
         &mut recording(&mut partial),
     );
-    assert_eq!(result.is_err(), checkpoint < total.get());
-    assert!(complete.starts_with(&partial));
+    let cancelled = result.is_err();
+    let retained_prefix = complete.starts_with(&partial);
+
+    assert_eq!(complete_replacements, ["Parent"]);
+    assert_eq!(cancelled, checkpoint < total.get());
+    assert!(retained_prefix);
 }
 
 #[rstest::rstest]
@@ -539,6 +689,7 @@ fn escaped_import_mutation_follows_comprehension_global_and_cyclic_aliases(#[cas
         .dependencies
         .get(&("external".to_owned(), 0))
         .unwrap();
+
     assert!(usage.mutated);
 }
 
@@ -554,11 +705,12 @@ fn ancestry_resolution_rejects_cycles_dynamic_modules_and_nonclass_targets(#[cas
         modules: [(path.to_owned(), module)].into(),
         ..ExceptionIndex::default()
     };
-    assert!(
-        index
-            .resolve_class(&(path.to_owned(), "Target".into()))
-            .is_none()
-    );
+
+    let actual = index
+        .resolve_class(&(path.to_owned(), "Target".into()))
+        .is_none();
+
+    assert!(actual);
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -621,37 +773,47 @@ fn hierarchy_index_phases_observe_cancellation_at_each_pending_step(
 ) {
     let mut index = unfinished_index();
     let polls = std::cell::Cell::new(0);
-    assert_eq!(
-        run_index_phase(&mut index, phase, &|| {
-            let current = polls.get();
-            polls.set(current + 1);
-            current >= checkpoint
-        }),
-        Err(AnalysisCancelled)
-    );
-    assert_eq!(polls.get(), checkpoint + 1);
+
+    let actual = run_index_phase(&mut index, phase, &|| {
+        let current = polls.get();
+        polls.set(current + 1);
+        current >= checkpoint
+    });
+    let actual_2 = polls.get();
+
+    assert_eq!(actual, Err(AnalysisCancelled));
+    assert_eq!(actual_2, checkpoint + 1);
 }
 
 #[test]
 fn mutation_of_builtins_invalidates_every_prepared_module_summary() {
     let mut index = unfinished_index();
-    assert!(index.modules.values().all(|module| !module.dynamic));
+    let all_static_before = index.modules.values().all(|module| !module.dynamic);
     run_index_phase(&mut index, IndexPhase::Mutated, &|| false).unwrap();
-    assert!(index.modules.values().all(|module| module.dynamic));
+    let all_dynamic_after = index.modules.values().all(|module| module.dynamic);
+
+    assert!(all_static_before);
+    assert!(all_dynamic_after);
 }
 
 #[test]
 fn relative_and_absolute_dependency_summaries_merge_without_losing_mutation() {
     let mut index = unfinished_index();
     let module = index.modules.get(Utf8Path::new("pkg/mod.py")).unwrap();
-    assert!(module.dependencies.contains_key(&(String::new(), 1)));
-    assert!(module.dependencies.get(&("pkg".into(), 0)).unwrap().mutated);
+    let relative_present_before = module.dependencies.contains_key(&(String::new(), 1));
+    let absolute_mutated_before = module.dependencies.get(&("pkg".into(), 0)).unwrap().mutated;
     run_index_phase(&mut index, IndexPhase::Relative, &|| false).unwrap();
     let module = index.modules.get(Utf8Path::new("pkg/mod.py")).unwrap();
-    assert!(!module.dependencies.contains_key(&(String::new(), 1)));
+    let relative_removed_after = !module.dependencies.contains_key(&(String::new(), 1));
     let merged = module.dependencies.get(&("pkg".into(), 0)).unwrap();
-    assert!(merged.eager);
-    assert!(merged.mutated);
+    let merged_eager = merged.eager;
+    let merged_mutated = merged.mutated;
+
+    assert!(relative_present_before);
+    assert!(absolute_mutated_before);
+    assert!(relative_removed_after);
+    assert!(merged_eager);
+    assert!(merged_mutated);
 }
 
 #[rstest::rstest]
@@ -670,15 +832,20 @@ fn constructible_descendants_require_constructible_resolved_parents(
     );
     let index =
         ExceptionIndex::from_sources(&[("sample.py".into(), source)], &[], &|| false).unwrap();
-    assert_eq!(index.classes.len(), 4);
-    assert_eq!(index.children.len(), 2);
-    assert!(index.children.iter().all(|(parent, children)| {
+
+    let actual = index.classes.len();
+    let actual_2 = index.children.len();
+    let actual_3 = index.children.iter().all(|(parent, children)| {
         !children.has_constructible()
             || index
                 .classes
                 .get(parent)
                 .is_some_and(|parent| parent.constructible)
-    }));
+    });
+
+    assert_eq!(actual, 4);
+    assert_eq!(actual_2, 2);
+    assert!(actual_3);
 }
 
 #[test]
@@ -693,9 +860,13 @@ fn one_import_statement_stops_extracting_aliases_after_the_summary_limit() {
     let parsed = parse_module(&source).unwrap();
     let mut escapes = Escapes::default();
     escapes.visit_body(&parsed.syntax().body);
+
+    let actual = escapes.imports.len();
+    let actual_2 = escapes.import_aliases.len();
+
     assert!(escapes.limit_exceeded);
-    assert_eq!(escapes.imports.len(), MAX_SUMMARY_ENTRIES + 1);
-    assert_eq!(escapes.import_aliases.len(), MAX_SUMMARY_ENTRIES + 1);
+    assert_eq!(actual, MAX_SUMMARY_ENTRIES + 1);
+    assert_eq!(actual_2, MAX_SUMMARY_ENTRIES + 1);
 }
 
 #[rstest::rstest]
@@ -724,8 +895,11 @@ fn imported_class_identity_requires_a_present_loaded_class_spelling(
         ),
     ];
     let index = ExceptionIndex::from_sources(&sources, &[".".into()], &|| false).unwrap();
+
+    let actual = index.binding_id(Utf8Path::new(path), spelling, before);
+
     assert_eq!(
-        index.binding_id(Utf8Path::new(path), spelling, before),
+        actual,
         resolved.then(|| (Utf8PathBuf::from("pkg/__init__.py"), "Root".to_owned()))
     );
 }
@@ -740,12 +914,14 @@ fn ancestry_lookup_rejects_an_unregistered_class_identity(#[case] path: &str, #[
         &|| false,
     )
     .unwrap();
-    assert!(
-        index
-            .classes
-            .contains_key(&(Utf8PathBuf::from("sample.py"), "Target".to_owned()))
-    );
-    assert!(index.resolve_class(&(path.into(), name.into())).is_none());
+
+    let actual = index
+        .classes
+        .contains_key(&(Utf8PathBuf::from("sample.py"), "Target".to_owned()));
+    let actual_2 = index.resolve_class(&(path.into(), name.into())).is_none();
+
+    assert!(actual);
+    assert!(actual_2);
 }
 
 #[test]
@@ -755,11 +931,15 @@ fn relative_import_without_a_package_context_loses_class_identity() {
     let index =
         ExceptionIndex::from_sources(&[(path.to_owned(), source.into())], &[], &|| false).unwrap();
     let module = index.modules.get(path).unwrap();
-    assert!(matches!(
+
+    let actual = matches!(
         module.bindings.get("Imported").unwrap().kind,
         BindingKind::Unknown
-    ));
-    assert!(index.classes.is_empty());
+    );
+    let actual_2 = index.classes.is_empty();
+
+    assert!(actual);
+    assert!(actual_2);
 }
 
 #[test]
@@ -774,16 +954,13 @@ fn cancellation_stops_private_alias_discovery_before_the_second_visible_spelling
         (path.to_owned(), source.to_owned()),
     ];
     let index = ExceptionIndex::from_sources(&sources, &[".".into()], &|| false).unwrap();
-    assert_eq!(
-        index
-            .visible
-            .get(path)
-            .unwrap()
-            .values()
-            .map(Vec::len)
-            .sum::<usize>(),
-        2
-    );
+    let visible_alias_count = index
+        .visible
+        .get(path)
+        .unwrap()
+        .values()
+        .map(Vec::len)
+        .sum::<usize>();
     let parsed = parse_module(source).unwrap();
     let mut replacements = Vec::new();
     lookup_tests::PRIVATE_ALIAS_VISITS.set(0);
@@ -794,7 +971,12 @@ fn cancellation_stops_private_alias_discovery_before_the_second_visible_spelling
         &|| lookup_tests::PRIVATE_ALIAS_VISITS.get() >= 1,
         &mut recording(&mut replacements),
     );
-    assert!(matches!(result, Err(AnalysisError::Cancelled)));
-    assert_eq!(lookup_tests::PRIVATE_ALIAS_VISITS.get(), 1);
+    let cancelled = matches!(result, Err(AnalysisError::Cancelled));
+    let alias_visit_count = lookup_tests::PRIVATE_ALIAS_VISITS.get();
+    let replacements = replacements;
+
+    assert_eq!(visible_alias_count, 2);
+    assert!(cancelled);
+    assert_eq!(alias_visit_count, 1);
     assert_eq!(replacements, [] as [String; 0]);
 }

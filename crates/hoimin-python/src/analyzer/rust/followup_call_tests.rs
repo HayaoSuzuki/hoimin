@@ -400,7 +400,10 @@ fn followup_call_index_build_rejects_cancellation(#[case] operator: &str, #[case
     let operators: MutationOperatorSelection =
         serde_json::from_value(serde_json::json!([operator])).unwrap();
     let parsed = super::parse_module(source).unwrap();
-    assert!(Imports::build(parsed.syntax(), &operators, &|| true).is_err());
+
+    let actual = Imports::build(parsed.syntax(), &operators, &|| true).is_err();
+
+    assert!(actual);
 }
 
 fn assert_multiline_edit_selection(operator: &str, source: &str, line: u32) {

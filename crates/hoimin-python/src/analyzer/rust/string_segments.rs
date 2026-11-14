@@ -100,7 +100,10 @@ mod coverage_tests {
             );
             output
         });
-        assert_eq!(result.as_deref(), expected);
+
+        let actual = result.as_deref();
+
+        assert_eq!(actual, expected);
     }
 
     #[rstest::rstest]
@@ -115,14 +118,15 @@ mod coverage_tests {
     ) {
         let parsed = ruff_python_parser::parse_expression(source).unwrap();
         let polls = Cell::new(0);
-        assert_eq!(
-            run(&parsed.syntax().body, source, &|| {
-                let current = polls.get();
-                polls.set(current + 1);
-                current >= checkpoint
-            }),
-            None
-        );
-        assert_eq!(polls.get(), checkpoint + 1);
+
+        let actual = run(&parsed.syntax().body, source, &|| {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= checkpoint
+        });
+        let actual_2 = polls.get();
+
+        assert_eq!(actual, None);
+        assert_eq!(actual_2, checkpoint + 1);
     }
 }

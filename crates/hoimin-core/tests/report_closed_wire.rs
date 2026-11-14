@@ -414,5 +414,8 @@ fn every_event_kind_requires_a_string(
 #[test]
 fn report_event_rejects_incomplete_raw_json_before_reading_its_discriminator() {
     let error = serde_json::from_str::<hoimin_core::OutputEvent>("{").unwrap_err();
-    assert!(error.to_string().contains("EOF while parsing an object"));
+
+    let actual = error.to_string().contains("EOF while parsing an object");
+
+    assert!(actual);
 }

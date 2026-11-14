@@ -77,10 +77,10 @@ mod coverage_tests {
             "StopIteration",
             &|| false,
         );
-        assert_eq!(
-            result.map(|(_, replacement)| replacement),
-            expected.map(str::to_owned)
-        );
+
+        let actual = result.map(|(_, replacement)| replacement);
+
+        assert_eq!(actual, expected.map(str::to_owned));
     }
     #[rstest::rstest]
     #[case("@decorator\ndef __next__(self):\n    pass\n", None)]
@@ -97,17 +97,17 @@ mod coverage_tests {
     ) {
         let parsed = ruff_python_parser::parse_module(source).unwrap();
         let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
-        assert_eq!(
-            run_entry(
-                definition,
-                source,
-                parsed.tokens(),
-                "StopIteration",
-                &|| false
-            )
-            .map(|(_, replacement)| replacement),
-            expected.map(str::to_owned)
-        );
+
+        let actual = run_entry(
+            definition,
+            source,
+            parsed.tokens(),
+            "StopIteration",
+            &|| false,
+        )
+        .map(|(_, replacement)| replacement);
+
+        assert_eq!(actual, expected.map(str::to_owned));
     }
 
     #[rstest::rstest]
@@ -134,6 +134,9 @@ mod coverage_tests {
                 current >= checkpoint
             },
         );
-        assert_eq!(result.is_some(), completed);
+
+        let actual = result.is_some();
+
+        assert_eq!(actual, completed);
     }
 }

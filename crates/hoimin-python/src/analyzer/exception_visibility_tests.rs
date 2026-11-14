@@ -418,16 +418,16 @@ fn qualified_visibility_keeps_similar_module_prefixes_distinct() {
         ("service.py".into(), "import pkg\nimport pkgextra\n".into()),
     ];
     let index = ExceptionIndex::from_sources(&sources, &[".".into()], &|| false).unwrap();
-    assert_eq!(index.visible, exhaustive_visibility(&index));
+    let indexed_visibility = (index.visible).clone();
     let service = &index.visible[Utf8Path::new("service.py")];
-    assert_eq!(
-        service[&(Utf8PathBuf::from("pkg/__init__.py"), "Root".into())][0].0,
-        "pkg.Root"
-    );
-    assert_eq!(
-        service[&(Utf8PathBuf::from("pkgextra.py"), "Other".into())][0].0,
-        "pkgextra.Other"
-    );
+    let package_root_name =
+        (service[&(Utf8PathBuf::from("pkg/__init__.py"), "Root".into())][0].0).clone();
+    let similar_prefix_name =
+        (service[&(Utf8PathBuf::from("pkgextra.py"), "Other".into())][0].0).clone();
+
+    assert_eq!(indexed_visibility, exhaustive_visibility(&index));
+    assert_eq!(package_root_name, "pkg.Root");
+    assert_eq!(similar_prefix_name, "pkgextra.Other");
 }
 
 #[test]
@@ -437,9 +437,13 @@ fn mapped_syntax_error_does_not_create_qualified_visibility() {
         ("service.py".into(), "import broken\n".into()),
     ];
     let index = ExceptionIndex::from_sources(&sources, &[".".into()], &|| false).unwrap();
-    assert!(!index.modules.contains_key(Utf8Path::new("broken.py")));
+
+    let actual = !index.modules.contains_key(Utf8Path::new("broken.py"));
+    let actual_2 = index.visible[Utf8Path::new("service.py")].clone();
+
+    assert!(actual);
     assert_eq!(index.visible, exhaustive_visibility(&index));
-    assert_eq!(index.visible[Utf8Path::new("service.py")], BTreeMap::new());
+    assert_eq!(actual_2, BTreeMap::new());
 }
 
 #[test]
@@ -449,5 +453,8 @@ fn local_spellings_share_the_limit_with_earlier_qualified_aliases() {
     // local class spellings are visited in path order.
     sources[1].0 = "a_service.py".into();
     let result = ExceptionIndex::from_sources(&sources, &[".".into()], &|| false);
-    assert!(matches!(result, Err(AnalysisError::HierarchyLimit)));
+
+    let actual = matches!(result, Err(AnalysisError::HierarchyLimit));
+
+    assert!(actual);
 }

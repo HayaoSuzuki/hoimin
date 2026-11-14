@@ -536,9 +536,16 @@ mod release_contract_tests {
             processes: 1,
         });
         let id = ledger.reserve(BudgetKind::Copy, 1).unwrap();
+
         ledger.release(id).unwrap();
-        assert_eq!(ledger.release(id), Err(BudgetError::AlreadyReleased(id)));
-        assert_eq!(ledger.reserved(BudgetKind::Copy), 0);
-        assert!(ledger.invariant());
+
+        let repeated = ledger.release(id);
+
+        let actual = ledger.reserved(BudgetKind::Copy);
+        let actual_2 = ledger.invariant();
+
+        assert_eq!(repeated, Err(BudgetError::AlreadyReleased(id)));
+        assert_eq!(actual, 0);
+        assert!(actual_2);
     }
 }

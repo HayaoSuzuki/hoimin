@@ -355,8 +355,11 @@ fn candidate_validation_rejects_incorrect_column() {
 #[test]
 fn ascii_mutation_text_rejects_non_ascii_characters() {
     let error = PythonSourceEncoding::Ascii.encode("é").unwrap_err();
+
+    let actual = error.to_string();
+
     assert_eq!(
-        error.to_string(),
+        actual,
         "source encoding 'ascii': mutation text contains a non-ASCII character"
     );
 }
@@ -364,12 +367,19 @@ fn ascii_mutation_text_rejects_non_ascii_characters() {
 #[test]
 fn ascii_encoding_preserves_representable_text() {
     let encoded = PythonSourceEncoding::Ascii.encode("value = 1\r\n").unwrap();
-    assert_eq!(encoded.as_ref(), b"value = 1\r\n");
+
+    let actual = encoded.as_ref();
+
+    assert_eq!(actual, b"value = 1\r\n");
 }
 
 #[test]
 fn an_empty_encoding_label_does_not_hide_a_valid_second_line_cookie() {
     let decoded = decode_python_source(b"# coding: \n# coding: latin-1\n\xe9").unwrap();
-    assert_eq!(decoded.encoding(), PythonSourceEncoding::Latin1);
-    assert_eq!(decoded.text(), "# coding: \n# coding: latin-1\né");
+
+    let actual = decoded.encoding();
+    let actual_2 = decoded.text();
+
+    assert_eq!(actual, PythonSourceEncoding::Latin1);
+    assert_eq!(actual_2, "# coding: \n# coding: latin-1\né");
 }

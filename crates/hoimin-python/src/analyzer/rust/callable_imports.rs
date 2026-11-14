@@ -755,8 +755,12 @@ mod coverage_tests {
             polls.set(current + 1);
             current >= checkpoint
         });
-        assert_eq!(result.is_err(), checkpoint < total.get());
-        assert_eq!(polls.get(), total.get().min(checkpoint + 1));
+
+        let actual = result.is_err();
+        let actual_2 = polls.get();
+
+        assert_eq!(actual, checkpoint < total.get());
+        assert_eq!(actual_2, total.get().min(checkpoint + 1));
     }
 
     fn run_namespace(
@@ -783,10 +787,10 @@ mod coverage_tests {
         let parsed = ruff_python_parser::parse_module(&source).unwrap();
         let imports = run_build(parsed.syntax(), &|| false).unwrap();
         let class = parsed.syntax().body[1].as_class_def_stmt().unwrap();
-        assert_eq!(
-            run_namespace(&imports, class, &|| false).unwrap().is_some(),
-            expected
-        );
+
+        let actual = run_namespace(&imports, class, &|| false).unwrap().is_some();
+
+        assert_eq!(actual, expected);
     }
 
     #[rstest::rstest]
@@ -798,15 +802,17 @@ mod coverage_tests {
         let imports = run_build(parsed.syntax(), &|| false).unwrap();
         let class = parsed.syntax().body[1].as_class_def_stmt().unwrap();
         let polls = Cell::new(0);
-        assert!(
-            run_namespace(&imports, class, &|| {
-                let current = polls.get();
-                polls.set(current + 1);
-                current >= checkpoint
-            })
-            .is_err()
-        );
-        assert_eq!(polls.get(), checkpoint + 1);
+
+        let actual = run_namespace(&imports, class, &|| {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= checkpoint
+        })
+        .is_err();
+        let actual_2 = polls.get();
+
+        assert!(actual);
+        assert_eq!(actual_2, checkpoint + 1);
     }
     #[rstest::rstest]
     #[case("value: int = dc.child.field()")]
@@ -834,11 +840,12 @@ mod coverage_tests {
             .as_call_expr()
             .unwrap()
             .func;
-        assert!(
-            imports
-                .resolve_in_ordinary_dataclass(function, &namespace)
-                .is_none()
-        );
+
+        let actual = imports
+            .resolve_in_ordinary_dataclass(function, &namespace)
+            .is_none();
+
+        assert!(actual);
     }
 
     #[test]
@@ -855,11 +862,12 @@ mod coverage_tests {
             .as_call_expr()
             .unwrap()
             .func;
-        assert!(
-            imports
-                .resolve_in_ordinary_dataclass(function, &namespace)
-                .is_none()
-        );
+
+        let actual = imports
+            .resolve_in_ordinary_dataclass(function, &namespace)
+            .is_none();
+
+        assert!(actual);
     }
     #[test]
     fn ordinary_dataclass_resolution_rejects_a_field_import_after_the_class() {
@@ -877,10 +885,11 @@ mod coverage_tests {
             .as_call_expr()
             .unwrap()
             .func;
-        assert!(
-            imports
-                .resolve_in_ordinary_dataclass(function, &namespace)
-                .is_none()
-        );
+
+        let actual = imports
+            .resolve_in_ordinary_dataclass(function, &namespace)
+            .is_none();
+
+        assert!(actual);
     }
 }

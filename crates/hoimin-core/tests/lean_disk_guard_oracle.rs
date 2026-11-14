@@ -402,7 +402,10 @@ fn corpus_contract_rejects_invalid_identity(
 ) {
     let mut case = parse_corpus().remove(0);
     mutate(&mut case);
-    assert_eq!(validate_contract(&case).unwrap_err(), expected);
+
+    let actual = validate_contract(&case).unwrap_err();
+
+    assert_eq!(actual, expected);
 }
 
 #[test]
@@ -413,15 +416,17 @@ fn policy_adapter_rejects_unsupported_events() {
         .unwrap();
     case.events = vec![Event::Unsupported];
     let panic = std::panic::catch_unwind(|| assert_policy_case(&case)).unwrap_err();
-    assert_eq!(
-        panic.downcast_ref::<String>().unwrap(),
-        &format!("unsupported policy event in {}", case.id)
-    );
+
+    let actual = panic.downcast_ref::<String>().unwrap();
+
+    assert_eq!(actual, &format!("unsupported policy event in {}", case.id));
 }
 
 #[test]
 fn process_failure_has_the_process_stop_name() {
-    assert_eq!(reason_name(DiskStopReason::ProcessFailed), "process_failed");
+    let actual = reason_name(DiskStopReason::ProcessFailed);
+
+    assert_eq!(actual, "process_failed");
 }
 
 fn sequential_failure_case() -> CorpusCase {
@@ -455,18 +460,20 @@ fn policy_adapter_retains_measurement_failure_secondary_to_size_limit() {
 
 #[test]
 fn simultaneous_secondary_mutant_agrees_on_sequential_failures() {
-    assert!(!broken_policy_mismatches(
+    let actual = !broken_policy_mismatches(
         &sequential_failure_case(),
-        BrokenFamily::DropSimultaneousSecondary
-    ));
+        BrokenFamily::DropSimultaneousSecondary,
+    );
+
+    assert!(actual);
 }
 
 #[test]
 fn broken_policy_comparison_ignores_unsupported_events() {
     let mut case = sequential_failure_case();
     case.events = vec![Event::Unsupported];
-    assert!(!broken_policy_mismatches(
-        &case,
-        BrokenFamily::ExclusiveSize
-    ));
+
+    let actual = !broken_policy_mismatches(&case, BrokenFamily::ExclusiveSize);
+
+    assert!(actual);
 }

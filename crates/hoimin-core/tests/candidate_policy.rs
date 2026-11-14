@@ -692,10 +692,10 @@ proptest! {
 fn unencodable_original_is_an_original_mismatch(#[case] source: &[u8], #[case] original: &str) {
     let mut candidate = descriptor(source);
     candidate.original = original.into();
-    assert_eq!(
-        validate_candidate(source, &candidate),
-        Err(CandidateValidationError::OriginalMismatch)
-    );
+
+    let actual = validate_candidate(source, &candidate);
+
+    assert_eq!(actual, Err(CandidateValidationError::OriginalMismatch));
 }
 
 #[test]
@@ -708,26 +708,30 @@ fn validation_scratch_bound_counts_owned_temporary_text() {
         + candidate.operator.len()
         + 2 * candidate.file_hash.len()
         + 67;
-    assert_eq!(
-        hoimin_core::candidate_validation_scratch_bytes(&candidate),
-        Some(expected)
-    );
+
+    let actual = hoimin_core::candidate_validation_scratch_bytes(&candidate);
+
+    assert_eq!(actual, Some(expected));
 }
 
 #[test]
 fn displayed_mutant_id_preserves_its_stable_wire_identity() {
     let source = b"x = 1\nvalue == 2\n";
     let id = validate_candidate(source, &descriptor(source)).unwrap();
-    assert_eq!(id.to_string(), id.as_str());
+
+    let actual = id.to_string();
+
+    assert_eq!(actual, id.as_str());
 }
 
 #[test]
 fn reusable_context_exposes_decoded_source_without_rebuilding_it() {
     let context = CandidateValidationContext::new(b"# coding: latin-1\n\xe9").unwrap();
     let decoded = context.decoded_source().unwrap();
-    assert_eq!(decoded.text(), "# coding: latin-1\né");
-    assert_eq!(
-        decoded.encoding(),
-        hoimin_core::PythonSourceEncoding::Latin1
-    );
+
+    let actual = decoded.text();
+    let actual_2 = decoded.encoding();
+
+    assert_eq!(actual, "# coding: latin-1\né");
+    assert_eq!(actual_2, hoimin_core::PythonSourceEncoding::Latin1);
 }

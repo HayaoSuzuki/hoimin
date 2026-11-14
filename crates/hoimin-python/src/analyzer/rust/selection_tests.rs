@@ -581,5 +581,7 @@ fn linear_sensitivity_control_preserves_exact_and_descendant_semantics(
     #[case] symbol: &str,
     #[case] expected: (bool, usize, usize),
 ) {
-    assert_eq!(old_linear_lookup(&["chosen".to_owned()], symbol), expected);
+    let actual = old_linear_lookup(&["chosen".to_owned()], symbol);
+
+    assert_eq!(actual, expected);
 }

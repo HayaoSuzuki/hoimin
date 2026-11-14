@@ -241,7 +241,10 @@ mod state_tests {
         selection.ordered_state_mut().unwrap().phase = OrderedCandidatePhase::Ready {
             remaining: VecDeque::from(["m1".into()]),
         };
-        assert_eq!(selection.missing_id(), None);
+
+        let actual = selection.missing_id();
+
+        assert_eq!(actual, None);
     }
 
     #[test]
@@ -251,8 +254,11 @@ mod state_tests {
             selection.select_streamed("m1")
         }))
         .unwrap_err();
+
+        let actual = panic.downcast_ref::<&str>().unwrap();
+
         assert_eq!(
-            panic.downcast_ref::<&str>().unwrap(),
+            actual,
             &"internal error: entered unreachable code: ordered selection collects before dispatch"
         );
     }
@@ -270,8 +276,13 @@ mod state_tests {
             VerificationSelection::candidate_ids(1, 1, false).unwrap(),
         )
         .unwrap();
-        assert_eq!(selection.select_streamed(id), selected);
-        assert_eq!(selection.missing_id().map(String::as_str), missing);
+
+        let dispatched = selection.select_streamed(id);
+
+        let actual = selection.missing_id().map(String::as_str);
+
+        assert_eq!(dispatched, selected);
+        assert_eq!(actual, missing);
     }
 
     #[test]
@@ -281,20 +292,30 @@ mod state_tests {
             VerificationSelection::candidate_ids(1, 1, false).unwrap(),
         )
         .unwrap();
-        assert!(selection.select_streamed("m1"));
+        let first_selected = selection.select_streamed("m1");
         let before = selection.clone();
-        assert!(!selection.select_streamed("m1"));
+
+        let repeated_selected = selection.select_streamed("m1");
+
+        assert!(first_selected);
+        assert!(!repeated_selected);
         assert_eq!(selection, before);
     }
 
     #[test]
     fn ordered_collection_has_no_missing_id_after_every_member_is_discovered() {
         let mut selection = ordered();
-        assert_eq!(selection.missing_id().map(String::as_str), Some("m1"));
+        let missing_before = selection.missing_id().cloned();
+
         selection.ordered_state_mut().unwrap().phase = OrderedCandidatePhase::Collecting {
             discovered: BTreeSet::from(["m1".into()]),
         };
-        assert_eq!(selection.missing_id(), None);
+        let missing_after = selection.missing_id().cloned();
+
+        let actual = missing_before.as_deref();
+
+        assert_eq!(actual, Some("m1"));
+        assert_eq!(missing_after, None);
     }
 
     #[test]

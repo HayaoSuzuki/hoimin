@@ -108,7 +108,10 @@ mod tests {
     ) {
         let source = format!("value = {}", expression(terms));
         let parsed = ruff_python_parser::parse_module(&source).unwrap();
-        assert_eq!(run_check(parsed.syntax(), &|| cancelled), expected);
+
+        let actual = run_check(parsed.syntax(), &|| cancelled);
+
+        assert_eq!(actual, expected);
     }
 
     fn expression(terms: usize) -> String {

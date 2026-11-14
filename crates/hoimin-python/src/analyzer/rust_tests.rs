@@ -2662,6 +2662,27 @@ fn raise_exception_type_pairs_keep_shared_selection_and_profile_behavior() {
             Some("selected".to_owned()),
         )]
     );
+}
+
+#[test]
+fn raise_exception_type_pairs_preserve_line_and_symbol_selection() {
+    let source = "def selected():\n    raise ValueError\n";
+    let full = analyze_with_profile(MutationProfile::Full, 10_000, source);
+    let summarize = |output: &super::AnalyzerOutput| {
+        output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator.as_str() == "exception_type_pair")
+            .map(|candidate| {
+                (
+                    candidate.original.clone(),
+                    candidate.replacement.clone(),
+                    candidate.line,
+                    candidate.symbol.clone(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
 
     let selected = analyze_with(
         Utf8Path::new("pkg/sample.py"),
@@ -2671,11 +2692,18 @@ fn raise_exception_type_pairs_keep_shared_selection_and_profile_behavior() {
         source,
     );
     assert_eq!(summarize(&selected), summarize(&full));
+}
 
+#[test]
+fn raise_exception_type_pair_candidates_respect_the_public_limit() {
     let bounded = analyze_with_profile(MutationProfile::Full, 1, "raise KeyError(key)\n");
     assert_eq!(bounded.candidates.len(), 1);
     assert!(bounded.truncated);
+}
 
+#[test]
+fn excluded_exception_type_pairs_generate_no_candidates() {
+    let source = "def selected():\n    raise ValueError\n";
     let mut operators = MutationOperatorSelection::default();
     operators.exclude(MutationOperator::ExceptionTypePair);
     let excluded = analyze_source(
@@ -2778,13 +2806,37 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse_scenario_2(
         .iter()
         .filter(|candidate| candidate.operator.as_str() == "exception_tuple_remove_member")
         .collect::<Vec<_>>();
-    assert_eq!(removals.len(), 1);
-    let mutated = apply_candidate_and_reparse(&source, removals[0]);
+    let removal_count = removals.len();
+    let mutated = removals
+        .first()
+        .map(|candidate| apply_candidate_and_reparse(&source, candidate));
+
+    assert_eq!(removal_count, 1);
     assert!(
-        !mutated.contains(&format!("except ({termination}")),
-        "tuple removal generated an individual termination handler: {mutated}"
+        mutated
+            .as_ref()
+            .is_some_and(|text| !text.contains(&format!("except ({termination}"))),
+        "tuple removal generated an individual termination handler: {mutated:?}"
     );
 }
+
+const RISKY_EXCEPTION_ADMISSION_SOURCE: &str = concat!(
+    "before_list = [before]\n",
+    "try:\n    work()\n",
+    "except:\n    pass\n",
+    "try:\n    work()\n",
+    "except Exception:\n    pass\n",
+    "try:\n    work()\n",
+    "except BaseException:\n    pass\n",
+    "try:\n    work()\n",
+    "except (ValueError,):\n    pass\n",
+    "try:\n    work()\n",
+    "except (ValueError, TypeError,):\n    pass\n",
+    "try:\n    work()\n",
+    "except (ValueError, # keep this comment\n",
+    "        TypeError,):\n    pass\n",
+    "after_tuple = (after,)\n",
+);
 
 #[test]
 #[expect(
@@ -2792,36 +2844,7 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse_scenario_2(
     reason = "the fixture covers every explicit risky exception operator and parseability"
 )]
 fn exception_risky_candidates_require_explicit_selection_and_reparse() {
-    let source = concat!(
-        "before_list = [before]\n",
-        "try:\n    work()\n",
-        "except:\n    pass\n",
-        "try:\n    work()\n",
-        "except Exception:\n    pass\n",
-        "try:\n    work()\n",
-        "except BaseException:\n    pass\n",
-        "try:\n    work()\n",
-        "except (ValueError,):\n    pass\n",
-        "try:\n    work()\n",
-        "except (ValueError, TypeError,):\n    pass\n",
-        "try:\n    work()\n",
-        "except (ValueError, # keep this comment\n",
-        "        TypeError,):\n    pass\n",
-        "after_tuple = (after,)\n",
-    );
-    let default_output = analyze(source);
-
-    assert!(default_output.candidates.iter().all(|candidate| {
-        !matches!(
-            candidate.operator.as_str(),
-            "exception_bare_to_exception"
-                | "exception_exception_to_bare"
-                | "exception_base_boundary"
-                | "exception_tuple_add_pair"
-                | "exception_tuple_remove_member"
-        )
-    }));
-
+    let source = RISKY_EXCEPTION_ADMISSION_SOURCE;
     let operators = explicitly_selected_risky_exception_operators();
 
     let output = analyze_source(
@@ -2849,6 +2872,18 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
             )
         })
         .collect();
+
+    let reparsed = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator.as_str().starts_with("exception_"))
+        .map(|candidate| {
+            (
+                candidate.original.contains("# keep this comment"),
+                apply_candidate_and_reparse(source, candidate),
+            )
+        })
+        .collect::<Vec<_>>();
 
     assert_eq!(
         risky_candidates,
@@ -2969,22 +3004,33 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
         candidate.operator.as_str() == "exception_tuple_remove_member"
             && candidate.original.contains("# keep this comment")
     }));
-    for candidate in output
-        .candidates
-        .iter()
-        .filter(|candidate| candidate.operator.as_str().starts_with("exception_"))
-    {
-        apply_candidate_and_reparse(source, candidate);
-    }
-    for candidate in output.candidates.iter().filter(|candidate| {
-        candidate.operator.as_str().starts_with("exception_")
-            && candidate.original.contains("# keep this comment")
-    }) {
-        let mutated = apply_candidate_and_reparse(source, candidate);
+    assert!(
+        reparsed
+            .iter()
+            .all(|(had_comment, mutated)| !had_comment || mutated.contains("# keep this comment"))
+    );
+}
 
-        assert!(mutated.contains("# keep this comment"));
-    }
+#[test]
+fn risky_exception_candidates_are_disabled_by_default() {
+    let source = RISKY_EXCEPTION_ADMISSION_SOURCE;
+    let default_output = analyze(source);
 
+    assert!(default_output.candidates.iter().all(|candidate| {
+        !matches!(
+            candidate.operator.as_str(),
+            "exception_bare_to_exception"
+                | "exception_exception_to_bare"
+                | "exception_base_boundary"
+                | "exception_tuple_add_pair"
+                | "exception_tuple_remove_member"
+        )
+    }));
+}
+
+#[test]
+fn risky_exception_candidates_reject_unsupported_handler_expressions() {
+    let operators = explicitly_selected_risky_exception_operators();
     let unsupported = concat!(
         "ValueError = Custom\n",
         "try:\n    work()\n",
@@ -3010,7 +3056,11 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
         .candidates,
         Vec::<super::payload::Charged<AnalyzerCandidate>>::new()
     );
+}
 
+#[test]
+fn risky_exception_candidates_reject_shadowed_builtin_exception_names() {
+    let operators = explicitly_selected_risky_exception_operators();
     let shadowed = concat!(
         "TypeError = CustomError\n",
         "Exception = CustomException\n",
@@ -3044,7 +3094,11 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
         "unexpected shadowed exception candidates: {:#?}",
         shadowed_output.candidates
     );
+}
 
+#[test]
+fn risky_exception_bare_replacement_preserves_handler_order() {
+    let operators = explicitly_selected_risky_exception_operators();
     let handler_position = concat!(
         "try:\n    work()\n",
         "except Exception as error:\n    pass\n",
@@ -6273,6 +6327,8 @@ fn typing_import_rebinding_scope() {
         })
         .collect();
 
+    assert_candidates_reparse(source, &output.candidates);
+
     assert_eq!(
         actual,
         vec![
@@ -6350,8 +6406,10 @@ fn typing_import_rebinding_scope() {
             ),
         ]
     );
-    assert_candidates_reparse(source, &output.candidates);
+}
 
+#[test]
+fn typing_module_alias_rebinding_preserves_local_and_module_sites() {
     let alias_source = concat!(
         "import typing as t\n",
         "def module_alias_shadow():\n",
@@ -6376,6 +6434,8 @@ fn typing_import_rebinding_scope() {
             )
         })
         .collect();
+    assert_candidates_reparse(alias_source, &alias_output.candidates);
+
     assert_eq!(
         alias_actual,
         vec![
@@ -6383,9 +6443,6 @@ fn typing_import_rebinding_scope() {
             (154, 9, 7, None, "t.Sequence[str]"),
         ]
     );
-    for candidate in &alias_output.candidates {
-        apply_candidate_and_reparse(alias_source, candidate);
-    }
 }
 
 type TypingRebindingCase = (

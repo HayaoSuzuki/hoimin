@@ -298,6 +298,7 @@ mod coverage_tests {
         let parsed = parse_module(source).unwrap();
         let mut declarations = Declarations::default();
         declarations.visit_body(&parsed.syntax().body);
+
         assert_eq!(
             declarations.locals,
             expected.iter().map(|name| (*name).to_owned()).collect()
@@ -316,15 +317,17 @@ mod coverage_tests {
         let parsed = parse_module(&source).unwrap();
         let mut declarations = Declarations::default();
         declarations.visit_body(&parsed.syntax().body);
-        assert!(declarations.exceeded);
-        assert_eq!(
-            declarations.globals.len() + declarations.nonlocals.len(),
-            MAX_SUMMARY_ENTRIES + 1
-        );
-        assert!(declarations.locals.is_empty());
+        let limit_exceeded = declarations.exceeded;
+        let declaration_count = declarations.globals.len() + declarations.nonlocals.len();
+        let locals_empty_before = declarations.locals.is_empty();
         let later_expression = ruff_python_parser::parse_expression("(after_limit := 1)").unwrap();
         declarations.visit_expr(&later_expression.syntax().body);
-        assert!(declarations.locals.is_empty());
+        let locals_empty_after = declarations.locals.is_empty();
+
+        assert!(limit_exceeded);
+        assert_eq!(declaration_count, MAX_SUMMARY_ENTRIES + 1);
+        assert!(locals_empty_before);
+        assert!(locals_empty_after);
     }
     #[test]
     fn enclosing_global_declaration_overrides_an_outer_local_binding() {
@@ -337,8 +340,11 @@ mod coverage_tests {
         middle.globals.insert("name".into());
         scopes.enter(Kind::Function, None, middle);
         scopes.enter(Kind::Function, None, Declarations::default());
+
+        let actual = scopes.resolve("name", false, false);
+
         assert_eq!(
-            scopes.resolve("name", false, false),
+            actual,
             vec![BindingKey {
                 scope: 0,
                 name: "name".into()
@@ -356,10 +362,15 @@ mod coverage_tests {
         };
         declarations.add("overflow");
         declarations.add("ignored");
+
+        let actual = declarations.locals.len();
+        let actual_2 = declarations.locals.contains("overflow");
+        let actual_3 = !declarations.locals.contains("ignored");
+
         assert!(declarations.exceeded);
-        assert_eq!(declarations.locals.len(), MAX_SUMMARY_ENTRIES + 1);
-        assert!(declarations.locals.contains("overflow"));
-        assert!(!declarations.locals.contains("ignored"));
+        assert_eq!(actual, MAX_SUMMARY_ENTRIES + 1);
+        assert!(actual_2);
+        assert!(actual_3);
     }
 
     #[rstest::rstest]
@@ -373,6 +384,7 @@ mod coverage_tests {
         let parsed = parse_module(source).unwrap();
         let mut declarations = Declarations::default();
         declarations.visit_body(&parsed.syntax().body);
+
         assert_eq!(
             declarations.locals,
             expected.iter().map(|name| (*name).to_owned()).collect()
@@ -385,6 +397,7 @@ mod coverage_tests {
             parse_module("result = [item for item in values if (condition := item)]\n").unwrap();
         let mut declarations = Declarations::default();
         declarations.visit_body(&parsed.syntax().body);
+
         assert_eq!(
             declarations.locals,
             BTreeSet::from(["result", "condition"].map(str::to_owned))
@@ -395,6 +408,9 @@ mod coverage_tests {
         let parsed = parse_module("pass\n").unwrap();
         let mut declarations = Declarations::default();
         headers(&mut declarations, &parsed.syntax().body[0]);
-        assert!(declarations.locals.is_empty());
+
+        let actual = declarations.locals.is_empty();
+
+        assert!(actual);
     }
 }

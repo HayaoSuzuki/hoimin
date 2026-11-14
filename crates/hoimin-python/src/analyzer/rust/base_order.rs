@@ -129,7 +129,10 @@ mod coverage_tests {
             polls.set(current + 1);
             current >= checkpoint
         });
-        assert_eq!(result.is_some(), completed);
+
+        let actual = result.is_some();
+
+        assert_eq!(actual, completed);
     }
     #[rstest::rstest]
     #[case("class Child: pass\n", false)]
@@ -146,10 +149,10 @@ mod coverage_tests {
     ) {
         let parsed = ruff_python_parser::parse_module(source).unwrap();
         let definition = parsed.syntax().body[0].as_class_def_stmt().unwrap();
-        assert_eq!(
-            run_replacement(definition, source, &|| false).is_some(),
-            eligible
-        );
+
+        let actual = run_replacement(definition, source, &|| false).is_some();
+
+        assert_eq!(actual, eligible);
     }
 
     #[rstest::rstest]
@@ -160,6 +163,9 @@ mod coverage_tests {
         let parsed =
             ruff_python_parser::parse_module("class Child(First, Second): pass\n").unwrap();
         let definition = parsed.syntax().body[0].as_class_def_stmt().unwrap();
-        assert!(run_replacement(definition, source, &|| false).is_none());
+
+        let actual = run_replacement(definition, source, &|| false).is_none();
+
+        assert!(actual);
     }
 }
