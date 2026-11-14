@@ -1843,6 +1843,8 @@ fn coordinator_lock_elapsed_io_deadlines_release_acquired_locks(
     let fault_was_triggered = fault.triggered();
 
     drop(fault);
+    // A concurrent child can retain this fixture descriptor after the parent closes it.
+    let _ = held.as_ref().map(File::unlock).transpose().unwrap();
     drop(held);
     let independent = File::options()
         .read(true)
