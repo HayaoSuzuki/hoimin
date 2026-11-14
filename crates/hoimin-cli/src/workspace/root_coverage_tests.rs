@@ -6,20 +6,20 @@ use super::*;
 fn native_parent_open_rejects_invalid_relative_paths(#[case] path: &str) {
     let directory = tempfile::tempdir().unwrap();
     let root = WorkerRoot::open(Utf8Path::from_path(directory.path()).unwrap().to_owned()).unwrap();
-    assert!(matches!(
-        root.open_native_parent(Path::new(path)),
-        Err(WorkspaceError::InvalidPath { .. })
-    ));
+
+    let result = root.open_native_parent(Path::new(path));
+
+    assert!(matches!(result, Err(WorkspaceError::InvalidPath { .. })));
 }
 
 #[test]
 fn native_parent_open_rejects_absolute_paths() {
     let directory = tempfile::tempdir().unwrap();
     let root = WorkerRoot::open(Utf8Path::from_path(directory.path()).unwrap().to_owned()).unwrap();
-    assert!(matches!(
-        root.open_native_parent(directory.path()),
-        Err(WorkspaceError::InvalidPath { .. })
-    ));
+
+    let result = root.open_native_parent(directory.path());
+
+    assert!(matches!(result, Err(WorkspaceError::InvalidPath { .. })));
 }
 
 #[cfg(unix)]
@@ -29,10 +29,10 @@ fn native_parent_open_rejects_symlink_ancestors() {
     let outside = tempfile::tempdir().unwrap();
     std::os::unix::fs::symlink(outside.path(), directory.path().join("link")).unwrap();
     let root = WorkerRoot::open(Utf8Path::from_path(directory.path()).unwrap().to_owned()).unwrap();
-    assert!(matches!(
-        root.open_native_parent(Path::new("link/target")),
-        Err(WorkspaceError::InvalidPath { .. })
-    ));
+
+    let result = root.open_native_parent(Path::new("link/target"));
+
+    assert!(matches!(result, Err(WorkspaceError::InvalidPath { .. })));
     assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
 }
 
@@ -40,10 +40,10 @@ fn native_parent_open_rejects_symlink_ancestors() {
 fn native_parent_open_reports_missing_directories() {
     let directory = tempfile::tempdir().unwrap();
     let root = WorkerRoot::open(Utf8Path::from_path(directory.path()).unwrap().to_owned()).unwrap();
-    assert!(matches!(
-        root.open_native_parent(Path::new("missing/target")),
-        Err(WorkspaceError::Io { .. })
-    ));
+
+    let result = root.open_native_parent(Path::new("missing/target"));
+
+    assert!(matches!(result, Err(WorkspaceError::Io { .. })));
 }
 
 #[test]
@@ -52,8 +52,10 @@ fn missing_entry_validation_requires_an_actual_directory_parent() {
     let path = directory.path().join("file");
     std::fs::write(&path, b"existing").unwrap();
     let file = File::open(path).unwrap();
+
     let error =
         WorkerRoot::validate_missing_entry_parent(&file, Utf8Path::new("child")).unwrap_err();
+
     assert!(
         matches!(error, WorkspaceError::Io { operation: "inspect worker entry", path, message } if path == "child" && message.contains("not a directory"))
     );
@@ -74,10 +76,11 @@ fn file_removal_rejects_replaced_identity_and_preserves_replacement() {
     )
     .unwrap();
     std::fs::write(directory.path().join("target"), b"replacement").unwrap();
-    assert!(matches!(
-        WorkerRoot::remove_non_directory(root.handle(), &name, Utf8Path::new("target"), &metadata),
-        Err(WorkspaceError::InvalidPath { .. })
-    ));
+
+    let result =
+        WorkerRoot::remove_non_directory(root.handle(), &name, Utf8Path::new("target"), &metadata);
+
+    assert!(matches!(result, Err(WorkspaceError::InvalidPath { .. })));
     assert_eq!(
         std::fs::read(directory.path().join("target")).unwrap(),
         b"replacement"
@@ -98,14 +101,16 @@ fn readonly_mutation_target_is_reopened_only_after_permission_repair() {
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o400)).unwrap();
     let root = WorkerRoot::open(Utf8Path::from_path(directory.path()).unwrap().to_owned()).unwrap();
     let mutation = root.open_mutation_file(Utf8Path::new("target")).unwrap();
-    assert!(mutation.reopen.is_some());
+    let capability_was_preserved = mutation.reopen.is_some();
     let mut writable = mutation.into_writable(Utf8Path::new("target")).unwrap();
     writable.write_all(b"modified").unwrap();
+
     assert_eq!(std::fs::read(&path).unwrap(), b"modified");
     assert_ne!(
         std::fs::metadata(path).unwrap().permissions().mode() & 0o200,
         0
     );
+    assert!(capability_was_preserved);
 }
 
 #[cfg(unix)]
@@ -120,10 +125,10 @@ fn readonly_mutation_reopen_preserves_a_replacement_identity() {
     let mutation = root.open_mutation_file(Utf8Path::new("target")).unwrap();
     std::fs::rename(&path, directory.path().join("original")).unwrap();
     std::fs::write(&path, b"replacement").unwrap();
-    assert!(matches!(
-        mutation.into_writable(Utf8Path::new("target")),
-        Err(WorkspaceError::InvalidPath { .. })
-    ));
+
+    let result = mutation.into_writable(Utf8Path::new("target"));
+
+    assert!(matches!(result, Err(WorkspaceError::InvalidPath { .. })));
     assert_eq!(std::fs::read(path).unwrap(), b"replacement");
     assert_eq!(
         std::fs::read(directory.path().join("original")).unwrap(),
@@ -142,6 +147,7 @@ fn mutation_open_reports_unreadable_files() {
     let root = WorkerRoot::open(Utf8Path::from_path(directory.path()).unwrap().to_owned()).unwrap();
     let denied = root.open_mutation_file(Utf8Path::new("target"));
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
     assert!(matches!(
         denied,
         Err(WorkspaceError::Io {
@@ -156,8 +162,11 @@ fn mutation_open_reports_directory_targets() {
     let directory = tempfile::tempdir().unwrap();
     let root = WorkerRoot::open(Utf8Path::from_path(directory.path()).unwrap().to_owned()).unwrap();
     std::fs::create_dir(directory.path().join("directory")).unwrap();
+
+    let result = root.open_mutation_file(Utf8Path::new("directory"));
+
     assert!(matches!(
-        root.open_mutation_file(Utf8Path::new("directory")),
+        result,
         Err(WorkspaceError::Io {
             operation: "open mutation target",
             ..
@@ -174,9 +183,11 @@ fn mutation_read_reports_real_file_read_errors_with_target_context() {
         file: File::options().write(true).open(path).unwrap(),
         reopen: None,
     };
+
     let error = mutation
         .read_to_end(&mut Vec::new(), 7, Utf8Path::new("target"))
         .unwrap_err();
+
     assert!(
         matches!(error, WorkspaceError::Io { operation: "read mutation target", path, .. } if path == "target")
     );
@@ -194,10 +205,10 @@ fn removal_directory_open_rejects_stale_identity() {
         cap_primitives::fs::stat(root.handle(), Path::new(&name), FollowSymlinks::No).unwrap();
     std::fs::rename(&path, directory.path().join("original")).unwrap();
     std::fs::create_dir(&path).unwrap();
-    assert!(matches!(
-        open_removal_directory(root.handle(), &name, Utf8Path::new("target"), &metadata),
-        Err(WorkspaceError::InvalidPath { .. })
-    ));
+
+    let result = open_removal_directory(root.handle(), &name, Utf8Path::new("target"), &metadata);
+
+    assert!(matches!(result, Err(WorkspaceError::InvalidPath { .. })));
     assert!(directory.path().join("original").is_dir());
 }
 
@@ -213,8 +224,11 @@ fn removal_directory_open_rejects_non_directory_replacement() {
         cap_primitives::fs::stat(root.handle(), Path::new(&name), FollowSymlinks::No).unwrap();
     std::fs::rename(&path, directory.path().join("original")).unwrap();
     std::fs::write(&path, b"replacement").unwrap();
+
+    let result = open_removal_directory(root.handle(), &name, Utf8Path::new("target"), &metadata);
+
     assert!(matches!(
-        open_removal_directory(root.handle(), &name, Utf8Path::new("target"), &metadata),
+        result,
         Err(WorkspaceError::Io {
             operation: "open worker directory",
             ..
@@ -235,6 +249,7 @@ fn inaccessible_directory_repair_rejects_owner_accessible_metadata() {
     let name = OsString::from("target");
     let metadata =
         cap_primitives::fs::stat(root.handle(), Path::new(&name), FollowSymlinks::No).unwrap();
+
     let error = make_inaccessible_directory_accessible(
         root.handle(),
         &name,
@@ -242,6 +257,7 @@ fn inaccessible_directory_repair_rejects_owner_accessible_metadata() {
         Utf8Path::new("target"),
     )
     .unwrap_err();
+
     assert!(
         matches!(error, WorkspaceError::Io { operation: "open worker directory", message, .. } if message.contains("despite owner access bits"))
     );
@@ -262,6 +278,7 @@ fn owner_inaccessible_directory_can_be_repaired_and_removed() {
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
     let root = WorkerRoot::open(Utf8Path::from_path(directory.path()).unwrap().to_owned()).unwrap();
     root.remove_any_if_exists(Utf8Path::new("target")).unwrap();
+
     assert!(!path.exists());
 }
 
@@ -295,12 +312,14 @@ fn inaccessible_directory_identity_is_rechecked_after_permission_repair() {
         root: directory.path().to_owned(),
     });
     let _guard = install_workspace_race_hook(hook);
+
     let result = root.remove_any_if_exists(Utf8Path::new("target"));
     std::fs::set_permissions(
         directory.path().join("held"),
         std::fs::Permissions::from_mode(0o700),
     )
     .unwrap();
+
     assert!(matches!(result, Err(WorkspaceError::InvalidPath { .. })));
     assert_eq!(
         std::fs::read(path.join("preserved")).unwrap(),
@@ -326,8 +345,11 @@ fn removal_depth_limit_preserves_the_unvisited_child() {
         entries: cap_primitives::fs::read_base_dir(root.handle()).unwrap(),
         depth: MAX_WORKER_TREE_DEPTH,
     }];
+
+    let result = WorkerRoot::process_removal_child(&mut stack, &child);
+
     assert!(matches!(
-        WorkerRoot::process_removal_child(&mut stack, &child),
+        result,
         Err(WorkspaceError::TreeDepthExceeded {
             limit: MAX_WORKER_TREE_DEPTH,
             ..
@@ -347,10 +369,10 @@ fn root_access_checks_reject_links() {
     std::fs::write(&file_path, b"preserved").unwrap();
     std::os::unix::fs::symlink("target", directory.path().join("link")).unwrap();
     let root = WorkerRoot::open(Utf8Path::from_path(directory.path()).unwrap().to_owned()).unwrap();
-    assert!(matches!(
-        root.try_exists(Utf8Path::new("link")),
-        Err(WorkspaceError::InvalidPath { .. })
-    ));
+
+    let result = root.try_exists(Utf8Path::new("link"));
+
+    assert!(matches!(result, Err(WorkspaceError::InvalidPath { .. })));
     assert_eq!(std::fs::read(file_path).unwrap(), b"preserved");
 }
 
@@ -372,8 +394,10 @@ fn root_access_checks_report_revoked_search_permissions(
     std::fs::write(&file_path, b"preserved").unwrap();
     let root = WorkerRoot::open(Utf8Path::from_path(directory.path()).unwrap().to_owned()).unwrap();
     std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o400)).unwrap();
+
     let result = action(&root);
     std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+
     assert!(matches!(result, Err(WorkspaceError::Io { .. })));
     assert_eq!(std::fs::read(file_path).unwrap(), b"preserved");
 }
@@ -394,9 +418,11 @@ fn snapshot_verification_reports_expected_stream_read_errors() {
             .unwrap()
             .permissions(),
     );
+
     let error = root
         .snapshot_matches_reader(Utf8Path::new("target"), &mut BrokenReader, 7, permissions)
         .unwrap_err();
+
     assert!(
         matches!(error, WorkspaceError::Io { operation: "verify restored file", message, .. } if message.contains("injected expected snapshot read failure"))
     );
@@ -415,21 +441,28 @@ fn mutation_read_preparation_failure_preserves_input_and_allows_retry(
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     let logical = Utf8Path::new("target.py");
     let mut file = root.open_mutation_file(logical).unwrap();
+
     let fault = crate::workspace::owned::io_faults::arm(point);
     let mut bytes = Vec::new();
+
     let result = file.read_to_end(&mut bytes, 8, logical);
+    let fault_was_triggered = fault.triggered();
+
+    let bytes_after_failure = bytes.clone();
+    let bytes_before_retry = std::fs::read(path.join("target.py")).unwrap();
+    drop(fault);
+    file.read_to_end(&mut bytes, 8, logical).unwrap();
+
+    assert_eq!(bytes, b"original");
     assert!(
-        fault.triggered(),
+        fault_was_triggered,
         "mutation read preparation boundary was not checked"
     );
     assert!(matches!(result, Err(WorkspaceError::Io {
         operation: actual, message, ..
     }) if actual == operation && message.contains(point)));
-    assert_eq!(bytes, b"");
-    assert_eq!(std::fs::read(path.join("target.py")).unwrap(), b"original");
-    drop(fault);
-    file.read_to_end(&mut bytes, 8, logical).unwrap();
-    assert_eq!(bytes, b"original");
+    assert_eq!(bytes_after_failure, b"");
+    assert_eq!(bytes_before_retry, b"original");
 }
 
 #[cfg(unix)]
@@ -451,19 +484,25 @@ fn worker_write_metadata_failure_keeps_a_retryable_file(
     prepare(path.join("target.py")).unwrap();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     let logical = Utf8Path::new("target.py");
+
     let fault = crate::workspace::owned::io_faults::arm(point);
+
     let result = root.write(logical, b"replacement");
+    let fault_was_triggered = fault.triggered();
+
+    let bytes_before_retry = root.read(logical).unwrap();
+    drop(fault);
+    root.write(logical, b"replacement").unwrap();
+
+    assert_eq!(root.read(logical).unwrap(), b"replacement");
     assert!(
-        fault.triggered(),
+        fault_was_triggered,
         "worker metadata boundary was not checked: {point}"
     );
     assert!(matches!(result, Err(WorkspaceError::Io {
         operation: "inspect worker file", message, ..
     }) if message.contains(point)));
-    assert_eq!(root.read(logical).unwrap(), expected_after_failure);
-    drop(fault);
-    root.write(logical, b"replacement").unwrap();
-    assert_eq!(root.read(logical).unwrap(), b"replacement");
+    assert_eq!(bytes_before_retry, expected_after_failure);
 }
 
 #[cfg(unix)]
@@ -483,26 +522,36 @@ fn worker_removal_metadata_failure_preserves_the_file_until_retry(
     std::fs::write(path.join("target.py"), b"original").unwrap();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     let logical = Utf8Path::new("target.py");
+
     let fault = crate::workspace::owned::io_faults::arm(point);
+
     let result = remove(&root, logical);
+    let fault_was_triggered = fault.triggered();
+
+    let bytes_before_retry = root.read(logical).unwrap();
+    drop(fault);
+    remove(&root, logical).unwrap();
+
+    let observed = !root.try_exists(logical).unwrap();
+
+    assert!(observed);
     assert!(
-        fault.triggered(),
+        fault_was_triggered,
         "removal metadata boundary was not checked: {point}"
     );
     assert!(matches!(result, Err(WorkspaceError::Io {
         operation: "inspect worker file", message, ..
     }) if message.contains(point)));
-    assert_eq!(root.read(logical).unwrap(), b"original");
-    drop(fault);
-    remove(&root, logical).unwrap();
-    assert!(!root.try_exists(logical).unwrap());
+    assert_eq!(bytes_before_retry, b"original");
 }
 
 #[cfg(unix)]
 fn create_fifo(path: &Utf8Path) {
     let native = std::ffi::CString::new(path.as_str()).unwrap();
     // SAFETY: native is a live NUL-terminated pathname in the owned temporary directory.
+
     let result = unsafe { libc::mkfifo(native.as_ptr(), 0o600) };
+
     assert_eq!(result, 0, "{}", std::io::Error::last_os_error());
 }
 
@@ -523,17 +572,22 @@ fn worker_write_rejects_a_fifo_replacement_after_initial_file_inspection() {
         .open(&replacement)
         .unwrap();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
+
     let fault = crate::workspace::owned::io_faults::arm_action(
         "worker.write.inspect_existing",
         0,
         move || std::fs::rename(replacement, target),
     );
     let logical = Utf8Path::new("target.py");
+
     let result = root.write(logical, b"replacement");
-    assert!(fault.triggered());
-    assert!(matches!(result, Err(WorkspaceError::InvalidPath { path }) if path == logical));
+    let fault_was_triggered = fault.triggered();
+
     let mut bytes = [0; 16];
+
     assert_eq!(reader.read(&mut bytes).unwrap(), 0);
+    assert!(fault_was_triggered);
+    assert!(matches!(result, Err(WorkspaceError::InvalidPath { path }) if path == logical));
 }
 
 #[cfg(unix)]
@@ -546,7 +600,10 @@ fn worker_write_rejects_an_existing_fifo_before_writing() {
     create_fifo(&path.join("target.py"));
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     let logical = Utf8Path::new("target.py");
-    assert!(matches!(root.write(logical, b"replacement"),
+
+    let result = root.write(logical, b"replacement");
+
+    assert!(matches!(result,
         Err(WorkspaceError::InvalidPath { path }) if path == logical));
     assert!(
         std::fs::symlink_metadata(path.join("target.py"))
@@ -597,21 +654,14 @@ fn mutation_permission_repair_inspection_failure_preserves_bytes_and_can_retry(
         file: File::open(&target).unwrap(),
         reopen: Some((parent, name)),
     };
+
     let fault = crate::workspace::owned::io_faults::arm_after(point, skip);
+
     let result = file.into_writable(logical);
-    assert!(
-        fault.triggered(),
-        "permission boundary was not checked: {point}"
-    );
-    assert!(
-        matches!(result, Err(WorkspaceError::Io { operation: actual, message, .. })
-        if actual == operation && message.contains(point))
-    );
-    assert_eq!(root.read(logical).unwrap(), b"original");
-    assert_eq!(
-        std::fs::metadata(&target).unwrap().permissions().mode() & 0o200 != 0,
-        expected_owner_write
-    );
+    let fault_was_triggered = fault.triggered();
+
+    let bytes_before_retry = root.read(logical).unwrap();
+    let mode_before_retry = std::fs::metadata(&target).unwrap().permissions().mode() & 0o200 != 0;
     drop(fault);
     let mut retry = root
         .open_mutation_file(logical)
@@ -619,7 +669,18 @@ fn mutation_permission_repair_inspection_failure_preserves_bytes_and_can_retry(
         .into_writable(logical)
         .unwrap();
     retry.write_all(b"replacement").unwrap();
+
     assert_eq!(root.read(logical).unwrap(), b"replacement");
+    assert!(
+        fault_was_triggered,
+        "permission boundary was not checked: {point}"
+    );
+    assert!(
+        matches!(result, Err(WorkspaceError::Io { operation: actual, message, .. })
+        if actual == operation && message.contains(point))
+    );
+    assert_eq!(bytes_before_retry, b"original");
+    assert_eq!(mode_before_retry, expected_owner_write);
 }
 
 #[rstest::rstest]
@@ -632,7 +693,10 @@ fn worker_root_open_rejects_non_directories_with_path_context(
     let directory = tempfile::tempdir().unwrap();
     let entry = Utf8Path::from_path(directory.path()).unwrap().join("entry");
     prepare(entry.clone()).unwrap();
-    assert!(matches!(WorkerRoot::open(entry.clone()),
+
+    let result = WorkerRoot::open(entry.clone());
+
+    assert!(matches!(result,
         Err(WorkspaceError::Io { operation: "open worker root", path, .. }) if path == entry));
 }
 
@@ -664,7 +728,10 @@ fn worker_file_operations_reject_parent_traversal_without_touching_sibling_files
     std::fs::write(&outside, b"outside sentinel").unwrap();
     let root = WorkerRoot::open(worker).unwrap();
     let logical = Utf8Path::new("../outside.txt");
-    assert!(matches!(action(&root, logical),
+
+    let result = action(&root, logical);
+
+    assert!(matches!(result,
         Err(WorkspaceError::InvalidPath { path }) if path == logical));
     assert_eq!(std::fs::read(outside).unwrap(), b"outside sentinel");
 }
@@ -697,8 +764,11 @@ fn worker_directory_metadata_failure_preserves_the_complete_tree(
     prepare(path.join("target"));
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     let before = root.entries().unwrap();
+
     let fault = crate::workspace::owned::io_faults::arm_after("worker.directory.inspect", skip);
+
     let result = action(&root, Utf8Path::new("target"));
+
     assert!(
         fault.triggered(),
         "directory metadata boundary was not checked"
@@ -719,7 +789,9 @@ fn native_cleanup_rejects_parent_traversal_with_retained_root_context() {
     let outside = parent.join("outside.txt");
     std::fs::write(&outside, b"outside sentinel").unwrap();
     let root = WorkerRoot::open(worker.clone()).unwrap();
+
     let result = root.remove_any_if_exists(Utf8Path::new("../outside.txt"));
+
     assert!(matches!(result, Err(WorkspaceError::InvalidPath { path }) if path == worker));
     assert_eq!(std::fs::read(outside).unwrap(), b"outside sentinel");
 }
@@ -759,11 +831,14 @@ fn worker_directory_permission_failure_preserves_the_original_mode() {
     std::fs::create_dir(&path).unwrap();
     let retained = open_retained_directory(path.as_std_path()).unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o500)).unwrap();
+
     let fault = crate::workspace::owned::io_faults::arm("worker.directory.chmod");
+
     let result = make_directory_writable(&retained, &path);
     let observed_mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o700;
     // Restore traversable fixture permissions before any assertion can fail.
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+
     assert!(
         fault.triggered(),
         "directory chmod boundary was not checked"
@@ -798,8 +873,11 @@ fn worker_file_io_failure_preserves_the_original_content(
     std::fs::write(&target, b"original").unwrap();
     std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o600)).unwrap();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
+
     let fault = crate::workspace::owned::io_faults::arm(point);
+
     let result = action(&root, Utf8Path::new("target.py"));
+
     assert!(
         fault.triggered(),
         "opened file metadata boundary was not checked: {point}"
@@ -826,7 +904,10 @@ fn strict_file_operations_reject_fifo_targets_without_removing_them(
     create_fifo(&path.join("target"));
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     let logical = Utf8Path::new("target");
-    assert!(matches!(action(&root, logical),
+
+    let result = action(&root, logical);
+
+    assert!(matches!(result,
         Err(WorkspaceError::InvalidPath { path }) if path == logical));
     assert!(
         std::fs::symlink_metadata(path.join("target"))
@@ -845,7 +926,10 @@ fn native_cleanup_unlinks_fifo_entries() {
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     let logical = Utf8Path::new("target");
     root.remove_any_if_exists(logical).unwrap();
-    assert!(!root.try_exists(logical).unwrap());
+
+    let observed = !root.try_exists(logical).unwrap();
+
+    assert!(observed);
 }
 
 #[cfg(unix)]
@@ -860,20 +944,30 @@ fn worker_snapshot_reports_a_file_removed_after_initial_inspection() {
     let permissions = std::fs::metadata(&target).unwrap().permissions().mode();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     let logical = Utf8Path::new("target");
-    assert!(
-        root.snapshot_matches(logical, b"original", permissions)
-            .unwrap()
-    );
+    let initial_snapshot_matched = root
+        .snapshot_matches(logical, b"original", permissions)
+        .unwrap();
+
     let fault =
         crate::workspace::owned::io_faults::arm_action("worker.snapshot.open", 0, move || {
             std::fs::remove_file(target)
         });
+
     let result = root.snapshot_matches(logical, b"original", permissions);
-    assert!(fault.triggered(), "snapshot open boundary was not checked");
+
+    let fault_was_triggered = fault.triggered();
+
+    let observed = !root.try_exists(logical).unwrap();
+
+    assert!(observed);
+    assert!(initial_snapshot_matched);
+    assert!(
+        fault_was_triggered,
+        "snapshot open boundary was not checked"
+    );
     assert!(matches!(result, Err(WorkspaceError::Io {
         operation: "verify restored file", path, ..
     }) if path == logical));
-    assert!(!root.try_exists(logical).unwrap());
 }
 
 #[cfg(unix)]
@@ -888,23 +982,25 @@ fn worker_snapshot_rejects_file_growth_before_reading() {
     let permissions = std::fs::metadata(&target).unwrap().permissions().mode();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     let logical = Utf8Path::new("target");
-    assert!(
-        root.snapshot_matches(logical, b"original", permissions)
-            .unwrap()
-    );
+    let initial_snapshot_matched = root
+        .snapshot_matches(logical, b"original", permissions)
+        .unwrap();
     let changed = target.clone();
+
     let fault = crate::workspace::owned::io_faults::arm_action(
         "worker.snapshot.inspect_opened",
         0,
         move || std::fs::write(changed, b"grown payload"),
     );
-    assert!(
-        !root
-            .snapshot_matches(logical, b"original", permissions)
-            .unwrap()
-    );
+
+    let observed = !root
+        .snapshot_matches(logical, b"original", permissions)
+        .unwrap();
+
+    assert!(observed);
     assert!(fault.triggered());
     assert_eq!(std::fs::read(target).unwrap(), b"grown payload");
+    assert!(initial_snapshot_matched);
 }
 
 #[cfg(unix)]
@@ -928,13 +1024,17 @@ fn worker_snapshot_rejects_a_fifo_replacement_without_reading_from_it() {
         .unwrap();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     let logical = Utf8Path::new("target");
-    assert!(root.snapshot_matches(logical, b"", permissions).unwrap());
+    let initial_snapshot_matched = root.snapshot_matches(logical, b"", permissions).unwrap();
     let changed = target.clone();
+
     let fault =
         crate::workspace::owned::io_faults::arm_action("worker.snapshot.open", 0, move || {
             std::fs::rename(replacement, changed)
         });
-    assert!(!root.snapshot_matches(logical, b"", permissions).unwrap());
+
+    let observed = !root.snapshot_matches(logical, b"", permissions).unwrap();
+
+    assert!(observed);
     assert!(fault.triggered(), "snapshot open boundary was not checked");
     assert!(
         std::fs::symlink_metadata(target)
@@ -942,6 +1042,7 @@ fn worker_snapshot_rejects_a_fifo_replacement_without_reading_from_it() {
             .file_type()
             .is_fifo()
     );
+    assert!(initial_snapshot_matched);
 }
 
 #[rstest::rstest]
@@ -985,8 +1086,11 @@ fn worker_directory_io_failures_preserve_every_original_entry(
     std::fs::write(path.join("sibling"), b"sibling bytes").unwrap();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     let before = root.entries().unwrap();
+
     let fault = crate::workspace::owned::io_faults::arm_after(point, skip);
+
     let result = action(&root, Utf8Path::new("target"));
+
     assert!(
         fault.triggered(),
         "directory I/O boundary was not checked: {point}"
@@ -1045,19 +1149,25 @@ fn worker_file_io_failures_before_mutation_preserve_original_bytes(
     std::fs::write(path.join("target"), b"original").unwrap();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     let logical = Utf8Path::new("target");
+
     let fault = crate::workspace::owned::io_faults::arm(point);
+
     let result = action(&root, logical);
+    let fault_was_triggered = fault.triggered();
+
+    let bytes_before_retry = root.read(logical).unwrap();
+    drop(fault);
+    action(&root, logical).unwrap();
+
     assert!(
-        fault.triggered(),
+        fault_was_triggered,
         "file I/O boundary was not checked: {point}"
     );
     assert!(
         matches!(result, Err(WorkspaceError::Io { operation: actual, message, .. })
         if actual == operation && message.contains(point))
     );
-    assert_eq!(root.read(logical).unwrap(), b"original");
-    drop(fault);
-    action(&root, logical).unwrap();
+    assert_eq!(bytes_before_retry, b"original");
 }
 
 #[expect(
@@ -1078,6 +1188,7 @@ fn worker_write_callback_persists_exactly_the_supplied_payload() {
     let logical = Utf8Path::new("target");
     root.with_write_file(logical, write_replacement_payload)
         .unwrap();
+
     assert_eq!(root.read(logical).unwrap(), b"replacement");
 }
 
@@ -1089,16 +1200,25 @@ fn failed_worker_payload_write_can_be_retried_after_truncation() {
     std::fs::write(path.join("target"), b"original").unwrap();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     let logical = Utf8Path::new("target");
+
     let fault = crate::workspace::owned::io_faults::arm("worker.write.bytes");
+
     let result = root.write(logical, b"replacement");
-    assert!(fault.triggered(), "payload write boundary was not checked");
+    let fault_was_triggered = fault.triggered();
+
+    let bytes_before_retry = root.read(logical).unwrap();
+    drop(fault);
+    root.write(logical, b"replacement").unwrap();
+
+    assert_eq!(root.read(logical).unwrap(), b"replacement");
+    assert!(
+        fault_was_triggered,
+        "payload write boundary was not checked"
+    );
     assert!(matches!(result, Err(WorkspaceError::Io {
         operation: "write worker file", message, ..
     }) if message.contains("worker.write.bytes")));
-    assert_eq!(root.read(logical).unwrap(), b"");
-    drop(fault);
-    root.write(logical, b"replacement").unwrap();
-    assert_eq!(root.read(logical).unwrap(), b"replacement");
+    assert_eq!(bytes_before_retry, b"");
 }
 
 #[cfg(unix)]
@@ -1119,20 +1239,26 @@ fn mutation_reopen_reports_namespace_removal_after_permission_repair() {
         file: File::open(&target).unwrap(),
         reopen: Some((parent, name)),
     };
+
     let fault = crate::workspace::owned::io_faults::arm_action(
         "worker.mutation.reopen.inspect_original",
         0,
         move || std::fs::remove_file(target),
     );
+
     let result = mutation.into_writable(logical);
-    assert!(fault.triggered());
+    let fault_was_triggered = fault.triggered();
+
+    let failure_was_observed = !root.try_exists(logical).unwrap();
+    let mut bytes = Vec::new();
+    original.read_to_end(&mut bytes).unwrap();
+
+    assert_eq!(bytes, b"original");
+    assert!(fault_was_triggered);
     assert!(matches!(result, Err(WorkspaceError::Io {
         operation: "open mutation target", path, ..
     }) if path == logical));
-    assert!(!root.try_exists(logical).unwrap());
-    let mut bytes = Vec::new();
-    original.read_to_end(&mut bytes).unwrap();
-    assert_eq!(bytes, b"original");
+    assert!(failure_was_observed);
 }
 
 #[cfg(unix)]
@@ -1151,15 +1277,21 @@ fn worker_file_permission_inspection_errors_retain_the_correct_progress(
     std::fs::write(path.join("target"), b"original").unwrap();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     let logical = Utf8Path::new("target");
+
     let fault = crate::workspace::owned::io_faults::arm_after("worker.file.inspect", skip);
+
     let result = action(&root, logical);
-    assert!(fault.triggered());
+    let fault_was_triggered = fault.triggered();
+
+    let bytes_before_retry = root.read(logical).unwrap();
+    drop(fault);
+    action(&root, logical).unwrap();
+
+    assert!(fault_was_triggered);
     assert!(matches!(result, Err(WorkspaceError::Io {
         operation: "inspect worker file", message, ..
     }) if message.contains("worker.file.inspect")));
-    assert_eq!(root.read(logical).unwrap(), expected_bytes);
-    drop(fault);
-    action(&root, logical).unwrap();
+    assert_eq!(bytes_before_retry, expected_bytes);
 }
 
 #[test]
@@ -1167,21 +1299,27 @@ fn directory_creation_rejects_parent_metadata_failure_before_creating_any_compon
     let directory = tempfile::tempdir().unwrap();
     let path = Utf8Path::from_path(directory.path()).unwrap();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
+
     let fault = crate::workspace::owned::io_faults::arm("worker.directory.inspect");
+
     let result = root.ensure_directory(Utf8Path::new("missing/nested"));
-    assert!(fault.triggered());
-    assert!(matches!(result, Err(WorkspaceError::Io {
-        operation: "inspect worker directory", message, ..
-    }) if message.contains("worker.directory.inspect")));
-    assert!(!root.try_exists(Utf8Path::new("missing")).unwrap());
+    let fault_was_triggered = fault.triggered();
+
+    let failure_was_observed = !root.try_exists(Utf8Path::new("missing")).unwrap();
     drop(fault);
     root.ensure_directory(Utf8Path::new("missing/nested"))
         .unwrap();
+
     assert!(
         std::fs::metadata(path.join("missing/nested"))
             .unwrap()
             .is_dir()
     );
+    assert!(fault_was_triggered);
+    assert!(matches!(result, Err(WorkspaceError::Io {
+        operation: "inspect worker directory", message, ..
+    }) if message.contains("worker.directory.inspect")));
+    assert!(failure_was_observed);
 }
 
 #[test]
@@ -1189,24 +1327,30 @@ fn directory_creation_reports_syscall_errors_without_publishing_a_partial_path()
     let directory = tempfile::tempdir().unwrap();
     let path = Utf8Path::from_path(directory.path()).unwrap();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
+
     let fault = crate::workspace::owned::io_faults::arm("worker.parent.mkdir");
+
     let result = root.ensure_directory(Utf8Path::new("missing/nested"));
-    assert!(
-        fault.triggered(),
-        "directory create boundary was not checked"
-    );
-    assert!(matches!(result, Err(WorkspaceError::Io {
-        operation: "open worker parent", message, ..
-    }) if message.contains("worker.parent.mkdir")));
-    assert!(!root.try_exists(Utf8Path::new("missing")).unwrap());
+    let fault_was_triggered = fault.triggered();
+
+    let failure_was_observed = !root.try_exists(Utf8Path::new("missing")).unwrap();
     drop(fault);
     root.ensure_directory(Utf8Path::new("missing/nested"))
         .unwrap();
+
     assert!(
         std::fs::metadata(path.join("missing/nested"))
             .unwrap()
             .is_dir()
     );
+    assert!(
+        fault_was_triggered,
+        "directory create boundary was not checked"
+    );
+    assert!(matches!(result, Err(WorkspaceError::Io {
+        operation: "open worker parent", message, ..
+    }) if message.contains("worker.parent.mkdir")));
+    assert!(failure_was_observed);
 }
 
 #[cfg(unix)]
@@ -1231,24 +1375,30 @@ fn native_directory_removal_io_failures_preserve_unvisited_contents(
     std::fs::write(path.join("target/a/leaf"), b"original").unwrap();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     let before = root.entries().unwrap();
+
     let fault = crate::workspace::owned::io_faults::arm_after(point, skip);
+
     let result = root.remove_any_if_exists(Utf8Path::new("target"));
+    let fault_was_triggered = fault.triggered();
+
+    let entries_after_failure = root.entries().unwrap();
+    let bytes_before_retry = root.read(Utf8Path::new("target/a/leaf")).unwrap();
+    drop(fault);
+    root.remove_any_if_exists(Utf8Path::new("target")).unwrap();
+
+    let observed = !root.try_exists(Utf8Path::new("target")).unwrap();
+
+    assert!(observed);
     assert!(
-        fault.triggered(),
+        fault_was_triggered,
         "directory removal boundary was not checked: {point}"
     );
     assert!(
         matches!(result, Err(WorkspaceError::Io { operation: actual, message, .. })
         if actual == operation && message.contains(point))
     );
-    assert_eq!(root.entries().unwrap(), before);
-    assert_eq!(
-        root.read(Utf8Path::new("target/a/leaf")).unwrap(),
-        b"original"
-    );
-    drop(fault);
-    root.remove_any_if_exists(Utf8Path::new("target")).unwrap();
-    assert!(!root.try_exists(Utf8Path::new("target")).unwrap());
+    assert_eq!(entries_after_failure, before);
+    assert_eq!(bytes_before_retry, b"original");
 }
 
 #[cfg(unix)]
@@ -1259,19 +1409,27 @@ fn native_empty_directory_removal_failure_is_retryable() {
     std::fs::create_dir(path.join("target")).unwrap();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     let logical = Utf8Path::new("target");
+
     let fault = crate::workspace::owned::io_faults::arm("worker.removal.rmdir");
+
     let result = root.remove_any_if_exists(logical);
+    let fault_was_triggered = fault.triggered();
+
+    let failure_was_observed = root.try_exists(logical).unwrap();
+    drop(fault);
+    root.remove_any_if_exists(logical).unwrap();
+
+    let observed = !root.try_exists(logical).unwrap();
+
+    assert!(observed);
     assert!(
-        fault.triggered(),
+        fault_was_triggered,
         "empty directory removal boundary was not checked"
     );
     assert!(matches!(result, Err(WorkspaceError::Io {
         operation: "remove worker directory", message, ..
     }) if message.contains("worker.removal.rmdir")));
-    assert!(root.try_exists(logical).unwrap());
-    drop(fault);
-    root.remove_any_if_exists(logical).unwrap();
-    assert!(!root.try_exists(logical).unwrap());
+    assert!(failure_was_observed);
 }
 
 #[cfg(unix)]
@@ -1296,8 +1454,11 @@ fn cleanup_diagnostics_use_the_retained_ancestor_when_the_logical_prefix_is_unkn
         entries,
         depth: 0,
     }];
+
     let fault = crate::workspace::owned::io_faults::arm("worker.cleanup.inspect_file");
+
     let result = WorkerRoot::process_removal_child(&mut stack, &child);
+
     assert!(fault.triggered());
     assert!(matches!(result, Err(WorkspaceError::Io {
         operation: "inspect worker file", path: error_path, ..
@@ -1316,6 +1477,7 @@ fn worker_entries_classify_directory_symlinks_without_traversing_their_targets()
     std::os::unix::fs::symlink(outside.path(), path.join("link")).unwrap();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     let entries = root.entries().unwrap();
+
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].kind, WorkerEntryKind::LinkOrReparse);
     assert_eq!(
@@ -1336,6 +1498,7 @@ fn worker_entries_classify_fifo_entries_as_special_entries() {
     create_fifo(&path.join("pipe"));
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     let entries = root.entries().unwrap();
+
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].kind, WorkerEntryKind::LinkOrReparse);
     assert_eq!(
@@ -1355,7 +1518,10 @@ fn recursive_native_cleanup_unlinks_symlinks_without_entering_outside_directorie
     std::os::unix::fs::symlink(outside.path(), path.join("target/link")).unwrap();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     root.remove_any_if_exists(Utf8Path::new("target")).unwrap();
-    assert!(!root.try_exists(Utf8Path::new("target")).unwrap());
+
+    let observed = !root.try_exists(Utf8Path::new("target")).unwrap();
+
+    assert!(observed);
     assert_eq!(
         std::fs::read(outside.path().join("protected")).unwrap(),
         b"outside sentinel"
@@ -1374,9 +1540,14 @@ fn strict_file_operations_report_missing_entries_without_creating_them(
     let directory = tempfile::tempdir().unwrap();
     let root = WorkerRoot::open(Utf8Path::from_path(directory.path()).unwrap().to_owned()).unwrap();
     let logical = Utf8Path::new("missing");
-    assert!(matches!(action(&root, logical),
+
+    let result = action(&root, logical);
+
+    let observed = !root.try_exists(logical).unwrap();
+
+    assert!(observed);
+    assert!(matches!(result,
         Err(WorkspaceError::Io { operation: actual, path, .. }) if actual == operation && path == logical));
-    assert!(!root.try_exists(logical).unwrap());
 }
 
 #[rstest::rstest]
@@ -1389,16 +1560,23 @@ fn missing_entry_parent_inspection_failure_cannot_establish_safe_absence(
     let directory = tempfile::tempdir().unwrap();
     let root = WorkerRoot::open(Utf8Path::from_path(directory.path()).unwrap().to_owned()).unwrap();
     let logical = Utf8Path::new("missing");
+
     let fault = crate::workspace::owned::io_faults::arm("worker.parent.inspect_missing");
+
     let result = action(&root, logical);
+
+    let fault_was_triggered = fault.triggered();
+
+    let observed = !root.try_exists(logical).unwrap();
+
+    assert!(observed);
     assert!(
-        fault.triggered(),
+        fault_was_triggered,
         "missing parent metadata boundary was not checked"
     );
     assert!(matches!(result, Err(WorkspaceError::Io {
         operation: "inspect worker parent", message, ..
     }) if message.contains("worker.parent.inspect_missing")));
-    assert!(!root.try_exists(logical).unwrap());
 }
 
 #[cfg(unix)]
@@ -1414,13 +1592,16 @@ fn cleanup_rechecks_identity_after_a_permission_denied_open(#[case] replace: fn(
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     let replacement = target.clone();
     let held = path.join("held");
+
     let fault =
         crate::workspace::owned::io_faults::arm_action("worker.cleanup.open_file", 0, move || {
             std::fs::rename(&replacement, &held).unwrap();
             replace(&replacement);
             Err(io::Error::from(io::ErrorKind::PermissionDenied))
         });
+
     let result = root.remove_any_if_exists(Utf8Path::new("target"));
+
     assert!(fault.triggered());
     assert!(matches!(result, Err(WorkspaceError::InvalidPath { path }) if path == "target"));
     assert!(std::fs::symlink_metadata(&target).is_ok());
@@ -1435,12 +1616,15 @@ fn cleanup_reports_an_entry_disappearing_after_a_permission_denied_open() {
     let target = path.join("target");
     std::fs::write(&target, b"original").unwrap();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
+
     let fault =
         crate::workspace::owned::io_faults::arm_action("worker.cleanup.open_file", 0, move || {
             std::fs::rename(&target, target.with_file_name("held")).unwrap();
             Err(io::Error::from(io::ErrorKind::PermissionDenied))
         });
+
     let result = root.remove_any_if_exists(Utf8Path::new("target"));
+
     assert!(fault.triggered());
     assert!(matches!(
         result,
@@ -1459,11 +1643,13 @@ fn cleanup_can_unlink_the_unchanged_file_after_a_permission_denied_open() {
     let path = Utf8Path::from_path(directory.path()).unwrap();
     std::fs::write(path.join("target"), b"original").unwrap();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
+
     let fault =
         crate::workspace::owned::io_faults::arm_action("worker.cleanup.open_file", 0, || {
             Err(io::Error::from(io::ErrorKind::PermissionDenied))
         });
     root.remove_any_if_exists(Utf8Path::new("target")).unwrap();
+
     assert!(fault.triggered());
     assert!(!path.join("target").exists());
 }
@@ -1491,8 +1677,11 @@ fn restore_reports_output_failures_with_the_target_path(
         .unwrap()
         .permissions();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
+
     let fault = crate::workspace::owned::io_faults::arm(point);
+
     let result = restore_test_stream(&root, &mut io::Cursor::new(b"replacement"), permissions);
+
     assert!(fault.triggered(), "restore output boundary was not checked");
     assert!(
         matches!(result, Err(WorkspaceError::Io { operation: actual, path, message })
@@ -1512,6 +1701,7 @@ fn restore_test_stream_restores_the_full_payload_and_permissions() {
     let expected = crate::workspace::permission_fingerprint(&permissions);
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     restore_test_stream(&root, &mut io::Cursor::new(b"replacement"), permissions).unwrap();
+
     assert_eq!(std::fs::read(path.join("target")).unwrap(), b"replacement");
     assert_eq!(
         crate::workspace::permission_fingerprint(
@@ -1536,7 +1726,9 @@ fn restore_reports_snapshot_reader_failures_with_the_target_path() {
         .write(true)
         .open(path.join("target"))
         .unwrap();
+
     let result = restore_test_stream(&root, &mut reader, permissions);
+
     assert!(
         matches!(result, Err(WorkspaceError::Io { operation: "read shared snapshot", path, .. }) if path == "target")
     );
@@ -1547,7 +1739,9 @@ fn restore_reports_snapshot_reader_failures_with_the_target_path() {
 fn mutation_buffer_capacity_overflow_preserves_existing_contents() {
     let mut contents = b"existing".to_vec();
     // Vec<u8> rejects this capacity before calling the allocator: no large allocation is attempted.
+
     let error = MutationFile::reserve_contents(&mut contents, usize::MAX).unwrap_err();
+
     assert_eq!(error.kind(), io::ErrorKind::Other);
     assert_eq!(contents, b"existing");
 }
@@ -1569,32 +1763,37 @@ fn repaired_directory_io_failures_preserve_the_unvisited_contents(
     let retained = File::open(&target).unwrap();
     std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o000)).unwrap();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
+
     let fault = crate::workspace::owned::io_faults::arm(point);
+
     let result = root.remove_any_if_exists(Utf8Path::new("target"));
     retained
         .set_permissions(std::fs::Permissions::from_mode(0o700))
         .unwrap();
+    let fault_was_triggered = fault.triggered();
+
+    let bytes_before_retry = std::fs::read(target.join("protected")).unwrap();
+    root.remove_any_if_exists(Utf8Path::new("target")).unwrap();
+
+    assert!(!target.exists());
     assert!(
-        fault.triggered(),
+        fault_was_triggered,
         "repaired directory boundary was not checked"
     );
     assert!(
         matches!(result, Err(WorkspaceError::Io { operation: actual, message, .. })
         if actual == operation && message.contains(point))
     );
-    assert_eq!(
-        std::fs::read(target.join("protected")).unwrap(),
-        b"original"
-    );
-    root.remove_any_if_exists(Utf8Path::new("target")).unwrap();
-    assert!(!target.exists());
+    assert_eq!(bytes_before_retry, b"original");
 }
 
 #[cfg(unix)]
 #[test]
 fn native_parent_link_errors_are_classified_as_invalid_paths() {
     let path = Utf8Path::new("logical/target");
+
     let error = WorkerRoot::map_parent_error(path, io::Error::from_raw_os_error(libc::ELOOP));
+
     assert!(matches!(error, WorkspaceError::InvalidPath { path: actual } if actual == path));
 }
 
@@ -1608,8 +1807,11 @@ fn restore_preserves_the_previous_file_when_removal_cannot_open_it() {
         .unwrap()
         .permissions();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
+
     let fault = crate::workspace::owned::io_faults::arm("worker.cleanup.open_file");
+
     let result = restore_test_stream(&root, &mut io::Cursor::new(b"replacement"), permissions);
+
     assert!(fault.triggered());
     assert!(
         matches!(result, Err(WorkspaceError::Io { operation: "open worker file", path, .. }) if path == "target")
@@ -1626,24 +1828,29 @@ fn failed_symlink_unlink_preserves_the_link_and_the_outside_target() {
     let path = Utf8Path::from_path(directory.path()).unwrap();
     std::os::unix::fs::symlink(outside.path(), path.join("link")).unwrap();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
+
     let fault = crate::workspace::owned::io_faults::arm("worker.link.remove");
+
     let result = root.remove_any_if_exists(Utf8Path::new("link"));
-    assert!(fault.triggered(), "symlink unlink boundary was not checked");
+    let fault_was_triggered = fault.triggered();
+
+    let failure_was_observed = std::fs::symlink_metadata(path.join("link"))
+        .unwrap()
+        .file_type()
+        .is_symlink();
+    let bytes_before_retry = std::fs::read(outside.path().join("protected")).unwrap();
+    root.remove_any_if_exists(Utf8Path::new("link")).unwrap();
+
+    assert!(std::fs::symlink_metadata(path.join("link")).is_err());
+    assert!(
+        fault_was_triggered,
+        "symlink unlink boundary was not checked"
+    );
     assert!(
         matches!(result, Err(WorkspaceError::Io { operation: "remove worker link", message, .. }) if message.contains("worker.link.remove"))
     );
-    assert!(
-        std::fs::symlink_metadata(path.join("link"))
-            .unwrap()
-            .file_type()
-            .is_symlink()
-    );
-    assert_eq!(
-        std::fs::read(outside.path().join("protected")).unwrap(),
-        b"outside sentinel"
-    );
-    root.remove_any_if_exists(Utf8Path::new("link")).unwrap();
-    assert!(std::fs::symlink_metadata(path.join("link")).is_err());
+    assert!(failure_was_observed);
+    assert_eq!(bytes_before_retry, b"outside sentinel");
 }
 
 #[rstest::rstest]
@@ -1657,13 +1864,14 @@ fn native_parent_open_retains_the_requested_existing_ancestor(#[case] relative: 
     std::fs::write(&target, b"original").unwrap();
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     let (parent, name) = root.open_native_parent(Path::new(relative)).unwrap();
-    assert_eq!(name, "target");
     let mut options = cap_primitives::fs::OpenOptions::new();
     options.read(true).follow(FollowSymlinks::No);
     let mut file = cap_primitives::fs::open(&parent, Path::new(&name), &options).unwrap();
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes).unwrap();
+
     assert_eq!(bytes, b"original");
+    assert_eq!(name, "target");
 }
 
 #[rstest::rstest]
@@ -1679,7 +1887,9 @@ fn restore_rejects_invalid_paths_before_consuming_the_snapshot(#[case] invalid: 
     let root = WorkerRoot::open(path.to_owned()).unwrap();
     let mut input = io::Cursor::new(b"replacement");
     let mut reader: &mut dyn Read = &mut input;
+
     let result = root.restore_from(Utf8Path::new(invalid), &mut reader, permissions);
+
     assert!(matches!(result, Err(WorkspaceError::InvalidPath { path }) if path == invalid));
     assert_eq!(input.position(), 0);
     assert_eq!(std::fs::read(path.join("target")).unwrap(), b"original");

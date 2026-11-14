@@ -2301,7 +2301,9 @@ mod tests {
     fn missing_removal_is_a_noop() {
         let fixture = RootFixture::new();
         let root = WorkerRoot::open(fixture.worker_path()).unwrap();
-        assert!(root.remove_any_if_exists(Utf8Path::new("missing")).is_ok());
+        let observed = root.remove_any_if_exists(Utf8Path::new("missing")).is_ok();
+
+        assert!(observed);
     }
 
     #[test]
@@ -2310,10 +2312,10 @@ mod tests {
         let root = WorkerRoot::open(fixture.worker_path()).unwrap();
         fixture.link_dir("outside", "linked").unwrap();
         let (parent, name) = root.open_parent(Utf8Path::new("linked"), false).unwrap();
-        assert!(matches!(
-            WorkerRoot::reject_link(&parent, &name, Utf8Path::new("linked"), "test link",),
-            Err(WorkspaceError::InvalidPath { .. })
-        ));
+
+        let result = WorkerRoot::reject_link(&parent, &name, Utf8Path::new("linked"), "test link");
+
+        assert!(matches!(result, Err(WorkspaceError::InvalidPath { .. })));
     }
 
     #[test]
@@ -2322,15 +2324,15 @@ mod tests {
         let root = WorkerRoot::open(fixture.worker_path()).unwrap();
         fixture.link_dir("outside", "linked").unwrap();
         let (parent, name) = root.open_parent(Utf8Path::new("linked"), false).unwrap();
-        assert!(matches!(
-            WorkerRoot::reject_link_if_present(
-                &parent,
-                &name,
-                Utf8Path::new("linked"),
-                "test link",
-            ),
-            Err(WorkspaceError::InvalidPath { .. })
-        ));
+
+        let result = WorkerRoot::reject_link_if_present(
+            &parent,
+            &name,
+            Utf8Path::new("linked"),
+            "test link",
+        );
+
+        assert!(matches!(result, Err(WorkspaceError::InvalidPath { .. })));
     }
 
     #[test]
@@ -2338,15 +2340,15 @@ mod tests {
         let fixture = RootFixture::new();
         let root = WorkerRoot::open(fixture.worker_path()).unwrap();
         let (parent, name) = root.open_parent(Utf8Path::new("missing"), false).unwrap();
-        assert!(
-            WorkerRoot::reject_link_if_present(
-                &parent,
-                &name,
-                Utf8Path::new("missing"),
-                "test link",
-            )
-            .is_ok()
+
+        let result = WorkerRoot::reject_link_if_present(
+            &parent,
+            &name,
+            Utf8Path::new("missing"),
+            "test link",
         );
+
+        assert!(result.is_ok());
     }
 
     #[test]

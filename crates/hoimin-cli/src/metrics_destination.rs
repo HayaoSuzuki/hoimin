@@ -567,9 +567,10 @@ mod tests {
         let error = inspect(&config, &[], &[], &temp.path().join("metrics.json"))
             .err()
             .unwrap();
+        let actual_1 = std::fs::read_dir(temp.path());
 
         assert_eq!(error.kind(), io::ErrorKind::NotFound);
-        assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 0);
+        assert_eq!(actual_1.unwrap().count(), 0);
     }
 
     #[test]
@@ -578,14 +579,15 @@ mod tests {
         let output = temp.path().join("metrics.json");
         std::fs::write(&output, b"protected").unwrap();
         let config = inspection_config(temp.path(), Some(&temp.path().join("missing/session.db")));
-
         let collision = inspect(&config, &[], std::slice::from_ref(&output), &output)
             .unwrap()
             .err()
             .unwrap();
 
+        let actual_1 = std::fs::read(&output);
+
         assert_eq!(collision, output);
-        assert_eq!(std::fs::read(output).unwrap(), b"protected");
+        assert_eq!(actual_1.unwrap(), b"protected");
     }
 
     #[test]
@@ -596,7 +598,6 @@ mod tests {
         std::fs::write(&output, b"protected").unwrap();
         std::fs::write(&blocked, b"obstruction").unwrap();
         let config = inspection_config(temp.path(), None);
-
         let collision = inspect(
             &config,
             &[],
@@ -607,9 +608,12 @@ mod tests {
         .err()
         .unwrap();
 
+        let actual_1 = std::fs::read(&output);
+        let actual_2 = std::fs::read(blocked);
+
         assert_eq!(collision, output);
-        assert_eq!(std::fs::read(output).unwrap(), b"protected");
-        assert_eq!(std::fs::read(blocked).unwrap(), b"obstruction");
+        assert_eq!(actual_1.unwrap(), b"protected");
+        assert_eq!(actual_2.unwrap(), b"obstruction");
     }
 
     #[rstest::rstest]
@@ -626,16 +630,17 @@ mod tests {
         let path = temp.path().join("metrics.json");
         std::fs::write(&path, b"original").unwrap();
         let fault = crate::io_faults::arm(point);
-
         let result = entry(&path);
-
-        assert!(fault.triggered(), "unchecked metrics I/O boundary: {point}");
+        let triggered = fault.triggered();
         let error = result.err().unwrap();
+        let retried = entry(&path).unwrap();
+
+        assert!(triggered, "unchecked metrics I/O boundary: {point}");
         assert_eq!(error.kind(), io::ErrorKind::Other);
         assert!(error.to_string().contains(point));
         assert_eq!(std::fs::read(&path).unwrap(), b"original");
-        assert!(entry(&path).unwrap().exists);
         assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 1);
+        assert!(retried.exists);
     }
 
     #[cfg(unix)]
@@ -646,11 +651,12 @@ mod tests {
         let added = temp.path().join("added");
         std::fs::write(&original, b"original").unwrap();
         let mut inspector = EntryInspector::default();
-        assert!(inspector.entry(&original).unwrap().exists);
+        let first = inspector.entry(&original).unwrap();
         std::fs::write(&added, b"added").unwrap();
 
         let error = inspector.entry(&added).err().unwrap();
 
+        assert!(first.exists);
         assert_eq!(error.kind(), io::ErrorKind::Other);
         assert_eq!(
             error.to_string(),
@@ -668,12 +674,13 @@ mod tests {
         let added = temp.path().join("added");
         std::fs::write(&original, b"original").unwrap();
         let mut inspector = EntryInspector::default();
-        assert!(inspector.entry(&original).unwrap().exists);
+        let first = inspector.entry(&original).unwrap();
         std::fs::remove_file(&original).unwrap();
         std::fs::write(&added, b"added").unwrap();
 
         let error = inspector.entry(&added).err().unwrap();
 
+        assert!(first.exists);
         assert_eq!(error.kind(), io::ErrorKind::NotFound);
         assert_eq!(std::fs::read(added).unwrap(), b"added");
     }
@@ -688,11 +695,12 @@ mod tests {
         std::fs::write(&original, b"original").unwrap();
         std::fs::hard_link(&original, &alias).unwrap();
         let mut inspector = EntryInspector::default();
-        assert!(inspector.entry(&original).unwrap().exists);
+        let first = inspector.entry(&original).unwrap();
         std::fs::hard_link(&original, &added).unwrap();
 
         let error = inspector.entry(&added).err().unwrap();
 
+        assert!(first.exists);
         assert_eq!(error.kind(), io::ErrorKind::Other);
         assert_eq!(error.to_string(), "ambiguous final entry alias");
         assert_eq!(std::fs::read(original).unwrap(), b"original");
@@ -723,9 +731,10 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
 
         let error = prospective_parent(&temp.path().join("missing/..")).unwrap_err();
+        let actual_1 = temp.path().join("missing").exists();
 
         assert_eq!(error.kind(), io::ErrorKind::NotFound);
-        assert!(!temp.path().join("missing").exists());
+        assert!(!actual_1);
     }
 
     #[test]
@@ -735,9 +744,10 @@ mod tests {
         std::fs::write(&parent, b"original").unwrap();
 
         let error = entry(&parent.join("metrics.json")).err().unwrap();
+        let actual_1 = std::fs::read(parent);
 
         assert_eq!(error.kind(), io::ErrorKind::NotADirectory);
-        assert_eq!(std::fs::read(parent).unwrap(), b"original");
+        assert_eq!(actual_1.unwrap(), b"original");
     }
 
     #[test]
@@ -759,9 +769,10 @@ mod tests {
         let right = entry(&temp.path().join("missing/METRICS.JSON")).unwrap();
 
         let error = same_entry(&left, &right).unwrap_err();
+        let actual_1 = std::fs::read_dir(temp.path());
 
         assert_eq!(error.to_string(), "missing parent");
-        assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 0);
+        assert_eq!(actual_1.unwrap().count(), 0);
     }
 
     #[rstest::rstest]
@@ -773,9 +784,13 @@ mod tests {
         let left = entry(&temp.path().join(left)).unwrap();
         let right = entry(&temp.path().join(right)).unwrap();
 
-        assert!(!same_parent(&left, &right).unwrap());
-        assert!(!same_entry(&left, &right).unwrap());
-        assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 0);
+        let actual_0 = same_parent(&left, &right);
+        let actual_1 = same_entry(&left, &right);
+        let actual_2 = std::fs::read_dir(temp.path());
+
+        assert!(!actual_0.unwrap());
+        assert!(!actual_1.unwrap());
+        assert_eq!(actual_2.unwrap().count(), 0);
     }
 
     #[rstest::rstest]

@@ -1286,24 +1286,34 @@ mod tests {
         }
     }
 
-    #[test]
-    fn initialization_rendezvous_reports_each_timeout_and_retains_the_first_failure() {
-        let participant = InitializationRendezvous {
+    #[rstest::rstest]
+    #[case::participant(
+        InitializationRendezvous::arrive_and_wait,
+        InitializationRendezvous::release_when_ready,
+        "participant timed out"
+    )]
+    #[case::coordinator(
+        InitializationRendezvous::release_when_ready,
+        InitializationRendezvous::arrive_and_wait,
+        "coordinator timed out"
+    )]
+    fn initialization_rendezvous_reports_each_timeout_and_retains_the_first_failure(
+        #[case] first: fn(&InitializationRendezvous),
+        #[case] second: fn(&InitializationRendezvous),
+        #[case] expected: &str,
+    ) {
+        let rendezvous = InitializationRendezvous {
             timeout: Some(Duration::ZERO),
             ..Default::default()
         };
-        participant.arrive_and_wait();
-        assert_eq!(participant.failure(), Some("participant timed out"));
-        participant.release_when_ready();
-        assert_eq!(participant.failure(), Some("participant timed out"));
-        let coordinator = InitializationRendezvous {
-            timeout: Some(Duration::ZERO),
-            ..Default::default()
-        };
-        coordinator.release_when_ready();
-        assert_eq!(coordinator.failure(), Some("coordinator timed out"));
-        coordinator.arrive_and_wait();
-        assert_eq!(coordinator.failure(), Some("coordinator timed out"));
+
+        first(&rendezvous);
+        let first_failure = rendezvous.failure();
+        second(&rendezvous);
+        let second_failure = rendezvous.failure();
+
+        assert_eq!(first_failure, Some(expected));
+        assert_eq!(second_failure, Some(expected));
     }
 
     fn query_plan(connection: &Connection, sql: &str) -> Vec<String> {
@@ -1328,27 +1338,47 @@ mod tests {
 mod coverage_tests {
     use super::*;
 
-    #[test]
-    fn lock_contention_classification_rejects_unrelated_sqlite_errors() {
-        for code in [rusqlite::ffi::SQLITE_BUSY, rusqlite::ffi::SQLITE_LOCKED] {
-            assert!(is_lock_contention(&rusqlite::Error::SqliteFailure(
-                rusqlite::ffi::Error::new(code),
-                None
-            )));
-        }
-        assert!(!is_lock_contention(&rusqlite::Error::InvalidQuery));
-        assert!(!is_lock_contention(&rusqlite::Error::SqliteFailure(
+    #[rstest::rstest]
+    #[case(
+        rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+            None
+        ),
+        true
+    )]
+    #[case(
+        rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_LOCKED),
+            None
+        ),
+        true
+    )]
+    #[case(rusqlite::Error::InvalidQuery, false)]
+    #[case(
+        rusqlite::Error::SqliteFailure(
             rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_IOERR),
             None
-        )));
+        ),
+        false
+    )]
+    fn lock_contention_classification_rejects_unrelated_sqlite_errors(
+        #[case]
+        #[by_ref]
+        error: &rusqlite::Error,
+        #[case] expected: bool,
+    ) {
+        let actual = is_lock_contention(error);
+
+        assert_eq!(actual, expected);
     }
 
     #[test]
     fn wal_refusal_in_a_temporary_database_is_reported() {
         let connection = Connection::open("").unwrap();
-        assert!(
-            matches!(enable_wal(&connection, Duration::ZERO), Err(SchemaError::JournalMode(mode)) if mode == "delete")
-        );
+
+        let actual = matches!(enable_wal(&connection, Duration::ZERO), Err(SchemaError::JournalMode(mode)) if mode == "delete");
+
+        assert!(actual);
     }
 
     #[test]
@@ -1364,16 +1394,18 @@ mod coverage_tests {
         let contender = Connection::open(&path).unwrap();
         contender.busy_timeout(Duration::ZERO).unwrap();
         let error = enable_wal(&contender, Duration::from_millis(15)).unwrap_err();
-        assert!(matches!(error, SchemaError::Database(error) if is_lock_contention(&error)));
-        assert_eq!(
-            owner
-                .query_row("SELECT count(*) FROM original", [], |row| row
-                    .get::<_, i64>(0))
-                .unwrap(),
-            1
-        );
+        let observed_1 =
+            matches!(error, SchemaError::Database(error) if is_lock_contention(&error));
+        let observed_2 = owner
+            .query_row("SELECT count(*) FROM original", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap();
         owner.execute_batch("ROLLBACK").unwrap();
         enable_wal(&contender, Duration::from_millis(15)).unwrap();
+
+        assert!(observed_1);
+        assert_eq!(observed_2, 1);
     }
 
     #[test]
@@ -1387,34 +1419,39 @@ mod coverage_tests {
         drop(connection);
         let readonly =
             Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
-        assert!(matches!(
+
+        let actual = matches!(
             enable_wal(&readonly, Duration::ZERO),
             Err(SchemaError::Database(_))
-        ));
+        );
+
+        assert!(actual);
     }
     #[test]
     fn database_inspection_rejects_a_directory_before_reading_its_header() {
         let directory = tempfile::tempdir().unwrap();
-        assert!(
-            matches!(inspect_existing_database(directory.path()), Err(SchemaError::Inspect(error)) if error.kind() == std::io::ErrorKind::InvalidInput)
-        );
+
+        let actual = matches!(inspect_existing_database(directory.path()), Err(SchemaError::Inspect(error)) if error.kind() == std::io::ErrorKind::InvalidInput);
+
+        assert!(actual);
     }
 
     #[cfg(target_os = "linux")]
     #[test]
     fn database_header_read_errors_preserve_the_original_io_error() {
-        assert!(
-            matches!(inspect_existing_database(Path::new("/proc/self/mem")), Err(SchemaError::Inspect(error)) if error.raw_os_error() == Some(libc::EIO))
-        );
+        let actual = matches!(inspect_existing_database(Path::new("/proc/self/mem")), Err(SchemaError::Inspect(error)) if error.raw_os_error() == Some(libc::EIO));
+
+        assert!(actual);
     }
     #[cfg(unix)]
     #[test]
     fn database_inspection_rejects_a_directory_opened_after_the_path_check() {
         let directory = tempfile::tempdir().unwrap();
         let opened = std::fs::File::open(directory.path()).unwrap();
-        assert!(
-            matches!(inspect_database_file(opened), Err(SchemaError::Inspect(error)) if error.kind() == std::io::ErrorKind::InvalidInput)
-        );
+
+        let actual = matches!(inspect_database_file(opened), Err(SchemaError::Inspect(error)) if error.kind() == std::io::ErrorKind::InvalidInput);
+
+        assert!(actual);
     }
     #[test]
     fn database_inspection_preserves_a_write_only_capability_read_failure() {
@@ -1426,9 +1463,10 @@ mod coverage_tests {
             .open(path)
             .unwrap();
         let error = inspect_database_file(opened).unwrap_err();
-        assert!(
-            matches!(error, SchemaError::Inspect(error) if error.kind() != std::io::ErrorKind::UnexpectedEof)
-        );
+
+        let actual = matches!(error, SchemaError::Inspect(error) if error.kind() != std::io::ErrorKind::UnexpectedEof);
+
+        assert!(actual);
     }
 
     #[cfg(unix)]
@@ -1447,9 +1485,11 @@ mod coverage_tests {
         std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o000)).unwrap();
         let result = inspect_existing_companions(&database);
         std::fs::set_permissions(&parent, permissions).unwrap();
-        assert!(
-            matches!(result, Err(SchemaError::Inspect(error)) if error.kind() == std::io::ErrorKind::PermissionDenied)
-        );
-        assert!(!database.exists());
+
+        let actual = matches!(result, Err(SchemaError::Inspect(error)) if error.kind() == std::io::ErrorKind::PermissionDenied);
+        let actual_2 = !database.exists();
+
+        assert!(actual);
+        assert!(actual_2);
     }
 }

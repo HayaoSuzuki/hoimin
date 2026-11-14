@@ -1,143 +1,171 @@
 use super::*;
 
+#[rstest::rstest]
+#[case::json("{", "invalid JSON")]
+#[case::object("[]", "not an object")]
+#[case::empty("", "no cases")]
+#[case::incomplete(CORPUS.lines().find(|line| !line.is_empty()).unwrap(), "exact schema-owned")]
+fn parser_rejects_invalid_corpus(#[case] input: &str, #[case] expected: &str) {
+    let result = parse_corpus(input);
+
+    assert!(result.unwrap_err().contains(expected));
+}
+
 #[test]
-fn parser_and_validator_report_invalid_contracts() {
-    assert!(parse_corpus("{").unwrap_err().contains("invalid JSON"));
-    assert!(parse_corpus("[]").unwrap_err().contains("not an object"));
-    assert!(parse_corpus("").unwrap_err().contains("no cases"));
+fn parser_ignores_empty_lines() {
+    let result = parse_corpus(&format!("\n{CORPUS}"));
+
+    assert_eq!(result.unwrap().len(), EXPECTED_CASE_KEYS.len());
+}
+
+#[test]
+fn parser_rejects_unknown_schema() {
     let row = CORPUS.lines().find(|line| !line.is_empty()).unwrap();
-    assert!(
-        parse_corpus(row)
-            .unwrap_err()
-            .contains("exact schema-owned")
-    );
-    assert_eq!(
-        parse_corpus(&format!("\n{CORPUS}")).unwrap().len(),
-        EXPECTED_CASE_KEYS.len()
-    );
     let mut value: serde_json::Value = serde_json::from_str(row).unwrap();
     value["schema"] = serde_json::json!("wrong");
-    assert!(
-        parse_corpus(&value.to_string())
-            .unwrap_err()
-            .contains("violates the schema")
-    );
-    assert!(!facts_are_normalized(&[
+
+    let result = parse_corpus(&value.to_string());
+
+    assert!(result.unwrap_err().contains("violates the schema"));
+}
+
+#[test]
+fn normalized_facts_reject_duplicates() {
+    let facts = [
         "direct:Sequence=typing.Sequence".into(),
-        "direct:Sequence=typing.Sequence".into()
-    ]));
+        "direct:Sequence=typing.Sequence".into(),
+    ];
+
+    let result = facts_are_normalized(&facts);
+
+    assert!(!result);
+}
+
+#[rstest::rstest]
+#[case::identity(|case: &mut OracleCase| case.id.clear(), "invalid identity")]
+#[case::facts(|case: &mut OracleCase| case.expected_facts = vec!["unknown".into()], "invalid normalized facts")]
+fn validator_rejects_invalid_contract(#[case] damage: fn(&mut OracleCase), #[case] expected: &str) {
     let mut case = parse_corpus(CORPUS).unwrap().remove(0);
-    case.id.clear();
-    assert!(
-        validate_case(&case)
-            .unwrap_err()
-            .contains("invalid identity")
-    );
-    case = parse_corpus(CORPUS).unwrap().remove(0);
+    damage(&mut case);
+
+    let result = validate_case(&case);
+
+    assert!(result.unwrap_err().contains(expected));
+}
+
+#[test]
+fn fields_reject_unknown_observation_kind() {
+    let mut case = parse_corpus(CORPUS).unwrap().remove(0);
     case.observation_kind = "unknown".into();
-    assert!(!fields_match(&case));
-    case = parse_corpus(CORPUS).unwrap().remove(0);
-    case.expected_facts = vec!["unknown".into()];
-    assert!(
-        validate_case(&case)
-            .unwrap_err()
-            .contains("invalid normalized facts")
-    );
+
+    let result = fields_match(&case);
+
+    assert!(!result);
 }
 
 #[test]
-fn fixture_failures_preserve_stage_and_case_identity() {
+fn fixture_reports_tempdir_failure() {
     let item = parse_corpus(CORPUS).unwrap().remove(0);
-    assert!(
-        Fixture::from_tempdir(&item, Err(std::io::Error::other("denied")))
-            .err()
-            .unwrap()
-            .contains("fixture tempdir: denied")
-    );
+
+    let result = Fixture::from_tempdir(&item, Err(std::io::Error::other("denied")));
+
+    assert!(result.err().unwrap().contains("fixture tempdir: denied"));
+}
+
+#[rstest::rstest]
+#[case::source("src/case.py", "fixture write source")]
+#[case::metadata("pyproject.toml", "fixture write project metadata")]
+fn fixture_preserves_failure_stage(#[case] obstruction: &str, #[case] expected: &str) {
+    let item = parse_corpus(CORPUS).unwrap().remove(0);
     let directory = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(directory.path().join("src/case.py")).unwrap();
-    assert!(
-        write_fixture_files(&item, directory.path())
-            .unwrap_err()
-            .contains("fixture write source")
-    );
-    let directory = tempfile::tempdir().unwrap();
-    std::fs::create_dir(directory.path().join("pyproject.toml")).unwrap();
-    assert!(
-        write_fixture_files(&item, directory.path())
-            .unwrap_err()
-            .contains("fixture write project metadata")
-    );
+    std::fs::create_dir_all(directory.path().join(obstruction)).unwrap();
+
+    let result = write_fixture_files(&item, directory.path());
+
+    assert!(result.unwrap_err().contains(expected));
 }
 
 #[test]
-fn wait_and_exit_status_decode_all_platform_states() {
-    assert!(
-        decode_wait("case", Ok(Err(std::io::Error::other("reaped"))))
-            .unwrap_err()
-            .contains("wait failed: reaped")
-    );
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::ExitStatusExt;
-        assert!(matches!(
-            process_termination(ExitStatus::from_raw(0)),
-            ProcessTermination::Success
-        ));
-        assert!(matches!(
-            process_termination(ExitStatus::from_raw(256)),
-            ProcessTermination::Exit(1)
-        ));
-        assert!(matches!(
-            process_termination(ExitStatus::from_raw(9)),
-            ProcessTermination::Signal { signal: 9, .. }
-        ));
-        assert!(matches!(
-            process_termination(ExitStatus::from_raw(127)),
-            ProcessTermination::Abnormal
-        ));
-    }
+fn wait_reports_io_error() {
+    let result = decode_wait("case", Ok(Err(std::io::Error::other("reaped"))));
+
+    assert!(result.unwrap_err().contains("wait failed: reaped"));
 }
 
-#[tokio::test]
-async fn normalization_and_operator_presence_reject_invalid_inputs() {
-    let mut item = parse_corpus(CORPUS)
+#[cfg(unix)]
+#[rstest::rstest]
+#[case::success(0, |result| matches!(result, ProcessTermination::Success))]
+#[case::exit(256, |result| matches!(result, ProcessTermination::Exit(1)))]
+#[case::signal(9, |result| matches!(result, ProcessTermination::Signal { signal: 9, .. }))]
+#[case::abnormal(127, |result| matches!(result, ProcessTermination::Abnormal))]
+fn termination_decodes_platform_state(
+    #[case] raw: i32,
+    #[case] expected: fn(ProcessTermination) -> bool,
+) {
+    use std::os::unix::process::ExitStatusExt;
+
+    let result = process_termination(ExitStatus::from_raw(raw));
+
+    assert!(expected(result));
+}
+
+async fn strict_fixture() -> (OracleCase, PlanManifest) {
+    let item = parse_corpus(CORPUS)
         .unwrap()
         .into_iter()
         .find(|item| item.mode == "strict" && item.expected_present)
         .unwrap();
     let manifest = public_plan(&item).await.unwrap();
-    let original_marker = item.marker.clone();
+    (item, manifest)
+}
+
+#[tokio::test]
+async fn normalization_excludes_candidate_outside_marker() {
+    let (mut item, manifest) = strict_fixture().await;
     item.marker =
         item.source[..usize::try_from(manifest.candidates[0].span.start).unwrap()].to_owned();
-    assert_eq!(normalize_manifest(&item, &manifest).unwrap().count, 0);
-    item.marker = original_marker;
-    let mut changed = manifest.clone();
-    changed.candidates[0].candidate.span.start = u64::MAX;
-    changed.candidates[0].candidate.span.length = 1;
-    assert!(
-        normalize_manifest(&item, &changed)
-            .unwrap_err()
-            .contains("candidate range overflow")
-    );
-    changed = manifest.clone();
-    changed.candidates[0].candidate.original = "wrong".into();
-    assert!(
-        normalize_manifest(&item, &changed)
-            .unwrap_err()
-            .contains("span does not match")
-    );
+
+    let result = normalize_manifest(&item, &manifest);
+
+    assert_eq!(result.unwrap().count, 0);
+}
+
+#[rstest::rstest]
+#[case::overflow(|manifest: &mut PlanManifest| { manifest.candidates[0].candidate.span.start = u64::MAX; manifest.candidates[0].candidate.span.length = 1; }, "candidate range overflow")]
+#[case::text(|manifest: &mut PlanManifest| manifest.candidates[0].candidate.original = "wrong".into(), "span does not match")]
+#[tokio::test]
+async fn normalization_rejects_invalid_candidate(
+    #[case] damage: fn(&mut PlanManifest),
+    #[case] expected: &str,
+) {
+    let (item, mut manifest) = strict_fixture().await;
+    damage(&mut manifest);
+
+    let result = normalize_manifest(&item, &manifest);
+
+    assert!(result.unwrap_err().contains(expected));
+}
+
+#[tokio::test]
+async fn normalization_rejects_missing_marker() {
+    let (mut item, manifest) = strict_fixture().await;
     item.marker = "missing".into();
-    assert!(
-        normalize_manifest(&item, &manifest)
-            .unwrap_err()
-            .contains("marker occurs 0 times")
-    );
+
+    let result = normalize_manifest(&item, &manifest);
+
+    assert!(result.unwrap_err().contains("marker occurs 0 times"));
+}
+
+#[tokio::test]
+async fn public_plan_requires_operator() {
+    let mut item = parse_corpus(CORPUS)
+        .unwrap()
+        .into_iter()
+        .find(|item| item.mode == "strict" && item.expected_present)
+        .unwrap();
     item.operator = None;
-    assert!(
-        public_plan(&item)
-            .await
-            .unwrap_err()
-            .contains("operator missing")
-    );
+
+    let result = public_plan(&item).await;
+
+    assert!(result.unwrap_err().contains("operator missing"));
 }

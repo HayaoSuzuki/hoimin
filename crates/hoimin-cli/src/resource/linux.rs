@@ -2367,6 +2367,7 @@ mod tests {
     fn cgroup_probe_reports_that_hard_limits_require_linux() {
         let limits =
             hoimin_core::RunLimits::try_from(&hoimin_core::RawRunLimits::default()).unwrap();
+
         let capabilities = super::probe_linux_cgroup(&limits);
 
         assert!(
@@ -2377,7 +2378,9 @@ mod tests {
     #[cfg(not(target_os = "linux"))]
     #[test]
     fn linux_launcher_leaves_arguments_unhandled_on_other_platforms() {
-        assert_eq!(super::run_linux_launcher_from(["hoimin", "--help"]), None);
+        let actual_0 = super::run_linux_launcher_from(["hoimin", "--help"]);
+
+        assert_eq!(actual_0, None);
     }
 
     #[rstest::rstest]
@@ -2479,7 +2482,9 @@ mod tests {
     #[case::lowest(br"\000", 0)]
     #[case::highest(br"\377", 255)]
     fn mount_field_parser_accepts_the_byte_boundaries(#[case] input: &[u8], #[case] byte: u8) {
-        assert_eq!(super::unescape_mount_field(input).unwrap(), [byte]);
+        let actual_0 = super::unescape_mount_field(input);
+
+        assert_eq!(actual_0.unwrap(), [byte]);
     }
 
     #[rstest::rstest]
@@ -2888,12 +2893,13 @@ mod tests {
         let signals = CleanupSignalRecorder::default();
         let kernel_group = KernelGroupKillRecorder::default();
         let emptiness_checks = Cell::new(0);
+        let signaled_group = Cell::new(None);
 
         let strategy = begin_cgroup_member_cleanup(
             live_root,
             || kernel_group.kill(kernel_succeeds),
             |pid| {
-                assert_eq!(Some(pid), live_root);
+                signaled_group.set(Some(pid));
                 signals.signal_process_group(pid);
                 Ok(())
             },
@@ -2918,6 +2924,7 @@ mod tests {
         )
         .unwrap();
 
+        assert_eq!(signaled_group.get(), live_root.filter(|_| group_calls > 0));
         assert_eq!(strategy, expected_strategy);
         assert_eq!(signals.numeric_pid_calls(), numeric_calls);
         assert_eq!(signals.process_group_calls(), group_calls);
@@ -2932,7 +2939,9 @@ mod tests {
         #[case] has_live_root: bool,
         #[case] expected: CleanupStrategy,
     ) {
-        assert_eq!(cleanup_strategy(false, has_live_root), expected);
+        let actual_0 = cleanup_strategy(false, has_live_root);
+
+        assert_eq!(actual_0, expected);
     }
 
     #[rstest::rstest]
@@ -2956,12 +2965,13 @@ mod tests {
                 numeric_result.map_err(|message| ResourceError::InvalidCgroupData(message.into()))
             },
         );
+        let actual_1 = calls.get();
 
         assert_eq!(
             result.map(|_| ()).map_err(|error| error.to_string()),
             expected.map_err(str::to_owned)
         );
-        assert_eq!(calls.get(), numeric_calls);
+        assert_eq!(actual_1, numeric_calls);
     }
 
     #[rstest::rstest]
@@ -2997,15 +3007,13 @@ mod tests {
                 wait_result.map_err(|message| ResourceError::InvalidCgroupData(message.into()))
             },
         );
+        let actual_1 = (tree_calls.get(), signal_calls.get(), wait_calls.get());
 
         assert_eq!(
             result.map_err(|error| error.to_string()),
             expected.map_err(str::to_owned)
         );
-        assert_eq!(
-            (tree_calls.get(), signal_calls.get(), wait_calls.get()),
-            expected_calls
-        );
+        assert_eq!(actual_1, expected_calls);
     }
 
     #[test]
@@ -3035,8 +3043,9 @@ mod tests {
             called.set(true);
             outcome.map_err(|message| ResourceError::InvalidCgroupData(message.into()))
         });
+        let actual_0 = called.get();
 
-        assert!(called.get());
+        assert!(actual_0);
         assert_eq!(
             result.map_err(|error| error.to_string()),
             outcome.map_err(|message| format!("invalid cgroup event data: {message}"))
@@ -3047,10 +3056,11 @@ mod tests {
     fn removing_an_absent_cgroup_is_idempotent() {
         let parent = tempfile::tempdir().unwrap();
         let cgroup = parent.path().join("absent");
-
         remove_cgroup_dir(&cgroup).unwrap();
 
-        assert_eq!(std::fs::read_dir(parent.path()).unwrap().count(), 0);
+        let actual_0 = std::fs::read_dir(parent.path());
+
+        assert_eq!(actual_0.unwrap().count(), 0);
     }
 
     #[test]

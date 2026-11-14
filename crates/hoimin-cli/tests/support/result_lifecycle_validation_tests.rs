@@ -34,13 +34,18 @@ fn rejects_invalid_case_contract(
 #[case("\n\n")]
 #[case("not JSON")]
 fn rejects_empty_or_malformed_corpus(#[case] input: &str) {
-    assert!(parse_corpus(input).is_err());
+    let actual_0 = parse_corpus(input);
+
+    assert!(actual_0.is_err());
 }
 
 #[test]
 fn empty_corpus_lines_are_ignored_between_valid_rows() {
     let first = corpus_text().lines().next().unwrap();
-    assert_eq!(parse_corpus(&format!("\n{first}\n\n")).unwrap().len(), 1);
+
+    let actual_0 = parse_corpus(&format!("\n{first}\n\n"));
+
+    assert_eq!(actual_0.unwrap().len(), 1);
 }
 
 #[rstest::rstest]
@@ -50,7 +55,9 @@ fn empty_corpus_lines_are_ignored_between_valid_rows() {
 #[case("finish_session:unknown")]
 #[case("discover:m9")]
 fn rejects_invalid_event_shapes(#[case] event: &str) {
-    assert!(!known_event(event));
+    let actual_0 = known_event(event);
+
+    assert!(!actual_0);
 }
 
 fn valid_summary() -> serde_json::Value {
@@ -58,20 +65,28 @@ fn valid_summary() -> serde_json::Value {
 }
 
 #[test]
-fn summary_requires_object_complete_keys_and_numeric_score() {
-    assert_eq!(
-        report_summary_counts(&json!({})).unwrap_err(),
-        "summary counts is not an object"
-    );
-    assert!(
-        report_summary_counts(&json!({"summary":{"counts":{}}}))
-            .unwrap_err()
-            .contains("missing killed")
-    );
+fn summary_requires_object() {
+    let actual_0 = report_summary_counts(&json!({}));
+
+    assert_eq!(actual_0.unwrap_err(), "summary counts is not an object");
+}
+
+#[test]
+fn summary_requires_count_keys() {
+    let actual_0 = report_summary_counts(&json!({"summary":{"counts":{}}}));
+
+    assert!(actual_0.unwrap_err().contains("missing killed"));
+}
+
+#[test]
+fn summary_requires_numeric_score() {
     let mut summary = valid_summary();
     summary["summary"]["counts"]["score"] = json!("invalid");
+
+    let actual_0 = report_summary_counts(&summary);
+
     assert_eq!(
-        report_summary_counts(&summary).unwrap_err(),
+        actual_0.unwrap_err(),
         "summary score is neither numeric nor null"
     );
 }
@@ -92,44 +107,53 @@ fn report_rejects_invalid_mutant_records(
     );
 }
 
-#[test]
-fn report_rejects_duplicate_ids_and_duplicate_roles() {
+#[rstest::rstest]
+#[case::case_0("second", "id")]
+#[case::case_1("first", "other")]
+fn report_rejects_duplicate_ids_and_duplicate_roles(#[case] symbol: &str, #[case] id: &str) {
     let outcome = serde_json::to_value(mutation_outcome::executed(
         hoimin_core::MutationStatus::Killed,
     ))
     .unwrap();
-    for (symbol, id) in [("second", "id"), ("first", "other")] {
-        let document = json!({"mutants":[{"candidate":{"symbol":"first","id":"id"},"outcome":outcome},{"candidate":{"symbol":symbol,"id":id},"outcome":outcome}]});
-        assert!(
-            report_results(&document, &BTreeSet::new())
-                .unwrap_err()
-                .contains("repeats semantic role")
-        );
-    }
+    let document = json!({"mutants":[{"candidate":{"symbol":"first","id":"id"},"outcome":outcome},{"candidate":{"symbol":symbol,"id":id},"outcome":outcome}]});
+
+    let actual_0 = report_results(&document, &BTreeSet::new());
+
+    assert!(actual_0.unwrap_err().contains("repeats semantic role"));
+}
+
+#[rstest::rstest]
+#[case::case_0(vec![255], vec![], "stdout is not UTF-8")]
+#[case::case_1(vec![], vec![255], "stderr is not UTF-8")]
+#[case::case_2(
+            b"not JSON".to_vec(),
+            b"detail".to_vec(),
+            "invalid report JSON",
+        )]
+#[cfg(unix)]
+fn fixture_output_rejects_invalid_payload(
+    #[case] stdout: Vec<u8>,
+    #[case] stderr: Vec<u8>,
+    #[case] message: &str,
+) {
+    use std::os::unix::process::ExitStatusExt;
+
+    let error = fixture_run_from_output(Output {
+        status: std::process::ExitStatus::from_raw(0),
+        stdout,
+        stderr,
+    })
+    .err()
+    .unwrap();
+
+    assert!(error.contains(message));
 }
 
 #[cfg(unix)]
 #[test]
-fn fixture_output_rejects_invalid_utf8_and_reports_json_context() {
+fn fixture_output_rejects_signal_exit() {
     use std::os::unix::process::ExitStatusExt;
-    for (stdout, stderr, message) in [
-        (vec![255], vec![], "stdout is not UTF-8"),
-        (vec![], vec![255], "stderr is not UTF-8"),
-        (
-            b"not JSON".to_vec(),
-            b"detail".to_vec(),
-            "invalid report JSON",
-        ),
-    ] {
-        let error = fixture_run_from_output(Output {
-            status: std::process::ExitStatus::from_raw(0),
-            stdout,
-            stderr,
-        })
-        .err()
-        .unwrap();
-        assert!(error.contains(message));
-    }
+
     let error = fixture_run_from_output(Output {
         status: std::process::ExitStatus::from_raw(libc::SIGTERM),
         stdout: vec![],
@@ -137,100 +161,102 @@ fn fixture_output_rejects_invalid_utf8_and_reports_json_context() {
     })
     .err()
     .unwrap();
+
     assert!(error.contains("terminated without an exit code"));
 }
 
 #[test]
-fn output_cleanup_and_marker_read_errors_are_observable() {
+fn output_cleanup_reports_marker_directory() {
     let fixture = Fixture::new(false).unwrap();
     std::fs::create_dir(&fixture.marker).unwrap();
-    assert!(fixture.clear_outputs().unwrap_err().contains("remove"));
-    assert!(
-        marker_roles(&fixture.marker)
-            .unwrap_err()
-            .contains("read execution marker")
-    );
-    std::fs::remove_dir(&fixture.marker).unwrap();
-    assert_eq!(marker_roles(&fixture.marker).unwrap(), Vec::<String>::new());
+
+    let actual_0 = fixture.clear_outputs();
+
+    assert!(actual_0.unwrap_err().contains("remove"));
+}
+
+#[test]
+fn marker_read_reports_directory() {
+    let fixture = Fixture::new(false).unwrap();
+    std::fs::create_dir(&fixture.marker).unwrap();
+
+    let actual_0 = marker_roles(&fixture.marker);
+
+    assert!(actual_0.unwrap_err().contains("read execution marker"));
+}
+
+#[test]
+fn marker_read_tolerates_missing_file() {
+    let fixture = Fixture::new(false).unwrap();
+
+    let actual_0 = marker_roles(&fixture.marker);
+
+    assert_eq!(actual_0.unwrap(), Vec::<String>::new());
+}
+
+#[test]
+fn output_cleanup_removes_existing_outputs() {
+    let fixture = Fixture::new(false).unwrap();
     std::fs::write(&fixture.marker, "m0\n").unwrap();
     std::fs::write(&fixture.metrics, "{}").unwrap();
     fixture.clear_outputs().unwrap();
-    assert!(!fixture.marker.exists());
-    assert!(!fixture.metrics.exists());
+
+    let actual_0 = fixture.marker.exists();
+    let actual_1 = fixture.metrics.exists();
+
+    assert!(!actual_0);
+    assert!(!actual_1);
 }
 
 #[rstest::rstest]
-#[case("missing-results", "prepare result query")]
-#[case("row-type", "read result")]
-#[case("invalid-outcome", "decode durable mutation outcome")]
-#[case("unreported-id", "absent from report")]
-fn session_projection_rejects_invalid_durable_records(#[case] damage: &str, #[case] message: &str) {
+#[case::missing_table(|_: &Connection| {}, "prepare result query")]
+#[case::row_type(|connection: &Connection| { connection.execute_batch("CREATE TABLE results (mutant_id TEXT, outcome_json, run_id TEXT); INSERT INTO results VALUES ('unknown', NULL, 'run')").unwrap(); }, "read result")]
+#[case::invalid_outcome(|connection: &Connection| { connection.execute_batch("CREATE TABLE results (mutant_id TEXT, outcome_json, run_id TEXT); INSERT INTO results VALUES ('unknown', 'invalid', 'run')").unwrap(); }, "decode durable mutation outcome")]
+#[case::unreported_id(|connection: &Connection| {
+    connection.execute_batch("CREATE TABLE results (mutant_id TEXT, outcome_json, run_id TEXT)").unwrap();
+    let outcome = serde_json::to_string(&mutation_outcome::executed(hoimin_core::MutationStatus::Killed)).unwrap();
+    connection.execute("INSERT INTO results VALUES ('unknown', ?1, 'run')", [outcome]).unwrap();
+}, "absent from report")]
+fn session_projection_rejects_invalid_durable_records(
+    #[case] damage: fn(&Connection),
+    #[case] message: &str,
+) {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("session.sqlite3");
     let connection = Connection::open(&path).unwrap();
     connection.execute_batch("CREATE TABLE runs (id INTEGER, run_id TEXT, finished INTEGER, complete INTEGER); INSERT INTO runs VALUES (1, 'run', 0, 0);").unwrap();
-    if damage != "missing-results" {
-        connection
-            .execute_batch("CREATE TABLE results (mutant_id TEXT, outcome_json, run_id TEXT)")
-            .unwrap();
-        let value = if damage == "row-type" {
-            serde_json::Value::Null
-        } else {
-            json!("invalid")
-        };
-        if damage == "unreported-id" {
-            let outcome = serde_json::to_string(&mutation_outcome::executed(
-                hoimin_core::MutationStatus::Killed,
-            ))
-            .unwrap();
-            connection
-                .execute(
-                    "INSERT INTO results VALUES ('unknown', ?1, 'run')",
-                    [outcome],
-                )
-                .unwrap();
-        } else if value.is_null() {
-            connection
-                .execute("INSERT INTO results VALUES ('unknown', NULL, 'run')", [])
-                .unwrap();
-        } else {
-            connection
-                .execute(
-                    "INSERT INTO results VALUES ('unknown', 'invalid', 'run')",
-                    [],
-                )
-                .unwrap();
-        }
-    }
+    damage(&connection);
     drop(connection);
-    assert!(
-        session_observation(&path, &BTreeMap::new(), &BTreeSet::new())
-            .unwrap_err()
-            .contains(message)
-    );
+
+    let result = session_observation(&path, &BTreeMap::new(), &BTreeSet::new());
+
+    assert!(result.unwrap_err().contains(message));
 }
 
 #[test]
-fn session_projection_reports_open_and_missing_run_errors() {
+fn session_projection_reports_open_failure() {
     let directory = tempfile::tempdir().unwrap();
-    assert!(
-        session_observation(directory.path(), &BTreeMap::new(), &BTreeSet::new())
-            .unwrap_err()
-            .contains("open session")
-    );
-    assert!(
-        session_observation(
-            &directory.path().join("empty.sqlite3"),
-            &BTreeMap::new(),
-            &BTreeSet::new()
-        )
-        .unwrap_err()
-        .contains("read latest run")
-    );
+
+    let actual_0 = session_observation(directory.path(), &BTreeMap::new(), &BTreeSet::new());
+
+    assert!(actual_0.unwrap_err().contains("open session"));
 }
 
 #[test]
-fn observation_reports_metrics_io_parse_and_summary_contract_failures() {
+fn session_projection_reports_missing_runs() {
+    let directory = tempfile::tempdir().unwrap();
+
+    let actual_0 = session_observation(
+        &directory.path().join("empty.sqlite3"),
+        &BTreeMap::new(),
+        &BTreeSet::new(),
+    );
+
+    assert!(actual_0.unwrap_err().contains("read latest run"));
+}
+
+#[test]
+fn observation_reports_metrics_read_failure() {
     let fixture = Fixture::new(false).unwrap();
     let mut run = FixtureRun {
         exit_code: 0,
@@ -240,163 +266,242 @@ fn observation_reports_metrics_io_parse_and_summary_contract_failures() {
     };
     run.document["mutants"] = json!([]);
     std::fs::write(&fixture.metrics, [255]).unwrap();
-    assert!(
-        observe_run(&fixture, &run, false, &fixture.metrics)
-            .unwrap_err()
-            .contains("read metrics")
-    );
+
+    let actual_0 = observe_run(&fixture, &run, false, &fixture.metrics);
+
+    assert!(actual_0.unwrap_err().contains("read metrics"));
+}
+
+#[test]
+fn observation_reports_metrics_parse_failure() {
+    let fixture = Fixture::new(false).unwrap();
+    let mut run = FixtureRun {
+        exit_code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+        document: valid_summary(),
+    };
+    run.document["mutants"] = json!([]);
     std::fs::write(&fixture.metrics, "invalid").unwrap();
+
+    let actual_0 = observe_run(&fixture, &run, false, &fixture.metrics);
+
+    assert!(actual_0.unwrap_err().contains("parse metrics"));
+}
+
+#[test]
+fn observation_requires_boolean_summary_completion() {
+    let fixture = Fixture::new(false).unwrap();
+    let mut run = FixtureRun {
+        exit_code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+        document: valid_summary(),
+    };
+    run.document["mutants"] = json!([]);
+
+    let actual_0 = observe_run(&fixture, &run, false, &fixture.metrics);
+
     assert!(
-        observe_run(&fixture, &run, false, &fixture.metrics)
-            .unwrap_err()
-            .contains("parse metrics")
-    );
-    std::fs::remove_file(&fixture.metrics).unwrap();
-    assert!(
-        observe_run(&fixture, &run, false, &fixture.metrics)
+        actual_0
             .unwrap_err()
             .contains("summary complete is not a bool")
     );
 }
 
 #[tokio::test(start_paused = true)]
-async fn output_join_reports_reader_error_task_failure_and_drain_timeout() {
+async fn output_join_reports_reader_failure() {
     let io_error = tokio::spawn(async { Err(std::io::Error::other("injected reader failure")) });
-    assert!(
-        join_output(io_error, "stdout")
-            .await
-            .unwrap_err()
-            .contains("read hoimin CLI stdout")
-    );
+
+    let actual_0 = join_output(io_error, "stdout").await;
+
+    assert!(actual_0.unwrap_err().contains("read hoimin CLI stdout"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn output_join_reports_task_panic() {
     let panic: tokio::task::JoinHandle<std::io::Result<Vec<u8>>> = tokio::spawn(async {
         panic!("injected output task panic");
     });
-    assert!(
-        join_output(panic, "stderr")
-            .await
-            .unwrap_err()
-            .contains("join hoimin CLI stderr")
-    );
+
+    let actual_0 = join_output(panic, "stderr").await;
+
+    assert!(actual_0.unwrap_err().contains("join hoimin CLI stderr"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn output_join_reports_drain_timeout() {
     let pending = tokio::spawn(std::future::pending());
+
+    let actual_0 = join_output(pending, "stdout").await;
+
     assert_eq!(
-        join_output(pending, "stdout").await.unwrap_err(),
+        actual_0.unwrap_err(),
         "timed out draining hoimin CLI stdout"
     );
 }
 
 #[tokio::test]
-async fn bounded_process_output_requires_pipes_and_existing_executable() {
+async fn bounded_output_reports_missing_executable() {
     let mut absent = tokio::process::Command::new("/nonexistent/hoimin-test-executable");
-    assert!(
-        bounded_cli_output(&mut absent, Duration::from_secs(1))
-            .await
-            .unwrap_err()
-            .contains("spawn hoimin CLI")
-    );
+
+    let actual_0 = bounded_cli_output(&mut absent, Duration::from_secs(1)).await;
+
+    assert!(actual_0.unwrap_err().contains("spawn hoimin CLI"));
+}
+
+#[tokio::test]
+async fn bounded_output_requires_stdout_pipe() {
     let mut unpiped = tokio::process::Command::new(python_executable().unwrap());
     unpiped.args(["-c", "pass"]).kill_on_drop(true);
-    assert_eq!(
-        bounded_cli_output(&mut unpiped, Duration::from_secs(1))
-            .await
-            .unwrap_err(),
-        "hoimin CLI stdout was not piped"
-    );
+
+    let actual_0 = bounded_cli_output(&mut unpiped, Duration::from_secs(1)).await;
+
+    assert_eq!(actual_0.unwrap_err(), "hoimin CLI stdout was not piped");
+}
+
+#[tokio::test]
+async fn bounded_output_requires_stderr_pipe() {
     let mut no_stderr = tokio::process::Command::new(python_executable().unwrap());
     no_stderr
         .args(["-c", "pass"])
         .stdout(Stdio::piped())
         .kill_on_drop(true);
-    assert_eq!(
-        bounded_cli_output(&mut no_stderr, Duration::from_secs(1))
-            .await
-            .unwrap_err(),
-        "hoimin CLI stderr was not piped"
-    );
+
+    let actual_0 = bounded_cli_output(&mut no_stderr, Duration::from_secs(1)).await;
+
+    assert_eq!(actual_0.unwrap_err(), "hoimin CLI stderr was not piped");
 }
 
 #[tokio::test]
-async fn durable_premise_reports_child_exit_and_deadline_expiry() {
+async fn durable_premise_reports_exited_child() {
     let fixture = Fixture::new(false).unwrap();
     let mut exited = tokio::process::Command::new(python_executable().unwrap())
         .args(["-c", "pass"])
         .spawn()
         .unwrap();
     exited.wait().await.unwrap();
+
+    let actual_0 =
+        wait_for_first_durable_kill(&mut exited, &fixture.session, Duration::from_secs(1)).await;
+
     assert!(
-        wait_for_first_durable_kill(&mut exited, &fixture.session, Duration::from_secs(1))
-            .await
+        actual_0
             .unwrap_err()
             .contains("exited before the first durable killed result")
     );
-    assert_eq!(
-        cleanup_cli_process_tree(&mut exited).await,
-        "child already exited"
-    );
+}
+
+#[tokio::test]
+async fn cleanup_tolerates_exited_child() {
+    let mut exited = tokio::process::Command::new(python_executable().unwrap())
+        .args(["-c", "pass"])
+        .spawn()
+        .unwrap();
+    exited.wait().await.unwrap();
+
+    let actual_0 = cleanup_cli_process_tree(&mut exited).await;
+
+    assert_eq!(actual_0, "child already exited");
+}
+
+#[tokio::test]
+async fn durable_premise_reports_deadline() {
+    let fixture = Fixture::new(false).unwrap();
     let mut sleeping = tokio::process::Command::new(python_executable().unwrap())
         .args(["-c", "import time; time.sleep(60)"])
         .kill_on_drop(true)
         .spawn()
         .unwrap();
+    let result = wait_for_first_durable_kill(&mut sleeping, &fixture.session, Duration::ZERO).await;
+
+    sleeping.kill().await.unwrap();
     assert_eq!(
-        wait_for_first_durable_kill(&mut sleeping, &fixture.session, Duration::ZERO)
-            .await
-            .unwrap_err(),
+        result.unwrap_err(),
         "timed out waiting for the first durable killed result"
     );
-    sleeping.kill().await.unwrap();
 }
 
 #[test]
-fn session_reopen_reports_missing_schema_and_marker_write_failures() {
+fn session_reopen_requires_runs() {
     let fixture = Fixture::new(false).unwrap();
-    assert!(
-        reopen_incomplete(&fixture, false)
-            .unwrap_err()
-            .contains("mark session incomplete")
-    );
-    assert!(
-        reopen_incomplete(&fixture, true)
-            .unwrap_err()
-            .contains("clear seeded results")
-    );
+
+    let actual_0 = reopen_incomplete(&fixture, false);
+
+    assert!(actual_0.unwrap_err().contains("mark session incomplete"));
+}
+
+#[test]
+fn session_reopen_requires_results() {
+    let fixture = Fixture::new(false).unwrap();
+
+    let actual_0 = reopen_incomplete(&fixture, true);
+
+    assert!(actual_0.unwrap_err().contains("clear seeded results"));
+}
+
+#[test]
+fn session_reopen_reports_marker_obstruction() {
+    let fixture = Fixture::new(false).unwrap();
     let connection = Connection::open(&fixture.session).unwrap();
     connection.execute_batch("CREATE TABLE runs (complete INTEGER); CREATE TABLE results (id INTEGER); CREATE TABLE candidates (id INTEGER);").unwrap();
     std::fs::create_dir(fixture.session.with_extension("fail-persist")).unwrap();
-    assert!(
-        reopen_incomplete(&fixture, true)
-            .unwrap_err()
-            .contains("arm persistence failure")
-    );
+
+    let actual_0 = reopen_incomplete(&fixture, true);
+
+    assert!(actual_0.unwrap_err().contains("arm persistence failure"));
 }
 
 #[tokio::test]
-async fn case_execution_classifies_mismatch_run_identity_failure_and_infrastructure() {
+async fn case_execution_reports_mismatch() {
     let case = parse_corpus(corpus_text()).unwrap().remove(0);
     let mut observation = expected_observation(&case);
     observation.exit_code = 42;
+
     let mismatch =
         run_case_with_execution(&case, |_| std::future::ready(Ok((observation, true)))).await;
+
     assert_eq!(mismatch.class, CaseClass::Mismatch);
     assert_eq!(mismatch.actual.unwrap().exit_code, 42);
     assert!(mismatch.detail.is_none());
+}
+
+#[tokio::test]
+async fn case_execution_reports_run_identity_mismatch() {
+    let case = parse_corpus(corpus_text()).unwrap().remove(0);
     let expected = expected_observation(&case);
     let identity_mismatch =
         run_case_with_execution(&case, |_| std::future::ready(Ok((expected, false)))).await;
+
+    let actual_1 = identity_mismatch.detail.as_deref();
+
     assert_eq!(identity_mismatch.class, CaseClass::Mismatch);
-    assert_eq!(
-        identity_mismatch.detail.as_deref(),
-        Some("run IDs disagree across public surfaces")
-    );
+    assert_eq!(actual_1, Some("run IDs disagree across public surfaces"));
+}
+
+#[tokio::test]
+async fn case_execution_reports_infrastructure_error() {
+    let case = parse_corpus(corpus_text()).unwrap().remove(0);
     let failed = run_case_with_execution(&case, |_| {
         std::future::ready(Err("injected execution failure".into()))
     })
     .await;
+
+    let actual_1 = failed.detail.as_deref();
+
     assert_eq!(failed.class, CaseClass::InfrastructureError);
-    assert_eq!(failed.detail.as_deref(), Some("injected execution failure"));
+    assert_eq!(actual_1, Some("injected execution failure"));
     assert!(failed.actual.is_none());
     assert!(failed.expected.is_some());
+}
+
+#[tokio::test]
+async fn case_execution_reports_panic() {
+    let case = parse_corpus(corpus_text()).unwrap().remove(0);
+
     let panicked =
         run_case_with_execution(&case, |_| async { panic!("injected case panic") }).await;
+
     assert_eq!(panicked.class, CaseClass::InfrastructureError);
     assert!(panicked.detail.unwrap().starts_with("case task panicked:"));
 }
@@ -411,6 +516,7 @@ fn fixture_creation_reports_tempdir_failure() {
     )
     .err()
     .unwrap();
+
     assert_eq!(
         error,
         "create temp dir: injected temporary directory failure"
@@ -418,50 +524,62 @@ fn fixture_creation_reports_tempdir_failure() {
 }
 
 #[rstest::rstest]
-#[case("source", "create source")]
-#[case("package", "write package")]
-#[case("module", "write source")]
-fn fixture_creation_reports_each_filesystem_stage(#[case] stage: &str, #[case] message: &str) {
+#[case::source(|root: &Path| std::fs::write(root.join("project"), "blocking file").unwrap(), "create source")]
+#[case::package(|root: &Path| std::fs::create_dir_all(root.join("project/src/__init__.py")).unwrap(), "write package")]
+#[case::module(|root: &Path| std::fs::create_dir_all(root.join("project/src/calc.py")).unwrap(), "write source")]
+fn fixture_creation_reports_each_filesystem_stage(
+    #[case] obstruct: fn(&Path),
+    #[case] message: &str,
+) {
     let temporary = tempfile::tempdir().unwrap();
-    if stage == "source" {
-        std::fs::write(temporary.path().join("project"), "blocking file").unwrap();
-    } else {
-        let source = temporary.path().join("project/src");
-        std::fs::create_dir_all(&source).unwrap();
-        std::fs::create_dir(source.join(if stage == "package" {
-            "__init__.py"
-        } else {
-            "calc.py"
-        }))
-        .unwrap();
-    }
-    assert!(
-        Fixture::from_tempdir(Ok(temporary), false)
-            .err()
-            .unwrap()
-            .contains(message)
-    );
+    obstruct(temporary.path());
+
+    let result = Fixture::from_tempdir(Ok(temporary), false);
+
+    assert!(result.err().unwrap().contains(message));
 }
 
 #[test]
-fn clear_outputs_accepts_missing_files_and_session_placeholder_is_idempotent() {
+fn clear_outputs_accepts_missing_files() {
     let fixture = Fixture::new(false).unwrap();
-    fixture.clear_outputs().unwrap();
-    enable_session(&fixture).unwrap();
-    enable_session(&fixture).unwrap();
+
+    let result = fixture.clear_outputs();
+
+    assert!(result.is_ok());
+}
+
+#[test]
+fn session_placeholder_is_idempotent() {
+    let fixture = Fixture::new(false).unwrap();
+    let first = enable_session(&fixture);
+
+    let second = enable_session(&fixture);
+
+    assert!(first.is_ok());
+    assert!(second.is_ok());
 }
 
 #[test]
 fn seeded_session_open_failure_has_context() {
     let mut fixture = Fixture::new(false).unwrap();
+
     fixture.session = fixture.root.join("absent/database.sqlite3");
+
+    let actual_0 = reopen_incomplete(&fixture, false);
+
+    assert!(actual_0.unwrap_err().starts_with("open seeded session:"));
+}
+
+#[test]
+fn session_placeholder_creation_failure_has_context() {
+    let mut fixture = Fixture::new(false).unwrap();
+
+    fixture.session = fixture.root.join("absent/database.sqlite3");
+
+    let actual_1 = enable_session(&fixture);
+
     assert!(
-        reopen_incomplete(&fixture, false)
-            .unwrap_err()
-            .starts_with("open seeded session:")
-    );
-    assert!(
-        enable_session(&fixture)
+        actual_1
             .unwrap_err()
             .starts_with("create session placeholder:")
     );
@@ -471,14 +589,34 @@ fn seeded_session_open_failure_has_context() {
 fn controlled_interpreter_requires_an_existing_file() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("absent-python");
+
+    let actual_0 = require_python(&path);
+
     assert_eq!(
-        require_python(&path).unwrap_err(),
+        actual_0.unwrap_err(),
         format!("missing controlled Python interpreter: {}", path.display())
     );
 }
 
 #[test]
-fn classification_rejects_malformed_or_contradictory_observations() {
+fn classification_rejects_equal_mismatch() {
+    let case = parse_corpus(corpus_text()).unwrap().remove(0);
+    let expected = expected_observation(&case);
+    let result = CaseResult {
+        id: case.id,
+        class: CaseClass::Mismatch,
+        expected: Some(expected.clone()),
+        actual: Some(expected),
+        detail: None,
+    };
+
+    let actual_0 = classification_consistent(&result);
+
+    assert!(!actual_0);
+}
+
+#[test]
+fn classification_accepts_different_mismatch() {
     let case = parse_corpus(corpus_text()).unwrap().remove(0);
     let expected = expected_observation(&case);
     let mut result = CaseResult {
@@ -488,16 +626,70 @@ fn classification_rejects_malformed_or_contradictory_observations() {
         actual: Some(expected),
         detail: None,
     };
-    assert!(!classification_consistent(&result));
     result.actual.as_mut().unwrap().exit_code = 42;
-    assert!(classification_consistent(&result));
+
+    let actual_0 = classification_consistent(&result);
+
+    assert!(actual_0);
+}
+
+#[test]
+fn classification_rejects_infrastructure_without_detail() {
+    let case = parse_corpus(corpus_text()).unwrap().remove(0);
+    let expected = expected_observation(&case);
+    let mut result = CaseResult {
+        id: case.id,
+        class: CaseClass::Mismatch,
+        expected: Some(expected.clone()),
+        actual: Some(expected),
+        detail: None,
+    };
     result.class = CaseClass::InfrastructureError;
     result.actual = None;
-    assert!(!classification_consistent(&result));
+
+    let actual_0 = classification_consistent(&result);
+
+    assert!(!actual_0);
+}
+
+#[test]
+fn classification_accepts_infrastructure_with_detail() {
+    let case = parse_corpus(corpus_text()).unwrap().remove(0);
+    let expected = expected_observation(&case);
+    let mut result = CaseResult {
+        id: case.id,
+        class: CaseClass::Mismatch,
+        expected: Some(expected.clone()),
+        actual: Some(expected),
+        detail: None,
+    };
+    result.class = CaseClass::InfrastructureError;
+    result.actual = None;
     result.detail = Some("injected execution error".into());
-    assert!(classification_consistent(&result));
+
+    let actual_0 = classification_consistent(&result);
+
+    assert!(actual_0);
+}
+
+#[test]
+fn classification_rejects_match_without_actual() {
+    let case = parse_corpus(corpus_text()).unwrap().remove(0);
+    let expected = expected_observation(&case);
+    let mut result = CaseResult {
+        id: case.id,
+        class: CaseClass::Mismatch,
+        expected: Some(expected.clone()),
+        actual: Some(expected),
+        detail: None,
+    };
+    result.actual = None;
+    result.detail = Some("injected execution error".into());
     result.class = CaseClass::Match;
-    assert!(!classification_consistent(&result));
+
+    let actual_0 = classification_consistent(&result);
+
+    assert!(!actual_0);
 }
 
 #[test]
@@ -513,43 +705,57 @@ fn metrics_validation_error_retains_its_context() {
     let mut metrics = hoimin_core::RunMetrics::empty("run");
     metrics.schema_version = 9;
     std::fs::write(&fixture.metrics, serde_json::to_vec(&metrics).unwrap()).unwrap();
+
+    let actual_0 = observe_run(&fixture, &run, false, &fixture.metrics);
+
     assert!(
-        observe_run(&fixture, &run, false, &fixture.metrics)
+        actual_0
             .unwrap_err()
             .contains("validate metrics: unsupported metrics schema version 9")
     );
 }
 
 #[tokio::test]
-async fn durable_timeout_command_reports_spawn_pipe_and_premise_failures() {
+async fn durable_timeout_reports_spawn_failure() {
     let fixture = Fixture::new(false).unwrap();
     let absent = tokio::process::Command::new("/absent/hoimin-test-executable");
-    assert!(
-        run_durable_timeout_command(absent, &fixture.session)
-            .await
-            .err()
-            .unwrap()
-            .starts_with("spawn hoimin CLI:")
-    );
+
+    let actual_0 = run_durable_timeout_command(absent, &fixture.session).await;
+
+    assert!(actual_0.err().unwrap().starts_with("spawn hoimin CLI:"));
+}
+
+#[tokio::test]
+async fn durable_timeout_requires_pipes() {
+    let fixture = Fixture::new(false).unwrap();
     let mut unpiped = tokio::process::Command::new(python_executable().unwrap());
     unpiped.args(["-c", "pass"]).kill_on_drop(true);
+
+    let actual_0 = run_durable_timeout_command(unpiped, &fixture.session).await;
+
     assert!(
-        run_durable_timeout_command(unpiped, &fixture.session)
-            .await
+        actual_0
             .err()
             .unwrap()
             .starts_with("hoimin CLI output was not piped; cleanup:")
     );
+}
+
+#[tokio::test]
+async fn durable_timeout_preserves_failed_premise_output() {
+    let fixture = Fixture::new(false).unwrap();
     let mut exits = tokio::process::Command::new(python_executable().unwrap());
     exits
         .args(["-c", "print('premise failed')"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+
     let error = run_durable_timeout_command(exits, &fixture.session)
         .await
         .err()
         .unwrap();
+
     assert!(error.starts_with("premise-guarded timeout failed:"));
     assert!(error.contains("stdout: Ok("));
     assert!(error.contains(&format!("{:?}", b"premise failed\n".to_vec())));
@@ -567,35 +773,43 @@ async fn cleanup_preserves_signal_failures_and_unreaped_child_diagnostic() {
         Err(std::io::Error::other("injected signal failure"))
     })
     .await;
+    child.kill().await.unwrap();
+
     assert!(diagnostics.contains("SIGINT failed: injected signal failure"));
     assert!(diagnostics.contains("process-group SIGKILL failed: injected signal failure"));
     assert!(diagnostics.contains("child was not reaped after process-group cleanup"));
-    child.kill().await.unwrap();
 }
 
 #[test]
 fn diagnostics_recognizes_session_commit_failure_and_metrics_failure_together() {
-    assert_eq!(
-        diagnostics("session commit failed\nmetrics.write failed\n"),
-        ["persistence_failed", "metrics_failed"]
-    );
+    let actual_0 = diagnostics("session commit failed\nmetrics.write failed\n");
+
+    assert_eq!(actual_0, ["persistence_failed", "metrics_failed"]);
 }
 
 #[tokio::test(start_paused = true)]
-async fn durable_wait_status_distinguishes_wait_failure_and_timeout() {
+async fn durable_status_reports_wait_failure() {
     let error = durable_timeout_status(Ok(Err(std::io::Error::other("injected wait failure"))))
         .unwrap_err();
+
     assert_eq!(
         error,
         "wait for hoimin CLI total timeout: injected wait failure"
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn durable_status_reports_timeout() {
     let elapsed = tokio::time::timeout(
         Duration::from_secs(1),
         std::future::pending::<std::io::Result<std::process::ExitStatus>>(),
     )
     .await;
+
+    let actual_0 = durable_timeout_status(elapsed);
+
     assert_eq!(
-        durable_timeout_status(elapsed).unwrap_err(),
+        actual_0.unwrap_err(),
         "hoimin CLI exceeded its total timeout plus shutdown and telemetry budgets"
     );
 }
@@ -609,6 +823,7 @@ async fn output_finisher_retains_wait_failure_and_both_output_streams() {
     child.wait().await.unwrap();
     let stdout = tokio::spawn(async { Ok(b"partial stdout".to_vec()) });
     let stderr = tokio::spawn(async { Ok(b"partial stderr".to_vec()) });
+
     let error = finish_cli_output(
         &mut child,
         Duration::from_secs(1),
@@ -618,6 +833,7 @@ async fn output_finisher_retains_wait_failure_and_both_output_streams() {
     )
     .await
     .unwrap_err();
+
     assert!(error.starts_with(
         "wait for hoimin CLI failed: injected wait failure; cleanup: child already exited;"
     ));
@@ -628,6 +844,7 @@ async fn output_finisher_retains_wait_failure_and_both_output_streams() {
 #[tokio::test]
 async fn output_reader_propagates_async_read_failure() {
     struct FailedReader;
+
     impl tokio::io::AsyncRead for FailedReader {
         fn poll_read(
             self: std::pin::Pin<&mut Self>,
@@ -646,51 +863,41 @@ async fn output_reader_propagates_async_read_failure() {
     );
 }
 
-#[test]
-fn oracle_environment_selection_is_validated_in_isolated_processes() {
+#[rstest::rstest]
+#[case::mode("future", |_: &[OracleCase]| String::new(), false, "unknown HOIMIN_RESULT_LIFECYCLE_MODE")]
+#[case::missing("strict", |_: &[OracleCase]| "missing-case".into(), false, "unknown HOIMIN_RESULT_LIFECYCLE_CASE")]
+#[case::model_strict("strict", |cases: &[OracleCase]| cases.iter().find(|case| case.mode != "strict").unwrap().id.clone(), false, "only strict cases are executable")]
+#[case::model_report("report", |cases: &[OracleCase]| cases.iter().find(|case| case.mode != "strict").unwrap().id.clone(), true, "NotExecuted")]
+#[case::strict("strict", |cases: &[OracleCase]| cases.iter().find(|case| case.mode == "strict").unwrap().id.clone(), true, "Match")]
+fn oracle_environment_selection_is_validated_in_isolated_processes(
+    #[case] mode: &str,
+    #[case] select: fn(&[OracleCase]) -> String,
+    #[case] succeeds: bool,
+    #[case] message: &str,
+) {
     let cases = parse_corpus(corpus_text()).unwrap();
-    let model = cases.iter().find(|case| case.mode != "strict").unwrap();
-    let strict = cases.iter().find(|case| case.mode == "strict").unwrap();
-    for (mode, selected, succeeds, message) in [
-        ("future", "", false, "unknown HOIMIN_RESULT_LIFECYCLE_MODE"),
-        (
-            "strict",
-            "missing-case",
-            false,
-            "unknown HOIMIN_RESULT_LIFECYCLE_CASE",
-        ),
-        (
-            "strict",
-            model.id.as_str(),
-            false,
-            "only strict cases are executable",
-        ),
-        ("report", model.id.as_str(), true, "NotExecuted"),
-        ("strict", strict.id.as_str(), true, "Match"),
-    ] {
-        let output = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "result_lifecycle_oracle_correspondence",
-                "--nocapture",
-                "--test-threads=1",
-            ])
-            .env(MODE_ENV, mode)
-            .env(CASE_ENV, selected)
-            .output()
-            .unwrap();
-        assert_eq!(
-            output.status.success(),
-            succeeds,
-            "mode={mode}; selected={selected}"
-        );
-        let combined = format!(
-            "{}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(combined.contains(message), "{combined}");
-    }
+    let selected = select(&cases);
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "result_lifecycle_oracle_correspondence",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env(MODE_ENV, mode)
+        .env(CASE_ENV, &selected)
+        .output()
+        .unwrap();
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let actual_0 = output.status.success();
+
+    assert_eq!(actual_0, succeeds, "mode={mode}; selected={selected}");
+    assert!(combined.contains(message), "{combined}");
 }
 
 #[cfg(unix)]
@@ -704,22 +911,27 @@ async fn durable_premise_reports_a_child_reaped_outside_tokio() {
     let pid = i32::try_from(child.id().unwrap()).unwrap();
     let mut status = 0;
     // SAFETY: this exact retained child belongs to this fixture; synchronous reap simulates an external supervisor.
-    assert_eq!(unsafe { libc::waitpid(pid, &raw mut status, 0) }, pid);
+    let reaped = unsafe { libc::waitpid(pid, &raw mut status, 0) };
     let mut child = child;
+    let actual_0 =
+        wait_for_first_durable_kill(&mut child, &fixture.session, Duration::from_secs(1)).await;
+    let actual_1 = signal_process(pid, libc::SIGINT);
     assert!(
-        wait_for_first_durable_kill(&mut child, &fixture.session, Duration::from_secs(1))
-            .await
+        actual_0
             .unwrap_err()
             .starts_with("inspect hoimin CLI while waiting for durable result:")
     );
-    assert!(signal_process(pid, libc::SIGINT).is_err());
+    assert!(actual_1.is_err());
+
+    assert_eq!(reaped, pid);
 }
 
 #[test]
-fn reporter_records_mismatches_infrastructure_and_malformed_classifications() {
+fn reporter_accepts_matching_classification() {
     let case = parse_corpus(corpus_text()).unwrap().remove(0);
     let expected = expected_observation(&case);
     let mut failures = Vec::new();
+
     record_case_result(
         CaseResult {
             id: "matching".into(),
@@ -730,9 +942,61 @@ fn reporter_records_mismatches_infrastructure_and_malformed_classifications() {
         },
         &mut failures,
     );
+
     assert_eq!(failures, Vec::<String>::new());
+}
+
+#[test]
+fn reporter_appends_failures_without_discarding_previous_entries() {
+    let case = parse_corpus(corpus_text()).unwrap().remove(0);
+    let expected = expected_observation(&case);
     let mut actual = expected.clone();
     actual.exit_code = 42;
+    let mismatch = CaseResult {
+        id: "mismatch".into(),
+        class: CaseClass::Mismatch,
+        expected: Some(expected.clone()),
+        actual: Some(actual),
+        detail: None,
+    };
+    let infrastructure = CaseResult {
+        id: "infrastructure".into(),
+        class: CaseClass::InfrastructureError,
+        expected: Some(expected),
+        actual: None,
+        detail: Some("injected failure".into()),
+    };
+    let malformed = CaseResult {
+        id: "malformed".into(),
+        class: CaseClass::Match,
+        expected: None,
+        actual: None,
+        detail: None,
+    };
+    let mut failures = vec!["existing".to_owned()];
+
+    record_case_result(mismatch, &mut failures);
+    record_case_result(infrastructure, &mut failures);
+    record_case_result(malformed, &mut failures);
+
+    assert_eq!(
+        failures,
+        ["existing", "mismatch", "infrastructure", "malformed"]
+    );
+}
+
+#[test]
+fn reporter_records_mismatch() {
+    let case = parse_corpus(corpus_text()).unwrap().remove(0);
+
+    let expected = expected_observation(&case);
+
+    let mut failures = Vec::new();
+
+    let mut actual = expected.clone();
+
+    actual.exit_code = 42;
+
     record_case_result(
         CaseResult {
             id: "mismatch".into(),
@@ -743,6 +1007,18 @@ fn reporter_records_mismatches_infrastructure_and_malformed_classifications() {
         },
         &mut failures,
     );
+
+    assert_eq!(failures, ["mismatch"]);
+}
+
+#[test]
+fn reporter_records_infrastructure_error() {
+    let case = parse_corpus(corpus_text()).unwrap().remove(0);
+
+    let expected = expected_observation(&case);
+
+    let mut failures = Vec::new();
+
     record_case_result(
         CaseResult {
             id: "infrastructure".into(),
@@ -753,6 +1029,14 @@ fn reporter_records_mismatches_infrastructure_and_malformed_classifications() {
         },
         &mut failures,
     );
+
+    assert_eq!(failures, ["infrastructure"]);
+}
+
+#[test]
+fn reporter_records_malformed_classification() {
+    let mut failures = Vec::new();
+
     record_case_result(
         CaseResult {
             id: "malformed".into(),
@@ -763,38 +1047,100 @@ fn reporter_records_mismatches_infrastructure_and_malformed_classifications() {
         },
         &mut failures,
     );
-    assert_eq!(failures, ["mismatch", "infrastructure", "malformed"]);
+
+    assert_eq!(failures, ["malformed"]);
 }
 
 #[test]
-fn seed_and_resumed_persistence_premises_reject_wrong_evidence() {
+fn seed_rejects_unsuccessful_run() {
+    let run = FixtureRun {
+        exit_code: 7,
+        stdout: "partial stdout".into(),
+        stderr: "seed failed".into(),
+        document: json!({}),
+    };
+
+    let actual_0 = validate_seed(&run);
+
+    assert_eq!(
+        actual_0.unwrap_err(),
+        "seed run failed: exit=7 stderr=seed failed stdout=partial stdout"
+    );
+}
+
+#[test]
+fn seed_accepts_successful_run() {
     let mut run = FixtureRun {
         exit_code: 7,
         stdout: "partial stdout".into(),
         stderr: "seed failed".into(),
         document: json!({}),
     };
-    assert_eq!(
-        validate_seed(&run).unwrap_err(),
-        "seed run failed: exit=7 stderr=seed failed stdout=partial stdout"
-    );
     run.exit_code = 0;
-    validate_seed(&run).unwrap();
-    validate_resumed_persistence_failure("resume_reuses_determinate", &run).unwrap();
+
+    let result = validate_seed(&run);
+
+    assert!(result.is_ok());
+}
+
+#[test]
+fn resumed_reuse_requires_no_failure_evidence() {
+    let mut run = FixtureRun {
+        exit_code: 7,
+        stdout: "partial stdout".into(),
+        stderr: "seed failed".into(),
+        document: json!({}),
+    };
+    run.exit_code = 0;
+
+    let result = validate_resumed_persistence_failure("resume_reuses_determinate", &run);
+
+    assert!(result.is_ok());
+}
+
+#[test]
+fn resumed_persistence_requires_failure_evidence() {
+    let mut run = FixtureRun {
+        exit_code: 7,
+        stdout: "partial stdout".into(),
+        stderr: "seed failed".into(),
+        document: json!({}),
+    };
+    run.exit_code = 0;
+
+    let actual_0 = validate_resumed_persistence_failure("session_persistence_failure", &run);
+
     assert_eq!(
-        validate_resumed_persistence_failure("session_persistence_failure", &run).unwrap_err(),
+        actual_0.unwrap_err(),
         "resumed run did not reach injected SQLite ABORT: seed failed"
     );
+}
+
+#[test]
+fn resumed_persistence_accepts_failure_evidence() {
+    let mut run = FixtureRun {
+        exit_code: 7,
+        stdout: "partial stdout".into(),
+        stderr: "seed failed".into(),
+        document: json!({}),
+    };
+    run.exit_code = 0;
     run.stderr = "injected save failure".into();
-    validate_resumed_persistence_failure("session_persistence_failure", &run).unwrap();
+
+    let result = validate_resumed_persistence_failure("session_persistence_failure", &run);
+
+    assert!(result.is_ok());
 }
 
 #[test]
 fn metrics_failure_destination_reports_existing_path() {
     let fixture = Fixture::new(false).unwrap();
     std::fs::write(fixture.temp.path().join("metrics-target"), "occupied").unwrap();
+
+    let actual_0 = metrics_destination(&fixture, true);
+
     assert!(
-        metrics_destination(&fixture, true)
+        actual_0
             .unwrap_err()
             .starts_with("create metrics failure target:")
     );
@@ -804,8 +1150,11 @@ fn metrics_failure_destination_reports_existing_path() {
 async fn strict_execution_rejects_an_unadapted_scenario() {
     let mut case = parse_corpus(corpus_text()).unwrap().remove(0);
     case.scenario = "unsupported".into();
+
+    let actual_0 = execute_strict(&case).await;
+
     assert_eq!(
-        execute_strict(&case).await.unwrap_err(),
+        actual_0.unwrap_err(),
         "strict scenario unsupported has no implementation adapter"
     );
 }
@@ -823,28 +1172,39 @@ async fn durable_premise_treats_malformed_result_rows_as_not_ready() {
         .kill_on_drop(true)
         .spawn()
         .unwrap();
+    let actual_0 = wait_for_first_durable_kill(&mut child, &fixture.session, Duration::ZERO).await;
+    child.kill().await.unwrap();
+
     assert_eq!(
-        wait_for_first_durable_kill(&mut child, &fixture.session, Duration::ZERO)
-            .await
-            .unwrap_err(),
+        actual_0.unwrap_err(),
         "timed out waiting for the first durable killed result"
     );
-    child.kill().await.unwrap();
 }
 
 #[cfg(unix)]
 #[tokio::test]
-async fn descendant_wait_distinguishes_live_gone_and_inaccessible_processes() {
+async fn descendant_wait_observes_live_then_reaped_child() {
     let mut child = tokio::process::Command::new(python_executable().unwrap())
         .args(["-c", "import time; time.sleep(60)"])
         .kill_on_drop(true)
         .spawn()
         .unwrap();
     let pid = i32::try_from(child.id().unwrap()).unwrap();
-    assert!(!wait_for_descendant_exit(pid, Duration::ZERO).await);
-    assert!(!wait_for_descendant_exit(1, Duration::ZERO).await);
+    let live = wait_for_descendant_exit(pid, Duration::ZERO).await;
     child.kill().await.unwrap();
-    assert!(wait_for_descendant_exit(pid, Duration::from_secs(1)).await);
+
+    let gone = wait_for_descendant_exit(pid, Duration::from_secs(1)).await;
+
+    assert!(!live);
+    assert!(gone);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn descendant_wait_does_not_report_inaccessible_process_as_gone() {
+    let result = wait_for_descendant_exit(1, Duration::ZERO).await;
+
+    assert!(!result);
 }
 
 #[test]
@@ -863,6 +1223,7 @@ fn result_binding_reports_sqlite_connection_length_limit() {
     let error = query_result_rows(&mut statement, "12345678-1234-1234-1234-123456789012")
         .err()
         .unwrap();
+
     // SAFETY: restore the exact limit on the same exclusively owned connection.
     unsafe {
         rusqlite::ffi::sqlite3_limit(
@@ -871,6 +1232,7 @@ fn result_binding_reports_sqlite_connection_length_limit() {
             previous,
         )
     };
+
     assert!(error.starts_with("query results:"));
     assert!(error.contains("too big"));
 }
@@ -890,11 +1252,10 @@ fn session_projection_rejects_invalid_run_column_types(#[case] columns: &str) {
         .execute_batch(&format!("INSERT INTO runs VALUES (1,{columns})"))
         .unwrap();
     drop(connection);
-    assert!(
-        session_observation(&path, &BTreeMap::new(), &BTreeSet::new())
-            .unwrap_err()
-            .starts_with("read latest run:")
-    );
+
+    let actual_0 = session_observation(&path, &BTreeMap::new(), &BTreeSet::new());
+
+    assert!(actual_0.unwrap_err().starts_with("read latest run:"));
 }
 
 #[test]
@@ -904,9 +1265,8 @@ fn session_projection_rejects_invalid_result_identifier_type() {
     let connection = Connection::open(&path).unwrap();
     connection.execute_batch("CREATE TABLE runs (id INTEGER, run_id TEXT, finished INTEGER, complete INTEGER); INSERT INTO runs VALUES (1,'run',0,0); CREATE TABLE results (mutant_id, outcome_json TEXT, run_id TEXT); INSERT INTO results VALUES (NULL, '{}', 'run')").unwrap();
     drop(connection);
-    assert!(
-        session_observation(&path, &BTreeMap::new(), &BTreeSet::new())
-            .unwrap_err()
-            .starts_with("read result:")
-    );
+
+    let actual_0 = session_observation(&path, &BTreeMap::new(), &BTreeSet::new());
+
+    assert!(actual_0.unwrap_err().starts_with("read result:"));
 }

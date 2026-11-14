@@ -590,10 +590,10 @@ fn verify_top_accepts_explicit_selection_policy(
     ];
 
     let parsed = parse_from(argv).unwrap();
-
     let ParsedCommand::Verify(verification) = parsed else {
         panic!("expected verify")
     };
+
     assert_eq!(
         verification.selection,
         VerifySelection::Top {
@@ -2132,6 +2132,7 @@ fn help_limits_discovery_timeout_to_plan(
     // Arrange: root describes run, while verify inherits the saved plan.
 
     let help = parse_from(argv.iter().copied()).unwrap_err().to_string();
+
     assert_eq!(help.contains("--analyzer-timeout"), advertised, "{argv:?}");
 }
 
@@ -2287,6 +2288,7 @@ fn line_selector_rejects_malformed_numeric_ranges(#[case] selector: &str) {
 fn symbol_selector_requires_a_module_qualname_separator() {
     let error =
         parse_config_from(["hoimin", "run", "--symbol", "pkg.target", "--", "python"]).unwrap_err();
+
     assert!(matches!(error, hoimin_cli::cli::CliError::InvalidValue {
         name: "--symbol", value,
     } if value == "pkg.target"));

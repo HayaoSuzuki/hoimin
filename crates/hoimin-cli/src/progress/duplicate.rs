@@ -137,10 +137,9 @@ mod tests {
         std::fs::write(&second, b"same").unwrap();
         append_after_readers_prepared(vec![[first.clone(), second.clone()][side].clone()]);
 
-        assert_eq!(
-            identical_regular_files(&first, &second).unwrap_err().kind(),
-            io::ErrorKind::InvalidData
-        );
+        let actual_0 = identical_regular_files(&first, &second);
+
+        assert_eq!(actual_0.unwrap_err().kind(), io::ErrorKind::InvalidData);
     }
 
     #[test]
@@ -173,10 +172,9 @@ mod tests {
             std::fs::write(path, b"").unwrap();
         });
 
-        assert_eq!(
-            identical_regular_files(&first, &second).unwrap_err().kind(),
-            io::ErrorKind::UnexpectedEof
-        );
+        let actual_0 = identical_regular_files(&first, &second);
+
+        assert_eq!(actual_0.unwrap_err().kind(), io::ErrorKind::UnexpectedEof);
     }
 
     #[test]
@@ -209,19 +207,17 @@ mod tests {
         use std::os::unix::fs::OpenOptionsExt;
         use std::sync::mpsc;
         use std::time::Duration;
-
         let fixture = tempfile::tempdir().unwrap();
         let fifo = fixture.path().join("replaced-report");
         let c_path = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
         // SAFETY: c_path is a valid NUL-terminated fixture path; mkfifo retains no pointer.
-        assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+        let fifo_created = unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) };
         let (sender, receiver) = mpsc::channel();
         let worker_path = fifo.clone();
         let worker = std::thread::spawn(move || {
             let rejected = open_regular_file(&worker_path).unwrap().is_none();
             sender.send(rejected).unwrap();
         });
-
         let result = receiver.recv_timeout(Duration::from_secs(1));
         // Release a broken blocking opener before failing, leaving no stuck
         // thread or FIFO behind in the test process.
@@ -239,7 +235,7 @@ mod tests {
             },
         );
         worker.join().unwrap();
-
+        assert_eq!(fifo_created, 0);
         assert_eq!(
             result,
             Ok(true),
@@ -295,7 +291,10 @@ mod tests {
         let fixture = tempfile::tempdir().unwrap();
         let file = fixture.path().join("file");
         std::fs::write(&file, b"payload").unwrap();
-        assert!(!identical_regular_files(&file, fixture.path()).unwrap());
+
+        let actual_0 = identical_regular_files(&file, fixture.path());
+
+        assert!(!actual_0.unwrap());
     }
 
     #[rstest::rstest]
@@ -308,10 +307,10 @@ mod tests {
         std::fs::write(&first, b"same").unwrap();
         std::fs::write(&second, b"same").unwrap();
         std::fs::remove_file([&first, &second][side]).unwrap();
-        assert_eq!(
-            identical_regular_files(&first, &second).unwrap_err().kind(),
-            io::ErrorKind::NotFound
-        );
+
+        let actual_0 = identical_regular_files(&first, &second);
+
+        assert_eq!(actual_0.unwrap_err().kind(), io::ErrorKind::NotFound);
     }
 
     #[rstest::rstest]
@@ -325,16 +324,19 @@ mod tests {
         std::fs::write(&second, b"same").unwrap();
         let fault = crate::io_faults::arm_after("snapshot.metadata", side);
         let result = identical_regular_files(&first, &second);
-        assert!(
-            fault.triggered(),
-            "snapshot metadata boundary was not checked"
-        );
+
+        let actual_0 = fault.triggered();
+        let actual_2 = std::fs::read(&first);
+        let actual_3 = std::fs::read(&second);
+        let actual_4 = identical_regular_files(&first, &second);
+
+        assert!(actual_0, "snapshot metadata boundary was not checked");
         assert!(
             matches!(result, Err(error) if error.kind() == io::ErrorKind::Other && error.to_string().contains("snapshot.metadata"))
         );
-        assert_eq!(std::fs::read(&first).unwrap(), b"same");
-        assert_eq!(std::fs::read(&second).unwrap(), b"same");
-        assert!(identical_regular_files(&first, &second).unwrap());
+        assert_eq!(actual_2.unwrap(), b"same");
+        assert_eq!(actual_3.unwrap(), b"same");
+        assert!(actual_4.unwrap());
     }
 
     #[test]

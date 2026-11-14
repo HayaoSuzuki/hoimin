@@ -246,5 +246,8 @@ fn environment_parser_rejects_invalid_observations(
 ) {
     let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
     *row.pointer_mut(pointer).unwrap() = value;
-    assert_eq!(cases(&row.to_string()).err().unwrap(), diagnostic);
+
+    let actual_0 = cases(&row.to_string());
+
+    assert_eq!(actual_0.err().unwrap(), diagnostic);
 }

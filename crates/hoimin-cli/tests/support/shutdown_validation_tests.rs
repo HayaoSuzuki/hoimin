@@ -14,94 +14,162 @@ fn rejects_invalid_shutdown_contract(
     #[case] message: &str,
 ) {
     let input = corpus_with_first_case_changed(|case| *case.pointer_mut(pointer).unwrap() = value);
-    assert!(parse_corpus(&input).unwrap_err().contains(message));
+
+    let actual_0 = parse_corpus(&input);
+
+    assert!(actual_0.unwrap_err().contains(message));
 }
 
 #[test]
-fn corpus_requires_exact_count_and_valid_json() {
-    assert!(
-        parse_corpus("")
-            .unwrap_err()
-            .contains("expected 12 cases, found 0")
-    );
-    assert!(parse_corpus("not JSON").unwrap_err().starts_with("line 1:"));
+fn corpus_requires_exact_count() {
+    let actual_0 = parse_corpus("");
+
+    assert!(actual_0.unwrap_err().contains("expected 12 cases, found 0"));
+}
+
+#[test]
+fn corpus_requires_valid_json() {
+    let actual_0 = parse_corpus("not JSON");
+
+    assert!(actual_0.unwrap_err().starts_with("line 1:"));
 }
 
 #[test]
 fn strict_projection_rejects_exit_code_outside_i32() {
     let mut case = parse_corpus(corpus_text()).unwrap().remove(0);
     case.expected.exit_code = Some(u64::MAX);
-    assert!(
-        project_strict(&case)
-            .unwrap_err()
-            .contains("not observable as i32")
-    );
+
+    let actual_0 = project_strict(&case);
+
+    assert!(actual_0.unwrap_err().contains("not observable as i32"));
 }
 
 #[cfg(unix)]
 #[test]
-fn report_projection_rejects_missing_summary_and_invalid_json() {
-    assert!(
-        observe_report(b"not JSON")
-            .unwrap_err()
-            .contains("invalid JSON report")
-    );
+fn report_projection_rejects_invalid_json() {
+    let actual_0 = observe_report(b"not JSON");
+
+    assert!(actual_0.unwrap_err().contains("invalid JSON report"));
+}
+
+#[cfg(unix)]
+#[test]
+fn report_projection_requires_boolean_completion() {
     let document = b"{\"summary\":{\"complete\":\"invalid\"}}";
-    assert!(
-        observe_report(document)
-            .unwrap_err()
-            .contains("boolean summary.complete")
-    );
+
+    let actual_0 = observe_report(document);
+
+    assert!(actual_0.unwrap_err().contains("boolean summary.complete"));
 }
 
 #[cfg(unix)]
 #[test]
-fn session_projection_reports_open_schema_and_completion_errors() {
+fn session_projection_rejects_directory() {
     let root = tempfile::tempdir().unwrap();
-    assert!(observe_session(root.path()).is_err());
+
+    let actual_0 = observe_session(root.path());
+
+    assert!(actual_0.is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn session_projection_rejects_missing_file() {
+    let root = tempfile::tempdir().unwrap();
     let database = root.path().join("session.sqlite3");
-    assert!(observe_session(&database).is_err());
+
+    let actual_0 = observe_session(&database);
+
+    assert!(actual_0.is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn session_projection_rejects_invalid_completion() {
+    let root = tempfile::tempdir().unwrap();
+    let database = root.path().join("session.sqlite3");
     let connection = rusqlite::Connection::open(&database).unwrap();
     connection
         .execute_batch("CREATE TABLE runs (complete INTEGER); INSERT INTO runs VALUES (2)")
         .unwrap();
-    assert_eq!(
-        observe_session(&database).unwrap_err(),
-        "invalid session complete value: 2"
-    );
-    connection
-        .execute("UPDATE runs SET complete=0", [])
-        .unwrap();
-    assert_eq!(observe_session(&database).unwrap(), "incomplete");
+
+    let actual_0 = observe_session(&database);
+
+    assert_eq!(actual_0.unwrap_err(), "invalid session complete value: 2");
 }
 
 #[cfg(unix)]
 #[test]
-fn project_writer_reports_unusable_root_and_process_liveness_rejects_invalid_pid() {
+fn session_projection_observes_incomplete() {
+    let root = tempfile::tempdir().unwrap();
+    let database = root.path().join("session.sqlite3");
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    connection
+        .execute_batch("CREATE TABLE runs (complete INTEGER); INSERT INTO runs VALUES (2)")
+        .unwrap();
+    connection
+        .execute("UPDATE runs SET complete=0", [])
+        .unwrap();
+
+    let actual_0 = observe_session(&database);
+
+    assert_eq!(actual_0.unwrap(), "incomplete");
+}
+
+#[cfg(unix)]
+#[test]
+fn project_writer_reports_unusable_root() {
     let file = tempfile::NamedTempFile::new().unwrap();
-    assert!(write_parallel_project(file.path()).is_err());
-    assert!(!process_is_alive(u32::MAX));
+
+    let actual_0 = write_parallel_project(file.path());
+
+    assert!(actual_0.is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn liveness_rejects_invalid_pid() {
+    let actual_0 = process_is_alive(u32::MAX);
+
+    assert!(!actual_0);
 }
 
 #[cfg(unix)]
 #[tokio::test]
-async fn readiness_and_interrupt_reject_already_exited_process() {
+async fn interrupt_rejects_exited_process() {
+    let mut child = tokio::process::Command::new(python_executable())
+        .args(["-c", "pass"])
+        .spawn()
+        .unwrap();
+    child.wait().await.unwrap();
+
+    let actual_0 = send_first_interrupt(&mut child);
+
+    assert_eq!(actual_0.unwrap_err(), "hoimin exited before SIGINT");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn readiness_rejects_exited_process() {
     let paths = FixturePaths::create().unwrap();
     let mut child = tokio::process::Command::new(python_executable())
         .args(["-c", "pass"])
         .spawn()
         .unwrap();
     child.wait().await.unwrap();
-    assert_eq!(
-        send_first_interrupt(&mut child).unwrap_err(),
-        "hoimin exited before SIGINT"
-    );
+
+    let actual_0 = wait_for_readiness(&paths, &mut child).await;
+
     assert!(
-        wait_for_readiness(&paths, &mut child)
-            .await
+        actual_0
             .unwrap_err()
             .contains("exited before fixture readiness")
     );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn reaping_tolerates_invalid_pid() {
     reap_fixture_processes(&FixtureProcesses {
         pids: vec![u32::MAX],
     })
@@ -118,19 +186,24 @@ async fn readiness_deadline_rejects_fixture_without_marker_processes() {
         .kill_on_drop(true)
         .spawn()
         .unwrap();
+    let result = wait_for_readiness(&paths, &mut child).await;
+
+    child.kill().await.unwrap();
+
     assert_eq!(
-        wait_for_readiness(&paths, &mut child).await.unwrap_err(),
+        result.unwrap_err(),
         "fixture processes did not become ready"
     );
-    child.kill().await.unwrap();
 }
 
 #[cfg(unix)]
 #[tokio::test]
-async fn case_execution_classifies_projection_failure_errors_panics_and_mismatch() {
+async fn case_execution_reports_projection_failure() {
     let mut case = parse_corpus(corpus_text()).unwrap().remove(0);
     case.expected.returned = false;
+
     let projection = run_strict_case_with_execution(&case, execute_strict_case).await;
+
     assert_eq!(projection.class, CaseClass::InfrastructureError);
     assert!(
         projection
@@ -139,100 +212,155 @@ async fn case_execution_classifies_projection_failure_errors_panics_and_mismatch
             .contains("no observable terminal exit")
     );
     assert!(projection.actual.is_none());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn case_execution_reports_execution_failure() {
+    let mut case = parse_corpus(corpus_text()).unwrap().remove(0);
     case.expected.returned = true;
     let failed = run_strict_case_with_execution(&case, |_| {
         std::future::ready(Err("injected execution failure".into()))
     })
     .await;
+
+    let actual_1 = failed.detail.as_deref();
+
     assert_eq!(failed.class, CaseClass::InfrastructureError);
-    assert_eq!(failed.detail.as_deref(), Some("injected execution failure"));
+    assert_eq!(actual_1, Some("injected execution failure"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn case_execution_reports_panic() {
+    let mut case = parse_corpus(corpus_text()).unwrap().remove(0);
+    case.expected.returned = true;
+
     let panicked =
         run_strict_case_with_execution(&case, |_| async { panic!("injected case panic") }).await;
+
     assert_eq!(panicked.class, CaseClass::InfrastructureError);
     assert!(panicked.detail.unwrap().starts_with("case panicked:"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn case_execution_reports_mismatch() {
+    let mut case = parse_corpus(corpus_text()).unwrap().remove(0);
+    case.expected.returned = true;
     let mut actual = project_strict(&case).unwrap();
     actual.exit_code = Some(42);
+
     let mismatch = run_strict_case_with_execution(&case, |_| std::future::ready(Ok(actual))).await;
+
     assert_eq!(mismatch.class, CaseClass::Mismatch);
     assert!(mismatch.detail.unwrap().starts_with("expected="));
     assert_eq!(mismatch.actual.unwrap().exit_code, Some(42));
 }
 
 #[cfg(unix)]
-#[test]
-fn fixture_creation_reports_first_and_second_tempdir_failures() {
-    for failed_call in [0, 1] {
-        let mut calls = 0;
-        let result = FixturePaths::with_tempdirs(&mut || {
-            let current = calls;
-            calls += 1;
-            if current == failed_call {
-                Err(std::io::Error::other("injected tempdir failure"))
-            } else {
-                tempfile::tempdir()
-            }
-        });
-        assert_eq!(result.err().unwrap(), "injected tempdir failure");
-        assert_eq!(calls, failed_call + 1);
-    }
+#[rstest::rstest]
+#[case::first(std::collections::VecDeque::from([Err(std::io::Error::other("injected tempdir failure"))]), 1)]
+#[case::second(std::collections::VecDeque::from([tempfile::tempdir(), Err(std::io::Error::other("injected tempdir failure"))]), 2)]
+fn fixture_creation_reports_tempdir_failure(
+    #[case] mut directories: std::collections::VecDeque<std::io::Result<tempfile::TempDir>>,
+    #[case] expected_calls: usize,
+) {
+    let mut calls = 0;
+
+    let result = FixturePaths::with_tempdirs(&mut || {
+        calls += 1;
+        directories.pop_front().unwrap()
+    });
+
+    assert_eq!(result.err().unwrap(), "injected tempdir failure");
+    assert_eq!(calls, expected_calls);
 }
 
 #[cfg(unix)]
 #[rstest::rstest]
-#[case("source")]
-#[case("package")]
-#[case("module")]
-#[case("active")]
-fn fixture_creation_reports_filesystem_failures(#[case] stage: &str) {
+#[case::source(|project: &Path, _: &Path| std::fs::write(project.join("src"), "blocking file").unwrap())]
+#[case::package(|project: &Path, _: &Path| std::fs::create_dir_all(project.join("src/__init__.py")).unwrap())]
+#[case::module(|project: &Path, _: &Path| std::fs::create_dir_all(project.join("src/calc.py")).unwrap())]
+#[case::active(|_: &Path, coordinator: &Path| std::fs::create_dir(coordinator.join("active")).unwrap())]
+fn fixture_creation_reports_filesystem_failures(#[case] obstruct: fn(&Path, &Path)) {
     let project = tempfile::tempdir().unwrap();
     let coordinator = tempfile::tempdir().unwrap();
-    if stage == "active" {
-        std::fs::create_dir(coordinator.path().join("active")).unwrap();
-    } else if stage == "source" {
-        std::fs::write(project.path().join("src"), "blocking file").unwrap();
-    } else {
-        std::fs::create_dir(project.path().join("src")).unwrap();
-        std::fs::create_dir(project.path().join("src").join(if stage == "package" {
-            "__init__.py"
-        } else {
-            "calc.py"
-        }))
-        .unwrap();
-    }
+    obstruct(project.path(), coordinator.path());
     let mut directories = std::collections::VecDeque::from([Ok(project), Ok(coordinator)]);
-    assert!(FixturePaths::with_tempdirs(&mut || directories.pop_front().unwrap()).is_err());
+
+    let result = FixturePaths::with_tempdirs(&mut || directories.pop_front().unwrap());
+
+    assert!(result.is_err());
 }
 
 #[cfg(unix)]
 #[tokio::test(start_paused = true)]
-async fn signals_and_reaping_report_failures_and_surviving_processes() {
-    assert!(native_pid(u32::MAX).is_err());
+async fn native_pid_rejects_overflow() {
+    let actual_0 = native_pid(u32::MAX);
+
+    assert!(actual_0.is_err());
+}
+
+#[cfg(unix)]
+#[tokio::test(start_paused = true)]
+async fn interrupt_reports_signal_failure() {
+    let mut child = tokio::process::Command::new(python_executable())
+        .args(["-c", "import time; time.sleep(60)"])
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let interrupt = send_first_interrupt_with_signal(&mut child, |_, _| {
+        Err(std::io::Error::other("injected interrupt failure"))
+    })
+    .unwrap_err();
+
+    child.kill().await.unwrap();
+
+    assert_eq!(interrupt, "SIGINT failed: injected interrupt failure");
+}
+
+#[cfg(unix)]
+#[tokio::test(start_paused = true)]
+async fn reaping_reports_signal_failure() {
     let mut child = tokio::process::Command::new(python_executable())
         .args(["-c", "import time; time.sleep(60)"])
         .kill_on_drop(true)
         .spawn()
         .unwrap();
     let pid = child.id().unwrap();
-    let interrupt = send_first_interrupt_with_signal(&mut child, |_, _| {
-        Err(std::io::Error::other("injected interrupt failure"))
-    })
-    .unwrap_err();
-    assert_eq!(interrupt, "SIGINT failed: injected interrupt failure");
     let processes = FixtureProcesses { pids: vec![pid] };
     let kill = reap_fixture_processes_with_signal(&processes, |_, _| {
         Err(std::io::Error::other("injected kill failure"))
     })
     .await
     .unwrap_err();
+
+    child.kill().await.unwrap();
+
     assert_eq!(
         kill,
         format!("failed to kill fixture process {pid}: injected kill failure")
     );
+}
+
+#[cfg(unix)]
+#[tokio::test(start_paused = true)]
+async fn reaping_reports_surviving_process() {
+    let mut child = tokio::process::Command::new(python_executable())
+        .args(["-c", "import time; time.sleep(60)"])
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let pid = child.id().unwrap();
+    let processes = FixtureProcesses { pids: vec![pid] };
     let survival = reap_fixture_processes_with_signal(&processes, |_, _| Ok(()))
         .await
         .unwrap_err();
-    assert_eq!(survival, format!("fixture process {pid} survived teardown"));
+
     child.kill().await.unwrap();
+
+    assert_eq!(survival, format!("fixture process {pid} survived teardown"));
 }
 
 #[cfg(unix)]
@@ -247,93 +375,99 @@ async fn successful_reaping_waits_for_running_fixture_to_exit() {
         pids: vec![child.id().unwrap()],
     };
     let wait = tokio::spawn(async move { child.wait().await });
+
     reap_fixture_processes(&processes).await.unwrap();
+
     assert!(!wait.await.unwrap().unwrap().success());
 }
 
 #[cfg(unix)]
-#[test]
-fn oracle_selection_rejects_unknown_cases_and_runs_selected_strict_case() {
+#[rstest::rstest]
+#[case::missing(|_: &OracleCase| "missing-case".to_owned(), false, "unknown oracle case")]
+#[case::selected(|case: &OracleCase| case.id.clone(), true, "test result: ok")]
+fn oracle_selection_checks_identity(
+    #[case] select: fn(&OracleCase) -> String,
+    #[case] succeeds: bool,
+    #[case] message: &str,
+) {
     let first = parse_corpus(corpus_text())
         .unwrap()
         .into_iter()
         .find(|case| case.mode == "strict")
         .unwrap();
-    for (id, succeeds, message) in [
-        ("missing-case", false, "unknown oracle case"),
-        (first.id.as_str(), true, "test result: ok"),
-    ] {
-        let output = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "oracle_correspondence",
-                "--nocapture",
-                "--test-threads=1",
-            ])
-            .env("HOIMIN_SHUTDOWN_ORACLE_CASE", id)
-            .output()
-            .unwrap();
-        assert_eq!(output.status.success(), succeeds);
-        let combined = format!(
-            "{}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(combined.contains(message), "{combined}");
-    }
+    let id = select(&first);
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "oracle_correspondence",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env("HOIMIN_SHUTDOWN_ORACLE_CASE", id)
+        .output()
+        .unwrap();
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let actual_0 = output.status.success();
+
+    assert_eq!(actual_0, succeeds);
+    assert!(combined.contains(message), "{combined}");
 }
 
 #[cfg(unix)]
 #[tokio::test(start_paused = true)]
-async fn exit_status_projection_distinguishes_io_error_and_elapsed_budget() {
-    assert_eq!(
-        bounded_exit_status(Ok(Err(std::io::Error::other("injected wait failure")))).unwrap_err(),
-        "injected wait failure"
-    );
+async fn exit_status_reports_wait_error() {
+    let actual_0 = bounded_exit_status(Ok(Err(std::io::Error::other("injected wait failure"))));
+
+    assert_eq!(actual_0.unwrap_err(), "injected wait failure");
+}
+
+#[cfg(unix)]
+#[tokio::test(start_paused = true)]
+async fn exit_status_reports_elapsed_budget() {
     let elapsed = tokio::time::timeout(
         Duration::from_secs(1),
         std::future::pending::<std::io::Result<std::process::ExitStatus>>(),
     )
     .await;
-    assert_eq!(
-        bounded_exit_status(elapsed).unwrap_err(),
-        "hoimin exceeded bounded exit"
-    );
+
+    let actual_0 = bounded_exit_status(elapsed);
+
+    assert_eq!(actual_0.unwrap_err(), "hoimin exceeded bounded exit");
 }
 
 #[cfg(unix)]
 #[rstest::rstest]
-#[case(false, false)]
-#[case(false, true)]
-#[case(true, false)]
-#[case(true, true)]
+#[case::read_stdout(false, || Err(std::io::Error::other("injected output read failure")), "injected output read failure")]
+#[case::read_stderr(true, || Err(std::io::Error::other("injected output read failure")), "injected output read failure")]
+#[case::panic_stdout(false, || panic!("injected output task panic"), "injected output task panic")]
+#[case::panic_stderr(true, || panic!("injected output task panic"), "injected output task panic")]
 #[tokio::test]
 async fn output_collection_reports_read_and_join_errors(
     #[case] fail_stderr: bool,
-    #[case] panic: bool,
+    #[case] fail: fn() -> std::io::Result<Vec<u8>>,
+    #[case] expected: &str,
 ) {
-    let failed: tokio::task::JoinHandle<std::io::Result<Vec<u8>>> = tokio::spawn(async move {
-        assert!(!panic, "injected output task panic");
-        Err(std::io::Error::other("injected output read failure"))
-    });
+    let failed = tokio::spawn(async move { fail() });
     let succeeded = tokio::spawn(async { Ok(Vec::new()) });
-    let (stdout, stderr) = if fail_stderr {
-        (succeeded, failed)
-    } else {
-        (failed, succeeded)
-    };
-    let message = collect_output(stdout, stderr).await.unwrap_err();
-    assert!(message.contains(if panic {
-        "injected output task panic"
-    } else {
-        "injected output read failure"
-    }));
+    let mut readers = [failed, succeeded];
+    readers.swap(0, usize::from(fail_stderr));
+    let [stdout, stderr] = readers;
+
+    let result = collect_output(stdout, stderr).await;
+
+    assert!(result.unwrap_err().contains(expected));
 }
 
 #[cfg(unix)]
 #[tokio::test]
 async fn output_reader_returns_async_read_errors() {
     struct FailedReader;
+
     impl tokio::io::AsyncRead for FailedReader {
         fn poll_read(
             self: std::pin::Pin<&mut Self>,
@@ -354,7 +488,7 @@ async fn output_reader_returns_async_read_errors() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn readiness_reports_a_child_reaped_outside_tokio() {
+async fn readiness_reports_external_reap() {
     let paths = FixturePaths::create().unwrap();
     let child = tokio::process::Command::new(python_executable())
         .args(["-c", "pass"])
@@ -363,14 +497,32 @@ async fn readiness_reports_a_child_reaped_outside_tokio() {
     let pid = i32::try_from(child.id().unwrap()).unwrap();
     let mut status = 0;
     // SAFETY: this exact retained child belongs to this fixture; synchronous reap simulates an external supervisor.
-    assert_eq!(unsafe { libc::waitpid(pid, &raw mut status, 0) }, pid);
+    let reaped = unsafe { libc::waitpid(pid, &raw mut status, 0) };
     let mut child = child;
-    assert!(wait_for_readiness(&paths, &mut child).await.is_err());
-    assert!(
-        send_first_interrupt(&mut child)
-            .unwrap_err()
-            .starts_with("SIGINT failed:")
-    );
+
+    let result = wait_for_readiness(&paths, &mut child).await;
+
+    assert_eq!(reaped, pid);
+    assert!(result.is_err());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn interrupt_reports_external_reap() {
+    let child = tokio::process::Command::new(python_executable())
+        .args(["-c", "pass"])
+        .spawn()
+        .unwrap();
+    let pid = i32::try_from(child.id().unwrap()).unwrap();
+    let mut status = 0;
+    // SAFETY: this exact retained child belongs to this fixture; synchronous reap simulates an external supervisor.
+    let reaped = unsafe { libc::waitpid(pid, &raw mut status, 0) };
+    let mut child = child;
+
+    let result = send_first_interrupt(&mut child);
+
+    assert_eq!(reaped, pid);
+    assert!(result.unwrap_err().starts_with("SIGINT failed:"));
 }
 
 #[cfg(unix)]
@@ -393,7 +545,9 @@ fn correspondence_assertion_reports_infrastructure_details(
         detail: detail.map(str::to_owned),
     };
     let panic = std::panic::catch_unwind(|| assert_correspondence_results(&[result])).unwrap_err();
+
     let panic = panic.downcast::<String>().unwrap();
+
     assert!(panic.contains("infrastructure errors:"));
     assert!(panic.contains(message));
 }
@@ -413,35 +567,41 @@ fn correspondence_assertion_reports_mismatch_expected_and_actual() {
         detail: None,
     };
     let panic = std::panic::catch_unwind(|| assert_correspondence_results(&[result])).unwrap_err();
+
     let panic = panic.downcast::<String>().unwrap();
+
     assert!(panic.contains("mismatch"));
     assert!(panic.contains("expected="));
     assert!(panic.contains("actual="));
 }
 
 #[cfg(unix)]
+#[rstest::rstest]
+#[case::stdout(Stdio::null, "missing stdout pipe")]
+#[case::stderr(Stdio::piped, "missing stderr pipe")]
 #[tokio::test(start_paused = true)]
-async fn fixture_execution_reports_missing_pipes_and_bounded_exit() {
+async fn fixture_execution_reports_missing_pipes(
+    #[case] stdout: fn() -> Stdio,
+    #[case] expected: &str,
+) {
     let case = parse_corpus(corpus_text()).unwrap().remove(0);
-    for stdout_piped in [false, true] {
-        let paths = FixturePaths::create().unwrap();
-        let mut command = tokio::process::Command::new(python_executable());
-        command.args(["-c", "pass"]).kill_on_drop(true);
-        if stdout_piped {
-            command.stdout(Stdio::piped());
-        }
-        let error = execute_fixture(case.clone(), paths, command.spawn().unwrap())
-            .await
-            .unwrap_err();
-        assert_eq!(
-            error,
-            if stdout_piped {
-                "missing stderr pipe"
-            } else {
-                "missing stdout pipe"
-            }
-        );
-    }
+    let paths = FixturePaths::create().unwrap();
+    let child = tokio::process::Command::new(python_executable())
+        .args(["-c", "pass"])
+        .stdout(stdout())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+
+    let result = execute_fixture(case, paths, child).await;
+
+    assert_eq!(result.unwrap_err(), expected);
+}
+
+#[cfg(unix)]
+#[tokio::test(start_paused = true)]
+async fn fixture_execution_reports_bounded_exit() {
+    let case = parse_corpus(corpus_text()).unwrap().remove(0);
     let paths = FixturePaths::create().unwrap();
     let child = tokio::process::Command::new(python_executable())
         .args(["-c", "import time; time.sleep(60)"])
@@ -450,9 +610,11 @@ async fn fixture_execution_reports_missing_pipes_and_bounded_exit() {
         .kill_on_drop(true)
         .spawn()
         .unwrap();
+
+    let actual_0 = execute_fixture(case, paths, child).await;
+
     assert!(
-        execute_fixture(case, paths, child)
-            .await
+        actual_0
             .unwrap_err()
             .starts_with("hoimin exceeded bounded exit; stderr=")
     );
@@ -470,36 +632,38 @@ async fn fixture_execution_reports_kill_failure() {
         .kill_on_drop(true)
         .spawn()
         .unwrap();
+
     let error = execute_fixture_with_kill(case, paths, child, |_| {
         Err(std::io::Error::other("injected child kill failure"))
     })
     .await
     .unwrap_err();
+
     assert_eq!(error, "injected child kill failure");
 }
 
 #[cfg(unix)]
+#[rstest::rstest]
+#[case::report("not JSON", "invalid JSON report")]
+#[case::session(r#"{"summary":{"complete":true}}"#, "no such table: runs")]
 #[tokio::test]
-async fn fixture_execution_validates_report_and_session_surfaces() {
+async fn fixture_execution_validates_report_and_session_surfaces(
+    #[case] output: &str,
+    #[case] expected: &str,
+) {
     let case = parse_corpus(corpus_text()).unwrap().remove(0);
-    for output in ["not JSON", r#"{"summary":{"complete":true}}"#] {
-        let paths = FixturePaths::create().unwrap();
-        let child = tokio::process::Command::new(python_executable())
-            .args(["-c", "import sys; print(sys.argv[1])", output])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .unwrap();
-        let error = execute_fixture(case.clone(), paths, child)
-            .await
-            .unwrap_err();
-        assert!(error.contains(if output == "not JSON" {
-            "invalid JSON report"
-        } else {
-            "no such table: runs"
-        }));
-    }
+    let paths = FixturePaths::create().unwrap();
+    let child = tokio::process::Command::new(python_executable())
+        .args(["-c", "import sys; print(sys.argv[1])", output])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+
+    let result = execute_fixture(case, paths, child).await;
+
+    assert!(result.unwrap_err().contains(expected));
 }
 
 #[cfg(unix)]
@@ -507,10 +671,12 @@ async fn fixture_execution_validates_report_and_session_surfaces() {
 fn spawning_reports_missing_binary() {
     let case = parse_corpus(corpus_text()).unwrap().remove(0);
     let paths = FixturePaths::create().unwrap();
+
     let error =
         spawn_scenario_with_executable(&case, &paths, Path::new("/absent/hoimin-test-executable"))
             .err()
             .unwrap();
+
     assert!(error.starts_with("spawn hoimin:"));
 }
 
@@ -528,6 +694,10 @@ async fn fixture_execution_reports_external_reap_during_teardown() {
     let pid = native_pid(child.id().unwrap()).unwrap();
     let mut status = 0;
     // SAFETY: this exact retained child is owned by the fixture; emulate another supervisor reaping it.
-    assert_eq!(unsafe { libc::waitpid(pid, &raw mut status, 0) }, pid);
-    assert!(execute_fixture(case, paths, child).await.is_err());
+    let reaped = unsafe { libc::waitpid(pid, &raw mut status, 0) };
+
+    let actual_0 = execute_fixture(case, paths, child).await;
+
+    assert!(actual_0.is_err());
+    assert_eq!(reaped, pid);
 }

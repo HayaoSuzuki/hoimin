@@ -163,20 +163,22 @@ mod tests {
         std::fs::write(root.join("z.py"), b"# coding: ascii\n# \xff\n").unwrap();
         let project = ExceptionProject::new(root);
 
-        let error = test_load(&project, &|| false).err().unwrap();
-
-        assert!(error.starts_with("z.py:"), "{error}");
+        let acquisition_error = test_load(&project, &|| false).err().unwrap();
         std::fs::write(root.join("z.py"), "").unwrap();
-
-        let error = test_load(&project, &|| false).err().unwrap();
-
-        assert!(error.contains("analysis depth"), "{error}");
+        let analysis_error = test_load(&project, &|| false).err().unwrap();
         std::fs::write(root.join("a.py"), "class Root(Exception): pass\n").unwrap();
         let first = test_load(&project, &|| false).unwrap();
-        assert!(Arc::ptr_eq(
-            &first,
-            &test_load(&project, &|| false).unwrap()
-        ));
+        let second = test_load(&project, &|| false).unwrap();
+
+        assert!(
+            acquisition_error.starts_with("z.py:"),
+            "{acquisition_error}"
+        );
+        assert!(
+            analysis_error.contains("analysis depth"),
+            "{analysis_error}"
+        );
+        assert!(Arc::ptr_eq(&first, &second));
     }
 
     #[test]
@@ -195,16 +197,20 @@ mod tests {
         );
         project.prepared_inputs = Some(Arc::new(inputs));
 
-        let error = test_load(&project, &|| false).err().unwrap();
-
-        assert!(error.starts_with("source.py:"), "{error}");
+        let acquisition_error = test_load(&project, &|| false).err().unwrap();
         std::fs::write(root.join("source.py"), "").unwrap();
         Arc::make_mut(project.prepared_inputs.as_mut().unwrap())
             .insert("source.py".into(), blake3::hash(b"").to_hex().to_string());
+        let limit_error = test_load(&project, &|| false).err().unwrap();
 
-        let error = test_load(&project, &|| false).err().unwrap();
-
-        assert!(error.contains("prepared input limit"), "{error}");
+        assert!(
+            acquisition_error.starts_with("source.py:"),
+            "{acquisition_error}"
+        );
+        assert!(
+            limit_error.contains("prepared input limit"),
+            "{limit_error}"
+        );
     }
     #[test]
     fn hierarchy_project_bounds_reads_and_does_not_cache_failure() {
@@ -217,16 +223,14 @@ mod tests {
         let root = Utf8PathBuf::from_path_buf(dir.path().into()).unwrap();
         let project = ExceptionProject::new(&root);
 
-        assert!(
-            test_load(&project, &|| false)
-                .err()
-                .unwrap()
-                .contains("byte limit")
-        );
+        let oversized = test_load(&project, &|| false);
         std::fs::write(path, "class Root(Exception): pass\n").unwrap();
-        assert!(test_load(&project, &|| true).is_err());
+        let cancelled = test_load(&project, &|| true);
         let first = test_load(&project, &|| false).unwrap();
         let second = test_load(&project, &|| false).unwrap();
+
+        assert!(oversized.err().unwrap().contains("byte limit"));
+        assert!(cancelled.is_err());
         assert!(Arc::ptr_eq(&first, &second));
     }
     #[test]
@@ -267,21 +271,19 @@ mod tests {
             "class Root(Exception): pass\nclass Child(ValueError): pass\n",
         )
         .unwrap();
-
         let result = test_load(&project, &|| false);
         // Restoring A makes a later workspace recheck pass, but cannot make an
         // index built from B correspond to the prepared input fingerprint.
         std::fs::write(&path, original).unwrap();
         crate::fingerprint_inputs::recheck_config(&config, &config.selection.root).unwrap();
 
+        let actual_1 = test_load(&project, &|| false);
+
         assert!(
             result.is_err(),
             "index accepted bytes outside its prepared fingerprint"
         );
-        assert!(
-            test_load(&project, &|| false).is_ok(),
-            "failed snapshot must not be cached"
-        );
+        assert!(actual_1.is_ok(), "failed snapshot must not be cached");
     }
     #[test]
     fn hierarchy_project_missing_snapshot_module_cannot_expose_lower_priority_module() {
@@ -315,7 +317,6 @@ mod tests {
         let config = crate::shell::prepare_run_config(config).unwrap();
         let project = ExceptionProject::from_config(&config).unwrap();
         std::fs::remove_file(&path).unwrap();
-
         let result = test_load(&project, &|| false);
         std::fs::write(&path, original).unwrap();
         crate::fingerprint_inputs::recheck_config(&config, &config.selection.root).unwrap();
@@ -341,8 +342,10 @@ mod tests {
             })
             .unwrap_or_default();
 
+        let actual_0 = candidates.is_empty();
+
         assert!(
-            candidates.is_empty(),
+            actual_0,
             "missing snapshot module exposed {} candidates",
             candidates.len()
         );
@@ -379,12 +382,10 @@ mod coverage_regressions {
         let directory = tempfile::tempdir().unwrap();
         let project = ExceptionProject::new(Utf8Path::from_path(directory.path()).unwrap());
         poison_cache(&project);
-        assert!(
-            test_load(&project, &|| false)
-                .err()
-                .unwrap()
-                .contains("poison")
-        );
+
+        let actual_0 = test_load(&project, &|| false);
+
+        assert!(actual_0.err().unwrap().contains("poison"));
     }
 
     #[test]
@@ -400,8 +401,11 @@ mod coverage_regressions {
         let error = test_load(&project, &|| poison_after_initial_check(&project, &calls))
             .err()
             .unwrap();
+
+        let actual_1 = calls.get() > 1;
+
         assert!(error.contains("poison"));
-        assert!(calls.get() > 1);
+        assert!(actual_1);
     }
 
     #[test]
@@ -409,7 +413,10 @@ mod coverage_regressions {
         let directory = tempfile::tempdir().unwrap();
         let root = Utf8PathBuf::from_path_buf(directory.path().join("absent")).unwrap();
         let project = ExceptionProject::new(&root);
-        assert!(test_load(&project, &|| false).is_err());
+
+        let actual_0 = test_load(&project, &|| false);
+
+        assert!(actual_0.is_err());
     }
 
     #[test]
@@ -419,8 +426,11 @@ mod coverage_regressions {
         source.resize(MAX_FILE_BYTES / 2 + 128, 255);
         std::fs::write(directory.path().join("source.py"), source).unwrap();
         let project = ExceptionProject::new(Utf8Path::from_path(directory.path()).unwrap());
+
+        let actual_0 = test_load(&project, &|| false);
+
         assert!(
-            test_load(&project, &|| false)
+            actual_0
                 .err()
                 .unwrap()
                 .contains("decoded source byte limit")
@@ -444,8 +454,11 @@ mod coverage_regressions {
         let error = test_load(&project, &|| cancel_after(&calls, 1))
             .err()
             .unwrap();
+
+        let actual_1 = project.index.lock();
+
         assert!(error.contains("cancel"));
-        assert!(project.index.lock().unwrap().is_none());
+        assert!(actual_1.unwrap().is_none());
     }
 
     #[test]
@@ -465,8 +478,11 @@ mod coverage_regressions {
         })
         .err()
         .unwrap();
+
+        let actual_1 = project.index.lock();
+
         assert_eq!(error, "analyzer.cancelled");
-        assert!(project.index.lock().unwrap().is_none());
+        assert!(actual_1.unwrap().is_none());
     }
 
     #[test]
@@ -481,13 +497,17 @@ mod coverage_regressions {
         source.truncate(6144);
         std::fs::write(directory.path().join("z.py"), source).unwrap();
         let project = ExceptionProject::new(Utf8Path::from_path(directory.path()).unwrap());
+
+        let actual_0 = test_load(&project, &|| false);
+        let actual_1 = project.index.lock();
+
         assert!(
-            test_load(&project, &|| false)
+            actual_0
                 .err()
                 .unwrap()
                 .contains("total decoded source byte limit")
         );
-        assert!(project.index.lock().unwrap().is_none());
+        assert!(actual_1.unwrap().is_none());
     }
 
     #[test]
@@ -509,9 +529,9 @@ mod coverage_regressions {
         ])
         .unwrap();
         let config = crate::shell::prepare_run_config(config).unwrap();
-        assert_eq!(
-            ExceptionProject::from_config(&config).unwrap().roots,
-            vec![Utf8PathBuf::new()]
-        );
+
+        let actual_0 = ExceptionProject::from_config(&config);
+
+        assert_eq!(actual_0.unwrap().roots, vec![Utf8PathBuf::new()]);
     }
 }

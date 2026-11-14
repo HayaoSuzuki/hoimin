@@ -559,21 +559,20 @@ mod tests {
             "import os,pathlib,sys; pathlib.Path(sys.argv[1]).write_text(str(os.getpid()))",
             &marker,
         );
-
         let error = runner
             .run_command(command, &cancellation)
             .await
             .unwrap_err();
+        runner
+            .drain_for_shutdown(Duration::from_secs(1))
+            .await
+            .unwrap();
 
         assert!(matches!(&error, GitError::Cancelled));
         assert!(
             matches!(error.into_target(), TargetError::GitFailed(message) if message == "target Git command cancelled")
         );
         assert!(!marker.exists());
-        runner
-            .drain_for_shutdown(Duration::from_secs(1))
-            .await
-            .unwrap();
     }
 
     #[tokio::test]
@@ -953,6 +952,7 @@ mod failure_coverage {
     #[tokio::test]
     async fn pipe_read_failure_preserves_its_io_diagnostic(#[case] diagnostic: bool) {
         let error = read_pipe(FailedPipe, 8, diagnostic).await.unwrap_err();
+
         assert!(
             matches!(&error, CaptureError::Io(cause) if cause.kind() == std::io::ErrorKind::Other)
         );
@@ -967,18 +967,19 @@ mod failure_coverage {
             .output()
             .unwrap_err();
         let runner = GitRunner::default();
+
         let error = runner
             .run_command(Command::new(&executable), &ProcessCancellation::new())
             .await
             .unwrap_err();
+        let actual_1 = runner.state.active.load(Ordering::Acquire);
+        let actual_2 = runner.drain_for_shutdown(Duration::from_secs(5)).await;
+
         assert!(
             matches!(error.into_target(), TargetError::GitFailed(message) if message == expected.to_string())
         );
-        assert_eq!(runner.state.active.load(Ordering::Acquire), 0);
-        assert_eq!(
-            runner.drain_for_shutdown(Duration::from_secs(5)).await,
-            Ok(())
-        );
+        assert_eq!(actual_1, 0);
+        assert_eq!(actual_2, Ok(()));
     }
 
     #[tokio::test]
@@ -993,9 +994,10 @@ mod failure_coverage {
         let first_poll =
             std::future::poll_fn(|context| std::task::Poll::Ready(drain.as_mut().poll(context)))
                 .await;
-        assert!(first_poll.is_pending());
         drop(lifecycle);
         let error = drain.await.unwrap_err();
+
+        assert!(first_poll.is_pending());
         assert_eq!(runner.state.active.load(Ordering::Acquire), 0);
         assert_eq!(
             error,

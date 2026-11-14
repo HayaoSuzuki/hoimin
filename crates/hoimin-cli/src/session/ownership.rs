@@ -136,11 +136,15 @@ mod coverage_tests {
             .path()
             .join(format!("{}.lock", blake3::hash(b"run").to_hex()));
         std::fs::create_dir(&lock).unwrap();
-        assert!(matches!(
+
+        let actual = matches!(
             RunOwnership::acquire(directory.path(), "run"),
             Err(AcquireError::Io(_))
-        ));
-        assert!(lock.is_dir());
+        );
+        let actual_2 = lock.is_dir();
+
+        assert!(actual);
+        assert!(actual_2);
     }
 
     #[cfg(target_os = "macos")]
@@ -149,8 +153,9 @@ mod coverage_tests {
         let (socket, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
         let descriptor: std::os::fd::OwnedFd = socket.into();
         let file = File::from(descriptor);
-        assert!(
-            matches!(try_lock(&file), Err(AcquireError::Io(error)) if error.raw_os_error() == Some(libc::ENOTSUP))
-        );
+
+        let actual = matches!(try_lock(&file), Err(AcquireError::Io(error)) if error.raw_os_error() == Some(libc::ENOTSUP));
+
+        assert!(actual);
     }
 }

@@ -270,11 +270,13 @@ async fn killed_exit_zero_minimal_regression_follows_lean() {
         .find(|case| case.id == "result_killed_exit_zero_complete")
         .expect("retain the minimal result-validation witness");
     let schema = hoimin_core::REPORT_SCHEMA_VERSION;
+
     let observed = observe_cli_self_comparison(&case).await.unwrap_or_else(
         // Fixed minimal regression witness asserts successful infrastructure execution.
         #[cfg_attr(coverage_nightly, coverage(off))]
         |error| panic!("v{schema} infrastructure-error: {error}"),
     );
+
     assert_eq!(observed.disposition, case.expected_disposition, "v{schema}");
     assert_eq!(observed.history, case.expected_history, "v{schema}");
 }
@@ -427,6 +429,7 @@ fn missing_baseline_diagnostic_is_explicitly_unexecuted() {
     gap.baseline = "missing".to_owned();
     gap.statuses = vec!["killed".to_owned()];
     let observation = print_unexecuted_gap(&gap);
+
     assert_eq!(observation["fixture"], gap.id);
     assert_eq!(observation["status"], "unexecuted");
     assert_eq!(observation["mode"], "report");
@@ -459,8 +462,10 @@ fn self_comparison_mismatch_reports_fixture_and_observed_disposition() {
         disposition: "unrecognized".into(),
         history: None,
     };
+
     let diagnostic =
         self_comparison_mismatch(&case, &observed, hoimin_core::REPORT_SCHEMA_VERSION).unwrap();
+
     assert!(diagnostic.contains(&case.id));
     assert!(diagnostic.contains("unrecognized"));
     assert!(diagnostic.contains(&case.expected_disposition));

@@ -193,7 +193,9 @@ mod rejection_coverage {
             files: vec!["../outside.py".into()],
             ..Selection::default()
         };
+
         let error = TargetHandler::resolve(&selection).await.unwrap_err();
+
         assert!(matches!(error, TargetError::PathOutsideRoot(_)));
     }
 
@@ -206,7 +208,9 @@ mod rejection_coverage {
             sources: vec!["parent/child".into()],
             ..Selection::default()
         };
+
         let error = validate_sources(&selection).unwrap_err();
+
         assert!(
             matches!(error, TargetError::DiscoveryFailed(message) if message.starts_with("cannot inspect source \"parent/child\": "))
         );
@@ -217,7 +221,9 @@ mod rejection_coverage {
         let temp = tempfile::tempdir().unwrap();
         let selection =
             symbol_selection(Utf8PathBuf::from_path_buf(temp.path().join("missing")).unwrap());
+
         let error = validate_symbols(&selection, &[selected_target()]).unwrap_err();
+
         assert!(
             matches!(error, TargetError::DiscoveryFailed(message) if message.contains("missing"))
         );
@@ -228,7 +234,9 @@ mod rejection_coverage {
         let temp = tempfile::tempdir().unwrap();
         let selection =
             symbol_selection(Utf8PathBuf::from_path_buf(temp.path().to_owned()).unwrap());
+
         let error = validate_symbols(&selection, &[selected_target()]).unwrap_err();
+
         assert!(
             matches!(error, TargetError::DiscoveryFailed(message) if message.starts_with("app.py: "))
         );
@@ -240,7 +248,9 @@ mod rejection_coverage {
         std::fs::write(temp.path().join("app.py"), b"# coding: utf-8\n\xff").unwrap();
         let selection =
             symbol_selection(Utf8PathBuf::from_path_buf(temp.path().to_owned()).unwrap());
+
         let error = validate_symbols(&selection, &[selected_target()]).unwrap_err();
+
         assert!(
             matches!(error, TargetError::DiscoveryFailed(message) if message.starts_with("app.py: ") && message.contains("UTF-8"))
         );

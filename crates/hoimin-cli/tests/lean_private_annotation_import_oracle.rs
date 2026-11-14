@@ -458,5 +458,7 @@ async fn private_alias_reverse_writes_and_lexical_context_public_controls(
 
 #[test]
 fn parser_rejects_missing_case_identities() {
-    assert!(parse_cases("").err().unwrap().contains("unexpected"));
+    let actual_0 = parse_cases("");
+
+    assert!(actual_0.err().unwrap().contains("unexpected"));
 }

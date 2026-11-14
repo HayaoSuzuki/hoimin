@@ -178,24 +178,24 @@ fn lean_candidate_ranking_corpus_is_valid() {
 }
 
 #[rstest::rstest]
-#[case::strict_1(0)]
-#[case::diverse_2(1)]
+#[case::strict("strict", |item: &OracleCase| item.expected_strict.clone())]
+#[case::diverse("diverse", |item: &OracleCase| item.expected_diverse.clone())]
 #[tokio::test]
-async fn public_plan_and_verify_match_the_lean_diverse_tier_case(#[case] scenario_index: usize) {
+async fn public_plan_and_verify_match_the_lean_diverse_tier_case(
+    #[case] policy: &str,
+    #[case] expected_roles: fn(&OracleCase) -> Vec<String>,
+) {
     let cases = parse_corpus(CORPUS).expect("valid Lean corpus");
     let item = cases
         .iter()
         .find(|item| item.id == "diverse_equal_tier" && item.mode == "strict")
         .expect("strict diverse case");
+    let expected = expected_roles(item);
     let fixture = Fixture::new().expect("create isolated project");
 
     let plan = run_cli(plan_args(&fixture)).await.expect("public plan");
-
-    assert_eq!(plan.code, 0, "stderr={}", plan.stderr);
     let manifest: serde_json::Value = serde_json::from_str(plan.stdout.trim()).expect("plan JSON");
     let candidates = manifest["candidates"].as_array().expect("plan candidates");
-    assert_eq!(candidates.len(), item.candidates.len());
-
     let id_roles = candidates
         .iter()
         .map(|candidate| {
@@ -211,20 +211,9 @@ async fn public_plan_and_verify_match_the_lean_diverse_tier_case(#[case] scenari
         .iter()
         .map(|candidate| ranked_observation(candidate, &id_roles))
         .collect::<Vec<_>>();
-    assert_eq!(actual_ranking, item.expected_ranking);
-
     let plan_path = fixture.root.join("plan.json");
     std::fs::write(&plan_path, plan.stdout.as_bytes()).expect("write plan manifest");
     let plan_before = std::fs::read(&plan_path).expect("read plan manifest");
-
-    let (policy, expected) = [
-        ("strict", &item.expected_strict),
-        ("diverse", &item.expected_diverse),
-    ]
-    .into_iter()
-    .nth(scenario_index)
-    .unwrap();
-
     let run = run_cli(verify_args(&plan_path, item.limit, policy))
         .await
         .unwrap_or_else(
@@ -232,11 +221,13 @@ async fn public_plan_and_verify_match_the_lean_diverse_tier_case(#[case] scenari
             #[cfg_attr(coverage_nightly, coverage(off))]
             |error| panic!("public verify {policy}: {error}"),
         );
-    assert_eq!(run.code, 0, "policy={policy}; stderr={}", run.stderr);
-
     let actual = selected_roles(&run.stdout, &id_roles).expect("selected role order");
 
-    assert_eq!(&actual, expected, "policy={policy}");
+    assert_eq!(plan.code, 0, "stderr={}", plan.stderr);
+    assert_eq!(candidates.len(), item.candidates.len());
+    assert_eq!(actual_ranking, item.expected_ranking);
+    assert_eq!(run.code, 0, "policy={policy}; stderr={}", run.stderr);
+    assert_eq!(actual, expected, "policy={policy}");
     assert_eq!(std::fs::read(&plan_path).unwrap(), plan_before);
 }
 
@@ -433,11 +424,10 @@ fn ranking_schema_rejects_one_invalid_coordinate(
 ) {
     let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
     *row.pointer_mut(pointer).unwrap() = value;
-    assert!(
-        parse_corpus(&row.to_string())
-            .unwrap_err()
-            .contains(diagnostic)
-    );
+
+    let actual_0 = parse_corpus(&row.to_string());
+
+    assert!(actual_0.unwrap_err().contains(diagnostic));
 }
 
 #[rstest::rstest]
@@ -450,7 +440,9 @@ fn ranking_parser_reports_invalid_corpus(#[case] input: &str, #[case] diagnostic
 
 #[test]
 fn ranking_parser_ignores_blank_lines() {
-    assert_eq!(parse_corpus(&format!("\n{CORPUS}\n")).unwrap().len(), 4);
+    let actual_0 = parse_corpus(&format!("\n{CORPUS}\n"));
+
+    assert_eq!(actual_0.unwrap().len(), 4);
 }
 
 #[rstest::rstest]
@@ -473,12 +465,9 @@ fn ranking_projection_rejects_invalid_started_events(
 
 #[test]
 fn ranking_fixture_reports_tempdir_failure() {
-    assert_eq!(
-        Fixture::from_directory(Err(std::io::Error::other("denied")))
-            .err()
-            .unwrap(),
-        "denied"
-    );
+    let actual_0 = Fixture::from_directory(Err(std::io::Error::other("denied")));
+
+    assert_eq!(actual_0.err().unwrap(), "denied");
 }
 
 #[test]
@@ -486,7 +475,10 @@ fn ranking_fixture_reports_source_directory_failure() {
     let directory = tempfile::tempdir().unwrap();
     std::fs::create_dir(directory.path().join("project")).unwrap();
     std::fs::write(directory.path().join("project/src"), "obstruction").unwrap();
-    assert!(Fixture::from_directory(Ok(directory)).is_err());
+
+    let actual_0 = Fixture::from_directory(Ok(directory));
+
+    assert!(actual_0.is_err());
 }
 
 #[rstest::rstest]
@@ -496,29 +488,27 @@ fn ranking_fixture_reports_source_directory_failure() {
 fn ranking_fixture_reports_unwritable_source(#[case] path: &str) {
     let directory = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(directory.path().join("project/src").join(path)).unwrap();
-    assert!(Fixture::from_directory(Ok(directory)).is_err());
+
+    let actual_0 = Fixture::from_directory(Ok(directory));
+
+    assert!(actual_0.is_err());
 }
 
 #[rstest::rstest]
 #[case::stdout(vec![255], vec![])]
 #[case::stderr(vec![], vec![255])]
 fn ranking_cli_output_rejects_invalid_utf8(#[case] stdout: Vec<u8>, #[case] stderr: Vec<u8>) {
-    assert!(
-        decode_cli_output(Ok(0), stdout, stderr)
-            .err()
-            .unwrap()
-            .contains("invalid utf-8")
-    );
+    let actual_0 = decode_cli_output(Ok(0), stdout, stderr);
+
+    assert!(actual_0.err().unwrap().contains("invalid utf-8"));
 }
 
 #[tokio::test(start_paused = true)]
 async fn ranking_cli_output_reports_timeout() {
     let result =
         tokio::time::timeout(Duration::from_millis(1), std::future::pending::<i32>()).await;
-    assert!(
-        decode_cli_output(result, vec![], vec![])
-            .err()
-            .unwrap()
-            .contains("timed out")
-    );
+
+    let actual_0 = decode_cli_output(result, vec![], vec![]);
+
+    assert!(actual_0.err().unwrap().contains("timed out"));
 }

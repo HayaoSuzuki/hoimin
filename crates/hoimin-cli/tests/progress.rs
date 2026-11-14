@@ -4824,30 +4824,27 @@ proptest! {
 #[path = "support/schema_validator_cases.rs"]
 mod schema_validator_cases;
 
-#[test]
-fn schema_validator_rejects_malformed_progress_shapes() {
-    schema_validator_cases::check_invalid_schema_instances(validate_schema);
-}
+schema_validator_cases::schema_validator_tests!(validate_schema);
 
-#[test]
-fn schema_validator_supports_union_types_and_numeric_bounds() {
-    for (schema, value, valid) in [
-        (json!({"type":[7,"integer","string"]}), json!("text"), true),
-        (json!({"type":[null,"integer"]}), json!("text"), false),
-        (json!({"type":true}), json!(null), false),
-        (json!({"maximum":1}), json!(2), false),
-        (json!({"maximum":1}), json!(1), true),
-        (
-            json!({"properties":{},"additionalProperties":true}),
-            json!({"extra":1}),
+#[rstest::rstest]
+#[case::case_0(&json!({"type":[7,"integer","string"]}), &json!("text"), true)]
+#[case::case_1(&json!({"type":[null,"integer"]}), &json!("text"), false)]
+#[case::case_2(&json!({"type":true}), &json!(null), false)]
+#[case::case_3(&json!({"maximum":1}), &json!(2), false)]
+#[case::case_4(&json!({"maximum":1}), &json!(1), true)]
+#[case::case_5(
+            &json!({"properties":{},"additionalProperties":true}),
+            &json!({"extra":1}),
             true,
-        ),
-    ] {
-        assert_eq!(
-            validate_schema(&schema, &value, &schema, "$test").is_ok(),
-            valid
-        );
-    }
+        )]
+fn schema_validator_supports_union_types_and_numeric_bounds(
+    #[case] schema: &Value,
+    #[case] value: &Value,
+    #[case] valid: bool,
+) {
+    let result = validate_schema(schema, value, schema, "$test");
+
+    assert_eq!(result.is_ok(), valid);
 }
 
 fn aborted_reader_diagnostic(
@@ -4866,96 +4863,134 @@ fn aborted_reader_diagnostic(
 }
 
 #[tokio::test(start_paused = true)]
-async fn aborted_reader_classifies_all_completion_kinds() {
-    assert!(
-        aborted_reader_diagnostic(Ok(Ok(Ok(Vec::new()))))
-            .unwrap()
-            .contains("completed after its abort")
-    );
-    assert!(
-        aborted_reader_diagnostic(Ok(Ok(Err(std::io::Error::other("read failure")))))
-            .unwrap()
-            .contains("read failure")
-    );
+async fn aborted_reader_reports_completed_read() {
+    let actual_0 = aborted_reader_diagnostic(Ok(Ok(Ok(Vec::new()))));
+
+    assert!(actual_0.unwrap().contains("completed after its abort"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn aborted_reader_reports_io_error() {
+    let actual_0 = aborted_reader_diagnostic(Ok(Ok(Err(std::io::Error::other("read failure")))));
+
+    assert!(actual_0.unwrap().contains("read failure"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn aborted_reader_accepts_cancelled_task() {
     let task = tokio::spawn(std::future::pending::<std::io::Result<Vec<u8>>>());
     task.abort();
-    assert!(aborted_reader_diagnostic(Ok(task.await)).is_none());
+
+    let actual_0 = aborted_reader_diagnostic(Ok(task.await));
+
+    assert!(actual_0.is_none());
+}
+
+#[tokio::test(start_paused = true)]
+async fn aborted_reader_reports_task_panic() {
     let reader: tokio::task::JoinHandle<std::io::Result<Vec<u8>>> = tokio::spawn(async {
         tokio::task::yield_now().await;
         panic!("reader panic")
     });
     let panic = reader.await;
-    assert!(
-        aborted_reader_diagnostic(Ok(panic))
-            .unwrap()
-            .contains("join reader after abort")
-    );
+
+    let actual_0 = aborted_reader_diagnostic(Ok(panic));
+
+    assert!(actual_0.unwrap().contains("join reader after abort"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn aborted_reader_reports_join_timeout() {
     let pending =
         std::future::pending::<Result<std::io::Result<Vec<u8>>, tokio::task::JoinError>>();
     let timeout = tokio::time::timeout(Duration::from_secs(1), pending).await;
-    assert!(
-        aborted_reader_diagnostic(timeout)
-            .unwrap()
-            .contains("timed out joining reader")
-    );
+
+    let actual_0 = aborted_reader_diagnostic(timeout);
+
+    assert!(actual_0.unwrap().contains("timed out joining reader"));
 }
 
 #[tokio::test]
-async fn completed_reader_propagates_io_and_task_failures() {
+async fn completed_reader_propagates_io_error() {
     let reader = tokio::spawn(async { Err(std::io::Error::other("reader IO")) });
-    assert!(
-        join_reader(reader, "stdout")
-            .await
-            .unwrap_err()
-            .contains("reader IO")
-    );
+
+    let actual_0 = join_reader(reader, "stdout").await;
+
+    assert!(actual_0.unwrap_err().contains("reader IO"));
+}
+
+#[tokio::test]
+async fn completed_reader_propagates_task_panic() {
     let reader: tokio::task::JoinHandle<std::io::Result<Vec<u8>>> = tokio::spawn(async {
         tokio::task::yield_now().await;
         panic!("reader panic")
     });
-    assert!(
-        join_reader(reader, "stderr")
-            .await
-            .unwrap_err()
-            .contains("join real CLI stderr")
-    );
+
+    let actual_0 = join_reader(reader, "stderr").await;
+
+    assert!(actual_0.unwrap_err().contains("join real CLI stderr"));
 }
 
 #[test]
-fn cleanup_diagnostics_preserve_primary_and_all_secondary_errors() {
+fn cleanup_records_only_failed_results() {
+    let mut cleanup = CleanupOutcome::default();
+    cleanup.record(Ok(()));
+
+    cleanup.record(Err("cleanup failed".into()));
+
+    assert_eq!(cleanup.diagnostics, ["cleanup failed"]);
+}
+
+#[test]
+fn cleanup_diagnostic_preserves_all_failures() {
     let mut cleanup = CleanupOutcome::default();
     cleanup.record(Ok(()));
     cleanup.record(Err("cleanup failed".into()));
-    assert_eq!(cleanup.diagnostics, ["cleanup failed"]);
+
     let message = cleanup_diagnostic(
         "primary",
         cleanup,
         Err("stdout failed".into()),
         Err("stderr failed".into()),
     );
-    for expected in [
-        "primary",
-        "unreaped",
-        "cleanup failed",
-        "stdout failed",
-        "stderr failed",
-    ] {
-        assert!(message.contains(expected), "{message}");
-    }
-    assert_eq!(
-        reader_diagnostic(Err("stdout".into()), Err("stderr".into())),
-        "stdout; stderr"
+
+    assert!(
+        [
+            "primary",
+            "unreaped",
+            "cleanup failed",
+            "stdout failed",
+            "stderr failed"
+        ]
+        .iter()
+        .all(|expected| message.contains(expected)),
+        "{message}"
     );
-    assert_eq!(
-        reader_diagnostic(Ok(Vec::new()), Err("stderr".into())),
-        "stderr"
-    );
+}
+
+#[test]
+fn reader_diagnostic_combines_both_failures() {
+    let actual_0 = reader_diagnostic(Err("stdout".into()), Err("stderr".into()));
+
+    assert_eq!(actual_0, "stdout; stderr");
+}
+
+#[test]
+fn reader_diagnostic_reports_stderr_failure() {
+    let actual_0 = reader_diagnostic(Ok(Vec::new()), Err("stderr".into()));
+
+    assert_eq!(actual_0, "stderr");
+}
+
+#[test]
+fn cleanup_diagnostic_renders_lossy_output() {
     let message = cleanup_diagnostic(
         "primary",
         CleanupOutcome::default(),
         Ok(b"out".to_vec()),
         Ok(vec![0xff]),
     );
+
     assert!(message.contains("stdout=out"));
     assert!(message.contains("stderr=\u{fffd}"));
 }

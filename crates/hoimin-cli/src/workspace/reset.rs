@@ -259,18 +259,24 @@ mod tests {
     fn reset_io_failure_preserves_the_changed_file_and_allows_retry(#[case] point: &'static str) {
         let (_project, mut worker, _permissions) = changed_worker();
         let root = worker.root().to_owned();
+
         let fault = crate::io_faults::arm(point);
+
         let result = worker.reset();
+        let fault_was_triggered = fault.triggered();
+
+        let bytes_before_retry = worker.read("swap/target.py").unwrap();
+        worker.reset().unwrap();
+
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
         assert!(
-            fault.triggered(),
+            fault_was_triggered,
             "reset I/O boundary was not checked: {point}"
         );
         assert!(
             matches!(result, Err(WorkspaceError::WorkspaceRestore { path, message }) if path == root && message.contains(point))
         );
-        assert_eq!(worker.read("swap/target.py").unwrap(), b"mutated!\n");
-        worker.reset().unwrap();
-        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
+        assert_eq!(bytes_before_retry, b"mutated!\n");
     }
 
     #[test]
@@ -278,15 +284,21 @@ mod tests {
         let (_project, mut worker, _permissions) = changed_worker();
         let root = worker.root().to_owned();
         fs::remove_dir_all(root.join("swap")).unwrap();
+
         let fault = crate::io_faults::arm("worker.directory.inspect");
+
         let result = worker.reset();
-        assert!(fault.triggered());
+        let fault_was_triggered = fault.triggered();
+
+        let required_directory_was_absent = !root.join("swap").exists();
+        worker.reset().unwrap();
+
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
+        assert!(fault_was_triggered);
         assert!(
             matches!(result, Err(WorkspaceError::WorkspaceRestore { path, message }) if path == root && message.contains("worker.directory.inspect"))
         );
-        assert!(!root.join("swap").exists());
-        worker.reset().unwrap();
-        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
+        assert!(required_directory_was_absent);
     }
 
     #[test]
@@ -294,14 +306,18 @@ mod tests {
         let (_project, mut worker, _permissions) = changed_worker();
         let limit = super::super::MAX_WORKER_TREE_DEPTH;
         fs::create_dir_all(worker.root().join("d/".repeat(limit + 1))).unwrap();
+
         let result = worker.reset();
         fs::remove_dir_all(worker.root().join("d")).unwrap();
+
+        let bytes_before_retry = worker.read("swap/target.py").unwrap();
+        worker.reset().unwrap();
+
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
         assert!(
             matches!(result, Err(WorkspaceError::TreeDepthExceeded { limit: actual, .. }) if actual == limit)
         );
-        assert_eq!(worker.read("swap/target.py").unwrap(), b"mutated!\n");
-        worker.reset().unwrap();
-        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
+        assert_eq!(bytes_before_retry, b"mutated!\n");
     }
 
     #[rstest::rstest]
@@ -317,7 +333,10 @@ mod tests {
         let (_project, mut worker, _permissions) = changed_worker();
         worker.reset().unwrap();
         change(worker.root());
-        assert_eq!(worker.matches_snapshot().unwrap(), expected);
+
+        let matches = worker.matches_snapshot().unwrap();
+
+        assert_eq!(matches, expected);
     }
 
     #[cfg(feature = "contracts")]
@@ -326,22 +345,25 @@ mod tests {
         let (_project, mut worker, _permissions) = changed_worker();
         let root = worker.root().to_owned();
         let changed_root = root.clone();
+
         let fault = crate::io_faults::arm_action("worker.walk.open", 1, move || {
             fs::write(changed_root.join("concurrent"), b"concurrent change").unwrap();
             Ok(())
         });
         let panic =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| worker.reset())).unwrap_err();
-        assert!(fault.triggered());
+        let fault_was_triggered = fault.triggered();
         let message = panic
             .downcast::<String>()
             .expect("formatted contract panic has a String payload");
+
         assert!(message.contains("workspace.reset.post"));
         assert_eq!(
             fs::read(root.join("concurrent")).unwrap(),
             b"concurrent change"
         );
         assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
+        assert!(fault_was_triggered);
     }
 
     #[cfg(feature = "contracts")]
@@ -349,15 +371,21 @@ mod tests {
     fn a_post_reset_comparison_error_preserves_the_successful_restoration() {
         let (_project, mut worker, _permissions) = changed_worker();
         let root = worker.root().to_owned();
+
         let fault = crate::io_faults::arm_after("worker.snapshot.inspect_entry", 1);
+
         let result = worker.reset();
-        assert!(fault.triggered());
+        let fault_was_triggered = fault.triggered();
+
+        let bytes_before_retry = worker.read("swap/target.py").unwrap();
+        worker.reset().unwrap();
+
+        assert!(worker.matches_snapshot().unwrap());
+        assert!(fault_was_triggered);
         assert!(
             matches!(result, Err(WorkspaceError::WorkspaceRestore { path, message }) if path == root && message.contains("worker.snapshot.inspect_entry"))
         );
-        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
-        worker.reset().unwrap();
-        assert!(worker.matches_snapshot().unwrap());
+        assert_eq!(bytes_before_retry, b"original\n");
     }
 
     #[cfg(unix)]
@@ -371,17 +399,21 @@ mod tests {
         fs::set_permissions(parent, fs::Permissions::from_mode(0o700)).unwrap();
         let held = parent.join("held-snapshot");
         fs::rename(&snapshot, &held).unwrap();
+
         let result = worker.reset();
         let restored = fs::rename(&held, &snapshot);
         let secured = fs::set_permissions(parent, permissions);
         restored.unwrap();
         secured.unwrap();
+
+        let bytes_before_retry = worker.read("swap/target.py").unwrap();
+        worker.reset().unwrap();
+
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
         assert!(
             matches!(result, Err(WorkspaceError::WorkspaceRestore { message, .. }) if message.contains("read shared snapshot"))
         );
-        assert_eq!(worker.read("swap/target.py").unwrap(), b"mutated!\n");
-        worker.reset().unwrap();
-        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
+        assert_eq!(bytes_before_retry, b"mutated!\n");
     }
 
     #[cfg(unix)]
@@ -395,16 +427,22 @@ mod tests {
         let (_project, mut worker, _permissions) = changed_worker();
         let root = worker.root().to_owned();
         create(&root);
+
         let fault = crate::io_faults::arm(point);
+
         let result = worker.reset();
-        assert!(fault.triggered());
+        let fault_was_triggered = fault.triggered();
+
+        let path_existed_before_retry = root.join("extra").exists();
+        worker.reset().unwrap();
+
+        assert!(!root.join("extra").exists());
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
+        assert!(fault_was_triggered);
         assert!(
             matches!(result, Err(WorkspaceError::WorkspaceRestore { path, message }) if path == root && message.contains(point))
         );
-        assert!(root.join("extra").exists());
-        worker.reset().unwrap();
-        assert!(!root.join("extra").exists());
-        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
+        assert!(path_existed_before_retry);
     }
 
     #[cfg(unix)]
@@ -415,28 +453,30 @@ mod tests {
         fs::write(outside.path().join("protected"), b"outside sentinel").unwrap();
         let link = worker.root().join("extra");
         std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+
         let fault = crate::io_faults::arm("worker.link.remove");
+
         let result = worker.reset();
-        assert!(fault.triggered());
-        assert!(
-            matches!(result, Err(WorkspaceError::WorkspaceRestore { message, .. }) if message.contains("worker.link.remove"))
-        );
-        assert!(
-            fs::symlink_metadata(&link)
-                .unwrap()
-                .file_type()
-                .is_symlink()
-        );
-        assert_eq!(
-            fs::read(outside.path().join("protected")).unwrap(),
-            b"outside sentinel"
-        );
+        let fault_was_triggered = fault.triggered();
+
+        let failure_was_observed = fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink();
+        let bytes_before_retry = fs::read(outside.path().join("protected")).unwrap();
         worker.reset().unwrap();
+
         assert!(fs::symlink_metadata(&link).is_err());
         assert_eq!(
             fs::read(outside.path().join("protected")).unwrap(),
             b"outside sentinel"
         );
+        assert!(fault_was_triggered);
+        assert!(
+            matches!(result, Err(WorkspaceError::WorkspaceRestore { message, .. }) if message.contains("worker.link.remove"))
+        );
+        assert!(failure_was_observed);
+        assert_eq!(bytes_before_retry, b"outside sentinel");
     }
 
     #[test]
@@ -489,11 +529,13 @@ mod tests {
             .as_std_path()
             .join(std::ffi::OsString::from_vec(b"native-\xff".to_vec()));
         fs::write(&extra, b"extra").unwrap();
-        assert!(!worker.matches_snapshot().unwrap());
+        let failure_was_observed = !worker.matches_snapshot().unwrap();
         worker.reset().unwrap();
+
         assert!(!extra.exists());
         assert!(worker.matches_snapshot().unwrap());
         assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
+        assert!(failure_was_observed);
     }
 
     #[test]

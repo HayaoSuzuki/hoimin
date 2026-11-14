@@ -551,20 +551,16 @@ mod unix_tests {
             clone.termination_failures,
         )
         .unwrap();
-
         let error = first
             .classify(hoimin_core::ProcessTermination::Exit(7))
             .unwrap_err();
 
+        let actual_1 = second.classify(hoimin_core::ProcessTermination::Exit(7));
+
         assert!(
             matches!(error, super::ResourceError::Io { operation: "classify portable process", source } if source.to_string() == "injected portable classification failure")
         );
-        assert_eq!(
-            second
-                .classify(hoimin_core::ProcessTermination::Exit(7))
-                .unwrap(),
-            hoimin_core::ProcessTermination::Exit(7)
-        );
+        assert_eq!(actual_1.unwrap(), hoimin_core::ProcessTermination::Exit(7));
     }
 
     #[rstest::rstest]
@@ -576,7 +572,9 @@ mod unix_tests {
         backend: &PortableBackend,
         #[case] expected: Option<&str>,
     ) {
-        assert_eq!(backend.diagnostic(), expected);
+        let actual_0 = backend.diagnostic();
+
+        assert_eq!(actual_0, expected);
     }
 
     #[tokio::test]
@@ -589,10 +587,11 @@ mod unix_tests {
             .kill_on_drop(true)
             .spawn()
             .unwrap();
-        assert!(child.wait().await.unwrap().success());
+        let exited = child.wait().await.unwrap();
 
         let error = supervisor.attach(&child).unwrap_err();
 
+        assert!(exited.success());
         assert!(matches!(error, super::ResourceError::MissingProcessId));
         assert!(matches!(supervisor.process_group, ProcessGroup::None));
     }

@@ -982,8 +982,10 @@ fn ranking_validation_rejects_multiple_operator_reasons_after_bounded_score_accu
         ],
     };
 
+    let actual_0 = validate_ranking(&[ranked]);
+
     assert_eq!(
-        validate_ranking(&[ranked]),
+        actual_0,
         Err("candidate ranking must contain exactly one operator reason, got 5".to_owned())
     );
 }
@@ -997,8 +999,10 @@ fn ranking_validation_rejects_an_unbounded_external_reason_score_before_accumula
         ranking_reasons: vec![reason(RankingReasonCode::Arithmetic, u32::MAX)],
     };
 
+    let actual_0 = validate_ranking(&[ranked]);
+
     assert_eq!(
-        validate_ranking(&[ranked]),
+        actual_0,
         Err("ranking reason Arithmetic has score 4294967295, expected 70".to_owned())
     );
 }

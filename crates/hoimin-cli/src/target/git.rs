@@ -970,6 +970,7 @@ mod rejection_coverage {
         #[case] expected: &str,
     ) {
         let error = parse_hunk_range(input).unwrap_err();
+
         assert!(matches!(error, TargetError::GitFailed(message) if message == expected));
     }
 
@@ -981,8 +982,10 @@ mod rejection_coverage {
     #[case::invalid_new(b"-\t-\t\0old.py\0\xff.py\0".as_slice(), "Git numstat path is not valid UTF-8")]
     fn malformed_numstat_records_are_rejected(#[case] input: &[u8], #[case] expected: &str) {
         let mut excluded = BTreeSet::new();
+
         let error =
             parse_binary_numstat(input, &mut excluded, &GitPathScope::default()).unwrap_err();
+
         assert!(matches!(error, TargetError::GitFailed(message) if message == expected));
     }
 
@@ -995,6 +998,7 @@ mod rejection_coverage {
         #[case] expected: &str,
     ) {
         let error = decode_git_quoted(input).unwrap_err();
+
         assert!(matches!(error, TargetError::GitFailed(message) if message == expected));
     }
 
@@ -1007,8 +1011,10 @@ mod rejection_coverage {
     fn malformed_patch_sections_are_rejected(#[case] input: &[u8], #[case] expected: &str) {
         let mut changed = BTreeMap::new();
         let mut excluded = BTreeSet::new();
+
         let error =
             parse_diff(input, &mut changed, &mut excluded, &GitPathScope::default()).unwrap_err();
+
         assert!(matches!(error, TargetError::GitFailed(message) if message == expected));
     }
 }

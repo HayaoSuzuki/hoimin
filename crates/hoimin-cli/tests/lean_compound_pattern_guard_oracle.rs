@@ -411,46 +411,67 @@ async fn strict_rows_match_complete_public_candidates() {
 mod validation_tests;
 
 #[test]
-fn parser_rejects_shape_schema_identity_and_duplicate_rows() {
-    assert!(
-        strict_cases_from("[]")
-            .unwrap_err()
-            .contains("not an object")
-    );
+fn parser_rejects_non_object() {
+    let actual_0 = strict_cases_from("[]");
+
+    assert!(actual_0.unwrap_err().contains("not an object"));
+}
+
+#[rstest::rstest]
+#[case::case_0("schema", serde_json::json!("wrong"), "violates schema")]
+#[case::case_1("schema", serde_json::json!(2), "invalid identity or mode")]
+#[case::case_2(
+            "mode",
+            serde_json::json!("unknown"),
+            "invalid identity or mode",
+        )]
+#[case::case_3(
+            "id",
+            serde_json::json!("unknown"),
+            "not an owned strict fixture",
+        )]
+fn parser_rejects_invalid_public_field(
+    #[case] field: &str,
+    #[case] value: serde_json::Value,
+    #[case] expected: &str,
+) {
     let rows = CORPUS
         .lines()
         .filter(|line| !line.is_empty())
         .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
         .collect::<Vec<_>>();
     let index = rows.iter().position(|row| row["mode"] == "strict").unwrap();
-    for (field, value, expected) in [
-        ("schema", serde_json::json!("wrong"), "violates schema"),
-        ("schema", serde_json::json!(2), "invalid identity or mode"),
-        (
-            "mode",
-            serde_json::json!("unknown"),
-            "invalid identity or mode",
-        ),
-        (
-            "id",
-            serde_json::json!("unknown"),
-            "not an owned strict fixture",
-        ),
-    ] {
-        let mut changed = rows.clone();
-        changed[index][field] = value;
-        let input = changed
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(strict_cases_from(&input).unwrap_err().contains(expected));
-    }
+    let mut changed = rows.clone();
+    changed[index][field] = value;
+    let input = changed
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let actual_0 = strict_cases_from(&input);
+
+    assert!(actual_0.unwrap_err().contains(expected));
+}
+
+#[test]
+fn parser_rejects_duplicate_identity() {
+    let rows = CORPUS
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    let index = rows.iter().position(|row| row["mode"] == "strict").unwrap();
     let duplicate = format!("{}\n{}", rows[index], rows[index]);
-    assert!(
-        strict_cases_from(&duplicate)
-            .unwrap_err()
-            .contains("duplicate case id")
-    );
-    assert!(strict_cases_from("\n").is_err());
+
+    let actual_0 = strict_cases_from(&duplicate);
+
+    assert!(actual_0.unwrap_err().contains("duplicate case id"));
+}
+
+#[test]
+fn parser_rejects_empty_corpus() {
+    let actual_0 = strict_cases_from("\n");
+
+    assert!(actual_0.is_err());
 }
