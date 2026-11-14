@@ -7,7 +7,9 @@ import sys
 import tomllib
 import zipfile
 from pathlib import Path
-from unittest.mock import Mock
+from types import SimpleNamespace
+from typing import cast
+from unittest.mock import Mock, create_autospec
 
 import pytest
 import wheel_smoke
@@ -15,6 +17,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from packaging.specifiers import SpecifierSet
 from packaging.tags import Tag
+from packaging.version import Version
 from pytest_mock import MockerFixture
 from wheel_smoke import (
     COMMAND_TIMEOUT_SECONDS,
@@ -627,6 +630,42 @@ def test_help_output_rejects_the_python_option(
         assert_help_hides_python_option(completed)
 
 
+@pytest.mark.parametrize(
+    ("stdout", "stderr"),
+    [("--python", ""), ("", "--python")],
+    ids=["stdout", "stderr"],
+)
+def test_exercise_cli_rejects_exposed_python_option_before_mutation(
+    tmp_path: Path, mocker: MockerFixture, stdout: str, stderr: str
+) -> None:
+    executable = Path(sys.executable).resolve()
+    project = tmp_path / "fixture"
+    runner = create_autospec(
+        wheel_smoke.run,
+        side_effect=[
+            subprocess.CompletedProcess([], 0, "hoimin 1.2.3", ""),
+            subprocess.CompletedProcess([], 0, stdout, stderr),
+            subprocess.CompletedProcess(
+                [],
+                0,
+                mutation_jsonl_output(
+                    [{"outcome": executed_smoke_outcome({"Exit": 1}, "complete")}]
+                ),
+                "",
+            ),
+        ],
+    )
+    mocker.patch.object(wheel_smoke, "run", runner)
+
+    with pytest.raises(AssertionError, match="--python"):
+        exercise_cli(executable, Path(sys.executable), project, "1.2.3")
+
+    assert runner.call_count == 2
+    assert runner.call_args_list[0].args[0] == [str(executable), "--version"]
+    assert runner.call_args_list[1].args[0] == [str(executable), "--help"]
+    assert not (project / "src").exists()
+
+
 def executed_smoke_outcome(termination: object, output_state: str) -> dict[str, object]:
     return {
         "executed": {
@@ -791,7 +830,7 @@ def test_distribution_supports_only_python_314_and_315(
 
 def prepare_distribution_smoke(
     tmp_path: Path, mocker: MockerFixture, *, write_report: bool
-) -> tuple[Path, Path, Mock]:
+) -> tuple[Path, Path, Mock, Mock]:
     wheel = tmp_path / "hoimin.whl"
     wheel.write_bytes(b"wheel contents")
     report = tmp_path / "report.json"
@@ -805,16 +844,19 @@ def prepare_distribution_smoke(
         wheel_smoke, "wheel_metadata", return_value=wheel_smoke.EXPECTED_WHEEL_METADATA
     )
     mocker.patch.object(wheel_smoke.venv.EnvBuilder, "create")
-    mocker.patch.object(wheel_smoke, "exercise_cli")
-    calls = Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
+    exercise = create_autospec(wheel_smoke.exercise_cli)
+    mocker.patch.object(wheel_smoke, "exercise_cli", exercise)
+    calls = create_autospec(
+        wheel_smoke.run, return_value=subprocess.CompletedProcess([], 0, "", "")
+    )
     mocker.patch.object(wheel_smoke, "run", calls)
-    return wheel, report, calls
+    return wheel, report, cast("Mock", calls), cast("Mock", exercise)
 
 
 def test_distribution_smoke_uses_the_running_python_without_report(
     tmp_path: Path, mocker: MockerFixture
 ) -> None:
-    wheel, report, calls = prepare_distribution_smoke(
+    wheel, report, calls, _exercise = prepare_distribution_smoke(
         tmp_path, mocker, write_report=False
     )
 
@@ -836,7 +878,7 @@ def test_distribution_smoke_uses_the_running_python_without_report(
 def test_distribution_smoke_report_binds_wheel_and_running_python(
     tmp_path: Path, mocker: MockerFixture
 ) -> None:
-    wheel, report, calls = prepare_distribution_smoke(
+    wheel, report, calls, _exercise = prepare_distribution_smoke(
         tmp_path, mocker, write_report=True
     )
 
@@ -855,6 +897,55 @@ def test_distribution_smoke_report_binds_wheel_and_running_python(
         "hoimin",
         "--help",
     ]
+
+
+@pytest.mark.parametrize(
+    ("os_name", "python_relative", "executable_relative"),
+    [
+        ("posix", "bin/python", "bin/hoimin"),
+        ("nt", "Scripts/python.exe", "Scripts/hoimin.exe"),
+    ],
+)
+def test_distribution_smoke_installs_and_exercises_platform_environment(
+    tmp_path: Path,
+    mocker: MockerFixture,
+    os_name: str,
+    python_relative: str,
+    executable_relative: str,
+) -> None:
+    wheel, _report, calls, exercise = prepare_distribution_smoke(
+        tmp_path, mocker, write_report=False
+    )
+    mocker.patch.object(
+        wheel_smoke, "os", SimpleNamespace(name=os_name, environ=os.environ)
+    )
+    mocker.patch.object(
+        wheel_smoke,
+        "project_identity",
+        create_autospec(
+            wheel_smoke.project_identity, return_value=("hoimin", Version("2.3.4.dev5"))
+        ),
+    )
+
+    result = main()
+
+    assert result == 0
+    assert calls.call_count == 2
+    temporary_root = calls.call_args_list[0].kwargs["cwd"]
+    python = temporary_root / "environment" / python_relative
+    executable = temporary_root / "environment" / executable_relative
+    assert calls.call_args_list[1].args[0] == [
+        str(python),
+        "-m",
+        "pip",
+        "install",
+        "--disable-pip-version-check",
+        str(wheel),
+        "pytest>=9,<10",
+    ]
+    exercise.assert_called_once_with(
+        executable, python, temporary_root / "project", "2.3.4.dev5"
+    )
 
 
 def damaged_completion(

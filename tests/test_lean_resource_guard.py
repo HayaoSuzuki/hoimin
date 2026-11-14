@@ -36,8 +36,154 @@ def test_rejects_unsupported_process_groups_before_spawning(
     exit_code = guard.run(arguments)
 
     assert exit_code == 126
-    assert json.loads(stats.read_text())["reason"] == "monitor_error"
+    assert json.loads(stats.read_text()) == {
+        "schema": 1,
+        "reason": "monitor_error",
+        "exit_code": 126,
+        "elapsed_ms": 0,
+        "peak_rss_kib": 0,
+        "rss_limit_kib": 8 * 1024,
+        "timeout_ms": 1000,
+    }
     assert not marker.exists()
+
+
+def test_normal_monitor_publishes_complete_stats_and_observed_tree_peak(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    stats = tmp_path / "stats.json"
+    arguments = guard.Arguments(
+        timeout_seconds=3,
+        rss_limit_mib=8,
+        sample_ms=25,
+        stats=stats,
+        command=["fixture-child"],
+    )
+    process = mocker.create_autospec(subprocess.Popen, instance=True)
+    process.pid = 101
+    process.poll.side_effect = [None, None, 7]
+    mocker.patch.object(
+        guard, "os", SimpleNamespace(name="posix", killpg=lambda *_: None)
+    )
+    mocker.patch.object(guard.subprocess, "Popen", autospec=True, return_value=process)
+    mocker.patch.object(
+        guard.time,
+        "monotonic",
+        autospec=True,
+        side_effect=[10, 10.01, 10.02, 10.03, 10.04],
+    )
+    mocker.patch.object(guard.time, "sleep", autospec=True)
+    mocker.patch.object(
+        guard,
+        "process_table",
+        autospec=True,
+        side_effect=[
+            {101: (0, 101, 10), 102: (101, 101, 20)},
+            {101: (0, 101, 5), 102: (101, 101, 40)},
+            {},
+        ],
+    )
+    terminate = mocker.patch.object(guard, "terminate_process_group", autospec=True)
+
+    exit_code = guard.run(arguments)
+
+    assert exit_code == 7
+    assert json.loads(stats.read_text()) == {
+        "schema": 1,
+        "reason": "child_exit",
+        "exit_code": 7,
+        "elapsed_ms": 40,
+        "peak_rss_kib": 45,
+        "rss_limit_kib": 8 * 1024,
+        "timeout_ms": 3000,
+    }
+    terminate.assert_not_called()
+
+
+def test_timeout_at_exact_deadline_prevents_another_resource_sample(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    arguments = guard.Arguments(
+        timeout_seconds=1,
+        rss_limit_mib=8,
+        sample_ms=25,
+        stats=tmp_path / "stats.json",
+        command=["fixture-child"],
+    )
+    process = mocker.create_autospec(subprocess.Popen, instance=True)
+    process.pid = 101
+    process.poll.return_value = None
+    mocker.patch.object(
+        guard, "os", SimpleNamespace(name="posix", killpg=lambda *_: None)
+    )
+    mocker.patch.object(guard.subprocess, "Popen", autospec=True, return_value=process)
+    # The extra clock value bounds the weakened > branch as well as >=.
+    mocker.patch.object(
+        guard.time, "monotonic", autospec=True, side_effect=[10, 11, 11.25, 11.25]
+    )
+    sample = mocker.patch.object(guard, "process_table", autospec=True, return_value={})
+    pause = mocker.patch.object(guard.time, "sleep", autospec=True)
+    terminate = mocker.patch.object(guard, "terminate_process_group", autospec=True)
+
+    exit_code = guard.run(arguments)
+
+    assert exit_code == 124
+    assert json.loads(arguments.stats.read_text())["reason"] == "timeout"
+    sample.assert_not_called()
+    pause.assert_not_called()
+    terminate.assert_called_once_with(process)
+
+
+def test_argument_parser_requires_a_resource_stats_destination(
+    mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mocker.patch.object(
+        sys,
+        "argv",
+        [
+            "guard",
+            "--timeout-seconds",
+            "1",
+            "--rss-limit-mib",
+            "8",
+            "--sample-ms",
+            "25",
+            "--",
+            "fixture-child",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as error:
+        guard.parse_arguments()
+
+    assert error.value.code == 2
+    assert "--stats" in capsys.readouterr().err
+
+
+def test_process_tree_keeps_pending_siblings_when_a_cycle_repeats_the_root() -> None:
+    rows = {
+        1: (2, 1, 10),
+        3: (1, 1, 30),
+        2: (1, 1, 20),
+        4: (0, 4, 90),
+    }
+
+    rss_kib = guard.process_tree_rss_kib(1, rows)
+
+    assert rss_kib == 60
+
+
+def test_stats_publication_creates_missing_parent_directories(tmp_path: Path) -> None:
+    stats = tmp_path / "nested" / "observations" / "resource.json"
+    document: dict[str, int | str] = {
+        "schema": 1,
+        "reason": "child_exit",
+        "peak_rss_kib": 37,
+    }
+
+    guard.write_stats(stats, document)
+
+    assert json.loads(stats.read_text()) == document
 
 
 requires_posix_guard = pytest.mark.skipif(

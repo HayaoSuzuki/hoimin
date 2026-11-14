@@ -378,3 +378,84 @@ def test_plan_cli_missing_event_file_selects_all(
     assert ci_selection.main() == 0
     outputs = json.loads(capsys.readouterr().out)
     assert all(outputs.get(key) for key in ci_selection.CATEGORIES)
+
+
+@pytest.mark.parametrize("value", [None, "", "True", "garbage"])
+def test_one_invalid_planner_output_fails_closed(value: object) -> None:
+    outputs: dict[str, object] = {
+        "python": value,
+        "rust": "false",
+        "formal": "false",
+        "creusot": "false",
+        "distribution": "false",
+        "cgroup": "false",
+    }
+    needs = needs_for(ci_selection.classify([]))
+    needs["changes"]["outputs"] = outputs
+
+    errors = ci_selection.aggregate(needs)
+
+    assert errors
+
+
+@pytest.mark.parametrize(
+    "value",
+    [{1: "value"}, {None: "value"}],
+    ids=["integer-key", "null-key"],
+)
+def test_object_mapping_rejects_non_json_objects(value: object) -> None:
+    with pytest.raises(TypeError):
+        ci_selection.object_mapping(value)
+
+
+def test_push_with_documentation_only_diff_selects_no_checks(tmp_path: Path) -> None:
+    git(tmp_path, "init")
+    git(tmp_path, "config", "user.name", "CI test")
+    git(tmp_path, "config", "user.email", "ci@example.invalid")
+    (tmp_path / "CONTRIBUTING.md").write_text("base\n", encoding="utf-8")
+    git(tmp_path, "add", ".")
+    git(tmp_path, "commit", "-m", "base")
+    base = git(tmp_path, "rev-parse", "HEAD")
+    (tmp_path / "CONTRIBUTING.md").write_text("updated\n", encoding="utf-8")
+    git(tmp_path, "add", ".")
+    git(tmp_path, "commit", "-m", "documentation")
+    head = git(tmp_path, "rev-parse", "HEAD")
+
+    flags = ci_selection.plan(tmp_path, "push", {"before": base, "after": head})
+
+    assert flags == {
+        "python": False,
+        "rust": False,
+        "formal": False,
+        "creusot": False,
+        "distribution": False,
+    }
+
+
+def test_push_cli_without_ref_disables_cgroup(
+    tmp_path: Path, mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    event = tmp_path / "event.json"
+    event.write_text("{}", encoding="utf-8")
+    mocker.patch.object(sys, "argv", ["ci-selection", "plan"])
+    mocker.patch.dict(
+        os.environ,
+        {
+            "GITHUB_EVENT_NAME": "push",
+            "GITHUB_EVENT_PATH": str(event),
+            "CI_CGROUP": "true",
+        },
+        clear=True,
+    )
+
+    result = ci_selection.main()
+
+    assert result == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "python": True,
+        "rust": True,
+        "formal": True,
+        "creusot": True,
+        "distribution": True,
+        "cgroup": False,
+    }

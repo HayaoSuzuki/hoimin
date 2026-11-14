@@ -13,7 +13,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import AbstractContextManager, chdir
 from pathlib import Path
 from types import SimpleNamespace
@@ -288,6 +288,17 @@ def test_generated_scope_accepts_current_named_files(
     root, manifest = proof_project
 
     verify_creusot.check_generated_scope(root, manifest, generated_after_ns=0)
+
+
+def test_generated_scope_rejects_empty_ancillary_obligations(
+    proof_project: tuple[Path, dict[str, Any]],
+) -> None:
+    root, manifest = proof_project
+    ancillary = root / verify_creusot.GENERATED / "ancillary.coma"
+    ancillary.write_bytes(b"")
+
+    with pytest.raises(verify_creusot.ProofError, match="empty generated Coma file"):
+        verify_creusot.check_generated_scope(root, manifest, generated_after_ns=0)
 
 
 def test_saved_strategies_attach_only_to_current_generated_files(
@@ -752,10 +763,35 @@ def test_runner_requires_three_fresh_target_results(
     )
     calls: list[list[str]] = []
 
+    fixture_command = proof_runner_command(unresolved_target, calls)
+    mocker.patch.object(
+        verify_creusot,
+        "run_command",
+        create_autospec(original_run_command_spec, side_effect=fixture_command),
+    )
+    output = root / "report"
+    output.mkdir()
+
+    expected_targets, expected_proofs = expected_results
+    results: list[dict[str, Any]] = []
+
+    with expectation:
+        results = verify_creusot.verify(root, output, manifest, time.monotonic() + 10)
+
+    actual_targets, actual_proofs = runner_result_columns(results)
+    assert actual_targets == expected_targets
+    assert actual_proofs == expected_proofs
+    assert runner_step_counts(calls) == {"generation": 3, "proof": 3, "preflight": 6}
+
+
+def proof_runner_command(
+    unresolved_target: str | None, calls: list[list[str]]
+) -> Callable[..., dict[str, Any]]:
     def fixture_command(
         command: list[str], *, cwd: Path, log_path: Path, deadline: float
     ) -> dict[str, Any]:
         del deadline
+        validate_runner_command(command, log_path)
         calls.append(command)
         target = log_path.parent.name
         if "--only=coma" in command:
@@ -780,35 +816,63 @@ def test_runner_requires_three_fresh_target_results(
             log_path.write_text("fixture subprocess completed\n")
         return {"command": command, "elapsed_seconds": 0.01, "log": str(log_path)}
 
-    mocker.patch.object(
-        verify_creusot,
-        "run_command",
-        create_autospec(original_run_command_spec, side_effect=fixture_command),
-    )
-    output = root / "report"
-    output.mkdir()
+    return fixture_command
 
-    expected_targets, expected_proofs = expected_results
-    results: list[dict[str, Any]] = []
 
-    with expectation:
-        results = verify_creusot.verify(root, output, manifest, time.monotonic() + 10)
+def runner_result_columns(
+    results: list[dict[str, Any]],
+) -> tuple[list[str], list[dict[str, int]]]:
+    return [result["target"] for result in results], [
+        result["proved"] for result in results
+    ]
 
-    proves = [call for call in calls if "--only=prove" in call]
-    generations = [call for call in calls if "--only=coma" in call]
 
-    assert [result["target"] for result in results] == expected_targets
-    assert [result["proved"] for result in results] == expected_proofs
-    assert len(generations) == 3
-    assert all(
-        "--ignore-rust-version" in call[call.index("--") + 1 :] for call in generations
-    )
-    assert len(proves) == 3
-    assert all(
-        "--no-cache" in call and "-j" in call and call[call.index("-j") + 1] == "2"
-        for call in proves
-    )
-    assert sum("check" in call for call in calls) == 6
+def runner_step_counts(calls: list[list[str]]) -> dict[str, int]:
+    return {
+        "generation": sum("--only=coma" in call for call in calls),
+        "proof": sum("--only=prove" in call for call in calls),
+        "preflight": sum("check" in call for call in calls),
+    }
+
+
+def validate_runner_command(command: list[str], log_path: Path) -> None:
+    """Model the external tools' accepted command interface before emitting evidence."""
+    target = log_path.parent.name
+    expected = {
+        "clean.log": ["cargo", "clean", "-p", "hoimin-budget-math", "--target", target],
+        "generation.log": [
+            "cargo",
+            "creusot",
+            "-p",
+            "hoimin-budget-math",
+            "--only=coma",
+            "--span-mode",
+            "absolute",
+            "-j",
+            "2",
+            "--",
+            "--lib",
+            "--locked",
+            "--ignore-rust-version",
+            "--target",
+            target,
+        ],
+        "proof.log": [
+            "cargo",
+            "creusot",
+            "-p",
+            "hoimin-budget-math",
+            "--only=prove",
+            "--no-cache",
+            "--replay",
+            "-j",
+            "2",
+            "--why3find-arg=--goals",
+        ],
+    }.get(log_path.name)
+    if expected is not None and command != expected:
+        message = f"invalid {log_path.name} command: {command!r}"
+        raise ValueError(message)
 
 
 def damage_manifest_scope(root: Path, manifest: dict[str, Any], damage: str) -> None:

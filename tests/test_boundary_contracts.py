@@ -330,6 +330,11 @@ def test_strict_execution_includes_every_parameterized_case(
     assert len(calls) == 1
     assert calls[0][-2:] == ["--", "--show-output"]
     assert row["status"] == "match"
+    assert row["observation"] == case["observation"]
+    assert row["boundary"] == case["boundary"]
+    assert row["evidence"] == case["evidence"]
+    assert row["premise"] == case["premise"]
+    assert row["sources"] == case["sources"]
 
 
 @pytest.mark.parametrize(
@@ -487,7 +492,10 @@ def test_report_rejects_non_mapping_document(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("status", ["match", "mismatch"])
 def test_strict_cli_fails_for_semantic_mismatch(
-    tmp_path: Path, mocker: MockerFixture, status: str
+    tmp_path: Path,
+    mocker: MockerFixture,
+    capsys: pytest.CaptureFixture[str],
+    status: str,
 ) -> None:
     original_execute_spec = execute
 
@@ -498,9 +506,48 @@ def test_strict_cli_fails_for_semantic_mismatch(
         "tools.boundary_contracts.execute",
         create_autospec(original_execute_spec, side_effect=result),
     )
+    expected_counts = {
+        "match": 0,
+        "mismatch": 0,
+        "infrastructure-error": 0,
+        "unexecuted": 0,
+    }
+    expected_counts[status] = len(load_registry()["cases"])
+
     exit_code = main(["strict", "--output", str(tmp_path)])
     report = json.loads((tmp_path / "strict.json").read_text(encoding="utf-8"))
 
     assert exit_code == int(status == "mismatch")
     assert report["rows"]
-    assert all(row["status"] == status for row in report["rows"])
+    assert report["rows"][0]["status"] == status
+    assert json.loads(capsys.readouterr().out) == {
+        "report": str(tmp_path / "strict.json"),
+        "counts": expected_counts,
+    }
+
+
+def test_report_only_registry_case_requires_reason(
+    tmp_path: Path, strict_case: StrictCase
+) -> None:
+    case = dict(strict_case) | {"mode": "report"}
+    case.pop("reason", None)
+    source = tmp_path / "registry.json"
+    source.write_text(json.dumps({"schema": 1, "cases": [case]}), encoding="utf-8")
+
+    with pytest.raises(AssertionError):
+        load_registry(source)
+
+
+@pytest.mark.parametrize(
+    ("returncode", "expected"),
+    [(1, BoundaryStatus.MISMATCH), (0, BoundaryStatus.INFRASTRUCTURE_ERROR)],
+    ids=["failed-process", "inconsistent-successful-process"],
+)
+def test_named_failure_requires_nonzero_exit(
+    returncode: int, expected: BoundaryStatus
+) -> None:
+    log = "test wanted ... FAILED"
+
+    result = classify(returncode, log, "wanted")
+
+    assert result is expected

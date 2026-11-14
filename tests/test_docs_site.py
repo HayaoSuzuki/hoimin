@@ -237,7 +237,10 @@ def test_github_main_links_are_pinned(tmp_path: Path) -> None:
 
 
 def test_html_boolean_attributes_and_legacy_anchors() -> None:
-    page = docs_site.BuiltPage('<a download name="legacy" href="#legacy">link</a>')
+    text = '<a id href name="legacy">link</a><img src><a href="#legacy">jump</a>'
+
+    page = docs_site.BuiltPage(text)
+
     assert page.anchors == {"legacy"}
     assert page.urls == ["#legacy"]
 
@@ -317,11 +320,54 @@ def documentation_repository(tmp_path: Path) -> Path:
 
 def test_full_documentation_build(documentation_repository: Path) -> None:
     repository = documentation_repository
+    reference = (repository / ".git/HEAD").read_text(encoding="utf-8").strip()
+    revision = (
+        (repository / ".git" / reference.removeprefix("ref: "))
+        .read_text(encoding="utf-8")
+        .strip()
+    )
+    (repository / "private.md").write_text("# Private\n", encoding="utf-8")
+    (repository / "README.md").write_text(
+        "# Example\n\n[Unpublished source](private.md)\n", encoding="utf-8"
+    )
 
     docs_site.build_site(repository, repository / "site")
 
+    page = docs_site.BuiltPage(
+        (repository / "site/index.html").read_text(encoding="utf-8")
+    )
     assert (repository / "site/index.html").is_file()
-    assert "Source commit" in (repository / "site/index.html").read_text()
+    assert f"https://github.com/HayaoSuzuki/hoimin/commit/{revision}" in page.urls
+    assert (
+        f"https://github.com/HayaoSuzuki/hoimin/blob/{revision}/private.md" in page.urls
+    )
+
+
+def test_build_validates_emitted_raw_html_targets(
+    documentation_repository: Path,
+) -> None:
+    repository = documentation_repository
+    (repository / "README.md").write_text(
+        '# Example\n\n<a href="missing.html">Broken raw HTML link</a>\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Missing built documentation target"):
+        docs_site.build_site(repository, repository / "site")
+
+
+def test_relative_output_directory_validates_local_links(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "site"
+    output.mkdir()
+    (output / "index.html").write_text(
+        '<a href="child.html#topic">Child</a>', encoding="utf-8"
+    )
+    (output / "child.html").write_text('<h1 id="topic">Topic</h1>', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    docs_site.validate_site(Path("site"))
 
 
 def test_build_rejects_mismatched_public_site_url(

@@ -256,6 +256,22 @@ def test_rejects_missing_build_receipt(environment: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    "artifact", [None, "archive.tar.gz", [], {}, {"sha256": "a" * 64}]
+)
+def test_manifest_rejects_malformed_pinned_artifacts(
+    environment: Path, artifact: object
+) -> None:
+    manifest = json.loads(environment.read_text())
+    manifest["artifacts"]["source"] = artifact
+    environment.write_text(json.dumps(manifest))
+
+    with pytest.raises(
+        creusot_environment.PreflightError, match="invalid pinned artifact"
+    ):
+        creusot_environment.load_manifest(environment)
+
+
+@pytest.mark.parametrize(
     ("section", "key", "value"),
     [
         ("root", "schema_version", True),

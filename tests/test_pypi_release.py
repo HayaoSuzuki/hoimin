@@ -12,6 +12,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tools import pypi_release
+
 ROOT = Path(__file__).resolve().parents[1]
 PLATFORMS = (
     "win_amd64",
@@ -109,6 +111,21 @@ def test_stages_only_verified_wheels_without_changing_bytes(
     assert {path.name: path.read_bytes() for path in staged} == {
         path.name: (release_assets / path.name).read_bytes() for path in staged
     }
+
+
+def test_staging_creates_missing_intermediate_output_directories(
+    release_assets: Path,
+) -> None:
+    output = release_assets.parent / "new-parent" / "nested" / "dist"
+    source_wheel = release_assets / "hoimin-1.2.3-py3-none-win_amd64.whl"
+    expected_bytes = source_wheel.read_bytes()
+
+    pypi_release.prepare_wheels(
+        "v1.2.3", release_assets.parent / "release.json", release_assets, output
+    )
+
+    assert output.is_dir()
+    assert (output / source_wheel.name).read_bytes() == expected_bytes
 
 
 @pytest.mark.parametrize("requires_python", [">=3.14, <3.16", "<3.16,>=3.14"])

@@ -611,6 +611,38 @@ def test_build_verification_rejects_unpinned_source(
         )
 
 
+def test_build_verification_binds_github_attestation_command(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    wheel = tmp_path / "a.whl"
+    bundle = tmp_path / "bundle.json"
+    runner = create_autospec(pypi_provenance.run_gh)
+    mocker.patch.object(pypi_provenance, "run_gh", runner)
+
+    pypi_provenance.verify_build(wheel, bundle, "a" * 40)
+
+    runner.assert_called_once_with(
+        [
+            "attestation",
+            "verify",
+            str(wheel.resolve()),
+            "--bundle",
+            str(bundle.resolve()),
+            "--repo",
+            "HayaoSuzuki/hoimin",
+            "--signer-workflow",
+            "HayaoSuzuki/hoimin/.github/workflows/release.yml",
+            "--source-digest",
+            "a" * 40,
+            "--signer-digest",
+            "a" * 40,
+            "--deny-self-hosted-runners",
+            "--predicate-type",
+            "https://slsa.dev/provenance/v1",
+        ]
+    )
+
+
 def reject_signature(arguments: list[str]) -> None:
     raise subprocess.CalledProcessError(1, arguments)
 
@@ -701,10 +733,12 @@ def stage_environment(
 
     def github(arguments: list[str], *, cwd: Path | None = None) -> None:
         handlers = {
-            "verify": verify,
-            "download": {"missing": missing_download}.get(mode, download_bundle),
+            ("attestation", "verify"): verify,
+            ("attestation", "download"): {"missing": missing_download}.get(
+                mode, download_bundle
+            ),
         }
-        handlers[arguments[1]](arguments, cwd=cwd)
+        handlers[arguments[0], arguments[1]](arguments, cwd=cwd)
 
     def authenticated(
         _self: Attestation, _publisher: GitHubPublisher, _dist: Distribution
