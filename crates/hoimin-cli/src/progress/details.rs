@@ -155,7 +155,9 @@ mod coverage_tests {
         #[case] expected: Option<&str>,
     ) {
         let details = Details::new(3, 5, eligibility, Changes::default());
+
         let value = serde_json::to_value(details).unwrap();
+
         assert_eq!(value["scope"], "latest_pair");
         assert_eq!(value["previous_input"], 2);
         assert_eq!(value["current_input"], 3);

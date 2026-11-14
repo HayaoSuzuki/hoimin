@@ -680,8 +680,11 @@ fn annotation_schema_rejects_one_invalid_coordinate(
 ) {
     let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
     *row.pointer_mut(pointer).unwrap() = value;
+
+    let actual_0 = parse_corpus(&row.to_string());
+
     assert!(
-        parse_corpus(&row.to_string())
+        actual_0
             .unwrap_err()
             .contains("violates the closed corpus schema")
     );
@@ -697,23 +700,24 @@ fn annotation_parser_reports_invalid_corpus(#[case] input: &str, #[case] diagnos
 
 #[test]
 fn annotation_parser_ignores_blank_lines() {
-    assert_eq!(parse_corpus(&format!("\n{CORPUS}\n")).unwrap().len(), 29);
+    let actual_0 = parse_corpus(&format!("\n{CORPUS}\n"));
+
+    assert_eq!(actual_0.unwrap().len(), 29);
 }
 
 #[tokio::test]
 async fn annotation_public_plan_reports_missing_operator() {
     let item = parse_corpus(CORPUS).unwrap().remove(0);
-    assert!(
-        public_plan_observation(&item)
-            .await
-            .unwrap_err()
-            .contains("operator missing")
-    );
+
+    let actual_0 = public_plan_observation(&item).await;
+
+    assert!(actual_0.unwrap_err().contains("operator missing"));
 }
 
 #[test]
 fn annotation_fixture_reports_tempdir_failure() {
     let result = Fixture::from_directory(Err(std::io::Error::other("denied")), "pass");
+
     assert_eq!(result.err().unwrap(), "denied");
 }
 
@@ -722,7 +726,10 @@ fn annotation_fixture_reports_source_directory_failure() {
     let directory = tempfile::tempdir().unwrap();
     std::fs::create_dir(directory.path().join("project")).unwrap();
     std::fs::write(directory.path().join("project/src"), "obstruction").unwrap();
-    assert!(Fixture::from_directory(Ok(directory), "pass").is_err());
+
+    let actual_0 = Fixture::from_directory(Ok(directory), "pass");
+
+    assert!(actual_0.is_err());
 }
 
 #[rstest::rstest]
@@ -731,7 +738,10 @@ fn annotation_fixture_reports_source_directory_failure() {
 fn annotation_fixture_reports_unwritable_file(#[case] path: &str) {
     let directory = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(directory.path().join("project").join(path)).unwrap();
-    assert!(Fixture::from_directory(Ok(directory), "pass").is_err());
+
+    let actual_0 = Fixture::from_directory(Ok(directory), "pass");
+
+    assert!(actual_0.is_err());
 }
 
 #[rstest::rstest]
@@ -744,11 +754,10 @@ fn annotation_decoder_reports_invalid_public_plan(
     #[case] diagnostic: &str,
 ) {
     let item = parse_corpus(CORPUS).unwrap().remove(0);
-    assert!(
-        decode_public_plan(&item, Ok(code), b"{", stderr)
-            .unwrap_err()
-            .contains(diagnostic)
-    );
+
+    let actual_0 = decode_public_plan(&item, Ok(code), b"{", stderr);
+
+    assert!(actual_0.unwrap_err().contains(diagnostic));
 }
 
 #[tokio::test(start_paused = true)]
@@ -756,11 +765,10 @@ async fn annotation_decoder_reports_timeout() {
     let item = parse_corpus(CORPUS).unwrap().remove(0);
     let result =
         tokio::time::timeout(Duration::from_millis(1), std::future::pending::<i32>()).await;
-    assert!(
-        decode_public_plan(&item, result, b"", b"")
-            .unwrap_err()
-            .contains("public plan timed out")
-    );
+
+    let actual_0 = decode_public_plan(&item, result, b"", b"");
+
+    assert!(actual_0.unwrap_err().contains("public plan timed out"));
 }
 
 fn strict_annotation_case() -> OracleCase {
@@ -776,11 +784,10 @@ async fn annotation_normalizer_reports_missing_marker() {
     let mut item = strict_annotation_case();
     let manifest = public_plan(&item).await.unwrap();
     item.marker = "absent marker".to_owned();
-    assert!(
-        normalize_manifest(&item, &manifest)
-            .unwrap_err()
-            .contains("marker missing")
-    );
+
+    let actual_0 = normalize_manifest(&item, &manifest);
+
+    assert!(actual_0.unwrap_err().contains("marker missing"));
 }
 
 #[tokio::test]
@@ -788,7 +795,9 @@ async fn annotation_normalizer_retains_overlapping_candidate_count() {
     let item = strict_annotation_case();
     let mut manifest = public_plan(&item).await.unwrap();
     manifest.candidates.push(manifest.candidates[0].clone());
+
     let observation = normalize_manifest(&item, &manifest).unwrap();
+
     assert_eq!(observation.count, 2);
     assert!(observation.present);
     assert_eq!(observation.original, None);
@@ -800,16 +809,17 @@ async fn annotation_normalizer_excludes_overflowing_candidate_span() {
     let mut manifest = public_plan(&item).await.unwrap();
     manifest.candidates[0].candidate.span.start = u64::MAX;
     manifest.candidates[0].candidate.span.length = 1;
-    assert!(!normalize_manifest(&item, &manifest).unwrap().present);
+
+    let actual_0 = normalize_manifest(&item, &manifest);
+
+    assert!(!actual_0.unwrap().present);
 }
 
 #[tokio::test]
 async fn annotation_public_plan_preserves_fixture_failure() {
     let item = strict_annotation_case();
-    assert_eq!(
-        public_plan_from_fixture(&item, Err("fixture denied".into()))
-            .await
-            .unwrap_err(),
-        "fixture denied"
-    );
+
+    let actual_0 = public_plan_from_fixture(&item, Err("fixture denied".into())).await;
+
+    assert_eq!(actual_0.unwrap_err(), "fixture denied");
 }

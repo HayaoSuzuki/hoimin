@@ -2282,8 +2282,8 @@ fn new_session_rejects_malformed_non_null_budget_storage(
     let mut handler = SessionHandler::open(&path).unwrap();
     handler.begin(begin_request(1, "budget")).unwrap();
     let observer = Connection::open(&path).unwrap();
-
     let result = observer.execute("UPDATE runs SET max_mutants=?1", [malformed]);
+
     let rusqlite::Error::SqliteFailure(error, _) = result.unwrap_err() else {
         panic!("expected SQLite constraint violation");
     };
@@ -2423,13 +2423,12 @@ fn corrupt_persisted_budget_is_rejected_without_repair(
         max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
     };
 
-    assert_eq!(
-        handler.load(&request).unwrap_err().failure.code(),
-        "session.corrupt"
-    );
+    let result = handler.load(&request);
     let after: Value = connection
         .query_row("SELECT max_mutants FROM runs", [], |row| row.get(0))
         .unwrap();
+
+    assert_eq!(result.unwrap_err().failure.code(), "session.corrupt");
     assert_eq!(&after, malformed);
 }
 

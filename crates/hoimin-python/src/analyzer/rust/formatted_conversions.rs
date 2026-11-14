@@ -107,6 +107,7 @@ mod coverage_tests {
             edits.push(replacement);
             true
         });
+
         assert_eq!(edits, expected);
     }
 
@@ -138,7 +139,10 @@ mod coverage_tests {
                 true
             },
         );
-        assert_eq!(edits.len(), expected_count);
+
+        let actual = edits.len();
+
+        assert_eq!(actual, expected_count);
         assert_eq!(edits, ["s"][..expected_count]);
     }
 
@@ -151,6 +155,7 @@ mod coverage_tests {
             edits.push(replacement);
             false
         });
+
         assert_eq!(edits, vec!["s"]);
     }
 
@@ -172,6 +177,7 @@ mod coverage_tests {
             edits.push(replacement);
             true
         });
+
         assert_eq!(edits, expected);
     }
 }

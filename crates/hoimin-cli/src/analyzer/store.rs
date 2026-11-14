@@ -1009,16 +1009,12 @@ mod tests {
         .into_iter()
         .nth(scenario_index)
         .unwrap();
-
         let mut candidate = candidate_with_payload_len(payload_length);
         candidate.original = "\n\t\"\\雪🧪".to_owned();
         let padding = usize::try_from(payload_length - serialized_len(&candidate)).unwrap();
         candidate.original.push_str(&"a".repeat(padding));
         let mut encoded = serde_json::to_vec(&candidate).unwrap();
         encoded.push(b'\n');
-
-        assert_eq!(u64::try_from(encoded.len()).unwrap(), payload_length + 1);
-
         let result = CandidateStore::record_size(&candidate);
         let actual_size = result.map_err(|error| {
             let StoreError::RecordTooLarge { limit } = error else {
@@ -1037,6 +1033,9 @@ mod tests {
             limit
         });
 
+        let actual_0 = u64::try_from(encoded.len());
+
+        assert_eq!(actual_0.unwrap(), payload_length + 1);
         assert_eq!(actual_size, expected_size);
     }
 
@@ -1080,8 +1079,10 @@ mod tests {
     fn zero_capacity_is_rejected_before_spool_creation(
         #[case] build: fn() -> Result<CandidateStore, StoreError>,
     ) {
+        let actual_0 = build();
+
         assert!(matches!(
-            build(),
+            actual_0,
             Err(StoreError::LimitExceeded { limit: 0 })
         ));
     }
@@ -1089,17 +1090,19 @@ mod tests {
     #[test]
     fn counting_writer_rejects_overflow_without_changing_the_count() {
         let mut writer = CountingWriter { bytes: u64::MAX };
-        assert_eq!(
-            writer.write(b"x").unwrap_err().kind(),
-            std::io::ErrorKind::Other
-        );
+
+        let actual_0 = writer.write(b"x");
+
+        assert_eq!(actual_0.unwrap_err().kind(), std::io::ErrorKind::Other);
         assert_eq!(writer.bytes, u64::MAX);
     }
 
     #[test]
     fn counting_writer_flush_preserves_the_count() {
         let mut writer = CountingWriter { bytes: 17 };
+
         writer.flush().unwrap();
+
         assert_eq!(writer.bytes, 17);
     }
 
@@ -1111,8 +1114,11 @@ mod tests {
             records: 1,
         };
         let reader = File::open(file.path()).unwrap();
+
+        let actual_0 = read_one_bounded(reader, &reference, CandidateCursor::START);
+
         assert!(matches!(
-            read_one_bounded(reader, &reference, CandidateCursor::START),
+            actual_0,
             Err(StoreError::UnexpectedEof {
                 expected_records: 1,
                 actual_records: 0
@@ -1133,8 +1139,11 @@ mod tests {
             records: 1,
         };
         let reader = File::open(file.path()).unwrap();
+
+        let actual_0 = read_one_bounded(reader, &reference, CandidateCursor::START);
+
         assert!(matches!(
-            read_one_bounded(reader, &reference, CandidateCursor::START),
+            actual_0,
             Err(StoreError::RecordTooLarge {
                 limit: MAX_SPOOL_RECORD_BYTES
             })
@@ -1152,8 +1161,11 @@ mod tests {
             records: 0,
         };
         let reader = File::open(file.path()).unwrap();
+
+        let actual_0 = read_one_bounded(reader, &reference, CandidateCursor::START);
+
         assert!(matches!(
-            read_one_bounded(reader, &reference, CandidateCursor::START),
+            actual_0,
             Err(StoreError::InvalidSequence {
                 expected: 0,
                 actual: 1
@@ -1170,10 +1182,10 @@ mod tests {
             token: directory.path().to_string_lossy().into_owned(),
             records: 1,
         };
-        assert!(matches!(
-            read_one_bounded(reader, &reference, CandidateCursor::START),
-            Err(StoreError::Io(_))
-        ));
+
+        let actual_0 = read_one_bounded(reader, &reference, CandidateCursor::START);
+
+        assert!(matches!(actual_0, Err(StoreError::Io(_))));
     }
 
     #[cfg(unix)]
@@ -1184,8 +1196,12 @@ mod tests {
         let (_file, temp_path) = temporary.into_parts();
         let device = OpenOptions::new().write(true).open("/dev/null").unwrap();
         let store = CandidateStore::with_file(1, NamedTempFile::from_parts(device, temp_path));
-        assert!(matches!(store.finish(), Err(StoreError::Io(_))));
-        assert!(!path.exists());
+
+        let actual_0 = store.finish();
+        let actual_1 = path.exists();
+
+        assert!(matches!(actual_0, Err(StoreError::Io(_))));
+        assert!(!actual_1);
     }
 
     #[rstest::rstest]
@@ -1199,6 +1215,7 @@ mod tests {
         #[case] diagnostic: &str,
     ) {
         let spool = finish_candidates(&[candidate_with_payload_len(512)]);
+
         let error = CandidateStore::replay_one(
             &spool.0,
             CandidateCursor {
@@ -1207,6 +1224,7 @@ mod tests {
             },
         )
         .unwrap_err();
+
         assert!(error.to_string().contains(diagnostic));
     }
 
@@ -1220,12 +1238,10 @@ mod tests {
             token: file.path().to_string_lossy().into_owned(),
             records: 1,
         };
-        assert!(
-            CandidateStore::replay_one(&reference, CandidateCursor::START)
-                .unwrap_err()
-                .to_string()
-                .contains(diagnostic)
-        );
+
+        let actual_0 = CandidateStore::replay_one(&reference, CandidateCursor::START);
+
+        assert!(actual_0.unwrap_err().to_string().contains(diagnostic));
     }
 
     #[test]
@@ -1239,10 +1255,10 @@ mod tests {
                 .into_owned(),
             records: 1,
         };
-        assert!(matches!(
-            CandidateStore::replay_one(&reference, CandidateCursor::START),
-            Err(StoreError::Io(_))
-        ));
+
+        let actual_0 = CandidateStore::replay_one(&reference, CandidateCursor::START);
+
+        assert!(matches!(actual_0, Err(StoreError::Io(_))));
     }
 
     #[test]
@@ -1257,8 +1273,11 @@ mod tests {
             token: file.path().to_string_lossy().into_owned(),
             records: 2,
         };
+
+        let actual_0 = CandidateStore::replay_one(&reference, CandidateCursor::START);
+
         assert!(matches!(
-            CandidateStore::replay_one(&reference, CandidateCursor::START),
+            actual_0,
             Err(StoreError::InvalidSequence {
                 expected: 1,
                 actual: 2
@@ -1274,16 +1293,16 @@ mod tests {
             token: directory.path().to_string_lossy().into_owned(),
             records: 1,
         };
-        assert!(matches!(
-            CandidateStore::replay_one(
-                &reference,
-                CandidateCursor {
-                    offset: 1,
-                    expected_sequence: 1
-                }
-            ),
-            Err(StoreError::Io(_))
-        ));
+
+        let actual_0 = CandidateStore::replay_one(
+            &reference,
+            CandidateCursor {
+                offset: 1,
+                expected_sequence: 1,
+            },
+        );
+
+        assert!(matches!(actual_0, Err(StoreError::Io(_))));
     }
 
     #[test]
@@ -1292,8 +1311,10 @@ mod tests {
             let _fault = io_faults::arm(io_faults::Stage::CreateDefault);
             CandidateStore::new(1).err().unwrap()
         };
+        let actual_1 = CandidateStore::new(1);
+
         assert!(error.to_string().contains("injected CreateDefault"));
-        assert!(CandidateStore::new(1).is_ok());
+        assert!(actual_1.is_ok());
     }
 
     #[rstest::rstest]
@@ -1312,20 +1333,17 @@ mod tests {
             offset: 513,
             expected_sequence: 2,
         };
+
         let error = {
             let _fault = io_faults::arm(stage);
             CandidateStore::replay_one(&spool.0, cursor).unwrap_err()
         };
+        let actual_1 = std::fs::read(&spool.0.token);
+        let actual_2 = CandidateStore::replay_one(&spool.0, cursor);
+
         assert!(error.to_string().contains(&format!("injected {stage:?}")));
-        assert_eq!(std::fs::read(&spool.0.token).unwrap(), before);
-        assert_eq!(
-            CandidateStore::replay_one(&spool.0, cursor)
-                .unwrap()
-                .unwrap()
-                .0
-                .sequence,
-            2
-        );
+        assert_eq!(actual_1.unwrap(), before);
+        assert_eq!(actual_2.unwrap().unwrap().0.sequence, 2);
     }
 
     #[test]
@@ -1344,8 +1362,11 @@ mod tests {
             offset: 0,
             expected_sequence: u64::MAX,
         };
+
+        let actual_0 = CandidateStore::replay_one(&reference, cursor);
+
         assert!(matches!(
-            CandidateStore::replay_one(&reference, cursor),
+            actual_0,
             Err(StoreError::InvalidSequence {
                 expected: u64::MAX,
                 actual: u64::MAX

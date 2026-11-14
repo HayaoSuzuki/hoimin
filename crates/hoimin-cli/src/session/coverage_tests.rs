@@ -79,132 +79,90 @@ fn reject_commit(handler: &SessionHandler, event: &str, table: &str) {
     )).unwrap();
 }
 
-#[test]
-fn transaction_begin_failures_are_reported_at_each_lifecycle_boundary() {
-    for operation in ["begin", "persist", "finish"] {
-        let (_directory, mut handler) = fixture();
-        handler.begin(begin_request()).unwrap();
-        handler
-            .connection
-            .execute_batch("PRAGMA query_only=ON")
-            .unwrap();
-        let error = match operation {
-            "begin" => handler.begin(begin_request()).unwrap_err(),
-            "persist" => handler.persist(&persist_request()).unwrap_err(),
-            _ => handler
-                .finish(FinishSession {
-                    id: EffectId(4),
-                    run_id: "coverage-run".into(),
-                    complete: true,
-                })
-                .unwrap_err(),
-        };
-        assert_database_error(
-            error,
-            match operation {
-                "begin" => "begin run transaction",
-                "persist" => "begin result transaction",
-                _ => "begin finish transaction",
-            },
-        );
-    }
-}
-
-#[test]
-fn run_insert_and_finish_update_errors_preserve_the_operation() {
-    let (_directory, mut handler) = fixture();
-    reject_write(&handler, "INSERT", "runs");
-    assert_database_error(handler.begin(begin_request()).unwrap_err(), "insert run");
-    handler
-        .connection
-        .execute_batch("DROP TRIGGER reject_write")
-        .unwrap();
-    handler.begin(begin_request()).unwrap();
-    reject_write(&handler, "UPDATE", "runs");
-    assert_database_error(
-        handler
-            .finish(FinishSession {
-                id: EffectId(4),
-                run_id: "coverage-run".into(),
-                complete: true,
-            })
-            .unwrap_err(),
-        "mark run finished",
-    );
-}
-
-#[test]
-fn deferred_constraint_errors_are_reported_as_commit_failures() {
-    for operation in ["begin", "persist", "finish"] {
-        let (_directory, mut handler) = fixture();
-        if operation != "begin" {
-            handler.begin(begin_request()).unwrap();
-        }
-        let (event, table) = match operation {
-            "begin" => ("INSERT", "runs"),
-            "persist" => ("INSERT", "results"),
-            _ => ("UPDATE", "runs"),
-        };
-        reject_commit(&handler, event, table);
-        let error = match operation {
-            "begin" => handler.begin(begin_request()).unwrap_err(),
-            "persist" => handler.persist(&persist_request()).unwrap_err(),
-            _ => handler
-                .finish(FinishSession {
-                    id: EffectId(4),
-                    run_id: "coverage-run".into(),
-                    complete: true,
-                })
-                .unwrap_err(),
-        };
-        assert_database_error(
-            error,
-            match operation {
-                "begin" => "commit run",
-                "persist" => "commit mutant result",
-                _ => "commit run finish",
-            },
-        );
-        assert!(handler.connection.is_autocommit());
-        assert_eq!(
-            handler
-                .connection
-                .query_row("SELECT count(*) FROM deferred_fault", [], |row| row
-                    .get::<_, i64>(0))
-                .unwrap(),
-            0
-        );
-    }
-}
-
-#[test]
-fn loading_reports_query_and_resume_recheck_failures() {
-    let (_directory, mut handler) = fixture();
-    handler
-        .connection
-        .execute_batch("DROP TABLE fingerprints")
-        .unwrap();
-    assert_database_error(
-        handler.load(&load_request()).unwrap_err(),
-        "inspect resume schema",
-    );
-    handler.connection.execute_batch("DROP TABLE runs").unwrap();
-    assert_database_error(
-        handler.load(&load_request()).unwrap_err(),
-        "load resume run",
-    );
-    assert_database_error(
-        handler.fresh_resume_reason(&load_request()).unwrap_err(),
-        "inspect resume history",
-    );
-
+#[rstest::rstest]
+#[case::begin(|handler: &mut SessionHandler| handler.begin(begin_request()).unwrap_err(), "begin run transaction")]
+#[case::persist(|handler: &mut SessionHandler| handler.persist(&persist_request()).unwrap_err(), "begin result transaction")]
+#[case::finish(|handler: &mut SessionHandler| handler.finish(FinishSession { id: EffectId(4), run_id: "coverage-run".into(), complete: true }).unwrap_err(), "begin finish transaction")]
+fn transaction_begin_failures_are_reported_at_each_lifecycle_boundary(
+    #[case] execute: fn(&mut SessionHandler) -> EffectFailed,
+    #[case] expected: &str,
+) {
     let (_directory, mut handler) = fixture();
     handler.begin(begin_request()).unwrap();
-    reject_write(&handler, "UPDATE", "runs");
-    assert_database_error(
-        handler.load(&load_request()).unwrap_err(),
-        "re-read resume run",
-    );
+    handler
+        .connection
+        .execute_batch("PRAGMA query_only=ON")
+        .unwrap();
+
+    let error = execute(&mut handler);
+
+    assert_database_error(error, expected);
+}
+
+#[rstest::rstest]
+#[case::begin(|_: &mut SessionHandler| {}, "INSERT", |handler: &mut SessionHandler| handler.begin(begin_request()).unwrap_err(), "insert run")]
+#[case::finish(|handler: &mut SessionHandler| { handler.begin(begin_request()).unwrap(); }, "UPDATE", |handler: &mut SessionHandler| handler.finish(FinishSession { id: EffectId(4), run_id: "coverage-run".into(), complete: true }).unwrap_err(), "mark run finished")]
+fn run_insert_and_finish_update_errors_preserve_the_operation(
+    #[case] prepare: fn(&mut SessionHandler),
+    #[case] event: &str,
+    #[case] execute: fn(&mut SessionHandler) -> EffectFailed,
+    #[case] expected: &str,
+) {
+    let (_directory, mut handler) = fixture();
+    prepare(&mut handler);
+    reject_write(&handler, event, "runs");
+
+    let error = execute(&mut handler);
+
+    assert_database_error(error, expected);
+}
+
+#[rstest::rstest]
+#[case::begin(|_: &mut SessionHandler| {}, "INSERT", "runs", |handler: &mut SessionHandler| handler.begin(begin_request()).unwrap_err(), "commit run")]
+#[case::persist(|handler: &mut SessionHandler| { handler.begin(begin_request()).unwrap(); }, "INSERT", "results", |handler: &mut SessionHandler| handler.persist(&persist_request()).unwrap_err(), "commit mutant result")]
+#[case::finish(|handler: &mut SessionHandler| { handler.begin(begin_request()).unwrap(); }, "UPDATE", "runs", |handler: &mut SessionHandler| handler.finish(FinishSession { id: EffectId(4), run_id: "coverage-run".into(), complete: true }).unwrap_err(), "commit run finish")]
+fn deferred_constraint_errors_are_reported_as_commit_failures(
+    #[case] prepare: fn(&mut SessionHandler),
+    #[case] event: &str,
+    #[case] table: &str,
+    #[case] execute: fn(&mut SessionHandler) -> EffectFailed,
+    #[case] expected: &str,
+) {
+    let (_directory, mut handler) = fixture();
+    prepare(&mut handler);
+    reject_commit(&handler, event, table);
+
+    let error = execute(&mut handler);
+    let pending_faults = handler
+        .connection
+        .query_row("SELECT count(*) FROM deferred_fault", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .unwrap();
+
+    let autocommit_restored = handler.connection.is_autocommit();
+
+    assert_database_error(error, expected);
+    assert!(autocommit_restored);
+    assert_eq!(pending_faults, 0);
+}
+
+#[rstest::rstest]
+#[case::schema(|handler: &mut SessionHandler| handler.connection.execute_batch("DROP TABLE fingerprints").unwrap(), |handler: &mut SessionHandler| handler.load(&load_request()).unwrap_err(), "inspect resume schema")]
+#[case::run(|handler: &mut SessionHandler| handler.connection.execute_batch("DROP TABLE fingerprints; DROP TABLE runs").unwrap(), |handler: &mut SessionHandler| handler.load(&load_request()).unwrap_err(), "load resume run")]
+#[case::history(|handler: &mut SessionHandler| handler.connection.execute_batch("DROP TABLE fingerprints; DROP TABLE runs").unwrap(), |handler: &mut SessionHandler| handler.fresh_resume_reason(&load_request()).unwrap_err(), "inspect resume history")]
+#[case::resume_recheck(|handler: &mut SessionHandler| { handler.begin(begin_request()).unwrap(); reject_write(handler, "UPDATE", "runs"); }, |handler: &mut SessionHandler| handler.load(&load_request()).unwrap_err(), "re-read resume run")]
+fn loading_reports_query_and_resume_recheck_failures(
+    #[case] prepare: fn(&mut SessionHandler),
+    #[case] execute: fn(&mut SessionHandler) -> EffectFailed,
+    #[case] expected: &str,
+) {
+    let (_directory, mut handler) = fixture();
+    prepare(&mut handler);
+
+    let error = execute(&mut handler);
+
+    assert_database_error(error, expected);
 }
 
 #[test]
@@ -217,42 +175,47 @@ fn ignored_resume_update_reports_candidate_changed() {
             "CREATE TRIGGER skip_resume BEFORE UPDATE ON runs BEGIN SELECT RAISE(IGNORE); END;",
         )
         .unwrap();
+
+    let actual = handler.load(&load_request()).unwrap().outcome;
+
     assert_eq!(
-        handler.load(&load_request()).unwrap().outcome,
+        actual,
         SessionLoadOutcome::Fresh(hoimin_core::ResumeFreshReason::CandidateChanged)
     );
 }
 
-#[test]
-fn persistence_distinguishes_candidate_result_diagnostic_and_replacement_errors() {
-    for (event, table, expected) in [
-        ("INSERT", "candidates", "insert candidate"),
-        ("INSERT", "results", "insert result"),
-        ("INSERT", "diagnostics", "insert diagnostic"),
-        ("DELETE", "diagnostics", "replace inconclusive result"),
-        ("DELETE", "results", "replace inconclusive result"),
-        ("DELETE", "candidates", "replace inconclusive result"),
-    ] {
-        let (_directory, mut handler) = fixture();
-        handler.begin(begin_request()).unwrap();
-        if event == "DELETE" {
-            handler.persist(&persist_request()).unwrap();
-        }
-        reject_write(&handler, event, table);
-        assert_database_error(handler.persist(&persist_request()).unwrap_err(), expected);
-        for relation in ["candidates", "results", "diagnostics"] {
-            assert_eq!(
-                handler
-                    .connection
-                    .query_row(&format!("SELECT count(*) FROM {relation}"), [], |row| row
-                        .get::<_, i64>(
-                        0
-                    ))
-                    .unwrap(),
-                i64::from(event == "DELETE")
-            );
-        }
-    }
+#[rstest::rstest]
+#[case(|_: &mut SessionHandler| {}, "INSERT", "candidates", "insert candidate", 0)]
+#[case(|_: &mut SessionHandler| {}, "INSERT", "results", "insert result", 0)]
+#[case(|_: &mut SessionHandler| {}, "INSERT", "diagnostics", "insert diagnostic", 0)]
+#[case(|handler: &mut SessionHandler| { handler.persist(&persist_request()).unwrap(); }, "DELETE", "diagnostics", "replace inconclusive result", 1)]
+#[case(|handler: &mut SessionHandler| { handler.persist(&persist_request()).unwrap(); }, "DELETE", "results", "replace inconclusive result", 1)]
+#[case(|handler: &mut SessionHandler| { handler.persist(&persist_request()).unwrap(); }, "DELETE", "candidates", "replace inconclusive result", 1)]
+fn persistence_distinguishes_candidate_result_diagnostic_and_replacement_errors(
+    #[case] prepare: fn(&mut SessionHandler),
+    #[case] event: &str,
+    #[case] table: &str,
+    #[case] expected: &str,
+    #[case] retained_rows: i64,
+) {
+    let (_directory, mut handler) = fixture();
+    handler.begin(begin_request()).unwrap();
+    prepare(&mut handler);
+    reject_write(&handler, event, table);
+
+    let error = handler.persist(&persist_request()).unwrap_err();
+    let row_counts = ["candidates", "results", "diagnostics"].map(|relation| {
+        handler
+            .connection
+            .query_row(&format!("SELECT count(*) FROM {relation}"), [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap()
+    });
+
+    assert_database_error(error, expected);
+
+    assert_eq!(row_counts, [retained_rows; 3]);
 }
 
 #[test]
@@ -262,8 +225,22 @@ fn candidate_overflow_is_a_database_conversion_error() {
     let mut request = persist_request();
     request.result.candidate.sequence = u64::MAX;
     assert_database_error(handler.persist(&request).unwrap_err(), "insert candidate");
-    assert!(to_i64(u64::MAX).is_err());
-    assert!(!is_constraint(&rusqlite::Error::InvalidQuery));
+}
+
+#[test]
+fn unsigned_database_conversion_rejects_overflow() {
+    let result = to_i64(u64::MAX);
+
+    let actual = result.is_err();
+
+    assert!(actual);
+}
+
+#[test]
+fn invalid_sql_is_not_a_constraint_violation() {
+    let classified = is_constraint(&rusqlite::Error::InvalidQuery);
+
+    assert!(!classified);
 }
 
 #[test]
@@ -272,10 +249,12 @@ fn ownership_io_errors_do_not_claim_a_run() {
     handler.lock_directory = directory.path().join("not-a-directory");
     std::fs::write(&handler.lock_directory, "file").unwrap();
     let error = handler.begin(begin_request()).unwrap_err();
-    assert!(
-        matches!(error.failure, EffectFailure::SessionDatabase { code, .. } if code == "session.ownership")
-    );
-    assert!(handler.ownerships.is_empty());
+
+    let actual = matches!(error.failure, EffectFailure::SessionDatabase { code, .. } if code == "session.ownership");
+    let actual_2 = handler.ownerships.is_empty();
+
+    assert!(actual);
+    assert!(actual_2);
 }
 
 #[tokio::test]
@@ -290,13 +269,13 @@ async fn dispatch_reports_poison_and_panicking_operations() {
         .call::<(), _>(EffectId(20), |_| panic!("operation panicked"))
         .await
         .unwrap_err();
-    assert!(
-        matches!(failed.failure, EffectFailure::Other { code, .. } if code == "session.dispatch")
-    );
+    let panic_reported =
+        matches!(failed.failure, EffectFailure::Other { code, .. } if code == "session.dispatch");
     let failed = dispatcher.call(EffectId(21), operation).await.unwrap_err();
-    assert!(
-        matches!(failed.failure, EffectFailure::Other { message, .. } if message == "session lock poisoned")
-    );
+    let poison_reported = matches!(failed.failure, EffectFailure::Other { message, .. } if message == "session lock poisoned");
+
+    assert!(panic_reported);
+    assert!(poison_reported);
 }
 
 #[cfg(feature = "contracts")]
@@ -319,188 +298,197 @@ fn raw_result() -> RawResult {
 }
 
 #[cfg(feature = "contracts")]
+#[rstest::rstest]
+#[case(|row: &mut RawResult| row.resource_mode = "unknown".into())]
+#[case(|row: &mut RawResult| row.outcome_json = "invalid".into())]
+#[case(|row: &mut RawResult| row.sequence = -1)]
+#[case(|row: &mut RawResult| row.span_start = -1)]
+#[case(|row: &mut RawResult| row.span_length = -1)]
+#[case(|row: &mut RawResult| row.line = i64::MAX)]
+#[case(|row: &mut RawResult| row.column = -1)]
+fn contract_readback_rejects_invalid_resource_outcome_and_numeric_columns(
+    #[case] corrupt: fn(&mut RawResult),
+) {
+    let mut row = raw_result();
+    corrupt(&mut row);
+
+    let result = row.into_result("run", "mutant");
+
+    let actual = result.is_err();
+
+    assert!(actual);
+}
+
+#[cfg(feature = "contracts")]
 #[test]
-fn contract_readback_rejects_invalid_resource_outcome_and_numeric_columns() {
-    for invalid in [
-        "resource",
-        "outcome",
-        "sequence",
-        "span start",
-        "span length",
-        "line",
-        "column",
-    ] {
-        let mut row = raw_result();
-        match invalid {
-            "resource" => row.resource_mode = "unknown".into(),
-            "outcome" => row.outcome_json = "invalid".into(),
-            "sequence" => row.sequence = -1,
-            "span start" => row.span_start = -1,
-            "span length" => row.span_length = -1,
-            "line" => row.line = i64::MAX,
-            _ => row.column = -1,
-        }
-        assert!(row.into_result("run", "mutant").is_err());
-    }
+fn contract_readback_preserves_best_effort_resource_mode() {
     let mut row = raw_result();
     row.resource_mode = "best_effort".into();
-    assert_eq!(
-        row.into_result("run", "mutant").unwrap().resource_mode,
-        ResourceMode::BestEffort
-    );
+
+    let result = row.into_result("run", "mutant").unwrap();
+
+    assert_eq!(result.resource_mode, ResourceMode::BestEffort);
 }
 
 fn unconstrained_runs(handler: &SessionHandler) {
     handler.connection.execute_batch("ALTER TABLE runs RENAME TO intact_runs; CREATE TABLE runs AS SELECT * FROM intact_runs;").unwrap();
 }
 
-#[test]
-fn lookup_and_persist_reject_corrupt_run_state_without_writing_results() {
-    for value in ["NULL", "2"] {
-        let (_directory, mut handler) = fixture();
-        handler.begin(begin_request()).unwrap();
-        unconstrained_runs(&handler);
-        handler
-            .connection
-            .execute_batch(&format!("UPDATE runs SET complete={value}"))
-            .unwrap();
-        let lookup = LookupStoredResult {
-            id: EffectId(10),
-            worker: 0,
-            run_id: "coverage-run".into(),
-            mutant_id: "mutant".into(),
-        };
-        assert!(
-            matches!(handler.lookup(&lookup).unwrap_err().failure, EffectFailure::SessionDatabase { code, .. } if code == "session.corrupt")
-        );
-        assert!(
-            matches!(handler.persist(&persist_request()).unwrap_err().failure, EffectFailure::SessionDatabase { code, .. } if code == "session.corrupt")
-        );
-        assert_eq!(
-            handler
-                .connection
-                .query_row("SELECT count(*) FROM results", [], |row| row
-                    .get::<_, i64>(0))
-                .unwrap(),
-            0
-        );
-    }
-}
-
-#[test]
-fn lookup_rejects_a_deleted_owned_run_and_database_read_errors() {
+#[rstest::rstest]
+fn lookup_and_persist_reject_corrupt_run_state_without_writing_results(
+    #[values("NULL", "2")] value: &str,
+) {
     let (_directory, mut handler) = fixture();
     handler.begin(begin_request()).unwrap();
+    unconstrained_runs(&handler);
+    handler
+        .connection
+        .execute_batch(&format!("UPDATE runs SET complete={value}"))
+        .unwrap();
     let lookup = LookupStoredResult {
         id: EffectId(10),
         worker: 0,
         run_id: "coverage-run".into(),
         mutant_id: "mutant".into(),
     };
-    handler
+
+    let actual = matches!(handler.lookup(&lookup).unwrap_err().failure, EffectFailure::SessionDatabase { code, .. } if code == "session.corrupt");
+    let actual_2 = matches!(handler.persist(&persist_request()).unwrap_err().failure, EffectFailure::SessionDatabase { code, .. } if code == "session.corrupt");
+    let actual_3 = handler
         .connection
-        .execute_batch("DELETE FROM runs")
+        .query_row("SELECT count(*) FROM results", [], |row| {
+            row.get::<_, i64>(0)
+        })
         .unwrap();
-    assert!(
-        matches!(handler.lookup(&lookup).unwrap_err().failure, EffectFailure::SessionDatabase { code, .. } if code == "session.lookup.state")
-    );
-    handler.connection.execute_batch("DROP TABLE runs").unwrap();
-    assert_database_error(handler.lookup(&lookup).unwrap_err(), "lookup run state");
-    assert_database_error(
-        handler.persist(&persist_request()).unwrap_err(),
-        "read run state",
-    );
+
+    assert!(actual);
+    assert!(actual_2);
+    assert_eq!(actual_3, 0);
 }
 
-#[test]
-fn missing_result_table_is_reported_at_lookup_and_persist_read_boundaries() {
+#[rstest::rstest]
+#[case::deleted_run("DELETE FROM runs", |handler: &mut SessionHandler| handler.lookup(&LookupStoredResult { id: EffectId(10), worker: 0, run_id: "coverage-run".into(), mutant_id: "mutant".into() }).unwrap_err(), |error: &EffectFailed| matches!(&error.failure, EffectFailure::SessionDatabase { code, .. } if code == "session.lookup.state"))]
+#[case::lookup_query("DROP TABLE runs", |handler: &mut SessionHandler| handler.lookup(&LookupStoredResult { id: EffectId(10), worker: 0, run_id: "coverage-run".into(), mutant_id: "mutant".into() }).unwrap_err(), |error: &EffectFailed| matches!(&error.failure, EffectFailure::SessionDatabase { operation, .. } if operation == "lookup run state"))]
+#[case::persist_query("DROP TABLE runs", |handler: &mut SessionHandler| handler.persist(&persist_request()).unwrap_err(), |error: &EffectFailed| matches!(&error.failure, EffectFailure::SessionDatabase { operation, .. } if operation == "read run state"))]
+fn lookup_rejects_a_deleted_owned_run_and_database_read_errors(
+    #[case] sql: &str,
+    #[case] execute: fn(&mut SessionHandler) -> EffectFailed,
+    #[case] expected: fn(&EffectFailed) -> bool,
+) {
+    let (_directory, mut handler) = fixture();
+    handler.begin(begin_request()).unwrap();
+    handler.connection.execute_batch(sql).unwrap();
+
+    let error = execute(&mut handler);
+
+    assert!(expected(&error), "{error:?}");
+}
+
+#[rstest::rstest]
+#[case::lookup(|handler: &mut SessionHandler| handler.lookup(&LookupStoredResult { id: EffectId(10), worker: 0, run_id: "coverage-run".into(), mutant_id: "mutant".into() }).unwrap_err(), "lookup stored result")]
+#[case::persist(|handler: &mut SessionHandler| handler.persist(&persist_request()).unwrap_err(), "read existing result")]
+fn missing_result_table_is_reported_at_lookup_and_persist_read_boundaries(
+    #[case] execute: fn(&mut SessionHandler) -> EffectFailed,
+    #[case] expected: &str,
+) {
     let (_directory, mut handler) = fixture();
     handler.begin(begin_request()).unwrap();
     handler
         .connection
         .execute_batch("DROP TABLE results")
         .unwrap();
-    let lookup = LookupStoredResult {
-        id: EffectId(10),
-        worker: 0,
-        run_id: "coverage-run".into(),
-        mutant_id: "mutant".into(),
-    };
-    assert_database_error(handler.lookup(&lookup).unwrap_err(), "lookup stored result");
-    assert_database_error(
-        handler.persist(&persist_request()).unwrap_err(),
-        "read existing result",
-    );
+
+    let error = execute(&mut handler);
+
+    assert_database_error(error, expected);
 }
 
-#[test]
-fn loading_rejects_null_run_identifiers_and_fingerprint_versions() {
+#[rstest::rstest]
+#[case::run_id(|handler: &mut SessionHandler| { unconstrained_runs(handler); handler.connection.execute_batch("UPDATE runs SET run_id=NULL").unwrap(); }, [7; 32], "NULL run ID")]
+#[case::fingerprint_version(|handler: &mut SessionHandler| handler.connection.execute_batch("ALTER TABLE fingerprints RENAME TO intact_fingerprints; CREATE TABLE fingerprints AS SELECT * FROM intact_fingerprints; UPDATE fingerprints SET schema_version=NULL;").unwrap(), [8; 32], "NULL fingerprint schema version")]
+fn loading_rejects_null_run_identifiers_and_fingerprint_versions(
+    #[case] corrupt: fn(&mut SessionHandler),
+    #[case] fingerprint: [u8; 32],
+    #[case] expected: &str,
+) {
     let (_directory, mut handler) = fixture();
     handler.begin(begin_request()).unwrap();
-    unconstrained_runs(&handler);
-    handler
-        .connection
-        .execute_batch("UPDATE runs SET run_id=NULL")
-        .unwrap();
-    assert!(
-        matches!(handler.load(&load_request()).unwrap_err().failure, EffectFailure::SessionDatabase { message, .. } if message == "NULL run ID")
-    );
-
-    let (_directory, mut handler) = fixture();
-    handler.begin(begin_request()).unwrap();
-    handler.connection.execute_batch("ALTER TABLE fingerprints RENAME TO intact_fingerprints; CREATE TABLE fingerprints AS SELECT * FROM intact_fingerprints; UPDATE fingerprints SET schema_version=NULL;").unwrap();
+    corrupt(&mut handler);
     let mut request = load_request();
-    request.fingerprint = RunFingerprint::from_bytes([8; 32]);
-    assert!(
-        matches!(handler.load(&request).unwrap_err().failure, EffectFailure::SessionDatabase { message, .. } if message == "NULL fingerprint schema version")
-    );
+    request.fingerprint = RunFingerprint::from_bytes(fingerprint);
+
+    let failure = handler.load(&request).unwrap_err().failure;
+
+    let actual =
+        matches!(failure, EffectFailure::SessionDatabase { message, .. } if message == expected);
+
+    assert!(actual);
 }
 
 #[cfg(feature = "contracts")]
 #[test]
-fn contract_readback_reports_missing_rows_and_invalid_diagnostics() {
+fn contract_readback_reports_missing_rows() {
+    let (_directory, handler) = fixture();
+
+    let result = handler.read_result("missing", "missing");
+
+    let actual = result.is_err();
+
+    assert!(actual);
+}
+
+#[cfg(feature = "contracts")]
+#[rstest::rstest]
+#[case::null_level(
+    "ALTER TABLE diagnostics RENAME TO intact_diagnostics; CREATE TABLE diagnostics AS SELECT * FROM intact_diagnostics; UPDATE diagnostics SET level=NULL",
+    "Null"
+)]
+#[case::missing_table("DROP TABLE diagnostics", "diagnostics")]
+fn contract_readback_reports_invalid_diagnostics(#[case] sql: &str, #[case] expected: &str) {
     let (_directory, mut handler) = fixture();
-    assert!(handler.read_result("missing", "missing").is_err());
     handler.begin(begin_request()).unwrap();
     handler.persist(&persist_request()).unwrap();
-    handler.connection.execute_batch("ALTER TABLE diagnostics RENAME TO intact_diagnostics; CREATE TABLE diagnostics AS SELECT * FROM intact_diagnostics; UPDATE diagnostics SET level=NULL").unwrap();
-    assert!(
-        handler
-            .read_result("coverage-run", "mutant")
-            .unwrap_err()
-            .contains("Null")
-    );
-    handler
-        .connection
-        .execute_batch("DROP TABLE diagnostics")
-        .unwrap();
-    assert!(
-        handler
-            .read_result("coverage-run", "mutant")
-            .unwrap_err()
-            .contains("diagnostics")
-    );
+    handler.connection.execute_batch(sql).unwrap();
+
+    let error = handler.read_result("coverage-run", "mutant").unwrap_err();
+
+    let actual = error.contains(expected);
+
+    assert!(actual);
 }
 
 #[test]
-fn resolved_session_artifacts_reject_empty_names_and_symlink_ancestor_loops() {
-    assert_eq!(
-        SessionArtifacts::resolve("").unwrap_err().kind(),
-        std::io::ErrorKind::InvalidInput
-    );
+fn resolved_session_artifacts_reject_empty_names() {
+    let error = SessionArtifacts::resolve("").unwrap_err();
+
+    let actual = error.kind();
+
+    assert_eq!(actual, std::io::ErrorKind::InvalidInput);
+}
+
+#[test]
+fn resolved_session_artifacts_reject_a_directory_as_the_database() {
     let directory = tempfile::tempdir().unwrap();
-    assert_eq!(
-        SessionArtifacts::resolve(directory.path())
-            .unwrap_err()
-            .kind(),
-        std::io::ErrorKind::InvalidInput
-    );
-    #[cfg(unix)]
-    {
-        let link = directory.path().join("cycle");
-        std::os::unix::fs::symlink(&link, &link).unwrap();
-        assert!(SessionArtifacts::resolve(link.join("session.sqlite3")).is_err());
-    }
+
+    let error = SessionArtifacts::resolve(directory.path()).unwrap_err();
+
+    let actual = error.kind();
+
+    assert_eq!(actual, std::io::ErrorKind::InvalidInput);
+}
+
+#[cfg(unix)]
+#[test]
+fn resolved_session_artifacts_reject_symlink_ancestor_loops() {
+    let directory = tempfile::tempdir().unwrap();
+    let link = directory.path().join("cycle");
+    std::os::unix::fs::symlink(&link, &link).unwrap();
+
+    let result = SessionArtifacts::resolve(link.join("session.sqlite3"));
+
+    let actual = result.is_err();
+
+    assert!(actual);
 }
 
 #[test]
@@ -517,16 +505,18 @@ fn finish_rejects_an_externally_completed_owned_run_and_keeps_ownership_for_retr
         complete: true,
     };
     let error = handler.finish(request.clone()).unwrap_err();
-    assert!(
-        matches!(error.failure, EffectFailure::SessionDatabase { code, .. } if code == "session.finish.state")
-    );
-    assert!(handler.ownerships.contains_key("coverage-run"));
+    let external_finish_rejected = matches!(error.failure, EffectFailure::SessionDatabase { code, .. } if code == "session.finish.state");
+    let owned_after_rejection = handler.ownerships.contains_key("coverage-run");
     handler
         .connection
         .execute_batch("UPDATE runs SET complete=0")
         .unwrap();
     handler.finish(request).unwrap();
-    assert!(handler.ownerships.is_empty());
+    let released_after_retry = handler.ownerships.is_empty();
+
+    assert!(external_finish_rejected);
+    assert!(owned_after_rejection);
+    assert!(released_after_retry);
 }
 
 #[cfg(feature = "contracts")]
@@ -575,46 +565,46 @@ fn diagnostic_query_binding_errors_are_returned_without_partial_readback() {
     let original_limit =
         unsafe { rusqlite::ffi::sqlite3_limit(database, rusqlite::ffi::SQLITE_LIMIT_LENGTH, -1) };
     // SAFETY: the callback receives precisely the live SQLite handle passed here.
-    assert_eq!(
-        unsafe {
-            rusqlite::ffi::sqlite3_set_authorizer(
-                database,
-                Some(restrict_diagnostic_bindings),
-                database.cast(),
-            )
-        },
-        rusqlite::ffi::SQLITE_OK
-    );
+    let observed_1 = unsafe {
+        rusqlite::ffi::sqlite3_set_authorizer(
+            database,
+            Some(restrict_diagnostic_bindings),
+            database.cast(),
+        )
+    };
     let result = handler.read_result(&run_id, "mutant");
     // SAFETY: this removes the callback before restoring the still-live connection.
-    assert_eq!(
-        unsafe { rusqlite::ffi::sqlite3_set_authorizer(database, None, std::ptr::null_mut()) },
-        rusqlite::ffi::SQLITE_OK
-    );
+    let observed_2 =
+        unsafe { rusqlite::ffi::sqlite3_set_authorizer(database, None, std::ptr::null_mut()) };
     // SAFETY: the handle remains owned by this handler; restore the default limit.
     unsafe {
         rusqlite::ffi::sqlite3_limit(database, rusqlite::ffi::SQLITE_LIMIT_LENGTH, original_limit);
     }
-    assert!(result.unwrap_err().contains("string or blob too big"));
-    assert_eq!(
-        handler
-            .read_result(&run_id, "mutant")
-            .unwrap()
-            .diagnostics
-            .len(),
-        1
-    );
+    let binding_error = result.unwrap_err();
+    let observed_3 = handler
+        .read_result(&run_id, "mutant")
+        .unwrap()
+        .diagnostics
+        .len();
+
+    let actual = binding_error.contains("string or blob too big");
+
+    assert!(actual);
+    assert_eq!(observed_1, rusqlite::ffi::SQLITE_OK);
+    assert_eq!(observed_2, rusqlite::ffi::SQLITE_OK);
+    assert_eq!(observed_3, 1);
 }
 
 #[test]
 fn a_relative_session_filename_resolves_against_the_current_directory_without_creating_it() {
     let name = format!("hoimin-session-{}.sqlite3", uuid::Uuid::new_v4());
     let artifacts = SessionArtifacts::resolve(&name).unwrap();
-    assert_eq!(
-        artifacts.database(),
-        std::fs::canonicalize(".").unwrap().join(name)
-    );
-    assert!(!artifacts.database().exists());
+
+    let actual = artifacts.database();
+    let actual_2 = !artifacts.database().exists();
+
+    assert_eq!(actual, std::fs::canonicalize(".").unwrap().join(name));
+    assert!(actual_2);
 }
 
 #[tokio::test]
@@ -624,11 +614,14 @@ async fn dispatcher_load_reports_an_empty_history_without_claiming_a_run() {
         .await
         .unwrap();
     let loaded = dispatcher.load(load_request()).await.unwrap();
+
+    let actual = dispatcher.handler.lock().unwrap().ownerships.is_empty();
+
     assert_eq!(
         loaded.outcome,
         SessionLoadOutcome::Fresh(hoimin_core::ResumeFreshReason::NoPriorRun)
     );
-    assert!(dispatcher.handler.lock().unwrap().ownerships.is_empty());
+    assert!(actual);
 }
 
 #[test]
@@ -640,7 +633,7 @@ fn beginning_again_after_external_row_removal_retains_the_existing_finish_author
         .execute_batch("DELETE FROM runs")
         .unwrap();
     handler.begin(begin_request()).unwrap();
-    assert_eq!(handler.ownerships.len(), 1);
+    let ownerships_before_finish = handler.ownerships.len();
     handler
         .finish(FinishSession {
             id: EffectId(40),
@@ -648,5 +641,8 @@ fn beginning_again_after_external_row_removal_retains_the_existing_finish_author
             complete: true,
         })
         .unwrap();
-    assert!(handler.ownerships.is_empty());
+    let released_after_finish = handler.ownerships.is_empty();
+
+    assert_eq!(ownerships_before_finish, 1);
+    assert!(released_after_finish);
 }

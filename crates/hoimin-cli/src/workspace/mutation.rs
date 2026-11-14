@@ -824,4 +824,31 @@ mod tests {
         }
         drop(worker);
     }
+
+    #[rstest::rstest]
+    #[case::absent(|_: &Utf8Path| {}, None)]
+    #[case::physically_present(|path: &Utf8Path| fs::write(path, b"original\n").unwrap(), Some(b"original\n".as_slice()))]
+    fn mutation_rejects_targets_outside_the_manifest_without_changing_worker_files(
+        #[case] prepare: fn(&Utf8Path),
+        #[case] expected_sentinel: Option<&[u8]>,
+    ) {
+        let (_project, mut worker, mut candidate) = worker_and_candidate();
+        candidate.path = "swap/unlisted.py".into();
+        candidate.id =
+            hoimin_core::validate_candidate(b"original\n", &CandidateDescriptor::from(&candidate))
+                .unwrap()
+                .to_string();
+        let unlisted = worker.root().join(&candidate.path);
+        prepare(&unlisted);
+        assert!(worker.manifest().entry(&candidate.path).is_none());
+
+        let result = worker.apply_mutation(&candidate);
+
+        assert!(matches!(
+            result,
+            Err(super::WorkspaceError::MutationTargetMissing { path }) if path == candidate.path
+        ));
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
+        assert_eq!(fs::read(unlisted).ok().as_deref(), expected_sentinel);
+    }
 }

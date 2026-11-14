@@ -411,47 +411,64 @@ async fn strict_public_multiple_handler_rows_match_complete_candidate_observatio
 mod validation_tests;
 
 #[test]
-fn parser_checks_invalid_public_fixture_and_owned_identity() {
-    assert_eq!(strict_cases_from(&format!("\n{CORPUS}")).unwrap().len(), 2);
+fn parser_ignores_empty_lines() {
+    let actual_0 = strict_cases_from(&format!("\n{CORPUS}"));
+
+    assert_eq!(actual_0.unwrap().len(), 2);
+}
+
+#[rstest::rstest]
+#[case::case_0("schema", serde_json::json!(2), "invalid public fixture")]
+#[case::case_1(
+            "marker",
+            serde_json::json!("missing"),
+            "invalid public fixture",
+        )]
+#[case::case_2(
+            "expected_exits",
+            serde_json::json!([]),
+            "invalid public fixture",
+        )]
+#[case::case_3(
+            "id",
+            serde_json::json!("unknown"),
+            "not an owned strict fixture",
+        )]
+#[case::case_4(
+            "family",
+            serde_json::json!("unknown"),
+            "not an owned strict fixture",
+        )]
+fn parser_rejects_invalid_public_field(
+    #[case] field: &str,
+    #[case] value: serde_json::Value,
+    #[case] expected: &str,
+) {
     let rows = CORPUS
         .lines()
         .filter(|line| !line.is_empty())
         .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
         .collect::<Vec<_>>();
     let index = rows.iter().position(|row| row["mode"] == "strict").unwrap();
-    for (field, value, expected) in [
-        ("schema", serde_json::json!(2), "invalid public fixture"),
-        (
-            "marker",
-            serde_json::json!("missing"),
-            "invalid public fixture",
-        ),
-        (
-            "expected_exits",
-            serde_json::json!([]),
-            "invalid public fixture",
-        ),
-        (
-            "id",
-            serde_json::json!("unknown"),
-            "not an owned strict fixture",
-        ),
-        (
-            "family",
-            serde_json::json!("unknown"),
-            "not an owned strict fixture",
-        ),
-    ] {
-        let mut changed = rows.clone();
-        changed[index][field] = value;
-        let input = changed
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(strict_cases_from(&input).unwrap_err().contains(expected));
-    }
+    let mut changed = rows.clone();
+    changed[index][field] = value;
+    let input = changed
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let actual_0 = strict_cases_from(&input);
+
+    assert!(actual_0.unwrap_err().contains(expected));
+}
+
+#[test]
+fn expectation_rejects_unobserved_candidate() {
     let mut item = strict_cases().unwrap().remove(0);
     item.candidate = CandidateExpectation::NotObserved;
-    assert!(std::panic::catch_unwind(|| expected_public(&item)).is_err());
+
+    let actual_0 = std::panic::catch_unwind(|| expected_public(&item));
+
+    assert!(actual_0.is_err());
 }

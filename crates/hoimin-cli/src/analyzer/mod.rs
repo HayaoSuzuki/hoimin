@@ -1939,6 +1939,7 @@ mod coverage_regressions {
     async fn discovery_rejects_an_unrepresentable_timeout_before_work_starts() {
         let directory = tempfile::tempdir().unwrap();
         let root = Utf8Path::from_path(directory.path()).unwrap();
+
         let error = discover_targets_with_timeout(
             root,
             &[],
@@ -1949,6 +1950,7 @@ mod coverage_regressions {
         )
         .await
         .unwrap_err();
+
         assert_eq!(error.failure.code(), "analyzer.timeout");
         assert!(
             error
@@ -1964,6 +1966,7 @@ mod coverage_regressions {
         let root = Utf8Path::from_path(directory.path()).unwrap();
         std::fs::write(root.join("source.py"), "result = left + right\n").unwrap();
         let control = DiscoveryControl::new(Arc::clone(&directory), discovery_noop);
+
         let error = discover_targets_with_control(
             root,
             &[TargetSlice {
@@ -1979,6 +1982,7 @@ mod coverage_regressions {
         )
         .await
         .unwrap_err();
+
         assert_eq!(error.failure.code(), "analyzer.timeout");
         assert!(
             error
@@ -1996,6 +2000,7 @@ mod coverage_regressions {
         let control = DiscoveryControl::new(Arc::clone(&directory), || {
             panic!("controlled analyzer panic");
         });
+
         let error = discover_targets_with_control(
             root,
             &[TargetSlice {
@@ -2011,6 +2016,7 @@ mod coverage_regressions {
         )
         .await
         .unwrap_err();
+
         assert_eq!(error.failure.code(), "analyzer.task");
         assert!(
             error
@@ -2037,6 +2043,7 @@ mod coverage_regressions {
             column,
             message: Some("detail".into()),
         });
+
         assert_eq!(actual.message, expected);
     }
 
@@ -2047,8 +2054,11 @@ mod coverage_regressions {
         #[case] error: hoimin_python::AnalysisError,
     ) {
         let failure = analysis_failure(EffectId(91), Utf8Path::new("source.py"), error);
+
+        let actual_1 = failure.failure.code();
+
         assert_eq!(failure.id, EffectId(91));
-        assert_eq!(failure.failure.code(), "analyzer.exception_hierarchy");
+        assert_eq!(actual_1, "analyzer.exception_hierarchy");
     }
 
     fn converted_candidate(span: hoimin_core::ByteSpan) -> Charged<AnalyzerCandidate> {
@@ -2069,6 +2079,7 @@ mod coverage_regressions {
     #[test]
     fn mutation_projection_reports_undecodable_source() {
         let validation = CandidateValidationContext::new(b"# coding: ascii\n# \xff\n").unwrap();
+
         let error = mutation_candidate(
             EffectId(92),
             &validation,
@@ -2079,6 +2090,7 @@ mod coverage_regressions {
             1,
         )
         .unwrap_err();
+
         assert_eq!(error.id, EffectId(92));
         assert_eq!(error.failure.code(), "analyzer.source.encoding");
         assert!(error.failure.message().starts_with("source.py:"));
@@ -2094,6 +2106,7 @@ mod coverage_regressions {
         #[case] length: u64,
     ) {
         let validation = CandidateValidationContext::new("é\n".as_bytes()).unwrap();
+
         let error = mutation_candidate(
             EffectId(93),
             &validation,
@@ -2101,6 +2114,7 @@ mod coverage_regressions {
             1,
         )
         .unwrap_err();
+
         assert_eq!(error.failure.code(), "analyzer.candidate");
         assert_eq!(
             error.failure.message(),
@@ -2158,10 +2172,12 @@ mod coverage_regressions {
         handler.checkpoint_hook = Some(Arc::new(move |actual| {
             cancel_at_checkpoint(&worker_cancellation, checkpoint, actual);
         }));
+
         let error = handler
             .handle_with_cancellation(handler_request(97), cancellation)
             .await
             .unwrap_err();
+
         assert_eq!(error.id, EffectId(97));
         assert_eq!(error.failure.code(), "analyzer.cancelled");
         assert!(handler.store.is_none());
@@ -2171,6 +2187,7 @@ mod coverage_regressions {
     async fn discovery_reports_a_missing_root_before_analysis() {
         let directory = tempfile::tempdir().unwrap();
         let missing = Utf8PathBuf::from_path_buf(directory.path().join("absent")).unwrap();
+
         let error = discover_targets(
             &missing,
             &[],
@@ -2180,6 +2197,7 @@ mod coverage_regressions {
         )
         .await
         .unwrap_err();
+
         assert_eq!(error.failure.code(), "analyzer.source.read");
     }
 
@@ -2189,7 +2207,9 @@ mod coverage_regressions {
         let owner = Arc::new(tempfile::tempdir().unwrap());
         std::fs::remove_dir(owner.path()).unwrap();
         let mut handler = handler.with_candidate_spool_owner(owner);
+
         let error = handler.handle(handler_request(98)).await.unwrap_err();
+
         assert_eq!(error.id, EffectId(98));
         assert_eq!(error.failure.code(), "analyzer.store");
         assert!(handler.root.is_none());
@@ -2199,7 +2219,9 @@ mod coverage_regressions {
     async fn handler_reports_worker_panic_without_retaining_the_store() {
         let (_directory, mut handler) = handler_fixture();
         handler.analysis_hook = Some(Arc::new(|| panic!("owned handler worker panic")));
+
         let error = handler.handle(handler_request(99)).await.unwrap_err();
+
         assert_eq!(error.id, EffectId(99));
         assert_eq!(error.failure.code(), "analyzer.task");
         assert!(
@@ -2227,7 +2249,9 @@ mod coverage_regressions {
         handler.store = Some(owned_store_with_handle(|path| {
             std::fs::File::open(path).unwrap()
         }));
+
         let error = handler.handle(handler_request(100)).await.unwrap_err();
+
         assert_eq!(error.id, EffectId(100));
         assert_eq!(error.failure.code(), "analyzer.store");
         assert!(handler.store.is_none());
@@ -2243,7 +2267,9 @@ mod coverage_regressions {
                 .open("/dev/null")
                 .unwrap()
         }));
+
         let error = handler.handle(handler_request(101)).await.unwrap_err();
+
         assert_eq!(error.id, EffectId(101));
         assert_eq!(error.failure.code(), "analyzer.store");
         assert!(handler.store.is_none());
@@ -2258,7 +2284,9 @@ mod coverage_regressions {
         let root = handler.root_path.clone();
         let moved = directory.path().join("moved-project");
         handler.analysis_hook = Some(Arc::new(move || std::fs::rename(&root, &moved).unwrap()));
+
         let error = handler.handle(handler_request(102)).await.unwrap_err();
+
         assert_eq!(error.id, EffectId(102));
         assert_eq!(error.failure.code(), "analyzer.exception_hierarchy");
     }
@@ -2284,6 +2312,7 @@ mod coverage_regressions {
     async fn configured_discovery_preserves_the_selected_operator_and_target() {
         let (_directory, handler) = handler_fixture();
         let config = prepared_config(&handler.root_path, "binary_add_sub");
+
         let discovery = discover_config_targets(
             &config,
             &hoimin_core::DiscoveryConfig::new(Duration::from_secs(10)).unwrap(),
@@ -2292,6 +2321,7 @@ mod coverage_regressions {
         )
         .await
         .unwrap();
+
         assert_eq!(discovery.candidates.len(), 1);
         assert_eq!(discovery.candidates[0].path, Utf8Path::new("source.py"));
         assert_eq!(discovery.candidates[0].operator, "binary_add_sub");
@@ -2306,6 +2336,7 @@ mod coverage_regressions {
         )
         .unwrap();
         let config = prepared_config(&handler.root_path, "exception_hierarchy");
+
         let error = discover_config_targets(
             &config,
             &hoimin_core::DiscoveryConfig::new(Duration::from_secs(10)).unwrap(),
@@ -2314,6 +2345,7 @@ mod coverage_regressions {
         )
         .await
         .unwrap_err();
+
         assert_eq!(error.failure.code(), "analyzer.exception_hierarchy");
         assert!(error.failure.message().starts_with("errors.py:"));
     }
@@ -2321,6 +2353,7 @@ mod coverage_regressions {
     #[tokio::test]
     async fn discovery_reports_a_missing_selected_source() {
         let (_directory, handler) = handler_fixture();
+
         let error = discover_targets(
             &handler.root_path,
             &[TargetSlice {
@@ -2334,6 +2367,7 @@ mod coverage_regressions {
         )
         .await
         .unwrap_err();
+
         assert_eq!(error.failure.code(), "analyzer.source.read");
     }
 
@@ -2345,6 +2379,7 @@ mod coverage_regressions {
             b"# coding: ascii\n# \xff\n",
         )
         .unwrap();
+
         let error = discover_targets(
             &handler.root_path,
             &[handler_request(1).target],
@@ -2354,6 +2389,7 @@ mod coverage_regressions {
         )
         .await
         .unwrap_err();
+
         assert_eq!(error.failure.code(), "analyzer.source.encoding");
         assert!(error.failure.message().starts_with("source.py:"));
     }
@@ -2367,6 +2403,7 @@ mod coverage_regressions {
         )
         .unwrap();
         let operators = serde_json::from_str("[\"binary_add_sub\"]").unwrap();
+
         let discovery = discover_targets(
             &handler.root_path,
             &[handler_request(1).target],
@@ -2376,6 +2413,7 @@ mod coverage_regressions {
         )
         .await
         .unwrap();
+
         assert!(discovery.truncated);
         assert_eq!(discovery.candidates.len(), 1);
     }
@@ -2389,6 +2427,7 @@ mod coverage_regressions {
         );
         std::fs::write(handler.root_path.join("source.py"), source).unwrap();
         let operators = serde_json::from_str("[\"function_body_erase\"]").unwrap();
+
         let error = discover_targets(
             &handler.root_path,
             &[handler_request(1).target],
@@ -2398,6 +2437,7 @@ mod coverage_regressions {
         )
         .await
         .unwrap_err();
+
         assert_eq!(error.failure.code(), "analyzer.store");
         assert!(error.failure.message().contains("spool record exceeds"));
     }
@@ -2413,7 +2453,9 @@ mod coverage_regressions {
             NonZeroUsize::new(1).unwrap(),
         )
         .with_candidate_spool_owner(Arc::new(tempfile::tempdir().unwrap()));
+
         let error = handler.handle(handler_request(111)).await.unwrap_err();
+
         assert_eq!(error.id, EffectId(111));
         assert_eq!(error.failure.code(), "analyzer.source.read");
     }
@@ -2426,7 +2468,9 @@ mod coverage_regressions {
             b"# coding: ascii\n# \xff\n",
         )
         .unwrap();
+
         let error = handler.handle(handler_request(112)).await.unwrap_err();
+
         assert_eq!(error.id, EffectId(112));
         assert_eq!(error.failure.code(), "analyzer.source.encoding");
     }
@@ -2440,7 +2484,9 @@ mod coverage_regressions {
         let mut handler = handler.with_exception_project(&config);
         handler.operators = config.operators.clone();
         std::fs::write(errors, "class Root(Exception): pass\n# changed\n").unwrap();
+
         let error = handler.handle(handler_request(113)).await.unwrap_err();
+
         assert_eq!(error.failure.code(), "analyzer.exception_hierarchy");
         assert!(
             error
@@ -2468,10 +2514,13 @@ mod coverage_regressions {
         let mut handler = handler.with_managed_candidate_spool_owner(Arc::clone(&child));
         let mut request = handler_request(114);
         request.final_target = false;
+
         let response = handler.handle(request).await.unwrap();
-        assert!(response.spool.is_none());
-        assert!(handler.store.as_ref().unwrap().count() > 0);
+        let retained_count = handler.store.as_ref().unwrap().count();
         handler.release_candidate_spool();
+
+        assert!(response.spool.is_none());
+        assert!(retained_count > 0);
         assert!(handler.store.is_none());
         assert!(handler.candidate_spool_owner.is_none());
         assert_eq!(std::fs::read_dir(child.path()).unwrap().count(), before);
@@ -2516,9 +2565,11 @@ mod coverage_regressions {
         runtime
             .block_on(handler.handle(handler_request(115)))
             .unwrap();
+
+        let actual_0 = events.lock();
+
         assert!(
-            events
-                .lock()
+            actual_0
                 .unwrap()
                 .iter()
                 .any(|message| message.contains("analyzing file"))
@@ -2531,6 +2582,7 @@ mod coverage_regressions {
         let control = DiscoveryControl::new(Arc::new(tempfile::tempdir().unwrap()), || {
             panic!("unbounded worker panic")
         });
+
         let error = discover_unbounded(
             &handler.root_path,
             &[handler_request(1).target],
@@ -2541,6 +2593,7 @@ mod coverage_regressions {
         )
         .await
         .unwrap_err();
+
         assert_eq!(error.failure.code(), "analyzer.task");
         assert!(error.failure.message().contains("unbounded worker panic"));
     }
@@ -2553,6 +2606,7 @@ mod coverage_regressions {
         let mut control =
             DiscoveryControl::new(Arc::new(tempfile::tempdir().unwrap()), discovery_noop);
         control.before_entry = Some(Box::new(|| panic!("pre-entry worker panic")));
+
         let error = discover_targets_with_control(
             &handler.root_path,
             &[handler_request(1).target],
@@ -2564,6 +2618,7 @@ mod coverage_regressions {
         )
         .await
         .unwrap_err();
+
         assert_eq!(error.failure.code(), "analyzer.task");
         assert!(error.failure.message().contains("pre-entry worker panic"));
     }
@@ -2602,7 +2657,9 @@ mod coverage_regressions {
             cancellation,
             Some(control),
         );
+
         let error = discover_targets_blocking(work).unwrap_err();
+
         assert_eq!(error.failure.code(), "analyzer.cancelled");
     }
 
@@ -2610,9 +2667,9 @@ mod coverage_regressions {
     async fn discovery_entry_wait_reports_a_disconnected_handshake() {
         let (sender, receiver) = std::sync::mpsc::sync_channel::<()>(1);
         drop(sender);
-        assert_eq!(
-            tests::wait_for_discovery_entry(&receiver).await,
-            Err(std::sync::mpsc::TryRecvError::Disconnected)
-        );
+
+        let actual_0 = tests::wait_for_discovery_entry(&receiver).await;
+
+        assert_eq!(actual_0, Err(std::sync::mpsc::TryRecvError::Disconnected));
     }
 }

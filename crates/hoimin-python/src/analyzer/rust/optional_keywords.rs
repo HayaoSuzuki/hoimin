@@ -324,7 +324,10 @@ mod coverage_tests {
                 true
             },
         );
-        assert_eq!(replacements.len(), expected_count);
+
+        let actual = replacements.len();
+
+        assert_eq!(actual, expected_count);
         assert_eq!(
             replacements,
             ["(function((1),other=(3),))", "(function((1),option=(2),))"][..expected_count]
@@ -356,6 +359,7 @@ mod coverage_tests {
             replacements.push(replacement);
             true
         });
+
         assert_eq!(replacements, expected);
     }
 
@@ -369,6 +373,7 @@ mod coverage_tests {
             replacements.push(replacement);
             false
         });
+
         assert_eq!(replacements, vec!["(function(other=(3),))"]);
     }
     fn run_build(
@@ -421,7 +426,10 @@ mod coverage_tests {
             .value
             .as_call_expr()
             .unwrap();
-        assert_eq!(run_lookup(&index, call, &|| false).as_deref(), expected);
+
+        let actual = run_lookup(&index, call, &|| false);
+
+        assert_eq!(actual.as_deref(), expected);
     }
 
     #[rstest::rstest]
@@ -450,7 +458,10 @@ mod coverage_tests {
             .value
             .as_call_expr()
             .unwrap();
-        assert_eq!(run_lookup(&index, call, &|| false).as_deref(), expected);
+
+        let actual = run_lookup(&index, call, &|| false);
+
+        assert_eq!(actual.as_deref(), expected);
     }
 
     #[rstest::rstest]
@@ -471,14 +482,17 @@ mod coverage_tests {
             false
         })
         .unwrap();
-        assert!(complete_polls.get() > 0);
+        let baseline_polled = complete_polls.get() > 0;
         let polls = Cell::new(0);
         let result = run_build(parsed.syntax(), &|| {
             let current = polls.get();
             polls.set(current + 1);
             current >= checkpoint
         });
-        assert_eq!(result.is_err(), checkpoint < complete_polls.get());
+        let cancelled_failed = result.is_err();
+
+        assert!(baseline_polled);
+        assert_eq!(cancelled_failed, checkpoint < complete_polls.get());
     }
 
     #[rstest::rstest]
@@ -503,7 +517,10 @@ mod coverage_tests {
             .value
             .as_call_expr()
             .unwrap();
-        assert_eq!(run_lookup(&index, call, &|| cancelled).as_deref(), expected);
+
+        let actual = run_lookup(&index, call, &|| cancelled);
+
+        assert_eq!(actual.as_deref(), expected);
     }
 
     #[rstest::rstest]
@@ -530,6 +547,7 @@ mod coverage_tests {
                 true
             },
         );
+
         assert_eq!(replacements, expected);
     }
 }

@@ -7,8 +7,11 @@ use hoimin_core::{
 #[case(MutationProfile::Full, "full")]
 #[case(MutationProfile::Focused, "focused")]
 fn profile_names_match_serialized_strings(#[case] profile: MutationProfile, #[case] name: &str) {
-    assert_eq!(profile.as_str(), name);
-    assert_eq!(serde_json::to_value(profile).unwrap(), name);
+    let actual = profile.as_str();
+    let actual_2 = serde_json::to_value(profile).unwrap();
+
+    assert_eq!(actual, name);
+    assert_eq!(actual_2, name);
 }
 
 #[rstest::rstest]
@@ -19,8 +22,11 @@ fn mode_names_match_serialized_strings(
     #[case] mode: VerificationSelectionMode,
     #[case] name: &str,
 ) {
-    assert_eq!(mode.as_str(), name);
-    assert_eq!(serde_json::to_value(mode).unwrap(), name);
+    let actual = mode.as_str();
+    let actual_2 = serde_json::to_value(mode).unwrap();
+
+    assert_eq!(actual, name);
+    assert_eq!(actual_2, name);
 }
 
 #[rstest::rstest]
@@ -36,8 +42,11 @@ fn policy_names_match_serialized_strings(
     #[case] policy: VerificationSelectionPolicy,
     #[case] name: &str,
 ) {
-    assert_eq!(policy.as_str(), name);
-    assert_eq!(serde_json::to_value(policy).unwrap(), name);
+    let actual = policy.as_str();
+    let actual_2 = serde_json::to_value(policy).unwrap();
+
+    assert_eq!(actual, name);
+    assert_eq!(actual_2, name);
 }
 
 #[rstest::rstest]
@@ -48,14 +57,19 @@ fn scope_names_match_serialized_strings(
     #[case] scope: VerificationSelectionScope,
     #[case] name: &str,
 ) {
-    assert_eq!(scope.as_str(), name);
-    assert_eq!(serde_json::to_value(scope).unwrap(), name);
+    let actual = scope.as_str();
+    let actual_2 = serde_json::to_value(scope).unwrap();
+
+    assert_eq!(actual, name);
+    assert_eq!(actual_2, name);
 }
 #[rstest::rstest]
 #[case(ProcessOutputState::Complete, true)]
 #[case(ProcessOutputState::CloseTimedOut, false)]
 fn process_output_completion(#[case] state: ProcessOutputState, #[case] expected: bool) {
-    assert_eq!(state.is_complete(), expected);
+    let actual = state.is_complete();
+
+    assert_eq!(actual, expected);
 }
 
 #[test]
@@ -65,6 +79,7 @@ fn ledger_exposes_the_limits_it_enforces() {
         copy: 23,
         processes: 5,
     };
+
     assert_eq!(hoimin_core::BudgetLedger::new(limits).limits(), limits);
 }
 
@@ -90,8 +105,11 @@ fn workspace_and_report_failures_retain_their_specific_diagnostics(
     #[case] code: &str,
     #[case] message: &str,
 ) {
-    assert_eq!(failure.code(), code);
-    assert_eq!(failure.message(), message);
+    let actual = failure.code();
+    let actual_2 = failure.message();
+
+    assert_eq!(actual, code);
+    assert_eq!(actual_2, message);
 }
 
 #[rstest::rstest]
@@ -105,12 +123,12 @@ fn zero_resource_limits_reject_the_specific_field(
     #[case] raw: &RawRunLimits,
     #[case] field: &'static str,
 ) {
+    let actual = RunLimits::try_from(raw);
+    let actual_2 = ConfigError::InvalidLimit(field).to_string();
+
+    assert_eq!(actual, Err(ConfigError::InvalidLimit(field)));
     assert_eq!(
-        RunLimits::try_from(raw),
-        Err(ConfigError::InvalidLimit(field))
-    );
-    assert_eq!(
-        ConfigError::InvalidLimit(field).to_string(),
+        actual_2,
         format!(
             "invalid zero or overflowing limit: --{}",
             field.replace('_', "-")
@@ -120,15 +138,16 @@ fn zero_resource_limits_reject_the_specific_field(
 
 #[test]
 fn extension_limit_diagnostic_preserves_its_name() {
-    assert_eq!(
-        ConfigError::InvalidLimit("extension_limit").to_string(),
-        "invalid zero or overflowing limit: extension_limit"
-    );
+    let actual = ConfigError::InvalidLimit("extension_limit").to_string();
+
+    assert_eq!(actual, "invalid zero or overflowing limit: extension_limit");
 }
 
 #[test]
 fn disabled_session_has_no_mutable_configuration() {
-    assert!(hoimin_core::SessionMode::Disabled.config_mut().is_none());
+    let actual = hoimin_core::SessionMode::Disabled.config_mut().is_none();
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -136,17 +155,17 @@ fn disabled_session_has_no_mutable_configuration() {
 #[case("x".repeat(4097))]
 fn aggregate_disk_probe_requires_bounded_nonempty_evidence(#[case] observation: String) {
     use hoimin_core::{DiskCapabilityProbe, DiskEnforcementError, DiskEnforcementReport};
-    assert_eq!(
-        DiskEnforcementReport::verified_aggregate(
-            "linux_project_quota".into(),
-            DiskCapabilityProbe {
-                capability: "project_quota".into(),
-                verified: true,
-                observation
-            }
-        ),
-        Err(DiskEnforcementError::InvalidObservation)
+
+    let actual = DiskEnforcementReport::verified_aggregate(
+        "linux_project_quota".into(),
+        DiskCapabilityProbe {
+            capability: "project_quota".into(),
+            verified: true,
+            observation,
+        },
     );
+
+    assert_eq!(actual, Err(DiskEnforcementError::InvalidObservation));
 }
 
 #[test]
@@ -157,8 +176,11 @@ fn source_paths_must_stay_inside_the_project() {
         sources: vec!["../escape".into()],
         ..Selection::default()
     };
+
+    let actual = resolve_explicit(&outside, &[]);
+
     assert_eq!(
-        resolve_explicit(&outside, &[]),
+        actual,
         Err(TargetError::PathOutsideRoot("../escape".into()))
     );
 }
@@ -174,8 +196,11 @@ fn line_paths_must_stay_inside_the_project() {
         }],
         ..Selection::default()
     };
+
+    let actual = resolve_explicit(&outside, &[]);
+
     assert_eq!(
-        resolve_explicit(&outside, &[]),
+        actual,
         Err(TargetError::PathOutsideRoot("../escape.py".into()))
     );
 }
@@ -193,7 +218,10 @@ fn symbol_selection_resolves_the_discovered_module() {
         ..Selection::default()
     };
     let targets = resolve_explicit(&selected, &[DiscoveredFile::python("calc.py")]).unwrap();
-    assert_eq!(targets.len(), 1);
+
+    let actual = targets.len();
+
+    assert_eq!(actual, 1);
     assert_eq!(targets[0].path, "calc.py");
 }
 
@@ -204,8 +232,11 @@ fn changed_only_selection_admits_the_changed_lines() {
         "calc.py".into(),
         vec![LineRange { start: 2, end: 4 }],
     )]);
+
+    let actual = intersect_changed(&[], &changed);
+
     assert_eq!(
-        intersect_changed(&[], &changed),
+        actual,
         vec![TargetSlice {
             path: "calc.py".into(),
             lines: vec![LineRange { start: 2, end: 4 }],
@@ -231,28 +262,31 @@ fn raw_configuration_propagates_invalid_nested_settings(
         ..hoimin_core::RawRunConfig::default()
     };
     mutate(&mut raw);
-    assert!(
-        hoimin_core::RunConfig::try_from(raw)
-            .unwrap_err()
-            .to_string()
-            .contains(expected)
-    );
+
+    let actual = hoimin_core::RunConfig::try_from(raw)
+        .unwrap_err()
+        .to_string()
+        .contains(expected);
+
+    assert!(actual);
 }
 
 #[test]
 fn environment_request_requires_a_list_of_names() {
     let error = serde_json::from_str::<hoimin_core::EnvironmentRequest>("42").unwrap_err();
-    assert!(error.to_string().contains("expected a sequence"));
+
+    let actual = error.to_string().contains("expected a sequence");
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
 #[case("analyzer_timeout", "--analyzer-timeout")]
 #[case("total_timeout", "--total-timeout")]
 fn timeout_limit_diagnostics_use_the_cli_flag(#[case] field: &'static str, #[case] flag: &str) {
-    assert_eq!(
-        ConfigError::InvalidLimit(field).to_string(),
-        format!("invalid zero or overflowing limit: {flag}")
-    );
+    let actual = ConfigError::InvalidLimit(field).to_string();
+
+    assert_eq!(actual, format!("invalid zero or overflowing limit: {flag}"));
 }
 
 #[test]
@@ -269,6 +303,7 @@ fn output_replacement_keeps_validated_execution_settings() {
         metrics: Some("metrics.json".into()),
     };
     let updated = config.with_output(output.clone());
+
     assert_eq!(updated.output, output);
     assert_eq!(updated.selection, before.selection);
     assert_eq!(updated.limits, before.limits);
@@ -286,15 +321,17 @@ fn janitor_distinguishes_normal_holds_from_cleanup_failures(
     #[case] reason: hoimin_core::JanitorReason,
     #[case] expected: bool,
 ) {
-    assert_eq!(reason.is_normal_hold(), expected);
+    let actual = reason.is_normal_hold();
+
+    assert_eq!(actual, expected);
 }
 
 #[test]
 fn resumed_outcome_decodes_without_redundant_fields() {
-    assert_eq!(
-        serde_json::from_str::<hoimin_core::ResumeOutcome>(r#"{"status":"resumed"}"#).unwrap(),
-        hoimin_core::ResumeOutcome::Resumed
-    );
+    let actual =
+        serde_json::from_str::<hoimin_core::ResumeOutcome>(r#"{"status":"resumed"}"#).unwrap();
+
+    assert_eq!(actual, hoimin_core::ResumeOutcome::Resumed);
 }
 
 #[rstest::rstest]
@@ -313,7 +350,9 @@ fn workspace_budget_failures_have_specific_codes(
     #[case] error: &hoimin_core::WorkspaceBudgetError,
     #[case] code: &str,
 ) {
-    assert_eq!(error.code(), code);
+    let actual = error.code();
+
+    assert_eq!(actual, code);
 }
 
 #[test]
@@ -332,13 +371,19 @@ fn persisted_plan_rejects_non_normalized_import_roots() {
             hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(1)).unwrap(),
         );
     plan.import_roots = vec!["src/./pkg".into()];
-    assert_eq!(plan.validate(), Err(ConfigError::NonNormalizedImportRoots));
+
+    let actual = plan.validate();
+
+    assert_eq!(actual, Err(ConfigError::NonNormalizedImportRoots));
 }
 
 #[test]
 fn environment_request_decodes_a_valid_list_of_names() {
     let request = serde_json::from_str::<hoimin_core::EnvironmentRequest>(r#"["PATH"]"#).unwrap();
-    assert_eq!(request.names(), ["PATH"]);
+
+    let actual = request.names();
+
+    assert_eq!(actual, ["PATH"]);
 }
 
 #[test]
@@ -356,9 +401,14 @@ fn baseline_event_accessors_read_the_stored_header_fields() {
             observed: 0,
         },
     });
-    assert_eq!(event.schema_version(), 123);
-    assert_eq!(event.sequence(), 7);
-    assert_eq!(event.run_id(), "baseline-run");
+
+    let actual = event.schema_version();
+    let actual_2 = event.sequence();
+    let actual_3 = event.run_id();
+
+    assert_eq!(actual, 123);
+    assert_eq!(actual_2, 7);
+    assert_eq!(actual_3, "baseline-run");
 }
 
 #[test]
@@ -380,8 +430,11 @@ fn line_selection_requires_a_discovered_python_file() {
         }],
         ..hoimin_core::Selection::default()
     };
+
+    let actual = hoimin_core::resolve_explicit(&selected, &[]);
+
     assert_eq!(
-        hoimin_core::resolve_explicit(&selected, &[]),
+        actual,
         Err(hoimin_core::TargetError::MissingOrNonPythonFile(
             "missing.py".into()
         ))

@@ -488,7 +488,10 @@ fn empty_graph_observes_cancellation_between_every_stage(
         polls.set(current + 1);
         current >= checkpoint
     };
-    assert_eq!(index.exclude_import_cycles(&cancelled), expected);
+
+    let actual = index.exclude_import_cycles(&cancelled);
+
+    assert_eq!(actual, expected);
 }
 
 fn source_boundary(size: usize, cyclic: bool) -> Vec<(Utf8PathBuf, String)> {

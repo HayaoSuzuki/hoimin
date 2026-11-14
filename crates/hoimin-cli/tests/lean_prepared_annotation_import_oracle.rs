@@ -316,5 +316,7 @@ async fn prepared_annotation_import_public_run_does_not_count_custom_pairs() {
 
 #[test]
 fn parser_rejects_missing_case_identities() {
-    assert!(parse_cases("").err().unwrap().contains("unexpected"));
+    let actual_0 = parse_cases("");
+
+    assert!(actual_0.err().unwrap().contains("unexpected"));
 }

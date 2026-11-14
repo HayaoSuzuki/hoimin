@@ -449,6 +449,60 @@ mod tests {
         }
     }
 
+    proptest::proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_cases(32))]
+
+        #[test]
+        fn duplicate_queue_preserves_the_original_queue_timestamp(
+            before_rejection_ms in 0_u64..10_000,
+            after_rejection_ms in 0_u64..10_000,
+        ) {
+            let mut collector = MetricsCollector::with_clock("run-1", FakeClock::default());
+            collector.queued(7).unwrap();
+            collector.clock.advance_ms(before_rejection_ms);
+
+            let rejected = collector.queued(7);
+            collector.clock.advance_ms(after_rejection_ms);
+            collector.process_started(7).unwrap();
+            collector.process_finished(7, true).unwrap();
+            let metrics = collector.finish(1, 1).unwrap();
+
+            assert!(matches!(rejected, Err(MetricsError::ProcessAlreadyQueued { worker: 7 })));
+            assert_eq!(metrics.workers, vec![WorkerMetric {
+                worker: 7,
+                queue_wait_ms: before_rejection_ms + after_rejection_ms,
+                busy_ms: 0,
+                processes: 1,
+            }]);
+        }
+
+        #[test]
+        fn unqueued_start_preserves_subsequent_process_accounting(
+            idle_ms in 0_u64..10_000,
+            wait_ms in 0_u64..10_000,
+            busy_ms in 0_u64..10_000,
+        ) {
+            let mut collector = MetricsCollector::with_clock("run-1", FakeClock::default());
+
+            let rejected = collector.process_started(7);
+            collector.clock.advance_ms(idle_ms);
+            collector.queued(7).unwrap();
+            collector.clock.advance_ms(wait_ms);
+            collector.process_started(7).unwrap();
+            collector.clock.advance_ms(busy_ms);
+            collector.process_finished(7, true).unwrap();
+            let metrics = collector.finish(1, 1).unwrap();
+
+            assert!(matches!(rejected, Err(MetricsError::ProcessNotQueued { worker: 7 })));
+            assert_eq!(metrics.workers, vec![WorkerMetric {
+                worker: 7,
+                queue_wait_ms: wait_ms,
+                busy_ms,
+                processes: 1,
+            }]);
+        }
+    }
+
     #[test]
     fn collector_accounts_for_stages_queueing_and_overlapping_workers() {
         let mut collector = MetricsCollector::with_clock("run-1", FakeClock::default());

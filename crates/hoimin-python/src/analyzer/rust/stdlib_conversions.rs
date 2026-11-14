@@ -222,7 +222,10 @@ mod coverage_tests {
             .value
             .as_call_expr()
             .unwrap();
-        assert_eq!(imports.is_conversion(call), expected);
+
+        let actual = imports.is_conversion(call);
+
+        assert_eq!(actual, expected);
     }
 
     #[rstest::rstest]
@@ -237,19 +240,20 @@ mod coverage_tests {
         let source = "from decimal import Decimal\nresult = Decimal.from_float(value)\n";
         let parsed = ruff_python_parser::parse_module(source).unwrap();
         let total = std::cell::Cell::new(0);
-        assert!(
-            run_build(parsed.syntax(), &|| {
-                total.set(total.get() + 1);
-                false
-            })
-            .is_ok()
-        );
+        let baseline_built = run_build(parsed.syntax(), &|| {
+            total.set(total.get() + 1);
+            false
+        })
+        .is_ok();
         let polls = std::cell::Cell::new(0);
         let result = run_build(parsed.syntax(), &|| {
             let current = polls.get();
             polls.set(current + 1);
             current >= checkpoint
         });
-        assert_eq!(result.is_err(), checkpoint < total.get());
+        let cancelled_failed = result.is_err();
+
+        assert!(baseline_built);
+        assert_eq!(cancelled_failed, checkpoint < total.get());
     }
 }

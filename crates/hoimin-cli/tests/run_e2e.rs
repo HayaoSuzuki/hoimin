@@ -5144,7 +5144,4 @@ async fn baseline_restoration_preserves_shared_inode_mutation_rejection() {
 #[path = "support/schema_validator_cases.rs"]
 mod schema_validator_cases;
 
-#[test]
-fn schema_validator_rejects_malformed_report_shapes() {
-    schema_validator_cases::check_invalid_schema_instances(validate_schema);
-}
+schema_validator_cases::schema_validator_tests!(validate_schema);

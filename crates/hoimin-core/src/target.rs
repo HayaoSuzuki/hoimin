@@ -1222,10 +1222,9 @@ mod tests {
 
     #[test]
     fn windows_case_normalization_preserves_multi_character_expansions() {
-        assert_eq!(
-            windows_case_key("sRc/école/straße.py"),
-            "SRC/ÉCOLE/STRAßE.PY"
-        );
+        let actual = windows_case_key("sRc/école/straße.py");
+
+        assert_eq!(actual, "SRC/ÉCOLE/STRAßE.PY");
     }
 
     #[rstest::rstest]
@@ -1236,7 +1235,9 @@ mod tests {
         #[case] value: char,
         #[case] expected: char,
     ) {
-        assert_eq!(simple_uppercase(value), expected);
+        let actual = simple_uppercase(value);
+
+        assert_eq!(actual, expected);
     }
 
     #[test]
@@ -1258,8 +1259,11 @@ mod tests {
             }],
             ..Selection::default()
         };
+
+        let actual = resolve_explicit(&selection, &[]);
+
         assert_eq!(
-            resolve_explicit(&selection, &[]),
+            actual,
             Err(TargetError::SymbolModuleNotFound("missing".into()))
         );
     }
@@ -1274,6 +1278,8 @@ mod tests {
         #[case] selection: &Selection,
         #[case] error: TargetError,
     ) {
-        assert_eq!(resolve_explicit(selection, &[]), Err(error));
+        let actual = resolve_explicit(selection, &[]);
+
+        assert_eq!(actual, Err(error));
     }
 }

@@ -247,7 +247,10 @@ mod tests {
         #[case] end: usize,
     ) {
         let index = ScopeIndex::new(vec![ScopeInterval::new(start, end, "invalid")]);
-        assert_eq!(index.symbol_at(5), None);
+
+        let actual = index.symbol_at(5);
+
+        assert_eq!(actual, None);
     }
 
     fn linear_contains(ranges: &[(usize, usize)], start: usize, end: usize) -> bool {

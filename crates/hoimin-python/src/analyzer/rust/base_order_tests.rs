@@ -106,7 +106,10 @@ fn base_order_seeded_layouts_have_more_than_one_three_base_permutation() {
     let observed = (0..24)
         .map(|padding| observed_base_order(3, padding))
         .collect::<std::collections::BTreeSet<_>>();
-    assert!(observed.len() > 1);
+
+    let actual = observed.len() > 1;
+
+    assert!(actual);
 }
 
 #[rstest::rstest]

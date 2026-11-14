@@ -784,18 +784,9 @@ def test_execution_reader_collects_finished_events_and_final_summary(
     assert result.summary == events[3]
 
 
-@pytest.mark.parametrize(
-    ("change", "message"),
-    [
-        ("schema", "unsupported schema"),
-        ("model", "missing fixture/model"),
-        ("dimensions", "all eight dimensions"),
-        ("duplicate-gate", "duplicate gate"),
-        ("gate-status", "unknown gate status"),
-        ("gate-args", "exact non-ignored"),
-    ],
-)
-def test_registry_rejects_invalid_contracts(change: str, message: str) -> None:
+@pytest.fixture
+def invalid_registry(request: pytest.FixtureRequest) -> shapes.Registry:
+    change = request.param
     registry = shapes.load_registry(ROOT / "docs/development/performance/shapes.json")
     if change == "schema":
         registry["schema_version"] = 2
@@ -810,8 +801,26 @@ def test_registry_rejects_invalid_contracts(change: str, message: str) -> None:
     else:
         registry["gates"][0]["status"] = "active"
         registry["gates"][0]["args"] = []
+    return registry
+
+
+@pytest.mark.parametrize(
+    ("invalid_registry", "message"),
+    [
+        ("schema", "unsupported schema"),
+        ("model", "missing fixture/model"),
+        ("dimensions", "all eight dimensions"),
+        ("duplicate-gate", "duplicate gate"),
+        ("gate-status", "unknown gate status"),
+        ("gate-args", "exact non-ignored"),
+    ],
+    indirect=["invalid_registry"],
+)
+def test_registry_rejects_invalid_contracts(
+    invalid_registry: shapes.Registry, message: str
+) -> None:
     with pytest.raises(ValueError, match=message):
-        shapes.validate_registry(registry)
+        shapes.validate_registry(invalid_registry)
 
 
 @pytest.mark.parametrize(
@@ -970,8 +979,11 @@ def test_main_measure_writes_medians_comparisons_and_growth(
             },
         ),
     )
-    assert shapes.main() == 0
+
+    result = shapes.main()
     report = json.loads((output / "result.json").read_text())
+
+    assert result == 0
     assert report["status"] == "passed"
     assert len(report["runs"]) == 18
     assert len(report["medians"]) == 6
@@ -991,9 +1003,16 @@ def test_nonobject_shape_is_invalid() -> None:
     assert not shapes.is_shape(None)
 
 
-@pytest.mark.parametrize("mode", ["gate", "measure"])
+@pytest.mark.parametrize(
+    ("mode", "expected_exit", "expected_status"),
+    [("gate", 0, "passed"), ("measure", 1, "infrastructure-error")],
+)
 def test_main_records_gate_success_or_missing_binary_error(
-    tmp_path: Path, mocker: MockerFixture, mode: str
+    tmp_path: Path,
+    mocker: MockerFixture,
+    mode: str,
+    expected_exit: int,
+    expected_status: str,
 ) -> None:
     original_tool_version_spec = shapes.tool_version
     original_run_gate_spec = shapes.run_gate
@@ -1009,9 +1028,12 @@ def test_main_records_gate_success_or_missing_binary_error(
         "run_gate",
         create_autospec(original_run_gate_spec, side_effect=lambda *_: []),
     )
-    assert shapes.main() == (0 if mode == "gate" else 1)
+
+    result = shapes.main()
     report = json.loads((output / "result.json").read_text())
-    assert report["status"] == ("passed" if mode == "gate" else "infrastructure-error")
+
+    assert result == expected_exit
+    assert report["status"] == expected_status
 
 
 def test_main_records_semantic_mismatch(tmp_path: Path, mocker: MockerFixture) -> None:
@@ -1035,8 +1057,11 @@ def test_main_records_semantic_mismatch(tmp_path: Path, mocker: MockerFixture) -
         "run_gate",
         create_autospec(original_run_gate_spec, side_effect=mismatch),
     )
-    assert shapes.main() == 1
+
+    result = shapes.main()
     report = json.loads((tmp_path / "output/result.json").read_text())
+
+    assert result == 1
     assert report["status"] == "mismatch"
     assert report["error"] == "wrong candidate count"
 

@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Generator
 from contextlib import AbstractContextManager, chdir
 from pathlib import Path
 from types import SimpleNamespace
@@ -415,17 +416,38 @@ def test_deadline_kills_child_in_separate_process_group(tmp_path: Path) -> None:
     assert state in (None, "Z"), f"child {child} remained in process state {state}"
 
 
+@contextlib.contextmanager
+def managed_guard_process(
+    command: list[str], pid_file: Path
+) -> Generator[tuple[subprocess.Popen[bytes], int]]:
+    process = subprocess.Popen(command, cwd=ROOT)  # noqa: S603 -- Fixed test Python code.
+    child_pid = None
+    try:
+        for _ in range(500):  # pragma: no branch -- Exhaustion fails readiness.
+            if pid_file.exists():
+                child_pid = int(pid_file.read_text())
+                break
+            assert process.poll() is None, "runner exited before starting child"
+            time.sleep(0.01)
+        assert child_pid is not None, "child did not start"
+        yield process, child_pid
+    finally:
+        if process.poll() is None:  # pragma: no cover -- Emergency cleanup.
+            process.kill()
+            process.wait(timeout=10)
+        cleanup_guard_child(child_pid)
+
+
+def cleanup_guard_child(child_pid: int | None) -> None:
+    if child_pid is not None:  # pragma: no branch -- Readiness succeeded.
+        with contextlib.suppress(ProcessLookupError):
+            getattr(os, "killpg")(child_pid, getattr(signal, "SIGKILL"))  # noqa: B009
+
+
 @pytest.mark.skipif(
     sys.platform != "linux", reason="Linux session ownership is required"
 )
 def test_sigterm_kills_child_in_separate_process_group(tmp_path: Path) -> None:
-    def cleanup_child(pid: int | None) -> None:
-        if (
-            pid is not None
-        ):  # pragma: no branch -- None occurs only if child startup assertions fail.
-            with contextlib.suppress(ProcessLookupError):
-                getattr(os, "killpg")(pid, getattr(signal, "SIGKILL"))  # noqa: B009
-
     pid_file = tmp_path / "child.pid"
     child = (
         "import os, pathlib, sys, time\n"
@@ -444,49 +466,24 @@ def test_sigterm_kills_child_in_separate_process_group(tmp_path: Path) -> None:
         "except ProofError:\n"
         "    raise SystemExit(17)\n"
     )
-    process = subprocess.Popen(  # noqa: S603 -- fixed test Python code, no shell
-        [sys.executable, "-c", wrapper, str(pid_file), str(tmp_path)], cwd=ROOT
-    )
-    child_pid = None
-    try:
-        for _ in range(
-            500
-        ):  # pragma: no branch -- Exhaustion fails the child-start assertion.
-            if pid_file.exists():
-                child_pid = int(pid_file.read_text())
-                break
-            assert process.poll() is None, "runner exited before starting child"
-            time.sleep(0.01)
-        assert child_pid is not None, "child did not start"
-
+    with managed_guard_process(
+        [sys.executable, "-c", wrapper, str(pid_file), str(tmp_path)], pid_file
+    ) as (process, child_pid):
         process.send_signal(signal.SIGTERM)
         exit_code = process.wait(timeout=10)
 
         assert exit_code == 17
         state_file = Path(f"/proc/{child_pid}/stat")
-        assert not state_file.exists() or (
-            state_file.read_text().split(") ", 1)[1][0] == "Z"
+        assert (
+            not state_file.exists()
+            or state_file.read_text().split(") ", 1)[1][0] == "Z"
         )
-    finally:
-        if (
-            process.poll() is None
-        ):  # pragma: no cover -- Emergency cleanup after a failing test.
-            process.kill()
-            process.wait(timeout=10)
-        cleanup_child(child_pid)
 
 
 @pytest.mark.skipif(
     sys.platform != "linux", reason="Linux proof-child signal delivery required"
 )
 def test_command_child_receives_sigterm(tmp_path: Path) -> None:
-    def cleanup_child(pid: int | None) -> None:
-        if (
-            pid is not None
-        ):  # pragma: no branch -- None occurs only if child startup assertions fail.
-            with contextlib.suppress(ProcessLookupError):
-                getattr(os, "killpg")(pid, getattr(signal, "SIGKILL"))  # noqa: B009
-
     pid_file = tmp_path / "child.pid"
     received = tmp_path / "received"
     child = (
@@ -511,34 +508,33 @@ def test_command_child_receives_sigterm(tmp_path: Path) -> None:
         "except ProofError:\n"
         "    raise SystemExit(17)\n"
     )
-    process = subprocess.Popen(  # noqa: S603 -- fixed test Python code, no shell
+    with managed_guard_process(
         [sys.executable, "-c", wrapper, str(pid_file), str(received), str(tmp_path)],
-        cwd=ROOT,
-    )
-    child_pid = None
-    try:
-        for _ in range(
-            500
-        ):  # pragma: no branch -- Exhaustion fails the child-start assertion.
-            if pid_file.exists():
-                child_pid = int(pid_file.read_text())
-                break
-            assert process.poll() is None, "runner exited before starting child"
-            time.sleep(0.01)
-        assert child_pid is not None, "child did not start"
-
+        pid_file,
+    ) as (process, child_pid):
         os.kill(child_pid, signal.SIGTERM)
         exit_code = process.wait(timeout=10)
 
         assert exit_code == 0
         assert received.read_text() == "received"
+
+
+@contextlib.contextmanager
+def managed_wait_lock_processes(
+    spawned: list[tuple[subprocess.Popen[bytes], threading.Lock]], mocker: MockerFixture
+) -> Generator[None]:
+    try:
+        yield
     finally:
-        if (
-            process.poll() is None
-        ):  # pragma: no cover -- Emergency cleanup after a failing test.
-            process.kill()
-            process.wait(timeout=10)
-        cleanup_child(child_pid)
+        for process, lock in spawned:
+            if lock.locked():  # pragma: no cover -- Only for a stranded test lock.
+                lock.release()
+            mocker.patch.object(process, "_waitpid_lock", lock)
+            if (
+                process.poll() is None
+            ):  # pragma: no cover -- Emergency cleanup after a failing test.
+                verify_creusot.terminate_session(process.pid)
+                process.wait(timeout=5)
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="POSIX subprocess wait lock")
@@ -593,7 +589,7 @@ def test_sigterm_during_wait_lock_acquisition_does_not_deadlock(
         "Popen",
         create_autospec(original_popen_spec, side_effect=start),
     )
-    try:
+    with managed_wait_lock_processes(spawned, mocker):
         with pytest.raises(verify_creusot.ProofError, match="SIGTERM"):
             verify_creusot.run_command(
                 [sys.executable, "-c", "import time; time.sleep(20)"],
@@ -603,16 +599,6 @@ def test_sigterm_during_wait_lock_acquisition_does_not_deadlock(
             )
         assert spawned
         assert all(process.returncode is not None for process, _ in spawned)
-    finally:
-        for process, lock in spawned:
-            if lock.locked():  # pragma: no cover -- Only for a stranded test lock.
-                lock.release()
-            mocker.patch.object(process, "_waitpid_lock", lock)
-            if (
-                process.poll() is None
-            ):  # pragma: no cover -- Emergency cleanup after a failing test.
-                verify_creusot.terminate_session(process.pid)
-                process.wait(timeout=5)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX SIGTERM is required")
@@ -704,6 +690,30 @@ def test_session_cleanup_stops_command_group_before_solver_groups(
     assert 101 in calls
 
 
+@pytest.fixture(params=[False, True], ids=["fresh-generated", "existing-generated"])
+def runner_proof_project(
+    proof_project: tuple[Path, dict[str, Any]], request: pytest.FixtureRequest
+) -> tuple[Path, dict[str, Any]]:
+    root, manifest = proof_project
+    for name in (
+        "Cargo.toml",
+        "Cargo.lock",
+        "why3find.json",
+        "crates/hoimin-budget-math/Cargo.toml",
+        "formal/creusot/obligations.json",
+    ):
+        destination = root / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / name, destination)
+    environment = root / "environment.py"
+    environment.write_text("# preflight fixture\n")
+    toolchain = root / "toolchain.json"
+    toolchain.write_text("{}")
+    if not request.param:
+        shutil.rmtree(root / verify_creusot.GENERATED)
+    return root, manifest
+
+
 @pytest.mark.parametrize(
     ("unresolved_target", "expectation", "expected_results"),
     [
@@ -721,33 +731,18 @@ def test_session_cleanup_stops_command_group_before_solver_groups(
         ),
     ],
 )
-@pytest.mark.parametrize("existing_generated", [False, True])
-def test_runner_requires_three_fresh_target_results(  # noqa: PLR0913 -- Proof outcome and initial-state matrix.
-    proof_project: tuple[Path, dict[str, Any]],
+def test_runner_requires_three_fresh_target_results(
+    runner_proof_project: tuple[Path, dict[str, Any]],
     mocker: MockerFixture,
     unresolved_target: str | None,
     expectation: AbstractContextManager[object],
     expected_results: tuple[list[str], list[dict[str, int]]],
-    *,
-    existing_generated: bool,
 ) -> None:
     original_install_strategies_spec = verify_creusot.install_strategies
     original_run_command_spec = verify_creusot.run_command
-    root, manifest = proof_project
-    for name in (
-        "Cargo.toml",
-        "Cargo.lock",
-        "why3find.json",
-        "crates/hoimin-budget-math/Cargo.toml",
-        "formal/creusot/obligations.json",
-    ):
-        destination = root / name
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(ROOT / name, destination)
+    root, manifest = runner_proof_project
     environment = root / "environment.py"
-    environment.write_text("# preflight fixture\n")
     toolchain = root / "toolchain.json"
-    toolchain.write_text("{}")
     mocker.patch.object(verify_creusot, "ENVIRONMENT", environment)
     mocker.patch.object(verify_creusot, "TOOLCHAIN", toolchain)
     mocker.patch.object(
@@ -790,8 +785,6 @@ def test_runner_requires_three_fresh_target_results(  # noqa: PLR0913 -- Proof o
         "run_command",
         create_autospec(original_run_command_spec, side_effect=fixture_command),
     )
-    if not existing_generated:
-        shutil.rmtree(root / verify_creusot.GENERATED)
     output = root / "report"
     output.mkdir()
 
@@ -882,10 +875,18 @@ def test_nested_trailing_block_comment_is_skipped() -> None:
     assert verify_creusot.trailing_comment_start(source, len(source)) == 0
 
 
-@pytest.mark.parametrize("success", [True, False])
+@pytest.mark.parametrize(
+    ("success", "outcome"),
+    [(True, (0, "passed", 5, None)), (False, (1, "failed", 0, "rejected proof"))],
+)
 def test_main_publishes_success_and_failure_reports(
-    tmp_path: Path, mocker: MockerFixture, *, success: bool
+    tmp_path: Path,
+    mocker: MockerFixture,
+    outcome: tuple[int, str, int, str | None],
+    *,
+    success: bool,
 ) -> None:
+    expected_exit, expected_status, expected_bytes, expected_error = outcome
     original_verify_spec = verify_creusot.verify
     output = tmp_path / "report"
     mocker.patch.object(sys, "argv", ["verify", "--output", str(output)])
@@ -904,18 +905,18 @@ def test_main_publishes_success_and_failure_reports(
             "verify",
             create_autospec(original_verify_spec, side_effect=verify),
         )
-        assert verify_creusot.main() == int(not success)
+
+        result = verify_creusot.main()
         summary = json.loads((output / "summary.json").read_text())
-        assert summary["status"] == ("passed" if success else "failed")
-        assert summary["output_disk_bytes"] == (5 if success else 0)
-        if not success:
-            assert summary["error"] == "rejected proof"
+
+    assert result == expected_exit
+    assert summary["status"] == expected_status
+    assert summary["output_disk_bytes"] == expected_bytes
+    assert summary.get("error") == expected_error
 
 
-def test_linux_session_inventory_ignores_unrelated_and_vanished_processes(
-    tmp_path: Path, mocker: MockerFixture
-) -> None:
-    original_iterdir_spec = Path.iterdir
+@pytest.fixture
+def proc_inventory(tmp_path: Path) -> Path:
     proc = tmp_path / "proc"
     proc.mkdir()
     for name, content in {
@@ -930,6 +931,14 @@ def test_linux_session_inventory_ignores_unrelated_and_vanished_processes(
         directory.mkdir()
         (directory / "stat").write_text(content)
     (proc / "6").mkdir()
+    return proc
+
+
+def test_linux_session_inventory_ignores_unrelated_and_vanished_processes(
+    proc_inventory: Path, mocker: MockerFixture
+) -> None:
+    original_iterdir_spec = Path.iterdir
+    proc = proc_inventory
     original = Path.iterdir
     mocker.patch.object(
         Path,
@@ -939,7 +948,9 @@ def test_linux_session_inventory_ignores_unrelated_and_vanished_processes(
             side_effect=lambda path: original(proc if path == Path("/proc") else path),
         ),
     )
-    assert verify_creusot.owned_session_groups(77) == {11}
+    result = verify_creusot.owned_session_groups(77)
+
+    assert result == {11}
 
 
 def test_proof_report_rejects_goal_before_theory(
@@ -967,13 +978,9 @@ def test_source_scope_rejects_missing_structural_model(
         verify_creusot.check_source_scope(root, manifest)
 
 
-@pytest.mark.parametrize(
-    "measurement", ["Maximum resident set size (kbytes): 123", "missing"]
-)
-def test_command_requires_linux_memory_measurement(
+def mock_linux_memory_measurement(
     tmp_path: Path, mocker: MockerFixture, measurement: str
 ) -> None:
-
     original_is_file_spec = Path.is_file
     original_popen_spec = subprocess.Popen
     mocker.patch.object(sys, "platform", "linux")
@@ -990,24 +997,37 @@ def test_command_requires_linux_memory_measurement(
     mocker.patch.object(
         subprocess, "Popen", create_autospec(original_popen_spec, side_effect=spawn)
     )
-    if measurement == "missing":
-        with pytest.raises(
-            verify_creusot.ProofError, match="missing per-command memory"
-        ):
-            verify_creusot.run_command(
-                ["proof"],
-                cwd=tmp_path,
-                log_path=tmp_path / "command.log",
-                deadline=time.monotonic() + 10,
-            )
-    else:
-        result = verify_creusot.run_command(
+
+
+def test_command_records_linux_memory_measurement(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    mock_linux_memory_measurement(
+        tmp_path, mocker, "Maximum resident set size (kbytes): 123"
+    )
+
+    result = verify_creusot.run_command(
+        ["proof"],
+        cwd=tmp_path,
+        log_path=tmp_path / "command.log",
+        deadline=time.monotonic() + 10,
+    )
+
+    assert result["peak_process_or_child_rss_kib"] == 123
+
+
+def test_command_requires_linux_memory_measurement(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    mock_linux_memory_measurement(tmp_path, mocker, "missing")
+
+    with pytest.raises(verify_creusot.ProofError, match="missing per-command memory"):
+        verify_creusot.run_command(
             ["proof"],
             cwd=tmp_path,
             log_path=tmp_path / "command.log",
             deadline=time.monotonic() + 10,
         )
-        assert result["peak_process_or_child_rss_kib"] == 123
 
 
 def test_session_cleanup_stops_scanning_after_groups_exit(

@@ -230,10 +230,10 @@ mod coverage_tests {
         let range = run_erased(definition, &|| false).unwrap();
         let mut mutated = source.to_owned();
         mutated.replace_range(usize::from(range.start())..usize::from(range.end()), "pass");
-        assert!(
-            ruff_python_parser::parse_module(&mutated).is_ok(),
-            "{mutated}"
-        );
+
+        let actual = ruff_python_parser::parse_module(&mutated).is_ok();
+
+        assert!(actual, "{mutated}");
         assert_eq!(mutated, "def outer():\n    pass\n");
     }
 
@@ -251,10 +251,10 @@ mod coverage_tests {
             usize::from(range.start())..usize::from(range.end()),
             replacements[0],
         );
-        assert!(
-            ruff_python_parser::parse_module(&mutated).is_ok(),
-            "{mutated}"
-        );
+
+        let actual = ruff_python_parser::parse_module(&mutated).is_ok();
+
+        assert!(actual, "{mutated}");
         assert_eq!(mutated, "def outer() -> int:\n    return 0\n");
     }
     fn run_plain(definition: &StmtFunctionDef, cancelled: &dyn Fn() -> bool) -> bool {
@@ -289,7 +289,10 @@ mod coverage_tests {
     ) {
         let parsed = ruff_python_parser::parse_module(source).unwrap();
         let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
-        assert_eq!(run_erased(definition, &|| false).is_some(), eligible);
+
+        let actual = run_erased(definition, &|| false).is_some();
+
+        assert_eq!(actual, eligible);
     }
 
     #[rstest::rstest]
@@ -305,7 +308,10 @@ mod coverage_tests {
     ) {
         let parsed = ruff_python_parser::parse_module(source).unwrap();
         let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
-        assert_eq!(run_plain(definition, &|| false), synchronous);
+
+        let actual = run_plain(definition, &|| false);
+
+        assert_eq!(actual, synchronous);
     }
 
     #[rstest::rstest]
@@ -336,12 +342,11 @@ mod coverage_tests {
         let source = format!("def function() -> {annotation}:\n{body}\n");
         let parsed = ruff_python_parser::parse_module(&source).unwrap();
         let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
-        assert_eq!(
-            run_constants(definition, annotation, &|| false)
-                .map(|(_, replacements)| replacements)
-                .as_deref(),
-            expected
-        );
+
+        let actual =
+            run_constants(definition, annotation, &|| false).map(|(_, replacements)| replacements);
+
+        assert_eq!(actual.as_deref(), expected);
     }
 
     #[rstest::rstest]
@@ -354,12 +359,11 @@ mod coverage_tests {
     ) {
         let parsed = ruff_python_parser::parse_module(source).unwrap();
         let definition = parsed.syntax().body[0].as_function_def_stmt().unwrap();
-        assert_eq!(
-            run_constants(definition, "int", &|| false)
-                .map(|(_, replacements)| replacements)
-                .as_deref(),
-            expected
-        );
+
+        let actual =
+            run_constants(definition, "int", &|| false).map(|(_, replacements)| replacements);
+
+        assert_eq!(actual.as_deref(), expected);
     }
 
     #[rstest::rstest]
@@ -381,7 +385,10 @@ mod coverage_tests {
             polls.set(current + 1);
             current >= checkpoint
         };
-        assert_eq!(run_erased(definition, &cancelled).is_some(), completed);
+
+        let actual = run_erased(definition, &cancelled).is_some();
+
+        assert_eq!(actual, completed);
     }
 
     #[rstest::rstest]
@@ -403,7 +410,10 @@ mod coverage_tests {
             polls.set(current + 1);
             current >= checkpoint
         };
-        assert_eq!(run_plain(definition, &cancelled), completed);
+
+        let actual = run_plain(definition, &cancelled);
+
+        assert_eq!(actual, completed);
     }
 
     #[rstest::rstest]
@@ -424,9 +434,9 @@ mod coverage_tests {
             polls.set(current + 1);
             current >= checkpoint
         };
-        assert_eq!(
-            run_constants(definition, "int", &cancelled).is_some(),
-            completed
-        );
+
+        let actual = run_constants(definition, "int", &cancelled).is_some();
+
+        assert_eq!(actual, completed);
     }
 }

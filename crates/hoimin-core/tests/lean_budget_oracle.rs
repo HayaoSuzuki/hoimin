@@ -511,31 +511,35 @@ fn adapter_rejects_invalid_schedule_metadata(
 ) {
     let mut case = load_corpus().unwrap().remove(0);
     mutate(&mut case);
-    assert!(validate_case(&case).unwrap_err().contains(expected));
+
+    let actual = validate_case(&case).unwrap_err().contains(expected);
+
+    assert!(actual);
 }
 
 #[test]
 fn adapter_rejects_empty_corpus() {
-    assert!(parse_corpus("\n\n").unwrap_err().contains("no cases"));
+    let actual = parse_corpus("\n\n").unwrap_err().contains("no cases");
+
+    assert!(actual);
 }
 
 #[test]
 fn adapter_reports_the_invalid_json_line() {
-    assert!(
-        parse_corpus("{")
-            .unwrap_err()
-            .contains("line 1 is invalid JSON")
-    );
+    let actual = parse_corpus("{")
+        .unwrap_err()
+        .contains("line 1 is invalid JSON");
+
+    assert!(actual);
 }
 
 #[test]
 fn adapter_accepts_whitespace_between_cases() {
-    assert_eq!(
-        parse_corpus(&format!("\n{}\n\n", corpus_text()))
-            .unwrap()
-            .len(),
-        load_corpus().unwrap().len()
-    );
+    let actual = parse_corpus(&format!("\n{}\n\n", corpus_text()))
+        .unwrap()
+        .len();
+
+    assert_eq!(actual, load_corpus().unwrap().len());
 }
 
 #[rstest::rstest]
@@ -550,17 +554,24 @@ fn driver_reports_malformed_steps_as_infrastructure_errors(
 ) {
     let case = load_corpus().unwrap().remove(0);
     let mut driver = Driver::new(&case.limits);
-    assert!(driver.apply(event).unwrap_err().contains(expected));
+
+    let actual = driver.apply(event).unwrap_err().contains(expected);
+
+    assert!(actual);
 }
 
 #[test]
 fn case_execution_reports_a_driver_infrastructure_error() {
     let mut invalid = load_corpus().unwrap().remove(0);
     invalid.schedule = vec!["unknown".into()];
+
     let result = run_case(&invalid);
+
+    let actual = result.detail.as_deref();
+
     assert_eq!(result.class, CaseClass::InfrastructureError);
     assert_eq!(result.actual, vec![]);
-    assert_eq!(result.detail.as_deref(), Some("unknown event unknown"));
+    assert_eq!(actual, Some("unknown event unknown"));
 }
 
 #[test]
@@ -570,17 +581,20 @@ fn memory_reservation_beyond_the_limit_is_rejected() {
         copy: 1,
         processes: 1,
     });
+
     let result = driver.apply("reserve:memory:2").unwrap();
+
+    let actual = result.error_code.as_deref();
+
     assert_eq!(result.verdict, "rejected");
-    assert_eq!(result.error_code.as_deref(), Some("budget.limit"));
+    assert_eq!(actual, Some("budget.limit"));
 }
 
 #[test]
 fn allocator_exhaustion_has_a_specific_error_code() {
-    assert_eq!(
-        reserve_error_code(&ReserveError::ReservationIdsExhausted),
-        "budget.reservation_id.exhausted"
-    );
+    let actual = reserve_error_code(&ReserveError::ReservationIdsExhausted);
+
+    assert_eq!(actual, "budget.reservation_id.exhausted");
 }
 
 #[test]
@@ -590,20 +604,27 @@ fn unexpected_workspace_errors_remain_infrastructure_errors() {
         workers: 2,
         reported: 1,
     };
+
+    let actual = workspace_reserve_code(error.clone());
+
     assert_eq!(
-        workspace_reserve_code(error.clone()),
+        actual,
         format!("infrastructure.unexpected_workspace_error.{}", error.code())
     );
 }
 
 #[test]
 fn owned_panic_payload_retains_its_message() {
-    assert_eq!(panic_message(&"owned panic".to_owned()), "owned panic");
+    let actual = panic_message(&"owned panic".to_owned());
+
+    assert_eq!(actual, "owned panic");
 }
 
 #[test]
 fn non_string_panic_payload_has_a_stable_description() {
-    assert_eq!(panic_message(&17u32), "non-string panic payload");
+    let actual = panic_message(&17u32);
+
+    assert_eq!(actual, "non-string panic payload");
 }
 
 #[rstest::rstest]
@@ -619,10 +640,14 @@ fn isolation_boundary_preserves_success_or_classifies_callback_panic(
     #[case] detail: Option<&str>,
 ) {
     let case = load_corpus().unwrap().remove(0);
+
     let result = isolate_case(&case, || {
         assert!(!should_panic, "isolation probe");
         run_case(&case)
     });
+
+    let actual = result.detail.as_deref();
+
     assert_eq!(result.class, class);
-    assert_eq!(result.detail.as_deref(), detail);
+    assert_eq!(actual, detail);
 }

@@ -864,6 +864,7 @@ fn oracle_correspondence() {
     let selected = std::env::var("HOIMIN_SESSION_ORACLE_CASE").ok();
     let selected_cases = select_cases(&cases, selected.as_deref());
     let results = selected_cases.into_iter().map(run_case).collect::<Vec<_>>();
+
     assert_correspondence(&results);
 }
 

@@ -122,7 +122,10 @@ mod iterator_tests {
     fn an_empty_diverse_iterator_stays_exhausted(#[values(false, true)] by_line: bool) {
         let mut candidates = DiverseCandidates::new(&[], by_line);
 
-        assert!(candidates.next().is_none());
-        assert!(candidates.next().is_none());
+        let actual_0 = candidates.next();
+        let actual_1 = candidates.next();
+
+        assert!(actual_0.is_none());
+        assert!(actual_1.is_none());
     }
 }

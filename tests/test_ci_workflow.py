@@ -2654,46 +2654,51 @@ def test_packaged_macos_archive_runs_on_older_supported_os() -> None:
     assert runner == "macos-15"
 
 
-@pytest.mark.parametrize("git_available", [True, False])
-@pytest.mark.parametrize("bundled_bash", [True, False])
-def test_windows_bash_resolution_prefers_git_installation(
+def prepare_windows_git_installation(
     tmp_path: Path,
     mocker: MockerFixture,
     *,
     git_available: bool,
     bundled_bash: bool,
 ) -> None:
-    original_which_spec = shutil.which
     git = tmp_path / "git" / "cmd" / "git.exe"
     git.parent.mkdir(parents=True)
     bash = tmp_path / "git" / "bin" / "bash.exe"
     if bundled_bash:
         bash.parent.mkdir()
         bash.touch()
+    commands = {
+        "git": str(git) if git_available else None,
+        "bash": str(tmp_path / "fallback-bash"),
+    }
     mocker.patch.dict(globals(), {"os": SimpleNamespace(name="nt")})
-    mocker.patch.object(
-        shutil,
-        "which",
-        create_autospec(
-            original_which_spec,
-            side_effect=lambda name: (
-                str(git) if name == "git" and git_available else "fallback-bash"
-            ),
-        ),
+    mocker.patch.object(shutil, "which", autospec=True, side_effect=commands.get)
+
+
+@pytest.mark.parametrize(
+    ("git_available", "bundled_bash", "expected"),
+    [
+        (True, True, "git/bin/bash.exe"),
+        (True, False, "fallback-bash"),
+        (False, True, "fallback-bash"),
+        (False, False, "fallback-bash"),
+    ],
+)
+def test_windows_bash_resolution_prefers_git_installation(
+    tmp_path: Path,
+    mocker: MockerFixture,
+    expected: str,
+    *,
+    git_available: bool,
+    bundled_bash: bool,
+) -> None:
+    prepare_windows_git_installation(
+        tmp_path, mocker, git_available=git_available, bundled_bash=bundled_bash
     )
-    # An absent git executable must fall through to the independently found bash.
-    if not git_available:
-        mocker.patch.object(
-            shutil,
-            "which",
-            create_autospec(
-                original_which_spec,
-                side_effect=lambda name: None if name == "git" else "fallback-bash",
-            ),
-        )
-    assert bash_executable() == (
-        str(bash) if git_available and bundled_bash else "fallback-bash"
-    )
+
+    result = bash_executable()
+
+    assert result == str(tmp_path / expected)
 
 
 def test_windows_bash_resolution_requires_available_shell(
@@ -2710,10 +2715,7 @@ def test_windows_bash_resolution_requires_available_shell(
         bash_executable()
 
 
-@pytest.mark.parametrize("drive", ["C:", ""])
-def test_windows_git_bash_paths_require_drive_and_normalize_separators(
-    tmp_path: Path, mocker: MockerFixture, drive: str
-) -> None:
+def mock_windows_path_drive(mocker: MockerFixture, drive: str) -> None:
     mocker.patch.dict(
         globals(),
         {
@@ -2724,11 +2726,25 @@ def test_windows_git_bash_paths_require_drive_and_normalize_separators(
             )
         },
     )
-    if drive:
-        assert git_bash_path(tmp_path) == "/c/work/project"
-    else:
-        with pytest.raises(AssertionError, match="must be on a drive"):
-            git_bash_path(tmp_path)
+
+
+def test_windows_git_bash_paths_normalize_separators(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    mock_windows_path_drive(mocker, "C:")
+
+    result = git_bash_path(tmp_path)
+
+    assert result == "/c/work/project"
+
+
+def test_windows_git_bash_paths_require_drive(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    mock_windows_path_drive(mocker, "")
+
+    with pytest.raises(AssertionError, match="must be on a drive"):
+        git_bash_path(tmp_path)
 
 
 def test_missing_lean_invocation_record_means_no_calls(tmp_path: Path) -> None:

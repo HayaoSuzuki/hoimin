@@ -14,6 +14,7 @@ from pytest_mock import MockerFixture
 from tools.boundary_contracts import (
     REGISTRY,
     BoundaryStatus,
+    StrictCase,
     classify,
     execute,
     load_registry,
@@ -251,13 +252,19 @@ def test_report_rejects_duplicate_or_unknown_status_rows(
     assert not (tmp_path / "report.json").exists()
 
 
+@pytest.fixture
+def strict_case() -> StrictCase:
+    case = load_registry()["cases"][0]
+    assert case["mode"] == "strict"
+    return case
+
+
 def test_strict_execution_removes_inherited_corpus_filters(
-    tmp_path: Path, mocker: MockerFixture
+    tmp_path: Path, mocker: MockerFixture, strict_case: StrictCase
 ) -> None:
     original_killpg_spec = getattr(os, "killpg", Mock())
-    case = load_registry()["cases"][0]
-
-    assert case["mode"] == "strict"
+    case = strict_case
+    environments: list[dict[str, str]] = []
 
     def spawn(
         _argv: list[str],
@@ -266,9 +273,7 @@ def test_strict_execution_removes_inherited_corpus_filters(
         stdout: TextIO,
         **_kwargs: object,
     ) -> Mock:
-        assert "HOIMIN_BOUNDARY_CASE" not in env
-        assert "HOIMIN_SESSION_ORACLE_CASE" not in env
-        assert env["PATH"] == os.environ["PATH"]
+        environments.append(env.copy())
         stdout.write(f"test {case['test']} ... ok\ntest result: ok. 1 passed;")
         stdout.flush()
         return Mock(wait=Mock(return_value=0))
@@ -287,14 +292,18 @@ def test_strict_execution_removes_inherited_corpus_filters(
     execute_result = execute(case, tmp_path)
 
     assert execute_result["status"] == "match"
+    assert len(environments) == 1
+    environment = environments[0]
+    assert "HOIMIN_BOUNDARY_CASE" not in environment
+    assert "HOIMIN_SESSION_ORACLE_CASE" not in environment
+    assert environment["PATH"] == os.environ["PATH"]
 
 
 def test_strict_execution_includes_every_parameterized_case(
-    tmp_path: Path, mocker: MockerFixture
+    tmp_path: Path, mocker: MockerFixture, strict_case: StrictCase
 ) -> None:
     original_killpg_spec = getattr(os, "killpg", Mock())
-    case = load_registry()["cases"][0]
-    assert case["mode"] == "strict"
+    case = strict_case
     calls: list[list[str]] = []
 
     def spawn(argv: list[str], *, stdout: TextIO, **_kwargs: object) -> Mock:
@@ -490,7 +499,8 @@ def test_strict_cli_fails_for_semantic_mismatch(
         create_autospec(original_execute_spec, side_effect=result),
     )
     exit_code = main(["strict", "--output", str(tmp_path)])
-    assert exit_code == int(status == "mismatch")
     report = json.loads((tmp_path / "strict.json").read_text(encoding="utf-8"))
+
+    assert exit_code == int(status == "mismatch")
     assert report["rows"]
     assert all(row["status"] == status for row in report["rows"])

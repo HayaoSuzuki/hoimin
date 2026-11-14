@@ -163,9 +163,13 @@ mod tests {
         std::fs::write(&path, payload).unwrap();
         let file = File::options().write(true).open(path).unwrap();
         let mut reader = SnapshotReader::new(file).unwrap();
-        assert_eq!(reader.read(&mut []).unwrap(), 0);
+
+        let actual_0 = reader.read(&mut []);
+        let actual_2 = reader.file.stream_position();
+
+        assert_eq!(actual_0.unwrap(), 0);
         assert_eq!(reader.remaining, u64::try_from(payload.len()).unwrap());
-        assert_eq!(reader.file.stream_position().unwrap(), 0);
+        assert_eq!(actual_2.unwrap(), 0);
     }
 
     #[rstest::rstest]
@@ -179,10 +183,13 @@ mod tests {
         let expected = file.try_clone().unwrap().read(&mut [7]).unwrap_err();
         let mut reader = SnapshotReader::new(file).unwrap();
         let mut bytes = [7];
+
         let error = reader.read(&mut bytes).unwrap_err();
+        let actual_2 = is_snapshot_length_change(&error);
+
         assert_eq!(error.kind(), expected.kind());
         assert_eq!(error.raw_os_error(), expected.raw_os_error());
-        assert!(!is_snapshot_length_change(&error));
+        assert!(!actual_2);
         assert_eq!(bytes, [7]);
         assert_eq!(reader.remaining, u64::try_from(payload.len()).unwrap());
     }

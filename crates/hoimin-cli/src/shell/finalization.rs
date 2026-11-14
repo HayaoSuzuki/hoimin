@@ -525,11 +525,18 @@ mod tests {
     #[test]
     fn repeated_inner_drain_completion_reports_the_rejected_component() {
         let mut owner = ExecutionFinalization::new().unwrap();
-        assert!(owner.observe_inner_drains(JOINED).unwrap());
+        let observed_1 = owner.observe_inner_drains(JOINED).unwrap();
         let previous = owner.snapshot();
         let error = owner.observe_inner_drains(JOINED).unwrap_err();
-        assert_eq!(error, "disk lifecycle rejected process drain completion");
-        assert_eq!(owner.snapshot(), previous);
+        let observed_2 = (error).clone();
+        let observed_3 = owner.snapshot();
+
+        assert!(observed_1);
+        assert_eq!(
+            observed_2,
+            "disk lifecycle rejected process drain completion"
+        );
+        assert_eq!(observed_3, previous);
     }
 
     #[test]
@@ -538,11 +545,15 @@ mod tests {
         let error = owner
             .observe_measurement(Err(CleanupThreadFailure::TimedOut))
             .unwrap_err();
-        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        let observed_1 = error.kind();
         let mut summary = summary();
         owner.project_summary(&mut summary);
-        assert!(owner.cleaned());
-        assert_eq!(summary.disk.removed_logical_bytes, None);
+        let observed_2 = owner.cleaned();
+        let observed_3 = summary.disk.removed_logical_bytes;
+
+        assert_eq!(observed_1, io::ErrorKind::TimedOut);
+        assert!(observed_2);
+        assert_eq!(observed_3, None);
     }
 
     #[test]
@@ -554,6 +565,7 @@ mod tests {
         other.details = vec!["preserve unrelated evidence".to_owned()];
         summary.disk.cleanup.insert(0, other.clone());
         owner.project_summary(&mut summary);
+
         assert_eq!(summary.disk.cleanup[0], other);
         assert_eq!(summary.disk.cleanup[1].examined_entries, 7);
         assert_eq!(summary.disk.removed_logical_bytes, Some(123));
@@ -565,6 +577,7 @@ mod tests {
         let mut summary = summary();
         summary.disk.cleanup.clear();
         owner.project_summary(&mut summary);
+
         assert_eq!(summary.disk.cleanup, Vec::new());
         assert_eq!(summary.disk.removed_logical_bytes, Some(123));
     }
@@ -583,7 +596,11 @@ mod tests {
             Ok(BTreeMap::from([(FilesystemKey(1), 0)]))
         })
         .unwrap();
-        assert_eq!(owner.end_available_bytes(FilesystemKey(1)), Some(0));
-        assert_eq!(owner.end_available_bytes(FilesystemKey(2)), None);
+
+        let actual = owner.end_available_bytes(FilesystemKey(1));
+        let actual_2 = owner.end_available_bytes(FilesystemKey(2));
+
+        assert_eq!(actual, Some(0));
+        assert_eq!(actual_2, None);
     }
 }

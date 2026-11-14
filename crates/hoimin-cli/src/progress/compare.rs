@@ -423,9 +423,9 @@ mod detail_tests {
     #[case::process_limit(MutationStatus::ProcessLimit)]
     fn inconclusive_outcomes_do_not_identify_a_transition(#[case] status: MutationStatus) {
         use MutationStatus::Survived;
-
         let before = report(&[("a", "body", Survived)]);
         let after = report(&[("a", "body", status)]);
+
         let (comparison, changes) = compare_usable_reports(
             &before,
             &after,
@@ -441,7 +441,6 @@ mod detail_tests {
     #[test]
     fn ambiguous_content_fallback_does_not_identify_a_transition() {
         use MutationStatus::{Killed, Survived};
-
         // Content fallback is ambiguous, including the otherwise identical ID.
         let before = report(&[("a", "body", Killed), ("b", "body", Killed)]);
         let after = report(&[("a", "body", Survived)]);
@@ -451,8 +450,11 @@ mod detail_tests {
             candidate_set_eligibility(&before, &after),
             Some(100),
         );
+
+        let actual_1 = changes.transitions.is_empty();
+
         assert_eq!(comparison.ambiguous, 1);
-        assert!(changes.transitions.is_empty());
+        assert!(actual_1);
     }
 
     #[test]
@@ -467,9 +469,12 @@ mod detail_tests {
             candidate_set_eligibility(&before, &after),
             Some(100),
         );
+
+        let actual_2 = changes.transitions.is_empty();
+
         assert_eq!(comparison.regressions, 1);
         assert_eq!(changes.unidentified, 1);
-        assert!(changes.transitions.is_empty());
+        assert!(actual_2);
     }
 
     #[rstest::rstest]
@@ -489,7 +494,6 @@ mod detail_tests {
             .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
             .find(|case| case["id"] == case_id)
             .expect("selected generated oracle case exists");
-        assert_ne!(case["mode"], "strict");
         let reports = case["reports"].as_array().unwrap();
         let build = |value: &serde_json::Value| {
             let owned: Vec<_> = value["mutants"]
@@ -518,10 +522,11 @@ mod detail_tests {
             candidate_set_eligibility(&previous, &current),
             Some(1),
         );
-
         let actual = serde_json::to_value(changes).unwrap();
+
         let expected = &case["expected"]["details"];
 
+        assert_ne!(case["mode"], "strict");
         assert_eq!(actual["omitted"], expected["omitted"], "{}", case["id"]);
         assert_eq!(
             actual["unidentified"], expected["unidentified"],

@@ -253,7 +253,10 @@ mod coverage_tests {
         let source = format!("for {target} in values:\n pass");
         let parsed = ruff_python_parser::parse_module(&source).unwrap();
         let target = &parsed.syntax().body[0].as_for_stmt().unwrap().target;
-        assert_eq!(run_binds(target, name, &|| false), Ok(expected));
+
+        let actual = run_binds(target, name, &|| false);
+
+        assert_eq!(actual, Ok(expected));
     }
 
     #[rstest::rstest]
@@ -265,15 +268,16 @@ mod coverage_tests {
                 .unwrap();
         let target = &parsed.syntax().body[0].as_for_stmt().unwrap().target;
         let polls = std::cell::Cell::new(0);
-        assert_eq!(
-            run_binds(target, "rest", &|| {
-                let current = polls.get();
-                polls.set(current + 1);
-                current >= checkpoint
-            }),
-            Err(AnalysisCancelled)
-        );
-        assert_eq!(polls.get(), checkpoint + 1);
+
+        let actual = run_binds(target, "rest", &|| {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= checkpoint
+        });
+        let actual_2 = polls.get();
+
+        assert_eq!(actual, Err(AnalysisCancelled));
+        assert_eq!(actual_2, checkpoint + 1);
     }
     const CAPTURES: &str = "for value in values:\n first = lambda value=value: value\n second = lambda value=value: value\n";
     const REPLACEMENT: &str = "(lambda _hoimin_get, _hoimin_missing: lambda value=_hoimin_missing: (_hoimin_get() if value is _hoimin_missing else value))(lambda: value, [])";
@@ -319,6 +323,7 @@ mod coverage_tests {
             &mut recording(&mut mutations, accepted),
         )
         .unwrap();
+
         assert_eq!(mutations, vec![REPLACEMENT; count]);
     }
 
@@ -344,7 +349,7 @@ mod coverage_tests {
             &mut recording(&mut complete, true),
         )
         .unwrap();
-        assert_eq!(complete, [REPLACEMENT, REPLACEMENT]);
+        let baseline_replacements = (complete).clone();
         let polls = std::cell::Cell::new(0);
         let mut partial = Vec::new();
         let result = run_emit(
@@ -358,8 +363,13 @@ mod coverage_tests {
             &mut all_selected,
             &mut recording(&mut partial, true),
         );
-        assert_eq!(result.is_err(), checkpoint < total.get());
-        assert_eq!(polls.get(), total.get().min(checkpoint + 1));
-        assert!(complete.starts_with(&partial));
+        let cancelled_failed = result.is_err();
+        let poll_count = polls.get();
+        let retained_prefix = complete.starts_with(&partial);
+
+        assert_eq!(baseline_replacements, [REPLACEMENT, REPLACEMENT]);
+        assert_eq!(cancelled_failed, checkpoint < total.get());
+        assert_eq!(poll_count, total.get().min(checkpoint + 1));
+        assert!(retained_prefix);
     }
 }

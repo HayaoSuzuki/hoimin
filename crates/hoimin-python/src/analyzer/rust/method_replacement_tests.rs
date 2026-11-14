@@ -339,7 +339,10 @@ fn method_edit_helpers_reject_unsupported_call_shapes(
         .value
         .as_call_expr()
         .unwrap();
-    assert_eq!(helper(source, call, &facts), None);
+
+    let actual = helper(source, call, &facts);
+
+    assert_eq!(actual, None);
 }
 
 #[rstest::rstest]
@@ -358,10 +361,10 @@ fn call_replacement_rejects_source_or_edits_outside_the_call(
         .value
         .as_call_expr()
         .unwrap();
-    assert_eq!(
-        replace_within_call(source, call, [(edit, "replacement")]),
-        None
-    );
+
+    let actual = replace_within_call(source, call, [(edit, "replacement")]);
+
+    assert_eq!(actual, None);
 }
 
 type LiteralReplacement = fn(&str, &Expr, &AstFacts) -> Option<String>;
@@ -413,7 +416,10 @@ fn literal_rewrites_require_complete_matching_delimiters(
     let parsed = parse_module(original).unwrap();
     let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), original);
     let expression = &parsed.syntax().body[0].as_expr_stmt().unwrap().value;
-    assert_eq!(rewrite(source, expression, &facts).as_deref(), expected);
+
+    let actual = rewrite(source, expression, &facts);
+
+    assert_eq!(actual.as_deref(), expected);
 }
 
 #[rstest::rstest]
@@ -432,10 +438,10 @@ fn integer_neighbors_accept_only_supported_decimal_spelling_and_magnitude(
     #[case] expected: Option<(i128, bool)>,
 ) {
     let parsed = ruff_python_parser::parse_expression(source).unwrap();
-    assert_eq!(
-        decimal_literal_value(source, &parsed.syntax().body),
-        expected
-    );
+
+    let actual = decimal_literal_value(source, &parsed.syntax().body);
+
+    assert_eq!(actual, expected);
 }
 
 fn boundary_rename_ordering(source: &str, call: &ExprCall, _: &AstFacts) -> Option<String> {
@@ -474,10 +480,10 @@ fn call_edit_helpers_reject_missing_metadata_or_unavailable_fragments(
         .value
         .as_call_expr()
         .unwrap();
-    assert_eq!(
-        helper(&source[..available_len.min(source.len())], call, &facts),
-        None
-    );
+
+    let actual = helper(&source[..available_len.min(source.len())], call, &facts);
+
+    assert_eq!(actual, None);
 }
 
 fn boundary_subscript_to_get(source: &str, expression: &Expr, facts: &AstFacts) -> Option<String> {
@@ -508,10 +514,10 @@ fn subscript_edit_requires_bracket_metadata_and_available_key_source(
     let mut facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
     facts.tokens = Some(&tokens);
     let expression = &parsed.syntax().body[0].as_expr_stmt().unwrap().value;
-    assert_eq!(
-        boundary_subscript_to_get(&source[..available_len], expression, &facts),
-        None
-    );
+
+    let actual = boundary_subscript_to_get(&source[..available_len], expression, &facts);
+
+    assert_eq!(actual, None);
 }
 
 #[rstest::rstest]
@@ -520,5 +526,8 @@ fn subscript_edit_requires_bracket_metadata_and_available_key_source(
 fn decimal_literal_decoder_rejects_unavailable_operand_source(#[case] source: &str) {
     let parsed = parse_module(source).unwrap();
     let expression = &parsed.syntax().body[0].as_expr_stmt().unwrap().value;
-    assert_eq!(decimal_literal_value("", expression), None);
+
+    let actual = decimal_literal_value("", expression);
+
+    assert_eq!(actual, None);
 }

@@ -1,6 +1,7 @@
 use super::model::*;
 use super::store::ReviewStore;
 use super::tests::{draft, key};
+use proptest::prelude::*;
 
 type InitializationHook = Box<dyn Fn(&str) -> Result<(), super::ReviewError>>;
 
@@ -369,6 +370,135 @@ fn store_rejects_foreign_schema() {
 
     assert!(result.is_err());
     assert_eq!(std::fs::read(&path).unwrap(), bytes);
+}
+
+#[rstest::rstest]
+#[case::metadata("DROP TABLE metadata")]
+#[case::candidates("DROP TABLE candidates")]
+#[case::events("DROP TABLE review_events")]
+fn store_rejects_missing_required_tables_without_changes(#[case] corruption: &str) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reviews.sqlite3");
+    let key = key();
+    drop(ReviewStore::open_write(&path, &key.project).unwrap());
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection.execute_batch(corruption).unwrap();
+    drop(connection);
+    let before = std::fs::read(&path).unwrap();
+
+    let error = ReviewStore::open_read(&path, &key.project).err().unwrap();
+
+    assert_eq!(
+        error.to_string(),
+        "invalid review input: review schema is incomplete"
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
+    #[test]
+    fn store_rejects_revision_blobs_with_invalid_width(
+        revision in prop_oneof![
+            proptest::collection::vec(any::<u8>(), 0..8),
+            proptest::collection::vec(any::<u8>(), 9..=32),
+        ],
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("reviews.sqlite3");
+        let key = key();
+        let mut store = ReviewStore::open_write(&path, &key.project).unwrap();
+        store.append(&key, SourceState::Fresh, 0, draft()).unwrap();
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection.pragma_update(None, "ignore_check_constraints", true).unwrap();
+        connection.execute("UPDATE review_events SET revision=?1", [revision]).unwrap();
+        drop(connection);
+        let before = std::fs::read(&path).unwrap();
+
+        let error = store.snapshot().unwrap_err();
+
+        prop_assert_eq!(error.to_string(), "invalid review input: invalid stored revision");
+        prop_assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+}
+
+type StoreReader = fn(&mut ReviewStore) -> Result<(), super::ReviewError>;
+
+#[rstest::rstest]
+#[case::snapshot(|store: &mut ReviewStore| store.snapshot().map(|_| ()))]
+#[case::unrelated_candidate(|store: &mut ReviewStore| store.candidate("not-in-store").map(|_| ()))]
+fn store_rejects_candidate_identity_conflicts_without_changes(#[case] read: StoreReader) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reviews.sqlite3");
+    let key = key();
+    let mut store = ReviewStore::open_write(&path, &key.project).unwrap();
+    store.append(&key, SourceState::Fresh, 0, draft()).unwrap();
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .pragma_update(None, "foreign_keys", false)
+        .unwrap();
+    connection
+        .execute("UPDATE candidates SET id='forged'", [])
+        .unwrap();
+    drop(connection);
+    let before = std::fs::read(&path).unwrap();
+
+    let error = read(&mut store).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "invalid review input: stored candidate identity conflict"
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+}
+
+#[test]
+fn store_rejects_appending_a_foreign_project_without_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reviews.sqlite3");
+    let mut key = key();
+    let mut store = ReviewStore::open_write(&path, &key.project).unwrap();
+    key.project = "/other-project".into();
+
+    let error = store
+        .append(&key, SourceState::Fresh, 0, draft())
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "invalid review input: store belongs to another project"
+    );
+    assert_eq!(store.snapshot().unwrap(), Vec::new());
+}
+
+#[test]
+fn store_rejects_history_above_the_event_limit_without_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reviews.sqlite3");
+    let key = key();
+    let mut store = ReviewStore::open_write(&path, &key.project).unwrap();
+    store.append(&key, SourceState::Fresh, 0, draft()).unwrap();
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute(
+            "WITH RECURSIVE revisions(n) AS (
+             SELECT 2 UNION ALL SELECT n+1 FROM revisions WHERE n<10001
+         ) INSERT INTO review_events(candidate_id, revision, draft_json)
+         SELECT ?1, CAST(printf('%08d', n) AS BLOB), ?2 FROM revisions",
+            rusqlite::params![key.candidate_id, serde_json::to_string(&draft()).unwrap()],
+        )
+        .unwrap();
+    drop(connection);
+    let before = std::fs::read(&path).unwrap();
+
+    let error = store.snapshot().unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "invalid review input: review event limit exceeded"
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), before);
 }
 
 #[test]

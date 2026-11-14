@@ -5,6 +5,7 @@ import importlib.util
 import json
 import runpy
 import sys
+from contextlib import AbstractContextManager, nullcontext
 from ctypes import wintypes
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -121,23 +122,14 @@ def test_baseline_does_not_spawn_descendants(
     probe.main()
 
 
-@pytest.mark.parametrize(
-    ("mode", "first", "release"),
-    [
-        ("memory", 12, "immediate"),
-        ("process", 11, "delayed"),
-        ("process", 12, "child_exit"),
-        ("process", 12, "timeout"),
-    ],
-)
-def test_mutant_publishes_job_observation_and_waits_for_controller(  # noqa: PLR0913, PLR0917 -- Protocol scenarios vary independently.
+@pytest.fixture
+def mutant_protocol(
+    request: pytest.FixtureRequest,
     probe: ModuleType,
     mocker: MockerFixture,
     tmp_path: Path,
-    mode: str,
-    first: int,
-    release: str,
-) -> None:
+) -> tuple[ModuleType, Path]:
+    mode, first, release = cast("tuple[str, int, str]", request.param)
     original_import_module_spec = probe.import_module
     original_popen_spec = probe.subprocess.Popen
     original_monotonic_spec = probe.time.monotonic
@@ -174,22 +166,40 @@ def test_mutant_publishes_job_observation_and_waits_for_controller(  # noqa: PLR
     )
     if release == "immediate":
         (tmp_path / "release").touch()
-    if release in {"child_exit", "timeout"}:
-        with pytest.raises(AssertionError if release == "child_exit" else TimeoutError):
-            probe.main()
-    else:
-        if release == "delayed":
-            mocker.patch.object(
-                probe.time,
-                "monotonic",
-                create_autospec(original_monotonic_spec, side_effect=lambda: 0),
-            )
+    elif release == "delayed":
+        mocker.patch.object(
+            probe.time,
+            "monotonic",
+            create_autospec(original_monotonic_spec, side_effect=lambda: 0),
+        )
+    return probe, tmp_path
+
+
+@pytest.mark.parametrize(
+    ("mutant_protocol", "expectation", "identity", "payload_bytes"),
+    [
+        (("memory", 12, "immediate"), nullcontext(), "first", 96 * 1024 * 1024),
+        (("process", 11, "delayed"), nullcontext(), "second", 0),
+        (("process", 12, "child_exit"), pytest.raises(AssertionError), "first", 0),
+        (("process", 12, "timeout"), pytest.raises(TimeoutError), "first", 0),
+    ],
+    indirect=["mutant_protocol"],
+)
+def test_mutant_publishes_job_observation_and_waits_for_controller(
+    mutant_protocol: tuple[ModuleType, Path],
+    expectation: AbstractContextManager[object],
+    identity: str,
+    payload_bytes: int,
+) -> None:
+    probe, tmp_path = mutant_protocol
+
+    with expectation:
         probe.main()
-    identity = "first" if first != 11 else "second"
+
     observation = json.loads((tmp_path / f"{identity}.json").read_text())
     assert observation["child_pid"] == 123
     assert observation["active_processes"] == 2
-    assert observation["payload_bytes"] == (96 * 1024 * 1024 if mode == "memory" else 0)
+    assert observation["payload_bytes"] == payload_bytes
     assert not (tmp_path / f"{identity}.tmp").exists()
 
 

@@ -347,11 +347,15 @@ fn qualified_spelling_preserves_provider_prefix_and_shadowing(#[case] scenario_i
 #[test]
 fn qualified_replacement_cannot_use_a_direct_type_import_as_a_module() {
     let imports = imports_from("from typing import Sequence as t\n");
+
+    let actual = imports.bindings.get("t");
+    let actual_2 = imports.spelling_for("t.List", &["typing.Sequence"]);
+
     assert_eq!(
-        imports.bindings.get("t"),
+        actual,
         Some(&super::KnownBinding::Direct("typing.Sequence".to_owned()))
     );
-    assert_eq!(imports.spelling_for("t.List", &["typing.Sequence"]), None);
+    assert_eq!(actual_2, None);
 }
 
 fn constrained_provider_spelling(
@@ -416,9 +420,9 @@ fn provider_spelling_requires_a_qualified_target_and_allowed_local_root(
     #[case] expected: Option<&str>,
 ) {
     let imports = imports_from(source);
-    assert_eq!(
-        constrained_provider_spelling(&imports, spelling, target, &|local| local == allowed_root)
-            .as_deref(),
-        expected
-    );
+
+    let actual =
+        constrained_provider_spelling(&imports, spelling, target, &|local| local == allowed_root);
+
+    assert_eq!(actual.as_deref(), expected);
 }

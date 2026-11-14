@@ -1031,6 +1031,7 @@ fn empty_filesystem_report() -> serde_json::Value {
 fn filesystem_report_accepts_absent_endpoints() {
     let report: hoimin_core::DiskFilesystemReport =
         serde_json::from_value(empty_filesystem_report()).unwrap();
+
     assert_eq!(report.start_available_bytes, None);
     assert_eq!(report.end_available_bytes, None);
 }
@@ -1042,30 +1043,33 @@ fn filesystem_report_accepts_absent_endpoints() {
 fn filesystem_report_rejects_invalid_observation_type(#[case] field: &str) {
     let mut invalid = empty_filesystem_report();
     invalid[field] = serde_json::json!("invalid");
-    assert!(
-        serde_json::from_value::<hoimin_core::DiskFilesystemReport>(invalid)
-            .unwrap_err()
-            .to_string()
-            .contains("invalid type")
-    );
+
+    let actual = serde_json::from_value::<hoimin_core::DiskFilesystemReport>(invalid)
+        .unwrap_err()
+        .to_string()
+        .contains("invalid type");
+
+    assert!(actual);
 }
 
 #[test]
 fn filesystem_report_change_requires_both_endpoints() {
     let mut invalid = empty_filesystem_report();
     invalid["available_bytes_change"] = serde_json::json!(1);
-    assert!(
-        serde_json::from_value::<hoimin_core::DiskFilesystemReport>(invalid)
-            .unwrap_err()
-            .to_string()
-            .contains("requires both endpoints")
-    );
+
+    let actual = serde_json::from_value::<hoimin_core::DiskFilesystemReport>(invalid)
+        .unwrap_err()
+        .to_string()
+        .contains("requires both endpoints");
+
+    assert!(actual);
 }
 
 #[test]
 fn direct_filesystem_report_decoding_preserves_valid_endpoint_arithmetic() {
     let wire = json!({"key":"workspace", "start_available_bytes":1024, "minimum_available_bytes":512, "end_available_bytes":768, "available_bytes_change":-256});
     let decoded = serde_json::from_value::<DiskFilesystemReport>(wire).unwrap();
+
     assert_eq!(
         decoded,
         DiskFilesystemReport {
@@ -1081,5 +1085,8 @@ fn direct_filesystem_report_decoding_preserves_valid_endpoint_arithmetic() {
 #[test]
 fn direct_filesystem_report_decoding_requires_its_wire_fields() {
     let error = serde_json::from_value::<DiskFilesystemReport>(json!({})).unwrap_err();
-    assert!(error.to_string().contains("missing field `key`"));
+
+    let actual = error.to_string().contains("missing field `key`");
+
+    assert!(actual);
 }

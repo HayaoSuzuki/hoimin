@@ -460,18 +460,20 @@ mod tests {
         );
 
         let error = result.unwrap_err();
-        assert!(
-            matches!(&error, super::WorkspaceError::Io { operation: "inject publish failure", message, .. } if message == &format!("injected at {selected:?}"))
-        );
+
         let _ = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
         let residual = std::fs::read_dir(parent.join(MANAGED_DIR))
             .unwrap()
             .map(|entry| entry.unwrap().file_name())
             .filter(|name| name != COORDINATOR_FILE)
             .collect::<Vec<_>>();
+
         assert!(
             residual.is_empty(),
             "boundary {selected:?} left managed roots: {residual:?}"
+        );
+        assert!(
+            matches!(&error, super::WorkspaceError::Io { operation: "inject publish failure", message, .. } if message == &format!("injected at {selected:?}"))
         );
     }
 

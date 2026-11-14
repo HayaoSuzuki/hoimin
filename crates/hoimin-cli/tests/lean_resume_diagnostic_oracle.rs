@@ -366,10 +366,11 @@ fn resume_schema_rejects_invalid_outcome_shapes(
     let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
     row["selected_run"] = selected;
     row["reason"] = reason;
-    assert_eq!(
-        validate(&serde_json::from_value::<Case>(row).unwrap()).unwrap_err(),
-        "invalid outcome shape"
-    );
+    let case: Case = serde_json::from_value(row).unwrap();
+
+    let result = validate(&case);
+
+    assert_eq!(result.unwrap_err(), "invalid outcome shape");
 }
 
 fn selected_strict_cases<'a>(cases: &'a [Case], selected: Option<&str>) -> Vec<&'a Case> {
@@ -388,23 +389,26 @@ fn resume_selector_preserves_closed_strict_case_identity(
     #[case] selected: Option<&str>,
     #[case] count: usize,
 ) {
-    assert_eq!(
-        selected_strict_cases(&parse(CORPUS).unwrap(), selected).len(),
-        count
-    );
+    let cases = parse(CORPUS).unwrap();
+
+    let result = selected_strict_cases(&cases, selected);
+
+    assert_eq!(result.len(), count);
 }
 
 #[test]
 fn resume_parser_reports_malformed_json() {
-    assert!(parse("{").unwrap_err().contains("EOF"));
+    let actual_0 = parse("{");
+
+    assert!(actual_0.unwrap_err().contains("EOF"));
 }
 
 #[test]
 fn resume_parser_propagates_schema_validation_failure() {
     let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
     row["schema"] = serde_json::json!(2);
-    assert_eq!(
-        parse(&row.to_string()).unwrap_err(),
-        "unknown schema or empty id"
-    );
+
+    let actual_0 = parse(&row.to_string());
+
+    assert_eq!(actual_0.unwrap_err(), "unknown schema or empty id");
 }

@@ -278,6 +278,7 @@ mod rejection_coverage {
         #[case] expected: &str,
     ) {
         let error = inventory_plan(input, &GitPathScope::default()).unwrap_err();
+
         assert!(matches!(error, TargetError::GitFailed(message) if message == expected));
     }
 
@@ -291,7 +292,9 @@ mod rejection_coverage {
             symbols: Vec::new(),
         }];
         let scope = GitPathScope::new(Some(&targets));
+
         let plan = inventory_plan(input, &scope).unwrap();
+
         assert_eq!(plan, DiffPlan::Scoped(Vec::new()));
     }
 }

@@ -206,7 +206,10 @@ proptest! {
 fn independently_computed_projections_with_equal_fields_are_equal() {
     let original = project(3, 2, Duration::from_secs(1));
     let repeated = project(3, 2, Duration::from_secs(1));
-    assert_eq!(original, repeated);
+
+    let equal = original == repeated;
+
+    assert!(equal);
 }
 
 #[rstest::rstest]
@@ -222,7 +225,10 @@ fn projection_equality_compares_every_field(#[case] mutate: fn(&mut TopBudgetPro
     let original = project(3, 2, Duration::from_secs(1));
     let mut changed = original;
     mutate(&mut changed);
-    assert_ne!(original, changed);
+
+    let equal = original == changed;
+
+    assert!(!equal);
 }
 
 #[rstest::rstest]
@@ -232,5 +238,7 @@ fn timeout_modes_are_distinct_even_at_the_automatic_floor(
     #[case] left: MutantTimeout,
     #[case] right: MutantTimeout,
 ) {
-    assert_ne!(left, right);
+    let equal = left == right;
+
+    assert!(!equal);
 }

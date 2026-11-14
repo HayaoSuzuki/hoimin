@@ -548,7 +548,9 @@ fn stop_projection_retains_disk_failure_reason(
     #[case] reason: DiskStopReason,
     #[case] expected: &str,
 ) {
-    assert_eq!(stop_name(reason), expected);
+    let actual_0 = stop_name(reason);
+
+    assert_eq!(actual_0, expected);
 }
 
 #[rstest::rstest]
@@ -587,5 +589,6 @@ fn secondary_observation_projection_retains_diagnostic_order(
         accepted: true,
         rejected_at: None,
     };
+
     assert_terminal_observation(&snapshot, &expected, 0, true, None, "secondary fixture");
 }

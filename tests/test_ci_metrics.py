@@ -154,8 +154,11 @@ def test_main_requires_github_cli(tmp_path: Path, mocker: MockerFixture) -> None
         ci_metrics.main()
 
 
+@pytest.mark.parametrize(
+    "pages", [{}, [{"jobs": {}}]], ids=["not-list", "jobs-not-list"]
+)
 def test_main_rejects_invalid_job_page_shapes(
-    tmp_path: Path, mocker: MockerFixture
+    tmp_path: Path, mocker: MockerFixture, pages: object
 ) -> None:
 
     original_which_spec = ci_metrics.shutil.which
@@ -168,19 +171,19 @@ def test_main_rejects_invalid_job_page_shapes(
         "which",
         create_autospec(original_which_spec, side_effect=lambda _: "/bin/gh"),
     )
-    for pages in ({}, [{"jobs": {}}]):
-        mocker.patch.object(
-            ci_metrics,
-            "api",
-            create_autospec(
-                original_api_spec,
-                side_effect=lambda _gh, _endpoint, *, pages=False, payload=pages: (
-                    payload if pages else {"run_attempt": 1}
-                ),
+    mocker.patch.object(
+        ci_metrics,
+        "api",
+        create_autospec(
+            original_api_spec,
+            side_effect=lambda _gh, _endpoint, *, pages=False, payload=pages: (
+                payload if pages else {"run_attempt": 1}
             ),
-        )
-        with pytest.raises(TypeError):
-            ci_metrics.main()
+        ),
+    )
+
+    with pytest.raises(TypeError):
+        ci_metrics.main()
 
 
 @pytest.mark.parametrize(

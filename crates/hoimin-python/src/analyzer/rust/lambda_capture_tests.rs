@@ -103,7 +103,10 @@ const OUTER_LOOP_CAPTURES: &str = "def build(values):\n for value in values:\n  
 #[test]
 fn lambda_capture_supports_outer_loop() {
     let output = analyze_selected(&["lambda_capture_late"], OUTER_LOOP_CAPTURES);
-    assert_eq!(output.candidates.len(), 2);
+
+    let actual = output.candidates.len();
+
+    assert_eq!(actual, 2);
 }
 
 #[test]
@@ -116,7 +119,10 @@ fn lambda_capture_respects_candidate_caps() {
         1,
         OUTER_LOOP_CAPTURES,
     );
-    assert_eq!(output.candidates.len(), 1);
+
+    let actual = output.candidates.len();
+
+    assert_eq!(actual, 1);
     assert!(output.truncated);
 }
 
@@ -130,7 +136,10 @@ fn lambda_capture_respects_line_and_symbol_selection() {
         10,
         OUTER_LOOP_CAPTURES,
     );
-    assert_eq!(output.candidates.len(), 1);
+
+    let actual = output.candidates.len();
+
+    assert_eq!(actual, 1);
     assert_eq!(output.candidates[0].line, 5);
 }
 
@@ -153,7 +162,10 @@ fn lambda_capture_stops_on_cancellation_or_callback_rejection(
             false
         },
     );
-    assert_eq!(result.is_err(), cancelled);
+
+    let actual = result.is_err();
+
+    assert_eq!(actual, cancelled);
     assert_eq!(count, expected_count);
 }
 

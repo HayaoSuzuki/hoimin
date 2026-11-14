@@ -249,14 +249,14 @@ mod coverage_tests {
             start.try_into().unwrap(),
             (start + marker.len()).try_into().unwrap(),
         );
-        assert_eq!(
-            (
-                index.contains(range),
-                index.contains_alias(range),
-                index.excludes_segment(range)
-            ),
-            expected
+
+        let actual = (
+            index.contains(range),
+            index.contains_alias(range),
+            index.excludes_segment(range),
         );
+
+        assert_eq!(actual, expected);
     }
 
     #[test]
@@ -268,7 +268,10 @@ mod coverage_tests {
             .as_ann_assign_stmt()
             .unwrap()
             .annotation;
-        assert!(!index.contains_alias(annotation.range()));
+
+        let actual = !index.contains_alias(annotation.range());
+
+        assert!(actual);
     }
 
     #[rstest::rstest]
@@ -283,19 +286,20 @@ mod coverage_tests {
         let source = "from typing import TypeAlias\nimport typing as t\nAlias: TypeAlias = 'value'\ndef function():\n 'documentation'\n return f'prefix {item!r} and {other}'\n";
         let parsed = ruff_python_parser::parse_module(source).unwrap();
         let total = std::cell::Cell::new(0);
-        assert!(
-            run_build(parsed.syntax(), &|| {
-                total.set(total.get() + 1);
-                false
-            })
-            .is_ok()
-        );
+        let baseline_built = run_build(parsed.syntax(), &|| {
+            total.set(total.get() + 1);
+            false
+        })
+        .is_ok();
         let polls = std::cell::Cell::new(0);
         let result = run_build(parsed.syntax(), &|| {
             let current = polls.get();
             polls.set(current + 1);
             current >= checkpoint
         });
-        assert_eq!(result.is_err(), checkpoint < total.get());
+        let cancelled_failed = result.is_err();
+
+        assert!(baseline_built);
+        assert_eq!(cancelled_failed, checkpoint < total.get());
     }
 }

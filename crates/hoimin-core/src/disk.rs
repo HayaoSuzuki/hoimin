@@ -620,23 +620,37 @@ mod counter_boundary_tests {
         lifecycle.active = active;
         lifecycle.dispatched = dispatched;
         let before = lifecycle.snapshot();
-        assert!(!lifecycle.apply(DiskLifecycleEvent::DispatchRequested));
-        assert_eq!(lifecycle.snapshot(), before);
+
+        let accepted = lifecycle.apply(DiskLifecycleEvent::DispatchRequested);
+
+        let actual = lifecycle.snapshot();
+
+        assert!(!accepted);
+        assert_eq!(actual, before);
     }
 
     #[test]
     fn finished_lifecycle_rejects_dispatch_without_mutating_the_terminal_snapshot() {
         let mut lifecycle = DiskLifecycle::new([]).unwrap();
-        assert!(!lifecycle.safety_succeeded());
-        assert!(lifecycle.apply(DiskLifecycleEvent::ProcessDrainSucceeded));
-        assert!(lifecycle.apply(DiskLifecycleEvent::OutputDrainSucceeded));
-        assert!(lifecycle.apply(DiskLifecycleEvent::MonitorJoinSucceeded));
-        assert!(lifecycle.safety_succeeded());
-        assert!(lifecycle.apply(DiskLifecycleEvent::ReportSucceeded));
-        assert!(lifecycle.apply(DiskLifecycleEvent::FinishRequested));
+        let safety_before = lifecycle.safety_succeeded();
+
+        let process_drained = lifecycle.apply(DiskLifecycleEvent::ProcessDrainSucceeded);
+        let output_drained = lifecycle.apply(DiskLifecycleEvent::OutputDrainSucceeded);
+        let monitor_joined = lifecycle.apply(DiskLifecycleEvent::MonitorJoinSucceeded);
+        let safety_after = lifecycle.safety_succeeded();
+        let report_delivered = lifecycle.apply(DiskLifecycleEvent::ReportSucceeded);
+        let finished = lifecycle.apply(DiskLifecycleEvent::FinishRequested);
         let before = lifecycle.snapshot();
-        assert!(!lifecycle.apply(DiskLifecycleEvent::DispatchRequested));
-        assert_eq!(lifecycle.snapshot(), before);
+
+        let accepted = lifecycle.apply(DiskLifecycleEvent::DispatchRequested);
+
+        let actual = lifecycle.snapshot();
+
+        assert!(!safety_before);
+        assert!(process_drained && output_drained && monitor_joined && safety_after);
+        assert!(report_delivered && finished);
+        assert!(!accepted);
+        assert_eq!(actual, before);
     }
 
     #[rstest::rstest]
@@ -662,25 +676,38 @@ mod counter_boundary_tests {
         #[case] duplicate: DiskLifecycleEvent,
     ) {
         let mut lifecycle = DiskLifecycle::new([]).unwrap();
-        assert!(lifecycle.apply(first));
+
+        let first_accepted = lifecycle.apply(first);
         let before = lifecycle.snapshot();
-        assert!(!lifecycle.apply(duplicate));
-        assert_eq!(lifecycle.snapshot(), before);
+
+        let duplicate_accepted = lifecycle.apply(duplicate);
+
+        let actual = lifecycle.snapshot();
+
+        assert!(first_accepted);
+        assert!(!duplicate_accepted);
+        assert_eq!(actual, before);
     }
 
     #[test]
     fn repeated_error_evidence_does_not_duplicate_the_primary_failure() {
         let mut lifecycle = DiskLifecycle::new([]).unwrap();
-        assert!(lifecycle.apply(DiskLifecycleEvent::MeasurementFailed {
-            message: "unavailable".into()
-        }));
+
+        let accepted = lifecycle.apply(DiskLifecycleEvent::MeasurementFailed {
+            message: "unavailable".into(),
+        });
         let before = lifecycle.snapshot();
+
         add_error(
             &mut lifecycle,
             DISK_MEASUREMENT_FAILED,
             "unavailable".into(),
         );
-        assert_eq!(lifecycle.snapshot(), before);
+
+        let actual = lifecycle.snapshot();
+
+        assert!(accepted);
+        assert_eq!(actual, before);
     }
 
     #[test]
@@ -688,9 +715,14 @@ mod counter_boundary_tests {
         let mut lifecycle = DiskLifecycle::new([]).unwrap();
         add_error(&mut lifecycle, WORKSPACE_CLEANUP_FAILED, "denied".into());
         let before = lifecycle.snapshot();
+
         add_error(&mut lifecycle, WORKSPACE_CLEANUP_FAILED, "denied".into());
-        assert_eq!(lifecycle.snapshot(), before);
-        assert_eq!(lifecycle.secondary.len(), 1);
+
+        let actual = lifecycle.snapshot();
+        let actual_2 = lifecycle.secondary.len();
+
+        assert_eq!(actual, before);
+        assert_eq!(actual_2, 1);
     }
 
     #[rstest::rstest]
@@ -705,28 +737,37 @@ mod counter_boundary_tests {
             max_owned_bytes: std::num::NonZeroU64::new(1).unwrap(),
             min_free_bytes: std::num::NonZeroU64::new(1).unwrap(),
         };
-        assert!(lifecycle.apply(DiskLifecycleEvent::Observation {
+
+        let accepted = lifecycle.apply(DiskLifecycleEvent::Observation {
             policy,
             value: DiskObservation {
                 owned_bytes,
                 available_bytes: 2,
-                measured_in: std::time::Duration::ZERO
-            }
-        }));
-        assert_eq!(lifecycle.stop.as_ref().map(DiskFailure::code), code);
+                measured_in: std::time::Duration::ZERO,
+            },
+        });
+
+        let actual = lifecycle.stop.as_ref().map(DiskFailure::code);
+
+        assert!(accepted);
+        assert_eq!(actual, code);
     }
 
     #[test]
     fn process_drain_failure_settles_processes_and_records_the_failure() {
         let mut lifecycle = DiskLifecycle::new([]).unwrap();
-        assert!(lifecycle.apply(DiskLifecycleEvent::DispatchRequested));
-        assert!(lifecycle.apply(DiskLifecycleEvent::ProcessDrainFailed));
+
+        let dispatched = lifecycle.apply(DiskLifecycleEvent::DispatchRequested);
+
+        let drained = lifecycle.apply(DiskLifecycleEvent::ProcessDrainFailed);
+
+        let actual = lifecycle.stop.as_ref().unwrap().code();
+
+        assert!(dispatched);
+        assert!(drained);
         assert_eq!(lifecycle.active, 0);
         assert_eq!(lifecycle.process_drain, DiskComponentState::Failed);
-        assert_eq!(
-            lifecycle.stop.as_ref().unwrap().code(),
-            PROCESS_LIFECYCLE_FAILED
-        );
+        assert_eq!(actual, PROCESS_LIFECYCLE_FAILED);
     }
 
     #[rstest::rstest]
@@ -737,25 +778,37 @@ mod counter_boundary_tests {
         #[case] component: fn(&DiskLifecycle) -> DiskComponentState,
     ) {
         let mut lifecycle = DiskLifecycle::new([]).unwrap();
-        assert!(lifecycle.apply(event.clone()));
-        assert_eq!(component(&lifecycle), DiskComponentState::Failed);
-        assert!(!lifecycle.apply(event));
+
+        let first_accepted = lifecycle.apply(event.clone());
+        let settled = component(&lifecycle);
+        let duplicate_accepted = lifecycle.apply(event);
+
+        assert!(first_accepted);
+        assert_eq!(settled, DiskComponentState::Failed);
+        assert!(!duplicate_accepted);
     }
 
     #[test]
     fn cleanup_events_record_the_registered_root_completion() {
         let mut lifecycle = DiskLifecycle::new([DiskRootId::Execution]).unwrap();
-        assert!(lifecycle.apply(DiskLifecycleEvent::ProcessDrainSucceeded));
-        assert!(lifecycle.apply(DiskLifecycleEvent::OutputDrainSucceeded));
-        assert!(lifecycle.apply(DiskLifecycleEvent::MonitorJoinSucceeded));
-        assert!(lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
-            root: DiskRootId::Execution
-        }));
-        assert_eq!(lifecycle.roots[0].cleanup, DiskCleanupState::Requested);
-        assert!(lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+
+        let process_drained = lifecycle.apply(DiskLifecycleEvent::ProcessDrainSucceeded);
+        let output_drained = lifecycle.apply(DiskLifecycleEvent::OutputDrainSucceeded);
+        let monitor_joined = lifecycle.apply(DiskLifecycleEvent::MonitorJoinSucceeded);
+
+        let requested = lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
             root: DiskRootId::Execution,
-            outcome: DiskCleanupOutcome::Clean
-        }));
+        });
+        let pending_cleanup = lifecycle.roots[0].cleanup.clone();
+        let completed = lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+            root: DiskRootId::Execution,
+            outcome: DiskCleanupOutcome::Clean,
+        });
+
+        assert!(process_drained && output_drained && monitor_joined);
+        assert!(requested);
+        assert_eq!(pending_cleanup, DiskCleanupState::Requested);
+        assert!(completed);
         assert_eq!(
             lifecycle.roots[0].cleanup,
             DiskCleanupState::Completed(DiskCleanupOutcome::Clean)
@@ -765,7 +818,10 @@ mod counter_boundary_tests {
     #[test]
     fn finish_requires_the_safety_components_to_settle() {
         let mut lifecycle = DiskLifecycle::new([]).unwrap();
-        assert!(!lifecycle.apply(DiskLifecycleEvent::FinishRequested));
+
+        let accepted = lifecycle.apply(DiskLifecycleEvent::FinishRequested);
+
+        assert!(!accepted);
         assert!(!lifecycle.finished);
     }
 }

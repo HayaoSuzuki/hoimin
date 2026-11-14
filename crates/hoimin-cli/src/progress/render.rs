@@ -351,11 +351,15 @@ mod coverage_tests {
         .unwrap();
         output.flush().unwrap();
         let actual = String::from_utf8(output.bytes).unwrap();
-        assert!(actual.contains(expected), "{actual}");
-        assert_eq!(actual.lines().count(), 1);
         let document: serde_json::Value = serde_json::from_slice(&stdout.bytes).unwrap();
+
+        let actual_1 = actual.lines().count();
+        let actual_3 = document["comparisons"].as_array();
+
+        assert!(actual.contains(expected), "{actual}");
+        assert_eq!(actual_1, 1);
         assert_eq!(document["schema_version"], 3);
-        assert_eq!(document["comparisons"].as_array().unwrap().len(), 1);
+        assert_eq!(actual_3.unwrap().len(), 1);
     }
 
     #[rstest::rstest]
@@ -372,6 +376,7 @@ mod coverage_tests {
             ..DiagnosticWriter::default()
         };
         let mut stdout = DiagnosticWriter::default();
+
         let error = render(
             &inputs,
             &eligibilities,
@@ -381,6 +386,7 @@ mod coverage_tests {
             &mut output,
         )
         .unwrap_err();
+
         assert!(
             matches!(error, ProgressError::Write { source } if source.kind() == io::ErrorKind::Other && source.to_string() == "progress diagnostic failed")
         );
@@ -392,7 +398,9 @@ mod coverage_tests {
     fn matching_usable_inputs_without_ambiguity_produce_no_warning() {
         let (inputs, eligibilities, result) = warning_fixture(Warning::Quiet);
         let mut output = DiagnosticWriter::default();
+
         write_diagnostics(&inputs, &eligibilities, &result, &mut output).unwrap();
+
         assert_eq!(output.bytes, Vec::<u8>::new());
     }
 
@@ -404,6 +412,7 @@ mod coverage_tests {
             ..DiagnosticWriter::default()
         };
         let mut stderr = DiagnosticWriter::default();
+
         let error = render(
             &inputs,
             &eligibilities,
@@ -413,6 +422,7 @@ mod coverage_tests {
             &mut stderr,
         )
         .unwrap_err();
+
         assert!(
             matches!(error, ProgressError::Serialize { source } if source.io_error_kind() == Some(io::ErrorKind::Other) && source.to_string().contains("progress diagnostic failed"))
         );
@@ -437,12 +447,15 @@ mod coverage_tests {
             &mut stderr,
         )
         .unwrap_err();
+        let document: serde_json::Value = serde_json::from_slice(&stdout.bytes).unwrap();
+
+        let actual_2 = stdout.bytes.last();
+
         assert!(
             matches!(error, ProgressError::Write { source } if source.kind() == io::ErrorKind::Other)
         );
-        let document: serde_json::Value = serde_json::from_slice(&stdout.bytes).unwrap();
         assert_eq!(document["schema_version"], 3);
-        assert_ne!(stdout.bytes.last(), Some(&b'\n'));
+        assert_ne!(actual_2, Some(&b'\n'));
         assert_eq!(stderr.bytes, Vec::<u8>::new());
     }
 }

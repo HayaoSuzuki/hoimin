@@ -2573,162 +2573,170 @@ mod tests {
         finished
     }
 
-    #[test]
-    fn lean_composed_rows_drive_run_state_and_public_run_finished() {
+    #[rstest::rstest]
+    fn lean_composed_rows_drive_run_state_and_public_run_finished(
+        #[values(0, 1, 2, 3, 4)] index: usize,
+    ) {
         let cases = MUTATION_SCORE_POLICY_CORPUS
             .lines()
             .map(|line| serde_json::from_str::<ComposedAuditCase>(line).unwrap())
             .filter(|case| case.scenario == "composed")
             .collect::<Vec<_>>();
         assert_eq!(cases.len(), 5);
+        let case = &cases[index];
 
-        for case in cases {
-            let statuses = case
-                .statuses
-                .iter()
-                .map(|name| audit_status(name))
-                .collect::<Vec<_>>();
-            let mut state = RunState::new(
-                "lean-policy-audit",
-                audit_config(),
-                crate::ResourceControl {
-                    mode: crate::ResourceMode::Hard,
-                    mechanism: "test_supplied_hard".into(),
-                },
-            );
-            state.summary = summarize(&statuses);
-            state.flags.outcome.infrastructure_error = case.run_flags.infrastructure_error;
-            state.flags.outcome.baseline_failed = case.run_flags.baseline_failed;
-            state.flags.outcome.incomplete = case.run_flags.incomplete;
-            state.flags.report.interrupted = case.run_flags.interrupted;
+        let statuses = case
+            .statuses
+            .iter()
+            .map(|name| audit_status(name))
+            .collect::<Vec<_>>();
+        let mut state = RunState::new(
+            "lean-policy-audit",
+            audit_config(),
+            crate::ResourceControl {
+                mode: crate::ResourceMode::Hard,
+                mechanism: "test_supplied_hard".into(),
+            },
+        );
+        state.summary = summarize(&statuses);
+        state.flags.outcome.infrastructure_error = case.run_flags.infrastructure_error;
+        state.flags.outcome.baseline_failed = case.run_flags.baseline_failed;
+        state.flags.outcome.incomplete = case.run_flags.incomplete;
+        state.flags.report.interrupted = case.run_flags.interrupted;
 
-            let expected_policy = ExitPolicy {
-                infrastructure_error: case.expected_policy.infrastructure_error,
-                baseline_failed: case.expected_policy.baseline_failed,
-                incomplete: case.expected_policy.incomplete,
-                interrupted: case.expected_policy.interrupted,
-            };
-            let policy = state.exit_policy();
-            let complete = state.complete();
-            let exit_code = state.exit_code();
-            let finished = finished_report(&mut state);
+        let expected_policy = ExitPolicy {
+            infrastructure_error: case.expected_policy.infrastructure_error,
+            baseline_failed: case.expected_policy.baseline_failed,
+            incomplete: case.expected_policy.incomplete,
+            interrupted: case.expected_policy.interrupted,
+        };
+        let policy = state.exit_policy();
+        let complete = state.complete();
+        let exit_code = state.exit_code();
+        let finished = finished_report(&mut state);
 
-            assert_eq!(policy, expected_policy, "{}", case.id);
-            assert_eq!(complete, case.expected_complete, "{}", case.id);
-            assert_eq!(exit_code, case.expected_exit_code, "{}", case.id);
-            assert_eq!(
-                finished.counts.killed, case.expected_counts.killed,
-                "{}",
-                case.id
-            );
-            assert_eq!(
-                finished.counts.survived, case.expected_counts.survived,
-                "{}",
-                case.id
-            );
-            assert_eq!(
-                finished.counts.timeout, case.expected_counts.timeout,
-                "{}",
-                case.id
-            );
-            assert_eq!(
-                finished.counts.out_of_memory, case.expected_counts.out_of_memory,
-                "{}",
-                case.id
-            );
-            assert_eq!(
-                finished.counts.process_limit, case.expected_counts.process_limit,
-                "{}",
-                case.id
-            );
-            assert_eq!(
-                finished.counts.error, case.expected_counts.error,
-                "{}",
-                case.id
-            );
-            assert_eq!(
-                finished.counts.not_run, case.expected_counts.not_run,
-                "{}",
-                case.id
-            );
-            assert_eq!(
-                finished.counts.inconclusive, case.expected_counts.inconclusive,
-                "{}",
-                case.id
-            );
-            assert_eq!(
-                finished.counts.score.map(f64::to_bits),
-                case.expected_score
-                    .as_ref()
-                    .map(audit_score)
-                    .map(f64::to_bits),
-                "{}",
-                case.id
-            );
-            assert_eq!(finished.complete, case.expected_complete, "{}", case.id);
-            assert_eq!(finished.exit_code, case.expected_exit_code, "{}", case.id);
-        }
+        assert_eq!(policy, expected_policy, "{}", case.id);
+        assert_eq!(complete, case.expected_complete, "{}", case.id);
+        assert_eq!(exit_code, case.expected_exit_code, "{}", case.id);
+        assert_eq!(
+            finished.counts.killed, case.expected_counts.killed,
+            "{}",
+            case.id
+        );
+        assert_eq!(
+            finished.counts.survived, case.expected_counts.survived,
+            "{}",
+            case.id
+        );
+        assert_eq!(
+            finished.counts.timeout, case.expected_counts.timeout,
+            "{}",
+            case.id
+        );
+        assert_eq!(
+            finished.counts.out_of_memory, case.expected_counts.out_of_memory,
+            "{}",
+            case.id
+        );
+        assert_eq!(
+            finished.counts.process_limit, case.expected_counts.process_limit,
+            "{}",
+            case.id
+        );
+        assert_eq!(
+            finished.counts.error, case.expected_counts.error,
+            "{}",
+            case.id
+        );
+        assert_eq!(
+            finished.counts.not_run, case.expected_counts.not_run,
+            "{}",
+            case.id
+        );
+        assert_eq!(
+            finished.counts.inconclusive, case.expected_counts.inconclusive,
+            "{}",
+            case.id
+        );
+        assert_eq!(
+            finished.counts.score.map(f64::to_bits),
+            case.expected_score
+                .as_ref()
+                .map(audit_score)
+                .map(f64::to_bits),
+            "{}",
+            case.id
+        );
+        assert_eq!(finished.complete, case.expected_complete, "{}", case.id);
+        assert_eq!(finished.exit_code, case.expected_exit_code, "{}", case.id);
     }
 
-    #[test]
-    fn composed_exit_policy_matches_all_run_flag_combinations() {
-        let booleans = [false, true];
-        let status_sets = [
-            vec![],
-            vec![MutationStatus::Survived],
-            vec![MutationStatus::Error],
-            vec![MutationStatus::NotRun, MutationStatus::Survived],
-        ];
+    #[rstest::rstest]
+    #[case::empty(&[])]
+    #[case::survived(&[MutationStatus::Survived])]
+    #[case::error(&[MutationStatus::Error])]
+    #[case::incomplete_survivor(&[MutationStatus::NotRun, MutationStatus::Survived])]
+    fn composed_exit_policy_matches_all_run_flag_combinations(
+        #[case] statuses: &[MutationStatus],
+        #[values(
+            (false, false, false, false),
+            (false, false, false, true),
+            (false, false, true, false),
+            (false, false, true, true),
+            (false, true, false, false),
+            (false, true, false, true),
+            (false, true, true, false),
+            (false, true, true, true),
+            (true, false, false, false),
+            (true, false, false, true),
+            (true, false, true, false),
+            (true, false, true, true),
+            (true, true, false, false),
+            (true, true, false, true),
+            (true, true, true, false),
+            (true, true, true, true),
+        )]
+        run_flags: (bool, bool, bool, bool),
+    ) {
+        let (infrastructure_error, baseline_failed, incomplete, interrupted) = run_flags;
+        let mut state = RunState::new(
+            "lean-policy-audit",
+            audit_config(),
+            crate::ResourceControl {
+                mode: crate::ResourceMode::Hard,
+                mechanism: "test_supplied_hard".into(),
+            },
+        );
+        state.summary = summarize(statuses);
+        state.flags.outcome.infrastructure_error = infrastructure_error;
+        state.flags.outcome.baseline_failed = baseline_failed;
+        state.flags.outcome.incomplete = incomplete;
+        state.flags.report.interrupted = interrupted;
 
-        for statuses in status_sets {
-            for infrastructure_error in booleans {
-                for baseline_failed in booleans {
-                    for incomplete in booleans {
-                        for interrupted in booleans {
-                            let mut state = RunState::new(
-                                "lean-policy-audit",
-                                audit_config(),
-                                crate::ResourceControl {
-                                    mode: crate::ResourceMode::Hard,
-                                    mechanism: "test_supplied_hard".into(),
-                                },
-                            );
-                            state.summary = summarize(&statuses);
-                            state.flags.outcome.infrastructure_error = infrastructure_error;
-                            state.flags.outcome.baseline_failed = baseline_failed;
-                            state.flags.outcome.incomplete = incomplete;
-                            state.flags.report.interrupted = interrupted;
+        let summary = ExitPolicy::from_summary(&state.summary);
+        let expected = ExitPolicy {
+            infrastructure_error: infrastructure_error || summary.infrastructure_error,
+            baseline_failed,
+            incomplete: incomplete || summary.incomplete,
+            interrupted,
+        };
+        let policy = state.exit_policy();
+        let exit_code = state.exit_code();
+        let complete = state.complete();
+        let finished = finished_report(&mut state);
 
-                            let summary = ExitPolicy::from_summary(&state.summary);
-                            let expected = ExitPolicy {
-                                infrastructure_error: infrastructure_error
-                                    || summary.infrastructure_error,
-                                baseline_failed,
-                                incomplete: incomplete || summary.incomplete,
-                                interrupted,
-                            };
-                            let policy = state.exit_policy();
-                            let exit_code = state.exit_code();
-                            let complete = state.complete();
-                            let finished = finished_report(&mut state);
-
-                            assert_eq!(policy, expected);
-                            assert_eq!(exit_code, exit_code_for(expected));
-                            assert_eq!(
-                                complete,
-                                !expected.infrastructure_error
-                                    && !expected.baseline_failed
-                                    && !expected.incomplete
-                                    && !expected.interrupted
-                            );
-                            assert_eq!(finished.counts, state.summary);
-                            assert_eq!(finished.complete, complete);
-                            assert_eq!(finished.exit_code, exit_code);
-                        }
-                    }
-                }
-            }
-        }
+        assert_eq!(policy, expected);
+        assert_eq!(exit_code, exit_code_for(expected));
+        assert_eq!(
+            complete,
+            !expected.infrastructure_error
+                && !expected.baseline_failed
+                && !expected.incomplete
+                && !expected.interrupted
+        );
+        assert_eq!(finished.counts, state.summary);
+        assert_eq!(finished.complete, complete);
+        assert_eq!(finished.exit_code, exit_code);
     }
     #[test]
     fn audit_status_includes_not_run_and_rejects_unknown_names() {
@@ -2744,6 +2752,8 @@ mod tests {
         #[case] name: &str,
         #[case] expected: MutationStatus,
     ) {
-        assert_eq!(audit_status(name), expected);
+        let actual = audit_status(name);
+
+        assert_eq!(actual, expected);
     }
 }

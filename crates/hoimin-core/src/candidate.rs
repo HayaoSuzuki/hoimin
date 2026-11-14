@@ -1042,40 +1042,49 @@ mod coordinate_boundary_tests {
     #[test]
     fn latin1_location_rejects_unrepresentable_raw_offsets() {
         let index = CandidateSourceIndex::Latin1(vec![0]);
-        assert_eq!(index.line_and_column(u32::MAX as usize + 1, 0), None);
+
+        let actual = index.line_and_column(u32::MAX as usize + 1, 0);
+
+        assert_eq!(actual, None);
     }
 
     #[test]
     fn unicode_location_rejects_unrepresentable_offsets() {
         let index = PythonSourceIndex::new("x").unwrap();
-        assert_eq!(index.line_and_column(u32::MAX as usize + 1), None);
+
+        let actual = index.line_and_column(u32::MAX as usize + 1);
+
+        assert_eq!(actual, None);
     }
 
     #[test]
     fn one_based_line_rejects_unrepresentable_indices() {
-        assert_eq!(one_based_line(u32::MAX as usize + 1), None);
+        let actual = one_based_line(u32::MAX as usize + 1);
+
+        assert_eq!(actual, None);
     }
 
     #[test]
     fn newline_index_rejects_unrepresentable_offsets() {
-        assert_eq!(
-            source_line_starts(0, [u32::MAX as usize + 1].into_iter()),
-            Err(CandidateValidationError::SourceTooLarge)
-        );
+        let actual = source_line_starts(0, [u32::MAX as usize + 1].into_iter());
+
+        assert_eq!(actual, Err(CandidateValidationError::SourceTooLarge));
     }
 
     #[test]
     fn source_length_overflow_is_rejected_even_with_representable_newline_offsets() {
-        assert_eq!(
-            source_line_starts(u32::MAX as usize + 1, [0].into_iter()),
-            Err(CandidateValidationError::SourceTooLarge)
-        );
+        let actual = source_line_starts(u32::MAX as usize + 1, [0].into_iter());
+
+        assert_eq!(actual, Err(CandidateValidationError::SourceTooLarge));
     }
 
     #[test]
     fn latin1_location_uses_original_byte_line_offsets() {
         let index = CandidateSourceIndex::Latin1(vec![0, 2]);
-        assert_eq!(index.line_and_column(2, 3), Some((2, 0)));
+
+        let actual = index.line_and_column(2, 3);
+
+        assert_eq!(actual, Some((2, 0)));
     }
 
     #[rstest::rstest]
@@ -1086,7 +1095,10 @@ mod coordinate_boundary_tests {
         #[case] offset: usize,
     ) {
         let index = PythonSourceIndex::new(source).unwrap();
-        assert_eq!(index.line_and_column(offset), None);
+
+        let actual = index.line_and_column(offset);
+
+        assert_eq!(actual, None);
     }
 
     #[test]
@@ -1095,9 +1107,9 @@ mod coordinate_boundary_tests {
         let decoded = decode_python_source(source).unwrap();
         let index = CandidateSourceIndex::new(source, &decoded).unwrap();
         let raw = source.len() - 1;
-        assert_eq!(
-            index.line_and_column(raw, decoded.raw_to_utf8(raw).unwrap()),
-            Some((2, 1))
-        );
+
+        let actual = index.line_and_column(raw, decoded.raw_to_utf8(raw).unwrap());
+
+        assert_eq!(actual, Some((2, 1)));
     }
 }

@@ -380,5 +380,8 @@ fn heap_window_enforces_exclusive_allocation_and_peak_bounds(
         peak_delta,
         allocated,
     };
-    assert_eq!(check_window("boundary-probe", &measured), expected);
+
+    let actual = check_window("boundary-probe", &measured);
+
+    assert_eq!(actual, expected);
 }

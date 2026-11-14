@@ -516,10 +516,9 @@ mod correspondence {
         #[case] selected: Option<&str>,
         #[case] expected: bool,
     ) {
-        assert_eq!(
-            selected_case(&parse_corpus(CORPUS).unwrap().remove(0), selected),
-            expected
-        );
+        let actual = selected_case(&parse_corpus(CORPUS).unwrap().remove(0), selected);
+
+        assert_eq!(actual, expected);
     }
 
     fn projection_event(kind: &str) -> OracleEvent {
@@ -551,7 +550,10 @@ mod correspondence {
     ) {
         let mut event = projection_event(kind);
         corrupt(&mut event);
-        assert!(to_output_event(&event).unwrap_err().contains(diagnostic));
+
+        let actual = to_output_event(&event).unwrap_err().contains(diagnostic);
+
+        assert!(actual);
     }
 
     #[rstest::rstest]
@@ -566,17 +568,19 @@ mod correspondence {
     fn error_projection_rejects_out_of_domain_runtime_identities(
         #[case] error: ReportSequenceError,
     ) {
-        assert!(
-            observed_error(&error)
-                .unwrap_err()
-                .contains("unknown observed")
-        );
+        let actual = observed_error(&error)
+            .unwrap_err()
+            .contains("unknown observed");
+
+        assert!(actual);
     }
 
     #[test]
     fn mutant_field_projection_preserves_the_second_role() {
+        let actual = mutant_fields("mutant-beta", 7).unwrap();
+
         assert_eq!(
-            mutant_fields("mutant-beta", 7).unwrap(),
+            actual,
             vec![
                 ("mutant_id", "beta".into()),
                 ("mutant_sequence", "7".into())
@@ -588,11 +592,12 @@ mod correspondence {
     fn observation_propagates_unprojectable_event_error() {
         let mut event = projection_event("diagnostic");
         event.run_id = "unknown".into();
-        assert!(
-            observe(&mut ReportSequence::new(), &event)
-                .unwrap_err()
-                .contains("unknown run role")
-        );
+
+        let actual = observe(&mut ReportSequence::new(), &event)
+            .unwrap_err()
+            .contains("unknown run role");
+
+        assert!(actual);
     }
 
     #[rstest::rstest]
@@ -608,7 +613,10 @@ mod correspondence {
     ) {
         let mut item = parse_corpus(CORPUS).unwrap().remove(0);
         corrupt(&mut item);
-        assert!(replay(&item).unwrap_err().contains(diagnostic));
+
+        let actual = replay(&item).unwrap_err().contains(diagnostic);
+
+        assert!(actual);
     }
 
     fn sequence_with_active_alpha() -> ReportSequence {
@@ -633,10 +641,10 @@ mod correspondence {
             .observe(&to_output_event(&repeated).unwrap())
             .unwrap_err();
         let observation = observed_error(&error).unwrap();
-        assert_eq!(
-            observation.error_code.as_deref(),
-            Some("report.sequence.mutant_already_started")
-        );
+
+        let actual = observation.error_code.as_deref();
+
+        assert_eq!(actual, Some("report.sequence.mutant_already_started"));
         assert_eq!(observation.error_fields["mutant_id"], "alpha");
         assert_eq!(observation.error_fields["mutant_sequence"], "1");
     }
@@ -651,8 +659,11 @@ mod correspondence {
             .observe(&to_output_event(&finished).unwrap())
             .unwrap_err();
         let observation = observed_error(&error).unwrap();
+
+        let actual = observation.error_code.as_deref();
+
         assert_eq!(
-            observation.error_code.as_deref(),
+            actual,
             Some("report.sequence.mutant_identity_sequence_mismatch")
         );
         assert_eq!(observation.error_fields["mutant_id"], "alpha");
@@ -672,8 +683,12 @@ mod correspondence {
         value["schema_version"] = json!(91);
         value["run_id"] = json!("sentinel-run-id");
         let event: OutputEvent = serde_json::from_value(value).unwrap();
-        assert_eq!(event.schema_version(), 91);
-        assert_eq!(event.run_id(), "sentinel-run-id");
+
+        let actual = event.schema_version();
+        let actual_2 = event.run_id();
+
+        assert_eq!(actual, 91);
+        assert_eq!(actual_2, "sentinel-run-id");
     }
 }
 
@@ -704,12 +719,16 @@ fn corpus_rejects_unknown_executed_termination_role() {
 
 #[test]
 fn sequence_parser_ignores_blank_lines() {
-    assert_eq!(parse_corpus(&format!("\n{CORPUS}\n")).unwrap().len(), 24);
+    let actual = parse_corpus(&format!("\n{CORPUS}\n")).unwrap().len();
+
+    assert_eq!(actual, 24);
 }
 
 #[test]
 fn sequence_parser_rejects_empty_input() {
-    assert_eq!(parse_corpus("").unwrap_err(), "corpus contains no cases");
+    let actual = parse_corpus("").unwrap_err();
+
+    assert_eq!(actual, "corpus contains no cases");
 }
 
 #[rstest::rstest]
@@ -725,9 +744,10 @@ fn sequence_parser_rejects_one_invalid_coordinate(
 ) {
     let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
     *row.pointer_mut(pointer).unwrap() = value;
-    assert!(
-        parse_corpus(&row.to_string())
-            .unwrap_err()
-            .contains(diagnostic)
-    );
+
+    let actual = parse_corpus(&row.to_string())
+        .unwrap_err()
+        .contains(diagnostic);
+
+    assert!(actual);
 }

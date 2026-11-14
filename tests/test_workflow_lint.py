@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import runpy
 import shutil
 import subprocess
 import sys
@@ -49,7 +50,7 @@ FIXTURES = Path(__file__).parent / "fixtures" / "workflow-lint"
     ],
     indirect=["executable"],
 )
-def test_real_linters_reject_isolated_unsafe_workflows(
+def test_real_linters_reject_isolated_unsafe_workflows(  # pragma: no cover
     executable: str, fixture: str, diagnostic: str
 ) -> None:
     args = LINTER_ARGUMENTS[Path(executable).stem]
@@ -139,7 +140,9 @@ def test_shellcheck_does_not_suppress_actionlint_default_exclusions(
 def test_default_shell_uses_explicit_shell_or_fallback(
     scope: dict[str, object], fallback: str, expected: str
 ) -> None:
-    assert workflow_lint.default_shell(scope, fallback) == expected
+    result = workflow_lint.default_shell(scope, fallback)
+
+    assert result == expected
 
 
 def test_runner_rejects_empty_workflow_directory(tmp_path: Path) -> None:
@@ -183,7 +186,10 @@ def test_shell_checker_skips_non_shell_steps(tmp_path: Path) -> None:
         "      - uses: actions/checkout@v4\n      - run: Write-Host hello\n",
         encoding="utf-8",
     )
-    assert workflow_lint.check_shells([path], "unused-shellcheck") == 0
+
+    result = workflow_lint.check_shells([path], "unused-shellcheck")
+
+    assert result == 0
 
 
 def test_missing_linter_fixture_reports_skip(mocker: MockerFixture) -> None:
@@ -192,3 +198,211 @@ def test_missing_linter_fixture_reports_skip(mocker: MockerFixture) -> None:
     mocker.patch.object(shutil, "which", return_value=None)
     with pytest.raises(pytest.skip.Exception, match="Install the workflow dependency"):
         executable._get_wrapped_function()(request)  # noqa: SLF001 -- Test the fixture's skip diagnostic.
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected_shell"),
+    [
+        (("", "", ""), "bash"),
+        (("", "    runs-on: windows-latest\n", "        shell: bash -e {0}\n"), "bash"),
+        (("defaults:\n  run:\n    shell: sh -e\n", "", ""), "sh"),
+        (
+            (
+                "defaults:\n  run:\n    shell: sh\n",
+                "    defaults:\n      run:\n        shell: bash\n",
+                "",
+            ),
+            "bash",
+        ),
+        (
+            (
+                "",
+                "    defaults:\n      run:\n        shell: bash\n",
+                "        shell: sh -e {0}\n",
+            ),
+            "sh",
+        ),
+    ],
+    ids=[
+        "unix-default",
+        "windows-override",
+        "workflow",
+        "job-override",
+        "step-override",
+    ],
+)
+def test_shell_checker_selects_shell_and_replaces_multiline_expressions(
+    tmp_path: Path,
+    mocker: MockerFixture,
+    overrides: tuple[str, str, str],
+    expected_shell: str,
+) -> None:
+    defaults, job, step = overrides
+    path = tmp_path / "ci.yml"
+    path.write_text(
+        defaults
+        + "jobs:\n  check:\n"
+        + job
+        + "    steps:\n      - run: |\n"
+        + "          echo '${{\n            github.ref\n          }}'\n"
+        + step,
+        encoding="utf-8",
+    )
+    run = mocker.patch.object(
+        subprocess,
+        "run",
+        autospec=True,
+        return_value=subprocess.CompletedProcess([], 0),
+    )
+
+    result = workflow_lint.check_shells([path], "resolved-shellcheck")
+
+    assert result == 0
+    run.assert_called_once_with(
+        ["resolved-shellcheck", "--norc", "--shell", expected_shell, "-x", "-"],
+        input=b"echo 'expression'\n",
+        check=False,
+        timeout=30,
+    )
+
+
+@pytest.mark.parametrize(
+    ("return_codes", "expected"),
+    [
+        ((0, 0, 0), 0),
+        ((1, 0, 0), 1),
+        ((0, 2, 0), 1),
+        ((0, 0, 1), 1),
+        ((1, 2, 1), 1),
+    ],
+    ids=["success", "actionlint-fails", "zizmor-fails", "shellcheck-fails", "all-fail"],
+)
+def test_runner_exit_status_aggregates_failures_without_skipping_checks(
+    tmp_path: Path,
+    mocker: MockerFixture,
+    return_codes: tuple[int, int, int],
+    expected: int,
+) -> None:
+    directory = tmp_path / ".github/workflows"
+    directory.mkdir(parents=True)
+    (directory / "ci.yml").write_text(
+        "jobs:\n  check:\n    steps:\n      - run: echo safe\n", encoding="utf-8"
+    )
+    mocker.patch.object(shutil, "which", autospec=True, return_value="shellcheck")
+    run = mocker.patch.object(
+        subprocess,
+        "run",
+        autospec=True,
+        side_effect=[
+            subprocess.CompletedProcess([], return_codes[0]),
+            subprocess.CompletedProcess([], return_codes[1]),
+            subprocess.CompletedProcess([], return_codes[2]),
+        ],
+    )
+
+    with chdir(tmp_path), pytest.raises(SystemExit) as raised:
+        runpy.run_path(str(Path(workflow_lint.__file__).resolve()), run_name="__main__")
+
+    assert raised.value.code == expected
+    assert run.call_count == 3
+
+
+@pytest.mark.parametrize(
+    ("return_codes", "expected", "diagnostics"),
+    [
+        ((0, 0), 0, ""),
+        ((1, 0), 1, "ShellCheck: {path}, job first, step 2\n"),
+        ((0, 1), 1, "ShellCheck: {path}, job second, step 1\n"),
+        (
+            (1, 1),
+            1,
+            (
+                "ShellCheck: {path}, job first, step 2\n"
+                "ShellCheck: {path}, job second, step 1\n"
+            ),
+        ),
+    ],
+    ids=["success", "first-job-fails", "last-job-fails", "both-jobs-fail"],
+)
+def test_shell_checker_keeps_failure_evidence_across_jobs(  # noqa: PLR0913 -- One case includes exit status and diagnostics.
+    tmp_path: Path,
+    mocker: MockerFixture,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    return_codes: tuple[int, int],
+    expected: int,
+    diagnostics: str,
+) -> None:
+    path = tmp_path / "ci.yml"
+    path.write_text(
+        "jobs:\n  first:\n    steps:\n      - uses: actions/checkout@v4\n"
+        "      - run: echo first\n  second:\n    steps:\n      - run: echo second\n",
+        encoding="utf-8",
+    )
+    run = mocker.patch.object(
+        subprocess,
+        "run",
+        autospec=True,
+        side_effect=[
+            subprocess.CompletedProcess([], return_codes[0]),
+            subprocess.CompletedProcess([], return_codes[1]),
+        ],
+    )
+
+    result = workflow_lint.check_shells([path], "resolved-shellcheck")
+
+    assert result == expected
+    assert capsys.readouterr().out == diagnostics.format(path=path)
+    assert run.call_count == 2
+
+
+def test_runner_checks_both_yaml_extensions_in_sorted_order(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    directory = tmp_path / ".github/workflows"
+    directory.mkdir(parents=True)
+    (directory / "z.yml").write_text("jobs: {}\n", encoding="utf-8")
+    (directory / "a.yaml").write_text("jobs: {}\n", encoding="utf-8")
+    (directory / "ignored.txt").write_text("not a workflow", encoding="utf-8")
+    mocker.patch.object(shutil, "which", autospec=True, return_value="shellcheck")
+    run = mocker.patch.object(
+        subprocess,
+        "run",
+        autospec=True,
+        return_value=subprocess.CompletedProcess([], 0),
+    )
+
+    with chdir(tmp_path):
+        result = workflow_lint.main()
+
+    assert result == 0
+    assert run.call_args_list == [
+        mocker.call(
+            [
+                "actionlint",
+                "-shellcheck",
+                "",
+                "-pyflakes",
+                "",
+                str(Path(".github/workflows/a.yaml")),
+                str(Path(".github/workflows/z.yml")),
+            ],
+            check=False,
+            timeout=180,
+        ),
+        mocker.call(
+            [
+                "zizmor",
+                "--offline",
+                "--no-progress",
+                "--persona",
+                "auditor",
+                "--format",
+                "plain",
+                str(Path(".github/workflows/a.yaml")),
+                str(Path(".github/workflows/z.yml")),
+            ],
+            check=False,
+            timeout=180,
+        ),
+    ]

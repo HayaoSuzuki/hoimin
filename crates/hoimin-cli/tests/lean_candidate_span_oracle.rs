@@ -296,12 +296,9 @@ fn serde_spool_machine_and_session_preserve_the_lean_identity_projection() {
         .find(|case| case.id == "spool_machine_session_projection")
         .unwrap();
     let candidate = mutation_candidate(&case).unwrap();
+
     let encoded = serde_json::to_vec(&candidate).unwrap();
-
     let decoded: MutationCandidate = serde_json::from_slice(&encoded).unwrap();
-
-    assert_eq!(decoded, candidate);
-
     let directory = tempfile::tempdir().unwrap();
     let mut store = CandidateStore::new_in(1, directory.path()).unwrap();
     store.push(&candidate).unwrap();
@@ -309,13 +306,10 @@ fn serde_spool_machine_and_session_preserve_the_lean_identity_projection() {
     let (spooled, cursor) = CandidateStore::replay_one(&reference, CandidateCursor::START)
         .unwrap()
         .unwrap();
-    assert_eq!(spooled, candidate);
-    assert!(
-        CandidateStore::replay_one(&reference, cursor)
-            .unwrap()
-            .is_none()
-    );
-
+    let spooled_matches = spooled == candidate;
+    let replay_finished = CandidateStore::replay_one(&reference, cursor)
+        .unwrap()
+        .is_none();
     let effect = ApplyMutation {
         id: EffectId(3),
         worker: 0,
@@ -323,8 +317,6 @@ fn serde_spool_machine_and_session_preserve_the_lean_identity_projection() {
     };
     let effect: ApplyMutation =
         serde_json::from_slice(&serde_json::to_vec(&effect).unwrap()).unwrap();
-    assert_eq!(effect.candidate, candidate);
-
     let database = directory.path().join("session.sqlite3");
     let mut session = SessionHandler::open(database).unwrap();
     session
@@ -358,7 +350,12 @@ fn serde_spool_machine_and_session_preserve_the_lean_identity_projection() {
             mutant_id: candidate.id.clone(),
         })
         .unwrap();
+
+    assert_eq!(decoded, candidate);
+    assert_eq!(effect.candidate, candidate);
     assert_eq!(loaded.result.unwrap().mutant_id, candidate.id);
+    assert!(spooled_matches);
+    assert!(replay_finished);
 }
 
 #[rstest::rstest]
@@ -474,13 +471,7 @@ fn python_executable() -> PathBuf {
     repo_root().join(VENV_PYTHON_PATH)
 }
 
-#[tokio::test]
-async fn public_plan_and_verify_preserve_all_strict_candidate_fields() {
-    let cases = parse_corpus(CORPUS)
-        .into_iter()
-        .filter(|case| case.mode == "strict")
-        .collect::<Vec<_>>();
-    let project = Project::from_cases(&cases);
+fn strict_candidate_plan_args(project: &Project, cases: &[OracleCase]) -> Vec<OsString> {
     let mut args = vec![
         OsString::from("hoimin"),
         OsString::from("plan"),
@@ -496,7 +487,7 @@ async fn public_plan_and_verify_preserve_all_strict_candidate_fields() {
         OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--allow-best-effort-memory"),
     ];
-    for case in &cases {
+    for case in cases {
         args.extend([
             OsString::from("--file"),
             case.candidate.path.as_os_str().to_owned(),
@@ -508,15 +499,22 @@ async fn public_plan_and_verify_preserve_all_strict_candidate_fields() {
         OsString::from("-c"),
         OsString::from("pass"),
     ]);
+    args
+}
+
+#[tokio::test]
+async fn public_plan_and_verify_preserve_all_strict_candidate_fields() {
+    let cases = parse_corpus(CORPUS)
+        .into_iter()
+        .filter(|case| case.mode == "strict")
+        .collect::<Vec<_>>();
+    let project = Project::from_cases(&cases);
+    let args = strict_candidate_plan_args(&project, &cases);
     let stdout = CollectingWriter::default();
     let stderr = CollectingWriter::default();
-    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
-    assert_eq!(
-        code,
-        0,
-        "stderr={}",
-        String::from_utf8_lossy(&stderr.snapshot())
-    );
+
+    let plan_code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    let plan_stderr = stderr.snapshot();
     let manifest: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
     let candidates = manifest["candidates"].as_array().unwrap();
     let mut selected_ids = Vec::new();
@@ -534,10 +532,8 @@ async fn public_plan_and_verify_preserve_all_strict_candidate_fields() {
                 #[cfg_attr(coverage_nightly, coverage(off))]
                 || panic!("missing strict candidate {}", case.id),
             );
-        assert_public_candidate(actual, case);
         selected_ids.push(actual["id"].as_str().unwrap().to_owned());
     }
-
     let plan = project.root.join("plan.json");
     std::fs::write(&plan, stdout.snapshot()).unwrap();
     let mut verify = vec![
@@ -551,14 +547,21 @@ async fn public_plan_and_verify_preserve_all_strict_candidate_fields() {
     stdout.clear();
     stderr.clear();
     let code = hoimin_cli::run_with_writers(verify, stdout.clone(), stderr.clone()).await;
+    let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
+    let mutants = report["mutants"].as_array().unwrap();
+
+    assert_eq!(
+        plan_code,
+        0,
+        "stderr={}",
+        String::from_utf8_lossy(&plan_stderr)
+    );
     assert_eq!(
         code,
         0,
         "stderr={}",
         String::from_utf8_lossy(&stderr.snapshot())
     );
-    let report: serde_json::Value = jsonl_report::from_slice(&stdout.snapshot()).unwrap();
-    let mutants = report["mutants"].as_array().unwrap();
     assert_eq!(mutants.len(), selected_ids.len());
     assert_eq!(
         mutants
@@ -576,6 +579,18 @@ async fn public_plan_and_verify_preserve_all_strict_candidate_fields() {
             .find(|item| item["candidate"]["path"] == case.candidate.path.as_str())
             .unwrap();
         assert_public_candidate(&actual["candidate"], case);
+    }
+    for case in &cases {
+        let actual = candidates
+            .iter()
+            .find(|candidate| {
+                candidate["path"] == case.candidate.path.as_str()
+                    && candidate["span"]["start"] == case.candidate.start
+                    && candidate["span"]["length"] == case.candidate.length
+                    && candidate["operator"] == case.candidate.operator
+            })
+            .unwrap();
+        assert_public_candidate(actual, case);
     }
 }
 
@@ -714,6 +729,7 @@ fn workspace_rejects_invalid_locations_as_invalid_spans() {
 fn span_shape_rejects_non_utf8_source() {
     let mut case = parse_corpus(CORPUS).remove(0);
     case.source[0] = 255;
+
     validate_case_shape(&case);
 }
 
@@ -722,6 +738,7 @@ fn span_shape_rejects_non_utf8_source() {
 fn span_shape_rejects_an_unowned_scenario() {
     let mut case = parse_corpus(CORPUS).remove(0);
     case.scenario = "unowned".to_owned();
+
     validate_case_shape(&case);
 }
 
@@ -731,6 +748,10 @@ fn span_shape_rejects_an_unowned_scenario() {
 fn candidate_projection_rejects_non_utf8_evidence(#[case] corrupt: fn(&mut OracleCase)) {
     let mut case = parse_corpus(CORPUS).remove(0);
     corrupt(&mut case);
-    assert!(descriptor(&case).is_none());
-    assert!(mutation_candidate(&case).is_none());
+
+    let actual_0 = descriptor(&case);
+    let actual_1 = mutation_candidate(&case);
+
+    assert!(actual_0.is_none());
+    assert!(actual_1.is_none());
 }

@@ -91,11 +91,12 @@ mod runtime_coverage {
             )
             .await
             .unwrap_err();
-        assert!(
-            error.starts_with("preparation failed: primary fixture; "),
-            "{error}"
-        );
-        assert!(error.contains(expected), "{error}");
+
+        let actual = error.starts_with("preparation failed: primary fixture; ");
+        let actual_2 = error.contains(expected);
+
+        assert!(actual, "{error}");
+        assert!(actual_2, "{error}");
     }
 
     #[tokio::test]
@@ -109,6 +110,7 @@ mod runtime_coverage {
                 Box::new(DiagnosticWriter(DiagnosticFault::None)) as Box<dyn std::io::Write + Send>,
             )
             .await;
+
         assert_eq!(result, Ok(130));
     }
 
@@ -116,20 +118,22 @@ mod runtime_coverage {
     async fn preparation_dispose_reports_owned_destructor_panic() {
         let timing = PreparationToken::new(Duration::from_secs(30), RunControl::new());
         let error = timing.dispose(PanicDuringDisposal).await.unwrap_err();
-        assert!(
-            matches!(error, PreparationError::Failed(message) if message.contains("preparation rollback task failed:") && message.contains("owned preparation rollback panic"))
-        );
+
+        let actual = matches!(error, PreparationError::Failed(message) if message.contains("preparation rollback task failed:") && message.contains("owned preparation rollback panic"));
+
+        assert!(actual);
     }
 
     #[tokio::test]
     async fn preparation_dispose_finishes_owned_drop() {
         let timing = PreparationToken::new(Duration::from_secs(30), RunControl::new());
-        assert!(
-            timing
-                .dispose(String::from("owned rollback resource"))
-                .await
-                .is_ok()
-        );
+
+        let actual = timing
+            .dispose(String::from("owned rollback resource"))
+            .await
+            .is_ok();
+
+        assert!(actual);
     }
 
     #[tokio::test]
@@ -147,10 +151,13 @@ mod runtime_coverage {
             )
             .await
             .unwrap_err();
-        assert!(matches!(
+
+        let actual = matches!(
             error,
             PreparationError::Stopped(ShutdownCause::Cancellation)
-        ));
+        );
+
+        assert!(actual);
     }
 
     #[tokio::test(start_paused = true)]
@@ -165,10 +172,13 @@ mod runtime_coverage {
             )
             .await
             .unwrap_err();
-        assert!(matches!(
+
+        let actual = matches!(
             error,
             PreparationError::Stopped(ShutdownCause::TotalTimeout)
-        ));
+        );
+
+        assert!(actual);
     }
 
     #[tokio::test]
@@ -184,10 +194,13 @@ mod runtime_coverage {
             )
             .await
             .unwrap_err();
-        assert!(matches!(
+
+        let actual = matches!(
             error,
             PreparationError::Stopped(ShutdownCause::Cancellation)
-        ));
+        );
+
+        assert!(actual);
     }
 
     #[tokio::test]
@@ -203,9 +216,10 @@ mod runtime_coverage {
             )
             .await
             .unwrap_err();
-        assert!(
-            matches!(error, PreparationError::Failed(message) if message == "owned interrupt failure")
-        );
+
+        let actual = matches!(error, PreparationError::Failed(message) if message == "owned interrupt failure");
+
+        assert!(actual);
     }
 
     #[tokio::test]
@@ -217,9 +231,10 @@ mod runtime_coverage {
         })
         .await
         .unwrap_err();
-        assert!(
-            matches!(error, PreparationError::Failed(message) if message.contains("preparation task failed:"))
-        );
+
+        let actual = matches!(error, PreparationError::Failed(message) if message.contains("preparation task failed:"));
+
+        assert!(actual);
     }
     #[tokio::test]
     async fn owned_blocking_absent_result_is_expired_without_retained_owner() {
@@ -232,9 +247,10 @@ mod runtime_coverage {
         let error = await_owned_blocking_until(&budget, &mut task)
             .await
             .unwrap_err();
-        assert!(
-            matches!(error, OwnedBlockingError::Expired(message) if message == budget.expiry_error(0, 0))
-        );
+
+        let actual = matches!(error, OwnedBlockingError::Expired(message) if message == budget.expiry_error(0, 0));
+
+        assert!(actual);
     }
 
     #[tokio::test]
@@ -243,21 +259,21 @@ mod runtime_coverage {
         let error = run_blocking_io::<()>(id, || panic!("owned blocking fixture panic"))
             .await
             .unwrap_err();
+
+        let actual = error
+            .failure
+            .message()
+            .contains("owned blocking fixture panic");
+
         assert_eq!(error.id, id);
-        assert!(
-            error
-                .failure
-                .message()
-                .contains("owned blocking fixture panic"),
-            "{}",
-            error.failure.message()
-        );
+        assert!(actual, "{}", error.failure.message());
     }
     #[test]
     fn cancelling_an_unqueued_worker_emits_metrics_state_warning() {
         let mut collector = Some(MetricsCollector::new("run-warning"));
         let mut warnings = Vec::new();
         cancel_queued_worker(7, &mut collector, &mut warnings);
+
         assert_eq!(
             warnings,
             vec![("metrics.state", "worker 7 has no queued process".to_owned())]
@@ -289,10 +305,13 @@ mod runtime_coverage {
         tokio::task::yield_now().await;
         release_tx.send(()).unwrap();
         let error = task.await.unwrap().unwrap_err();
-        assert!(matches!(
+
+        let actual = matches!(
             error,
             PreparationError::Stopped(ShutdownCause::Cancellation)
-        ));
+        );
+
+        assert!(actual);
     }
 
     #[tokio::test]
@@ -315,9 +334,11 @@ mod runtime_coverage {
         tokio::task::yield_now().await;
         release_tx.send(()).unwrap();
         let error = task.await.unwrap().unwrap_err();
-        assert!(
-            matches!(error, PreparationError::Failed(message) if message == "preparation failed")
-        );
+
+        let actual =
+            matches!(error, PreparationError::Failed(message) if message == "preparation failed");
+
+        assert!(actual);
     }
 
     #[tokio::test(start_paused = true)]
@@ -338,17 +359,21 @@ mod runtime_coverage {
         tokio::task::yield_now().await;
         release_tx.send(()).unwrap();
         let error = task.await.unwrap().unwrap_err();
-        assert!(matches!(
+
+        let actual = matches!(
             error,
             PreparationError::Stopped(ShutdownCause::TotalTimeout)
-        ));
+        );
+
+        assert!(actual);
     }
     #[test]
     fn preparation_string_error_conversion_retains_message() {
         let error = PreparationError::from(String::from("owned preparation error"));
-        assert!(
-            matches!(error, PreparationError::Failed(message) if message == "owned preparation error")
-        );
+
+        let actual = matches!(error, PreparationError::Failed(message) if message == "owned preparation error");
+
+        assert!(actual);
     }
 
     #[tokio::test]
@@ -365,10 +390,13 @@ mod runtime_coverage {
             )
             .await
             .unwrap_err();
-        assert!(matches!(
+
+        let actual = matches!(
             error,
             PreparationError::Stopped(ShutdownCause::Cancellation)
-        ));
+        );
+
+        assert!(actual);
     }
     #[tokio::test]
     async fn preparation_cancellation_overrides_an_already_stopped_result() {
@@ -378,10 +406,13 @@ mod runtime_coverage {
         let result = timing
             .accept_test_result::<()>(Err(PreparationError::Stopped(ShutdownCause::TotalTimeout)))
             .await;
-        assert!(matches!(
+
+        let actual = matches!(
             result,
             Err(PreparationError::Stopped(ShutdownCause::Cancellation))
-        ));
+        );
+
+        assert!(actual);
     }
     #[derive(Debug)]
     struct DisposalWitness(Arc<std::sync::atomic::AtomicBool>);
@@ -411,16 +442,20 @@ mod runtime_coverage {
         tokio::time::timeout(Duration::from_secs(5), ready.notified())
             .await
             .unwrap();
-        assert!(!disposed.load(Ordering::Acquire));
+        let retained_before_delivery = !disposed.load(Ordering::Acquire);
         sender.send(Ok(())).unwrap();
         control.cancelled().await;
         release_tx.send(()).unwrap();
         let error = task.await.unwrap().unwrap_err();
-        assert!(disposed.load(Ordering::Acquire));
-        assert!(matches!(
+        let disposed_after_delivery = disposed.load(Ordering::Acquire);
+        let cancelled = matches!(
             error,
             PreparationError::Stopped(ShutdownCause::Cancellation)
-        ));
+        );
+
+        assert!(retained_before_delivery);
+        assert!(disposed_after_delivery);
+        assert!(cancelled);
     }
     #[tokio::test]
     async fn preparation_run_reports_worker_panic_during_interrupt_shutdown() {
@@ -441,9 +476,10 @@ mod runtime_coverage {
         control.cancelled().await;
         release_tx.send(()).unwrap();
         let error = task.await.unwrap().unwrap_err();
-        assert!(
-            matches!(error, PreparationError::Failed(message) if message.contains("preparation task failed:"))
-        );
+
+        let actual = matches!(error, PreparationError::Failed(message) if message.contains("preparation task failed:"));
+
+        assert!(actual);
     }
 
     #[tokio::test]
@@ -465,9 +501,10 @@ mod runtime_coverage {
         control.cancelled().await;
         release_tx.send(()).unwrap();
         let error = task.await.unwrap().unwrap_err();
-        assert!(
-            matches!(error, PreparationError::Failed(message) if message == "owned operation failed")
-        );
+
+        let actual = matches!(error, PreparationError::Failed(message) if message == "owned operation failed");
+
+        assert!(actual);
     }
     #[tokio::test]
     async fn preparation_reports_disposal_failure_after_checked_owner_delivery() {
@@ -490,9 +527,10 @@ mod runtime_coverage {
         control.cancelled().await;
         release_tx.send(()).unwrap();
         let error = task.await.unwrap().err().unwrap();
-        assert!(
-            matches!(error, PreparationError::Failed(message) if message.contains("preparation rollback task failed:") && message.contains("owned preparation rollback panic"))
-        );
+
+        let actual = matches!(error, PreparationError::Failed(message) if message.contains("preparation rollback task failed:") && message.contains("owned preparation rollback panic"));
+
+        assert!(actual);
     }
     #[rstest::rstest]
     #[case(Ok(7), Ok(()), Ok(()), Ok(7))]
@@ -518,14 +556,13 @@ mod runtime_coverage {
         #[case] process: Result<(), &str>,
         #[case] expected: Result<i32, &str>,
     ) {
-        assert_eq!(
-            combine_close_results(
-                run.map_err(str::to_owned),
-                workspace.map_err(str::to_owned),
-                process.map_err(str::to_owned)
-            ),
-            expected.map_err(str::to_owned)
+        let actual = combine_close_results(
+            run.map_err(str::to_owned),
+            workspace.map_err(str::to_owned),
+            process.map_err(str::to_owned),
         );
+
+        assert_eq!(actual, expected.map_err(str::to_owned));
     }
 
     fn initialized_metrics(stages: &[&str]) -> MetricsCollector {
@@ -564,6 +601,7 @@ mod runtime_coverage {
             preflight_completed,
             cleanup_finished,
         );
+
         assert_eq!(warnings, vec![("metrics.state", expected.to_owned())]);
     }
     #[allow(
@@ -581,6 +619,7 @@ mod runtime_coverage {
         let owner = run_preparation(&timing, &mut interrupts, successful_preparation_operation)
             .await
             .unwrap();
+
         assert_eq!(format!("{owner:?}"), "()");
     }
 
@@ -593,10 +632,13 @@ mod runtime_coverage {
         let error = run_preparation(&timing, &mut interrupts, successful_preparation_operation)
             .await
             .unwrap_err();
-        assert!(matches!(
+
+        let actual = matches!(
             error,
             PreparationError::Stopped(ShutdownCause::Cancellation)
-        ));
+        );
+
+        assert!(actual);
     }
 
     #[derive(Debug)]
@@ -629,11 +671,11 @@ mod runtime_coverage {
         started.notified().await;
         tokio::time::advance(Duration::from_secs(2)).await;
         let error = task.await.unwrap().unwrap_err();
-        assert!(
-            matches!(error, PreparationError::Failed(message) if message == "preparation rollback exceeded shutdown grace")
-        );
+        let rollback_timed_out = matches!(error, PreparationError::Failed(message) if message == "preparation rollback exceeded shutdown grace");
         release_tx.send(()).unwrap();
         finished_rx.await.unwrap();
+
+        assert!(rollback_timed_out);
     }
     #[derive(Clone, Copy)]
     enum CheckedPreparationResult {
@@ -679,6 +721,7 @@ mod runtime_coverage {
     ) {
         let timing = checked_preparation_token(cancelled);
         let result = timing.accept_test_result(input.into_result()).await;
+
         assert_eq!(format!("{result:?}"), expected);
     }
 
@@ -687,9 +730,10 @@ mod runtime_coverage {
         let timing = checked_preparation_token(true);
         let owner: TestPreparationOwner = Box::new(PanicDuringDisposal);
         let error = timing.accept_test_result(Ok(owner)).await.unwrap_err();
-        assert!(
-            matches!(error, PreparationError::Failed(message) if message.contains("owned preparation rollback panic"))
-        );
+
+        let actual = matches!(error, PreparationError::Failed(message) if message.contains("owned preparation rollback panic"));
+
+        assert!(actual);
     }
 
     #[tokio::test]
@@ -711,10 +755,13 @@ mod runtime_coverage {
         tokio::task::yield_now().await;
         release_tx.send(()).unwrap();
         let error = task.await.unwrap().unwrap_err();
-        assert!(matches!(
+
+        let actual = matches!(
             error,
             PreparationError::Stopped(ShutdownCause::Cancellation)
-        ));
+        );
+
+        assert!(actual);
     }
 
     #[derive(Debug)]
@@ -746,15 +793,16 @@ mod runtime_coverage {
         control.cancel();
         tokio::time::advance(Duration::from_secs(2)).await;
         let error = task.await.unwrap().unwrap_err();
-        assert!(
-            matches!(error, PreparationError::Failed(message) if message.contains("preparation shutdown grace expired"))
-        );
-        assert!(matches!(
+        let shutdown_grace_expired = matches!(error, PreparationError::Failed(message) if message.contains("preparation shutdown grace expired"));
+        let worker_still_pending = matches!(
             finished_rx.try_recv(),
             Err(tokio::sync::oneshot::error::TryRecvError::Empty)
-        ));
+        );
         release_tx.send(()).unwrap();
         finished_rx.await.unwrap();
+
+        assert!(shutdown_grace_expired);
+        assert!(worker_still_pending);
     }
     #[tokio::test]
     async fn preparation_admit_returns_a_completed_future() {
@@ -762,7 +810,10 @@ mod runtime_coverage {
         let (_sender, mut interrupts) = preparation_monitor();
         let future = Box::pin(std::future::ready(()))
             as std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
-        assert!(timing.admit(&mut interrupts, future).await.is_ok());
+
+        let actual = timing.admit(&mut interrupts, future).await.is_ok();
+
+        assert!(actual);
     }
 
     #[tokio::test]
@@ -780,10 +831,13 @@ mod runtime_coverage {
         ready.notified().await;
         control.cancel();
         let error = task.await.unwrap().unwrap_err();
-        assert!(matches!(
+
+        let actual = matches!(
             error,
             PreparationError::Stopped(ShutdownCause::Cancellation)
-        ));
+        );
+
+        assert!(actual);
     }
 
     #[tokio::test]
@@ -797,6 +851,7 @@ mod runtime_coverage {
             )
             .await
             .unwrap_err();
+
         assert_eq!(
             error,
             "cancellation during preparation; owned cleanup failure"
@@ -815,6 +870,7 @@ mod runtime_coverage {
             )
             .await
             .unwrap_err();
+
         assert_eq!(error, "preparation failed: owned primary failure");
     }
     fn direct_process_request<C>(context: C) -> RunProcess<C> {
@@ -843,9 +899,10 @@ mod runtime_coverage {
             run_id: "direct-baseline".into(),
         }));
         let event = execute_effect(&mut context, effect).await;
-        assert!(
-            matches!(event, RunEvent::BaselineFinished(value) if value.id == EffectId(880) && value.worker == Some(0) && value.termination == hoimin_core::ProcessTermination::Exit(0))
-        );
+
+        let actual = matches!(event, RunEvent::BaselineFinished(value) if value.id == EffectId(880) && value.worker == Some(0) && value.termination == hoimin_core::ProcessTermination::Exit(0));
+
+        assert!(actual);
     }
 
     #[tokio::test]
@@ -857,9 +914,10 @@ mod runtime_coverage {
             mutant_id: "owned-mutant".into(),
         }));
         let event = execute_effect(&mut context, effect).await;
-        assert!(
-            matches!(event, RunEvent::MutantFinished(value) if value.id == EffectId(880) && value.worker == Some(0) && value.termination == hoimin_core::ProcessTermination::Exit(0))
-        );
+
+        let actual = matches!(event, RunEvent::MutantFinished(value) if value.id == EffectId(880) && value.worker == Some(0) && value.termination == hoimin_core::ProcessTermination::Exit(0));
+
+        assert!(actual);
     }
 
     #[tokio::test]
@@ -870,9 +928,10 @@ mod runtime_coverage {
             RunEffect::Preflight(Preflight { id: EffectId(881) }),
         )
         .await;
-        assert!(
-            matches!(event, RunEvent::EffectFailed(error) if error.id == EffectId(881) && error.failure.code() == "shell.targets.missing")
-        );
+
+        let actual = matches!(event, RunEvent::EffectFailed(error) if error.id == EffectId(881) && error.failure.code() == "shell.targets.missing");
+
+        assert!(actual);
     }
 
     #[tokio::test]
@@ -888,9 +947,10 @@ mod runtime_coverage {
             }),
         )
         .await;
-        assert!(
-            matches!(event, RunEvent::EffectFailed(error) if error.id == EffectId(882) && error.failure.code() == "target.resolve")
-        );
+
+        let actual = matches!(event, RunEvent::EffectFailed(error) if error.id == EffectId(882) && error.failure.code() == "target.resolve");
+
+        assert!(actual);
     }
     type RootSetupResult = Result<
         (
@@ -944,11 +1004,15 @@ mod runtime_coverage {
         let error = create_roots_with_cancellation(parent, &control, Some(boundary), &timing)
             .err()
             .unwrap();
-        assert!(matches!(
+
+        let actual = matches!(
             error,
             PreparationError::Stopped(ShutdownCause::Cancellation)
-        ));
-        assert_eq!(root_setup_residual(parent), Vec::<OsString>::new());
+        );
+        let actual_2 = root_setup_residual(parent);
+
+        assert!(actual);
+        assert_eq!(actual_2, Vec::<OsString>::new());
     }
 
     #[tokio::test]
@@ -961,11 +1025,15 @@ mod runtime_coverage {
         let error = create_roots_with_cancellation(parent, &control, None, &timing)
             .err()
             .unwrap();
-        assert!(matches!(
+
+        let actual = matches!(
             error,
             PreparationError::Stopped(ShutdownCause::Cancellation)
-        ));
-        assert!(!parent.join("hoimin-workspaces-v2").exists());
+        );
+        let actual_2 = !parent.join("hoimin-workspaces-v2").exists();
+
+        assert!(actual);
+        assert!(actual_2);
     }
 
     #[tokio::test]
@@ -979,10 +1047,13 @@ mod runtime_coverage {
         let error = create_roots_with_cancellation(parent, &control, None, &timing)
             .err()
             .unwrap();
-        assert!(
-            matches!(error, PreparationError::Failed(message) if message.contains("file-parent"))
-        );
-        assert_eq!(std::fs::read(path).unwrap(), b"owned parent blocker");
+
+        let actual =
+            matches!(error, PreparationError::Failed(message) if message.contains("file-parent"));
+        let actual_2 = std::fs::read(path).unwrap();
+
+        assert!(actual);
+        assert_eq!(actual_2, b"owned parent blocker");
     }
 
     #[tokio::test]
@@ -993,8 +1064,8 @@ mod runtime_coverage {
         let timing = PreparationToken::new(Duration::from_secs(30), control.clone());
         let (rollback, execution, delivery, execution_spool, delivery_spool, _) =
             create_roots_with_cancellation(parent, &control, None, &timing).unwrap();
-        assert!(execution.path().exists());
-        assert!(delivery.path().exists());
+        let execution_present_before_rollback = execution.path().exists();
+        let delivery_present_before_rollback = delivery.path().exists();
         drop((
             execution_spool,
             delivery_spool,
@@ -1002,7 +1073,11 @@ mod runtime_coverage {
             delivery,
             rollback,
         ));
-        assert_eq!(root_setup_residual(parent), Vec::<OsString>::new());
+        let remaining_roots = root_setup_residual(parent);
+
+        assert!(execution_present_before_rollback);
+        assert!(delivery_present_before_rollback);
+        assert_eq!(remaining_roots, Vec::<OsString>::new());
     }
     #[rstest::rstest]
     #[case(owner_io_faults::Stage::ExecutionRoot)]
@@ -1021,10 +1096,8 @@ mod runtime_coverage {
         let error = create_roots_with_cancellation(parent, &control, None, &timing)
             .err()
             .unwrap();
-        assert!(
-            matches!(error, PreparationError::Failed(message) if message.contains(&format!("injected shell owner operation: {stage:?}")))
-        );
-        assert_eq!(root_setup_residual(parent), Vec::<OsString>::new());
+        let creation_failed = matches!(error, PreparationError::Failed(message) if message.contains(&format!("injected shell owner operation: {stage:?}")));
+        let roots_after_failure = root_setup_residual(parent);
         let retry_timing = PreparationToken::new(Duration::from_secs(30), control.clone());
         let (rollback, execution, delivery, execution_spool, delivery_spool, _) =
             create_roots_with_cancellation(parent, &control, None, &retry_timing).unwrap();
@@ -1035,7 +1108,11 @@ mod runtime_coverage {
             delivery,
             rollback,
         ));
-        assert_eq!(root_setup_residual(parent), Vec::<OsString>::new());
+        let roots_after_retry = root_setup_residual(parent);
+
+        assert!(creation_failed);
+        assert_eq!(roots_after_failure, Vec::<OsString>::new());
+        assert_eq!(roots_after_retry, Vec::<OsString>::new());
     }
     fn runtime_setup_config(project: &TempDir) -> RunConfig {
         shell_setup_test_config(project)
@@ -1059,11 +1136,15 @@ mod runtime_coverage {
         )
         .err()
         .unwrap();
-        assert!(matches!(
+
+        let actual = matches!(
             error,
             PreparationError::Stopped(ShutdownCause::Cancellation)
-        ));
-        assert!(!parent.join("hoimin-workspaces-v2").exists());
+        );
+        let actual_2 = !parent.join("hoimin-workspaces-v2").exists();
+
+        assert!(actual);
+        assert!(actual_2);
     }
 
     #[tokio::test]
@@ -1079,8 +1160,12 @@ mod runtime_coverage {
         )
         .err()
         .unwrap();
-        assert!(error.contains("owned-file-parent"), "{error}");
-        assert_eq!(std::fs::read(path).unwrap(), b"owned shell parent");
+
+        let actual = error.contains("owned-file-parent");
+        let actual_2 = std::fs::read(path).unwrap();
+
+        assert!(actual, "{error}");
+        assert_eq!(actual_2, b"owned shell parent");
     }
 
     #[tokio::test]
@@ -1094,8 +1179,12 @@ mod runtime_coverage {
         )
         .err()
         .unwrap();
-        assert!(error.contains("owned-root-parent"), "{error}");
-        assert_eq!(std::fs::read(path).unwrap(), b"owned root parent");
+
+        let actual = error.contains("owned-root-parent");
+        let actual_2 = std::fs::read(path).unwrap();
+
+        assert!(actual, "{error}");
+        assert_eq!(actual_2, b"owned root parent");
     }
 
     #[cfg(target_os = "macos")]
@@ -1121,21 +1210,25 @@ mod runtime_coverage {
             prepare_shell_setup_sync_in(config, parent, &std::mem::drop::<ShellSetupBoundary>)
                 .err()
                 .unwrap();
-        assert!(
-            error.contains("require --allow-best-effort-memory"),
-            "{error}"
-        );
-        assert_eq!(root_setup_residual(parent), Vec::<OsString>::new());
+
+        let actual = error.contains("require --allow-best-effort-memory");
+        let actual_2 = root_setup_residual(parent);
+
+        assert!(actual, "{error}");
+        assert_eq!(actual_2, Vec::<OsString>::new());
     }
     #[test]
     fn default_run_control_has_no_completions_in_flight() {
-        assert_eq!(RunControl::new().max_completion_in_flight(), 0);
+        let actual = RunControl::new().max_completion_in_flight();
+
+        assert_eq!(actual, 0);
     }
 
     #[test]
     fn shell_disk_lifecycle_rejects_duplicate_logical_roots() {
         let error =
             ShellDiskLifecycle::new([DiskRootId::Execution, DiskRootId::Execution]).unwrap_err();
+
         assert_eq!(
             error,
             hoimin_core::DiskLifecycleError::DuplicateRoot(DiskRootId::Execution)
@@ -1157,12 +1250,13 @@ mod runtime_coverage {
         );
         let result =
             close_context_resources(&mut context, &budget, false, true, Box::new(|| {})).await;
-        assert!(
-            result
-                .process
-                .unwrap_err()
-                .contains("injected portable close failure")
-        );
+
+        let actual = result
+            .process
+            .unwrap_err()
+            .contains("injected portable close failure");
+
+        assert!(actual);
         assert_eq!(result.workspace, Ok(()));
         assert_eq!(result.expiry, None);
     }
@@ -1191,28 +1285,28 @@ mod runtime_coverage {
         let result =
             close_context_resources(&mut context, &budget, false, true, Box::new(|| {})).await;
         let error = result.workspace.unwrap_err();
-        assert!(error.contains(root.as_str()), "{error}");
+
+        let actual = error.contains(root.as_str());
+        let actual_2 = std::fs::read(root.join("replacement-sentinel")).unwrap();
+        let actual_3 = std::fs::read(moved.join("workspace/pkg/a.py")).unwrap();
+
+        assert!(actual, "{error}");
         assert_eq!(result.process, Ok(()));
-        assert_eq!(
-            std::fs::read(root.join("replacement-sentinel")).unwrap(),
-            b"owned replacement"
-        );
-        assert_eq!(
-            std::fs::read(moved.join("workspace/pkg/a.py")).unwrap(),
-            b"original\n"
-        );
+        assert_eq!(actual_2, b"owned replacement");
+        assert_eq!(actual_3, b"original\n");
     }
     #[tokio::test]
     async fn final_measurement_pause_returns_when_its_controller_has_gone() {
         let (pause, controller) = FinalMeasurementPause::with_timeout(Duration::from_secs(5));
         drop(controller);
         let task = tokio::task::spawn_blocking(move || pause.wait());
-        assert!(
-            tokio::time::timeout(Duration::from_secs(5), task)
-                .await
-                .unwrap()
-                .is_ok()
-        );
+
+        let actual = tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .unwrap()
+            .is_ok();
+
+        assert!(actual);
     }
 
     #[tokio::test]
@@ -1229,8 +1323,12 @@ mod runtime_coverage {
         )
         .unwrap();
         let sample = sample_after_process_drain(&monitor, false).await;
-        assert!(sample.is_none());
-        assert!(monitor.stop_and_join(Duration::from_secs(5)).await);
+
+        let actual = sample.is_none();
+        let actual_2 = monitor.stop_and_join(Duration::from_secs(5)).await;
+
+        assert!(actual);
+        assert!(actual_2);
     }
     #[tokio::test]
     async fn draining_owned_blocking_event_delivers_it_once_and_releases_its_slot() {
@@ -1269,11 +1367,14 @@ mod runtime_coverage {
             |completion| events.push(accept_blocking_completion(&mut context, completion)),
         )
         .await;
+
+        let actual = io_tasks.is_empty();
+
         assert_eq!(result, Ok(()));
         assert_eq!(events, vec![RunEvent::CancellationRequested]);
         assert_eq!(in_flight, 0);
         assert!(!expired);
-        assert!(io_tasks.is_empty());
+        assert!(actual);
     }
     #[cfg(unix)]
     #[derive(Clone, Copy)]
@@ -1347,16 +1448,16 @@ mod runtime_coverage {
         .await
         .unwrap()
         .unwrap_err();
-        assert!(
-            error.contains("disk monitor stop channel closed"),
-            "{error}"
-        );
-        assert!(observed.max_process_tasks() > 0);
-        assert!(
-            !observed
-                .finalization_events()
-                .contains(&"output_acknowledged")
-        );
+
+        let actual = error.contains("disk monitor stop channel closed");
+        let actual_2 = observed.max_process_tasks() > 0;
+        let actual_3 = !observed
+            .finalization_events()
+            .contains(&"output_acknowledged");
+
+        assert!(actual, "{error}");
+        assert!(actual_2);
+        assert!(actual_3);
     }
     #[cfg(unix)]
     struct MonitorPanicSerialWriter {
@@ -1425,16 +1526,15 @@ mod runtime_coverage {
         release_tx.send(()).unwrap();
         drop(run);
         let error = result.unwrap().unwrap_err();
-        assert!(
-            error.contains("disk monitor stop channel closed"),
-            "{error}"
-        );
+
+        let actual = error.contains("disk monitor stop channel closed");
+        let actual_2 = !observed
+            .finalization_events()
+            .contains(&"output_acknowledged");
+
+        assert!(actual, "{error}");
         assert!(retained);
-        assert!(
-            !observed
-                .finalization_events()
-                .contains(&"output_acknowledged")
-        );
+        assert!(actual_2);
     }
     #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1483,19 +1583,21 @@ mod runtime_coverage {
         .await;
         drop(run);
         let (result, ()) = completed.unwrap();
-        assert_eq!(result.unwrap(), 2);
-        assert!(observed.finalization_events().contains(&"disk_stop"));
-        assert!(
-            observed
-                .finalization_events()
-                .contains(&"output_acknowledged")
-        );
-        assert!(
-            observed
-                .managed_root_paths()
-                .iter()
-                .all(|path| !path.exists())
-        );
+
+        let actual = result.unwrap();
+        let actual_2 = observed.finalization_events().contains(&"disk_stop");
+        let actual_3 = observed
+            .finalization_events()
+            .contains(&"output_acknowledged");
+        let actual_4 = observed
+            .managed_root_paths()
+            .iter()
+            .all(|path| !path.exists());
+
+        assert_eq!(actual, 2);
+        assert!(actual_2);
+        assert!(actual_3);
+        assert!(actual_4);
     }
     #[tokio::test]
     async fn elapsed_deadline_after_preparation_stops_before_first_effect_dispatch() {
@@ -1534,8 +1636,12 @@ mod runtime_coverage {
             monitor,
         )
         .await;
-        assert_eq!(result.unwrap(), 4);
-        assert_eq!(observed.max_process_tasks(), 0);
+
+        let actual = result.unwrap();
+        let actual_2 = observed.max_process_tasks();
+
+        assert_eq!(actual, 4);
+        assert_eq!(actual_2, 0);
     }
     // macOS native filesystems reject this byte name with EILSEQ; Linux permits it.
     #[cfg(target_os = "linux")]
@@ -1554,11 +1660,12 @@ mod runtime_coverage {
             path: Utf8PathBuf::from_path_buf(logical).unwrap(),
         });
         let config = RunConfig::try_from(data).unwrap();
-        assert_eq!(
-            prepare_session_artifacts(&config).unwrap_err(),
-            "session artifact path is not UTF-8"
-        );
-        assert_eq!(std::fs::read(physical).unwrap(), b"owned session artifact");
+
+        let actual = prepare_session_artifacts(&config).unwrap_err();
+        let actual_2 = std::fs::read(physical).unwrap();
+
+        assert_eq!(actual, "session artifact path is not UTF-8");
+        assert_eq!(actual_2, b"owned session artifact");
     }
 
     // macOS native filesystems reject this byte name with EILSEQ; Linux permits it.
@@ -1579,11 +1686,12 @@ mod runtime_coverage {
             path: Utf8PathBuf::from_path_buf(logical.join("session.sqlite3")).unwrap(),
         });
         let config = RunConfig::try_from(data).unwrap();
-        assert_eq!(
-            prepare_session_artifacts(&config).unwrap_err(),
-            "session database path is not UTF-8"
-        );
-        assert!(!physical.join("session.sqlite3").exists());
+
+        let actual = prepare_session_artifacts(&config).unwrap_err();
+        let actual_2 = !physical.join("session.sqlite3").exists();
+
+        assert_eq!(actual, "session database path is not UTF-8");
+        assert!(actual_2);
     }
     #[tokio::test]
     async fn verified_plan_elapsed_preparation_deadline_reports_incomplete_without_baseline() {
@@ -1625,13 +1733,16 @@ mod runtime_coverage {
         let stdout = CollectingWriter::default();
         let stderr = CollectingWriter::default();
         let result = verified.execute(stdout.clone(), stderr.clone()).await;
-        assert_eq!(result.unwrap(), 4);
-        assert_eq!(stdout.snapshot(), Vec::<u8>::new());
-        assert!(
-            String::from_utf8(stderr.snapshot())
-                .unwrap()
-                .contains("during preparation; baseline was not started")
-        );
+
+        let actual = result.unwrap();
+        let actual_2 = stdout.snapshot();
+        let actual_3 = String::from_utf8(stderr.snapshot())
+            .unwrap()
+            .contains("during preparation; baseline was not started");
+
+        assert_eq!(actual, 4);
+        assert_eq!(actual_2, Vec::<u8>::new());
+        assert!(actual_3);
     }
     #[rstest::rstest]
     #[case::cleanup_ready_thread(0, false, true)]
@@ -1654,34 +1765,29 @@ mod runtime_coverage {
         );
         let fault = crate::io_faults::arm_after("cleanup.thread.spawn", preceding_spawns);
         let outcome = cleanup_managed_root(Arc::clone(&root), &budget).await;
-        assert!(fault.triggered());
-        assert_eq!(outcome.record.disposition, CleanupDisposition::Failed);
-        assert!(
-            outcome.error.contains(
-                "cleanup thread could not start: injected owned I/O failure: cleanup.thread.spawn"
-            ),
-            "{}",
-            outcome.error
+        let fault_triggered = fault.triggered();
+        let failed_disposition = outcome.record.disposition;
+        let spawn_failure_reported = outcome.error.contains(
+            "cleanup thread could not start: injected owned I/O failure: cleanup.thread.spawn",
         );
-        assert!(root.path().exists());
-        assert_eq!(
-            root.path().join(".hoimin-cleanup-ready.json").exists(),
-            marker_exists
-        );
-        assert_eq!(
-            outcome
-                .record
-                .evidence
-                .details
-                .iter()
-                .any(|detail| detail.starts_with("cleanup-ready: ")),
-            marker_failure_detail
-        );
+        let root_retained = root.path().exists();
+        let cleanup_marker_present = root.path().join(".hoimin-cleanup-ready.json").exists();
+        let cleanup_evidence_present = outcome
+            .record
+            .evidence
+            .details
+            .iter()
+            .any(|detail| detail.starts_with("cleanup-ready: "));
         drop(fault);
-        assert_eq!(
-            root.cleanup(Duration::from_secs(5)).disposition,
-            CleanupDisposition::Clean
-        );
+        let retried_disposition = root.cleanup(Duration::from_secs(5)).disposition;
+
+        assert!(fault_triggered);
+        assert_eq!(failed_disposition, CleanupDisposition::Failed);
+        assert!(spawn_failure_reported, "{}", outcome.error);
+        assert!(root_retained);
+        assert_eq!(cleanup_marker_present, marker_exists);
+        assert_eq!(cleanup_evidence_present, marker_failure_detail);
+        assert_eq!(retried_disposition, CleanupDisposition::Clean);
     }
     #[tokio::test]
     async fn process_release_wait_remains_pending_until_the_last_owner_drops() {
@@ -1696,10 +1802,13 @@ mod runtime_coverage {
             std::task::Poll::Ready(std::future::Future::poll(waiting.as_mut(), context))
         })
         .await;
-        assert!(first_poll.is_pending());
+        let pending_before_release = first_poll.is_pending();
         drop(process);
         waiting.await;
-        assert!(weak.upgrade().is_none());
+        let owner_gone_after_release = weak.upgrade().is_none();
+
+        assert!(pending_before_release);
+        assert!(owner_gone_after_release);
     }
     #[rstest::rstest]
     #[case::native(RunControl::new)]
@@ -1720,14 +1829,18 @@ mod runtime_coverage {
         let control = make_control();
         let fault = crate::io_faults::arm("shell.disk_monitor.start");
         let error = begin_disk_monitor(&prepared, &control).err().unwrap();
-        assert!(fault.triggered());
-        assert_eq!(
-            error,
-            "disk.measurement.failed: injected owned I/O failure: shell.disk_monitor.start"
-        );
+        let fault_triggered = fault.triggered();
+        let monitor_error = (error).clone();
         drop(fault);
         drop(prepared);
-        assert!(roots.iter().all(|root| !root.exists()));
+        let roots_removed = roots.iter().all(|root| !root.exists());
+
+        assert!(fault_triggered);
+        assert_eq!(
+            monitor_error,
+            "disk.measurement.failed: injected owned I/O failure: shell.disk_monitor.start"
+        );
+        assert!(roots_removed);
     }
     #[tokio::test]
     async fn asynchronous_preparation_monitor_failure_preserves_error_and_removes_owned_roots() {
@@ -1741,11 +1854,12 @@ mod runtime_coverage {
             .await
             .err()
             .unwrap();
-        assert!(
-            matches!(error, PreparationError::Failed(message) if message == "disk.measurement.failed: injected owned I/O failure: shell.disk_monitor.start")
-        );
+        let monitor_start_failed = matches!(error, PreparationError::Failed(message) if message == "disk.measurement.failed: injected owned I/O failure: shell.disk_monitor.start");
         let parent = Utf8Path::from_path(control.managed_parent.path()).unwrap();
-        assert_eq!(root_setup_residual(parent), Vec::<OsString>::new());
+        let remaining_roots = root_setup_residual(parent);
+
+        assert!(monitor_start_failed);
+        assert_eq!(remaining_roots, Vec::<OsString>::new());
     }
     struct HeldInitialMeasurement {
         entered: std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
@@ -1813,13 +1927,17 @@ mod runtime_coverage {
         })
         .await
         .unwrap();
-        assert!(matches!(
+        let cancelled = matches!(
             result,
             Err(PreparationError::Stopped(ShutdownCause::Cancellation))
-        ));
+        );
         let parent = Utf8Path::from_path(control.managed_parent.path()).unwrap();
-        assert_eq!(root_setup_residual(parent), Vec::<OsString>::new());
-        assert_eq!(control.max_process_tasks(), 0);
+        let remaining_roots = root_setup_residual(parent);
+        let peak_process_tasks = control.max_process_tasks();
+
+        assert!(cancelled);
+        assert_eq!(remaining_roots, Vec::<OsString>::new());
+        assert_eq!(peak_process_tasks, 0);
     }
 
     #[tokio::test]
@@ -1855,11 +1973,9 @@ mod runtime_coverage {
         .await
         .unwrap();
         let error = result.err().unwrap();
-        assert!(
-            matches!(error, PreparationError::Failed(message) if message.contains("preparation disk monitor did not join before shutdown grace; live measurement retains its roots"))
-        );
+        let join_grace_expired = matches!(error, PreparationError::Failed(message) if message.contains("preparation disk monitor did not join before shutdown grace; live measurement retains its roots"));
         let parent = Utf8Path::from_path(parent_owner.path()).unwrap();
-        assert_eq!(root_setup_residual(parent).len(), 2);
+        let roots_before_worker_exit = root_setup_residual(parent).len();
         release_tx.send(()).unwrap();
         drop(timing);
         drop(control);
@@ -1867,7 +1983,11 @@ mod runtime_coverage {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(root_setup_residual(parent).len(), 2);
+        let roots_after_worker_exit = root_setup_residual(parent).len();
+
+        assert!(join_grace_expired);
+        assert_eq!(roots_before_worker_exit, 2);
+        assert_eq!(roots_after_worker_exit, 2);
     }
     #[rstest::rstest]
     #[case::before_environment(RunPreparationCheckpoint::BeforeEnvironment)]
@@ -1892,14 +2012,18 @@ mod runtime_coverage {
             control,
         ))
         .await;
-        assert_eq!(result.unwrap(), 130);
-        assert_eq!(stdout.snapshot(), Vec::<u8>::new());
-        assert!(
-            String::from_utf8(stderr.snapshot())
-                .unwrap()
-                .contains("cancellation during preparation; baseline was not started")
-        );
-        assert_eq!(observed.max_process_tasks(), 0);
+
+        let actual = result.unwrap();
+        let actual_2 = stdout.snapshot();
+        let actual_3 = String::from_utf8(stderr.snapshot())
+            .unwrap()
+            .contains("cancellation during preparation; baseline was not started");
+        let actual_4 = observed.max_process_tasks();
+
+        assert_eq!(actual, 130);
+        assert_eq!(actual_2, Vec::<u8>::new());
+        assert!(actual_3);
+        assert_eq!(actual_4, 0);
     }
 
     #[tokio::test]
@@ -1920,15 +2044,20 @@ mod runtime_coverage {
         ))
         .await
         .unwrap_err();
-        assert!(error.contains("preparation failed"), "{error}");
-        assert!(error.contains("absent-fingerprint.lock"), "{error}");
-        assert_eq!(stdout.snapshot(), Vec::<u8>::new());
-        assert!(
-            String::from_utf8(stderr.snapshot())
-                .unwrap()
-                .contains("absent-fingerprint.lock")
-        );
-        assert_eq!(observed.max_process_tasks(), 0);
+
+        let actual = error.contains("preparation failed");
+        let actual_2 = error.contains("absent-fingerprint.lock");
+        let actual_3 = stdout.snapshot();
+        let actual_4 = String::from_utf8(stderr.snapshot())
+            .unwrap()
+            .contains("absent-fingerprint.lock");
+        let actual_5 = observed.max_process_tasks();
+
+        assert!(actual, "{error}");
+        assert!(actual_2, "{error}");
+        assert_eq!(actual_3, Vec::<u8>::new());
+        assert!(actual_4);
+        assert_eq!(actual_5, 0);
     }
     #[tokio::test]
     async fn cancellation_after_owned_root_setup_rolls_back_before_monitor_start() {
@@ -1946,16 +2075,20 @@ mod runtime_coverage {
             control,
         ))
         .await;
-        assert_eq!(result.unwrap(), 130);
-        assert_eq!(stdout.snapshot(), Vec::<u8>::new());
-        assert!(
-            String::from_utf8(stderr.snapshot())
-                .unwrap()
-                .contains("cancellation during preparation; baseline was not started")
-        );
+        let exit_code = result.unwrap();
+        let output = stdout.snapshot();
+        let cancelled_before_baseline = String::from_utf8(stderr.snapshot())
+            .unwrap()
+            .contains("cancellation during preparation; baseline was not started");
         let parent = Utf8Path::from_path(observed.managed_parent.path()).unwrap();
-        assert_eq!(root_setup_residual(parent), Vec::<OsString>::new());
-        assert_eq!(observed.max_process_tasks(), 0);
+        let remaining_roots = root_setup_residual(parent);
+        let peak_process_tasks = observed.max_process_tasks();
+
+        assert_eq!(exit_code, 130);
+        assert_eq!(output, Vec::<u8>::new());
+        assert!(cancelled_before_baseline);
+        assert_eq!(remaining_roots, Vec::<OsString>::new());
+        assert_eq!(peak_process_tasks, 0);
     }
 
     #[tokio::test]
@@ -1970,16 +2103,16 @@ mod runtime_coverage {
             .await
             .err()
             .unwrap();
-        assert!(
-            matches!(error, PreparationError::Failed(message) if message.contains("canonicalize managed-root parent") && message.contains("injected owned I/O failure: bootstrap.canonicalize"))
-        );
-        assert!(
-            !control
-                .managed_parent
-                .path()
-                .join("hoimin-workspaces-v2")
-                .exists()
-        );
+
+        let actual = matches!(error, PreparationError::Failed(message) if message.contains("canonicalize managed-root parent") && message.contains("injected owned I/O failure: bootstrap.canonicalize"));
+        let actual_2 = !control
+            .managed_parent
+            .path()
+            .join("hoimin-workspaces-v2")
+            .exists();
+
+        assert!(actual);
+        assert!(actual_2);
     }
     #[tokio::test]
     async fn rollback_timeout_after_joined_initial_measurement_preserves_owned_roots() {
@@ -2021,11 +2154,9 @@ mod runtime_coverage {
         .await
         .unwrap();
         let error = result.err().unwrap();
-        assert!(
-            matches!(error, PreparationError::Failed(message) if message == "preparation rollback exceeded shutdown grace")
-        );
+        let rollback_timed_out = matches!(error, PreparationError::Failed(message) if message == "preparation rollback exceeded shutdown grace");
         let parent = Utf8Path::from_path(parent_owner.path()).unwrap();
-        assert_eq!(root_setup_residual(parent).len(), 2);
+        let roots_before_drop_finishes = root_setup_residual(parent).len();
         dispose_release_tx.send(()).unwrap();
         drop(timing);
         drop(control);
@@ -2033,7 +2164,11 @@ mod runtime_coverage {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(root_setup_residual(parent).len(), 2);
+        let roots_after_drop_finishes = root_setup_residual(parent).len();
+
+        assert!(rollback_timed_out);
+        assert_eq!(roots_before_drop_finishes, 2);
+        assert_eq!(roots_after_drop_finishes, 2);
     }
     #[derive(Clone, Copy)]
     enum FinalRecordFault {
@@ -2106,20 +2241,23 @@ mod runtime_coverage {
         let error = run_loop_with_control(config, writer, Vec::new(), control)
             .await
             .unwrap_err();
-        assert!(failed.load(Ordering::Acquire));
-        assert!(error.contains("owned final record failure"), "{error}");
-        assert!(error.contains("report.finalization.failed"), "{error}");
-        assert!(
-            !observed
-                .finalization_events()
-                .contains(&"output_acknowledged")
-        );
-        assert!(
-            observed
-                .managed_root_paths()
-                .iter()
-                .all(|root| !root.exists())
-        );
+
+        let actual = failed.load(Ordering::Acquire);
+        let actual_2 = error.contains("owned final record failure");
+        let actual_3 = error.contains("report.finalization.failed");
+        let actual_4 = !observed
+            .finalization_events()
+            .contains(&"output_acknowledged");
+        let actual_5 = observed
+            .managed_root_paths()
+            .iter()
+            .all(|root| !root.exists());
+
+        assert!(actual);
+        assert!(actual_2, "{error}");
+        assert!(actual_3, "{error}");
+        assert!(actual_4);
+        assert!(actual_5);
     }
     #[cfg(unix)]
     #[tokio::test]
@@ -2147,22 +2285,26 @@ mod runtime_coverage {
         .unwrap();
         // Core deliberately ignores new stop requests in Cleaning after execution is complete.
         let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
-        assert_eq!(result.unwrap(), 0);
+
+        let actual = result.unwrap();
+        let actual_2 = observed.dispatched_effect_count();
+        let actual_3 = observed.max_process_tasks();
+        let actual_4 = observed.finalization_events().contains(&"disk_stop");
+        let actual_5 = observed
+            .finalization_events()
+            .contains(&"output_acknowledged");
+        let actual_6 = observed
+            .managed_root_paths()
+            .iter()
+            .all(|root| !root.exists());
+
+        assert_eq!(actual, 0);
         assert_eq!(report["summary"]["complete"], true);
-        assert_eq!(observed.dispatched_effect_count(), 2);
-        assert_eq!(observed.max_process_tasks(), 1);
-        assert!(observed.finalization_events().contains(&"disk_stop"));
-        assert!(
-            observed
-                .finalization_events()
-                .contains(&"output_acknowledged")
-        );
-        assert!(
-            observed
-                .managed_root_paths()
-                .iter()
-                .all(|root| !root.exists())
-        );
+        assert_eq!(actual_2, 2);
+        assert_eq!(actual_3, 1);
+        assert!(actual_4);
+        assert!(actual_5);
+        assert!(actual_6);
     }
     #[rstest::rstest]
     #[case::final_record(b"run_finished", "final_report_deadline_observed", 0)]
@@ -2205,18 +2347,19 @@ mod runtime_coverage {
             run_loop_with_control(config, writer, Vec::new(), control),
             delivery,
         );
-        assert_eq!(result.unwrap(), expected_exit);
-        assert!(
-            observed
-                .finalization_events()
-                .contains(&"output_acknowledged")
-        );
-        assert!(
-            observed
-                .managed_root_paths()
-                .iter()
-                .all(|root| !root.exists())
-        );
+
+        let actual = result.unwrap();
+        let actual_2 = observed
+            .finalization_events()
+            .contains(&"output_acknowledged");
+        let actual_3 = observed
+            .managed_root_paths()
+            .iter()
+            .all(|root| !root.exists());
+
+        assert_eq!(actual, expected_exit);
+        assert!(actual_2);
+        assert!(actual_3);
     }
     #[tokio::test]
     async fn ranked_saved_plan_rechecks_remaining_budget_after_baseline_restoration() {
@@ -2248,8 +2391,11 @@ mod runtime_coverage {
         let stdout = CollectingWriter::default();
         let result = verified.execute(stdout.clone(), Vec::new()).await.unwrap();
         let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
+
+        let actual = report["mutants"].as_array().unwrap().len();
+
         assert_eq!(result, 0);
-        assert_eq!(report["mutants"].as_array().unwrap().len(), 1);
+        assert_eq!(actual, 1);
         assert_eq!(report["summary"]["counts"]["survived"], 1);
         assert_eq!(report["summary"]["complete"], true);
         assert_eq!(report["summary"]["verification_selection"]["mode"], "top");
@@ -2279,10 +2425,14 @@ mod runtime_coverage {
             Duration::from_secs(5),
         );
         let outcome = cleanup_managed_root(Arc::clone(&root), &budget).await;
-        assert!(release.triggered());
+
+        let actual = release.triggered();
+        let actual_2 = !root.path().exists();
+
+        assert!(actual);
         assert_eq!(outcome.record.disposition, CleanupDisposition::Clean);
         assert_eq!(outcome.error, "");
-        assert!(!root.path().exists());
+        assert!(actual_2);
     }
     #[cfg(unix)]
     #[tokio::test]
@@ -2301,20 +2451,21 @@ mod runtime_coverage {
             .await
             .unwrap();
         let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
+
+        let actual = observed.max_process_tasks();
+        let actual_2 = String::from_utf8(stderr.snapshot())
+            .unwrap()
+            .contains("cannot construct PYTHONPATH");
+        let actual_3 = observed
+            .managed_root_paths()
+            .iter()
+            .all(|root| !root.exists());
+
         assert_eq!(result, 2);
-        assert_eq!(observed.max_process_tasks(), 0);
-        assert!(
-            String::from_utf8(stderr.snapshot())
-                .unwrap()
-                .contains("cannot construct PYTHONPATH")
-        );
+        assert_eq!(actual, 0);
+        assert!(actual_2);
         assert_eq!(report["summary"]["complete"], false);
-        assert!(
-            observed
-                .managed_root_paths()
-                .iter()
-                .all(|root| !root.exists())
-        );
+        assert!(actual_3);
     }
     async fn wait_for_guarded_dispatch_count(control: &RunControl, expected: usize) {
         tokio::time::timeout(Duration::from_secs(5), async {
@@ -2357,14 +2508,17 @@ mod runtime_coverage {
         let result = run_loop_with_control(config, Vec::new(), Vec::new(), control).await;
         cancellation.await.unwrap();
         controller.join().unwrap();
-        assert_eq!(result.unwrap(), 130);
-        assert_eq!(observed.max_process_tasks(), 0);
-        assert!(
-            observed
-                .managed_root_paths()
-                .iter()
-                .all(|root| !root.exists())
-        );
+
+        let actual = result.unwrap();
+        let actual_2 = observed.max_process_tasks();
+        let actual_3 = observed
+            .managed_root_paths()
+            .iter()
+            .all(|root| !root.exists());
+
+        assert_eq!(actual, 130);
+        assert_eq!(actual_2, 0);
+        assert!(actual_3);
     }
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn cancellation_under_the_mutant_spawn_gate_preserves_the_completed_baseline() {
@@ -2417,19 +2571,21 @@ mod runtime_coverage {
         let result = run_loop_with_control(config, writer, Vec::new(), control).await;
         cancellation.await.unwrap();
         controller.join().unwrap();
-        assert_eq!(result.unwrap(), 130);
-        assert_eq!(observed.max_process_tasks(), 1);
-        assert!(
-            observed
-                .finalization_events()
-                .contains(&"output_acknowledged")
-        );
-        assert!(
-            observed
-                .managed_root_paths()
-                .iter()
-                .all(|root| !root.exists())
-        );
+
+        let actual = result.unwrap();
+        let actual_2 = observed.max_process_tasks();
+        let actual_3 = observed
+            .finalization_events()
+            .contains(&"output_acknowledged");
+        let actual_4 = observed
+            .managed_root_paths()
+            .iter()
+            .all(|root| !root.exists());
+
+        assert_eq!(actual, 130);
+        assert_eq!(actual_2, 1);
+        assert!(actual_3);
+        assert!(actual_4);
     }
 
     async fn run_with_failed_serial_interrupt(
@@ -2496,17 +2652,22 @@ mod runtime_coverage {
         let fault = crate::io_faults::arm_after("cleanup.thread.spawn", preceding_spawns);
         let result = run_with_failed_serial_interrupt(config, control).await;
         let error = result.unwrap_err();
-        assert!(fault.triggered());
-        assert!(error.contains("owned interrupt setup failure"), "{error}");
-        assert!(error.contains("cleanup thread could not start"), "{error}");
+        let fault_triggered = fault.triggered();
+        let primary_interrupt_preserved = error.contains("owned interrupt setup failure");
+        let cleanup_spawn_failed = error.contains("cleanup thread could not start");
         let roots = observed.managed_root_paths();
-        assert!(roots[retained_root].exists());
-        assert!(!roots[removed_root].exists());
-        assert!(
-            !observed
-                .finalization_events()
-                .contains(&"output_acknowledged")
-        );
+        let failed_root_retained = roots[retained_root].exists();
+        let other_root_removed = !roots[removed_root].exists();
+        let output_unacknowledged = !observed
+            .finalization_events()
+            .contains(&"output_acknowledged");
+
+        assert!(fault_triggered);
+        assert!(primary_interrupt_preserved, "{error}");
+        assert!(cleanup_spawn_failed, "{error}");
+        assert!(failed_root_retained);
+        assert!(other_root_removed);
+        assert!(output_unacknowledged);
     }
     #[tokio::test]
     async fn public_run_loop_completes_and_delivers_a_report_with_default_control() {
@@ -2515,10 +2676,13 @@ mod runtime_coverage {
         let stdout = CollectingWriter::default();
         let result = run_loop(config, stdout.clone(), Vec::new()).await.unwrap();
         let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
+
+        let actual = report["baseline"].is_object();
+
         assert_eq!(result, 0);
         assert_eq!(report["summary"]["complete"], true);
         assert_eq!(report["summary"]["exit_code"], result);
-        assert!(report["baseline"].is_object());
+        assert!(actual);
     }
     #[cfg(unix)]
     #[tokio::test]
@@ -2538,11 +2702,19 @@ mod runtime_coverage {
         .unwrap();
         let completion = task.execute();
         let event = accept_blocking_completion(&mut context, completion);
-        assert!(matches!(event, RunEvent::CleanupFinished(value) if value.id == EffectId(841)));
-        assert_eq!(context.workspace().worker_count(), 0);
-        assert_eq!(context.blocking_secondary_errors.len(), 1);
-        assert!(context.blocking_secondary_errors[0].starts_with("process.resource.close:"));
-        assert!(context.blocking_secondary_errors[0].contains("injected portable close failure"));
+
+        let actual = matches!(event, RunEvent::CleanupFinished(value) if value.id == EffectId(841));
+        let actual_2 = context.workspace().worker_count();
+        let actual_3 = context.blocking_secondary_errors.len();
+        let actual_4 = context.blocking_secondary_errors[0].starts_with("process.resource.close:");
+        let actual_5 =
+            context.blocking_secondary_errors[0].contains("injected portable close failure");
+
+        assert!(actual);
+        assert_eq!(actual_2, 0);
+        assert_eq!(actual_3, 1);
+        assert!(actual_4);
+        assert!(actual_5);
     }
     struct ObservedPausedReportWriter {
         inner: PausedReportWriter,
@@ -2621,21 +2793,26 @@ mod runtime_coverage {
             observation
         );
         let error = result.unwrap_err();
-        assert!(error.contains("owned interrupt setup failure"), "{error}");
-        assert!(error.contains("shutdown grace expired"), "{error}");
-        assert!(observed.managed_root_paths()[1].exists());
-        assert!(
-            !observed
-                .finalization_events()
-                .contains(&"output_acknowledged")
-        );
+        let primary_interrupt_preserved = error.contains("owned interrupt setup failure");
+        let shutdown_grace_expired = error.contains("shutdown grace expired");
+        let delivery_root_before_drop = observed.managed_root_paths()[1].exists();
+        let output_unacknowledged = !observed
+            .finalization_events()
+            .contains(&"output_acknowledged");
         release_tx.send(()).unwrap();
         tokio::time::timeout(Duration::from_secs(5), closed_rx)
             .await
             .unwrap()
             .unwrap();
-        assert!(parent_owner.path().exists());
-        assert!(observed.managed_root_paths()[1].exists());
+        let parent_exists_after_drop = parent_owner.path().exists();
+        let delivery_root_after_drop = observed.managed_root_paths()[1].exists();
+
+        assert!(primary_interrupt_preserved, "{error}");
+        assert!(shutdown_grace_expired, "{error}");
+        assert!(delivery_root_before_drop);
+        assert!(output_unacknowledged);
+        assert!(parent_exists_after_drop);
+        assert!(delivery_root_after_drop);
     }
     #[tokio::test]
     async fn historical_git_failure_survives_repeated_completed_drains() {
@@ -2649,6 +2826,7 @@ mod runtime_coverage {
             .drain_for_shutdown(Duration::from_secs(5))
             .await
             .unwrap_err();
+
         assert_eq!(first, "target.git.cleanup: owned historical reap failure");
         assert_eq!(second, first);
     }
@@ -2663,19 +2841,21 @@ mod runtime_coverage {
         let error = run_loop_with_control(config, Vec::new(), Vec::new(), control)
             .await
             .unwrap_err();
-        assert!(error.contains("owned historical reap failure"), "{error}");
-        assert_eq!(observed.max_process_tasks(), 1);
-        assert!(
-            observed
-                .managed_root_paths()
-                .iter()
-                .all(|root| root.exists())
-        );
-        assert!(
-            !observed
-                .finalization_events()
-                .contains(&"output_acknowledged")
-        );
+
+        let actual = error.contains("owned historical reap failure");
+        let actual_2 = observed.max_process_tasks();
+        let actual_3 = observed
+            .managed_root_paths()
+            .iter()
+            .all(|root| root.exists());
+        let actual_4 = !observed
+            .finalization_events()
+            .contains(&"output_acknowledged");
+
+        assert!(actual, "{error}");
+        assert_eq!(actual_2, 1);
+        assert!(actual_3);
+        assert!(actual_4);
     }
 
     #[tokio::test]
@@ -2690,19 +2870,22 @@ mod runtime_coverage {
         let error = run_with_failed_serial_interrupt(config, control)
             .await
             .unwrap_err();
-        assert!(error.contains("owned interrupt setup failure"), "{error}");
-        assert!(error.contains("owned historical reap failure"), "{error}");
-        assert_eq!(observed.max_process_tasks(), 1);
-        assert!(
-            observed
-                .managed_root_paths()
-                .iter()
-                .all(|root| root.exists())
-        );
-        assert!(
-            !observed
-                .finalization_events()
-                .contains(&"output_acknowledged")
-        );
+
+        let actual = error.contains("owned interrupt setup failure");
+        let actual_2 = error.contains("owned historical reap failure");
+        let actual_3 = observed.max_process_tasks();
+        let actual_4 = observed
+            .managed_root_paths()
+            .iter()
+            .all(|root| root.exists());
+        let actual_5 = !observed
+            .finalization_events()
+            .contains(&"output_acknowledged");
+
+        assert!(actual, "{error}");
+        assert!(actual_2, "{error}");
+        assert_eq!(actual_3, 1);
+        assert!(actual_4);
+        assert!(actual_5);
     }
 }

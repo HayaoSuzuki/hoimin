@@ -303,10 +303,9 @@ fn failed_producers_keep_the_first_error_without_polling_or_emitting(
     #[case] source: &str,
     #[case] attempt: Attempt,
 ) {
-    assert_eq!(
-        observe_attempt(source, attempt, State::Failed),
-        (0, true, 0, 0, 0, false)
-    );
+    let actual = observe_attempt(source, attempt, State::Failed);
+
+    assert_eq!(actual, (0, true, 0, 0, 0, false));
 }
 
 fn run_ast(
@@ -381,21 +380,22 @@ fn active_producers_keep_their_mutation_contracts(
 ) {
     let operators = serde_json::from_value(serde_json::json!([operator.as_str()])).unwrap();
     let prefix = run_ast(source, &operators, &PayloadBudget::default(), &|| false).unwrap();
-    assert_eq!(
-        prefix
-            .candidates
-            .iter()
-            .map(|candidate| candidate.replacement.as_str())
-            .collect::<Vec<_>>(),
-        expected
-    );
+
+    let actual = prefix
+        .candidates
+        .iter()
+        .map(|candidate| candidate.replacement.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(actual, expected);
     assert!(!prefix.overflowed);
 }
 
 #[test]
 fn cancelled_ast_collection_rejects_selection_before_producing_candidates() {
     let operators = MutationOperatorSelection::default();
-    assert!(matches!(
+
+    let actual = matches!(
         run_ast(
             "items.copy()",
             &operators,
@@ -403,7 +403,9 @@ fn cancelled_ast_collection_rejects_selection_before_producing_candidates() {
             &|| true
         ),
         Err(AnalysisError::Cancelled)
-    ));
+    );
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -496,12 +498,17 @@ fn producer_payload_failure_stops_after_its_first_generated_candidate(
 ) {
     let operators = serde_json::from_value(serde_json::json!([operator.as_str()])).unwrap();
     let budget = PayloadBudget::new(0);
-    assert!(matches!(
+
+    let actual = matches!(
         run_ast(source, &operators, &budget, &|| false),
         Err(AnalysisError::PayloadLimit { limit: 0 })
-    ));
-    assert_eq!(budget.snapshot().generated, 1);
-    assert_eq!(budget.snapshot().used, 0);
+    );
+    let actual_2 = budget.snapshot().generated;
+    let actual_3 = budget.snapshot().used;
+
+    assert!(actual);
+    assert_eq!(actual_2, 1);
+    assert_eq!(actual_3, 0);
 }
 
 #[rstest::rstest]
@@ -546,6 +553,7 @@ fn producer_context_guards_prevent_generation_with_a_healthy_payload_budget(
 ) {
     let (retained, error_unchanged, polls, generated, used, cancelled_observed) =
         observe_attempt(source, attempt, state);
+
     assert_eq!(retained, count);
     assert!(error_unchanged);
     assert!(!cancelled_observed);
@@ -593,7 +601,7 @@ fn analyzer_cancellation_releases_payload_across_index_and_class_emission_phases
         false
     })
     .unwrap();
-    assert_eq!(complete.candidates.len(), 1);
+    let baseline_candidate_count = complete.candidates.len();
     drop(complete);
     let polls = Cell::new(0);
     let result = run_public(source, &operators, &budget, &|| {
@@ -601,12 +609,16 @@ fn analyzer_cancellation_releases_payload_across_index_and_class_emission_phases
         polls.set(current + 1);
         current >= checkpoint
     });
+    let cancellation_error = result.as_ref().err().copied();
+    drop(result);
+    let used_after_drop = budget.snapshot().used;
+
+    assert_eq!(baseline_candidate_count, 1);
     assert_eq!(
-        result.as_ref().err().copied(),
+        cancellation_error,
         (checkpoint < total.get()).then_some(AnalysisError::Cancelled)
     );
-    drop(result);
-    assert_eq!(budget.snapshot().used, 0);
+    assert_eq!(used_after_drop, 0);
 }
 
 #[test]
@@ -620,7 +632,7 @@ fn analyzer_final_cancellation_boundary_releases_already_generated_payload() {
         false
     })
     .unwrap();
-    assert_eq!(complete.candidates.len(), 1);
+    let baseline_candidate_count = complete.candidates.len();
     drop(complete);
     let checkpoint = total.get().checked_sub(1).unwrap();
     let polls = Cell::new(0);
@@ -629,9 +641,14 @@ fn analyzer_final_cancellation_boundary_releases_already_generated_payload() {
         polls.set(current + 1);
         current >= checkpoint
     });
-    assert!(matches!(result, Err(AnalysisError::Cancelled)));
-    assert_eq!(polls.get(), total.get());
-    assert_eq!(budget.snapshot().used, 0);
+    let cancelled = matches!(result, Err(AnalysisError::Cancelled));
+    let poll_count = polls.get();
+    let used_after_cancellation = budget.snapshot().used;
+
+    assert_eq!(baseline_candidate_count, 1);
+    assert!(cancelled);
+    assert_eq!(poll_count, total.get());
+    assert_eq!(used_after_cancellation, 0);
 }
 
 #[test]
@@ -644,17 +661,21 @@ fn condition_clause_deletion_generates_only_one_sentinel_beyond_the_public_limit
     let operators = serde_json::from_value(serde_json::json!(["condition_clause_delete"])).unwrap();
     let budget = PayloadBudget::default();
     let output = run_public(&source, &operators, &budget, &|| false).unwrap();
-    assert_eq!(output.candidates.len(), 100);
-    assert!(output.truncated);
-    assert_eq!(budget.snapshot().generated, 101);
+    let candidate_count = output.candidates.len();
+    let truncated = output.truncated;
+    let generated_count = budget.snapshot().generated;
     drop(output);
-    assert_eq!(budget.snapshot().used, 0);
+    let used_after_drop = budget.snapshot().used;
+
+    assert_eq!(candidate_count, 100);
+    assert!(truncated);
+    assert_eq!(generated_count, 101);
+    assert_eq!(used_after_drop, 0);
 }
 
 #[test]
 fn augmented_assignment_observes_cancellation_while_scanning_its_operator() {
-    assert_eq!(
-        observe_attempt("value += 1", Attempt::Augmented, State::Cancelled),
-        (0, true, 1, 0, 0, true)
-    );
+    let actual = observe_attempt("value += 1", Attempt::Augmented, State::Cancelled);
+
+    assert_eq!(actual, (0, true, 1, 0, 0, true));
 }

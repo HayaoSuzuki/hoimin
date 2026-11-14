@@ -92,15 +92,16 @@ mod coverage_tests {
     ) {
         let parsed = ruff_python_parser::parse_module(source).unwrap();
         let polls = Cell::new(0);
-        assert_eq!(
-            configuration_present(parsed.syntax(), &|| {
-                let current = polls.get();
-                polls.set(current + 1);
-                current >= expected_polls
-            }),
-            Ok(true)
-        );
-        assert_eq!(polls.get(), expected_polls);
+
+        let actual = configuration_present(parsed.syntax(), &|| {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= expected_polls
+        });
+        let actual_2 = polls.get();
+
+        assert_eq!(actual, Ok(true));
+        assert_eq!(actual_2, expected_polls);
     }
     #[rstest::rstest]
     #[case(0, Err(AnalysisCancelled))]
@@ -116,13 +117,13 @@ mod coverage_tests {
             ruff_python_parser::parse_module("value = 1\nfrom sys import set_lazy_imports\n")
                 .unwrap();
         let polls = Cell::new(0);
-        assert_eq!(
-            configuration_present(parsed.syntax(), &|| {
-                let current = polls.get();
-                polls.set(current + 1);
-                current >= checkpoint
-            }),
-            expected
-        );
+
+        let actual = configuration_present(parsed.syntax(), &|| {
+            let current = polls.get();
+            polls.set(current + 1);
+            current >= checkpoint
+        });
+
+        assert_eq!(actual, expected);
     }
 }

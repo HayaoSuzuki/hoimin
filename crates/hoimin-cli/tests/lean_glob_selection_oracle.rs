@@ -245,6 +245,7 @@ fn selection_projection_rejects_unknown_selector() {
     let mut case = cases().remove(0);
     case.selector = "unknown".into();
     let directory = tempfile::tempdir().unwrap();
+
     let _ = selection(directory.path(), &case);
 }
 
@@ -254,5 +255,6 @@ fn argument_projection_rejects_unknown_selector() {
     let mut case = cases().remove(0);
     case.selector = "unknown".into();
     let directory = tempfile::tempdir().unwrap();
+
     let _ = arguments(directory.path(), &case, "plan");
 }

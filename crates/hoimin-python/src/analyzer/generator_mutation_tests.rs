@@ -313,5 +313,8 @@ fn generator_skip_first_respects_temporary_exception_handler_bindings(
         "try:\n action()\nexcept Exception as {handler_name}:\n result = (item for item in values)\n"
     );
     let output = analyze_selected(&["generator_skip_first"], &source);
-    assert_eq!(output.candidates.len(), expected_count);
+
+    let actual = output.candidates.len();
+
+    assert_eq!(actual, expected_count);
 }

@@ -437,25 +437,24 @@ fn bounded_schema_rejects_one_invalid_coordinate(
 ) {
     let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
     *row.pointer_mut(pointer).unwrap() = value;
-    assert!(
-        parse_corpus(&row.to_string())
-            .unwrap_err()
-            .contains(diagnostic)
-    );
+
+    let actual_0 = parse_corpus(&row.to_string());
+
+    assert!(actual_0.unwrap_err().contains(diagnostic));
 }
 
 #[test]
 fn bounded_parser_rejects_missing_case_set() {
-    assert!(
-        parse_corpus("")
-            .unwrap_err()
-            .contains("exact closed case set")
-    );
+    let actual_0 = parse_corpus("");
+
+    assert!(actual_0.unwrap_err().contains("exact closed case set"));
 }
 
 #[test]
 fn bounded_parser_ignores_blank_lines() {
-    assert_eq!(parse_corpus(&format!("\n{CORPUS}\n")).unwrap().len(), 8);
+    let actual_0 = parse_corpus(&format!("\n{CORPUS}\n"));
+
+    assert_eq!(actual_0.unwrap().len(), 8);
 }
 
 #[rstest::rstest]
@@ -472,11 +471,10 @@ fn bounded_schema_rejects_invalid_ordered_target_projection(
         .find(|row| row["id"] == "complete_two_targets")
         .unwrap();
     *row.pointer_mut(pointer).unwrap() = value;
-    assert!(
-        parse_corpus(&row.to_string())
-            .unwrap_err()
-            .contains("invalid target projection")
-    );
+
+    let actual_0 = parse_corpus(&row.to_string());
+
+    assert!(actual_0.unwrap_err().contains("invalid target projection"));
 }
 
 #[rstest::rstest]
@@ -485,7 +483,9 @@ fn bounded_schema_rejects_invalid_ordered_target_projection(
 fn bounded_fixture_reports_tempdir_failure(
     #[case] diagnostic: fn(std::io::Result<tempfile::TempDir>) -> String,
 ) {
-    assert_eq!(diagnostic(Err(std::io::Error::other("denied"))), "denied");
+    let actual_0 = diagnostic(Err(std::io::Error::other("denied")));
+
+    assert_eq!(actual_0, "denied");
 }
 
 #[rstest::rstest]
@@ -497,7 +497,10 @@ fn bounded_fixture_reports_source_directory_failure(
     let directory = tempfile::tempdir().unwrap();
     std::fs::create_dir(directory.path().join("project")).unwrap();
     std::fs::write(directory.path().join("project/src"), "obstruction").unwrap();
-    assert!(rejected(directory));
+
+    let actual_0 = rejected(directory);
+
+    assert!(actual_0);
 }
 
 #[rstest::rstest]
@@ -511,5 +514,8 @@ fn bounded_fixture_reports_unwritable_source(
 ) {
     let directory = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(directory.path().join("project/src").join(path)).unwrap();
-    assert!(rejected(directory));
+
+    let actual_0 = rejected(directory);
+
+    assert!(actual_0);
 }

@@ -2224,14 +2224,19 @@ mod tests {
         let timed_out = select_process_result(ready(7_u8), pending::<()>(), ready(())).await;
         assert_eq!(timed_out, ProcessSelection::Timeout);
     }
-    #[test]
-    fn coverage_tests_oracle_decoder_rejects_unknown_wire_values() {
-        assert!(std::panic::catch_unwind(|| named_termination("unknown")).is_err());
-        assert!(std::panic::catch_unwind(|| named_status("unknown")).is_err());
-        assert!(std::panic::catch_unwind(|| execution_context("unknown")).is_err());
+    #[rstest::rstest]
+    #[case::termination(|| std::panic::catch_unwind(|| named_termination("unknown")).is_err())]
+    #[case::status(|| std::panic::catch_unwind(|| named_status("unknown")).is_err())]
+    #[case::execution_context(|| std::panic::catch_unwind(|| execution_context("unknown")).is_err())]
+    #[case::output(|| {
         let mut case = process_output_cases().into_iter().next().unwrap();
         case.output = "unknown".to_owned();
-        assert!(std::panic::catch_unwind(|| combine_process_output_case(&case)).is_err());
+        std::panic::catch_unwind(|| combine_process_output_case(&case)).is_err()
+    })]
+    fn coverage_tests_oracle_decoder_rejects_unknown_wire_values(#[case] rejects: fn() -> bool) {
+        let rejected = rejects();
+
+        assert!(rejected);
     }
 }
 

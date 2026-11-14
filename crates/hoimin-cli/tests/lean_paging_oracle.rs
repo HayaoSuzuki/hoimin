@@ -285,5 +285,7 @@ fn assert_case(
 
 #[test]
 fn parser_reports_malformed_json() {
-    assert!(parse("{").unwrap_err().contains("EOF"));
+    let actual_0 = parse("{");
+
+    assert!(actual_0.unwrap_err().contains("EOF"));
 }

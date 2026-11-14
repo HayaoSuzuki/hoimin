@@ -73,6 +73,7 @@ fn source_unions_normalization_match_broad_discovery(
         ..base.clone()
     };
     let targets = assert_broad_correspondence(&selection).unwrap();
+
     assert_eq!(
         targets
             .iter()

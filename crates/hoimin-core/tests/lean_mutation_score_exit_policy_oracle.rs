@@ -386,11 +386,12 @@ fn score_parser_rejects_crossed_premise_coordinate(
         .find(|row| row["id"] == id)
         .unwrap();
     *row.pointer_mut(pointer).unwrap() = value;
-    assert!(
-        parse_corpus(&row.to_string())
-            .unwrap_err()
-            .contains(diagnostic)
-    );
+
+    let actual = parse_corpus(&row.to_string())
+        .unwrap_err()
+        .contains(diagnostic);
+
+    assert!(actual);
 }
 
 #[test]
@@ -409,9 +410,10 @@ fn score_parser_rejects_a_missing_boolean_policy_assignment() {
         .map(serde_json::Value::to_string)
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(
-        parse_corpus(&source)
-            .unwrap_err()
-            .contains("16 unique assignments")
-    );
+
+    let actual = parse_corpus(&source)
+        .unwrap_err()
+        .contains("16 unique assignments");
+
+    assert!(actual);
 }

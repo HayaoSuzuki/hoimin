@@ -1,3 +1,31 @@
+fn inject_quiescence_failure(supervisor: &mut ProcessSupervisor) {
+    #[allow(
+        irrefutable_let_patterns,
+        reason = "other platforms also compile non-portable supervisors"
+    )]
+    if let ProcessSupervisor::Portable(portable) = supervisor {
+        portable
+            .inject_quiescence_failure_for_tests(std::io::Error::other("injected probe failure"));
+    }
+}
+
+#[cfg(unix)]
+async fn wait_for_fixture_pid(path: &std::path::Path) -> i32 {
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if let Some(pid) = std::fs::read_to_string(path)
+                .ok()
+                .and_then(|text| text.trim().parse::<i32>().ok())
+            {
+                break pid;
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap()
+}
+
 use super::*;
 use crate::resource::{PortableBackend, ResourceBackend};
 use hoimin_core::{ProbeContext, ProcessLimits};
@@ -29,8 +57,16 @@ fn request(argv: Vec<CommandArg>) -> ProcessRequest {
 }
 
 #[test]
-fn default_cancellation_and_invalid_spool_identity_are_explicit() {
-    assert!(!ProcessCancellation::default().is_cancelled());
+fn default_cancellation_is_not_requested() {
+    let cancellation = ProcessCancellation::default();
+
+    let actual = !cancellation.is_cancelled();
+
+    assert!(actual);
+}
+
+#[test]
+fn invalid_spool_identity_is_explicit() {
     let directory = tempfile::tempdir().unwrap();
     let error = handler(directory.path())
         .spool_path(&OutputSpoolRef {
@@ -39,23 +75,42 @@ fn default_cancellation_and_invalid_spool_identity_are_explicit() {
             observed: 0,
         })
         .unwrap_err();
-    assert!(matches!(error, ProcessError::InvalidSpoolToken(value) if value == "not-a-uuid"));
+
+    let actual = matches!(error, ProcessError::InvalidSpoolToken(value) if value == "not-a-uuid");
+
+    assert!(actual);
 }
 
+fn foreign_argument() -> CommandArg {
+    #[cfg(unix)]
+    {
+        CommandArg::Windows(vec![65])
+    }
+    #[cfg(windows)]
+    {
+        CommandArg::Unix(vec![65])
+    }
+}
+
+#[rstest::rstest]
+#[case::empty(Vec::new(), "process.argv.empty")]
+#[case::foreign(vec![foreign_argument()], "process.argv.invalid")]
 #[tokio::test]
-async fn argument_rejection_precedes_output_creation() {
+async fn argument_rejection_precedes_output_creation(
+    #[case] argv: Vec<CommandArg>,
+    #[case] code: &str,
+) {
     let directory = tempfile::tempdir().unwrap();
     let output = directory.path().join("uncreated");
     let handler = handler(&output);
-    let error = handler.run_owned(request(Vec::new())).await.unwrap_err();
-    assert_eq!(error.failure.code(), "process.argv.empty");
-    #[cfg(unix)]
-    let foreign = CommandArg::Windows(vec![65]);
-    #[cfg(windows)]
-    let foreign = CommandArg::Unix(vec![65]);
-    let error = handler.run_owned(request(vec![foreign])).await.unwrap_err();
-    assert_eq!(error.failure.code(), "process.argv.invalid");
-    assert!(!output.exists());
+
+    let error = handler.run_owned(request(argv)).await.unwrap_err();
+
+    let actual = (error.failure.code()).to_owned();
+    let actual_2 = !output.exists();
+
+    assert_eq!(actual, code);
+    assert!(actual_2);
 }
 
 #[tokio::test]
@@ -68,8 +123,12 @@ async fn output_directory_failure_is_reported_before_spawn() {
         .run_owned(request(vec![program]))
         .await
         .unwrap_err();
-    assert_eq!(error.failure.code(), "process.output.create");
-    assert_eq!(std::fs::read_to_string(output).unwrap(), "occupied");
+
+    let actual = (error.failure.code()).to_owned();
+    let actual_2 = std::fs::read_to_string(output).unwrap();
+
+    assert_eq!(actual, "process.output.create");
+    assert_eq!(actual_2, "occupied");
 }
 
 #[tokio::test]
@@ -82,24 +141,32 @@ async fn a_closed_start_gate_cancels_before_process_spawn() {
         .run_owned(request(vec![program]).with_start_gate(gate))
         .await
         .unwrap_err();
-    assert_eq!(error.failure.code(), "process.cancelled.before_spawn");
+
+    let actual = (error.failure.code()).to_owned();
+
+    assert_eq!(actual, "process.cancelled.before_spawn");
 }
 
+#[rstest::rstest]
+#[case::read(|| tokio::spawn(async { Err(std::io::Error::other("read failed")) }), "stdout", "process.stdout.read")]
+#[case::join(|| tokio::spawn(async { panic!("pipe task failed") }), "stderr", "process.stderr.join")]
 #[tokio::test]
-async fn pipe_join_and_io_errors_keep_the_stream_identity() {
+async fn pipe_join_and_io_errors_keep_the_stream_identity(
+    #[case] spawn: fn() -> tokio::task::JoinHandle<std::io::Result<()>>,
+    #[case] stream: &'static str,
+    #[case] code: &str,
+) {
     let id = EffectId(81);
     let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
-    let mut failed_read = tokio::spawn(async { Err(std::io::Error::other("read failed")) });
-    let error = await_pipe_until(id, "stdout", &mut failed_read, deadline)
+    let mut task = spawn();
+
+    let error = await_pipe_until(id, stream, &mut task, deadline)
         .await
         .unwrap_err();
-    assert_eq!(error.failure.code(), "process.stdout.read");
-    let mut failed_join: tokio::task::JoinHandle<std::io::Result<()>> =
-        tokio::spawn(async { panic!("pipe task failed") });
-    let error = await_pipe_until(id, "stderr", &mut failed_join, deadline)
-        .await
-        .unwrap_err();
-    assert_eq!(error.failure.code(), "process.stderr.join");
+
+    let actual = (error.failure.code()).to_owned();
+
+    assert_eq!(actual, code);
 }
 
 #[tokio::test]
@@ -112,11 +179,11 @@ async fn collector_panic_is_distinct_from_an_output_write_failure() {
         tokio::time::Instant::now() + Duration::from_secs(1),
     )
     .await;
+
+    let actual = (outcome.result.unwrap_err().failure.code()).to_owned();
+
     assert!(outcome.quiescent);
-    assert_eq!(
-        outcome.result.unwrap_err().failure.code(),
-        "process.output.join"
-    );
+    assert_eq!(actual, "process.output.join");
 }
 
 #[tokio::test]
@@ -138,11 +205,11 @@ async fn a_failed_stderr_pipe_keeps_its_failure_after_collector_completion() {
         tokio::time::Instant::now() + Duration::from_secs(1),
     )
     .await;
+
+    let actual = (outcome.result.unwrap_err().failure.code()).to_owned();
+
     assert!(outcome.quiescent);
-    assert_eq!(
-        outcome.result.unwrap_err().failure.code(),
-        "process.stderr.read"
-    );
+    assert_eq!(actual, "process.stderr.read");
 }
 
 fn native_program() -> CommandArg {
@@ -168,11 +235,14 @@ async fn root_wait_reports_a_child_reaped_by_another_owner() {
     let pid = i32::try_from(child.id().unwrap()).unwrap();
     let mut status = 0;
     // SAFETY: pid identifies this test's child, and status is valid writable storage.
-    assert_eq!(unsafe { libc::waitpid(pid, &raw mut status, 0) }, pid);
+    let reaped_pid = unsafe { libc::waitpid(pid, &raw mut status, 0) };
     let error = wait_after_termination(EffectId(84), &mut child)
         .await
         .unwrap_err();
-    assert_eq!(error.failure.code(), "process.wait");
+    let wait_error_code = (error.failure.code()).to_owned();
+
+    assert_eq!(reaped_pid, pid);
+    assert_eq!(wait_error_code, "process.wait");
 }
 
 #[tokio::test]
@@ -186,7 +256,10 @@ async fn classification_cannot_claim_a_supervisor_after_ownership_is_released() 
     owner.finish(EffectId(85)).await.unwrap();
     let (result, reaped) =
         classify_and_terminate(EffectId(85), &mut owner, ProcessTermination::Exit(0)).await;
-    assert_eq!(result.unwrap_err().failure.code(), "process.resource.owner");
+
+    let actual = (result.unwrap_err().failure.code()).to_owned();
+
+    assert_eq!(actual, "process.resource.owner");
     assert!(!reaped);
 }
 
@@ -200,13 +273,13 @@ fn cleanup_fallback_message_preserves_a_foreign_error_without_claiming_a_process
             message: "detail".into(),
         },
     };
-    assert_eq!(failure_message(&error), "non-process cleanup failure");
+    let observed_1 = failure_message(&error);
     let mut primary = EffectFailed::other(EffectId(86), "process", "primary");
     append_cleanup_failure(&mut primary, "foreign", &error);
-    assert_eq!(
-        failure_message(&primary),
-        "primary; foreign: non-process cleanup failure"
-    );
+    let observed_2 = failure_message(&primary);
+
+    assert_eq!(observed_1, "non-process cleanup failure");
+    assert_eq!(observed_2, "primary; foreign: non-process cleanup failure");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -229,8 +302,12 @@ async fn cancellation_is_rechecked_after_waiting_for_spawn_authority() {
         drop(gate);
     });
     let error = running.await.unwrap().unwrap_err();
-    assert_eq!(error.failure.code(), "process.cancelled.before_spawn");
-    assert!(std::fs::read_dir(output).unwrap().next().is_none());
+
+    let actual = (error.failure.code()).to_owned();
+    let actual_2 = std::fs::read_dir(output).unwrap().next().is_none();
+
+    assert_eq!(actual, "process.cancelled.before_spawn");
+    assert!(actual_2);
 }
 
 #[tokio::test]
@@ -245,12 +322,17 @@ async fn classification_failure_keeps_both_failed_termination_attempts() {
     let (result, reaped) =
         classify_and_terminate(EffectId(87), &mut owner, ProcessTermination::Exit(0)).await;
     let error = result.unwrap_err();
-    assert_eq!(error.failure.code(), "process.resource.classify");
+    let classification_error_code = (error.failure.code()).to_owned();
     let message = failure_message(&error);
-    assert!(message.contains("supervised termination also failed"));
-    assert!(message.contains("supervisor termination retry failed"));
-    assert!(!reaped);
+    let first_termination_failed = message.contains("supervised termination also failed");
+    let retry_termination_failed = message.contains("supervisor termination retry failed");
+    let not_reaped = !reaped;
     owner.finish(EffectId(87)).await.unwrap();
+
+    assert_eq!(classification_error_code, "process.resource.classify");
+    assert!(first_termination_failed);
+    assert!(retry_termination_failed);
+    assert!(not_reaped);
 }
 
 #[tokio::test]
@@ -277,9 +359,14 @@ async fn missing_supervisor_still_kills_and_reaps_the_owned_root() {
     let error = terminate_and_reap(EffectId(88), &mut owner, &mut child)
         .await
         .unwrap_err();
-    assert_eq!(error.failure.code(), "process.resource.owner");
-    assert!(failure_message(&error).contains("supervisor termination retry failed"));
-    assert!(child.try_wait().unwrap().is_some());
+
+    let actual = (error.failure.code()).to_owned();
+    let actual_2 = failure_message(&error).contains("supervisor termination retry failed");
+    let actual_3 = child.try_wait().unwrap().is_some();
+
+    assert_eq!(actual, "process.resource.owner");
+    assert!(actual_2);
+    assert!(actual_3);
 }
 
 #[test]
@@ -326,89 +413,95 @@ impl TerminatingRoot for ScriptedRoot {
     }
 }
 
-#[tokio::test(start_paused = true)]
-async fn bounded_root_reaping_preserves_kill_and_wait_errors_in_order() {
-    let wait_error = || std::io::Error::other("injected wait error");
-    let kill_error = || std::io::Error::other("injected kill error");
-    let cases = [
-        (vec![WaitStep::Ready(Ok(()))], Ok(()), None, 1, 0, None),
-        (
-            vec![WaitStep::Ready(Err(wait_error()))],
+#[rstest::rstest]
+#[case(vec![WaitStep::Ready(Ok(()))], Ok(()), None, 1, 0, None)]
+#[case(
+            vec![WaitStep::Ready(Err(std::io::Error::other("injected wait error")))],
             Ok(()),
             Some("process.wait"),
             1,
             0,
             Some("wait after process termination"),
-        ),
-        (
+        )]
+#[case(
             vec![WaitStep::Pending, WaitStep::Ready(Ok(()))],
             Ok(()),
             None,
             2,
             1,
             None,
-        ),
-        (
+        )]
+#[case(
             vec![WaitStep::Pending, WaitStep::Ready(Ok(()))],
-            Err(kill_error()),
+            Err(std::io::Error::other("injected kill error")),
             Some("process.kill"),
             2,
             1,
             Some("injected kill error"),
-        ),
-        (
-            vec![WaitStep::Pending, WaitStep::Ready(Err(wait_error()))],
+        )]
+#[case(
+            vec![WaitStep::Pending, WaitStep::Ready(Err(std::io::Error::other("injected wait error")))],
             Ok(()),
             Some("process.wait"),
             2,
             1,
             Some("wait after root kill"),
-        ),
-        (
-            vec![WaitStep::Pending, WaitStep::Ready(Err(wait_error()))],
-            Err(kill_error()),
+        )]
+#[case(
+            vec![WaitStep::Pending, WaitStep::Ready(Err(std::io::Error::other("injected wait error")))],
+            Err(std::io::Error::other("injected kill error")),
             Some("process.kill"),
             2,
             1,
             Some("root wait also failed: injected wait error"),
-        ),
-        (
+        )]
+#[case(
             vec![WaitStep::Pending, WaitStep::Pending],
             Ok(()),
             Some("process.wait.timeout"),
             2,
             1,
             Some("timed out reaping root after kill"),
-        ),
-        (
+        )]
+#[case(
             vec![WaitStep::Pending, WaitStep::Pending],
-            Err(kill_error()),
+            Err(std::io::Error::other("injected kill error")),
             Some("process.kill"),
             2,
             1,
             Some("root wait also failed: timed out reaping root after kill"),
-        ),
-    ];
-    for (steps, kill, expected_code, expected_waits, expected_kills, expected_detail) in cases {
-        let mut root = ScriptedRoot {
-            waits: steps.into(),
-            kill,
-            wait_count: 0,
-            kill_count: 0,
-        };
-        let result = wait_after_termination_for(EffectId(90), &mut root).await;
-        assert_eq!(root.wait_count, expected_waits);
-        assert_eq!(root.kill_count, expected_kills);
-        assert!(root.waits.is_empty());
-        assert_eq!(
-            result.as_ref().err().map(|error| error.failure.code()),
-            expected_code
-        );
-        if let Some(detail) = expected_detail {
-            let error = result.unwrap_err();
-            assert!(format!("{:?}", error.failure).contains(detail), "{error:?}");
-        }
-    }
+        )]
+#[tokio::test(start_paused = true)]
+async fn bounded_root_reaping_preserves_kill_and_wait_errors_in_order(
+    #[case] steps: Vec<WaitStep>,
+    #[case] kill: std::io::Result<()>,
+    #[case] expected_code: Option<&str>,
+    #[case] expected_waits: usize,
+    #[case] expected_kills: usize,
+    #[case] expected_detail: Option<&str>,
+) {
+    let mut root = ScriptedRoot {
+        waits: steps.into(),
+        kill,
+        wait_count: 0,
+        kill_count: 0,
+    };
+    let result = wait_after_termination_for(EffectId(90), &mut root).await;
+
+    let actual = root.waits.is_empty();
+    let actual_2 = result.as_ref().err().map(|error| error.failure.code());
+    let actual_3 = expected_detail.is_none_or(|detail| {
+        result
+            .as_ref()
+            .err()
+            .is_some_and(|error| format!("{:?}", error.failure).contains(detail))
+    });
+
+    assert_eq!(root.wait_count, expected_waits);
+    assert_eq!(root.kill_count, expected_kills);
+    assert!(actual);
+    assert_eq!(actual_2, expected_code);
+    assert!(actual_3);
 }
 
 #[cfg(unix)]
@@ -432,30 +525,25 @@ async fn lifecycle_preserves_a_real_wait_error_when_the_root_is_reaped_externall
     process.process.limits.timeout = Duration::from_secs(5);
     process.process.limits.max_memory_bytes = 256 * 1024 * 1024;
     let running = tokio::spawn(async move { handler.run(process).await });
-    let pid = tokio::time::timeout(Duration::from_secs(3), async {
-        loop {
-            if let Some(pid) = std::fs::read_to_string(&pid_path)
-                .ok()
-                .and_then(|text| text.trim().parse::<i32>().ok())
-            {
-                break pid;
-            }
-            tokio::time::sleep(Duration::from_millis(1)).await;
-        }
-    })
-    .await
-    .unwrap();
+    let pid = wait_for_fixture_pid(&pid_path).await;
     std::fs::write(release, "release").unwrap();
     let mut status = 0;
     // Keep this current-thread runtime unpolled until waitpid has reaped our released fixture.
     // SAFETY: pid belongs to this test, and status is valid writable storage.
-    assert_eq!(unsafe { libc::waitpid(pid, &raw mut status, 0) }, pid);
+    let externally_reaped_pid = unsafe { libc::waitpid(pid, &raw mut status, 0) };
     let failure = running.await.unwrap().unwrap_err();
-    assert_eq!(failure.failure.code(), "process.wait");
-    assert!(failure_message(&failure).contains("supervised cleanup after wait error failed"));
+    let wait_error_code = (failure.failure.code()).to_owned();
+    let cleanup_failure_reported =
+        failure_message(&failure).contains("supervised cleanup after wait error failed");
     let drained = observed.drain_for_shutdown(Duration::from_secs(1)).await;
-    assert!(!drained.all_reaped);
-    assert!(drained.output_drains_joined);
+    let reap_unproven = !drained.all_reaped;
+    let output_joined = drained.output_drains_joined;
+
+    assert_eq!(externally_reaped_pid, pid);
+    assert_eq!(wait_error_code, "process.wait");
+    assert!(cleanup_failure_reported);
+    assert!(reap_unproven);
+    assert!(output_joined);
 }
 
 #[cfg(unix)]
@@ -476,6 +564,7 @@ async fn debug_span_fields_preserve_successful_process_outcomes() {
         .with_subscriber(subscriber)
         .await
         .unwrap();
+
     assert_eq!(finished.termination, ProcessTermination::Exit(0));
     assert_eq!(finished.output.observed, 0);
 }
@@ -491,10 +580,14 @@ fn shutdown_drain_reports_backend_task_cancellation_on_a_stopped_runtime() {
     let handle = runtime.handle().clone();
     runtime.shutdown_background();
     let report = handle.block_on(handler.drain_for_shutdown(Duration::from_secs(1)));
+
+    let actual = report.secondary_errors.len();
+    let actual_2 = report.secondary_errors[0].contains("process resource close task failed");
+
     assert!(report.all_reaped);
     assert!(report.output_drains_joined);
-    assert_eq!(report.secondary_errors.len(), 1);
-    assert!(report.secondary_errors[0].contains("process resource close task failed"));
+    assert_eq!(actual, 1);
+    assert!(actual_2);
 }
 
 #[cfg(unix)]
@@ -505,66 +598,68 @@ async fn quiescence_probe_errors_are_reported_and_an_unknown_tree_remains_unprov
     let mut supervisor = backend
         .prepare(&mut command, request(Vec::new()).process.limits)
         .unwrap();
-    #[allow(
-        irrefutable_let_patterns,
-        reason = "other platforms also compile non-portable supervisors"
-    )]
-    if let ProcessSupervisor::Portable(portable) = &mut supervisor {
-        portable
-            .inject_quiescence_failure_for_tests(std::io::Error::other("injected probe failure"));
-    }
+    inject_quiescence_failure(&mut supervisor);
     let mut owner = BlockingOwner::new(supervisor);
     let error = await_tree_quiescence_after_root_reap(EffectId(91), &mut owner)
         .await
         .unwrap_err();
-    assert_eq!(error.failure.code(), "process.resource.quiescence");
-    assert!(failure_message(&error).contains("injected probe failure"));
+    let probe_error_code = (error.failure.code()).to_owned();
+    let probe_error_reported = failure_message(&error).contains("injected probe failure");
     let started = tokio::time::Instant::now();
-    assert!(
-        !await_tree_quiescence_after_root_reap(EffectId(91), &mut owner)
-            .await
-            .unwrap()
-    );
-    assert!(started.elapsed() >= PROCESS_TREE_QUIESCENCE_GRACE);
+    let tree_unproven = !await_tree_quiescence_after_root_reap(EffectId(91), &mut owner)
+        .await
+        .unwrap();
+    let probe_grace_elapsed = started.elapsed() >= PROCESS_TREE_QUIESCENCE_GRACE;
     owner.finish(EffectId(91)).await.unwrap();
+
+    assert_eq!(probe_error_code, "process.resource.quiescence");
+    assert!(probe_error_reported);
+    assert!(tree_unproven);
+    assert!(probe_grace_elapsed);
 }
 
-#[tokio::test(start_paused = true)]
-async fn unattached_root_cleanup_keeps_termination_errors_and_bounds_reaping() {
-    let cases = [
-        (
+#[rstest::rstest]
+#[case(
             vec![],
             Some(std::io::Error::other("kill failed")),
             Some(std::io::ErrorKind::Other),
             0,
-        ),
-        (vec![WaitStep::Ready(Ok(()))], None, None, 1),
-        (
+        )]
+#[case(vec![WaitStep::Ready(Ok(()))], None, None, 1)]
+#[case(
             vec![WaitStep::Ready(Err(std::io::Error::other("wait failed")))],
             None,
             Some(std::io::ErrorKind::Other),
             1,
-        ),
-        (
+        )]
+#[case(
             vec![WaitStep::Pending],
             None,
             Some(std::io::ErrorKind::TimedOut),
             1,
-        ),
-    ];
-    for (steps, terminate_error, expected, expected_waits) in cases {
-        let mut root = ScriptedRoot {
-            waits: steps.into(),
-            kill: Ok(()),
-            wait_count: 0,
-            kill_count: 0,
-        };
-        let result = reap_unattached_root(&mut root, terminate_error).await;
-        assert_eq!(result.as_ref().map(std::io::Error::kind), expected);
-        assert_eq!(root.wait_count, expected_waits);
-        assert_eq!(root.kill_count, 0);
-        assert!(root.waits.is_empty());
-    }
+        )]
+#[tokio::test(start_paused = true)]
+async fn unattached_root_cleanup_keeps_termination_errors_and_bounds_reaping(
+    #[case] steps: Vec<WaitStep>,
+    #[case] terminate_error: Option<std::io::Error>,
+    #[case] expected: Option<std::io::ErrorKind>,
+    #[case] expected_waits: usize,
+) {
+    let mut root = ScriptedRoot {
+        waits: steps.into(),
+        kill: Ok(()),
+        wait_count: 0,
+        kill_count: 0,
+    };
+    let result = reap_unattached_root(&mut root, terminate_error).await;
+
+    let actual = result.as_ref().map(std::io::Error::kind);
+    let actual_2 = root.waits.is_empty();
+
+    assert_eq!(actual, expected);
+    assert_eq!(root.wait_count, expected_waits);
+    assert_eq!(root.kill_count, 0);
+    assert!(actual_2);
 }
 
 #[cfg(unix)]
@@ -582,13 +677,21 @@ async fn failed_attachment_reaps_the_root_before_releasing_lifecycle_ownership()
     ]);
     process.process.limits.max_memory_bytes = 64 * 1024 * 1024;
     let error = handler.run(process).await.unwrap_err();
-    assert_eq!(error.failure.code(), "process.resource.attach");
-    assert!(failure_message(&error).contains("injected portable attachment failure"));
+    let attachment_error_code = (error.failure.code()).to_owned();
+    let injected_failure_reported =
+        failure_message(&error).contains("injected portable attachment failure");
     let report = handler.drain_for_shutdown(Duration::from_secs(1)).await;
-    assert!(report.all_reaped);
-    assert!(report.output_drains_joined);
-    assert_eq!(report.secondary_errors, Vec::<String>::new());
-    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+    let all_reaped = report.all_reaped;
+    let output_joined = report.output_drains_joined;
+    let secondary_errors = (report.secondary_errors).clone();
+    let spool_count = std::fs::read_dir(directory.path()).unwrap().count();
+
+    assert_eq!(attachment_error_code, "process.resource.attach");
+    assert!(injected_failure_reported);
+    assert!(all_reaped);
+    assert!(output_joined);
+    assert_eq!(secondary_errors, Vec::<String>::new());
+    assert_eq!(spool_count, 0);
 }
 
 #[cfg(unix)]
@@ -600,58 +703,59 @@ async fn a_backend_close_error_does_not_erase_completed_reap_and_output_proofs()
         Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap(),
     );
     let report = handler.drain_for_shutdown(Duration::from_secs(1)).await;
-    assert!(report.all_reaped);
-    assert!(report.output_drains_joined);
-    assert_eq!(report.secondary_errors.len(), 1);
-    assert!(report.secondary_errors[0].contains("injected portable close failure"));
+    let initial_all_reaped = report.all_reaped;
+    let initial_output_joined = report.output_drains_joined;
+    let initial_error_count = report.secondary_errors.len();
+    let close_failure_reported =
+        report.secondary_errors[0].contains("injected portable close failure");
     let retried = handler.drain_for_shutdown(Duration::from_secs(1)).await;
-    assert!(retried.all_reaped);
-    assert!(retried.output_drains_joined);
-    assert_eq!(retried.secondary_errors, Vec::<String>::new());
+    let retry_all_reaped = retried.all_reaped;
+    let retry_output_joined = retried.output_drains_joined;
+    let retry_errors = (retried.secondary_errors).clone();
+
+    assert!(initial_all_reaped);
+    assert!(initial_output_joined);
+    assert_eq!(initial_error_count, 1);
+    assert!(close_failure_reported);
+    assert!(retry_all_reaped);
+    assert!(retry_output_joined);
+    assert_eq!(retry_errors, Vec::<String>::new());
 }
 
-#[test]
-fn supervisor_cleanup_preserves_primary_failure_and_never_invents_reap_evidence() {
-    let primary = EffectFailed::other(EffectId(92), "process.wait", "primary");
-    let secondary = EffectFailed::other(EffectId(92), "process.resource.join", "cleanup");
-    for process_failed in [false, true] {
-        for cleanup_failed in [false, true] {
-            for initially_reaped in [false, true] {
-                let mut result = if process_failed {
-                    Err(primary.clone())
-                } else {
-                    Ok(ProcessTermination::Exit(0))
-                };
-                let mut reaped = initially_reaped;
-                apply_supervisor_cleanup(
-                    &mut result,
-                    &mut reaped,
-                    if cleanup_failed {
-                        Err(secondary.clone())
-                    } else {
-                        Ok(())
-                    },
-                );
-                assert_eq!(reaped, initially_reaped && !cleanup_failed);
-                let expected = if process_failed {
-                    Err(EffectFailed::other(
-                        EffectId(92),
-                        "process.wait",
-                        if cleanup_failed {
-                            "primary; supervisor destruction failed: cleanup"
-                        } else {
-                            "primary"
-                        },
-                    ))
-                } else if cleanup_failed {
-                    Err(secondary.clone())
-                } else {
-                    Ok(ProcessTermination::Exit(0))
-                };
-                assert_eq!(result, expected);
-            }
-        }
-    }
+#[rstest::rstest]
+#[case::both_succeed(Ok(ProcessTermination::Exit(0)), Ok(()), Ok(ProcessTermination::Exit(0)), false)]
+#[case::process_failed(Err(EffectFailed::other(EffectId(92), "process.wait", "primary")), Ok(()), Err(EffectFailed::other(EffectId(92), "process.wait", "primary")), false)]
+#[case::cleanup_failed(
+    Ok(ProcessTermination::Exit(0)),
+    Err(EffectFailed::other(EffectId(92), "process.resource.join", "cleanup")),
+    Err(EffectFailed::other(EffectId(92), "process.resource.join", "cleanup")),
+    true
+)]
+#[case::both_failed(
+    Err(EffectFailed::other(EffectId(92), "process.wait", "primary")),
+    Err(EffectFailed::other(EffectId(92), "process.resource.join", "cleanup")),
+    Err(EffectFailed::other(
+        EffectId(92),
+        "process.wait",
+        "primary; supervisor destruction failed: cleanup"
+    )),
+    true
+)]
+fn supervisor_cleanup_preserves_primary_failure_and_never_invents_reap_evidence(
+    #[case] mut result: Result<ProcessTermination, EffectFailed>,
+    #[case] cleanup: Result<(), EffectFailed>,
+    #[case]
+    #[by_ref]
+    expected: &Result<ProcessTermination, EffectFailed>,
+    #[case] cleanup_failed: bool,
+    #[values(false, true)] initially_reaped: bool,
+) {
+    let mut reaped = initially_reaped;
+
+    apply_supervisor_cleanup(&mut result, &mut reaped, cleanup);
+
+    assert_eq!(reaped, initially_reaped && !cleanup_failed);
+    assert_eq!(&result, expected);
 }
 
 #[tokio::test(start_paused = true)]
@@ -673,7 +777,7 @@ async fn supervised_cleanup_keeps_all_failed_attempts_in_execution_order() {
     let failure = terminate_and_reap(EffectId(93), &mut owner, &mut root)
         .await
         .unwrap_err();
-    assert_eq!(failure.failure.code(), "process.resource.terminate");
+    let primary_failure_code = (failure.failure.code()).to_owned();
     let message = failure_message(&failure);
     let direct_kill = message
         .find("direct root kill failed: kill failure")
@@ -682,10 +786,15 @@ async fn supervised_cleanup_keeps_all_failed_attempts_in_execution_order() {
         .find("supervisor termination retry failed:")
         .unwrap();
     let wait = message.find("root reap failed: wait failure").unwrap();
-    assert!(direct_kill < retry && retry < wait);
-    assert_eq!(root.kill_count, 1);
-    assert_eq!(root.wait_count, 1);
+    let errors_in_order = direct_kill < retry && retry < wait;
+    let kill_count = root.kill_count;
+    let wait_count = root.wait_count;
     owner.finish(EffectId(93)).await.unwrap();
+
+    assert_eq!(primary_failure_code, "process.resource.terminate");
+    assert!(errors_in_order);
+    assert_eq!(kill_count, 1);
+    assert_eq!(wait_count, 1);
 }
 
 #[tokio::test(start_paused = true)]
@@ -708,49 +817,48 @@ async fn a_root_reap_without_process_group_evidence_remains_unproven() {
     assert!(!reaped);
     #[cfg(not(unix))]
     assert!(reaped);
-    assert_eq!(root.kill_count, 0);
-    assert_eq!(root.wait_count, 1);
+    let kill_count = root.kill_count;
+    let wait_count = root.wait_count;
     owner.finish(EffectId(94)).await.unwrap();
+
+    assert_eq!(kill_count, 0);
+    assert_eq!(wait_count, 1);
 }
 
-#[test]
-fn attachment_failure_retains_each_cleanup_error_and_requires_both_completion_proofs() {
+#[rstest::rstest]
+fn attachment_failure_retains_each_cleanup_error_and_requires_both_completion_proofs(
+    #[values(false, true)] root_failed: bool,
+    #[values(false, true)] supervisor_failed: bool,
+) {
     let attachment = ResourceError::io(
         "attach supervisor",
         std::io::Error::other("attachment failure"),
     );
-    for root_failed in [false, true] {
-        for supervisor_failed in [false, true] {
-            let root_cleanup = root_failed.then(|| std::io::Error::other("root cleanup failure"));
-            let supervisor = if supervisor_failed {
-                Err(EffectFailed::other(
-                    EffectId(95),
-                    "process.resource.join",
-                    "supervisor cleanup failure",
-                ))
-            } else {
-                Ok(())
-            };
-            let (failure, reaped) = failed_attachment_outcome(
+    let root_cleanup = root_failed.then(|| std::io::Error::other("root cleanup failure"));
+    let supervisor = supervisor_failed
+        .then(|| {
+            EffectFailed::other(
                 EffectId(95),
-                &attachment,
-                root_cleanup.as_ref(),
-                supervisor,
-            );
-            assert_eq!(failure.failure.code(), "process.resource.attach");
-            assert_eq!(reaped, !root_failed && !supervisor_failed);
-            let message = failure_message(&failure);
-            assert!(message.contains("attachment failure"));
-            assert_eq!(
-                message.contains("spawned-child cleanup failed: root cleanup failure"),
-                root_failed
-            );
-            assert_eq!(
-                message.contains("supervisor destruction failed: supervisor cleanup failure"),
-                supervisor_failed
-            );
-        }
-    }
+                "process.resource.join",
+                "supervisor cleanup failure",
+            )
+        })
+        .map_or(Ok(()), Err);
+
+    let (failure, reaped) =
+        failed_attachment_outcome(EffectId(95), &attachment, root_cleanup.as_ref(), supervisor);
+    let message = failure_message(&failure);
+
+    let actual = (failure.failure.code()).to_owned();
+    let actual_2 = message.contains("attachment failure");
+    let actual_3 = message.contains("spawned-child cleanup failed: root cleanup failure");
+    let actual_4 = message.contains("supervisor destruction failed: supervisor cleanup failure");
+
+    assert_eq!(actual, "process.resource.attach");
+    assert_eq!(reaped, !root_failed && !supervisor_failed);
+    assert!(actual_2);
+    assert_eq!(actual_3, root_failed);
+    assert_eq!(actual_4, supervisor_failed);
 }
 
 #[tokio::test]
@@ -763,8 +871,12 @@ async fn cancellation_before_setup_never_creates_the_output_directory() {
         .run_owned(request(vec![native_program()]).with_cancellation(cancellation))
         .await
         .unwrap_err();
-    assert_eq!(error.failure.code(), "process.cancelled.before_spawn");
-    assert!(!output.exists());
+
+    let actual = (error.failure.code()).to_owned();
+    let actual_2 = !output.exists();
+
+    assert_eq!(actual, "process.cancelled.before_spawn");
+    assert!(actual_2);
 }
 
 #[tokio::test]
@@ -787,26 +899,28 @@ async fn stdout_failure_aborts_stderr_and_still_observes_collector_completion() 
         tokio::time::Instant::now() + Duration::from_secs(1),
     )
     .await;
-    assert!(stderr_abort.is_finished());
+
+    let actual = stderr_abort.is_finished();
+    let actual_2 = (outcome.result.unwrap_err().failure.code()).to_owned();
+
+    assert!(actual);
     assert!(outcome.quiescent);
-    assert_eq!(
-        outcome.result.unwrap_err().failure.code(),
-        "process.stdout.read"
-    );
+    assert_eq!(actual_2, "process.stdout.read");
 }
 
 #[cfg(unix)]
-#[test]
-fn signal_exit_status_uses_the_conventional_signal_number() {
+#[rstest::rstest]
+#[case::success(0, ProcessTermination::Exit(0))]
+#[case::signal(libc::SIGTERM, ProcessTermination::Exit(128 + libc::SIGTERM))]
+fn signal_exit_status_uses_the_conventional_signal_number(
+    #[case] raw: i32,
+    #[case] expected: ProcessTermination,
+) {
     use std::os::unix::process::ExitStatusExt;
-    assert_eq!(
-        exit_termination(std::process::ExitStatus::from_raw(0)),
-        ProcessTermination::Exit(0)
-    );
-    assert_eq!(
-        exit_termination(std::process::ExitStatus::from_raw(libc::SIGTERM)),
-        ProcessTermination::Exit(128 + libc::SIGTERM)
-    );
+
+    let actual = exit_termination(std::process::ExitStatus::from_raw(raw));
+
+    assert_eq!(actual, expected);
 }
 
 #[tokio::test(start_paused = true)]
@@ -816,9 +930,14 @@ async fn pipe_drain_deadline_aborts_and_joins_the_owned_task() {
     let error = await_pipe_until(EffectId(99), "stdout", &mut pipe, deadline)
         .await
         .unwrap_err();
-    assert_eq!(error.failure.code(), "process.output.close.timeout");
-    assert!(pipe.is_finished());
-    assert_eq!(tokio::time::Instant::now(), deadline);
+
+    let actual = (error.failure.code()).to_owned();
+    let actual_2 = pipe.is_finished();
+    let actual_3 = tokio::time::Instant::now();
+
+    assert_eq!(actual, "process.output.close.timeout");
+    assert!(actual_2);
+    assert_eq!(actual_3, deadline);
 }
 
 #[tokio::test]
@@ -833,10 +952,14 @@ async fn a_successful_termination_retry_preserves_the_original_failure_without_i
     let (result, reaped) =
         classify_and_terminate(EffectId(100), &mut owner, ProcessTermination::Exit(0)).await;
     let error = result.unwrap_err();
-    assert_eq!(error.failure.code(), "process.resource.terminate");
-    assert!(!failure_message(&error).contains("supervisor termination retry failed"));
-    assert!(!reaped);
+    let primary_failure_code = (error.failure.code()).to_owned();
+    let no_retry_failure = !failure_message(&error).contains("supervisor termination retry failed");
+    let reap_unproven = !reaped;
     owner.finish(EffectId(100)).await.unwrap();
+
+    assert_eq!(primary_failure_code, "process.resource.terminate");
+    assert!(no_retry_failure);
+    assert!(reap_unproven);
 }
 
 #[cfg(unix)]
@@ -852,26 +975,33 @@ async fn attachment_failure_after_external_reap_does_not_claim_a_cleanup_proof()
     let mut request = typed_request(vec![CommandArg::Unix(b"/usr/bin/true".to_vec())]);
     request.limits.max_memory_bytes = 64 * 1024 * 1024;
     let error = handler.handle(request).await.unwrap_err();
-    assert_eq!(error.failure.code(), "process.resource.attach");
-    assert!(failure_message(&error).contains("spawned-child cleanup failed"));
+    let attachment_error_code = (error.failure.code()).to_owned();
+    let cleanup_failure_reported = failure_message(&error).contains("spawned-child cleanup failed");
     let drain = handler.drain_for_shutdown(Duration::from_secs(1)).await;
-    assert!(!drain.all_reaped);
-    assert!(drain.output_drains_joined);
-    assert_eq!(drain.secondary_errors, Vec::<String>::new());
-    assert!(
-        std::fs::read_dir(directory.path())
-            .unwrap()
-            .next()
-            .is_none()
-    );
+    let reap_unproven = !drain.all_reaped;
+    let output_joined = drain.output_drains_joined;
+    let secondary_errors = (drain.secondary_errors).clone();
+    let spool_empty = std::fs::read_dir(directory.path())
+        .unwrap()
+        .next()
+        .is_none();
+
+    assert_eq!(attachment_error_code, "process.resource.attach");
+    assert!(cleanup_failure_reported);
+    assert!(reap_unproven);
+    assert!(output_joined);
+    assert_eq!(secondary_errors, Vec::<String>::new());
+    assert!(spool_empty);
 }
 
 #[cfg(unix)]
 #[rstest::rstest]
-#[case::released_collector(true)]
-#[case::stalled_collector(false)]
+#[case::released_collector(|gate: &CollectorPause| gate.release.notify_one(), Ok(ProcessTermination::Exit(0)), true)]
+#[case::stalled_collector(|_: &CollectorPause| {}, Err("process.output.close.timeout".to_owned()), false)]
 #[tokio::test(flavor = "current_thread")]
 async fn collector_completion_is_required_for_the_handlers_output_drain_proof(
+    #[case] release_collector: fn(&CollectorPause),
+    #[case] expected: Result<ProcessTermination, String>,
     #[case] release: bool,
 ) {
     let directory = tempfile::tempdir().unwrap();
@@ -883,19 +1013,15 @@ async fn collector_completion_is_required_for_the_handlers_output_drain_proof(
     request.limits.max_memory_bytes = 64 * 1024 * 1024;
     let running = tokio::spawn(async move { owned.handle(request).await });
     gate.entered.notified().await;
-    if release {
-        gate.release.notify_one();
-    }
-    let result = running.await.unwrap();
-    if release {
-        assert_eq!(result.unwrap().termination, ProcessTermination::Exit(0));
-    } else {
-        assert_eq!(
-            result.unwrap_err().failure.code(),
-            "process.output.close.timeout"
-        );
-    }
+    release_collector(&gate);
+    let result = running
+        .await
+        .unwrap()
+        .map(|result| result.termination)
+        .map_err(|error| error.failure.code().to_owned());
     let drain = handler.drain_for_shutdown(Duration::from_secs(1)).await;
+
+    assert_eq!(result, expected);
     assert!(drain.all_reaped);
     assert_eq!(drain.output_drains_joined, release);
     assert_eq!(drain.secondary_errors, Vec::<String>::new());

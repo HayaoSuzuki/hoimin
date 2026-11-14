@@ -247,23 +247,25 @@ def test_built_link_cannot_escape_output(tmp_path: Path) -> None:
         docs_site.built_target(tmp_path.resolve(), tmp_path / "index.html", "../secret")
 
 
-def test_build_rejects_unsafe_output_and_missing_git(
-    tmp_path: Path, mocker: MockerFixture
-) -> None:
-    original_which_spec = docs_site.shutil.which
+def test_build_rejects_unsafe_output(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="repository's site directory"):
         docs_site.build_site(tmp_path, tmp_path / "other")
+
+
+def test_build_rejects_missing_git(tmp_path: Path, mocker: MockerFixture) -> None:
+    original_which_spec = docs_site.shutil.which
     mocker.patch.object(
         docs_site.shutil,
         "which",
         create_autospec(original_which_spec, side_effect=lambda _: None),
     )
+
     with pytest.raises(FileNotFoundError, match="Git is required"):
         docs_site.build_site(tmp_path, tmp_path / "site")
 
 
-def test_full_documentation_build(tmp_path: Path) -> None:
-
+@pytest.fixture
+def documentation_repository(tmp_path: Path) -> Path:
     root = Path(__file__).resolve().parents[1]
     repository = tmp_path / "repository"
     repository.mkdir()
@@ -310,7 +312,14 @@ def test_full_documentation_build(tmp_path: Path) -> None:
         subprocess.run(  # noqa: S603 -- fixed commands in isolated repository
             [git, "-C", str(repository), *arguments], check=True, capture_output=True
         )
+    return repository
+
+
+def test_full_documentation_build(documentation_repository: Path) -> None:
+    repository = documentation_repository
+
     docs_site.build_site(repository, repository / "site")
+
     assert (repository / "site/index.html").is_file()
     assert "Source commit" in (repository / "site/index.html").read_text()
 

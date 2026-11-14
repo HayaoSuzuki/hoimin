@@ -263,14 +263,15 @@ fn dataclass_factory_share_build_observes_cancellation() {
     use hoimin_core::MutationOperatorSelection;
     let source = "from dataclasses import dataclass, field\n@dataclass\nclass Example:\n values: list = field(default_factory=list)\n";
     let parsed = ruff_python_parser::parse_module(source).unwrap();
-    assert!(
-        DataclassFactories::build(
-            parsed.syntax(),
-            &MutationOperatorSelection::default(),
-            &|| true
-        )
-        .is_err()
-    );
+
+    let actual = DataclassFactories::build(
+        parsed.syntax(),
+        &MutationOperatorSelection::default(),
+        &|| true,
+    )
+    .is_err();
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -297,8 +298,12 @@ fn dataclass_factory_share_emission_observes_cancellation(
         replacements.push(replacement);
         true
     });
-    assert_eq!(result.is_err(), cancelled);
-    assert_eq!(replacements.len(), expected_count);
+
+    let actual = result.is_err();
+    let actual_2 = replacements.len();
+
+    assert_eq!(actual, cancelled);
+    assert_eq!(actual_2, expected_count);
     assert_eq!(replacements, ["lambda shared=[]: shared"][..expected_count]);
 }
 
@@ -345,6 +350,7 @@ fn repeated_factory_keywords_never_produce_a_shared_default(#[case] keywords: &s
     );
     ruff_python_parser::parse_module(&source).unwrap();
     let output = super::analyze_selected(&["dataclass_factory_share"], &source);
+
     assert_eq!(output.diagnostics, Vec::new());
     assert_eq!(output.candidates, Vec::new());
 }

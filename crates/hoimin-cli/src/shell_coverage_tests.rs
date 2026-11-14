@@ -25,21 +25,28 @@ mod coverage_tests {
     #[test]
     fn default_run_control_starts_without_cancellation() {
         let control = RunControl::default();
-        assert!(!control.request.is_cancelled());
+
+        let actual = !control.request.is_cancelled();
+
+        assert!(actual);
     }
 
     #[test]
     fn disk_meter_debug_does_not_expose_the_meter() {
         let meter = TestDiskMeter(Arc::new(std::sync::Mutex::new(Box::new(FailingDiskMeter))));
+
         assert_eq!(format!("{meter:?}"), "TestDiskMeter { .. }");
     }
 
     #[test]
     fn shared_diagnostic_capture_preserves_written_bytes() {
         let mut capture = SharedDiagnosticCapture::default();
-        assert_eq!(capture.write(b"diagnostic").unwrap(), 10);
+        let written_bytes = capture.write(b"diagnostic").unwrap();
         capture.flush().unwrap();
-        assert_eq!(*capture.0.lock().unwrap(), b"diagnostic");
+        let captured_bytes = (*capture.0.lock().unwrap()).clone();
+
+        assert_eq!(written_bytes, 10);
+        assert_eq!(captured_bytes, b"diagnostic");
     }
 
     #[tokio::test]
@@ -49,7 +56,10 @@ mod coverage_tests {
         let error = prepare_blocking_effect(&mut context, preflight.clone())
             .err()
             .unwrap();
-        assert_eq!(error.failure.code(), "shell.targets.missing");
+
+        let actual = (error.failure.code()).to_owned();
+
+        assert_eq!(actual, "shell.targets.missing");
     }
 
     #[tokio::test]
@@ -61,7 +71,10 @@ mod coverage_tests {
         let error = prepare_blocking_effect(&mut context, preflight)
             .err()
             .unwrap();
-        assert_eq!(error.failure.code(), "shell.blocking_io");
+
+        let actual = (error.failure.code()).to_owned();
+
+        assert_eq!(actual, "shell.blocking_io");
     }
 
     #[tokio::test]
@@ -77,7 +90,10 @@ mod coverage_tests {
         )
         .err()
         .unwrap();
-        assert_eq!(error.failure.code(), "shell.blocking_io");
+
+        let actual = (error.failure.code()).to_owned();
+
+        assert_eq!(actual, "shell.blocking_io");
     }
 
     #[tokio::test]
@@ -93,9 +109,10 @@ mod coverage_tests {
             hoimin_core::CandidateReadTarget::Next,
         );
         let event = execute_direct_io_effect(&mut context, effect);
-        assert!(
-            matches!(event, RunEvent::EffectFailed(error) if error.failure.code() == "shell.blocking_io")
-        );
+
+        let actual = matches!(event, RunEvent::EffectFailed(error) if error.failure.code() == "shell.blocking_io");
+
+        assert!(actual);
     }
 
     #[tokio::test]
@@ -109,9 +126,10 @@ mod coverage_tests {
                 event: Box::new(RunEvent::CancellationRequested),
             },
         );
-        assert!(
-            matches!(event, RunEvent::EffectFailed(error) if error.failure.code() == "shell.blocking_io")
-        );
+
+        let actual = matches!(event, RunEvent::EffectFailed(error) if error.failure.code() == "shell.blocking_io");
+
+        assert!(actual);
     }
 
     #[tokio::test]
@@ -129,39 +147,43 @@ mod coverage_tests {
                 session_path: None,
             },
         );
-        assert!(
-            matches!(event, RunEvent::EffectFailed(error) if error.failure.code() == "shell.blocking_io")
-        );
-        assert!(context.workspace.is_some());
+
+        let actual = matches!(event, RunEvent::EffectFailed(error) if error.failure.code() == "shell.blocking_io");
+        let actual_2 = context.workspace.is_some();
+
+        assert!(actual);
+        assert!(actual_2);
     }
 
     #[tokio::test]
     async fn session_open_reports_missing_path() {
         let (_project, _parent, mut context, _, _) = context_with_worker().await;
-        assert_eq!(
-            session(&mut context, EffectId(506))
-                .await
-                .err()
-                .unwrap()
-                .failure
-                .code(),
-            "session.missing"
-        );
+
+        let actual = (session(&mut context, EffectId(506))
+            .await
+            .err()
+            .unwrap()
+            .failure
+            .code())
+        .to_owned();
+
+        assert_eq!(actual, "session.missing");
     }
 
     #[tokio::test]
     async fn session_open_reports_invalid_path() {
         let (project, _parent, mut context, _, _) = context_with_worker().await;
         context.session_path = Some(Utf8PathBuf::from_path_buf(project.path().to_owned()).unwrap());
-        assert_eq!(
-            session(&mut context, EffectId(507))
-                .await
-                .err()
-                .unwrap()
-                .failure
-                .code(),
-            "session.open"
-        );
+
+        let actual = (session(&mut context, EffectId(507))
+            .await
+            .err()
+            .unwrap()
+            .failure
+            .code())
+        .to_owned();
+
+        assert_eq!(actual, "session.open");
     }
 
     #[tokio::test]
@@ -183,9 +205,10 @@ mod coverage_tests {
             },
         };
         let event = execute_effect(&mut context, RunEffect::RunBaseline(request)).await;
-        assert!(
-            matches!(event, RunEvent::EffectFailed(error) if error.failure.code() == "shell.worker.environment")
-        );
+
+        let actual = matches!(event, RunEvent::EffectFailed(error) if error.failure.code() == "shell.worker.environment");
+
+        assert!(actual);
     }
 
     #[test]
@@ -201,7 +224,10 @@ mod coverage_tests {
         data.selection.root =
             Utf8PathBuf::from_path_buf(project.path().join("missing-root")).unwrap();
         let config = RunConfig::try_from(data).unwrap();
-        assert!(prepare_session_artifacts(&config).is_err());
+
+        let actual = prepare_session_artifacts(&config).is_err();
+
+        assert!(actual);
     }
 
     #[tokio::test]
@@ -213,9 +239,10 @@ mod coverage_tests {
             ProcessCancellation::new(),
         )
         .await;
-        assert!(
-            matches!(event, RunEvent::EffectFailed(error) if error.failure.code() == "shell.budget.scheduler")
-        );
+
+        let actual = matches!(event, RunEvent::EffectFailed(error) if error.failure.code() == "shell.budget.scheduler");
+
+        assert!(actual);
     }
 
     #[tokio::test]
@@ -238,9 +265,10 @@ mod coverage_tests {
             },
         };
         let event = execute_effect(&mut context, RunEffect::RunMutant(request)).await;
-        assert!(
-            matches!(event, RunEvent::EffectFailed(error) if error.failure.code() == "shell.worker.environment")
-        );
+
+        let actual = matches!(event, RunEvent::EffectFailed(error) if error.failure.code() == "shell.worker.environment");
+
+        assert!(actual);
     }
 
     #[tokio::test]
@@ -264,8 +292,11 @@ mod coverage_tests {
             ),
         )
         .await;
+
+        let actual = missing.workspace.unwrap_err();
+
         assert_eq!(
-            missing.workspace.unwrap_err(),
+            actual,
             "workspace ownership is unavailable during final cleanup"
         );
     }
@@ -286,14 +317,17 @@ mod coverage_tests {
             Box::new(|| panic!("cleanup hook panicked")),
         )
         .await;
-        assert!(
-            failed
-                .workspace
-                .unwrap_err()
-                .contains("cleanup hook panicked")
-        );
-        assert!(failed.process.is_ok());
-        assert!(failed.expiry.is_none());
+
+        let actual = failed
+            .workspace
+            .unwrap_err()
+            .contains("cleanup hook panicked");
+        let actual_2 = failed.process.is_ok();
+        let actual_3 = failed.expiry.is_none();
+
+        assert!(actual);
+        assert!(actual_2);
+        assert!(actual_3);
     }
 
     #[tokio::test]
@@ -317,11 +351,16 @@ mod coverage_tests {
             Box::new(|| panic!("metrics hook panicked")),
         )
         .await;
+
+        let actual = finalized.warnings[1].1.contains("metrics hook panicked");
+        let actual_2 = finalized.expiry.is_none();
+        let actual_3 = !path.exists();
+
         assert_eq!(finalized.warnings[0], ("previous", "preserve".into()));
         assert_eq!(finalized.warnings[1].0, "metrics.write");
-        assert!(finalized.warnings[1].1.contains("metrics hook panicked"));
-        assert!(finalized.expiry.is_none());
-        assert!(!path.exists());
+        assert!(actual);
+        assert!(actual_2);
+        assert!(actual_3);
     }
 
     #[test]
@@ -339,8 +378,8 @@ mod coverage_tests {
         };
         apply_finalization_errors_to_summary(&mut summary, &["unstructured failure".into()]);
         let stop = summary.disk.stop.as_ref().unwrap();
-        assert_eq!(stop.code, "run.finalization.failed");
-        assert_eq!(summary.exit_code, 2);
+        let primary_failure_code = (stop.code).clone();
+        let exit_code_after_first_failure = summary.exit_code;
         apply_finalization_errors_to_summary(
             &mut summary,
             &[
@@ -349,8 +388,13 @@ mod coverage_tests {
                 "cleanup.failed: detail".into(),
             ],
         );
-        assert_eq!(summary.disk.stop.as_ref().unwrap().secondary.len(), 1);
-        assert!(!summary.complete);
+        let secondary_failure_count = summary.disk.stop.as_ref().unwrap().secondary.len();
+        let incomplete = !summary.complete;
+
+        assert_eq!(primary_failure_code, "run.finalization.failed");
+        assert_eq!(exit_code_after_first_failure, 2);
+        assert_eq!(secondary_failure_count, 1);
+        assert!(incomplete);
     }
 
     #[cfg(target_os = "linux")]
@@ -376,12 +420,12 @@ mod coverage_tests {
         data.session = hoimin_core::SessionMode::Fresh(hoimin_core::SessionConfig {
             path: Utf8PathBuf::from_path_buf(link.join("session.sqlite3")).unwrap(),
         });
-        assert!(
-            prepare_session_artifacts(&RunConfig::try_from(data).unwrap())
-                .unwrap_err()
-                .contains(expected)
-        );
+        let native_path_rejected = prepare_session_artifacts(&RunConfig::try_from(data).unwrap())
+            .unwrap_err()
+            .contains(expected);
         std::fs::remove_file(link).unwrap();
+
+        assert!(native_path_rejected);
     }
 
     #[cfg(unix)]
@@ -398,7 +442,10 @@ mod coverage_tests {
         data.session = hoimin_core::SessionMode::Fresh(hoimin_core::SessionConfig {
             path: Utf8PathBuf::from_path_buf(project.path().join("session.sqlite3")).unwrap(),
         });
-        assert!(prepare_session_artifacts(&RunConfig::try_from(data).unwrap()).is_err());
+
+        let actual = prepare_session_artifacts(&RunConfig::try_from(data).unwrap()).is_err();
+
+        assert!(actual);
     }
 
     #[cfg(unix)]
@@ -412,11 +459,12 @@ mod coverage_tests {
         data.session = hoimin_core::SessionMode::Fresh(hoimin_core::SessionConfig {
             path: Utf8PathBuf::from_path_buf(project.path().join("bad\\session.sqlite3")).unwrap(),
         });
-        assert!(
-            prepare_session_artifacts(&RunConfig::try_from(data).unwrap())
-                .unwrap_err()
-                .contains("literal backslash")
-        );
+
+        let actual = prepare_session_artifacts(&RunConfig::try_from(data).unwrap())
+            .unwrap_err()
+            .contains("literal backslash");
+
+        assert!(actual);
     }
     #[rstest::rstest]
     #[case::load(|_: MutationCandidate| RunEffect::LoadSession(hoimin_core::LoadSession {
@@ -460,9 +508,10 @@ mod coverage_tests {
         let effect = effect(candidate);
         let expected = effect.id();
         let event = execute_effect(&mut context, effect).await;
-        assert!(
-            matches!(event, RunEvent::EffectFailed(error) if error.id == expected && error.failure.code() == "session.missing")
-        );
+
+        let actual = matches!(event, RunEvent::EffectFailed(error) if error.id == expected && error.failure.code() == "session.missing");
+
+        assert!(actual);
     }
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn cancellation_that_wins_the_dispatch_gate_prevents_baseline_spawn() {
@@ -485,8 +534,12 @@ mod coverage_tests {
             observing.request.cancel_under_held_spawn_gate_for_tests();
             drop(gate);
         });
-        assert_eq!(running.await.unwrap().unwrap(), 130);
-        assert_eq!(observing.max_process_tasks(), 0);
+
+        let actual = running.await.unwrap().unwrap();
+        let actual_2 = observing.max_process_tasks();
+
+        assert_eq!(actual, 130);
+        assert_eq!(actual_2, 0);
     }
     #[tokio::test]
     async fn direct_workspace_adapter_restores_and_verifies_the_original_after_replay() {
@@ -494,8 +547,9 @@ mod coverage_tests {
         let id = retry.id();
         let root = context.workspace().worker(0).unwrap().root().to_owned();
         let duplicate = execute_direct_io_effect(&mut context, RunEffect::CreateWorker(retry));
-        assert!(matches!(duplicate, RunEvent::EffectFailed(error) if error.id == id));
-        assert_eq!(context.workspace().worker(0).unwrap().root(), &root);
+        let duplicate_rejected =
+            matches!(duplicate, RunEvent::EffectFailed(error) if error.id == id);
+        let worker_root_before_replay = context.workspace().worker(0).unwrap().root().to_owned();
         let spool_directory = tempfile::tempdir().unwrap();
         let mut store = crate::analyzer::CandidateStore::new_in(1, spool_directory.path()).unwrap();
         store.push(&candidate).unwrap();
@@ -505,9 +559,7 @@ mod coverage_tests {
             &mut context,
             candidate_read_effect(520, spool, hoimin_core::CandidateReadTarget::Next),
         );
-        assert!(
-            matches!(loaded, RunEvent::CandidateLoaded(CandidateLoaded { candidate: Some(value), .. }) if value == candidate)
-        );
+        let candidate_loaded = matches!(loaded, RunEvent::CandidateLoaded(CandidateLoaded { candidate: Some(value), .. }) if value == candidate);
         let mutated = execute_direct_io_effect(
             &mut context,
             RunEffect::ApplyMutation(ApplyMutation {
@@ -516,7 +568,7 @@ mod coverage_tests {
                 candidate,
             }),
         );
-        assert!(matches!(mutated, RunEvent::MutationApplied(_)));
+        let mutation_applied = matches!(mutated, RunEvent::MutationApplied(_));
         let reset = execute_direct_io_effect(
             &mut context,
             RunEffect::ResetWorker(ResetWorker {
@@ -524,7 +576,7 @@ mod coverage_tests {
                 worker: 0,
             }),
         );
-        assert!(matches!(reset, RunEvent::WorkerReset(_)));
+        let worker_reset = matches!(reset, RunEvent::WorkerReset(_));
         let verified = execute_direct_io_effect(
             &mut context,
             RunEffect::VerifyOriginals(VerifyOriginals {
@@ -532,39 +584,56 @@ mod coverage_tests {
                 checkpoint: IntegrityCheckpoint::PreFinalReport,
             }),
         );
-        assert!(matches!(verified, RunEvent::OriginalsVerified(_)));
-        assert_eq!(
-            context
-                .workspace()
-                .worker(0)
-                .unwrap()
-                .read("pkg/a.py")
-                .unwrap(),
-            b"original\n"
-        );
+        let original_verified = matches!(verified, RunEvent::OriginalsVerified(_));
+        let restored_source = context
+            .workspace()
+            .worker(0)
+            .unwrap()
+            .read("pkg/a.py")
+            .unwrap();
+
+        assert!(duplicate_rejected);
+        assert_eq!(worker_root_before_replay, root);
+        assert!(candidate_loaded);
+        assert!(mutation_applied);
+        assert!(worker_reset);
+        assert!(original_verified);
+        assert_eq!(restored_source, b"original\n");
     }
 
     #[tokio::test(start_paused = true)]
-    async fn fixture_waiters_bound_their_failure_cleanup_and_cancel_an_unresponsive_run() {
+    async fn live_process_fixture_reports_completion_before_readiness() {
         let mut completed = std::future::ready(17);
-        assert!(
-            wait_for_live_process(&mut completed, || false)
-                .await
-                .unwrap_err()
-                .contains("finished before fixture readiness")
-        );
+
+        let error = wait_for_live_process(&mut completed, || false)
+            .await
+            .unwrap_err();
+
+        assert!(error.contains("finished before fixture readiness"));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn live_process_fixture_bounds_an_unresponsive_readiness_wait() {
         let mut unresponsive = std::future::pending::<()>();
-        assert_eq!(
-            wait_for_live_process(&mut unresponsive, || false)
-                .await
-                .unwrap_err(),
-            "live process fixture did not become ready"
-        );
+
+        let error = wait_for_live_process(&mut unresponsive, || false)
+            .await
+            .unwrap_err();
+
+        assert_eq!(error, "live process fixture did not become ready");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn disk_stop_fixture_cancels_an_unresponsive_run_at_its_deadline() {
+        let mut unresponsive = std::future::pending::<()>();
         let control = RunControl::new();
+
+        let error = wait_for_disk_stop(&mut unresponsive, &control)
+            .await
+            .unwrap_err();
+
         assert_eq!(
-            wait_for_disk_stop(&mut unresponsive, &control)
-                .await
-                .unwrap_err(),
+            error,
             "periodic disk stop did not interrupt the active process"
         );
         assert!(control.is_cancelled());
@@ -574,16 +643,16 @@ mod coverage_tests {
     fn startup_events_do_not_establish_a_shutdown_budget() {
         let now = tokio::time::Instant::now();
         let mut budget = None;
-        assert_eq!(
-            establish_event_shutdown_budget(
-                &mut budget,
-                &RunEvent::StartRequested(StartRequested),
-                now + Duration::from_secs(1),
-                now,
-                Duration::from_secs(1)
-            ),
-            None
+
+        let actual = establish_event_shutdown_budget(
+            &mut budget,
+            &RunEvent::StartRequested(StartRequested),
+            now + Duration::from_secs(1),
+            now,
+            Duration::from_secs(1),
         );
+
+        assert_eq!(actual, None);
         assert_eq!(budget, None);
     }
     #[tokio::test]
@@ -618,11 +687,17 @@ mod coverage_tests {
         )
         .await
         .unwrap_err();
-        assert!(failure.contains("blocking I/O task failed while stopping"));
-        assert!(failure.contains("first outer I/O panic"));
-        assert!(!failure.contains("second outer I/O panic"));
+
+        let actual = failure.contains("blocking I/O task failed while stopping");
+        let actual_2 = failure.contains("first outer I/O panic");
+        let actual_3 = !failure.contains("second outer I/O panic");
+        let actual_4 = io_tasks.is_empty();
+
+        assert!(actual);
+        assert!(actual_2);
+        assert!(actual_3);
         assert_eq!(in_flight, 0);
-        assert!(io_tasks.is_empty());
+        assert!(actual_4);
         assert!(!expiry_reported);
         assert_eq!(warnings, Vec::<(&str, String)>::new());
     }
@@ -755,7 +830,10 @@ mod coverage_tests {
             ReleasePolicy::AfterRun,
         )
         .await;
-        assert_eq!(observation.result.unwrap_or(2), 2);
+
+        let actual = observation.result.unwrap_or(2);
+
+        assert_eq!(actual, 2);
         assert!(observation.retained_delivery);
         assert!(!observation.acknowledged);
     }
@@ -775,12 +853,13 @@ mod coverage_tests {
             ReleasePolicy::AfterRun,
         )
         .await;
-        assert!(
-            observation
-                .result
-                .unwrap_err()
-                .contains("install Ctrl+C handler: injected failure")
-        );
+
+        let actual = observation
+            .result
+            .unwrap_err()
+            .contains("install Ctrl+C handler: injected failure");
+
+        assert!(actual);
         assert!(observation.retained_delivery);
         assert!(!observation.acknowledged);
     }
@@ -800,7 +879,10 @@ mod coverage_tests {
             ReleasePolicy::AfterObserved("interrupt_observed"),
         )
         .await;
-        assert_eq!(observation.result.unwrap(), 130);
+
+        let actual = observation.result.unwrap();
+
+        assert_eq!(actual, 130);
         assert!(observation.acknowledged);
     }
 
@@ -817,12 +899,13 @@ mod coverage_tests {
             ReleasePolicy::AfterObserved("interrupt_observed"),
         )
         .await;
-        assert!(
-            observation
-                .result
-                .unwrap_err()
-                .contains("install Ctrl+C handler: injected failure")
-        );
+
+        let actual = observation
+            .result
+            .unwrap_err()
+            .contains("install Ctrl+C handler: injected failure");
+
+        assert!(actual);
         assert!(!observation.acknowledged);
     }
 
@@ -836,7 +919,10 @@ mod coverage_tests {
             ReleasePolicy::AfterObserved("serial_stop_observed"),
         )
         .await;
-        assert_eq!(observation.result.unwrap(), 130);
+
+        let actual = observation.result.unwrap();
+
+        assert_eq!(actual, 130);
         assert!(observation.acknowledged);
     }
 
@@ -850,12 +936,13 @@ mod coverage_tests {
             ReleasePolicy::AfterRun,
         )
         .await;
-        assert!(
-            observation
-                .result
-                .unwrap_err()
-                .contains("cancellation: shutdown grace expired")
-        );
+
+        let actual = observation
+            .result
+            .unwrap_err()
+            .contains("cancellation: shutdown grace expired");
+
+        assert!(actual);
         assert!(!observation.acknowledged);
     }
 
@@ -923,7 +1010,10 @@ mod coverage_tests {
             ReleasePolicy::AfterObserved("interrupt_observed"),
         )
         .await;
-        assert_eq!(result.unwrap(), 130);
+
+        let actual = result.unwrap();
+
+        assert_eq!(actual, 130);
         assert_eq!(processes, 0);
     }
 
@@ -936,11 +1026,12 @@ mod coverage_tests {
         )
         .await;
         let error = result.unwrap_err();
-        assert!(
-            error.starts_with("install Ctrl+C handler: materialization failure"),
-            "{error}"
-        );
-        assert!(!error.contains("shutdown grace expired"), "{error}");
+
+        let actual = error.starts_with("install Ctrl+C handler: materialization failure");
+        let actual_2 = !error.contains("shutdown grace expired");
+
+        assert!(actual, "{error}");
+        assert!(actual_2, "{error}");
         assert_eq!(processes, 0);
     }
 
@@ -953,11 +1044,12 @@ mod coverage_tests {
         )
         .await;
         let error = result.unwrap_err();
-        assert!(
-            error.contains("cancellation: shutdown grace expired"),
-            "{error}"
-        );
-        assert!(error.contains("blocking I/O tasks: 1"), "{error}");
+
+        let actual = error.contains("cancellation: shutdown grace expired");
+        let actual_2 = error.contains("blocking I/O tasks: 1");
+
+        assert!(actual, "{error}");
+        assert!(actual_2, "{error}");
         assert_eq!(processes, 0);
     }
 
@@ -970,11 +1062,12 @@ mod coverage_tests {
         )
         .await;
         let error = result.unwrap_err();
-        assert!(
-            error.starts_with("install Ctrl+C handler: materialization failure"),
-            "{error}"
-        );
-        assert!(error.contains("shutdown grace expired"), "{error}");
+
+        let actual = error.starts_with("install Ctrl+C handler: materialization failure");
+        let actual_2 = error.contains("shutdown grace expired");
+
+        assert!(actual, "{error}");
+        assert!(actual_2, "{error}");
         assert_eq!(processes, 0);
     }
 
@@ -1012,14 +1105,18 @@ mod coverage_tests {
         )
         .await
         .unwrap_err();
-        assert!(error.contains(task_kind), "{error}");
-        assert!(error.contains("post-delivery panic"), "{error}");
-        assert!(!error.contains("shutdown grace expired"), "{error}");
-        assert!(
-            !observed
-                .finalization_events()
-                .contains(&"output_acknowledged")
-        );
+
+        let actual = error.contains(task_kind);
+        let actual_2 = error.contains("post-delivery panic");
+        let actual_3 = !error.contains("shutdown grace expired");
+        let actual_4 = !observed
+            .finalization_events()
+            .contains(&"output_acknowledged");
+
+        assert!(actual, "{error}");
+        assert!(actual_2, "{error}");
+        assert!(actual_3, "{error}");
+        assert!(actual_4);
     }
 
     struct MetricsObservation {
@@ -1067,40 +1164,44 @@ mod coverage_tests {
     #[tokio::test(flavor = "current_thread")]
     async fn outer_metrics_success_writes_a_valid_metrics_object() {
         let observation = observe_outer_metrics("metrics.json", false).await;
-        assert_eq!(observation.result.unwrap(), 0);
+        let exit_code = observation.result.unwrap();
         let report: serde_json::Value =
             serde_json::from_slice(&std::fs::read(observation.path).unwrap()).unwrap();
-        assert!(report.is_object());
-        assert!(!observation.diagnostics.contains("metrics.incomplete"));
+        let metrics_object = report.is_object();
+        let no_incomplete_warning = !observation.diagnostics.contains("metrics.incomplete");
+
+        assert_eq!(exit_code, 0);
+        assert!(metrics_object);
+        assert!(no_incomplete_warning);
     }
 
     #[tokio::test(flavor = "current_thread")]
     async fn outer_metrics_unavailable_destination_reports_unwritten_output() {
         let observation = observe_outer_metrics("missing/metrics.json", false).await;
-        assert_eq!(observation.result.unwrap(), 0);
-        assert!(!observation.path.exists());
-        assert!(
-            observation.diagnostics.contains("metrics.write"),
-            "{}",
-            observation.diagnostics
-        );
+
+        let actual = observation.result.unwrap();
+        let actual_2 = !observation.path.exists();
+        let actual_3 = observation.diagnostics.contains("metrics.write");
+
+        assert_eq!(actual, 0);
+        assert!(actual_2);
+        assert!(actual_3, "{}", observation.diagnostics);
     }
 
     #[tokio::test(flavor = "current_thread")]
     async fn outer_metrics_failed_owned_task_reports_incomplete_output() {
         let observation = observe_outer_metrics("metrics.json", true).await;
-        assert!(
-            observation
-                .result
-                .unwrap_err()
-                .contains("injected process post-delivery panic")
-        );
-        assert!(!observation.path.exists());
-        assert!(
-            observation.diagnostics.contains("metrics.incomplete"),
-            "{}",
-            observation.diagnostics
-        );
+
+        let actual = observation
+            .result
+            .unwrap_err()
+            .contains("injected process post-delivery panic");
+        let actual_2 = !observation.path.exists();
+        let actual_3 = observation.diagnostics.contains("metrics.incomplete");
+
+        assert!(actual);
+        assert!(actual_2);
+        assert!(actual_3, "{}", observation.diagnostics);
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -1137,37 +1238,37 @@ mod coverage_tests {
         )
         .await
         .unwrap();
-        assert_eq!(result, 0);
+        let exit_code = result;
         let report = String::from_utf8(stdout.snapshot()).unwrap();
-        assert!(report.contains("mutant_finished"), "{report}");
+        let mutant_result_emitted = report.contains("mutant_finished");
         let connection = rusqlite::Connection::open(session).unwrap();
-        assert!(
-            connection
-                .query_row("SELECT count(*) FROM results", [], |row| row
-                    .get::<_, i64>(0))
-                .unwrap()
-                > 0
-        );
-        assert_eq!(
-            connection
-                .query_row("SELECT complete FROM runs", [], |row| row.get::<_, i64>(0))
-                .unwrap(),
-            1
-        );
+        let result_persisted = connection
+            .query_row("SELECT count(*) FROM results", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap()
+            > 0;
+        let run_complete = connection
+            .query_row("SELECT complete FROM runs", [], |row| row.get::<_, i64>(0))
+            .unwrap();
         let metrics: serde_json::Value =
             serde_json::from_slice(&std::fs::read(metrics).unwrap()).unwrap();
-        assert!(metrics.is_object());
-        assert!(
-            observed
-                .finalization_events()
-                .contains(&"output_acknowledged")
-        );
-        assert!(
-            observed
-                .managed_root_paths()
-                .iter()
-                .all(|path| !path.exists())
-        );
+        let metrics_object = metrics.is_object();
+        let output_acknowledged = observed
+            .finalization_events()
+            .contains(&"output_acknowledged");
+        let roots_removed = observed
+            .managed_root_paths()
+            .iter()
+            .all(|path| !path.exists());
+
+        assert_eq!(exit_code, 0);
+        assert!(mutant_result_emitted, "{report}");
+        assert!(result_persisted);
+        assert_eq!(run_complete, 1);
+        assert!(metrics_object);
+        assert!(output_acknowledged);
+        assert!(roots_removed);
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -1198,13 +1299,10 @@ mod coverage_tests {
                 .unwrap();
         let stdout = CollectingWriter::default();
         let stderr = CollectingWriter::default();
-        assert_eq!(
-            verified
-                .execute(stdout.clone(), stderr.clone())
-                .await
-                .unwrap(),
-            0
-        );
+        let exit_code = verified
+            .execute(stdout.clone(), stderr.clone())
+            .await
+            .unwrap();
         let events: Vec<OutputEvent> = String::from_utf8(stdout.snapshot())
             .unwrap()
             .lines()
@@ -1217,10 +1315,15 @@ mod coverage_tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(finished.len(), 1);
+        let finished_candidate_count = finished.len();
         let event = serde_json::to_string(finished[0]).unwrap();
-        assert!(event.contains(&selected), "{event}");
-        assert_eq!(stderr.snapshot(), Vec::<u8>::new());
+        let selected_candidate_reported = event.contains(&selected);
+        let diagnostics = stderr.snapshot();
+
+        assert_eq!(exit_code, 0);
+        assert_eq!(finished_candidate_count, 1);
+        assert!(selected_candidate_reported, "{event}");
+        assert_eq!(diagnostics, Vec::<u8>::new());
     }
 
     async fn baseline_spool_diagnostics(
@@ -1280,7 +1383,10 @@ mod coverage_tests {
             .iter()
             .filter(|event| event["code"] == "baseline.output.read")
             .collect();
-        assert_eq!(errors.len(), 1, "{diagnostics:?}");
+
+        let actual = errors.len();
+
+        assert_eq!(actual, 1, "{diagnostics:?}");
         assert_eq!(errors[0]["run_id"], "spool-read-failure");
         assert_eq!(errors[0]["kind"], "diagnostic");
     }
@@ -1292,13 +1398,15 @@ mod coverage_tests {
                 std::fs::write(path, b"x")
             })
             .await;
-        assert_eq!(diagnostics.len(), 3);
-        assert!(
-            diagnostics[1]["message"]
-                .as_str()
-                .unwrap()
-                .contains("offset=0:\nx")
-        );
+
+        let actual = diagnostics.len();
+        let actual_2 = diagnostics[1]["message"]
+            .as_str()
+            .unwrap()
+            .contains("offset=0:\nx");
+
+        assert_eq!(actual, 3);
+        assert!(actual_2);
         assert_eq!(diagnostics[2]["code"], "baseline.output.read");
         assert_eq!(
             diagnostics[2]["message"],

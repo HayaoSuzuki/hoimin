@@ -148,31 +148,20 @@ proptest! {
 }
 
 #[rstest::rstest]
-#[case::vec_1(vec![])]
-#[case::vec_btreemap_from_1_900_2_700_2(vec![BTreeMap::from([(1, 900), (2, 700)])])]
+#[case::refresh_failure(true, || Ok(reading(BTreeMap::from([(1, 0)]), 99)))]
+#[case::measurement_failure(false, || Err(io::Error::other("measurement failed")))]
+#[case::missing_capacity(false, || Ok(reading(BTreeMap::new(), 99)))]
 fn rejected_samples_preserve_all_successful_statistics(
-    #[case] initial: Vec<BTreeMap<u64, u64>>,
-    #[values(0, 1, 2)] scenario_index: usize,
+    #[values(vec![], vec![BTreeMap::from([(1, 900), (2, 700)])])] initial: Vec<BTreeMap<u64, u64>>,
+    #[case] refresh_fails: bool,
+    #[case] rejected: fn() -> io::Result<MeterReading>,
 ) {
-    let (refresh_fails, reading_fails, capacities) = [
-        (true, false, BTreeMap::from([(1, 0)])),
-        (false, true, BTreeMap::from([(1, 0)])),
-        (false, false, BTreeMap::new()),
-    ]
-    .into_iter()
-    .nth(scenario_index)
-    .unwrap();
-
     let samples = Samples::new();
     for capacities in initial {
         samples.accept(capacities, 1);
     }
-    let rejected = if reading_fails {
-        Err(io::Error::other("measurement failed"))
-    } else {
-        Ok(reading(capacities, 99))
-    };
     let before = samples.snapshot();
+    let rejected = rejected();
 
     samples.sample(rejected, refresh_fails);
     let after = samples.snapshot();

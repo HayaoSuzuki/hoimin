@@ -587,7 +587,9 @@ mod tests {
             excludes,
             ..Selection::default()
         };
+
         let error = discover_explicit(&selection).unwrap_err();
+
         assert!(matches!(&error, FsTargetError::InvalidGlob(_)));
         assert!(
             error
@@ -603,7 +605,9 @@ mod tests {
             root: Utf8PathBuf::from_path_buf(directory.path().join("absent")).unwrap(),
             ..Selection::default()
         };
+
         let error = discover_explicit(&selection).unwrap_err();
+
         assert!(matches!(&error, FsTargetError::Walk(_)));
         assert!(error.to_string().starts_with("target discovery failed:"));
     }
@@ -622,7 +626,10 @@ mod tests {
             files,
             ..Selection::default()
         };
-        assert!(DiscoveryScope::new(&selection).is_none());
+
+        let actual_0 = DiscoveryScope::new(&selection);
+
+        assert!(actual_0.is_none());
     }
 
     #[test]
@@ -636,7 +643,10 @@ mod tests {
             }],
             ..Selection::default()
         };
-        assert!(DiscoveryScope::new(&selection).is_none());
+
+        let actual_0 = DiscoveryScope::new(&selection);
+
+        assert!(actual_0.is_none());
     }
 
     #[cfg(unix)]
@@ -660,7 +670,9 @@ mod tests {
             files,
             ..Selection::default()
         };
+
         let error = discover_explicit(&selection).unwrap_err();
+
         assert!(
             matches!(error, FsTargetError::UnsupportedPath(path) if path == "selected/odd\\part/app.py")
         );
@@ -681,16 +693,20 @@ mod tests {
             .map(Result::unwrap)
             .find(|entry| entry.depth() == 1)
             .unwrap();
-        assert!(!scope.keeps(
+
+        let actual_0 = scope.keeps(
             &entry,
             &directory.path().join("different"),
-            &DiscoveryStats::default()
-        ));
+            &DiscoveryStats::default(),
+        );
+
+        assert!(!actual_0);
     }
     #[test]
     fn a_discovered_path_preserves_its_relative_portable_spelling() {
         let path =
             discovered_path(Path::new("workspace/nested/app.py"), Path::new("workspace")).unwrap();
+
         assert_eq!(path, Utf8PathBuf::from("nested/app.py"));
     }
 
@@ -698,6 +714,7 @@ mod tests {
     fn a_discovered_path_outside_its_root_has_a_typed_diagnostic() {
         let error =
             discovered_path(Path::new("elsewhere/app.py"), Path::new("workspace")).unwrap_err();
+
         assert!(matches!(&error, FsTargetError::OutsideRoot));
         assert_eq!(error.to_string(), "discovered path is outside root");
     }
@@ -708,7 +725,9 @@ mod tests {
         use std::os::unix::ffi::OsStringExt;
         let root = Path::new("workspace");
         let path = root.join(std::ffi::OsString::from_vec(vec![0xff]));
+
         let error = discovered_path(&path, root).unwrap_err();
+
         assert!(matches!(&error, FsTargetError::NonUtf8Path));
         assert_eq!(error.to_string(), "target path must be valid UTF-8");
     }
@@ -718,6 +737,7 @@ mod tests {
     fn a_discovered_literal_backslash_is_not_a_portable_separator_alias() {
         let error = discovered_path(Path::new("workspace/odd\\name.py"), Path::new("workspace"))
             .unwrap_err();
+
         assert!(matches!(error, FsTargetError::UnsupportedPath(path) if path == "odd\\name.py"));
     }
 
@@ -726,6 +746,7 @@ mod tests {
     fn an_unsupported_discovered_path_formats_its_rejected_spelling() {
         let error = discovered_path(Path::new("workspace/odd\\name.py"), Path::new("workspace"))
             .unwrap_err();
+
         assert_eq!(
             error.to_string(),
             "target path cannot be represented portably: odd\\name.py"
@@ -738,7 +759,10 @@ mod tests {
         use std::os::unix::ffi::OsStringExt;
         let root = Path::new("workspace");
         let path = root.join(std::ffi::OsString::from_vec(vec![0xff]));
-        assert_eq!(portable_relative(&path, root), None);
+
+        let actual_0 = portable_relative(&path, root);
+
+        assert_eq!(actual_0, None);
     }
 
     #[test]
@@ -754,7 +778,9 @@ mod tests {
             removed.call_once(|| fs::remove_dir(directory.path()).unwrap());
             false
         };
+
         let error = discover_python_bounded(&selection, 1, &cancelled).unwrap_err();
+
         assert!(matches!(error, FsTargetError::Walk(_)));
     }
 
@@ -765,7 +791,9 @@ mod tests {
             root: Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap(),
             ..Selection::default()
         };
+
         let error = discover_python_bounded(&selection, 1, &|| true).unwrap_err();
+
         assert_eq!(
             error.to_string(),
             "exception hierarchy input discovery cancelled or exceeded its file limit"
@@ -780,7 +808,9 @@ mod tests {
             root: Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap(),
             ..Selection::default()
         };
+
         let error = discover_python_bounded(&selection, 0, &|| false).unwrap_err();
+
         assert!(matches!(error, FsTargetError::AnalysisLimit));
     }
 
@@ -793,7 +823,9 @@ mod tests {
             includes: vec!["*.py".to_owned()],
             ..Selection::default()
         };
+
         let files = discover_python_bounded(&selection, 1, &|| false).unwrap();
+
         assert_eq!(
             files,
             vec![hoimin_core::DiscoveredFile {

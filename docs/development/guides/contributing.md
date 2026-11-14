@@ -823,16 +823,35 @@ uv run --frozen pytest --randomly-seed=12345
 uv run --frozen pytest --randomly-seed=last
 ```
 
-To measure branch coverage of the Python tools:
+To measure Python source and test coverage:
 
 ```console
-uv run --frozen pytest --cov=tools --cov-branch --cov-report=term-missing
+uv run --frozen pytest --cov --cov-report=term-missing
 ```
 
-Coverage is opt-in and has no minimum percentage gate. This command measures
-`tools/` in the pytest process; it does not measure the Rust implementation or
-every subprocess. Generated coverage data and common report outputs are ignored
-by Git. See the [pytest-cov configuration guide](
+The configuration in `pyproject.toml` includes repository Python tools, tests,
+oracle tooling, and CLI test support, with branch and Python subprocess coverage.
+The target is 100%. A run on one OS or Python version can leave platform-specific
+cases uncovered; use `--cov-fail-under=0` to collect a diagnostic report. Direct
+upstream-linter smoke tests are outside this target. Keep tests of hoimin's
+dependency-boundary behavior in scope.
+
+To measure Rust workspace source and tests, including parameterized test bodies:
+
+```console
+CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 \
+CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 \
+cargo +nightly-2026-10-08 coverage -- --test-threads=2
+```
+
+The Cargo alias runs all targets and features with 100% targets for lines,
+functions, and regions. It excludes standard-library sources, registry/Git and
+vendored dependencies, and generated build output. It retains workspace test
+files. One build job and two test threads bound concurrent compilation and test
+execution; monitor free disk space before retaining another instrumented build.
+
+Git ignores generated coverage data and common report outputs. See the
+[pytest-cov configuration guide](
 https://pytest-cov.readthedocs.io/en/latest/config.html) and
 [pytest-randomly usage](https://github.com/pytest-dev/pytest-randomly#usage).
 

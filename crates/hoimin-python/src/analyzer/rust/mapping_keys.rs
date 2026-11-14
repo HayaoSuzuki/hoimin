@@ -215,10 +215,10 @@ mod coverage_tests {
         #[case] expected: Option<f64>,
     ) {
         let parsed = ruff_python_parser::parse_expression(source).unwrap();
-        assert_eq!(
-            complex_real(&parsed.syntax().body).map(f64::to_bits),
-            expected.map(f64::to_bits)
-        );
+
+        let actual = complex_real(&parsed.syntax().body).map(f64::to_bits);
+
+        assert_eq!(actual, expected.map(f64::to_bits));
     }
 
     #[test]
@@ -227,17 +227,22 @@ mod coverage_tests {
         let parsed = ruff_python_parser::parse_expression(source).unwrap();
         let keys = &parsed.syntax().body.as_tuple_expr().unwrap().elts;
         let collisions = colliding_edits(keys);
-        assert_eq!(collisions.len(), 1);
-        assert_eq!(
-            &source[usize::from(collisions[0].start())..usize::from(collisions[0].end())],
-            " - "
-        );
+
+        let actual = collisions.len();
+        let actual_2 =
+            &source[usize::from(collisions[0].start())..usize::from(collisions[0].end())];
+
+        assert_eq!(actual, 1);
+        assert_eq!(actual_2, " - ");
     }
     #[test]
     fn real_integer_within_the_digit_bound_must_still_be_finite() {
         let source = "9".repeat(309);
         let parsed = ruff_python_parser::parse_expression(&source).unwrap();
-        assert_eq!(complex_real(&parsed.syntax().body), None);
+
+        let actual = complex_real(&parsed.syntax().body);
+
+        assert_eq!(actual, None);
     }
 
     #[rstest::rstest]
@@ -246,7 +251,10 @@ mod coverage_tests {
     fn real_only_and_noncomplex_binary_keys_do_not_gain_a_conjugate_edit(#[case] source: &str) {
         let parsed = ruff_python_parser::parse_expression(source).unwrap();
         let keys = &parsed.syntax().body.as_tuple_expr().unwrap().elts;
-        assert_eq!(colliding_edits(keys), Vec::<TextRange>::new());
+
+        let actual = colliding_edits(keys);
+
+        assert_eq!(actual, Vec::<TextRange>::new());
     }
     #[rstest::rstest]
     #[case("True", Some(Identity::Boolean(true)))]
@@ -272,6 +280,9 @@ mod coverage_tests {
         #[case] expected: Option<Identity>,
     ) {
         let parsed = ruff_python_parser::parse_expression(source).unwrap();
-        assert!(key_identity(&parsed.syntax().body) == expected, "{source}");
+
+        let actual = key_identity(&parsed.syntax().body) == expected;
+
+        assert!(actual, "{source}");
     }
 }

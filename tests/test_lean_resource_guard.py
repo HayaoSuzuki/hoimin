@@ -209,7 +209,7 @@ def test_argument_parser_rejects_nonpositive_limits(
         guard.parse_arguments()
 
 
-def test_process_table_ignores_incomplete_rows_and_rejects_ps_failure(
+def test_process_table_ignores_incomplete_rows(
     mocker: MockerFixture,
 ) -> None:
     original_run_spec = guard.subprocess.run
@@ -223,7 +223,14 @@ def test_process_table_ignores_incomplete_rows_and_rejects_ps_failure(
             ),
         ),
     )
-    assert guard.process_table() == {1: (0, 1, 10), 2: (1, 1, 20)}
+
+    result = guard.process_table()
+
+    assert result == {1: (0, 1, 10), 2: (1, 1, 20)}
+
+
+def test_process_table_rejects_ps_failure(mocker: MockerFixture) -> None:
+    original_run_spec = guard.subprocess.run
     mocker.patch.object(
         guard.subprocess,
         "run",
@@ -232,6 +239,7 @@ def test_process_table_ignores_incomplete_rows_and_rejects_ps_failure(
             side_effect=lambda *_a, **_k: SimpleNamespace(returncode=3),
         ),
     )
+
     with pytest.raises(RuntimeError, match="exit code 3"):
         guard.process_table()
 
@@ -295,17 +303,12 @@ def test_group_wait_reports_final_existence(
     assert guard.wait_for_process_group_exit(process, 1) is exits
 
 
-@pytest.mark.parametrize("unsupported", [True, False])
-def test_stats_failure_reports_monitor_error(
-    tmp_path: Path,
-    mocker: MockerFixture,
-    capsys: pytest.CaptureFixture[str],
-    *,
-    unsupported: bool,
+@pytest.fixture(params=["unsupported", "spawn-failed"])
+def stats_failure_runtime(
+    request: pytest.FixtureRequest, mocker: MockerFixture
 ) -> None:
-    original_write_stats_spec = guard.write_stats
     original_popen_spec = guard.subprocess.Popen
-    if unsupported:
+    if request.param == "unsupported":
         mocker.patch.object(guard, "os", SimpleNamespace(name="unsupported"))
     else:
         mocker.patch.object(
@@ -319,6 +322,15 @@ def test_stats_failure_reports_monitor_error(
             ),
         )
 
+
+@pytest.mark.usefixtures("stats_failure_runtime")
+def test_stats_failure_reports_monitor_error(
+    tmp_path: Path,
+    mocker: MockerFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    original_write_stats_spec = guard.write_stats
+
     def fail_write(*_: object) -> None:
         msg = "disk full"
         raise OSError(msg)
@@ -328,7 +340,10 @@ def test_stats_failure_reports_monitor_error(
         "write_stats",
         create_autospec(original_write_stats_spec, side_effect=fail_write),
     )
-    assert guard.run(guard.Arguments(stats=tmp_path / "stats")) == 126
+
+    result = guard.run(guard.Arguments(stats=tmp_path / "stats"))
+
+    assert result == 126
     assert "disk full" in capsys.readouterr().err
 
 
@@ -444,7 +459,9 @@ def test_process_exit_assertion_retries_until_process_disappears(
 ) -> None:
     probe = mocker.patch.object(os, "kill", side_effect=[None, ProcessLookupError])
     pause = mocker.patch.object(time, "sleep")
+
     assert_process_exited(123)
+
     assert probe.call_count == 2
     pause.assert_called_once_with(0.05)
 

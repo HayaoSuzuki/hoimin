@@ -239,7 +239,7 @@ fn duplicate_child_summary_insertion_preserves_constructible_replacements() {
     let constructible = index.classes.get(&source_id).unwrap().constructible;
     let group = index.children.get_mut(&parent_id).unwrap();
     group.insert(source_id, constructible);
-    assert_eq!(group.constructible, 2);
+    let constructible_count = group.constructible;
     let parsed = ruff_python_parser::parse_module(source).unwrap();
     let mut replacements = Vec::new();
     index
@@ -248,6 +248,9 @@ fn duplicate_child_summary_insertion_preserves_constructible_replacements() {
             Ok(())
         })
         .unwrap();
+    let replacements = replacements;
+
+    assert_eq!(constructible_count, 2);
     assert_eq!(replacements, ["Allowed", "Parent"]);
 }
 
@@ -371,6 +374,7 @@ fn exhaustive_lookup_oracle_preserves_rejection_reasons(
         &excluded,
         (10, &|| false),
     );
+
     assert_eq!(&oracle, expected);
     assert_eq!(&actual, expected);
 }

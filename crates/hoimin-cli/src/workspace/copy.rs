@@ -1509,19 +1509,25 @@ mod tests {
     ) {
         let (_source, plan, grant, bytes) = plan_with_padding(1, 0);
         let request = grant.create_worker(EffectId(8), 0).unwrap();
+
         let fault = crate::io_faults::arm(point);
+
         let result = plan.create_worker(&request);
+        let fault_was_triggered = fault.triggered();
+
+        let copy_bytes_after_failure = plan.observed_copy_bytes();
+        let worker = plan.create_worker(&request).unwrap();
+
+        assert_eq!(worker.read("target.py").unwrap(), b"original\n");
+        assert_eq!(plan.observed_copy_bytes(), bytes);
         assert!(
-            fault.triggered(),
+            fault_was_triggered,
             "worker materialization boundary was not checked: {point}"
         );
         assert!(
             matches!(result, Err(WorkspaceError::Io { operation: actual, message, .. }) if actual == operation && message.contains(point))
         );
-        assert_eq!(plan.observed_copy_bytes(), 0);
-        let worker = plan.create_worker(&request).unwrap();
-        assert_eq!(worker.read("target.py").unwrap(), b"original\n");
-        assert_eq!(plan.observed_copy_bytes(), bytes);
+        assert_eq!(copy_bytes_after_failure, 0);
     }
 
     #[rstest::rstest]
@@ -1543,21 +1549,24 @@ mod tests {
         fs::create_dir_all(source.path().join("nested/empty")).unwrap();
         fs::write(source.path().join("nested/target.py"), b"original\n").unwrap();
         let root = Utf8Path::from_path(source.path()).unwrap();
+
         let fault = crate::io_faults::arm(point);
+
         let result = WorkspacePlan::preflight(root, EffectId(7), 1, CopyOptions::default());
+        let fault_was_triggered = fault.triggered();
+
+        let bytes_before_retry = fs::read(root.join("nested/target.py")).unwrap();
+        let plan = WorkspacePlan::preflight(root, EffectId(7), 1, CopyOptions::default()).unwrap();
+
+        assert_eq!(plan.manifest().logical_bytes(), 9);
         assert!(
-            fault.triggered(),
+            fault_was_triggered,
             "snapshot creation boundary was not checked: {point}"
         );
         assert!(
             matches!(result, Err(WorkspaceError::Io { operation: actual, message, .. }) if actual == operation && message.contains(point))
         );
-        assert_eq!(
-            fs::read(root.join("nested/target.py")).unwrap(),
-            b"original\n"
-        );
-        let plan = WorkspacePlan::preflight(root, EffectId(7), 1, CopyOptions::default()).unwrap();
-        assert_eq!(plan.manifest().logical_bytes(), 9);
+        assert_eq!(bytes_before_retry, b"original\n");
     }
 
     #[test]
@@ -1658,11 +1667,11 @@ mod tests {
             let _guard = plan.state.lock().unwrap();
             panic!("poison worker state");
         }));
+
         assert!(panic.is_err());
-        assert!(matches!(
-            action(&plan, &request),
-            Err(WorkspaceError::StatePoisoned)
-        ));
+        let result = action(&plan, &request);
+
+        assert!(matches!(result, Err(WorkspaceError::StatePoisoned)));
         assert_eq!(plan.observed_copy_bytes(), 0);
     }
 
@@ -2136,28 +2145,35 @@ mod tests {
             }
         };
 
-        assert_eq!(operation, "read shared snapshot");
-        assert_eq!(path, Utf8Path::new("target.py"));
-        assert_eq!(plan.materialized_workers(), 0);
-        assert_eq!(plan.observed_copy_bytes(), 0);
-        assert_eq!(plan.reservation_id(), Some(winner.reservation_id()));
+        let failure_operation = operation;
+        let failure_path = path;
+        let workers_after_failure = plan.materialized_workers();
+        let copy_bytes_after_failure = plan.observed_copy_bytes();
+        let reservation_after_failure = plan.reservation_id();
 
-        assert_eq!(
-            plan.create_worker(&foreign_request).unwrap_err(),
-            WorkspaceError::ReservationMismatch {
-                expected: winner.reservation_id(),
-                received: foreign.reservation_id(),
-            }
-        );
+        let foreign_request_error = plan.create_worker(&foreign_request).unwrap_err();
 
         fs::write(snapshot_path, b"original\n").unwrap();
         let worker = plan.create_worker(&winner_request).unwrap();
+
         assert_eq!(plan.materialized_workers(), 1);
         assert_eq!(
             plan.observed_copy_bytes(),
             completed.per_worker_logical_bytes
         );
         assert_eq!(worker.read("target.py").unwrap(), b"original\n");
+        assert_eq!(failure_operation, "read shared snapshot");
+        assert_eq!(failure_path, Utf8Path::new("target.py"));
+        assert_eq!(workers_after_failure, 0);
+        assert_eq!(copy_bytes_after_failure, 0);
+        assert_eq!(reservation_after_failure, Some(winner.reservation_id()));
+        assert_eq!(
+            foreign_request_error,
+            WorkspaceError::ReservationMismatch {
+                expected: winner.reservation_id(),
+                received: foreign.reservation_id(),
+            }
+        );
     }
 
     #[test]

@@ -425,7 +425,10 @@ fn oracle_validation_rejects_inconsistent_case_fields(
     let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
     row[field] = replacement;
     let item: OracleCase = serde_json::from_value(row).unwrap();
-    assert!(validate_case(&item).unwrap_err().contains(expected));
+
+    let actual = validate_case(&item).unwrap_err().contains(expected);
+
+    assert!(actual);
 }
 
 #[rstest::rstest]
@@ -434,37 +437,41 @@ fn oracle_validation_rejects_inconsistent_case_fields(
 #[case("{}", "inexact field set")]
 #[case("", "exact owned case set")]
 fn oracle_validation_rejects_invalid_corpus_structure(#[case] input: &str, #[case] expected: &str) {
-    assert!(parse_corpus(input).unwrap_err().contains(expected));
+    let actual = parse_corpus(input).unwrap_err().contains(expected);
+
+    assert!(actual);
 }
 
 #[test]
 fn oracle_validation_rejects_duplicate_case_id() {
     let duplicated = format!("{CORPUS}\n{CORPUS}");
-    assert!(
-        parse_corpus(&duplicated)
-            .unwrap_err()
-            .contains("duplicate case id")
-    );
+
+    let actual = parse_corpus(&duplicated)
+        .unwrap_err()
+        .contains("duplicate case id");
+
+    assert!(actual);
 }
 
 #[test]
 fn oracle_validation_accepts_blank_lines_between_valid_rows() {
     let with_blanks = format!("\n{CORPUS}\n\n");
-    assert_eq!(
-        parse_corpus(&with_blanks).unwrap().len(),
-        parse_corpus(CORPUS).unwrap().len()
-    );
+
+    let actual = parse_corpus(&with_blanks).unwrap().len();
+
+    assert_eq!(actual, parse_corpus(CORPUS).unwrap().len());
 }
 
 #[test]
 fn oracle_validation_rejects_field_with_wrong_json_type() {
     let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
     row["schema"] = serde_json::json!(false);
-    assert!(
-        parse_corpus(&row.to_string())
-            .unwrap_err()
-            .contains("violates schema")
-    );
+
+    let actual = parse_corpus(&row.to_string())
+        .unwrap_err()
+        .contains("violates schema");
+
+    assert!(actual);
 }
 
 #[test]
@@ -476,7 +483,10 @@ fn oracle_case_filter_selects_the_requested_fixture() {
         .collect::<Vec<_>>();
     let id = cases[0].id.clone();
     let selected = apply_case_filter(cases, Some(id.clone().into())).unwrap();
-    assert_eq!(selected.len(), 1);
+
+    let actual = selected.len();
+
+    assert_eq!(actual, 1);
     assert_eq!(selected[0].id, id);
 }
 
@@ -488,7 +498,10 @@ fn oracle_case_filter_rejects_an_unknown_fixture() {
         .filter(|case| case.mode == "internal-fixture")
         .collect::<Vec<_>>();
     let error = apply_case_filter(cases, Some("unknown-fixture".into())).unwrap_err();
-    assert!(error.contains("selected 0"));
+
+    let actual = error.contains("selected 0");
+
+    assert!(actual);
 }
 
 #[cfg(unix)]
@@ -502,5 +515,8 @@ fn oracle_case_filter_rejects_non_utf8_fixture_names() {
         .collect::<Vec<_>>();
     let error =
         apply_case_filter(cases, Some(std::ffi::OsString::from_vec(vec![0xff]))).unwrap_err();
-    assert!(error.contains("not UTF-8"));
+
+    let actual = error.contains("not UTF-8");
+
+    assert!(actual);
 }

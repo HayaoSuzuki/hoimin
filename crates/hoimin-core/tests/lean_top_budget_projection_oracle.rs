@@ -246,83 +246,89 @@ fn projection_adapter_rejects_invalid_case_metadata(
 ) {
     let mut item = parse_corpus(CORPUS).unwrap().remove(0);
     mutate(&mut item);
-    assert!(validate_case(&item).unwrap_err().contains(expected));
+
+    let actual = validate_case(&item).unwrap_err().contains(expected);
+
+    assert!(actual);
 }
 
 #[test]
 fn projection_adapter_rejects_empty_input() {
-    assert_eq!(
-        parse_corpus("\n\n").unwrap_err(),
-        "corpus contains no cases"
-    );
+    let actual = parse_corpus("\n\n").unwrap_err();
+
+    assert_eq!(actual, "corpus contains no cases");
 }
 
 #[test]
 fn projection_adapter_rejects_invalid_json() {
-    assert!(
-        parse_corpus("{")
-            .unwrap_err()
-            .contains("line 1 is invalid JSON")
-    );
+    let actual = parse_corpus("{")
+        .unwrap_err()
+        .contains("line 1 is invalid JSON");
+
+    assert!(actual);
 }
 
 #[test]
 fn projection_adapter_rejects_duplicate_ids() {
     let line = CORPUS.lines().next().unwrap();
-    assert!(
-        parse_corpus(&format!("{line}\n{line}"))
-            .unwrap_err()
-            .contains("duplicate case id")
-    );
+
+    let actual = parse_corpus(&format!("{line}\n{line}"))
+        .unwrap_err()
+        .contains("duplicate case id");
+
+    assert!(actual);
 }
 
 #[test]
 fn projection_adapter_rejects_duration_above_maximum() {
-    assert!(
-        duration_from_nanos(Duration::MAX.as_nanos() + 1)
-            .unwrap_err()
-            .contains("exceeds Duration::MAX")
-    );
+    let actual = duration_from_nanos(Duration::MAX.as_nanos() + 1)
+        .unwrap_err()
+        .contains("exceeds Duration::MAX");
+
+    assert!(actual);
 }
 
 #[test]
 fn projection_adapter_rejects_zero_fixed_timeout() {
-    assert!(
-        fixed_timeout(Duration::ZERO)
-            .unwrap_err()
-            .contains("cannot construct fixed timeout")
-    );
+    let actual = fixed_timeout(Duration::ZERO)
+        .unwrap_err()
+        .contains("cannot construct fixed timeout");
+
+    assert!(actual);
 }
 
 #[test]
 fn projection_execution_rejects_inconsistent_timeout_mode() {
     let mut item = parse_corpus(CORPUS).unwrap().remove(0);
     item.timeout_mode = "unknown".into();
-    assert!(
-        timeout(&item)
-            .unwrap_err()
-            .contains("inconsistent timeout mode")
-    );
+
+    let actual = timeout(&item)
+        .unwrap_err()
+        .contains("inconsistent timeout mode");
+
+    assert!(actual);
 }
 
 #[test]
 fn projection_corpus_propagates_invalid_case_metadata() {
     let invalid = CORPUS.replacen("\"schema\":1", "\"schema\":2", 1);
-    assert!(
-        parse_corpus(&invalid)
-            .unwrap_err()
-            .contains("unsupported schema")
-    );
+
+    let actual = parse_corpus(&invalid)
+        .unwrap_err()
+        .contains("unsupported schema");
+
+    assert!(actual);
 }
 
 #[test]
 fn projection_duration_field_reports_invalid_numbers() {
     let item = parse_corpus(CORPUS).unwrap().remove(0);
-    assert!(
-        duration_field(&item, "remaining_ns", "invalid")
-            .unwrap_err()
-            .contains("invalid remaining_ns")
-    );
+
+    let actual = duration_field(&item, "remaining_ns", "invalid")
+        .unwrap_err()
+        .contains("invalid remaining_ns");
+
+    assert!(actual);
 }
 
 #[test]
@@ -330,9 +336,10 @@ fn projection_timeout_reports_invalid_fixed_timeout_text() {
     let mut item = parse_corpus(CORPUS).unwrap().remove(0);
     item.timeout_mode = "fixed".into();
     item.fixed_timeout_ns = Some("invalid".into());
-    assert!(
-        timeout(&item)
-            .unwrap_err()
-            .contains("invalid fixed_timeout_ns")
-    );
+
+    let actual = timeout(&item)
+        .unwrap_err()
+        .contains("invalid fixed_timeout_ns");
+
+    assert!(actual);
 }
