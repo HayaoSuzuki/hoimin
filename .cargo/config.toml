@@ -15,12 +15,13 @@ rustflags = [
 [alias]
 # Include test files: cargo-llvm-cov excludes them from reports by default.
 # Run with `cargo +nightly-2026-10-08 coverage` for native inline exclusions.
-# Dependency macro sources and generated build output are outside this workspace's
-# source/test scope; workspace test files remain included.
+# Standard-library sources, registry/git and vendored dependencies, and generated
+# build output are outside this workspace's source/test scope. Workspace tests
+# remain included, including tests of hoimin's contracts at dependency boundaries.
 coverage = [
     "llvm-cov", "--workspace", "--all-targets", "--all-features",
     "--no-default-ignore-filename-regex",
-    "--ignore-filename-regex", "/\\.cargo/(registry|git)/|/\\.rustup/toolchains/|/target/(llvm-cov-target/)?([^/]+/)?(debug|release)/",
+    "--ignore-filename-regex", "^/rustc/|/\\.cargo/(registry|git)/|/\\.rustup/toolchains/|/vendor/|/target/(llvm-cov-target/)?([^/]+/)?(debug|release)/",
     "--fail-under-lines", "100",
     "--fail-under-functions", "100",
     "--fail-under-regions", "100",

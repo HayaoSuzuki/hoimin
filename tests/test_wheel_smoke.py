@@ -7,6 +7,7 @@ import sys
 import tomllib
 import zipfile
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 import wheel_smoke
@@ -723,7 +724,6 @@ def test_mutation_result_accepts_default_jsonl_output() -> None:
     output = mutation_jsonl_output(
         [{"outcome": executed_smoke_outcome({"Exit": 1}, "complete")}]
     )
-
     observed_result = assert_mutation_result(output)
 
     assert observed_result is None
@@ -738,16 +738,22 @@ def test_exercise_cli_uses_default_jsonl_output(
         [{"outcome": executed_smoke_outcome({"Exit": 1}, "complete")}]
     )
 
+    mutation_commands: list[list[str]] = []
+
     def execute(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         if argv[1] == "--version":
             return subprocess.CompletedProcess(argv, 0, "hoimin 0.14.0\n", "")
         if argv[1] == "--help":
             return subprocess.CompletedProcess(argv, 0, "Usage: hoimin <COMMAND>\n", "")
-        assert "--format" not in argv
+        mutation_commands.append(argv)
         return subprocess.CompletedProcess(argv, 0, output, "")
 
     mocker.patch("wheel_smoke.run", side_effect=execute)
+
     exercise_cli(executable, Path(sys.executable), tmp_path / "fixture", "0.14.0")
+
+    assert len(mutation_commands) == 1
+    assert "--format" not in mutation_commands[0]
 
 
 @pytest.mark.parametrize(
@@ -783,13 +789,9 @@ def test_distribution_supports_only_python_314_and_315(
     assert "Programming Language :: Python :: 3.15" in project["classifiers"]
 
 
-@pytest.mark.parametrize("write_report", [False, True])
-def test_distribution_smoke_uses_the_running_python(
-    tmp_path: Path,
-    mocker: MockerFixture,
-    *,
-    write_report: bool,
-) -> None:
+def prepare_distribution_smoke(
+    tmp_path: Path, mocker: MockerFixture, *, write_report: bool
+) -> tuple[Path, Path, Mock]:
     wheel = tmp_path / "hoimin.whl"
     wheel.write_bytes(b"wheel contents")
     report = tmp_path / "report.json"
@@ -804,18 +806,46 @@ def test_distribution_smoke_uses_the_running_python(
     )
     mocker.patch.object(wheel_smoke.venv.EnvBuilder, "create")
     mocker.patch.object(wheel_smoke, "exercise_cli")
-    calls = mocker.patch.object(
-        wheel_smoke, "run", return_value=subprocess.CompletedProcess([], 0, "", "")
+    calls = Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
+    mocker.patch.object(wheel_smoke, "run", calls)
+    return wheel, report, calls
+
+
+def test_distribution_smoke_uses_the_running_python_without_report(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    wheel, report, calls = prepare_distribution_smoke(
+        tmp_path, mocker, write_report=False
     )
 
-    observed_result = main()
+    result = main()
 
-    assert observed_result == 0
-    assert report.exists() is write_report
-    if write_report:
-        evidence = json.loads(report.read_text(encoding="utf-8"))
-        assert evidence["wheel"] == wheel.name
-        assert evidence["sha256"] == hashlib.sha256(wheel.read_bytes()).hexdigest()
+    assert result == 0
+    assert not report.exists()
+    assert calls.call_args_list[0].args[0] == [
+        "uvx",
+        "--python",
+        sys.executable,
+        "--from",
+        str(wheel),
+        "hoimin",
+        "--help",
+    ]
+
+
+def test_distribution_smoke_report_binds_wheel_and_running_python(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    wheel, report, calls = prepare_distribution_smoke(
+        tmp_path, mocker, write_report=True
+    )
+
+    result = main()
+    evidence = json.loads(report.read_text(encoding="utf-8"))
+
+    assert result == 0
+    assert evidence["wheel"] == wheel.name
+    assert evidence["sha256"] == hashlib.sha256(wheel.read_bytes()).hexdigest()
     assert calls.call_args_list[0].args[0] == [
         "uvx",
         "--python",

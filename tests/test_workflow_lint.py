@@ -50,7 +50,7 @@ FIXTURES = Path(__file__).parent / "fixtures" / "workflow-lint"
     ],
     indirect=["executable"],
 )
-def test_real_linters_reject_isolated_unsafe_workflows(
+def test_real_linters_reject_isolated_unsafe_workflows(  # pragma: no cover
     executable: str, fixture: str, diagnostic: str
 ) -> None:
     args = LINTER_ARGUMENTS[Path(executable).stem]
@@ -140,7 +140,9 @@ def test_shellcheck_does_not_suppress_actionlint_default_exclusions(
 def test_default_shell_uses_explicit_shell_or_fallback(
     scope: dict[str, object], fallback: str, expected: str
 ) -> None:
-    assert workflow_lint.default_shell(scope, fallback) == expected
+    result = workflow_lint.default_shell(scope, fallback)
+
+    assert result == expected
 
 
 def test_runner_rejects_empty_workflow_directory(tmp_path: Path) -> None:
@@ -184,7 +186,10 @@ def test_shell_checker_skips_non_shell_steps(tmp_path: Path) -> None:
         "      - uses: actions/checkout@v4\n      - run: Write-Host hello\n",
         encoding="utf-8",
     )
-    assert workflow_lint.check_shells([path], "unused-shellcheck") == 0
+
+    result = workflow_lint.check_shells([path], "unused-shellcheck")
+
+    assert result == 0
 
 
 def test_missing_linter_fixture_reports_skip(mocker: MockerFixture) -> None:

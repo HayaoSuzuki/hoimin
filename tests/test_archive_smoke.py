@@ -179,9 +179,15 @@ def test_venv_interpreter_symlink_keeps_its_environment(
     assert command.call_args.args[0][-4] == str(python.absolute())
 
 
-@pytest.mark.parametrize("system", ["darwin", "linux"])
+@pytest.mark.parametrize(
+    ("system", "glibc_symbols"),
+    [("darwin", None), ("linux", [[2, 17], [2, 35]])],
+)
 def test_archive_smoke_report_binds_archive_and_extracted_binary(
-    tmp_path: Path, mocker: MockerFixture, system: str
+    tmp_path: Path,
+    mocker: MockerFixture,
+    system: str,
+    glibc_symbols: list[list[int]] | None,
 ) -> None:
     original_exercise_cli_spec = archive_smoke.exercise_cli
     original_run_spec = archive_smoke.run
@@ -192,14 +198,10 @@ def test_archive_smoke_report_binds_archive_and_extracted_binary(
     mocker.patch.dict(os.environ, {"VERSION": "1.2.3"})
     mocker.patch.dict(os.environ, {"SMOKE_REPORT": str(report)})
     mocker.patch.object(sys, "platform", system)
-    extracted: list[Path] = []
+    extracted: list[tuple[Path, bytes, Path, Path, str]] = []
 
     def exercise(binary: Path, python: Path, project: Path, version: str) -> None:
-        assert binary.read_bytes() == ARCHIVE_MEMBERS["hoimin"]
-        assert python == Path(sys.executable)
-        assert version == "1.2.3"
-        assert project.parent == binary.parent.parent
-        extracted.append(binary)
+        extracted.append((binary, binary.read_bytes(), python, project, version))
 
     mocker.patch.object(
         archive_smoke,
@@ -216,8 +218,11 @@ def test_archive_smoke_report_binds_archive_and_extracted_binary(
             ),
         ),
     )
-    assert archive_smoke.main() == 0
+
+    result = archive_smoke.main()
     evidence = json.loads(report.read_text(encoding="utf-8"))
+
+    assert result == 0
     assert evidence["archive"] == archive.name
     assert evidence["version"] == "1.2.3"
     assert evidence["sha256"] == hashlib.sha256(archive.read_bytes()).hexdigest()
@@ -225,7 +230,11 @@ def test_archive_smoke_report_binds_archive_and_extracted_binary(
         evidence["binary_sha256"]
         == hashlib.sha256(ARCHIVE_MEMBERS["hoimin"]).hexdigest()
     )
-    if system == "linux":
-        assert evidence["glibc_symbols"] == [[2, 17], [2, 35]]
-    assert extracted
-    assert not extracted[0].exists()
+    assert evidence.get("glibc_symbols") == glibc_symbols
+    assert len(extracted) == 1
+    binary, contents, python, project, version = extracted[0]
+    assert contents == ARCHIVE_MEMBERS["hoimin"]
+    assert python == Path(sys.executable)
+    assert version == "1.2.3"
+    assert project.parent == binary.parent.parent
+    assert not binary.exists()

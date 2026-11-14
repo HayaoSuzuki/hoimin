@@ -999,16 +999,8 @@ def test_run_gh_requires_cli_and_passes_working_directory(
     assert calls[0][1]["check"] is True
 
 
-@pytest.mark.parametrize("mode", ["stage", "inspect", "verify"])
-def test_provenance_cli_dispatches_modes(
-    tmp_path: Path, mocker: MockerFixture, mode: str
-) -> None:
-
-    original_stage_spec = pypi_provenance.stage
-    original_verify_with_propagation_spec = pypi_provenance.verify_with_propagation
-    output = tmp_path / "github-output"
-    mocker.patch.dict(os.environ, {"GITHUB_OUTPUT": str(output)})
-    arguments = [
+def provenance_arguments(tmp_path: Path, mode: str) -> list[str]:
+    return [
         "provenance",
         mode,
         "--tag",
@@ -1018,40 +1010,59 @@ def test_provenance_cli_dispatches_modes(
         "--directory",
         str(tmp_path),
     ]
-    calls = []
-    if mode == "stage":
-        arguments += [
+
+
+def test_provenance_cli_dispatches_staging(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    stage = mocker.patch.object(pypi_provenance, "stage", autospec=True)
+    mocker.patch.object(
+        sys,
+        "argv",
+        [
+            *provenance_arguments(tmp_path, "stage"),
             "--output",
             str(tmp_path / "dist"),
             "--release-json",
             str(tmp_path / "release.json"),
-        ]
-        mocker.patch.object(
-            pypi_provenance,
-            "stage",
-            create_autospec(
-                original_stage_spec, side_effect=lambda *args: calls.append(args)
-            ),
-        )
-    else:
-        arguments += ["--index", "testpypi"]
-        mocker.patch.object(
-            pypi_provenance,
-            "verify_with_propagation",
-            create_autospec(
-                original_verify_with_propagation_spec,
-                side_effect=lambda *args, **kwargs: (
-                    calls.append((args, kwargs)) or True
-                ),
-            ),
-        )
-    mocker.patch.object(sys, "argv", arguments)
+        ],
+    )
+
     pypi_provenance.main()
-    assert len(calls) == 1
-    if mode == "inspect":
-        assert output.read_text() == "published=true\n"
-    elif mode == "verify":
-        assert calls[0][1] == {"allow_missing": False}
+
+    stage.assert_called_once_with(
+        "v1.2.3", "a" * 40, tmp_path, tmp_path / "release.json", tmp_path / "dist"
+    )
+
+
+@pytest.mark.parametrize(
+    ("mode", "allow_missing", "expected_output"),
+    [("inspect", True, "published=true\n"), ("verify", False, "")],
+)
+def test_provenance_cli_dispatches_verification(
+    tmp_path: Path,
+    mocker: MockerFixture,
+    mode: str,
+    expected_output: str,
+    *,
+    allow_missing: bool,
+) -> None:
+    output = tmp_path / "github-output"
+    output.touch()
+    mocker.patch.dict(os.environ, {"GITHUB_OUTPUT": str(output)})
+    verify = mocker.patch.object(
+        pypi_provenance, "verify_with_propagation", autospec=True, return_value=True
+    )
+    mocker.patch.object(
+        sys, "argv", [*provenance_arguments(tmp_path, mode), "--index", "testpypi"]
+    )
+
+    pypi_provenance.main()
+
+    verify.assert_called_once_with(
+        "testpypi", "v1.2.3", "a" * 40, tmp_path, allow_missing=allow_missing
+    )
+    assert output.read_text() == expected_output
 
 
 @pytest.mark.parametrize("mode", ["stage", "inspect"])

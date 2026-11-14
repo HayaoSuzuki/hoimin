@@ -1052,19 +1052,18 @@ def test_publication_uses_server_version_selection_in_both_finish_orders(
         for step in workflow["jobs"]["publish"]["steps"]
         if step.get("name") == "Publish complete release"
     )
-    results = []
-    for tag in order:
-        mocker.patch.dict(os.environ, {"TAG": tag})
-        result = command(
-            "bash", "-e", "-o", "pipefail", "-c", step["run"], cwd=tmp_path
-        )
+    first_tag, second_tag = order
 
-        results.append(result)
+    mocker.patch.dict(os.environ, {"TAG": first_tag})
+    first = command("bash", "-e", "-o", "pipefail", "-c", step["run"], cwd=tmp_path)
+    mocker.patch.dict(os.environ, {"TAG": second_tag})
+    second = command("bash", "-e", "-o", "pipefail", "-c", step["run"], cwd=tmp_path)
     state = json.loads((tmp_path / "server.json").read_text())
 
-    assert [result.returncode for result in results] == [0, 0], [
-        result.stderr for result in results
-    ]
+    assert (first.returncode, second.returncode) == (0, 0), (
+        first.stderr,
+        second.stderr,
+    )
     assert state["published"] == list(order)
     assert state["latest"] == "v1.2.4"
 
@@ -1131,9 +1130,12 @@ def test_checksums_rejects_inconsistent_sbom_lock_digests(tmp_path: Path) -> Non
     documents = attach_sboms(assets)
     document = documents[0]
     data = json.loads(document.read_text(encoding="utf-8"))
-    for prop in data["metadata"]["properties"]:
-        if prop["name"] == "hoimin:lock:sha256":
-            prop["value"] = "f" * 64
+    lock_digest = next(
+        prop
+        for prop in data["metadata"]["properties"]
+        if prop["name"] == "hoimin:lock:sha256"
+    )
+    lock_digest["value"] = "f" * 64
     document.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ValueError, match=r"different Cargo\.lock files"):
         automation.checksums(tmp_path, "1.2.3", "a" * 40)
