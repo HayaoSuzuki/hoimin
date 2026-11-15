@@ -8,14 +8,14 @@ import json
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
 from jsonschema import Draft7Validator, ValidationError
 from jsonschema.protocols import Validator
 from referencing import Registry, Resource
 
-if bool(__package__):
+if TYPE_CHECKING or bool(__package__):
     from .release_policy import RELEASE_PLATFORMS
 else:
     from release_policy import RELEASE_PLATFORMS

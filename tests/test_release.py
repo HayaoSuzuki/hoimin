@@ -445,6 +445,13 @@ def prepare_workflow(tmp_path: Path, mocker: MockerFixture) -> dict[str, Any]:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     (fake_bin / "python").symlink_to(sys.executable)
+    # Exercise the workflow shell without invoking uv's environment management.
+    uv = fake_bin / "uv"
+    uv.write_text(
+        '#!/bin/sh\nset -eu\n[ "$1 $2 $3" = "run --frozen --no-sync" ]\n'
+        'shift 3\nexec "$@"\n'
+    )
+    uv.chmod(0o755)
     (tmp_path / "tools").mkdir()
     (tmp_path / "tools/release.py").write_text(
         "import os, sys\n"

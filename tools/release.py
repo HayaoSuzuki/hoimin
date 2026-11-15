@@ -14,12 +14,12 @@ import tarfile
 import tomllib
 import zipfile
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import deal
 from returns.result import Failure, Result, Success
 
-if bool(__package__):
+if TYPE_CHECKING or bool(__package__):
     from .release_policy import PLATFORM_NAMES, RELEASE_PLATFORMS, SEMVER
 else:
     from release_policy import PLATFORM_NAMES, RELEASE_PLATFORMS, SEMVER
