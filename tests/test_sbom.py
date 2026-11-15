@@ -7,8 +7,8 @@ import sys
 from collections.abc import Callable
 from operator import setitem
 from pathlib import Path
-from typing import Any
-from unittest.mock import create_autospec
+from typing import Any, cast
+from unittest.mock import Mock, call, create_autospec
 
 import pytest
 import yaml
@@ -233,17 +233,11 @@ def test_corrupt_sbom_is_rejected(
 
 
 @pytest.fixture
-def cargo_capture(mocker: MockerFixture) -> Callable[[Path, bytes], None]:
+def cargo_capture(mocker: MockerFixture) -> Callable[[Path, bytes], Mock]:
     original_run_spec = capture_sbom.run
 
-    def install(root: Path, lock_contents: bytes) -> None:
-        def metadata(*args: str) -> str:
-            assert "--locked" in args
-            assert "--no-default-features" in args
-            return "rustc fixture"
-
-        def cyclonedx(*args: str) -> str:
-            assert "--no-default-features" in args
+    def install(root: Path, lock_contents: bytes) -> Mock:
+        def cyclonedx(*_args: str) -> str:
             path = root / "crates/hoimin-cli/hoimin-release-sbom.json"
             path.parent.mkdir(parents=True)
             path.write_text(json.dumps(raw_bom()))
@@ -259,37 +253,90 @@ def cargo_capture(mocker: MockerFixture) -> Callable[[Path, bytes], None]:
                 ("cargo", "cyclonedx", "--version"): lambda *_args: (
                     "cargo-cyclonedx-cyclonedx 0.5.7"
                 ),
-                ("cargo", "metadata"): metadata,
-                ("cargo", "cyclonedx"): cyclonedx,
+                (
+                    "cargo",
+                    "metadata",
+                    "--locked",
+                    "--format-version",
+                    "1",
+                    "--no-default-features",
+                    "--filter-platform",
+                    "x86_64-unknown-linux-gnu",
+                ): lambda *_args: "metadata fixture",
+                (
+                    "cargo",
+                    "cyclonedx",
+                    "--manifest-path",
+                    "crates/hoimin-cli/Cargo.toml",
+                    "--format",
+                    "json",
+                    "--spec-version",
+                    "1.5",
+                    "--no-default-features",
+                    "--target",
+                    "x86_64-unknown-linux-gnu",
+                    "--override-filename",
+                    "hoimin-release-sbom",
+                ): cyclonedx,
+                ("rustc", "-vV"): lambda *_args: "rustc fixture",
             }
-            handler = handlers.get(
-                args, handlers.get(args[:2], lambda *_args: "rustc fixture")
-            )
-            return handler(*args)
+            return handlers[args](*args)
 
-        mocker.patch.object(
-            capture_sbom, "run", create_autospec(original_run_spec, side_effect=command)
-        )
+        runner = create_autospec(original_run_spec, side_effect=command)
+        mocker.patch.object(capture_sbom, "run", runner)
+        return cast("Mock", runner)
 
     return install
 
 
 def test_capture_matches_real_generator_version_and_preserves_lock(
-    tmp_path: Path, cargo_capture: Callable[[Path, bytes], None]
+    tmp_path: Path, cargo_capture: Callable[[Path, bytes], Mock]
 ) -> None:
     source_tree(tmp_path)
     before = (tmp_path / "Cargo.lock").read_bytes()
-    cargo_capture(tmp_path, before)
+    runner = cargo_capture(tmp_path, before)
     output = tmp_path / "result.json"
 
     capture_sbom.capture(tmp_path, "x86_64-unknown-linux-gnu", output)
 
     assert json.loads(output.read_text())["bom"]["components"][2]["name"] == "stacker"
     assert (tmp_path / "Cargo.lock").read_bytes() == before
+    assert runner.call_args_list == [
+        call(tmp_path, "cargo", "cyclonedx", "--version"),
+        call(
+            tmp_path,
+            "cargo",
+            "metadata",
+            "--locked",
+            "--format-version",
+            "1",
+            "--no-default-features",
+            "--filter-platform",
+            "x86_64-unknown-linux-gnu",
+        ),
+        call(
+            tmp_path,
+            "cargo",
+            "cyclonedx",
+            "--manifest-path",
+            "crates/hoimin-cli/Cargo.toml",
+            "--format",
+            "json",
+            "--spec-version",
+            "1.5",
+            "--no-default-features",
+            "--target",
+            "x86_64-unknown-linux-gnu",
+            "--override-filename",
+            "hoimin-release-sbom",
+        ),
+        call(tmp_path, "rustc", "-vV"),
+    ]
+    assert json.loads(output.read_text())["rustc"] == "rustc fixture"
 
 
 def test_capture_rejects_and_restores_changed_lock(
-    tmp_path: Path, cargo_capture: Callable[[Path, bytes], None]
+    tmp_path: Path, cargo_capture: Callable[[Path, bytes], Mock]
 ) -> None:
     source_tree(tmp_path)
     before = (tmp_path / "Cargo.lock").read_bytes()
@@ -304,7 +351,7 @@ def test_capture_rejects_and_restores_changed_lock(
 
 
 def test_successful_capture_removes_workspace_sidecars(
-    tmp_path: Path, cargo_capture: Callable[[Path, bytes], None]
+    tmp_path: Path, cargo_capture: Callable[[Path, bytes], Mock]
 ) -> None:
     source_tree(tmp_path)
     before = (tmp_path / "Cargo.lock").read_bytes()
@@ -317,7 +364,7 @@ def test_successful_capture_removes_workspace_sidecars(
 
 
 def test_failed_capture_removes_workspace_sidecars(
-    tmp_path: Path, cargo_capture: Callable[[Path, bytes], None]
+    tmp_path: Path, cargo_capture: Callable[[Path, bytes], Mock]
 ) -> None:
     source_tree(tmp_path)
     cargo_capture(tmp_path, b"changed")
@@ -467,6 +514,74 @@ def test_macos_sbom_environment_matches_actual_build_runner(kind: str) -> None:
     assert actual == expected
 
 
+@pytest.mark.parametrize(
+    ("platform", "target", "kind", "build_environment"),
+    [
+        (
+            "windows-x86_64",
+            "x86_64-pc-windows-msvc",
+            "standalone",
+            "windows-latest",
+        ),
+        ("windows-x86_64", "x86_64-pc-windows-msvc", "wheel", "windows-latest"),
+        ("macos-aarch64", "aarch64-apple-darwin", "standalone", "macos-26"),
+        ("macos-aarch64", "aarch64-apple-darwin", "wheel", "macos-26"),
+        (
+            "linux-x86_64",
+            "x86_64-unknown-linux-gnu",
+            "wheel",
+            "ghcr.io/pyo3/maturin:v1.15.0 (manylinux2014)",
+        ),
+    ],
+)
+def test_finalized_sbom_records_independent_build_identity(
+    tmp_path: Path, platform: str, target: str, kind: str, build_environment: str
+) -> None:
+    source_tree(tmp_path)
+    asset = tmp_path / "artifact"
+    asset.write_bytes(b"release artifact")
+    raw = capture_file(tmp_path, target)
+
+    path = sbom.finalize(tmp_path, raw, asset, platform, kind, "1.2.3", COMMIT)
+
+    properties = json.loads(path.read_text(encoding="utf-8"))["metadata"]["properties"]
+    assert {
+        "name": "cdx:rustc:sbom:target:triple",
+        "value": target,
+    } in properties
+    assert {
+        "name": "hoimin:build-environment",
+        "value": build_environment,
+    } in properties
+
+
+def test_capture_does_not_reuse_stale_sidecar_when_generator_emits_nothing(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    source_tree(tmp_path)
+    stale = tmp_path / "crates/hoimin-cli/hoimin-release-sbom.json"
+    stale.parent.mkdir(parents=True)
+    stale.write_text(json.dumps(raw_bom()), encoding="utf-8")
+    output = tmp_path / "result.json"
+    runner = create_autospec(
+        capture_sbom.run,
+        side_effect=[
+            "cargo-cyclonedx-cyclonedx 0.5.7",
+            "metadata fixture",
+            "",
+            "rustc fixture",
+        ],
+    )
+    mocker.patch.object(capture_sbom, "run", runner)
+
+    with pytest.raises(FileNotFoundError):
+        capture_sbom.capture(tmp_path, "x86_64-unknown-linux-gnu", output)
+
+    assert not output.exists()
+    assert not stale.exists()
+    assert runner.call_count == 3
+
+
 def test_capture_rejects_unpinned_generator_and_cleans_stale_sidecars(
     tmp_path: Path, mocker: MockerFixture
 ) -> None:
@@ -568,7 +683,7 @@ def test_sbom_cli_binds_selected_asset(
 
 def test_capture_cli_writes_validated_generator_output(
     tmp_path: Path,
-    cargo_capture: Callable[[Path, bytes], None],
+    cargo_capture: Callable[[Path, bytes], Mock],
     mocker: MockerFixture,
 ) -> None:
     source_tree(tmp_path)

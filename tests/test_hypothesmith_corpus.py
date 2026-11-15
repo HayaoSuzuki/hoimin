@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -318,3 +319,64 @@ def test_cli_reports_missing_optional_generator(
         corpus.main()
     assert error.value.code == 2
     assert "install fuzz dependencies" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "syntax",
+    [
+        r"async def \w+\([^)]*\):\s+return \{\*\w+ async for \w+ in \w+\}",
+        r"async def \w+\([^)]*\):\s+return \(\*\w+ async for \w+ in \w+\)",
+    ],
+    ids=["async-starred-set", "async-starred-generator"],
+)
+def test_python315_templates_retain_async_starred_syntax(syntax: str) -> None:
+    source = "\n".join(corpus.PYTHON315_TEMPLATES).format(name="item", number=7)
+
+    match = re.search(syntax, source)
+
+    assert match is not None
+
+
+def test_cli_accepts_python315_generation_profile(
+    tmp_path: Path, mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    counts = {"written": 1, "existing": 0, "empty": 0, "oversize": 0, "invalid": 0}
+    generate = mocker.patch.object(
+        corpus, "generate", create_autospec(corpus.generate, return_value=counts)
+    )
+    versions = {
+        "hypothesmith": "0.3.3",
+        "hypothesis": "6.170.1",
+        "libcst": "1.8.6",
+        "lark": "1.3.1",
+    }
+    mocker.patch.object(
+        corpus,
+        "version",
+        create_autospec(corpus.version, side_effect=versions.__getitem__),
+    )
+    mocker.patch.object(
+        sys,
+        "argv",
+        [
+            "corpus",
+            "--output",
+            str(tmp_path),
+            "--strategy",
+            "python315",
+            "--examples",
+            "3",
+            "--seed",
+            "7",
+            "--max-bytes",
+            "512",
+        ],
+    )
+
+    result = corpus.main()
+
+    assert result == 0
+    generate.assert_called_once_with(
+        tmp_path, examples=3, random_seed=7, strategy="python315", max_bytes=512
+    )
+    assert json.loads(capsys.readouterr().out)["strategy"] == "python315"

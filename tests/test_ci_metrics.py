@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from collections.abc import Mapping
+from functools import partial
 from pathlib import Path
 from unittest.mock import create_autospec
 
@@ -45,22 +47,33 @@ def test_metrics_separate_queue_execution_skips_and_attempts() -> None:
     assert result["executed_jobs"] == 1
     assert result["job_seconds"] == 60
     assert result["queue_seconds"] == 10
+    assert result["jobs"][0]["name"] == "Rust"
+    assert result["jobs"][1]["name"] == "Lean"
     assert result["jobs"][0]["start_delay_seconds"] == 30
 
 
 def test_incomplete_measurement_is_not_reported_as_zero() -> None:
     result = ci_metrics.job_metrics(
-        {"name": "Waiting", "conclusion": None, "created_at": "2026-10-10T01:00:00Z"},
+        {"name": "Waiting", "created_at": "2026-10-10T01:00:00Z"},
         "2026-10-10T01:00:00Z",
     )
 
     assert result["queue_seconds"] is None
     assert result["duration_seconds"] is None
+    assert result["conclusion"] is None
 
 
-def test_total_preserves_missing_measurements() -> None:
-    assert ci_metrics.total([1.0, None]) is None
-    assert ci_metrics.total([]) == 0
+@pytest.mark.parametrize(
+    ("measurements", "expected"),
+    [([1.0, None], None), ([None, 1.0], None), ([None], None), ([0.0], 0.0), ([], 0)],
+    ids=["missing-last", "missing-first", "only-missing", "measured-zero", "empty"],
+)
+def test_total_preserves_missing_measurements(
+    measurements: list[float | None], expected: float | None
+) -> None:
+    result = ci_metrics.total(measurements)
+
+    assert result == expected
 
 
 def test_api_pagination_uses_json_pages(mocker: MockerFixture) -> None:
@@ -90,13 +103,34 @@ def test_api_pagination_uses_json_pages(mocker: MockerFixture) -> None:
     assert calls[0][1]["check"] is True
 
 
+def recorded_metrics_api(
+    run: Mapping[str, object],
+    calls: list[tuple[str, str, bool]],
+    gh: str,
+    endpoint: str,
+    *,
+    pages: bool = False,
+) -> object:
+    calls.append((gh, endpoint, pages))
+    return [{"jobs": []}, {"jobs": []}] if pages else run
+
+
+@pytest.fixture(params=["new", "existing"])
+def metrics_output(tmp_path: Path, request: pytest.FixtureRequest) -> Path:
+    output = tmp_path / "reports" / "nested" / "report.json"
+    if request.param == "existing":
+        output.parent.mkdir(parents=True)
+        output.write_text('{"workflow": "stale"}', encoding="utf-8")
+    return output
+
+
 def test_main_writes_attempt_specific_metrics(
-    tmp_path: Path, mocker: MockerFixture
+    metrics_output: Path, mocker: MockerFixture
 ) -> None:
 
     original_which_spec = ci_metrics.shutil.which
     original_api_spec = ci_metrics.api
-    output = tmp_path / "nested" / "report.json"
+    output = metrics_output
     mocker.patch.object(
         sys,
         "argv",
@@ -113,22 +147,24 @@ def test_main_writes_attempt_specific_metrics(
         "event": "push",
         "head_sha": "abc",
         "created_at": "2026-10-10T01:00:00Z",
-        "name": "CI",
+        "name": "日本語 CI",
         "html_url": "https://example.test/run",
     }
-    calls = []
-
-    def api(gh: str, endpoint: str, *, pages: bool = False) -> object:
-        calls.append((gh, endpoint, pages))
-        return [{"jobs": []}, {"jobs": []}] if pages else run
-
+    calls: list[tuple[str, str, bool]] = []
     mocker.patch.object(
-        ci_metrics, "api", create_autospec(original_api_spec, side_effect=api)
+        ci_metrics,
+        "api",
+        create_autospec(
+            original_api_spec,
+            side_effect=partial(recorded_metrics_api, run, calls),
+        ),
     )
+
     ci_metrics.main()
-    report = json.loads(output.read_text())
+    report = json.loads(output.read_text(encoding="utf-8"))
+
     assert report["repository"] == "owner/repo"
-    assert report["workflow"] == "CI"
+    assert report["workflow"] == "日本語 CI"
     assert report["url"] == run["html_url"]
     assert report["metrics"]["executed_jobs"] == 0
     assert report["measured_at"].endswith("+00:00")

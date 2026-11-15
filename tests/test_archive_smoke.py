@@ -11,6 +11,7 @@ import venv
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import create_autospec
 
 import archive_smoke
@@ -198,6 +199,15 @@ def test_archive_smoke_report_binds_archive_and_extracted_binary(
     mocker.patch.dict(os.environ, {"VERSION": "1.2.3"})
     mocker.patch.dict(os.environ, {"SMOKE_REPORT": str(report)})
     mocker.patch.object(sys, "platform", system)
+    mocker.patch.object(
+        archive_smoke, "os", SimpleNamespace(name="posix", environ=os.environ)
+    )
+    mocker.patch.object(archive_smoke.platform, "platform", return_value="test-system")
+    mocker.patch.object(archive_smoke.platform, "machine", return_value="test-machine")
+    mocker.patch.object(archive_smoke.platform, "python_version", return_value="3.14.9")
+    mocker.patch.object(
+        archive_smoke.platform, "libc_ver", return_value=("glibc", "2.35")
+    )
     extracted: list[tuple[Path, bytes, Path, Path, str]] = []
 
     def exercise(binary: Path, python: Path, project: Path, version: str) -> None:
@@ -225,6 +235,11 @@ def test_archive_smoke_report_binds_archive_and_extracted_binary(
     assert result == 0
     assert evidence["archive"] == archive.name
     assert evidence["version"] == "1.2.3"
+    assert evidence["system"] == "test-system"
+    assert evidence["machine"] == "test-machine"
+    assert evidence["python"] == "3.14.9"
+    assert evidence["libc"] == ["glibc", "2.35"]
+    assert "" not in evidence
     assert evidence["sha256"] == hashlib.sha256(archive.read_bytes()).hexdigest()
     assert (
         evidence["binary_sha256"]
@@ -238,3 +253,43 @@ def test_archive_smoke_report_binds_archive_and_extracted_binary(
     assert version == "1.2.3"
     assert project.parent == binary.parent.parent
     assert not binary.exists()
+
+
+def test_linux_archive_smoke_inspects_extracted_binary_version_information(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    archive = tmp_path / "release.zip"
+    write_zip(archive)
+    report = tmp_path / "report.json"
+    mocker.patch.dict(
+        os.environ,
+        {"ARCHIVE": str(archive), "VERSION": "1.2.3", "SMOKE_REPORT": str(report)},
+    )
+    mocker.patch.object(sys, "platform", "linux")
+    mocker.patch.object(
+        archive_smoke, "os", SimpleNamespace(name="posix", environ=os.environ)
+    )
+    expected_environment = dict(os.environ)
+    expected_environment.pop("PYTHONPATH", None)
+    expected_environment.pop("PYTHONHOME", None)
+    expected_environment.pop("VIRTUAL_ENV", None)
+    expected_environment["PYTHONNOUSERSITE"] = "1"
+    exercise = create_autospec(archive_smoke.exercise_cli)
+    mocker.patch.object(archive_smoke, "exercise_cli", exercise)
+    runner = create_autospec(
+        archive_smoke.run,
+        return_value=subprocess.CompletedProcess([], 0, "GLIBC_2.17", ""),
+    )
+    mocker.patch.object(archive_smoke, "run", runner)
+
+    result = archive_smoke.main()
+
+    assert result == 0
+    exercise.assert_called_once()
+    binary = exercise.call_args.args[0]
+    runner.assert_called_once_with(
+        ["readelf", "--version-info", str(binary)],
+        cwd=binary.parent.parent,
+        env=expected_environment,
+    )
+    assert json.loads(report.read_text(encoding="utf-8"))["glibc_symbols"] == [[2, 17]]

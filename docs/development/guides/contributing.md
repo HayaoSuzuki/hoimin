@@ -855,6 +855,24 @@ Git ignores generated coverage data and common report outputs. See the
 https://pytest-cov.readthedocs.io/en/latest/config.html) and
 [pytest-randomly usage](https://github.com/pytest-dev/pytest-randomly#usage).
 
+### Mutation evidence for Python support tools
+
+Select tests for the callers affected by a mutation. Matching a source filename
+to one test module can omit existing consumer checks: release policy values also
+affect SBOM validation and PyPI staging. Recheck uncertain survivors with the full
+Python suite before attributing them to missing assertions.
+
+At external command boundaries, check the arguments hoimin constructs while
+doubling the compiler, solver or network service. Derive expected target triples,
+environment identities and report fields independently of the code that produces
+them. For cyclic inputs, bound repeated expansion in a test fixture so a mutant
+fails without an unbounded loop or allocation.
+
+Record source revisions, candidate IDs, selectors, test argv, limits and incomplete
+results with each measurement. Distinguish sampled runs, full-suite witnesses and
+static review. Add tests for observable contracts; equivalent collection rewrites,
+diagnostic punctuation and unspecified formatting do not justify new assertions.
+
 ## CI platform execution policy
 
 Pull requests and pushes to `main` run the repository gates on Linux. Linux CI

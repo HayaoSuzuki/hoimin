@@ -3,12 +3,26 @@
 import json
 import sys
 from pathlib import Path
+from unittest.mock import create_autospec
 
 import pytest
 from pytest_mock import MockerFixture
 
 from tools import knowledge_references
 from tools.knowledge_references import inventory
+
+
+class BoundedFootnotes(dict[str, list[str]]):
+    def __init__(self, footnotes: dict[str, list[str]], expansions: list[str]) -> None:
+        super().__init__(footnotes)
+        self.expansions = expansions
+        self.budget = iter(range(8))
+
+    def lookup(self, key: str, default: list[str]) -> list[str]:
+        # Exhaust the finite budget before a broken visited set can grow pending.
+        next(self.budget)
+        self.expansions.append(key)
+        return super().get(key, default)
 
 
 def test_missing_sources_links_and_unreachable_pages_are_independent(
@@ -118,15 +132,81 @@ def test_inventory_cli_reports_navigation_failures(
     assert bool(result["missing_markdown"]) is broken
 
 
-def test_cyclic_navigation_and_repeated_references_terminate(tmp_path: Path) -> None:
+def test_cyclic_navigation_and_repeated_references_terminate(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
     (tmp_path / "index.md").write_text("[a](a.md) [b](b.md)\n", encoding="utf-8")
     (tmp_path / "a.md").write_text(
         "[b][B] [b][B] [^n] [^n]\n[B]: b.md\n[^n]: [^n]\n", encoding="utf-8"
     )
     (tmp_path / "b.md").write_text("[a](a.md)\n", encoding="utf-8")
-    assert inventory(tmp_path)["unreachable_pages"] == []
+    original_expand = knowledge_references.reachable_footnote_lines
+    expansions: list[str] = []
+
+    def expand(ordinary: list[str], footnotes: dict[str, list[str]]) -> list[str]:
+        bounded = BoundedFootnotes(footnotes, expansions)
+        mocker.patch.object(
+            bounded,
+            "get",
+            create_autospec(bounded.get, side_effect=bounded.lookup),
+        )
+        return original_expand(ordinary, bounded)
+
+    mocker.patch.object(
+        knowledge_references,
+        "reachable_footnote_lines",
+        create_autospec(original_expand, side_effect=expand),
+    )
+
+    result = inventory(tmp_path)
+
+    assert result["unreachable_pages"] == []
+    assert expansions == ["n"]
 
 
 def test_mismatched_fence_markers_do_not_end_code() -> None:
     body = "````\n~~~\n```\n[hidden](missing.md)\n````\n[shown](shown.md)"
     assert list(knowledge_references.markdown_targets(body)) == ["shown.md"]
+
+
+def test_angle_delimited_inline_link_is_inventoried_and_navigable(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "index.md").write_text("[child](<child.md>)\n", encoding="utf-8")
+    (tmp_path / "child.md").write_text("# Child\n", encoding="utf-8")
+
+    result = inventory(tmp_path)
+
+    assert result["markdown"] == [
+        {"page": "index.md", "target": "child.md", "local": True, "exists": True}
+    ]
+    assert result["missing_markdown"] == []
+    assert result["unreachable_pages"] == []
+
+
+@pytest.mark.parametrize(
+    ("resource", "local", "exists"),
+    [("evidence.txt", True, True), ("https://example.org/evidence", False, None)],
+    ids=["local-file", "external-url"],
+)
+def test_source_inventory_preserves_resource_kind(
+    tmp_path: Path, resource: str, *, local: bool, exists: bool | None
+) -> None:
+    (tmp_path / "index.md").write_text(
+        f"---\nsources:\n  - id: evidence\n    resource: {resource}\n---\nEntry\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "evidence.txt").write_text("Evidence\n", encoding="utf-8")
+
+    result = inventory(tmp_path)
+
+    assert result["sources"] == [
+        {
+            "page": "index.md",
+            "id": "evidence",
+            "resource": resource,
+            "local": local,
+            "exists": exists,
+        }
+    ]
+    assert result["missing_sources"] == []

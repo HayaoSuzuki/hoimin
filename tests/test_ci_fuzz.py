@@ -20,6 +20,105 @@ MAX_SEED = 4294967295
 JOB_MINUTES = 11
 
 
+@pytest.fixture
+def recorded_campaign(
+    tmp_path: Path, mocker: MockerFixture
+) -> tuple[ci_fuzz.Campaign, dict[str, tuple[list[str], bool]]]:
+    mocker.patch.object(ci_fuzz, "ROOT", tmp_path)
+    (tmp_path / "fuzz").mkdir()
+    (tmp_path / "fuzz/Cargo.toml").write_bytes((ROOT / "fuzz/Cargo.toml").read_bytes())
+    campaign = ci_fuzz.Campaign(time.time() + 300, tmp_path / "report", seed=19)
+    observations: dict[str, tuple[list[str], bool]] = {}
+
+    def record(name: str, argv: list[str], **_options: object) -> None:
+        observations[name] = (argv, (tmp_path / "fuzz/corpus" / name).is_dir())
+
+    mocker.patch.object(campaign, "run", autospec=True, side_effect=record)
+    return campaign, observations
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "source_encoding",
+        "source_index",
+        "candidate_validation",
+        "python_analyzer",
+        "report_sequence",
+        "target_resolution",
+        "sampling",
+    ],
+)
+def test_campaign_dispatches_bounded_fuzz_commands_with_existing_output_corpus(
+    recorded_campaign: tuple[ci_fuzz.Campaign, dict[str, tuple[list[str], bool]]],
+    target: str,
+) -> None:
+    campaign, observations = recorded_campaign
+
+    ci_fuzz.run_campaign(campaign, seconds_per_target=7)
+
+    argv, corpus_exists = observations[target]
+    assert argv[:5] == [
+        "cargo",
+        f"+{ci_fuzz.TOOLCHAIN}",
+        "fuzz",
+        "run",
+        "--codegen-units",
+    ]
+    assert int(argv[5]) > 0
+    assert argv[6:10] == [target, f"fuzz/corpus/{target}", f"fuzz/seeds/{target}", "--"]
+    assert argv[10:12] == ["-max_total_time=7", "-seed=19"]
+    assert argv[12].startswith("-max_len=")
+    assert int(argv[12].removeprefix("-max_len=")) > 0
+    assert argv[13].startswith("-timeout=")
+    assert int(argv[13].removeprefix("-timeout=")) > 0
+    assert argv[14].startswith("-rss_limit_mb=")
+    assert int(argv[14].removeprefix("-rss_limit_mb=")) > 0
+    assert len(argv) == 15
+    assert corpus_exists
+
+
+@pytest.mark.parametrize(("version", "suffix"), [("3.14", "314"), ("3.15", "315")])
+def test_campaign_selects_frozen_generator_dependencies(
+    recorded_campaign: tuple[ci_fuzz.Campaign, dict[str, tuple[list[str], bool]]],
+    version: str,
+    suffix: str,
+) -> None:
+    campaign, observations = recorded_campaign
+
+    ci_fuzz.run_campaign(campaign, seconds_per_target=1)
+
+    argv, _ = observations[f"dependencies-{suffix}"]
+    assert argv == [
+        "uv",
+        "sync",
+        "--frozen",
+        "--group",
+        "fuzz",
+        "--no-install-project",
+        "--python",
+        version,
+    ]
+
+
+def test_cli_requires_an_explicit_reproducibility_seed(
+    tmp_path: Path, mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mocker.patch.object(
+        sys, "argv", ["ci-fuzz", "--deadline", "1", "--report", str(tmp_path)]
+    )
+    construct = mocker.patch.object(ci_fuzz, "Campaign", autospec=True)
+    execute = mocker.patch.object(ci_fuzz, "run_campaign", autospec=True)
+
+    with pytest.raises(SystemExit) as error:
+        ci_fuzz.main()
+
+    assert error.value.code == 2
+    assert "--seed" in capsys.readouterr().err
+    construct.assert_not_called()
+    execute.assert_not_called()
+
+
 @pytest.mark.parametrize("name", ["ci.yml", "fuzz.yml"])
 def test_fuzz_workflows_install_and_cache_the_runner_toolchain(name: str) -> None:
     workflow = yaml.safe_load(

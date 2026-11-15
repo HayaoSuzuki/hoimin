@@ -288,7 +288,12 @@ def test_runner_exit_status_aggregates_failures_without_skipping_checks(
     (directory / "ci.yml").write_text(
         "jobs:\n  check:\n    steps:\n      - run: echo safe\n", encoding="utf-8"
     )
-    mocker.patch.object(shutil, "which", autospec=True, return_value="shellcheck")
+    executables = {
+        "actionlint": "/tools/actionlint",
+        "shellcheck": "/tools/shellcheck",
+        "zizmor": "/tools/zizmor",
+    }
+    mocker.patch.object(shutil, "which", autospec=True, side_effect=executables.get)
     run = mocker.patch.object(
         subprocess,
         "run",
@@ -305,6 +310,12 @@ def test_runner_exit_status_aggregates_failures_without_skipping_checks(
 
     assert raised.value.code == expected
     assert run.call_count == 3
+    assert run.call_args_list[-1] == mocker.call(
+        ["/tools/shellcheck", "--norc", "--shell", "bash", "-x", "-"],
+        input=b"echo safe",
+        check=False,
+        timeout=30,
+    )
 
 
 @pytest.mark.parametrize(

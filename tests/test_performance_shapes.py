@@ -1,8 +1,10 @@
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
 from typing import BinaryIO, Never, TextIO
@@ -14,6 +16,103 @@ from pytest_mock import MockerFixture
 from tools import performance_shapes as shapes
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def fixture_input_bytes(root: Path) -> int:
+    return sum(len(path.read_bytes()) for path in root.rglob("*") if path.is_file())
+
+
+def artifact_input_bytes(path: Path) -> list[int]:
+    report = json.loads(path.read_text())
+    return [run["fixture"]["input_bytes"] for run in report["runs"]]
+
+
+def validate_workspace_capacity(command: list[str]) -> None:
+    """Reject malformed CLI capacity operands before synthesizing process output."""
+    if "--max-workspace-size" not in command:
+        return
+    value = command[command.index("--max-workspace-size") + 1]
+    match = re.fullmatch(r"([1-9][0-9]*)(KiB|MiB|GiB)", value)
+    if match is None:
+        message = f"invalid workspace capacity: {value!r}"
+        raise ValueError(message)
+    unit_bytes = {"KiB": 1024, "MiB": 1024**2, "GiB": 1024**3}
+    capacity = int(match[1]) * unit_bytes[match[2]]
+    # The largest supported byte fixture contains 65536 blocks of 65536 bytes,
+    # together with Python source. A valid measurement must allow that copy.
+    if capacity <= 65536 * 65536:
+        message = "workspace capacity cannot hold the largest supported fixture"
+        raise ValueError(message)
+
+
+@pytest.mark.parametrize("name", ["long-line", "many-lines"])
+def test_layout_fixture_truncates_two_candidates_to_a_one_candidate_plan(
+    tmp_path: Path, name: str
+) -> None:
+    root = tmp_path / "project"
+
+    fixture = shapes.make_fixture(name, 2, root)
+
+    assert (root / "case.py").read_text().count("True,") == 2
+    assert fixture["candidate_limit"] == 1
+    assert fixture["expected_candidates"] == 1
+    assert fixture["truncated"] is True
+
+
+@pytest.mark.parametrize("name", ["fingerprint-files", "workspace-bytes"])
+def test_fixture_metadata_counts_all_input_bytes(tmp_path: Path, name: str) -> None:
+    root = tmp_path / "project"
+
+    fixture = shapes.make_fixture(name, 3, root)
+
+    assert fixture["input_bytes"] == fixture_input_bytes(root)
+    assert fixture["input_bytes"] > fixture["python_source_bytes"]
+
+
+def fingerprint_payloads(root: Path) -> list[bytes]:
+    return [path.read_bytes() for path in sorted(root.glob("config*.toml"))]
+
+
+@pytest.mark.parametrize(
+    ("name", "expected_count", "expected_options"),
+    [
+        pytest.param(
+            "fingerprint-files",
+            3,
+            ["--fingerprint-include", "*.toml"],
+            id="multiple-files",
+        ),
+        pytest.param(
+            "fingerprint-mixed",
+            1,
+            [
+                "--fingerprint-file",
+                "config.toml",
+                "--fingerprint-include",
+                "*.toml",
+                "--fingerprint-include",
+                "*.toml",
+                "--fingerprint-include",
+                "*.toml",
+            ],
+            id="explicit-file-and-globs",
+        ),
+    ],
+)
+def test_fingerprint_axes_materialize_nonempty_hash_inputs(
+    tmp_path: Path,
+    name: str,
+    expected_count: int,
+    expected_options: list[str],
+) -> None:
+    root = tmp_path / "project"
+
+    fixture = shapes.make_fixture(name, 3, root)
+    payloads = fingerprint_payloads(root)
+
+    assert len(payloads) == expected_count
+    assert min(map(len, payloads)) > 0
+    assert fixture["options"] == expected_options
 
 
 def test_registry_covers_all_dimensions() -> None:
@@ -882,6 +981,22 @@ def test_measurement_records_valid_guarded_process(
     )
     artifact = tmp_path / "artifact"
     artifact.mkdir()
+    run = guarded_measurement_process(fixture, mode)
+    mocker.patch.object(
+        shapes.subprocess, "run", create_autospec(original_run_spec, side_effect=run)
+    )
+
+    result = shapes.measure_once(Path("hoimin"), fixture, root, artifact, 25)
+
+    assert result["candidates"] == fixture["expected_candidates"]
+    assert result["sampled_tree_rss_bytes"] == 12 * 1024
+    assert result["elapsed_ms"] == 10
+    assert result["output_document_bytes"] > 0
+
+
+def guarded_measurement_process(
+    fixture: shapes.Fixture, mode: str
+) -> Callable[..., subprocess.CompletedProcess[bytes]]:
     events = [
         {"kind": "run_started"},
         *[{"kind": "mutant_finished"}] * fixture["expected_candidates"],
@@ -891,6 +1006,7 @@ def test_measurement_records_valid_guarded_process(
     def run(
         command: list[str], *, stdout: BinaryIO, **_kwargs: object
     ) -> subprocess.CompletedProcess[bytes]:
+        validate_workspace_capacity(command)
         if "--stats" in command:
             Path(command[command.index("--stats") + 1]).write_text(
                 json.dumps(
@@ -914,14 +1030,7 @@ def test_measurement_records_valid_guarded_process(
         stdout.write(value.encode())
         return subprocess.CompletedProcess(command, 0)
 
-    mocker.patch.object(
-        shapes.subprocess, "run", create_autospec(original_run_spec, side_effect=run)
-    )
-    result = shapes.measure_once(Path("hoimin"), fixture, root, artifact, 25)
-    assert result["candidates"] == fixture["expected_candidates"]
-    assert result["sampled_tree_rss_bytes"] == 12 * 1024
-    assert result["elapsed_ms"] == 10
-    assert result["output_document_bytes"] > 0
+    return run
 
 
 def test_main_measure_writes_medians_comparisons_and_growth(
@@ -962,21 +1071,33 @@ def test_main_measure_writes_medians_comparisons_and_growth(
         "tool_version",
         create_autospec(original_tool_version_spec, side_effect=lambda _: "rustc test"),
     )
+    expected_input_bytes: list[int] = []
+
+    def measure(
+        _binary: Path,
+        _fixture: shapes.Fixture,
+        root: Path,
+        _artifact: Path,
+        _sample_ms: int,
+    ) -> shapes.Measurement:
+        expected_input_bytes.append(fixture_input_bytes(root))
+        return {
+            "elapsed_ms": 10,
+            "sampled_tree_rss_bytes": None,
+            "output_document_bytes": 20,
+            "candidates": 1,
+            "truncated": False,
+            "argv": [],
+            "exit_code": 0,
+            "sample_ms": 25,
+        }
+
     mocker.patch.object(
         shapes,
         "measure_once",
         create_autospec(
             original_measure_once_spec,
-            side_effect=lambda *_: {
-                "elapsed_ms": 10,
-                "sampled_tree_rss_bytes": None,
-                "output_document_bytes": 20,
-                "candidates": 1,
-                "truncated": False,
-                "argv": [],
-                "exit_code": 0,
-                "sample_ms": 25,
-            },
+            side_effect=measure,
         ),
     )
 
@@ -989,6 +1110,7 @@ def test_main_measure_writes_medians_comparisons_and_growth(
     assert len(report["medians"]) == 6
     assert len(report["comparisons"]) == 3
     assert report["growth"]
+    assert artifact_input_bytes(output / "result.json") == expected_input_bytes
 
 
 @pytest.mark.parametrize("mode", ["gate", "measure"])
