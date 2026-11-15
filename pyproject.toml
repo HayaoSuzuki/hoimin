@@ -139,8 +139,6 @@ allowed-confusables = ["ノ"]
 "tests/*.py" = ["INP001"]
 # Literal expected values keep test assertions readable.
 "tests/test_*.py" = ["PLR2004"]
-"tools/*.py" = ["INP001"]
-"formal/HoiminOracle/tools/*.py" = ["INP001"]
 "crates/hoimin-cli/tests/support/*.py" = ["INP001"]
 
 [tool.pytest.ini_options]
