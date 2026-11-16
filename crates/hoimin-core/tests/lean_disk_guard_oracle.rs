@@ -195,25 +195,21 @@ fn assert_policy_case(case: &CorpusCase) {
         .stop
         .as_ref()
         .map(|failure| reason_name(failure.reason.kind()));
-    let secondary = snapshot
-        .stop
-        .as_ref()
-        .map(|failure| {
-            failure
-                .secondary
-                .iter()
-                .fold(Vec::new(), |mut reasons, value| {
-                    let reason = match value {
-                        DiskSecondary::Observation { reason, .. } => reason_name(*reason),
-                        DiskSecondary::Error { .. } => "measurement_failed",
-                    };
-                    if !reasons.contains(&reason) {
-                        reasons.push(reason);
-                    }
-                    reasons
-                })
-        })
-        .unwrap_or_default();
+    let secondary = snapshot.stop.as_ref().map_or_default(|failure| {
+        failure
+            .secondary
+            .iter()
+            .fold(Vec::new(), |mut reasons, value| {
+                let reason = match value {
+                    DiskSecondary::Observation { reason, .. } => reason_name(*reason),
+                    DiskSecondary::Error { .. } => "measurement_failed",
+                };
+                if !reasons.contains(&reason) {
+                    reasons.push(reason);
+                }
+                reasons
+            })
+    });
     assert_eq!(
         actual_stop,
         case.expected.state.stop.as_deref(),

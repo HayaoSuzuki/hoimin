@@ -320,27 +320,25 @@ mod tests {
         let result = test_load(&project, &|| false);
         std::fs::write(&path, original).unwrap();
         crate::fingerprint_inputs::recheck_config(&config, &config.selection.root).unwrap();
-        let candidates = result
-            .map(|index| {
-                let operators = serde_json::from_str("[\"exception_hierarchy\"]").unwrap();
-                hoimin_python::analyze_source_with_exceptions(
-                    &hoimin_python::AnalyzeRequest {
-                        payload: hoimin_python::payload::PayloadBudget::default(),
-                        path: Utf8Path::new("service.py"),
-                        lines: &[],
-                        symbols: &[],
-                        operators: &operators,
-                        profile: hoimin_core::MutationProfile::Full,
-                        max_candidates: 100,
-                    },
-                    service,
-                    &|| false,
-                    Some(&index),
-                )
-                .unwrap()
-                .candidates
-            })
-            .unwrap_or_default();
+        let candidates = result.map_or_default(|index| {
+            let operators = serde_json::from_str("[\"exception_hierarchy\"]").unwrap();
+            hoimin_python::analyze_source_with_exceptions(
+                &hoimin_python::AnalyzeRequest {
+                    payload: hoimin_python::payload::PayloadBudget::default(),
+                    path: Utf8Path::new("service.py"),
+                    lines: &[],
+                    symbols: &[],
+                    operators: &operators,
+                    profile: hoimin_core::MutationProfile::Full,
+                    max_candidates: 100,
+                },
+                service,
+                &|| false,
+                Some(&index),
+            )
+            .unwrap()
+            .candidates
+        });
 
         let actual_0 = candidates.is_empty();
 

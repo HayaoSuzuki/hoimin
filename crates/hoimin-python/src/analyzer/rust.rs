@@ -7298,19 +7298,15 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
     fn can_reuse_loop_transfer(&self, fallback_unchanged: bool) -> bool {
         // Recording must visit every annotation. A transfer can also update
         // class fallback state, which is not part of the loop-head fixed point.
-        if self.record_annotations || !fallback_unchanged {
-            return false;
-        }
+        let eligible = !self.record_annotations && fallback_unchanged;
         #[cfg(test)]
-        if DISABLE_LOOP_TRANSFER_REUSE.get()
-            || self.marker_projection.is_some()
-            || self.handler_exit_projection.is_some()
-            || self.try_exit_projection.is_some()
-            || self.test_mutation.is_some()
-        {
-            return false;
-        }
-        true
+        let eligible = eligible
+            && !(DISABLE_LOOP_TRANSFER_REUSE.get()
+                || self.marker_projection.is_some()
+                || self.handler_exit_projection.is_some()
+                || self.try_exit_projection.is_some()
+                || self.test_mutation.is_some());
+        eligible
     }
 
     fn loop_head_fixed_point(
@@ -8794,8 +8790,7 @@ fn collection_replacements(
     match resolved.as_str() {
         "list" if builtin("list") => imports
             .spelling_for(&base, &["typing.Sequence", "collections.abc.Sequence"])
-            .map(|name| vec![replacement(name, MutationOperator::TypeListSequence)])
-            .unwrap_or_default(),
+            .map_or_default(|name| vec![replacement(name, MutationOperator::TypeListSequence)]),
         "typing.Sequence" | "collections.abc.Sequence" => {
             let mut replacements = Vec::new();
             if builtin("list") {
@@ -8813,8 +8808,7 @@ fn collection_replacements(
         }
         "set" if builtin("set") => imports
             .spelling_for(&base, &["typing.AbstractSet", "collections.abc.Set"])
-            .map(|name| vec![replacement(name, MutationOperator::TypeSetAbstractSet)])
-            .unwrap_or_default(),
+            .map_or_default(|name| vec![replacement(name, MutationOperator::TypeSetAbstractSet)]),
         "typing.AbstractSet" | "collections.abc.Set" if builtin("set") => {
             vec![replacement(
                 "set".to_owned(),
@@ -8823,20 +8817,17 @@ fn collection_replacements(
         }
         "dict" if builtin("dict") => imports
             .spelling_for(&base, &["typing.Mapping", "collections.abc.Mapping"])
-            .map(|name| vec![replacement(name, MutationOperator::TypeMapping)])
-            .unwrap_or_default(),
+            .map_or_default(|name| vec![replacement(name, MutationOperator::TypeMapping)]),
         "typing.Mapping" | "collections.abc.Mapping" if builtin("dict") => vec![replacement(
             "dict".to_owned(),
             MutationOperator::TypeMapping,
         )],
         "typing.Iterable" | "collections.abc.Iterable" => imports
             .spelling_for(&base, &["typing.Iterator", "collections.abc.Iterator"])
-            .map(|name| vec![replacement(name, MutationOperator::TypeIterableIterator)])
-            .unwrap_or_default(),
+            .map_or_default(|name| vec![replacement(name, MutationOperator::TypeIterableIterator)]),
         "typing.Iterator" | "collections.abc.Iterator" => imports
             .spelling_for(&base, &["typing.Iterable", "collections.abc.Iterable"])
-            .map(|name| vec![replacement(name, MutationOperator::TypeIterableIterator)])
-            .unwrap_or_default(),
+            .map_or_default(|name| vec![replacement(name, MutationOperator::TypeIterableIterator)]),
         _ => Vec::new(),
     }
 }

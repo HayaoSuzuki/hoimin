@@ -83,32 +83,30 @@ fn lean_exception_hierarchy_snapshot_correspondence() {
             "infrastructure-error {}: {errors:?}",
             case.id
         );
-        let pairs = cached
-            .map(|index| {
-                let operators = serde_json::from_str("[\"exception_hierarchy\"]").unwrap();
+        let pairs = cached.map_or_default(|index| {
+            let operators = serde_json::from_str("[\"exception_hierarchy\"]").unwrap();
 
-                let output = hoimin_python::analyze_source_with_exceptions(
-                    &hoimin_python::AnalyzeRequest {
-                        payload: hoimin_python::payload::PayloadBudget::default(),
-                        path: Utf8Path::new("service.py"),
-                        lines: &[],
-                        symbols: &[],
-                        operators: &operators,
-                        profile: hoimin_core::MutationProfile::Full,
-                        max_candidates: case.max_candidates,
-                    },
-                    service,
-                    &|| false,
-                    Some(&index),
-                )
-                .unwrap();
-                output
-                    .candidates
-                    .into_iter()
-                    .map(|candidate| (candidate.value.original, candidate.value.replacement))
-                    .collect()
-            })
-            .unwrap_or_default();
+            let output = hoimin_python::analyze_source_with_exceptions(
+                &hoimin_python::AnalyzeRequest {
+                    payload: hoimin_python::payload::PayloadBudget::default(),
+                    path: Utf8Path::new("service.py"),
+                    lines: &[],
+                    symbols: &[],
+                    operators: &operators,
+                    profile: hoimin_core::MutationProfile::Full,
+                    max_candidates: case.max_candidates,
+                },
+                service,
+                &|| false,
+                Some(&index),
+            )
+            .unwrap();
+            output
+                .candidates
+                .into_iter()
+                .map(|candidate| (candidate.value.original, candidate.value.replacement))
+                .collect()
+        });
         let recheck = crate::fingerprint_inputs::recheck_config(&config, &config.selection.root);
         let fingerprint_matches = recheck.is_ok();
         let expected_recheck = [

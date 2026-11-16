@@ -16,7 +16,7 @@ rstest_macros = { path = "vendor/rstest_macros" }
 [workspace.package]
 version = "0.14.0"
 edition = "2024"
-rust-version = "1.99.1"
+rust-version = "1.100.0"
 license = "Elastic-2.0"
 repository = "https://github.com/HayaoSuzuki/hoimin"
 
