@@ -1321,8 +1321,7 @@ impl RunState {
         let reservations = self
             .copy_grant
             .as_ref()
-            .map(|grant| vec![grant.reservation_id()])
-            .unwrap_or_default();
+            .map_or_else(Vec::new, |grant| vec![grant.reservation_id()]);
         Ok(vec![RunEffect::Cleanup(Cleanup { id, reservations })])
     }
 
