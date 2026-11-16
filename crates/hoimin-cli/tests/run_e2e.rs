@@ -3236,20 +3236,17 @@ async fn run_fixture_options_extra_jsonl(
                 "invalid JSON report ({error}); exit={exit_code}; stdout={stdout:?}; stderr={stderr:?}"
             )
         });
-    let statuses = document["mutants"]
-        .as_array()
-        .map(|mutants| {
-            mutants
-                .iter()
-                .map(|mutant| {
-                    mutation_outcome::status(mutant)
-                        .as_str()
-                        .unwrap()
-                        .to_owned()
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let statuses = document["mutants"].as_array().map_or_default(|mutants| {
+        mutants
+            .iter()
+            .map(|mutant| {
+                mutation_outcome::status(mutant)
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect()
+    });
     FixtureRun {
         exit_code,
         statuses,
@@ -3568,20 +3565,17 @@ async fn run_focused_profile(
                 "invalid JSON report ({error}); exit={exit_code}; stdout={stdout:?}; stderr={stderr:?}"
             )
         });
-    let statuses = document["mutants"]
-        .as_array()
-        .map(|mutants| {
-            mutants
-                .iter()
-                .map(|mutant| {
-                    mutation_outcome::status(mutant)
-                        .as_str()
-                        .unwrap()
-                        .to_owned()
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let statuses = document["mutants"].as_array().map_or_default(|mutants| {
+        mutants
+            .iter()
+            .map(|mutant| {
+                mutation_outcome::status(mutant)
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect()
+    });
     FixtureRun {
         exit_code,
         statuses,

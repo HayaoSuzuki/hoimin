@@ -938,9 +938,8 @@ fn combine_cleanup_results(
     cleanup: Result<hoimin_core::CleanupFinished, EffectFailed>,
 ) -> (RunEvent, Vec<String>) {
     let event = cleanup.map_or_else(RunEvent::EffectFailed, RunEvent::CleanupFinished);
-    let secondary_errors = close_error
-        .map(|error| vec![format!("process.resource.close: {error}")])
-        .unwrap_or_default();
+    let secondary_errors =
+        close_error.map_or_default(|error| vec![format!("process.resource.close: {error}")]);
     (event, secondary_errors)
 }
 

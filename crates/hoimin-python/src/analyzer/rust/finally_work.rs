@@ -82,19 +82,15 @@ impl AnnotationCollector<'_, '_> {
     pub(super) fn can_share_finally_transfer(&self) -> bool {
         // Repeated equal imports in class scope may observe different mutable
         // fallbacks. This gate applies equally to reuse AND deleting duplicates.
-        if self.class_context.is_some() {
-            return false;
-        }
+        let eligible = self.class_context.is_none();
         #[cfg(test)]
-        if DISABLED.get()
-            || self.marker_projection.is_some()
-            || self.handler_exit_projection.is_some()
-            || self.try_exit_projection.is_some()
-            || self.test_mutation.is_some()
-        {
-            return false;
-        }
-        true
+        let eligible = eligible
+            && !(DISABLED.get()
+                || self.marker_projection.is_some()
+                || self.handler_exit_projection.is_some()
+                || self.try_exit_projection.is_some()
+                || self.test_mutation.is_some());
+        eligible
     }
 }
 

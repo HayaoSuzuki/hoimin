@@ -1499,16 +1499,14 @@ impl WorkspaceHandler {
     pub fn observed_copy_bytes(&self) -> u64 {
         self.plan
             .as_ref()
-            .map(|plan| plan.observed_copy_bytes())
-            .unwrap_or_default()
+            .map_or_default(|plan| plan.observed_copy_bytes())
     }
 
     #[must_use]
     pub fn materialized_worker_slots(&self) -> usize {
         self.plan
             .as_ref()
-            .map(|plan| plan.materialized_workers())
-            .unwrap_or_default()
+            .map_or_default(|plan| plan.materialized_workers())
     }
 
     /// # Errors

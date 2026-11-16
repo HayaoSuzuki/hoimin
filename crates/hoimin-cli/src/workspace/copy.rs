@@ -540,8 +540,7 @@ impl WorkspacePlan {
     pub fn materialized_workers(&self) -> usize {
         self.state
             .lock()
-            .map(|state| state.workers.len())
-            .unwrap_or_default()
+            .map_or_default(|state| state.workers.len())
     }
 
     #[cfg(test)]

@@ -66,6 +66,12 @@ The historical `infra/github/Pulumi.yaml` required-check configuration targets `
 
 # Verification scope
 
+The current stable pin and minimum source-build version are Rust 1.100.0.
+The update also adapts optional collection defaults and annotation-transfer
+eligibility expressions to its Clippy checks without changing analyzer behavior.
+The pin and manifest remain the authoritative version sources; historical
+measurement records retain the compiler versions used for those measurements.
+
 This page records the update policy adopted in Issue #739. It does not guarantee execution success for a particular Rust version or OS. Record results and unverified conditions in each update PR. Retain historical MSRV designs as past decisions; use this page and the development guide for current procedures.
 
 [^development]: [development.md](../guides/contributing.md).
