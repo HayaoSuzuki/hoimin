@@ -26,8 +26,8 @@ KINDS = ("standalone", "wheel")
 SCOPE = "Cargo normal and build dependencies; excludes dev/fuzz and OS libraries"
 REPOSITORY = "https://github.com/HayaoSuzuki/hoimin"
 PARSER = "ruff_python_parser"
-RUFF_VERSION = "0.0.21"
-UPSTREAM = "05cdc36a45a29e078c2af9358969d0f576408bef"
+RUFF_VERSION = "0.0.22"
+UPSTREAM = "c91de8a012cb87efe279b762020a0d28dd75ddb5"
 
 
 def digest(path: Path) -> str:
@@ -255,7 +255,7 @@ def finalize(  # noqa: PLR0913, PLR0917 -- Explicit release identity.
             )
             component["pedigree"] = {
                 "notes": (
-                    "Ruff parser crate 0.0.21 with a standalone manifest; "
+                    "Ruff parser crate 0.0.22 with a standalone manifest; "
                     "parser retains hoimin stack growth, interpolation recovery "
                     "and iterative cleanup changes. "
                     "See pinned README.hoimin.md."

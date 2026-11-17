@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "platform": "linux/amd64",
-  "base_image": "ubuntu@sha256:a2d43bffc46670d7108bb3c0468c67c5557c4c92e83e1e34cbff1322ad1b94dc",
-  "apt_snapshot": "20261018T000000Z",
+  "base_image": "ubuntu@sha256:0d5255be560e2d2ddcfbfda88549e9e815ef29e7cd7fc62183d5709e6e2963c6",
+  "apt_snapshot": "20261117T000000Z",
   "rust_toolchain": "nightly-2026-08-03",
   "targets": [
     "x86_64-unknown-linux-gnu",
@@ -148,14 +148,14 @@
       "args": [
         "--version"
       ],
-      "version": "timeout (GNU coreutils) 9.4"
+      "version": "timeout (uutils coreutils) 0.10.0"
     },
     "prlimit": {
       "path": "/usr/bin/prlimit",
       "args": [
         "--version"
       ],
-      "version": "prlimit from util-linux 2.39.3"
+      "version": "prlimit from util-linux 2.41.3"
     }
   },
   "project_config": "/opt/creusot/data/why3find.json",

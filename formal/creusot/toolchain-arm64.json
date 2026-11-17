@@ -2,7 +2,7 @@
   "schema_version": 1,
   "platform": "linux/arm64",
   "base_image": "ubuntu@sha256:18b33ff3829707f31ada654a963b9ee35f2e6f0241b964bd17a22a9b330cb63d",
-  "apt_snapshot": "20261018T000000Z",
+  "apt_snapshot": "20261117T000000Z",
   "rust_toolchain": "nightly-2026-08-03",
   "targets": [
     "x86_64-unknown-linux-gnu",

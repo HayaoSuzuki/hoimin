@@ -4104,36 +4104,50 @@ fn open_initialized_coordinator_until(
         }
         ensure_bootstrap_deadline(deadline, coordinator_path, "identify coordinator")?;
         lock_file_until(&file, deadline, coordinator_path)?;
-        ensure_bootstrap_deadline(deadline, coordinator_path, "lock coordinator")?;
-        let is_uninitialized = owned_io!("reopen.metadata", file.metadata())
-            .map_err(|error| WorkspaceError::io("inspect coordinator", coordinator_path, error))?
-            .len()
-            == 0;
-        ensure_bootstrap_deadline(deadline, coordinator_path, "inspect coordinator")?;
-        if is_uninitialized {
-            owned_io!("reopen.unlock_empty", File::unlock(&file)).map_err(|error| {
+        let initialized = (|| -> Result<bool, WorkspaceError> {
+            ensure_bootstrap_deadline(deadline, coordinator_path, "lock coordinator")?;
+            let is_uninitialized = owned_io!("reopen.metadata", file.metadata())
+                .map_err(|error| {
+                    WorkspaceError::io("inspect coordinator", coordinator_path, error)
+                })?
+                .len()
+                == 0;
+            ensure_bootstrap_deadline(deadline, coordinator_path, "inspect coordinator")?;
+            if is_uninitialized {
+                owned_io!("reopen.unlock_empty", File::unlock(&file)).map_err(|error| {
+                    WorkspaceError::io("unlock coordinator", coordinator_path, error)
+                })?;
+                if std::time::Instant::now() >= deadline {
+                    return Err(WorkspaceError::io(
+                        "open coordinator",
+                        coordinator_path,
+                        std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "coordinator initialization deadline exceeded",
+                        ),
+                    ));
+                }
+                std::thread::sleep(Duration::from_millis(5));
+                return Ok(false);
+            }
+            secure_coordinator_file(&file, coordinator_path)?;
+            ensure_bootstrap_deadline(deadline, coordinator_path, "secure coordinator")?;
+            validate_coordinator_file(&mut file, coordinator_path)?;
+            ensure_bootstrap_deadline(deadline, coordinator_path, "validate coordinator")?;
+            owned_io!("reopen.unlock_valid", File::unlock(&file)).map_err(|error| {
                 WorkspaceError::io("unlock coordinator", coordinator_path, error)
             })?;
-            if std::time::Instant::now() >= deadline {
-                return Err(WorkspaceError::io(
-                    "open coordinator",
-                    coordinator_path,
-                    std::io::Error::new(
-                        std::io::ErrorKind::TimedOut,
-                        "coordinator initialization deadline exceeded",
-                    ),
-                ));
-            }
-            std::thread::sleep(Duration::from_millis(5));
+            ensure_bootstrap_deadline(deadline, coordinator_path, "unlock coordinator")?;
+            Ok(true)
+        })();
+        // Unlock explicitly: concurrent forked children can retain the open file
+        // description after this process closes its own descriptor.
+        if initialized.is_err() {
+            let _ = File::unlock(&file);
+        }
+        if !initialized? {
             continue;
         }
-        secure_coordinator_file(&file, coordinator_path)?;
-        ensure_bootstrap_deadline(deadline, coordinator_path, "secure coordinator")?;
-        validate_coordinator_file(&mut file, coordinator_path)?;
-        ensure_bootstrap_deadline(deadline, coordinator_path, "validate coordinator")?;
-        owned_io!("reopen.unlock_valid", File::unlock(&file))
-            .map_err(|error| WorkspaceError::io("unlock coordinator", coordinator_path, error))?;
-        ensure_bootstrap_deadline(deadline, coordinator_path, "unlock coordinator")?;
         return Ok(file);
     }
 }

@@ -1,5 +1,5 @@
 # Build on native x86_64 for acceptance measurements. No image publication.
-ARG CREUSOT_BASE=ubuntu@sha256:a2d43bffc46670d7108bb3c0468c67c5557c4c92e83e1e34cbff1322ad1b94dc
+ARG CREUSOT_BASE=ubuntu@sha256:0d5255be560e2d2ddcfbfda88549e9e815ef29e7cd7fc62183d5709e6e2963c6
 FROM ${CREUSOT_BASE} AS prerequisites
 ENV DEBIAN_FRONTEND=noninteractive CARGO_BUILD_JOBS=2 OPAMJOBS=2 OPAMREQUIRECHECKSUMS=true \
     OPAMROOT=/opt/creusot/opam-root OPAMSWITCH=/opt/creusot/opam-switch \
@@ -9,8 +9,10 @@ ENV DEBIAN_FRONTEND=noninteractive CARGO_BUILD_JOBS=2 OPAMJOBS=2 OPAMREQUIRECHEC
     LD_LIBRARY_PATH=/opt/creusot/rust/lib
 ADD --chmod=0644 --checksum=sha256:f290e6acaf904a4121424ca3ebdd70652780707e28e8af999221786b86bb1975 https://curl.se/ca/cacert-2025-09-09.pem /etc/ssl/certs/ca-certificates.crt
 # apt verifies package hashes against signed snapshot indexes. No mutable mirror.
-RUN chmod 0755 /etc/ssl /etc/ssl/certs \
- && sed -i 's|http://ports.ubuntu.com/ubuntu-ports/|http://snapshot.ubuntu.com/ubuntu/20261018T000000Z/|g; s|http://archive.ubuntu.com/ubuntu/|http://snapshot.ubuntu.com/ubuntu/20261018T000000Z/|g; s|http://security.ubuntu.com/ubuntu/|http://snapshot.ubuntu.com/ubuntu/20261018T000000Z/|g' /etc/apt/sources.list.d/ubuntu.sources \
+# Minimal Ubuntu images lack OpenSSL's default CA path before ca-certificates.
+RUN printf 'Acquire::https::CaInfo "/etc/ssl/certs/ca-certificates.crt";\n' > /etc/apt/apt.conf.d/99hoimin-ca \
+ && chmod 0755 /etc/ssl /etc/ssl/certs \
+ && sed -i 's|http://ports.ubuntu.com/ubuntu-ports/|http://snapshot.ubuntu.com/ubuntu/20261117T000000Z/|g; s|http://archive.ubuntu.com/ubuntu/|http://snapshot.ubuntu.com/ubuntu/20261117T000000Z/|g; s|http://security.ubuntu.com/ubuntu/|http://snapshot.ubuntu.com/ubuntu/20261117T000000Z/|g' /etc/apt/sources.list.d/ubuntu.sources \
  && apt-get -o APT::Update::Error-Mode=any -o Acquire::Retries=1 -o Acquire::http::Timeout=30 update \
  && apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=30 install -y --no-install-recommends \
       ca-certificates curl python3 opam build-essential autoconf pkg-config \
