@@ -148,14 +148,14 @@
       "args": [
         "--version"
       ],
-      "version": "timeout (GNU coreutils) 9.4"
+      "version": "timeout (uutils coreutils) 0.10.0"
     },
     "prlimit": {
       "path": "/usr/bin/prlimit",
       "args": [
         "--version"
       ],
-      "version": "prlimit from util-linux 2.39.3"
+      "version": "prlimit from util-linux 2.41.3"
     }
   },
   "project_config": "/opt/creusot/data/why3find.json",
