@@ -1,5 +1,5 @@
 # Build on native x86_64 for acceptance measurements. No image publication.
-ARG CREUSOT_BASE=ubuntu@sha256:a2d43bffc46670d7108bb3c0468c67c5557c4c92e83e1e34cbff1322ad1b94dc
+ARG CREUSOT_BASE=ubuntu@sha256:0d5255be560e2d2ddcfbfda88549e9e815ef29e7cd7fc62183d5709e6e2963c6
 FROM ${CREUSOT_BASE} AS prerequisites
 ENV DEBIAN_FRONTEND=noninteractive CARGO_BUILD_JOBS=2 OPAMJOBS=2 OPAMREQUIRECHECKSUMS=true \
     OPAMROOT=/opt/creusot/opam-root OPAMSWITCH=/opt/creusot/opam-switch \
