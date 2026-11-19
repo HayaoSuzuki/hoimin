@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1172-reduce-implementation-design
+  resource: ../../work/designs/2026-11-19-issue-1172-reduce-design.md
+  revision: 626da4b3f14b247cc9260ae8b6b1c9ead5fc6c7c
+  working_tree: clean
+  sha256: da972659de59df011691ab656cc9d2514d61d6a73e8ce9eb0e1b37c75462604e
 - id: effective-python-mutations-design
   resource: ../../work/designs/2026-10-25-effective-python-mutations-design.md
   revision: 8c3ebc2db9cd7212006ea76c5ca0f0ca077ca977
@@ -1892,3 +1897,12 @@ receiver types. Defaults: 72 operators; catalog: 91 IDs. Each remains independen
 excludable.[^effective-python-mutations-design]
 
 [^effective-python-mutations-design]: [Missing-value and shared-state mutation design](../../work/designs/2026-10-25-effective-python-mutations-design.md).
+
+
+## Reduce implementation
+
+| Original | Scope |
+| --- | --- |
+| [Issue #1172: reduce の実装設計](../../work/designs/2026-11-19-issue-1172-reduce-design.md) [^issue-1172-reduce-implementation-design] | Owned Python edits, evidence certification, bounded search and artifact publication |
+
+[^issue-1172-reduce-implementation-design]: [Reduce implementation design](../../work/designs/2026-11-19-issue-1172-reduce-design.md).
