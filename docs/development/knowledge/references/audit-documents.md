@@ -5,6 +5,38 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1172-readme
+  resource: ../../work/reports/issue-1172/README.md
+  working_tree: untracked
+  sha256: eae26641341e362ba0f9eac84bf1e2fd5f0421ca167b99151a39d2baacd1a965
+- id: issue-1172-adapter-contract
+  resource: ../../work/reports/issue-1172/adapter-contract.md
+  working_tree: untracked
+  sha256: 7eea4d5f4364ac63367933d0a484d62c5182ee7d2bb22d5ff7ad9737710cd318
+- id: issue-1172-clarifications
+  resource: ../../work/reports/issue-1172/clarifications.md
+  working_tree: untracked
+  sha256: 007e65a15ac6e1213fb716c77eecd7bdc220ce0d973993ddbf970828c0532a54
+- id: issue-1172-correspondence
+  resource: ../../work/reports/issue-1172/correspondence.md
+  working_tree: untracked
+  sha256: 7bc493123f5250c1ba9be0214cb41cbba0dc377e38defd65108f71d444f28351
+- id: issue-1172-counterexamples
+  resource: ../../work/reports/issue-1172/counterexamples.md
+  working_tree: untracked
+  sha256: 3ae0b76e6d9188a6c089a7ad68d14eab993b3aadc5870b399f8accdaad1145ba
+- id: issue-1172-design-review
+  resource: ../../work/reports/issue-1172/design-review.md
+  working_tree: untracked
+  sha256: c917032aaecefd407dc93ad3a322632124a67684397a50be725895d0ace21f6d
+- id: issue-1172-specification-current
+  resource: ../../work/reports/issue-1172/specification-current.md
+  working_tree: untracked
+  sha256: 57e92ce07ce8fec1e2a5ca362bb940aaa5c3302414935c1f2787e5fa20a52b8d
+- id: issue-1172-specification
+  resource: ../../work/reports/issue-1172/specification.md
+  working_tree: untracked
+  sha256: 94f1d12ee069e0f39cc6c6a8c42728968ab7dfa3a5711549ced219a07a8469e7
 - id: issue-1123-implementation
   resource: ../../work/reports/issue-1123/implementation.md
   revision: c933c1ff608e155846d32f8a5ce08f03f3e50c75
@@ -1731,3 +1763,26 @@ sources:
 [^issue-1123-review]: [Review record](../../work/reports/issue-1123/self-review.md).
 [^issue-1123-base-order]: [Base-order follow-up](../../work/reports/issue-1123/base-order.md).
 [^issue-1123-implementation]: [Base-order implementation](../../work/reports/issue-1123/implementation.md).
+
+
+## Issue 1172 reduce specification and formal oracle
+
+| Document | Scope |
+| --- | --- |
+| [1172 reduce 仕様の Lean 監査と実装前オラクル](../../work/reports/issue-1172/README.md) [^issue-1172-readme] | Specification, audit evidence or implementation handoff |
+| [Pre-implementation oracle consumer contract](../../work/reports/issue-1172/adapter-contract.md) [^issue-1172-adapter-contract] | Specification, audit evidence or implementation handoff |
+| [1172 の確定した境界条件](../../work/reports/issue-1172/clarifications.md) [^issue-1172-clarifications] | Specification, audit evidence or implementation handoff |
+| [Correspondence worksheet — before model construction](../../work/reports/issue-1172/correspondence.md) [^issue-1172-correspondence] | Specification, audit evidence or implementation handoff |
+| [1172 の反例と境界条件](../../work/reports/issue-1172/counterexamples.md) [^issue-1172-counterexamples] | Specification, audit evidence or implementation handoff |
+| [reduce 仕様の複雑性評価](../../work/reports/issue-1172/design-review.md) [^issue-1172-design-review] | Specification, audit evidence or implementation handoff |
+| [状態](../../work/reports/issue-1172/specification-current.md) [^issue-1172-specification-current] | Specification, audit evidence or implementation handoff |
+| [状態](../../work/reports/issue-1172/specification.md) [^issue-1172-specification] | Specification, audit evidence or implementation handoff |
+
+[^issue-1172-readme]: [issue-1172-readme](../../work/reports/issue-1172/README.md).
+[^issue-1172-adapter-contract]: [issue-1172-adapter-contract](../../work/reports/issue-1172/adapter-contract.md).
+[^issue-1172-clarifications]: [issue-1172-clarifications](../../work/reports/issue-1172/clarifications.md).
+[^issue-1172-correspondence]: [issue-1172-correspondence](../../work/reports/issue-1172/correspondence.md).
+[^issue-1172-counterexamples]: [issue-1172-counterexamples](../../work/reports/issue-1172/counterexamples.md).
+[^issue-1172-design-review]: [issue-1172-design-review](../../work/reports/issue-1172/design-review.md).
+[^issue-1172-specification-current]: [issue-1172-specification-current](../../work/reports/issue-1172/specification-current.md).
+[^issue-1172-specification]: [issue-1172-specification](../../work/reports/issue-1172/specification.md).

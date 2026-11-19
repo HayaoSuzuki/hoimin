@@ -8,6 +8,8 @@ and an actual host execution are different evidence; see the
 
 Read the relevant summary and follow its original sources:
 
+- [Reduce specification and oracle](reduce-spec.md) - Accepted boundaries, Lean-only proofs, generated expectations and design ownership before implementation.
+
 - [Design and resource audit after PR 1093](design-2026-10-23-post1093.md) - Fixed JSON buffer and Tokio follow-up, new type/state/performance candidates declined, session companion defect; audit included with #1094 implementation.
 - [Design and resource audit after PR 1090](design-2026-10-23-post1090.md) - JSON record buffer/write tradeoff, retained type/state boundaries and unresolved companion admission; audit included with #1092 implementation.
 - [Design and resource audit after PR 1088](design-2026-10-22-post1088.md) - Session companion hardlinks and transient descriptor copies; audit included with #1089 implementation.

@@ -350,6 +350,10 @@ jobs:
           }
 
           modules=(
+            HoiminOracle.ReduceSpecModel
+            HoiminOracle.ReduceSpecProofs
+            HoiminOracle.ReduceSpecCases
+            ReduceSpecAuditMain
             HoiminOracle.SurvivorReviewModel
             HoiminOracle.SurvivorReviewProofs
             HoiminOracle.SurvivorReviewCases
@@ -548,6 +552,7 @@ jobs:
             lake env lean -j1 -DElab.async=false DefaultOperatorSelection.lean
 
           generators=(
+            'generate_reduce_spec|corpus/reduce-spec.jsonl|sensitivity'
             'generate|corpus/state-machine.jsonl|check-only'
             'generate_budget|corpus/budget-cleanup.jsonl|check-only'
             'generate_resume_budget|corpus/resume-budget.jsonl|sensitivity'

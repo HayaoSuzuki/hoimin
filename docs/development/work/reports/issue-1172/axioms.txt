@@ -1,0 +1,22 @@
+'HoiminOracle.ReduceSpec.pairPass_strict' depends on axioms: [propext, Classical.choice, Quot.sound]
+'HoiminOracle.ReduceSpec.certified_protected' depends on axioms: [propext]
+'HoiminOracle.ReduceSpec.certified_exact' does not depend on any axioms
+'HoiminOracle.ReduceSpec.certified_identity' does not depend on any axioms
+'HoiminOracle.ReduceSpec.certified_three_pairs' does not depend on any axioms
+'HoiminOracle.ReduceSpec.chooseBest_safe' depends on axioms: [propext]
+'HoiminOracle.ReduceSpec.chooseBest_idempotent' depends on axioms: [propext]
+'HoiminOracle.ReduceSpec.step_preserves' depends on axioms: [propext, Quot.sound]
+'HoiminOracle.ReduceSpec.run_preserves' depends on axioms: [propext, Quot.sound]
+'HoiminOracle.ReduceSpec.all_trace_artifact_safety' depends on axioms: [propext, Quot.sound]
+'HoiminOracle.ReduceSpec.stopped_absorbing' depends on axioms: [propext]
+'HoiminOracle.ReduceSpec.deadline_no_publish' depends on axioms: [propext]
+'HoiminOracle.ReduceSpec.chooseBest_minimum' depends on axioms: [propext, Quot.sound]
+'HoiminOracle.ReduceSpec.finalPass_strict' depends on axioms: [propext, Classical.choice, Quot.sound]
+'HoiminOracle.ReduceSpec.empty_span_no_overlap' depends on axioms: [propext]
+'HoiminOracle.ReduceSpec.overlap_symmetric' depends on axioms: [propext]
+'HoiminOracle.ReduceSpec.exactResults_lookup' depends on axioms: [propext, Quot.sound]
+'HoiminOracle.ReduceSpec.certified_frozen_timeout' depends on axioms: [propext]
+'HoiminOracle.ReduceSpec.certified_original_kill' depends on axioms: [propext]
+'HoiminOracle.ReduceSpec.kept_interval_not_removed' depends on axioms: [propext, Quot.sound]
+'HoiminOracle.ReduceSpec.invalid_config_no_publish' depends on axioms: [propext]
+'HoiminOracle.ReduceSpec.measurement_error_stops' depends on axioms: [propext, Quot.sound]
