@@ -49,3 +49,5 @@
 - Supplement verification: 22 theorems, 952 rows, seven-event depth 3 (400 traces / 1134 transitions), 14 detected broken variants; red-to-green clarification examples. Product reduce remains out of scope.
 
 - Independent read-only review of a252d68c: no Critical/Important findings; independently counted the corpus, traces and hashes. Minor: half-completed timing pairs are not represented by pairCount. Added the consumer obligation to stop immediately on failure of either observed half, without expanding the model into runner scheduling.
+
+- CI follow-up: run 44463579893 / job 135356646224 failed because test_ci_workflow.py omitted the new generator from its independent inventory. Reproduced the failure; added generate_reduce_spec and aligned the workflow check order with lakefile registration. No xfail: this is a registration-contract defect, not missing product implementation. Full workflow test module: 215 passed in 10.11s.
