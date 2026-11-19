@@ -35,9 +35,10 @@ pub use copy::WorkspacePlan;
 #[cfg(test)]
 pub(crate) use copy::{MaterializationPause, MaterializationPauseController};
 #[cfg(test)]
-pub(crate) use disk::{DiskMeasurement, MeterReading};
+pub(crate) use disk::DiskMeasurement;
 pub(crate) use disk::{
-    DiskMonitor, FilesystemKey, available_for_managed_roots, measure_managed_roots,
+    DiskMeter, DiskMonitor, FilesystemKey, MeterReading, RootCapability, SystemAvailableSpace,
+    available_for_managed_roots, measure_managed_roots,
 };
 pub(crate) use manifest::selected_copy_membership;
 pub use manifest::{ManifestEntry, WorkspaceManifest};

@@ -79,6 +79,8 @@ mod depth;
 mod fact_index;
 #[path = "rust/finally_work.rs"]
 mod finally_work;
+#[path = "rust/reduce.rs"]
+pub mod reduce;
 use finally_work::FinallyTransfer;
 #[path = "rust/lazy_imports.rs"]
 mod lazy_imports;

@@ -600,6 +600,7 @@ dependencies = [
  "blake3",
  "camino",
  "hoimin-budget-math",
+ "num-bigint",
  "proptest",
  "rstest",
  "serde",

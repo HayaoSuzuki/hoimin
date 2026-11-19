@@ -334,6 +334,7 @@ dependencies = [
  "blake3",
  "camino",
  "hoimin-budget-math",
+ "num-bigint",
  "serde",
  "serde_json",
  "thiserror",

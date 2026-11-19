@@ -47,6 +47,7 @@ def recorded_campaign(
         "report_sequence",
         "target_resolution",
         "sampling",
+        "python_reduce",
     ],
 )
 def test_campaign_dispatches_bounded_fuzz_commands_with_existing_output_corpus(
@@ -323,6 +324,7 @@ def test_campaign_reports_all_targets(
         "report_sequence",
         "target_resolution",
         "sampling",
+        "python_reduce",
     ]
     assert {
         "generate-grammar-314",
@@ -545,6 +547,7 @@ def test_campaign_generates_with_both_interpreters_before_one_fuzz_run(
         "report_sequence",
         "target_resolution",
         "sampling",
+        "python_reduce",
     ]
 
 

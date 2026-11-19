@@ -20,6 +20,7 @@ pub mod plan;
 mod portable_path;
 pub mod process;
 pub mod progress;
+pub mod reduce;
 pub mod report;
 pub mod resource;
 pub mod review;
@@ -87,6 +88,10 @@ where
             progress::run(args, &mut stdout, &mut stderr).map(|()| 0),
             &mut stderr,
         ),
+        Ok(cli::ParsedCommand::Reduce(args)) => {
+            let result = reduce::run(args).await;
+            command_result(result, &mut stderr)
+        }
         Ok(cli::ParsedCommand::Review(args)) => {
             command_result(review::run(&args, &mut stdout), &mut stderr)
         }
