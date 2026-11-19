@@ -237,3 +237,7 @@ root = "ExceptionHierarchyAuditMain"
 [[lean_exe]]
 name = "generate_sampling"
 root = "SamplingAuditMain"
+
+[[lean_exe]]
+name = "generate_reduce_spec"
+root = "ReduceSpecAuditMain"

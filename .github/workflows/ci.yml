@@ -350,6 +350,10 @@ jobs:
           }
 
           modules=(
+            HoiminOracle.ReduceSpecModel
+            HoiminOracle.ReduceSpecProofs
+            HoiminOracle.ReduceSpecCases
+            ReduceSpecAuditMain
             HoiminOracle.SurvivorReviewModel
             HoiminOracle.SurvivorReviewProofs
             HoiminOracle.SurvivorReviewCases
@@ -607,6 +611,7 @@ jobs:
             'generate_resume_diagnostic|corpus/resume-diagnostic.jsonl|sensitivity'
             'generate_exception_hierarchy|corpus/exception-hierarchy.jsonl|sensitivity'
             'generate_sampling|corpus/sampling.jsonl|sensitivity'
+            'generate_reduce_spec|corpus/reduce-spec.jsonl|sensitivity'
           )
           for entry in "${generators[@]}"; do
             IFS='|' read -r executable corpus sensitivity <<< "$entry"

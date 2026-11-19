@@ -1,0 +1,206 @@
+{
+  "initial_audit_runs": [
+    {
+      "name": "depth1",
+      "elapsed_ms": 5746,
+      "exit_code": 0,
+      "peak_rss_kib": 759008,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    {
+      "name": "depth2",
+      "elapsed_ms": 493,
+      "exit_code": 0,
+      "peak_rss_kib": 57008,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    {
+      "name": "depth3",
+      "elapsed_ms": 500,
+      "exit_code": 0,
+      "peak_rss_kib": 57840,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    {
+      "name": "final-generate",
+      "elapsed_ms": 5673,
+      "exit_code": 0,
+      "peak_rss_kib": 779936,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    {
+      "name": "freshness",
+      "elapsed_ms": 489,
+      "exit_code": 0,
+      "peak_rss_kib": 60464,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    {
+      "name": "sensitivity",
+      "elapsed_ms": 253,
+      "exit_code": 0,
+      "peak_rss_kib": 56944,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    {
+      "name": "stats",
+      "elapsed_ms": 258,
+      "exit_code": 0,
+      "peak_rss_kib": 56592,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    {
+      "name": "library",
+      "elapsed_ms": 1713,
+      "exit_code": 125,
+      "peak_rss_kib": 3097536,
+      "reason": "rss_limit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    {
+      "name": "axioms",
+      "elapsed_ms": 2570,
+      "exit_code": 0,
+      "peak_rss_kib": 628048,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    {
+      "name": "corrupt-check",
+      "elapsed_ms": 255,
+      "exit_code": 1,
+      "peak_rss_kib": 56656,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    }
+  ],
+  "clarification_runs": [
+    {
+      "name": "red",
+      "elapsed_ms": 2750,
+      "exit_code": 1,
+      "peak_rss_kib": 658144,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    {
+      "name": "depth1",
+      "elapsed_ms": 6326,
+      "exit_code": 0,
+      "peak_rss_kib": 776096,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    {
+      "name": "depth2",
+      "elapsed_ms": 499,
+      "exit_code": 0,
+      "peak_rss_kib": 57216,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    {
+      "name": "depth3",
+      "elapsed_ms": 493,
+      "exit_code": 0,
+      "peak_rss_kib": 57824,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    {
+      "name": "generate",
+      "elapsed_ms": 498,
+      "exit_code": 0,
+      "peak_rss_kib": 57600,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    {
+      "name": "freshness",
+      "elapsed_ms": 257,
+      "exit_code": 0,
+      "peak_rss_kib": 57376,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    {
+      "name": "sensitivity",
+      "elapsed_ms": 259,
+      "exit_code": 0,
+      "peak_rss_kib": 57520,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    {
+      "name": "green",
+      "elapsed_ms": 2453,
+      "exit_code": 0,
+      "peak_rss_kib": 640832,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    {
+      "name": "final-check",
+      "elapsed_ms": 5375,
+      "exit_code": 0,
+      "peak_rss_kib": 763776,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    {
+      "name": "axioms",
+      "elapsed_ms": 2989,
+      "exit_code": 0,
+      "peak_rss_kib": 652256,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    }
+  ]
+}

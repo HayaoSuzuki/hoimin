@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "issue": 1172,
+  "lean_toolchain": "leanprover/lean4:v4.32.2",
+  "spec_sha256": "94f1d12ee069e0f39cc6c6a8c42728968ab7dfa3a5711549ced219a07a8469e7",
+  "corpus_sha256": "eab36d82024719cd69f59715f1335badf71ba9c1efe93011df93e35bbc060c6f",
+  "corpus_rows": 952,
+  "named_theorems": 22,
+  "trace_depth": 3,
+  "event_alphabet": 7,
+  "traces": 400,
+  "transitions": 1134,
+  "broken_variants_detected": 14,
+  "modes": {
+    "model-only": 952,
+    "strict": 0,
+    "internal-fixture": 0
+  },
+  "production_correspondence": "not implemented",
+  "whole_library_build": "infrastructure-error: rss_limit",
+  "current_spec_sha256": "57e92ce07ce8fec1e2a5ca362bb940aaa5c3302414935c1f2787e5fa20a52b8d",
+  "clarifications": "accepted"
+}
