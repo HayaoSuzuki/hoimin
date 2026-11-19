@@ -14,11 +14,12 @@ default = []
 contracts = []
 
 [dependencies]
+num-bigint = ">=0.5.0, <1"
 hoimin-budget-math = { path = "../hoimin-budget-math", features = ["serde"] }
 blake3 = "1.8"
 camino = { version = "1.1", features = ["serde1"] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0", features = ["raw_value"] }
+serde_json = { version = "1.0", features = ["raw_value", "arbitrary_precision"] }
 thiserror = "2.0"
 
 [dev-dependencies]

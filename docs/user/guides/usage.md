@@ -2014,3 +2014,53 @@ expose the same losslessness requirement; count that as one requirement.
 All four share candidate limits, payload admission, selection, profiles and
 cancellation. They add no dependency or saved-format compatibility path.
 See the [implementation and evidence](../../development/work/reports/issues-1125-1131/four-implementation.md).
+
+## Explore test reductions
+
+`reduce` searches for whole Python function or method definitions that can be
+removed while preserving the complete killed/survived outcomes of explicitly
+selected saved-plan mutants. It measures the ordinary test command from the plan;
+it accepts arbitrary commands, including commands other than pytest.
+
+```console
+hoimin reduce /tmp/plan.json \
+  --candidate m1_ID_FROM_PLAN \
+  --test 'tests/test_subject.py:TestSubject.test_*' \
+  --keep 'tests/test_subject.py:TestSubject.test_regression' \
+  --total-timeout 5m --min-reduction 5 --output /tmp/reduction
+```
+
+Use exact root-relative file paths and qualified definition names. `*` matches
+any sequence of characters and `?` matches one character in a name. Repeat
+`--test`, `--keep`, or `--candidate` to select more inputs. Ambiguous redefinitions
+are rejected. Keep takes precedence, including a kept nested definition inside
+an otherwise removable function. A parametrized function is one removal unit.
+Mutation scope and execution settings come from the saved plan; reduction files
+must not overlap its mutation sources or explicit fingerprint inputs.
+
+The time budget includes original-suite evaluation, grouped/split search,
+repeated measurements, and final confirmation. Candidate ranking uses the median
+of three ordinary executions. Confirmation alternates original and reduced suites
+for three pairs; every pair must meet the threshold. The default reduction is
+5%; a decimal percentage with up to six fractional digits must be strictly
+between 0 and 100. An automatic mutant timeout is fixed from the first original
+execution and reused throughout the search.
+
+The output must be a new directory outside the project. `report.json` records
+selection, timing, per-mutant outcomes, identities, and the stop reason.
+`execution-N.bin` retains bounded combined child output. `proposal.diff` exists
+only for a fully confirmed proposal. Original files are never edited. The diff
+reproduces the verified bytes, including supported source encoding and line
+endings. Exit 0 means a completed search, including a search with no confirmed
+reduction; 2 indicates invalid input or an unusable original suite, 3 an
+infrastructure failure, 4 an incomplete run due to time/resources, and 130 a
+cancellation. Earlier confirmed evidence can survive a later stop. Reserving the
+remaining time for confirmation can also end an incomplete search before the
+absolute deadline.
+
+Review the retained output: ordinary nonzero mutant exits cannot generally
+distinguish assertion failures from import or collection errors. Preserved mutant
+outcomes do not establish that a test is unnecessary or that future fault
+detection will be preserved. A person or external agent must review the meaning
+of the tests and decide whether to apply the diff. Search is local and bounded;
+it does not guarantee a globally optimal suite.

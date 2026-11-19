@@ -18,6 +18,7 @@ pub mod effect;
 pub mod event;
 pub mod machine;
 pub mod model;
+pub mod reduce;
 mod relative_path;
 pub mod report;
 pub mod resume;

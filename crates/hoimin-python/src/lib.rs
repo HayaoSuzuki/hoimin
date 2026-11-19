@@ -21,3 +21,5 @@ pub use types::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 #[cfg(test)]
 #[path = "analyzer/payload_tests.rs"]
 mod payload_tests;
+
+pub use rust::reduce;

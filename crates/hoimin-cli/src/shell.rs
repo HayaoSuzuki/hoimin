@@ -2374,14 +2374,16 @@ fn recheck_fingerprint_inputs(
 }
 
 #[cfg(windows)]
-fn resource_backend(
+pub(crate) fn resource_backend(
     _config: &RunConfig,
 ) -> Result<ResourceBackend, crate::resource::ResourceError> {
     crate::resource::WindowsBackend::new().map(ResourceBackend::Windows)
 }
 
 #[cfg(target_os = "linux")]
-fn resource_backend(config: &RunConfig) -> Result<ResourceBackend, crate::resource::ResourceError> {
+pub(crate) fn resource_backend(
+    config: &RunConfig,
+) -> Result<ResourceBackend, crate::resource::ResourceError> {
     crate::resource::select_linux_backend(
         crate::resource::probe_linux_cgroup(&config.limits),
         config.allow_best_effort_memory,
@@ -2389,7 +2391,9 @@ fn resource_backend(config: &RunConfig) -> Result<ResourceBackend, crate::resour
 }
 
 #[cfg(not(any(windows, target_os = "linux")))]
-fn resource_backend(config: &RunConfig) -> Result<ResourceBackend, crate::resource::ResourceError> {
+pub(crate) fn resource_backend(
+    config: &RunConfig,
+) -> Result<ResourceBackend, crate::resource::ResourceError> {
     PortableBackend::new(config.allow_best_effort_memory).map(ResourceBackend::Portable)
 }
 
@@ -2645,6 +2649,16 @@ fn set_worker_metadata<C: WorkspaceProcessContext>(
     environment: &mut crate::workspace::CommandEnvironment,
     context: &C,
 ) {
+    set_execution_metadata(environment, context.run_id(), context.mutant_id());
+}
+
+/// Applies the shared workspace identity policy, removing inherited case aliases.
+/// The session owns the run ID and supplies a mutant ID only for mutant runs.
+pub(crate) fn set_execution_metadata(
+    environment: &mut crate::workspace::CommandEnvironment,
+    run_id: &str,
+    mutant_id: Option<&str>,
+) {
     for name in ["HOIMIN_WORKER_ROOT", "HOIMIN_RUN_ID", "HOIMIN_MUTANT_ID"] {
         remove_environment_key(&mut environment.env, name);
     }
@@ -2654,9 +2668,9 @@ fn set_worker_metadata<C: WorkspaceProcessContext>(
     );
     environment.env.insert(
         std::ffi::OsString::from("HOIMIN_RUN_ID"),
-        std::ffi::OsString::from(context.run_id()),
+        std::ffi::OsString::from(run_id),
     );
-    if let Some(mutant_id) = context.mutant_id() {
+    if let Some(mutant_id) = mutant_id {
         environment.env.insert(
             std::ffi::OsString::from("HOIMIN_MUTANT_ID"),
             std::ffi::OsString::from(mutant_id),

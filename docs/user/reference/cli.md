@@ -25,6 +25,7 @@ Commands:
   verify    Execute one or more candidates using settings from a previously generated plan
   progress  Compare chronologically ordered mutation run reports
   review    Record and inspect human assessments independently of test outcomes
+  reduce    Search and validate whole-definition test reductions without applying them
   help      Print this message or the help of the given subcommand(s)
 
 Options:
@@ -472,6 +473,78 @@ Usage: hoimin review help record
 Print this message or the help of the given subcommand(s)
 
 Usage: hoimin review help help
+```
+
+## hoimin reduce
+
+```text
+Search and validate whole-definition test reductions without applying them
+
+Usage: hoimin reduce [OPTIONS] --candidate <CANDIDATE> --test <TEST> --total-timeout <TOTAL_TIMEOUT> --output <OUTPUT> <PLAN>
+
+Arguments:
+  <PLAN>
+
+
+Options:
+      --candidate <CANDIDATE>
+
+
+      --test <TEST>
+          Select root-relative `PATH:QUALNAME_GLOB`; repeat for additional definitions
+
+      --keep <KEEP>
+          Keep definitions using the same `PATH:QUALNAME_GLOB` syntax; keep wins
+
+      --total-timeout <TOTAL_TIMEOUT>
+          Absolute search budget, including original evaluation and final confirmation
+
+      --min-reduction <MIN_REDUCTION>
+          [default: 5]
+
+      --output <OUTPUT>
+          New artifact directory outside the project
+
+  -h, --help
+          Print help
+```
+
+Argument constraints:
+
+```text
+plan
+  required: true
+  arity: 1
+  repeatable: false
+--candidate
+  required: true
+  arity: 1
+  repeatable: true
+--test
+  required: true
+  arity: 1
+  repeatable: true
+--keep
+  required: false
+  arity: 1
+  repeatable: true
+--total-timeout
+  required: true
+  arity: 1
+  repeatable: false
+--min-reduction
+  required: false
+  arity: 1
+  repeatable: false
+  default: 5
+--output
+  required: true
+  arity: 1
+  repeatable: false
+--help
+  required: false
+  arity: 0
+  repeatable: false
 ```
 
 ## hoimin run
@@ -1163,6 +1236,7 @@ Commands:
   verify    Execute one or more candidates using settings from a previously generated plan
   progress  Compare chronologically ordered mutation run reports
   review    Record and inspect human assessments independently of test outcomes
+  reduce    Search and validate whole-definition test reductions without applying them
   run       Run mutation tests for an explicitly selected target
   plan      Discover mutation candidates without executing tests
   help      Print this message or the help of the given subcommand(s)
@@ -1219,6 +1293,14 @@ Usage: hoimin help review show
 Append a human assessment using an expected revision
 
 Usage: hoimin help review record
+```
+
+## hoimin help reduce
+
+```text
+Search and validate whole-definition test reductions without applying them
+
+Usage: hoimin help reduce
 ```
 
 ## hoimin help run

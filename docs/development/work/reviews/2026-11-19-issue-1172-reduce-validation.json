@@ -1,0 +1,166 @@
+{
+  "schema": 1,
+  "base_commit": "435f7fe79628fbf0bcb36bfba0548a548ad519ae",
+  "branch": "feat/issue-1172-reduce",
+  "platform": "macOS aarch64",
+  "oracle_mode": "internal-fixture",
+  "oracle_rows": 952,
+  "public_strict_claim": false,
+  "note": "Full workspace passed before final feature-only refinements and metadata extraction; final affected code was revalidated with targeted suites and all-target clippy. Log paths are temporary; digests and summaries persist here.",
+  "checks": [
+    {
+      "name": "workspace",
+      "command": "CARGO_ENCODED_RUSTFLAGS='' CARGO_BUILD_JOBS=2 cargo test --workspace",
+      "log_path": "/tmp/1172-workspace-final.log",
+      "log_sha256": "c55c0288c98248a2044ca9ef37909d6a6996b7e1ce73303760c150e3d5808240",
+      "status": "passed",
+      "rust_summary": {
+        "suites": 216,
+        "passed": 17358,
+        "failed": 0,
+        "ignored": 62
+      }
+    },
+    {
+      "name": "python",
+      "command": "CARGO_ENCODED_RUSTFLAGS='' .venv/bin/python -m pytest -q",
+      "log_path": "/tmp/1172-pytest-final.log",
+      "log_sha256": "4cf6a6274bbdf29838b4042fc9d5a862d6b8114e665bf8e4fa5ff64b2706e6d1",
+      "status": "passed"
+    },
+    {
+      "name": "policy_and_oracle",
+      "command": "CARGO_ENCODED_RUSTFLAGS='' cargo test -p hoimin-core --test reduce_policy --test lean_reduce_spec_oracle",
+      "log_path": "/tmp/1172-policy-final.log",
+      "log_sha256": "e4001a44ebcd42fcc6257845a442a926ef42f1906fa5a661b25c174e8f6ff737",
+      "status": "passed",
+      "rust_summary": {
+        "suites": 2,
+        "passed": 963,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "name": "definition_edit",
+      "command": "CARGO_ENCODED_RUSTFLAGS='' cargo test -p hoimin-python --test reduce",
+      "log_path": "/tmp/1172-edit-final2.log",
+      "log_sha256": "d179c210747651c3e4bbe450719e0b62a674c8694425216972316eacd91053d2",
+      "status": "passed",
+      "rust_summary": {
+        "suites": 1,
+        "passed": 16,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "name": "reduce_cli",
+      "command": "CARGO_ENCODED_RUSTFLAGS='' cargo test -p hoimin-cli --test reduce",
+      "log_path": "/tmp/1172-cli-complete.log",
+      "log_sha256": "0824f61e1c3925a6a9946207da2de38a44e71be642fbeaea31a922d6107ea250",
+      "status": "passed",
+      "rust_summary": {
+        "suites": 1,
+        "passed": 18,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "name": "artifacts_and_diff",
+      "command": "CARGO_ENCODED_RUSTFLAGS='' cargo test -p hoimin-cli --lib reduce::",
+      "log_path": "/tmp/1172-reduce-unit-final.log",
+      "log_sha256": "8627a7fcff5117cf637b46d5c6e761ec6b6d6a54f6f3a0704818db2339b17db9",
+      "status": "passed",
+      "rust_summary": {
+        "suites": 1,
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "name": "existing_metadata",
+      "command": "CARGO_ENCODED_RUSTFLAGS='' cargo test -p hoimin-cli --lib metadata",
+      "log_path": "/tmp/1172-metadata-existing-final.log",
+      "log_sha256": "697f7fbe563beb33837867fc56e203205e7c5bc5cbe841dace166ef9dcb3e6f8",
+      "status": "passed",
+      "rust_summary": {
+        "suites": 1,
+        "passed": 48,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "name": "clippy",
+      "command": "CARGO_ENCODED_RUSTFLAGS='' cargo clippy --workspace --all-targets --all-features",
+      "log_path": "/tmp/1172-clippy-complete.log",
+      "log_sha256": "ef074a8f5f82b666cc08cc75a961fa6fda7f47b6495eca06ade000f6f39ff8be",
+      "status": "passed"
+    },
+    {
+      "name": "reference",
+      "command": "CARGO_ENCODED_RUSTFLAGS='' cargo run --locked -p hoimin-cli --example generate_cli_reference -- --check",
+      "log_path": "/tmp/1172-reference-complete.log",
+      "log_sha256": "b667525351fa4e2aaf56214a97c5a06c457c1722844ed68368fe55a4445d90f6",
+      "status": "passed"
+    },
+    {
+      "name": "reference_tests",
+      "command": "CARGO_ENCODED_RUSTFLAGS='' cargo test --locked -p hoimin-cli --example generate_cli_reference",
+      "log_path": "/tmp/1172-cli-reference-tests.log",
+      "log_sha256": "8727351755f9529c7153c1f55a24812e53a7c09e07167bb29769662b391ad0ae",
+      "status": "passed",
+      "rust_summary": {
+        "suites": 1,
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "name": "fuzz",
+      "command": "RUSTFLAGS='' cargo +nightly-2026-10-08 fuzz run python_reduce fuzz/corpus/python_reduce fuzz/seeds/python_reduce -- -max_total_time=10 -rss_limit_mb=1024 -timeout=2 -max_len=4096",
+      "log_path": "/tmp/1172-fuzz-final.log",
+      "log_sha256": "6a665a173d4ce1bc94bbc134df70b57fd86430ada77ca916a83a75ba08784549",
+      "status": "passed"
+    }
+  ],
+  "lean": {
+    "build": {
+      "elapsed_ms": 379,
+      "exit_code": 0,
+      "peak_rss_kib": 54768,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "freshness": {
+      "elapsed_ms": 705,
+      "exit_code": 0,
+      "peak_rss_kib": 57616,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "sensitivity": {
+      "elapsed_ms": 370,
+      "exit_code": 0,
+      "peak_rss_kib": 85568,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    }
+  },
+  "reviews": {
+    "design": 5,
+    "implementation_plan": 5,
+    "implementation": 6,
+    "tests": 6
+  }
+}

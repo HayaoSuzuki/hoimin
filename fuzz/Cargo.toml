@@ -71,3 +71,10 @@ path = "fuzz_targets/sampling.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "python_reduce"
+path = "fuzz_targets/python_reduce.rs"
+test = false
+doc = false
+bench = false

@@ -38,6 +38,8 @@ enum Command {
     Progress(RawProgressArgs),
     /// Record and inspect human assessments independently of test outcomes.
     Review(ReviewCommand),
+    /// Search and validate whole-definition test reductions without applying them.
+    Reduce(crate::reduce::ReduceArgs),
 }
 
 #[derive(Debug, Args)]
@@ -441,6 +443,7 @@ pub enum ParsedCommand {
     Verify(VerifyArgs),
     Progress(ProgressArgs),
     Review(ReviewArgs),
+    Reduce(crate::reduce::ReduceArgs),
 }
 
 #[derive(Debug)]
@@ -570,6 +573,7 @@ impl TryFrom<Command> for ParsedCommand {
                 patience: raw.patience,
             })),
             Command::Review(args) => Ok(Self::Review(args.command)),
+            Command::Reduce(args) => Ok(Self::Reduce(args)),
         }
     }
 }

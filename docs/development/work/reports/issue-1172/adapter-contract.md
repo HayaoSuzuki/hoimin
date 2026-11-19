@@ -1,5 +1,7 @@
 # Pre-implementation oracle consumer contract
 
+> Implementation follow-up: the Rust consumer at `crates/hoimin-core/tests/lean_reduce_spec_oracle.rs` now compares all 952 rows with the production policy as **internal-fixture** cases, including every intermediate trace state. The generated producer metadata remains unchanged; no row is promoted to public strict runner correspondence. See [implementation validation](../../reviews/2026-11-19-issue-1172-reduce.md). The original pre-implementation notes below are historical.
+
 ## Artifacts and modes
 
 The sole producer of expected values is `formal/HoiminOracle/ReduceSpecAuditMain.lean`. It generates `formal/HoiminOracle/corpus/reduce-spec.jsonl` with schema `1`. Do not hand-edit the corpus or reproduce its expected predicates in a consumer.
