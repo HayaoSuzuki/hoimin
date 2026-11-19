@@ -40,6 +40,8 @@ The decision corpus does not prove parsing or physical deletion. Before implemen
 
 Observed zero durations are measurement errors that stop exploration; absent final slots are not observations. The model checks only the declared number of final pairs. Invalid percentage settings are rejected at preflight. No automatic retry or extra control parameter is introduced.
 
+`pairCount` counts completed original/reduced pairs, not individual command executions. A half-completed pair is outside the proposal representation: if either observed half has zero duration or another measurement failure, the adapter must immediately emit a `stop` event even if its partner has not run. It must not hide that observation by keeping `pairCount` unchanged and treating the half as unobserved. Successful halves can wait for their partner, but cannot certify a proposal on their own.
+
 Global budget is an absolute monotonic deadline spanning original evaluation, exploration, repetitions and final confirmation. The model only establishes decision precedence at that boundary. Child termination, cleanup and artifact publication need the repository's resource contracts and implementation tests; Lean's logical clock is not an OS deadline guarantee.
 
 Optimization expectations refer to the best *certified observed exploration median*, with stable old-wins ties. They do not prove the fastest real-world suite, statistical confidence, future fault detection or search completeness. Search must still explore grouped removals; cost is not assumed additive.

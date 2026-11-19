@@ -12,7 +12,7 @@ sources:
 - id: issue-1172-adapter-contract
   resource: ../../work/reports/issue-1172/adapter-contract.md
   working_tree: untracked
-  sha256: 7eea4d5f4364ac63367933d0a484d62c5182ee7d2bb22d5ff7ad9737710cd318
+  sha256: 602fc44a9c639844f4f4b2b7403de3f7c74a4ab84a39af41cc9f23aa3d01f858
 - id: issue-1172-clarifications
   resource: ../../work/reports/issue-1172/clarifications.md
   working_tree: untracked
