@@ -67,7 +67,7 @@ fn native_mutation_config(
     }
 }
 
-const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 85] = [
+const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 90] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -153,6 +153,11 @@ const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 85] = [
     "base_order_shuffle",
     "override_method_delete",
     "super_call_move",
+    "finally_unwrap",
+    "match_case_delete",
+    "match_guard_constant",
+    "match_or_alternative_delete",
+    "statement_order_swap",
 ];
 
 #[rstest::rstest]
@@ -230,8 +235,8 @@ fn usage_documents_all_mutation_operator_ids_and_selector_families_1(#[case] nam
 }
 
 #[rstest::rstest]
-#[case::input_85_default_runtime_operators_1("85 default runtime operators")]
-#[case::input_104_operator_ids_2("104 operator IDs")]
+#[case::input_90_default_runtime_operators_1("90 default runtime operators")]
+#[case::input_109_operator_ids_2("109 operator IDs")]
 #[case::collection_ops_3("collection_ops")]
 #[case::structure_ops_4("structure_ops")]
 #[case::bitwise_ops_5("bitwise_ops")]

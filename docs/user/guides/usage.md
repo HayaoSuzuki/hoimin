@@ -670,10 +670,10 @@ the detailed capability and cleanup model.
 
 ## Mutation operators
 
-Without `--operators`, a run selects 85 default runtime operators. `--operators`
+Without `--operators`, a run selects 90 default runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
-individual IDs or selector families. Hoimin exposes 104 operator IDs in total:
-85 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
+individual IDs or selector families. Hoimin exposes 109 operator IDs in total:
+90 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
 `exception_hierarchy`, and six opt-in analyzers: `condition_constant`,
 `function_body_erase`, `enum_member_replace`, `condition_clause_delete`,
 `container_element_delete`, and `optional_keyword_delete`.
@@ -704,6 +704,9 @@ Defaults also include `dataclass_factory_share`, `sort_key_swap`,
 `override_method_delete` and `super_call_move`. Each can be selected or
 excluded individually, without expanding any existing selector family.
 
+To disable a control-flow mutation, pass its ID to `--exclude-operators`, for example
+`--exclude-operators finally_unwrap,statement_order_swap`.
+
 New default runs can generate more candidates and take longer. With a candidate
 cap, the retained prefix can also change. Explicit `--operators` selections and
 saved plans keep their operator sets; saved plans are not expanded on reload.
@@ -718,6 +721,9 @@ binding analysis. Their existing applicability guards are unchanged.
 | Continuation, comparison and causes | `continue_remove`, `comparison_not_implemented`, `exception_cause_remove` | Same-iteration continuation, reflected comparison and explicit diagnostic causes; enabled by default |
 | Existing expression/control flow | `compare_eq_ne`, `compare_order`, `membership`, `identity`, `boolean_and_or`, `binary_add_sub`, `augmented_add_sub`, `binary_mul_div`, `augmented_mul_div`, `binary_floor_mod`, `binary_div_floor`, `augmented_floor_mod`, `unary_sign`, `remove_not`, `boolean_literal`, `break_continue` | comparisons; membership and identity; binary `+`/`-`, `*`/`/`, `//`/`%`, and `/`/`//`; augmented `+=`/`-=`, `*=`/`/=`, and `//=`/`%=`; unary signs; boolean expressions and literals, including `True`/`False` match patterns; and control flow |
 | Generator behavior | `list_comprehension_to_generator`, `generator_return_insert`, `generator_skip_first`, `generator_empty` | Eager/lazy conversion, early return, first-item consumption and empty output; enabled by default |
+| Cleanup | `finally_unwrap` | Run cleanup after normal completion. Returning, raising, or leaving the loop from the protected suite skips cleanup. |
+| Pattern dispatch | `match_case_delete`, `match_guard_constant`, `match_or_alternative_delete` | Skip one case, force a guard after pattern binding, or remove one OR alternative. |
+| Statement order | `statement_order_swap` | Exchange adjacent calls, assignments, or assertions when at least one can have an effect. Direct local-name dependencies and directive comments exclude a pair. |
 | Single inheritance | `override_method_delete`, `super_call_move` | Remove an ordinary overriding method or move its standalone same-method delegation; enabled by default |
 | Multiple inheritance | `base_order_shuffle` | Change the order of distinct simple-name direct bases; enabled by default, with stable source-derived permutations |
 | Missing values and shared state | `none_truthiness`, `mutable_default_share`, `nonlocal_remove`, `yield_from_to_yield`, `mapping_setdefault_to_get`, `bisect_boundary_swap`, `deepcopy_to_copy`, `deque_popleft_to_pop`, `gather_return_exceptions`, `itertools_take_drop_swap`, `fstring_conversion_swap` | Empty/missing distinctions, shared defaults, lost outer updates, delegation, dictionary insertion, duplicate boundaries, nested copies, FIFO order, exception results, iterator prefixes and representations; enabled by default |

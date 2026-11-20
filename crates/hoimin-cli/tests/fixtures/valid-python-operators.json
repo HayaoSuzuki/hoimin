@@ -518,5 +518,30 @@
     "operator": "super_call_move",
     "status": "deferred",
     "reason": "Dedicated conservative inheritance, source preservation, default/opt-out and CPython saved-plan checks; not modeled by the initial Lean cross-producer corpus"
+  },
+  {
+    "operator": "finally_unwrap",
+    "status": "deferred",
+    "reason": "Covered by structural control-flow compiler and behavior contracts outside the initial Lean corpus"
+  },
+  {
+    "operator": "match_case_delete",
+    "status": "deferred",
+    "reason": "Covered by structural control-flow compiler and behavior contracts outside the initial Lean corpus"
+  },
+  {
+    "operator": "match_guard_constant",
+    "status": "deferred",
+    "reason": "Covered by structural control-flow compiler and behavior contracts outside the initial Lean corpus"
+  },
+  {
+    "operator": "match_or_alternative_delete",
+    "status": "deferred",
+    "reason": "Covered by structural control-flow compiler and behavior contracts outside the initial Lean corpus"
+  },
+  {
+    "operator": "statement_order_swap",
+    "status": "deferred",
+    "reason": "Covered by structural control-flow compiler and behavior contracts outside the initial Lean corpus"
   }
 ]

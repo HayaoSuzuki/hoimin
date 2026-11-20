@@ -191,6 +191,11 @@ mutation_operators! {
     BaseOrderShuffle => "base_order_shuffle",
     OverrideMethodDelete => "override_method_delete",
     SuperCallMove => "super_call_move",
+    FinallyUnwrap => "finally_unwrap",
+    MatchCaseDelete => "match_case_delete",
+    MatchGuardConstant => "match_guard_constant",
+    MatchOrAlternativeDelete => "match_or_alternative_delete",
+    StatementOrderSwap => "statement_order_swap",
 }
 
 // Family membership is an explicit selection policy, separate from the full
@@ -420,6 +425,11 @@ impl Default for MutationOperatorSelection {
                 MutationOperator::BaseOrderShuffle,
                 MutationOperator::OverrideMethodDelete,
                 MutationOperator::SuperCallMove,
+                MutationOperator::FinallyUnwrap,
+                MutationOperator::MatchCaseDelete,
+                MutationOperator::MatchGuardConstant,
+                MutationOperator::MatchOrAlternativeDelete,
+                MutationOperator::StatementOrderSwap,
             ]
             .into_iter()
             .collect(),

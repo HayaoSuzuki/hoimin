@@ -252,6 +252,14 @@ const OPERATORS: &[(MutationOperator, &str)] = &[
         "override_method_delete",
     ),
     (MutationOperator::SuperCallMove, "super_call_move"),
+    (MutationOperator::FinallyUnwrap, "finally_unwrap"),
+    (MutationOperator::MatchCaseDelete, "match_case_delete"),
+    (MutationOperator::MatchGuardConstant, "match_guard_constant"),
+    (
+        MutationOperator::MatchOrAlternativeDelete,
+        "match_or_alternative_delete",
+    ),
+    (MutationOperator::StatementOrderSwap, "statement_order_swap"),
 ];
 
 const FAMILIES: [&str; 8] = [
@@ -370,6 +378,11 @@ const FAMILIES: [&str; 8] = [
 #[case::mutationoperator_baseordershuffle_102(101)]
 #[case::mutationoperator_overridemethoddelete_103(102)]
 #[case::mutationoperator_supercallmove_104(103)]
+#[case::finally_unwrap(104)]
+#[case::match_case_delete(105)]
+#[case::match_guard_constant(106)]
+#[case::match_or_alternative_delete(107)]
+#[case::statement_order_swap(108)]
 fn canonical_names_preserve_wire_encoding_and_exact_lookup(#[case] case_index: usize) {
     let &(operator, name) = &OPERATORS[case_index];
 

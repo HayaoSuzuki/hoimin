@@ -550,6 +550,9 @@ const HIGH_VALUE_CONTROL_OPERATORS: &[&str] = &[
     "remove_not",
     "boolean_literal",
     "break_continue",
+    "match_or_alternative_delete",
+    "match_guard_constant",
+    "match_case_delete",
     "loop_break_insert",
     "iterator_stop_insert",
     "async_iterator_stop_insert",
@@ -562,6 +565,7 @@ const HIGH_VALUE_CONTROL_OPERATORS: &[&str] = &[
 ];
 const EXCEPTION_HANDLING_OPERATORS: &[&str] = &[
     "exception_cause_remove",
+    "finally_unwrap",
     "gather_return_exceptions",
     "exception_hierarchy",
     "exception_type_pair",
@@ -575,6 +579,7 @@ const BEHAVIORAL_OPERATORS: &[&str] = &[
     "base_order_shuffle",
     "override_method_delete",
     "super_call_move",
+    "statement_order_swap",
     "dataclass_factory_share",
     "sort_key_swap",
     "encoding_errors_ignore",
@@ -669,7 +674,7 @@ fn ranking_category_inventory_covers_every_canonical_operator() {
         .filter_map(MutationOperator::from_name)
         .collect::<BTreeSet<_>>();
 
-    assert_eq!(tested.len(), 104);
+    assert_eq!(tested.len(), 109);
     assert_eq!(tested, canonical);
 }
 
@@ -749,6 +754,15 @@ fn ranking_category_inventory_covers_every_canonical_operator() {
 #[case::base_order_shuffle("base_order_shuffle", RankingReasonCode::Behavioral, 80)]
 #[case::override_method_delete("override_method_delete", RankingReasonCode::Behavioral, 80)]
 #[case::super_call_move("super_call_move", RankingReasonCode::Behavioral, 80)]
+#[case::finally_unwrap("finally_unwrap", RankingReasonCode::ExceptionHandling, 90)]
+#[case::match_case_delete("match_case_delete", RankingReasonCode::HighValueControl, 100)]
+#[case::match_guard_constant("match_guard_constant", RankingReasonCode::HighValueControl, 100)]
+#[case::match_or_alternative_delete(
+    "match_or_alternative_delete",
+    RankingReasonCode::HighValueControl,
+    100
+)]
+#[case::statement_order_swap("statement_order_swap", RankingReasonCode::Behavioral, 80)]
 #[case::dataclass_factory_share("dataclass_factory_share", RankingReasonCode::Behavioral, 80)]
 #[case::sort_key_swap("sort_key_swap", RankingReasonCode::Behavioral, 80)]
 #[case::encoding_errors_ignore("encoding_errors_ignore", RankingReasonCode::Behavioral, 80)]

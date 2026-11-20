@@ -1268,3 +1268,6 @@ mod behavioral_research_contracts;
 
 #[path = "behavioral_research/four_contracts.rs"]
 mod four_research_contracts;
+
+#[path = "behavioral_research/control_contracts.rs"]
+mod research_control_contracts;

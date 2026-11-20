@@ -96,6 +96,11 @@ async fn plan_with_check(root: &Path, selection: &[&str], check: &str) -> serde_
 #[case::base_order_shuffle("base_order_shuffle")]
 #[case::override_method_delete("override_method_delete")]
 #[case::super_call_move("super_call_move")]
+#[case::finally_unwrap("finally_unwrap")]
+#[case::match_case_delete("match_case_delete")]
+#[case::match_guard_constant("match_guard_constant")]
+#[case::match_or_alternative_delete("match_or_alternative_delete")]
+#[case::statement_order_swap("statement_order_swap")]
 #[tokio::test]
 async fn current_default_candidates_are_individually_excludable_case(#[case] operator: &str) {
     let root = tempfile::tempdir().unwrap();
@@ -129,11 +134,14 @@ async fn current_default_candidates_are_individually_excludable_case(#[case] ope
     let source = format!(
         "{source}\nclass Parent:\n def run(self, emit): emit(1)\nclass Child(Parent):\n def run(self, emit): super().run(emit); emit(2)\n"
     );
+    let source = format!(
+        "{source}\ndef route(x):\n try:\n  match x:\n   case 1 | 2 if ready(): send(); finish()\n finally: clean()\n"
+    );
     std::fs::write(root.path().join("subject.py"), &source).unwrap();
     let default = plan(root.path(), &[]).await;
     let manifest: PlanManifest = serde_json::from_value(default.clone()).unwrap();
 
-    assert_eq!(manifest.normalized_config.operators.names().len(), 85);
+    assert_eq!(manifest.normalized_config.operators.names().len(), 90);
     let candidates = default["candidates"].as_array().unwrap();
     for original in ["Decimal(x)", "Decimal.from_float(x)", "HTTPStatus(x)"] {
         assert!(
@@ -210,10 +218,13 @@ async fn current_default_candidates_are_individually_excludable() {
     let source = format!(
         "{source}\nclass Parent:\n def run(self, emit): emit(1)\nclass Child(Parent):\n def run(self, emit): super().run(emit); emit(2)\n"
     );
+    let source = format!(
+        "{source}\ndef route(x):\n try:\n  match x:\n   case 1 | 2 if ready(): send(); finish()\n finally: clean()\n"
+    );
     std::fs::write(root.path().join("subject.py"), &source).unwrap();
     let default = plan(root.path(), &[]).await;
     let manifest: PlanManifest = serde_json::from_value(default.clone()).unwrap();
-    assert_eq!(manifest.normalized_config.operators.names().len(), 85);
+    assert_eq!(manifest.normalized_config.operators.names().len(), 90);
     let candidates = default["candidates"].as_array().unwrap();
     for original in ["Decimal(x)", "Decimal.from_float(x)", "HTTPStatus(x)"] {
         assert!(
@@ -467,4 +478,118 @@ async fn multiline_call_plans_select_the_edit_line(
         std::fs::read_to_string(root.path().join("subject.py")).unwrap(),
         source
     );
+}
+
+const CLEANUP_CHECK: &str =
+    "log=[]\ndef f(early):\n try:\n  if early: return\n finally: log.append(1)\n";
+const ARM_CHECK: &str = "def f(x):\n match x:\n  case [v]: return v\n return -1\n";
+const GUARD_CHECK: &str = "def f(x):\n match x:\n  case y if y > 0: return y\n return 0\n";
+const OR_CHECK: &str = "def f(x):\n match x:\n  case 1|2: return True\n return False\n";
+const ORDER_CHECK: &str = "log=[]\ndef f():\n log.append(1)\n log.append(2)\n";
+
+#[rstest::rstest]
+#[case::normal_cleanup("finally_unwrap", CLEANUP_CHECK, "f(False); assert log == [1]", 1, 0)]
+#[case::early_cleanup("finally_unwrap", CLEANUP_CHECK, "f(True); assert log == [1]", 0, 1)]
+#[case::fallback_only("match_case_delete", ARM_CHECK, "assert f(None) == -1", 1, 0)]
+#[case::targeted_arm("match_case_delete", ARM_CHECK, "assert f([7]) == 7", 0, 1)]
+#[case::guard_unobserved(
+    "match_guard_constant",
+    GUARD_CHECK,
+    "assert isinstance(f(7), int)",
+    2,
+    0
+)]
+#[case::guard_boundaries(
+    "match_guard_constant",
+    GUARD_CHECK,
+    "assert (f(-7),f(7)) == (0,7)",
+    0,
+    2
+)]
+#[case::miss_both_alternatives("match_or_alternative_delete", OR_CHECK, "assert not f(3)", 2, 0)]
+#[case::hit_both_alternatives(
+    "match_or_alternative_delete",
+    OR_CHECK,
+    "assert f(1) and f(2)",
+    0,
+    2
+)]
+#[case::call_counts(
+    "statement_order_swap",
+    ORDER_CHECK,
+    "f(); assert sorted(log) == [1,2]",
+    1,
+    0
+)]
+#[case::call_sequence("statement_order_swap", ORDER_CHECK, "f(); assert log == [1,2]", 0, 1)]
+#[tokio::test]
+async fn research_control_saved_verification(
+    #[case] operator: &str,
+    #[case] source: &str,
+    #[case] check: &str,
+    #[case] survived: usize,
+    #[case] killed: usize,
+) {
+    let root = tempfile::tempdir().unwrap();
+    let subject = root.path().join("subject.py");
+    std::fs::write(&subject, source).unwrap();
+    let manifest = plan_with_check(
+        root.path(),
+        &["--operators", operator],
+        &format!("from subject import *\n{check}"),
+    )
+    .await;
+    let saved = root.path().join("saved.json");
+    std::fs::write(&saved, serde_json::to_vec(&manifest).unwrap()).unwrap();
+
+    let report = cli(vec![
+        "hoimin".into(),
+        "verify".into(),
+        saved.into_os_string(),
+        "--top".into(),
+        "10".into(),
+    ])
+    .await;
+
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+    assert_eq!(report["summary"]["complete"], true);
+    assert_eq!(report["summary"]["counts"]["survived"], survived);
+    assert_eq!(report["summary"]["counts"]["killed"], killed);
+    assert_eq!(
+        manifest["candidates"].as_array().unwrap().len(),
+        survived + killed
+    );
+    assert_eq!(std::fs::read_to_string(subject).unwrap(), source);
+}
+
+#[rstest::rstest]
+#[case::latin1(b"# coding: latin-1\r\nevents=[]\r\ndef f():\r\n try: return 'caf\xe9'\r\n finally: events.append(1)\r\n".as_slice())]
+#[case::bom(b"\xef\xbb\xbfevents=[]\r\ndef f():\r\n try: return 'caf\xc3\xa9'\r\n finally: events.append(1)\r\n".as_slice())]
+#[case::ascii(b"# coding: ascii\nevents=[]\ndef f():\n try: return 'caf\\xe9'\n finally: events.append(1)".as_slice())]
+#[tokio::test]
+async fn research_control_encoded_saved_cleanup(#[case] bytes: &[u8]) {
+    let root = tempfile::tempdir().unwrap();
+    let subject = root.path().join("subject.py");
+    std::fs::write(&subject, bytes).unwrap();
+    let manifest = plan_with_check(
+        root.path(),
+        &["--operators", "finally_unwrap"],
+        "import subject as s; assert s.f() == 'caf\\xe9'; assert s.events == [1]",
+    )
+    .await;
+    let path = root.path().join("saved.json");
+    std::fs::write(&path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+
+    let report = cli(vec![
+        "hoimin".into(),
+        "verify".into(),
+        path.into_os_string(),
+        "--top".into(),
+        "1".into(),
+    ])
+    .await;
+
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+    assert_eq!(report["summary"]["counts"]["killed"], 1);
+    assert_eq!(std::fs::read(subject).unwrap(), bytes);
 }

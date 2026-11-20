@@ -68,6 +68,11 @@ mod string_literals;
 #[path = "rust/string_segments.rs"]
 mod string_segments;
 
+#[path = "rust/control_structure.rs"]
+mod control_structure;
+#[path = "rust/statement_order.rs"]
+mod statement_order;
+
 #[path = "rust/deletion.rs"]
 mod deletion;
 
@@ -3032,6 +3037,7 @@ fn selected_source_start(
 // Source, facts and every visited AST range come from the same checked parse.
 // Neither the source nor that tree is mutated during collection.
 struct AstCandidateCollector<'a, F> {
+    match_state: control_structure::MatchTraversal,
     inheritance: inheritance::Index,
     string_exclusions: string_literals::Exclusions,
     enum_index: &'a enum_members::EnumIndex,
@@ -3087,6 +3093,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             dataclass_factory::DataclassFactories::build(module, request.operators, cancelled)?;
         let followup_calls = followup_calls::Imports::build(module, request.operators, cancelled)?;
         let mut collector = AstCandidateCollector {
+            match_state: control_structure::MatchTraversal::default(),
             inheritance: if [
                 MutationOperator::OverrideMethodDelete,
                 MutationOperator::SuperCallMove,
@@ -3186,14 +3193,12 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 return Err(error);
             }
         }
-        for statement in &module.body {
-            collector.visit_stmt(statement);
-            if let Some(error) = collector.candidates.failure {
-                return Err(error);
-            }
-            if collector.cancelled_observed {
-                return Err(AnalysisError::Cancelled);
-            }
+        collector.visit_suite(&module.body);
+        if let Some(error) = collector.candidates.failure {
+            return Err(error);
+        }
+        if collector.cancelled_observed {
+            return Err(AnalysisError::Cancelled);
         }
         let mut report = exception_hierarchy::HierarchyReport::default();
         if let Some(index) = exceptions {
@@ -3219,11 +3224,34 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         ))
     }
 
+    fn visit_suite(&mut self, body: &'a [Stmt]) {
+        let swap = self
+            .request
+            .operators
+            .contains(MutationOperator::StatementOrderSwap);
+        let mut trailing_directive = None;
+        for (i, statement) in body.iter().enumerate() {
+            if self.check_cancelled() {
+                return;
+            }
+            if swap && let Some(next) = body.get(i + 1) {
+                self.collect_swap(statement, next, &mut trailing_directive);
+                if self.check_cancelled() {
+                    return;
+                }
+            }
+            self.visit_stmt(statement);
+        }
+    }
+
     fn check_cancelled(&mut self) -> bool {
+        if self.candidates.failure.is_some() {
+            return true;
+        }
         if !self.cancelled_observed && (self.cancelled)() {
             self.cancelled_observed = true;
         }
-        self.cancelled_observed || self.candidates.failure.is_some()
+        self.cancelled_observed
     }
 
     fn visit_exception_type(&mut self, expression: &'a Expr) {
@@ -4330,6 +4358,12 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         reason = "statement operator gates stop between builders on the first admission failure"
     )]
     fn collect_statement_mutations(&mut self, statement: &Stmt) {
+        if let Stmt::Try(node) = statement {
+            self.collect_unwrap(node);
+            if self.candidates.failure.is_some() {
+                return;
+            }
+        }
         if let Stmt::FunctionDef(method) = statement
             && self.inheritance.contains(method)
         {
@@ -4679,6 +4713,26 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
 }
 
 impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
+    fn visit_match_case(&mut self, case: &'ast ruff_python_ast::MatchCase) {
+        if self.candidates.failure.is_some() || self.check_cancelled() {
+            return;
+        }
+        self.match_state.suite_depth += 1;
+        if self.match_state.eligible {
+            self.collect_case(case);
+        }
+        if !self.check_cancelled() {
+            visitor::walk_match_case(self, case);
+        }
+        self.match_state.suite_depth -= 1;
+    }
+
+    fn visit_body(&mut self, body: &'ast [Stmt]) {
+        self.match_state.suite_depth += 1;
+        self.visit_suite(body);
+        self.match_state.suite_depth -= 1;
+    }
+
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
         if self.candidates.failure.is_some() {
             return;
@@ -4732,6 +4786,15 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                 if self.candidates.failure.is_some() {
                     return;
                 }
+            }
+            if let Stmt::Match(node) = statement
+                && self.match_enabled()
+            {
+                let valid = self.valid_cases(node);
+                let previous = std::mem::replace(&mut self.match_state.eligible, valid);
+                visitor::walk_stmt(self, statement);
+                self.match_state.eligible = previous;
+                return;
             }
             let Stmt::Try(try_statement) = statement else {
                 visitor::walk_stmt(self, statement);
@@ -5001,6 +5064,18 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
         }
         if self.check_cancelled() {
             return;
+        }
+        if self.match_state.eligible
+            && self
+                .request
+                .operators
+                .contains(MutationOperator::MatchOrAlternativeDelete)
+            && let Pattern::MatchOr(node) = pattern
+        {
+            self.collect_or(node);
+            if self.check_cancelled() {
+                return;
+            }
         }
         let previous = std::mem::replace(&mut self.in_pattern, true);
         visitor::walk_pattern(self, pattern);

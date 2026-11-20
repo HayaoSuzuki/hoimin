@@ -34,6 +34,10 @@ enum Attempt {
     FunctionBody,
     Augmented,
     TupleHandler,
+    Unwrap,
+    MatchArm,
+    Alternatives,
+    Swap,
 }
 
 fn expression(module: &ModModule) -> &Expr {
@@ -50,12 +54,27 @@ fn handler_body(module: &ModModule) -> &ruff_python_ast::ExceptHandlerExceptHand
     handler
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one exhaustive dispatch table exercises each directly callable producer with the same prefailed sink"
+)]
 fn invoke(
     collector: &mut AstCandidateCollector<'_, &dyn Fn() -> bool>,
     module: &ModModule,
     attempt: Attempt,
 ) {
     match attempt {
+        Attempt::Unwrap => collector.collect_unwrap(module.body[0].as_try_stmt().unwrap()),
+        Attempt::MatchArm => {
+            collector.collect_case(&module.body[0].as_match_stmt().unwrap().cases[0]);
+        }
+        Attempt::Alternatives => collector.collect_or(
+            module.body[0].as_match_stmt().unwrap().cases[0]
+                .pattern
+                .as_match_or()
+                .unwrap(),
+        ),
+        Attempt::Swap => collector.collect_swap(&module.body[0], &module.body[1], &mut None),
         Attempt::StringSegment => {
             collector.collect_string_segment(expression(module));
         }
@@ -228,6 +247,7 @@ fn observe_attempt(
     let dataclass_factories = dataclass_factory::DataclassFactories::default();
     let followup_calls = followup_calls::Imports::default();
     let mut collector = AstCandidateCollector {
+        match_state: control_structure::MatchTraversal::default(),
         inheritance: inheritance::Index::default(),
         string_exclusions: string_literals::Exclusions::build(module, &cancelled).unwrap(),
         enum_index: &enum_index,
@@ -299,6 +319,10 @@ fn observe_attempt(
 #[case::functionbody("def function() -> int:\n return 1", Attempt::FunctionBody)]
 #[case::augmented("value += 1", Attempt::Augmented)]
 #[case::tuplehandler("(ValueError, TypeError)", Attempt::TupleHandler)]
+#[case::finally_unwrap("try: a()\nfinally: b()", Attempt::Unwrap)]
+#[case::match_case("match x:\n case name if pred(): pass", Attempt::MatchArm)]
+#[case::or_alternatives("match x:\n case 1|2: pass", Attempt::Alternatives)]
+#[case::statement_exchange("a()\nb()", Attempt::Swap)]
 fn failed_producers_keep_the_first_error_without_polling_or_emitting(
     #[case] source: &str,
     #[case] attempt: Attempt,

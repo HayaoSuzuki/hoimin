@@ -709,20 +709,22 @@ Mutation operator IDs and selector families:
   dataclass_factory_share, deepcopy_to_copy, deque_popleft_to_pop, encoding_errors_ignore
   enum_member_replace, exception_bare_to_exception, exception_base_boundary, exception_cause_remove
   exception_exception_to_bare, exception_hierarchy, exception_ops, exception_risky
-  exception_tuple_add_pair, exception_tuple_remove_member, exception_type_pair, fstring_conversion_swap
-  function_body_erase, function_body_return_constant, gather_return_exceptions, generator_empty
-  generator_return_insert, generator_skip_first, identity, integer_literal_neighbor
-  iterator_stop_insert, itertools_take_drop_swap, lambda_capture_late, list_comprehension_to_generator
-  loop_break_insert, mapping_setdefault_to_get, membership, method_call_remove
+  exception_tuple_add_pair, exception_tuple_remove_member, exception_type_pair, finally_unwrap
+  fstring_conversion_swap, function_body_erase, function_body_return_constant, gather_return_exceptions
+  generator_empty, generator_return_insert, generator_skip_first, identity
+  integer_literal_neighbor, iterator_stop_insert, itertools_take_drop_swap, lambda_capture_late
+  list_comprehension_to_generator, loop_break_insert, mapping_setdefault_to_get, match_case_delete
+  match_guard_constant, match_or_alternative_delete, membership, method_call_remove
   mutable_default_share, none_truthiness, nonlocal_remove, operator_function
   optional_keyword_delete, override_method_delete, remove_not, return_tuple_swap
-  sort_key_swap, statement_delete, stdlib_conversion_call_remove, string_literal_empty
-  string_segment_empty, structure_append_extend, structure_index_neighbor, structure_mapping_get_subscript
-  structure_ops, structure_slice_bound_move, structure_slice_bound_omit, structure_slice_neighbor
-  structure_sort_reverse, structure_sorted_reversed, super_call_move, type_collections
-  type_dict_mapping, type_iterable_iterator, type_iterables, type_list_sequence
-  type_nullable, type_nullable_add, type_nullable_remove, type_sequence_iterable
-  type_set_abstract_set, unary_sign, while_condition_false, yield_from_to_yield
+  sort_key_swap, statement_delete, statement_order_swap, stdlib_conversion_call_remove
+  string_literal_empty, string_segment_empty, structure_append_extend, structure_index_neighbor
+  structure_mapping_get_subscript, structure_ops, structure_slice_bound_move, structure_slice_bound_omit
+  structure_slice_neighbor, structure_sort_reverse, structure_sorted_reversed, super_call_move
+  type_collections, type_dict_mapping, type_iterable_iterator, type_iterables
+  type_list_sequence, type_nullable, type_nullable_add, type_nullable_remove
+  type_sequence_iterable, type_set_abstract_set, unary_sign, while_condition_false
+  yield_from_to_yield
 ```
 
 Argument constraints:
@@ -1050,20 +1052,22 @@ Mutation operator IDs and selector families:
   dataclass_factory_share, deepcopy_to_copy, deque_popleft_to_pop, encoding_errors_ignore
   enum_member_replace, exception_bare_to_exception, exception_base_boundary, exception_cause_remove
   exception_exception_to_bare, exception_hierarchy, exception_ops, exception_risky
-  exception_tuple_add_pair, exception_tuple_remove_member, exception_type_pair, fstring_conversion_swap
-  function_body_erase, function_body_return_constant, gather_return_exceptions, generator_empty
-  generator_return_insert, generator_skip_first, identity, integer_literal_neighbor
-  iterator_stop_insert, itertools_take_drop_swap, lambda_capture_late, list_comprehension_to_generator
-  loop_break_insert, mapping_setdefault_to_get, membership, method_call_remove
+  exception_tuple_add_pair, exception_tuple_remove_member, exception_type_pair, finally_unwrap
+  fstring_conversion_swap, function_body_erase, function_body_return_constant, gather_return_exceptions
+  generator_empty, generator_return_insert, generator_skip_first, identity
+  integer_literal_neighbor, iterator_stop_insert, itertools_take_drop_swap, lambda_capture_late
+  list_comprehension_to_generator, loop_break_insert, mapping_setdefault_to_get, match_case_delete
+  match_guard_constant, match_or_alternative_delete, membership, method_call_remove
   mutable_default_share, none_truthiness, nonlocal_remove, operator_function
   optional_keyword_delete, override_method_delete, remove_not, return_tuple_swap
-  sort_key_swap, statement_delete, stdlib_conversion_call_remove, string_literal_empty
-  string_segment_empty, structure_append_extend, structure_index_neighbor, structure_mapping_get_subscript
-  structure_ops, structure_slice_bound_move, structure_slice_bound_omit, structure_slice_neighbor
-  structure_sort_reverse, structure_sorted_reversed, super_call_move, type_collections
-  type_dict_mapping, type_iterable_iterator, type_iterables, type_list_sequence
-  type_nullable, type_nullable_add, type_nullable_remove, type_sequence_iterable
-  type_set_abstract_set, unary_sign, while_condition_false, yield_from_to_yield
+  sort_key_swap, statement_delete, statement_order_swap, stdlib_conversion_call_remove
+  string_literal_empty, string_segment_empty, structure_append_extend, structure_index_neighbor
+  structure_mapping_get_subscript, structure_ops, structure_slice_bound_move, structure_slice_bound_omit
+  structure_slice_neighbor, structure_sort_reverse, structure_sorted_reversed, super_call_move
+  type_collections, type_dict_mapping, type_iterable_iterator, type_iterables
+  type_list_sequence, type_nullable, type_nullable_add, type_nullable_remove
+  type_sequence_iterable, type_set_abstract_set, unary_sign, while_condition_false
+  yield_from_to_yield
 ```
 
 Argument constraints:
