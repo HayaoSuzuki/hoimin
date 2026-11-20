@@ -622,9 +622,9 @@ mod tests {
     #[case::canonical_parent("metrics.parent.canonicalize")]
     #[case::open_parent("metrics.entry.open")]
     #[case::leaf_metadata("metrics.entry.leaf")]
-    #[case::index_metadata("metrics.index.metadata")]
-    #[case::index_open("metrics.index.entries")]
-    #[case::index_iteration("metrics.index.collect")]
+    #[cfg_attr(unix, case::index_metadata("metrics.index.metadata"))]
+    #[cfg_attr(unix, case::index_open("metrics.index.entries"))]
+    #[cfg_attr(unix, case::index_iteration("metrics.index.collect"))]
     fn entry_io_errors_preserve_the_source_and_allow_retry(#[case] point: &'static str) {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("metrics.json");
@@ -730,7 +730,16 @@ mod tests {
     fn prospective_parent_rejects_a_missing_component_followed_by_parent_navigation() {
         let temp = tempfile::tempdir().unwrap();
 
-        let error = prospective_parent(&temp.path().join("missing/..")).unwrap_err();
+        #[cfg(windows)]
+        let path = {
+            // Preserve the parent component until the filesystem resolves it.
+            let parent = std::fs::canonicalize(temp.path()).unwrap();
+            PathBuf::from(format!(r"{}\missing\..", parent.display()))
+        };
+        #[cfg(not(windows))]
+        let path = temp.path().join("missing/..");
+
+        let error = prospective_parent(&path).unwrap_err();
         let actual_1 = temp.path().join("missing").exists();
 
         assert_eq!(error.kind(), io::ErrorKind::NotFound);

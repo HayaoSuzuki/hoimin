@@ -211,6 +211,12 @@ mod rejection_coverage {
 
         let error = validate_sources(&selection).unwrap_err();
 
+        #[cfg(windows)]
+        assert!(matches!(
+            error, TargetError::DiscoveryFailed(message)
+                if message == "source \"parent/child\" does not exist"
+        ));
+        #[cfg(not(windows))]
         assert!(
             matches!(error, TargetError::DiscoveryFailed(message) if message.starts_with("cannot inspect source \"parent/child\": "))
         );

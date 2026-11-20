@@ -291,10 +291,16 @@ mod tests {
         let fixture = tempfile::tempdir().unwrap();
         let file = fixture.path().join("file");
         std::fs::write(&file, b"payload").unwrap();
+        let fingerprint = blake3::hash(b"payload");
+        let mut tracker = DuplicateInputs::default();
+        assert!(tracker.observe(&file, fingerprint, &[]).is_none());
+        let inputs = [input(file)];
 
-        let actual_0 = identical_regular_files(&file, fixture.path());
+        let duplicate = tracker.observe(fixture.path(), fingerprint, &inputs);
 
-        assert!(!actual_0.unwrap());
+        assert!(duplicate.is_none());
+        #[cfg(unix)]
+        assert!(!identical_regular_files(&inputs[0].source, fixture.path()).unwrap());
     }
 
     #[rstest::rstest]
