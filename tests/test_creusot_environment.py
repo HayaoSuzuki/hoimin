@@ -410,6 +410,7 @@ def test_rejects_invalid_receipt_hashes(environment: Path, hashes: object) -> No
     assert "hash" in result.stderr
 
 
+@POSIX_SHELL
 def test_rejects_nonexecutable_tool(environment: Path) -> None:
     (environment.parent / "z3").chmod(0o644)
     result = check(environment)

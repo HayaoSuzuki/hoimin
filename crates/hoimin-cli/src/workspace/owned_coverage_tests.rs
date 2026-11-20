@@ -2431,12 +2431,14 @@ fn owner_removal_observes_external_absence_without_inventing_deleted_entries() {
     assert_eq!(namespace_after_failure, NamespaceLifecycle::Complete);
 }
 
+#[cfg(unix)]
 fn empty_deleting_candidate(coordinator: &ManagedRootCoordinator) -> String {
     let name = format!("{DELETING_PREFIX}{}", uuid::Uuid::new_v4());
     coordinator.dir.create_dir(&name).unwrap();
     name
 }
 
+#[cfg(unix)]
 fn ready_abandoned_candidate(coordinator: &ManagedRootCoordinator) -> String {
     let root = ManagedRunRoot::create(coordinator, OwnerKind::PublicExecution).unwrap();
     root.mark_cleanup_ready().unwrap();
@@ -2600,6 +2602,7 @@ fn selected_janitor_unlock_error_preserves_observed_progress_and_retry_authority
     assert_eq!(observed_before_retry, remaining);
 }
 
+#[cfg(unix)]
 fn mismatch_live_lease_owner(root: &ManagedRunRoot) {
     let mut marker = read_marker_file(root.lease.lock().unwrap().as_deref().unwrap()).unwrap();
     marker.owner = OwnerKind::PublicDelivery;

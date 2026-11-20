@@ -501,6 +501,9 @@ def test_monitor_failure_cleans_up_spawned_process(
     original_terminate_process_group_spec = guard.terminate_process_group
     process = SimpleNamespace(pid=1, poll=lambda: None)
     mocker.patch.object(
+        guard, "os", SimpleNamespace(name="posix", killpg=lambda *_: None)
+    )
+    mocker.patch.object(
         guard.subprocess,
         "Popen",
         create_autospec(original_popen_spec, side_effect=lambda *_a, **_k: process),
@@ -615,10 +618,13 @@ def test_process_exit_assertion_retries_until_process_disappears(
 def test_process_exit_assertion_cleans_up_a_leaked_process(
     mocker: MockerFixture,
 ) -> None:
-    assert hasattr(signal, "SIGKILL")
+    kill_signal = getattr(signal, "SIGKILL", 9)
+    mocker.patch.object(signal, "SIGKILL", kill_signal, create=True)
     probe = mocker.patch.object(os, "kill")
     mocker.patch.object(time, "sleep")
+
     with pytest.raises(pytest.fail.Exception, match="guard left process 123 alive"):
         assert_process_exited(123)
+
     assert probe.call_count == 21
-    probe.assert_called_with(123, signal.SIGKILL)
+    probe.assert_called_with(123, kill_signal)

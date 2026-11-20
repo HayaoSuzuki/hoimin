@@ -897,8 +897,7 @@ mod tests {
             eprintln!("SKIP Windows session symlink namespace: symlink setup unavailable: {error}");
             return;
         }
-        let (files, trees) =
-            session_artifacts(&configured, &mut EntryInspector::default()).unwrap();
+        let (files, _) = session_artifacts(&configured, &mut EntryInspector::default()).unwrap();
         let parent = std::fs::canonicalize(temp.path()).unwrap();
         assert!(files.contains(&parent.join("configured.db-wal")));
 

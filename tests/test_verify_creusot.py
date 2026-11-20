@@ -1149,6 +1149,7 @@ def test_attached_attributes_handles_nested_arrays_and_rejects_missing_opening()
         verify_creusot.attached_attributes("]\nfn proof() {}", "proof", None)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX SIGTERM is required")
 def test_repeated_sigterm_during_cleanup_preserves_deadline_error(
     tmp_path: Path, mocker: MockerFixture
 ) -> None:

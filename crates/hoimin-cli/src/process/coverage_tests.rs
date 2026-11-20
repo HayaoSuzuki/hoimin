@@ -1,3 +1,4 @@
+#[cfg(unix)]
 fn inject_quiescence_failure(supervisor: &mut ProcessSupervisor) {
     #[allow(
         irrefutable_let_patterns,
