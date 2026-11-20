@@ -20,7 +20,7 @@ pub(super) fn erased_range<F: Fn() -> bool>(
     let first = body.first()?;
     let mut check = OwnScope {
         safe: true,
-        reject_value_return: true,
+        policy: ScopePolicy::Erasure,
         has_value_return: false,
         cancelled,
     };
@@ -45,9 +45,21 @@ pub(super) fn plain_synchronous<F: Fn() -> bool>(
     if definition.is_async || cancelled() {
         return false;
     }
+    ordinary_result(definition, cancelled)
+}
+
+/// Check the function's own lexical scope for generator semantics.
+pub(super) fn ordinary_result<F: Fn() -> bool>(
+    definition: &StmtFunctionDef,
+    cancelled: &F,
+) -> bool {
     let mut check = OwnScope {
         safe: true,
-        reject_value_return: false,
+        policy: if definition.is_async {
+            ScopePolicy::Coroutine
+        } else {
+            ScopePolicy::Synchronous
+        },
         has_value_return: false,
         cancelled,
     };
@@ -85,7 +97,7 @@ pub(super) fn constant_returns<F: Fn() -> bool>(
     let first = body.first()?;
     let mut check = OwnScope {
         safe: true,
-        reject_value_return: false,
+        policy: ScopePolicy::Synchronous,
         has_value_return: false,
         cancelled,
     };
@@ -144,9 +156,16 @@ fn is_noop(statement: &Stmt) -> bool {
     }
 }
 
+#[derive(PartialEq, Eq)]
+enum ScopePolicy {
+    Erasure,
+    Synchronous,
+    Coroutine,
+}
+
 struct OwnScope<'a, F> {
     safe: bool,
-    reject_value_return: bool,
+    policy: ScopePolicy,
     has_value_return: bool,
     cancelled: &'a F,
 }
@@ -178,7 +197,7 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for OwnScope<'_, F> {
                     .as_deref()
                     .is_some_and(|value| !matches!(value, Expr::NoneLiteral(_)));
                 self.has_value_return |= has_value;
-                if self.reject_value_return && has_value {
+                if self.policy == ScopePolicy::Erasure && has_value {
                     self.safe = false;
                 } else {
                     visitor::walk_stmt(self, statement);
@@ -194,7 +213,8 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for OwnScope<'_, F> {
             return;
         }
         match expression {
-            Expr::Yield(_) | Expr::YieldFrom(_) | Expr::Await(_) => self.safe = false,
+            Expr::Yield(_) | Expr::YieldFrom(_) => self.safe = false,
+            Expr::Await(_) if self.policy != ScopePolicy::Coroutine => self.safe = false,
             Expr::Lambda(lambda) => {
                 if let Some(parameters) = &lambda.parameters {
                     self.visit_parameters(parameters);

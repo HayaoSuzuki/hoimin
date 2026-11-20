@@ -101,6 +101,9 @@ async fn plan_with_check(root: &Path, selection: &[&str], check: &str) -> serde_
 #[case::match_guard_constant("match_guard_constant")]
 #[case::match_or_alternative_delete("match_or_alternative_delete")]
 #[case::statement_order_swap("statement_order_swap")]
+#[case::stdlib_escape_remove("stdlib_escape_remove")]
+#[case::call_argument_swap("call_argument_swap")]
+#[case::call_result_default("call_result_default")]
 #[tokio::test]
 async fn current_default_candidates_are_individually_excludable_case(#[case] operator: &str) {
     let root = tempfile::tempdir().unwrap();
@@ -137,11 +140,14 @@ async fn current_default_candidates_are_individually_excludable_case(#[case] ope
     let source = format!(
         "{source}\ndef route(x):\n try:\n  match x:\n   case 1 | 2 if ready(): send(); finish()\n finally: clean()\n"
     );
+    let source = format!(
+        "{source}\nimport re\npattern=re.escape('.')\nsize=len(pattern)\nprint(pattern, size)\n"
+    );
     std::fs::write(root.path().join("subject.py"), &source).unwrap();
     let default = plan(root.path(), &[]).await;
     let manifest: PlanManifest = serde_json::from_value(default.clone()).unwrap();
 
-    assert_eq!(manifest.normalized_config.operators.names().len(), 90);
+    assert_eq!(manifest.normalized_config.operators.names().len(), 93);
     let candidates = default["candidates"].as_array().unwrap();
     for original in ["Decimal(x)", "Decimal.from_float(x)", "HTTPStatus(x)"] {
         assert!(
@@ -224,7 +230,7 @@ async fn current_default_candidates_are_individually_excludable() {
     std::fs::write(root.path().join("subject.py"), &source).unwrap();
     let default = plan(root.path(), &[]).await;
     let manifest: PlanManifest = serde_json::from_value(default.clone()).unwrap();
-    assert_eq!(manifest.normalized_config.operators.names().len(), 90);
+    assert_eq!(manifest.normalized_config.operators.names().len(), 93);
     let candidates = default["candidates"].as_array().unwrap();
     for original in ["Decimal(x)", "Decimal.from_float(x)", "HTTPStatus(x)"] {
         assert!(
@@ -592,4 +598,170 @@ async fn research_control_encoded_saved_cleanup(#[case] bytes: &[u8]) {
     assert_eq!(report["baseline"]["termination"]["Exit"], 0);
     assert_eq!(report["summary"]["counts"]["killed"], 1);
     assert_eq!(std::fs::read(subject).unwrap(), bytes);
+}
+
+const REGEX_ESCAPE_CHECK: &str =
+    "import re\ndef match(text, pattern): return bool(re.fullmatch(re.escape(pattern), text))\n";
+const HTML_ESCAPE_CHECK: &str = "import html\ndef render(text): return html.escape(text)\n";
+const URL_ESCAPE_CHECK: &str =
+    "import urllib.parse\ndef render(text: str): return urllib.parse.quote(text)\n";
+const ARGUMENT_SWAP_CHECK: &str = concat!(
+    "def move(source,dest):\n source[0] -= 2\n dest[0] += 2\n",
+    "def transfer(a,b): move(a,b)\n",
+);
+const CALL_DEFAULT_CHECK: &str = concat!(
+    "log=[]\ndef write() -> int: log.append(1); return 1\n",
+    "def run(): return write()\n",
+);
+
+#[rstest::rstest]
+#[case::regex_weak(
+    "stdlib_escape_remove",
+    REGEX_ESCAPE_CHECK,
+    "assert match('x','x')",
+    1,
+    0
+)]
+#[case::regex_strong(
+    "stdlib_escape_remove",
+    REGEX_ESCAPE_CHECK,
+    "assert not match('x','.')",
+    0,
+    1
+)]
+#[case::html_weak(
+    "stdlib_escape_remove",
+    HTML_ESCAPE_CHECK,
+    "assert render('word') == 'word'",
+    1,
+    0
+)]
+#[case::html_strong(
+    "stdlib_escape_remove",
+    HTML_ESCAPE_CHECK,
+    "assert render('&') == '&amp;'",
+    0,
+    1
+)]
+#[case::url_weak(
+    "stdlib_escape_remove",
+    URL_ESCAPE_CHECK,
+    "assert render('word') == 'word'",
+    1,
+    0
+)]
+#[case::url_strong(
+    "stdlib_escape_remove",
+    URL_ESCAPE_CHECK,
+    "assert render('a b') == 'a%20b'",
+    0,
+    1
+)]
+#[case::argument_weak(
+    "call_argument_swap",
+    ARGUMENT_SWAP_CHECK,
+    "a,b=[10],[10]; transfer(a,b); assert a[0]+b[0]==20",
+    1,
+    0
+)]
+#[case::argument_strong(
+    "call_argument_swap",
+    ARGUMENT_SWAP_CHECK,
+    "a,b=[10],[10]; transfer(a,b); assert a==[8] and b==[12]",
+    0,
+    1
+)]
+#[case::result_weak(
+    "call_result_default",
+    CALL_DEFAULT_CHECK,
+    "run(); assert log == [1]",
+    1,
+    0
+)]
+#[case::result_strong(
+    "call_result_default",
+    CALL_DEFAULT_CHECK,
+    "assert run() == 1 and log == [1]",
+    0,
+    1
+)]
+#[tokio::test]
+async fn call_contract_saved_verification(
+    #[case] operator: &str,
+    #[case] source: &str,
+    #[case] check: &str,
+    #[case] survived: usize,
+    #[case] killed: usize,
+) {
+    let root = tempfile::tempdir().unwrap();
+    let subject = root.path().join("subject.py");
+    std::fs::write(&subject, source).unwrap();
+    let manifest = plan_with_check(
+        root.path(),
+        &["--operators", operator],
+        &format!("from subject import *\n{check}"),
+    )
+    .await;
+    let saved = root.path().join("saved-call.json");
+    std::fs::write(&saved, serde_json::to_vec(&manifest).unwrap()).unwrap();
+
+    let report = cli(vec![
+        "hoimin".into(),
+        "verify".into(),
+        saved.into_os_string(),
+        "--top".into(),
+        "1".into(),
+    ])
+    .await;
+
+    assert_eq!(
+        manifest["normalized_config"]["operators"],
+        serde_json::json!([operator])
+    );
+    assert_eq!(
+        report["baseline"]["termination"]["Exit"], 0,
+        "{operator}: {check}"
+    );
+    assert_eq!(report["summary"]["complete"], true);
+    assert_eq!(report["summary"]["counts"]["survived"], survived);
+    assert_eq!(report["summary"]["counts"]["killed"], killed);
+    assert_eq!(report["summary"]["counts"]["error"], 0);
+    assert_eq!(report["summary"]["counts"]["not_run"], 0);
+    assert_eq!(std::fs::read_to_string(subject).unwrap(), source);
+}
+
+#[rstest::rstest]
+#[case::latin1(b"# coding: latin-1\r\nimport html\r\nvalue=html.escape('\xe9&')\r\n")]
+#[case::utf8_bom(b"\xef\xbb\xbfimport html\r\nvalue=html.escape('\xc3\xa9&')\r\n")]
+#[tokio::test]
+async fn saved_escape_candidate_applies_in_original_encoding(#[case] source: &[u8]) {
+    let root = tempfile::tempdir().unwrap();
+    let subject = root.path().join("subject.py");
+    std::fs::write(&subject, source).unwrap();
+    let manifest = plan_with_check(
+        root.path(),
+        &["--operators", "stdlib_escape_remove"],
+        "import subject, sys\nsys.exit(0 if subject.value == '\\u00e9&amp;' else 42)",
+    )
+    .await;
+    let saved = root.path().join("saved-encoding.json");
+    std::fs::write(&saved, serde_json::to_vec(&manifest).unwrap()).unwrap();
+
+    let report = cli(vec![
+        "hoimin".into(),
+        "verify".into(),
+        saved.into_os_string(),
+        "--top".into(),
+        "1".into(),
+    ])
+    .await;
+
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+    assert_eq!(
+        report["mutants"][0]["outcome"]["executed"]["termination"]["Exit"],
+        42
+    );
+    assert_eq!(report["summary"]["counts"]["killed"], 1);
+    assert_eq!(report["summary"]["complete"], true);
+    assert_eq!(std::fs::read(subject).unwrap(), source);
 }

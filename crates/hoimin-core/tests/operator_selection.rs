@@ -355,7 +355,7 @@ fn exception_hierarchy_is_explicit_only(#[case] family: &str) {
 }
 
 // Fixed current policy, independent of catalog and production default builders.
-const CURRENT_DEFAULT_NAMES: [&str; 90] = [
+const CURRENT_DEFAULT_NAMES: [&str; 93] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -446,6 +446,9 @@ const CURRENT_DEFAULT_NAMES: [&str; 90] = [
     "match_guard_constant",
     "match_or_alternative_delete",
     "statement_order_swap",
+    "stdlib_escape_remove",
+    "call_argument_swap",
+    "call_result_default",
 ];
 
 #[test]

@@ -701,7 +701,8 @@ Mutation operator IDs and selector families:
   binary_div_floor, binary_floor_mod, binary_matmul, binary_mul_div
   binary_power, bisect_boundary_swap, bitwise_and_or, bitwise_invert
   bitwise_ops, bitwise_shift, bitwise_xor, boolean_and_or
-  boolean_literal, break_continue, collection_any_all, collection_append_insert
+  boolean_literal, break_continue, call_argument_swap, call_contracts, call_result_default
+  collection_any_all, collection_append_insert
   collection_list_tuple, collection_min_max, collection_ops, collection_set_add_discard
   collection_set_frozenset, collection_set_remove_discard, collection_string_split_rsplit, collection_string_starts_ends
   compare_eq_ne, compare_order, comparison_not_implemented, condition_clause_delete
@@ -718,6 +719,7 @@ Mutation operator IDs and selector families:
   mutable_default_share, none_truthiness, nonlocal_remove, operator_function
   optional_keyword_delete, override_method_delete, remove_not, return_tuple_swap
   sort_key_swap, statement_delete, statement_order_swap, stdlib_conversion_call_remove
+  stdlib_escape_remove
   string_literal_empty, string_segment_empty, structure_append_extend, structure_index_neighbor
   structure_mapping_get_subscript, structure_ops, structure_slice_bound_move, structure_slice_bound_omit
   structure_slice_neighbor, structure_sort_reverse, structure_sorted_reversed, super_call_move
@@ -1044,7 +1046,8 @@ Mutation operator IDs and selector families:
   binary_div_floor, binary_floor_mod, binary_matmul, binary_mul_div
   binary_power, bisect_boundary_swap, bitwise_and_or, bitwise_invert
   bitwise_ops, bitwise_shift, bitwise_xor, boolean_and_or
-  boolean_literal, break_continue, collection_any_all, collection_append_insert
+  boolean_literal, break_continue, call_argument_swap, call_contracts, call_result_default
+  collection_any_all, collection_append_insert
   collection_list_tuple, collection_min_max, collection_ops, collection_set_add_discard
   collection_set_frozenset, collection_set_remove_discard, collection_string_split_rsplit, collection_string_starts_ends
   compare_eq_ne, compare_order, comparison_not_implemented, condition_clause_delete
@@ -1061,6 +1064,7 @@ Mutation operator IDs and selector families:
   mutable_default_share, none_truthiness, nonlocal_remove, operator_function
   optional_keyword_delete, override_method_delete, remove_not, return_tuple_swap
   sort_key_swap, statement_delete, statement_order_swap, stdlib_conversion_call_remove
+  stdlib_escape_remove
   string_literal_empty, string_segment_empty, structure_append_extend, structure_index_neighbor
   structure_mapping_get_subscript, structure_ops, structure_slice_bound_move, structure_slice_bound_omit
   structure_slice_neighbor, structure_sort_reverse, structure_sorted_reversed, super_call_move

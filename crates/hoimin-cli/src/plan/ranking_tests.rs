@@ -580,6 +580,9 @@ const BEHAVIORAL_OPERATORS: &[&str] = &[
     "override_method_delete",
     "super_call_move",
     "statement_order_swap",
+    "stdlib_escape_remove",
+    "call_argument_swap",
+    "call_result_default",
     "dataclass_factory_share",
     "sort_key_swap",
     "encoding_errors_ignore",
@@ -763,6 +766,9 @@ fn ranking_category_inventory_covers_every_canonical_operator() {
     100
 )]
 #[case::statement_order_swap("statement_order_swap", RankingReasonCode::Behavioral, 80)]
+#[case::stdlib_escape_remove("stdlib_escape_remove", RankingReasonCode::Behavioral, 80)]
+#[case::call_argument_swap("call_argument_swap", RankingReasonCode::Behavioral, 80)]
+#[case::call_result_default("call_result_default", RankingReasonCode::Behavioral, 80)]
 #[case::dataclass_factory_share("dataclass_factory_share", RankingReasonCode::Behavioral, 80)]
 #[case::sort_key_swap("sort_key_swap", RankingReasonCode::Behavioral, 80)]
 #[case::encoding_errors_ignore("encoding_errors_ignore", RankingReasonCode::Behavioral, 80)]

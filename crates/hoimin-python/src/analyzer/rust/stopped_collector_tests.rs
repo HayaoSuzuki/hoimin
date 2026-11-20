@@ -246,7 +246,12 @@ fn observe_attempt(
     let enum_index = enum_members::EnumIndex::default();
     let dataclass_factories = dataclass_factory::DataclassFactories::default();
     let followup_calls = followup_calls::Imports::default();
+    let optional_functions = optional_keywords::FunctionIndex::default();
+    let call_contracts = call_contracts::Contracts::default();
     let mut collector = AstCandidateCollector {
+        call_contracts: &call_contracts,
+        discarded_results: [None; 2],
+        direct_await: None,
         match_state: control_structure::MatchTraversal::default(),
         private_class: None,
         inheritance: inheritance::Index::default(),
@@ -254,7 +259,7 @@ fn observe_attempt(
         enum_index: &enum_index,
         dataclass_factories: &dataclass_factories,
         followup_calls: &followup_calls,
-        optional_functions: optional_keywords::FunctionIndex::default(),
+        optional_functions: &optional_functions,
         operator_imports: OperatorImports::default(),
         behavior_imports: BehaviorImports::default(),
         conversion_imports: stdlib_conversions::ConversionImports::build(module, &cancelled)

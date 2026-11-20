@@ -516,7 +516,7 @@ fn operator_function_pairs_cover_qualified_imported_and_higher_order_references(
                 "import operator as {module}\nresult = {module}.{original}(left(), right())\n"
             );
 
-            let output = analyze(&source);
+            let output = analyze_with_only_operator(&source, MutationOperator::OperatorFunction);
 
             assert_eq!(output.candidates.len(), 1, "{source}");
             let candidate = &output.candidates[0];
@@ -536,7 +536,7 @@ fn operator_function_pairs_cover_qualified_imported_and_higher_order_references(
         for usage in ["plus(left(), right())", "map(plus, values, values)"] {
             let source = format!("from operator import {original} as plus\nresult = {usage}\n");
 
-            let output = analyze(&source);
+            let output = analyze_with_only_operator(&source, MutationOperator::OperatorFunction);
 
             assert_eq!(output.candidates.len(), 1, "{source}");
             let candidate = &output.candidates[0];
@@ -738,7 +738,12 @@ fn operator_function_helpers_and_undocumented_dunders_are_excluded(#[case] name:
     "import operator as op\nx: op.add\ndef f(x: op.mul) -> op.sub: pass\ntype Alias = op.pow\n"
 )]
 fn operator_function_source_order_selection_profiles_and_annotations_table_1(#[case] source: &str) {
-    assert!(analyze(source).candidates.is_empty(), "{source}");
+    assert!(
+        analyze_with_only_operator(source, MutationOperator::OperatorFunction)
+            .candidates
+            .is_empty(),
+        "{source}"
+    );
 }
 
 #[rstest::rstest]
@@ -827,11 +832,16 @@ fn operator_function_source_order_selection_profiles_and_annotations() {
         10,
         source,
     );
-    assert_eq!(selected.candidates.len(), 1);
-    assert_eq!(selected.candidates[0].original, "add");
-    assert_eq!(selected.candidates[0].replacement, "sub");
-    assert_eq!(selected.candidates[0].line, 6);
-    assert_eq!(selected.candidates[0].symbol.as_deref(), Some("combine"));
+    let operator_candidates = selected
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == MutationOperator::OperatorFunction)
+        .collect::<Vec<_>>();
+    assert_eq!(operator_candidates.len(), 1);
+    assert_eq!(operator_candidates[0].original, "add");
+    assert_eq!(operator_candidates[0].replacement, "sub");
+    assert_eq!(operator_candidates[0].line, 6);
+    assert_eq!(operator_candidates[0].symbol.as_deref(), Some("combine"));
     let arid = "import operator as op\nprint(op.add)\nassert op.eq(a, b)\nresult = op.sub(a, b)\n";
     assert_eq!(
         analyze(arid)

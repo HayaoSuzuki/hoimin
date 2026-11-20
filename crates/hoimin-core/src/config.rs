@@ -196,6 +196,9 @@ mutation_operators! {
     MatchGuardConstant => "match_guard_constant",
     MatchOrAlternativeDelete => "match_or_alternative_delete",
     StatementOrderSwap => "statement_order_swap",
+    StdlibEscapeRemove => "stdlib_escape_remove",
+    CallArgumentSwap => "call_argument_swap",
+    CallResultDefault => "call_result_default",
 }
 
 // Family membership is an explicit selection policy, separate from the full
@@ -272,6 +275,14 @@ const SELECTOR_FAMILIES: &[(&str, &[MutationOperator])] = &[
             MutationOperator::ExceptionBaseBoundary,
             MutationOperator::ExceptionTupleAddPair,
             MutationOperator::ExceptionTupleRemoveMember,
+        ],
+    ),
+    (
+        "call_contracts",
+        &[
+            MutationOperator::StdlibEscapeRemove,
+            MutationOperator::CallArgumentSwap,
+            MutationOperator::CallResultDefault,
         ],
     ),
 ];
@@ -430,6 +441,9 @@ impl Default for MutationOperatorSelection {
                 MutationOperator::MatchGuardConstant,
                 MutationOperator::MatchOrAlternativeDelete,
                 MutationOperator::StatementOrderSwap,
+                MutationOperator::StdlibEscapeRemove,
+                MutationOperator::CallArgumentSwap,
+                MutationOperator::CallResultDefault,
             ]
             .into_iter()
             .collect(),

@@ -305,6 +305,9 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::StdlibConversionCallRemove
         | MutationOperator::ConversionCallRemove
         | MutationOperator::OptionalKeywordDelete
+        | MutationOperator::StdlibEscapeRemove
+        | MutationOperator::CallArgumentSwap
+        | MutationOperator::CallResultDefault
         | MutationOperator::StringLiteralEmpty
         | MutationOperator::StringSegmentEmpty
         | MutationOperator::ReturnTupleSwap

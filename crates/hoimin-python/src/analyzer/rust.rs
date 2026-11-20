@@ -76,6 +76,8 @@ mod statement_order;
 #[path = "rust/deletion.rs"]
 mod deletion;
 
+#[path = "rust/call_contracts.rs"]
+mod call_contracts;
 #[path = "rust/callable_imports.rs"]
 mod callable_imports;
 #[path = "rust/depth.rs"]
@@ -1276,6 +1278,7 @@ struct NameResolutionIndex {
     back_edge_bindings: HashMap<usize, HashSet<String>>,
     unevaluated_annotations: HashSet<usize>,
     imported_names: HashSet<String>,
+    text_parameters: HashMap<ScopeId, HashMap<String, usize>>,
 }
 
 impl NameResolutionIndex {
@@ -1326,6 +1329,12 @@ impl NameResolutionIndex {
         }
     }
 
+    fn is_function_body_lookup(&self, expression: &Expr) -> bool {
+        self.occurrences
+            .get(&usize::from(expression.start()))
+            .is_some_and(|site| self.scopes[site.scope.0].kind == NameScopeKind::Function)
+    }
+
     fn from_module(module: &ModModule) -> Self {
         Self::from_module_with_names(module, HashSet::new())
     }
@@ -1334,9 +1343,10 @@ impl NameResolutionIndex {
         let mut builder = NameResolutionBuilder::new();
         let mut names = ImportedNames::default();
         names.visit_body(&module.body);
-        builder.identity_names.clone_from(&extra);
-        names.0.extend(extra);
-        builder.imported_names = names.0;
+        builder.identity_names = extra;
+        builder.identity_names.extend(names.text_parameters);
+        names.imports.extend(builder.identity_names.iter().cloned());
+        builder.imported_names = names.imports;
         builder.visit_body(&module.body);
         // Resolve nonlocal destinations after all enclosing locals are known.
         for (origin, name) in &builder.nonlocal_import_writes {
@@ -1357,6 +1367,44 @@ impl NameResolutionIndex {
         }
         builder.index.imported_names = builder.imported_names;
         builder.index
+    }
+
+    fn stable_text_parameter(&self, name: &ruff_python_ast::ExprName) -> bool {
+        let Some(site) = self.occurrences.get(&usize::from(name.start())) else {
+            return false;
+        };
+        if site.temporarily_shadowed || name.id.starts_with("__") {
+            return false;
+        }
+        let id = name.id.as_str();
+        let mut current = Some(site.scope);
+        let mut direct = true;
+        while let Some(scope_id) = current {
+            let scope = &self.scopes[scope_id.0];
+            if scope.kind == NameScopeKind::Module || (direct && scope.kind == NameScopeKind::Class)
+            {
+                return false;
+            }
+            if scope.kind != NameScopeKind::Class {
+                if scope.wildcard || scope.globals.contains(id) || scope.nonlocals.contains(id) {
+                    return false;
+                }
+                if scope.locals.contains(id) {
+                    return !scope.import_writes.contains_key(id)
+                        && self
+                            .text_parameters
+                            .get(&scope_id)
+                            .and_then(|params| params.get(id))
+                            .is_some_and(|offset| {
+                                self.annotation_resolution(*offset, "str")
+                                    == NameResolution::DefinitelyBuiltin
+                            });
+                }
+            }
+            current = scope.parent;
+            direct &= scope.kind == NameScopeKind::TypeParameters;
+        }
+        false
     }
 
     fn resolution(&self, offset: usize, name: &str) -> NameResolution {
@@ -1685,10 +1733,19 @@ fn tracked_resolution_name(name: &str) -> bool {
     MUTABLE_BUILTINS.contains(&name)
         || EXCEPTION_NAMES.contains(&name)
         || CONTROL_BUILTINS.contains(&name)
+        || CALL_CONTRACT_BUILTINS.contains(&name)
 }
 
 #[derive(Default)]
-struct ImportedNames(HashSet<String>);
+struct ImportedNames {
+    imports: HashSet<String>,
+    text_parameters: HashSet<String>,
+}
+
+fn text_parameter_annotation(parameter: &ruff_python_ast::Parameter) -> Option<usize> {
+    let annotation = parameter.annotation.as_deref()?.as_name_expr()?;
+    (annotation.id == "str").then(|| usize::from(annotation.start()))
+}
 
 impl<'ast> Visitor<'ast> for ImportedNames {
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
@@ -1698,8 +1755,14 @@ impl<'ast> Visitor<'ast> for ImportedNames {
             Stmt::ImportFrom(import) => imports.transfer_import_from(import),
             _ => {}
         }
-        self.0.extend(imports.bindings.into_keys());
+        self.imports.extend(imports.bindings.into_keys());
         visitor::walk_stmt(self, statement);
+    }
+    fn visit_parameter(&mut self, parameter: &'ast ruff_python_ast::Parameter) {
+        if text_parameter_annotation(parameter).is_some() {
+            self.text_parameters.insert(parameter.name.to_string());
+        }
+        visitor::walk_parameter(self, parameter);
     }
 }
 
@@ -1739,6 +1802,7 @@ impl NameResolutionBuilder {
                 back_edge_bindings: HashMap::new(),
                 unevaluated_annotations: HashSet::new(),
                 imported_names: HashSet::new(),
+                text_parameters: HashMap::new(),
             },
             identity_names: HashSet::new(),
             imported_names: HashSet::new(),
@@ -2059,6 +2123,7 @@ impl NameResolutionBuilder {
                 .iter()
                 .chain(EXCEPTION_NAMES)
                 .chain(CONTROL_BUILTINS)
+                .chain(CALL_CONTRACT_BUILTINS)
             {
                 self.record_loop_back_edge_binding(self.current, name);
             }
@@ -2068,6 +2133,7 @@ impl NameResolutionBuilder {
                 .iter()
                 .chain(EXCEPTION_NAMES)
                 .chain(CONTROL_BUILTINS)
+                .chain(CALL_CONTRACT_BUILTINS)
             {
                 scope.possible_bindings.insert((*name).to_owned());
                 if matches!(scope.kind, NameScopeKind::Module | NameScopeKind::Class) {
@@ -2096,6 +2162,7 @@ impl NameResolutionBuilder {
             .iter()
             .chain(EXCEPTION_NAMES)
             .chain(CONTROL_BUILTINS)
+            .chain(CALL_CONTRACT_BUILTINS)
         {
             self.record_loop_back_edge_binding(scope_id, name);
         }
@@ -2105,6 +2172,7 @@ impl NameResolutionBuilder {
             .iter()
             .chain(EXCEPTION_NAMES)
             .chain(CONTROL_BUILTINS)
+            .chain(CALL_CONTRACT_BUILTINS)
         {
             scope.possible_bindings.insert((*name).to_owned());
             if matches!(scope.kind, NameScopeKind::Module | NameScopeKind::Class) {
@@ -2240,6 +2308,15 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
                     let scope = this.new_scope(NameScopeKind::Function);
                     for parameter in definition.parameters.as_ref() {
                         this.add_local(scope, parameter.name().as_str());
+                    }
+                    for parameter in definition.parameters.iter_non_variadic_params() {
+                        if let Some(annotation) = text_parameter_annotation(&parameter.parameter) {
+                            this.index
+                                .text_parameters
+                                .entry(scope)
+                                .or_default()
+                                .insert(parameter.parameter.name.to_string(), annotation);
+                        }
                     }
                     this.in_scope(scope, |this| {
                         if matches!(definition.name.as_str(), "__next__" | "__anext__") {
@@ -2934,6 +3011,24 @@ const CONTROL_BUILTINS: &[&str] = &[
     "NotImplemented",
 ];
 
+const CALL_CONTRACT_BUILTINS: &[&str] = &[
+    "ascii",
+    "bin",
+    "callable",
+    "chr",
+    "format",
+    "hasattr",
+    "hash",
+    "hex",
+    "id",
+    "isinstance",
+    "issubclass",
+    "len",
+    "oct",
+    "ord",
+    "repr",
+];
+
 const EXCEPTION_NAMES: &[&str] = &[
     "ValueError",
     "TypeError",
@@ -3050,7 +3145,10 @@ struct AstCandidateCollector<'a, F> {
     enum_index: &'a enum_members::EnumIndex,
     dataclass_factories: &'a dataclass_factory::DataclassFactories,
     followup_calls: &'a followup_calls::Imports,
-    optional_functions: optional_keywords::FunctionIndex,
+    optional_functions: &'a optional_keywords::FunctionIndex<'a>,
+    call_contracts: &'a call_contracts::Contracts,
+    discarded_results: [Option<TextRange>; 2],
+    direct_await: Option<(TextRange, TextRange)>,
     operator_imports: OperatorImports,
     behavior_imports: BehaviorImports,
     conversion_imports: stdlib_conversions::ConversionImports,
@@ -3099,7 +3197,32 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         let dataclass_factories =
             dataclass_factory::DataclassFactories::build(module, request.operators, cancelled)?;
         let followup_calls = followup_calls::Imports::build(module, request.operators, cancelled)?;
+        let call_contracts =
+            call_contracts::Contracts::build(module, facts, request.operators, cancelled)?;
+        let additional_signatures = [
+            MutationOperator::CallArgumentSwap,
+            MutationOperator::CallResultDefault,
+            MutationOperator::StdlibEscapeRemove,
+        ]
+        .into_iter()
+        .any(|operator| request.operators.contains(operator));
+        let optional_functions = if additional_signatures
+            || request
+                .operators
+                .contains(MutationOperator::OptionalKeywordDelete)
+        {
+            optional_keywords::FunctionIndex::build_for_calls(
+                module,
+                additional_signatures,
+                cancelled,
+            )?
+        } else {
+            optional_keywords::FunctionIndex::default()
+        };
         let mut collector = AstCandidateCollector {
+            call_contracts: &call_contracts,
+            discarded_results: [None; 2],
+            direct_await: None,
             match_state: control_structure::MatchTraversal::default(),
             private_class: None,
             inheritance: if [
@@ -3113,20 +3236,16 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             } else {
                 inheritance::Index::default()
             },
-            optional_functions: if request
-                .operators
-                .contains(MutationOperator::OptionalKeywordDelete)
-            {
-                optional_keywords::FunctionIndex::build(module, cancelled)?
-            } else {
-                optional_keywords::FunctionIndex::default()
-            },
+            optional_functions: &optional_functions,
             string_exclusions: if [
                 MutationOperator::StringLiteralEmpty,
                 MutationOperator::StringSegmentEmpty,
                 MutationOperator::OptionalKeywordDelete,
                 MutationOperator::ConversionCallRemove,
                 MutationOperator::StdlibConversionCallRemove,
+                MutationOperator::StdlibEscapeRemove,
+                MutationOperator::CallArgumentSwap,
+                MutationOperator::CallResultDefault,
                 MutationOperator::MethodCallRemove,
                 MutationOperator::ContainerElementDelete,
             ]
@@ -3230,6 +3349,31 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             report,
             enum_index.diagnostics,
         ))
+    }
+
+    fn walk_function(
+        &mut self,
+        statement: &'a Stmt,
+        definition: &'a ruff_python_ast::StmtFunctionDef,
+    ) {
+        let comparison = self.comparison_scope_for(definition);
+        let previous_comparison = std::mem::replace(&mut self.comparison_scope, comparison);
+        let allowed = self
+            .request
+            .operators
+            .contains(MutationOperator::ReturnTupleSwap)
+            && function_body::plain_synchronous(definition, self.cancelled);
+        let scope = if allowed {
+            ReturnScope::PlainSynchronous
+        } else {
+            ReturnScope::Excluded
+        };
+        let previous = std::mem::replace(&mut self.return_scope, scope);
+        let previous_class = std::mem::replace(&mut self.enclosing_body, EnclosingBody::Function);
+        visitor::walk_stmt(self, statement);
+        self.enclosing_body = previous_class;
+        self.return_scope = previous;
+        self.comparison_scope = previous_comparison;
     }
 
     fn walk_class(&mut self, statement: &'a Stmt, name: &'a str) {
@@ -3468,9 +3612,51 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         }
     }
 
+    fn collect_call_contracts(&mut self, call: &ExprCall) {
+        if self.in_pattern || self.string_exclusions.contains_alias(call.range()) {
+            return;
+        }
+        let (range, awaited) = self
+            .direct_await
+            .filter(|(operand, _)| *operand == call.range())
+            .map_or((call.range(), false), |(_, await_range)| {
+                (await_range, true)
+            });
+        let result = (!self.discarded_results.contains(&Some(range)))
+            .then_some(call_contracts::ResultSpan { range, awaited });
+        let facts = self.facts;
+        let line_index = self.line_index;
+        let selection = self.selection;
+        let call_contracts = self.call_contracts;
+        let cx = call_contracts::Context {
+            facts,
+            functions: self.optional_functions,
+            source: self.source,
+            operators: self.request.operators,
+            cancelled: self.cancelled,
+            ordinary_name_reads: self.enclosing_body != EnclosingBody::Class,
+        };
+        call_contracts.emit(
+            call,
+            result,
+            &cx,
+            |range| selected_source_start(range, line_index, facts, selection),
+            |range, replacement, operator| {
+                self.add_candidate(range, replacement, operator);
+                !self.check_cancelled()
+            },
+        );
+    }
+
     fn collect_call(&mut self, call: &ExprCall) {
         if self.candidates.failure.is_some() {
             return;
+        }
+        if self.call_contracts.active() {
+            self.collect_call_contracts(call);
+            if self.check_cancelled() || self.candidates.failure.is_some() {
+                return;
+            }
         }
         if self
             .request
@@ -4762,30 +4948,26 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
             if self.check_cancelled() {
                 return;
             }
+            if self
+                .request
+                .operators
+                .contains(MutationOperator::CallResultDefault)
+                && let Stmt::Expr(node) = statement
+            {
+                let outer = std::mem::replace(
+                    &mut self.discarded_results,
+                    [Some(node.value.range()), None],
+                );
+                self.visit_expr(&node.value);
+                self.discarded_results = outer;
+                return;
+            }
             if let Stmt::ClassDef(class) = statement {
                 self.walk_class(statement, class.name.as_str());
                 return;
             }
             if let Stmt::FunctionDef(definition) = statement {
-                let comparison = self.comparison_scope_for(definition);
-                let previous_comparison = std::mem::replace(&mut self.comparison_scope, comparison);
-                let allowed = self
-                    .request
-                    .operators
-                    .contains(MutationOperator::ReturnTupleSwap)
-                    && function_body::plain_synchronous(definition, self.cancelled);
-                let scope = if allowed {
-                    ReturnScope::PlainSynchronous
-                } else {
-                    ReturnScope::Excluded
-                };
-                let previous = std::mem::replace(&mut self.return_scope, scope);
-                let previous_class =
-                    std::mem::replace(&mut self.enclosing_body, EnclosingBody::Function);
-                visitor::walk_stmt(self, statement);
-                self.enclosing_body = previous_class;
-                self.return_scope = previous;
-                self.comparison_scope = previous_comparison;
+                self.walk_function(statement, definition);
                 return;
             }
             if self.return_scope == ReturnScope::PlainSynchronous
@@ -5047,7 +5229,32 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                 self.visit_expr(subscript.slice.as_ref());
             } else {
                 self.integer_suppressed |= signed_literal;
+                let previous_await = self.direct_await;
+                let previous_discarded = self.discarded_results;
+                if previous_discarded.contains(&Some(expression.range())) {
+                    match expression {
+                        Expr::BoolOp(node) => {
+                            self.discarded_results = [node.values.last().map(Ranged::range), None];
+                        }
+                        Expr::If(node) => {
+                            self.discarded_results =
+                                [Some(node.body.range()), Some(node.orelse.range())];
+                        }
+                        _ => {}
+                    }
+                }
+                if self
+                    .request
+                    .operators
+                    .contains(MutationOperator::CallResultDefault)
+                    && let Expr::Await(node) = expression
+                    && let Expr::Call(call) = node.value.as_ref()
+                {
+                    self.direct_await = Some((call.range(), node.range()));
+                }
                 visitor::walk_expr(self, expression);
+                self.direct_await = previous_await;
+                self.discarded_results = previous_discarded;
             }
             self.integer_suppressed = suppressed;
             self.runtime_role = target_context;
@@ -9642,6 +9849,9 @@ mod nested_finally_transfer_tests;
 #[path = "rust/whole_expression_selection_tests.rs"]
 mod whole_expression_selection_tests;
 
+#[cfg(test)]
+#[path = "rust/call_contract_tests.rs"]
+mod call_contract_tests;
 #[cfg(test)]
 #[path = "rust/optional_keyword_selection_tests.rs"]
 mod optional_keyword_selection_tests;

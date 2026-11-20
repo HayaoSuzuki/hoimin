@@ -260,9 +260,12 @@ const OPERATORS: &[(MutationOperator, &str)] = &[
         "match_or_alternative_delete",
     ),
     (MutationOperator::StatementOrderSwap, "statement_order_swap"),
+    (MutationOperator::StdlibEscapeRemove, "stdlib_escape_remove"),
+    (MutationOperator::CallArgumentSwap, "call_argument_swap"),
+    (MutationOperator::CallResultDefault, "call_result_default"),
 ];
 
-const FAMILIES: [&str; 8] = [
+const FAMILIES: [&str; 9] = [
     "type_nullable",
     "type_collections",
     "type_iterables",
@@ -271,6 +274,7 @@ const FAMILIES: [&str; 8] = [
     "bitwise_ops",
     "exception_ops",
     "exception_risky",
+    "call_contracts",
 ];
 
 #[rstest::rstest]
@@ -383,6 +387,9 @@ const FAMILIES: [&str; 8] = [
 #[case::match_guard_constant(106)]
 #[case::match_or_alternative_delete(107)]
 #[case::statement_order_swap(108)]
+#[case::stdlib_escape_remove(109)]
+#[case::call_argument_swap(110)]
+#[case::call_result_default(111)]
 fn canonical_names_preserve_wire_encoding_and_exact_lookup(#[case] case_index: usize) {
     let &(operator, name) = &OPERATORS[case_index];
 

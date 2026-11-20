@@ -670,10 +670,10 @@ the detailed capability and cleanup model.
 
 ## Mutation operators
 
-Without `--operators`, a run selects 90 default runtime operators. `--operators`
+Without `--operators`, a run selects 93 default runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
-individual IDs or selector families. Hoimin exposes 109 operator IDs in total:
-90 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
+individual IDs or selector families. Hoimin exposes 112 operator IDs in total:
+93 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
 `exception_hierarchy`, and six opt-in analyzers: `condition_constant`,
 `function_body_erase`, `enum_member_replace`, `condition_clause_delete`,
 `container_element_delete`, and `optional_keyword_delete`.
@@ -707,6 +707,10 @@ excluded individually, without expanding any existing selector family.
 To disable a control-flow mutation, pass its ID to `--exclude-operators`, for example
 `--exclude-operators finally_unwrap,statement_order_swap`.
 
+Select the three call contract operators with `--operators call_contracts`.
+To disable one while using the defaults, pass its ID to `--exclude-operators`,
+for example `--exclude-operators call_result_default`.
+
 New default runs can generate more candidates and take longer. With a candidate
 cap, the retained prefix can also change. Explicit `--operators` selections and
 saved plans keep their operator sets; saved plans are not expanded on reload.
@@ -723,6 +727,9 @@ binding analysis. Their existing applicability guards are unchanged.
 | Generator behavior | `list_comprehension_to_generator`, `generator_return_insert`, `generator_skip_first`, `generator_empty` | Eager/lazy conversion, early return, first-item consumption and empty output; enabled by default |
 | Cleanup | `finally_unwrap` | Run cleanup after normal completion. Returning, raising, or leaving the loop from the protected suite skips cleanup. |
 | Pattern dispatch | `match_case_delete`, `match_guard_constant`, `match_or_alternative_delete` | Skip one case, force a guard after pattern binding, or remove one OR alternative. |
+| Call escaping | `stdlib_escape_remove` | Bypass a resolved `re.escape`, `html.escape`, `urllib.parse.quote`, or `urllib.parse.quote_plus` call. Evaluate each supplied argument once in its original order and return the primary input. URL quoting requires a supported text input. |
+| Argument roles | `call_argument_swap` | Exchange the bindings of two adjacent explicit arguments. Preserve the original evaluation order. Keyword and mixed pairs require proven parameter roles. |
+| Call results | `call_result_default` | Execute a consumed call or directly awaited coroutine once, then replace its result with a default for its known type. |
 | Statement order | `statement_order_swap` | Exchange adjacent calls, assignments, or assertions when at least one can have an effect. Direct local-name dependencies and directive comments exclude a pair. |
 | Single inheritance | `override_method_delete`, `super_call_move` | Remove an ordinary overriding method or move its standalone same-method delegation; enabled by default |
 | Multiple inheritance | `base_order_shuffle` | Change the order of distinct simple-name direct bases; enabled by default, with stable source-derived permutations |

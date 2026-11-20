@@ -67,7 +67,7 @@ fn native_mutation_config(
     }
 }
 
-const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 90] = [
+const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 93] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -158,6 +158,9 @@ const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 90] = [
     "match_guard_constant",
     "match_or_alternative_delete",
     "statement_order_swap",
+    "stdlib_escape_remove",
+    "call_argument_swap",
+    "call_result_default",
 ];
 
 #[rstest::rstest]
@@ -235,13 +238,14 @@ fn usage_documents_all_mutation_operator_ids_and_selector_families_1(#[case] nam
 }
 
 #[rstest::rstest]
-#[case::input_90_default_runtime_operators_1("90 default runtime operators")]
-#[case::input_109_operator_ids_2("109 operator IDs")]
+#[case::input_93_default_runtime_operators_1("93 default runtime operators")]
+#[case::input_112_operator_ids_2("112 operator IDs")]
 #[case::collection_ops_3("collection_ops")]
 #[case::structure_ops_4("structure_ops")]
 #[case::bitwise_ops_5("bitwise_ops")]
 #[case::exception_ops_6("exception_ops")]
 #[case::exception_risky_7("exception_risky")]
+#[case::call_contracts("call_contracts")]
 #[case::exception_type_pair_8("exception_type_pair")]
 #[case::baseexception_9("BaseException")]
 #[case::except_10("except*")]
