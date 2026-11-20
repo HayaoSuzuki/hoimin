@@ -70,7 +70,7 @@ Update user guides/operator documentation, generated CLI reference, default-sele
 - [x] Verify default/exclusion selectors, stable serialization/ranking and candidate limits across mixed families.
 - [x] Update reference and examples with precise static-analysis limitations and survivor interpretation.
 - [x] Run formatting, clippy, workspace tests, contract features and frozen Python tests; investigate failures rather than weakening expectations.
-- [ ] Perform final five implementation/test self-review passes, reassess all eight design diagnostics and obtain independent whole-branch review. Record remaining risks explicitly. Commit local work only.
+- [x] Perform final five implementation/test self-review passes, reassess all eight design diagnostics and obtain independent whole-branch review. Record remaining risks explicitly. Commit local work only.
 
 ## Plan self-review
 
