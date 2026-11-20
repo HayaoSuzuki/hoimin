@@ -147,6 +147,61 @@ pub(super) struct Set {
     pub may_fold: bool,
 }
 
+// In both modes every character belongs to exactly one of these four sets:
+// decimal digit, other word character, whitespace, or other nonword character.
+fn partition(category: char) -> u8 {
+    match category {
+        'd' => 1,
+        'w' => 3,
+        's' => 4,
+        'D' => 14,
+        'W' => 12,
+        'S' => 11,
+        _ => unreachable!(),
+    }
+}
+
+const DIGITS: u128 = ((1u128 << 10) - 1) << 48;
+const LETTERS: u128 = (1u128 << 26) - 1;
+const WORD: u128 = DIGITS | (LETTERS << 65) | (LETTERS << 97) | (1u128 << 95);
+const SPACE: u128 = (31u128 << 9) | (1u128 << 32);
+fn ascii_members(partitions: u8) -> u128 {
+    [DIGITS, WORD & !DIGITS, SPACE, !(WORD | SPACE)]
+        .into_iter()
+        .enumerate()
+        .filter(|(index, _)| partitions & (1 << index) != 0)
+        .fold(0, |union, (_, mask)| union | mask)
+}
+
+// Retain disjoint non-ASCII intervals. Adjacent ranges coalesce even when the
+// pattern lists them out of order. No uncancellable final sort is needed.
+#[derive(Default)]
+struct Intervals(std::collections::BTreeMap<u32, u32>);
+impl Intervals {
+    fn insert(&mut self, mut lo: u32, mut hi: u32, cancelled: &dyn Fn() -> bool) -> Option<()> {
+        if hi < 128 {
+            return Some(());
+        }
+        lo = lo.max(128);
+        while let Some((&start, &end)) = self.0.range(..=hi + 1).next_back() {
+            if end + 1 < lo {
+                break;
+            }
+            if cancelled() {
+                return None;
+            }
+            self.0.remove(&start);
+            lo = lo.min(start);
+            hi = hi.max(end);
+        }
+        self.0.insert(lo, hi);
+        Some(())
+    }
+    fn covers_all(&self, ascii: u128) -> bool {
+        ascii == u128::MAX && self.0.get(&128) == Some(&0x0010_ffff)
+    }
+}
+
 pub(super) fn class(
     s: &[char],
     at: &mut usize,
@@ -161,6 +216,7 @@ pub(super) fn class(
     *at += usize::from(negative);
     let mut any = false;
     let mut ascii = 0u128;
+    let mut intervals = Intervals::default();
     let mut wholly_ascii = true;
     let mut sensitive = false;
     let mut may_fold = negative;
@@ -184,7 +240,7 @@ pub(super) fn class(
             Escape::Category(c) if !range => {
                 wholly_ascii = false;
                 may_fold |= !matches!(c, 'd' | 's');
-                categories |= 1 << "dDwWsS".find(c)?;
+                categories |= partition(c);
                 sensitive = true;
                 continue;
             }
@@ -204,6 +260,9 @@ pub(super) fn class(
             Escape::Literal(lo) => (lo, lo),
             _ => return None,
         };
+        if !bytes {
+            intervals.insert(lo, hi, cancelled)?;
+        }
         if hi >= 128 {
             wholly_ascii = false;
         }
@@ -232,21 +291,15 @@ pub(super) fn class(
         let paired = ((ascii >> 65) | (ascii >> 97)) & letters;
         ascii |= (paired << 65) | (paired << 97);
     }
-    let exact = ascii_category(ascii, wholly_ascii, negative);
-    if categories & (categories >> 1) & 0b01_0101 != 0 {
-        sensitive = false;
+    if categories == 15 || intervals.covers_all(ascii | ascii_members(categories)) {
+        return Some(Set {
+            variant: None,
+            sensitive: false,
+            may_fold: !negative,
+        });
     }
-    let variant = if let Some(code) = exact {
-        Some(if flags & ASCII != 0 {
-            Variant::Unicode(code)
-        } else {
-            Variant::Text(code)
-        })
-    } else if sensitive {
-        Some(Variant::Scope(if flags & ASCII != 0 { 'u' } else { 'a' }))
-    } else {
-        None
-    };
+    let exact = ascii_category(ascii, wholly_ascii, negative);
+    let variant = class_variant(exact, sensitive, flags);
     Some(Set {
         variant,
         sensitive,
@@ -255,20 +308,30 @@ pub(super) fn class(
 }
 
 fn ascii_category(ascii: u128, wholly_ascii: bool, negative: bool) -> Option<&'static str> {
-    let digits = ((1u128 << 10) - 1) << 48;
-    let letters = (1u128 << 26) - 1;
-    let word = digits | (letters << 65) | (letters << 97) | (1u128 << 95);
-    let space = (31u128 << 9) | (1u128 << 32);
     if wholly_ascii {
         match (ascii, negative) {
-            (v, false) if v == digits => Some(r"\d"),
-            (v, true) if v == digits => Some(r"\D"),
-            (v, false) if v == word => Some(r"\w"),
-            (v, true) if v == word => Some(r"\W"),
-            (v, false) if v == space => Some(r"\s"),
-            (v, true) if v == space => Some(r"\S"),
+            (v, false) if v == DIGITS => Some(r"\d"),
+            (v, true) if v == DIGITS => Some(r"\D"),
+            (v, false) if v == WORD => Some(r"\w"),
+            (v, true) if v == WORD => Some(r"\W"),
+            (v, false) if v == SPACE => Some(r"\s"),
+            (v, true) if v == SPACE => Some(r"\S"),
             _ => None,
         }
+    } else {
+        None
+    }
+}
+
+fn class_variant(exact: Option<&'static str>, sensitive: bool, flags: u16) -> Option<Variant> {
+    if let Some(code) = exact {
+        Some(if flags & ASCII != 0 {
+            Variant::Unicode(code)
+        } else {
+            Variant::Text(code)
+        })
+    } else if sensitive {
+        Some(Variant::Scope(if flags & ASCII != 0 { 'u' } else { 'a' }))
     } else {
         None
     }

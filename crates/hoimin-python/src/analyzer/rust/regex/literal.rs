@@ -69,6 +69,8 @@ impl<'a> Literal<'a> {
             }
             _ => return None,
         }
+        #[cfg(test)]
+        super::record_work(result.chars.len(), 0);
         Some(result)
     }
 

@@ -12,6 +12,23 @@ pub(super) const ASCII: u16 = 256;
 const MODES: u16 = ASCII | UNICODE | LOCALE;
 pub(super) const MASK: u16 = IGNORE | LOCALE | MULTI | 16 | UNICODE | VERBOSE | ASCII;
 
+/// Anchor redundancy depends only on where the consumer permits the match to start and end.
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+pub(super) enum Consumer {
+    Search,
+    Prefix,
+    Full,
+}
+impl Consumer {
+    pub(super) fn from_method(method: &str) -> Self {
+        match method {
+            "fullmatch" => Self::Full,
+            "match" | "prefixmatch" => Self::Prefix,
+            _ => Self::Search,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub(super) enum Variant {
     Text(&'static str),
@@ -21,7 +38,6 @@ pub(super) enum Variant {
 pub(super) struct Edit {
     pub span: Range<usize>,
     pub variant: Variant,
-    pub boundary: bool,
 }
 struct Anchor {
     span: Range<usize>,
@@ -30,7 +46,8 @@ struct Anchor {
     root: bool,
 }
 pub(super) struct Syntax {
-    pub edits: Vec<Edit>,
+    pub sets: Vec<Edit>,
+    pub anchors: Vec<Edit>,
     pub sensitive: bool,
     pub global_modes: Vec<usize>,
     pub flags: u16,
@@ -193,6 +210,16 @@ enum Repeat {
     Literal,
     Bounds(u32, u32),
 }
+const MAX_DECIMAL_DIGITS: usize = 4300;
+fn decimal(digits: impl ExactSizeIterator<Item = char>) -> Option<u32> {
+    if digits.len() > MAX_DECIMAL_DIGITS {
+        return None;
+    }
+    let mut digits = digits;
+    digits
+        .try_fold(0u32, |n, d| n.checked_mul(10)?.checked_add(d.to_digit(10)?))
+        .filter(|&n| n < u32::MAX)
+}
 fn quant(s: &[char], at: &mut usize, cancelled: &dyn Fn() -> bool) -> Option<Repeat> {
     let start = *at;
     let mut end = start;
@@ -219,19 +246,11 @@ fn quant(s: &[char], at: &mut usize, cancelled: &dyn Fn() -> bool) -> Option<Rep
     if s.get(end) != Some(&'}') || (!comma && a.is_empty()) {
         return Some(Repeat::Literal);
     }
-    let number = |ds: &[char]| {
-        if ds.len() > 4300 {
-            return None;
-        }
-        ds.iter()
-            .try_fold(0u32, |n, d| n.checked_mul(10)?.checked_add(d.to_digit(10)?))
-            .filter(|&n| n < u32::MAX)
-    };
-    let lo = number(a)?;
+    let lo = decimal(a.iter().copied())?;
     let hi = if comma && b.is_empty() {
         u32::MAX
     } else {
-        number(b)?
+        decimal(b.iter().copied())?
     };
     if lo > hi {
         return None;
@@ -269,9 +288,11 @@ impl Syntax {
         source: &[char],
         bytes: bool,
         external: u16,
-        consumer: &str,
+        consumer: Consumer,
         cancelled: &dyn Fn() -> bool,
     ) -> Option<Self> {
+        #[cfg(test)]
+        super::record_work(0, source.len());
         if !valid(external, bytes) {
             return None;
         }
@@ -288,7 +309,8 @@ impl Syntax {
             last: None,
             anchors: vec![],
             output: Self {
-                edits: vec![],
+                sets: vec![],
+                anchors: vec![],
                 sensitive: false,
                 global_modes: vec![],
                 flags: external,
@@ -411,7 +433,7 @@ impl Scanner<'_> {
                 '(' => {
                     let id = self.name(')')?;
                     let n = if !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()) {
-                        id.parse::<usize>().ok()?
+                        usize::try_from(decimal(id.bytes().map(char::from))?).ok()?
                     } else {
                         *self.names.get(&id)?
                     };
@@ -586,17 +608,16 @@ impl Scanner<'_> {
         }
         self.output.sensitive |= frame.inherits && sensitive;
         if let Some(variant) = variant {
-            self.output.edits.push(Edit {
+            self.output.sets.push(Edit {
                 span: start..self.at,
                 variant,
-                boundary: false,
             });
         }
         frame.may_fold |= may_fold;
         frame.push(width, repeatable);
         Some(())
     }
-    fn finish(mut self, consumer: &str) -> Option<Syntax> {
+    fn finish(mut self, consumer: Consumer) -> Option<Syntax> {
         if self.stack.len() != 1 || self.max_condition >= self.captures.len() {
             return None;
         }
@@ -607,9 +628,9 @@ impl Scanner<'_> {
             let simple = anchor.root && self.stack[0].alternatives.is_none();
             let leading = simple
                 && self.first == Some(anchor.span.start)
-                && matches!(consumer, "match" | "prefixmatch" | "fullmatch");
+                && matches!(consumer, Consumer::Prefix | Consumer::Full);
             let terminal =
-                simple && self.last == Some(anchor.span.start) && consumer == "fullmatch";
+                simple && self.last == Some(anchor.span.start) && consumer == Consumer::Full;
             if (leading && matches!(anchor.ch, '^' | 'A'))
                 || (terminal && matches!(anchor.ch, '$' | 'Z' | 'z'))
             {
@@ -623,10 +644,9 @@ impl Scanner<'_> {
                 _ => None,
             };
             for replacement in [Some("(?:)"), alternate].into_iter().flatten() {
-                self.output.edits.push(Edit {
+                self.output.anchors.push(Edit {
                     span: anchor.span.clone(),
                     variant: Variant::Text(replacement),
-                    boundary: true,
                 });
             }
         }
@@ -652,7 +672,7 @@ mod tests {
             .collect::<Vec<_>>();
         let polls = std::cell::Cell::new(0);
 
-        let result = Syntax::scan(&text, false, 0, "compile", &|| {
+        let result = Syntax::scan(&text, false, 0, Consumer::Search, &|| {
             polls.set(polls.get() + 1);
             polls.get() >= 50
         });

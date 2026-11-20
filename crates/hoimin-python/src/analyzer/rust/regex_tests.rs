@@ -333,3 +333,144 @@ fn rejected_sink_stops_reference_materialization() {
     assert!(matches!(outcome, Err(AnalysisError::PayloadLimit { .. })));
     assert_eq!(super::regex::materialized(), 4102);
 }
+
+#[rstest]
+#[case::module_compiled("p=re.compile(PAT)", "re.search(p, subject)", "regex_character_set", 0)]
+#[case::compiled_receiver("p=re.compile(PAT)", "p.search(subject)", "regex_match_boundary", 24)]
+#[case::module_method(
+    "p=re.compile(PAT)",
+    "re.search(p, subject)",
+    "regex_match_boundary",
+    24
+)]
+#[case::plain_reference("p=PAT", "re.search(PAT, subject)", "regex_character_set", 0)]
+fn fix1_shared_pattern_work(
+    #[case] init: &str,
+    #[case] usage: &str,
+    #[case] op: &str,
+    #[case] expected: usize,
+) {
+    let size = 1024;
+    let source = format!(
+        "import re\nPAT=r'{}'\n{init}\n{}",
+        "a".repeat(size),
+        format!("{usage}\n").repeat(24)
+    );
+    super::regex::clear_work();
+
+    let output = analyze_regex(&source, &[op], 128, &[], &[]);
+    let work = super::regex::pattern_work();
+
+    assert_eq!(output.candidates.len(), expected);
+    assert_eq!(
+        work,
+        (size, size),
+        "decoded and grammar units across all 24 calls"
+    );
+}
+
+#[rstest]
+#[case::direct_subject("re.search(rb'x$', f'{v}')")]
+#[case::direct_pattern("re.search(f'{v}', b'x')")]
+#[case::receiver_subject("re.compile(b'x').search(f'{v}')")]
+#[case::receiver_pattern("re.compile(f'{v}').search(b'x')")]
+#[case::named_receiver("p=re.compile(b'x')\np.search(f'{v}')")]
+#[case::named_formatted("pattern=f'{v}'\nre.search(pattern,b'x')")]
+fn fix1_incompatible_formatted_text(#[case] expression: &str) {
+    let source = format!("import re\n{expression}");
+    let operators = [
+        "regex_match_boundary",
+        "regex_character_set",
+        "regex_ascii_mode",
+    ];
+
+    let found = analyze_regex(&source, &operators, 128, &[], &[]);
+
+    assert_eq!(found.candidates.len(), 0);
+}
+
+#[rstest]
+#[case::last_valid(4300, 1)]
+#[case::first_invalid(4301, 0)]
+fn fix1_numeric_condition_limit(#[case] digits: usize, #[case] expected: usize) {
+    let pattern = format!(r"(\d)(?({}1)y|n)", "0".repeat(digits - 1));
+    let source = format!("import re\np=re.compile(r'{pattern}')");
+
+    let actual = edits(&source, "regex_character_set");
+
+    assert_eq!(actual.len(), expected);
+}
+
+#[rstest]
+#[case::universal(r"[\x00-\U0010ffff]")]
+#[case::empty(r"[^\x00-\U0010ffff]")]
+#[case::unsorted_union(r"[\u0080-\U0010ffff\x00-\x7f]")]
+#[case::negative_overlap(r"[^\u007e-\U0010ffff\x00-\x7f]")]
+#[case::mixed_categories(r"[\D\w]")]
+#[case::mixed_and_ranges(r"[^\D0-9\x80-\U0010ffff]")]
+fn fix1_full_character_unions_have_no_mode_sensitive_atoms(#[case] class: &str) {
+    let source = format!("import re\np=re.compile(r'(?i){class}')");
+
+    let actual = analyze_regex(
+        &source,
+        &["regex_character_set", "regex_ascii_mode"],
+        16,
+        &[],
+        &[],
+    );
+
+    assert_eq!(actual.candidates.len(), 0);
+}
+
+#[rstest]
+#[case::excluded_definition_valid("a", 2, 1)]
+#[case::excluded_definition_invalid(r"(\d", 0, 3)]
+fn fix1_method_only_consumers_share_constructor_validity(
+    #[case] pattern: &str,
+    #[case] expected: usize,
+    #[case] units: usize,
+) {
+    let source = format!("import re\np=re.compile(r'{pattern}')\na=p.search(s)\nb=p.search(s)\n");
+    super::regex::clear_work();
+
+    let output = analyze_regex(
+        &source,
+        &["regex_match_boundary"],
+        32,
+        &[LineRange { start: 3, end: 4 }],
+        &[],
+    );
+
+    assert_eq!(output.candidates.len(), expected);
+    assert_eq!(super::regex::pattern_work(), (units, units));
+}
+
+#[test]
+fn fix1_shared_literal_keeps_flags_and_match_context() {
+    let source = "import re\nPAT=r'^\\d$'\na=re.search(PAT,s)\nb=re.fullmatch(PAT,s)\nc=re.search(PAT,s,re.A)\n";
+    let ops = ["regex_match_boundary", "regex_character_set"];
+    super::regex::clear_work();
+
+    let output = analyze_regex(source, &ops, 64, &[], &[]);
+    let anchors = |line| {
+        output
+            .candidates
+            .iter()
+            .filter(|c| {
+                c.line == line
+                    && c.original == "PAT"
+                    && c.operator.as_str() == "regex_match_boundary"
+            })
+            .count()
+    };
+    let categories: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|c| c.operator.as_str() == "regex_character_set")
+        .map(|c| c.replacement.as_str())
+        .collect();
+
+    assert_eq!([anchors(3), anchors(4), anchors(5)], [3, 0, 3]);
+    assert_eq!(categories, [r"r'^[0-9]$'", r"r'^[0-9]$'", r"r'^(?u:\d)$'"]);
+    assert_eq!(super::regex::pattern_work(), (4, 12));
+}

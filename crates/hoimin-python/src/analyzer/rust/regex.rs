@@ -20,7 +20,11 @@ use literal::Literal;
 use pattern::{ASCII, Syntax, UNICODE};
 use ruff_python_ast::{Expr, ExprCall, ModModule, Number, Operator};
 use ruff_text_size::{Ranged, TextRange};
-use std::collections::HashSet;
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 const BOUND: MutationOperator = MutationOperator::RegexMatchBoundary;
 const SET: MutationOperator = MutationOperator::RegexCharacterSet;
@@ -30,6 +34,63 @@ const MODE: MutationOperator = MutationOperator::RegexAsciiMode;
 pub(super) struct Regex<'a> {
     imports: CallableImports,
     bindings: Option<local_initializers::Index<&'a Expr>>,
+    cache: PatternCache<'a>,
+}
+
+#[derive(Clone)]
+struct Prepared<'a> {
+    literal: Rc<Literal<'a>>,
+    syntax: Rc<Syntax>,
+}
+type GrammarBySite<'a> = HashMap<(TextRange, u16, pattern::Consumer), Option<Prepared<'a>>>;
+#[derive(Default)]
+struct PatternCache<'a> {
+    literals: RefCell<HashMap<TextRange, Option<Rc<Literal<'a>>>>>,
+    parsed: RefCell<GrammarBySite<'a>>,
+    // Every constructor has one argument site. Consumers can check its validity
+    // without reevaluating its flag expression or traversing its source mapping.
+    compiled_validity: RefCell<HashMap<TextRange, bool>>,
+}
+impl<'a> PatternCache<'a> {
+    fn mapped(&self, expr: &Expr, shared: bool, site: &Site<'a>) -> Option<Rc<Literal<'a>>> {
+        let cached = self.literals.borrow().get(&expr.range()).cloned();
+        if let Some(known) = cached {
+            known
+        } else {
+            let mapped = Literal::read(expr, site.source, site.cancelled).map(Rc::new);
+            if shared && !(site.cancelled)() {
+                self.literals
+                    .borrow_mut()
+                    .insert(expr.range(), mapped.clone());
+            }
+            mapped
+        }
+    }
+    fn prepare(
+        &self,
+        expr: &Expr,
+        flags: u16,
+        consumer: &str,
+        shared: bool,
+        site: &Site<'a>,
+    ) -> Option<Prepared<'a>> {
+        let context = pattern::Consumer::from_method(consumer);
+        let key = (expr.range(), flags, context);
+        if let Some(known) = self.parsed.borrow().get(&key) {
+            return known.clone();
+        }
+        let mapped = self.mapped(expr, shared, site)?;
+        let parsed = Syntax::scan(&mapped.chars, mapped.bytes, flags, context, site.cancelled).map(
+            |syntax| Prepared {
+                literal: mapped,
+                syntax: Rc::new(syntax),
+            },
+        );
+        if shared && !(site.cancelled)() {
+            self.parsed.borrow_mut().insert(key, parsed.clone());
+        }
+        parsed
+    }
 }
 struct Target<'a> {
     method: &'a str,
@@ -144,6 +205,7 @@ impl<'a> Regex<'a> {
         let bindings = local_initializers::Index::build(module, cancelled, |e, with| {
             (!with
                 && (is_literal(e)
+                    || matches!(e, Expr::FString(_))
                     || e.as_call_expr().is_some_and(|c| {
                         imports
                             .resolve(&c.func)
@@ -154,6 +216,7 @@ impl<'a> Regex<'a> {
         Ok(Self {
             imports,
             bindings: Some(bindings),
+            cache: PatternCache::default(),
         })
     }
     pub fn active(&self) -> bool {
@@ -228,10 +291,68 @@ impl<'a> Regex<'a> {
         })
     }
 
+    fn text_is_bytes(&self, expr: &Expr) -> Option<bool> {
+        let value = self.initializer(expr).unwrap_or(expr);
+        match value {
+            Expr::BytesLiteral(_) => Some(true),
+            Expr::StringLiteral(_) | Expr::FString(_) => Some(false),
+            _ => None,
+        }
+    }
+
+    fn compatible_types(&self, pattern: &Expr, subject: Option<&Expr>) -> bool {
+        if [Some(pattern), subject].into_iter().flatten().any(|v| {
+            matches!(
+                v,
+                Expr::NoneLiteral(_)
+                    | Expr::NumberLiteral(_)
+                    | Expr::BooleanLiteral(_)
+                    | Expr::List(_)
+                    | Expr::Dict(_)
+                    | Expr::Set(_)
+                    | Expr::Tuple(_)
+            )
+        }) {
+            return false;
+        }
+        if let (Some(pattern_type), Some(subject_type)) = (
+            self.text_is_bytes(pattern),
+            subject.and_then(|v| self.text_is_bytes(v)),
+        ) && pattern_type != subject_type
+        {
+            return false;
+        }
+        true
+    }
+    fn compiled_valid(&self, pattern: &Expr, flags: Option<&Expr>, site: &Site<'a>) -> bool {
+        if let Some(&valid) = self.cache.compiled_validity.borrow().get(&pattern.range()) {
+            return valid;
+        }
+        let known = Flags::read(flags, &self.imports, site.cancelled);
+        let valid = match (self.literal(pattern), known) {
+            (Some(expr), Some(flags)) => self
+                .cache
+                .prepare(expr, flags.value, "compile", true, site)
+                .is_some(),
+            (Some(expr), None) => self.cache.mapped(expr, true, site).is_some(),
+            (_, Some(flags)) => self
+                .text_is_bytes(pattern)
+                .is_none_or(|bytes| pattern::valid(flags.value, bytes)),
+            _ => true,
+        };
+        if !(site.cancelled)() {
+            self.cache
+                .compiled_validity
+                .borrow_mut()
+                .insert(pattern.range(), valid);
+        }
+        valid
+    }
+
     pub fn emit(
         &self,
         call: &ExprCall,
-        site: &Site<'_>,
+        site: &Site<'a>,
         max: usize,
         selected: impl Fn(TextRange) -> bool,
         intersects: impl Fn(TextRange) -> bool,
@@ -243,66 +364,69 @@ impl<'a> Regex<'a> {
         let method_range = target.member.unwrap_or_else(|| call.func.range());
         let method =
             site.supports(BOUND) && !methods(target.method).is_empty() && selected(method_range);
-        let pattern = !target.compiled
+        let compiled_argument = self.compile(target.pattern);
+        let is_compiled = target.compiled || compiled_argument.is_some();
+        let inspect = !is_compiled
             && (intersects(target.pattern.range())
                 || site.supports(MODE) && target.flags.is_some_and(|f| intersects(f.range())));
-        if !method && !pattern {
+        if !method && !inspect {
             return;
         }
-        if [Some(target.pattern), target.subject]
-            .into_iter()
-            .flatten()
-            .any(|v| {
-                matches!(
-                    v,
-                    Expr::NoneLiteral(_)
-                        | Expr::NumberLiteral(_)
-                        | Expr::BooleanLiteral(_)
-                        | Expr::List(_)
-                        | Expr::Dict(_)
-                        | Expr::Set(_)
-                        | Expr::Tuple(_)
-                )
-            })
+        let (pattern, compile_flags) = compiled_argument.unwrap_or((target.pattern, target.flags));
+        if !self.compatible_types(pattern, target.subject) {
+            return;
+        }
+        if compiled_argument.is_some()
+            && Flags::read(target.flags, &self.imports, site.cancelled)
+                .is_some_and(|f| f.value != 0)
         {
             return;
         }
-        let compiled = self.compile(target.pattern);
-        let mut flags = Flags::read(target.flags, &self.imports, site.cancelled);
-        if let Some((_, compile_flags)) = compiled {
-            if flags.as_ref().is_some_and(|v| v.value != 0) {
+
+        let mut pattern_site = None;
+        if is_compiled {
+            if !self.compiled_valid(pattern, compile_flags, site) {
                 return;
             }
-            flags = Flags::read(compile_flags, &self.imports, site.cancelled);
-        }
-        let value = self.literal(compiled.map_or(target.pattern, |(p, _)| p));
-        if let (Some(p), Some(s)) = (value, target.subject.and_then(|s| self.literal(s)))
-            && p.is_bytes_literal_expr() != s.is_bytes_literal_expr()
+        } else if let Some(external) = Flags::read(target.flags, &self.imports, site.cancelled) {
+            if self
+                .text_is_bytes(pattern)
+                .is_some_and(|bytes| !pattern::valid(external.value, bytes))
+            {
+                return;
+            }
+            if let Some(value) = self.literal(pattern) {
+                let reference = pattern.is_name_expr().then(|| pattern.range());
+                let prepared = self.cache.prepare(
+                    value,
+                    external.value,
+                    target.method,
+                    reference.is_some(),
+                    site,
+                );
+                if target.method == "compile" && !(site.cancelled)() {
+                    self.cache
+                        .compiled_validity
+                        .borrow_mut()
+                        .insert(pattern.range(), prepared.is_some());
+                }
+                let Some(prepared) = prepared else { return };
+                pattern_site = Some(PatternSite {
+                    literal: prepared.literal,
+                    syntax: prepared.syntax,
+                    external,
+                    flag_expr: target.flags,
+                    reference,
+                });
+            }
+        } else if let Some(value) = self.literal(pattern)
+            && self
+                .cache
+                .mapped(value, pattern.is_name_expr(), site)
+                .is_none()
         {
             return;
         }
-        let literal = value.and_then(|e| Literal::read(e, site.source, site.cancelled));
-        if value.is_some() && literal.is_none() {
-            return;
-        }
-        let parsed = if let (Some(mapped), Some(external)) = (&literal, &flags) {
-            let Some(syntax) = Syntax::scan(
-                &mapped.chars,
-                mapped.bytes,
-                external.value,
-                if target.compiled {
-                    "compile"
-                } else {
-                    target.method
-                },
-                site.cancelled,
-            ) else {
-                return;
-            };
-            Some(syntax)
-        } else {
-            None
-        };
         if method {
             for &dest in methods(target.method) {
                 if (site.cancelled)() {
@@ -321,28 +445,15 @@ impl<'a> Regex<'a> {
                 }
             }
         }
-        if !pattern || compiled.is_some() {
-            return;
-        }
-        if let (Some(literal), Some(syntax), Some(external)) = (literal, parsed, flags) {
-            let pattern = PatternSite {
-                literal,
-                syntax,
-                external,
-                flag_expr: target.flags,
-                reference: target
-                    .pattern
-                    .is_name_expr()
-                    .then(|| target.pattern.range()),
-            };
-            pattern.emit(site, max, selected, emit);
+        if inspect && let Some(pattern_site) = pattern_site {
+            pattern_site.emit(site, max, selected, emit);
         }
     }
 }
 
 struct PatternSite<'a> {
-    literal: Literal<'a>,
-    syntax: Syntax,
+    literal: Rc<Literal<'a>>,
+    syntax: Rc<Syntax>,
     external: Flags<'a>,
     flag_expr: Option<&'a Expr>,
     reference: Option<TextRange>,
@@ -355,33 +466,34 @@ impl PatternSite<'_> {
         selected: impl Fn(TextRange) -> bool,
         mut emit: impl FnMut(TextRange, String, MutationOperator) -> bool,
     ) {
-        let mut variants = [0usize; 2];
-        let mut seen = HashSet::new();
-        for edit in &self.syntax.edits {
-            if (site.cancelled)() {
-                return;
-            }
-            let op = if edit.boundary { BOUND } else { SET };
-            let group = usize::from(edit.boundary);
-            if !site.supports(op)
-                || self.reference.is_some() && variants[group] >= max.saturating_add(1)
-            {
+        for (op, edits) in [(SET, &self.syntax.sets), (BOUND, &self.syntax.anchors)] {
+            if !site.supports(op) {
                 continue;
             }
-            let Some(range) = self.literal.range_for(&edit.span) else {
-                continue;
-            };
-            if !selected(self.reference.unwrap_or(range)) {
-                continue;
-            }
-            if self.reference.is_some() && !seen.insert((edit.span.clone(), edit.variant, op)) {
-                continue;
-            }
-            if let Some((range, text)) = self.literal.edit(edit.span.clone(), edit.variant) {
-                let (target, text) = self.project(range, text);
-                variants[group] += 1;
-                if !emit(target, text, op) {
+            let mut variants = 0;
+            let mut seen = HashSet::new();
+            for edit in edits {
+                if (site.cancelled)() {
                     return;
+                }
+                if self.reference.is_some() && variants >= max.saturating_add(1) {
+                    break;
+                }
+                let Some(range) = self.literal.range_for(&edit.span) else {
+                    continue;
+                };
+                if !selected(self.reference.unwrap_or(range)) {
+                    continue;
+                }
+                if self.reference.is_some() && !seen.insert((edit.span.clone(), edit.variant)) {
+                    continue;
+                }
+                if let Some((range, text)) = self.literal.edit(edit.span.clone(), edit.variant) {
+                    let (target, text) = self.project(range, text);
+                    variants += 1;
+                    if !emit(target, text, op) {
+                        return;
+                    }
                 }
             }
         }
@@ -458,4 +570,20 @@ pub(super) fn reset_materialized() {
 #[cfg(test)]
 pub(super) fn materialized() -> usize {
     MATERIALIZED.get()
+}
+
+#[cfg(test)]
+thread_local! {static PATTERN_WORK:std::cell::Cell<(usize,usize)>=const{std::cell::Cell::new((0,0))};}
+#[cfg(test)]
+pub(super) fn clear_work() {
+    PATTERN_WORK.set((0, 0));
+}
+#[cfg(test)]
+pub(super) fn pattern_work() -> (usize, usize) {
+    PATTERN_WORK.get()
+}
+#[cfg(test)]
+fn record_work(decoded: usize, scanned: usize) {
+    let (d, s) = pattern_work();
+    PATTERN_WORK.set((d + decoded, s + scanned));
 }

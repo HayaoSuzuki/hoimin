@@ -489,3 +489,108 @@ proptest::proptest! {
         proptest::prop_assert!(mutant.status.success(),"{}",String::from_utf8_lossy(&mutant.stderr));
     }
 }
+
+#[rstest]
+#[case::bytes_pattern("re.search(rb'x$', f'{value}')", 0, true)]
+#[case::bytes_subject("re.search(f'{value}', b'x')", 0, true)]
+#[case::compiled_bytes("re.compile(b'x').search(f'{value}')", 0, true)]
+#[case::compiled_text("re.compile(f'{value}').search(b'x')", 0, true)]
+#[case::dynamic_text("re.search(f'{value}', 'xx')", 1, false)]
+#[case::compiled_dynamic("re.compile(f'{value}').search('xx')", 1, false)]
+#[tokio::test]
+async fn fix1_match_type_contract(
+    #[case] expression: &str,
+    #[case] count: usize,
+    #[case] mismatch: bool,
+) {
+    let root = tempfile::tempdir().unwrap();
+    let source = format!("import re\nvalue='x'\ndef run(): return {expression}\n");
+    fs::write(root.path().join("subject.py"), source).unwrap();
+    let harness =
+        "from subject import run\ntry: print(run().span())\nexcept TypeError: print('TypeError')";
+
+    let manifest = plan(root.path(), BOUND).await;
+    let output = run_python(root.path(), harness);
+
+    assert_eq!(manifest["candidates"].as_array().unwrap().len(), count);
+    assert_python_output(
+        BOUND,
+        "original",
+        &output,
+        if mismatch { "TypeError\n" } else { "(0, 1)\n" },
+    );
+}
+
+#[rstest]
+#[case::last_valid(4300, true)]
+#[case::first_invalid(4301, false)]
+#[tokio::test]
+async fn fix1_conditional_conversion_contract(#[case] digits: usize, #[case] valid: bool) {
+    let root = tempfile::tempdir().unwrap();
+    let pattern = format!(r"(\d)(?({}1)y|n)", "0".repeat(digits - 1));
+    let source = format!("import re\np=re.compile(r'{pattern}')\n");
+    fs::write(root.path().join("subject.py"), source).unwrap();
+
+    let manifest = plan(root.path(), CLASS).await;
+    let output = run_python(
+        root.path(),
+        "try:\n from subject import p\n print(p.fullmatch('1y').groups())\nexcept ValueError: print('ValueError')",
+    );
+
+    assert_eq!(
+        manifest["candidates"].as_array().unwrap().len(),
+        usize::from(valid)
+    );
+    assert_python_output(
+        CLASS,
+        "original",
+        &output,
+        if valid { "('1',)\n" } else { "ValueError\n" },
+    );
+}
+
+#[rstest]
+#[case::universal(r"[\x00-\U0010ffff]", true, true, 0)]
+#[case::empty_complement(r"[^\U00010000-\U0010ffff\x00-\uffff]", false, false, 0)]
+#[case::unsorted_split(r"[\x80-\U0010ffff\x00-\x7f]", true, true, 0)]
+#[case::missing_kelvin(r"[\x00-\u2129\u212b-\U0010ffff]", true, false, 2)]
+#[case::complement_missing_kelvin(r"[^\x00-\u2129\u212b-\U0010ffff]", false, true, 2)]
+#[case::categories_cover_domain(r"[\D\w]", true, true, 0)]
+#[case::ranges_and_categories(r"[^\D0-9\x80-\U0010ffff]", false, false, 0)]
+#[tokio::test]
+async fn fix1_union_mode_contract(
+    #[case] class: &str,
+    #[case] unicode: bool,
+    #[case] ascii: bool,
+    #[case] count: usize,
+) {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("subject.py");
+    let source = format!("import re\np=re.compile(r'(?i){class}')\n");
+    fs::write(&path, &source).unwrap();
+    let harness = "from subject import p\nprint(bool(p.fullmatch(chr(0x212a))))";
+    let expected = |v| if v { "True\n" } else { "False\n" };
+
+    let original = run_python(root.path(), harness);
+    let manifest = plan(root.path(), "regex_ascii_mode,regex_character_set").await;
+    let candidates = manifest["candidates"].as_array().unwrap();
+
+    assert_python_output(CLASS, "original", &original, expected(unicode));
+    assert_eq!(candidates.len(), count);
+    for candidate in candidates {
+        let start = usize::try_from(candidate["span"]["start"].as_u64().unwrap()).unwrap();
+        let length = usize::try_from(candidate["span"]["length"].as_u64().unwrap()).unwrap();
+        let mut changed = source.clone();
+        changed.replace_range(
+            start..start + length,
+            candidate["replacement"].as_str().unwrap(),
+        );
+        fs::write(&path, changed).unwrap();
+        assert_python_output(
+            CLASS,
+            "mutant",
+            &run_python(root.path(), harness),
+            expected(ascii),
+        );
+    }
+}
