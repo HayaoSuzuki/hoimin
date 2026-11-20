@@ -66,10 +66,10 @@ Read regex-design.md. Create rust/regex.rs with private scanner/source-literal m
 
 Update user guides/operator documentation, generated CLI reference, default-selection fixtures and regression contracts. Run end-to-end plan/verify/report with representative new operators. Do not introduce new CLI surfaces.
 
-- [ ] Reconcile every issue acceptance item with implemented IDs and executable tests.
-- [ ] Verify default/exclusion selectors, stable serialization/ranking and candidate limits across mixed families.
-- [ ] Update reference and examples with precise static-analysis limitations and survivor interpretation.
-- [ ] Run formatting, clippy, workspace tests, contract features and frozen Python tests; investigate failures rather than weakening expectations.
+- [x] Reconcile every issue acceptance item with implemented IDs and executable tests.
+- [x] Verify default/exclusion selectors, stable serialization/ranking and candidate limits across mixed families.
+- [x] Update reference and examples with precise static-analysis limitations and survivor interpretation.
+- [x] Run formatting, clippy, workspace tests, contract features and frozen Python tests; investigate failures rather than weakening expectations.
 - [ ] Perform final five implementation/test self-review passes, reassess all eight design diagnostics and obtain independent whole-branch review. Record remaining risks explicitly. Commit local work only.
 
 ## Plan self-review
