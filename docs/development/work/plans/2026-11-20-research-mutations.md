@@ -26,11 +26,11 @@ The design Global constraints apply verbatim to each task. Tasks run only in C:/
 
 Read control-design.md. Create rust/control_structure.rs (or focused finally/match/order modules if cohesive separation is necessary), rust/research_control_tests.rs and CLI behavioral contracts. Modify rust.rs traversal, core/config.rs IDs/defaults, CLI ranking and directly affected fixtures.
 
-- [ ] Write named failing tests for finally_unwrap, match arm deletion, guard alteration, OR deletion, statement_order_swap, including illegal reachability and binding rejection.
-- [ ] Run focused Rust tests and record RED before adding emitters.
-- [ ] Implement token-aligned structural edits, preserving suite bytes and multiline literals; visit module and nested suites without duplicate emission.
-- [ ] Add bounded property tests for parse-valid edits and executable normal/abrupt cleanup, pattern fallback and state/notification ordering.
-- [ ] Run focused tests and relevant existing analyzer/core suites; record five code and five test reviews, fix findings, commit task-only paths and report.
+- [x] Write named failing tests for finally_unwrap, match arm deletion, guard alteration, OR deletion, statement_order_swap, including illegal reachability and binding rejection.
+- [x] Run focused Rust tests and record RED before adding emitters.
+- [x] Implement token-aligned structural edits, preserving suite bytes and multiline literals; visit module and nested suites without duplicate emission.
+- [x] Add bounded property tests for parse-valid edits and executable normal/abrupt cleanup, pattern fallback and state/notification ordering.
+- [x] Run focused tests and relevant existing analyzer/core suites; record five code and five test reviews, fix findings, commit task-only paths and report.
 
 ### Task 2: Calls, escaping, argument and result contracts
 
@@ -79,3 +79,4 @@ Update user guides/operator documentation, generated CLI reference, default-sele
 3. Interfaces: all tasks share config/defaults/ranking and collector; execute sequentially. Reuse actual preceding-task signatures, not guessed parallel versions. No task consumes an undocumented new public API.
 4. Verification gaps: added await, wildcard reachability, encoded sources, scoped regex flags, shadowing and source/lifetime effects to task owners.
 5. Proportion and completion: five independently reviewable deliverables, setup integrated into owners, final task is cross-family integration rather than repeated per-family testing. Full suite repeated only after new changes justify it.
+
