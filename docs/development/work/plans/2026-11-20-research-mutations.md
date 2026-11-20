@@ -56,11 +56,11 @@ Read calls-design.md sections for #1198/#1199. Create rust/collection_processing
 
 Read regex-design.md. Create rust/regex.rs with private scanner/source-literal modules if needed, plus regex_tests.rs and actual CPython contracts. Reuse guarded imports/provenance. Modify IDs/defaults/ranking/integration.
 
-- [ ] Add named failing cases for method, anchor and all ASCII/Unicode modes including compiled receivers and aliases.
-- [ ] Record focused RED.
-- [ ] Implement a bounded Python-regex scanner and source-edit mapping; handle global/external/scoped flags, complements, word boundaries, case folding, bytes and string syntax without pretending Rust regex syntax equals Python syntax.
-- [ ] Add bounded proptest compilation/runtime properties and the complete Unicode witness matrix from the domain design. Include specification-dependent ASCII original bug and Unicode intended behavior.
-- [ ] Verify focused and impacted tests; record five code/test reviews, commit and report.
+- [x] Add named failing cases for method, anchor and all ASCII/Unicode modes including compiled receivers and aliases.
+- [x] Record focused RED.
+- [x] Implement a bounded Python-regex scanner and source-edit mapping; handle global/external/scoped flags, complements, word boundaries, case folding, bytes and string syntax without pretending Rust regex syntax equals Python syntax.
+- [x] Add bounded proptest compilation/runtime properties and the complete Unicode witness matrix from the domain design. Include specification-dependent ASCII original bug and Unicode intended behavior.
+- [x] Verify focused and impacted tests; record five code/test reviews, commit and report.
 
 ### Task 5: Integration, documentation and final verification
 
