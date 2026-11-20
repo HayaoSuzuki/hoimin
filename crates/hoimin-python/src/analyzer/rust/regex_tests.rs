@@ -236,7 +236,7 @@ fn excludes_unproven_or_equivalent(#[case] source: &str, #[case] op: &str) {
 
     let mut actual = edits(source, if anchor { "regex_match_boundary" } else { op });
     if anchor {
-        actual.retain(|(s, _)| s != "fullmatch")
+        actual.retain(|(s, _)| s != "fullmatch");
     }
 
     assert!(actual.is_empty(), "{actual:?}");
@@ -267,21 +267,37 @@ proptest::proptest! {
     fn referenced_variants_obey_unlimited_ranked_prefix(
         categories in proptest::collection::vec(proptest::sample::select(vec!['d','W','s','B']),12..48),
         budget in 0usize..6,
-    ){
-        let pattern=categories.into_iter().map(|c|format!("\\{c}")).collect::<String>();
-        let source=format!("import re\np=r'{pattern}'\ndef f(s): return re.search(p,s)\n");
-        let ids=["regex_match_boundary","regex_character_set","regex_ascii_mode"];
-        let all=analyze_regex(&source,&ids,usize::MAX,&[],&[]);
-        let expected:Vec<_>=all.candidates.iter().take(budget).map(|c|(c.span,c.operator,c.replacement.clone())).collect();
+    ) {
+        // Arrange.
+        let mut pattern = String::with_capacity(2 * categories.len());
+        for category in categories {
+            pattern.push('\\');
+            pattern.push(category);
+        }
+        let source = format!("import re\np=r'{pattern}'\ndef f(s): return re.search(p,s)\n");
+        let ids = ["regex_match_boundary", "regex_character_set", "regex_ascii_mode"];
+        let all = analyze_regex(&source, &ids, usize::MAX, &[], &[]);
+        let expected: Vec<_> = all
+            .candidates
+            .iter()
+            .take(budget)
+            .map(|c| (c.span, c.operator, c.replacement.clone()))
+            .collect();
 
+        // Act.
         super::regex::reset_materialized();
-        let limited=analyze_regex(&source,&ids,budget,&[],&[]);
-        let generated=super::regex::materialized();
+        let limited = analyze_regex(&source, &ids, budget, &[], &[]);
+        let generated = super::regex::materialized();
+        let actual: Vec<_> = limited
+            .candidates
+            .iter()
+            .map(|c| (c.span, c.operator, c.replacement.clone()))
+            .collect();
 
-        let actual:Vec<_>=limited.candidates.iter().map(|c|(c.span,c.operator,c.replacement.clone())).collect();
-        proptest::prop_assert_eq!(actual,expected);
+        // Assert.
+        proptest::prop_assert_eq!(actual, expected);
         proptest::prop_assert!(limited.truncated);
-        proptest::prop_assert!(generated<=(budget+2)*(pattern.len()+34));
+        proptest::prop_assert!(generated <= (budget + 2) * (pattern.len() + 34));
     }
 }
 #[rstest]

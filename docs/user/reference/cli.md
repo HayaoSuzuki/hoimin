@@ -75,7 +75,7 @@ Usage: hoimin verify [OPTIONS] <--candidate <ID>|--top <N>|--sample <N>> <PLAN>
 
 Arguments:
   <PLAN>
-          Path to a version-5 plan manifest
+          Path to a manifest saved by hoimin plan
 
 Options:
       --candidate <ID>

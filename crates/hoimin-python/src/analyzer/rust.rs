@@ -3549,23 +3549,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn visit_suite(&mut self, body: &'a [Stmt]) {
-        let swap = self
-            .request
-            .operators
-            .contains(MutationOperator::StatementOrderSwap);
-        let mut trailing_directive = None;
-        for (i, statement) in body.iter().enumerate() {
-            if self.check_cancelled() {
-                return;
-            }
-            if swap && let Some(next) = body.get(i + 1) {
-                self.collect_swap(statement, next, &mut trailing_directive);
-                if self.check_cancelled() {
-                    return;
-                }
-            }
-            self.visit_stmt(statement);
-        }
+        self.visit_suite_with_swaps(body);
     }
 
     fn check_cancelled(&mut self) -> bool {

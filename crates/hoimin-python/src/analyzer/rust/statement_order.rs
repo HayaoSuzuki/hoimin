@@ -109,8 +109,29 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for ReadNames<'_, 'ast, F> {
     }
 }
 
-impl<F: Fn() -> bool> AstCandidateCollector<'_, F> {
-    pub(super) fn collect_swap(
+impl<'ast, F: Fn() -> bool> AstCandidateCollector<'ast, F> {
+    /// Consider exchanges as the collector visits each statement in source order.
+    pub(super) fn visit_suite_with_swaps(&mut self, body: &'ast [Stmt]) {
+        let swap = self
+            .request
+            .operators
+            .contains(MutationOperator::StatementOrderSwap);
+        let mut trailing_directive = None;
+        for (i, statement) in body.iter().enumerate() {
+            if self.check_cancelled() {
+                return;
+            }
+            if swap && let Some(next) = body.get(i + 1) {
+                self.collect_swap(statement, next, &mut trailing_directive);
+                if self.check_cancelled() {
+                    return;
+                }
+            }
+            self.visit_stmt(statement);
+        }
+    }
+
+    fn collect_swap(
         &mut self,
         first: &Stmt,
         second: &Stmt,

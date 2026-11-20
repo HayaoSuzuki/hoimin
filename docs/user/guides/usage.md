@@ -765,6 +765,18 @@ binding analysis. Their existing applicability guards are unchanged.
 | Slice ranges | `structure_slice_bound_omit`, `structure_slice_bound_move` | omit one of two explicit bounds, or move a single bound to the other side; enabled by default |
 | Exception types | `exception_type_pair` | curated pairs such as `ValueError` ↔ `TypeError` in simple `except`/`except*` clauses and supported `raise` expressions |
 
+Escaping mutations require a statically resolved standard-library callable.
+Argument swaps hold expression evaluation order fixed. The analyzer can swap
+explicit positional values at a dynamic call site. It requires a known
+signature to swap a keyword with another keyword or a positional value.
+`*args` and `**kwargs` expansions suppress swaps. Result replacement requires a
+supported known return type. The call still runs and can produce its usual
+effects. Replacing the result can shorten the original object's lifetime.
+
+To check a cleanup guarantee with `finally_unwrap`, exercise an early return
+or an escaping exception and assert the cleanup event for that path.
+A normal-path cleanup assertion can pass under both executions.
+
 Use `--operators regex` to select all three regex operators, or exclude one
 with `--exclude-operators regex_ascii_mode`. An imported `re` name must
 resolve to the standard library. The analyzer recognizes literal text and byte
@@ -773,9 +785,20 @@ receivers. Bytes have no Unicode-mode mutation. Dynamic patterns can still
 support a method edit when both methods accept the supplied arguments.
 Pattern analysis skips ambiguous future set operators and groups nested more
 than 255 levels deep.
-For an ASCII-only field, an original `\\d+` accepting fullwidth digits can
+
+A complement such as `\D` accepts characters outside the decimal class.
+When the excluded class narrows to ASCII digits, the complement also accepts
+Unicode digits such as `９`. A word boundary `\b` checks word status on both
+sides of its position. It matches when one neighbor is a word character and
+the other is nonword in the effective mode. An input edge has a nonword
+neighbor.
+
+For an ASCII-only field, an original `\d+` accepting fullwidth digits can
 fail the specification before any mutant runs. A Unicode decimal field
 requires a test accepting such digits to distinguish it from `[0-9]+`.
+A survivor shows that the test command accepted the altered behavior. Use the
+field's specification to decide which digit repertoire, match span, or newline
+behavior the tests should distinguish.
 
 Decimal rounding changes can affect the value, exponent, flags, and traps of
 a calculation. When checking a scoped context, assert precision-sensitive

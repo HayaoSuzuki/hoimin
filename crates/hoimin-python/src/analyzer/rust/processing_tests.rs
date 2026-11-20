@@ -546,7 +546,7 @@ fn unselected_decimal_literal_does_not_charge_the_payload() {
 
     let result = analyze_source_cancellable(&request, source, || false).unwrap();
 
-    assert!(result.candidates.is_empty());
+    assert_eq!(result.candidates, []);
 }
 
 #[test]

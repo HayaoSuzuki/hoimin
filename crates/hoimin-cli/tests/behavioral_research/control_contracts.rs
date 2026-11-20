@@ -70,6 +70,33 @@ async fn cleanup_after_handler(#[case] mode: &str, #[case] baseline: &str, #[cas
 }
 
 #[rstest]
+#[case::cleanup_returns("return 7", "returned 7\n")]
+#[case::cleanup_raises("raise ValueError()", "ValueError KeyError\n")]
+#[tokio::test]
+async fn cleanup_overrides_pending_exception(#[case] action: &str, #[case] original: &str) {
+    // Arrange.
+    let headers = "try: raise KeyError()\n finally";
+    let source = format!("def run():\n {headers}: {action}\n");
+    let harness = concat!(
+        "from subject import run\n",
+        "try: print('returned', run())\n",
+        "except Exception as e: print(type(e).__name__, type(e.__context__).__name__)\n",
+    );
+
+    // Act and assert both executions of the selected edit.
+    outcomes(
+        &source,
+        "finally_unwrap",
+        headers,
+        None,
+        harness,
+        original,
+        "KeyError NoneType\n",
+    )
+    .await;
+}
+
+#[rstest]
 #[case::loop_break("break")]
 #[case::loop_continue("continue")]
 #[tokio::test]

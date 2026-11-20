@@ -1,6 +1,5 @@
 //! Map decoded Python regex units back to the token bodies that produced them.
 //! Cover edits across tokens without reconstructing their quotes or comments.
-use super::pattern::Variant;
 use ruff_python_ast::Expr;
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use std::ops::Range;
@@ -18,6 +17,16 @@ struct Token {
     raw: bool,
     quote: u8,
     single: bool,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum Change<'a> {
+    Replace(&'a str),
+    /// ASCII delimiters that can be written directly inside each token body.
+    Surround {
+        prefix: &'a str,
+        suffix: &'a str,
+    },
 }
 
 pub(super) struct Literal<'a> {
@@ -179,7 +188,7 @@ impl<'a> Literal<'a> {
         )
     }
 
-    pub fn edit(&self, span: Range<usize>, variant: Variant) -> Option<(TextRange, String)> {
+    pub fn edit(&self, span: Range<usize>, change: Change<'_>) -> Option<(TextRange, String)> {
         let range = self.range_for(&span)?;
         let first = self.units.get(span.start).map_or(0, |u| u.token);
         let last = if span.is_empty() {
@@ -187,42 +196,33 @@ impl<'a> Literal<'a> {
         } else {
             self.units[span.end - 1].token
         };
-        // Inserting a mode opener immediately before the last raw backslash
-        // leaves an odd run before the closing quote. Carry the whole scoped
-        // escape in that token and retain the following literal as an empty piece.
-        if first != last
-            && self.tokens[first].raw
-            && self.chars[span.start] == '\\'
-            && let Variant::Scope(mode) = variant
-        {
-            let code = match (mode, self.chars[span.start + 1]) {
-                ('a', 'b') => r"(?a:\b)",
-                ('a', 'B') => r"(?a:\B)",
-                ('u', 'b') => r"(?u:\b)",
-                ('u', 'B') => r"(?u:\B)",
-                ('u', 'd') => r"(?u:\d)",
-                ('u', 'D') => r"(?u:\D)",
-                ('u', 'w') => r"(?u:\w)",
-                ('u', 'W') => r"(?u:\W)",
-                ('u', 's') => r"(?u:\s)",
-                ('u', 'S') => r"(?u:\S)",
-                _ => return None,
-            };
-            return self.edit(span, Variant::Text(code));
-        }
         let start = usize::from(range.start());
         let end = usize::from(range.end());
-        let (code, wrap) = match variant {
-            Variant::Text(s) => (s.to_owned(), false),
-            Variant::Unicode(s) => (format!("(?u:{s})"), false),
-            Variant::Scope(mode) => (format!("(?{mode}:"), true),
+        let (code, suffix) = match change {
+            Change::Replace(text) => (text, None),
+            Change::Surround { prefix, suffix } => (prefix, Some(suffix)),
         };
+        if let Some(suffix) = suffix
+            && first != last
+            && self.tokens[first].raw
+        {
+            // A new prefix splits a backslash run crossing the start of the
+            // span. An odd remainder would escape the first token's closing
+            // quote. Write the decoded edit together inside that token.
+            let tail = &self.source[start..self.tokens[first].body.end];
+            if tail.len() % 2 == 1 && tail.bytes().all(|byte| byte == b'\\') {
+                let mut text = code.to_owned();
+                text.extend(self.chars[span.clone()].iter().copied());
+                text.push_str(suffix);
+                return self.edit(span, Change::Replace(&text));
+            }
+        }
         let mut out = String::new();
         let mut finish = end;
         let next_cont = self.continuations.partition_point(|r| r.end <= start);
         let mut cont = self.continuations[next_cont..].iter().peekable();
-        if wrap {
-            out = format!("{code}{})", &self.source[start..end]);
+        if let Some(suffix) = suffix {
+            out = format!("{code}{}{suffix}", &self.source[start..end]);
         } else {
             for index in first..=last {
                 if (self.cancelled)() {
@@ -266,7 +266,7 @@ impl<'a> Literal<'a> {
         }
         let edit = text_range(start, finish)?;
         if first != last {
-            self.verify_cross_token(span, first..last + 1, edit, &out, &code, wrap)?;
+            self.verify_cross_token(span, first..last + 1, edit, &out, code, suffix)?;
         }
         Some((edit, out))
     }
@@ -277,7 +277,7 @@ impl<'a> Literal<'a> {
         edit: TextRange,
         out: &str,
         code: &str,
-        wrap: bool,
+        suffix: Option<&str>,
     ) -> Option<()> {
         let (start, finish) = (usize::from(edit.start()), usize::from(edit.end()));
         let (first, last) = (tokens.start, tokens.end - 1);
@@ -301,9 +301,9 @@ impl<'a> Literal<'a> {
                 self.chars[span.clone()]
                     .iter()
                     .copied()
-                    .take(if wrap { span.len() } else { 0 }),
+                    .take(if suffix.is_some() { span.len() } else { 0 }),
             )
-            .chain(wrap.then_some(')'))
+            .chain(suffix.unwrap_or_default().chars())
             .chain(self.chars[span.end..right.decoded.end].iter().copied());
         if !decoded.into_iter().eq(expected) {
             return None;

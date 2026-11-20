@@ -256,28 +256,68 @@ async fn assert_outcome(
 proptest::proptest! {
     #![proptest_config(proptest::test_runner::Config::with_cases(12))]
     #[test]
-    fn cross_token_digit_classes_match_independent_decimal_oracle(split in 1usize..5,negate in proptest::bool::ANY, raw_second in proptest::bool::ANY){
-        let class=if negate{"[^0-9]"}else{"[0-9]"};
-        let split=split.min(class.len()-1);
-        let source=format!("import re\ndef build():\n value=(r'{}' # boundary\n  {}'{}')\n compiled=re.compile(value)\n return compiled\np=build()\n",&class[..split],if raw_second{"r"}else{""},&class[split..]);
-        let root=tempfile::tempdir().unwrap();
-        let path=root.path().join("subject.py");
-        fs::write(&path,&source).unwrap();
-        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    fn cross_token_digit_classes_match_independent_decimal_oracle(
+        split in 1usize..5,
+        negate in proptest::bool::ANY,
+        raw_second in proptest::bool::ANY,
+    ) {
+        // Arrange.
+        let class = if negate { "[^0-9]" } else { "[0-9]" };
+        let split = split.min(class.len() - 1);
+        let (left, right) = class.split_at(split);
+        let raw_prefix = if raw_second { "r" } else { "" };
+        let source = format!(
+            concat!(
+                "import re\n",
+                "def build():\n",
+                " value=(r'{left}' # boundary\n",
+                "  {raw_prefix}'{right}')\n",
+                " compiled=re.compile(value)\n",
+                " return compiled\n",
+                "p=build()\n",
+            ),
+            left = left,
+            right = right,
+            raw_prefix = raw_prefix,
+        );
+        let expected_class = if negate { r"\D" } else { r"\d" };
+        let polarity = if negate { "not " } else { "" };
+        let checker = format!(
+            concat!(
+                "from subject import p\n",
+                "chars='x9９١²é_🙂'\n",
+                "assert p.pattern==r'{expected_class}'\n",
+                "assert all(bool(p.fullmatch(x))==({polarity}x.isdecimal()) for x in chars)",
+            ),
+            expected_class = expected_class,
+            polarity = polarity,
+        );
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("subject.py");
+        fs::write(&path, &source).unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
 
-        let manifest=runtime.block_on(plan(root.path(),CLASS));
-        let candidates=manifest["candidates"].as_array().unwrap();
-        proptest::prop_assert_eq!(candidates.len(),1);
-        let c=&candidates[0];
-        let start=usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
-        let end=start+usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
-        let mut changed=source.clone();
-        changed.replace_range(start..end,c["replacement"].as_str().unwrap());
-        fs::write(path,changed).unwrap();
-        let checker=format!("from subject import p\nchars='x9９١²é_🙂'\nassert p.pattern==r'{}'\nassert all(bool(p.fullmatch(x))==({}x.isdecimal()) for x in chars)",if negate{r"\D"}else{r"\d"},if negate{"not "}else{""});
-        let output=run_python(root.path(),&checker);
+        // Act.
+        let manifest = runtime.block_on(plan(root.path(), CLASS));
+        let candidates = manifest["candidates"].as_array().unwrap();
+        proptest::prop_assert_eq!(candidates.len(), 1);
+        let candidate = &candidates[0];
+        let start = usize::try_from(candidate["span"]["start"].as_u64().unwrap()).unwrap();
+        let length = usize::try_from(candidate["span"]["length"].as_u64().unwrap()).unwrap();
+        let mut changed = source;
+        changed.replace_range(start..start + length, candidate["replacement"].as_str().unwrap());
+        fs::write(path, changed).unwrap();
+        let output = run_python(root.path(), &checker);
 
-        proptest::prop_assert!(output.status.success(),"{}",String::from_utf8_lossy(&output.stderr));
+        // Assert.
+        proptest::prop_assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }
 
@@ -464,29 +504,70 @@ proptest::proptest! {
     #![proptest_config(proptest::test_runner::Config::with_cases(8))]
     #[test]
     fn generated_capture_and_reference_follow_effective_decimal_mode(
-        count in 1usize..4, external_ascii in proptest::bool::ANY, override_mode in proptest::bool::ANY
-    ){
-        let ascii=external_ascii^override_mode;
-        let atom=if override_mode{if ascii{r"(?a:\d)"}else{r"(?u:\d)"}}else{r"\d"};
-        let source=format!("import re\np=re.compile(r'\\A(?P<num>{atom}{{{count}}})(?P=num)\\Z',{})\n",if external_ascii{"re.A"}else{"0"});
-        let root=tempfile::tempdir().unwrap();
-        let path=root.path().join("subject.py");fs::write(&path,&source).unwrap();
-        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-        let harness=|ascii:bool|format!("from subject import p\nfor digit in '2９١x':\n piece=digit*{count}\n for tail in (piece,'0'*{count}):\n  m=p.fullmatch(piece+tail)\n  assert bool(m)==(digit.isdecimal() and (digit.isascii() or {}) and piece==tail)\n  if m: assert m.groups()==(piece,) and m.span()==(0,2*{count})",if ascii{"False"}else{"True"});
+        count in 1usize..4,
+        external_ascii in proptest::bool::ANY,
+        override_mode in proptest::bool::ANY,
+    ) {
+        // Arrange.
+        let ascii = external_ascii ^ override_mode;
+        let atom = match (override_mode, ascii) {
+            (false, _) => r"\d",
+            (true, true) => r"(?a:\d)",
+            (true, false) => r"(?u:\d)",
+        };
+        let flags = if external_ascii { "re.A" } else { "0" };
+        let source = format!(
+            "import re\np=re.compile(r'\\A(?P<num>{atom}{{{count}}})(?P=num)\\Z',{flags})\n"
+        );
+        let harness = |ascii: bool| {
+            let allow_unicode = if ascii { "False" } else { "True" };
+            format!(
+                concat!(
+                    "from subject import p\n",
+                    "for digit in '2９١x':\n",
+                    " piece=digit*{count}\n",
+                    " for tail in (piece,'0'*{count}):\n",
+                    "  m=p.fullmatch(piece+tail)\n",
+                    "  accepted=digit.isdecimal() and (digit.isascii() or {allow_unicode}) and piece==tail\n",
+                    "  assert bool(m)==accepted\n",
+                    "  if m: assert m.groups()==(piece,) and m.span()==(0,2*{count})",
+                ),
+                count = count,
+                allow_unicode = allow_unicode,
+            )
+        };
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("subject.py");
+        fs::write(&path, &source).unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
 
-        let manifest=runtime.block_on(plan(root.path(),CLASS));
-        let original=run_python(root.path(),&harness(ascii));
-        let candidates=manifest["candidates"].as_array().unwrap();
-        proptest::prop_assert_eq!(candidates.len(),1);
-        let c=&candidates[0];
-        let start=usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
-        let end=start+usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
-        let mut changed=source.clone();changed.replace_range(start..end,c["replacement"].as_str().unwrap());
-        fs::write(path,changed).unwrap();
-        let mutant=run_python(root.path(),&harness(!ascii));
+        // Act.
+        let manifest = runtime.block_on(plan(root.path(), CLASS));
+        let original = run_python(root.path(), &harness(ascii));
+        let candidates = manifest["candidates"].as_array().unwrap();
+        proptest::prop_assert_eq!(candidates.len(), 1);
+        let candidate = &candidates[0];
+        let start = usize::try_from(candidate["span"]["start"].as_u64().unwrap()).unwrap();
+        let length = usize::try_from(candidate["span"]["length"].as_u64().unwrap()).unwrap();
+        let mut changed = source;
+        changed.replace_range(start..start + length, candidate["replacement"].as_str().unwrap());
+        fs::write(path, changed).unwrap();
+        let mutant = run_python(root.path(), &harness(!ascii));
 
-        proptest::prop_assert!(original.status.success(),"{}",String::from_utf8_lossy(&original.stderr));
-        proptest::prop_assert!(mutant.status.success(),"{}",String::from_utf8_lossy(&mutant.stderr));
+        // Assert.
+        proptest::prop_assert!(
+            original.status.success(),
+            "{}",
+            String::from_utf8_lossy(&original.stderr)
+        );
+        proptest::prop_assert!(
+            mutant.status.success(),
+            "{}",
+            String::from_utf8_lossy(&mutant.stderr)
+        );
     }
 }
 

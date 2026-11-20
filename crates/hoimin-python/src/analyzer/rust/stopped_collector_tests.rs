@@ -58,9 +58,9 @@ fn handler_body(module: &ModModule) -> &ruff_python_ast::ExceptHandlerExceptHand
     clippy::too_many_lines,
     reason = "one exhaustive dispatch table exercises each directly callable producer with the same prefailed sink"
 )]
-fn invoke(
-    collector: &mut AstCandidateCollector<'_, &dyn Fn() -> bool>,
-    module: &ModModule,
+fn invoke<'ast>(
+    collector: &mut AstCandidateCollector<'ast, &dyn Fn() -> bool>,
+    module: &'ast ModModule,
     attempt: Attempt,
 ) {
     match attempt {
@@ -74,7 +74,7 @@ fn invoke(
                 .as_match_or()
                 .unwrap(),
         ),
-        Attempt::Swap => collector.collect_swap(&module.body[0], &module.body[1], &mut None),
+        Attempt::Swap => collector.visit_suite_with_swaps(&module.body),
         Attempt::StringSegment => {
             collector.collect_string_segment(expression(module));
         }

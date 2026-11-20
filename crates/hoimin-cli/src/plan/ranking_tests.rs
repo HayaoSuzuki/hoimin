@@ -691,7 +691,7 @@ fn ranking_category_inventory_covers_every_canonical_operator() {
         .filter_map(MutationOperator::from_name)
         .collect::<BTreeSet<_>>();
 
-    assert_eq!(tested.len(), 109);
+    assert_eq!(tested.len(), 126);
     assert_eq!(tested, canonical);
 }
 

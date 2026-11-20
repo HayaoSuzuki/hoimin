@@ -318,6 +318,11 @@ fn case_near_compiler_indent_limit_is_skipped() {
 #[case::leading_inspection("# noinspection PyTypeChecker\nfirst()\nsecond()", 0)]
 #[case::preceding_inline_directive("setup() # noqa\nfirst()\nsecond()", 1)]
 #[case::ordinary_comment("# after setup\nfirst()\nsecond()", 1)]
+#[case::directive_applies_to_one_semicolon_line("a(); b(); c() # noqa\nd(); e(); f()", 2)]
+#[case::nested_semicolon_suite_has_its_own_directive_state(
+    "def f():\n a(); b(); c() # noqa\n def nested():\n  d(); e(); f()\n g(); h(); i() # noqa",
+    2
+)]
 #[case::private_store_explicit_read("class K:\n def f(self):\n  __x = int(2)\n  print(_K__x)", 0)]
 #[case::explicit_store_private_read("class _K:\n def f(self):\n  _K__x = int(2)\n  print(__x)", 0)]
 #[case::different_class_prefix("class K:\n def f(self):\n  __x = int(2)\n  print(_Other__x)", 1)]

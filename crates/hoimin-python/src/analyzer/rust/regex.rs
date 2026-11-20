@@ -16,8 +16,8 @@ use super::{
     processing_calls::{Site, bind},
 };
 use hoimin_core::MutationOperator;
-use literal::Literal;
-use pattern::{ASCII, Syntax, UNICODE};
+use literal::{Change, Literal};
+use pattern::{ASCII, Syntax, UNICODE, Variant};
 use ruff_python_ast::{Expr, ExprCall, ModModule, Number, Operator};
 use ruff_text_size::{Ranged, TextRange};
 use std::{
@@ -488,7 +488,7 @@ impl PatternSite<'_> {
                 if self.reference.is_some() && !seen.insert((edit.span.clone(), edit.variant)) {
                     continue;
                 }
-                if let Some((range, text)) = self.literal.edit(edit.span.clone(), edit.variant) {
+                if let Some((range, text)) = self.materialize(edit) {
                     let (target, text) = self.project(range, text);
                     variants += 1;
                     if !emit(target, text, op) {
@@ -520,6 +520,23 @@ impl PatternSite<'_> {
         {
             let (target, text) = self.project(range, text);
             emit(target, text, MODE);
+        }
+    }
+
+    fn materialize(&self, edit: &pattern::Edit) -> Option<(TextRange, String)> {
+        let span = edit.span.clone();
+        match edit.variant {
+            Variant::Text(text) => self.literal.edit(span, Change::Replace(text)),
+            Variant::Unicode(text) => self
+                .literal
+                .edit(span, Change::Replace(&format!("(?u:{text})"))),
+            Variant::Scope(mode) => self.literal.edit(
+                span,
+                Change::Surround {
+                    prefix: &format!("(?{mode}:"),
+                    suffix: ")",
+                },
+            ),
         }
     }
 
@@ -561,11 +578,11 @@ impl PatternSite<'_> {
 thread_local! {static MATERIALIZED:std::cell::Cell<usize>=const{std::cell::Cell::new(0)};}
 #[cfg(test)]
 fn record_materialized(n: usize) {
-    MATERIALIZED.set(MATERIALIZED.get() + n)
+    MATERIALIZED.set(MATERIALIZED.get() + n);
 }
 #[cfg(test)]
 pub(super) fn reset_materialized() {
-    MATERIALIZED.set(0)
+    MATERIALIZED.set(0);
 }
 #[cfg(test)]
 pub(super) fn materialized() -> usize {
