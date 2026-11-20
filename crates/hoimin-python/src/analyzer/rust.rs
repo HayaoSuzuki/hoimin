@@ -1,4 +1,3 @@
-#[cfg(test)]
 use std::cell::Cell;
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, BinaryHeap, HashMap, HashSet};
@@ -280,18 +279,14 @@ struct RetainedCandidate {
 }
 
 // Candidate ranking uses canonical names; enum Ord serves selection ordering.
+fn rank_key(candidate: &AnalyzerCandidate) -> (u64, &'static str) {
+    (candidate.span.start, candidate.operator.as_str())
+}
+
 impl Ord for RetainedCandidate {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.candidate
-            .span
-            .start
-            .cmp(&other.candidate.span.start)
-            .then_with(|| {
-                self.candidate
-                    .operator
-                    .as_str()
-                    .cmp(other.candidate.operator.as_str())
-            })
+        rank_key(&self.candidate)
+            .cmp(&rank_key(&other.candidate))
             .then_with(|| self.emission_sequence.cmp(&other.emission_sequence))
     }
 }
@@ -335,9 +330,44 @@ impl CandidatePrefix {
     }
 
     pub(crate) fn push(&mut self, candidate: AnalyzerCandidate) -> Result<(), AnalysisError> {
+        self.push_with(candidate, |_| {})
+    }
+
+    fn compare_to_cutoff(&self, start: u64, operator: MutationOperator) -> Option<Ordering> {
+        if self.entries.len() != self.capacity {
+            return None;
+        }
+        let worst = self.entries.peek()?;
+        Some((start, operator.as_str()).cmp(&rank_key(&worst.candidate)))
+    }
+
+    /// Until a distinct overflow witness exists, an unvalidated edit might
+    /// establish one. Afterwards only a strictly better rank can matter.
+    fn needs_validation(&self, start: u64, operator: MutationOperator) -> bool {
+        !self.overflowed
+            || self
+                .compare_to_cutoff(start, operator)
+                .is_none_or(Ordering::is_lt)
+    }
+
+    /// The candidate has already passed selection/profile checks. Only a
+    /// strictly worse location/operator proves both loss and nonduplication
+    /// without the replacement. Equal keys still need exact identity checks.
+    fn push_with(
+        &mut self,
+        mut candidate: AnalyzerCandidate,
+        render: impl FnOnce(&mut AnalyzerCandidate),
+    ) -> Result<(), AnalysisError> {
         if let Some(error) = self.failure {
             return Err(error);
         }
+        if self.compare_to_cutoff(candidate.span.start, candidate.operator)
+            == Some(Ordering::Greater)
+        {
+            self.overflowed = true;
+            return Ok(());
+        }
+        render(&mut candidate);
         let result = self.admit(candidate);
         if let Err(error) = result {
             self.failure = Some(error);
@@ -359,13 +389,7 @@ impl CandidatePrefix {
         if self.entries.len() == self.capacity {
             self.overflowed = true;
             let latest = self.entries.peek().expect("full prefix has an entry");
-            let rank = (candidate.span.start, candidate.operator.as_str(), sequence);
-            let worst = (
-                latest.candidate.span.start,
-                latest.candidate.operator.as_str(),
-                latest.emission_sequence,
-            );
-            if rank >= worst {
+            if rank_key(&candidate) >= rank_key(&latest.candidate) {
                 return Ok(());
             }
             let evicted = self.entries.pop().unwrap();
@@ -497,7 +521,7 @@ pub fn analyze_source_with_exceptions(
         Err(depth::CheckedParseError::InvalidSyntax) => return Ok(invalid_syntax(request.path)),
         Err(depth::CheckedParseError::Analysis(error)) => return Err(error),
     };
-    let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
+    let facts = AstFacts::collect(parsed.syntax(), parsed.tokens(), source, cancelled)?;
     if cancelled() {
         return Err(AnalysisError::Cancelled);
     }
@@ -1295,6 +1319,7 @@ struct NameResolutionIndex {
     unevaluated_annotations: HashSet<usize>,
     imported_names: HashSet<String>,
     text_parameters: HashMap<ScopeId, HashMap<String, usize>>,
+    module_namespace_exposed: bool,
     initializers: HashMap<ScopeId, HashMap<String, (usize, usize)>>,
 }
 
@@ -1356,21 +1381,53 @@ impl NameResolutionIndex {
             .is_some_and(|site| self.scopes[site.scope.0].kind == NameScopeKind::Function)
     }
 
+    #[cfg(test)]
     fn from_module(module: &ModModule) -> Self {
         Self::from_module_with_names(module, HashSet::new())
     }
 
+    #[cfg(test)]
     fn from_module_with_names(module: &ModModule, extra: HashSet<String>) -> Self {
-        let mut builder = NameResolutionBuilder::new(&|| false);
-        let mut names = ImportedNames::default();
+        Self::collect(module, extra, &|| false).expect("uncancelled name resolution")
+    }
+
+    /// Publish the complete import and lexical facts together. Latch even a
+    /// one-shot cancellation request while a nested visitor unwinds.
+    fn collect(
+        module: &ModModule,
+        extra: HashSet<String>,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<Self, AnalysisCancelled> {
+        let stopped = Cell::new(false);
+        let stop = || {
+            stopped.set(stopped.get() || cancelled());
+            stopped.get()
+        };
+        let mut names = ImportedNames {
+            cancelled: &stop,
+            imports: HashSet::new(),
+            callable_aliases: HashSet::new(),
+            text_parameters: HashSet::new(),
+        };
         names.visit_body(&module.body);
+        if stop() {
+            return Err(AnalysisCancelled);
+        }
+        let mut builder = NameResolutionBuilder::new(&stop);
         builder.identity_names = extra;
         builder.identity_names.extend(names.text_parameters);
         builder.identity_names.extend(names.callable_aliases);
         names.imports.extend(builder.identity_names.iter().cloned());
         builder.imported_names = names.imports;
         builder.visit_body(&module.body);
-        builder.finish()
+        if stop() {
+            return Err(AnalysisCancelled);
+        }
+        let index = builder.finish();
+        if stop() {
+            return Err(AnalysisCancelled);
+        }
+        Ok(index)
     }
 }
 
@@ -1765,6 +1822,12 @@ impl NameResolutionIndex {
     }
 }
 
+/// These spellings can expose the live module dictionary, including through
+/// a different function. A lexical initializer alone cannot prove its contents.
+fn exposes_module_namespace(name: &str) -> bool {
+    matches!(name, "globals" | "__globals__")
+}
+
 fn tracked_resolution_name(name: &str) -> bool {
     MUTABLE_BUILTINS.contains(&name)
         || EXCEPTION_NAMES.contains(&name)
@@ -1772,8 +1835,8 @@ fn tracked_resolution_name(name: &str) -> bool {
         || CALL_CONTRACT_BUILTINS.contains(&name)
 }
 
-#[derive(Default)]
-struct ImportedNames {
+struct ImportedNames<'a> {
+    cancelled: &'a dyn Fn() -> bool,
     imports: HashSet<String>,
     callable_aliases: HashSet<String>,
     text_parameters: HashSet<String>,
@@ -1784,18 +1847,34 @@ fn text_parameter_annotation(parameter: &ruff_python_ast::Parameter) -> Option<u
     (annotation.id == "str").then(|| usize::from(annotation.start()))
 }
 
-impl<'ast> Visitor<'ast> for ImportedNames {
+impl<'ast> Visitor<'ast> for ImportedNames<'_> {
+    fn visit_body(&mut self, body: &'ast [Stmt]) {
+        for stmt in body {
+            if (self.cancelled)() {
+                break;
+            }
+            self.visit_stmt(stmt);
+        }
+    }
+    // Expressions contain neither imports nor annotated function parameters.
+    fn visit_expr(&mut self, _expr: &'ast Expr) {}
+
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
+        #[cfg(test)]
+        optional_keyword_selection_tests::IMPORT_STATEMENTS.update(|n| n + 1);
         let mut imports = KnownImports::default();
         match statement {
-            Stmt::Import(import) => imports.transfer_import(import),
-            Stmt::ImportFrom(import) => imports.transfer_import_from(import),
+            Stmt::Import(import) => imports.transfer_import(import, self.cancelled),
+            Stmt::ImportFrom(import) => imports.transfer_import_from(import, self.cancelled),
             _ => {}
         }
         self.imports.extend(imports.bindings.into_keys());
         let aliases = match statement {
             Stmt::Import(import) => {
                 for alias in &import.names {
+                    if (self.cancelled)() {
+                        return;
+                    }
                     if matches!(
                         alias.name.as_str(),
                         "builtins" | "decimal" | "itertools" | "math"
@@ -1822,12 +1901,16 @@ impl<'ast> Visitor<'ast> for ImportedNames {
         self.callable_aliases.extend(
             aliases
                 .iter()
+                .take_while(|_| !(self.cancelled)())
                 .filter(|alias| alias.name.as_str() != "*")
                 .map(|alias| alias.asname.as_ref().unwrap_or(&alias.name).to_string()),
         );
         visitor::walk_stmt(self, statement);
     }
     fn visit_parameter(&mut self, parameter: &'ast ruff_python_ast::Parameter) {
+        if (self.cancelled)() {
+            return;
+        }
         if text_parameter_annotation(parameter).is_some() {
             self.text_parameters.insert(parameter.name.to_string());
         }
@@ -1876,6 +1959,7 @@ impl<'a> NameResolutionBuilder<'a> {
                 unevaluated_annotations: HashSet::new(),
                 imported_names: HashSet::new(),
                 text_parameters: HashMap::new(),
+                module_namespace_exposed: false,
                 initializers: HashMap::new(),
             },
             identity_names: HashSet::new(),
@@ -2372,6 +2456,8 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder<'_> {
         if (self.cancelled)() {
             return;
         }
+        #[cfg(test)]
+        optional_keyword_selection_tests::LEXICAL_STATEMENTS.update(|n| n + 1);
         match statement {
             Stmt::FunctionDef(definition) => {
                 for decorator in &definition.decorator_list {
@@ -2574,12 +2660,25 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder<'_> {
             return;
         }
         match expression {
-            Expr::Name(name) => self.record_occurrence(name),
+            Expr::Name(name) => {
+                if name.ctx == ExprContext::Load && exposes_module_namespace(name.id.as_str()) {
+                    self.index.module_namespace_exposed = true;
+                }
+                self.record_occurrence(name);
+            }
+            Expr::Attribute(attribute) if exposes_module_namespace(attribute.attr.as_str()) => {
+                self.index.module_namespace_exposed = true;
+                visitor::walk_expr(self, expression);
+                return;
+            }
             Expr::Call(call) => {
                 // Ruff visits the callable, positional/starred args, then keywords.
                 visitor::walk_expr(self, expression);
-                if matches!(call.func.as_ref(), Expr::Name(name)
-                    if matches!(name.id.as_str(), "exec" | "globals" | "locals" | "vars"))
+                if matches!(call.func.as_ref(), Expr::Name(name) if exposes_module_namespace(name.id.as_str()))
+                {
+                    self.record_scope_wildcard(ScopeId(0));
+                } else if matches!(call.func.as_ref(), Expr::Name(name)
+                    if matches!(name.id.as_str(), "exec" | "locals" | "vars"))
                 {
                     self.record_dynamic_uncertainty();
                 }
@@ -2712,12 +2811,21 @@ struct AstFacts<'tokens> {
     candidate_tokens_examined: Cell<usize>,
 }
 impl<'tokens> AstFacts<'tokens> {
+    #[cfg(test)]
     fn from_module(
         module: &ModModule,
         tokens: &'tokens ruff_python_ast::token::Tokens,
         source: &'tokens str,
     ) -> Self {
-        let name_resolution = NameResolutionIndex::from_module(module);
+        Self::collect(module, tokens, source, &|| false).expect("uncancelled AST facts")
+    }
+    fn collect(
+        module: &ModModule,
+        tokens: &'tokens ruff_python_ast::token::Tokens,
+        source: &'tokens str,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<Self, AnalysisCancelled> {
+        let name_resolution = NameResolutionIndex::collect(module, HashSet::new(), cancelled)?;
         let mut facts = Self {
             tokens: Some(tokens),
             source,
@@ -2729,7 +2837,7 @@ impl<'tokens> AstFacts<'tokens> {
         }
         facts.normalize_arid_ranges();
         facts.finalize_indexes();
-        facts
+        Ok(facts)
     }
 
     fn finalize_indexes(&mut self) {
@@ -3266,6 +3374,44 @@ struct AstCandidateCollector<'a, F> {
     candidates: CandidatePrefix,
 }
 
+/// Receives a valid edit whose potentially expensive replacement is needed
+/// only after selection, profile filtering and conservative prefix admission.
+trait EditSink {
+    fn needs_validation(
+        &self,
+        earliest: ruff_text_size::TextSize,
+        operator: MutationOperator,
+    ) -> bool;
+
+    fn emit(
+        &mut self,
+        range: TextRange,
+        operator: MutationOperator,
+        render: impl FnOnce() -> String,
+    ) -> bool;
+}
+
+impl<F: Fn() -> bool> EditSink for AstCandidateCollector<'_, F> {
+    fn needs_validation(
+        &self,
+        earliest: ruff_text_size::TextSize,
+        operator: MutationOperator,
+    ) -> bool {
+        self.candidates
+            .needs_validation(u64::from(earliest.to_u32()), operator)
+    }
+
+    fn emit(
+        &mut self,
+        range: TextRange,
+        operator: MutationOperator,
+        render: impl FnOnce() -> String,
+    ) -> bool {
+        self.add_deferred_candidate(range, operator, range, render);
+        !self.check_cancelled()
+    }
+}
+
 impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     #[expect(
         clippy::too_many_arguments,
@@ -3548,10 +3694,6 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         self.enclosing_body = previous;
     }
 
-    fn visit_suite(&mut self, body: &'a [Stmt]) {
-        self.visit_suite_with_swaps(body);
-    }
-
     fn check_cancelled(&mut self) -> bool {
         if self.candidates.failure.is_some() {
             return true;
@@ -3604,6 +3746,16 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         operator: MutationOperator,
         scope: TextRange,
     ) {
+        self.add_deferred_candidate(range, operator, scope, || replacement);
+    }
+
+    fn add_deferred_candidate(
+        &mut self,
+        range: TextRange,
+        operator: MutationOperator,
+        scope: TextRange,
+        render: impl FnOnce() -> String,
+    ) {
         if self.check_cancelled() {
             return;
         }
@@ -3615,12 +3767,14 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             self.source,
             self.line_index,
             range,
-            replacement,
+            String::new(),
             operator,
             symbol,
         ) && retained_by_profile(&candidate, self.request.profile, self.facts)
         {
-            let _ = self.candidates.push(candidate);
+            let _ = self
+                .candidates
+                .push_with(candidate, |candidate| candidate.replacement = render());
         }
     }
 
@@ -3847,10 +4001,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                     let (last, _) = line_index.line_and_column(usize::from(range.end()));
                     selection.intersects(first, last, facts.scope_at(start).as_deref())
                 },
-                |range, text, operator| {
-                    self.add_candidate(range, text, operator);
-                    !self.check_cancelled()
-                },
+                self,
             );
         }
         if self.rounding.visits_calls()
@@ -6310,8 +6461,15 @@ impl KnownImports {
         }
     }
 
-    fn transfer_import(&mut self, import: &ruff_python_ast::StmtImport) {
+    fn transfer_import(
+        &mut self,
+        import: &ruff_python_ast::StmtImport,
+        cancelled: &dyn Fn() -> bool,
+    ) {
         for alias in &import.names {
+            if cancelled() {
+                return;
+            }
             let name = alias.name.as_str();
             let local = alias.asname.as_ref().map_or_else(
                 || name.split('.').next().unwrap_or(name),
@@ -6326,7 +6484,11 @@ impl KnownImports {
         }
     }
 
-    fn transfer_import_from(&mut self, import: &ruff_python_ast::StmtImportFrom) {
+    fn transfer_import_from(
+        &mut self,
+        import: &ruff_python_ast::StmtImportFrom,
+        cancelled: &dyn Fn() -> bool,
+    ) {
         let module_name = (import.level == 0)
             .then(|| {
                 import
@@ -6336,6 +6498,9 @@ impl KnownImports {
             })
             .flatten();
         for alias in &import.names {
+            if cancelled() {
+                return;
+            }
             let imported = alias.name.as_str();
             if imported == "*" {
                 if matches!(module_name, Some("typing" | "collections.abc")) {
@@ -6379,8 +6544,8 @@ impl KnownImports {
 
     fn transfer_statement(&mut self, statement: &Stmt) {
         match statement {
-            Stmt::Import(import) => self.transfer_import(import),
-            Stmt::ImportFrom(import) => self.transfer_import_from(import),
+            Stmt::Import(import) => self.transfer_import(import, &|| false),
+            Stmt::ImportFrom(import) => self.transfer_import_from(import, &|| false),
             Stmt::Assign(assign) => self.transfer_assign(&assign.targets, assign.value.as_ref()),
             Stmt::AnnAssign(assign) => {
                 if let Some(value) = assign.value.as_deref() {

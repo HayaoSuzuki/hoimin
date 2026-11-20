@@ -309,3 +309,31 @@ proptest! {
         check_excluded(&source, &lines, &[], limit, payload_bytes);
     }
 }
+
+thread_local! {
+    pub(super) static IMPORT_STATEMENTS: Cell<usize> = const { Cell::new(0) };
+    pub(super) static LEXICAL_STATEMENTS: Cell<usize> = const { Cell::new(0) };
+}
+
+#[rstest::rstest]
+#[case::imported_names(true)]
+#[case::lexical_scope(false)]
+fn final_review_signature_cancellation(#[case] imports: bool) {
+    let source = format!("def f(a=0): pass\n{}", "import math\n".repeat(64));
+    let parsed = ruff_python_parser::parse_module(&source).unwrap();
+    let stage = if imports {
+        &IMPORT_STATEMENTS
+    } else {
+        &LEXICAL_STATEMENTS
+    };
+    IMPORT_STATEMENTS.set(0);
+    LEXICAL_STATEMENTS.set(0);
+
+    let requested = Cell::new(false);
+    let result = optional_keywords::FunctionIndex::build_for_calls(parsed.syntax(), true, &|| {
+        stage.get() >= 4 && !requested.replace(true)
+    });
+
+    assert!(matches!(result, Err(AnalysisCancelled)));
+    assert_eq!(stage.get(), 4);
+}

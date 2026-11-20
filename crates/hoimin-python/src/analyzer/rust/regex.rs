@@ -10,7 +10,7 @@ mod literal;
 mod pattern;
 
 use super::{
-    AnalysisCancelled,
+    AnalysisCancelled, EditSink,
     callable_imports::CallableImports,
     local_initializers,
     processing_calls::{Site, bind},
@@ -65,6 +65,13 @@ impl<'a> PatternCache<'a> {
             }
             mapped
         }
+    }
+    /// VERBOSE changes tokenization. The other supported external flags can
+    /// narrow legal modes or change matches, but cannot repair invalid syntax.
+    fn possible_grammar(&self, expr: &Expr, shared: bool, site: &Site<'a>) -> bool {
+        [0, pattern::VERBOSE].into_iter().any(|flags| {
+            !(site.cancelled)() && self.prepare(expr, flags, "compile", shared, site).is_some()
+        })
     }
     fn prepare(
         &self,
@@ -181,6 +188,9 @@ impl<'a> Flags<'a> {
         let mut cursor = usize::from(range.start());
         let mut out = String::new();
         for (term, n) in &self.mode_terms {
+            if (site.cancelled)() {
+                return None;
+            }
             out.push_str(&site.source[cursor..usize::from(term.start())]);
             out.push_str(&((n & !from) | to).to_string());
             cursor = usize::from(term.end());
@@ -334,7 +344,7 @@ impl<'a> Regex<'a> {
                 .cache
                 .prepare(expr, flags.value, "compile", true, site)
                 .is_some(),
-            (Some(expr), None) => self.cache.mapped(expr, true, site).is_some(),
+            (Some(expr), None) => self.cache.possible_grammar(expr, true, site),
             (_, Some(flags)) => self
                 .text_is_bytes(pattern)
                 .is_none_or(|bytes| pattern::valid(flags.value, bytes)),
@@ -356,7 +366,7 @@ impl<'a> Regex<'a> {
         max: usize,
         selected: impl Fn(TextRange) -> bool,
         intersects: impl Fn(TextRange) -> bool,
-        mut emit: impl FnMut(TextRange, String, MutationOperator) -> bool,
+        sink: &mut impl EditSink,
     ) {
         let Some(target) = self.target(call) else {
             return;
@@ -420,10 +430,9 @@ impl<'a> Regex<'a> {
                 });
             }
         } else if let Some(value) = self.literal(pattern)
-            && self
+            && !self
                 .cache
-                .mapped(value, pattern.is_name_expr(), site)
-                .is_none()
+                .possible_grammar(value, pattern.is_name_expr(), site)
         {
             return;
         }
@@ -439,14 +448,14 @@ impl<'a> Regex<'a> {
                         .import_member(&self.imports, "re", dest, &call.func, site)
                 };
                 if let Some(spelling) = spelling
-                    && !emit(method_range, spelling, BOUND)
+                    && !sink.emit(method_range, BOUND, || spelling)
                 {
                     return;
                 }
             }
         }
         if inspect && let Some(pattern_site) = pattern_site {
-            pattern_site.emit(site, max, selected, emit);
+            pattern_site.emit(site, max, selected, sink);
         }
     }
 }
@@ -464,10 +473,14 @@ impl PatternSite<'_> {
         site: &Site<'_>,
         max: usize,
         selected: impl Fn(TextRange) -> bool,
-        mut emit: impl FnMut(TextRange, String, MutationOperator) -> bool,
+        sink: &mut impl EditSink,
     ) {
         for (op, edits) in [(SET, &self.syntax.sets), (BOUND, &self.syntax.anchors)] {
-            if !site.supports(op) {
+            if !site.supports(op)
+                || self
+                    .reference
+                    .is_some_and(|use_site| !sink.needs_validation(use_site.start(), op))
+            {
                 continue;
             }
             let mut variants = 0;
@@ -489,9 +502,10 @@ impl PatternSite<'_> {
                     continue;
                 }
                 if let Some((range, text)) = self.materialize(edit) {
-                    let (target, text) = self.project(range, text);
                     variants += 1;
-                    if !emit(target, text, op) {
+                    if !sink.emit(self.reference.unwrap_or(range), op, || {
+                        self.project(range, text)
+                    }) {
                         return;
                     }
                 }
@@ -504,7 +518,11 @@ impl PatternSite<'_> {
         {
             return;
         }
-        if !self.syntax.global_modes.is_empty() && self.external.value & (ASCII | UNICODE) != 0 {
+        let pattern_start = self.reference.unwrap_or(self.literal.range).start();
+        let earliest = self
+            .flag_expr
+            .map_or(pattern_start, |f| f.start().min(pattern_start));
+        if !sink.needs_validation(earliest, MODE) {
             return;
         }
         if self.syntax.global_modes.is_empty()
@@ -513,13 +531,36 @@ impl PatternSite<'_> {
             if let Some((range, text)) = self.external.edit(expr, site)
                 && selected(range)
             {
-                emit(range, text, MODE);
+                sink.emit(range, MODE, || text);
             }
-        } else if let Some((range, text)) = self.root_mode(site)
-            && selected(self.reference.unwrap_or(range))
-        {
-            let (target, text) = self.project(range, text);
-            emit(target, text, MODE);
+            return;
+        }
+        let Some((range, inline)) = self.root_mode(site) else {
+            return;
+        };
+        let target = self.reference.unwrap_or(range);
+        if !self.external.mode_terms.is_empty() {
+            let Some((flags, replacement)) = self
+                .flag_expr
+                .and_then(|expr| self.external.edit(expr, site))
+            else {
+                return;
+            };
+            let cover = target.cover(flags);
+            if selected(cover) {
+                sink.emit(cover, MODE, || {
+                    let inline = self.project(range, inline);
+                    let ((first, left), (last, right)) = if target.start() < flags.start() {
+                        ((target, inline), (flags, replacement))
+                    } else {
+                        ((flags, replacement), (target, inline))
+                    };
+                    let between = &site.source[usize::from(first.end())..usize::from(last.start())];
+                    format!("{left}{between}{right}")
+                });
+            }
+        } else if selected(target) {
+            sink.emit(target, MODE, || self.project(range, inline));
         }
     }
 
@@ -540,11 +581,11 @@ impl PatternSite<'_> {
         }
     }
 
-    fn project(&self, range: TextRange, text: String) -> (TextRange, String) {
-        if let Some(target) = self.reference {
-            (target, self.literal.at_reference(range, &text))
+    fn project(&self, range: TextRange, text: String) -> String {
+        if self.reference.is_some() {
+            self.literal.at_reference(range, &text)
         } else {
-            (range, text)
+            text
         }
     }
 

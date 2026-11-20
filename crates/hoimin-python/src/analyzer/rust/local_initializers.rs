@@ -73,7 +73,7 @@ impl NameResolutionIndex {
         let source_start = usize::from(name.start());
         let site = self.occurrences.get(&source_start)?;
         let id = name.id.as_str();
-        if site.temporarily_shadowed || self.scopes[0].wildcard || id.starts_with("__") {
+        if site.temporarily_shadowed || id.starts_with("__") {
             return None;
         }
         let mut owner = site.scope;
@@ -100,6 +100,7 @@ impl NameResolutionIndex {
         let scope = &self.scopes[owner.0];
         if !matches!(scope.kind, NameScopeKind::Module | NameScopeKind::Function)
             || scope.wildcard
+            || (owner == ScopeId(0) && self.module_namespace_exposed)
             || scope.globals.contains(name)
             || scope.nonlocals.contains(name)
             || scope.ambiguous_private_import(name)

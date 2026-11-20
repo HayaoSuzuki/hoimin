@@ -111,7 +111,7 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for ReadNames<'_, 'ast, F> {
 
 impl<'ast, F: Fn() -> bool> AstCandidateCollector<'ast, F> {
     /// Consider exchanges as the collector visits each statement in source order.
-    pub(super) fn visit_suite_with_swaps(&mut self, body: &'ast [Stmt]) {
+    pub(super) fn visit_suite(&mut self, body: &'ast [Stmt]) {
         let swap = self
             .request
             .operators

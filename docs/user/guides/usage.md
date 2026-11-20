@@ -782,7 +782,12 @@ with `--exclude-operators regex_ascii_mode`. An imported `re` name must
 resolve to the standard library. The analyzer recognizes literal text and byte
 patterns, uniquely initialized module and local literal bindings, and trusted compiled
 receivers. Bytes have no Unicode-mode mutation. Dynamic patterns can still
-support a method edit when both methods accept the supplied arguments.
+support a method edit when both methods accept the supplied arguments. When flags
+come from a runtime value, a literal pattern must parse in ordinary or verbose
+mode for the analyzer to emit a method edit. For a pattern such as
+`re.compile(r'(?a)\d', re.A)`, one `regex_ascii_mode` candidate changes both
+mode declarations. If the call references a shared pattern literal, the
+candidate changes that use while preserving other consumers.
 Pattern analysis skips ambiguous future set operators and groups nested more
 than 255 levels deep.
 

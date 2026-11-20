@@ -14,23 +14,22 @@ use ruff_text_size::{Ranged, TextRange};
 use std::collections::{HashMap, HashSet};
 
 fn dynamic_namespace_name(name: &str) -> bool {
-    matches!(
-        name,
-        "exec"
-            | "eval"
-            | "globals"
-            | "locals"
-            | "vars"
-            | "setattr"
-            | "delattr"
-            | "__import__"
-            | "__builtins__"
-            | "__globals__"
-            | "__dict__"
-            | "__setattr__"
-            | "__delattr__"
-            | "__getattribute__"
-    )
+    super::exposes_module_namespace(name)
+        || matches!(
+            name,
+            "exec"
+                | "eval"
+                | "locals"
+                | "vars"
+                | "setattr"
+                | "delattr"
+                | "__import__"
+                | "__builtins__"
+                | "__dict__"
+                | "__setattr__"
+                | "__delattr__"
+                | "__getattribute__"
+        )
 }
 
 /// Reading these values does not expose the defining module or a callable.

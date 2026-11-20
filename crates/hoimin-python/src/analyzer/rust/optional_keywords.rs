@@ -89,7 +89,7 @@ impl<'ast> FunctionIndex<'ast> {
             return Ok(Self::default());
         }
         let names = definitions.keys().cloned().collect::<HashSet<_>>();
-        let resolution = NameResolutionIndex::from_module_with_names(module, names.clone());
+        let resolution = NameResolutionIndex::collect(module, names.clone(), cancelled)?;
         let mut hazards = Hazards {
             names: &names,
             invalid: HashSet::new(),
@@ -333,10 +333,11 @@ struct Hazards<'a, F> {
     stopped: bool,
 }
 fn dynamic_name(name: &str) -> bool {
-    matches!(
-        name,
-        "exec" | "eval" | "globals" | "locals" | "vars" | "setattr" | "delattr" | "__import__"
-    )
+    super::exposes_module_namespace(name)
+        || matches!(
+            name,
+            "exec" | "eval" | "locals" | "vars" | "setattr" | "delattr" | "__import__"
+        )
 }
 
 impl<'ast, F: Fn() -> bool> Visitor<'ast> for Hazards<'_, F> {
@@ -367,7 +368,7 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for Hazards<'_, F> {
                 self.dynamic = true;
             }
         } else if let Expr::Attribute(attribute) = expression
-            && attribute.attr.as_str() == "__globals__"
+            && super::exposes_module_namespace(attribute.attr.as_str())
         {
             // A different function can expose the same module dictionary.
             self.dynamic = true;

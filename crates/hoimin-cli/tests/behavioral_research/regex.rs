@@ -365,6 +365,22 @@ async fn aliased_match_import_at_source_depth(#[case] depth: usize, #[case] expe
     "258 False\n",
     "34 True\n"
 )]
+#[case::coordinated_reference(
+    "from re import A as ascii_flag, I, compile as make\nPAT=(r'(?a)' # concatenated\n r'(?u:\\w)\\d')\np=make(PAT, # keep this comment\n I|ascii_flag|ascii_flag)\nother=make(PAT)\n",
+    ROOT,
+    "r'(?u)' # concatenated\n r'(?u:\\w)\\d', # keep this comment\n I|32|32",
+    "from subject import p,other\nprint(p.flags,bool(p.fullmatch('é９')),bool(other.fullmatch('é９')))",
+    "258 False False\n",
+    "34 True False\n"
+)]
+#[case::coordinated_module(
+    "import re as rx\ndef run(s): return rx.fullmatch(flags=rx.U|rx.I, string=s, pattern=r'(?u)\\d')\n",
+    ROOT,
+    "256|rx.I, string=s, pattern=r'(?a",
+    "from subject import run\nprint(run('1').re.flags,bool(run('９')))",
+    "34 True\n",
+    "258 False\n"
+)]
 #[case::global_and_scoped(
     "import re\np=re.compile(r'(?i)(?a:\\w)\\w')\n",
     ROOT,
@@ -695,4 +711,32 @@ async fn fix2_whitespace_union_contract(
     let harness = "from subject import p\nprint(''.join(str(int(bool(p.fullmatch(chr(n))))) for n in range(0x1b,0x21)))";
 
     assert_outcome(&source, op, replacement, harness, original, mutant).await;
+}
+
+#[rstest]
+#[case::direct_plain("re.search('(', 'value', flags)", "0", 0, "invalid\n")]
+#[case::direct_verbose("re.search('(', 'value', flags)", "re.X", 0, "invalid\n")]
+#[case::compiled_plain("re.compile('(', flags).match('value')", "0", 0, "invalid\n")]
+#[case::compiled_verbose("re.compile('(', flags).match('value')", "re.X", 0, "invalid\n")]
+#[case::comment_plain("re.search('# (', 'value', flags)", "0", 1, "invalid\n")]
+#[case::comment_verbose("re.search('# (', 'value', flags)", "re.X", 1, "(0, 0)\n")]
+#[tokio::test]
+async fn unknown_flags_grammar_contract(
+    #[case] expression: &str,
+    #[case] flags: &str,
+    #[case] expected: usize,
+    #[case] output: &str,
+) {
+    let root = tempfile::tempdir().unwrap();
+    let source = format!("import re\ndef run(flags): return {expression}\n");
+    fs::write(root.path().join("subject.py"), source).unwrap();
+    let harness = format!(
+        "import re\nfrom subject import run\ntry: print(run({flags}).span())\nexcept re.error: print('invalid')"
+    );
+
+    let manifest = plan(root.path(), BOUND).await;
+    let original = run_python(root.path(), &harness);
+
+    assert_eq!(manifest["candidates"].as_array().unwrap().len(), expected);
+    assert_python_output(BOUND, "original", &original, output);
 }

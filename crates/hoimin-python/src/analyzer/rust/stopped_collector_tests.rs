@@ -74,7 +74,7 @@ fn invoke<'ast>(
                 .as_match_or()
                 .unwrap(),
         ),
-        Attempt::Swap => collector.visit_suite_with_swaps(&module.body),
+        Attempt::Swap => collector.visit_suite(&module.body),
         Attempt::StringSegment => {
             collector.collect_string_segment(expression(module));
         }

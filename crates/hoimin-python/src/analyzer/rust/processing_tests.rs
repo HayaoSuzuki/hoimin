@@ -563,3 +563,27 @@ fn standalone_quantum_operator_proves_round_returning_decimal() {
             .all(|candidate| candidate.original == "'.1'")
     );
 }
+
+#[rstest]
+#[case::module_read("marker.__globals__['s']=custom", "out=s.union(xs)", 0)]
+#[case::function_module_read("marker.__globals__['s']=custom", "def f(): return s.union(xs)", 0)]
+#[case::function_local(
+    "marker.__globals__['s']=custom",
+    "def f():\n s={1}\n return s.union(xs)",
+    1
+)]
+#[case::direct_globals_local("globals()['s']=custom", "def f():\n s={1}\n return s.union(xs)", 1)]
+#[case::direct_globals_module("globals()['s']=custom", "def f(): return s.union(xs)", 0)]
+#[case::namespace_escape("publish(marker.__globals__)", "out=s.union(xs)", 0)]
+#[case::ordinary("pass", "out=s.union(xs)", 1)]
+fn final_review_set_initializer(
+    #[case] hazard: &str,
+    #[case] usage: &str,
+    #[case] expected: usize,
+) {
+    let source = format!("def marker(): pass\ns={{1}}\n{hazard}\n{usage}");
+
+    let actual = edits(&source, "set_union_intersection_swap");
+
+    assert_eq!(actual.len(), expected);
+}

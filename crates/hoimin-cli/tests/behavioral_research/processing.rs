@@ -557,3 +557,22 @@ async fn already_grouped_generator_keeps_its_delimiter_depth() {
 
     assert_compiles_with_candidate_count(&source, "intermediate_rounding_remove", 1).await;
 }
+
+#[rstest]
+#[case::module("out=s.union({2})")]
+#[case::module_read_in_function("def f(): return s.union({2})\nout=f()")]
+#[tokio::test]
+async fn reflective_set_rebinding(#[case] usage: &str) {
+    let root = tempfile::tempdir().unwrap();
+    let source = format!(
+        "class Custom:\n def union(self, x): return 'custom'\ndef marker(): pass\ns={{1}}\nmarker.__globals__['s']=Custom()\n{usage}\n"
+    );
+    fs::write(root.path().join("subject.py"), source).unwrap();
+    let op = "set_union_intersection_swap";
+
+    let manifest = plan(root.path(), op).await;
+    let original = run_python(root.path(), "from subject import out; print(out)");
+
+    assert_eq!(manifest["candidates"], serde_json::json!([]));
+    assert_python_output(op, "original", &original, "custom\n");
+}

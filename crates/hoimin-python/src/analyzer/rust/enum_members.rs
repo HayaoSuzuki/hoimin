@@ -45,7 +45,7 @@ impl EnumIndex {
             return Ok(Self::default());
         }
         let (imports, names) = module_bindings(module, cancelled)?;
-        let resolution = NameResolutionIndex::from_module_with_names(module, names.clone());
+        let resolution = NameResolutionIndex::collect(module, names.clone(), cancelled)?;
         let mut index = Self {
             resolution,
             ..Self::default()

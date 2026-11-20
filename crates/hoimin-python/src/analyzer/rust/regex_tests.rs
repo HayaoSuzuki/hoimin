@@ -214,7 +214,6 @@ fn supported_regex_shapes(
 #[case::wrong_type(r"import re; re.match(r'\d',b'2')", "regex_match_boundary")]
 #[case::unknown_flag(r"import re; re.compile(r'\d',unknown)", "regex_character_set")]
 #[case::fully_scoped(r"import re; re.compile(r'(?a:\d)(?u:\w)')", "regex_ascii_mode")]
-#[case::external_and_inline(r"import re; re.compile(r'(?a)\d',re.A)", "regex_ascii_mode")]
 #[case::ascii_literal(r"import re; re.compile(r'(?i)x')", "regex_ascii_mode")]
 #[case::ascii_reference(r"import re; re.compile(r'(?i)(x)\1')", "regex_ascii_mode")]
 #[case::class_backspace(r"import re; re.compile(r'[\b]')", "regex_character_set")]
@@ -505,4 +504,127 @@ fn fix2_whitespace_union_eligibility(#[case] sign: &str, #[case] op: &str, #[cas
     let result = analyze_regex(&source, &[op], 16, &[], &[]);
 
     assert_eq!(result.candidates.len(), usize::from(extra.is_empty()));
+}
+
+#[rstest]
+#[case::inline_first(r"re.compile(r'(?a)\d',re.A)", r"a)\d',re.A", r"u)\d',32")]
+#[case::external_first(
+    r"re.compile(flags=re.I|re.U,pattern=r'(?u)\d')",
+    "re.U,pattern=r'(?u",
+    "256,pattern=r'(?a"
+)]
+fn final_review_coordinated_mode(#[case] call: &str, #[case] before: &str, #[case] after: &str) {
+    let source = format!("import re\n{call}");
+
+    let actual = edits(&source, "regex_ascii_mode");
+
+    assert_eq!(actual, [(before.to_owned(), after.to_owned())]);
+}
+
+#[rstest]
+#[case::direct_malformed("re.search('(',s,flags)", 0)]
+#[case::compiled_malformed("re.compile('(',flags).match(s)", 0)]
+#[case::direct_verbose("re.search('# (',s,flags)", 1)]
+#[case::compiled_verbose("re.compile('# (',flags).match(s)", 2)]
+#[case::direct_ordinary("re.search('(#)',s,flags)", 1)]
+#[case::dynamic("re.search(pattern,s,flags)", 1)]
+fn final_review_unknown_flags(#[case] call: &str, #[case] expected: usize) {
+    let source = format!("import re\n{call}");
+
+    let actual = edits(&source, "regex_match_boundary");
+
+    assert_eq!(actual.len(), expected);
+}
+
+#[rstest]
+#[case::one_winner(1)]
+#[case::three_winners(3)]
+fn final_review_reference_copying(#[case] budget: usize) {
+    let source = format!(
+        "import re\np=r'{}{}'\n{}",
+        r"\d".repeat(4),
+        "x".repeat(2048),
+        "re.search(p,s)\n".repeat(32)
+    );
+    let ids = ["regex_character_set"];
+    let all = analyze_regex(&source, &ids, usize::MAX, &[], &[]);
+    super::regex::reset_materialized();
+
+    let limited = analyze_regex(&source, &ids, budget, &[], &[]);
+    let bytes = super::regex::materialized();
+
+    assert!(limited.truncated);
+    assert_eq!(&limited.candidates[..], &all.candidates[..budget]);
+    let prefix_bytes: usize = all
+        .candidates
+        .iter()
+        .take(budget + 1)
+        .map(|c| c.replacement.len())
+        .sum();
+    assert_eq!(bytes, prefix_bytes);
+}
+
+#[rstest]
+#[case::flags_start(3, "chosen", 1)]
+#[case::pattern_start(4, "chosen", 0)]
+#[case::wrong_symbol(3, "other", 0)]
+fn final_review_covering_edit_selection(
+    #[case] line: u32,
+    #[case] symbol: &str,
+    #[case] expected: usize,
+) {
+    let source =
+        "import re\ndef chosen(s):\n return re.match(flags=re.A,\n  pattern=r'(?a)\\d', string=s)";
+    let lines = [LineRange {
+        start: line,
+        end: line,
+    }];
+
+    let result = analyze_regex(
+        source,
+        &["regex_ascii_mode"],
+        4,
+        &lines,
+        &[symbol.to_owned()],
+    );
+
+    assert_eq!(result.candidates.len(), expected);
+}
+
+#[test]
+fn final_review_later_better_ranked_pattern_is_retained() {
+    // Python visits positional arguments before keywords even when a starred
+    // positional expression occurs after a keyword in source order.
+    let source = "import re\np=r'\\d\\w\\s'\nf(k=re.search(p,s), *[re.search(p,s)])";
+    let ids = ["regex_character_set"];
+    let all = analyze_regex(source, &ids, usize::MAX, &[], &[]);
+
+    let limited = analyze_regex(source, &ids, 1, &[], &[]);
+
+    assert!(limited.truncated);
+    assert_eq!(&limited.candidates[..], &all.candidates[..1]);
+    assert_eq!(
+        limited.candidates[0].span.start,
+        source.find("p,s").unwrap() as u64
+    );
+}
+
+#[test]
+fn losing_references_skip_cross_token_source_validation() {
+    let suffix = "x".repeat(1024);
+    let source = format!(
+        "import re\np=(r'[0-' r'9]\\d' r'{suffix}')\n{}",
+        "re.search(p,s)\n".repeat(32)
+    );
+    super::regex::clear_work();
+
+    let output = analyze_regex(&source, &["regex_character_set"], 1, &[], &[]);
+    let (decoded, _) = super::regex::pattern_work();
+
+    assert!(output.truncated);
+    assert_eq!(output.candidates.len(), 1);
+    assert!(
+        decoded <= 4 * (suffix.len() + 16),
+        "decoded {decoded} units"
+    );
 }
