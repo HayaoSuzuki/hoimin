@@ -987,9 +987,9 @@ The Rust analyzer preserves the original source except for exactly one replaceme
 
 `--profile full` is the default and considers every candidate produced by the selected
 operators. `--profile focused` suppresses candidates in Python `__main__` guards, bare
-`print(...)` calls, `assert` statements, and function default expressions. It is intended
-to reduce low-value survivors in focused change checks, but may omit useful mutants; use
-`full` when measuring the complete selected target.
+`print(...)` calls, `assert` statements, and function default expressions. A
+statement exchange is suppressed if either participant is in a suppressed region.
+Use `full` when measuring the complete selected target.
 
 ```console
 hoimin run --profile focused --root . --source src -- python -m pytest -q

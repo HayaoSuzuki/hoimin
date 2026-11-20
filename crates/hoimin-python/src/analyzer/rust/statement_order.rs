@@ -1,7 +1,7 @@
 //! Eligibility and source boundaries for one adjacent exchange in a single suite.
 use super::{
-    AstCandidateCollector, Expr, ExprContext, HashSet, MutationOperator, Ranged, Stmt, TextRange,
-    TokenKind, Visitor, byte_range, mangled_name, selected_source_start, visitor,
+    AstCandidateCollector, Expr, ExprContext, HashSet, MutationOperator, MutationProfile, Ranged,
+    Stmt, TextRange, TokenKind, Visitor, byte_range, mangled_name, selected_source_start, visitor,
 };
 use ruff_python_ast::token::Tokens;
 use std::borrow::Cow;
@@ -142,6 +142,16 @@ impl<'ast, F: Fn() -> bool> AstCandidateCollector<'ast, F> {
         }
         let range = TextRange::new(first.start(), second.end());
         if !selected_source_start(range, self.line_index, self.facts, self.selection) {
+            return;
+        }
+        // Both statements change position. Their combined range can straddle
+        // two suppressed regions or include one ordinary statement.
+        if self.request.profile == MutationProfile::Focused
+            && [first, second].into_iter().any(|statement| {
+                let span = byte_range(statement.range());
+                self.facts.contains_arid_span(span.start, span.end)
+            })
+        {
             return;
         }
         let Some(a) = Footprint::for_statement(first, self.private_class, self.cancelled) else {

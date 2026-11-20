@@ -21,6 +21,34 @@ fn edits(source: &str, operator: &str) -> Vec<(String, String)> {
 }
 
 #[rstest]
+#[case::leading_arid(MutationProfile::Focused, "print(1)\nrecord()", 0)]
+#[case::trailing_arid(MutationProfile::Focused, "record()\nassert ready", 0)]
+#[case::both_arid(MutationProfile::Focused, "print(1)\nassert ready", 0)]
+#[case::ordinary(MutationProfile::Focused, "record()\nnotify()", 1)]
+#[case::arid_in_full_profile(MutationProfile::Full, "print(1)\nassert ready", 1)]
+fn statement_order_profile_filters_arid_operands(
+    #[case] profile: MutationProfile,
+    #[case] source: &str,
+    #[case] expected: usize,
+) {
+    let operators = serde_json::from_value(serde_json::json!(["statement_order_swap"])).unwrap();
+    let request = AnalyzeRequest {
+        payload: super::super::payload::PayloadBudget::default(),
+        path: Utf8Path::new("subject.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile,
+        max_candidates: 1,
+    };
+
+    let output = analyze_source(&request, source);
+
+    assert_eq!(output.candidates.len(), expected);
+    assert!(!output.truncated);
+}
+
+#[rstest]
 #[case::bare_finally(
     "try: enter()\nfinally: exit()\n",
     "finally_unwrap",
