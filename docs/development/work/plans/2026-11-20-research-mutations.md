@@ -46,11 +46,11 @@ Read calls-design.md sections for #1192/#1195/#1196. Create rust/call_contracts.
 
 Read calls-design.md sections for #1198/#1199. Create rust/collection_processing.rs and rust/rounding.rs plus focused tests and runtime contracts. Reuse Task 2 callable identity helpers without changing established behavior. Modify IDs/defaults/ranking/integration.
 
-- [ ] Add failing cases for comprehension/filter selection, set union/intersection, sum/count, rounding functions/digits, Decimal modes/quantum/context and intermediate rounding.
-- [ ] Record focused RED.
-- [ ] Implement each semantic family with statically justified bindings and bounded emitters, preserving non-target argument effects.
-- [ ] Add meaningful bounded numeric/comprehension properties and executable ties, negatives, context and intermediate-rounding examples.
-- [ ] Verify focused and impacted tests; record five code/test reviews, commit and report.
+- [x] Add failing cases for comprehension/filter selection, set union/intersection, sum/count, rounding functions/digits, Decimal modes/quantum/context and intermediate rounding.
+- [x] Record focused RED.
+- [x] Implement each semantic family with statically justified bindings and bounded emitters, preserving non-target argument effects.
+- [x] Add meaningful bounded numeric/comprehension properties and executable ties, negatives, context and intermediate-rounding examples.
+- [x] Verify focused and impacted tests; record five code/test reviews, commit and report.
 
 ### Task 4: Complete regex mutation domain
 
