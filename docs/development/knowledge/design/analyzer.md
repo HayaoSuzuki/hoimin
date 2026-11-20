@@ -5,6 +5,11 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: research-final-fixes
+  resource: ../../work/reports/research-mutations/final-fixes.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: 6ea61c851a4e27da73e7b6e4ef9881b59d5eaa3d758a5915a4bf47f46f851cde
 - id: effective-python-mutations-design
   resource: ../../work/designs/2026-10-25-effective-python-mutations-design.md
   revision: 8c3ebc2db9cd7212006ea76c5ca0f0ca077ca977
@@ -1852,3 +1857,12 @@ receiver types. Defaults: 72 operators; catalog: 91 IDs. Each remains independen
 excludable.[^effective-python-mutations-design]
 
 [^effective-python-mutations-design]: [Missing-value and shared-state mutation design](../../work/designs/2026-10-25-effective-python-mutations-design.md).
+
+
+## Research mutation domains
+
+Issues #1190–#1192 and #1195–#1200 add 22 operators for cleanup, match dispatch, regex modes and boundaries, escaping, call contracts, collection processing, precision and statement order. The private domain modules keep eligibility and source spelling behind the shared candidate collector. Static provenance remains conservative; source-visible namespace exposure invalidates module-owned proofs.[^research-final-fixes]
+
+The regex domain models Python ASCII/Unicode distinctions, including root and scoped modes. Coordinated inline/external root flags use one covering edit. The collector rejects provably losing replacements before rendering large referenced literals, while later better-ranked candidates remain eligible. Cancellation reaches the name-index preprocessing walks. The report records executable witnesses and measured work bounds; it does not establish general regex equivalence or arbitrary dynamic-Python proofs.[^research-final-fixes]
+
+[^research-final-fixes]: [Implementation and verification record](../../work/reports/research-mutations/final-fixes.md).

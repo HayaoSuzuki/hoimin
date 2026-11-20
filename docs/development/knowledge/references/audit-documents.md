@@ -5,6 +5,96 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: research-2026-11-20-2026-11-20-windows-workspace-failures
+  resource: ../../work/reports/2026-11-20-windows-workspace-failures.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: 34adc8aabbf779237cc8fd79680bf0144b8b8171fd5066c610e047bbc41d2cd2
+- id: research-2026-11-20-research-mutations-audit-records
+  resource: ../../work/reports/research-mutations/audit-records.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: 560527202819029081c1530e32b7213c7ee2edb47d1ba28a161d44f4350bd19e
+- id: research-2026-11-20-research-mutations-calls-design
+  resource: ../../work/reports/research-mutations/calls-design.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: 6f8363de080189db74ff478e7a8216b17f3bf2610cfcedf53460fb4bf6383a07
+- id: research-2026-11-20-research-mutations-calls-implementation
+  resource: ../../work/reports/research-mutations/calls-implementation.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: baa2b838890ba36f14b148314c38433db077ae6545e079bb06706f00f4f67941
+- id: research-2026-11-20-research-mutations-control-design
+  resource: ../../work/reports/research-mutations/control-design.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: 34c77f4d8542528ecd25298566b72cc797608f20a5d98c80004b6e54577fe28f
+- id: research-2026-11-20-research-mutations-control-implementation
+  resource: ../../work/reports/research-mutations/control-implementation.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: 1fa569c41ec938a2393b100d8d78b376f07e2459e597d18b3dfa00f6135b849e
+- id: research-2026-11-20-research-mutations-final-fixes
+  resource: ../../work/reports/research-mutations/final-fixes.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: 6ea61c851a4e27da73e7b6e4ef9881b59d5eaa3d758a5915a4bf47f46f851cde
+- id: research-2026-11-20-research-mutations-integration-implementation
+  resource: ../../work/reports/research-mutations/integration-implementation.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: 4faa7f0f05095e406f79ce20dfea99df7cf0b1ba117cd5da3f4e7311835ed808
+- id: research-2026-11-20-research-mutations-processing-implementation
+  resource: ../../work/reports/research-mutations/processing-implementation.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: 67742c740539e81d5d0bc5de2169bdbec3593a0b388427f9e5b6866a93747147
+- id: research-2026-11-20-research-mutations-records-controller-ledger
+  resource: ../../work/reports/research-mutations/records/controller-ledger.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: 843f1a7e929b41e8eaeb782d7b5fbcc7acaf746a59935316920c0d5e169224e0
+- id: research-2026-11-20-research-mutations-records-final-fixes-review
+  resource: ../../work/reports/research-mutations/records/final-fixes-review.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: cacb0b42f4e331afaa552b7f9018c9143ed75009b20fd456604d8a04c9eeecd1
+- id: research-2026-11-20-research-mutations-records-final-review
+  resource: ../../work/reports/research-mutations/records/final-review.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: 05f03cf58f170b997df0ffa65ef83882557f673055bf3585a34f41909f89f56c
+- id: research-2026-11-20-research-mutations-regex-design
+  resource: ../../work/reports/research-mutations/regex-design.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: c1a44c8abf19a9f9f45e2895dd56086e574ac2da543c25b0a75c15e27c82297d
+- id: research-2026-11-20-research-mutations-regex-implementation
+  resource: ../../work/reports/research-mutations/regex-implementation.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: 81a7a82717f03621dadf9074148e4d2cbc15302a0f27aa27131115c98359a95f
+- id: research-2026-11-20-research-mutations-windows-baseline
+  resource: ../../work/reports/research-mutations/windows-baseline.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: 282807634c2b2c9d3b3fcd40c04fa9a9ddf815945fafb8bae95f3ef52004e920
+- id: research-2026-11-20-windows-workspace-final-review
+  resource: ../../work/reports/windows-workspace/final-review.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: 0748eb61200899d6b7a6acb8898ca29880cb360c7f1ec94230480a6cff582b5e
+- id: research-2026-11-20-windows-workspace-progress
+  resource: ../../work/reports/windows-workspace/progress.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: fdb8f64bf4e673a5b08799647f47dbdbde21d4e991080e6278bea140565bf3d1
+- id: research-2026-11-20-windows-workspace-scoped-review
+  resource: ../../work/reports/windows-workspace/scoped-review.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: 1b293ed9d8bc420dbcb7d2226e5e0d9c77252a799c671d57388fd89813ee3624
 - id: issue-1172-readme
   resource: ../../work/reports/issue-1172/README.md
   working_tree: untracked
@@ -1786,3 +1876,48 @@ sources:
 [^issue-1172-design-review]: [issue-1172-design-review](../../work/reports/issue-1172/design-review.md).
 [^issue-1172-specification-current]: [issue-1172-specification-current](../../work/reports/issue-1172/specification-current.md).
 [^issue-1172-specification]: [issue-1172-specification](../../work/reports/issue-1172/specification.md).
+
+
+## Research mutation implementation and Windows verification
+
+These records distinguish design decisions, intermediate findings and the final native Windows verification.
+
+| Original | First heading | Reference state |
+| --- | --- | --- |
+| [2026-11-20-windows-workspace-failures.md](../../work/reports/2026-11-20-windows-workspace-failures.md) | Windows workspace failure repair [^research-2026-11-20-2026-11-20-windows-workspace-failures] | Tracked at `e389cce9` |
+| [research-mutations/audit-records.md](../../work/reports/research-mutations/audit-records.md) | Research mutation audit records [^research-2026-11-20-research-mutations-audit-records] | Tracked at `e389cce9` |
+| [research-mutations/calls-design.md](../../work/reports/research-mutations/calls-design.md) | Call, collection and rounding mutations [^research-2026-11-20-research-mutations-calls-design] | Tracked at `e389cce9` |
+| [research-mutations/calls-implementation.md](../../work/reports/research-mutations/calls-implementation.md) | Task 2 call contracts [^research-2026-11-20-research-mutations-calls-implementation] | Tracked at `e389cce9` |
+| [research-mutations/control-design.md](../../work/reports/research-mutations/control-design.md) | Control-flow mutation design [^research-2026-11-20-research-mutations-control-design] | Tracked at `e389cce9` |
+| [research-mutations/control-implementation.md](../../work/reports/research-mutations/control-implementation.md) | Task 1 structural mutation report [^research-2026-11-20-research-mutations-control-implementation] | Tracked at `e389cce9` |
+| [research-mutations/final-fixes.md](../../work/reports/research-mutations/final-fixes.md) | Final research mutation fixes [^research-2026-11-20-research-mutations-final-fixes] | Tracked at `e389cce9` |
+| [research-mutations/integration-implementation.md](../../work/reports/research-mutations/integration-implementation.md) | Research mutation integration verification [^research-2026-11-20-research-mutations-integration-implementation] | Tracked at `e389cce9` |
+| [research-mutations/processing-implementation.md](../../work/reports/research-mutations/processing-implementation.md) | Task 3 collection processing and precision [^research-2026-11-20-research-mutations-processing-implementation] | Tracked at `e389cce9` |
+| [research-mutations/records/controller-ledger.md](../../work/reports/research-mutations/records/controller-ledger.md) | SDD ledger — plan: docs/development/work/plans/2026-11-20-research-mutations.md [^research-2026-11-20-research-mutations-records-controller-ledger] | Tracked at `e389cce9` |
+| [research-mutations/records/final-fixes-review.md](../../work/reports/research-mutations/records/final-fixes-review.md) | Finding Verdicts [^research-2026-11-20-research-mutations-records-final-fixes-review] | Tracked at `e389cce9` |
+| [research-mutations/records/final-review.md](../../work/reports/research-mutations/records/final-review.md) | Whole-branch review of the research mutation operators [^research-2026-11-20-research-mutations-records-final-review] | Tracked at `e389cce9` |
+| [research-mutations/regex-design.md](../../work/reports/research-mutations/regex-design.md) | Python regular expression mutation design [^research-2026-11-20-research-mutations-regex-design] | Tracked at `e389cce9` |
+| [research-mutations/regex-implementation.md](../../work/reports/research-mutations/regex-implementation.md) | Task 4 Python regular expression mutations [^research-2026-11-20-research-mutations-regex-implementation] | Tracked at `e389cce9` |
+| [research-mutations/windows-baseline.md](../../work/reports/research-mutations/windows-baseline.md) | Windows baseline verification [^research-2026-11-20-research-mutations-windows-baseline] | Tracked at `e389cce9` |
+| [windows-workspace/final-review.md](../../work/reports/windows-workspace/final-review.md) | Windows workspace repair review [^research-2026-11-20-windows-workspace-final-review] | Tracked at `e389cce9` |
+| [windows-workspace/progress.md](../../work/reports/windows-workspace/progress.md) | Windows workspace repair ledger [^research-2026-11-20-windows-workspace-progress] | Tracked at `e389cce9` |
+| [windows-workspace/scoped-review.md](../../work/reports/windows-workspace/scoped-review.md) | Follow-up review of the named-entry observation [^research-2026-11-20-windows-workspace-scoped-review] | Tracked at `e389cce9` |
+
+[^research-2026-11-20-2026-11-20-windows-workspace-failures]: [Windows workspace failure repair](../../work/reports/2026-11-20-windows-workspace-failures.md).
+[^research-2026-11-20-research-mutations-audit-records]: [Research mutation audit records](../../work/reports/research-mutations/audit-records.md).
+[^research-2026-11-20-research-mutations-calls-design]: [Call, collection and rounding mutations](../../work/reports/research-mutations/calls-design.md).
+[^research-2026-11-20-research-mutations-calls-implementation]: [Task 2 call contracts](../../work/reports/research-mutations/calls-implementation.md).
+[^research-2026-11-20-research-mutations-control-design]: [Control-flow mutation design](../../work/reports/research-mutations/control-design.md).
+[^research-2026-11-20-research-mutations-control-implementation]: [Task 1 structural mutation report](../../work/reports/research-mutations/control-implementation.md).
+[^research-2026-11-20-research-mutations-final-fixes]: [Final research mutation fixes](../../work/reports/research-mutations/final-fixes.md).
+[^research-2026-11-20-research-mutations-integration-implementation]: [Research mutation integration verification](../../work/reports/research-mutations/integration-implementation.md).
+[^research-2026-11-20-research-mutations-processing-implementation]: [Task 3 collection processing and precision](../../work/reports/research-mutations/processing-implementation.md).
+[^research-2026-11-20-research-mutations-records-controller-ledger]: [SDD ledger — plan: docs/development/work/plans/2026-11-20-research-mutations.md](../../work/reports/research-mutations/records/controller-ledger.md).
+[^research-2026-11-20-research-mutations-records-final-fixes-review]: [Finding Verdicts](../../work/reports/research-mutations/records/final-fixes-review.md).
+[^research-2026-11-20-research-mutations-records-final-review]: [Whole-branch review of the research mutation operators](../../work/reports/research-mutations/records/final-review.md).
+[^research-2026-11-20-research-mutations-regex-design]: [Python regular expression mutation design](../../work/reports/research-mutations/regex-design.md).
+[^research-2026-11-20-research-mutations-regex-implementation]: [Task 4 Python regular expression mutations](../../work/reports/research-mutations/regex-implementation.md).
+[^research-2026-11-20-research-mutations-windows-baseline]: [Windows baseline verification](../../work/reports/research-mutations/windows-baseline.md).
+[^research-2026-11-20-windows-workspace-final-review]: [Windows workspace repair review](../../work/reports/windows-workspace/final-review.md).
+[^research-2026-11-20-windows-workspace-progress]: [Windows workspace repair ledger](../../work/reports/windows-workspace/progress.md).
+[^research-2026-11-20-windows-workspace-scoped-review]: [Follow-up review of the named-entry observation](../../work/reports/windows-workspace/scoped-review.md).

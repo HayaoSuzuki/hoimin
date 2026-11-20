@@ -5,6 +5,11 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: bcbb8bea00188ca27c0dd98a1e10a5c3a40a0d56
 sources:
+- id: research-integration
+  resource: ../../work/reports/research-mutations/integration-implementation.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: 4faa7f0f05095e406f79ce20dfea99df7cf0b1ba117cd5da3f4e7311835ed808
 - id: current-jsonl-contract
   resource: ../../../user/reference/compatibility.md
   working_tree: modified
@@ -1362,3 +1367,12 @@ snapshot to reuse during execution.[^issue-1081-plan]
 [^issue-1081-membership]: [Capability-relative copy membership](../../../../crates/hoimin-cli/src/workspace/manifest.rs).
 
 [^current-jsonl-contract]: [Current CLI and execution-output policy](../../../user/reference/compatibility.md#agent-oriented-output-11001103).
+
+
+## Expanded research defaults
+
+Fresh plans select 107 runtime operators from the 126-ID catalog. All 22 operators added for Issues #1190–#1192 and #1195–#1200 are enabled by default and individually removable with `--exclude-operators`. Existing saved plans keep their recorded selections; create a new plan to inspect the expanded default set. Candidate limits can retain a different ranked prefix when more operators participate.[^research-integration]
+
+The integration record checks changed-line and symbol selection, mixed-family candidate limits, stable candidate identities and two actual older plan captures. Those captures are compatibility observations at the recorded revisions, not a new cross-version compatibility requirement.[^research-integration]
+
+[^research-integration]: [Implementation and verification record](../../work/reports/research-mutations/integration-implementation.md).
