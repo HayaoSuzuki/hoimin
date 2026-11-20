@@ -50,11 +50,11 @@ fn exit_notification_completes_only_its_root(#[case] scenario_index: usize) {
 }
 
 #[rstest::rstest]
-#[case::false_vec_uuid_from_u128_1_false_1(false, vec![Uuid::from_u128(1)], false)]
-#[case::true_vec_true_2(true, vec![], true)]
+#[case::active_root(false, &[Uuid::from_u128(1)], false)]
+#[case::empty_job(true, &[], true)]
 fn active_process_zero_requires_empty_job_before_completing_roots(
     #[case] job_is_empty: bool,
-    #[case] expected_active: Vec<Uuid>,
+    #[case] expected_active: &[Uuid],
     #[case] expected_complete: bool,
 ) {
     let mut state = RunState {

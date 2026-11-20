@@ -3912,12 +3912,15 @@ fn rename_open_owned_directory_with_guard(
     expected_identity: (u64, u64),
     before_next_operation: &impl Fn() -> Result<(), WorkspaceError>,
 ) -> std::io::Result<()> {
-    super::root::windows::rename_open_entry_relative_with_guard(
-        parent,
-        source,
-        std::ffi::OsStr::new(destination),
-        expected_identity,
-        &|| before_next_operation().map_err(std::io::Error::other),
+    owned_io!(
+        "claim.rename",
+        super::root::windows::rename_open_entry_relative_with_guard(
+            parent,
+            source,
+            std::ffi::OsStr::new(destination),
+            expected_identity,
+            &|| before_next_operation().map_err(std::io::Error::other),
+        )
     )
 }
 
@@ -8825,11 +8828,14 @@ fn remove_cleanup_entry_checked<'a>(
     budget: impl Into<CleanupBudget<'a>>,
 ) -> std::io::Result<()> {
     let budget = budget.into();
-    super::root::windows::remove_entry_io_checked_with_guard(
-        parent,
-        name,
-        expected_identity,
-        &|| ensure_cleanup_deadline(started, budget),
+    owned_io!(
+        "cleanup.unlink_file",
+        super::root::windows::remove_entry_io_checked_with_guard(
+            parent,
+            name,
+            expected_identity,
+            &|| ensure_cleanup_deadline(started, budget),
+        )
     )
 }
 
@@ -9130,6 +9136,45 @@ impl ManagedChild {
             )),
         }
     }
+}
+
+/// Verify the named entry still identifies its owning handle, then observe its bytes
+/// without reopening a locked file or changing the shared file position.
+#[cfg(test)]
+fn read_fixture_bytes(parent: &cap_std::fs::Dir, name: &str, file: &File) -> Vec<u8> {
+    let named = parent.symlink_metadata(name).unwrap();
+    assert!(named.is_file() && !named.file_type().is_symlink());
+    assert_eq!(
+        metadata_identity(&named),
+        file_identity(file).unwrap(),
+        "fixture name must retain its owned file"
+    );
+    let mut reader = file;
+    let position = reader.stream_position().unwrap();
+    reader.rewind().unwrap();
+    let mut bytes = Vec::new();
+    reader.read_to_end(&mut bytes).unwrap();
+    reader.seek(SeekFrom::Start(position)).unwrap();
+    bytes
+}
+
+#[cfg(test)]
+fn rename_fixture_file(parent: &cap_std::fs::Dir, file: &File, source: &str, destination: &str) {
+    #[cfg(unix)]
+    let _ = file;
+    #[cfg(windows)]
+    let _ = source;
+    #[cfg(unix)]
+    parent.rename(source, parent, destination).unwrap();
+    #[cfg(windows)]
+    super::root::windows::rename_open_entry_relative_with_guard(
+        parent,
+        file,
+        std::ffi::OsStr::new(destination),
+        file_identity(file).unwrap(),
+        &|| Ok(()),
+    )
+    .unwrap();
 }
 
 #[cfg(test)]

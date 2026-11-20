@@ -550,6 +550,9 @@ const HIGH_VALUE_CONTROL_OPERATORS: &[&str] = &[
     "remove_not",
     "boolean_literal",
     "break_continue",
+    "match_or_alternative_delete",
+    "match_guard_constant",
+    "match_case_delete",
     "loop_break_insert",
     "iterator_stop_insert",
     "async_iterator_stop_insert",
@@ -562,6 +565,7 @@ const HIGH_VALUE_CONTROL_OPERATORS: &[&str] = &[
 ];
 const EXCEPTION_HANDLING_OPERATORS: &[&str] = &[
     "exception_cause_remove",
+    "finally_unwrap",
     "gather_return_exceptions",
     "exception_hierarchy",
     "exception_type_pair",
@@ -575,6 +579,24 @@ const BEHAVIORAL_OPERATORS: &[&str] = &[
     "base_order_shuffle",
     "override_method_delete",
     "super_call_move",
+    "statement_order_swap",
+    "stdlib_escape_remove",
+    "call_argument_swap",
+    "call_result_default",
+    "comprehension_filter_remove",
+    "comprehension_filter_invert",
+    "filter_predicate_swap",
+    "set_union_intersection_swap",
+    "aggregate_sum_count",
+    "rounding_function_swap",
+    "round_digits_remove",
+    "decimal_rounding_mode_swap",
+    "decimal_quantum_shift",
+    "decimal_context_precision",
+    "intermediate_rounding_remove",
+    "regex_match_boundary",
+    "regex_character_set",
+    "regex_ascii_mode",
     "dataclass_factory_share",
     "sort_key_swap",
     "encoding_errors_ignore",
@@ -669,7 +691,7 @@ fn ranking_category_inventory_covers_every_canonical_operator() {
         .filter_map(MutationOperator::from_name)
         .collect::<BTreeSet<_>>();
 
-    assert_eq!(tested.len(), 104);
+    assert_eq!(tested.len(), 126);
     assert_eq!(tested, canonical);
 }
 
@@ -749,6 +771,48 @@ fn ranking_category_inventory_covers_every_canonical_operator() {
 #[case::base_order_shuffle("base_order_shuffle", RankingReasonCode::Behavioral, 80)]
 #[case::override_method_delete("override_method_delete", RankingReasonCode::Behavioral, 80)]
 #[case::super_call_move("super_call_move", RankingReasonCode::Behavioral, 80)]
+#[case::finally_unwrap("finally_unwrap", RankingReasonCode::ExceptionHandling, 90)]
+#[case::match_case_delete("match_case_delete", RankingReasonCode::HighValueControl, 100)]
+#[case::match_guard_constant("match_guard_constant", RankingReasonCode::HighValueControl, 100)]
+#[case::match_or_alternative_delete(
+    "match_or_alternative_delete",
+    RankingReasonCode::HighValueControl,
+    100
+)]
+#[case::statement_order_swap("statement_order_swap", RankingReasonCode::Behavioral, 80)]
+#[case::stdlib_escape_remove("stdlib_escape_remove", RankingReasonCode::Behavioral, 80)]
+#[case::call_argument_swap("call_argument_swap", RankingReasonCode::Behavioral, 80)]
+#[case::call_result_default("call_result_default", RankingReasonCode::Behavioral, 80)]
+#[case::comprehension_filter_remove(
+    "comprehension_filter_remove",
+    RankingReasonCode::Behavioral,
+    80
+)]
+#[case::comprehension_filter_invert(
+    "comprehension_filter_invert",
+    RankingReasonCode::Behavioral,
+    80
+)]
+#[case::filter_predicate_swap("filter_predicate_swap", RankingReasonCode::Behavioral, 80)]
+#[case::set_union_intersection_swap(
+    "set_union_intersection_swap",
+    RankingReasonCode::Behavioral,
+    80
+)]
+#[case::aggregate_sum_count("aggregate_sum_count", RankingReasonCode::Behavioral, 80)]
+#[case::rounding_function_swap("rounding_function_swap", RankingReasonCode::Behavioral, 80)]
+#[case::round_digits_remove("round_digits_remove", RankingReasonCode::Behavioral, 80)]
+#[case::decimal_rounding_mode_swap("decimal_rounding_mode_swap", RankingReasonCode::Behavioral, 80)]
+#[case::decimal_quantum_shift("decimal_quantum_shift", RankingReasonCode::Behavioral, 80)]
+#[case::decimal_context_precision("decimal_context_precision", RankingReasonCode::Behavioral, 80)]
+#[case::regex_match_boundary("regex_match_boundary", RankingReasonCode::Behavioral, 80)]
+#[case::regex_character_set("regex_character_set", RankingReasonCode::Behavioral, 80)]
+#[case::regex_ascii_mode("regex_ascii_mode", RankingReasonCode::Behavioral, 80)]
+#[case::intermediate_rounding_remove(
+    "intermediate_rounding_remove",
+    RankingReasonCode::Behavioral,
+    80
+)]
 #[case::dataclass_factory_share("dataclass_factory_share", RankingReasonCode::Behavioral, 80)]
 #[case::sort_key_swap("sort_key_swap", RankingReasonCode::Behavioral, 80)]
 #[case::encoding_errors_ignore("encoding_errors_ignore", RankingReasonCode::Behavioral, 80)]

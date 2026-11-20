@@ -252,9 +252,61 @@ const OPERATORS: &[(MutationOperator, &str)] = &[
         "override_method_delete",
     ),
     (MutationOperator::SuperCallMove, "super_call_move"),
+    (MutationOperator::FinallyUnwrap, "finally_unwrap"),
+    (MutationOperator::MatchCaseDelete, "match_case_delete"),
+    (MutationOperator::MatchGuardConstant, "match_guard_constant"),
+    (
+        MutationOperator::MatchOrAlternativeDelete,
+        "match_or_alternative_delete",
+    ),
+    (MutationOperator::StatementOrderSwap, "statement_order_swap"),
+    (MutationOperator::StdlibEscapeRemove, "stdlib_escape_remove"),
+    (MutationOperator::CallArgumentSwap, "call_argument_swap"),
+    (MutationOperator::CallResultDefault, "call_result_default"),
+    (
+        MutationOperator::ComprehensionFilterRemove,
+        "comprehension_filter_remove",
+    ),
+    (
+        MutationOperator::ComprehensionFilterInvert,
+        "comprehension_filter_invert",
+    ),
+    (
+        MutationOperator::FilterPredicateSwap,
+        "filter_predicate_swap",
+    ),
+    (
+        MutationOperator::SetUnionIntersectionSwap,
+        "set_union_intersection_swap",
+    ),
+    (MutationOperator::AggregateSumCount, "aggregate_sum_count"),
+    (
+        MutationOperator::RoundingFunctionSwap,
+        "rounding_function_swap",
+    ),
+    (MutationOperator::RoundDigitsRemove, "round_digits_remove"),
+    (
+        MutationOperator::DecimalRoundingModeSwap,
+        "decimal_rounding_mode_swap",
+    ),
+    (
+        MutationOperator::DecimalQuantumShift,
+        "decimal_quantum_shift",
+    ),
+    (
+        MutationOperator::DecimalContextPrecision,
+        "decimal_context_precision",
+    ),
+    (
+        MutationOperator::IntermediateRoundingRemove,
+        "intermediate_rounding_remove",
+    ),
+    (MutationOperator::RegexMatchBoundary, "regex_match_boundary"),
+    (MutationOperator::RegexCharacterSet, "regex_character_set"),
+    (MutationOperator::RegexAsciiMode, "regex_ascii_mode"),
 ];
 
-const FAMILIES: [&str; 8] = [
+const FAMILIES: [&str; 12] = [
     "type_nullable",
     "type_collections",
     "type_iterables",
@@ -263,6 +315,10 @@ const FAMILIES: [&str; 8] = [
     "bitwise_ops",
     "exception_ops",
     "exception_risky",
+    "call_contracts",
+    "collection_processing",
+    "rounding",
+    "regex",
 ];
 
 #[rstest::rstest]
@@ -370,6 +426,28 @@ const FAMILIES: [&str; 8] = [
 #[case::mutationoperator_baseordershuffle_102(101)]
 #[case::mutationoperator_overridemethoddelete_103(102)]
 #[case::mutationoperator_supercallmove_104(103)]
+#[case::finally_unwrap(104)]
+#[case::match_case_delete(105)]
+#[case::match_guard_constant(106)]
+#[case::match_or_alternative_delete(107)]
+#[case::statement_order_swap(108)]
+#[case::stdlib_escape_remove(109)]
+#[case::call_argument_swap(110)]
+#[case::call_result_default(111)]
+#[case::comprehension_filter_remove(112)]
+#[case::comprehension_filter_invert(113)]
+#[case::filter_predicate_swap(114)]
+#[case::set_union_intersection_swap(115)]
+#[case::aggregate_sum_count(116)]
+#[case::rounding_function_swap(117)]
+#[case::round_digits_remove(118)]
+#[case::decimal_rounding_mode_swap(119)]
+#[case::decimal_quantum_shift(120)]
+#[case::decimal_context_precision(121)]
+#[case::intermediate_rounding_remove(122)]
+#[case::regex_match_boundary(123)]
+#[case::regex_character_set(124)]
+#[case::regex_ascii_mode(125)]
 fn canonical_names_preserve_wire_encoding_and_exact_lookup(#[case] case_index: usize) {
     let &(operator, name) = &OPERATORS[case_index];
 

@@ -287,13 +287,11 @@ def documentation_repository(tmp_path: Path) -> Path:
             + (
                 "README.md"
                 if source == "README.md"
-                else str(
-                    Path(
-                        os.path.relpath(
-                            repository / "README.md", (repository / source).parent
-                        )
+                else Path(
+                    os.path.relpath(
+                        repository / "README.md", (repository / source).parent
                     )
-                )
+                ).as_posix()
             )
             + ")\n"
         )

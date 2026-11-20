@@ -259,11 +259,23 @@ def strict_case() -> StrictCase:
     return case
 
 
+@pytest.fixture
+def native_strict_case(mocker: MockerFixture, strict_case: StrictCase) -> StrictCase:
+    def killpg(_pgid: int, _signum: int, /) -> None:
+        pytest.fail("the fake process must not receive a group signal")
+
+    mocker.patch("tools.boundary_contracts.sys.platform", strict_case["platforms"][0])
+    mocker.patch.object(
+        os, "killpg", create_autospec(killpg, side_effect=killpg), create=True
+    )
+    mocker.patch.object(signal, "SIGKILL", 9, create=True)
+    return strict_case
+
+
 def test_strict_execution_removes_inherited_corpus_filters(
-    tmp_path: Path, mocker: MockerFixture, strict_case: StrictCase
+    tmp_path: Path, mocker: MockerFixture, native_strict_case: StrictCase
 ) -> None:
-    original_killpg_spec = getattr(os, "killpg", Mock())
-    case = strict_case
+    case = native_strict_case
     environments: list[dict[str, str]] = []
 
     def spawn(
@@ -280,13 +292,6 @@ def test_strict_execution_removes_inherited_corpus_filters(
 
     mocker.patch.dict(os.environ, {"HOIMIN_BOUNDARY_CASE": "one"})
     mocker.patch.dict(os.environ, {"HOIMIN_SESSION_ORACLE_CASE": "one"})
-    mocker.patch("tools.boundary_contracts.sys.platform", case["platforms"][0])
-    mocker.patch(
-        "tools.boundary_contracts.os.killpg",
-        create_autospec(original_killpg_spec, side_effect=Mock()),
-        create=True,
-    )
-    mocker.patch("tools.boundary_contracts.signal.SIGKILL", 9, create=True)
     mocker.patch("tools.boundary_contracts.subprocess.Popen", side_effect=spawn)
 
     execute_result = execute(case, tmp_path)
@@ -300,10 +305,9 @@ def test_strict_execution_removes_inherited_corpus_filters(
 
 
 def test_strict_execution_includes_every_parameterized_case(
-    tmp_path: Path, mocker: MockerFixture, strict_case: StrictCase
+    tmp_path: Path, mocker: MockerFixture, native_strict_case: StrictCase
 ) -> None:
-    original_killpg_spec = getattr(os, "killpg", Mock())
-    case = strict_case
+    case = native_strict_case
     calls: list[list[str]] = []
 
     def spawn(argv: list[str], *, stdout: TextIO, **_kwargs: object) -> Mock:
@@ -316,13 +320,6 @@ def test_strict_execution_includes_every_parameterized_case(
         stdout.flush()
         return Mock(wait=Mock(return_value=0))
 
-    mocker.patch("tools.boundary_contracts.sys.platform", case["platforms"][0])
-    mocker.patch(
-        "tools.boundary_contracts.os.killpg",
-        create_autospec(original_killpg_spec, side_effect=Mock()),
-        create=True,
-    )
-    mocker.patch("tools.boundary_contracts.signal.SIGKILL", 9, create=True)
     mocker.patch("tools.boundary_contracts.subprocess.Popen", side_effect=spawn)
 
     row = execute(case, tmp_path)
@@ -423,14 +420,17 @@ def test_timeout_kills_process_group_and_reports_infrastructure_error(
 
 
 def test_execution_without_process_group_support_is_unexecuted(
-    tmp_path: Path, mocker: MockerFixture
+    tmp_path: Path,
+    mocker: MockerFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    strict_case: StrictCase,
 ) -> None:
-    case = load_registry()["cases"][0]
-    mocker.patch("tools.boundary_contracts.os.killpg", create=True)
-    delattr(os, "killpg")
+    mocker.patch("tools.boundary_contracts.sys.platform", strict_case["platforms"][0])
+    mocker.patch.object(signal, "SIGKILL", 9, create=True)
+    monkeypatch.delattr(os, "killpg", raising=False)
     spawn = mocker.patch("tools.boundary_contracts.subprocess.Popen")
 
-    row = execute(case, tmp_path)
+    row = execute(strict_case, tmp_path)
 
     spawn.assert_not_called()
 
@@ -455,10 +455,9 @@ def test_observations_preserve_additional_evidence() -> None:
 
 
 def test_failed_process_start_is_an_infrastructure_error(
-    tmp_path: Path, mocker: MockerFixture
+    tmp_path: Path, mocker: MockerFixture, native_strict_case: StrictCase
 ) -> None:
     original_popen_spec = subprocess.Popen
-    case = load_registry()["cases"][0]
 
     def cannot_start(*_args: object, **_kwargs: object) -> None:
         msg = "process unavailable"
@@ -469,7 +468,9 @@ def test_failed_process_start_is_an_infrastructure_error(
         "Popen",
         create_autospec(original_popen_spec, side_effect=cannot_start),
     )
-    row = execute(case, tmp_path)
+
+    row = execute(native_strict_case, tmp_path)
+
     assert row["status"] == BoundaryStatus.INFRASTRUCTURE_ERROR.value
     assert row["reason"] == "process unavailable"
 

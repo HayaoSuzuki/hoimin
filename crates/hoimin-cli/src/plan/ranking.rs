@@ -250,6 +250,9 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
     Some(match operator {
         MutationOperator::LambdaCaptureLate
         | MutationOperator::ContinueRemove
+        | MutationOperator::MatchOrAlternativeDelete
+        | MutationOperator::MatchGuardConstant
+        | MutationOperator::MatchCaseDelete
         | MutationOperator::ComparisonNotImplemented
         | MutationOperator::NoneTruthiness
         | MutationOperator::NonlocalRemove
@@ -272,6 +275,7 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::BooleanLiteral
         | MutationOperator::BreakContinue => RankingReasonCode::HighValueControl,
         MutationOperator::ExceptionCauseRemove
+        | MutationOperator::FinallyUnwrap
         | MutationOperator::GatherReturnExceptions
         | MutationOperator::ExceptionTypePair
         | MutationOperator::ExceptionHierarchy
@@ -283,6 +287,7 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         MutationOperator::BaseOrderShuffle
         | MutationOperator::OverrideMethodDelete
         | MutationOperator::SuperCallMove
+        | MutationOperator::StatementOrderSwap
         | MutationOperator::DataclassFactoryShare
         | MutationOperator::SortKeySwap
         | MutationOperator::EncodingErrorsIgnore
@@ -300,6 +305,23 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::StdlibConversionCallRemove
         | MutationOperator::ConversionCallRemove
         | MutationOperator::OptionalKeywordDelete
+        | MutationOperator::StdlibEscapeRemove
+        | MutationOperator::CallArgumentSwap
+        | MutationOperator::CallResultDefault
+        | MutationOperator::ComprehensionFilterRemove
+        | MutationOperator::ComprehensionFilterInvert
+        | MutationOperator::FilterPredicateSwap
+        | MutationOperator::SetUnionIntersectionSwap
+        | MutationOperator::AggregateSumCount
+        | MutationOperator::RoundingFunctionSwap
+        | MutationOperator::RoundDigitsRemove
+        | MutationOperator::DecimalRoundingModeSwap
+        | MutationOperator::DecimalQuantumShift
+        | MutationOperator::DecimalContextPrecision
+        | MutationOperator::RegexMatchBoundary
+        | MutationOperator::RegexCharacterSet
+        | MutationOperator::RegexAsciiMode
+        | MutationOperator::IntermediateRoundingRemove
         | MutationOperator::StringLiteralEmpty
         | MutationOperator::StringSegmentEmpty
         | MutationOperator::ReturnTupleSwap

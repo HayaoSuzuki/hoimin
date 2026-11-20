@@ -1857,6 +1857,9 @@ fn failed_symlink_unlink_preserves_the_link_and_the_outside_target() {
 #[case::one_parent("nested/target")]
 #[case::two_parents("nested/deeper/target")]
 fn native_parent_open_retains_the_requested_existing_ancestor(#[case] relative: &str) {
+    #[cfg(windows)]
+    use cap_fs_ext::OpenOptionsFollowExt;
+
     let directory = tempfile::tempdir().unwrap();
     let path = Utf8Path::from_path(directory.path()).unwrap();
     let target = path.join(relative);

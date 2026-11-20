@@ -19,6 +19,18 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Cleanup, matching, call, and numeric defaults
+
+Fresh runs and plans select 107 runtime operators from 126 catalog IDs.
+The expanded set covers cleanup, match dispatch, regular expressions, escaping,
+call contracts, collection processing, rounding, statement order, and
+inheritance. Pass an individual ID to `--exclude-operators` to disable it.
+
+Saved plans keep their recorded operator sets and candidate identities.
+Create a fresh plan to see the expanded defaults. A candidate cap can retain a
+different prefix when discovery includes more operators. See the [operator
+catalog](../guides/usage.md#mutation-operators) for applicability and selectors.
+
 ## Additional behavioral defaults (Issues 1126, 1127, 1128 and 1131)
 
 Fresh runs/plans add `dataclass_factory_share`, `sort_key_swap`,

@@ -4,6 +4,10 @@ title: Fuzzing maintenance adoption
 description: Evidence gates for corpus distillation, property reuse and targeted exploration.
 status: draft
 sources:
+- id: bounded-cache-campaign
+  resource: ../../../tools/ci_fuzz.py
+- id: bounded-cache-tests
+  resource: ../../../tests/test_ci_fuzz.py
 - id: issue-851-protocol
   resource: ../work/maintenance/2026-10-13-analyzer-protocol.md
 - id: assessment
@@ -114,6 +118,25 @@ targets run once with the original byte/time/RSS guards and failure handling.
 The workflow's 3.14 driver is distinct from its two generation interpreters.
 See the canonical [development procedure](../guides/contributing.md#bounded-ci-fuzzing).[^python315-guide]
 Windows generator checks do not establish a Linux sanitizer campaign result.[^python315-campaign]
+
+# Bounded cached-input replay
+
+PR #1202 exposed a startup limit: libFuzzer replayed 16,325 initial inputs
+before entering its total-time-controlled mutation loop, exceeding the target's
+48-second process deadline. The campaign now samples at most 512 cached inputs
+per target into a temporary working corpus using the campaign seed. Fixed seeds
+and all freshly generated inputs enter separately. Discoveries are copied back
+on success or failure without deleting the original cache. This bounds the
+number of cached inputs replayed, not the cost of an individual input; existing
+input and process timeouts still fail the job. The same policy serves CI and
+scheduled fuzzing.[^bounded-cache-campaign]
+
+Tests cover the sampling boundary, reproducibility, preservation on failure,
+and the separate path for fresh inputs. These checks do not establish coverage
+equivalence with replaying the complete cache.[^bounded-cache-tests]
+
+[^bounded-cache-campaign]: [Campaign corpus lifecycle](../../../tools/ci_fuzz.py).
+[^bounded-cache-tests]: [Campaign regression tests](../../../tests/test_ci_fuzz.py).
 
 [^python315-design]: [Python 3.14・3.15のfuzz入力生成](../work/designs/2026-10-24-python-315-fuzz-design.md).
 [^python315-generator]: [Bounded source generation](../../../tools/hypothesmith_corpus.py).

@@ -6,6 +6,10 @@ use std::time::Duration;
 use serde_json::Value;
 
 async fn plan(root: &Path, selectors: &[String], limit: usize) -> Value {
+    plan_operators(root, selectors, "boolean_literal", limit).await
+}
+
+async fn plan_operators(root: &Path, selectors: &[String], operators: &str, limit: usize) -> Value {
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
     command
         .args(["plan", "--root"])
@@ -13,7 +17,7 @@ async fn plan(root: &Path, selectors: &[String], limit: usize) -> Value {
         .args(selectors)
         .args([
             "--operators",
-            "boolean_literal",
+            operators,
             "--max-candidates",
             &limit.to_string(),
             "--min-free-space",
@@ -34,7 +38,12 @@ async fn plan(root: &Path, selectors: &[String], limit: usize) -> Value {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    serde_json::from_slice(&output.stdout).unwrap()
+    let manifest: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(if manifest["truncated"] == true { 4 } else { 0 })
+    );
+    manifest
 }
 
 #[tokio::test]
@@ -172,4 +181,114 @@ async fn noncontiguous_changed_hunks_admit_only_changed_candidates() {
             .all(|candidate| candidate["original"] == "False")
     );
     assert_eq!(output["truncated"], false);
+}
+
+const RESEARCH_SOURCE: &str = concat!(
+    "import re\n",
+    "from html import escape\n",
+    "def target(value):\n",
+    "    try:\n",
+    "        cleaned = escape(value)\n",
+    "        return re.search(r'\\d+', cleaned)\n",
+    "    finally: pass\n",
+    "def other(value):\n",
+    "    return re.search(r'\\d+', value)\n",
+    "def unaffected(values):\n",
+    "    return [v for v in values if v]\n",
+);
+const RESEARCH_OPERATORS: &str =
+    "finally_unwrap,stdlib_escape_remove,regex_character_set,comprehension_filter_remove";
+
+#[rstest::rstest]
+#[case::diff(
+    &["--changed"],
+    &[(6, "regex_character_set", "target"), (9, "regex_character_set", "other")],
+)]
+#[case::symbol(
+    &["--symbol", "subject:target"],
+    &[
+        (4, "finally_unwrap", "target"),
+        (5, "stdlib_escape_remove", "target"),
+        (6, "regex_character_set", "target"),
+    ],
+)]
+#[case::intersection(
+    &["--changed", "--symbol", "subject:target"],
+    &[(6, "regex_character_set", "target")],
+)]
+#[tokio::test]
+async fn research_operators_respect_public_diff_and_symbol_selection(
+    #[case] args: &[&str],
+    #[case] expected: &[(u64, &str, &str)],
+) {
+    // Arrange two changed pattern lines in different functions.
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("subject.py");
+    std::fs::write(&path, RESEARCH_SOURCE.replace(r"\d+", r"\d*")).unwrap();
+    git(root.path(), &["init", "-q"]).await;
+    git(root.path(), &["add", "subject.py"]).await;
+    git(root.path(), &["commit", "-qm", "fixture"]).await;
+    std::fs::write(path, RESEARCH_SOURCE).unwrap();
+    let selectors = ["--source", "."]
+        .into_iter()
+        .chain(args.iter().copied())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+
+    // Act.
+    let manifest = plan_operators(root.path(), &selectors, RESEARCH_OPERATORS, 10).await;
+    let candidates = manifest["candidates"].as_array().unwrap();
+    let mut sites = candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate["line"].as_u64().unwrap(),
+                candidate["operator"].as_str().unwrap(),
+                candidate["symbol"].as_str().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    sites.sort_unstable();
+
+    // Assert both membership and the reason attached by Git-based ranking.
+    assert_eq!(sites, expected);
+    assert_eq!(manifest["truncated"], false);
+    for candidate in candidates {
+        let reasons = candidate["ranking_reasons"].as_array().unwrap();
+        assert_eq!(
+            reasons
+                .iter()
+                .any(|reason| reason["code"] == "changed_line"),
+            args.contains(&"--changed")
+        );
+    }
+}
+
+#[rstest::rstest]
+#[case::first_candidate(1)]
+#[case::mixed_prefix(3)]
+#[case::exact_capacity(5)]
+#[tokio::test]
+async fn research_operator_budget_keeps_the_serialized_ranked_prefix(#[case] limit: usize) {
+    // Arrange.
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), RESEARCH_SOURCE).unwrap();
+    let selectors = ["--file".to_owned(), "subject.py".to_owned()];
+    let full = plan_operators(root.path(), &selectors, RESEARCH_OPERATORS, 10).await;
+
+    // Act.
+    let limited = plan_operators(root.path(), &selectors, RESEARCH_OPERATORS, limit).await;
+    let saved = serde_json::to_vec(&limited).unwrap();
+    let loaded: hoimin_cli::plan::PlanManifest = serde_json::from_slice(&saved).unwrap();
+
+    // Assert that clipping and round-tripping preserve candidate IDs, ranks and edits.
+    let all_candidates = full["candidates"].as_array().unwrap();
+    assert_eq!(all_candidates.len(), 5);
+    assert_eq!(full["truncated"], false);
+    assert_eq!(limited["truncated"], limit < all_candidates.len());
+    assert_eq!(
+        limited["candidates"].as_array().unwrap(),
+        &all_candidates[..limit]
+    );
+    assert_eq!(serde_json::to_value(loaded).unwrap(), limited);
 }

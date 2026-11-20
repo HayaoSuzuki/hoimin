@@ -93,7 +93,7 @@ impl Index {
         }
         let mut tracked = names.clone();
         tracked.insert("super".to_owned());
-        let resolution = NameResolutionIndex::from_module_with_names(module, tracked);
+        let resolution = NameResolutionIndex::collect(module, tracked, cancelled)?;
         if cancelled() {
             return Err(AnalysisCancelled);
         }

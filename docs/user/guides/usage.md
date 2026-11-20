@@ -670,10 +670,10 @@ the detailed capability and cleanup model.
 
 ## Mutation operators
 
-Without `--operators`, a run selects 85 default runtime operators. `--operators`
+Without `--operators`, a run selects 107 default runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
-individual IDs or selector families. Hoimin exposes 104 operator IDs in total:
-85 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
+individual IDs or selector families. Hoimin exposes 126 operator IDs in total:
+107 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
 `exception_hierarchy`, and six opt-in analyzers: `condition_constant`,
 `function_body_erase`, `enum_member_replace`, `condition_clause_delete`,
 `container_element_delete`, and `optional_keyword_delete`.
@@ -704,6 +704,19 @@ Defaults also include `dataclass_factory_share`, `sort_key_swap`,
 `override_method_delete` and `super_call_move`. Each can be selected or
 excluded individually, without expanding any existing selector family.
 
+To disable a control-flow mutation, pass its ID to `--exclude-operators`, for example
+`--exclude-operators finally_unwrap,statement_order_swap`.
+
+Select the three call contract operators with `--operators call_contracts`.
+To disable one while using the defaults, pass its ID to `--exclude-operators`,
+for example `--exclude-operators call_result_default`.
+
+Use `--operators collection_processing` for comprehensions, lazy predicates, set
+operations, and aggregation. Use `--operators rounding` for rounding functions and
+Decimal precision. Both families are enabled by default. To omit individual
+operators, use, for example,
+`--exclude-operators filter_predicate_swap,decimal_quantum_shift`.
+
 New default runs can generate more candidates and take longer. With a candidate
 cap, the retained prefix can also change. Explicit `--operators` selections and
 saved plans keep their operator sets; saved plans are not expanded on reload.
@@ -718,6 +731,25 @@ binding analysis. Their existing applicability guards are unchanged.
 | Continuation, comparison and causes | `continue_remove`, `comparison_not_implemented`, `exception_cause_remove` | Same-iteration continuation, reflected comparison and explicit diagnostic causes; enabled by default |
 | Existing expression/control flow | `compare_eq_ne`, `compare_order`, `membership`, `identity`, `boolean_and_or`, `binary_add_sub`, `augmented_add_sub`, `binary_mul_div`, `augmented_mul_div`, `binary_floor_mod`, `binary_div_floor`, `augmented_floor_mod`, `unary_sign`, `remove_not`, `boolean_literal`, `break_continue` | comparisons; membership and identity; binary `+`/`-`, `*`/`/`, `//`/`%`, and `/`/`//`; augmented `+=`/`-=`, `*=`/`/=`, and `//=`/`%=`; unary signs; boolean expressions and literals, including `True`/`False` match patterns; and control flow |
 | Generator behavior | `list_comprehension_to_generator`, `generator_return_insert`, `generator_skip_first`, `generator_empty` | Eager/lazy conversion, early return, first-item consumption and empty output; enabled by default |
+| Cleanup | `finally_unwrap` | Run cleanup after normal completion. Returning, raising, or leaving the loop from the protected suite skips cleanup. |
+| Pattern dispatch | `match_case_delete`, `match_guard_constant`, `match_or_alternative_delete` | Skip one case, force a guard after pattern binding, or remove one OR alternative. |
+| Call escaping | `stdlib_escape_remove` | Bypass a resolved `re.escape`, `html.escape`, `urllib.parse.quote`, or `urllib.parse.quote_plus` call. Evaluate each supplied argument once in its original order and return the primary input. URL quoting requires a supported text input. |
+| Argument roles | `call_argument_swap` | Exchange the bindings of two adjacent explicit arguments. Preserve the original evaluation order. Keyword and mixed pairs require proven parameter roles. |
+| Call results | `call_result_default` | Execute a consumed call or directly awaited coroutine once, then replace its result with a default for its known type. |
+| Comprehension filters | `comprehension_filter_remove`, `comprehension_filter_invert` | Bypass or negate a single filter in a list, set, dictionary, or generator comprehension. Negation still evaluates the predicate once per item that reaches it. |
+| Lazy predicates | `filter_predicate_swap` | Exchange the builtin `filter` and `itertools.filterfalse` for two explicit positional arguments. Keep the predicate and iterable, including a `None` predicate. |
+| Set operations | `set_union_intersection_swap` | Exchange `union` and `intersection` on a confirmed builtin set or frozenset. The receiver determines the result type. |
+| Aggregation | `aggregate_sum_count` | Count the items of a one-argument builtin `sum`, or sum an explicit numeric list or tuple passed to builtin `len`. Counting consumes the original iterable once. |
+| Rounding function | `rounding_function_swap` | Exchange one-argument `round`, `math.floor`, and `math.ceil`. They can dispatch to different numeric methods and raise on non-finite inputs. |
+| Digits | `round_digits_remove` | Evaluate the explicit `ndigits` expression and pass `None` in its place. The result type can change. |
+| Decimal mode | `decimal_rounding_mode_swap` | Change a known rounding mode in quantization, a context constructor, or a context assignment. |
+| Decimal quantum | `decimal_quantum_shift` | Increase or decrease the exponent of a known finite Decimal quantum by one. |
+| Decimal precision | `decimal_context_precision` | Set an explicit Decimal context precision of three or more to one, or increase a precision of one or two by two. |
+| Match boundary | `regex_match_boundary` | Exchange whole-input, prefix, and substring matching, or change a start/end assertion. Compiled receiver edits preserve `pos` and `endpos`. |
+| Regex character set | `regex_character_set` | Change one decimal, word, whitespace, complement, boundary, or case-insensitive class between ASCII and Unicode behavior. |
+| Regex ASCII mode | `regex_ascii_mode` | Toggle the root text-pattern mode while preserving scoped overrides and other flags. The compiled pattern exposes the changed flags. |
+| Rounding stage | `intermediate_rounding_remove` | Skip an inner `round` or Decimal quantization in an arithmetic expression followed by final rounding. Evaluate the inner numeric value and options in source order. |
+| Statement order | `statement_order_swap` | Exchange adjacent calls, assignments, or assertions when at least one can have an effect. Direct local-name dependencies and directive comments exclude a pair. |
 | Single inheritance | `override_method_delete`, `super_call_move` | Remove an ordinary overriding method or move its standalone same-method delegation; enabled by default |
 | Multiple inheritance | `base_order_shuffle` | Change the order of distinct simple-name direct bases; enabled by default, with stable source-derived permutations |
 | Missing values and shared state | `none_truthiness`, `mutable_default_share`, `nonlocal_remove`, `yield_from_to_yield`, `mapping_setdefault_to_get`, `bisect_boundary_swap`, `deepcopy_to_copy`, `deque_popleft_to_pop`, `gather_return_exceptions`, `itertools_take_drop_swap`, `fstring_conversion_swap` | Empty/missing distinctions, shared defaults, lost outer updates, delegation, dictionary insertion, duplicate boundaries, nested copies, FIFO order, exception results, iterator prefixes and representations; enabled by default |
@@ -732,6 +764,50 @@ binding analysis. Their existing applicability guards are unchanged.
 | Boundary operators | `structure_index_neighbor`, `structure_slice_neighbor` | adjacent plain-decimal index and slice-bound values, including unary-minus integers |
 | Slice ranges | `structure_slice_bound_omit`, `structure_slice_bound_move` | omit one of two explicit bounds, or move a single bound to the other side; enabled by default |
 | Exception types | `exception_type_pair` | curated pairs such as `ValueError` ↔ `TypeError` in simple `except`/`except*` clauses and supported `raise` expressions |
+
+Escaping mutations require a statically resolved standard-library callable.
+Argument swaps hold expression evaluation order fixed. The analyzer can swap
+explicit positional values at a dynamic call site. It requires a known
+signature to swap a keyword with another keyword or a positional value.
+`*args` and `**kwargs` expansions suppress swaps. Result replacement requires a
+supported known return type. The call still runs and can produce its usual
+effects. Replacing the result can shorten the original object's lifetime.
+
+To check a cleanup guarantee with `finally_unwrap`, exercise an early return
+or an escaping exception and assert the cleanup event for that path.
+A normal-path cleanup assertion can pass under both executions.
+
+Use `--operators regex` to select all three regex operators, or exclude one
+with `--exclude-operators regex_ascii_mode`. An imported `re` name must
+resolve to the standard library. The analyzer recognizes literal text and byte
+patterns, uniquely initialized module and local literal bindings, and trusted compiled
+receivers. Bytes have no Unicode-mode mutation. Dynamic patterns can still
+support a method edit when both methods accept the supplied arguments. When flags
+come from a runtime value, a literal pattern must parse in ordinary or verbose
+mode for the analyzer to emit a method edit. For a pattern such as
+`re.compile(r'(?a)\d', re.A)`, one `regex_ascii_mode` candidate changes both
+mode declarations. If the call references a shared pattern literal, the
+candidate changes that use while preserving other consumers.
+Pattern analysis skips ambiguous future set operators and groups nested more
+than 255 levels deep.
+
+A complement such as `\D` accepts characters outside the decimal class.
+When the excluded class narrows to ASCII digits, the complement also accepts
+Unicode digits such as `９`. A word boundary `\b` checks word status on both
+sides of its position. It matches when one neighbor is a word character and
+the other is nonword in the effective mode. An input edge has a nonword
+neighbor.
+
+For an ASCII-only field, an original `\d+` accepting fullwidth digits can
+fail the specification before any mutant runs. A Unicode decimal field
+requires a test accepting such digits to distinguish it from `[0-9]+`.
+A survivor shows that the test command accepted the altered behavior. Use the
+field's specification to decide which digit repertoire, match span, or newline
+behavior the tests should distinguish.
+
+Decimal rounding changes can affect the value, exponent, flags, and traps of
+a calculation. When checking a scoped context, assert precision-sensitive
+results in the context and check that the outer context is restored afterward.
 
 Slice range operators apply only to one-dimensional load-context slices without
 an explicit step value. Bounds must be names or integer literals, including
@@ -916,9 +992,9 @@ The Rust analyzer preserves the original source except for exactly one replaceme
 
 `--profile full` is the default and considers every candidate produced by the selected
 operators. `--profile focused` suppresses candidates in Python `__main__` guards, bare
-`print(...)` calls, `assert` statements, and function default expressions. It is intended
-to reduce low-value survivors in focused change checks, but may omit useful mutants; use
-`full` when measuring the complete selected target.
+`print(...)` calls, `assert` statements, and function default expressions. A
+statement exchange is suppressed if either participant is in a suppressed region.
+Use `full` when measuring the complete selected target.
 
 ```console
 hoimin run --profile focused --root . --source src -- python -m pytest -q

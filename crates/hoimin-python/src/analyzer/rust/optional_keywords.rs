@@ -1,29 +1,44 @@
 //! Conservative same-module signatures and optional-keyword call edits.
 use super::{AnalysisCancelled, NameResolutionIndex, deletion, source_text};
 use crate::visitor::{self, Visitor};
-use ruff_python_ast::{Expr, ExprCall, ExprContext, ModModule, Stmt};
-use ruff_text_size::{Ranged, TextRange};
+use ruff_python_ast::{Expr, ExprCall, ExprContext, ModModule, Stmt, StmtFunctionDef};
+use ruff_text_size::Ranged;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 
 #[derive(Default)]
-pub(super) struct FunctionIndex {
-    definitions: HashMap<String, Signature>,
+pub(super) struct FunctionIndex<'ast> {
+    definitions: HashMap<String, Signature<'ast>>,
     resolution: NameResolutionIndex,
+    optional_namespace_dynamic: bool,
 }
-struct Signature {
-    range: TextRange,
+
+pub(super) struct Signature<'ast> {
+    pub(super) definition: &'ast StmtFunctionDef,
     positional_only: usize,
     positional: usize,
+    required_positional: usize,
+    required: usize,
     defaults: Vec<bool>,
     names: HashMap<String, usize>,
 }
-impl FunctionIndex {
+
+impl<'ast> FunctionIndex<'ast> {
+    #[cfg(test)]
     pub(super) fn build(
-        module: &ModModule,
+        module: &'ast ModModule,
+        cancelled: &impl Fn() -> bool,
+    ) -> Result<Self, AnalysisCancelled> {
+        Self::build_for_calls(module, false, cancelled)
+    }
+
+    pub(super) fn build_for_calls(
+        module: &'ast ModModule,
+        include_other_signatures: bool,
         cancelled: &impl Fn() -> bool,
     ) -> Result<Self, AnalysisCancelled> {
         let mut definitions = HashMap::new();
+        let mut optional_dynamic_names = HashSet::new();
         for statement in &module.body {
             if cancelled() {
                 return Err(AnalysisCancelled);
@@ -31,30 +46,40 @@ impl FunctionIndex {
             let Stmt::FunctionDef(function) = statement else {
                 continue;
             };
-            let parameters = &function.parameters;
-            if function.is_async
-                || !function.decorator_list.is_empty()
+            if !function.decorator_list.is_empty()
                 || function.type_params.is_some()
-                || parameters.vararg.is_some()
-                || parameters.kwarg.is_some()
+                || (!include_other_signatures && !optional_signature(function))
             {
                 continue;
             }
+            if dynamic_name(function.name.as_str()) && optional_signature(function) {
+                optional_dynamic_names.insert(function.name.to_string());
+            }
+            let parameters = &function.parameters;
+            let positional_only = parameters.posonlyargs.len();
+            let positional = positional_only + parameters.args.len();
+            let mut required = 0;
+            let mut required_positional = 0;
             let mut defaults = Vec::new();
             let mut names = HashMap::new();
             for parameter in parameters.iter_non_variadic_params() {
                 if cancelled() {
                     return Err(AnalysisCancelled);
                 }
+                let has_default = parameter.default.is_some();
+                required += usize::from(!has_default);
+                required_positional += usize::from(!has_default && defaults.len() < positional);
                 names.insert(parameter.parameter.name.to_string(), defaults.len());
-                defaults.push(parameter.default.is_some());
+                defaults.push(has_default);
             }
             definitions.insert(
                 function.name.to_string(),
                 Signature {
-                    range: function.range(),
-                    positional_only: parameters.posonlyargs.len(),
-                    positional: parameters.posonlyargs.len() + parameters.args.len(),
+                    definition: function,
+                    positional_only,
+                    positional,
+                    required_positional,
+                    required,
                     defaults,
                     names,
                 },
@@ -64,11 +89,13 @@ impl FunctionIndex {
             return Ok(Self::default());
         }
         let names = definitions.keys().cloned().collect::<HashSet<_>>();
-        let resolution = NameResolutionIndex::from_module_with_names(module, names.clone());
+        let resolution = NameResolutionIndex::collect(module, names.clone(), cancelled)?;
         let mut hazards = Hazards {
             names: &names,
             invalid: HashSet::new(),
             dynamic: false,
+            optional_dynamic_names: &optional_dynamic_names,
+            optional_namespace_dynamic: false,
             cancelled,
             stopped: false,
         };
@@ -76,6 +103,7 @@ impl FunctionIndex {
         if hazards.stopped || cancelled() {
             return Err(AnalysisCancelled);
         }
+        let optional_namespace_dynamic = hazards.optional_namespace_dynamic;
         definitions.retain(|name, _| {
             !hazards.dynamic
                 && !hazards.invalid.contains(name)
@@ -84,7 +112,27 @@ impl FunctionIndex {
         Ok(Self {
             definitions,
             resolution,
+            optional_namespace_dynamic,
         })
+    }
+
+    pub(super) fn signature(&self, call: &ExprCall) -> Option<&Signature<'ast>> {
+        let Expr::Name(name) = call.func.as_ref() else {
+            return None;
+        };
+        let signature = self.definitions.get(name.id.as_str())?;
+        let id = name.id.as_str();
+        if !self.resolution.resolves_unique_module(&call.func, id) {
+            return None;
+        }
+        let definition = signature.definition;
+        let in_own_body = definition
+            .body
+            .first()
+            .is_some_and(|first| first.start() <= call.start() && call.end() <= definition.end());
+        let forward_reference =
+            self.resolution.is_function_body_lookup(&call.func) && !can_fall_back_to_builtin(id);
+        (call.start() >= definition.end() || in_own_body || forward_reference).then_some(signature)
     }
 
     pub(super) fn optional_keywords(
@@ -94,48 +142,184 @@ impl FunctionIndex {
     ) -> Option<Vec<usize>> {
         #[cfg(test)]
         super::optional_keyword_selection_tests::record_lookup();
-        let Expr::Name(name) = call.func.as_ref() else {
-            return None;
-        };
-        let signature = self.definitions.get(name.id.as_str())?;
-        if call.start() < signature.range.end()
-            || !self
-                .resolution
-                .resolves_unique_module(&call.func, name.id.as_str())
-            || call.arguments.args.len() > signature.positional
-            || call.arguments.args.iter().any(Expr::is_starred_expr)
-        {
+        if self.optional_namespace_dynamic {
             return None;
         }
-        let mut assigned = vec![false; signature.defaults.len()];
-        for present in assigned.iter_mut().take(call.arguments.args.len()) {
-            *present = true;
+        let signature = self.signature(call)?;
+        if call.start() < signature.definition.end() || !optional_signature(signature.definition) {
+            return None;
         }
-        let mut optional = Vec::new();
-        for (index, keyword) in call.arguments.keywords.iter().enumerate() {
+        let slots = signature.bind_explicit(call, cancelled, || {
             #[cfg(test)]
             super::optional_keyword_selection_tests::record_keyword();
+        })?;
+        Some(
+            slots
+                .into_iter()
+                .enumerate()
+                .filter_map(|(index, slot)| signature.defaults[slot?].then_some(index))
+                .collect(),
+        )
+    }
+}
+
+fn optional_signature(function: &StmtFunctionDef) -> bool {
+    !function.is_async
+        && function.parameters.vararg.is_none()
+        && function.parameters.kwarg.is_none()
+}
+
+// An earlier function body can load a later unique module definition. Before
+// that definition runs, Python searches builtins. Exclude possible builtin
+// names so a successful early call cannot have a different contract.
+fn can_fall_back_to_builtin(name: &str) -> bool {
+    name.starts_with('_')
+        || name.starts_with(char::is_uppercase)
+        || matches!(
+            name,
+            "abs"
+                | "aiter"
+                | "all"
+                | "anext"
+                | "any"
+                | "ascii"
+                | "bin"
+                | "bool"
+                | "breakpoint"
+                | "bytearray"
+                | "bytes"
+                | "callable"
+                | "chr"
+                | "classmethod"
+                | "compile"
+                | "complex"
+                | "copyright"
+                | "credits"
+                | "delattr"
+                | "dict"
+                | "dir"
+                | "divmod"
+                | "enumerate"
+                | "eval"
+                | "exec"
+                | "exit"
+                | "filter"
+                | "float"
+                | "format"
+                | "frozenset"
+                | "getattr"
+                | "globals"
+                | "hasattr"
+                | "hash"
+                | "help"
+                | "hex"
+                | "id"
+                | "input"
+                | "int"
+                | "isinstance"
+                | "issubclass"
+                | "iter"
+                | "len"
+                | "license"
+                | "list"
+                | "locals"
+                | "map"
+                | "max"
+                | "memoryview"
+                | "min"
+                | "next"
+                | "object"
+                | "oct"
+                | "open"
+                | "ord"
+                | "pow"
+                | "print"
+                | "property"
+                | "quit"
+                | "range"
+                | "repr"
+                | "reversed"
+                | "round"
+                | "set"
+                | "setattr"
+                | "slice"
+                | "sorted"
+                | "staticmethod"
+                | "str"
+                | "sum"
+                | "super"
+                | "tuple"
+                | "type"
+                | "vars"
+                | "zip"
+        )
+}
+
+impl Signature<'_> {
+    /// A slot of None is an extra keyword accepted by the variadic keyword
+    /// parameter. Expanded arguments cannot establish the complete binding.
+    pub(super) fn bind_explicit(
+        &self,
+        call: &ExprCall,
+        cancelled: &impl Fn() -> bool,
+        mut visit_keyword: impl FnMut(),
+    ) -> Option<Vec<Option<usize>>> {
+        #[cfg(test)]
+        super::call_contract_tests::record_signature_binding();
+        let positional = call.arguments.args.len();
+        let parameters = &self.definition.parameters;
+        if positional > self.positional && parameters.vararg.is_none() {
+            return None;
+        }
+        for argument in &call.arguments.args {
+            if cancelled() || argument.is_starred_expr() {
+                return None;
+            }
+        }
+        // Python's required positional formals precede the optional ones.
+        // Each unique keyword can cover at most one more required formal.
+        let bound_positionally = positional.min(self.positional);
+        let mut supplied_required = bound_positionally.min(self.required_positional);
+        let mut names = HashSet::new();
+        let mut keyword_slots = Vec::new();
+        for keyword in &call.arguments.keywords {
+            visit_keyword();
             if cancelled() {
                 return None;
             }
-            let name = keyword.arg.as_ref()?;
-            let position = *signature.names.get(name.as_str())?;
-            if position < signature.positional_only || assigned[position] {
+            let name = keyword.arg.as_ref()?.as_str();
+            if !names.insert(name) {
                 return None;
             }
-            assigned[position] = true;
-            if signature.defaults[position] {
-                optional.push(index);
+            let slot = self
+                .names
+                .get(name)
+                .copied()
+                .filter(|position| *position >= self.positional_only);
+            if let Some(slot) = slot {
+                if slot < bound_positionally {
+                    return None;
+                }
+                supplied_required += usize::from(!self.defaults[slot]);
+            } else if parameters.kwarg.is_none() {
+                return None;
             }
+            keyword_slots.push(slot);
         }
-        if assigned
-            .iter()
-            .zip(&signature.defaults)
-            .any(|(provided, default)| !provided && !default)
-        {
-            return None;
-        }
-        Some(optional)
+        (supplied_required == self.required && !cancelled()).then_some(keyword_slots)
+    }
+
+    pub(super) fn positional_keyword_name(&self, index: usize) -> Option<&str> {
+        let index = index.checked_sub(self.positional_only)?;
+        Some(
+            self.definition
+                .parameters
+                .args
+                .get(index)?
+                .parameter
+                .name
+                .as_str(),
+        )
     }
 }
 
@@ -143,9 +327,19 @@ struct Hazards<'a, F> {
     names: &'a HashSet<String>,
     invalid: HashSet<String>,
     dynamic: bool,
+    optional_dynamic_names: &'a HashSet<String>,
+    optional_namespace_dynamic: bool,
     cancelled: &'a F,
     stopped: bool,
 }
+fn dynamic_name(name: &str) -> bool {
+    super::exposes_module_namespace(name)
+        || matches!(
+            name,
+            "exec" | "eval" | "locals" | "vars" | "setattr" | "delattr" | "__import__"
+        )
+}
+
 impl<'ast, F: Fn() -> bool> Visitor<'ast> for Hazards<'_, F> {
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
         self.stopped |= (self.cancelled)();
@@ -170,24 +364,25 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for Hazards<'_, F> {
             if name.ctx == ExprContext::Load && self.names.contains(name.id.as_str()) {
                 self.invalid.insert(name.id.to_string());
             }
-            if matches!(
-                name.id.as_str(),
-                "exec"
-                    | "eval"
-                    | "globals"
-                    | "locals"
-                    | "vars"
-                    | "setattr"
-                    | "delattr"
-                    | "__import__"
-            ) {
+            if dynamic_name(name.id.as_str()) {
                 self.dynamic = true;
             }
+        } else if let Expr::Attribute(attribute) = expression
+            && super::exposes_module_namespace(attribute.attr.as_str())
+        {
+            // A different function can expose the same module dictionary.
+            self.dynamic = true;
         }
         // Only a direct callee load proves this function object has not escaped.
         if let Expr::Call(call) = expression
-            && matches!(call.func.as_ref(), Expr::Name(n) if self.names.contains(n.id.as_str()))
+            && let Expr::Name(name) = call.func.as_ref()
+            && self.names.contains(name.id.as_str())
         {
+            if dynamic_name(name.id.as_str())
+                && !self.optional_dynamic_names.contains(name.id.as_str())
+            {
+                self.optional_namespace_dynamic = true;
+            }
             self.visit_arguments(&call.arguments);
         } else {
             visitor::walk_expr(self, expression);
@@ -376,15 +571,15 @@ mod coverage_tests {
 
         assert_eq!(replacements, vec!["(function(other=(3),))"]);
     }
-    fn run_build(
-        module: &ModModule,
+    fn run_build<'ast>(
+        module: &'ast ModModule,
         cancelled: &dyn Fn() -> bool,
-    ) -> Result<FunctionIndex, AnalysisCancelled> {
+    ) -> Result<FunctionIndex<'ast>, AnalysisCancelled> {
         FunctionIndex::build(module, &cancelled)
     }
 
     fn run_lookup(
-        index: &FunctionIndex,
+        index: &FunctionIndex<'_>,
         call: &ExprCall,
         cancelled: &dyn Fn() -> bool,
     ) -> Option<Vec<usize>> {
@@ -439,6 +634,10 @@ mod coverage_tests {
     #[case("function = replacement", None)]
     #[case("exec('pass')", None)]
     #[case("unrelated = 0", Some(&[0][..]))]
+    #[case::function_globals_exposure(
+        "def changer(): pass\nchanger.__globals__.update(function=override)",
+        None
+    )]
     fn optional_keyword_lookup_rejects_escaped_or_rebound_function_identities(
         #[case] intervening: &str,
         #[case] expected: Option<&[usize]>,
@@ -549,5 +748,36 @@ mod coverage_tests {
         );
 
         assert_eq!(replacements, expected);
+    }
+    #[rstest::rstest]
+    #[case::narrow(1)]
+    #[case::wide(512)]
+    fn explicit_binding_work_depends_on_supplied_slots(#[case] defaults: usize) {
+        let parameters = (0..defaults)
+            .map(|i| format!("p{i}=0"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let source = format!("def f(required, optional=0, {parameters}): pass\nf(1, optional=2)");
+        let parsed = ruff_python_parser::parse_module(&source).unwrap();
+        let index = run_build(parsed.syntax(), &|| false).unwrap();
+        let call = parsed.syntax().body[1]
+            .as_expr_stmt()
+            .unwrap()
+            .value
+            .as_call_expr()
+            .unwrap();
+        let polls = Cell::new(0);
+
+        let optional = run_lookup(&index, call, &|| {
+            polls.update(|count| count + 1);
+            false
+        });
+
+        assert_eq!(optional, Some(vec![0]));
+        assert!(
+            polls.get() <= 4,
+            "{} binding polls for two supplied arguments",
+            polls.get()
+        );
     }
 }

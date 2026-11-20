@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: research-2026-11-20-2026-11-20-research-mutations
+  resource: ../../work/designs/2026-11-20-research-mutations.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: f80b734b819b0ddaa9eec6ee0efdaf8b164a65df8107d2cb25a9c5225537d05f
 - id: issue-1172-reduce-implementation-design
   resource: ../../work/designs/2026-11-19-issue-1172-reduce-design.md
   revision: 626da4b3f14b247cc9260ae8b6b1c9ead5fc6c7c
@@ -1906,3 +1911,14 @@ excludable.[^effective-python-mutations-design]
 | [Issue #1172: reduce の実装設計](../../work/designs/2026-11-19-issue-1172-reduce-design.md) [^issue-1172-reduce-implementation-design] | Owned Python edits, evidence certification, bounded search and artifact publication |
 
 [^issue-1172-reduce-implementation-design]: [Reduce implementation design](../../work/designs/2026-11-19-issue-1172-reduce-design.md).
+
+
+## Research mutation implementation and Windows verification
+
+These records distinguish design decisions, intermediate findings and the final native Windows verification.
+
+| Original | First heading | Reference state |
+| --- | --- | --- |
+| [2026-11-20-research-mutations.md](../../work/designs/2026-11-20-research-mutations.md) | Research mutation design [^research-2026-11-20-2026-11-20-research-mutations] | Tracked at `e389cce9` |
+
+[^research-2026-11-20-2026-11-20-research-mutations]: [Research mutation design](../../work/designs/2026-11-20-research-mutations.md).

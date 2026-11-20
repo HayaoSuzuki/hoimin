@@ -369,7 +369,11 @@ fn secure_object(expected: &File, path: &Utf8Path, directory: bool) -> io::Resul
     }
     // SAFETY: CreateFileW returned one newly owned handle.
     let secured = unsafe { File::from_raw_handle(handle.cast()) };
-    let metadata = secured.metadata()?;
+    let metadata = if directory {
+        super::owned_io!("bootstrap.root_inspect", secured.metadata())
+    } else {
+        super::owned_io!("bootstrap.coordinator_inspect", secured.metadata())
+    }?;
     if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
         || metadata.is_dir() != directory
         || file_identity(&secured)? != file_identity(expected)?
@@ -381,7 +385,12 @@ fn secure_object(expected: &File, path: &Utf8Path, directory: bool) -> io::Resul
     let expected_descriptor = SecurityDescriptor::for_user(&token, directory)?;
     let expected_dacl = expected_descriptor.dacl()?;
     repair_existing_dacl(&secured, &token, expected_dacl)?;
-    if file_identity(&secured)? != file_identity(expected)? {
+    let secured_identity = if directory {
+        super::owned_io!("bootstrap.root_verify", file_identity(&secured))
+    } else {
+        super::owned_io!("bootstrap.coordinator_verify", file_identity(&secured))
+    }?;
+    if secured_identity != file_identity(expected)? {
         return Err(io::Error::other(
             "managed object identity changed while securing it",
         ));

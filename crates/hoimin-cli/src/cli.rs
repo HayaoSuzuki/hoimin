@@ -290,7 +290,7 @@ struct RawPlanArgs {
     after_help = "Execution and resource settings come from PLAN and cannot be overridden. Disk safety limits --max-workspace-size and --min-free-space are inherited from PLAN. Create a new plan to change them."
 )]
 struct RawVerifyArgs {
-    /// Path to a version-5 plan manifest.
+    /// Path to a manifest saved by hoimin plan.
     #[arg(value_name = "PLAN")]
     manifest: PathBuf,
 

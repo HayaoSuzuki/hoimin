@@ -518,5 +518,115 @@
     "operator": "super_call_move",
     "status": "deferred",
     "reason": "Dedicated conservative inheritance, source preservation, default/opt-out and CPython saved-plan checks; not modeled by the initial Lean cross-producer corpus"
+  },
+  {
+    "operator": "finally_unwrap",
+    "status": "deferred",
+    "reason": "Covered by structural control-flow compiler and behavior contracts outside the initial Lean corpus"
+  },
+  {
+    "operator": "match_case_delete",
+    "status": "deferred",
+    "reason": "Covered by structural control-flow compiler and behavior contracts outside the initial Lean corpus"
+  },
+  {
+    "operator": "match_guard_constant",
+    "status": "deferred",
+    "reason": "Covered by structural control-flow compiler and behavior contracts outside the initial Lean corpus"
+  },
+  {
+    "operator": "match_or_alternative_delete",
+    "status": "deferred",
+    "reason": "Covered by structural control-flow compiler and behavior contracts outside the initial Lean corpus"
+  },
+  {
+    "operator": "statement_order_swap",
+    "status": "deferred",
+    "reason": "Covered by structural control-flow compiler and behavior contracts outside the initial Lean corpus"
+  },
+  {
+    "operator": "stdlib_escape_remove",
+    "status": "deferred",
+    "reason": "Compiler and behavioral witnesses are in the call contract suite outside the initial Lean corpus"
+  },
+  {
+    "operator": "call_argument_swap",
+    "status": "deferred",
+    "reason": "Compiler and behavioral witnesses are in the call contract suite outside the initial Lean corpus"
+  },
+  {
+    "operator": "call_result_default",
+    "status": "deferred",
+    "reason": "Compiler and behavioral witnesses are in the call contract suite outside the initial Lean corpus"
+  },
+  {
+    "operator": "comprehension_filter_remove",
+    "status": "deferred",
+    "reason": "Compiler and behavioral witnesses are in the collection and precision contract suite outside the initial Lean corpus"
+  },
+  {
+    "operator": "comprehension_filter_invert",
+    "status": "deferred",
+    "reason": "Compiler and behavioral witnesses are in the collection and precision contract suite outside the initial Lean corpus"
+  },
+  {
+    "operator": "filter_predicate_swap",
+    "status": "deferred",
+    "reason": "Compiler and behavioral witnesses are in the collection and precision contract suite outside the initial Lean corpus"
+  },
+  {
+    "operator": "set_union_intersection_swap",
+    "status": "deferred",
+    "reason": "Compiler and behavioral witnesses are in the collection and precision contract suite outside the initial Lean corpus"
+  },
+  {
+    "operator": "aggregate_sum_count",
+    "status": "deferred",
+    "reason": "Compiler and behavioral witnesses are in the collection and precision contract suite outside the initial Lean corpus"
+  },
+  {
+    "operator": "rounding_function_swap",
+    "status": "deferred",
+    "reason": "Compiler and behavioral witnesses are in the collection and precision contract suite outside the initial Lean corpus"
+  },
+  {
+    "operator": "round_digits_remove",
+    "status": "deferred",
+    "reason": "Compiler and behavioral witnesses are in the collection and precision contract suite outside the initial Lean corpus"
+  },
+  {
+    "operator": "decimal_rounding_mode_swap",
+    "status": "deferred",
+    "reason": "Compiler and behavioral witnesses are in the collection and precision contract suite outside the initial Lean corpus"
+  },
+  {
+    "operator": "decimal_quantum_shift",
+    "status": "deferred",
+    "reason": "Compiler and behavioral witnesses are in the collection and precision contract suite outside the initial Lean corpus"
+  },
+  {
+    "operator": "decimal_context_precision",
+    "status": "deferred",
+    "reason": "Compiler and behavioral witnesses are in the collection and precision contract suite outside the initial Lean corpus"
+  },
+  {
+    "operator": "intermediate_rounding_remove",
+    "status": "deferred",
+    "reason": "Compiler and behavioral witnesses are in the collection and precision contract suite outside the initial Lean corpus"
+  },
+  {
+    "operator": "regex_match_boundary",
+    "status": "deferred",
+    "reason": "CPython matching contracts exercise this operator outside the initial Lean corpus"
+  },
+  {
+    "operator": "regex_character_set",
+    "status": "deferred",
+    "reason": "CPython matching contracts exercise this operator outside the initial Lean corpus"
+  },
+  {
+    "operator": "regex_ascii_mode",
+    "status": "deferred",
+    "reason": "CPython matching contracts exercise this operator outside the initial Lean corpus"
   }
 ]

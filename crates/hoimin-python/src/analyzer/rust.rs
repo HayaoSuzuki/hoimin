@@ -1,4 +1,3 @@
-#[cfg(test)]
 use std::cell::Cell;
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, BinaryHeap, HashMap, HashSet};
@@ -68,19 +67,42 @@ mod string_literals;
 #[path = "rust/string_segments.rs"]
 mod string_segments;
 
+#[path = "rust/control_structure.rs"]
+mod control_structure;
+#[path = "rust/statement_order.rs"]
+mod statement_order;
+
 #[path = "rust/deletion.rs"]
 mod deletion;
 
+#[path = "rust/call_contracts.rs"]
+mod call_contracts;
 #[path = "rust/callable_imports.rs"]
 mod callable_imports;
+#[path = "rust/collection_processing.rs"]
+mod collection_processing;
+#[path = "rust/decimal_context.rs"]
+mod decimal_context;
+#[path = "rust/decimal_quantum.rs"]
+mod decimal_quantum;
 #[path = "rust/depth.rs"]
 mod depth;
 #[path = "rust/fact_index.rs"]
 mod fact_index;
 #[path = "rust/finally_work.rs"]
 mod finally_work;
+#[path = "rust/local_initializers.rs"]
+mod local_initializers;
+#[path = "rust/processing_calls.rs"]
+mod processing_calls;
 #[path = "rust/reduce.rs"]
 pub mod reduce;
+#[path = "rust/regex.rs"]
+mod regex;
+#[path = "rust/rounding.rs"]
+mod rounding;
+#[path = "rust/source_delimiters.rs"]
+mod source_delimiters;
 use finally_work::FinallyTransfer;
 #[path = "rust/lazy_imports.rs"]
 mod lazy_imports;
@@ -257,18 +279,14 @@ struct RetainedCandidate {
 }
 
 // Candidate ranking uses canonical names; enum Ord serves selection ordering.
+fn rank_key(candidate: &AnalyzerCandidate) -> (u64, &'static str) {
+    (candidate.span.start, candidate.operator.as_str())
+}
+
 impl Ord for RetainedCandidate {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.candidate
-            .span
-            .start
-            .cmp(&other.candidate.span.start)
-            .then_with(|| {
-                self.candidate
-                    .operator
-                    .as_str()
-                    .cmp(other.candidate.operator.as_str())
-            })
+        rank_key(&self.candidate)
+            .cmp(&rank_key(&other.candidate))
             .then_with(|| self.emission_sequence.cmp(&other.emission_sequence))
     }
 }
@@ -312,9 +330,44 @@ impl CandidatePrefix {
     }
 
     pub(crate) fn push(&mut self, candidate: AnalyzerCandidate) -> Result<(), AnalysisError> {
+        self.push_with(candidate, |_| {})
+    }
+
+    fn compare_to_cutoff(&self, start: u64, operator: MutationOperator) -> Option<Ordering> {
+        if self.entries.len() != self.capacity {
+            return None;
+        }
+        let worst = self.entries.peek()?;
+        Some((start, operator.as_str()).cmp(&rank_key(&worst.candidate)))
+    }
+
+    /// Until a distinct overflow witness exists, an unvalidated edit might
+    /// establish one. Afterwards only a strictly better rank can matter.
+    fn needs_validation(&self, start: u64, operator: MutationOperator) -> bool {
+        !self.overflowed
+            || self
+                .compare_to_cutoff(start, operator)
+                .is_none_or(Ordering::is_lt)
+    }
+
+    /// The candidate has already passed selection/profile checks. Only a
+    /// strictly worse location/operator proves both loss and nonduplication
+    /// without the replacement. Equal keys still need exact identity checks.
+    fn push_with(
+        &mut self,
+        mut candidate: AnalyzerCandidate,
+        render: impl FnOnce(&mut AnalyzerCandidate),
+    ) -> Result<(), AnalysisError> {
         if let Some(error) = self.failure {
             return Err(error);
         }
+        if self.compare_to_cutoff(candidate.span.start, candidate.operator)
+            == Some(Ordering::Greater)
+        {
+            self.overflowed = true;
+            return Ok(());
+        }
+        render(&mut candidate);
         let result = self.admit(candidate);
         if let Err(error) = result {
             self.failure = Some(error);
@@ -336,13 +389,7 @@ impl CandidatePrefix {
         if self.entries.len() == self.capacity {
             self.overflowed = true;
             let latest = self.entries.peek().expect("full prefix has an entry");
-            let rank = (candidate.span.start, candidate.operator.as_str(), sequence);
-            let worst = (
-                latest.candidate.span.start,
-                latest.candidate.operator.as_str(),
-                latest.emission_sequence,
-            );
-            if rank >= worst {
+            if rank_key(&candidate) >= rank_key(&latest.candidate) {
                 return Ok(());
             }
             let evicted = self.entries.pop().unwrap();
@@ -474,7 +521,7 @@ pub fn analyze_source_with_exceptions(
         Err(depth::CheckedParseError::InvalidSyntax) => return Ok(invalid_syntax(request.path)),
         Err(depth::CheckedParseError::Analysis(error)) => return Err(error),
     };
-    let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
+    let facts = AstFacts::collect(parsed.syntax(), parsed.tokens(), source, cancelled)?;
     if cancelled() {
         return Err(AnalysisError::Cancelled);
     }
@@ -1271,6 +1318,9 @@ struct NameResolutionIndex {
     back_edge_bindings: HashMap<usize, HashSet<String>>,
     unevaluated_annotations: HashSet<usize>,
     imported_names: HashSet<String>,
+    text_parameters: HashMap<ScopeId, HashMap<String, usize>>,
+    module_namespace_exposed: bool,
+    initializers: HashMap<ScopeId, HashMap<String, (usize, usize)>>,
 }
 
 impl NameResolutionIndex {
@@ -1286,10 +1336,14 @@ impl NameResolutionIndex {
     // Intentionally reject class namespace loads and any shadow in an enclosing
     // lexical scope. Method bodies skip class namespaces as Python does.
     fn resolves_unique_module(&self, expression: &Expr, name: &str) -> bool {
+        self.resolves_unique_module_at(usize::from(expression.start()), name)
+    }
+
+    fn resolves_unique_module_at(&self, offset: usize, name: &str) -> bool {
         if !self.unique_module_binding(name) || name.starts_with("__") {
             return false;
         }
-        let Some(site) = self.occurrences.get(&usize::from(expression.start())) else {
+        let Some(site) = self.occurrences.get(&offset) else {
             return false;
         };
         if site.temporarily_shadowed {
@@ -1321,23 +1375,72 @@ impl NameResolutionIndex {
         }
     }
 
+    fn is_function_body_lookup(&self, expression: &Expr) -> bool {
+        self.occurrences
+            .get(&usize::from(expression.start()))
+            .is_some_and(|site| self.scopes[site.scope.0].kind == NameScopeKind::Function)
+    }
+
+    #[cfg(test)]
     fn from_module(module: &ModModule) -> Self {
         Self::from_module_with_names(module, HashSet::new())
     }
 
+    #[cfg(test)]
     fn from_module_with_names(module: &ModModule, extra: HashSet<String>) -> Self {
-        let mut builder = NameResolutionBuilder::new();
-        let mut names = ImportedNames::default();
+        Self::collect(module, extra, &|| false).expect("uncancelled name resolution")
+    }
+
+    /// Publish the complete import and lexical facts together. Latch even a
+    /// one-shot cancellation request while a nested visitor unwinds.
+    fn collect(
+        module: &ModModule,
+        extra: HashSet<String>,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<Self, AnalysisCancelled> {
+        let stopped = Cell::new(false);
+        let stop = || {
+            stopped.set(stopped.get() || cancelled());
+            stopped.get()
+        };
+        let mut names = ImportedNames {
+            cancelled: &stop,
+            imports: HashSet::new(),
+            callable_aliases: HashSet::new(),
+            text_parameters: HashSet::new(),
+        };
         names.visit_body(&module.body);
-        builder.identity_names.clone_from(&extra);
-        names.0.extend(extra);
-        builder.imported_names = names.0;
+        if stop() {
+            return Err(AnalysisCancelled);
+        }
+        let mut builder = NameResolutionBuilder::new(&stop);
+        builder.identity_names = extra;
+        builder.identity_names.extend(names.text_parameters);
+        builder.identity_names.extend(names.callable_aliases);
+        names.imports.extend(builder.identity_names.iter().cloned());
+        builder.imported_names = names.imports;
         builder.visit_body(&module.body);
+        if stop() {
+            return Err(AnalysisCancelled);
+        }
+        let index = builder.finish();
+        if stop() {
+            return Err(AnalysisCancelled);
+        }
+        Ok(index)
+    }
+}
+
+impl NameResolutionBuilder<'_> {
+    fn finish(mut self) -> NameResolutionIndex {
         // Resolve nonlocal destinations after all enclosing locals are known.
-        for (origin, name) in &builder.nonlocal_import_writes {
-            let mut parent = builder.index.scopes[origin.0].parent;
+        for (origin, name) in &self.nonlocal_import_writes {
+            if (self.cancelled)() {
+                return self.index;
+            }
+            let mut parent = self.index.scopes[origin.0].parent;
             while let Some(id) = parent {
-                let scope = &mut builder.index.scopes[id.0];
+                let scope = &mut self.index.scopes[id.0];
                 if scope.kind == NameScopeKind::Function && scope.locals.contains(name) {
                     scope.import_writes.insert(name.clone(), usize::MAX);
                     break;
@@ -1345,13 +1448,56 @@ impl NameResolutionIndex {
                 parent = scope.parent;
             }
         }
-        for scope in &mut builder.index.scopes {
+        for scope in &mut self.index.scopes {
             for history in scope.ordered.values_mut() {
+                if (self.cancelled)() {
+                    return self.index;
+                }
                 history.finalize();
             }
         }
-        builder.index.imported_names = builder.imported_names;
-        builder.index
+        self.index.imported_names = self.imported_names;
+        self.index
+    }
+}
+
+impl NameResolutionIndex {
+    fn stable_text_parameter(&self, name: &ruff_python_ast::ExprName) -> bool {
+        let Some(site) = self.occurrences.get(&usize::from(name.start())) else {
+            return false;
+        };
+        if site.temporarily_shadowed || name.id.starts_with("__") {
+            return false;
+        }
+        let id = name.id.as_str();
+        let mut current = Some(site.scope);
+        let mut direct = true;
+        while let Some(scope_id) = current {
+            let scope = &self.scopes[scope_id.0];
+            if scope.kind == NameScopeKind::Module || (direct && scope.kind == NameScopeKind::Class)
+            {
+                return false;
+            }
+            if scope.kind != NameScopeKind::Class {
+                if scope.wildcard || scope.globals.contains(id) || scope.nonlocals.contains(id) {
+                    return false;
+                }
+                if scope.locals.contains(id) {
+                    return !scope.import_writes.contains_key(id)
+                        && self
+                            .text_parameters
+                            .get(&scope_id)
+                            .and_then(|params| params.get(id))
+                            .is_some_and(|offset| {
+                                self.annotation_resolution(*offset, "str")
+                                    == NameResolution::DefinitelyBuiltin
+                            });
+                }
+            }
+            current = scope.parent;
+            direct &= scope.kind == NameScopeKind::TypeParameters;
+        }
+        false
     }
 
     fn resolution(&self, offset: usize, name: &str) -> NameResolution {
@@ -1676,29 +1822,105 @@ impl NameResolutionIndex {
     }
 }
 
+/// These spellings can expose the live module dictionary, including through
+/// a different function. A lexical initializer alone cannot prove its contents.
+fn exposes_module_namespace(name: &str) -> bool {
+    matches!(name, "globals" | "__globals__")
+}
+
 fn tracked_resolution_name(name: &str) -> bool {
     MUTABLE_BUILTINS.contains(&name)
         || EXCEPTION_NAMES.contains(&name)
         || CONTROL_BUILTINS.contains(&name)
+        || CALL_CONTRACT_BUILTINS.contains(&name)
 }
 
-#[derive(Default)]
-struct ImportedNames(HashSet<String>);
+struct ImportedNames<'a> {
+    cancelled: &'a dyn Fn() -> bool,
+    imports: HashSet<String>,
+    callable_aliases: HashSet<String>,
+    text_parameters: HashSet<String>,
+}
 
-impl<'ast> Visitor<'ast> for ImportedNames {
+fn text_parameter_annotation(parameter: &ruff_python_ast::Parameter) -> Option<usize> {
+    let annotation = parameter.annotation.as_deref()?.as_name_expr()?;
+    (annotation.id == "str").then(|| usize::from(annotation.start()))
+}
+
+impl<'ast> Visitor<'ast> for ImportedNames<'_> {
+    fn visit_body(&mut self, body: &'ast [Stmt]) {
+        for stmt in body {
+            if (self.cancelled)() {
+                break;
+            }
+            self.visit_stmt(stmt);
+        }
+    }
+    // Expressions contain neither imports nor annotated function parameters.
+    fn visit_expr(&mut self, _expr: &'ast Expr) {}
+
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
+        #[cfg(test)]
+        optional_keyword_selection_tests::IMPORT_STATEMENTS.update(|n| n + 1);
         let mut imports = KnownImports::default();
         match statement {
-            Stmt::Import(import) => imports.transfer_import(import),
-            Stmt::ImportFrom(import) => imports.transfer_import_from(import),
+            Stmt::Import(import) => imports.transfer_import(import, self.cancelled),
+            Stmt::ImportFrom(import) => imports.transfer_import_from(import, self.cancelled),
             _ => {}
         }
-        self.0.extend(imports.bindings.into_keys());
+        self.imports.extend(imports.bindings.into_keys());
+        let aliases = match statement {
+            Stmt::Import(import) => {
+                for alias in &import.names {
+                    if (self.cancelled)() {
+                        return;
+                    }
+                    if matches!(
+                        alias.name.as_str(),
+                        "builtins" | "decimal" | "itertools" | "math"
+                    ) {
+                        self.callable_aliases
+                            .insert(alias.asname.as_ref().unwrap_or(&alias.name).to_string());
+                    }
+                }
+                &[][..]
+            }
+            Stmt::ImportFrom(import)
+                if import.level == 0
+                    && import.module.as_ref().is_some_and(|module| {
+                        matches!(
+                            module.as_str(),
+                            "builtins" | "decimal" | "itertools" | "math"
+                        )
+                    }) =>
+            {
+                &import.names[..]
+            }
+            _ => &[],
+        };
+        self.callable_aliases.extend(
+            aliases
+                .iter()
+                .take_while(|_| !(self.cancelled)())
+                .filter(|alias| alias.name.as_str() != "*")
+                .map(|alias| alias.asname.as_ref().unwrap_or(&alias.name).to_string()),
+        );
         visitor::walk_stmt(self, statement);
+    }
+    fn visit_parameter(&mut self, parameter: &'ast ruff_python_ast::Parameter) {
+        if (self.cancelled)() {
+            return;
+        }
+        if text_parameter_annotation(parameter).is_some() {
+            self.text_parameters.insert(parameter.name.to_string());
+        }
+        visitor::walk_parameter(self, parameter);
     }
 }
 
-struct NameResolutionBuilder {
+struct NameResolutionBuilder<'a> {
+    cancelled: &'a dyn Fn() -> bool,
+    initializer_targets: HashSet<usize>,
     identity_names: HashSet<String>,
     imported_names: HashSet<String>,
     nonlocal_import_writes: Vec<(ScopeId, String)>,
@@ -1716,7 +1938,7 @@ struct LoopBackEdgeContext {
     bindings: HashSet<String>,
 }
 
-impl NameResolutionBuilder {
+impl<'a> NameResolutionBuilder<'a> {
     fn tracks(&self, name: &str) -> bool {
         tracked_resolution_name(name)
             || self.imported_names.contains(name)
@@ -1725,8 +1947,10 @@ impl NameResolutionBuilder {
                 .is_some_and(|mangled| self.imported_names.contains(&mangled))
     }
 
-    fn new() -> Self {
+    fn new(cancelled: &'a dyn Fn() -> bool) -> Self {
         Self {
+            cancelled,
+            initializer_targets: HashSet::new(),
             index: NameResolutionIndex {
                 scopes: vec![NameScope::new(NameScopeKind::Module, None)],
                 occurrences: HashMap::new(),
@@ -1734,6 +1958,9 @@ impl NameResolutionBuilder {
                 back_edge_bindings: HashMap::new(),
                 unevaluated_annotations: HashSet::new(),
                 imported_names: HashSet::new(),
+                text_parameters: HashMap::new(),
+                module_namespace_exposed: false,
+                initializers: HashMap::new(),
             },
             identity_names: HashSet::new(),
             imported_names: HashSet::new(),
@@ -1893,7 +2120,7 @@ impl NameResolutionBuilder {
 
     fn visit_assignment_target(&mut self, target: &Expr) {
         match target {
-            Expr::Name(name) => self.record_binding(name.id.as_str()),
+            Expr::Name(name) => self.record_initializer(name),
             Expr::Tuple(tuple) => {
                 for element in &tuple.elts {
                     self.visit_assignment_target(element);
@@ -2054,6 +2281,7 @@ impl NameResolutionBuilder {
                 .iter()
                 .chain(EXCEPTION_NAMES)
                 .chain(CONTROL_BUILTINS)
+                .chain(CALL_CONTRACT_BUILTINS)
             {
                 self.record_loop_back_edge_binding(self.current, name);
             }
@@ -2063,6 +2291,7 @@ impl NameResolutionBuilder {
                 .iter()
                 .chain(EXCEPTION_NAMES)
                 .chain(CONTROL_BUILTINS)
+                .chain(CALL_CONTRACT_BUILTINS)
             {
                 scope.possible_bindings.insert((*name).to_owned());
                 if matches!(scope.kind, NameScopeKind::Module | NameScopeKind::Class) {
@@ -2091,6 +2320,7 @@ impl NameResolutionBuilder {
             .iter()
             .chain(EXCEPTION_NAMES)
             .chain(CONTROL_BUILTINS)
+            .chain(CALL_CONTRACT_BUILTINS)
         {
             self.record_loop_back_edge_binding(scope_id, name);
         }
@@ -2100,6 +2330,7 @@ impl NameResolutionBuilder {
             .iter()
             .chain(EXCEPTION_NAMES)
             .chain(CONTROL_BUILTINS)
+            .chain(CALL_CONTRACT_BUILTINS)
         {
             scope.possible_bindings.insert((*name).to_owned());
             if matches!(scope.kind, NameScopeKind::Module | NameScopeKind::Class) {
@@ -2200,7 +2431,16 @@ impl NameResolutionBuilder {
     }
 }
 
-impl<'ast> Visitor<'ast> for NameResolutionBuilder {
+impl<'ast> Visitor<'ast> for NameResolutionBuilder<'_> {
+    fn visit_body(&mut self, body: &'ast [Stmt]) {
+        for statement in body {
+            if (self.cancelled)() {
+                break;
+            }
+            self.visit_stmt(statement);
+        }
+    }
+
     fn visit_annotation(&mut self, annotation: &'ast Expr) {
         // Abstract bases such as Sequence are not runtime builtin occurrences,
         // but their replacements still need the scope at this annotation site.
@@ -2213,6 +2453,11 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
         reason = "the exhaustive statement-binding pass keeps evaluation order and scope entry visible in one match"
     )]
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
+        if (self.cancelled)() {
+            return;
+        }
+        #[cfg(test)]
+        optional_keyword_selection_tests::LEXICAL_STATEMENTS.update(|n| n + 1);
         match statement {
             Stmt::FunctionDef(definition) => {
                 for decorator in &definition.decorator_list {
@@ -2235,6 +2480,15 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
                     let scope = this.new_scope(NameScopeKind::Function);
                     for parameter in definition.parameters.as_ref() {
                         this.add_local(scope, parameter.name().as_str());
+                    }
+                    for parameter in definition.parameters.iter_non_variadic_params() {
+                        if let Some(annotation) = text_parameter_annotation(&parameter.parameter) {
+                            this.index
+                                .text_parameters
+                                .entry(scope)
+                                .or_default()
+                                .insert(parameter.parameter.name.to_string(), annotation);
+                        }
                     }
                     this.in_scope(scope, |this| {
                         if matches!(definition.name.as_str(), "__next__" | "__anext__") {
@@ -2402,13 +2656,29 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
     }
 
     fn visit_expr(&mut self, expression: &'ast Expr) {
+        if (self.cancelled)() {
+            return;
+        }
         match expression {
-            Expr::Name(name) => self.record_occurrence(name),
+            Expr::Name(name) => {
+                if name.ctx == ExprContext::Load && exposes_module_namespace(name.id.as_str()) {
+                    self.index.module_namespace_exposed = true;
+                }
+                self.record_occurrence(name);
+            }
+            Expr::Attribute(attribute) if exposes_module_namespace(attribute.attr.as_str()) => {
+                self.index.module_namespace_exposed = true;
+                visitor::walk_expr(self, expression);
+                return;
+            }
             Expr::Call(call) => {
                 // Ruff visits the callable, positional/starred args, then keywords.
                 visitor::walk_expr(self, expression);
-                if matches!(call.func.as_ref(), Expr::Name(name)
-                    if matches!(name.id.as_str(), "exec" | "globals" | "locals" | "vars"))
+                if matches!(call.func.as_ref(), Expr::Name(name) if exposes_module_namespace(name.id.as_str()))
+                {
+                    self.record_scope_wildcard(ScopeId(0));
+                } else if matches!(call.func.as_ref(), Expr::Name(name)
+                    if matches!(name.id.as_str(), "exec" | "locals" | "vars"))
                 {
                     self.record_dynamic_uncertainty();
                 }
@@ -2541,12 +2811,21 @@ struct AstFacts<'tokens> {
     candidate_tokens_examined: Cell<usize>,
 }
 impl<'tokens> AstFacts<'tokens> {
+    #[cfg(test)]
     fn from_module(
         module: &ModModule,
         tokens: &'tokens ruff_python_ast::token::Tokens,
         source: &'tokens str,
     ) -> Self {
-        let name_resolution = NameResolutionIndex::from_module(module);
+        Self::collect(module, tokens, source, &|| false).expect("uncancelled AST facts")
+    }
+    fn collect(
+        module: &ModModule,
+        tokens: &'tokens ruff_python_ast::token::Tokens,
+        source: &'tokens str,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<Self, AnalysisCancelled> {
+        let name_resolution = NameResolutionIndex::collect(module, HashSet::new(), cancelled)?;
         let mut facts = Self {
             tokens: Some(tokens),
             source,
@@ -2558,7 +2837,7 @@ impl<'tokens> AstFacts<'tokens> {
         }
         facts.normalize_arid_ranges();
         facts.finalize_indexes();
-        facts
+        Ok(facts)
     }
 
     fn finalize_indexes(&mut self) {
@@ -2929,6 +3208,27 @@ const CONTROL_BUILTINS: &[&str] = &[
     "NotImplemented",
 ];
 
+const CALL_CONTRACT_BUILTINS: &[&str] = &[
+    "ascii",
+    "bin",
+    "callable",
+    "chr",
+    "format",
+    "hasattr",
+    "hash",
+    "hex",
+    "id",
+    "isinstance",
+    "issubclass",
+    "len",
+    "filter",
+    "round",
+    "sum",
+    "oct",
+    "ord",
+    "repr",
+];
+
 const EXCEPTION_NAMES: &[&str] = &[
     "ValueError",
     "TypeError",
@@ -3015,6 +3315,12 @@ enum EnclosingBody {
     Function,
 }
 
+fn mangled_name(class: Option<&str>, name: &str) -> Option<String> {
+    let class = class?.trim_start_matches('_');
+    (!class.is_empty() && name.starts_with("__") && !name.ends_with("__"))
+        .then(|| format!("_{class}{name}"))
+}
+
 fn selected_source_start(
     range: TextRange,
     line_index: &LineIndex,
@@ -3032,12 +3338,21 @@ fn selected_source_start(
 // Source, facts and every visited AST range come from the same checked parse.
 // Neither the source nor that tree is mutated during collection.
 struct AstCandidateCollector<'a, F> {
+    match_state: control_structure::MatchTraversal,
+    private_class: Option<&'a str>,
     inheritance: inheritance::Index,
     string_exclusions: string_literals::Exclusions,
     enum_index: &'a enum_members::EnumIndex,
     dataclass_factories: &'a dataclass_factory::DataclassFactories,
     followup_calls: &'a followup_calls::Imports,
-    optional_functions: optional_keywords::FunctionIndex,
+    optional_functions: &'a optional_keywords::FunctionIndex<'a>,
+    call_contracts: &'a call_contracts::Contracts,
+    collections: &'a collection_processing::Collections,
+    regex: &'a regex::Regex<'a>,
+    rounding: &'a rounding::Rounding,
+    processing_site: &'a processing_calls::Site<'a>,
+    discarded_results: [Option<TextRange>; 2],
+    direct_await: Option<(TextRange, TextRange)>,
     operator_imports: OperatorImports,
     behavior_imports: BehaviorImports,
     conversion_imports: stdlib_conversions::ConversionImports,
@@ -3057,6 +3372,44 @@ struct AstCandidateCollector<'a, F> {
     exception_handler_finality: Vec<bool>,
     exception_type_depth: usize,
     candidates: CandidatePrefix,
+}
+
+/// Receives a valid edit whose potentially expensive replacement is needed
+/// only after selection, profile filtering and conservative prefix admission.
+trait EditSink {
+    fn needs_validation(
+        &self,
+        earliest: ruff_text_size::TextSize,
+        operator: MutationOperator,
+    ) -> bool;
+
+    fn emit(
+        &mut self,
+        range: TextRange,
+        operator: MutationOperator,
+        render: impl FnOnce() -> String,
+    ) -> bool;
+}
+
+impl<F: Fn() -> bool> EditSink for AstCandidateCollector<'_, F> {
+    fn needs_validation(
+        &self,
+        earliest: ruff_text_size::TextSize,
+        operator: MutationOperator,
+    ) -> bool {
+        self.candidates
+            .needs_validation(u64::from(earliest.to_u32()), operator)
+    }
+
+    fn emit(
+        &mut self,
+        range: TextRange,
+        operator: MutationOperator,
+        render: impl FnOnce() -> String,
+    ) -> bool {
+        self.add_deferred_candidate(range, operator, range, render);
+        !self.check_cancelled()
+    }
 }
 
 impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
@@ -3086,7 +3439,98 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         let dataclass_factories =
             dataclass_factory::DataclassFactories::build(module, request.operators, cancelled)?;
         let followup_calls = followup_calls::Imports::build(module, request.operators, cancelled)?;
+        let additional_signatures = [
+            MutationOperator::CallArgumentSwap,
+            MutationOperator::CallResultDefault,
+            MutationOperator::StdlibEscapeRemove,
+        ]
+        .into_iter()
+        .any(|operator| request.operators.contains(operator));
+        let optional_functions = if additional_signatures
+            || request
+                .operators
+                .contains(MutationOperator::OptionalKeywordDelete)
+        {
+            optional_keywords::FunctionIndex::build_for_calls(
+                module,
+                additional_signatures,
+                cancelled,
+            )?
+        } else {
+            optional_keywords::FunctionIndex::default()
+        };
+        let delimiters = if [
+            MutationOperator::CallArgumentSwap,
+            MutationOperator::CallResultDefault,
+            MutationOperator::ComprehensionFilterInvert,
+            MutationOperator::FilterPredicateSwap,
+            MutationOperator::AggregateSumCount,
+            MutationOperator::RegexMatchBoundary,
+            MutationOperator::RoundingFunctionSwap,
+            MutationOperator::RoundDigitsRemove,
+            MutationOperator::DecimalRoundingModeSwap,
+            MutationOperator::IntermediateRoundingRemove,
+        ]
+        .into_iter()
+        .any(|op| request.operators.contains(op))
+        {
+            source_delimiters::DelimiterDepth::build(
+                facts.tokens.expect("checked parse"),
+                cancelled,
+            )?
+        } else {
+            source_delimiters::DelimiterDepth::default()
+        };
+        let builtins = if [
+            MutationOperator::StdlibEscapeRemove,
+            MutationOperator::CallArgumentSwap,
+            MutationOperator::CallResultDefault,
+            MutationOperator::FilterPredicateSwap,
+            MutationOperator::SetUnionIntersectionSwap,
+            MutationOperator::AggregateSumCount,
+            MutationOperator::RegexMatchBoundary,
+            MutationOperator::RoundingFunctionSwap,
+            MutationOperator::RoundDigitsRemove,
+            MutationOperator::DecimalRoundingModeSwap,
+            MutationOperator::DecimalQuantumShift,
+            MutationOperator::IntermediateRoundingRemove,
+        ]
+        .into_iter()
+        .any(|op| request.operators.contains(op))
+        {
+            processing_calls::Builtins::build(module, cancelled)?
+        } else {
+            processing_calls::Builtins::default()
+        };
+        let call_contracts = call_contracts::Contracts::build(
+            module,
+            facts,
+            request.operators,
+            &builtins,
+            cancelled,
+        )?;
+        let processing_site = processing_calls::Site {
+            facts,
+            source,
+            operators: request.operators,
+            delimiters: &delimiters,
+            builtins: &builtins,
+            cancelled,
+        };
+        let collections =
+            collection_processing::Collections::build(module, &processing_site, cancelled)?;
+        let regex = regex::Regex::build(module, &processing_site, cancelled)?;
+        let rounding = rounding::Rounding::build(module, &processing_site, cancelled)?;
         let mut collector = AstCandidateCollector {
+            call_contracts: &call_contracts,
+            collections: &collections,
+            regex: &regex,
+            rounding: &rounding,
+            processing_site: &processing_site,
+            discarded_results: [None; 2],
+            direct_await: None,
+            match_state: control_structure::MatchTraversal::default(),
+            private_class: None,
             inheritance: if [
                 MutationOperator::OverrideMethodDelete,
                 MutationOperator::SuperCallMove,
@@ -3098,20 +3542,19 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             } else {
                 inheritance::Index::default()
             },
-            optional_functions: if request
-                .operators
-                .contains(MutationOperator::OptionalKeywordDelete)
-            {
-                optional_keywords::FunctionIndex::build(module, cancelled)?
-            } else {
-                optional_keywords::FunctionIndex::default()
-            },
+            optional_functions: &optional_functions,
             string_exclusions: if [
                 MutationOperator::StringLiteralEmpty,
                 MutationOperator::StringSegmentEmpty,
+                MutationOperator::RegexMatchBoundary,
+                MutationOperator::RegexCharacterSet,
+                MutationOperator::RegexAsciiMode,
                 MutationOperator::OptionalKeywordDelete,
                 MutationOperator::ConversionCallRemove,
                 MutationOperator::StdlibConversionCallRemove,
+                MutationOperator::StdlibEscapeRemove,
+                MutationOperator::CallArgumentSwap,
+                MutationOperator::CallResultDefault,
                 MutationOperator::MethodCallRemove,
                 MutationOperator::ContainerElementDelete,
             ]
@@ -3186,14 +3629,12 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 return Err(error);
             }
         }
-        for statement in &module.body {
-            collector.visit_stmt(statement);
-            if let Some(error) = collector.candidates.failure {
-                return Err(error);
-            }
-            if collector.cancelled_observed {
-                return Err(AnalysisError::Cancelled);
-            }
+        collector.visit_suite(&module.body);
+        if let Some(error) = collector.candidates.failure {
+            return Err(error);
+        }
+        if collector.cancelled_observed {
+            return Err(AnalysisError::Cancelled);
         }
         let mut report = exception_hierarchy::HierarchyReport::default();
         if let Some(index) = exceptions {
@@ -3219,11 +3660,48 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         ))
     }
 
+    fn walk_function(
+        &mut self,
+        statement: &'a Stmt,
+        definition: &'a ruff_python_ast::StmtFunctionDef,
+    ) {
+        let comparison = self.comparison_scope_for(definition);
+        let previous_comparison = std::mem::replace(&mut self.comparison_scope, comparison);
+        let allowed = self
+            .request
+            .operators
+            .contains(MutationOperator::ReturnTupleSwap)
+            && function_body::plain_synchronous(definition, self.cancelled);
+        let scope = if allowed {
+            ReturnScope::PlainSynchronous
+        } else {
+            ReturnScope::Excluded
+        };
+        let previous = std::mem::replace(&mut self.return_scope, scope);
+        let previous_class = std::mem::replace(&mut self.enclosing_body, EnclosingBody::Function);
+        visitor::walk_stmt(self, statement);
+        self.enclosing_body = previous_class;
+        self.return_scope = previous;
+        self.comparison_scope = previous_comparison;
+    }
+
+    fn walk_class(&mut self, statement: &'a Stmt, name: &'a str) {
+        let previous = std::mem::replace(&mut self.enclosing_body, EnclosingBody::Class);
+        // Private-name mangling remains active in methods and nested functions.
+        let enclosing_class = self.private_class.replace(name);
+        visitor::walk_stmt(self, statement);
+        self.private_class = enclosing_class;
+        self.enclosing_body = previous;
+    }
+
     fn check_cancelled(&mut self) -> bool {
+        if self.candidates.failure.is_some() {
+            return true;
+        }
         if !self.cancelled_observed && (self.cancelled)() {
             self.cancelled_observed = true;
         }
-        self.cancelled_observed || self.candidates.failure.is_some()
+        self.cancelled_observed
     }
 
     fn visit_exception_type(&mut self, expression: &'a Expr) {
@@ -3268,6 +3746,16 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         operator: MutationOperator,
         scope: TextRange,
     ) {
+        self.add_deferred_candidate(range, operator, scope, || replacement);
+    }
+
+    fn add_deferred_candidate(
+        &mut self,
+        range: TextRange,
+        operator: MutationOperator,
+        scope: TextRange,
+        render: impl FnOnce() -> String,
+    ) {
         if self.check_cancelled() {
             return;
         }
@@ -3279,12 +3767,14 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             self.source,
             self.line_index,
             range,
-            replacement,
+            String::new(),
             operator,
             symbol,
         ) && retained_by_profile(&candidate, self.request.profile, self.facts)
         {
-            let _ = self.candidates.push(candidate);
+            let _ = self
+                .candidates
+                .push_with(candidate, |candidate| candidate.replacement = render());
         }
     }
 
@@ -3423,9 +3913,132 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         }
     }
 
+    fn collect_call_contracts(&mut self, call: &ExprCall) {
+        if self.in_pattern || self.string_exclusions.contains_alias(call.range()) {
+            return;
+        }
+        let (range, awaited) = self
+            .direct_await
+            .filter(|(operand, _)| *operand == call.range())
+            .map_or((call.range(), false), |(_, await_range)| {
+                (await_range, true)
+            });
+        let result = (!self.discarded_results.contains(&Some(range)))
+            .then_some(call_contracts::ResultSpan { range, awaited });
+        let facts = self.facts;
+        let line_index = self.line_index;
+        let selection = self.selection;
+        let call_contracts = self.call_contracts;
+        let cx = call_contracts::Context {
+            facts,
+            functions: self.optional_functions,
+            source: self.source,
+            operators: self.request.operators,
+            cancelled: self.cancelled,
+            ordinary_name_reads: self.enclosing_body != EnclosingBody::Class,
+            delimiters: self.processing_site.delimiters,
+        };
+        call_contracts.emit(
+            call,
+            result,
+            &cx,
+            |range| selected_source_start(range, line_index, facts, selection),
+            |range, replacement, operator| {
+                self.add_candidate(range, replacement, operator);
+                !self.check_cancelled()
+            },
+        );
+    }
+
+    fn collect_precision_assignment(&mut self, statement: &Stmt) {
+        if self.rounding.visits_assignments()
+            && self.candidates.failure.is_none()
+            && !self.check_cancelled()
+        {
+            let facts = self.facts;
+            let line_index = self.line_index;
+            let selection = self.selection;
+            self.rounding.emit_assignment(
+                statement,
+                self.processing_site,
+                |range| selected_source_start(range, line_index, facts, selection),
+                |range, replacement, operator| {
+                    self.add_candidate(range, replacement, operator);
+                    !self.check_cancelled()
+                },
+            );
+        }
+    }
+
+    fn collect_processing_call(&mut self, call: &ExprCall) {
+        let facts = self.facts;
+        let line_index = self.line_index;
+        let selection = self.selection;
+        let selected = |range| selected_source_start(range, line_index, facts, selection);
+        if self.collections.visits_calls() {
+            self.collections.emit_call(
+                call,
+                self.processing_site,
+                selected,
+                |range, replacement, operator| {
+                    self.add_candidate(range, replacement, operator);
+                    !self.check_cancelled()
+                },
+            );
+        }
+        if self.regex.active() && !self.check_cancelled() {
+            self.regex.emit(
+                call,
+                self.processing_site,
+                self.request.max_candidates,
+                selected,
+                |range| {
+                    if selection.is_unrestricted() {
+                        return true;
+                    }
+                    let start = usize::from(range.start());
+                    let (first, _) = line_index.line_and_column(start);
+                    let (last, _) = line_index.line_and_column(usize::from(range.end()));
+                    selection.intersects(first, last, facts.scope_at(start).as_deref())
+                },
+                self,
+            );
+        }
+        if self.rounding.visits_calls()
+            && self.candidates.failure.is_none()
+            && !self.check_cancelled()
+        {
+            self.rounding.emit_call(
+                call,
+                self.processing_site,
+                selected,
+                |range, replacement, operator| {
+                    self.add_candidate(range, replacement, operator);
+                    !self.check_cancelled()
+                },
+            );
+        }
+    }
+
     fn collect_call(&mut self, call: &ExprCall) {
         if self.candidates.failure.is_some() {
             return;
+        }
+        if (self.collections.visits_calls() || self.rounding.visits_calls() || self.regex.active())
+            && self.runtime_role == RuntimeRole::Value
+            && !self.in_pattern
+            && !self.string_exclusions.contains_alias(call.range())
+        {
+            self.collect_processing_call(call);
+            if self.check_cancelled() || self.candidates.failure.is_some() {
+                return;
+            }
+        }
+        if self.call_contracts.active() {
+            self.collect_call_contracts(call);
+            if self.check_cancelled() || self.candidates.failure.is_some() {
+                return;
+            }
         }
         if self
             .request
@@ -4330,6 +4943,12 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         reason = "statement operator gates stop between builders on the first admission failure"
     )]
     fn collect_statement_mutations(&mut self, statement: &Stmt) {
+        if let Stmt::Try(node) = statement {
+            self.collect_unwrap(node);
+            if self.candidates.failure.is_some() {
+                return;
+            }
+        }
         if let Stmt::FunctionDef(method) = statement
             && self.inheritance.contains(method)
         {
@@ -4679,44 +5298,59 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
 }
 
 impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
+    fn visit_match_case(&mut self, case: &'ast ruff_python_ast::MatchCase) {
+        if self.candidates.failure.is_some() || self.check_cancelled() {
+            return;
+        }
+        self.match_state.suite_depth += 1;
+        if self.match_state.eligible {
+            self.collect_case(case);
+        }
+        if !self.check_cancelled() {
+            visitor::walk_match_case(self, case);
+        }
+        self.match_state.suite_depth -= 1;
+    }
+
+    fn visit_body(&mut self, body: &'ast [Stmt]) {
+        self.match_state.suite_depth += 1;
+        self.visit_suite(body);
+        self.match_state.suite_depth -= 1;
+    }
+
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
         if self.candidates.failure.is_some() {
             return;
         }
         if !self.check_cancelled() {
             self.collect_statement_mutations(statement);
+            self.collect_precision_assignment(statement);
             if self.candidates.failure.is_some() {
                 return;
             }
             if self.check_cancelled() {
                 return;
             }
-            if matches!(statement, Stmt::ClassDef(_)) {
-                let previous = std::mem::replace(&mut self.enclosing_body, EnclosingBody::Class);
-                visitor::walk_stmt(self, statement);
-                self.enclosing_body = previous;
+            if self
+                .request
+                .operators
+                .contains(MutationOperator::CallResultDefault)
+                && let Stmt::Expr(node) = statement
+            {
+                let outer = std::mem::replace(
+                    &mut self.discarded_results,
+                    [Some(node.value.range()), None],
+                );
+                self.visit_expr(&node.value);
+                self.discarded_results = outer;
+                return;
+            }
+            if let Stmt::ClassDef(class) = statement {
+                self.walk_class(statement, class.name.as_str());
                 return;
             }
             if let Stmt::FunctionDef(definition) = statement {
-                let comparison = self.comparison_scope_for(definition);
-                let previous_comparison = std::mem::replace(&mut self.comparison_scope, comparison);
-                let allowed = self
-                    .request
-                    .operators
-                    .contains(MutationOperator::ReturnTupleSwap)
-                    && function_body::plain_synchronous(definition, self.cancelled);
-                let scope = if allowed {
-                    ReturnScope::PlainSynchronous
-                } else {
-                    ReturnScope::Excluded
-                };
-                let previous = std::mem::replace(&mut self.return_scope, scope);
-                let previous_class =
-                    std::mem::replace(&mut self.enclosing_body, EnclosingBody::Function);
-                visitor::walk_stmt(self, statement);
-                self.enclosing_body = previous_class;
-                self.return_scope = previous;
-                self.comparison_scope = previous_comparison;
+                self.walk_function(statement, definition);
                 return;
             }
             if self.return_scope == ReturnScope::PlainSynchronous
@@ -4732,6 +5366,15 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                 if self.candidates.failure.is_some() {
                     return;
                 }
+            }
+            if let Stmt::Match(node) = statement
+                && self.match_enabled()
+            {
+                let valid = self.valid_cases(node);
+                let previous = std::mem::replace(&mut self.match_state.eligible, valid);
+                visitor::walk_stmt(self, statement);
+                self.match_state.eligible = previous;
+                return;
             }
             let Stmt::Try(try_statement) = statement else {
                 visitor::walk_stmt(self, statement);
@@ -4769,6 +5412,29 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
             }
             self.visit_body(&try_statement.orelse);
             self.visit_body(&try_statement.finalbody);
+        }
+    }
+
+    fn visit_comprehension(&mut self, clause: &'ast ruff_python_ast::Comprehension) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
+        if !self.in_pattern && self.collections.visits_comprehensions() {
+            let facts = self.facts;
+            let line_index = self.line_index;
+            let selection = self.selection;
+            self.collections.emit_filters(
+                clause,
+                self.processing_site,
+                |range| selected_source_start(range, line_index, facts, selection),
+                |range, replacement, operator| {
+                    self.add_candidate(range, replacement, operator);
+                    !self.check_cancelled()
+                },
+            );
+        }
+        if self.candidates.failure.is_none() && !self.check_cancelled() {
+            visitor::walk_comprehension(self, clause);
         }
     }
 
@@ -4969,7 +5635,32 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                 self.visit_expr(subscript.slice.as_ref());
             } else {
                 self.integer_suppressed |= signed_literal;
+                let previous_await = self.direct_await;
+                let previous_discarded = self.discarded_results;
+                if previous_discarded.contains(&Some(expression.range())) {
+                    match expression {
+                        Expr::BoolOp(node) => {
+                            self.discarded_results = [node.values.last().map(Ranged::range), None];
+                        }
+                        Expr::If(node) => {
+                            self.discarded_results =
+                                [Some(node.body.range()), Some(node.orelse.range())];
+                        }
+                        _ => {}
+                    }
+                }
+                if self
+                    .request
+                    .operators
+                    .contains(MutationOperator::CallResultDefault)
+                    && let Expr::Await(node) = expression
+                    && let Expr::Call(call) = node.value.as_ref()
+                {
+                    self.direct_await = Some((call.range(), node.range()));
+                }
                 visitor::walk_expr(self, expression);
+                self.direct_await = previous_await;
+                self.discarded_results = previous_discarded;
             }
             self.integer_suppressed = suppressed;
             self.runtime_role = target_context;
@@ -5001,6 +5692,18 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
         }
         if self.check_cancelled() {
             return;
+        }
+        if self.match_state.eligible
+            && self
+                .request
+                .operators
+                .contains(MutationOperator::MatchOrAlternativeDelete)
+            && let Pattern::MatchOr(node) = pattern
+        {
+            self.collect_or(node);
+            if self.check_cancelled() {
+                return;
+            }
         }
         let previous = std::mem::replace(&mut self.in_pattern, true);
         visitor::walk_pattern(self, pattern);
@@ -5758,8 +6461,15 @@ impl KnownImports {
         }
     }
 
-    fn transfer_import(&mut self, import: &ruff_python_ast::StmtImport) {
+    fn transfer_import(
+        &mut self,
+        import: &ruff_python_ast::StmtImport,
+        cancelled: &dyn Fn() -> bool,
+    ) {
         for alias in &import.names {
+            if cancelled() {
+                return;
+            }
             let name = alias.name.as_str();
             let local = alias.asname.as_ref().map_or_else(
                 || name.split('.').next().unwrap_or(name),
@@ -5774,7 +6484,11 @@ impl KnownImports {
         }
     }
 
-    fn transfer_import_from(&mut self, import: &ruff_python_ast::StmtImportFrom) {
+    fn transfer_import_from(
+        &mut self,
+        import: &ruff_python_ast::StmtImportFrom,
+        cancelled: &dyn Fn() -> bool,
+    ) {
         let module_name = (import.level == 0)
             .then(|| {
                 import
@@ -5784,6 +6498,9 @@ impl KnownImports {
             })
             .flatten();
         for alias in &import.names {
+            if cancelled() {
+                return;
+            }
             let imported = alias.name.as_str();
             if imported == "*" {
                 if matches!(module_name, Some("typing" | "collections.abc")) {
@@ -5827,8 +6544,8 @@ impl KnownImports {
 
     fn transfer_statement(&mut self, statement: &Stmt) {
         match statement {
-            Stmt::Import(import) => self.transfer_import(import),
-            Stmt::ImportFrom(import) => self.transfer_import_from(import),
+            Stmt::Import(import) => self.transfer_import(import, &|| false),
+            Stmt::ImportFrom(import) => self.transfer_import_from(import, &|| false),
             Stmt::Assign(assign) => self.transfer_assign(&assign.targets, assign.value.as_ref()),
             Stmt::AnnAssign(assign) => {
                 if let Some(value) = assign.value.as_deref() {
@@ -9553,6 +10270,9 @@ mod nested_finally_transfer_tests;
 mod whole_expression_selection_tests;
 
 #[cfg(test)]
+#[path = "rust/call_contract_tests.rs"]
+mod call_contract_tests;
+#[cfg(test)]
 #[path = "rust/optional_keyword_selection_tests.rs"]
 mod optional_keyword_selection_tests;
 
@@ -9563,3 +10283,11 @@ mod coverage_tests;
 #[cfg(test)]
 #[path = "rust/stopped_collector_tests.rs"]
 mod stopped_collector_tests;
+
+#[cfg(test)]
+#[path = "rust/processing_tests.rs"]
+mod processing_tests;
+
+#[cfg(test)]
+#[path = "rust/regex_tests.rs"]
+mod regex_tests;

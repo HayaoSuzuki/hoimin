@@ -557,18 +557,18 @@ mod correspondence {
     }
 
     #[rstest::rstest]
-    #[case::started(ReportSequenceError::RunAlreadyStarted { run_id: "unknown".into() })]
-    #[case::finished(ReportSequenceError::RunAlreadyFinished { run_id: "unknown".into() })]
-    #[case::expected_run(ReportSequenceError::RunIdMismatch { expected: "unknown".into(), received: "run-first".into() })]
-    #[case::received_run(ReportSequenceError::RunIdMismatch { expected: "run-first".into(), received: "unknown".into() })]
-    #[case::already_started(ReportSequenceError::MutantAlreadyStarted { mutant_id: "unknown".into(), mutant_sequence: 1 })]
-    #[case::duplicate(ReportSequenceError::DuplicateMutantIdentity { mutant_id: "unknown".into(), mutant_sequence: 1 })]
-    #[case::identity_mismatch(ReportSequenceError::MutantIdentitySequenceMismatch { mutant_id: "unknown".into(), expected_sequence: 1, received_sequence: 2 })]
-    #[case::not_started(ReportSequenceError::MutantNotStarted { mutant_id: "unknown".into(), mutant_sequence: 1 })]
+    #[case::started(&ReportSequenceError::RunAlreadyStarted { run_id: "unknown".into() })]
+    #[case::finished(&ReportSequenceError::RunAlreadyFinished { run_id: "unknown".into() })]
+    #[case::expected_run(&ReportSequenceError::RunIdMismatch { expected: "unknown".into(), received: "run-first".into() })]
+    #[case::received_run(&ReportSequenceError::RunIdMismatch { expected: "run-first".into(), received: "unknown".into() })]
+    #[case::already_started(&ReportSequenceError::MutantAlreadyStarted { mutant_id: "unknown".into(), mutant_sequence: 1 })]
+    #[case::duplicate(&ReportSequenceError::DuplicateMutantIdentity { mutant_id: "unknown".into(), mutant_sequence: 1 })]
+    #[case::identity_mismatch(&ReportSequenceError::MutantIdentitySequenceMismatch { mutant_id: "unknown".into(), expected_sequence: 1, received_sequence: 2 })]
+    #[case::not_started(&ReportSequenceError::MutantNotStarted { mutant_id: "unknown".into(), mutant_sequence: 1 })]
     fn error_projection_rejects_out_of_domain_runtime_identities(
-        #[case] error: ReportSequenceError,
+        #[case] error: &ReportSequenceError,
     ) {
-        let actual = observed_error(&error)
+        let actual = observed_error(error)
             .unwrap_err()
             .contains("unknown observed");
 

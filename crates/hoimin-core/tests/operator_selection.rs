@@ -355,7 +355,7 @@ fn exception_hierarchy_is_explicit_only(#[case] family: &str) {
 }
 
 // Fixed current policy, independent of catalog and production default builders.
-const CURRENT_DEFAULT_NAMES: [&str; 85] = [
+const CURRENT_DEFAULT_NAMES: [&str; 107] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -441,6 +441,28 @@ const CURRENT_DEFAULT_NAMES: [&str; 85] = [
     "base_order_shuffle",
     "override_method_delete",
     "super_call_move",
+    "finally_unwrap",
+    "match_case_delete",
+    "match_guard_constant",
+    "match_or_alternative_delete",
+    "statement_order_swap",
+    "stdlib_escape_remove",
+    "call_argument_swap",
+    "call_result_default",
+    "comprehension_filter_remove",
+    "comprehension_filter_invert",
+    "filter_predicate_swap",
+    "set_union_intersection_swap",
+    "aggregate_sum_count",
+    "rounding_function_swap",
+    "round_digits_remove",
+    "decimal_rounding_mode_swap",
+    "decimal_quantum_shift",
+    "decimal_context_precision",
+    "intermediate_rounding_remove",
+    "regex_match_boundary",
+    "regex_character_set",
+    "regex_ascii_mode",
 ];
 
 #[test]
@@ -540,5 +562,38 @@ fn effective_python_mutations_are_default_and_individually_selectable(#[case] na
             .unwrap()
             .len(),
         1
+    );
+}
+
+#[rstest::rstest]
+#[case::collection_processing("collection_processing", &[
+    MutationOperator::ComprehensionFilterRemove,
+    MutationOperator::ComprehensionFilterInvert,
+    MutationOperator::FilterPredicateSwap,
+    MutationOperator::SetUnionIntersectionSwap,
+    MutationOperator::AggregateSumCount,
+])]
+#[case::regex("regex", &[MutationOperator::RegexMatchBoundary,MutationOperator::RegexCharacterSet,MutationOperator::RegexAsciiMode])]
+#[case::rounding("rounding", &[
+    MutationOperator::RoundingFunctionSwap,
+    MutationOperator::RoundDigitsRemove,
+    MutationOperator::DecimalRoundingModeSwap,
+    MutationOperator::DecimalQuantumShift,
+    MutationOperator::DecimalContextPrecision,
+    MutationOperator::IntermediateRoundingRemove,
+])]
+fn research_selector_expands_its_runtime_operators(
+    #[case] selector: &str,
+    #[case] expected: &[MutationOperator],
+) {
+    let defaults = MutationOperatorSelection::default();
+
+    let members = MutationOperatorSelection::parse_selector(selector).unwrap();
+
+    assert_eq!(members, expected);
+    assert!(
+        members
+            .into_iter()
+            .all(|operator| defaults.contains(operator))
     );
 }

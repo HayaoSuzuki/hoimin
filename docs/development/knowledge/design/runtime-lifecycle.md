@@ -5,6 +5,11 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: 6e9f34cf4ef6c3930ebca53b96034e446a0c992b
 sources:
+- id: windows-workspace-repair
+  resource: ../../work/reports/2026-11-20-windows-workspace-failures.md
+  revision: e389cce9beb208c53e832277be4970d0969abc43
+  working_tree: clean
+  sha256: 34adc8aabbf779237cc8fd79680bf0144b8b8171fd5066c610e047bbc41d2cd2
 - id: issue-1082-read
   resource: ../../../../crates/hoimin-cli/src/workspace/root.rs
   revision: 6ad22aaa87c6298f8c84e3a2c00cbd016cf0b7db
@@ -1411,3 +1416,12 @@ valid stable source files.[^issue-1082-finite]
 
 [^issue-1082-read]: [Mutation descriptor admission](../../../../crates/hoimin-cli/src/workspace/root.rs).
 [^issue-1082-finite]: [Shared finite descriptor reader](../../../../crates/hoimin-cli/src/finite_file.rs).
+
+
+## Native Windows workspace verification
+
+Windows writes validate the retained parent before treating an absent final entry as safe to create. The native implementation retains pinned sharing policy and exact-object deletion authority. Inspection-only handles do not substitute for deletion capabilities, and transferring an owner capability twice fails closed when its deletion pin is absent.[^windows-workspace-repair]
+
+The follow-up reproduced and resolved all 29 previously recorded Windows failures. Fixture observations retain the lock-owning handle and verify that the named entry still has its identity. The final native Windows run at source commit `ca1db19d02acd7617c8271cf631ad96d67e6c664` passed 17,424 tests with no failures and 45 existing ignores across the all-features workspace, including contracts. No skip was added by that follow-up. Unix runtime execution and AppContainer publication are not established by this native-host result.[^windows-workspace-repair]
+
+[^windows-workspace-repair]: [Implementation and verification record](../../work/reports/2026-11-20-windows-workspace-failures.md).

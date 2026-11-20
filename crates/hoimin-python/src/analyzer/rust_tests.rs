@@ -516,7 +516,7 @@ fn operator_function_pairs_cover_qualified_imported_and_higher_order_references(
                 "import operator as {module}\nresult = {module}.{original}(left(), right())\n"
             );
 
-            let output = analyze(&source);
+            let output = analyze_with_only_operator(&source, MutationOperator::OperatorFunction);
 
             assert_eq!(output.candidates.len(), 1, "{source}");
             let candidate = &output.candidates[0];
@@ -536,7 +536,7 @@ fn operator_function_pairs_cover_qualified_imported_and_higher_order_references(
         for usage in ["plus(left(), right())", "map(plus, values, values)"] {
             let source = format!("from operator import {original} as plus\nresult = {usage}\n");
 
-            let output = analyze(&source);
+            let output = analyze_with_only_operator(&source, MutationOperator::OperatorFunction);
 
             assert_eq!(output.candidates.len(), 1, "{source}");
             let candidate = &output.candidates[0];
@@ -698,7 +698,12 @@ fn operator_function_uncertain_bindings_and_namespaces_are_excluded_table_1(
     "from operator import add as plus\ndef f(__import__): return plus(a, b)\n"
 )]
 fn operator_function_uncertain_bindings_and_namespaces_are_excluded_table_2(#[case] source: &str) {
-    assert!(analyze(source).candidates.is_empty(), "{source}");
+    assert!(
+        analyze_selected(&["operator_function"], source)
+            .candidates
+            .is_empty(),
+        "{source}"
+    );
 }
 
 #[rstest::rstest]
@@ -733,7 +738,12 @@ fn operator_function_helpers_and_undocumented_dunders_are_excluded(#[case] name:
     "import operator as op\nx: op.add\ndef f(x: op.mul) -> op.sub: pass\ntype Alias = op.pow\n"
 )]
 fn operator_function_source_order_selection_profiles_and_annotations_table_1(#[case] source: &str) {
-    assert!(analyze(source).candidates.is_empty(), "{source}");
+    assert!(
+        analyze_with_only_operator(source, MutationOperator::OperatorFunction)
+            .candidates
+            .is_empty(),
+        "{source}"
+    );
 }
 
 #[rstest::rstest]
@@ -822,11 +832,16 @@ fn operator_function_source_order_selection_profiles_and_annotations() {
         10,
         source,
     );
-    assert_eq!(selected.candidates.len(), 1);
-    assert_eq!(selected.candidates[0].original, "add");
-    assert_eq!(selected.candidates[0].replacement, "sub");
-    assert_eq!(selected.candidates[0].line, 6);
-    assert_eq!(selected.candidates[0].symbol.as_deref(), Some("combine"));
+    let operator_candidates = selected
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == MutationOperator::OperatorFunction)
+        .collect::<Vec<_>>();
+    assert_eq!(operator_candidates.len(), 1);
+    assert_eq!(operator_candidates[0].original, "add");
+    assert_eq!(operator_candidates[0].replacement, "sub");
+    assert_eq!(operator_candidates[0].line, 6);
+    assert_eq!(operator_candidates[0].symbol.as_deref(), Some("combine"));
     let arid = "import operator as op\nprint(op.add)\nassert op.eq(a, b)\nresult = op.sub(a, b)\n";
     assert_eq!(
         analyze(arid)
@@ -836,7 +851,8 @@ fn operator_function_source_order_selection_profiles_and_annotations() {
             .count(),
         3
     );
-    let focused = analyze_with_profile(MutationProfile::Focused, 10, arid);
+    let focused =
+        analyze_selected_with_profile(&["operator_function"], MutationProfile::Focused, 10, arid);
     assert_eq!(focused.candidates.len(), 1);
     assert_eq!(focused.candidates[0].original, "sub");
     let mut operators = MutationOperatorSelection::default();
@@ -1239,7 +1255,7 @@ fn operator_function_qualified_dynamic_namespace_access_is_uncertain(#[case] alt
 fn operator_function_lambda_replacements_exclude_pattern_values_table_1(#[case] name: &str) {
     let source = format!("import operator as op\nmatch value:\n    case op.{name}: pass\n");
 
-    let output = analyze(&source);
+    let output = analyze_selected(&["operator_function"], &source);
     assert_eq!(
         output.candidates,
         Vec::<super::payload::Charged<AnalyzerCandidate>>::new()
@@ -1254,7 +1270,12 @@ fn operator_function_lambda_replacements_exclude_pattern_values_table_1(#[case] 
     "import operator as op\nmatch value:\n    case op.call(): pass\n"
 )]
 fn operator_function_lambda_replacements_exclude_pattern_values_table_2(#[case] source: &str) {
-    assert!(analyze(source).candidates.is_empty(), "{source}");
+    assert!(
+        analyze_selected(&["operator_function"], source)
+            .candidates
+            .is_empty(),
+        "{source}"
+    );
 }
 
 #[test]
@@ -1262,7 +1283,7 @@ fn operator_function_lambda_replacements_exclude_pattern_values() {
     let source =
         "import operator as op\nmatch value:\n    case _ if op.contains(container, item): pass\n";
 
-    let output = analyze(source);
+    let output = analyze_selected(&["operator_function"], source);
 
     assert_eq!(output.candidates.len(), 1);
     assert_eq!(output.candidates[0].original, "op.contains");
@@ -3191,7 +3212,7 @@ fn annotations_suppress_all_default_token_mutations() {
     "match value:\n    case list:\n        pass\nresult = list(items)\n"
 )]
 fn type_alias_and_match_capture_bindings_shadow_collection_builtins(#[case] source: &str) {
-    let output = analyze(source);
+    let output = analyze_selected(&["collection_list_tuple", "conversion_call_remove"], source);
 
     assert!(
         output.candidates.is_empty(),
@@ -3245,8 +3266,10 @@ fn annotations_and_star_imports_suppress_collection_candidates() {
         Vec::<super::payload::Charged<AnalyzerCandidate>>::new()
     );
 
-    let star_import_output =
-        analyze("from helpers import *\nresult = list(items)\nvalue = tuple(items)\n");
+    let star_import_output = analyze_selected(
+        &["collection_list_tuple", "conversion_call_remove"],
+        "from helpers import *\nresult = list(items)\nvalue = tuple(items)\n",
+    );
     assert_eq!(
         star_import_output.candidates,
         Vec::<super::payload::Charged<AnalyzerCandidate>>::new()
@@ -5006,7 +5029,12 @@ fn augmented_and_pattern_candidates_share_line_symbol_and_focused_selection() {
         LineRange { start: 4, end: 4 },
     ];
     let symbols = ["pkg.sample:selected".to_owned()];
-    let operators = MutationOperatorSelection::default();
+    let operators = serde_json::from_value(serde_json::json!([
+        "augmented_mul_div",
+        "augmented_to_assignment",
+        "boolean_literal"
+    ]))
+    .unwrap();
 
     let output = analyze_source(
         &AnalyzeRequest {
@@ -11705,3 +11733,6 @@ mod generator_mutation_tests;
 
 #[path = "effective_python_tests.rs"]
 mod effective_python_tests;
+
+#[path = "rust/research_control_tests.rs"]
+mod research_control_tests;

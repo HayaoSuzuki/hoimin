@@ -3,16 +3,46 @@
 import argparse
 import json
 import os
+import random
+import shutil
 import signal
 import subprocess
 import time
 import tomllib
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLCHAIN = "nightly-2026-10-08"
 STARTUP_MARGIN = 10
+MAX_CACHED_INPUTS = 512
+
+
+@contextmanager
+def active_corpus(cache: Path, *, seed: int) -> Generator[Path]:
+    """Replay a bounded cache sample and retain discoveries, including on failure.
+
+    libFuzzer executes its entire initial corpus before checking max_total_time.
+    Keep the growing cache out of that startup path; fixed and freshly generated
+    inputs are supplied separately and are never sampled.
+    """
+    cache.mkdir(parents=True, exist_ok=True)
+    entries = sorted(p for p in cache.iterdir() if p.is_file() and not p.is_symlink())
+    selected = random.Random(seed).sample(  # noqa: S311 -- Reproducible fuzz selection.
+        entries, min(len(entries), MAX_CACHED_INPUTS)
+    )
+    with TemporaryDirectory(prefix="hoimin-fuzz-corpus-") as directory:
+        active = Path(directory)
+        for source in selected:
+            shutil.copyfile(source, active / source.name)
+        try:
+            yield active
+        finally:
+            for source in active.iterdir():
+                if source.is_file() and not source.is_symlink():
+                    shutil.copyfile(source, cache / source.name)
 
 
 class FuzzError(Exception):
@@ -131,6 +161,8 @@ def run_campaign(campaign: Campaign, *, seconds_per_target: int | None = None) -
     reserve = len(targets) * (STARTUP_MARGIN + 1)
     cargo = ["cargo", f"+{TOOLCHAIN}", "fuzz"]
     campaign.run("build", [*cargo, "build", "--codegen-units", "16"], reserve=reserve)
+    generated = campaign.report / "generated-python"
+    generated.mkdir(parents=True, exist_ok=True)
     # Interpreter-specific generation feeds one interpreter-independent Rust run.
     # Temporary environments never replace the development venv or enter artifacts.
     with TemporaryDirectory(prefix="hoimin-fuzz-python-") as environments:
@@ -178,6 +210,8 @@ def run_campaign(campaign: Campaign, *, seconds_per_target: int | None = None) -
                     [
                         *python,
                         "tools/hypothesmith_corpus.py",
+                        "--output",
+                        str(generated),
                         "--strategy",
                         strategy,
                         "--examples",
@@ -194,27 +228,29 @@ def run_campaign(campaign: Campaign, *, seconds_per_target: int | None = None) -
             if seconds_per_target is not None
             else fuzz_seconds(campaign.remaining(), len(targets) - index)
         )
-        corpus = f"fuzz/corpus/{target}"
-        (ROOT / corpus).mkdir(parents=True, exist_ok=True)
-        campaign.run(
-            target,
-            [
-                *cargo,
-                "run",
-                "--codegen-units",
-                "16",
+        cache = ROOT / "fuzz/corpus" / target
+        with active_corpus(cache, seed=campaign.seed) as corpus:
+            inputs = [str(corpus), f"fuzz/seeds/{target}"]
+            if target == "python_analyzer":
+                inputs.append(str(generated))
+            campaign.run(
                 target,
-                corpus,
-                f"fuzz/seeds/{target}",
-                "--",
-                f"-max_total_time={seconds}",
-                f"-seed={campaign.seed}",
-                "-max_len=4096",
-                "-timeout=5",
-                "-rss_limit_mb=1024",
-            ],
-            timeout=seconds + STARTUP_MARGIN,
-        )
+                [
+                    *cargo,
+                    "run",
+                    "--codegen-units",
+                    "16",
+                    target,
+                    *inputs,
+                    "--",
+                    f"-max_total_time={seconds}",
+                    f"-seed={campaign.seed}",
+                    "-max_len=4096",
+                    "-timeout=5",
+                    "-rss_limit_mb=1024",
+                ],
+                timeout=seconds + STARTUP_MARGIN,
+            )
         campaign.completed_targets.append(target)
 
 

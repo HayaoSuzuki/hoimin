@@ -17,6 +17,8 @@ default = []
 test-support = []
 
 [dependencies]
+ruff_unicode_names2 = "=0.0.22"
+unicode-ident = "1"
 blake3 = "1.8"
 camino = "1.1"
 hoimin-core = { path = "../hoimin-core" }

@@ -7,28 +7,67 @@
 use super::{AnalysisCancelled, ContainmentIndex};
 use crate::visitor::{self, Visitor};
 use ruff_python_ast::{
-    Comprehension, Expr, ExprContext, ModModule, Pattern, Stmt, StmtClassDef, TypeParam,
+    Comprehension, Expr, ExprContext, ModModule, Pattern, Stmt, StmtClassDef, StmtImport,
+    StmtImportFrom, TypeParam,
 };
 use ruff_text_size::{Ranged, TextRange};
 use std::collections::{HashMap, HashSet};
 
 fn dynamic_namespace_name(name: &str) -> bool {
-    matches!(
-        name,
-        "exec"
-            | "eval"
-            | "globals"
-            | "locals"
-            | "vars"
-            | "setattr"
-            | "delattr"
-            | "__import__"
-            | "__builtins__"
-            | "__dict__"
-            | "__setattr__"
-            | "__delattr__"
-            | "__getattribute__"
-    )
+    super::exposes_module_namespace(name)
+        || matches!(
+            name,
+            "exec"
+                | "eval"
+                | "locals"
+                | "vars"
+                | "setattr"
+                | "delattr"
+                | "__import__"
+                | "__builtins__"
+                | "__dict__"
+                | "__setattr__"
+                | "__delattr__"
+                | "__getattribute__"
+        )
+}
+
+/// Reading these values does not expose the defining module or a callable.
+fn is_library_constant(module: &str, member: &str) -> bool {
+    match module {
+        "re" => matches!(
+            member,
+            "A" | "ASCII"
+                | "DEBUG"
+                | "DOTALL"
+                | "I"
+                | "IGNORECASE"
+                | "L"
+                | "LOCALE"
+                | "M"
+                | "MULTILINE"
+                | "NOFLAG"
+                | "S"
+                | "T"
+                | "TEMPLATE"
+                | "U"
+                | "UNICODE"
+                | "VERBOSE"
+                | "X"
+        ),
+        "decimal" => matches!(
+            member,
+            "ROUND_05UP"
+                | "ROUND_CEILING"
+                | "ROUND_DOWN"
+                | "ROUND_FLOOR"
+                | "ROUND_HALF_DOWN"
+                | "ROUND_HALF_EVEN"
+                | "ROUND_HALF_UP"
+                | "ROUND_UP"
+        ),
+        _ => false,
+    }
 }
 
 #[derive(Default)]
@@ -42,6 +81,7 @@ struct ImportedBinding {
     // None is a module import; Some is the original imported callable name.
     member: Option<String>,
     import_range: TextRange,
+    package_prefix: Option<&'static str>,
 }
 
 #[derive(Default)]
@@ -49,8 +89,23 @@ pub(super) struct CallableImports {
     trusted: HashMap<String, ImportedBinding>,
     possible: HashMap<String, PossibleOrigins>,
     import_builtin_available: bool,
+    namespace_stable: bool,
     class_ranges: ContainmentIndex,
     class_lookups: HashSet<(usize, usize)>,
+    first_submodule_import: Option<TextRange>,
+    preferred_module: Option<ImportSpelling>,
+    preferred_members: HashMap<String, ImportSpelling>,
+}
+
+struct ImportSpelling {
+    name: String,
+    available_after: ruff_text_size::TextSize,
+}
+
+impl ImportSpelling {
+    fn order(&self) -> (ruff_text_size::TextSize, &str) {
+        (self.available_after, &self.name)
+    }
 }
 
 impl CallableImports {
@@ -59,11 +114,33 @@ impl CallableImports {
         cancelled: &impl Fn() -> bool,
         modules: &'static [&'static str],
     ) -> Result<Self, AnalysisCancelled> {
+        Self::build_with_policy(module, cancelled, modules, ImportPolicy::Legacy)
+    }
+
+    /// Track a single module family so writes and escapes cannot suppress
+    /// candidates from unrelated imports. Dotted paths include their package
+    /// aliases and require evidence that the submodule was loaded.
+    pub(super) fn build_family(
+        module: &ModModule,
+        cancelled: &impl Fn() -> bool,
+        family: &'static [&'static str; 1],
+    ) -> Result<Self, AnalysisCancelled> {
+        Self::build_with_policy(module, cancelled, family, ImportPolicy::Family)
+    }
+
+    fn build_with_policy(
+        module: &ModModule,
+        cancelled: &impl Fn() -> bool,
+        modules: &'static [&'static str],
+        policy: ImportPolicy,
+    ) -> Result<Self, AnalysisCancelled> {
         if super::lazy_imports::configuration_present(module, cancelled)? {
             return Ok(Self::default());
         }
         let mut scan = ImportScan {
             modules,
+            policy,
+            first_submodule_import: None,
             cancelled,
             cancelled_observed: false,
             depth: 0,
@@ -74,6 +151,7 @@ impl CallableImports {
             module_names: HashSet::new(),
             attribute_writes: HashSet::new(),
             escaped_names: HashSet::new(),
+            constant_reads: HashMap::new(),
             namespace_uncertain: false,
             class_ranges: Vec::new(),
         };
@@ -100,13 +178,41 @@ impl CallableImports {
         if lookup_scan.cancelled_observed {
             return Err(AnalysisCancelled);
         }
-        Ok(Self {
+        let (preferred_module, preferred_members) = if policy == ImportPolicy::Family {
+            preferred_spellings(&scan.trusted, cancelled)?
+        } else {
+            (None, HashMap::new())
+        };
+        let imports = Self {
             trusted: scan.trusted,
+            preferred_module,
+            preferred_members,
             possible: scan.possible,
             import_builtin_available: !scan.bindings.contains_key("__import__"),
+            namespace_stable: true,
             class_ranges: ContainmentIndex::new(scan.class_ranges),
             class_lookups: lookup_scan.class_lookups,
-        })
+            first_submodule_import: scan.first_submodule_import,
+        };
+        for (local, ranges) in scan.constant_reads {
+            if !scan.module_names.contains(&local) {
+                continue;
+            }
+            for range in ranges {
+                if cancelled() {
+                    return Err(AnalysisCancelled);
+                }
+                if imports
+                    .trusted_binding(&local, range)
+                    .is_none_or(|binding| {
+                        binding.member.is_some() || binding.import_range.end() > range.start()
+                    })
+                {
+                    return Ok(Self::default());
+                }
+            }
+        }
+        Ok(imports)
     }
 
     fn trusted_binding(&self, name: &str, range: TextRange) -> Option<&ImportedBinding> {
@@ -128,11 +234,22 @@ impl CallableImports {
     pub(super) fn resolve<'a>(&'a self, expression: &'a Expr) -> Option<ResolvedCallable<'a>> {
         let (binding, name, member_range) = match expression {
             Expr::Attribute(attribute) if attribute.ctx == ExprContext::Load => {
-                let Expr::Name(module) = attribute.value.as_ref() else {
-                    return None;
+                let (root, prefix) = match attribute.value.as_ref() {
+                    Expr::Name(module) => (module, None),
+                    Expr::Attribute(path) if path.ctx == ExprContext::Load => {
+                        (path.value.as_name_expr()?, Some(path.attr.as_str()))
+                    }
+                    _ => return None,
                 };
-                let binding = self.trusted_binding(module.id.as_str(), expression.range())?;
-                if binding.member.is_some() {
+                let binding = self.trusted_binding(root.id.as_str(), expression.range())?;
+                if binding.member.is_some() || binding.package_prefix != prefix {
+                    return None;
+                }
+                if prefix.is_some()
+                    && self
+                        .first_submodule_import
+                        .is_none_or(|import| expression.start() < import.end())
+                {
                     return None;
                 }
                 (
@@ -292,9 +409,75 @@ impl CallableImports {
             })
     }
 
+    /// Prefer an existing eager alias in this module family to a new import.
+    /// The anchor is an actual load so class namespace restrictions still apply.
+    pub(super) fn destination_spelling(&self, member: &str, anchor: &Expr) -> Option<String> {
+        let start = usize::from(anchor.start());
+        let end = usize::from(anchor.end());
+        if self.class_lookups.contains(&(start, end)) {
+            return None;
+        }
+        let available = |spelling: &&ImportSpelling| {
+            spelling.available_after <= anchor.start()
+                && !(spelling.name.starts_with("__") && self.class_ranges.contains(start, end))
+        };
+        if let Some(alias) = self.preferred_members.get(member).filter(available) {
+            Some(alias.name.clone())
+        } else {
+            self.preferred_module
+                .as_ref()
+                .filter(available)
+                .map(|alias| format!("{}.{member}", alias.name))
+        }
+    }
+
+    pub(super) fn has_trusted_bindings(&self) -> bool {
+        !self.trusted.is_empty()
+    }
+
+    pub(super) fn namespace_stable(&self) -> bool {
+        self.namespace_stable
+    }
+
     pub(super) fn import_builtin_available(&self) -> bool {
         self.import_builtin_available
     }
+}
+
+fn preferred_spellings(
+    trusted: &HashMap<String, ImportedBinding>,
+    cancelled: &impl Fn() -> bool,
+) -> Result<(Option<ImportSpelling>, HashMap<String, ImportSpelling>), AnalysisCancelled> {
+    let mut module: Option<ImportSpelling> = None;
+    let mut members = HashMap::<String, ImportSpelling>::new();
+    for (name, binding) in trusted {
+        if cancelled() {
+            return Err(AnalysisCancelled);
+        }
+        let spelling = ImportSpelling {
+            name: name.clone(),
+            available_after: binding.import_range.end(),
+        };
+        if let Some(member) = &binding.member {
+            use std::collections::hash_map::Entry;
+            match members.entry(member.clone()) {
+                Entry::Vacant(entry) => {
+                    entry.insert(spelling);
+                }
+                Entry::Occupied(mut entry) if spelling.order() < entry.get().order() => {
+                    entry.insert(spelling);
+                }
+                Entry::Occupied(_) => {}
+            }
+        } else if binding.package_prefix.is_none()
+            && module
+                .as_ref()
+                .is_none_or(|previous| spelling.order() < previous.order())
+        {
+            module = Some(spelling);
+        }
+    }
+    Ok((module, members))
 }
 
 /// Constructible only through the independently checked dataclass path above.
@@ -461,8 +644,16 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for ClassLookupScan<'_, F> {
     }
 }
 
+#[derive(PartialEq, Eq, Copy, Clone)]
+enum ImportPolicy {
+    Legacy,
+    Family,
+}
+
 struct ImportScan<'a, F> {
     modules: &'static [&'static str],
+    policy: ImportPolicy,
+    first_submodule_import: Option<TextRange>,
     cancelled: &'a F,
     cancelled_observed: bool,
     depth: usize,
@@ -473,6 +664,7 @@ struct ImportScan<'a, F> {
     module_names: HashSet<String>,
     attribute_writes: HashSet<String>,
     escaped_names: HashSet<String>,
+    constant_reads: HashMap<String, Vec<TextRange>>,
     namespace_uncertain: bool,
     class_ranges: Vec<(usize, usize)>,
 }
@@ -497,7 +689,10 @@ impl<F: Fn() -> bool> ImportScan<'_, F> {
         range: TextRange,
         eager: bool,
     ) {
-        if member.is_none() {
+        if member.is_none()
+            || (self.policy == ImportPolicy::Family
+                && !member.is_some_and(|member| is_library_constant(module, member)))
+        {
             self.module_names.insert(local.to_owned());
         }
         let possible = self.possible.entry(local.to_owned()).or_default();
@@ -517,9 +712,161 @@ impl<F: Fn() -> bool> ImportScan<'_, F> {
                     module,
                     member: member.map(str::to_owned),
                     import_range: range,
+                    package_prefix: None,
                 },
             );
         }
+    }
+    // The extra policy applies only to the single-family API. Ordinary imports
+    // continue sharing the original one-member hazard checks.
+    fn import_package(
+        &mut self,
+        local: &str,
+        imported: &str,
+        aliased: bool,
+        range: TextRange,
+        eager: bool,
+    ) -> bool {
+        if self.policy != ImportPolicy::Family {
+            return false;
+        }
+        let module = self.modules[0];
+        let Some((package, submodule)) = module.split_once('.') else {
+            return false;
+        };
+        if imported != module && imported != package {
+            return false;
+        }
+        self.import(local, module, None, range, eager);
+        if self.depth == 0 && eager {
+            if imported == module {
+                self.first_submodule_import.get_or_insert(range);
+            }
+            if !aliased || imported == package {
+                self.trusted
+                    .get_mut(local)
+                    .expect("new binding")
+                    .package_prefix = Some(submodule);
+            }
+        }
+        true
+    }
+
+    fn scan_module_import(&mut self, import: &StmtImport) {
+        for alias in &import.names {
+            let local = alias.asname.as_ref().map_or_else(
+                || {
+                    alias
+                        .name
+                        .as_str()
+                        .split('.')
+                        .next()
+                        .unwrap_or(alias.name.as_str())
+                },
+                ruff_python_ast::Identifier::as_str,
+            );
+            self.bind(local);
+            if self.import_package(
+                local,
+                alias.name.as_str(),
+                alias.asname.is_some(),
+                import.range(),
+                !import.is_lazy,
+            ) {
+                continue;
+            }
+            if let Some(&module) = self
+                .modules
+                .iter()
+                .find(|&&module| module == alias.name.as_str())
+            {
+                self.import(local, module, None, import.range(), !import.is_lazy);
+            }
+        }
+    }
+
+    fn scan_member_import(&mut self, import: &StmtImportFrom) {
+        for alias in &import.names {
+            if import.level == 0
+                && import.module.as_ref().is_some_and(|module| {
+                    ((module.as_str() == "builtins" || self.modules.contains(&module.as_str()))
+                        && dynamic_namespace_name(alias.name.as_str()))
+                        || (module.as_str() == "sys" && alias.name.as_str() == "modules")
+                })
+            {
+                self.namespace_uncertain = true;
+            }
+            if alias.name.as_str() == "*" {
+                self.namespace_uncertain = true;
+            }
+            let local = alias.asname.as_ref().unwrap_or(&alias.name).as_str();
+            self.bind(local);
+            if self.policy == ImportPolicy::Family
+                && import.level == 0
+                && let Some((package, submodule)) = self.modules[0].split_once('.')
+                && import
+                    .module
+                    .as_ref()
+                    .is_some_and(|name| name.as_str() == package)
+                && alias.name.as_str() == submodule
+            {
+                self.import(
+                    local,
+                    self.modules[0],
+                    None,
+                    import.range(),
+                    !import.is_lazy,
+                );
+                if self.depth == 0 && !import.is_lazy {
+                    self.first_submodule_import.get_or_insert(import.range());
+                }
+                continue;
+            }
+            if import.level == 0
+                && let Some(name) = &import.module
+                && let Some(&module) = self.modules.iter().find(|&&module| module == name.as_str())
+            {
+                if self.policy == ImportPolicy::Family
+                    && self.depth == 0
+                    && !import.is_lazy
+                    && module.contains('.')
+                {
+                    self.first_submodule_import.get_or_insert(import.range());
+                }
+                self.import(
+                    local,
+                    module,
+                    Some(alias.name.as_str()),
+                    import.range(),
+                    !import.is_lazy,
+                );
+            }
+        }
+    }
+
+    fn direct_call_target(&mut self, expression: &Expr) {
+        if let Some(root) = self.path_root(expression) {
+            if dynamic_namespace_name(root) {
+                self.namespace_uncertain = true;
+            }
+        } else {
+            self.visit_expr(expression);
+        }
+    }
+
+    fn path_root<'ast>(&mut self, mut expression: &'ast Expr) -> Option<&'ast str> {
+        while let Expr::Attribute(attribute) = expression {
+            if self.stop() {
+                return None;
+            }
+            if dynamic_namespace_name(attribute.attr.as_str())
+                || attribute.attr.as_str() == "modules"
+            {
+                self.namespace_uncertain = true;
+            }
+            expression = &attribute.value;
+        }
+        Some(expression.as_name_expr()?.id.as_str())
     }
 }
 
@@ -530,61 +877,8 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for ImportScan<'_, F> {
         }
         let previous_function_scope = self.function_scope;
         match statement {
-            Stmt::Import(import) => {
-                for alias in &import.names {
-                    let local = alias.asname.as_ref().map_or_else(
-                        || {
-                            alias
-                                .name
-                                .as_str()
-                                .split('.')
-                                .next()
-                                .unwrap_or(alias.name.as_str())
-                        },
-                        ruff_python_ast::Identifier::as_str,
-                    );
-                    self.bind(local);
-                    if let Some(&module) = self
-                        .modules
-                        .iter()
-                        .find(|&&module| module == alias.name.as_str())
-                    {
-                        self.import(local, module, None, statement.range(), !import.is_lazy);
-                    }
-                }
-            }
-            Stmt::ImportFrom(import) => {
-                for alias in &import.names {
-                    if import.level == 0
-                        && import.module.as_ref().is_some_and(|module| {
-                            ((module.as_str() == "builtins"
-                                || self.modules.contains(&module.as_str()))
-                                && dynamic_namespace_name(alias.name.as_str()))
-                                || (module.as_str() == "sys" && alias.name.as_str() == "modules")
-                        })
-                    {
-                        self.namespace_uncertain = true;
-                    }
-                    if alias.name.as_str() == "*" {
-                        self.namespace_uncertain = true;
-                    }
-                    let local = alias.asname.as_ref().unwrap_or(&alias.name).as_str();
-                    self.bind(local);
-                    if import.level == 0
-                        && let Some(name) = &import.module
-                        && let Some(&module) =
-                            self.modules.iter().find(|&&module| module == name.as_str())
-                    {
-                        self.import(
-                            local,
-                            module,
-                            Some(alias.name.as_str()),
-                            statement.range(),
-                            !import.is_lazy,
-                        );
-                    }
-                }
-            }
+            Stmt::Import(import) => self.scan_module_import(import),
+            Stmt::ImportFrom(import) => self.scan_member_import(import),
             Stmt::AnnAssign(assign)
                 if assign.value.is_none()
                     && matches!(assign.target.as_ref(), Expr::Name(_))
@@ -630,6 +924,28 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for ImportScan<'_, F> {
             return;
         }
         match expression {
+            Expr::Call(call) if self.policy == ImportPolicy::Family => {
+                self.direct_call_target(&call.func);
+                self.visit_arguments(&call.arguments);
+                return;
+            }
+            Expr::Attribute(attribute) if self.policy == ImportPolicy::Family => {
+                if let Some(root) = self.path_root(expression) {
+                    if attribute.ctx != ExprContext::Load {
+                        self.attribute_writes.insert(root.to_owned());
+                    } else if attribute.value.is_name_expr()
+                        && is_library_constant(self.modules[0], attribute.attr.as_str())
+                    {
+                        self.constant_reads
+                            .entry(root.to_owned())
+                            .or_default()
+                            .push(attribute.range());
+                    } else {
+                        self.escaped_names.insert(root.to_owned());
+                    }
+                    return;
+                }
+            }
             Expr::Name(name) => {
                 if name.ctx == ExprContext::Load {
                     self.escaped_names.insert(name.id.to_string());
@@ -891,5 +1207,43 @@ mod coverage_tests {
             .is_none();
 
         assert!(actual);
+    }
+}
+
+#[cfg(test)]
+mod constant_tests {
+    use super::CallableImports;
+
+    #[rstest::rstest]
+    #[case::rounding_value("import decimal as d\nuse(d.ROUND_HALF_EVEN)", true)]
+    #[case::rounding_alias(
+        "import decimal as d\nfrom decimal import ROUND_UP as mode\nuse(mode)",
+        true
+    )]
+    #[case::unknown_attribute("import decimal as d\nuse(d.Context)", false)]
+    #[case::rounding_write("import decimal as d\nd.ROUND_UP = change", false)]
+    fn family_resolution_distinguishes_constant_reads_from_namespace_hazards(
+        #[case] setup: &str,
+        #[case] expected: bool,
+    ) {
+        let source = format!("{setup}\nvalue=d.Decimal('1.25')");
+        let parsed = ruff_python_parser::parse_module(&source).unwrap();
+        let expression = parsed
+            .syntax()
+            .body
+            .last()
+            .unwrap()
+            .as_assign_stmt()
+            .unwrap()
+            .value
+            .as_call_expr()
+            .unwrap()
+            .func
+            .as_ref();
+
+        let imports =
+            CallableImports::build_family(parsed.syntax(), &|| false, &["decimal"]).unwrap();
+
+        assert_eq!(imports.resolve(expression).is_some(), expected);
     }
 }

@@ -261,12 +261,21 @@ fn temporary_storage_failure_child() {
 fn temporary_worker_storage_failure_child() {
     let source = Utf8PathBuf::from(std::env::var("HOIMIN_STORAGE_FAILURE_SOURCE").unwrap());
     let plan = WorkspacePlan::preflight(&source, EffectId(7), 1, CopyOptions::default()).unwrap();
-    let temporary_root = std::env::temp_dir();
-    let moved_root = temporary_root.with_extension("moved");
-    fs::rename(&temporary_root, moved_root).unwrap();
-    fs::write(&temporary_root, b"not a directory").unwrap();
+    #[cfg(unix)]
+    {
+        let temporary_root = std::env::temp_dir();
+        let moved_root = temporary_root.with_extension("moved");
+        fs::rename(&temporary_root, moved_root).unwrap();
+        fs::write(&temporary_root, b"not a directory").unwrap();
+    }
+    // Windows denies renaming the live parent of the pinned snapshot.
+    #[cfg(windows)]
+    let fault = crate::io_faults::arm("copy.worker.temp");
 
     let result = plan.materialize_worker(0);
+
+    #[cfg(windows)]
+    assert!(fault.triggered());
 
     assert!(matches!(
         result,

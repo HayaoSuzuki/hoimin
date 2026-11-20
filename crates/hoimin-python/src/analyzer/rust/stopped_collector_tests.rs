@@ -34,6 +34,10 @@ enum Attempt {
     FunctionBody,
     Augmented,
     TupleHandler,
+    Unwrap,
+    MatchArm,
+    Alternatives,
+    Swap,
 }
 
 fn expression(module: &ModModule) -> &Expr {
@@ -50,12 +54,27 @@ fn handler_body(module: &ModModule) -> &ruff_python_ast::ExceptHandlerExceptHand
     handler
 }
 
-fn invoke(
-    collector: &mut AstCandidateCollector<'_, &dyn Fn() -> bool>,
-    module: &ModModule,
+#[expect(
+    clippy::too_many_lines,
+    reason = "one exhaustive dispatch table exercises each directly callable producer with the same prefailed sink"
+)]
+fn invoke<'ast>(
+    collector: &mut AstCandidateCollector<'ast, &dyn Fn() -> bool>,
+    module: &'ast ModModule,
     attempt: Attempt,
 ) {
     match attempt {
+        Attempt::Unwrap => collector.collect_unwrap(module.body[0].as_try_stmt().unwrap()),
+        Attempt::MatchArm => {
+            collector.collect_case(&module.body[0].as_match_stmt().unwrap().cases[0]);
+        }
+        Attempt::Alternatives => collector.collect_or(
+            module.body[0].as_match_stmt().unwrap().cases[0]
+                .pattern
+                .as_match_or()
+                .unwrap(),
+        ),
+        Attempt::Swap => collector.visit_suite(&module.body),
         Attempt::StringSegment => {
             collector.collect_string_segment(expression(module));
         }
@@ -227,13 +246,36 @@ fn observe_attempt(
     let enum_index = enum_members::EnumIndex::default();
     let dataclass_factories = dataclass_factory::DataclassFactories::default();
     let followup_calls = followup_calls::Imports::default();
+    let optional_functions = optional_keywords::FunctionIndex::default();
+    let call_contracts = call_contracts::Contracts::default();
+    let collections = collection_processing::Collections::default();
+    let rounding = rounding::Rounding::default();
+    let delimiters = source_delimiters::DelimiterDepth::default();
+    let builtins = processing_calls::Builtins::default();
+    let processing_site = processing_calls::Site {
+        builtins: &builtins,
+        facts: &facts,
+        source,
+        operators: request.operators,
+        delimiters: &delimiters,
+        cancelled: &cancelled,
+    };
     let mut collector = AstCandidateCollector {
+        call_contracts: &call_contracts,
+        collections: &collections,
+        regex: &regex::Regex::default(),
+        rounding: &rounding,
+        processing_site: &processing_site,
+        discarded_results: [None; 2],
+        direct_await: None,
+        match_state: control_structure::MatchTraversal::default(),
+        private_class: None,
         inheritance: inheritance::Index::default(),
         string_exclusions: string_literals::Exclusions::build(module, &cancelled).unwrap(),
         enum_index: &enum_index,
         dataclass_factories: &dataclass_factories,
         followup_calls: &followup_calls,
-        optional_functions: optional_keywords::FunctionIndex::default(),
+        optional_functions: &optional_functions,
         operator_imports: OperatorImports::default(),
         behavior_imports: BehaviorImports::default(),
         conversion_imports: stdlib_conversions::ConversionImports::build(module, &cancelled)
@@ -299,6 +341,10 @@ fn observe_attempt(
 #[case::functionbody("def function() -> int:\n return 1", Attempt::FunctionBody)]
 #[case::augmented("value += 1", Attempt::Augmented)]
 #[case::tuplehandler("(ValueError, TypeError)", Attempt::TupleHandler)]
+#[case::finally_unwrap("try: a()\nfinally: b()", Attempt::Unwrap)]
+#[case::match_case("match x:\n case name if pred(): pass", Attempt::MatchArm)]
+#[case::or_alternatives("match x:\n case 1|2: pass", Attempt::Alternatives)]
+#[case::statement_exchange("a()\nb()", Attempt::Swap)]
 fn failed_producers_keep_the_first_error_without_polling_or_emitting(
     #[case] source: &str,
     #[case] attempt: Attempt,
