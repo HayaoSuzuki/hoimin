@@ -98,3 +98,12 @@ Base `237cc44b163f78a278448a246a36cc48f04673d0`. The review's four Important fin
 - `cargo test -j2 -p hoimin-cli --test operator_function_contracts research_regex --quiet -- --test-threads=2` passed 55 runtime contracts on each of CPython 3.14.9 and 3.15.1. The final fix-specific run, after adding two mixed-union controls, used `research_regex::fix1_` in the same command. Both interpreters passed all 15 cases.
 - `cargo clippy -j2 -p hoimin-python --lib --quiet --message-format=short` and `cargo clippy -j2 -p hoimin-cli --test operator_function_contracts --quiet --message-format=short` exited 0. The final allocator and formatting receipts follow.
 - `cargo test -j2 -p hoimin-cli --test regex_heap --quiet -- --test-threads=2 --nocapture` exited 0, 4 passed without changing the benchmark. The long-reference case at K=3 retained 3 candidates, used 245,856 peak heap bytes, and took 4,067 μs in this debug run. Typical, 128-deep, and import-free regex cases used 8,732, 64,799 and 24,434 peak heap bytes. `cargo fmt --all -- --check` exited 0.
+
+## Independent review fix round 2
+
+Base `0687b638360c8b1c0e49f832f0194f3330cb256f`. The universality check now verifies coverage of all 128 low code points separately under ASCII and Unicode rules after establishing complete high-range coverage. Unicode adds U+001C through U+001F to the low whitespace mask. Category complements use the same mode-specific partition as positive categories.
+
+- RED `cargo test -j2 -p hoimin-python --lib fix2_ --quiet -- --test-threads=2` exited 1. Four cases reported zero candidates where one was expected, for the positive and negated class under each operator independently. Two controls with the missing range supplied explicitly passed.
+- GREEN with the same command passed all six cases. `cargo test -j2 -p hoimin-python --lib fix1_full_character_unions --quiet -- --test-threads=2` passed all six existing universal-class controls.
+- `cargo test -j2 -p hoimin-cli --test operator_function_contracts research_regex::fix2_ --quiet -- --test-threads=2` passed four cases per interpreter using `HOIMIN_OPERATOR_TEST_PYTHON` set to CPython 3.14.9 and 3.15.1 in turn. For U+001B through U+0020, the positive class produced `100001` originally and `111111` for each emitted mutation. The negated class produced `011110` originally and `000000` for each mutation.
+- `cargo fmt --all -- --check` and `git diff --check` exited 0.

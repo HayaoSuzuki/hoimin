@@ -474,3 +474,19 @@ fn fix1_shared_literal_keeps_flags_and_match_context() {
     assert_eq!(categories, [r"r'^[0-9]$'", r"r'^[0-9]$'", r"r'^(?u:\d)$'"]);
     assert_eq!(super::regex::pattern_work(), (4, 12));
 }
+
+#[rstest]
+#[case::positive_atom("", "regex_character_set", "")]
+#[case::positive_root("", "regex_ascii_mode", "")]
+#[case::negative_atom("^", "regex_character_set", "")]
+#[case::negative_root("^", "regex_ascii_mode", "")]
+#[case::positive_universal("", "regex_character_set", r"\x1c-\x1f")]
+#[case::negative_universal("^", "regex_ascii_mode", r"\x1c-\x1f")]
+fn fix2_whitespace_union_eligibility(#[case] sign: &str, #[case] op: &str, #[case] extra: &str) {
+    let class = format!(r"[{sign}\S\x09-\x0d\x20{extra}\x80-\U0010ffff]");
+    let source = format!("import re\np=re.compile(r'(?u){class}')");
+
+    let result = analyze_regex(&source, &[op], 16, &[], &[]);
+
+    assert_eq!(result.candidates.len(), usize::from(extra.is_empty()));
+}

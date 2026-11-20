@@ -165,8 +165,12 @@ const DIGITS: u128 = ((1u128 << 10) - 1) << 48;
 const LETTERS: u128 = (1u128 << 26) - 1;
 const WORD: u128 = DIGITS | (LETTERS << 65) | (LETTERS << 97) | (1u128 << 95);
 const SPACE: u128 = (31u128 << 9) | (1u128 << 32);
-fn ascii_members(partitions: u8) -> u128 {
-    [DIGITS, WORD & !DIGITS, SPACE, !(WORD | SPACE)]
+
+// CPython Unicode whitespace also includes the four ASCII information separators.
+const UNICODE_SPACE_BELOW_128: u128 = SPACE | (0xfu128 << 0x1c);
+
+fn ascii_members(partitions: u8, space: u128) -> u128 {
+    [DIGITS, WORD & !DIGITS, space, !(WORD | space)]
         .into_iter()
         .enumerate()
         .filter(|(index, _)| partitions & (1 << index) != 0)
@@ -197,8 +201,11 @@ impl Intervals {
         self.0.insert(lo, hi);
         Some(())
     }
-    fn covers_all(&self, ascii: u128) -> bool {
-        ascii == u128::MAX && self.0.get(&128) == Some(&0x0010_ffff)
+    fn covers_all(&self, ascii_literals: u128, categories: u8) -> bool {
+        self.0.get(&128) == Some(&0x0010_ffff)
+            && [SPACE, UNICODE_SPACE_BELOW_128]
+                .into_iter()
+                .all(|space| ascii_literals | ascii_members(categories, space) == u128::MAX)
     }
 }
 
@@ -291,7 +298,7 @@ pub(super) fn class(
         let paired = ((ascii >> 65) | (ascii >> 97)) & letters;
         ascii |= (paired << 65) | (paired << 97);
     }
-    if categories == 15 || intervals.covers_all(ascii | ascii_members(categories)) {
+    if categories == 15 || intervals.covers_all(ascii, categories) {
         return Some(Set {
             variant: None,
             sensitive: false,

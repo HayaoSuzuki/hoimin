@@ -594,3 +594,24 @@ async fn fix1_union_mode_contract(
         );
     }
 }
+
+#[rstest]
+#[case::positive_atom("", CLASS, "100001\n", "111111\n")]
+#[case::negative_atom("^", CLASS, "011110\n", "000000\n")]
+#[case::positive_root("", ROOT, "100001\n", "111111\n")]
+#[case::negative_root("^", ROOT, "011110\n", "000000\n")]
+#[tokio::test]
+async fn fix2_whitespace_union_contract(
+    #[case] sign: &str,
+    #[case] op: &str,
+    #[case] original: &str,
+    #[case] mutant: &str,
+) {
+    let class = format!(r"[{sign}\S\x09-\x0d\x20\x80-\U0010ffff]");
+    let source = format!("import re\np=re.compile(r'(?u){class}')\n");
+    let scoped = format!("(?a:{class})");
+    let replacement = if op == CLASS { &scoped } else { "a" };
+    let harness = "from subject import p\nprint(''.join(str(int(bool(p.fullmatch(chr(n))))) for n in range(0x1b,0x21)))";
+
+    assert_outcome(&source, op, replacement, harness, original, mutant).await;
+}
