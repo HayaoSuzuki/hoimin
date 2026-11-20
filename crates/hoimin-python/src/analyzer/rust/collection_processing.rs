@@ -5,7 +5,7 @@ use super::{
     AnalysisCancelled,
     callable_imports::CallableImports,
     local_initializers,
-    processing_calls::{Site, bind},
+    processing_calls::{Site, bind, implicit_generator_interior},
 };
 use hoimin_core::MutationOperator;
 use ruff_python_ast::token::TokenKind;
@@ -94,9 +94,10 @@ impl Collections {
             if condition.is_boolean_literal_expr() || !selected(range) {
                 continue;
             }
+            let (before, after) = filter_spacing(range, site);
             if site.supports(REMOVE)
                 && !contains(&self.named_expressions, range)
-                && !emit(range, "True".to_owned(), REMOVE)
+                && !emit(range, format!("{before}True{after}"), REMOVE)
             {
                 return;
             }
@@ -104,7 +105,7 @@ impl Collections {
                 && !duplicate_inversion(condition)
                 && site.delimiters.can_enclose(range, 1)
                 && let Some(text) = site.text(range)
-                && ((site.cancelled)() || !emit(range, format!("not ({text})"), INVERT))
+                && ((site.cancelled)() || !emit(range, format!("{before}not ({text})"), INVERT))
             {
                 return;
             }
@@ -152,11 +153,11 @@ impl Collections {
                 self.emit_count(call, iterable, site, selected, emit);
             } else if selected(callee)
                 && site.builtins.resolves(&call.func, "len", site)
-                && site.builtins.destination("sum", &call.func, site)
+                && let Some(replacement) = site.builtins.destination("sum", &call.func, site)
                 && numeric_sequence(iterable, site)
                 && !(site.cancelled)()
             {
-                emit(callee, "sum".to_owned(), COUNT);
+                emit(callee, replacement, COUNT);
             }
         }
     }
@@ -174,9 +175,8 @@ impl Collections {
             .itertools
             .resolve(&call.func)
             .is_some_and(|callable| callable.member == "filterfalse")
-            && site.builtins.destination("filter", &call.func, site)
         {
-            Some("filter".to_owned())
+            site.builtins.destination("filter", &call.func, site)
         } else {
             None
         }
@@ -191,15 +191,8 @@ impl Collections {
         mut emit: impl FnMut(TextRange, String, MutationOperator) -> bool,
     ) {
         let args = call.arguments.range();
-        let implicit_generator = iterable.is_generator_expr() && iterable.range() == args;
-        let range = if implicit_generator {
-            TextRange::new(
-                args.start() + TextSize::new(1),
-                args.end() - TextSize::new(1),
-            )
-        } else {
-            site.argument_range(iterable, call)
-        };
+        let range = implicit_generator_interior(call)
+            .unwrap_or_else(|| site.argument_range(iterable, call));
         if !selected(range)
             || contains(&self.named_expressions, range)
             || contains(&self.yields, range)
@@ -231,6 +224,23 @@ fn contains(offsets: &[TextSize], range: TextRange) -> bool {
     offsets
         .get(offsets.partition_point(|offset| *offset < range.start()))
         .is_some_and(|offset| *offset < range.end())
+}
+
+// Python permits adjacent delimiters and clause keywords. A replacement
+// starting or ending in an identifier needs a separator at those boundaries.
+fn filter_spacing(range: TextRange, site: &Site<'_>) -> (&'static str, &'static str) {
+    let tokens = site.tokens();
+    let before = tokens
+        .before(range.start())
+        .last()
+        .is_some_and(|token| token.kind() == TokenKind::If && token.end() == range.start());
+    let after = tokens.after(range.end()).first().is_some_and(|token| {
+        matches!(
+            token.kind(),
+            TokenKind::If | TokenKind::For | TokenKind::Async
+        ) && token.start() == range.end()
+    });
+    (if before { " " } else { "" }, if after { " " } else { "" })
 }
 
 fn duplicate_inversion(condition: &Expr) -> bool {

@@ -3,7 +3,7 @@
 
 use super::{
     AnalysisCancelled,
-    call_contracts::evaluated_arguments,
+    call_contracts::{EvaluatedReceiver, evaluated_arguments},
     callable_imports::CallableImports,
     decimal_context::{Decimals, Quantize, arithmetic},
     decimal_quantum::{MAX_PRECISION, Quantum, signed_integer},
@@ -48,7 +48,7 @@ impl Rounding {
                 CallableImports::default()
             },
             decimal: if decimal {
-                Decimals::build(module, cancelled)?
+                Decimals::build(module, site, cancelled)?
             } else {
                 Decimals::default()
             },
@@ -75,7 +75,7 @@ impl Rounding {
         if site.supports(SWAP) && !self.emit_swaps(call, site, &mut selected, &mut emit) {
             return;
         }
-        let round = Self::round_arguments(call, site);
+        let round = site.builtins.round_arguments(call, site);
         if site.supports(DIGITS)
             && let Some([_, Some(digits)]) = round
             && !digits.is_none_literal_expr()
@@ -101,7 +101,7 @@ impl Rounding {
         {
             return;
         }
-        let quantize = self.decimal.quantize(call, site.cancelled);
+        let quantize = self.decimal.quantize(call, site);
         if let Some(ref quantize) = quantize {
             if !self.emit_settings(None, quantize.rounding, site, &mut selected, &mut emit) {
                 return;
@@ -153,7 +153,7 @@ impl Rounding {
         if let Some(attribute) = target.as_attribute_expr()
             && matches!(attribute.attr.as_str(), "prec" | "rounding")
             && !(site.cancelled)()
-            && self.decimal.context_target(attribute, site.cancelled)
+            && self.decimal.context_target(attribute, site)
         {
             let (precision, mode) = if attribute.attr.as_str() == "prec" {
                 (Some(value), None)
@@ -161,14 +161,6 @@ impl Rounding {
                 (None, Some(value))
             };
             self.emit_settings(precision, mode, site, &mut selected, &mut emit);
-        }
-    }
-
-    fn round_arguments<'a>(call: &'a ExprCall, site: &Site<'_>) -> Option<[Option<&'a Expr>; 2]> {
-        if site.builtins.resolves(&call.func, "round", site) {
-            bind(call, ["number", "ndigits"], 0, 2, 1)
-        } else {
-            None
         }
     }
 
@@ -211,9 +203,7 @@ impl Rounding {
                 continue;
             }
             let replacement = if destination == "round" {
-                site.builtins
-                    .destination("round", &call.func, site)
-                    .then(|| "round".to_owned())
+                site.builtins.destination("round", &call.func, site)
             } else if member_range.is_some() {
                 Some(destination.to_owned())
             } else {
@@ -324,7 +314,7 @@ impl Rounding {
     }
 
     fn without_rounding(&self, call: &ExprCall, site: &Site<'_>) -> Option<String> {
-        if let Some([Some(number), _]) = Self::round_arguments(call, site) {
+        if let Some([Some(number), _]) = site.builtins.round_arguments(call, site) {
             let index = call
                 .arguments
                 .args
@@ -340,17 +330,17 @@ impl Rounding {
                 site.cancelled,
             );
         }
-        let Quantize { attribute, .. } = self.decimal.quantize(call, site.cancelled)?;
+        let Quantize { attribute, .. } = self.decimal.quantize(call, site)?;
         let receiver = &attribute.value;
         let range = parenthesized_range(receiver.as_ref().into(), attribute.into(), site.tokens())
             .unwrap_or_else(|| receiver.range());
-        if !site.delimiters.can_enclose(range, 1) {
-            return None;
-        }
         evaluated_arguments(
             call,
             0,
-            Some(site.text(range)?),
+            Some(EvaluatedReceiver {
+                range,
+                delimiters: site.delimiters,
+            }),
             site.source,
             site.tokens(),
             site.cancelled,

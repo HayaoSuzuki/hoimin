@@ -7,7 +7,7 @@ use super::{
 use hoimin_core::{MutationOperator, MutationOperatorSelection};
 use ruff_python_ast::token::{Tokens, parenthesized_range};
 use ruff_python_ast::{Expr, ExprCall, ModModule};
-use ruff_text_size::{Ranged, TextRange};
+use ruff_text_size::{Ranged, TextRange, TextSize};
 
 pub(super) struct Site<'a> {
     pub(super) facts: &'a AstFacts<'a>,
@@ -74,11 +74,32 @@ impl Builtins {
             .resolve(expr)
             .is_some_and(|value| value.member == name)
             || (expr.as_name_expr().is_some_and(|value| value.id == name)
-                && self.destination(name, expr, site))
+                && self.bare_name(name, expr, site))
     }
 
-    pub(super) fn destination(&self, name: &str, anchor: &Expr, site: &Site<'_>) -> bool {
+    fn bare_name(&self, name: &str, anchor: &Expr, site: &Site<'_>) -> bool {
         self.0.namespace_stable() && site.builtin_at(name, anchor)
+    }
+
+    /// Use an unshadowed builtin name or an eager, stable import at the site.
+    pub(super) fn destination(&self, name: &str, anchor: &Expr, site: &Site<'_>) -> Option<String> {
+        if self.bare_name(name, anchor, site) {
+            Some(name.to_owned())
+        } else {
+            self.0.destination_spelling(name, anchor)
+        }
+    }
+
+    pub(super) fn round_arguments<'a>(
+        &self,
+        call: &'a ExprCall,
+        site: &Site<'_>,
+    ) -> Option<[Option<&'a Expr>; 2]> {
+        if self.resolves(&call.func, "round", site) {
+            bind(call, ["number", "ndigits"], 0, 2, 1)
+        } else {
+            None
+        }
     }
 
     /// Admission is at the insertion point. Existing callee grouping stays
@@ -98,6 +119,20 @@ impl Builtins {
             .then(|| format!("__import__('{module}').{member}"))
         })
     }
+}
+
+/// A single unparenthesized generator borrows the call's own delimiters.
+pub(super) fn implicit_generator_interior(call: &ExprCall) -> Option<TextRange> {
+    let [Expr::Generator(generator)] = call.arguments.args.as_ref() else {
+        return None;
+    };
+    let args = call.arguments.range();
+    (!generator.parenthesized).then(|| {
+        TextRange::new(
+            args.start() + TextSize::new(1),
+            args.end() - TextSize::new(1),
+        )
+    })
 }
 
 /// Bind a fixed signature in supplied-argument order. The upfront arity

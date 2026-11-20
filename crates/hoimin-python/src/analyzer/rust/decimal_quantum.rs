@@ -28,13 +28,13 @@ pub(super) struct Quantum {
     pub(super) range: TextRange,
     exponent: i64,
     coefficient_size: i64,
-    tuple_exponent: bool,
+    sequence_exponent: bool,
 }
 
 impl Quantum {
     pub(super) fn edit_range(expr: &Expr) -> Option<TextRange> {
-        if let Expr::Tuple(tuple) = expr {
-            let [_, _, exponent] = tuple.elts.as_slice() else {
+        if let Some(elements) = sequence_display(expr) {
+            let [_, _, exponent] = elements else {
                 return None;
             };
             Some(exponent.range())
@@ -44,7 +44,7 @@ impl Quantum {
     }
 
     pub(super) fn from_literal(expr: &Expr, cancelled: &dyn Fn() -> bool) -> Option<Self> {
-        let (range, exponent, coefficient_size, tuple_exponent) = match expr {
+        let (range, exponent, coefficient_size, sequence_exponent) = match expr {
             Expr::StringLiteral(literal) => {
                 let chars = literal
                     .value
@@ -54,14 +54,14 @@ impl Quantum {
                 let (exponent, size) = string_exponent(chars, cancelled)?;
                 (expr.range(), exponent, size, false)
             }
-            Expr::Tuple(tuple) => {
-                let [sign, coefficient, exponent] = tuple.elts.as_slice() else {
+            Expr::Tuple(_) | Expr::List(_) => {
+                let [sign, coefficient, exponent] = sequence_display(expr)? else {
                     return None;
                 };
                 if !matches!(signed_integer(sign), Some(0 | 1)) {
                     return None;
                 }
-                let digits = &coefficient.as_tuple_expr()?.elts;
+                let digits = sequence_display(coefficient)?;
                 let mut size = 0;
                 for digit in digits {
                     if cancelled() {
@@ -89,24 +89,32 @@ impl Quantum {
             range,
             exponent,
             coefficient_size,
-            tuple_exponent,
+            sequence_exponent,
         })
     }
 
     pub(super) fn shifted(&self, direction: i64) -> Option<String> {
         let exponent = self.exponent.checked_add(direction)?;
-        let size = if self.tuple_exponent {
+        let size = if self.sequence_exponent {
             self.coefficient_size
         } else {
             1
         };
         valid_exponent(exponent, size).then(|| {
-            if self.tuple_exponent {
+            if self.sequence_exponent {
                 exponent.to_string()
             } else {
                 format!("'1e{exponent}'")
             }
         })
+    }
+}
+
+fn sequence_display(expr: &Expr) -> Option<&[Expr]> {
+    match expr {
+        Expr::List(list) => Some(&list.elts),
+        Expr::Tuple(tuple) => Some(&tuple.elts),
+        _ => None,
     }
 }
 

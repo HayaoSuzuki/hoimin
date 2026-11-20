@@ -11,7 +11,7 @@ use super::{
     callable_imports::CallableImports,
     function_body,
     optional_keywords::{FunctionIndex, Signature},
-    processing_calls::Builtins,
+    processing_calls::{Builtins, implicit_generator_interior},
     source_delimiters::DelimiterDepth,
     source_text,
 };
@@ -438,12 +438,17 @@ fn escape_replacement(
     evaluated_arguments(call, primary, None, cx.source, cx.tokens(), cx.cancelled)
 }
 
+pub(super) struct EvaluatedReceiver<'a> {
+    pub(super) range: TextRange,
+    pub(super) delimiters: &'a DelimiterDepth,
+}
+
 /// Evaluate the supplied arguments in Python's original order and retain one
 /// value. An optional leading value represents the receiver of a bound call.
 pub(super) fn evaluated_arguments(
     call: &ExprCall,
     retained_index: usize,
-    receiver: Option<&str>,
+    receiver: Option<EvaluatedReceiver<'_>>,
     source: &str,
     tokens: &Tokens,
     cancelled: &dyn Fn() -> bool,
@@ -451,10 +456,25 @@ pub(super) fn evaluated_arguments(
     let args = &call.arguments;
     let mut cursor = args.start();
     let mut replacement = String::new();
+    let has_receiver = receiver.is_some();
     if let Some(receiver) = receiver {
+        if !receiver.delimiters.can_enclose(receiver.range, 1) {
+            return None;
+        }
+        let generator = implicit_generator_interior(call);
+        if generator.is_some_and(|range| !receiver.delimiters.can_enclose(range, 1)) || cancelled()
+        {
+            return None;
+        }
         replacement.push('(');
-        replacement.push_str(receiver);
+        replacement.push_str(source_text(source, receiver.range)?);
         replacement.push(',');
+        if let Some(generator) = generator {
+            // The generator no longer gets its grouping from the call.
+            let generator = source_text(source, generator)?;
+            write!(replacement, "({generator}))[{retained_index}]").expect("write to String");
+            return Some(replacement);
+        }
         cursor += TextSize::new(1);
     }
     for keyword in &args.keywords {
@@ -470,7 +490,7 @@ pub(super) fn evaluated_arguments(
         )?);
         cursor = equal.end();
     }
-    if args.len() == 1 && receiver.is_none() {
+    if args.len() == 1 && !has_receiver {
         // Grouping alone suffices. Remove a trailing comma to keep the value
         // from becoming a tuple. The original interior trivia stays in place.
         let last = tokens
@@ -485,7 +505,7 @@ pub(super) fn evaluated_arguments(
         }
     }
     replacement.push_str(source_text(source, TextRange::new(cursor, args.end()))?);
-    if args.len() > 1 || receiver.is_some() {
+    if args.len() > 1 || has_receiver {
         write!(replacement, "[{retained_index}]").expect("write to String");
     }
     Some(replacement)

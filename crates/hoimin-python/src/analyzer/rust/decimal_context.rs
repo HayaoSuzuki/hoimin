@@ -5,7 +5,7 @@ use super::{
     callable_imports::{CallableImports, ResolvedCallable},
     decimal_quantum::exact_integer,
     local_initializers,
-    processing_calls::bind,
+    processing_calls::{Site, bind},
 };
 use crate::visitor::{self, Visitor};
 use ruff_python_ast::{Expr, ExprAttribute, ExprCall, ModModule, Operator, Stmt, UnaryOp};
@@ -33,6 +33,7 @@ pub(super) struct Decimals {
 impl Decimals {
     pub(super) fn build(
         module: &ModModule,
+        site: &Site<'_>,
         cancelled: &impl Fn() -> bool,
     ) -> Result<Self, AnalysisCancelled> {
         let imports = CallableImports::build_family(module, cancelled, &["decimal"])?;
@@ -62,7 +63,7 @@ impl Decimals {
                 let call = expr.as_call_expr()?;
                 decimals.localcontext_arguments(call).map(|_| Kind::Context)
             } else {
-                match decimals.kind(expr, cancelled) {
+                match decimals.kind(expr, site) {
                     kind @ (Kind::Decimal | Kind::Context) => Some(kind),
                     _ => None,
                 }
@@ -90,16 +91,12 @@ impl Decimals {
         bind(call, ["value", "context"], 0, 2, 0)
     }
 
-    pub(super) fn quantize<'a>(
-        &self,
-        call: &'a ExprCall,
-        cancelled: &dyn Fn() -> bool,
-    ) -> Option<Quantize<'a>> {
+    pub(super) fn quantize<'a>(&self, call: &'a ExprCall, site: &Site<'_>) -> Option<Quantize<'a>> {
         let attribute = quantize_method(call)?;
         let [Some(exp), rounding, _] = bind(call, ["exp", "rounding", "context"], 0, 3, 1)? else {
             return None;
         };
-        (self.kind(&attribute.value, cancelled) == Kind::Decimal).then_some(Quantize {
+        (self.kind(&attribute.value, site) == Kind::Decimal).then_some(Quantize {
             attribute,
             exp,
             rounding,
@@ -137,16 +134,12 @@ impl Decimals {
         })
     }
 
-    pub(super) fn context_target(
-        &self,
-        target: &ExprAttribute,
-        cancelled: &dyn Fn() -> bool,
-    ) -> bool {
-        self.kind(&target.value, cancelled) == Kind::Context
+    pub(super) fn context_target(&self, target: &ExprAttribute, site: &Site<'_>) -> bool {
+        self.kind(&target.value, site) == Kind::Context
     }
 
-    fn kind(&self, expr: &Expr, cancelled: &dyn Fn() -> bool) -> Kind {
-        if cancelled() {
+    fn kind(&self, expr: &Expr, site: &Site<'_>) -> Kind {
+        if (site.cancelled)() {
             return Kind::Unknown;
         }
         if let Some(found) = self.types.borrow().get(&expr.range()).copied() {
@@ -154,17 +147,17 @@ impl Decimals {
         }
         let kind = match expr {
             Expr::Name(name) => return self.bindings.get(name).unwrap_or_default(),
-            Expr::Call(call) => self.call_kind(call, cancelled),
+            Expr::Call(call) => self.call_kind(call, site),
             Expr::UnaryOp(unary) if matches!(unary.op, UnaryOp::UAdd | UnaryOp::USub) => {
-                match self.kind(&unary.operand, cancelled) {
+                match self.kind(&unary.operand, site) {
                     numeric @ (Kind::Decimal | Kind::Integer) => numeric,
                     _ => Kind::Unknown,
                 }
             }
             Expr::BinOp(binary) if arithmetic(binary.op) => {
                 match (
-                    self.kind(&binary.left, cancelled),
-                    self.kind(&binary.right, cancelled),
+                    self.kind(&binary.left, site),
+                    self.kind(&binary.right, site),
                 ) {
                     (Kind::Decimal, Kind::Decimal | Kind::Integer)
                     | (Kind::Integer, Kind::Decimal) => Kind::Decimal,
@@ -178,7 +171,7 @@ impl Decimals {
         kind
     }
 
-    fn call_kind(&self, call: &ExprCall, cancelled: &dyn Fn() -> bool) -> Kind {
+    fn call_kind(&self, call: &ExprCall, site: &Site<'_>) -> Kind {
         if let Some(source) = self.direct(call) {
             return match source.member {
                 "Decimal" if self.decimal_arguments(call).is_some() => Kind::Decimal,
@@ -189,7 +182,11 @@ impl Decimals {
                 _ => Kind::Unknown,
             };
         }
-        if self.quantize(call, cancelled).is_some() {
+        if self.quantize(call, site).is_some()
+            || matches!(site.builtins.round_arguments(call, site),
+                Some([Some(value), Some(digits)])
+                    if exact_integer(digits) && self.kind(value, site) == Kind::Decimal)
+        {
             return Kind::Decimal;
         }
         // from_float explicitly constructs Decimal without relying on implicit

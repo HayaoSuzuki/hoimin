@@ -36,6 +36,22 @@ const SUM_ITERATOR: &str = concat!(
 );
 
 #[rstest]
+#[case::negative_ndigits(
+    "round_digits_remove",
+    "out=round(-147,-1)\n",
+    "(-1, None)[1]",
+    "import subject as s; print(s.out)",
+    "-150\n",
+    "-147\n"
+)]
+#[case::nan_round_protocol(
+    "round_digits_remove",
+    "def run(): return round(float('nan'),2)\n",
+    "(2, None)[1]",
+    "import math, subject as s\ntry: print(math.isnan(s.run()))\nexcept ValueError as e: print(type(e).__name__)",
+    "True\n",
+    "ValueError\n"
+)]
 #[case::list_removal(
     "comprehension_filter_remove",
     LIST_SELECTION,
@@ -207,6 +223,22 @@ const INTERMEDIATE_DECIMAL: &str = concat!(
 );
 
 #[rstest]
+#[case::builtin_round_inside_decimal_quantize(
+    "intermediate_rounding_remove",
+    "from decimal import Decimal as D\nout=(round(D('2.45'),1)*3).quantize(D('.1'))\n",
+    "(D('2.45'),1)[0]",
+    "import subject as s; print(s.out)",
+    "7.2\n",
+    "7.4\n"
+)]
+#[case::decimal_sequence_display(
+    "decimal_quantum_shift",
+    "from decimal import Decimal as D\nout=D('2.456').quantize(D([0,[1],-2]))\n",
+    "-3",
+    "import subject as s; print(s.out)",
+    "2.46\n",
+    "2.456\n"
+)]
 #[case::context_tie_mode(
     "decimal_rounding_mode_swap",
     "from decimal import Context, ROUND_HALF_EVEN as bankers\nout=Context(prec=2,rounding=bankers).create_decimal('-2.45')\n",
@@ -376,8 +408,8 @@ async fn assert_compiles_with_candidate_count(source: &str, operator: &str, expe
 
     assert_python_output(operator, "original compile", &baseline, "");
     assert_eq!(candidates.len(), expected, "{manifest}");
-    if let [candidate] = candidates.as_slice() {
-        fs::write(path, apply_edit(source, candidate)).unwrap();
+    for candidate in candidates {
+        fs::write(&path, apply_edit(source, candidate)).unwrap();
         assert_python_output(
             operator,
             "mutated compile",
@@ -422,4 +454,106 @@ async fn decimal_quantum_matches_integer_reference_across_signed_midpoints() {
 
     assert_python_output("quantum", "baseline", &baseline, "195 coefficients\n");
     assert_python_output("quantum", "mutant", &mutant, "195 coefficients\n");
+}
+
+#[rstest]
+#[case::remove_left("[x for x in xs if[x]]", "comprehension_filter_remove", 1)]
+#[case::invert_left("[x for x in xs if[x]]", "comprehension_filter_invert", 1)]
+#[case::remove_right("[x for x in xs if pred(x)if ok(x)]", "comprehension_filter_remove", 2)]
+#[case::remove_for(
+    "[x for x in xs if pred(x)for item in x]",
+    "comprehension_filter_remove",
+    1
+)]
+#[case::remove_async_for(
+    "async def run(xs): return [x for x in xs if pred(x)async for i in x]",
+    "comprehension_filter_remove",
+    1
+)]
+#[tokio::test]
+async fn adjoining_comprehension_tokens_compile(
+    #[case] source: &str,
+    #[case] operator: &str,
+    #[case] expected: usize,
+) {
+    assert_compiles_with_candidate_count(source, operator, expected).await;
+}
+
+#[rstest]
+#[case::untouched_call_trivia(" # keep this comment\n(x)\n", 1)]
+#[case::below_limit(&format!("{}x{}", "(".repeat(197), ")".repeat(197)), 1)]
+#[case::at_limit(&format!("{}x{}", "(".repeat(198), ")".repeat(198)), 0)]
+#[tokio::test]
+async fn implicit_generator_becomes_a_separate_receiver_tuple_value(
+    #[case] item: &str,
+    #[case] expected: usize,
+) {
+    let source = format!(
+        "from decimal import Decimal as D\ndef run(xs): return round(D('2.45').quantize({item} for x in xs)*3,1)"
+    );
+
+    assert_compiles_with_candidate_count(&source, "intermediate_rounding_remove", expected).await;
+}
+
+#[tokio::test]
+async fn single_implicit_generator_retains_the_shared_call_argument_grouping() {
+    let source = "def run(xs): return round(round(x for x in xs)*3,1)";
+
+    assert_compiles_with_candidate_count(source, "intermediate_rounding_remove", 1).await;
+}
+
+#[rstest]
+#[case::removed("comprehension_filter_remove", "True", "removed")]
+#[case::inverted("comprehension_filter_invert", "not (x > 0)", "inverted")]
+#[tokio::test]
+async fn collection_filters_match_a_reference_loop_over_generated_lists(
+    #[case] operator: &str,
+    #[case] replacement: &str,
+    #[case] mode: &str,
+) {
+    let source = "def run(items): return [x for x in items if x > 0 if x != 2]\n";
+    let harness = concat!(
+        "import itertools, subject\n",
+        "mode='EXPECTED_MODE'\n",
+        "checked=0\n",
+        "for width in range(5):\n",
+        " for values in itertools.product(range(-2,3),repeat=width):\n",
+        "  expected=[]\n",
+        "  for value in values:\n",
+        "   if mode=='original' and value <= 0: continue\n",
+        "   if mode=='inverted' and value > 0: continue\n",
+        "   if value != 2: expected.append(value)\n",
+        "  assert subject.run(list(values)) == expected, (mode,values,expected)\n",
+        "  checked+=1\n",
+        "print(checked)\n",
+    );
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("subject.py");
+    fs::write(&path, source).unwrap();
+
+    let manifest = plan(root.path(), operator).await;
+    let initial = run_python(root.path(), &harness.replace("EXPECTED_MODE", "original"));
+    let candidate = manifest["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|candidate| {
+            candidate["original"] == "x > 0" && candidate["replacement"] == replacement
+        })
+        .expect("the first condition is eligible");
+    fs::write(&path, apply_edit(source, candidate)).unwrap();
+    let changed = run_python(root.path(), &harness.replace("EXPECTED_MODE", mode));
+
+    assert_python_output(operator, "original reference", &initial, "781\n");
+    assert_python_output(operator, "mutated reference", &changed, "781\n");
+}
+
+#[tokio::test]
+async fn already_grouped_generator_keeps_its_delimiter_depth() {
+    let elt = format!("{}x{}", "(".repeat(197), ")".repeat(197));
+    let source = format!(
+        "from decimal import Decimal as D\ndef run(xs): return round(D('2.45').quantize(({elt} for x in xs))*3,1)"
+    );
+
+    assert_compiles_with_candidate_count(&source, "intermediate_rounding_remove", 1).await;
 }

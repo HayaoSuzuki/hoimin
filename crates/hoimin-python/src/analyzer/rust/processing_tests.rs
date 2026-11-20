@@ -21,6 +21,61 @@ fn edits(source: &str, operator: &str) -> Vec<(String, String)> {
 }
 
 #[rstest]
+#[case::filter_left_token("[x for x in xs if[x]]", "comprehension_filter_remove", "[x]", " True")]
+#[case::inverted_left_token(
+    "[x for x in xs if[x]]",
+    "comprehension_filter_invert",
+    "[x]",
+    " not ([x])"
+)]
+#[case::filter_async_token(
+    "async def f(xs): return [x for x in xs if pred(x)async for i in x]",
+    "comprehension_filter_remove",
+    "pred(x)",
+    "True "
+)]
+#[case::filter_right_token(
+    "[x for x in xs if pred(x)if ok(x)]",
+    "comprehension_filter_remove",
+    "pred(x)",
+    "True "
+)]
+#[case::sum_destination_alias(
+    "from builtins import sum as total\ndef f(sum): return len([2,4])",
+    "aggregate_sum_count",
+    "len",
+    "total"
+)]
+#[case::filter_destination_module(
+    "import builtins as b\nfrom itertools import filterfalse as opposite\ndef f(filter): return opposite(None, xs)",
+    "filter_predicate_swap",
+    "opposite",
+    "b.filter"
+)]
+#[case::round_destination_alias(
+    "from builtins import round as nearest\nfrom math import floor\ndef f(round): return floor(x)",
+    "rounding_function_swap",
+    "floor",
+    "nearest"
+)]
+#[case::decimal_list_coefficient(
+    "from decimal import Decimal as D\nout=D('2.45').quantize(D((0,[1],-2)))",
+    "decimal_quantum_shift",
+    "-2",
+    "-3"
+)]
+#[case::decimal_list_outer(
+    "from decimal import Decimal as D\nout=D('2.45').quantize(D([0,(1,),-2]))",
+    "decimal_quantum_shift",
+    "-2",
+    "-3"
+)]
+#[case::decimal_list_both(
+    "from decimal import Decimal as D\nout=D('2.45').quantize(D([0,[1],-2]))",
+    "decimal_quantum_shift",
+    "-2",
+    "-3"
+)]
 #[case::list_filter(
     "[x for x in xs if pred(x)]",
     "comprehension_filter_remove",
@@ -199,6 +254,34 @@ fn research_processing_edits(
 }
 
 #[rstest]
+#[case::rebound_sum_alias(
+    "from builtins import sum as total\ntotal = custom\ndef f(sum): return len([2,4])",
+    "aggregate_sum_count"
+)]
+#[case::rebound_filter_alias(
+    "from builtins import filter as choose\nfrom itertools import filterfalse as other\nchoose = custom\ndef f(filter): return other(None,xs)",
+    "filter_predicate_swap"
+)]
+#[case::invalid_list_digit(
+    "from decimal import Decimal as D\nout=D('2.45').quantize(D([0,[10],-2]))",
+    "decimal_quantum_shift"
+)]
+#[case::spread_list_digit(
+    "from decimal import Decimal as D\nout=D('2.45').quantize(D([0,[*xs],-2]))",
+    "decimal_quantum_shift"
+)]
+#[case::shadowed_decimal_round(
+    "from decimal import Decimal as D\ndef f(round): return (round(D('2.45'),1)*3).quantize(D('.1'))",
+    "intermediate_rounding_remove"
+)]
+#[case::omitted_decimal_digits(
+    "from decimal import Decimal as D\nout=(round(D('2.45'))*3).quantize(D('.1'))",
+    "intermediate_rounding_remove"
+)]
+#[case::none_decimal_digits(
+    "from decimal import Decimal as D\nout=(round(D('2.45'),None)*3).quantize(D('.1'))",
+    "intermediate_rounding_remove"
+)]
 #[case::bool_remove("[x for x in xs if False]", "comprehension_filter_remove")]
 #[case::bool_invert("[x for x in xs if True]", "comprehension_filter_invert")]
 #[case::existing_not("[x for x in xs if not good(x)]", "comprehension_filter_invert")]
@@ -294,6 +377,10 @@ fn rejects_unproven_or_duplicate_processing_edit(#[case] source: &str, #[case] o
 }
 
 #[rstest]
+#[case::cross_family(
+    "from decimal import Decimal as D\nout=(round(D('2.45'),1)*3).quantize(D('.1'))",
+    "round(D('2.45'),1)"
+)]
 #[case::round("out=round(round(x, effect()) * 3, 1)", "round(x, effect())")]
 #[case::decimal(
     "from decimal import Decimal\nx=Decimal('2.45')\nout=(x.quantize(Decimal('.1')) * 3).quantize(Decimal('.1'))",
@@ -460,4 +547,19 @@ fn unselected_decimal_literal_does_not_charge_the_payload() {
     let result = analyze_source_cancellable(&request, source, || false).unwrap();
 
     assert!(result.candidates.is_empty());
+}
+
+#[test]
+fn standalone_quantum_operator_proves_round_returning_decimal() {
+    let source = "from decimal import Decimal as D\nout=round(D('2.45'),1).quantize(D('.1'))";
+
+    let result = analyze_case(source, "decimal_quantum_shift", &[], 16);
+
+    assert_eq!(result.candidates.len(), 2);
+    assert!(
+        result
+            .candidates
+            .iter()
+            .all(|candidate| candidate.original == "'.1'")
+    );
 }

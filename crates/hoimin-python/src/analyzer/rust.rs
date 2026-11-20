@@ -3341,6 +3341,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             MutationOperator::RoundingFunctionSwap,
             MutationOperator::RoundDigitsRemove,
             MutationOperator::DecimalRoundingModeSwap,
+            MutationOperator::DecimalQuantumShift,
             MutationOperator::IntermediateRoundingRemove,
         ]
         .into_iter()
