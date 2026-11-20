@@ -20,7 +20,7 @@ The native `hoimin-cli --features contracts --lib workspace::` run reproduced ex
 ## Implementation self-review
 
 1. **Absence and mutation.** Traced Windows `write_with` through optional inspection and creation. The shared parent validator now runs in the NotFound branch. Existing relative-open and no-reparse rules remain in place.
-2. **Lock and cursor ownership.** Verified fixture reads use the handle that actually owns the lock. Coordinator contention uses the independent lock owner's handle, and poisoned lease tests retain an Arc before poisoning rather than recovering poisoned state. The byte reader restores the shared cursor.
+2. **Lock and cursor ownership.** Verified fixture reads use the handle that actually owns the lock. Coordinator contention uses the independent lock owner's handle, and poisoned lease tests retain an Arc before poisoning rather than recovering poisoned state. The byte reader restores the shared cursor. Final review additionally required comparing the no-follow identity of the named entry with the retained handle; this restores and strengthens the original named-byte oracle.
 3. **Deletion and replacement authority.** Checked native creation includes DELETE while denying delete sharing. Rename fixtures use that existing handle; general shared opens are unchanged. Retry acquires deletion authority, and a consumed owner slot continues to fail closed.
 4. **Fixture lifetimes.** Followed janitor guards in order: an active mutation barrier precedes coordinator inspection; ordinary cap-std directory handles can block deletion-capability acquisition. Explicit fixture drops make the intended later invariant observable. Heartbeat setup also releases its own pinned capability.
 5. **Fault boundaries and error context.** Matched native metadata and final-identity checks to bootstrap hooks, and native rename/unlink to their existing semantic hooks. Windows retains its `secure ...` error context; Unix inspect/verify expectations are unchanged. Hooks do not replace operations or change normal production access masks.
@@ -55,9 +55,18 @@ Seven supported diagnostics yield 8.75/10. The remaining row needs actual time m
 | Native workspace-group RED | 658 passed, 29 failed, 8 ignored; exit 101 |
 | Missing-parent RED | 1 passed, 1 failed; exit 101 |
 | Native workspace-group GREEN | 687 passed, 0 failed, 8 ignored; exit 0 |
+| Native workspace group after review correction | 689 passed, 0 failed, 8 ignored; exit 0; includes both added regressions |
 | Strict workspace Clippy, all targets and features | Exit 0 after correcting two underscore-prefixed test argument references |
 | Workspace formatting and diff whitespace | Exit 0 |
 | Full workspace with all features, including CLI/core contracts | In progress; no completion claim yet |
-| Independent review | Pending |
+| Independent review | One Important finding corrected; scoped source review accepts the correction |
 
-Commands use `--locked -j 2 --quiet` and `--test-threads=2`. Builds use `CARGO_PROFILE_DEV_DEBUG=0`, `CARGO_PROFILE_TEST_DEBUG=0`, and `CARGO_INCREMENTAL=0`, preserving debug assertions. The full `cargo test --workspace --all-features --no-fail-fast` run includes both CLI and core contract features, so a second equivalent CLI-contract run is unnecessary. The final Clippy correction only changes test-helper argument names and explicitly accounts for the platform-unused argument; the full suite exercises that final source.
+Commands use `--locked -j 2 --quiet` and `--test-threads=2`. Builds use `CARGO_PROFILE_DEV_DEBUG=0`, `CARGO_PROFILE_TEST_DEBUG=0`, and `CARGO_INCREMENTAL=0`, preserving debug assertions. The full `cargo test --workspace --all-features --no-fail-fast` run includes both CLI and core contract features, so a second equivalent CLI-contract run is unnecessary. The first Clippy correction only changed test-helper argument names and explicitly accounted for the platform-unused argument. The full suite runs again on the final reviewed source, including the namespace-oracle correction described below.
+
+## Independent review correction
+
+Review of `3514ecdb` found one Important issue: reading through the owned handle preserved the lock but no longer proved that the entry name still referred to that file. A detached or replaced file could satisfy an assertion about the named lease on Unix. No other findings were reported.
+
+Two named regression cases keep the original handle readable while removing its old name or installing a different file with identical bytes. Both failed on the old helper. The shared helper now compares no-follow named metadata with the handle identity before reading and restoring its position. All eleven converted observations supply the correct parent, name and owning handle. Scoped source review accepts the correction and found no new breakage; the affected suite passed 689 tests with 8 existing ignored fixtures and no failures. The full-suite receipt remains pending.
+
+The full-suite build started before this review was interrupted during compilation, before test execution, to avoid mixing revisions. Its empty log is retained as incomplete evidence. The final full-suite run uses the corrected source. Native Unix runtime behavior was not executed on this Windows host; shared fixture code was reviewed and the two namespace regressions also execute on Windows through retained rename authority.

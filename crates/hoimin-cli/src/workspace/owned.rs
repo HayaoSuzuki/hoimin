@@ -9138,10 +9138,17 @@ impl ManagedChild {
     }
 }
 
-/// Observe fixture bytes through their owning handle without reopening a locked file
-/// or changing the shared file position used by the operation under test.
+/// Verify the named entry still identifies its owning handle, then observe its bytes
+/// without reopening a locked file or changing the shared file position.
 #[cfg(test)]
-fn read_fixture_bytes(file: &File) -> Vec<u8> {
+fn read_fixture_bytes(parent: &cap_std::fs::Dir, name: &str, file: &File) -> Vec<u8> {
+    let named = parent.symlink_metadata(name).unwrap();
+    assert!(named.is_file() && !named.file_type().is_symlink());
+    assert_eq!(
+        metadata_identity(&named),
+        file_identity(file).unwrap(),
+        "fixture name must retain its owned file"
+    );
     let mut reader = file;
     let position = reader.stream_position().unwrap();
     reader.rewind().unwrap();

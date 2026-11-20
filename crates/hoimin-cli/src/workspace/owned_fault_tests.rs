@@ -1531,14 +1531,14 @@ fn missing_heartbeat_is_reported_without_modifying_the_lease() {
     let coordinator = setup(&parent);
     let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
     let lease_handle = Arc::clone(root.lease.lock().unwrap().as_ref().unwrap());
-    let original = read_fixture_bytes(&lease_handle);
+    let original = read_fixture_bytes(&root.dir, LEASE_FILE, &lease_handle);
     let marker: LeaseMarker = serde_json::from_slice(&original).unwrap();
     drop(root.heartbeat.lock().unwrap().take());
     root.dir.remove_file(HEARTBEAT_FILE).unwrap();
 
     let error = candidate_is_stale(&root.dir, &marker, SystemTime::now()).unwrap_err();
 
-    let bytes_before_retry = read_fixture_bytes(&lease_handle);
+    let bytes_before_retry = read_fixture_bytes(&root.dir, LEASE_FILE, &lease_handle);
     root.dir.write(HEARTBEAT_FILE, &original).unwrap();
     root.retain().unwrap();
 

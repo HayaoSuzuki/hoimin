@@ -2941,7 +2941,7 @@ fn janitor_selection_rejects_a_real_oversized_namespace_without_advancing_the_cu
     let parent = tempfile::tempdir().unwrap();
     let coordinator = coordinator_in(&parent);
     let _files = FilledNamespace::new(&coordinator.dir, MAX_MANAGED_CHILDREN);
-    let original = read_fixture_bytes(&coordinator.file);
+    let original = read_fixture_bytes(&coordinator.dir, COORDINATOR_FILE, &coordinator.file);
     let _guard = CoordinatorLockGuard::acquire(&coordinator).unwrap();
     let now = std::time::Instant::now();
     let mut scan = JanitorScan::default();
@@ -2966,7 +2966,10 @@ fn janitor_selection_rejects_a_real_oversized_namespace_without_advancing_the_cu
     assert!(error.to_string().contains("managed child limit exceeded"));
     assert_eq!(scan.stop_reason, Some(JanitorReason::SelectionChildLimit));
     assert!(!scan.directory_scan_complete);
-    assert_eq!(read_fixture_bytes(&coordinator.file), original);
+    assert_eq!(
+        read_fixture_bytes(&coordinator.dir, COORDINATOR_FILE, &coordinator.file),
+        original
+    );
 }
 
 #[test]
@@ -3419,7 +3422,7 @@ fn controlled_selection_file_contention_preserves_the_cursor_and_allows_retry() 
     .unwrap();
     let observed_before_retry = selection;
     let observed_before_retry_2 = scan.stop_reason;
-    let bytes_before_retry = read_fixture_bytes(&independent);
+    let bytes_before_retry = read_fixture_bytes(&coordinator.dir, COORDINATOR_FILE, &independent);
     File::unlock(&independent).unwrap();
     let mut retry_scan = JanitorScan::default();
 
@@ -3822,7 +3825,7 @@ fn child_construction_rolls_back_when_the_parent_lease_mutex_is_poisoned() {
     let coordinator = coordinator_in(&parent);
     let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
     let lease_handle = Arc::clone(root.lease.lock().unwrap().as_ref().unwrap());
-    let original = read_fixture_bytes(&lease_handle);
+    let original = read_fixture_bytes(&root.dir, LEASE_FILE, &lease_handle);
     let controls = root.dir.entries().unwrap().count();
     poison(&root.lease);
     let retry_outcome = matches!(
@@ -3833,7 +3836,10 @@ fn child_construction_rolls_back_when_the_parent_lease_mutex_is_poisoned() {
     assert!(retry_outcome);
     assert_eq!(root.lifecycle.lock().unwrap().live_children, 0);
     assert_eq!(root.dir.entries().unwrap().count(), controls);
-    assert_eq!(read_fixture_bytes(&lease_handle), original);
+    assert_eq!(
+        read_fixture_bytes(&root.dir, LEASE_FILE, &lease_handle),
+        original
+    );
 }
 
 #[cfg(unix)]
@@ -3891,7 +3897,7 @@ fn child_admission_rejects_invalid_prefixes_before_opening_or_modifying_the_name
     let coordinator = coordinator_in(&parent);
     let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
     let lease_handle = Arc::clone(root.lease.lock().unwrap().as_ref().unwrap());
-    let original = read_fixture_bytes(&lease_handle);
+    let original = read_fixture_bytes(&root.dir, LEASE_FILE, &lease_handle);
     let controls = root.dir.entries().unwrap().count();
 
     let fault = io_faults::arm("owned.entries_open");
@@ -3901,7 +3907,7 @@ fn child_admission_rejects_invalid_prefixes_before_opening_or_modifying_the_name
     let fault_was_not_consumed = !fault.triggered();
     let live_children_after_failure = root.lifecycle.lock().unwrap().live_children;
     let entries_before_retry = root.dir.entries().unwrap().count();
-    let bytes_before_retry = read_fixture_bytes(&lease_handle);
+    let bytes_before_retry = read_fixture_bytes(&root.dir, LEASE_FILE, &lease_handle);
     drop(fault);
     let child = root.create_child("worker-").unwrap();
     child.cleanup().unwrap();
@@ -4221,7 +4227,7 @@ fn controlled_reclamation_preserves_active_payload_for_stop_and_deadline_states(
     let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
     let lease_handle = Arc::clone(root.lease.lock().unwrap().as_ref().unwrap());
     root.dir.write("payload", b"keep-controlled-root").unwrap();
-    let lease = read_fixture_bytes(&lease_handle);
+    let lease = read_fixture_bytes(&root.dir, LEASE_FILE, &lease_handle);
 
     let report = ManagedRunRoot::reclaim_abandoned_controlled(
         &coordinator,
@@ -4237,6 +4243,31 @@ fn controlled_reclamation_preserves_active_payload_for_stop_and_deadline_states(
     assert_eq!(report.removed_entries, 0);
     assert_eq!(report.scan.stop_reason, reason);
     assert_eq!(root.dir.read("payload").unwrap(), b"keep-controlled-root");
-    assert_eq!(read_fixture_bytes(&lease_handle), lease);
+    assert_eq!(
+        read_fixture_bytes(&root.dir, LEASE_FILE, &lease_handle),
+        lease
+    );
     assert!(root.path.is_dir());
+}
+
+#[rstest::rstest]
+#[case::missing(false)]
+#[case::replacement_with_identical_bytes(true)]
+fn fixture_byte_observation_rejects_a_detached_name(#[case] replace: bool) {
+    // Arrange: the old handle stays readable even after its name changes.
+    let parent = tempfile::tempdir().unwrap();
+    let dir =
+        cap_std::fs::Dir::open_ambient_dir(parent.path(), cap_std::ambient_authority()).unwrap();
+    let mut file = create_owned_file(&dir, "entry", OwnedFileAccess::ReadWrite).unwrap();
+    file.write_all(b"unchanged").unwrap();
+    rename_fixture_file(&dir, &file, "entry", "original");
+    if replace {
+        dir.write("entry", b"unchanged").unwrap();
+    }
+
+    // Act.
+    let observation = std::panic::catch_unwind(|| read_fixture_bytes(&dir, "entry", &file));
+
+    // Assert: identical bytes through the retained handle cannot prove the name.
+    assert!(observation.is_err());
 }
