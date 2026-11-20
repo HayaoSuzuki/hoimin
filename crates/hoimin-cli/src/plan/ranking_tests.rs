@@ -583,6 +583,17 @@ const BEHAVIORAL_OPERATORS: &[&str] = &[
     "stdlib_escape_remove",
     "call_argument_swap",
     "call_result_default",
+    "comprehension_filter_remove",
+    "comprehension_filter_invert",
+    "filter_predicate_swap",
+    "set_union_intersection_swap",
+    "aggregate_sum_count",
+    "rounding_function_swap",
+    "round_digits_remove",
+    "decimal_rounding_mode_swap",
+    "decimal_quantum_shift",
+    "decimal_context_precision",
+    "intermediate_rounding_remove",
     "dataclass_factory_share",
     "sort_key_swap",
     "encoding_errors_ignore",
@@ -769,6 +780,33 @@ fn ranking_category_inventory_covers_every_canonical_operator() {
 #[case::stdlib_escape_remove("stdlib_escape_remove", RankingReasonCode::Behavioral, 80)]
 #[case::call_argument_swap("call_argument_swap", RankingReasonCode::Behavioral, 80)]
 #[case::call_result_default("call_result_default", RankingReasonCode::Behavioral, 80)]
+#[case::comprehension_filter_remove(
+    "comprehension_filter_remove",
+    RankingReasonCode::Behavioral,
+    80
+)]
+#[case::comprehension_filter_invert(
+    "comprehension_filter_invert",
+    RankingReasonCode::Behavioral,
+    80
+)]
+#[case::filter_predicate_swap("filter_predicate_swap", RankingReasonCode::Behavioral, 80)]
+#[case::set_union_intersection_swap(
+    "set_union_intersection_swap",
+    RankingReasonCode::Behavioral,
+    80
+)]
+#[case::aggregate_sum_count("aggregate_sum_count", RankingReasonCode::Behavioral, 80)]
+#[case::rounding_function_swap("rounding_function_swap", RankingReasonCode::Behavioral, 80)]
+#[case::round_digits_remove("round_digits_remove", RankingReasonCode::Behavioral, 80)]
+#[case::decimal_rounding_mode_swap("decimal_rounding_mode_swap", RankingReasonCode::Behavioral, 80)]
+#[case::decimal_quantum_shift("decimal_quantum_shift", RankingReasonCode::Behavioral, 80)]
+#[case::decimal_context_precision("decimal_context_precision", RankingReasonCode::Behavioral, 80)]
+#[case::intermediate_rounding_remove(
+    "intermediate_rounding_remove",
+    RankingReasonCode::Behavioral,
+    80
+)]
 #[case::dataclass_factory_share("dataclass_factory_share", RankingReasonCode::Behavioral, 80)]
 #[case::sort_key_swap("sort_key_swap", RankingReasonCode::Behavioral, 80)]
 #[case::encoding_errors_ignore("encoding_errors_ignore", RankingReasonCode::Behavioral, 80)]

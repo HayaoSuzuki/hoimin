@@ -263,9 +263,47 @@ const OPERATORS: &[(MutationOperator, &str)] = &[
     (MutationOperator::StdlibEscapeRemove, "stdlib_escape_remove"),
     (MutationOperator::CallArgumentSwap, "call_argument_swap"),
     (MutationOperator::CallResultDefault, "call_result_default"),
+    (
+        MutationOperator::ComprehensionFilterRemove,
+        "comprehension_filter_remove",
+    ),
+    (
+        MutationOperator::ComprehensionFilterInvert,
+        "comprehension_filter_invert",
+    ),
+    (
+        MutationOperator::FilterPredicateSwap,
+        "filter_predicate_swap",
+    ),
+    (
+        MutationOperator::SetUnionIntersectionSwap,
+        "set_union_intersection_swap",
+    ),
+    (MutationOperator::AggregateSumCount, "aggregate_sum_count"),
+    (
+        MutationOperator::RoundingFunctionSwap,
+        "rounding_function_swap",
+    ),
+    (MutationOperator::RoundDigitsRemove, "round_digits_remove"),
+    (
+        MutationOperator::DecimalRoundingModeSwap,
+        "decimal_rounding_mode_swap",
+    ),
+    (
+        MutationOperator::DecimalQuantumShift,
+        "decimal_quantum_shift",
+    ),
+    (
+        MutationOperator::DecimalContextPrecision,
+        "decimal_context_precision",
+    ),
+    (
+        MutationOperator::IntermediateRoundingRemove,
+        "intermediate_rounding_remove",
+    ),
 ];
 
-const FAMILIES: [&str; 9] = [
+const FAMILIES: [&str; 11] = [
     "type_nullable",
     "type_collections",
     "type_iterables",
@@ -275,6 +313,8 @@ const FAMILIES: [&str; 9] = [
     "exception_ops",
     "exception_risky",
     "call_contracts",
+    "collection_processing",
+    "rounding",
 ];
 
 #[rstest::rstest]
@@ -390,6 +430,17 @@ const FAMILIES: [&str; 9] = [
 #[case::stdlib_escape_remove(109)]
 #[case::call_argument_swap(110)]
 #[case::call_result_default(111)]
+#[case::comprehension_filter_remove(112)]
+#[case::comprehension_filter_invert(113)]
+#[case::filter_predicate_swap(114)]
+#[case::set_union_intersection_swap(115)]
+#[case::aggregate_sum_count(116)]
+#[case::rounding_function_swap(117)]
+#[case::round_digits_remove(118)]
+#[case::decimal_rounding_mode_swap(119)]
+#[case::decimal_quantum_shift(120)]
+#[case::decimal_context_precision(121)]
+#[case::intermediate_rounding_remove(122)]
 fn canonical_names_preserve_wire_encoding_and_exact_lookup(#[case] case_index: usize) {
     let &(operator, name) = &OPERATORS[case_index];
 

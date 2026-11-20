@@ -67,7 +67,7 @@ fn native_mutation_config(
     }
 }
 
-const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 93] = [
+const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 104] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -161,6 +161,17 @@ const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 93] = [
     "stdlib_escape_remove",
     "call_argument_swap",
     "call_result_default",
+    "comprehension_filter_remove",
+    "comprehension_filter_invert",
+    "filter_predicate_swap",
+    "set_union_intersection_swap",
+    "aggregate_sum_count",
+    "rounding_function_swap",
+    "round_digits_remove",
+    "decimal_rounding_mode_swap",
+    "decimal_quantum_shift",
+    "decimal_context_precision",
+    "intermediate_rounding_remove",
 ];
 
 #[rstest::rstest]
@@ -238,14 +249,16 @@ fn usage_documents_all_mutation_operator_ids_and_selector_families_1(#[case] nam
 }
 
 #[rstest::rstest]
-#[case::input_93_default_runtime_operators_1("93 default runtime operators")]
-#[case::input_112_operator_ids_2("112 operator IDs")]
+#[case::runtime_default_count("104 default runtime operators")]
+#[case::operator_id_count("123 operator IDs")]
 #[case::collection_ops_3("collection_ops")]
 #[case::structure_ops_4("structure_ops")]
 #[case::bitwise_ops_5("bitwise_ops")]
 #[case::exception_ops_6("exception_ops")]
 #[case::exception_risky_7("exception_risky")]
 #[case::call_contracts("call_contracts")]
+#[case::collection_processing("collection_processing")]
+#[case::rounding("rounding")]
 #[case::exception_type_pair_8("exception_type_pair")]
 #[case::baseexception_9("BaseException")]
 #[case::except_10("except*")]

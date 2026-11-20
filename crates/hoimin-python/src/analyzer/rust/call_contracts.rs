@@ -11,6 +11,8 @@ use super::{
     callable_imports::CallableImports,
     function_body,
     optional_keywords::{FunctionIndex, Signature},
+    processing_calls::Builtins,
+    source_delimiters::DelimiterDepth,
     source_text,
 };
 use hoimin_core::{MutationOperator, MutationOperatorSelection};
@@ -31,7 +33,6 @@ pub(super) struct Contracts {
     escapes: Vec<CallableImports>,
     builtin_namespace_stable: bool,
     declared_results: HashMap<TextSize, &'static str>,
-    delimiters: DelimiterDepth,
 }
 
 impl Contracts {
@@ -39,6 +40,7 @@ impl Contracts {
         module: &ModModule,
         facts: &AstFacts<'_>,
         operators: &MutationOperatorSelection,
+        builtins: &Builtins,
         cancelled: &impl Fn() -> bool,
     ) -> Result<Self, AnalysisCancelled> {
         if ![ESCAPE, SWAP, DEFAULT]
@@ -55,9 +57,7 @@ impl Contracts {
                 }
             }
         }
-        let builtin_namespace_stable =
-            CallableImports::build_family(module, cancelled, &["builtins"])?
-                .import_builtin_available();
+        let builtin_namespace_stable = builtins.ordinary_namespace();
         let mut declared_results = HashMap::new();
         if builtin_namespace_stable
             && [ESCAPE, DEFAULT]
@@ -79,11 +79,6 @@ impl Contracts {
                 }
             }
         }
-        let delimiters = if [SWAP, DEFAULT].into_iter().any(|op| operators.contains(op)) {
-            DelimiterDepth::build(facts.tokens.expect("checked parse"), cancelled)?
-        } else {
-            DelimiterDepth::default()
-        };
         if cancelled() {
             return Err(AnalysisCancelled);
         }
@@ -92,7 +87,6 @@ impl Contracts {
             escapes,
             builtin_namespace_stable,
             declared_results,
-            delimiters,
         })
     }
 
@@ -169,8 +163,8 @@ impl Contracts {
             && let Some(span) = result_span
             && selected(span.range)
             && let Some(default) = self.result_contract(call, span.awaited, cx)
-            && self.delimiters.can_enclose(span.range, 1)
-            && (default != "{*()}" || self.delimiters.room_before(span.range.start(), 3))
+            && cx.delimiters.can_enclose(span.range, 1)
+            && (default != "{*()}" || cx.delimiters.room_before(span.range.start(), 3))
             && let Some(original) = source_text(cx.source, span.range)
             && ((cx.cancelled)()
                 || !emit(span.range, format!("({original}, {default})[1]"), DEFAULT))
@@ -213,7 +207,7 @@ impl Contracts {
                 .builtin_namespace_stable
                 .then(|| cx.functions.signature(call))
                 .flatten();
-            return swap_arguments(call, known, local, &self.delimiters, cx, selected, emit);
+            return swap_arguments(call, known, local, cx.delimiters, cx, selected, emit);
         }
         !(cx.cancelled)()
     }
@@ -256,6 +250,7 @@ pub(super) struct Context<'a, 'ast, F> {
     pub(super) operators: &'a MutationOperatorSelection,
     pub(super) cancelled: &'a F,
     pub(super) ordinary_name_reads: bool,
+    pub(super) delimiters: &'a DelimiterDepth,
 }
 
 impl<F: Fn() -> bool> Context<'_, '_, F> {
@@ -369,63 +364,6 @@ fn has_import_family(
     Ok(false)
 }
 
-// CPython caps delimiters at 200, including redundant parentheses absent
-// from the AST. Record only the intervals that exclude our 1-, 2-, or
-// 3-delimiter additions, so shallow files need no per-token storage.
-#[derive(Default)]
-struct DelimiterDepth {
-    forbidden: [Vec<TextRange>; 3],
-}
-
-impl DelimiterDepth {
-    fn build(tokens: &Tokens, cancelled: &impl Fn() -> bool) -> Result<Self, AnalysisCancelled> {
-        const LIMIT: usize = 200;
-        let near_limit = |depth| LIMIT.checked_sub(depth).filter(|index| *index < 3);
-        let mut index = Self::default();
-        let mut depth = 0usize;
-        let mut openings = [None; 3];
-        for token in tokens {
-            if cancelled() {
-                return Err(AnalysisCancelled);
-            }
-            match token.kind() {
-                TokenKind::Lpar | TokenKind::Lbrace | TokenKind::Lsqb => {
-                    depth += 1;
-                    if let Some(bucket) = near_limit(depth) {
-                        openings[bucket] = Some(token.start());
-                    }
-                }
-                TokenKind::Rpar | TokenKind::Rbrace | TokenKind::Rsqb => {
-                    if let Some(bucket) = near_limit(depth)
-                        && let Some(start) = openings[bucket].take()
-                    {
-                        index.forbidden[bucket].push(TextRange::new(start, token.end()));
-                    }
-                    depth = depth.saturating_sub(1);
-                }
-                _ => {}
-            }
-        }
-        Ok(index)
-    }
-
-    fn can_enclose(&self, range: TextRange, added: usize) -> bool {
-        self.first_interval_after(range.start(), added)
-            .is_none_or(|interval| interval.start() >= range.end())
-    }
-
-    fn room_before(&self, offset: TextSize, added: usize) -> bool {
-        self.first_interval_after(offset, added)
-            .is_none_or(|interval| interval.start() >= offset)
-    }
-
-    fn first_interval_after(&self, offset: TextSize, added: usize) -> Option<TextRange> {
-        let intervals = &self.forbidden[added - 1];
-        let next = intervals.partition_point(|interval| interval.end() <= offset);
-        intervals.get(next).copied()
-    }
-}
-
 fn explicit_arguments(call: &ExprCall, cancelled: &impl Fn() -> bool) -> bool {
     for arg in &call.arguments.args {
         if cancelled() || arg.is_starred_expr() {
@@ -497,27 +435,42 @@ fn escape_replacement(
     primary: usize,
     cx: &Context<'_, '_, impl Fn() -> bool>,
 ) -> Option<String> {
+    evaluated_arguments(call, primary, None, cx.source, cx.tokens(), cx.cancelled)
+}
+
+/// Evaluate the supplied arguments in Python's original order and retain one
+/// value. An optional leading value represents the receiver of a bound call.
+pub(super) fn evaluated_arguments(
+    call: &ExprCall,
+    retained_index: usize,
+    receiver: Option<&str>,
+    source: &str,
+    tokens: &Tokens,
+    cancelled: &dyn Fn() -> bool,
+) -> Option<String> {
     let args = &call.arguments;
-    let tokens = cx.tokens();
     let mut cursor = args.start();
     let mut replacement = String::new();
+    if let Some(receiver) = receiver {
+        replacement.push('(');
+        replacement.push_str(receiver);
+        replacement.push(',');
+        cursor += TextSize::new(1);
+    }
     for keyword in &args.keywords {
-        if (cx.cancelled)() {
+        if cancelled() {
             return None;
         }
         let name = keyword.arg.as_ref()?;
         let equal = equals_token(keyword, tokens)?;
+        replacement.push_str(source_text(source, TextRange::new(cursor, name.start()))?);
         replacement.push_str(source_text(
-            cx.source,
-            TextRange::new(cursor, name.start()),
-        )?);
-        replacement.push_str(source_text(
-            cx.source,
+            source,
             TextRange::new(name.end(), equal.start()),
         )?);
         cursor = equal.end();
     }
-    if args.len() == 1 {
+    if args.len() == 1 && receiver.is_none() {
         // Grouping alone suffices. Remove a trailing comma to keep the value
         // from becoming a tuple. The original interior trivia stays in place.
         let last = tokens
@@ -527,16 +480,13 @@ fn escape_replacement(
             .filter(|token| !token.kind().is_trivia())
             .nth(1)?;
         if last.kind() == TokenKind::Comma {
-            replacement.push_str(source_text(
-                cx.source,
-                TextRange::new(cursor, last.start()),
-            )?);
+            replacement.push_str(source_text(source, TextRange::new(cursor, last.start()))?);
             cursor = last.end();
         }
     }
-    replacement.push_str(source_text(cx.source, TextRange::new(cursor, args.end()))?);
-    if args.len() > 1 {
-        write!(replacement, "[{primary}]").expect("write to String");
+    replacement.push_str(source_text(source, TextRange::new(cursor, args.end()))?);
+    if args.len() > 1 || receiver.is_some() {
+        write!(replacement, "[{retained_index}]").expect("write to String");
     }
     Some(replacement)
 }

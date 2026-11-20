@@ -90,9 +90,23 @@ pub(super) struct CallableImports {
     trusted: HashMap<String, ImportedBinding>,
     possible: HashMap<String, PossibleOrigins>,
     import_builtin_available: bool,
+    namespace_stable: bool,
     class_ranges: ContainmentIndex,
     class_lookups: HashSet<(usize, usize)>,
     first_submodule_import: Option<TextRange>,
+    preferred_module: Option<ImportSpelling>,
+    preferred_members: HashMap<String, ImportSpelling>,
+}
+
+struct ImportSpelling {
+    name: String,
+    available_after: ruff_text_size::TextSize,
+}
+
+impl ImportSpelling {
+    fn order(&self) -> (ruff_text_size::TextSize, &str) {
+        (self.available_after, &self.name)
+    }
 }
 
 impl CallableImports {
@@ -165,10 +179,18 @@ impl CallableImports {
         if lookup_scan.cancelled_observed {
             return Err(AnalysisCancelled);
         }
+        let (preferred_module, preferred_members) = if policy == ImportPolicy::Family {
+            preferred_spellings(&scan.trusted, cancelled)?
+        } else {
+            (None, HashMap::new())
+        };
         let imports = Self {
             trusted: scan.trusted,
+            preferred_module,
+            preferred_members,
             possible: scan.possible,
             import_builtin_available: !scan.bindings.contains_key("__import__"),
+            namespace_stable: true,
             class_ranges: ContainmentIndex::new(scan.class_ranges),
             class_lookups: lookup_scan.class_lookups,
             first_submodule_import: scan.first_submodule_import,
@@ -388,9 +410,75 @@ impl CallableImports {
             })
     }
 
+    /// Prefer an existing eager alias in this module family to a new import.
+    /// The anchor is an actual load so class namespace restrictions still apply.
+    pub(super) fn destination_spelling(&self, member: &str, anchor: &Expr) -> Option<String> {
+        let start = usize::from(anchor.start());
+        let end = usize::from(anchor.end());
+        if self.class_lookups.contains(&(start, end)) {
+            return None;
+        }
+        let available = |spelling: &&ImportSpelling| {
+            spelling.available_after <= anchor.start()
+                && !(spelling.name.starts_with("__") && self.class_ranges.contains(start, end))
+        };
+        if let Some(alias) = self.preferred_members.get(member).filter(available) {
+            Some(alias.name.clone())
+        } else {
+            self.preferred_module
+                .as_ref()
+                .filter(available)
+                .map(|alias| format!("{}.{member}", alias.name))
+        }
+    }
+
+    pub(super) fn has_trusted_bindings(&self) -> bool {
+        !self.trusted.is_empty()
+    }
+
+    pub(super) fn namespace_stable(&self) -> bool {
+        self.namespace_stable
+    }
+
     pub(super) fn import_builtin_available(&self) -> bool {
         self.import_builtin_available
     }
+}
+
+fn preferred_spellings(
+    trusted: &HashMap<String, ImportedBinding>,
+    cancelled: &impl Fn() -> bool,
+) -> Result<(Option<ImportSpelling>, HashMap<String, ImportSpelling>), AnalysisCancelled> {
+    let mut module: Option<ImportSpelling> = None;
+    let mut members = HashMap::<String, ImportSpelling>::new();
+    for (name, binding) in trusted {
+        if cancelled() {
+            return Err(AnalysisCancelled);
+        }
+        let spelling = ImportSpelling {
+            name: name.clone(),
+            available_after: binding.import_range.end(),
+        };
+        if let Some(member) = &binding.member {
+            use std::collections::hash_map::Entry;
+            match members.entry(member.clone()) {
+                Entry::Vacant(entry) => {
+                    entry.insert(spelling);
+                }
+                Entry::Occupied(mut entry) if spelling.order() < entry.get().order() => {
+                    entry.insert(spelling);
+                }
+                Entry::Occupied(_) => {}
+            }
+        } else if binding.package_prefix.is_none()
+            && module
+                .as_ref()
+                .is_none_or(|previous| spelling.order() < previous.order())
+        {
+            module = Some(spelling);
+        }
+    }
+    Ok((module, members))
 }
 
 /// Constructible only through the independently checked dataclass path above.

@@ -248,8 +248,23 @@ fn observe_attempt(
     let followup_calls = followup_calls::Imports::default();
     let optional_functions = optional_keywords::FunctionIndex::default();
     let call_contracts = call_contracts::Contracts::default();
+    let collections = collection_processing::Collections::default();
+    let rounding = rounding::Rounding::default();
+    let delimiters = source_delimiters::DelimiterDepth::default();
+    let builtins = processing_calls::Builtins::default();
+    let processing_site = processing_calls::Site {
+        builtins: &builtins,
+        facts: &facts,
+        source,
+        operators: request.operators,
+        delimiters: &delimiters,
+        cancelled: &cancelled,
+    };
     let mut collector = AstCandidateCollector {
         call_contracts: &call_contracts,
+        collections: &collections,
+        rounding: &rounding,
+        processing_site: &processing_site,
         discarded_results: [None; 2],
         direct_await: None,
         match_state: control_structure::MatchTraversal::default(),

@@ -670,10 +670,10 @@ the detailed capability and cleanup model.
 
 ## Mutation operators
 
-Without `--operators`, a run selects 93 default runtime operators. `--operators`
+Without `--operators`, a run selects 104 default runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
-individual IDs or selector families. Hoimin exposes 112 operator IDs in total:
-93 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
+individual IDs or selector families. Hoimin exposes 123 operator IDs in total:
+104 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
 `exception_hierarchy`, and six opt-in analyzers: `condition_constant`,
 `function_body_erase`, `enum_member_replace`, `condition_clause_delete`,
 `container_element_delete`, and `optional_keyword_delete`.
@@ -711,6 +711,12 @@ Select the three call contract operators with `--operators call_contracts`.
 To disable one while using the defaults, pass its ID to `--exclude-operators`,
 for example `--exclude-operators call_result_default`.
 
+Use `--operators collection_processing` for comprehensions, lazy predicates, set
+operations, and aggregation. Use `--operators rounding` for rounding functions and
+Decimal precision. Both families are enabled by default. To omit individual
+operators, use, for example,
+`--exclude-operators filter_predicate_swap,decimal_quantum_shift`.
+
 New default runs can generate more candidates and take longer. With a candidate
 cap, the retained prefix can also change. Explicit `--operators` selections and
 saved plans keep their operator sets; saved plans are not expanded on reload.
@@ -730,6 +736,16 @@ binding analysis. Their existing applicability guards are unchanged.
 | Call escaping | `stdlib_escape_remove` | Bypass a resolved `re.escape`, `html.escape`, `urllib.parse.quote`, or `urllib.parse.quote_plus` call. Evaluate each supplied argument once in its original order and return the primary input. URL quoting requires a supported text input. |
 | Argument roles | `call_argument_swap` | Exchange the bindings of two adjacent explicit arguments. Preserve the original evaluation order. Keyword and mixed pairs require proven parameter roles. |
 | Call results | `call_result_default` | Execute a consumed call or directly awaited coroutine once, then replace its result with a default for its known type. |
+| Comprehension filters | `comprehension_filter_remove`, `comprehension_filter_invert` | Bypass or negate a single filter in a list, set, dictionary, or generator comprehension. Negation still evaluates the predicate once per item that reaches it. |
+| Lazy predicates | `filter_predicate_swap` | Exchange the builtin `filter` and `itertools.filterfalse` for two explicit positional arguments. Keep the predicate and iterable, including a `None` predicate. |
+| Set operations | `set_union_intersection_swap` | Exchange `union` and `intersection` on a confirmed builtin set or frozenset. The receiver determines the result type. |
+| Aggregation | `aggregate_sum_count` | Count the items of a one-argument builtin `sum`, or sum an explicit numeric list or tuple passed to builtin `len`. Counting consumes the original iterable once. |
+| Rounding function | `rounding_function_swap` | Exchange one-argument `round`, `math.floor`, and `math.ceil`. They can dispatch to different numeric methods and raise on non-finite inputs. |
+| Digits | `round_digits_remove` | Evaluate the explicit `ndigits` expression and pass `None` in its place. The result type can change. |
+| Decimal mode | `decimal_rounding_mode_swap` | Change a known rounding mode in quantization, a context constructor, or a context assignment. |
+| Decimal quantum | `decimal_quantum_shift` | Increase or decrease the exponent of a known finite Decimal quantum by one. |
+| Decimal precision | `decimal_context_precision` | Set an explicit Decimal context precision of three or more to one, or increase a precision of one or two by two. |
+| Rounding stage | `intermediate_rounding_remove` | Skip an inner `round` or Decimal quantization in an arithmetic expression followed by final rounding. Evaluate the inner numeric value and options in source order. |
 | Statement order | `statement_order_swap` | Exchange adjacent calls, assignments, or assertions when at least one can have an effect. Direct local-name dependencies and directive comments exclude a pair. |
 | Single inheritance | `override_method_delete`, `super_call_move` | Remove an ordinary overriding method or move its standalone same-method delegation; enabled by default |
 | Multiple inheritance | `base_order_shuffle` | Change the order of distinct simple-name direct bases; enabled by default, with stable source-derived permutations |
@@ -745,6 +761,10 @@ binding analysis. Their existing applicability guards are unchanged.
 | Boundary operators | `structure_index_neighbor`, `structure_slice_neighbor` | adjacent plain-decimal index and slice-bound values, including unary-minus integers |
 | Slice ranges | `structure_slice_bound_omit`, `structure_slice_bound_move` | omit one of two explicit bounds, or move a single bound to the other side; enabled by default |
 | Exception types | `exception_type_pair` | curated pairs such as `ValueError` ↔ `TypeError` in simple `except`/`except*` clauses and supported `raise` expressions |
+
+Decimal rounding changes can affect the value, exponent, flags, and traps of
+a calculation. When checking a scoped context, assert precision-sensitive
+results in the context and check that the outer context is restored afterward.
 
 Slice range operators apply only to one-dimensional load-context slices without
 an explicit step value. Bounds must be names or integer literals, including

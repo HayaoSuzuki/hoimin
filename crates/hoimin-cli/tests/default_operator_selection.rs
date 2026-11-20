@@ -104,6 +104,17 @@ async fn plan_with_check(root: &Path, selection: &[&str], check: &str) -> serde_
 #[case::stdlib_escape_remove("stdlib_escape_remove")]
 #[case::call_argument_swap("call_argument_swap")]
 #[case::call_result_default("call_result_default")]
+#[case::comprehension_filter_remove("comprehension_filter_remove")]
+#[case::comprehension_filter_invert("comprehension_filter_invert")]
+#[case::filter_predicate_swap("filter_predicate_swap")]
+#[case::set_union_intersection_swap("set_union_intersection_swap")]
+#[case::aggregate_sum_count("aggregate_sum_count")]
+#[case::rounding_function_swap("rounding_function_swap")]
+#[case::round_digits_remove("round_digits_remove")]
+#[case::decimal_rounding_mode_swap("decimal_rounding_mode_swap")]
+#[case::decimal_quantum_shift("decimal_quantum_shift")]
+#[case::decimal_context_precision("decimal_context_precision")]
+#[case::intermediate_rounding_remove("intermediate_rounding_remove")]
 #[tokio::test]
 async fn current_default_candidates_are_individually_excludable_case(#[case] operator: &str) {
     let root = tempfile::tempdir().unwrap();
@@ -143,11 +154,14 @@ async fn current_default_candidates_are_individually_excludable_case(#[case] ope
     let source = format!(
         "{source}\nimport re\npattern=re.escape('.')\nsize=len(pattern)\nprint(pattern, size)\n"
     );
+    let source = format!(
+        "{source}\nfrom decimal import Context\nimport decimal as d\nchosen=[x for x in (1,2) if x > 1]\nfiltered=filter(None, chosen)\ncombined={{1}}.union(chosen)\nweighted=sum(chosen)\nrounded=round(2.5)\ndigits=round(1.23,2)\nctx=Context(prec=5,rounding=d.ROUND_HALF_EVEN)\namount=d.Decimal('2.45').quantize(d.Decimal('.1'))\nwhole=round(round(2.45,1)*3,1)\n"
+    );
     std::fs::write(root.path().join("subject.py"), &source).unwrap();
     let default = plan(root.path(), &[]).await;
     let manifest: PlanManifest = serde_json::from_value(default.clone()).unwrap();
 
-    assert_eq!(manifest.normalized_config.operators.names().len(), 93);
+    assert_eq!(manifest.normalized_config.operators.names().len(), 104);
     let candidates = default["candidates"].as_array().unwrap();
     for original in ["Decimal(x)", "Decimal.from_float(x)", "HTTPStatus(x)"] {
         assert!(
@@ -227,10 +241,13 @@ async fn current_default_candidates_are_individually_excludable() {
     let source = format!(
         "{source}\ndef route(x):\n try:\n  match x:\n   case 1 | 2 if ready(): send(); finish()\n finally: clean()\n"
     );
+    let source = format!(
+        "{source}\nfrom decimal import Context\nimport decimal as d\nchosen=[x for x in (1,2) if x > 1]\nfiltered=filter(None, chosen)\ncombined={{1}}.union(chosen)\nweighted=sum(chosen)\nrounded=round(2.5)\ndigits=round(1.23,2)\nctx=Context(prec=5,rounding=d.ROUND_HALF_EVEN)\namount=d.Decimal('2.45').quantize(d.Decimal('.1'))\nwhole=round(round(2.45,1)*3,1)\n"
+    );
     std::fs::write(root.path().join("subject.py"), &source).unwrap();
     let default = plan(root.path(), &[]).await;
     let manifest: PlanManifest = serde_json::from_value(default.clone()).unwrap();
-    assert_eq!(manifest.normalized_config.operators.names().len(), 93);
+    assert_eq!(manifest.normalized_config.operators.names().len(), 104);
     let candidates = default["candidates"].as_array().unwrap();
     for original in ["Decimal(x)", "Decimal.from_float(x)", "HTTPStatus(x)"] {
         assert!(
@@ -535,6 +552,59 @@ async fn research_control_saved_verification(
     #[case] check: &str,
     #[case] survived: usize,
     #[case] killed: usize,
+) {
+    verify_research_case(operator, source, check, survived, killed).await;
+}
+
+const SELECTION_CHECK: &str = "def f(items): return [x for x in items if x >= 0]\n";
+const PRECISION_CHECK: &str = "from decimal import Decimal as D, ROUND_HALF_EVEN as nearest\ndef f(x): return D(x).quantize(D('.1'), rounding=nearest)\n";
+
+#[rstest::rstest]
+#[case::ordinary_selection(
+    "comprehension_filter_remove",
+    SELECTION_CHECK,
+    "assert f([1,2]) == [1,2]",
+    1,
+    0
+)]
+#[case::selection_boundary(
+    "comprehension_filter_remove",
+    SELECTION_CHECK,
+    "assert f([0,-1,2,2]) == [0,2,2]",
+    0,
+    1
+)]
+#[case::non_midpoint(
+    "decimal_rounding_mode_swap",
+    PRECISION_CHECK,
+    "assert str(f('2.46')) == '2.5'",
+    1,
+    0
+)]
+#[case::signed_midpoints(
+    "decimal_rounding_mode_swap",
+    PRECISION_CHECK,
+    "assert (str(f('2.45')),str(f('-2.45'))) == ('2.4','-2.4')",
+    0,
+    1
+)]
+#[tokio::test]
+async fn research_processing_saved_verification(
+    #[case] operator: &str,
+    #[case] source: &str,
+    #[case] check: &str,
+    #[case] survived: usize,
+    #[case] killed: usize,
+) {
+    verify_research_case(operator, source, check, survived, killed).await;
+}
+
+async fn verify_research_case(
+    operator: &str,
+    source: &str,
+    check: &str,
+    survived: usize,
+    killed: usize,
 ) {
     let root = tempfile::tempdir().unwrap();
     let subject = root.path().join("subject.py");

@@ -80,14 +80,28 @@ mod deletion;
 mod call_contracts;
 #[path = "rust/callable_imports.rs"]
 mod callable_imports;
+#[path = "rust/collection_processing.rs"]
+mod collection_processing;
+#[path = "rust/decimal_context.rs"]
+mod decimal_context;
+#[path = "rust/decimal_quantum.rs"]
+mod decimal_quantum;
 #[path = "rust/depth.rs"]
 mod depth;
 #[path = "rust/fact_index.rs"]
 mod fact_index;
 #[path = "rust/finally_work.rs"]
 mod finally_work;
+#[path = "rust/local_initializers.rs"]
+mod local_initializers;
+#[path = "rust/processing_calls.rs"]
+mod processing_calls;
 #[path = "rust/reduce.rs"]
 pub mod reduce;
+#[path = "rust/rounding.rs"]
+mod rounding;
+#[path = "rust/source_delimiters.rs"]
+mod source_delimiters;
 use finally_work::FinallyTransfer;
 #[path = "rust/lazy_imports.rs"]
 mod lazy_imports;
@@ -1279,6 +1293,7 @@ struct NameResolutionIndex {
     unevaluated_annotations: HashSet<usize>,
     imported_names: HashSet<String>,
     text_parameters: HashMap<ScopeId, HashMap<String, usize>>,
+    initializers: HashMap<ScopeId, HashMap<String, (usize, usize)>>,
 }
 
 impl NameResolutionIndex {
@@ -1294,10 +1309,14 @@ impl NameResolutionIndex {
     // Intentionally reject class namespace loads and any shadow in an enclosing
     // lexical scope. Method bodies skip class namespaces as Python does.
     fn resolves_unique_module(&self, expression: &Expr, name: &str) -> bool {
+        self.resolves_unique_module_at(usize::from(expression.start()), name)
+    }
+
+    fn resolves_unique_module_at(&self, offset: usize, name: &str) -> bool {
         if !self.unique_module_binding(name) || name.starts_with("__") {
             return false;
         }
-        let Some(site) = self.occurrences.get(&usize::from(expression.start())) else {
+        let Some(site) = self.occurrences.get(&offset) else {
             return false;
         };
         if site.temporarily_shadowed {
@@ -1340,19 +1359,29 @@ impl NameResolutionIndex {
     }
 
     fn from_module_with_names(module: &ModModule, extra: HashSet<String>) -> Self {
-        let mut builder = NameResolutionBuilder::new();
+        let mut builder = NameResolutionBuilder::new(&|| false);
         let mut names = ImportedNames::default();
         names.visit_body(&module.body);
         builder.identity_names = extra;
         builder.identity_names.extend(names.text_parameters);
+        builder.identity_names.extend(names.callable_aliases);
         names.imports.extend(builder.identity_names.iter().cloned());
         builder.imported_names = names.imports;
         builder.visit_body(&module.body);
+        builder.finish()
+    }
+}
+
+impl NameResolutionBuilder<'_> {
+    fn finish(mut self) -> NameResolutionIndex {
         // Resolve nonlocal destinations after all enclosing locals are known.
-        for (origin, name) in &builder.nonlocal_import_writes {
-            let mut parent = builder.index.scopes[origin.0].parent;
+        for (origin, name) in &self.nonlocal_import_writes {
+            if (self.cancelled)() {
+                return self.index;
+            }
+            let mut parent = self.index.scopes[origin.0].parent;
             while let Some(id) = parent {
-                let scope = &mut builder.index.scopes[id.0];
+                let scope = &mut self.index.scopes[id.0];
                 if scope.kind == NameScopeKind::Function && scope.locals.contains(name) {
                     scope.import_writes.insert(name.clone(), usize::MAX);
                     break;
@@ -1360,15 +1389,20 @@ impl NameResolutionIndex {
                 parent = scope.parent;
             }
         }
-        for scope in &mut builder.index.scopes {
+        for scope in &mut self.index.scopes {
             for history in scope.ordered.values_mut() {
+                if (self.cancelled)() {
+                    return self.index;
+                }
                 history.finalize();
             }
         }
-        builder.index.imported_names = builder.imported_names;
-        builder.index
+        self.index.imported_names = self.imported_names;
+        self.index
     }
+}
 
+impl NameResolutionIndex {
     fn stable_text_parameter(&self, name: &ruff_python_ast::ExprName) -> bool {
         let Some(site) = self.occurrences.get(&usize::from(name.start())) else {
             return false;
@@ -1739,6 +1773,7 @@ fn tracked_resolution_name(name: &str) -> bool {
 #[derive(Default)]
 struct ImportedNames {
     imports: HashSet<String>,
+    callable_aliases: HashSet<String>,
     text_parameters: HashSet<String>,
 }
 
@@ -1756,6 +1791,38 @@ impl<'ast> Visitor<'ast> for ImportedNames {
             _ => {}
         }
         self.imports.extend(imports.bindings.into_keys());
+        let aliases = match statement {
+            Stmt::Import(import) => {
+                for alias in &import.names {
+                    if matches!(
+                        alias.name.as_str(),
+                        "builtins" | "decimal" | "itertools" | "math"
+                    ) {
+                        self.callable_aliases
+                            .insert(alias.asname.as_ref().unwrap_or(&alias.name).to_string());
+                    }
+                }
+                &[][..]
+            }
+            Stmt::ImportFrom(import)
+                if import.level == 0
+                    && import.module.as_ref().is_some_and(|module| {
+                        matches!(
+                            module.as_str(),
+                            "builtins" | "decimal" | "itertools" | "math"
+                        )
+                    }) =>
+            {
+                &import.names[..]
+            }
+            _ => &[],
+        };
+        self.callable_aliases.extend(
+            aliases
+                .iter()
+                .filter(|alias| alias.name.as_str() != "*")
+                .map(|alias| alias.asname.as_ref().unwrap_or(&alias.name).to_string()),
+        );
         visitor::walk_stmt(self, statement);
     }
     fn visit_parameter(&mut self, parameter: &'ast ruff_python_ast::Parameter) {
@@ -1766,7 +1833,9 @@ impl<'ast> Visitor<'ast> for ImportedNames {
     }
 }
 
-struct NameResolutionBuilder {
+struct NameResolutionBuilder<'a> {
+    cancelled: &'a dyn Fn() -> bool,
+    initializer_targets: HashSet<usize>,
     identity_names: HashSet<String>,
     imported_names: HashSet<String>,
     nonlocal_import_writes: Vec<(ScopeId, String)>,
@@ -1784,7 +1853,7 @@ struct LoopBackEdgeContext {
     bindings: HashSet<String>,
 }
 
-impl NameResolutionBuilder {
+impl<'a> NameResolutionBuilder<'a> {
     fn tracks(&self, name: &str) -> bool {
         tracked_resolution_name(name)
             || self.imported_names.contains(name)
@@ -1793,8 +1862,10 @@ impl NameResolutionBuilder {
                 .is_some_and(|mangled| self.imported_names.contains(&mangled))
     }
 
-    fn new() -> Self {
+    fn new(cancelled: &'a dyn Fn() -> bool) -> Self {
         Self {
+            cancelled,
+            initializer_targets: HashSet::new(),
             index: NameResolutionIndex {
                 scopes: vec![NameScope::new(NameScopeKind::Module, None)],
                 occurrences: HashMap::new(),
@@ -1803,6 +1874,7 @@ impl NameResolutionBuilder {
                 unevaluated_annotations: HashSet::new(),
                 imported_names: HashSet::new(),
                 text_parameters: HashMap::new(),
+                initializers: HashMap::new(),
             },
             identity_names: HashSet::new(),
             imported_names: HashSet::new(),
@@ -1962,7 +2034,7 @@ impl NameResolutionBuilder {
 
     fn visit_assignment_target(&mut self, target: &Expr) {
         match target {
-            Expr::Name(name) => self.record_binding(name.id.as_str()),
+            Expr::Name(name) => self.record_initializer(name),
             Expr::Tuple(tuple) => {
                 for element in &tuple.elts {
                     self.visit_assignment_target(element);
@@ -2273,7 +2345,16 @@ impl NameResolutionBuilder {
     }
 }
 
-impl<'ast> Visitor<'ast> for NameResolutionBuilder {
+impl<'ast> Visitor<'ast> for NameResolutionBuilder<'_> {
+    fn visit_body(&mut self, body: &'ast [Stmt]) {
+        for statement in body {
+            if (self.cancelled)() {
+                break;
+            }
+            self.visit_stmt(statement);
+        }
+    }
+
     fn visit_annotation(&mut self, annotation: &'ast Expr) {
         // Abstract bases such as Sequence are not runtime builtin occurrences,
         // but their replacements still need the scope at this annotation site.
@@ -2286,6 +2367,9 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
         reason = "the exhaustive statement-binding pass keeps evaluation order and scope entry visible in one match"
     )]
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
+        if (self.cancelled)() {
+            return;
+        }
         match statement {
             Stmt::FunctionDef(definition) => {
                 for decorator in &definition.decorator_list {
@@ -2484,6 +2568,9 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
     }
 
     fn visit_expr(&mut self, expression: &'ast Expr) {
+        if (self.cancelled)() {
+            return;
+        }
         match expression {
             Expr::Name(name) => self.record_occurrence(name),
             Expr::Call(call) => {
@@ -3024,6 +3111,9 @@ const CALL_CONTRACT_BUILTINS: &[&str] = &[
     "isinstance",
     "issubclass",
     "len",
+    "filter",
+    "round",
+    "sum",
     "oct",
     "ord",
     "repr",
@@ -3147,6 +3237,9 @@ struct AstCandidateCollector<'a, F> {
     followup_calls: &'a followup_calls::Imports,
     optional_functions: &'a optional_keywords::FunctionIndex<'a>,
     call_contracts: &'a call_contracts::Contracts,
+    collections: &'a collection_processing::Collections,
+    rounding: &'a rounding::Rounding,
+    processing_site: &'a processing_calls::Site<'a>,
     discarded_results: [Option<TextRange>; 2],
     direct_await: Option<(TextRange, TextRange)>,
     operator_imports: OperatorImports,
@@ -3197,8 +3290,6 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         let dataclass_factories =
             dataclass_factory::DataclassFactories::build(module, request.operators, cancelled)?;
         let followup_calls = followup_calls::Imports::build(module, request.operators, cancelled)?;
-        let call_contracts =
-            call_contracts::Contracts::build(module, facts, request.operators, cancelled)?;
         let additional_signatures = [
             MutationOperator::CallArgumentSwap,
             MutationOperator::CallResultDefault,
@@ -3219,8 +3310,69 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         } else {
             optional_keywords::FunctionIndex::default()
         };
+        let delimiters = if [
+            MutationOperator::CallArgumentSwap,
+            MutationOperator::CallResultDefault,
+            MutationOperator::ComprehensionFilterInvert,
+            MutationOperator::FilterPredicateSwap,
+            MutationOperator::AggregateSumCount,
+            MutationOperator::RoundingFunctionSwap,
+            MutationOperator::RoundDigitsRemove,
+            MutationOperator::DecimalRoundingModeSwap,
+            MutationOperator::IntermediateRoundingRemove,
+        ]
+        .into_iter()
+        .any(|op| request.operators.contains(op))
+        {
+            source_delimiters::DelimiterDepth::build(
+                facts.tokens.expect("checked parse"),
+                cancelled,
+            )?
+        } else {
+            source_delimiters::DelimiterDepth::default()
+        };
+        let builtins = if [
+            MutationOperator::StdlibEscapeRemove,
+            MutationOperator::CallArgumentSwap,
+            MutationOperator::CallResultDefault,
+            MutationOperator::FilterPredicateSwap,
+            MutationOperator::SetUnionIntersectionSwap,
+            MutationOperator::AggregateSumCount,
+            MutationOperator::RoundingFunctionSwap,
+            MutationOperator::RoundDigitsRemove,
+            MutationOperator::DecimalRoundingModeSwap,
+            MutationOperator::IntermediateRoundingRemove,
+        ]
+        .into_iter()
+        .any(|op| request.operators.contains(op))
+        {
+            processing_calls::Builtins::build(module, cancelled)?
+        } else {
+            processing_calls::Builtins::default()
+        };
+        let call_contracts = call_contracts::Contracts::build(
+            module,
+            facts,
+            request.operators,
+            &builtins,
+            cancelled,
+        )?;
+        let processing_site = processing_calls::Site {
+            facts,
+            source,
+            operators: request.operators,
+            delimiters: &delimiters,
+            builtins: &builtins,
+            cancelled,
+        };
+        let collections =
+            collection_processing::Collections::build(module, &processing_site, cancelled)?;
+        let rounding = rounding::Rounding::build(module, &processing_site, cancelled)?;
         let mut collector = AstCandidateCollector {
             call_contracts: &call_contracts,
+            collections: &collections,
+            rounding: &rounding,
+            processing_site: &processing_site,
             discarded_results: [None; 2],
             direct_await: None,
             match_state: control_structure::MatchTraversal::default(),
@@ -3635,6 +3787,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             operators: self.request.operators,
             cancelled: self.cancelled,
             ordinary_name_reads: self.enclosing_body != EnclosingBody::Class,
+            delimiters: self.processing_site.delimiters,
         };
         call_contracts.emit(
             call,
@@ -3648,9 +3801,71 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         );
     }
 
+    fn collect_precision_assignment(&mut self, statement: &Stmt) {
+        if self.rounding.visits_assignments()
+            && self.candidates.failure.is_none()
+            && !self.check_cancelled()
+        {
+            let facts = self.facts;
+            let line_index = self.line_index;
+            let selection = self.selection;
+            self.rounding.emit_assignment(
+                statement,
+                self.processing_site,
+                |range| selected_source_start(range, line_index, facts, selection),
+                |range, replacement, operator| {
+                    self.add_candidate(range, replacement, operator);
+                    !self.check_cancelled()
+                },
+            );
+        }
+    }
+
+    fn collect_processing_call(&mut self, call: &ExprCall) {
+        let facts = self.facts;
+        let line_index = self.line_index;
+        let selection = self.selection;
+        let selected = |range| selected_source_start(range, line_index, facts, selection);
+        if self.collections.visits_calls() {
+            self.collections.emit_call(
+                call,
+                self.processing_site,
+                selected,
+                |range, replacement, operator| {
+                    self.add_candidate(range, replacement, operator);
+                    !self.check_cancelled()
+                },
+            );
+        }
+        if self.rounding.visits_calls()
+            && self.candidates.failure.is_none()
+            && !self.check_cancelled()
+        {
+            self.rounding.emit_call(
+                call,
+                self.processing_site,
+                selected,
+                |range, replacement, operator| {
+                    self.add_candidate(range, replacement, operator);
+                    !self.check_cancelled()
+                },
+            );
+        }
+    }
+
     fn collect_call(&mut self, call: &ExprCall) {
         if self.candidates.failure.is_some() {
             return;
+        }
+        if (self.collections.visits_calls() || self.rounding.visits_calls())
+            && self.runtime_role == RuntimeRole::Value
+            && !self.in_pattern
+            && !self.string_exclusions.contains_alias(call.range())
+        {
+            self.collect_processing_call(call);
+            if self.check_cancelled() || self.candidates.failure.is_some() {
+                return;
+            }
         }
         if self.call_contracts.active() {
             self.collect_call_contracts(call);
@@ -4942,6 +5157,7 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
         }
         if !self.check_cancelled() {
             self.collect_statement_mutations(statement);
+            self.collect_precision_assignment(statement);
             if self.candidates.failure.is_some() {
                 return;
             }
@@ -5029,6 +5245,29 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
             }
             self.visit_body(&try_statement.orelse);
             self.visit_body(&try_statement.finalbody);
+        }
+    }
+
+    fn visit_comprehension(&mut self, clause: &'ast ruff_python_ast::Comprehension) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
+        if !self.in_pattern && self.collections.visits_comprehensions() {
+            let facts = self.facts;
+            let line_index = self.line_index;
+            let selection = self.selection;
+            self.collections.emit_filters(
+                clause,
+                self.processing_site,
+                |range| selected_source_start(range, line_index, facts, selection),
+                |range, replacement, operator| {
+                    self.add_candidate(range, replacement, operator);
+                    !self.check_cancelled()
+                },
+            );
+        }
+        if self.candidates.failure.is_none() && !self.check_cancelled() {
+            visitor::walk_comprehension(self, clause);
         }
     }
 
@@ -9863,3 +10102,7 @@ mod coverage_tests;
 #[cfg(test)]
 #[path = "rust/stopped_collector_tests.rs"]
 mod stopped_collector_tests;
+
+#[cfg(test)]
+#[path = "rust/processing_tests.rs"]
+mod processing_tests;

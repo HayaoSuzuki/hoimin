@@ -308,6 +308,17 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::StdlibEscapeRemove
         | MutationOperator::CallArgumentSwap
         | MutationOperator::CallResultDefault
+        | MutationOperator::ComprehensionFilterRemove
+        | MutationOperator::ComprehensionFilterInvert
+        | MutationOperator::FilterPredicateSwap
+        | MutationOperator::SetUnionIntersectionSwap
+        | MutationOperator::AggregateSumCount
+        | MutationOperator::RoundingFunctionSwap
+        | MutationOperator::RoundDigitsRemove
+        | MutationOperator::DecimalRoundingModeSwap
+        | MutationOperator::DecimalQuantumShift
+        | MutationOperator::DecimalContextPrecision
+        | MutationOperator::IntermediateRoundingRemove
         | MutationOperator::StringLiteralEmpty
         | MutationOperator::StringSegmentEmpty
         | MutationOperator::ReturnTupleSwap
