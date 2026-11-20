@@ -56,10 +56,11 @@ Seven supported diagnostics yield 8.75/10. The remaining row needs actual time m
 | Missing-parent RED | 1 passed, 1 failed; exit 101 |
 | Native workspace-group GREEN | 687 passed, 0 failed, 8 ignored; exit 0 |
 | Native workspace group after review correction | 689 passed, 0 failed, 8 ignored; exit 0; includes both added regressions |
-| Strict workspace Clippy, all targets and features | Exit 0 after correcting two underscore-prefixed test argument references |
+| Strict workspace Clippy, all targets and features | Final exit 0 on the reviewed source; two earlier test argument lint findings were corrected |
 | Workspace formatting and diff whitespace | Exit 0 |
-| Full workspace with all features, including CLI/core contracts | In progress; no completion claim yet |
-| Independent review | One Important finding corrected; scoped source review accepts the correction |
+| Documentation site build (`uv run --frozen --no-sync python -m tools.docs_site --output site`) | Exit 0 after preserving the review records |
+| Full workspace with all features, including CLI/core contracts | Exit 0: 17,424 passed, 0 failed, 45 ignored across 200 unfiltered harnesses |
+| Independent review | One Important finding corrected; scoped re-review approved with no further findings |
 
 Commands use `--locked -j 2 --quiet` and `--test-threads=2`. Builds use `CARGO_PROFILE_DEV_DEBUG=0`, `CARGO_PROFILE_TEST_DEBUG=0`, and `CARGO_INCREMENTAL=0`, preserving debug assertions. The full `cargo test --workspace --all-features --no-fail-fast` run includes both CLI and core contract features, so a second equivalent CLI-contract run is unnecessary. The first Clippy correction only changed test-helper argument names and explicitly accounted for the platform-unused argument. The full suite runs again on the final reviewed source, including the namespace-oracle correction described below.
 
@@ -67,6 +68,22 @@ Commands use `--locked -j 2 --quiet` and `--test-threads=2`. Builds use `CARGO_P
 
 Review of `3514ecdb` found one Important issue: reading through the owned handle preserved the lock but no longer proved that the entry name still referred to that file. A detached or replaced file could satisfy an assertion about the named lease on Unix. No other findings were reported.
 
-Two named regression cases keep the original handle readable while removing its old name or installing a different file with identical bytes. Both failed on the old helper. The shared helper now compares no-follow named metadata with the handle identity before reading and restoring its position. All eleven converted observations supply the correct parent, name and owning handle. Scoped source review accepts the correction and found no new breakage; the affected suite passed 689 tests with 8 existing ignored fixtures and no failures. The full-suite receipt remains pending.
+Two named regression cases keep the original handle readable while removing its old name or installing a different file with identical bytes. Both failed on the old helper. The shared helper now compares no-follow named metadata with the handle identity before reading and restoring its position. All eleven converted observations supply the correct parent, name and owning handle. Scoped source review accepts the correction and found no new breakage; the affected suite passed 689 tests with 8 existing ignored fixtures and no failures. The final all-features workspace run and strict Clippy both exited 0.
 
 The full-suite build started before this review was interrupted during compilation, before test execution, to avoid mixing revisions. Its empty log is retained as incomplete evidence. The final full-suite run uses the corrected source. Native Unix runtime behavior was not executed on this Windows host; shared fixture code was reviewed and the two namespace regressions also execute on Windows through retained rename authority.
+
+## Final result and evidence
+
+All 29 original Windows failures are resolved. The final source commit is `ca1db19d02acd7617c8271cf631ad96d67e6c664`.
+The complete `cargo test --locked -j 2 --quiet --workspace --all-features --no-fail-fast -- --test-threads=2` run passed on the native Windows host.
+Its 200 unfiltered harness summaries contain 17,424 passes, no failures and 45 existing ignored cases.
+Four filtered child-process harness summaries are excluded from that aggregate to avoid recounting fixture executions.
+The CLI library passed 2,690 cases with 27 existing ignored fixtures, and the analyzer passed 5,150 with five existing ignores.
+No skip or ignored test was added by this follow-up.
+The final strict whole-workspace Clippy run also exited 0.
+
+The [initial review](windows-workspace/final-review.md), [scoped approval](windows-workspace/scoped-review.md), and [execution ledger](windows-workspace/progress.md) retain the findings and their disposition.
+`windows-workspace/evidence.zip` preserves the original failure inventory, reproduction and final command logs, and command status/aggregate receipts.
+`windows-workspace/evidence-manifest.json` records each archive member's size and SHA-256.
+Review diffs can be regenerated from the recorded Git revisions.
+The original research reports retain their historical counts and now link to this correction.

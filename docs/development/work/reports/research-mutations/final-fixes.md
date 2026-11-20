@@ -1,5 +1,7 @@
 # Final research mutation fixes
 
+The subsequent [Windows workspace repair](../2026-11-20-windows-workspace-failures.md) addresses all 29 native failures recorded here. Its final all-features workspace run passes 17,424 tests with no failures; see that report for the verification details. The counts and decisions below describe the earlier research-mutation revisions.
+
 The analyzer now rejects set receivers whose proof depends on an exposed module dictionary and method edits for literals that fail both supported regex grammars. A root regex mode declared inline and in the external flags produces one covering edit. The planner defers replacement construction for losing edits, and signature preparation honors cancellation in both name-index traversals.
 
 The reviewed base was `6df6dcb7`. Implementation started from `d4658222`, which includes the root design clarification. All 22 added operator IDs for the nine issues retain their default selection and individual exclusions. The [integration report](integration-implementation.md) covers the full inventory and the prior native Windows disposition.

@@ -40,5 +40,5 @@
 - [x] Restore missing-entry parent validation on the Windows write path; run the existing failure and neighboring root contracts.
 - [x] Correct locked evidence, retained rename, janitor fixture lifetime and cancellation/owner-slot fixtures with preserved assertions.
 - [x] Exercise applicable native bootstrap/publication fault boundaries and require retry/rollback evidence.
-- [ ] Run affected tests, strict lint, formatting, full workspace and CLI contracts; investigate any remaining failures.
-- [ ] Record implementation/test reviews, software-design diagnostics, final independent review and local commits.
+- [x] Run affected tests, strict lint, formatting, full workspace and CLI contracts; investigate any remaining failures.
+- [x] Record implementation/test reviews, software-design diagnostics, final independent review and local commits.

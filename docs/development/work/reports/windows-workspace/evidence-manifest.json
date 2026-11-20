@@ -1,0 +1,74 @@
+{
+  "clippy-final.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "clippy.log": {
+    "bytes": 1418,
+    "sha256": "2caec6d9966c300a58a388976417f346aee3bb68aed56130d443084f14cc4dc6"
+  },
+  "final-review.md": {
+    "bytes": 3957,
+    "sha256": "0748eb61200899d6b7a6acb8898ca29880cb360c7f1ec94230480a6cff582b5e"
+  },
+  "final-status.txt": {
+    "bytes": 38,
+    "sha256": "491a6fea3ac7af1f807a2e1c4feb9510baa39195af34ce694f65fdb0be5cfc14"
+  },
+  "final-summary.json": {
+    "bytes": 265,
+    "sha256": "217b151e0a0332205f304f31b2928f1af8d7b348351b278d5c5c1a847ed27663"
+  },
+  "full-workspace-incomplete.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "full-workspace.log": {
+    "bytes": 46787,
+    "sha256": "e0ba1d14e1fbd9b61352113c5d41063df0319f2e169dc5621bd72e3ab734bc75"
+  },
+  "original-failures.txt": {
+    "bytes": 21283,
+    "sha256": "212fe1eb2ddc8f35e877dace9abebd665c14f5591f34a0013266a1ee42006f60"
+  },
+  "progress.md": {
+    "bytes": 2384,
+    "sha256": "fdb8f64bf4e673a5b08799647f47dbdbde21d4e991080e6278bea140565bf3d1"
+  },
+  "reproduce-native.log": {
+    "bytes": 27105,
+    "sha256": "0c32f84d11bb3d3fbb29c32d8c00fffcc064cc59f25d4fe98e06ee944680d02a"
+  },
+  "reproduce.log": {
+    "bytes": 13920,
+    "sha256": "29a92aa453fcff8faa7696435d67311cbf0364d76db4f3f5b61ff58eaaa7d623"
+  },
+  "review-green.log": {
+    "bytes": 1994,
+    "sha256": "160d3e614e1585c2e1deb726b844c387c0bd4d0c0004d0c18ca4fd7300ceaa77"
+  },
+  "review-red.log": {
+    "bytes": 1527,
+    "sha256": "76fcb6a8a981cb345ec43d40a61e1b637d53337018f78affefee346c3a54602e"
+  },
+  "root-red.log": {
+    "bytes": 924,
+    "sha256": "393c9917e92a5dc933a3bedd9e24287a9c0dabd14fb97231694475b551824690"
+  },
+  "scoped-review.md": {
+    "bytes": 1892,
+    "sha256": "1b293ed9d8bc420dbcb7d2226e5e0d9c77252a799c671d57388fd89813ee3624"
+  },
+  "task-5-base-native-probe.log": {
+    "bytes": 10493,
+    "sha256": "e8bfe6a902fa2dac6074c1595c8c2d8d49491a9847136cff85270be0fa4f1a74"
+  },
+  "task-5-cli-contracts-ci-profile.log": {
+    "bytes": 55320,
+    "sha256": "db1f0649f3cc25c4414a8c65716a55a29f11160198070bd20d0716cd7f268a49"
+  },
+  "workspace-green.log": {
+    "bytes": 1982,
+    "sha256": "05a1ead8f9701e1fc71a9716f4671ea4f9e07ce4b199c8a9467b5d8f8d14aedf"
+  }
+}

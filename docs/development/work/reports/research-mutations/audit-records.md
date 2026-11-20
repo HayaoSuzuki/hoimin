@@ -1,5 +1,7 @@
 # Research mutation audit records
 
+The subsequent [Windows workspace repair](../2026-11-20-windows-workspace-failures.md) addresses all 29 native failures recorded here. Its final all-features workspace run passes 17,424 tests with no failures; see that report for the verification details. The counts and decisions below describe the earlier research-mutation revisions.
+
 This record helps maintainers review the implementation of issues #1190–#1192 and #1195–#1200 on `codex/research-mutations`.
 The branch starts at `4cf630f977dc266c6633969b57d0f9f251bb91d8`.
 The final source implementation is `d5eb8012b87989285a9c5e439ec299c72ef667f0`.

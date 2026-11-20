@@ -1,5 +1,7 @@
 # Research mutation integration verification
 
+The subsequent [Windows workspace repair](../2026-11-20-windows-workspace-failures.md) addresses all 29 native failures recorded here. Its final all-features workspace run passes 17,424 tests with no failures; see that report for the verification details. The counts and decisions below describe the earlier research-mutation revisions.
+
 This report records the final integration work for the nine research issues, based on 2e6cdc7502e974b7127e1891298c07fcfbb497c2. Use the domain reports for the individual eligibility rules and earlier test receipts. The managed Windows worktree used Rust 1.100.0 and CPython 3.14.9 and 3.15.1. Source and user-documentation work ends at `727ddb2f`; the test-only fixture commits are recorded below.
 
 ## Acceptance evidence
