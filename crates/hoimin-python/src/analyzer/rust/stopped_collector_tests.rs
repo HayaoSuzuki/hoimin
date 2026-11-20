@@ -248,6 +248,7 @@ fn observe_attempt(
     let followup_calls = followup_calls::Imports::default();
     let mut collector = AstCandidateCollector {
         match_state: control_structure::MatchTraversal::default(),
+        private_class: None,
         inheritance: inheritance::Index::default(),
         string_exclusions: string_literals::Exclusions::build(module, &cancelled).unwrap(),
         enum_index: &enum_index,

@@ -3020,6 +3020,12 @@ enum EnclosingBody {
     Function,
 }
 
+fn mangled_name(class: Option<&str>, name: &str) -> Option<String> {
+    let class = class?.trim_start_matches('_');
+    (!class.is_empty() && name.starts_with("__") && !name.ends_with("__"))
+        .then(|| format!("_{class}{name}"))
+}
+
 fn selected_source_start(
     range: TextRange,
     line_index: &LineIndex,
@@ -3038,6 +3044,7 @@ fn selected_source_start(
 // Neither the source nor that tree is mutated during collection.
 struct AstCandidateCollector<'a, F> {
     match_state: control_structure::MatchTraversal,
+    private_class: Option<&'a str>,
     inheritance: inheritance::Index,
     string_exclusions: string_literals::Exclusions,
     enum_index: &'a enum_members::EnumIndex,
@@ -3094,6 +3101,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         let followup_calls = followup_calls::Imports::build(module, request.operators, cancelled)?;
         let mut collector = AstCandidateCollector {
             match_state: control_structure::MatchTraversal::default(),
+            private_class: None,
             inheritance: if [
                 MutationOperator::OverrideMethodDelete,
                 MutationOperator::SuperCallMove,
@@ -3222,6 +3230,15 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             report,
             enum_index.diagnostics,
         ))
+    }
+
+    fn walk_class(&mut self, statement: &'a Stmt, name: &'a str) {
+        let previous = std::mem::replace(&mut self.enclosing_body, EnclosingBody::Class);
+        // Private-name mangling remains active in methods and nested functions.
+        let enclosing_class = self.private_class.replace(name);
+        visitor::walk_stmt(self, statement);
+        self.private_class = enclosing_class;
+        self.enclosing_body = previous;
     }
 
     fn visit_suite(&mut self, body: &'a [Stmt]) {
@@ -4745,10 +4762,8 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
             if self.check_cancelled() {
                 return;
             }
-            if matches!(statement, Stmt::ClassDef(_)) {
-                let previous = std::mem::replace(&mut self.enclosing_body, EnclosingBody::Class);
-                visitor::walk_stmt(self, statement);
-                self.enclosing_body = previous;
+            if let Stmt::ClassDef(class) = statement {
+                self.walk_class(statement, class.name.as_str());
                 return;
             }
             if let Stmt::FunctionDef(definition) = statement {

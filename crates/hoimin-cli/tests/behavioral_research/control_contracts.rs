@@ -339,3 +339,100 @@ proptest::proptest! {
         runtime.block_on(outcomes(&source, "match_or_alternative_delete", &before, None, &harness, baseline, expected));
     }
 }
+
+#[rstest]
+#[case::two_slots(198, false, 2)]
+#[case::one_slot(199, false, 0)]
+#[case::full(200, false, 0)]
+#[case::nested_in_guard(198, true, 0)]
+#[tokio::test]
+async fn review_guard_compiler_delimiter_boundary(
+    #[case] groups: usize,
+    #[case] call: bool,
+    #[case] count: usize,
+) {
+    let guard = format!("{}ready{}", "(".repeat(groups), ")".repeat(groups));
+    let guard = if call {
+        format!("bool({guard})")
+    } else {
+        guard
+    };
+    let source = format!(
+        "ready=False\nmatch 1:\n case _ if {guard}: selected=True\n case _: selected=False\n"
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let subject = dir.path().join("subject.py");
+    fs::write(&subject, &source).unwrap();
+    let harness = "import subject; print(subject.selected)";
+    assert_python_output(
+        "delimiter guard",
+        "original",
+        &run_python(dir.path(), harness),
+        "False\n",
+    );
+
+    let manifest = plan(dir.path(), "match_guard_constant").await;
+    let candidates = manifest["candidates"].as_array().unwrap();
+
+    assert_eq!(candidates.len(), count);
+    if count > 0 {
+        let edit = candidates
+            .iter()
+            .find(|c| c["replacement"].as_str().unwrap().contains("True or"))
+            .unwrap();
+        let start = usize::try_from(edit["span"]["start"].as_u64().unwrap()).unwrap();
+        let len = usize::try_from(edit["span"]["length"].as_u64().unwrap()).unwrap();
+        let mut changed = source;
+        changed.replace_range(start..start + len, edit["replacement"].as_str().unwrap());
+        fs::write(subject, changed).unwrap();
+        assert_python_output(
+            "delimiter guard",
+            "mutant",
+            &run_python(dir.path(), harness),
+            "True\n",
+        );
+    }
+}
+
+#[rstest]
+#[case::integer_and_float("18446744073709551616", "18446744073709551616.0", false)]
+#[case::integer_and_complex("18446744073709551616", "18446744073709551616+0j", false)]
+#[case::adjacent_integer_and_float("18446744073709551617", "18446744073709551616.0", true)]
+#[tokio::test]
+async fn review_mapping_keys_match_cpython_compilation(
+    #[case] left: &str,
+    #[case] right: &str,
+    #[case] valid: bool,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let source = format!("def f(v):\n match v:\n  case {{{left}: a, {right}: b}}: return a, b\n");
+    fs::write(dir.path().join("subject.py"), source).unwrap();
+    let harness = "try: import subject\nexcept SyntaxError as e: print('duplicate' if 'duplicate key' in str(e) else type(e).__name__)\nelse: print('valid')";
+
+    let compilation = run_python(dir.path(), harness);
+    let manifest = plan(dir.path(), "match_case_delete").await;
+
+    assert_python_output(
+        "numeric mapping keys",
+        "compile",
+        &compilation,
+        if valid { "valid\n" } else { "duplicate\n" },
+    );
+    assert_eq!(
+        manifest["candidates"].as_array().unwrap().len(),
+        usize::from(valid)
+    );
+}
+
+#[tokio::test]
+async fn review_private_store_precedes_explicit_mangled_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = "class __K:\n def f(self):\n  __x = int(2)\n  print(_K__x)\n";
+    fs::write(dir.path().join("subject.py"), source).unwrap();
+
+    let original = run_python(dir.path(), "import subject; subject.__K().f()");
+    let manifest = plan(dir.path(), "statement_order_swap").await;
+
+    assert_python_output("private binding", "original", &original, "2\n");
+    assert_eq!(manifest["candidates"].as_array().unwrap().len(), 0);
+}

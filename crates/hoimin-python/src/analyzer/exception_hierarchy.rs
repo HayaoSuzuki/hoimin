@@ -7,7 +7,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 use ruff_python_ast::{Expr, ExprContext, ModModule, Pattern, Stmt};
 use ruff_text_size::{Ranged, TextRange};
 
-use super::{AnalysisCancelled, AnalysisError, depth};
+use super::{AnalysisCancelled, AnalysisError, depth, mangled_name};
 
 #[path = "exception_import_graph.rs"]
 mod import_graph;
@@ -435,12 +435,6 @@ fn header_bindings(statement: &Stmt) -> Bindings {
         _ => {}
     }
     bindings
-}
-
-fn mangled_name(class: Option<&str>, name: &str) -> Option<String> {
-    let class = class?.trim_start_matches('_');
-    (!class.is_empty() && name.starts_with("__") && !name.ends_with("__"))
-        .then(|| format!("_{class}{name}"))
 }
 
 /// Escaping writes and imports can change module identities from nested scopes.

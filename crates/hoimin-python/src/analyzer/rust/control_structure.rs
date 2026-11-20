@@ -97,6 +97,7 @@ impl<F: Fn() -> bool> AstCandidateCollector<'_, F> {
             && let Some(guard) = &case.guard
             && !guard.is_boolean_literal_expr()
             && selected_source_start(guard.range(), self.line_index, self.facts, self.selection)
+            && self.guard_wrapper_fits(case.pattern.end(), guard.end())
         {
             let range = guard.range();
             let original = &self.source[byte_range(range)];
@@ -111,6 +112,34 @@ impl<F: Fn() -> bool> AstCandidateCollector<'_, F> {
                 );
             }
         }
+    }
+
+    // The AST omits redundant grouping. CPython's tokenizer allows 200
+    // nested delimiters, and the two wrappers enclose the entire expression.
+    fn guard_wrapper_fits(&mut self, pattern_end: TextSize, guard_end: TextSize) -> bool {
+        let tokens = self.facts.tokens.expect("checked parse");
+        let mut inside_guard = false;
+        let mut depth = 0;
+        for token in tokens.in_range(TextRange::new(pattern_end, guard_end)) {
+            if self.check_cancelled() {
+                return false;
+            }
+            if !inside_guard {
+                inside_guard = token.kind() == TokenKind::If;
+                continue;
+            }
+            match token.kind() {
+                TokenKind::Lpar | TokenKind::Lbrace | TokenKind::Lsqb => {
+                    depth += 1;
+                    if depth > 198 {
+                        return false;
+                    }
+                }
+                TokenKind::Rpar | TokenKind::Rbrace | TokenKind::Rsqb => depth -= 1,
+                _ => {}
+            }
+        }
+        inside_guard
     }
 
     fn dead_case_header(&mut self, case: &MatchCase) -> Option<(TextRange, String)> {
@@ -270,16 +299,8 @@ fn valid_bindings<'a>(
                     .all(|p| valid_bindings(p, names, cancelled))
         }
         Pattern::MatchMapping(p) => {
-            #[expect(
-                clippy::mutable_key_type,
-                reason = "Ruff's Python-equality hash ignores AST node indices and the checked tree is immutable during discovery"
-            )]
-            let mut literals = HashSet::new();
-            p.keys.iter().all(|key| {
-                !cancelled()
-                    && (key.is_attribute_expr()
-                        || literals.insert(ruff_python_ast::comparable::HashableExpr::from(key)))
-            }) && p.rest.as_ref().is_none_or(|name| bind(names, name))
+            super::mapping_keys::distinct_literals(&p.keys, cancelled)
+                && p.rest.as_ref().is_none_or(|name| bind(names, name))
                 && p.patterns
                     .iter()
                     .all(|p| valid_bindings(p, names, cancelled))

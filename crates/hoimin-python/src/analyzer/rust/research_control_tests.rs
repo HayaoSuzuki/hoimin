@@ -306,3 +306,40 @@ fn case_near_compiler_indent_limit_is_skipped() {
     assert_eq!(out.diagnostics.len(), 0, "{:?}", out.diagnostics);
     assert_eq!(out.candidates.len(), 0, "{:?}", out.candidates);
 }
+
+#[rstest]
+#[case::leading_pylint("# pylint: disable-next=not-callable\nfirst()\nsecond()", 0)]
+#[case::leading_directive_nested(
+    "def f():\n # pylint: disable-next=not-callable\n first()\n second()",
+    0
+)]
+#[case::bom_leading_directive("\u{feff}# pylint: disable-next=not-callable\nfirst()\nsecond()", 0)]
+#[case::leading_pyre("# pyre-fixme[6]\nfirst()\nsecond()", 0)]
+#[case::leading_inspection("# noinspection PyTypeChecker\nfirst()\nsecond()", 0)]
+#[case::preceding_inline_directive("setup() # noqa\nfirst()\nsecond()", 1)]
+#[case::ordinary_comment("# after setup\nfirst()\nsecond()", 1)]
+#[case::private_store_explicit_read("class K:\n def f(self):\n  __x = int(2)\n  print(_K__x)", 0)]
+#[case::explicit_store_private_read("class _K:\n def f(self):\n  _K__x = int(2)\n  print(__x)", 0)]
+#[case::different_class_prefix("class K:\n def f(self):\n  __x = int(2)\n  print(_Other__x)", 1)]
+fn review_order_attachment_and_binding(#[case] source: &str, #[case] count: usize) {
+    let selected = ["statement_order_swap"];
+
+    let result = analyze_selected(&selected, source);
+
+    assert_eq!(result.candidates.len(), count, "{:?}", result.candidates);
+}
+
+#[rstest]
+#[case::large_integer_float("18446744073709551616", "18446744073709551616.0", 0)]
+#[case::large_radix_integer("0x1_0000_0000_0000_0000", "18446744073709551616", 0)]
+#[case::negative_large_integer("-18446744073709551616", "-18446744073709551616.0", 0)]
+#[case::zero_imaginary("18446744073709551616", "18446744073709551616.0+0j", 0)]
+#[case::next_integer_distinct("18446744073709551617", "18446744073709551616.0", 1)]
+#[case::rounded_complex_real("0x1_0000_0000_0000_0001 + 2j", "18446744073709551616.0+2j", 0)]
+fn review_mapping_key_equality(#[case] first: &str, #[case] second: &str, #[case] count: usize) {
+    let source = format!("match x:\n case {{{first}: a, {second}: b}}: pass");
+
+    let result = analyze_selected(&["match_case_delete"], &source);
+
+    assert_eq!(result.candidates.len(), count, "{:?}", result.candidates);
+}

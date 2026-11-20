@@ -1,4 +1,4 @@
-//! Collision identities for the actual key edits: bool flips and complex conjugation.
+//! Equality of mapping-pattern keys for compiler checks and key-changing mutations.
 //!
 //! Real-only keys can collide with a bool replacement only at exactly 0 or 1.
 //! A nonzero imaginary part cannot equal a real-only key. Conjugating zero does
@@ -6,8 +6,9 @@
 //! Thus ordinary large integer keys never need conversion to floating point.
 use std::collections::HashSet;
 
-use num_bigint::BigUint;
-use num_traits::ToPrimitive;
+use num_bigint::{BigInt, BigUint};
+use num_traits::{FromPrimitive, ToPrimitive};
+use ruff_python_ast::comparable::HashableExpr;
 use ruff_python_ast::{Expr, Number, Operator, UnaryOp};
 use ruff_text_size::{Ranged, TextRange};
 
@@ -37,6 +38,15 @@ fn identity(real: f64, imag: f64) -> Option<Identity> {
     }
 }
 
+fn integer_digits(text: &str) -> (&str, u32) {
+    match text.get(..2) {
+        Some("0x" | "0X") => (&text[2..], 16),
+        Some("0o" | "0O") => (&text[2..], 8),
+        Some("0b" | "0B") => (&text[2..], 2),
+        _ => (text, 10),
+    }
+}
+
 /// Only complex construction converts an integer real part, as `CPython` does.
 /// `BigUint` handles original radix/underscore spelling and ties-to-even rounding.
 /// Integer overflow is not a foldable Python complex literal; float infinity is.
@@ -51,12 +61,7 @@ fn complex_real(expr: &Expr) -> Option<f64> {
                     value.to_f64().expect("u64 converts to finite f64")
                 } else {
                     let text = value.to_string().replace('_', "");
-                    let (digits, radix) = match text.get(..2) {
-                        Some("0x" | "0X") => (&text[2..], 16),
-                        Some("0o" | "0O") => (&text[2..], 8),
-                        Some("0b" | "0B") => (&text[2..], 2),
-                        _ => (text.as_str(), 10),
-                    };
+                    let (digits, radix) = integer_digits(&text);
                     let digits = digits.trim_start_matches('0');
                     // These generous digit bounds include every finite f64 integer
                     // conversion. Boundary rounding remains the library's job.
@@ -139,6 +144,69 @@ fn key_identity(expr: &Expr) -> Option<Identity> {
         }
         _ => complex(expr).and_then(|(real, imag)| identity(real, imag)),
     }
+}
+
+// Integral floats and zero-imaginary complex values share Python's integer
+// equality, even above u64. Keep literal integers exact; only the construction
+// of a complex real component rounds an integer to binary64.
+#[derive(Eq, PartialEq, Hash)]
+enum LiteralKey<'a> {
+    Integer(BigInt),
+    Numeric { real: u64, imag: u64 },
+    Other(HashableExpr<'a>),
+}
+
+fn literal_key(key: &Expr) -> Option<LiteralKey<'_>> {
+    if let Expr::BooleanLiteral(value) = key {
+        return Some(LiteralKey::Integer(BigInt::from(value.value)));
+    }
+    let (operand, negative) = match key {
+        Expr::UnaryOp(unary) if unary.op == UnaryOp::USub => (unary.operand.as_ref(), true),
+        _ => (key, false),
+    };
+    if let Expr::NumberLiteral(number) = operand
+        && let Number::Int(integer) = &number.value
+    {
+        let magnitude = if let Some(small) = integer.as_u64() {
+            BigInt::from(small)
+        } else {
+            let text = integer.to_string().replace('_', "");
+            let (digits, radix) = integer_digits(&text);
+            BigInt::parse_bytes(digits.as_bytes(), radix)?
+        };
+        return Some(LiteralKey::Integer(if negative {
+            -magnitude
+        } else {
+            magnitude
+        }));
+    }
+    if !matches!(
+        key,
+        Expr::NumberLiteral(_) | Expr::UnaryOp(_) | Expr::BinOp(_)
+    ) {
+        return Some(LiteralKey::Other(HashableExpr::from(key)));
+    }
+    let (real, imag) = complex(key).or_else(|| complex_real(key).map(|n| (n, 0.0)))?;
+    if imag == 0.0 && real.fract() == 0.0 {
+        return BigInt::from_f64(real).map(LiteralKey::Integer);
+    }
+    let bits = |n: f64| if n == 0.0 { 0 } else { n.to_bits() };
+    Some(LiteralKey::Numeric {
+        real: bits(real),
+        imag: bits(imag),
+    })
+}
+
+pub(super) fn distinct_literals(keys: &[Expr], cancelled: &impl Fn() -> bool) -> bool {
+    #[expect(
+        clippy::mutable_key_type,
+        reason = "Ruff's comparable literal hash ignores node indices and the checked tree is immutable"
+    )]
+    let mut seen = HashSet::new();
+    keys.iter().all(|key| {
+        !cancelled()
+            && (key.is_attribute_expr() || literal_key(key).is_some_and(|k| seen.insert(k)))
+    })
 }
 
 /// Normalize each key at most twice and use one hash lookup per editable key.
