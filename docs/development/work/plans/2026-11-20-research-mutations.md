@@ -36,11 +36,11 @@ Read control-design.md. Create rust/control_structure.rs (or focused finally/mat
 
 Read calls-design.md sections for #1192/#1195/#1196. Create rust/call_contracts.rs and tests; extend callable_imports.rs only as needed for guarded dotted imports, reuse optional_keywords.rs signature facts where sound. Modify IDs/defaults/ranking/integration.
 
-- [ ] Add failing tests for re/html/URL escape removal, positional/keyword/boundary swaps and typed call/await results.
-- [ ] Record focused RED.
-- [ ] Implement preserved evaluation order and scoped binding safeguards. No lambda scope relocation, duplicate evaluation or exception fallback.
-- [ ] Add finite runtime witnesses and bounded property cases for parse validity, alias/shadowing, spread rejection, defaults and source encodings.
-- [ ] Verify focused and impacted existing tests; record five code/test review passes, commit and report.
+- [x] Add failing tests for re/html/URL escape removal, positional/keyword/boundary swaps and typed call/await results.
+- [x] Record focused RED.
+- [x] Implement preserved evaluation order and scoped binding safeguards. No lambda scope relocation, duplicate evaluation or exception fallback.
+- [x] Add finite runtime witnesses and bounded property cases for parse validity, alias/shadowing, spread rejection, defaults and source encodings.
+- [x] Verify focused and impacted existing tests; record five code/test review passes, commit and report.
 
 ### Task 3: Collection processing and precision mutations
 
@@ -80,3 +80,5 @@ Update user guides/operator documentation, generated CLI reference, default-sele
 4. Verification gaps: added await, wildcard reachability, encoded sources, scoped regex flags, shadowing and source/lifetime effects to task owners.
 5. Proportion and completion: five independently reviewable deliverables, setup integrated into owners, final task is cross-family integration rather than repeated per-family testing. Full suite repeated only after new changes justify it.
 
+
+User clarification (2026-11-20): every new mutation operator in all nine issues is opt-out: enabled by default and individually disableable using existing options. No opt-in subset or experimental-default exception. Verify actual default planning and exclusion behavior, including the three earlier issues.
