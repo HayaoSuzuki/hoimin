@@ -3,12 +3,14 @@ import os
 import subprocess
 import sys
 import time
+from contextlib import nullcontext
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import create_autospec
 
 import pytest
 import yaml
-from hypothesis import example, given
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 from pytest_mock import MockerFixture
 
@@ -18,6 +20,122 @@ ROOT = Path(__file__).resolve().parents[1]
 FAILURE_CODE = 23
 MAX_SEED = 4294967295
 JOB_MINUTES = 11
+
+
+@pytest.mark.parametrize("count", [0, 1, 512, 513, 1000])
+def test_active_corpus_bounds_cached_replay(tmp_path: Path, count: int) -> None:
+    # Arrange: old discoveries must survive a bounded replay unchanged.
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    original = {f"input-{index:04}": str(index).encode() for index in range(count)}
+    for name, data in original.items():
+        (cache / name).write_bytes(data)
+
+    # Act: read the real files libFuzzer will receive.
+    with ci_fuzz.active_corpus(cache, seed=19) as active:
+        replay = {p.name: p.read_bytes() for p in active.iterdir()}
+
+    # Assert: only cached replay is bounded; no cached evidence is deleted.
+    assert len(replay) == min(count, 512)
+    assert replay.items() <= original.items()
+    assert {p.name: p.read_bytes() for p in cache.iterdir()} == original
+    assert not active.exists()
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_active_corpus_retains_new_discoveries_on_exit(
+    tmp_path: Path, *, fail: bool
+) -> None:
+    # Arrange
+    cache = tmp_path / "cache"
+    active_path: Path | None = None
+
+    # Act
+    with (
+        pytest.raises(ci_fuzz.FuzzError) if fail else nullcontext(),
+        ci_fuzz.active_corpus(cache, seed=19) as active,
+    ):
+        active_path = active
+        (active / "new-input").write_bytes(b"discovered")
+        if fail:
+            msg = "target failed"
+            raise ci_fuzz.FuzzError(msg)
+
+    # Assert
+    assert (cache / "new-input").read_bytes() == b"discovered"
+    assert active_path is not None
+    assert not active_path.exists()
+
+
+def test_campaign_passes_all_fresh_inputs_outside_sampled_cache(
+    recorded_campaign: tuple[ci_fuzz.Campaign, dict[str, tuple[list[str], bool]]],
+) -> None:
+    # Arrange
+    campaign, observations = recorded_campaign
+
+    # Act
+    ci_fuzz.run_campaign(campaign, seconds_per_target=1)
+    analyzer_argv, _ = observations["python_analyzer"]
+    generator_commands = [
+        argv for name, (argv, _) in observations.items() if name.startswith("generate-")
+    ]
+    generated_paths = {argv[argv.index("--output") + 1] for argv in generator_commands}
+
+    # Assert: every generator feeds an unsampled input directory to the analyzer.
+    assert len(generator_commands) == 5
+    assert generated_paths == {analyzer_argv[9]}
+    assert Path(analyzer_argv[9]).is_dir()
+    assert analyzer_argv[9] != analyzer_argv[7]
+
+
+def test_campaign_runs_against_sampled_cache_and_saves_discovery(
+    recorded_campaign: tuple[ci_fuzz.Campaign, dict[str, tuple[list[str], bool]]],
+    mocker: MockerFixture,
+) -> None:
+    # Arrange: enough cached inputs to exceed the replay bound.
+    campaign, _ = recorded_campaign
+    cache = ci_fuzz.ROOT / "fuzz/corpus/python_analyzer"
+    cache.mkdir(parents=True)
+    for index in range(600):
+        (cache / str(index)).write_text(str(index))
+    replayed: list[int] = []
+
+    def run(name: str, argv: list[str], **_options: object) -> None:
+        if name == "python_analyzer":
+            active = Path(argv[7])
+            replayed.append(len(list(active.iterdir())))
+            (active / "discovery").write_bytes(b"new input")
+
+    mocker.patch.object(campaign, "run", side_effect=run)
+
+    # Act
+    ci_fuzz.run_campaign(campaign, seconds_per_target=1)
+
+    # Assert: the process sees the bounded copy and its output reaches the cache.
+    assert replayed == [512]
+    assert len(list(cache.iterdir())) == 601
+    assert (cache / "discovery").read_bytes() == b"new input"
+
+
+@given(seed=st.integers(1, MAX_SEED))
+@settings(max_examples=10, deadline=None)
+def test_active_corpus_selection_is_reproducible(seed: int) -> None:
+    # Arrange
+    with TemporaryDirectory() as directory:
+        cache = Path(directory) / "cache"
+        cache.mkdir()
+        for index in range(520):
+            (cache / str(index)).write_bytes(str(index).encode())
+
+        # Act
+        with ci_fuzz.active_corpus(cache, seed=seed) as active:
+            first = {p.name for p in active.iterdir()}
+        with ci_fuzz.active_corpus(cache, seed=seed) as active:
+            second = {p.name for p in active.iterdir()}
+
+        # Assert
+        assert len(first) == 512
+        assert second == first
 
 
 @pytest.fixture
@@ -67,15 +185,17 @@ def test_campaign_dispatches_bounded_fuzz_commands_with_existing_output_corpus(
         "--codegen-units",
     ]
     assert int(argv[5]) > 0
-    assert argv[6:10] == [target, f"fuzz/corpus/{target}", f"fuzz/seeds/{target}", "--"]
-    assert argv[10:12] == ["-max_total_time=7", "-seed=19"]
-    assert argv[12].startswith("-max_len=")
-    assert int(argv[12].removeprefix("-max_len=")) > 0
-    assert argv[13].startswith("-timeout=")
-    assert int(argv[13].removeprefix("-timeout=")) > 0
-    assert argv[14].startswith("-rss_limit_mb=")
-    assert int(argv[14].removeprefix("-rss_limit_mb=")) > 0
-    assert len(argv) == 15
+    assert argv[6] == target
+    assert argv[8] == f"fuzz/seeds/{target}"
+    options = argv[argv.index("--") + 1 :]
+    assert options[:2] == ["-max_total_time=7", "-seed=19"]
+    assert options[2].startswith("-max_len=")
+    assert int(options[2].removeprefix("-max_len=")) > 0
+    assert options[3].startswith("-timeout=")
+    assert int(options[3].removeprefix("-timeout=")) > 0
+    assert options[4].startswith("-rss_limit_mb=")
+    assert int(options[4].removeprefix("-rss_limit_mb=")) > 0
+    assert len(options) == 5
     assert corpus_exists
 
 
@@ -333,10 +453,7 @@ def test_campaign_reports_all_targets(
         "generate-libcst-315",
         "generate-python315-315",
     } <= stages.keys()
-    assert all(
-        argv.index(f"fuzz/corpus/{name}") < argv.index(f"fuzz/seeds/{name}")
-        for name, argv in target_argv.items()
-    )
+    assert all(argv[8] == f"fuzz/seeds/{name}" for name, argv in target_argv.items())
     assert durations == sorted(durations)
 
 

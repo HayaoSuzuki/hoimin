@@ -636,7 +636,9 @@ the `python315` structured strategy for lazy imports and synchronous/asynchronou
 unpacking in list, set and dict comprehensions and generator expressions.
 Every generated source is compiled with that lane's CPython, without execution;
 3.14 rejects a request for the `python315` strategy. Eleven fixed 3.15 seeds
-also enter the analyzer target. Both lanes feed the same hash-named corpus.
+also enter the analyzer target. Both lanes feed the same hash-named input
+directory under `fuzz-report/generated-python`; every fresh input enters the
+analyzer run and remains available in the diagnostic artifact.
 
 The workflow's Python 3.14 setup is the campaign driver; every `uv sync` and
 `uv run` selects its generation interpreter explicitly with `--python`.
@@ -652,7 +654,13 @@ process group, including compiler and fuzzer children.
 
 The cargo-fuzz executable and discovered corpus are cached. Large compiled
 target directories are not cached, keeping post-job work small. CI builds use
-16 codegen units to reduce compilation time. Both generation and fuzzing use
+16 codegen units to reduce compilation time. Each target replays at most 512
+cached inputs, sampled using the campaign seed, in a temporary working corpus.
+Fixed seeds and freshly generated Python inputs enter separately without
+sampling. This bounds cache replay during libFuzzer startup, which runs before
+its total-time check. After each target, including failures, working-corpus
+discoveries are copied back into the cache; the original cache is retained.
+The limit applies to both CI and scheduled campaigns. Both generation and fuzzing use
 a seed derived from the workflow run ID. The `fuzz-report` artifact retains
 per-stage command logs (with Python-version suffixes for generation), a JSON
 summary with timings, explicit environment selectors and completed targets, and

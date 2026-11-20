@@ -209,7 +209,7 @@ const QUANTUM_SIGNALS: &str = concat!(
     "def run(inexact, rounded):\n",
     " with d.localcontext() as ctx:\n",
     "  value=d.Decimal('-0.0049').quantize(d.Decimal('.01'))\n",
-    "  return str(value),value.as_tuple().sign,value.as_tuple().exponent,ctx.flags[inexact],ctx.flags[rounded]\n",
+    "  return str(value),value.as_tuple().sign,value.as_tuple().exponent,bool(ctx.flags[inexact]),bool(ctx.flags[rounded])\n",
 );
 const INTERMEDIATE_DECIMAL: &str = concat!(
     "import decimal as d\n",
@@ -219,7 +219,7 @@ const INTERMEDIATE_DECIMAL: &str = concat!(
     "def run(inexact, rounded):\n",
     " with d.localcontext() as ctx:\n",
     "  inner=(d.Decimal('2.45').quantize(d.Decimal('.1'),context=option(),rounding=mode()) * 2).quantize(d.Decimal('.1'))\n",
-    "  return str(inner),ctx.flags[inexact],ctx.flags[rounded],trace\n",
+    "  return str(inner),bool(ctx.flags[inexact]),bool(ctx.flags[rounded]),trace\n",
 );
 
 #[rstest]
@@ -291,7 +291,7 @@ const INTERMEDIATE_DECIMAL: &str = concat!(
     "decimal_context_precision",
     "from decimal import Context, Decimal\nctx=Context(5)\nout=ctx.multiply(Decimal('123'),Decimal('1'))\n",
     "1",
-    "from decimal import Inexact; import subject as s; print(s.out,s.ctx.flags[Inexact])",
+    "from decimal import Inexact; import subject as s; print(s.out,bool(s.ctx.flags[Inexact]))",
     "123 False\n",
     "1E+2 True\n"
 )]
