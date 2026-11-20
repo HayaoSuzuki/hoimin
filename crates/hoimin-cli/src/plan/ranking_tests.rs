@@ -594,6 +594,9 @@ const BEHAVIORAL_OPERATORS: &[&str] = &[
     "decimal_quantum_shift",
     "decimal_context_precision",
     "intermediate_rounding_remove",
+    "regex_match_boundary",
+    "regex_character_set",
+    "regex_ascii_mode",
     "dataclass_factory_share",
     "sort_key_swap",
     "encoding_errors_ignore",
@@ -802,6 +805,9 @@ fn ranking_category_inventory_covers_every_canonical_operator() {
 #[case::decimal_rounding_mode_swap("decimal_rounding_mode_swap", RankingReasonCode::Behavioral, 80)]
 #[case::decimal_quantum_shift("decimal_quantum_shift", RankingReasonCode::Behavioral, 80)]
 #[case::decimal_context_precision("decimal_context_precision", RankingReasonCode::Behavioral, 80)]
+#[case::regex_match_boundary("regex_match_boundary", RankingReasonCode::Behavioral, 80)]
+#[case::regex_character_set("regex_character_set", RankingReasonCode::Behavioral, 80)]
+#[case::regex_ascii_mode("regex_ascii_mode", RankingReasonCode::Behavioral, 80)]
 #[case::intermediate_rounding_remove(
     "intermediate_rounding_remove",
     RankingReasonCode::Behavioral,

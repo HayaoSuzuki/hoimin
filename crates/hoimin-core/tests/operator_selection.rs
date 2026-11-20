@@ -355,7 +355,7 @@ fn exception_hierarchy_is_explicit_only(#[case] family: &str) {
 }
 
 // Fixed current policy, independent of catalog and production default builders.
-const CURRENT_DEFAULT_NAMES: [&str; 104] = [
+const CURRENT_DEFAULT_NAMES: [&str; 107] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -460,6 +460,9 @@ const CURRENT_DEFAULT_NAMES: [&str; 104] = [
     "decimal_quantum_shift",
     "decimal_context_precision",
     "intermediate_rounding_remove",
+    "regex_match_boundary",
+    "regex_character_set",
+    "regex_ascii_mode",
 ];
 
 #[test]
@@ -570,6 +573,7 @@ fn effective_python_mutations_are_default_and_individually_selectable(#[case] na
     MutationOperator::SetUnionIntersectionSwap,
     MutationOperator::AggregateSumCount,
 ])]
+#[case::regex("regex", &[MutationOperator::RegexMatchBoundary,MutationOperator::RegexCharacterSet,MutationOperator::RegexAsciiMode])]
 #[case::rounding("rounding", &[
     MutationOperator::RoundingFunctionSwap,
     MutationOperator::RoundDigitsRemove,

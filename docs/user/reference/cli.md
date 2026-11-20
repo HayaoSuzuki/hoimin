@@ -719,7 +719,8 @@ Mutation operator IDs and selector families:
   list_comprehension_to_generator, loop_break_insert, mapping_setdefault_to_get, match_case_delete
   match_guard_constant, match_or_alternative_delete, membership, method_call_remove
   mutable_default_share, none_truthiness, nonlocal_remove, operator_function
-  optional_keyword_delete, override_method_delete, remove_not, return_tuple_swap
+  optional_keyword_delete, override_method_delete, regex, regex_ascii_mode
+  regex_character_set, regex_match_boundary, remove_not, return_tuple_swap
   round_digits_remove, rounding, rounding_function_swap, set_union_intersection_swap
   sort_key_swap, statement_delete, statement_order_swap, stdlib_conversion_call_remove
   stdlib_escape_remove, string_literal_empty, string_segment_empty, structure_append_extend
@@ -1066,7 +1067,8 @@ Mutation operator IDs and selector families:
   list_comprehension_to_generator, loop_break_insert, mapping_setdefault_to_get, match_case_delete
   match_guard_constant, match_or_alternative_delete, membership, method_call_remove
   mutable_default_share, none_truthiness, nonlocal_remove, operator_function
-  optional_keyword_delete, override_method_delete, remove_not, return_tuple_swap
+  optional_keyword_delete, override_method_delete, regex, regex_ascii_mode
+  regex_character_set, regex_match_boundary, remove_not, return_tuple_swap
   round_digits_remove, rounding, rounding_function_swap, set_union_intersection_swap
   sort_key_swap, statement_delete, statement_order_swap, stdlib_conversion_call_remove
   stdlib_escape_remove, string_literal_empty, string_segment_empty, structure_append_extend

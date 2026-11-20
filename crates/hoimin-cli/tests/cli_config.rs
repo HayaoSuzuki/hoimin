@@ -67,7 +67,7 @@ fn native_mutation_config(
     }
 }
 
-const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 104] = [
+const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 107] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -172,6 +172,9 @@ const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 104] = [
     "decimal_quantum_shift",
     "decimal_context_precision",
     "intermediate_rounding_remove",
+    "regex_match_boundary",
+    "regex_character_set",
+    "regex_ascii_mode",
 ];
 
 #[rstest::rstest]
@@ -249,8 +252,8 @@ fn usage_documents_all_mutation_operator_ids_and_selector_families_1(#[case] nam
 }
 
 #[rstest::rstest]
-#[case::runtime_default_count("104 default runtime operators")]
-#[case::operator_id_count("123 operator IDs")]
+#[case::runtime_default_count("107 default runtime operators")]
+#[case::operator_id_count("126 operator IDs")]
 #[case::collection_ops_3("collection_ops")]
 #[case::structure_ops_4("structure_ops")]
 #[case::bitwise_ops_5("bitwise_ops")]
@@ -259,6 +262,7 @@ fn usage_documents_all_mutation_operator_ids_and_selector_families_1(#[case] nam
 #[case::call_contracts("call_contracts")]
 #[case::collection_processing("collection_processing")]
 #[case::rounding("rounding")]
+#[case::regex("regex")]
 #[case::exception_type_pair_8("exception_type_pair")]
 #[case::baseexception_9("BaseException")]
 #[case::except_10("except*")]

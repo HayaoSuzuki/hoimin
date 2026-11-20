@@ -670,10 +670,10 @@ the detailed capability and cleanup model.
 
 ## Mutation operators
 
-Without `--operators`, a run selects 104 default runtime operators. `--operators`
+Without `--operators`, a run selects 107 default runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
-individual IDs or selector families. Hoimin exposes 123 operator IDs in total:
-104 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
+individual IDs or selector families. Hoimin exposes 126 operator IDs in total:
+107 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
 `exception_hierarchy`, and six opt-in analyzers: `condition_constant`,
 `function_body_erase`, `enum_member_replace`, `condition_clause_delete`,
 `container_element_delete`, and `optional_keyword_delete`.
@@ -745,6 +745,9 @@ binding analysis. Their existing applicability guards are unchanged.
 | Decimal mode | `decimal_rounding_mode_swap` | Change a known rounding mode in quantization, a context constructor, or a context assignment. |
 | Decimal quantum | `decimal_quantum_shift` | Increase or decrease the exponent of a known finite Decimal quantum by one. |
 | Decimal precision | `decimal_context_precision` | Set an explicit Decimal context precision of three or more to one, or increase a precision of one or two by two. |
+| Match boundary | `regex_match_boundary` | Exchange whole-input, prefix, and substring matching, or change a start/end assertion. Compiled receiver edits preserve `pos` and `endpos`. |
+| Regex character set | `regex_character_set` | Change one decimal, word, whitespace, complement, boundary, or case-insensitive class between ASCII and Unicode behavior. |
+| Regex ASCII mode | `regex_ascii_mode` | Toggle the root text-pattern mode while preserving scoped overrides and other flags. The compiled pattern exposes the changed flags. |
 | Rounding stage | `intermediate_rounding_remove` | Skip an inner `round` or Decimal quantization in an arithmetic expression followed by final rounding. Evaluate the inner numeric value and options in source order. |
 | Statement order | `statement_order_swap` | Exchange adjacent calls, assignments, or assertions when at least one can have an effect. Direct local-name dependencies and directive comments exclude a pair. |
 | Single inheritance | `override_method_delete`, `super_call_move` | Remove an ordinary overriding method or move its standalone same-method delegation; enabled by default |
@@ -761,6 +764,18 @@ binding analysis. Their existing applicability guards are unchanged.
 | Boundary operators | `structure_index_neighbor`, `structure_slice_neighbor` | adjacent plain-decimal index and slice-bound values, including unary-minus integers |
 | Slice ranges | `structure_slice_bound_omit`, `structure_slice_bound_move` | omit one of two explicit bounds, or move a single bound to the other side; enabled by default |
 | Exception types | `exception_type_pair` | curated pairs such as `ValueError` ↔ `TypeError` in simple `except`/`except*` clauses and supported `raise` expressions |
+
+Use `--operators regex` to select all three regex operators, or exclude one
+with `--exclude-operators regex_ascii_mode`. An imported `re` name must
+resolve to the standard library. The analyzer recognizes literal text and byte
+patterns, uniquely initialized module and local literal bindings, and trusted compiled
+receivers. Bytes have no Unicode-mode mutation. Dynamic patterns can still
+support a method edit when both methods accept the supplied arguments.
+Pattern analysis skips ambiguous future set operators and groups nested more
+than 255 levels deep.
+For an ASCII-only field, an original `\\d+` accepting fullwidth digits can
+fail the specification before any mutant runs. A Unicode decimal field
+requires a test accepting such digits to distinguish it from `[0-9]+`.
 
 Decimal rounding changes can affect the value, exponent, flags, and traps of
 a calculation. When checking a scoped context, assert precision-sensitive

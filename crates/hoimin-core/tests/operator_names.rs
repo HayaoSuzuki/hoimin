@@ -301,9 +301,12 @@ const OPERATORS: &[(MutationOperator, &str)] = &[
         MutationOperator::IntermediateRoundingRemove,
         "intermediate_rounding_remove",
     ),
+    (MutationOperator::RegexMatchBoundary, "regex_match_boundary"),
+    (MutationOperator::RegexCharacterSet, "regex_character_set"),
+    (MutationOperator::RegexAsciiMode, "regex_ascii_mode"),
 ];
 
-const FAMILIES: [&str; 11] = [
+const FAMILIES: [&str; 12] = [
     "type_nullable",
     "type_collections",
     "type_iterables",
@@ -315,6 +318,7 @@ const FAMILIES: [&str; 11] = [
     "call_contracts",
     "collection_processing",
     "rounding",
+    "regex",
 ];
 
 #[rstest::rstest]
@@ -441,6 +445,9 @@ const FAMILIES: [&str; 11] = [
 #[case::decimal_quantum_shift(120)]
 #[case::decimal_context_precision(121)]
 #[case::intermediate_rounding_remove(122)]
+#[case::regex_match_boundary(123)]
+#[case::regex_character_set(124)]
+#[case::regex_ascii_mode(125)]
 fn canonical_names_preserve_wire_encoding_and_exact_lookup(#[case] case_index: usize) {
     let &(operator, name) = &OPERATORS[case_index];
 

@@ -102,6 +102,11 @@ impl<'a> CandidateSelection<'a> {
     }
 
     pub(super) fn includes(&self, line: u32, symbol: Option<&str>) -> bool {
+        self.intersects(line, line, symbol)
+    }
+
+    /// A literal and its token interiors share their enclosing Python symbol.
+    pub(super) fn intersects(&self, first: u32, last: u32, symbol: Option<&str>) -> bool {
         #[cfg(test)]
         super::selection_tests::record_query();
         let line_selected = match &self.lines {
@@ -110,14 +115,14 @@ impl<'a> CandidateSelection<'a> {
                 let end = ranges.partition_point(|range| {
                     #[cfg(test)]
                     super::selection_tests::record_membership();
-                    range.start <= line
+                    range.start <= last
                 });
                 // All starts to the left qualify. Their maximum end therefore
                 // answers membership even when the latest interval is nested.
                 end.checked_sub(1).is_some_and(|index| {
                     #[cfg(test)]
                     super::selection_tests::record_membership();
-                    line <= ranges[index].end
+                    first <= ranges[index].end
                 })
             }
         };

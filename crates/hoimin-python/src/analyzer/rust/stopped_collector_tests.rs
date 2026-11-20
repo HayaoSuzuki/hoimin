@@ -263,6 +263,7 @@ fn observe_attempt(
     let mut collector = AstCandidateCollector {
         call_contracts: &call_contracts,
         collections: &collections,
+        regex: &regex::Regex::default(),
         rounding: &rounding,
         processing_site: &processing_site,
         discarded_results: [None; 2],

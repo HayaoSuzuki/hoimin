@@ -613,5 +613,20 @@
     "operator": "intermediate_rounding_remove",
     "status": "deferred",
     "reason": "Compiler and behavioral witnesses are in the collection and precision contract suite outside the initial Lean corpus"
+  },
+  {
+    "operator": "regex_match_boundary",
+    "status": "deferred",
+    "reason": "CPython matching contracts exercise this operator outside the initial Lean corpus"
+  },
+  {
+    "operator": "regex_character_set",
+    "status": "deferred",
+    "reason": "CPython matching contracts exercise this operator outside the initial Lean corpus"
+  },
+  {
+    "operator": "regex_ascii_mode",
+    "status": "deferred",
+    "reason": "CPython matching contracts exercise this operator outside the initial Lean corpus"
   }
 ]

@@ -318,6 +318,9 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::DecimalRoundingModeSwap
         | MutationOperator::DecimalQuantumShift
         | MutationOperator::DecimalContextPrecision
+        | MutationOperator::RegexMatchBoundary
+        | MutationOperator::RegexCharacterSet
+        | MutationOperator::RegexAsciiMode
         | MutationOperator::IntermediateRoundingRemove
         | MutationOperator::StringLiteralEmpty
         | MutationOperator::StringSegmentEmpty

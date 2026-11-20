@@ -98,6 +98,8 @@ mod local_initializers;
 mod processing_calls;
 #[path = "rust/reduce.rs"]
 pub mod reduce;
+#[path = "rust/regex.rs"]
+mod regex;
 #[path = "rust/rounding.rs"]
 mod rounding;
 #[path = "rust/source_delimiters.rs"]
@@ -3238,6 +3240,7 @@ struct AstCandidateCollector<'a, F> {
     optional_functions: &'a optional_keywords::FunctionIndex<'a>,
     call_contracts: &'a call_contracts::Contracts,
     collections: &'a collection_processing::Collections,
+    regex: &'a regex::Regex<'a>,
     rounding: &'a rounding::Rounding,
     processing_site: &'a processing_calls::Site<'a>,
     discarded_results: [Option<TextRange>; 2],
@@ -3316,6 +3319,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             MutationOperator::ComprehensionFilterInvert,
             MutationOperator::FilterPredicateSwap,
             MutationOperator::AggregateSumCount,
+            MutationOperator::RegexMatchBoundary,
             MutationOperator::RoundingFunctionSwap,
             MutationOperator::RoundDigitsRemove,
             MutationOperator::DecimalRoundingModeSwap,
@@ -3338,6 +3342,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             MutationOperator::FilterPredicateSwap,
             MutationOperator::SetUnionIntersectionSwap,
             MutationOperator::AggregateSumCount,
+            MutationOperator::RegexMatchBoundary,
             MutationOperator::RoundingFunctionSwap,
             MutationOperator::RoundDigitsRemove,
             MutationOperator::DecimalRoundingModeSwap,
@@ -3368,10 +3373,12 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         };
         let collections =
             collection_processing::Collections::build(module, &processing_site, cancelled)?;
+        let regex = regex::Regex::build(module, &processing_site, cancelled)?;
         let rounding = rounding::Rounding::build(module, &processing_site, cancelled)?;
         let mut collector = AstCandidateCollector {
             call_contracts: &call_contracts,
             collections: &collections,
+            regex: &regex,
             rounding: &rounding,
             processing_site: &processing_site,
             discarded_results: [None; 2],
@@ -3393,6 +3400,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             string_exclusions: if [
                 MutationOperator::StringLiteralEmpty,
                 MutationOperator::StringSegmentEmpty,
+                MutationOperator::RegexMatchBoundary,
+                MutationOperator::RegexCharacterSet,
+                MutationOperator::RegexAsciiMode,
                 MutationOperator::OptionalKeywordDelete,
                 MutationOperator::ConversionCallRemove,
                 MutationOperator::StdlibConversionCallRemove,
@@ -3838,6 +3848,27 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 },
             );
         }
+        if self.regex.active() && !self.check_cancelled() {
+            self.regex.emit(
+                call,
+                self.processing_site,
+                self.request.max_candidates,
+                selected,
+                |range| {
+                    if selection.is_unrestricted() {
+                        return true;
+                    }
+                    let start = usize::from(range.start());
+                    let (first, _) = line_index.line_and_column(start);
+                    let (last, _) = line_index.line_and_column(usize::from(range.end()));
+                    selection.intersects(first, last, facts.scope_at(start).as_deref())
+                },
+                |range, text, operator| {
+                    self.add_candidate(range, text, operator);
+                    !self.check_cancelled()
+                },
+            );
+        }
         if self.rounding.visits_calls()
             && self.candidates.failure.is_none()
             && !self.check_cancelled()
@@ -3858,7 +3889,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         if self.candidates.failure.is_some() {
             return;
         }
-        if (self.collections.visits_calls() || self.rounding.visits_calls())
+        if (self.collections.visits_calls() || self.rounding.visits_calls() || self.regex.active())
             && self.runtime_role == RuntimeRole::Value
             && !self.in_pattern
             && !self.string_exclusions.contains_alias(call.range())
@@ -10107,3 +10138,7 @@ mod stopped_collector_tests;
 #[cfg(test)]
 #[path = "rust/processing_tests.rs"]
 mod processing_tests;
+
+#[cfg(test)]
+#[path = "rust/regex_tests.rs"]
+mod regex_tests;

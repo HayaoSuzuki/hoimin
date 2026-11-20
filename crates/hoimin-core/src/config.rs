@@ -210,6 +210,9 @@ mutation_operators! {
     DecimalQuantumShift => "decimal_quantum_shift",
     DecimalContextPrecision => "decimal_context_precision",
     IntermediateRoundingRemove => "intermediate_rounding_remove",
+    RegexMatchBoundary => "regex_match_boundary",
+    RegexCharacterSet => "regex_character_set",
+    RegexAsciiMode => "regex_ascii_mode",
 }
 
 // Family membership is an explicit selection policy, separate from the full
@@ -307,6 +310,14 @@ const SELECTOR_FAMILIES: &[(&str, &[MutationOperator])] = &[
             MutationOperator::DecimalQuantumShift,
             MutationOperator::DecimalContextPrecision,
             MutationOperator::IntermediateRoundingRemove,
+        ],
+    ),
+    (
+        "regex",
+        &[
+            MutationOperator::RegexMatchBoundary,
+            MutationOperator::RegexCharacterSet,
+            MutationOperator::RegexAsciiMode,
         ],
     ),
     (
@@ -483,6 +494,9 @@ const DEFAULT_RUNTIME_OPERATORS: &[MutationOperator] = &[
     MutationOperator::DecimalQuantumShift,
     MutationOperator::DecimalContextPrecision,
     MutationOperator::IntermediateRoundingRemove,
+    MutationOperator::RegexMatchBoundary,
+    MutationOperator::RegexCharacterSet,
+    MutationOperator::RegexAsciiMode,
 ];
 
 impl Default for MutationOperatorSelection {
