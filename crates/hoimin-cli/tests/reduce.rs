@@ -27,10 +27,15 @@ impl Project {
         .unwrap();
         std::fs::write(project.path().join("checks.py"), checks).unwrap();
         let plan = artifacts.path().join("plan.json");
-        let args=vec!["hoimin".into(),"plan".into(),"--root".into(),project.path().as_os_str().to_owned(),
-            "--file".into(),"subject.py".into(),"--operators".into(),"integer_literal_neighbor".into(),
-            "--allow-best-effort-memory".into(),"--min-free-space".into(),"1".into(),
-            "--".into(),"python3".into(),"-c".into(),"import runpy; ns=runpy.run_path('checks.py'); [v() for k,v in ns.items() if k.startswith('test_')]".into()];
+        let python = std::env::var_os("PYTHON")
+            .unwrap_or_else(|| if cfg!(windows) { "python" } else { "python3" }.into());
+        let args = vec![
+            "hoimin".into(), "plan".into(), "--root".into(), project.path().as_os_str().to_owned(),
+            "--file".into(), "subject.py".into(), "--operators".into(), "integer_literal_neighbor".into(),
+            "--allow-best-effort-memory".into(), "--min-free-space".into(), "1".into(),
+            "--".into(), python, "-c".into(),
+            "import runpy; ns=runpy.run_path('checks.py'); [v() for k,v in ns.items() if k.startswith('test_')]".into(),
+        ];
         assert_eq!(
             hoimin_cli::run_with_writers(
                 args,
@@ -255,7 +260,18 @@ async fn insufficient_confirmation_reserve_is_reported_as_incomplete() {
 #[tokio::test]
 async fn reduction_preserves_workspace_execution_metadata() {
     // Arrange
-    let project=Project::new("from subject import value\nimport os, time\nassert os.environ['HOIMIN_RUN_ID']\nassert os.environ['HOIMIN_WORKER_ROOT'] == os.getcwd()\ndef test_keep():\n    assert os.getenv('HOIMIN_MUTANT_ID') is None or value() == 1\ndef test_slow():\n    time.sleep(0.08)\n    assert os.getenv('HOIMIN_MUTANT_ID') is None or value() == 1\n").await;
+    let project = Project::new(concat!(
+        "from subject import value\n",
+        "import os, time\n",
+        "assert os.environ['HOIMIN_RUN_ID']\n",
+        "assert os.path.samefile(os.environ['HOIMIN_WORKER_ROOT'], os.getcwd())\n",
+        "def test_keep():\n",
+        "    assert os.getenv('HOIMIN_MUTANT_ID') is None or value() == 1\n",
+        "def test_slow():\n",
+        "    time.sleep(0.08)\n",
+        "    assert os.getenv('HOIMIN_MUTANT_ID') is None or value() == 1\n",
+    ))
+    .await;
     // Act
     let code = project.reduce("checks.py:test_slow", "5", "30s").await;
     // Assert
