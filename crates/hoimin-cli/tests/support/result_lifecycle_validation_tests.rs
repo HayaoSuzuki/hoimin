@@ -1,6 +1,12 @@
 use super::*;
 use serde_json::json;
 
+const EXITED_CHILD_CLEANUP: &str = if cfg!(windows) {
+    "process tree terminated and root reaped"
+} else {
+    "child already exited"
+};
+
 #[rstest::rstest]
 #[case("/schema", json!(2), "unsupported schema")]
 #[case("/mode", json!("unknown"), "unknown mode")]
@@ -402,7 +408,7 @@ async fn cleanup_tolerates_exited_child() {
 
     let actual_0 = cleanup_cli_process_tree(&mut exited).await;
 
-    assert_eq!(actual_0, "child already exited");
+    assert_eq!(actual_0, EXITED_CHILD_CLEANUP);
 }
 
 #[tokio::test]
@@ -746,7 +752,10 @@ async fn durable_timeout_preserves_failed_premise_output() {
     let fixture = Fixture::new(false).unwrap();
     let mut exits = tokio::process::Command::new(python_executable().unwrap());
     exits
-        .args(["-c", "print('premise failed')"])
+        .args([
+            "-c",
+            "import sys; sys.stdout.buffer.write(b'premise failed\\n')",
+        ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
@@ -834,9 +843,9 @@ async fn output_finisher_retains_wait_failure_and_both_output_streams() {
     .await
     .unwrap_err();
 
-    assert!(error.starts_with(
-        "wait for hoimin CLI failed: injected wait failure; cleanup: child already exited;"
-    ));
+    assert!(error.starts_with(&format!(
+        "wait for hoimin CLI failed: injected wait failure; cleanup: {EXITED_CHILD_CLEANUP};"
+    )));
     assert!(error.contains("stdout: Ok("));
     assert!(error.contains("stderr: Ok("));
 }
