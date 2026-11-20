@@ -17,6 +17,8 @@ pub(super) struct Signature<'ast> {
     pub(super) definition: &'ast StmtFunctionDef,
     positional_only: usize,
     positional: usize,
+    required_positional: usize,
+    required: usize,
     defaults: Vec<bool>,
     names: HashMap<String, usize>,
 }
@@ -54,21 +56,30 @@ impl<'ast> FunctionIndex<'ast> {
                 optional_dynamic_names.insert(function.name.to_string());
             }
             let parameters = &function.parameters;
+            let positional_only = parameters.posonlyargs.len();
+            let positional = positional_only + parameters.args.len();
+            let mut required = 0;
+            let mut required_positional = 0;
             let mut defaults = Vec::new();
             let mut names = HashMap::new();
             for parameter in parameters.iter_non_variadic_params() {
                 if cancelled() {
                     return Err(AnalysisCancelled);
                 }
+                let has_default = parameter.default.is_some();
+                required += usize::from(!has_default);
+                required_positional += usize::from(!has_default && defaults.len() < positional);
                 names.insert(parameter.parameter.name.to_string(), defaults.len());
-                defaults.push(parameter.default.is_some());
+                defaults.push(has_default);
             }
             definitions.insert(
                 function.name.to_string(),
                 Signature {
                     definition: function,
-                    positional_only: parameters.posonlyargs.len(),
-                    positional: parameters.posonlyargs.len() + parameters.args.len(),
+                    positional_only,
+                    positional,
+                    required_positional,
+                    required,
                     defaults,
                     names,
                 },
@@ -253,6 +264,8 @@ impl Signature<'_> {
         cancelled: &impl Fn() -> bool,
         mut visit_keyword: impl FnMut(),
     ) -> Option<Vec<Option<usize>>> {
+        #[cfg(test)]
+        super::call_contract_tests::record_signature_binding();
         let positional = call.arguments.args.len();
         let parameters = &self.definition.parameters;
         if positional > self.positional && parameters.vararg.is_none() {
@@ -263,13 +276,10 @@ impl Signature<'_> {
                 return None;
             }
         }
-        let mut assigned = vec![false; self.defaults.len()];
-        for present in assigned.iter_mut().take(positional) {
-            if cancelled() {
-                return None;
-            }
-            *present = true;
-        }
+        // Python's required positional formals precede the optional ones.
+        // Each unique keyword can cover at most one more required formal.
+        let bound_positionally = positional.min(self.positional);
+        let mut supplied_required = bound_positionally.min(self.required_positional);
         let mut names = HashSet::new();
         let mut keyword_slots = Vec::new();
         for keyword in &call.arguments.keywords {
@@ -287,21 +297,16 @@ impl Signature<'_> {
                 .copied()
                 .filter(|position| *position >= self.positional_only);
             if let Some(slot) = slot {
-                if assigned[slot] {
+                if slot < bound_positionally {
                     return None;
                 }
-                assigned[slot] = true;
+                supplied_required += usize::from(!self.defaults[slot]);
             } else if parameters.kwarg.is_none() {
                 return None;
             }
             keyword_slots.push(slot);
         }
-        for (provided, default) in assigned.iter().zip(&self.defaults) {
-            if cancelled() || (!provided && !default) {
-                return None;
-            }
-        }
-        Some(keyword_slots)
+        (supplied_required == self.required && !cancelled()).then_some(keyword_slots)
     }
 
     pub(super) fn positional_keyword_name(&self, index: usize) -> Option<&str> {
@@ -361,6 +366,11 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for Hazards<'_, F> {
             if dynamic_name(name.id.as_str()) {
                 self.dynamic = true;
             }
+        } else if let Expr::Attribute(attribute) = expression
+            && attribute.attr.as_str() == "__globals__"
+        {
+            // A different function can expose the same module dictionary.
+            self.dynamic = true;
         }
         // Only a direct callee load proves this function object has not escaped.
         if let Expr::Call(call) = expression
@@ -623,6 +633,10 @@ mod coverage_tests {
     #[case("function = replacement", None)]
     #[case("exec('pass')", None)]
     #[case("unrelated = 0", Some(&[0][..]))]
+    #[case::function_globals_exposure(
+        "def changer(): pass\nchanger.__globals__.update(function=override)",
+        None
+    )]
     fn optional_keyword_lookup_rejects_escaped_or_rebound_function_identities(
         #[case] intervening: &str,
         #[case] expected: Option<&[usize]>,
@@ -733,5 +747,36 @@ mod coverage_tests {
         );
 
         assert_eq!(replacements, expected);
+    }
+    #[rstest::rstest]
+    #[case::narrow(1)]
+    #[case::wide(512)]
+    fn explicit_binding_work_depends_on_supplied_slots(#[case] defaults: usize) {
+        let parameters = (0..defaults)
+            .map(|i| format!("p{i}=0"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let source = format!("def f(required, optional=0, {parameters}): pass\nf(1, optional=2)");
+        let parsed = ruff_python_parser::parse_module(&source).unwrap();
+        let index = run_build(parsed.syntax(), &|| false).unwrap();
+        let call = parsed.syntax().body[1]
+            .as_expr_stmt()
+            .unwrap()
+            .value
+            .as_call_expr()
+            .unwrap();
+        let polls = Cell::new(0);
+
+        let optional = run_lookup(&index, call, &|| {
+            polls.update(|count| count + 1);
+            false
+        });
+
+        assert_eq!(optional, Some(vec![0]));
+        assert!(
+            polls.get() <= 4,
+            "{} binding polls for two supplied arguments",
+            polls.get()
+        );
     }
 }

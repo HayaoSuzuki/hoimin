@@ -17,6 +17,7 @@ use hoimin_core::{MutationOperator, MutationOperatorSelection};
 use ruff_python_ast::token::{TokenKind, Tokens, parenthesized_range};
 use ruff_python_ast::{Expr, ExprCall, Keyword, ModModule, Number, Stmt, UnaryOp};
 use ruff_text_size::{Ranged, TextRange, TextSize};
+use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 
@@ -198,13 +199,10 @@ impl Contracts {
                 _ => return None,
             })
         });
-        let primary = known.and_then(|shape| shape.bind(call));
-        if known.is_some() && primary.is_none() {
-            return true;
-        }
         if escape
-            && let Some(primary) = primary
-            && signature.is_some_and(|sig| self.escape_type_compatible(sig, primary.value, cx))
+            && let Some(signature) = signature
+            && let Some(primary) = signature.shape().bind(call)
+            && self.escape_type_compatible(signature, primary.value, cx)
             && let Some(replacement) = escape_replacement(call, primary.index, cx)
             && ((cx.cancelled)() || !emit(call.range(), replacement, ESCAPE))
         {
@@ -558,10 +556,22 @@ fn swap_arguments(
     mut emit: impl FnMut(TextRange, String, MutationOperator) -> bool,
 ) -> bool {
     let args = &call.arguments;
-    let slots = signature.and_then(|sig| sig.bind_explicit(call, cx.cancelled, || {}));
-    if signature.is_some() && slots.is_none() {
-        return !(cx.cancelled)();
-    }
+    // The first selected, eligible pair proves the original call binding.
+    // Later pairs reuse that proof, including a failed binding.
+    let binding = OnceCell::new();
+    let bound_slots = || {
+        binding
+            .get_or_init(|| {
+                if let Some(shape) = known {
+                    shape.bind(call)?;
+                }
+                signature.map_or_else(
+                    || Some(Vec::new()),
+                    |signature| signature.bind_explicit(call, cx.cancelled, || {}),
+                )
+            })
+            .as_deref()
+    };
     let tokens = cx.tokens();
     for pair in args.args.windows(2) {
         if (cx.cancelled)() {
@@ -577,6 +587,7 @@ fn swap_arguments(
         if selected(range)
             && delimiters.can_enclose(range, 1)
             && !same_simple_value(first, second, cx.ordinary_name_reads)
+            && bound_slots().is_some()
             && let Some(original) = source_text(cx.source, range)
             && !emit(range, format!("*({original})[::-1]"), SWAP)
         {
@@ -584,11 +595,14 @@ fn swap_arguments(
         }
     }
 
-    let explicit_slot =
-        |index: usize| known.is_some() || slots.as_ref().and_then(|slots| slots[index]).is_some();
-    if let (Some(positional), Some(keyword)) = (args.args.last(), args.keywords.first())
-        && explicit_slot(0)
-    {
+    if known.is_none() && signature.is_none() {
+        return !(cx.cancelled)();
+    }
+    let explicit_slot = |index: usize| {
+        bound_slots()
+            .is_some_and(|slots| known.is_some() || slots.get(index).is_some_and(Option::is_some))
+    };
+    if let (Some(positional), Some(keyword)) = (args.args.last(), args.keywords.first()) {
         let position = args.args.len() - 1;
         let formal = signature
             .and_then(|signature| signature.positional_keyword_name(position))
@@ -600,6 +614,7 @@ fn swap_arguments(
             && delimiters.can_enclose(range, 2)
             && !same_simple_value(positional, &keyword.value, cx.ordinary_name_reads)
             && let Some(formal) = formal
+            && explicit_slot(0)
             && let Some(replacement) = mixed_swap(formal, keyword, first, last, cx)
             && ((cx.cancelled)() || !emit(range, replacement, SWAP))
         {
@@ -610,9 +625,6 @@ fn swap_arguments(
         if (cx.cancelled)() {
             return false;
         }
-        if !explicit_slot(index) || !explicit_slot(index + 1) {
-            continue;
-        }
         let [first, second] = pair else {
             unreachable!("two keyword window")
         };
@@ -622,6 +634,8 @@ fn swap_arguments(
         let range = TextRange::new(left.start(), right.end());
         if selected(range)
             && !same_simple_value(&first.value, &second.value, cx.ordinary_name_reads)
+            && explicit_slot(index)
+            && explicit_slot(index + 1)
             && let (Some(left_text), Some(between), Some(right_text)) = (
                 source_text(cx.source, left.range()),
                 source_text(cx.source, TextRange::new(left.end(), right.start())),

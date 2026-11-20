@@ -188,6 +188,46 @@ fn candidates(source: &str, op: &str) -> Vec<String> {
 #[case::negative_equivalent_literal("f(-1,-0x1)", "call_argument_swap", 0)]
 #[case::float_sign_distinction("f(-0.0,0.0)", "call_argument_swap", 1)]
 #[case::consumed_subscript_target("def f()->list: return [1]\nf()[0]=5", "call_result_default", 1)]
+#[case::function_globals_rewrites_regex_callable(
+    "import re\nre.escape.__globals__.update(escape=lambda s:'custom')\nout=re.escape('.')",
+    "stdlib_escape_remove",
+    0
+)]
+#[case::another_function_globals_rewrites_typed_callable(
+    "def f()->int: return 8\ndef change(): pass\nchange.__globals__.update(f=lambda:'custom')\nout=f()",
+    "call_result_default",
+    0
+)]
+#[case::regex_flag_is_safe(
+    "import re\nout=re.compile(re.escape(text), re.IGNORECASE)",
+    "stdlib_escape_remove",
+    1
+)]
+#[case::regex_flag_alias_is_safe(
+    "import re\nfrom re import IGNORECASE as mode\nout=re.compile(re.escape(text), mode)",
+    "stdlib_escape_remove",
+    1
+)]
+#[case::unknown_module_member_can_escape(
+    "import re\nexpose(re.RegexFlag)\nout=re.escape('.')",
+    "stdlib_escape_remove",
+    0
+)]
+#[case::constant_store_invalidates_module(
+    "import re\nre.IGNORECASE=override\nout=re.escape('.')",
+    "stdlib_escape_remove",
+    0
+)]
+#[case::variadic_arguments_keep_keyword_only_roles(
+    "def f(a,*rest,option,mode): pass\nf(1,2,3,option=4,mode=5)",
+    "call_argument_swap",
+    3
+)]
+#[case::variadic_arguments_cannot_supply_required_keyword_only_roles(
+    "def f(a,*rest,option): pass\nf(1,2,3)",
+    "call_argument_swap",
+    0
+)]
 fn eligible_sites(#[case] source: &str, #[case] op: &str, #[case] expected: usize) {
     let edits = candidates(source, op);
 
@@ -266,4 +306,50 @@ fn wide_calls_follow_analyzer_prefix_admission(#[case] limit: usize) {
         spans(&bounded.candidates),
         spans(&unlimited.candidates[..limit])
     );
+}
+
+thread_local! {
+    static SIGNATURE_BINDINGS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+pub(super) fn record_signature_binding() {
+    SIGNATURE_BINDINGS.update(|count| count + 1);
+}
+
+#[rstest]
+#[case::outside_selected_arguments(1, 0)]
+#[case::only_last_call_selected(97, 1)]
+fn wide_signature_binding_waits_for_an_argument_candidate(
+    #[case] selected_line: u32,
+    #[case] expected: usize,
+) {
+    let parameters = (0..512)
+        .map(|i| format!("p{i}=0"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let source = format!("def f(a,b,{parameters}): pass\n{}", "f(1,2)\n".repeat(96));
+    let mut operators = MutationOperatorSelection::default();
+    for name in operators.names() {
+        operators.exclude(MutationOperator::from_name(&name).unwrap());
+    }
+    operators.include(MutationOperator::CallArgumentSwap);
+    let lines = [LineRange {
+        start: selected_line,
+        end: selected_line,
+    }];
+    let request = AnalyzeRequest {
+        payload: super::super::payload::PayloadBudget::default(),
+        path: Utf8Path::new("contract.py"),
+        lines: &lines,
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 512,
+    };
+    SIGNATURE_BINDINGS.set(0);
+
+    let output = analyze_source(&request, &source);
+
+    assert_eq!(output.candidates.len(), expected);
+    assert_eq!(SIGNATURE_BINDINGS.get(), expected);
 }

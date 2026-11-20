@@ -25,11 +25,50 @@ fn dynamic_namespace_name(name: &str) -> bool {
             | "delattr"
             | "__import__"
             | "__builtins__"
+            | "__globals__"
             | "__dict__"
             | "__setattr__"
             | "__delattr__"
             | "__getattribute__"
     )
+}
+
+/// Reading these values does not expose the defining module or a callable.
+fn is_library_constant(module: &str, member: &str) -> bool {
+    match module {
+        "re" => matches!(
+            member,
+            "A" | "ASCII"
+                | "DEBUG"
+                | "DOTALL"
+                | "I"
+                | "IGNORECASE"
+                | "L"
+                | "LOCALE"
+                | "M"
+                | "MULTILINE"
+                | "NOFLAG"
+                | "S"
+                | "T"
+                | "TEMPLATE"
+                | "U"
+                | "UNICODE"
+                | "VERBOSE"
+                | "X"
+        ),
+        "decimal" => matches!(
+            member,
+            "ROUND_05UP"
+                | "ROUND_CEILING"
+                | "ROUND_DOWN"
+                | "ROUND_FLOOR"
+                | "ROUND_HALF_DOWN"
+                | "ROUND_HALF_EVEN"
+                | "ROUND_HALF_UP"
+                | "ROUND_UP"
+        ),
+        _ => false,
+    }
 }
 
 #[derive(Default)]
@@ -99,6 +138,7 @@ impl CallableImports {
             module_names: HashSet::new(),
             attribute_writes: HashSet::new(),
             escaped_names: HashSet::new(),
+            constant_reads: HashMap::new(),
             namespace_uncertain: false,
             class_ranges: Vec::new(),
         };
@@ -125,14 +165,33 @@ impl CallableImports {
         if lookup_scan.cancelled_observed {
             return Err(AnalysisCancelled);
         }
-        Ok(Self {
+        let imports = Self {
             trusted: scan.trusted,
             possible: scan.possible,
             import_builtin_available: !scan.bindings.contains_key("__import__"),
             class_ranges: ContainmentIndex::new(scan.class_ranges),
             class_lookups: lookup_scan.class_lookups,
             first_submodule_import: scan.first_submodule_import,
-        })
+        };
+        for (local, ranges) in scan.constant_reads {
+            if !scan.module_names.contains(&local) {
+                continue;
+            }
+            for range in ranges {
+                if cancelled() {
+                    return Err(AnalysisCancelled);
+                }
+                if imports
+                    .trusted_binding(&local, range)
+                    .is_none_or(|binding| {
+                        binding.member.is_some() || binding.import_range.end() > range.start()
+                    })
+                {
+                    return Ok(Self::default());
+                }
+            }
+        }
+        Ok(imports)
     }
 
     fn trusted_binding(&self, name: &str, range: TextRange) -> Option<&ImportedBinding> {
@@ -518,6 +577,7 @@ struct ImportScan<'a, F> {
     module_names: HashSet<String>,
     attribute_writes: HashSet<String>,
     escaped_names: HashSet<String>,
+    constant_reads: HashMap<String, Vec<TextRange>>,
     namespace_uncertain: bool,
     class_ranges: Vec<(usize, usize)>,
 }
@@ -542,7 +602,10 @@ impl<F: Fn() -> bool> ImportScan<'_, F> {
         range: TextRange,
         eager: bool,
     ) {
-        if member.is_none() || self.policy == ImportPolicy::Family {
+        if member.is_none()
+            || (self.policy == ImportPolicy::Family
+                && !member.is_some_and(|member| is_library_constant(module, member)))
+        {
             self.module_names.insert(local.to_owned());
         }
         let possible = self.possible.entry(local.to_owned()).or_default();
@@ -781,10 +844,17 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for ImportScan<'_, F> {
             }
             Expr::Attribute(attribute) if self.policy == ImportPolicy::Family => {
                 if let Some(root) = self.path_root(expression) {
-                    if attribute.ctx == ExprContext::Load {
-                        self.escaped_names.insert(root.to_owned());
-                    } else {
+                    if attribute.ctx != ExprContext::Load {
                         self.attribute_writes.insert(root.to_owned());
+                    } else if attribute.value.is_name_expr()
+                        && is_library_constant(self.modules[0], attribute.attr.as_str())
+                    {
+                        self.constant_reads
+                            .entry(root.to_owned())
+                            .or_default()
+                            .push(attribute.range());
+                    } else {
+                        self.escaped_names.insert(root.to_owned());
                     }
                     return;
                 }
@@ -1050,5 +1120,43 @@ mod coverage_tests {
             .is_none();
 
         assert!(actual);
+    }
+}
+
+#[cfg(test)]
+mod constant_tests {
+    use super::CallableImports;
+
+    #[rstest::rstest]
+    #[case::rounding_value("import decimal as d\nuse(d.ROUND_HALF_EVEN)", true)]
+    #[case::rounding_alias(
+        "import decimal as d\nfrom decimal import ROUND_UP as mode\nuse(mode)",
+        true
+    )]
+    #[case::unknown_attribute("import decimal as d\nuse(d.Context)", false)]
+    #[case::rounding_write("import decimal as d\nd.ROUND_UP = change", false)]
+    fn family_resolution_distinguishes_constant_reads_from_namespace_hazards(
+        #[case] setup: &str,
+        #[case] expected: bool,
+    ) {
+        let source = format!("{setup}\nvalue=d.Decimal('1.25')");
+        let parsed = ruff_python_parser::parse_module(&source).unwrap();
+        let expression = parsed
+            .syntax()
+            .body
+            .last()
+            .unwrap()
+            .as_assign_stmt()
+            .unwrap()
+            .value
+            .as_call_expr()
+            .unwrap()
+            .func
+            .as_ref();
+
+        let imports =
+            CallableImports::build_family(parsed.syntax(), &|| false, &["decimal"]).unwrap();
+
+        assert_eq!(imports.resolve(expression).is_some(), expected);
     }
 }
