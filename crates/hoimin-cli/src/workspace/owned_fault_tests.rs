@@ -203,10 +203,10 @@ fn serializer_failure_before_any_write_does_not_consume_an_io_fault() {
 #[case("bootstrap.inspect_root", "inspect managed root")]
 #[case("bootstrap.open_root", "open managed root")]
 #[case("bootstrap.root_identity", "identify managed root")]
-#[case("bootstrap.root_inspect", "inspect managed root")]
-#[case("bootstrap.root_verify", "verify managed root")]
-#[case("bootstrap.coordinator_inspect", "inspect coordinator")]
-#[case("bootstrap.coordinator_verify", "verify coordinator")]
+#[case("bootstrap.root_inspect", if cfg!(windows) { "secure managed root" } else { "inspect managed root" })]
+#[case("bootstrap.root_verify", if cfg!(windows) { "secure managed root" } else { "verify managed root" })]
+#[case("bootstrap.coordinator_inspect", if cfg!(windows) { "secure coordinator" } else { "inspect coordinator" })]
+#[case("bootstrap.coordinator_verify", if cfg!(windows) { "secure coordinator" } else { "verify coordinator" })]
 #[case("bootstrap.coordinator_create", "create coordinator")]
 #[case("bootstrap.coordinator_write", "initialize coordinator")]
 #[case("bootstrap.coordinator_flush", "flush coordinator")]
@@ -1530,13 +1530,15 @@ fn missing_heartbeat_is_reported_without_modifying_the_lease() {
     let parent = tempfile::tempdir().unwrap();
     let coordinator = setup(&parent);
     let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
-    let original = root.dir.read(LEASE_FILE).unwrap();
+    let lease_handle = Arc::clone(root.lease.lock().unwrap().as_ref().unwrap());
+    let original = read_fixture_bytes(&lease_handle);
     let marker: LeaseMarker = serde_json::from_slice(&original).unwrap();
+    drop(root.heartbeat.lock().unwrap().take());
     root.dir.remove_file(HEARTBEAT_FILE).unwrap();
 
     let error = candidate_is_stale(&root.dir, &marker, SystemTime::now()).unwrap_err();
 
-    let bytes_before_retry = root.dir.read(LEASE_FILE).unwrap();
+    let bytes_before_retry = read_fixture_bytes(&lease_handle);
     root.dir.write(HEARTBEAT_FILE, &original).unwrap();
     root.retain().unwrap();
 
@@ -1997,11 +1999,17 @@ fn coordinator_reopen_rejects_an_identity_replacement_without_removing_either_fi
     let original = coordinator.dir.read(COORDINATOR_FILE).unwrap();
     let original_identity = file_identity(&coordinator.file).unwrap();
     let replace_path = path.clone();
-    let parked_path = parked.clone();
+    let fixture_parent = coordinator.dir.try_clone().unwrap();
+    let fixture_file = coordinator.file.try_clone().unwrap();
     let replacement_bytes = original.clone();
 
     let fault = io_faults::arm_action("reopen.open", 0, move || {
-        fs::rename(&replace_path, parked_path).expect("park the coordinator before its reopen");
+        rename_fixture_file(
+            &fixture_parent,
+            &fixture_file,
+            COORDINATOR_FILE,
+            "parked-coordinator",
+        );
         fs::write(replace_path, replacement_bytes)
             .expect("install the replacement coordinator fixture");
         Ok(())

@@ -161,7 +161,7 @@ fn failed_initialization_preserves_replacement_and_reports_rollback_after_primar
         .join(COORDINATOR_FILE);
     let file = create_owned_file(&dir, COORDINATOR_FILE, OwnedFileAccess::ReadWrite).unwrap();
     let identity = file_identity(&file).unwrap();
-    dir.rename(COORDINATOR_FILE, &dir, "original").unwrap();
+    rename_fixture_file(&dir, &file, COORDINATOR_FILE, "original");
     dir.write(COORDINATOR_FILE, b"replacement").unwrap();
 
     let error = initialize_new_coordinator(&dir, file, identity, &path, std::time::Instant::now())
@@ -1423,6 +1423,7 @@ fn janitor_retains_ready_and_empty_roots_when_coordinator_state_is_poisoned(
     root.mark_cleanup_ready().unwrap();
     root.unlock_fixture_lease();
     let name = candidate(&coordinator, &root);
+    drop(root);
     coordinator.local_lock = Arc::new(Mutex::new(()));
     poison(&coordinator.local_lock);
 
@@ -2257,7 +2258,10 @@ fn identity_bound_rollback_preserves_the_replacement_and_both_error_causes() {
         cap_std::fs::Dir::open_ambient_dir(parent.path(), cap_std::ambient_authority()).unwrap();
     let original = create_owned_directory(&dir, "created").unwrap();
     let identity = directory_identity(&original).unwrap();
+    #[cfg(unix)]
     dir.rename("created", &dir, "original").unwrap();
+    #[cfg(windows)]
+    rename_open_owned_directory(&dir, &original, "original", identity).unwrap();
     dir.create_dir("created").unwrap();
     dir.write("created/payload", b"replacement").unwrap();
     let path = Utf8Path::from_path(parent.path()).unwrap().join("created");
@@ -2349,17 +2353,29 @@ fn taking_an_empty_owner_slot_does_not_manufacture_a_lease() {
     let coordinator = coordinator_in(&parent);
     let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
     let original = root.take_owner_cleanup_capabilities().unwrap();
-    let empty = root.take_owner_cleanup_capabilities().unwrap();
-    let failure_was_observed = empty.lease_guard.is_none();
-    let observed_before_retry = empty.progress.examined_entries;
-    let removed_before_retry = empty.progress.removed_entries;
+    let repeated = root.take_owner_cleanup_capabilities();
+    let lease_slot_empty = root.lease.lock().unwrap().is_none();
+    #[cfg(windows)]
+    let root_slot_empty = root.rename_handle.lock().unwrap().is_none();
     root.restore_owner_cleanup_capabilities(original);
     let cleanup_disposition = root.cleanup(Duration::from_secs(1)).disposition;
 
     assert_eq!(cleanup_disposition, CleanupDisposition::Clean);
-    assert!(failure_was_observed);
-    assert_eq!(observed_before_retry, 0);
-    assert_eq!(removed_before_retry, 0);
+    assert!(lease_slot_empty);
+    #[cfg(unix)]
+    {
+        let empty = repeated.unwrap();
+        assert!(empty.lease_guard.is_none());
+        assert_eq!(empty.progress.examined_entries, 0);
+        assert_eq!(empty.progress.removed_entries, 0);
+    }
+    #[cfg(windows)]
+    {
+        assert!(root_slot_empty);
+        assert!(matches!(repeated, Err(WorkspaceError::Io {
+            operation: "resume managed workspace cleanup", message, ..
+        }) if message == "managed root deletion capability is unavailable"));
+    }
 }
 
 #[test]
@@ -2524,6 +2540,7 @@ fn selected_janitor_candidate_rejects_mismatched_lease_schema_or_identity(
     let dir = coordinator.dir.open_dir(&name).unwrap();
     let bytes = serde_json::to_vec(&marker).unwrap();
     dir.write(LEASE_FILE, &bytes).unwrap();
+    drop(dir);
 
     let report = reclaim_selected(&coordinator, std::slice::from_ref(&name));
 
@@ -2535,7 +2552,13 @@ fn selected_janitor_candidate_rejects_mismatched_lease_schema_or_identity(
     );
     assert_eq!(report.reclaimed_roots, 0);
     assert_eq!(report.removed_entries, 0);
-    assert_eq!(dir.read(LEASE_FILE).unwrap(), bytes);
+    assert_eq!(
+        coordinator
+            .dir
+            .read(format!("{name}/{LEASE_FILE}"))
+            .unwrap(),
+        bytes
+    );
     assert!(coordinator.dir.exists(&name));
 }
 
@@ -2918,7 +2941,7 @@ fn janitor_selection_rejects_a_real_oversized_namespace_without_advancing_the_cu
     let parent = tempfile::tempdir().unwrap();
     let coordinator = coordinator_in(&parent);
     let _files = FilledNamespace::new(&coordinator.dir, MAX_MANAGED_CHILDREN);
-    let original = coordinator.dir.read(COORDINATOR_FILE).unwrap();
+    let original = read_fixture_bytes(&coordinator.file);
     let _guard = CoordinatorLockGuard::acquire(&coordinator).unwrap();
     let now = std::time::Instant::now();
     let mut scan = JanitorScan::default();
@@ -2943,7 +2966,7 @@ fn janitor_selection_rejects_a_real_oversized_namespace_without_advancing_the_cu
     assert!(error.to_string().contains("managed child limit exceeded"));
     assert_eq!(scan.stop_reason, Some(JanitorReason::SelectionChildLimit));
     assert!(!scan.directory_scan_complete);
-    assert_eq!(coordinator.dir.read(COORDINATOR_FILE).unwrap(), original);
+    assert_eq!(read_fixture_bytes(&coordinator.file), original);
 }
 
 #[test]
@@ -3396,7 +3419,7 @@ fn controlled_selection_file_contention_preserves_the_cursor_and_allows_retry() 
     .unwrap();
     let observed_before_retry = selection;
     let observed_before_retry_2 = scan.stop_reason;
-    let bytes_before_retry = coordinator.dir.read(COORDINATOR_FILE).unwrap();
+    let bytes_before_retry = read_fixture_bytes(&independent);
     File::unlock(&independent).unwrap();
     let mut retry_scan = JanitorScan::default();
 
@@ -3622,7 +3645,10 @@ fn empty_root_removal_cancellation_preserves_identity_before_unlink(#[case] stop
     let failure_was_observed = !progress.root_removed;
     let namespace_identity_after_failure =
         metadata_identity(&coordinator.dir.symlink_metadata(&name).unwrap());
+    #[cfg(unix)]
     let retry = open_owned_directory(&coordinator.dir, &name).unwrap();
+    #[cfg(windows)]
+    let retry = open_owned_directory_for_rename(&coordinator.dir, &name).unwrap();
     remove_empty_unmarked_directory(
         &coordinator.dir,
         &name,
@@ -3795,7 +3821,8 @@ fn child_construction_rolls_back_when_the_parent_lease_mutex_is_poisoned() {
     let parent = tempfile::tempdir().unwrap();
     let coordinator = coordinator_in(&parent);
     let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
-    let original = root.dir.read(LEASE_FILE).unwrap();
+    let lease_handle = Arc::clone(root.lease.lock().unwrap().as_ref().unwrap());
+    let original = read_fixture_bytes(&lease_handle);
     let controls = root.dir.entries().unwrap().count();
     poison(&root.lease);
     let retry_outcome = matches!(
@@ -3806,7 +3833,7 @@ fn child_construction_rolls_back_when_the_parent_lease_mutex_is_poisoned() {
     assert!(retry_outcome);
     assert_eq!(root.lifecycle.lock().unwrap().live_children, 0);
     assert_eq!(root.dir.entries().unwrap().count(), controls);
-    assert_eq!(root.dir.read(LEASE_FILE).unwrap(), original);
+    assert_eq!(read_fixture_bytes(&lease_handle), original);
 }
 
 #[cfg(unix)]
@@ -3863,7 +3890,8 @@ fn child_admission_rejects_invalid_prefixes_before_opening_or_modifying_the_name
     let parent = tempfile::tempdir().unwrap();
     let coordinator = coordinator_in(&parent);
     let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
-    let original = root.dir.read(LEASE_FILE).unwrap();
+    let lease_handle = Arc::clone(root.lease.lock().unwrap().as_ref().unwrap());
+    let original = read_fixture_bytes(&lease_handle);
     let controls = root.dir.entries().unwrap().count();
 
     let fault = io_faults::arm("owned.entries_open");
@@ -3873,7 +3901,7 @@ fn child_admission_rejects_invalid_prefixes_before_opening_or_modifying_the_name
     let fault_was_not_consumed = !fault.triggered();
     let live_children_after_failure = root.lifecycle.lock().unwrap().live_children;
     let entries_before_retry = root.dir.entries().unwrap().count();
-    let bytes_before_retry = root.dir.read(LEASE_FILE).unwrap();
+    let bytes_before_retry = read_fixture_bytes(&lease_handle);
     drop(fault);
     let child = root.create_child("worker-").unwrap();
     child.cleanup().unwrap();
@@ -4191,8 +4219,9 @@ fn controlled_reclamation_preserves_active_payload_for_stop_and_deadline_states(
     let parent = tempfile::tempdir().unwrap();
     let coordinator = coordinator_in(&parent);
     let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+    let lease_handle = Arc::clone(root.lease.lock().unwrap().as_ref().unwrap());
     root.dir.write("payload", b"keep-controlled-root").unwrap();
-    let lease = root.dir.read(LEASE_FILE).unwrap();
+    let lease = read_fixture_bytes(&lease_handle);
 
     let report = ManagedRunRoot::reclaim_abandoned_controlled(
         &coordinator,
@@ -4208,6 +4237,6 @@ fn controlled_reclamation_preserves_active_payload_for_stop_and_deadline_states(
     assert_eq!(report.removed_entries, 0);
     assert_eq!(report.scan.stop_reason, reason);
     assert_eq!(root.dir.read("payload").unwrap(), b"keep-controlled-root");
-    assert_eq!(root.dir.read(LEASE_FILE).unwrap(), lease);
+    assert_eq!(read_fixture_bytes(&lease_handle), lease);
     assert!(root.path.is_dir());
 }

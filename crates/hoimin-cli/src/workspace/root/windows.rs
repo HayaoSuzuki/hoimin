@@ -665,7 +665,10 @@ fn open_final_if_present(
     validate_final_name(name, logical_path)?;
     match open_final_handle(parent, name, operation) {
         Ok(file) => validate_opened_file(file, logical_path).map(Some),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            super::WorkerRoot::validate_missing_entry_parent(parent, logical_path)?;
+            Ok(None)
+        }
         Err(error) => Err(WorkspaceError::io(
             operation_name(operation),
             logical_path,
