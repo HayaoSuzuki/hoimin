@@ -1,0 +1,16 @@
+{
+  "argv": [
+    "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+    "-m",
+    "pytest",
+    "-q",
+    "--tb=short",
+    "-x",
+    "-k",
+    "test_stateful_history"
+  ],
+  "returncode": 0,
+  "seconds": 0.8511298000230454,
+  "stdout": "...............................................                          [100%]\n47 passed, 599 deselected in 0.29s\n",
+  "stderr": ""
+}

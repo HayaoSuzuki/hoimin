@@ -1,0 +1,15 @@
+{
+  "revision": "89889b94b5113bf7979b05766a709cfd4afa74db",
+  "source": "tools/pypi_provenance.py",
+  "source_sha256": "db587017041d5b5f308ca6bb2de17eae0ba035ddd1310becf4c880222b2fd8d7",
+  "function_lines": [
+    299,
+    337
+  ],
+  "function_sha256": "b20aaf3d30df028738b02044cb221bbee6eb2eae5f98fbb83b2a8fcd59b6ccaf",
+  "projection_sha256": "02719a60cc7b60a9d24f1de4df6542c5ac5c82535d69680560b3fd3491492ae2",
+  "binary_sha256": "169fa79530f84d4205d8fc25d740ef68464f7434db95f70bcf9aace36ba11324",
+  "python": "3.14.9 (main, Oct 21 2026, 17:48:58) [MSC v.1944 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26300-SP0",
+  "hypothesis": "6.170.15"
+}
