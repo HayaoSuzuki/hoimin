@@ -225,6 +225,150 @@ fn disk_stop() -> RunEvent {
     })
 }
 
+#[rstest::rstest]
+#[case::preflight(RunPhase::Preflight)]
+#[case::baseline(RunPhase::Baseline)]
+#[case::analysis(RunPhase::Analyze)]
+#[case::mutants(RunPhase::Mutants)]
+#[case::finalize(RunPhase::Finalize)]
+fn disk_stop_reports_its_reason_before_draining_or_cleanup(#[case] phase: RunPhase) {
+    // Arrange
+    let mut state = ready_state(vec!["a".into()], vec![candidate("a".into(), 1)], 1);
+    state.phase = phase;
+    let event = RunEvent::DiskStopRequested(crate::DiskStopRequested {
+        failure: crate::DiskFailure {
+            reason: crate::DiskFailureReason::MeasurementFailed("synthetic scan failure".into()),
+            secondary: Vec::new(),
+        },
+    });
+
+    // Act
+    let (_, effects) = transition(state, event).unwrap();
+
+    // Assert
+    assert!(matches!(effects.as_slice(), [RunEffect::EmitOutput(output)]
+        if matches!(&output.event, OutputEvent::Diagnostic(diagnostic)
+            if diagnostic.code == "disk.measurement.failed"
+                && diagnostic.message == "synthetic scan failure")));
+}
+
+#[test]
+fn disk_stop_before_reporting_emits_start_then_reason_then_finalizes() {
+    // Arrange
+    let mut state = ready_state(vec!["a".into()], Vec::new(), 1);
+    state.phase = RunPhase::Preflight;
+    state.flags.report.report_started = false;
+
+    // Act
+    let (state, effects) = transition(state, disk_stop()).unwrap();
+    let outputs = drain_outputs(state, effects, &[]);
+
+    // Assert
+    assert!(matches!(outputs.first(), Some(OutputEvent::RunStarted(_))));
+    assert!(
+        matches!(outputs.get(1), Some(OutputEvent::Diagnostic(diagnostic))
+        if diagnostic.code == crate::disk::FILESYSTEM_RESERVE_REACHED
+            && diagnostic.message.contains("4096")
+            && diagnostic.message.contains("1024"))
+    );
+    assert!(
+        matches!(outputs.last(), Some(OutputEvent::RunFinished(summary))
+        if summary.exit_code == 2 && !summary.complete)
+    );
+}
+
+proptest::proptest! {
+    #[test]
+    fn repeated_stops_preserve_the_first_disk_diagnostic(
+        stops in proptest::collection::vec(0_u8..3, 0..16),
+        before_start in proptest::bool::ANY,
+    ) {
+        // Arrange
+        let state = ready_state(vec!["a".into()], vec![candidate("a".into(), 1)], 1);
+        let mut state = state;
+        state.workers.insert(0, WorkerState::Idle);
+        if before_start {
+            state.phase = RunPhase::Preflight;
+            state.flags.report.report_started = false;
+        }
+        let (mut state, effects) = transition(state, disk_stop()).unwrap();
+        let diagnostic_id = effects[0].id();
+        let expected_exit = if stops.contains(&1) { 130 } else { 2 };
+
+        // Act
+        for stop in stops {
+            let event = match stop {
+                0 => disk_stop(),
+                1 => RunEvent::CancellationRequested,
+                _ => RunEvent::DeadlineReached,
+            };
+            let (next, produced) = transition(state, event).unwrap();
+            proptest::prop_assert!(produced.is_empty());
+            state = next;
+        }
+        let still_pending = state.is_effect_pending(diagnostic_id);
+        let outputs = drain_outputs(state, effects, &[candidate("a".into(), 1)]);
+
+        // Assert
+        proptest::prop_assert!(still_pending);
+        proptest::prop_assert_eq!(outputs.iter().filter(|event| matches!(event, OutputEvent::Diagnostic(_))).count(), 1);
+        proptest::prop_assert!(matches!(outputs.last(), Some(OutputEvent::RunFinished(summary)) if summary.exit_code == expected_exit && summary.disk.stop.is_some()));
+    }
+}
+
+#[rstest::rstest]
+#[case::io(crate::EffectFailure::ReportIo { operation: "write".into(), message: "synthetic writer failure".into() })]
+#[case::serialization(crate::EffectFailure::ReportSerialization { message: "synthetic serialization failure".into() })]
+#[case::state(crate::EffectFailure::ReportState { message: "synthetic report state failure".into() })]
+fn failed_disk_stop_output_cleans_up_without_retrying_delivery(
+    #[case] failure: crate::EffectFailure,
+    #[values(false, true)] before_start: bool,
+) {
+    // Arrange
+    let mut state = ready_state(vec!["a".into()], Vec::new(), 1);
+    state.phase = RunPhase::Preflight;
+    state.flags.report.report_started = !before_start;
+    let (state, effects) = transition(state, disk_stop()).unwrap();
+    let primary = state.disk_summary.stop.clone().unwrap();
+    let failure_code = failure.code().to_owned();
+
+    // Act
+    let (state, effects) = transition(
+        state,
+        RunEvent::EffectFailed(crate::EffectFailed {
+            id: effects[0].id(),
+            failure,
+        }),
+    )
+    .unwrap();
+    let [RunEffect::Cleanup(cleanup)] = effects.as_slice() else {
+        panic!("failed disk-stop output must request cleanup, got {effects:?}");
+    };
+    let (state, effects) = transition(
+        state,
+        RunEvent::CleanupFinished(crate::CleanupFinished {
+            id: cleanup.id,
+            released_reservations: cleanup.reservations.clone(),
+        }),
+    )
+    .unwrap();
+
+    // Assert
+    assert_eq!(state.phase(), RunPhase::Finished);
+    assert_eq!(effects, []);
+    assert_eq!(state.disk_summary.stop.as_ref().unwrap().code, primary.code);
+    assert!(
+        state
+            .disk_summary
+            .stop
+            .as_ref()
+            .unwrap()
+            .secondary
+            .iter()
+            .any(|secondary| secondary.code() == failure_code)
+    );
+}
+
 fn drain_outputs(
     mut state: RunState,
     mut effects: Vec<RunEffect>,
@@ -323,7 +467,18 @@ fn assert_disordered_stop(event: RunEvent, exit: i32, repeated: bool) {
         .workers
         .insert(1, WorkerState::Ready(candidate("d".into(), 4)));
     let retired = if repeated {
-        let (next, effects) = transition(state, event.clone()).unwrap();
+        let (mut next, mut effects) = transition(state, event.clone()).unwrap();
+        if matches!(&effects[0], RunEffect::EmitOutput(output)
+            if matches!(&output.event, OutputEvent::Diagnostic(_)))
+        {
+            (next, effects) = transition(
+                next,
+                RunEvent::OutputEmitted(crate::OutputEmitted {
+                    id: effects[0].id(),
+                }),
+            )
+            .unwrap();
+        }
         state = next;
         assert_eq!(state.stopped_candidates.len(), 3);
         assert!(matches!(

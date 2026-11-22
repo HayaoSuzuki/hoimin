@@ -721,7 +721,7 @@ fn measure_owned_tree_with_elapsed(
     state: &mut WalkState,
     elapsed: &impl Fn() -> Duration,
 ) -> io::Result<()> {
-    measure_owned_tree_with_hooks(root, state, elapsed, &|_| {}, &|_| {})
+    measure_owned_tree_with_hooks(root, state, elapsed, &|_| {}, &|_| {}, &|_| {})
 }
 
 fn check_scan_deadline(elapsed: &impl Fn() -> Duration) -> io::Result<()> {
@@ -744,6 +744,7 @@ fn measure_owned_tree_with_hooks(
     root: &RootCapability,
     state: &mut WalkState,
     elapsed: &impl Fn() -> Duration,
+    _before_entry_open: &impl Fn(&Utf8Path),
     before_directory_open: &impl Fn(&Utf8Path),
     observe_open_directories: &impl Fn(usize),
 ) -> io::Result<()> {
@@ -949,6 +950,7 @@ fn measure_owned_tree_with_hooks(
     root: &RootCapability,
     state: &mut WalkState,
     elapsed: &impl Fn() -> Duration,
+    before_entry_open: &impl Fn(&Utf8Path),
     before_directory_open: &impl Fn(&Utf8Path),
     observe_open_directories: &impl Fn(usize),
 ) -> io::Result<()> {
@@ -1000,9 +1002,11 @@ fn measure_owned_tree_with_hooks(
                 "owned workspace depth exceeds {MAX_TREE_DEPTH}: {display}"
             )));
         }
-        // At the deepest accepted frame, acquire only a non-directory handle. This pins the
-        // enumerated file without increasing the directory-handle peak, and the file-id check
-        // makes a same-name replacement fail closed.
+        before_entry_open(&display);
+        check_scan_deadline(elapsed)?;
+        // At the deepest accepted frame, acquire only a non-directory, non-reparse handle.
+        // Measure the file actually opened: atomic cache replacement can legitimately change
+        // its ID after enumeration. This does not increase the directory-handle peak.
         if frame.depth == MAX_TREE_DEPTH {
             let inspected_result =
                 super::root::windows::open_regular_file_shared(frame.entries.directory(), &name);
@@ -1012,13 +1016,6 @@ fn measure_owned_tree_with_hooks(
                 Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
                 Err(error) => return Err(error),
             };
-            let identity = super::root::windows::file_identity_io(&inspected)?;
-            check_scan_deadline(elapsed)?;
-            if identity.1 != entry_file_id {
-                return Err(io::Error::other(format!(
-                    "owned workspace entry identity changed while opening: {display}"
-                )));
-            }
             let length = inspected.metadata()?.len();
             check_scan_deadline(elapsed)?;
             state.owned_bytes = state
@@ -1039,7 +1036,12 @@ fn measure_owned_tree_with_hooks(
         check_scan_deadline(elapsed)?;
         let inspected_identity = super::root::windows::file_identity_io(&inspected)?;
         check_scan_deadline(elapsed)?;
-        if inspected_identity.1 != entry_file_id {
+        // A regular-file handle pins the object whose length we count. Directory changes
+        // affect traversal authority, so they must still match the enumerated identity.
+        let ordinary_file = attributes & FILE_ATTRIBUTE_DIRECTORY == 0
+            && metadata.is_file()
+            && metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0;
+        if !ordinary_file && inspected_identity.1 != entry_file_id {
             return Err(io::Error::other(format!(
                 "owned workspace entry identity changed while opening: {display}"
             )));
@@ -1177,6 +1179,9 @@ mod stats_tests;
 
 #[cfg(test)]
 mod native_name_tests;
+
+#[cfg(all(test, windows))]
+mod replacement_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1743,6 +1748,7 @@ mod tests {
                 [std::time::Duration::ZERO, super::MAX_SCAN_DURATION]
                     [usize::from(deadline_crossed.get())]
             },
+            &|_| {},
             &|_| deadline_crossed.set(true),
             &|open| {
                 child_opened.set(child_opened.get() || open > 1);
@@ -1798,6 +1804,7 @@ mod tests {
             &root,
             &mut state,
             &|| std::time::Duration::ZERO,
+            &|_| {},
             &|display| {
                 swap_directory_before_open(
                     display,
@@ -1837,6 +1844,7 @@ mod tests {
             &root,
             &mut state,
             &|| std::time::Duration::ZERO,
+            &|_| {},
             &|_| {},
             &|open| peak.set(peak.get().max(open)),
         )
@@ -1879,6 +1887,7 @@ mod tests {
             &root,
             &mut state,
             &|| std::time::Duration::ZERO,
+            &|_| {},
             &|_| {},
             &|_| peak.set(peak.get().max(open_file_descriptor_count())),
         )
@@ -1923,6 +1932,7 @@ mod tests {
             &root,
             &mut state,
             &|| std::time::Duration::ZERO,
+            &|_| {},
             &|display| remove_directory_before_open(display, &temp.join("victim"), &removed),
             &|_| {},
         )

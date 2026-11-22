@@ -150,6 +150,7 @@ enum OutputContinuation {
     RunStarted,
     RunFinished,
     Diagnostic,
+    ContinueAfterDiskStopDiagnostic,
     ContinueAfterBudgetWarning,
     ContinueAfterAnalysisDiagnostic,
     StartMutant(u32),
@@ -195,6 +196,14 @@ struct ReportFlags {
     report_started: bool,
     delivery: ReportDelivery,
     stop_after_run_started: bool,
+    disk_stop_diagnostic: DiskStopDiagnostic,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DiskStopDiagnostic {
+    NotRequested,
+    Pending,
+    Complete,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -329,6 +338,7 @@ impl RunState {
                     report_started: false,
                     delivery: ReportDelivery::Writable,
                     stop_after_run_started: false,
+                    disk_stop_diagnostic: DiskStopDiagnostic::NotRequested,
                 },
                 cleanup: CleanupFlags {
                     cleanup_done: false,
@@ -1169,9 +1179,50 @@ impl RunState {
     /// finalizing. Callers record the stop cause; terminal stops are filtered by transition.
     fn begin_stop(&mut self) -> Result<Vec<RunEffect>, MachineError> {
         self.flags.scheduling.stop_requested = true;
+        // Repeated stops must not retire the output that carries the first disk reason.
+        if self.flags.report.disk_stop_diagnostic == DiskStopDiagnostic::Pending
+            && self.pending.values().any(|pending| {
+                pending.output_continuation()
+                    == Some(OutputContinuation::ContinueAfterDiskStopDiagnostic)
+                    || (self.flags.report.stop_after_run_started
+                        && pending.output_continuation() == Some(OutputContinuation::RunStarted))
+            })
+        {
+            return Ok(Vec::new());
+        }
         let was_mutating = self.phase == RunPhase::Mutants;
         self.retire_pending();
-        if was_mutating {
+        if self.flags.report.disk_stop_diagnostic == DiskStopDiagnostic::Pending
+            && self.flags.report.report_started
+        {
+            let stop = self
+                .disk_summary
+                .stop
+                .as_ref()
+                .expect("disk stop has a reason");
+            let code = stop.code.clone();
+            let message = stop.message.clone().unwrap_or_else(|| {
+                format!(
+                    "disk policy stopped execution; owned bytes: {}; available bytes: {}",
+                    stop.owned_bytes.unwrap_or_default(),
+                    stop.available_bytes.unwrap_or_default(),
+                )
+            });
+            let output = EmitOutput {
+                id: self.allocate_id()?,
+                event: OutputEvent::Diagnostic(Diagnostic::new(
+                    self.run_id().to_owned(),
+                    self.output_sequence(),
+                    "error",
+                    code,
+                    message,
+                )),
+            };
+            Ok(vec![self.register_output(
+                output,
+                OutputContinuation::ContinueAfterDiskStopDiagnostic,
+            )])
+        } else if was_mutating {
             self.begin_stopped_mutant_drain()
         } else if !self.flags.report.report_started {
             self.flags.report.stop_after_run_started = true;
@@ -1871,7 +1922,10 @@ pub fn transition(
                 OutputContinuation::Baseline => Vec::new(),
                 OutputContinuation::RunStarted => {
                     state.flags.report.report_started = true;
-                    if let Some(failed) = state.pending_failure.take() {
+                    if state.flags.report.disk_stop_diagnostic == DiskStopDiagnostic::Pending {
+                        state.flags.report.stop_after_run_started = false;
+                        state.begin_stop()?
+                    } else if let Some(failed) = state.pending_failure.take() {
                         state.diagnostic_effect(&failed)?
                     } else if state.flags.report.stop_after_run_started {
                         state.flags.report.stop_after_run_started = false;
@@ -1886,6 +1940,10 @@ pub fn transition(
                     }
                 }
                 OutputContinuation::RunFinished => state.post_report_effects()?,
+                OutputContinuation::ContinueAfterDiskStopDiagnostic => {
+                    state.flags.report.disk_stop_diagnostic = DiskStopDiagnostic::Complete;
+                    state.begin_stop()?
+                }
                 OutputContinuation::Diagnostic => {
                     if state.flags.cleanup.cleanup_done {
                         state.post_cleanup_effects()?
@@ -2010,8 +2068,17 @@ pub fn transition(
             state.diagnostic_effect(&failed)?
         }
         RunEvent::EffectFailed(failed)
-            if completed_output == Some(OutputContinuation::Diagnostic) =>
+            if matches!(
+                completed_output,
+                Some(
+                    OutputContinuation::Diagnostic
+                        | OutputContinuation::ContinueAfterDiskStopDiagnostic
+                )
+            ) =>
         {
+            if completed_output == Some(OutputContinuation::ContinueAfterDiskStopDiagnostic) {
+                state.flags.report.disk_stop_diagnostic = DiskStopDiagnostic::Complete;
+            }
             state.flags.outcome.infrastructure_error = true;
             state.flags.scheduling.stop_requested = true;
             if is_report_failure(&failed.failure) {
@@ -2072,6 +2139,7 @@ pub fn transition(
             state.flags.outcome.incomplete = true;
             if state.disk_summary.stop.is_none() {
                 state.disk_summary.stop = Some(value.failure.into());
+                state.flags.report.disk_stop_diagnostic = DiskStopDiagnostic::Pending;
             }
             state.begin_stop()?
         }

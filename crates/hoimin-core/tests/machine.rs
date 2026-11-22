@@ -98,6 +98,7 @@ fn stop_while_run_start_is_pending_waits_for_replacement_ack(#[case] scenario_in
         matches!(&effects[..], [RunEffect::EmitOutput(output)] if matches!(output.event, OutputEvent::RunStarted(_)))
     );
     assert!(matches!(late, Err(MachineError::RetiredEffect(id)) if id == old_id));
+    let (state, following) = complete_disk_stop_diagnostic(state, following);
     assert_eq!(state.phase(), RunPhase::Finalize);
     assert!(matches!(&following[..], [RunEffect::VerifyOriginals(_)]));
 }
@@ -876,6 +877,20 @@ fn disk_stop(available_bytes: u64) -> RunEvent {
     })
 }
 
+fn complete_disk_stop_diagnostic(
+    state: RunState,
+    effects: Vec<RunEffect>,
+) -> (RunState, Vec<RunEffect>) {
+    if let [RunEffect::EmitOutput(output)] = effects.as_slice()
+        && matches!(&output.event, OutputEvent::Diagnostic(diagnostic) if diagnostic.code == FILESYSTEM_RESERVE_REACHED)
+    {
+        let id = output.id;
+        transition(state, RunEvent::OutputEmitted(OutputEmitted { id })).unwrap()
+    } else {
+        (state, effects)
+    }
+}
+
 #[rstest::rstest]
 #[case::before_preflight_1(0)]
 #[case::creating_workers_2(1)]
@@ -992,6 +1007,7 @@ fn disk_stop_is_a_global_infrastructure_stop_before_new_mutant_dispatch() {
     )
     .unwrap();
 
+    let (next, effects) = complete_disk_stop_diagnostic(next, effects);
     assert_eq!(next.phase(), RunPhase::Finalize);
     assert_eq!(next.exit_code(), 2);
     assert!(
@@ -6167,6 +6183,7 @@ fn assert_stop_during_indexed_read(stop: RunEvent, repeated: bool, expected_exit
     // Act: retire the pending body fetch, optionally again while its NotRun fetch is pending.
     harness.stop(stop.clone());
     if repeated {
+        harness.complete_until(|effect| matches!(effect, RunEffect::ReadCandidate(_)));
         let RunEffect::ReadCandidate(read) = find_effect(&harness.pending, |effect| {
             matches!(effect, RunEffect::ReadCandidate(_))
         }) else {
@@ -7602,6 +7619,7 @@ fn baseline_restoration_stops_retire_reset_without_dispatch(
             worker: 0,
         }),
     );
+    let (state, effects) = complete_disk_stop_diagnostic(state, effects);
     // Assert.
     assert_eq!(state.exit_code(), exit);
     assert!(matches!(
