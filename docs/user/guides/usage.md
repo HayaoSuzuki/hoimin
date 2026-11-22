@@ -2134,6 +2134,15 @@ cancellation. Earlier confirmed evidence can survive a later stop. Reserving the
 remaining time for confirmation can also end an incomplete search before the
 absolute deadline.
 
+After a completed search, cleanup uses the remaining total budget and the
+two-second shutdown grace. A stopped search gets only the shutdown grace,
+capped by the original deadline plus two seconds; changing cleanup stages
+does not restart it. If cleanup cannot finish, the report retains its failure
+and any previously confirmed proposal. Inspect `exit_code` and `stop` as well
+as `best` before treating the whole command as successful.
+Cleanup checks for the first Ctrl+C between bounded waits and removal slices;
+an observed interrupt shortens the existing deadline and is reported as cancellation.
+
 Review the retained output: ordinary nonzero mutant exits cannot generally
 distinguish assertion failures from import or collection errors. Preserved mutant
 outcomes do not establish that a test is unnecessary or that future fault

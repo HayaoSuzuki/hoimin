@@ -66,7 +66,7 @@ pub(super) async fn run(args: ReduceArgs) -> Result<i32, String> {
         state.best = None;
         stop = Some(error);
     }
-    if let Err(error) = runner.finish_execution().await {
+    if let Err(error) = runner.finish_execution(stop.as_ref()).await {
         stop = Some(error);
     }
     if let Err(error) = runner.close().await {
