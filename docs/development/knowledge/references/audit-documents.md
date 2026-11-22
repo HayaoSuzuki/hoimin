@@ -5,6 +5,36 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: testing-2026-11-22-issue-1176-1178-1180-design
+  resource: ../../work/reports/issue-1176-1178-1180/design.md
+  revision: 10f06abe036791947e29d3cc127e192033dde2c5
+  working_tree: clean
+  sha256: 0eb6020b8d9a9bdccb3fe519a19bb53e9d761478de7a6b3195b406bc829d9520
+- id: testing-2026-11-22-issue-1176-1178-1180-readme
+  resource: ../../work/reports/issue-1176-1178-1180/README.md
+  revision: 10f06abe036791947e29d3cc127e192033dde2c5
+  working_tree: clean
+  sha256: 2e333bc0886195d2aea1f0d5cf62dce711a3d4a355e31ebbcae6f909a10697d5
+- id: testing-2026-11-22-issue-1176-1178-1180-review
+  resource: ../../work/reports/issue-1176-1178-1180/review.md
+  revision: 10f06abe036791947e29d3cc127e192033dde2c5
+  working_tree: clean
+  sha256: 0335611cfcefe02a61b43985d7c1a8afb0bab1078c20a05f6b6e9b986f00eddd
+- id: testing-2026-11-22-issue-1177-1179-1182-1186-design
+  resource: ../../work/reports/issue-1177-1179-1182-1186/design.md
+  revision: 10f06abe036791947e29d3cc127e192033dde2c5
+  working_tree: clean
+  sha256: f6df11200875f823d47962c0ed950b9fa297bd0b7ed296a0c2683af7c48aeb78
+- id: testing-2026-11-22-issue-1177-1179-1182-1186-readme
+  resource: ../../work/reports/issue-1177-1179-1182-1186/README.md
+  revision: 10f06abe036791947e29d3cc127e192033dde2c5
+  working_tree: clean
+  sha256: 131c48c9cb3cf5128e52b838f62d8cf60099ae68eda92c46094e0187798633ea
+- id: testing-2026-11-22-issue-1177-1179-1182-1186-review
+  resource: ../../work/reports/issue-1177-1179-1182-1186/review.md
+  revision: 10f06abe036791947e29d3cc127e192033dde2c5
+  working_tree: clean
+  sha256: 89ea399caaa52fe74d5ca8886995695e2e170dead38fe9683e8f2db9e3df3197
 - id: research-2026-11-20-2026-11-20-windows-workspace-failures
   resource: ../../work/reports/2026-11-20-windows-workspace-failures.md
   revision: e389cce9beb208c53e832277be4970d0969abc43
@@ -1921,3 +1951,21 @@ These records distinguish design decisions, intermediate findings and the final 
 [^research-2026-11-20-windows-workspace-final-review]: [Windows workspace repair review](../../work/reports/windows-workspace/final-review.md).
 [^research-2026-11-20-windows-workspace-progress]: [Windows workspace repair ledger](../../work/reports/windows-workspace/progress.md).
 [^research-2026-11-20-windows-workspace-scoped-review]: [Follow-up review of the named-entry observation](../../work/reports/windows-workspace/scoped-review.md).
+
+## November 2026 testing research evaluations
+
+| Source | Original title | State when read |
+| --- | --- | --- |
+| [issue-1176-1178-1180/design.md](../../work/reports/issue-1176-1178-1180/design.md) | Research evaluation design [^testing-2026-11-22-issue-1176-1178-1180-design] | Tracked at `10f06abe` |
+| [issue-1176-1178-1180/README.md](../../work/reports/issue-1176-1178-1180/README.md) | PBT, stateful and resilience evaluation [^testing-2026-11-22-issue-1176-1178-1180-readme] | Tracked at `10f06abe` |
+| [issue-1176-1178-1180/review.md](../../work/reports/issue-1176-1178-1180/review.md) | Evaluation review record [^testing-2026-11-22-issue-1176-1178-1180-review] | Tracked at `10f06abe` |
+| [issue-1177-1179-1182-1186/design.md](../../work/reports/issue-1177-1179-1182-1186/design.md) | 評価設計 [^testing-2026-11-22-issue-1177-1179-1182-1186-design] | Tracked at `10f06abe` |
+| [issue-1177-1179-1182-1186/README.md](../../work/reports/issue-1177-1179-1182-1186/README.md) | メタモルフィック・組合せ・契約・増強テストの評価 [^testing-2026-11-22-issue-1177-1179-1182-1186-readme] | Tracked at `10f06abe` |
+| [issue-1177-1179-1182-1186/review.md](../../work/reports/issue-1177-1179-1182-1186/review.md) | 評価コードと証跡のレビュー [^testing-2026-11-22-issue-1177-1179-1182-1186-review] | Tracked at `10f06abe` |
+
+[^testing-2026-11-22-issue-1176-1178-1180-design]: [Research evaluation design](../../work/reports/issue-1176-1178-1180/design.md).
+[^testing-2026-11-22-issue-1176-1178-1180-readme]: [PBT, stateful and resilience evaluation](../../work/reports/issue-1176-1178-1180/README.md).
+[^testing-2026-11-22-issue-1176-1178-1180-review]: [Evaluation review record](../../work/reports/issue-1176-1178-1180/review.md).
+[^testing-2026-11-22-issue-1177-1179-1182-1186-design]: [評価設計](../../work/reports/issue-1177-1179-1182-1186/design.md).
+[^testing-2026-11-22-issue-1177-1179-1182-1186-readme]: [メタモルフィック・組合せ・契約・増強テストの評価](../../work/reports/issue-1177-1179-1182-1186/README.md).
+[^testing-2026-11-22-issue-1177-1179-1182-1186-review]: [評価コードと証跡のレビュー](../../work/reports/issue-1177-1179-1182-1186/review.md).

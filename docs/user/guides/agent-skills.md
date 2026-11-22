@@ -10,6 +10,13 @@ under `skills/`:
 
 Each skill includes its own PyPI setup reference and can be installed separately.
 
+The improvement skill also includes a
+[test-design guide](../../../skills/hoimin-mutation-improvement/test-design.md).
+Use it to separate missing inputs from missing assertions, compare substitutes
+with real local dependencies, and record why a test change is worth adopting.
+Check existing integration coverage before counting a focused survivor as a new
+test gap. The guide keeps execution results separate from human acceptance.
+
 These skills implement hoimin's primary [local agent workflow](../about/product-principles.md):
 investigate small batches, identify specification-backed test improvements, and
 reverify within resource budgets. A survivor is not automatically a test defect;

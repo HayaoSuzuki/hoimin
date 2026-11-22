@@ -76,6 +76,10 @@ recorded revisions against the implementation you are changing:
 
 # Audits and verification scope
 
+- [Software-testing research evaluations](testing-research-evaluation.md) - Seven
+  techniques, controlled and real-code comparisons, adopted skill guidance and
+  evidence required before adding dedicated product features.
+
 - [Slice/division operators and survivor-directed selection evaluation](mutation-research-1121-1122-1124.md) - Issues 1121/1122/1124, default-on implementation, bounded comparisons and selection deferral limits.
 
 Treat these as evidence at their recorded revisions, inputs and environments,
